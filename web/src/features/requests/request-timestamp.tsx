@@ -2,6 +2,7 @@ import { useHydrated } from '@/lib/use-hydrated'
 import { useUnixClock } from '@/lib/use-unix-clock'
 import {
   formatRelativeUnix,
+  RELATIVE_HORIZON_SECONDS,
   formatUnixDate,
   formatUnixDateUtc,
 } from './request-labels'
@@ -23,9 +24,12 @@ export function RequestTimestamp({
       className={className}
       dateTime={date.toISOString()}
       suppressHydrationWarning
-      title={hydrated ? formatUnixDate(value) : undefined}
+      aria-label={formatExactDate(date, hydrated)}
+      title={formatExactDate(date, hydrated)}
     >
-      {formatRelativeUnix(value, nowUnix)}
+      {Math.abs(value - nowUnix) >= RELATIVE_HORIZON_SECONDS
+        ? formatCompactDate(date, hydrated)
+        : formatRelativeUnix(value, nowUnix)}
     </time>
   )
 }
@@ -36,10 +40,12 @@ export function RequestTimestamp({
 export function RequestAbsoluteTimestamp({
   className,
   prefix = '',
+  compact = false,
   value,
 }: {
   className?: string
   prefix?: string
+  compact?: boolean
   value: number | null
 }) {
   const hydrated = useHydrated()
@@ -58,9 +64,37 @@ export function RequestAbsoluteTimestamp({
       className={className}
       dateTime={date.toISOString()}
       suppressHydrationWarning
+      aria-label={`${prefix}${formatExactDate(date, hydrated)}`}
+      title={formatExactDate(date, hydrated)}
     >
       {prefix}
-      {hydrated ? formatUnixDate(value) : formatUnixDateUtc(value)}
+      {compact
+        ? formatCompactDate(date, hydrated)
+        : hydrated ? formatUnixDate(value) : formatUnixDateUtc(value)}
     </time>
   )
+}
+
+const COMPACT_DATE = new Intl.DateTimeFormat('en-US', {
+  month: 'short', day: 'numeric', year: 'numeric',
+})
+const COMPACT_DATE_UTC = new Intl.DateTimeFormat('en-US', {
+  month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+})
+
+function formatCompactDate(date: Date, hydrated: boolean) {
+  return (hydrated ? COMPACT_DATE : COMPACT_DATE_UTC).format(date)
+}
+
+const EXACT_DATE_OPTIONS = {
+  year: 'numeric', month: 'short', day: 'numeric',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
+} satisfies Intl.DateTimeFormatOptions
+const EXACT_DATE = new Intl.DateTimeFormat('en-US', EXACT_DATE_OPTIONS)
+const EXACT_DATE_UTC = new Intl.DateTimeFormat('en-US', {
+  ...EXACT_DATE_OPTIONS, timeZone: 'UTC',
+})
+
+function formatExactDate(date: Date, hydrated: boolean) {
+  return (hydrated ? EXACT_DATE : EXACT_DATE_UTC).format(date)
 }

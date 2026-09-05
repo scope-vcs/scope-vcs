@@ -29,8 +29,8 @@ export function CommitDetailSkeleton({ showDiff }: { showDiff: boolean }) {
         <TextSkeleton length="long" />
         <TextSkeleton className="mt-2" length="medium" size="meta" />
       </div>
-      <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,1.1fr)]">
-        <div className="min-w-0 divide-y divide-border">
+      <div className="grid min-w-0 grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)]">
+        <div className="hidden min-w-0 divide-y divide-border lg:block">
           {COMMIT_FILES.map((file) => (
             <div
               className="flex min-h-9 min-w-0 items-center gap-3 px-5"
@@ -44,7 +44,7 @@ export function CommitDetailSkeleton({ showDiff }: { showDiff: boolean }) {
             </div>
           ))}
         </div>
-        <div className="h-[70vh] min-h-[340px] max-h-[720px] min-w-0 border-border p-5 xl:border-l">
+        <div className="h-[70vh] min-h-[340px] max-h-[720px] min-w-0 border-border p-5 lg:border-l">
           {showDiff ? (
             <div className="space-y-3">
               {DIFF_LINES.map((line) => (

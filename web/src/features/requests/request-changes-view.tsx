@@ -4,6 +4,8 @@ import type {
 } from '@/api/types'
 import type { LoadRequestRevisionCommitInput } from '@/api/requests'
 import { EmptyState } from '@/components/empty-state'
+import { Button } from '@/components/ui/button'
+import { Link } from '@tanstack/react-router'
 import { GitCommit } from 'lucide-react'
 import {
   RequestChangesWorkbench,
@@ -23,6 +25,8 @@ type RequestChangesViewProps = {
     signal?: AbortSignal,
   ) => Promise<ReviewFileDiff>
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
+  onRetry: () => void
+  retrying: boolean
   onSearchChange: (search: RequestChangesSearch) => void
   params: {
     owner: string
@@ -39,6 +43,8 @@ export function RequestChangesView({
   initialDiscussionReferences,
   loadDiff,
   loadDiscussions,
+  onRetry,
+  retrying,
   onSearchChange,
   params,
   repoId,
@@ -48,9 +54,22 @@ export function RequestChangesView({
   if (!revisions) {
     return (
       <EmptyState
-        description="The request conversation is still available. Reload the page to try loading its revision history again."
+        description="the discussion is still available. Try loading this revision again."
+        action={
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button disabled={retrying} onClick={onRetry}>
+              {retrying ? 'retrying changes…' : 'retry changes'}
+            </Button>
+            <Button asChild variant="secondary">
+              <Link to="/$owner/$repo/requests/$requestId" params={{ owner: params.owner, repo: params.repo, requestId: params.request_id }}>
+                back to discussion
+              </Link>
+            </Button>
+            <output className="sr-only">{retrying ? 'loading request changes' : 'changes could not load'}</output>
+          </div>
+        }
         icon={<GitCommit />}
-        title="Changes are unavailable"
+        title="changes couldn't load"
       />
     )
   }

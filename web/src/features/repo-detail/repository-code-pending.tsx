@@ -18,7 +18,7 @@ export function RepositoryCodePending() {
           summary={PENDING_SUMMARY}
           title="Code"
         />
-        <div className="grid min-w-0 lg:min-h-[calc(100dvh-var(--app-chrome))] lg:grid-cols-[minmax(300px,0.36fr)_minmax(0,0.64fr)]">
+        <div className="grid min-w-0 lg:min-h-[calc(100dvh-var(--app-chrome))] lg:grid-cols-[250px_minmax(0,1fr)]">
           <div className="border-b border-border px-3 py-3 lg:border-b-0 lg:border-r lg:px-5">
             <TextSkeleton
               className="mb-3 hidden sm:block"

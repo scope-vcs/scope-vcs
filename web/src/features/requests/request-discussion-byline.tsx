@@ -26,7 +26,7 @@ export function RequestDiscussionByline({
         {author.handle}
       </span>
       <RequestTimestamp
-        className="whitespace-nowrap text-xs text-muted-foreground"
+        className="whitespace-nowrap text-[13px] text-muted-foreground"
         value={createdAtUnix}
       />
       {children}

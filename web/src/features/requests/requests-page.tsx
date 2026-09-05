@@ -8,9 +8,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
 import { PageContent } from '@/components/page-header'
+import { useAuth } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
 import {
   CheckCircle2,
+  ChevronRight,
   GitPullRequest,
   Search,
   UserRound,
@@ -36,17 +38,17 @@ const SECTION_DETAILS = {
   your_work: {
     empty: 'Nothing here involves you yet.',
     icon: UserRound,
-    title: 'Your work',
+    title: 'your work',
   },
   open: {
     empty: 'No open requests.',
     icon: GitPullRequest,
-    title: 'Open',
+    title: 'open',
   },
   closed: {
     empty: 'No closed requests.',
     icon: CheckCircle2,
-    title: 'Closed',
+    title: 'closed',
   },
 } as const
 
@@ -63,6 +65,7 @@ export function RequestsPage({
   ) => Promise<RequestList>
   params: RepoParams
 }) {
+  const { isSignedIn } = useAuth()
   const [state, dispatch] = useReducer(
     requestQueueViewReducer,
     initialPages,
@@ -169,7 +172,7 @@ export function RequestsPage({
         searchQuery={searchQuery}
       />
       <div aria-busy={searching} className="mt-10 grid gap-12">
-        {REQUEST_QUEUE_SECTION_ORDER.map((section) => (
+        {REQUEST_QUEUE_SECTION_ORDER.map((section) => section === 'your_work' && !isSignedIn ? null : (
           <QueueSection
             busy={Boolean(loadingSection) || searching}
             error={sectionErrors[section]}
@@ -208,7 +211,7 @@ function QueueSearch({
 }) {
   return (
     <form
-      className="flex flex-col gap-2 sm:flex-row sm:items-center"
+      className="flex flex-wrap items-center gap-2"
       onSubmit={onSubmit}
       role="search"
     >
@@ -279,17 +282,24 @@ function QueueSection({
     ? `Nothing matches “${searchQuery}”.`
     : details.empty
 
+  const Container = section === 'closed' ? 'details' : 'section'
+  const Heading = section === 'closed' ? 'summary' : 'div'
+
   return (
-    <section aria-labelledby={headingId}>
-      <div className="flex items-center gap-2">
-        <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
+    <Container aria-labelledby={headingId} className="group/section" open={section === 'closed' && searchQuery ? true : undefined}>
+      <Heading className="flex items-center gap-2 [&:is(summary)]:cursor-pointer">
+        {section === 'closed' ? (
+          <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground group-open/section:rotate-90" />
+        ) : (
+          <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
+        )}
         <h2 className="text-sm font-semibold" id={headingId}>
           {details.title}
         </h2>
         <span className="text-xs tabular-nums text-muted-foreground">
           {requestCountLabel(page.requests.length, Boolean(page.next_cursor))}
         </span>
-      </div>
+      </Heading>
 
       {page.requests.length ? (
         <div className="mt-2 divide-y divide-border">
@@ -329,7 +339,7 @@ function QueueSection({
           {error}
         </p>
       ) : null}
-    </section>
+    </Container>
   )
 }
 
@@ -349,33 +359,26 @@ function RequestQueueRow({
       title={request.id}
       to="/$owner/$repo/requests/$requestId"
     >
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <h3 className="break-words text-sm font-medium leading-6 group-hover:underline">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <h3 className="break-words text-base font-medium leading-6 group-hover:underline">
           {request.title}
         </h3>
-        {request.title !== request.name ? (
-          <span className="truncate font-mono text-xs text-muted-foreground">
-            {request.name}
-          </span>
-        ) : null}
+        <Badge className="font-medium text-foreground" variant={section === 'open' ? 'neutral' : requestStatusTone(request)}>
+          {section === 'open' ? requestMergeabilityLabel(request) : requestStatusLabel(request)}
+        </Badge>
       </div>
-      {/* Status stays adjacent to the title rather than justified to the far
-          edge, so wide viewports do not separate a row from its state. */}
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-muted-foreground">
-        {section === 'open' ? (
-          <span>{requestMergeabilityLabel(request)}</span>
-        ) : (
-          <Badge variant={requestStatusTone(request)}>
-            {requestStatusLabel(request)}
-          </Badge>
-        )}
-        <span aria-hidden="true">·</span>
-        <span>{requestAudienceLabel(request)}</span>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] leading-5 text-muted-foreground">
+        <QueueDate request={request} section={section} />
         <span aria-hidden="true">·</span>
         <span>{requestAuthorRoleLabel(request)}</span>
         <span aria-hidden="true">·</span>
-        <QueueDate request={request} section={section} />
+        <span>{requestAudienceLabel(request)}</span>
       </div>
+      {request.title !== request.name ? (
+        <div className="mt-1 break-all font-mono text-[13px] text-muted-foreground">
+          {request.name}
+        </div>
+      ) : null}
     </Link>
   )
 }
@@ -391,6 +394,7 @@ function QueueDate({
     return (
       <RequestAbsoluteTimestamp
         className="tabular-nums"
+        compact
         prefix="Submitted "
         value={request.submitted_at_unix}
       />
@@ -399,6 +403,7 @@ function QueueDate({
   return (
     <RequestAbsoluteTimestamp
       className="tabular-nums"
+      compact
       prefix="Updated "
       value={request.updated_at_unix}
     />

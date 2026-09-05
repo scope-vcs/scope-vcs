@@ -71,12 +71,12 @@ export function MarketingCliOnboarding({
   return (
     <section
       aria-labelledby="install-scope"
-      className="marketing-cli-onboarding mt-9 max-w-[570px]"
+      className="marketing-cli-onboarding min-w-0"
     >
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-sm font-semibold" id="install-scope">
-            Install Scope
+            install scope
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Install now. Sign in when you connect a repository.
@@ -106,12 +106,20 @@ export function MarketingCliOnboarding({
       </div>
 
       <CopyableCodeBlock
-        className="shadow-[0_18px_55px_-34px_rgba(0,0,0,0.9)]"
+        buttonLabel="copy install command"
+        className="shadow-none"
         copyLabel={`Copy ${platformOption.copyName} install command`}
         key={platform}
         onCopy={revealNextSteps}
         value={installCommand}
       />
+
+      <a
+        className="mt-4 inline-flex text-sm text-muted-foreground underline decoration-border-strong underline-offset-4 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+        href="https://scopevcs.com/adamblumoff/scope-vcs"
+      >
+        explore a public repository ↗
+      </a>
 
       <LazyMotion features={domAnimation}>
         <AnimatePresence initial={false}>
@@ -130,7 +138,7 @@ export function MarketingCliOnboarding({
                 onClick={() => revealNextSteps(true)}
                 type="button"
               >
-                Already installed? Show next steps
+                already installed? next steps
               </button>
             </m.div>
           )}
@@ -150,14 +158,14 @@ export function MarketingCliOnboarding({
               <div className="mt-5 border-t border-border pt-5">
                 <div className="mb-4 flex items-center gap-2 font-mono text-[11px] font-semibold text-[var(--success-strong)]">
                   <CheckCircle2 className="size-3.5" />
-                  Ready for the next step
+                  ready for the next step
                 </div>
                 <h3
                   className="text-sm font-semibold outline-none"
                   ref={nextStepsHeadingRef}
                   tabIndex={-1}
                 >
-                  Connect a repository
+                  connect a repository
                 </h3>
                 <div className="mt-4 space-y-4">
                   {nextSteps.map((step, index) => (

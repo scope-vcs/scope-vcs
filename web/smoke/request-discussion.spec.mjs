@@ -174,10 +174,7 @@ test('seeded request discussion and changes stay reciprocal and ordered', async 
     page.on('request', recordServerFunction)
     await changesLink.click()
     await page.waitForURL((url) => url.pathname.endsWith('/requests/req_demo_ready/changes'))
-    await page
-      .getByRole('button', { name: /, commit .+, \d+ files?$/ })
-      .first()
-      .waitFor()
+    await page.getByLabel('Commit file navigator').waitFor()
     page.off('request', recordServerFunction)
     const repeatedServerFunctions = transitionServerFunctions.filter(
       (url, index, requests) => requests.indexOf(url) !== index,
@@ -226,6 +223,45 @@ async function assertReplyRegion(page, region, expanded) {
   assert.equal(await region.getAttribute('aria-hidden'), String(!expanded))
   assert.equal(await region.getAttribute('inert'), expanded ? null : '')
 }
+
+test('request details disclose on mobile without replacing discussion or quote targets', async () => {
+  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const context = page.locator('.request-context-rail > details')
+    const summary = context.locator(':scope > summary')
+    await summary.waitFor()
+    assert.equal(await context.getAttribute('open'), null)
+    assert.doesNotMatch(await context.ariaSnapshot(), /Public request/)
+    assert.equal(await context.count(), 1)
+    const tabs = page.getByRole('navigation', { name: 'Request views' })
+    const thread = page.locator('#discussion-discussion_demo_retry_cap')
+    const tabBox = await tabs.boundingBox()
+    const summaryBox = await summary.boundingBox()
+    const threadBox = await thread.boundingBox()
+    assert(tabBox.y + tabBox.height <= summaryBox.y)
+    assert(summaryBox.y + summaryBox.height <= threadBox.y)
+    await summary.click()
+    await context.getByText('Public request', { exact: true }).waitFor()
+    const invitees = context.locator('details').filter({ has: page.getByRole('heading', { name: 'invitees', exact: true }) })
+    assert.equal(await invitees.getAttribute('open'), null)
+    await invitees.locator('summary').click()
+    await invitees.getByText('No invitees.', { exact: false }).waitFor()
+    await summary.click()
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await context.getByText('Public request', { exact: true }).waitFor()
+    assert.equal(await context.getAttribute('open'), '')
+    assert.match(await context.ariaSnapshot(), /Public request/)
+    assert.equal(await context.count(), 1)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
+    assert.doesNotMatch(await context.ariaSnapshot(), /Public request/)
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    const quote = page.locator('#reply-discussion_reply_demo_retry_cap_quote a[href^="#discussion="]')
+    await quote.click()
+    await page.waitForFunction(() => document.activeElement?.id === 'reply-discussion_reply_demo_retry_cap_maintainer')
+    assert.equal(await page.locator('h1').innerText(), 'Add bounded retry timing')
+  })
+})
 
 async function withPage(path, assertion) {
   const browser = await chromium.launch({ headless: true })

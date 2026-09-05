@@ -5,8 +5,9 @@ import {
   TextSkeleton,
   type TextSkeletonLength,
 } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 const DEFAULT_ROWS: { id: string; length: TextSkeletonLength }[] = [
   { id: 'primary', length: 'long' },
@@ -20,15 +21,27 @@ export function PendingSurface({
   className,
   delay = false,
   label = 'Loading page',
+  onRetry,
+  retryLabel = 'try again',
+  delayedLabel = 'this is taking longer than usual',
 }: {
   children?: ReactNode
   className?: string
   delay?: boolean
   label?: string
+  onRetry?: () => void
+  retryLabel?: string
+  delayedLabel?: string
 }) {
+  const [delayed, setDelayed] = useState(false)
+  useEffect(() => {
+    if (delayed) return
+    const timer = window.setTimeout(() => setDelayed(true), 8_000)
+    return () => window.clearTimeout(timer)
+  }, [delayed])
   return (
-    <output
-      aria-busy="true"
+    <div
+      aria-busy={delayed ? undefined : true}
       className={cn(
         'scope-pending-enter block min-h-full w-full',
         delay && 'scope-pending-delayed',
@@ -36,9 +49,30 @@ export function PendingSurface({
       )}
       data-slot="pending-surface"
     >
-      <span className="sr-only">{label}</span>
-      {children ?? <DefaultPageSkeleton />}
-    </output>
+      {delayed && onRetry ? (
+        <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+          <output className="block text-sm font-medium">{delayedLabel}</output>
+          <p className="text-sm text-muted-foreground">you can keep waiting or try again</p>
+          <Button
+            onClick={() => {
+              setDelayed(false)
+              onRetry()
+            }}
+            size="sm"
+            variant="secondary"
+          >
+            {retryLabel}
+          </Button>
+        </div>
+      ) : (
+        <>
+          {delayed ? (
+            <output className="block px-6 py-4 text-sm text-muted-foreground">{delayedLabel}. You can keep waiting.</output>
+          ) : <output className="sr-only">{label}</output>}
+          {children ?? <DefaultPageSkeleton />}
+        </>
+      )}
+    </div>
   )
 }
 

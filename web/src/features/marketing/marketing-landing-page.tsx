@@ -17,7 +17,7 @@ export function MarketingLandingPage({
   initialCliPlatform: CliPlatform
 }): ReactElement {
   return (
-    <div className="dark marketing-page min-h-dvh text-foreground">
+    <div className="marketing-page min-h-dvh text-foreground">
       <a
         className="fixed left-4 top-3 z-50 -translate-y-16 rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background shadow-md focus:translate-y-0"
         href="#main-content"
@@ -25,43 +25,51 @@ export function MarketingLandingPage({
         Skip to content
       </a>
 
-      <div className="grid min-h-dvh grid-rows-[66px_1fr] overflow-hidden sm:grid-rows-[74px_1fr]">
+      <div className="grid min-h-dvh grid-rows-[66px_1fr] sm:grid-rows-[74px_1fr]">
         <MarketingHeader />
 
         <PageRail
           as="main"
-          className="marketing-arena relative min-h-[1080px] py-10 outline-none sm:py-14"
+          className="marketing-arena py-10 outline-none sm:py-14"
           id="main-content"
           tabIndex={-1}
         >
-          <section className="marketing-copy relative z-10 max-w-[610px]">
-            <h1 className="max-w-[680px] text-[clamp(2.3rem,11.6vw,3.2rem)] font-semibold leading-none tracking-[-0.067em] sm:text-[clamp(3.2rem,5.4vw,4rem)] min-[1200px]:text-[clamp(3.2rem,6.1vw,5.75rem)]">
-              <span className="block whitespace-nowrap">One repository.</span>
-              <span className="block whitespace-nowrap text-muted-foreground">
-                Public and private.
-              </span>
-            </h1>
-
-            <ul className="mt-8 max-w-[540px] list-none space-y-2 text-[clamp(0.9375rem,1.4vw,1.1875rem)] leading-[1.62] tracking-[-0.015em] text-muted-foreground">
-              <li>
-                Scope lets you keep public and private code in one Git repository. The public
-                clones only what you choose to share.
-              </li>
-              <li>One codebase. No split repositories. No synchronization scripts.</li>
-            </ul>
-
-            <p className="mt-7 max-w-[560px] text-[clamp(1.05rem,1.6vw,1.35rem)] font-medium leading-[1.45] tracking-[-0.025em] text-foreground">
-              Maintainers define what earns access to their attention.{' '}
-              <span className="text-muted-foreground">Everything else remains invisible.</span>
-            </p>
-
+          <div className="marketing-hero">
+            <section className="marketing-copy">
+              <h1 className="text-[clamp(2rem,7.8vw,4.6rem)] font-semibold leading-[1.05] tracking-[-0.06em]">
+                <span className="block">One repository.</span>
+                <span className="block text-muted-foreground">Public and private.</span>
+              </h1>
+              <p className="mt-6 max-w-[540px] text-lg leading-relaxed text-muted-foreground">
+                Keep public and private code in one Git repository. The public clones
+                only what you choose to share.
+              </p>
+              <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                One codebase. No split repositories. No synchronization scripts.
+              </p>
+            </section>
+            <RepositoryProjection />
             <MarketingCliOnboarding
               commands={cliInstallCommands}
               initialPlatform={initialCliPlatform}
             />
-          </section>
+          </div>
 
-          <RepositoryProjection />
+          <section className="marketing-explanation" aria-labelledby="request-workflow-title">
+            <h2 className="text-2xl font-semibold tracking-tight" id="request-workflow-title">
+              prepare privately, submit when ready
+            </h2>
+            <p className="mt-4 max-w-[700px] text-base leading-relaxed text-muted-foreground">
+              Draft requests stay private to their participants. Submit when the work is
+              ready for the maintainer queue, then keep the discussion and changes
+              together as you revise.
+            </p>
+            <ol className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <li>private draft</li>
+              <li><span aria-hidden className="mr-4 text-muted-foreground">→</span>submit request</li>
+              <li className="font-medium"><span aria-hidden className="mr-4 text-muted-foreground">→</span>maintainer queue</li>
+            </ol>
+          </section>
         </PageRail>
       </div>
     </div>

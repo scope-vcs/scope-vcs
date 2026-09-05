@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 type CopyableCodeBlockProps = {
+  buttonLabel?: string
   className?: string
   copyLabel?: string
   onCopy?: () => void
@@ -18,6 +19,7 @@ type CopyableCodeBlockProps = {
 }
 
 export function CopyableCodeBlock({
+  buttonLabel,
   className,
   copyLabel = 'Copy',
   onCopy,
@@ -65,39 +67,52 @@ export function CopyableCodeBlock({
     onCopy?.()
   }
 
-  return (
+  const copyButton = (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            aria-label={copied ? 'Copied' : copyLabel}
+            className={buttonLabel
+              ? 'gap-2'
+              : 'absolute inset-y-0 right-2 my-auto border-white/15 bg-white/5 text-[#aeb4bf] hover:bg-white/10 hover:text-white'}
+            onClick={() => void copyToClipboard()}
+            size={buttonLabel ? 'default' : 'icon-sm'}
+            type="button"
+            variant={buttonLabel ? 'default' : 'secondary'}
+          >
+            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            {buttonLabel && <span>{copied ? 'copied' : buttonLabel}</span>}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{copied ? 'Copied' : copyLabel}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+
+  const codeBlock = (
     <div
       className={cn(
         'relative rounded-lg border border-border border-l-2 border-l-[var(--platinum)] bg-[var(--terminal-surface)] text-[var(--terminal-foreground)] shadow-[var(--shadow-card)]',
         className,
       )}
     >
-      <pre className="overflow-x-auto whitespace-pre-wrap break-words px-3 py-2 pr-12 font-mono text-xs leading-5 [overflow-wrap:anywhere]">
+      <pre className={cn(
+        'overflow-x-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs leading-5 [overflow-wrap:anywhere]',
+        !buttonLabel && 'pr-12',
+      )}>
         <code>{value}</code>
       </pre>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              aria-label={copied ? 'Copied' : copyLabel}
-              className="absolute inset-y-0 right-2 my-auto border-white/15 bg-white/5 text-[#aeb4bf] hover:bg-white/10 hover:text-white"
-              onClick={() => void copyToClipboard()}
-              size="icon-sm"
-              type="button"
-              variant="secondary"
-            >
-              {copied ? (
-                <Check className="size-3.5" />
-              ) : (
-                <Copy className="size-3.5" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{copied ? 'Copied' : copyLabel}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      {!buttonLabel && copyButton}
     </div>
   )
+
+  return buttonLabel ? (
+    <div className="space-y-3">
+      {codeBlock}
+      {copyButton}
+    </div>
+  ) : codeBlock
 }
 
 function copyWithFallback(value: string): boolean {

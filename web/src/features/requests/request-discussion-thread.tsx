@@ -120,6 +120,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
       const target = document.getElementById(`reply-${replyId}`)
       if (target) {
         target.scrollIntoView({ block: 'center' })
+        target.focus({ preventScroll: true })
         attemptedReplyHashRef.current = hash
         handledReplyHashRef.current = hash
         return

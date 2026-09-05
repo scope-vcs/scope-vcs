@@ -1,5 +1,6 @@
 import { AuthLayout } from '@/features/auth/auth-layout'
-import { AuthFailureState } from '@/features/auth/auth-failure-state'
+import { forceSignedOut } from '@/auth-mode'
+import { AuthFailureState, AuthRouteError } from '@/features/auth/auth-failure-state'
 import {
   AuthLoadingState,
   AuthSurface,
@@ -14,26 +15,33 @@ import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/sign-in/$')({
   component: Page,
+  errorComponent: AuthRouteError,
 })
 
 function Page() {
   return (
     <AuthLayout>
       <AuthSurface
-        description="Continue to repositories, requests, and your CLI sessions."
+        description="continue to repositories, requests, and your CLI sessions"
         title="Sign in to Scope"
       >
-        <ClerkLoading>
-          <AuthLoadingState label="Loading sign in…" />
-        </ClerkLoading>
-        <ClerkFailed>
-          <AuthFailureState title="Sign in unavailable" />
-        </ClerkFailed>
-        <ClerkLoaded>
-          <div className="scope-content-enter">
-            <SignIn />
-          </div>
-        </ClerkLoaded>
+        {forceSignedOut ? (
+          <AuthFailureState title="sign in unavailable" />
+        ) : (
+          <>
+            <ClerkLoading>
+              <AuthLoadingState label="Loading sign in…" />
+            </ClerkLoading>
+            <ClerkFailed>
+              <AuthFailureState title="Sign in unavailable" />
+            </ClerkFailed>
+            <ClerkLoaded>
+              <div className="scope-content-enter">
+                <SignIn />
+              </div>
+            </ClerkLoaded>
+          </>
+        )}
       </AuthSurface>
     </AuthLayout>
   )

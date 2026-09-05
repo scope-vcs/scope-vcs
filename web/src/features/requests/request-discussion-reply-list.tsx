@@ -13,6 +13,7 @@ import {
   sameUtcDate,
   shouldGroupReplies,
 } from './request-discussion-reply-presentation'
+import { RequestTimestamp } from './request-timestamp'
 import type { RequestDiscussionReplyView } from './request-discussion-types'
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
@@ -112,6 +113,7 @@ function DiscussionReply({
         grouped ? 'py-0.5' : 'pt-3 pb-1',
       )}
       id={`reply-${reply.id}`}
+      tabIndex={-1}
     >
       {grouped ? (
         <span aria-hidden="true" />
@@ -122,10 +124,9 @@ function DiscussionReply({
       <div className="min-w-0">
         {grouped ? (
           <span className="sr-only">
-            {reply.author.handle}, grouped message
+            {reply.author.handle}, <RequestTimestamp value={reply.created_at_unix} />
           </span>
         ) : null}
-        <ReplyReference reply={reply} />
         {!grouped ? (
           <RequestDiscussionByline
             author={reply.author}
@@ -139,6 +140,7 @@ function DiscussionReply({
             ) : null}
           </RequestDiscussionByline>
         ) : null}
+        <ReplyReference reply={reply} />
         <RequestDiscussionMarkdown
           className={cn(
             REQUEST_DISCUSSION_CONTENT_CLASS,
@@ -243,11 +245,11 @@ function ReplyReference({ reply }: { reply: RequestDiscussionReplyView }) {
   if (reply.reply_to) {
     return (
       <a
-        className="mb-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+        className="my-2 flex min-w-0 items-center gap-1.5 border-l-2 border-border pl-3 text-[13px] text-muted-foreground hover:text-foreground"
         href={replyFragment(reply.discussion_id, reply.reply_to.id)}
       >
         <CornerLeftUp className="size-3 shrink-0" />
-        <span className="shrink-0 font-medium text-foreground">
+        <span className="max-w-[45%] shrink-0 truncate font-medium text-foreground">
           {reply.reply_to.author.handle}
         </span>
         <span className="truncate">
@@ -258,7 +260,7 @@ function ReplyReference({ reply }: { reply: RequestDiscussionReplyView }) {
   }
   if (!reply.optimistic_reply_to_reply_id) return null
   return (
-    <span className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+    <span className="my-2 flex items-center gap-1.5 border-l-2 border-border pl-3 text-[13px] text-muted-foreground">
       <CornerLeftUp className="size-3 shrink-0" />
       Replying to an earlier message
     </span>

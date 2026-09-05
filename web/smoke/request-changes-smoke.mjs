@@ -90,6 +90,7 @@ export async function assertFileSelectionSkipsRevisionReload(page, fileName, pat
 
 export async function assertUpdateSelectionReloadsSelectedPayload(page) {
   await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
+  await page.locator('summary').filter({ hasText: /^commits ·/ }).click()
   const updates = page.getByRole('button', {
     name: /, commit .+, \d+ files?$/,
   })

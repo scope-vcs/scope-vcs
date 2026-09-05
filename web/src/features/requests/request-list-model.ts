@@ -4,8 +4,8 @@ import type { RequestQueueSection } from '@/api/request-queue-input'
 export type RequestQueuePages = Record<RequestQueueSection, RequestList>
 
 export const REQUEST_QUEUE_SECTION_ORDER = [
-  'your_work',
   'open',
+  'your_work',
   'closed',
 ] as const satisfies readonly RequestQueueSection[]
 

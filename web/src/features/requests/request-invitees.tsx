@@ -35,15 +35,15 @@ export function RequestInvitees({
   }
 
   return (
-    <section>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-          Invitees
+    <details open={request.invitees.length > 0 || request.permissions.can_manage_invitees || request.permissions.can_leave_request ? true : undefined}>
+      <summary className="cursor-pointer list-item items-center justify-between gap-3">
+        <h2 className="inline text-[13px] font-semibold text-muted-foreground">
+          invitees
         </h2>
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="float-right font-mono text-xs text-muted-foreground">
           {request.invitees.length} / 30
         </span>
-      </div>
+      </summary>
 
       {request.invitees.length > 0 ? (
         <div className="mt-3 divide-y divide-border">
@@ -121,6 +121,6 @@ export function RequestInvitees({
           Leave request
         </Button>
       ) : null}
-    </section>
+    </details>
   )
 }

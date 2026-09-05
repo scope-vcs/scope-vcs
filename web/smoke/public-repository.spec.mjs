@@ -408,7 +408,8 @@ test('public direct Runs access is explicit and exposes no operations', async ()
 test('public repository history renders its seeded push as an update', async () => {
   await withPage(`${repoPath}/history`, async (page) => {
     await assertCurrentRepoSection(page, 'History')
-    await assertPageHeading(page, 'History')
+    await assertPageHeading(page, 'history')
+    await page.locator('summary').filter({ hasText: /^updates/ }).click()
     const update = page.getByRole('button', {
       name: 'Push: Projected public update, update dev-public-1, 2 file changes',
     })
@@ -462,7 +463,7 @@ test('public repository navigates to history after client hydration', async () =
       .getByRole('link', { name: 'History', exact: true })
       .click()
     await assertCurrentRepoSection(page, 'History')
-    await page.getByText('Projected public update', { exact: true }).first().waitFor()
+    await page.getByRole('heading', { name: 'Projected public update', exact: true }).waitFor()
     assert.equal(
       await page.evaluate(() => window.__scopeSmokeDocument),
       documentSentinel,
@@ -640,9 +641,9 @@ test('public repository requests route is anonymously readable', async () => {
   await withPage(`${repoPath}/requests`, async (page) => {
     await assertCurrentRepoSection(page, 'Requests')
     await assertPageHeading(page, 'Requests')
-    await page.getByRole('heading', { level: 2, name: 'Your work' }).waitFor()
-    await page.getByRole('heading', { level: 2, name: 'Open' }).waitFor()
-    await page.getByRole('heading', { level: 2, name: 'Closed' }).waitFor()
+    assert.equal(await page.getByRole('heading', { level: 2, name: /^your work$/i }).count(), 0)
+    await page.getByRole('heading', { level: 2, name: 'open', exact: true }).waitFor()
+    await page.locator('summary').filter({ hasText: /^closed/ }).click()
     await page.getByText('No open requests.', { exact: true }).waitFor()
     await page.getByText('No closed requests.', { exact: true }).waitFor()
   })

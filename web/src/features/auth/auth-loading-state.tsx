@@ -28,6 +28,7 @@ export function AuthLoadingState({ label }: { label: string }) {
       className="min-h-[220px] w-full max-w-sm"
       delay
       label={label}
+      onRetry={() => window.location.reload()}
     >
       <div className="space-y-3">
         <BlockSkeleton className="h-10 w-full" />

@@ -1,0 +1,121 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { chromium } from 'playwright'
+import { waitForClientHydration } from './request-changes-smoke.mjs'
+
+const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000'
+const repo = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
+const requestRepo = process.env.SCOPE_SMOKE_REQUEST_REPO ?? 'dev/update-demo'
+
+test('sign-in keeps Scope navigation when authentication is disabled', async (t) => {
+  const browser = await chromium.launch({ headless: true })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  try {
+    await page.goto(`${baseUrl}/sign-in`)
+    const disabled = page.getByText('sign-in is disabled in this preview.', { exact: false })
+    if (!await disabled.isVisible().catch(() => false)) {
+      await page.waitForTimeout(1500)
+      if (!await disabled.count()) return t.skip('requires forced signed-out preview')
+    }
+    await page.getByRole('link', { name: 'back to scope' }).click()
+    await page.waitForURL(new URL('/', baseUrl).href)
+    assert.deepEqual(errors, [])
+  } finally {
+    await browser.close()
+  }
+})
+
+test('changes retry keeps the document and selected revision', async () => {
+  const browser = await chromium.launch({ headless: true })
+  const page = await browser.newPage()
+  await page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
+  try {
+    let injected = false
+    await page.route('**/_serverFn/**', async (route) => {
+      const id = new URL(route.request().url()).pathname.split('/').at(-1)
+      const name = JSON.parse(Buffer.from(id, 'base64url')).export
+      if (!injected && name === 'loadChangesPage_createServerFn_handler') {
+        injected = true
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ result: { discussionReferences: { commitKey: null, page: null }, revisions: null }, context: {} }),
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.goto(`${baseUrl}/${requestRepo}/requests/req_demo_ready`)
+    const changes = page.locator('#discussion-discussion_demo_revision_jitter').getByRole('link', { name: /Revision/ })
+    await waitForClientHydration(page, changes)
+    await changes.click()
+    const retry = page.getByRole('button', { name: 'retry changes', exact: true })
+    await retry.waitFor()
+    assert.equal(injected, true)
+    const before = page.url()
+    assert.equal(new URL(before).searchParams.get('revision'), 'event_req_demo_ready_revision_2')
+    const heading = await page.getByRole('heading', { name: 'Add bounded retry timing' }).elementHandle()
+    await page.evaluate(() => { window.__recoveryDocument = 'preserved' })
+    const requests = []
+    page.on('request', (request) => {
+      if (request.url().includes('/_serverFn/')) {
+        const id = new URL(request.url()).pathname.split('/').at(-1)
+        requests.push(JSON.parse(Buffer.from(id, 'base64url')).export)
+      }
+    })
+    await waitForClientHydration(page, retry)
+    const response = page.waitForResponse((response) => response.url().includes('/_serverFn/'))
+    await retry.click()
+    await response
+    await page.waitForFunction(() => !document.querySelector('button:disabled'))
+    assert.equal(new URL(page.url()).pathname, new URL(before).pathname)
+    for (const [key, value] of new URL(before).searchParams) {
+      assert.equal(new URL(page.url()).searchParams.get(key), value)
+    }
+    assert.equal(await page.evaluate(() => window.__recoveryDocument), 'preserved')
+    assert.equal(await heading.evaluate((element) => element.isConnected), true)
+    assert.deepEqual(requests, ['loadChangesPage_createServerFn_handler'])
+    await page.getByLabel('Commit file navigator').waitFor()
+    assert.equal(await retry.count(), 0)
+    const discussion = page.getByRole('navigation', { name: 'Request views' }).getByRole('link', { name: 'Discussion', exact: true })
+    await discussion.click()
+    await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready'))
+  } finally {
+    await browser.close()
+  }
+})
+
+test('a delayed file offers scoped retry and keeps its selection', async () => {
+  const browser = await chromium.launch({ headless: true })
+  const page = await browser.newPage()
+  await page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
+  let release = () => {}
+  try {
+    await page.goto(`${baseUrl}/${repo}`)
+    await page.locator('iframe[title="README.html preview"]').waitFor()
+    let attempts = 0
+    const held = new Promise((resolve) => { release = resolve })
+    await page.route('**/_serverFn/**', async (route) => {
+      if (decodeURIComponent(route.request().url()).includes('src/app.ts')) {
+        attempts += 1
+        if (attempts === 1) await held
+      }
+      await route.continue().catch(() => {})
+    })
+    const expand = page.getByRole('button', { name: 'Expand src', exact: true })
+    await waitForClientHydration(page, expand)
+    await expand.click()
+    await page.getByRole('button', { name: 'app.ts', exact: true }).click()
+    await page.getByText('this file is taking longer than usual', { exact: true }).waitFor({ timeout: 30_000 })
+    assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
+    assert.equal(await page.getByLabel('Repository file navigator').isVisible(), true)
+    await page.getByRole('button', { name: 'retry file', exact: true }).click()
+    await page.locator('pre code').filter({ hasText: 'export function greet' }).waitFor()
+    assert.equal(attempts, 2)
+    assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
+  } finally {
+    release()
+    await browser.close()
+  }
+})
