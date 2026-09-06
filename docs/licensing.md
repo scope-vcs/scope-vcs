@@ -21,6 +21,10 @@ reuse. A different archive requires a new review of its terms.
 
 `legal/dependency-inventory.json` records the audited package versions, archive
 checksums, license declarations, and the provenance of license and notice texts.
+Each dependency occupies one JSON record line. Generated notices print repeated
+MIT and Apache terms once and reference them from each applicable document.
+Sharing requires identical words and punctuation; differences in whitespace are
+ignored. Copyright notices, additional terms, and distinct wording are retained.
 The inventory covers both Rust lockfiles and the web lockfile, including
 platform-specific and development dependencies. This is a conservative set;
 listing a package does not mean every distribution contains it.

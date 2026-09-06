@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import io
@@ -18,6 +19,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CACHE = Path(tempfile.gettempdir()) / "scope-license-archives"
 LOCKFILES = ["Cargo.lock", "cli/Cargo.lock", "web/pnpm-lock.yaml"]
 LICENSE_NAME = re.compile(r"^(licen[cs]e|copying|copyright|notice|ofl|unlicense)([._-].*)?$", re.I)
+SHARED_TERMS = re.compile(
+    r"Permission\s+is\s+hereby\s+granted,.*?OTHER\s+DEALINGS\s+IN\s+THE\s+SOFTWARE\."
+    r"|Apache\s+License\s+Version\s+2\.0,\s+January\s+2004.*?END\s+OF\s+TERMS\s+AND\s+CONDITIONS",
+    re.S,
+)
 
 
 def digest(data, algorithm="sha256"):
@@ -244,13 +250,34 @@ def document_text(document):
     return raw.decode("utf-8-sig").replace("\r\n", "\n").strip()
 
 
+def shared_terms(texts):
+    """Share repeated terms only when all words and punctuation are identical."""
+    matches = [match.group() for text in texts.values() for match in SHARED_TERMS.finditer(text)]
+    counts = Counter(" ".join(text.split()) for text in matches)
+    terms = {}
+    for text in matches:
+        normalized = " ".join(text.split())
+        if counts[normalized] > 1:
+            terms.setdefault(digest(normalized.encode()), text)
+    return terms
+
+
+def reference_terms(text, terms):
+    def replace(match):
+        reference = digest(" ".join(match.group().split()).encode())
+        return f"[Shared terms {reference}]" if reference in terms else match.group()
+    return SHARED_TERMS.sub(replace, text)
+
+
 def render(entries, ecosystem):
     output = ["Third-party licenses for Scope", "",
         "Generated from checksum-verified dependency archives by dev/licensing/generate.py.",
         "Includes every locked dependency, including build, development, optional, and",
         "platform-specific packages. An entry does not imply it is linked into every build.",
         "Third-party components retain their own licenses. Scope's Apache-2.0 license",
-        "does not replace those terms.", ""]
+        "does not replace those terms. References to shared terms resolve to the",
+        "complete text at the end of this document; package-specific notices remain",
+        "with each license document.", ""]
     texts = {}
     for entry in entries:
         if entry["ecosystem"] != ecosystem:
@@ -269,9 +296,20 @@ def render(entries, ecosystem):
             output.append(f"{document['path']}: text {reference}")
         output.append("")
     output.extend(["=" * 78, "License and notice texts", ""])
+    terms = shared_terms(texts)
     for reference, text in sorted(texts.items()):
-        output.extend([f"--- text {reference} ---", text, ""])
-    return "\n".join(output).rstrip() + "\n"
+        output.extend([f"--- text {reference} ---", reference_terms(text, terms), ""])
+    output.extend(["=" * 78, "Shared license terms", ""])
+    for reference, text in sorted(terms.items()):
+        output.extend([f"--- shared terms {reference} ---", text, ""])
+    return "\n".join(line.rstrip() for line in "\n".join(output).split("\n")).rstrip() + "\n"
+
+
+def render_inventory(metadata, packages):
+    """Keep one dependency per line so changes remain reviewable without JSON padding."""
+    header = json.dumps(metadata, indent=2, ensure_ascii=False).removesuffix("\n}")
+    records = ",\n".join("    " + json.dumps(entry, ensure_ascii=False) for entry in packages)
+    return header + ',\n  "packages": [\n' + records + "\n  ]\n}\n"
 
 
 def main():
@@ -304,11 +342,10 @@ def main():
         "web/public/LICENSE.txt": (ROOT / "LICENSE").read_text(encoding="utf-8"),
         "web/public/NOTICE.txt": (ROOT / "NOTICE").read_text(encoding="utf-8"),
     }
-    outputs["legal/dependency-inventory.json"] = json.dumps(dict(
+    outputs["legal/dependency-inventory.json"] = render_inventory(dict(
         lockfiles={path: digest((ROOT / path).read_text(encoding="utf-8").encode()) for path in LOCKFILES},
         inputs={path: input_digest(path) for path in input_files()},
-        artifacts={path: digest(content.encode()) for path, content in outputs.items()},
-        packages=inventory), indent=2, ensure_ascii=False) + "\n"
+        artifacts={path: digest(content.encode()) for path, content in outputs.items()}), inventory)
     for path, content in outputs.items():
         target = ROOT / path
         target.parent.mkdir(parents=True, exist_ok=True)

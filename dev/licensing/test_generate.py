@@ -4,6 +4,7 @@ import base64
 import contextlib
 import io
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -124,6 +125,45 @@ class LicensingChecks(unittest.TestCase):
                 "MIT & Apache-2.0", "MIT Apache-2.0", "MIT WITH", "(MIT) WITH LLVM-exception"]:
             with self.subTest(expression=expression), self.assertRaises(ValueError):
                 generate.validate_selections({expression: expression})
+
+    def test_shared_terms_preserve_attribution_and_distinct_license_wording(self):
+        terms = ("Permission is hereby granted, free of charge, to any person obtaining a copy.\n\n"
+            "THE SOFTWARE IS PROVIDED AS IS. OTHER DEALINGS IN THE SOFTWARE.")
+        original = [
+            "Copyright Alice\n\n" + terms + "\nAdditional notice from Alice.",
+            "Copyright Bob\n\n" + terms.replace(" ", "\n"),
+            "Copyright Carol\n\n" + terms.replace("free of charge", "subject to an additional condition"),
+        ]
+        texts = {generate.digest(text.encode()): text for text in original}
+        shared = generate.shared_terms(texts)
+        self.assertEqual(len(shared), 1)
+        for text in original:
+            rendered = generate.reference_terms(text, shared)
+            restored = re.sub(r"\[Shared terms ([a-f0-9]{64})\]", lambda match: shared[match[1]], rendered)
+            self.assertEqual(" ".join(restored.split()), " ".join(text.split()))
+        self.assertIn("Copyright Alice", generate.reference_terms(original[0], shared))
+        self.assertIn("Additional notice from Alice.", generate.reference_terms(original[0], shared))
+        self.assertEqual(generate.reference_terms(original[2], shared), original[2])
+
+    def test_rendered_notices_include_all_referenced_terms(self):
+        terms = "Apache License\nVersion 2.0, January 2004\nTerms.\nEND OF TERMS AND CONDITIONS"
+        documents = [dict(path="LICENSE", text="Copyright " + name + "\n" + terms) for name in ["Alice", "Bob"]]
+        entries = [dict(ecosystem="rust", name="package-" + str(index), version="1", license="Apache-2.0",
+            selected_license="Apache-2.0", url="https://example.invalid/source", documents=[document])
+            for index, document in enumerate(documents)]
+        rendered = generate.render(entries, "rust")
+        self.assertEqual(rendered.count(terms), 1)
+        for reference in re.findall(r"\[Shared terms ([a-f0-9]{64})\]", rendered):
+            self.assertIn(f"--- shared terms {reference} ---\n{terms}", rendered)
+        for name in ["Alice", "Bob"]:
+            self.assertIn("Copyright " + name, rendered)
+
+    def test_compact_inventory_preserves_every_field(self):
+        metadata = dict(lockfiles={"Cargo.lock": "checksum"}, inputs={}, artifacts={})
+        packages = [dict(name="example", authors=["Copyright Holder"], documents=[dict(path="LICENSE", sha256="hash")])]
+        rendered = generate.render_inventory(metadata, packages)
+        self.assertEqual(json.loads(rendered), dict(**metadata, packages=packages))
+        self.assertEqual(sum('"name":' in line for line in rendered.splitlines()), len(packages))
 
 
 if __name__ == "__main__":
