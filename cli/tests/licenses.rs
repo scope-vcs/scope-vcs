@@ -1,6 +1,28 @@
 mod support;
 
+use std::io::Read;
+use std::process::Stdio;
+
 use support::{TempDir, scope_command};
+
+#[test]
+fn licenses_exits_quietly_when_the_pipe_reader_closes() {
+    let dir = TempDir::new("licenses-closed-pipe");
+    for args in [vec!["licenses"], vec!["licenses", "--json"]] {
+        let mut child = scope_command(dir.path())
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut reader = child.stdout.take().unwrap();
+        reader.read_exact(&mut [0; 16]).unwrap();
+        drop(reader);
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
 
 #[test]
 fn licenses_prints_complete_embedded_texts_without_a_repository_or_server() {

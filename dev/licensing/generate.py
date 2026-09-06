@@ -164,13 +164,63 @@ def apply_separate_terms(entries):
 
 
 def validate_selections(selections):
-    """Catch mistyped identifiers in the manually reviewed alternative choices."""
-    def identifiers(expression):
-        return {word.lower() for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9.+-]*", expression)
-            if word not in {"AND", "OR", "WITH"}}
+    """Keep every selected alternative within the declared combinations of terms."""
     for declared, selected in selections.items():
-        if not identifiers(selected) <= identifiers(declared):
+        if not license_choices(selected) <= license_choices(declared):
             raise ValueError(f"Selected license is not a declared alternative: {declared} -> {selected}")
+
+
+def license_choices(expression):
+    """Expand AND/OR expressions into alternatives, keeping WITH exceptions attached."""
+    tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9.+-]*|[()/]", expression)
+    if "".join(tokens) != re.sub(r"\s+", "", expression):
+        raise ValueError(f"Invalid license expression: {expression}")
+    position = 0
+
+    def take(token):
+        nonlocal position
+        if position < len(tokens) and tokens[position] == token:
+            position += 1
+            return True
+        return False
+
+    def identifier():
+        nonlocal position
+        if position == len(tokens) or tokens[position] in {"AND", "OR", "WITH", "(", ")", "/"}:
+            raise ValueError(f"Expected license identifier: {expression}")
+        value = tokens[position].lower()
+        position += 1
+        return value
+
+    def term():
+        if take("("):
+            choices = alternatives()
+            if not take(")"):
+                raise ValueError(f"Unclosed license expression: {expression}")
+            return choices
+        value = identifier()
+        if take("WITH"):
+            value += " WITH " + identifier()
+        return {frozenset([value])}
+
+    def conjunction():
+        choices = term()
+        while take("AND"):
+            following = term()
+            choices = {left | right for left in choices for right in following}
+        return choices
+
+    def alternatives():
+        choices = conjunction()
+        # Published crate manifests in this inventory also use slash for alternatives.
+        while take("OR") or take("/"):
+            choices |= conjunction()
+        return choices
+
+    choices = alternatives()
+    if position != len(tokens):
+        raise ValueError(f"Unexpected license expression token: {expression}")
+    return choices
 
 
 def missing_coverage(entry):

@@ -97,6 +97,34 @@ class LicensingChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not a declared alternative"):
             generate.validate_selections({expression: "MIT"})
 
+    def test_license_selection_preserves_required_terms_and_exceptions(self):
+        invalid = [
+            ("MIT AND Apache-2.0", "MIT OR Apache-2.0"),
+            ("MIT AND Apache-2.0", "MIT"),
+            ("(MIT OR Apache-2.0) AND Unicode-3.0", "MIT"),
+            ("Apache-2.0 WITH LLVM-exception", "Apache-2.0"),
+            ("Apache-2.0", "Apache-2.0 WITH LLVM-exception"),
+            ("MIT OR Apache-2.0", "MIT AND Apache-2.0"),
+        ]
+        for declared, selected in invalid:
+            with self.subTest(declared=declared, selected=selected):
+                with self.assertRaisesRegex(ValueError, "not a declared alternative"):
+                    generate.validate_selections({declared: selected})
+        generate.validate_selections({
+            "(MIT OR Apache-2.0) AND Unicode-3.0": "MIT AND Unicode-3.0",
+            "MIT OR Apache-2.0 AND Unicode-3.0": "MIT",
+            "ISC AND (Apache-2.0 OR ISC)": "ISC",
+            "MIT OR Apache-2.0 WITH LLVM-exception": "Apache-2.0 WITH LLVM-exception",
+            "Apache-2.0/MIT": "MIT",
+            "apache-2.0": "Apache-2.0",
+        })
+
+    def test_license_selection_rejects_malformed_expressions(self):
+        for expression in ["", "MIT OR", "MIT AND (Apache-2.0", "MIT)",
+                "MIT & Apache-2.0", "MIT Apache-2.0", "MIT WITH", "(MIT) WITH LLVM-exception"]:
+            with self.subTest(expression=expression), self.assertRaises(ValueError):
+                generate.validate_selections({expression: expression})
+
 
 if __name__ == "__main__":
     unittest.main()

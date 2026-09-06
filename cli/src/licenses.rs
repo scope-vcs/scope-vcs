@@ -19,6 +19,13 @@ const LICENSES: Licenses = Licenses {
 
 pub fn run(json: bool) -> anyhow::Result<()> {
     let mut output = io::stdout().lock();
+    match write_licenses(&mut output, json) {
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        result => Ok(result?),
+    }
+}
+
+fn write_licenses(mut output: impl Write, json: bool) -> io::Result<()> {
     if json {
         serde_json::to_writer(&mut output, &LICENSES)?;
         writeln!(output)?;
