@@ -79,9 +79,13 @@ export const Route = createFileRoute('/$owner/$repo/_code/')({
         ? loadAddressedFile({ ...params, path: deps.file }, signal)
         : repoFileResource.load(fileIdentity, '', (signal) => loadAddressedFile({ ...params, path: deps.file! }, signal))
       : null
+    const initialContent = settleRepoCodeResource(content)
+    const initialFile = file ? settleRepoCodeResource(file) : null
+    // Client loads already belong to the cache. Only SSR promises need a
+    // handoff; retaining a client promise here would replay it on explicit retry.
     return {
-      content: settleRepoCodeResource(content),
-      file: file ? settleRepoCodeResource(file) : null,
+      content: typeof window === 'undefined' ? initialContent : null,
+      file: typeof window === 'undefined' ? initialFile : null,
       contentIdentity,
       fileIdentity,
     }
