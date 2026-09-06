@@ -4,7 +4,7 @@ import {
   folderVisibility,
   type FileSystemTreeNode,
 } from '@/components/file-system-tree-model'
-import { VisibilityBadge } from '@/components/visibility-badge'
+import { VisibilityBadge, VisibilityLegend } from '@/components/visibility-badge'
 import {
   ChevronDown,
   ChevronRight,
@@ -23,7 +23,6 @@ type ProjectionFile = {
 }
 
 type ProjectionRow = {
-  active?: boolean
   depth: number
   expanded?: boolean
   key: string
@@ -52,20 +51,15 @@ const repositoryFiles: readonly ProjectionFile[] = [
   { path: 'README.md', visibility: 'Public' },
 ]
 
-const activeFolderPaths: Record<ProjectionAudience, string> = {
-  private: '/src/internal',
-  public: '/src/cli',
-}
-
 const expandedFolderPaths = new Set(['/src', '/src/cli'])
 
 const treeRowMetrics = {
   chevronSize: 12,
-  disclosureSlotSize: 24,
+  disclosureSlotSize: 16,
   fileIconSize: 16,
-  itemGap: 8,
-  levelIndent: 16,
-  rowInset: 8,
+  itemGap: 4,
+  levelIndent: 10,
+  rowInset: 4,
 } as const
 const fileIconInset = (
   treeRowMetrics.disclosureSlotSize - treeRowMetrics.chevronSize
@@ -78,16 +72,15 @@ const fileLabelGap = treeRowMetrics.disclosureSlotSize
 const projectionViews = [
   {
     audience: 'public',
-    label: 'Public view',
+    label: 'public view',
     rows: buildProjectionRows(
       repositoryFiles.filter((file) => file.visibility === 'Public'),
-      'public',
     ),
   },
   {
     audience: 'private',
-    label: 'Private view',
-    rows: buildProjectionRows(repositoryFiles, 'private'),
+    label: 'maintainer view',
+    rows: buildProjectionRows(repositoryFiles),
   },
 ] as const satisfies ReadonlyArray<ProjectionViewDefinition>
 
@@ -98,19 +91,16 @@ export function RepositoryProjection(): ReactElement {
   return (
     <section
       aria-labelledby="repository-views-title"
-      className="marketing-projection pointer-events-none absolute inset-0"
-      data-private-only={hoveredRow?.visibility === 'Private' || undefined}
+      className="marketing-projection"
       id="repository-views"
     >
       <h2 className="sr-only" id="repository-views-title">
-        One repository projected into public and private views
+        One repository with public and maintainer views
       </h2>
 
       <div
         className="marketing-source-node"
-        data-hover-visibility={hoveredRow?.visibility}
         data-projection-node="repository"
-        data-source-context={sourceContext ?? undefined}
         id="repository-source"
       >
         <span aria-hidden className="marketing-source-icon">
@@ -121,48 +111,29 @@ export function RepositoryProjection(): ReactElement {
           {sourceContext && <span title={sourceContext}>{sourceContext}</span>}
         </span>
         <span className="marketing-source-branch">main</span>
-        <span aria-hidden className="marketing-source-junction" />
       </div>
 
-      <ProjectionConnections />
-
-      {projectionViews.map((view) => (
-        <ProjectionView
-          hoveredPath={hoveredRow?.path ?? null}
-          key={view.audience}
-          onHoverRow={setHoveredRow}
-          {...view}
-        />
-      ))}
+      <div aria-hidden className="marketing-projection-arrows">
+        <span>↓</span>
+        <span>↓</span>
+      </div>
+      <div className="marketing-views">
+        {projectionViews.map((view) => (
+          <ProjectionView
+            hoveredPath={hoveredRow?.path ?? null}
+            key={view.audience}
+            onHoverRow={setHoveredRow}
+            {...view}
+          />
+        ))}
+      </div>
+      <div className="mt-4">
+        <VisibilityLegend />
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-muted-foreground" id="projection-explanation">
+        The public receives only shared files. Maintainers work with the complete repository.
+      </p>
     </section>
-  )
-}
-
-function ProjectionConnections(): ReactElement {
-  return (
-    <svg
-      aria-hidden
-      className="marketing-connections"
-      preserveAspectRatio="none"
-      viewBox="0 0 100 100"
-    >
-      <path
-        className="marketing-connection marketing-connection-public marketing-connection-stacked"
-        d="M 50 9 C 50 10, 50 10.5, 50 11.5"
-      />
-      <path
-        className="marketing-connection marketing-connection-private marketing-connection-stacked"
-        d="M 50 9 C 66 16, 66 35, 55 48.5"
-      />
-      <path
-        className="marketing-connection marketing-connection-public marketing-connection-desktop"
-        d="M 71 50 C 73 50, 69 28, 73 28"
-      />
-      <path
-        className="marketing-connection marketing-connection-private marketing-connection-desktop"
-        d="M 71 50 C 73 50, 69 80, 73 80"
-      />
-    </svg>
   )
 }
 
@@ -181,12 +152,16 @@ function ProjectionView({
       <header className="marketing-view-header">
         <h3>{label}</h3>
       </header>
-      <ul className="px-2 py-2">
+      <ul className="p-1 sm:p-2">
         {rows.map((row) => (
           <li key={row.key}>
-            <div
-              className="marketing-file-row pointer-events-auto w-full text-left"
-              data-active={row.active}
+            <button
+              aria-label={`${row.path}, ${row.visibility.toLowerCase()}`}
+              aria-describedby="projection-explanation"
+              className="marketing-file-row w-full text-left"
+              type="button"
+              onFocus={() => onHoverRow(row)}
+              onBlur={() => onHoverRow(null)}
               data-highlighted={hoveredPath === row.path || undefined}
               data-path={row.path}
               onPointerEnter={() => onHoverRow(row)}
@@ -200,7 +175,7 @@ function ProjectionView({
                 {row.type === 'folder' && (
                   <span
                     aria-hidden
-                    className="grid size-6 shrink-0 place-items-center text-[var(--platinum)]"
+                    className="marketing-disclosure grid size-4 shrink-0 place-items-center text-[var(--platinum)]"
                   >
                     <ProjectionDisclosureIcon expanded={row.expanded} />
                   </span>
@@ -209,7 +184,7 @@ function ProjectionView({
                 <span className="min-w-0 truncate font-mono text-xs">{row.name}</span>
               </span>
               <VisibilityBadge compact visibility={row.visibility} />
-            </div>
+            </button>
           </li>
         ))}
       </ul>
@@ -219,15 +194,13 @@ function ProjectionView({
 
 function buildProjectionRows(
   files: readonly ProjectionFile[],
-  audience: ProjectionAudience,
 ): ProjectionRow[] {
   const tree = buildFileSystemTree([...files])
-  return flattenProjectionTree(tree.children, activeFolderPaths[audience])
+  return flattenProjectionTree(tree.children)
 }
 
 function flattenProjectionTree(
   nodes: FileSystemTreeNode<ProjectionFile>[],
-  activePath: string,
   depth = 0,
 ): ProjectionRow[] {
   return nodes.flatMap((node) => {
@@ -244,7 +217,6 @@ function flattenProjectionTree(
 
     const expanded = expandedFolderPaths.has(node.path)
     const row: ProjectionRow = {
-      active: node.path === activePath || undefined,
       depth,
       expanded,
       key: node.key,
@@ -255,7 +227,7 @@ function flattenProjectionTree(
     }
 
     return expanded
-      ? [row, ...flattenProjectionTree(node.children, activePath, depth + 1)]
+      ? [row, ...flattenProjectionTree(node.children, depth + 1)]
       : [row]
   })
 }

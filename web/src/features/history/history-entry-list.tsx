@@ -28,7 +28,7 @@ export function HistoryEntryList({
   showLoadOlder: boolean
 }) {
   return (
-    <div className="border-b border-border py-2 lg:border-b-0 lg:border-r">
+    <div className="py-2">
       {/* Pages append within a generation; row positions stay fixed even when source IDs repeat. */}
       {entries.map((entry, position) => {
         const labels = historyEntryLabels(entry)
@@ -36,6 +36,7 @@ export function HistoryEntryList({
         return (
           <button
             aria-label={labels.ariaLabel}
+            aria-pressed={selected}
             className={cn(
               HISTORY_ENTRY_ROW_CLASS,
               'transition-colors',

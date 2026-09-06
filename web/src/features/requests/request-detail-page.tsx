@@ -134,7 +134,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
             <RequestLifecycleActions
               actions={requestActions}
-              className="hidden xl:flex"
+              className="fixed inset-x-0 bottom-0 z-30 flex flex-wrap justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] xl:static xl:border-0 xl:bg-transparent xl:p-0"
               request={request}
             />
             <Button asChild size="sm" variant="secondary">
@@ -167,16 +167,13 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     <WorkbenchPane>
       <div className={hasLifecycleActions ? 'pb-20 xl:pb-0' : undefined}>
         {requestHeader()}
-        <div className="grid min-h-0 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="order-2 min-w-0 xl:order-1">
-            <RequestDescription
-              canEdit={request.permissions.can_edit_identity}
-              description={description}
-              onSave={saveDescription}
-            />
-            <RequestViewTabs params={{ ...params, requestId: request.id }} />
-            {children}
-          </div>
+        <div className="grid min-h-0 xl:grid-cols-[minmax(0,1fr)_320px] xl:grid-rows-[auto_auto_1fr]">
+          <RequestDescription
+            canEdit={request.permissions.can_edit_identity}
+            description={description}
+            onSave={saveDescription}
+          />
+          <RequestViewTabs params={{ ...params, requestId: request.id }} />
           <RequestContextRail
             actions={requestActions}
             onRate={rateRequest}
@@ -184,17 +181,8 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             ratings={ratings}
             request={request}
           />
+          <div className="min-w-0 xl:col-start-1">{children}</div>
         </div>
-
-        {hasLifecycleActions ? (
-          <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border-strong)] bg-background/95 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur xl:hidden">
-            <RequestLifecycleActions
-              actions={requestActions}
-              className="grid w-full grid-cols-2 [&>button]:min-h-10"
-              request={request}
-            />
-          </div>
-        ) : null}
 
         <RequestActivityDrawer
           activity={history.activity}

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 
 export async function assertHistoryFirstFileStaysInRoute(page) {
+  const defaultDiff = page.getByLabel('README.html diff', { exact: true })
+  await defaultDiff.waitFor()
+  await defaultDiff.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
   const fileNavigator = page.getByLabel('Update file navigator')
   await fileNavigator.waitFor()
   await page.waitForFunction(
@@ -17,7 +20,9 @@ export async function assertHistoryFirstFileStaysInRoute(page) {
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
-      serverFunctions.push(serverFunctionExport(request))
+      const name = serverFunctionExport(request)
+      // Live repository refresh can run independently of file selection.
+      if (name.startsWith('loadHistoryEntry')) serverFunctions.push(name)
     }
   }
   page.on('request', recordServerFunction)
@@ -41,9 +46,7 @@ export async function assertHistoryFirstFileStaysInRoute(page) {
     await page.evaluate(() => window.__scopeHistoryDocument),
     documentSentinel,
   )
-  assert.deepEqual(serverFunctions, [
-    'loadHistoryEntryFileDiff_createServerFn_handler',
-  ])
+  assert.deepEqual(serverFunctions, [])
   await page.waitForFunction((diffLabel) => {
     const diff = document.querySelector(`[aria-label="${diffLabel}"]`)
     const host = diff?.querySelector('diffs-container')

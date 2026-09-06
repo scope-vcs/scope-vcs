@@ -13,7 +13,7 @@ export function CommitList({
   selectedCommitId: string | null
 }) {
   return (
-    <div className="border-b border-border py-2 lg:border-b-0 lg:border-r">
+    <div className="py-2">
       {commits.map((commit) => {
         const labels = historyRowLabels(commit)
         const selected = selectedCommitId === commit.projected_id

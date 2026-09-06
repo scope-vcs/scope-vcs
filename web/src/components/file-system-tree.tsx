@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { VisibilityBadge } from '@/components/visibility-badge'
+import { VisibilityBadge, VisibilityLegend } from '@/components/visibility-badge'
 import { cn } from '@/lib/utils'
 import {
   ChevronDown,
@@ -22,7 +22,7 @@ import {
 const FULL_TREE_COLUMNS =
   'grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_110px_120px]'
 const COMPACT_TREE_COLUMNS =
-  'grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_84px_28px]'
+  'grid-cols-[minmax(0,1fr)_auto_20px]'
 
 export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
   compactVisibility = false,
@@ -121,7 +121,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
           columnsClassName,
         )}
       >
-        <div>Path</div>
+        <div>path</div>
         <div>{metaColumnLabel}</div>
         <div className={compactVisibility ? 'text-center' : undefined}>
           {compactVisibility ? (
@@ -149,6 +149,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
           />
         ))}
       </ul>
+      {compactVisibility ? <div className="px-3 pt-4 pb-2"><VisibilityLegend /></div> : null}
     </div>
   )
 }
@@ -205,11 +206,11 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
               }
               type="button"
             >
-              <FilePathLabel name={node.name} path={node.path} />
+              <FilePathLabel compact={compactVisibility} name={node.name} path={node.path} />
             </button>
           ) : (
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <FilePathLabel name={node.name} path={node.path} />
+              <FilePathLabel compact={compactVisibility} name={node.name} path={node.path} />
             </div>
           )}
         </div>
@@ -325,10 +326,10 @@ function folderIsCollapsed(
   )
 }
 
-function FilePathLabel({ name, path }: { name: string; path: string }) {
+function FilePathLabel({ compact, name, path }: { compact: boolean; name: string; path: string }) {
   return (
     <>
-      <span className="size-6 shrink-0" />
+      {!compact ? <span className="size-6 shrink-0" /> : null}
       <File className="size-4 shrink-0 text-[var(--platinum)]" strokeWidth={1.7} />
       <span className="min-w-0 truncate font-mono text-xs" title={displayPath(path)}>
         {name}

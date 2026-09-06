@@ -32,7 +32,7 @@ export function RequestDescription({
   }
 
   return (
-    <section className="px-5 py-5 lg:px-7">
+    <section className="min-w-0 px-5 py-5 lg:px-7">
       {canEdit && !editing ? (
         <div className="flex justify-end">
           <Button

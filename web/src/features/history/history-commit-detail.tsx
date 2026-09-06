@@ -1,5 +1,6 @@
 import type { CommitFile, HistoryEntryDetail } from '@/api/types'
 import { PanelState, EmptyState } from '@/components/empty-state'
+import { FileWorkbench } from '@/components/file-workbench'
 import { FileSystemTree } from '@/components/file-system-tree'
 import { PendingSurface } from '@/components/pending-surface'
 import { Badge } from '@/components/ui/badge'
@@ -10,7 +11,7 @@ import type {
   CommitFileDiffState,
 } from '@/features/history/history-state'
 import { GitCommit, TriangleAlert } from 'lucide-react'
-import { type ReactNode, useRef } from 'react'
+import { type ReactNode, useRef, useState } from 'react'
 import { CommitDetailSkeleton } from './history-commit-detail-skeleton'
 import { VisibilityChanges } from './history-visibility-changes'
 import { ReviewFileDiffDrawer } from '../review/review-file-diff-drawer'
@@ -33,11 +34,7 @@ type CommitDetailPanelProps = {
   visibilityChanges?: HistoryEntryDetail['visibility_changes']
 }
 
-export function CommitDetailPanel(props: CommitDetailPanelProps) {
-  return <CommitDetailPanelContent {...props} />
-}
-
-function CommitDetailPanelContent({
+export function CommitDetailPanel({
   commitContext,
   commitState,
   diffIdentity,
@@ -52,6 +49,7 @@ function CommitDetailPanelContent({
   terminology = 'commit',
   visibilityChanges = EMPTY_VISIBILITY_CHANGES,
 }: CommitDetailPanelProps) {
+  const [navigationOpen, setNavigationOpen] = useState(false)
   const fileNavigatorRef = useRef<HTMLDivElement>(null)
 
   if (commitState.status === 'loading') {
@@ -94,13 +92,15 @@ function CommitDetailPanelContent({
   const filesTruncated = commit.files_truncated
   function closeDiff() {
     onCloseDiff()
+    setNavigationOpen(true)
     requestAnimationFrame(() => fileNavigatorRef.current?.focus())
   }
+
 
   return (
     <div className="scope-content-enter min-w-0">
       <div className="border-b border-border px-5 py-4 sm:px-6">
-        <h3 className="truncate text-sm font-semibold leading-5">
+        <h3 className="break-words text-sm font-semibold leading-5">
           {historyCommitTitle(commit)}
         </h3>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground">
@@ -115,7 +115,11 @@ function CommitDetailPanelContent({
         {commitContext}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,1.1fr)]">
+      <FileWorkbench
+        navigationOpen={navigationOpen}
+        onNavigationOpenChange={setNavigationOpen}
+        selectedPath={selectedFilePath}
+      >
         <div
           aria-label={`${capitalize(terminology)} file navigator`}
           className="min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -138,13 +142,16 @@ function CommitDetailPanelContent({
               compactVisibility
               files={commit.files}
               getFileMeta={commitFileStatus}
-              metaColumnLabel="Change"
-              onSelectFile={onSelectFile}
+              metaColumnLabel="change"
+              onSelectFile={(file) => {
+                onSelectFile(file)
+                setNavigationOpen(false)
+              }}
               selectedFilePath={selectedFilePath}
             />
           ) : null}
         </div>
-        <div className="h-[70vh] min-h-[340px] max-h-[720px] min-w-0 overflow-hidden border-border xl:border-l">
+        <div className="h-[70vh] min-h-[340px] max-h-[720px] min-w-0 overflow-hidden">
           {diffOpen ? (
             <ReviewFileDiffDrawer
               cacheKey={diffIdentity}
@@ -171,7 +178,7 @@ function CommitDetailPanelContent({
             </PanelState>
           )}
         </div>
-      </div>
+      </FileWorkbench>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { ScopeLogo } from '@/components/scope-logo'
 import { PageRail } from '@/components/page-header'
+import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 export function AuthLayout({ children }: { children: ReactNode }) {
@@ -7,7 +8,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
     <div className="min-h-dvh bg-background text-foreground">
       <header className="border-b border-border bg-card">
         <PageRail className="flex min-h-14 items-center">
-          <ScopeLogo className="w-[112px]" />
+          <Link aria-label="Scope home" to="/"><ScopeLogo className="w-[112px]" /></Link>
         </PageRail>
       </header>
       <PageRail as="main" className="grid min-h-[calc(100dvh-var(--app-topbar))] items-center gap-12 py-12 lg:grid-cols-[minmax(0,1fr)_400px]">

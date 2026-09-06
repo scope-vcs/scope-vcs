@@ -5,6 +5,7 @@ import type {
   RepoParams,
 } from '@/api/types'
 import { EmptyState, PanelState } from '@/components/empty-state'
+import { FileWorkbench } from '@/components/file-workbench'
 import { FileSystemTree } from '@/components/file-system-tree'
 import { PendingSurface } from '@/components/pending-surface'
 import { isRepositoryHtmlPath } from '@/components/repository-html'
@@ -30,6 +31,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from 'react'
 import {
@@ -71,6 +73,7 @@ export function RepositoryCodeView({
   const workspaceTabs = useWorkspaceTabs({
     activeId: selectedPath,
   })
+  const [navigationOpen, setNavigationOpen] = useState(false)
   const fileNavigatorRef = useRef<HTMLDivElement>(null)
   const openPath = workspaceTabs.state.openIds.includes(selectedPath ?? '')
     ? selectedPath
@@ -81,15 +84,20 @@ export function RepositoryCodeView({
   function selectFile(path: string, pinned: boolean) {
     workspaceTabs.open(displayRouteFilePath(path), pinned)
     onSelectFilePath(path)
+    setNavigationOpen(false)
   }
-
 
   return (
     <section>
-      <div className="grid min-w-0 lg:min-h-[calc(100dvh-var(--app-chrome))] lg:grid-cols-[minmax(300px,0.36fr)_minmax(0,0.64fr)]">
+      <FileWorkbench
+        className="lg:min-h-[calc(100dvh-var(--app-chrome))]"
+        navigationOpen={navigationOpen}
+        onNavigationOpenChange={setNavigationOpen}
+        selectedPath={openPath}
+      >
         <div
           aria-label="Repository file navigator"
-          className="min-w-0 border-b border-border px-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring lg:border-b-0 lg:border-r lg:px-5"
+          className="min-w-0 px-2 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           ref={fileNavigatorRef}
           tabIndex={-1}
         >
@@ -111,6 +119,8 @@ export function RepositoryCodeView({
               className="min-h-[220px]"
               delay
               label="Loading repository files"
+              onRetry={contentRetry}
+              retryLabel="retry files"
             >
               <FileNavigatorSkeleton />
             </PendingSurface>
@@ -124,7 +134,10 @@ export function RepositoryCodeView({
           file={selectedFile}
           loading={selectedFileLoading}
           onActivateTab={onSelectFilePath}
-          onEmptyTabFocus={() => fileNavigatorRef.current?.focus()}
+          onEmptyTabFocus={() => {
+            setNavigationOpen(true)
+            requestAnimationFrame(() => fileNavigatorRef.current?.focus())
+          }}
           onPinTab={(path) => workspaceTabs.open(path, true)}
           params={params}
           retry={selectedFileRetry}
@@ -132,7 +145,7 @@ export function RepositoryCodeView({
           selectedPath={openPath}
           workspaceTabs={workspaceTabs}
         />
-      </div>
+      </FileWorkbench>
     </section>
   )
 }
@@ -161,7 +174,7 @@ function RepositoryFileNavigator({
       compactVisibility
       files={files}
       getFileMeta={fileStatus}
-      metaColumnLabel="Status"
+      metaColumnLabel="status"
       onActivateFile={(file) => onSelectFile(file.path, true)}
       onSelectFile={(file) => onSelectFile(file.path, false)}
       selectedFilePath={selectedPath}
@@ -345,6 +358,10 @@ function SourceContent({
         className="min-h-[220px]"
         delay
         label={`Loading ${displayPath(selectedPath)}`}
+        delayedLabel="this file is taking longer than usual"
+        key={selectedPath}
+        onRetry={retry}
+        retryLabel="retry file"
       >
         <SourceCodeSkeleton />
       </PendingSurface>

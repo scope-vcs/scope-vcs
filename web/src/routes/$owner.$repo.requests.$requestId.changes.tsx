@@ -25,10 +25,10 @@ import {
 } from '@/features/requests/request-changes-model'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
-import { createFileRoute, getRouteApi } from '@tanstack/react-router'
+import { createFileRoute, getRouteApi, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type LoadRequestRevisionsInput = ReturnType<typeof parseLoadRequestRevisionsInput>
 
@@ -96,27 +96,18 @@ export const Route = createFileRoute(
     const replay = takePinnedChangesReplay(input)
     if (replay) return replay
     const page = await loadChangesPage({ data: input })
-    const { revisions } = page
-    if (!revisions) return { ...page, pin: null }
-    const selection = requestChangeSelection(
-      revisions.revisions,
-      revisions.review_revision_id,
-      selectionSearch,
-    )
-    const pin = requestRevisionPin(
-      selection.revision,
-      selection.commit,
-      selectionSearch.revision,
-    )
-    return { ...page, pin }
+    return pinChangesPage(page, selectionSearch)
   },
   pendingComponent: RequestChangesPending,
   component: RequestChangesRoute,
 })
 
 function RequestChangesRoute() {
+  const router = useRouter()
+  const [retrying, setRetrying] = useState(false)
   const page = requestRoute.useLoaderData()
   const changes = Route.useLoaderData()
+  const matchId = Route.useMatch().id
   const params = Route.useParams()
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -156,6 +147,25 @@ function RequestChangesRoute() {
       initialDiscussionReferences={changes.discussionReferences}
       loadDiff={loadDiffForView}
       loadDiscussions={loadDiscussionsForView}
+      retrying={retrying}
+      onRetry={() => {
+        setRetrying(true)
+        void loadChangesPage({
+          data: {
+            ...requestParams,
+            commit_oid: search.commit,
+            revision_id: search.revision,
+          },
+        })
+          .then((result) => {
+            router.updateMatch(matchId, (match) => ({
+              ...match,
+              loaderData: pinChangesPage(result, search),
+            }))
+          })
+          .catch((error: unknown) => console.error('Retrying request changes failed', error))
+          .finally(() => setRetrying(false))
+      }}
       onSearchChange={(nextSearch) => {
         void navigate({
           params,
@@ -212,4 +222,18 @@ function changesSelectionKey(input: LoadRequestRevisionsInput) {
     input.revision_id ?? '',
     input.commit_oid ?? '',
   ].join('\0')
+}
+
+function pinChangesPage(page: ChangesPage, search: RequestChangesSearch): ChangesLoaderData {
+  const { revisions } = page
+  if (!revisions) return { ...page, pin: null }
+  const selection = requestChangeSelection(
+    revisions.revisions,
+    revisions.review_revision_id,
+    search,
+  )
+  return {
+    ...page,
+    pin: requestRevisionPin(selection.revision, selection.commit, search.revision),
+  }
 }

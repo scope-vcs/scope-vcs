@@ -11,7 +11,7 @@ import type {
   CommitFileDiffState,
 } from '@/features/history/history-state'
 import { History } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 export function HistoryWorkbench({
   commitContext,
@@ -44,6 +44,7 @@ export function HistoryWorkbench({
   selectedCommitId: string | null
   selectedFilePath: string | null
 }) {
+  const [commitsOpen, setCommitsOpen] = useState(false)
   return (
     <section className="border-t border-border">
       {commits.length === 0 ? (
@@ -53,12 +54,17 @@ export function HistoryWorkbench({
           title={emptyTitle}
         />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.4fr)_minmax(0,1.6fr)]">
+        <div>
+          <details className="border-b border-border" open={commitsOpen} onToggle={(event) => setCommitsOpen(event.currentTarget.open)}>
+            <summary className="cursor-pointer px-5 py-3 text-sm font-medium">commits · {commits.length}</summary>
+            <div className="max-h-72 overflow-y-auto">
           <CommitList
             commits={commits}
-            onSelectCommit={onSelectCommit}
+            onSelectCommit={(commit) => { onSelectCommit(commit); setCommitsOpen(false) }}
             selectedCommitId={selectedCommitId}
           />
+            </div>
+          </details>
           <CommitDetailPanel
             commitContext={commitContext}
             commitState={commitState}

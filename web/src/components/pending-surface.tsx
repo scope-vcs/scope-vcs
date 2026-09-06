@@ -5,8 +5,9 @@ import {
   TextSkeleton,
   type TextSkeletonLength,
 } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 const DEFAULT_ROWS: { id: string; length: TextSkeletonLength }[] = [
   { id: 'primary', length: 'long' },
@@ -20,25 +21,63 @@ export function PendingSurface({
   className,
   delay = false,
   label = 'Loading page',
+  onRetry,
+  retryLabel = 'try again',
+  delayedLabel = 'this is taking longer than usual',
 }: {
   children?: ReactNode
   className?: string
   delay?: boolean
   label?: string
+  onRetry?: () => void
+  retryLabel?: string
+  delayedLabel?: string
 }) {
+  const [delayed, setDelayed] = useState(false)
+  useEffect(() => {
+    if (delayed) return
+    const timer = window.setTimeout(() => setDelayed(true), 8_000)
+    return () => window.clearTimeout(timer)
+  }, [delayed])
   return (
-    <output
-      aria-busy="true"
-      className={cn(
-        'scope-pending-enter block min-h-full w-full',
-        delay && 'scope-pending-delayed',
-        className,
-      )}
-      data-slot="pending-surface"
-    >
-      <span className="sr-only">{label}</span>
-      {children ?? <DefaultPageSkeleton />}
-    </output>
+    <>
+      <output className="sr-only">
+        {delayed ? `${delayedLabel}. Loading continues.` : label}
+      </output>
+      <div
+        aria-busy="true"
+        className={cn(
+          'scope-pending-enter block min-h-full w-full',
+          delay && 'scope-pending-delayed',
+          className,
+        )}
+        data-slot="pending-surface"
+      >
+        {delayed && onRetry ? (
+          <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+            <p className="text-sm font-medium">{delayedLabel}</p>
+            <p className="text-sm text-muted-foreground">you can keep waiting or try again</p>
+            <Button
+              onClick={() => {
+                setDelayed(false)
+                onRetry()
+              }}
+              size="sm"
+              variant="secondary"
+            >
+              {retryLabel}
+            </Button>
+          </div>
+        ) : (
+          <>
+            {delayed ? (
+              <p className="px-6 py-4 text-sm text-muted-foreground">{delayedLabel}. You can keep waiting.</p>
+            ) : null}
+            {children ?? <DefaultPageSkeleton />}
+          </>
+        )}
+      </div>
+    </>
   )
 }
 

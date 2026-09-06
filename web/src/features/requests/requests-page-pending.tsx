@@ -18,7 +18,7 @@ export function RequestsPagePending() {
         <h1 className="sr-only">Requests</h1>
         <BlockSkeleton className="h-10 w-full sm:max-w-lg" />
         <div className="mt-10 grid min-w-0 gap-12">
-          {['Your work', 'Open', 'Closed'].map((section) => (
+          {['open', 'closed'].map((section) => (
             <section className="min-w-0" key={section}>
               <div className="flex items-center gap-2">
                 <BlockSkeleton className="size-4" />

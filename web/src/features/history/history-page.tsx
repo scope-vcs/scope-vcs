@@ -39,8 +39,9 @@ import {
   loadHistoryEntryFileDiff,
   loadHistoryPage,
 } from '@/routes/-repo-history-actions'
-import { useNavigate } from '@tanstack/react-router'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useCallback, useState } from 'react'
+import { historySelectedFilePath } from './history-selection'
 
 type HistoryPageProps = {
   initialPage: HistoryPageResponse
@@ -76,6 +77,8 @@ export function HistoryPage(props: HistoryPageProps) {
     saveDiffScroll,
   } = useHistoryPageModel(props)
 
+  const [updatesOpen, setUpdatesOpen] = useState(false)
+
   return (
     <WorkbenchPane>
       <WorkbenchBar
@@ -87,7 +90,7 @@ export function HistoryPage(props: HistoryPageProps) {
           />
         ) : undefined}
         summary={`${historySummary(entries, showLoadOlder)}${selectedDetail ? ` · ${historyDetailCountLabel(selectedDetail)}` : ''}`}
-        title="History"
+        title="history"
       />
       <section className="border-t border-border">
         {entries.length === 0 && !selectedEntryId ? (
@@ -98,16 +101,30 @@ export function HistoryPage(props: HistoryPageProps) {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.4fr)_minmax(0,1.6fr)]">
-            <HistoryEntryList
-              entries={entries}
-              loadOlderError={loadOlderError}
-              loadingOlder={loadingOlder}
-              onLoadOlder={loadOlder}
-              onSelectEntry={selectEntry}
-              selectedEntryId={selectedEntryId}
-              showLoadOlder={showLoadOlder}
-            />
+          <div>
+            <details
+              className="border-b border-border"
+              open={updatesOpen}
+              onToggle={(event) => setUpdatesOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer px-5 py-3 text-sm font-medium sm:px-6">
+                updates <span className="font-normal text-muted-foreground">· {entries.length}</span>
+              </summary>
+              <div className="max-h-72 overflow-y-auto">
+                <HistoryEntryList
+                  entries={entries}
+                  loadOlderError={loadOlderError}
+                  loadingOlder={loadingOlder}
+                  onLoadOlder={loadOlder}
+                  onSelectEntry={(entry) => {
+                    selectEntry(entry)
+                    setUpdatesOpen(false)
+                  }}
+                  selectedEntryId={selectedEntryId}
+                  showLoadOlder={showLoadOlder}
+                />
+              </div>
+            </details>
             <div className="min-w-0">
               <CommitDetailPanel
                 commitState={detailState}
@@ -133,6 +150,11 @@ export function HistoryPage(props: HistoryPageProps) {
 
 function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) {
   const navigate = useNavigate()
+  const locationKey = useLocation({ select: (location) => location.state.__TSR_key })
+  const [diffSelection, setDiffSelection] = useState({ locationKey, dismissed: false })
+  if (diffSelection.locationKey !== locationKey) {
+    setDiffSelection({ locationKey, dismissed: false })
+  }
   const { repo } = useRepoLayout()
   const [loaded, setLoaded] = useState(() => ({
     entries: initialPage.entries,
@@ -175,7 +197,11 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
     write: writeHistoryEntryCache,
   })
   const selectedEntry = entryResource.value
-  const selectedFilePath = search.path ?? null
+  const selectedFilePath = historySelectedFilePath(
+    search.path,
+    selectedEntry?.files,
+    diffSelection.locationKey === locationKey && diffSelection.dismissed,
+  )
   const selectedFile = selectedEntry?.files.find(
     (file) => file.path === selectedFilePath,
   ) ?? null
@@ -253,8 +279,8 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
   }, [audience, loaded.next_cursor, loadingOlder, params.owner, params.repo])
 
   const closeDiff = useCallback(
-    () => replaceHistorySelection(selectedEntryId),
-    [replaceHistorySelection, selectedEntryId],
+    () => setDiffSelection({ locationKey, dismissed: true }),
+    [locationKey],
   )
   const selectAudience = useCallback(
     (nextAudience: ProjectionPreviewAudience) => navigate({
@@ -267,14 +293,18 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
     [navigate, params],
   )
   const selectEntry = useCallback(
-    (entry: HistoryEntrySummary) =>
-      replaceHistorySelection(entry.source_id),
-    [replaceHistorySelection],
+    (entry: HistoryEntrySummary) => {
+      setDiffSelection({ locationKey, dismissed: false })
+      return replaceHistorySelection(entry.source_id)
+    },
+    [locationKey, replaceHistorySelection],
   )
   const selectFile = useCallback(
-    (file: CommitFile) =>
-      replaceHistorySelection(selectedEntryId, file.path),
-    [replaceHistorySelection, selectedEntryId],
+    (file: CommitFile) => {
+      setDiffSelection({ locationKey, dismissed: false })
+      return replaceHistorySelection(selectedEntryId, file.path)
+    },
+    [locationKey, replaceHistorySelection, selectedEntryId],
   )
   const saveDiffScroll = useCallback(
     (scrollTop: number) => writeHistoryDiffScroll(diffIdentity, scrollTop),
