@@ -143,15 +143,15 @@ jobs:
         run: cargo install cross --locked
 
       - name: Build scope
-        working-directory: cli
         shell: bash
         env:
           SCOPE_BUILD_SHA: ${{ github.sha }}
         run: |
+          # Cross mounts the current directory; include the root license files.
           if [ "${{ matrix.builder }}" = "cross" ]; then
-            cross build --release --locked --target "${{ matrix.target }}" --bin scope
+            cross build --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --bin scope
           else
-            cargo build --release --locked --target "${{ matrix.target }}" --bin scope
+            cargo build --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --bin scope
           fi
 
       - name: Smoke test
