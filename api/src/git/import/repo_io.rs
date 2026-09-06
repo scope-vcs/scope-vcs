@@ -308,6 +308,9 @@ pub(crate) fn validate_pushed_commit_range(
     base_oid: Option<&str>,
     head_oid: &str,
 ) -> Result<(), ApiError> {
+    // Rules describe the resulting repository. Imported history may predate Scope,
+    // but every newly reachable tree still needs the file/path safety checks.
+    validate_pushed_tree(staging_repo, head_oid)?;
     let mut args = vec!["rev-list", "--reverse", head_oid];
     let excluded_base = base_oid.map(|oid| format!("^{oid}"));
     if let Some(excluded_base) = excluded_base.as_deref() {
@@ -315,7 +318,9 @@ pub(crate) fn validate_pushed_commit_range(
     }
     let commits = git_stdout_text(staging_repo, &args, "reading pushed commit range")?;
     for commit_oid in commits.lines() {
-        validate_pushed_tree(staging_repo, commit_oid)?;
+        if commit_oid != head_oid {
+            git_tree_entries(staging_repo, commit_oid)?;
+        }
     }
     Ok(())
 }

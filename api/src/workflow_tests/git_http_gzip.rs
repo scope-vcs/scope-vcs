@@ -49,7 +49,7 @@ async fn receive_pack_accepts_gzip_encoded_request_body() {
         state.clone(),
         &secret,
         push_intent,
-        gzip_bytes(&receive_pack_first_push_request(&source)),
+        gzip_bytes(&receive_pack_first_push_request(&source, true)),
         true,
     )
     .await;
@@ -78,6 +78,11 @@ async fn receive_pack_accepts_gzip_encoded_request_body() {
 
 #[tokio::test]
 async fn receive_pack_queues_orphan_objects_when_push_intent_does_not_match_head() {
+    assert_intent_mismatch_rejection(true).await;
+    assert_intent_mismatch_rejection(false).await;
+}
+
+async fn assert_intent_mismatch_rejection(sideband: bool) {
     let (state, secret) = test_state_with_first_push_token().await;
     let readme = b"intent mismatch should be cleaned\n";
     let source = first_push_source("intent-head-mismatch-first-push", readme);
@@ -86,12 +91,23 @@ async fn receive_pack_queues_orphan_objects_when_push_intent_does_not_match_head
         state.clone(),
         &secret,
         push_intent,
-        receive_pack_first_push_request(&source),
+        receive_pack_first_push_request(&source, sideband),
         false,
     )
     .await;
 
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[CONTENT_TYPE],
+        "application/x-git-receive-pack-result"
+    );
+    let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    if sideband {
+        assert_eq!(body[4], 3, "push rejection must use Git's fatal sideband");
+    } else {
+        assert!(body[4..].starts_with(b"ERR "));
+    }
+    assert!(!String::from_utf8_lossy(&body).contains("unpack ok"));
     assert!(!state.test_object_store.contains_bytes(readme));
 }
 
@@ -175,7 +191,7 @@ fn upload_pack_want_request(oid: &str) -> Vec<u8> {
     request
 }
 
-fn receive_pack_first_push_request(source: &FsPath) -> Vec<u8> {
+fn receive_pack_first_push_request(source: &FsPath, sideband: bool) -> Vec<u8> {
     let head = git_stdout_text(source, &["rev-parse", "HEAD"], "source head").unwrap();
     let mut pack_command = Command::new("git");
     pack_command
@@ -191,8 +207,9 @@ fn receive_pack_first_push_request(source: &FsPath) -> Vec<u8> {
     )
     .unwrap();
 
+    let sideband = if sideband { " side-band-64k" } else { "" };
     let command = format!(
-        "{ZERO_OID} {} refs/heads/{DEFAULT_GIT_BRANCH}\0 report-status side-band-64k object-format=sha1\n",
+        "{ZERO_OID} {} refs/heads/{DEFAULT_GIT_BRANCH}\0 report-status{sideband} object-format=sha1\n",
         head.trim()
     );
     let mut request = pkt_line(command.as_bytes());

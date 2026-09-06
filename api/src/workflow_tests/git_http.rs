@@ -476,6 +476,113 @@ async fn chunked_real_git_published_push_over_http_accepts_image_context() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn first_push_accepts_history_from_before_scope_rules_existed() {
+    let (state, secret) = test_state_with_first_push_token().await;
+    let (origin, _server) = spawn_test_server(&state).await;
+    let source = temp_git_repo("pre-scope-history-http");
+    run_git(
+        Some(&source),
+        &["rm", "--cached", ".scope/RULES.md"],
+        "unstage rules from original history",
+    )
+    .unwrap();
+    fs::write(source.join("README.md"), "existing project\n").unwrap();
+    run_git(Some(&source), &["add", "README.md"], "stage original files").unwrap();
+    commit_all(&source, "before Scope");
+    let original_head = git_head_oid(&source);
+    run_git(Some(&source), &["add", ".scope/RULES.md"], "stage rules").unwrap();
+    commit_all(&source, "adopt Scope");
+    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}").replacen(
+        "http://",
+        &format!("http://scope:{secret}@"),
+        1,
+    );
+    configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
+
+    run_git(
+        Some(&source),
+        &["push", &remote, "HEAD:main"],
+        "import existing history",
+    )
+    .unwrap();
+
+    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert_eq!(repo.record.lifecycle_state, RepoLifecycleState::Ready);
+    assert_eq!(
+        repo.git_head.as_ref().unwrap().head_oid,
+        git_head_oid(&source)
+    );
+    assert_eq!(
+        live_file_content(&state, "/.scope/RULES.md")
+            .await
+            .as_deref(),
+        Some("")
+    );
+    let clone = TempGitRepo(unique_test_path("pre-scope-history-clone"));
+    cache_test_jwks(&state);
+    clone_with_bearer(
+        &format!("{origin}/git/permissioned/{TEST_REPO_ID}"),
+        &clone,
+        &bearer_header(),
+        "clone imported history",
+    );
+    run_git(
+        Some(&clone),
+        &[
+            "merge-base",
+            "--is-ancestor",
+            &original_head,
+            "refs/remotes/origin/main",
+        ],
+        "verify original history survives",
+    )
+    .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn first_push_missing_tip_rules_displays_rejection_without_persisting() {
+    let (state, source, _server) =
+        first_push_fixture("missing-tip-rules-http", "hello\n", None).await;
+    run_git(
+        Some(&source),
+        &["rm", ".scope/RULES.md"],
+        "remove tip rules",
+    )
+    .unwrap();
+    commit_all(&source, "remove rules");
+    let remote = git_stdout_text(&source, &["remote", "get-url", "scope"], "read remote").unwrap();
+    configure_push_intent_header(&state, &source, remote.trim(), &test_owner_id()).await;
+    let object_count = state.test_object_store.object_count();
+
+    let output = run_git_output(
+        Some(&source),
+        &["push", "scope", "HEAD:main"],
+        "push missing rules",
+    )
+    .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pushed main tree must contain .scope/RULES.md"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("HTTP 400"), "{stderr}");
+    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert_eq!(
+        repo.record.lifecycle_state,
+        RepoLifecycleState::AwaitingFirstPush
+    );
+    assert!(repo.git_head.is_none());
+    assert!(repo.first_push_token.is_some());
+    assert_eq!(state.test_object_store.object_count(), object_count);
+}
+
 async fn first_push_fixture(
     label: &str,
     readme: &str,
