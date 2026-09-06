@@ -188,7 +188,13 @@ fn validate_tree(root: &Path, path: &Path) -> anyhow::Result<()> {
         fs::canonicalize(path)?.starts_with(root),
         "out-of-root storage target"
     );
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
+    ensure!(
+        mount_id(path)? == mount_id(root)?,
+        "storage target crosses filesystem boundary: {}",
+        path.display()
+    );
+    #[cfg(all(unix, not(target_os = "linux")))]
     {
         use std::os::unix::fs::MetadataExt;
         ensure!(
@@ -202,6 +208,36 @@ fn validate_tree(root: &Path, path: &Path) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn mount_id(path: &Path) -> anyhow::Result<u64> {
+    use std::{ffi::CString, mem::MaybeUninit, os::unix::ffi::OsStrExt};
+
+    // Overlay files can report a different st_dev from their parent directory.
+    // The mount ID identifies the actual boundary, including bind mounts.
+    let name = CString::new(path.as_os_str().as_bytes())?;
+    let mut stat = MaybeUninit::<libc::statx>::zeroed();
+    let result = unsafe {
+        libc::statx(
+            libc::AT_FDCWD,
+            name.as_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW | libc::AT_NO_AUTOMOUNT,
+            libc::STATX_MNT_ID,
+            stat.as_mut_ptr(),
+        )
+    };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("read storage mount identity: {}", path.display()));
+    }
+    let stat = unsafe { stat.assume_init() };
+    ensure!(
+        stat.stx_mask & libc::STATX_MNT_ID != 0,
+        "storage mount identity unavailable: {}",
+        path.display()
+    );
+    Ok(stat.stx_mnt_id)
 }
 
 fn hex_key(value: &str, length: usize) -> bool {

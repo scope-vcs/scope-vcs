@@ -33,6 +33,7 @@ RUN sed -i \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
         iproute2 \
+        jq \
         "postgresql-15=${POSTGRES_VERSION}" \
         "postgresql-client-15=${POSTGRES_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
@@ -61,6 +62,7 @@ ARG PLAYWRIGHT_CHROMIUM_REVISION=1228
 RUN test "$(rustc --version | cut -d' ' -f2)" = "1.98.0" \
     && test "$(node --version)" = "v${NODE_VERSION}" \
     && test "$(pnpm --version)" = "${PNPM_VERSION}" \
+    && jq --version \
     && test "$(psql --version | cut -d' ' -f3)" = "15.18" \
     && test "$(playwright --version)" = "Version ${PLAYWRIGHT_VERSION}" \
     && test -x "${PLAYWRIGHT_BROWSERS_PATH}/chromium-${PLAYWRIGHT_CHROMIUM_REVISION}/chrome-linux64/chrome" \

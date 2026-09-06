@@ -55,7 +55,8 @@ fn deletes_only_retired_storage_and_resumes_after_interruption() {
         fixture(root.path(), "objects/snapshots"),
     ];
     assert!(open_writer(root.path()).is_err());
-    assert!(scrub(root.path(), |_| bail!("interrupted")).is_err());
+    let error = scrub(root.path(), |_| bail!("interrupted")).unwrap_err();
+    assert_eq!(error.to_string(), "interrupted", "{error:#}");
     assert!(!root.path().join(MARKER).exists());
     assert_eq!(old.iter().filter(|p| p.exists()).count(), 5);
     assert_eq!(scrub(root.path(), |_| Ok(())).unwrap(), 5);
@@ -138,20 +139,46 @@ fn rejects_symlinked_groups_targets_and_nonprivate_roots() {
 fn resumes_when_deletion_finished_before_completion_was_recorded() {
     let root = root();
     let old = retired(root.path());
-    assert!(
-        scrub(root.path(), |count| {
-            if count == 6 {
-                bail!("crashed before marker");
-            }
-            Ok(())
-        })
-        .is_err()
-    );
+    let error = scrub(root.path(), |count| {
+        if count == 6 {
+            bail!("crashed before marker");
+        }
+        Ok(())
+    })
+    .unwrap_err();
+    assert_eq!(error.to_string(), "crashed before marker", "{error:#}");
     assert!(old.iter().all(|path| !path.exists()));
     assert!(!root.path().join(MARKER).exists());
     fs::write(root.path().join(format!("{MARKER}.tmp")), b"partial").unwrap();
     assert_eq!(scrub(root.path(), |_| Ok(())).unwrap(), 0);
     assert!(complete(root.path()).unwrap());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn regular_files_share_their_directory_mount_identity() {
+    let root = root();
+    let directory = fixture(root.path(), "git-repos/current.git");
+    let root_mount = mount_id(root.path()).unwrap();
+    assert_eq!(mount_id(&directory).unwrap(), root_mount);
+    assert_eq!(
+        mount_id(&directory.join("private-object")).unwrap(),
+        root_mount
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn rejects_files_and_directories_on_another_mount() {
+    for path in [Path::new("/proc"), Path::new("/proc/version")] {
+        let error = validate_tree(Path::new("/"), path).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("storage target crosses filesystem boundary"),
+            "{error:#}"
+        );
+    }
 }
 
 #[cfg(unix)]
