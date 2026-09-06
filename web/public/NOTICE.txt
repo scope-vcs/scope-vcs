@@ -3,7 +3,5 @@ Copyright 2026 Adam Blumoff
 
 Scope is licensed under the Apache License, Version 2.0.
 Third-party components retain their own copyright and license notices.
-The bundled Pagent package is excluded from Scope's Apache-2.0 grant.
-Its separate license terms have not been supplied in this repository.
-See web/vendor/PAGENT-LICENSING.txt for the recorded exception.
+Pagent is separately licensed under Apache-2.0 by its upstream project.
 See docs/licensing.md for the inventory and distribution details.

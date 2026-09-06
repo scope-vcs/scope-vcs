@@ -1,7 +1,0 @@
-{
-  "web:pagent@0.1.0": {
-    "archive_sha256": "62792ab450d5a2d8dd29f474b29b705e069c2a120e79e2c807f138657001f618",
-    "notice": "web/vendor/PAGENT-LICENSING.txt",
-    "reason": "The maintainer explicitly directed that this exact vendored Pagent archive remain separately licensed. The archive supplies no license declaration or license text. This inventory records the exclusion and missing terms; it does not grant redistribution rights or apply Scope's Apache-2.0 license to Pagent. Any archive or version change requires a fresh review."
-  }
-}

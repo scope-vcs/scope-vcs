@@ -57,7 +57,7 @@ class LicensingChecks(unittest.TestCase):
                     self.write(path, content)
 
     def test_unreviewed_license_expression_fails(self):
-        for name in ["rust-supplements", "web-supplements", "license-selections", "separate-licenses"]:
+        for name in ["rust-supplements", "web-supplements", "license-selections"]:
             self.write(f"legal/{name}.json", "{}")
         self.write("legal/copied-sources.json", "[]")
         with self.assertRaisesRegex(ValueError, "Review new license expression"):
@@ -77,19 +77,25 @@ class LicensingChecks(unittest.TestCase):
             generate.document_text(dict(path="terms.txt", sha256=generate.digest(changed.encode()),
                 source_path="source.txt", source_sha256=generate.digest(source.encode())))
 
-    def test_separate_license_exception_is_bound_to_version_and_archive(self):
-        self.write("web/vendor/status.txt", "No license supplied. Scope license excludes this component.")
-        self.write("legal/separate-licenses.json", json.dumps({"web:pagent@0.1.0": dict(
-            archive_sha256="audited-archive-hash", notice="web/vendor/status.txt", reason="Reviewed exclusion")}))
-        entry = dict(ecosystem="web", name="pagent", version="0.1.0", archive_sha256="audited-archive-hash", license=None, documents=[])
-        generate.apply_separate_terms([entry])
-        self.assertFalse(generate.missing_coverage(entry))
-        self.assertIsNone(entry["selected_license"])
+    def test_upstream_license_is_bound_to_the_audited_package(self):
+        self.write("legal/upstream/LICENSE", "Upstream license terms")
+        self.write("legal/copied-sources.json", "[]")
+        self.write("legal/rust-supplements.json", "{}")
+        self.write("legal/license-selections.json", json.dumps({"Apache-2.0": "Apache-2.0"}))
+        self.write("legal/web-supplements.json", json.dumps({"web:pagent@0.1.0": dict(
+            upstream_license="Apache-2.0", archive_sha256="audited-archive-hash", reason="Upstream grant",
+            documents=[dict(path="legal/upstream/LICENSE", sha256=generate.digest(b"Upstream license terms"))])}))
+        entry = dict(ecosystem="web", name="pagent", version="0.1.0", archive_sha256="audited-archive-hash", license=None)
+        audited = generate.supplement([{**entry, "documents": []}])[0]
+        self.assertFalse(generate.missing_coverage(audited))
+        self.assertIsNone(audited["license"])
+        self.assertEqual(audited["upstream_license"], "Apache-2.0")
+        self.assertEqual(audited["selected_license"], "Apache-2.0")
+        self.assertEqual(audited["documents"][0]["text"], "Upstream license terms")
         for change in [{"version": "0.1.1"}, {"archive_sha256": "new-archive-hash"}, {"license": "MIT"}]:
-            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "review|Review"):
-                generate.apply_separate_terms([{**entry, **change}])
-        unknown = dict(ecosystem="web", name="other-package", version="1", license=None, documents=[])
-        self.assertTrue(generate.missing_coverage(unknown))
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "stale|Review"):
+                generate.supplement([{**entry, **change, "documents": []}])
+        self.assertTrue(generate.missing_coverage(dict(license=None, documents=[])))
 
     def test_license_selection_distinguishes_mit_from_mit_zero(self):
         expression = "CC0-1.0 OR MIT-0 OR Apache-2.0"

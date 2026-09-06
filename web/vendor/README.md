@@ -9,7 +9,11 @@ credentials for the private Pagent repository. Replace the archive only with a
 package produced by Pagent's release builder, then update the commit and digest
 above.
 
-Pagent is excluded from Scope's Apache-2.0 license. The archive supplies no
-separate license terms. Its reviewed status is recorded in
-[`PAGENT-LICENSING.txt`](PAGENT-LICENSING.txt) and the dependency inventory;
-the archive remains unchanged.
+Pagent is separately licensed under Apache-2.0. Its original release builder
+omitted the license from this archive. The upstream grant from commit
+`d0e8ba60e39e058d189d7dd121740afc30f32900` is preserved in
+[`legal/upstream/pagent-d0e8ba60e39e-LICENSE`](../../legal/upstream/pagent-d0e8ba60e39e-LICENSE)
+and the generated web notices. Only licensing and repository instructions changed
+between that revision and the bundled revision; application code is unchanged.
+The supplement is bound to the archive checksum above. A replacement archive
+must include the upstream license and update the inventory.

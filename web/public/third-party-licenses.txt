@@ -5331,13 +5331,14 @@ license: text 1529f88b3675095087120854c6fa2cc1113ab2da2f88c4f6aa4ffe52e98ef81b
 ==============================================================================
 pagent 0.1.0
 Declared license: not declared
-Selected license: none; separate terms not supplied
+Selected license: Apache-2.0
 Source: file:vendor/pagent-v0.1.0-47b796c.tgz
 
+Upstream license: Apache-2.0
 Repository: {"type": "git", "url": "git+https://github.com/adamblumoff/pagent.git"}
-The maintainer explicitly directed that this exact vendored Pagent archive remain separately licensed. The archive supplies no license declaration or license text. This inventory records the exclusion and missing terms; it does not grant redistribution rights or apply Scope's Apache-2.0 license to Pagent. Any archive or version change requires a fresh review.
+Pagent declares Apache-2.0 in its upstream LICENSE at d0e8ba60e39e058d189d7dd121740afc30f32900. Compared with the bundled source revision 47b796c169381be68c43db20b7324c8172d82512, only LICENSE, AGENTS.md, and .scope/RULES.md changed; application code is unchanged. The original release archive omits the license and its package manifest has no license field. Preserve the upstream grant here for this exact archive.
 
-web/vendor/PAGENT-LICENSING.txt: text ec2259d821a244eb3100e2a48a94e19d9dd4bda38b3f7d282969151d73d45f11
+legal/upstream/pagent-d0e8ba60e39e-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
 parse-entities 4.0.2
@@ -12387,25 +12388,6 @@ Copyright (c) 2020 Vercel, Inc.
 Copyright (c) Titus Wormer <tituswormer@gmail.com>
 
 [Shared terms ed1e240a96a36e5baa93b7fad4cc89dae42effbc8820657ff397f2cc7a079d15]
-
---- text ec2259d821a244eb3100e2a48a94e19d9dd4bda38b3f7d282969151d73d45f11 ---
-Pagent licensing status
-
-The bundled pagent-v0.1.0-47b796c.tgz archive is excluded from Scope's
-Apache-2.0 license. Scope's license does not grant rights to use, modify,
-or redistribute Pagent.
-
-The archive declares no license and supplies no separate license text.
-It remains subject to its copyright owner's rights. Separate permission
-or applicable license terms must be established for Pagent independently.
-This notice records its status; it does not supply a license or assert
-that redistribution rights have been verified.
-
-Package: pagent 0.1.0
-Source repository: https://github.com/adamblumoff/pagent
-Source revision recorded by the vendor: 47b796c
-Archive SHA-256:
-62792ab450d5a2d8dd29f474b29b705e069c2a120e79e2c807f138657001f618
 
 --- text ecc934075c786ff5a83b109f49b32b1efb57cd99410e194e15b01dc144dc7fd5 ---
 The MIT License (MIT)

@@ -597,5 +597,17 @@
   "web:@tailwindcss/oxide-wasm32-wasi@4.3.1": {
     "reason": "The published native binding declares MIT. Retain exact-version Tailwind CSS project MIT license in addition to separately bundled dependency notices.",
     "from_package": "web:tailwindcss@4.3.1"
+  },
+  "web:pagent@0.1.0": {
+    "reason": "Pagent declares Apache-2.0 in its upstream LICENSE at d0e8ba60e39e058d189d7dd121740afc30f32900. Compared with the bundled source revision 47b796c169381be68c43db20b7324c8172d82512, only LICENSE, AGENTS.md, and .scope/RULES.md changed; application code is unchanged. The original release archive omits the license and its package manifest has no license field. Preserve the upstream grant here for this exact archive.",
+    "upstream_license": "Apache-2.0",
+    "archive_sha256": "62792ab450d5a2d8dd29f474b29b705e069c2a120e79e2c807f138657001f618",
+    "documents": [
+      {
+        "path": "legal/upstream/pagent-d0e8ba60e39e-LICENSE",
+        "url": "https://github.com/adamblumoff/pagent/blob/d0e8ba60e39e058d189d7dd121740afc30f32900/LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    ]
   }
 }

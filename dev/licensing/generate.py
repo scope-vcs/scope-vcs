@@ -121,6 +121,10 @@ def supplement(entries):
             raise ValueError(f"Remove stale license supplement: {key}")
         entry = by_key[key]
         entry["license_evidence"] = addition["reason"]
+        if addition.get("upstream_license"):
+            if entry["archive_sha256"] != addition["archive_sha256"] or entry["license"] is not None:
+                raise ValueError(f"Review upstream license supplement for changed package: {key}")
+            entry["upstream_license"] = addition["upstream_license"]
         for document in addition.get("documents", []):
             entry["documents"].append(dict(**document, text=document_text(document)))
         if addition.get("declared_metadata"):
@@ -145,28 +149,12 @@ def supplement(entries):
     selections = json.loads((ROOT / "legal/license-selections.json").read_text())
     validate_selections(selections)
     for entry in entries:
-        if entry["license"]:
-            if entry["license"] not in selections:
-                raise ValueError(f"Review new license expression: {entry['license']}")
-            entry["selected_license"] = selections[entry["license"]]
-    apply_separate_terms(entries)
+        declaration = entry["license"] or entry.get("upstream_license")
+        if declaration:
+            if declaration not in selections:
+                raise ValueError(f"Review new license expression: {declaration}")
+            entry["selected_license"] = selections[declaration]
     return sorted(entries, key=lambda item: (item["ecosystem"], item["name"], item["version"]))
-
-
-def apply_separate_terms(entries):
-    by_key = {f"{entry['ecosystem']}:{entry['name']}@{entry['version']}": entry for entry in entries}
-    exceptions = json.loads((ROOT / "legal/separate-licenses.json").read_text(encoding="utf-8"))
-    for key, exception in exceptions.items():
-        entry = by_key.get(key)
-        if entry is None or entry.get("archive_sha256") != exception["archive_sha256"]:
-            raise ValueError(f"Separately licensed archive changed; review its terms: {key}")
-        if entry["license"] is not None:
-            raise ValueError(f"Separately licensed package now declares a license; review: {key}")
-        raw = (ROOT / exception["notice"]).read_bytes()
-        entry["licensing_status"] = "separate-terms-not-supplied"
-        entry["license_evidence"] = exception["reason"]
-        entry["selected_license"] = None
-        entry["documents"].append(dict(path=exception["notice"], sha256=digest(raw), text=raw.decode("utf-8").strip()))
 
 
 def validate_selections(selections):
@@ -230,9 +218,7 @@ def license_choices(expression):
 
 
 def missing_coverage(entry):
-    if entry.get("licensing_status") == "separate-terms-not-supplied":
-        return False
-    return not entry["license"] or not entry["documents"] or (
+    return not (entry["license"] or entry.get("upstream_license")) or not entry["documents"] or (
         not entry.get("license_evidence") and not any("/" not in doc["path"] for doc in entry["documents"]))
 
 
@@ -283,7 +269,9 @@ def render(entries, ecosystem):
         if entry["ecosystem"] != ecosystem:
             continue
         output.extend(["=" * 78, f"{entry['name']} {entry['version']}",
-            f"Declared license: {entry['license'] or 'not declared'}", f"Selected license: {entry.get('selected_license') or 'none; separate terms not supplied'}", f"Source: {entry['url']}", ""])
+            f"Declared license: {entry['license'] or 'not declared'}", f"Selected license: {entry['selected_license']}", f"Source: {entry['url']}", ""])
+        if entry.get("upstream_license"):
+            output.append("Upstream license: " + entry["upstream_license"])
         if entry.get("authors"):
             output.append("Published author metadata: " + json.dumps(entry["authors"], ensure_ascii=False))
         if entry.get("repository"):
@@ -332,7 +320,6 @@ def main():
         raise SystemExit(1)
     if args.audit_only:
         print(f"Audited {len(entries)} dependency and copied-source entries.")
-        report_separate_terms(entries)
         return
     inventory = [{**entry, "documents": [{key: value for key, value in document.items() if key != "text"}
         for document in entry["documents"]]} for entry in entries]
@@ -351,7 +338,6 @@ def main():
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content.encode("utf-8"))
     print(f"Generated notices for {len(entries)} dependency versions.")
-    report_separate_terms(entries)
 
 
 def check():
@@ -374,19 +360,11 @@ def check():
     if stale:
         raise SystemExit("Licensing artifacts are stale. Run python dev/licensing/generate.py:\n" + "\n".join(stale))
     print(f"Checked notices for {len(inventory['packages'])} dependency versions.")
-    report_separate_terms(inventory["packages"])
-
-
-def report_separate_terms(entries):
-    for entry in entries:
-        if entry.get("licensing_status") == "separate-terms-not-supplied":
-            print(f"Separate licensing remains unresolved: {entry['name']} {entry['version']}; no license terms supplied. Scope's Apache-2.0 grant excludes this component.")
 
 
 def input_files():
     paths = ["dev/licensing/generate.py", "dev/licensing/requirements.txt", "legal/license-selections.json",
-        "legal/rust-supplements.json", "legal/web-supplements.json", "legal/copied-sources.json",
-        "legal/separate-licenses.json", "web/vendor/PAGENT-LICENSING.txt"]
+        "legal/rust-supplements.json", "legal/web-supplements.json", "legal/copied-sources.json"]
     paths.extend(path.relative_to(ROOT).as_posix() for path in (ROOT / "legal/upstream").glob("*"))
     paths.extend(path.relative_to(ROOT).as_posix() for path in (ROOT / "web/vendor").glob("*.tgz"))
     return sorted(paths)

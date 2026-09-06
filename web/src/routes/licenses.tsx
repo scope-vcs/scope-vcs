@@ -30,8 +30,8 @@ function LicensesRoute() {
               Third-party components retain their own licenses.
             </p>
             <p className="mt-3 text-[15px] leading-6 text-muted-foreground">
-              The bundled Pagent package is excluded from this grant; its separate
-              license terms have not been supplied.
+              Pagent is separately licensed under Apache-2.0. Its upstream license
+              is included in the third-party notices below.
             </p>
             <ul className="mt-4 space-y-3 text-sm">
               <li><a className={licenseLinkClass} href="/LICENSE.txt">Apache License 2.0</a></li>

@@ -9,13 +9,13 @@ Third-party code, fonts, and other material retain their original licenses.
 Scope's Apache license does not replace those terms. Apache-2.0 does not grant
 permission to use Scope's trademarks except as described in section 6.
 
-Pagent is explicitly excluded from Scope's Apache-2.0 grant. The bundled
-`web/vendor/pagent-v0.1.0-47b796c.tgz` remains unchanged and supplies no separate
-license declaration or terms. `web/vendor/PAGENT-LICENSING.txt` records this
-exception for that exact archive. It does not establish redistribution rights.
-The dependency inventory and web notices preserve this unresolved licensing
-status; a passing freshness check does not mean Pagent has been cleared for
-reuse. A different archive requires a new review of its terms.
+Pagent is separately licensed under Apache-2.0 by its upstream project. The
+original bundled archive omits its license text and package license field.
+The inventory preserves the upstream grant from commit
+`d0e8ba60e39e058d189d7dd121740afc30f32900`, whose application code is unchanged
+from the bundled revision, and includes that grant in the web notices.
+The supplement is bound to the exact archive checksum. A replacement archive
+requires review and should include the upstream license itself.
 
 ## Dependency inventory
 
