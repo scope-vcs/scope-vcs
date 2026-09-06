@@ -112,6 +112,48 @@ fn request_diff_uses_server_revision_and_path_with_no_local_private_data() {
 }
 
 #[test]
+fn request_diff_rejects_a_commit_absent_from_visible_revision_inspection() {
+    let dir = TempDir::new("request-absent-commit");
+    let server = FixtureServer::start();
+    let output = server
+        .command(dir.path())
+        .args([
+            "--json",
+            "--repo",
+            "owner/repo",
+            "request",
+            "diff",
+            "--request",
+            "req_one",
+            "--revision",
+            "rev_old",
+            "--commit",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["code"], "not_found");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("visible revision inspection")
+    );
+    assert!(
+        !server
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|uri| uri.contains("file-diff"))
+    );
+    server.finish();
+}
+
+#[test]
 fn request_diff_defaults_to_visible_text_changes() {
     let dir = TempDir::new("request-default-diff");
     let server = FixtureServer::start();

@@ -150,6 +150,16 @@ pub(super) fn diff_request(
             .iter()
             .find(|revision| revision.id == id)
     });
+    if args.path.is_none()
+        && let Some(commit) = args.commit.as_deref()
+        && !selected.is_some_and(|revision| revision.commits.iter().any(|item| item.oid == commit))
+    {
+        return Err(crate::error::CliError::new(ErrorResponse::new(
+            ErrorCode::NotFound,
+            "the selected commit is not available in the server's visible revision inspection",
+        ))
+        .into());
+    }
     let mut lines = Vec::new();
     let mut files = Vec::new();
     if let Some(revision) = selected {
