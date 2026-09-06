@@ -1,4 +1,4 @@
-import type { CommitFile, HistoryEntryDetail } from '@/api/types'
+import type { CommitFile } from '@/api/types'
 import { PanelState, EmptyState } from '@/components/empty-state'
 import { FileWorkbench } from '@/components/file-workbench'
 import { FileSystemTree } from '@/components/file-system-tree'
@@ -13,10 +13,7 @@ import type {
 import { GitCommit, TriangleAlert } from 'lucide-react'
 import { type ReactNode, useRef, useState } from 'react'
 import { CommitDetailSkeleton } from './history-commit-detail-skeleton'
-import { VisibilityChanges } from './history-visibility-changes'
 import { ReviewFileDiffDrawer } from '../review/review-file-diff-drawer'
-
-const EMPTY_VISIBILITY_CHANGES: HistoryEntryDetail['visibility_changes'] = []
 
 type CommitDetailPanelProps = {
   commitContext?: ReactNode
@@ -31,7 +28,6 @@ type CommitDetailPanelProps = {
   onSelectFile: (file: CommitFile) => void
   selectedFilePath: string | null
   terminology?: 'commit' | 'update'
-  visibilityChanges?: HistoryEntryDetail['visibility_changes']
 }
 
 export function CommitDetailPanel({
@@ -47,7 +43,6 @@ export function CommitDetailPanel({
   onSelectFile,
   selectedFilePath,
   terminology = 'commit',
-  visibilityChanges = EMPTY_VISIBILITY_CHANGES,
 }: CommitDetailPanelProps) {
   const [navigationOpen, setNavigationOpen] = useState(false)
   const fileNavigatorRef = useRef<HTMLDivElement>(null)
@@ -126,10 +121,7 @@ export function CommitDetailPanel({
           ref={fileNavigatorRef}
           tabIndex={-1}
         >
-          {visibilityChanges.length > 0 ? (
-            <VisibilityChanges changes={visibilityChanges} />
-          ) : null}
-          {commit.files.length === 0 && visibilityChanges.length === 0 ? (
+          {commit.files.length === 0 ? (
             <EmptyState
               inline
               className="px-5 py-8 sm:px-6"
@@ -164,10 +156,6 @@ export function CommitDetailPanel({
               scrollTop={diffScrollTop}
               selectedPath={selectedFilePath}
             />
-          ) : commit.files.length === 0 && visibilityChanges.length > 0 ? (
-            <PanelState>
-              <span>Visibility changes do not have a content diff</span>
-            </PanelState>
           ) : commit.files.length === 0 && filesTruncated ? (
             <PanelState>
               <span>Changed files are outside the bounded file list</span>

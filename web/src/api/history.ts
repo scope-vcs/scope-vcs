@@ -1,6 +1,6 @@
 import { createApiClient } from '@/api/client'
 import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
-import { parseHistoryAudience } from './history-inputs'
+import { parseHistoryAudience, parseHistoryFeed } from './history-inputs'
 import type {
   HistoryEntryDetail,
   HistoryEntryDetailInput,
@@ -23,6 +23,7 @@ export async function loadHistoryPageForRequest(
   const query = new URLSearchParams()
   if (data.audience) query.set('audience', parseHistoryAudience(data.audience))
   if (data.before) query.set('before', data.before)
+  query.set('feed', parseHistoryFeed(data.feed))
 
   return createApiClient().get(
     `${buildApiPath(ApiRouteTemplates.repoHistory, {
@@ -59,6 +60,8 @@ export async function loadHistoryEntryFileDiffForRequest(
     audience: parseHistoryAudience(data.audience),
     path: data.path,
   })
+
+  if (data.visibility_change) query.set('visibility_change', data.visibility_change)
 
   const diff = await createApiClient().get(
     `${buildApiPath(ApiRouteTemplates.repoHistoryEntryFileDiff, {

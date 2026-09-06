@@ -138,11 +138,11 @@ export type RepositoryInviteLookupResponse = { repo_id: string, owner_handle: st
 
 export type AcceptRepositoryInviteResponse = { repo: RepoSummaryResponse, member: RepositoryMemberResponse, };
 
-export type HistoryPageRequest = { audience: ProjectionPreviewAudience | null, before: string | null, };
+export type HistoryPageRequest = { feed: HistoryFeed | null, audience: ProjectionPreviewAudience | null, before: string | null, };
 
 export type HistoryEntryRequest = { audience: ProjectionPreviewAudience | null, };
 
-export type HistoryEntryFileDiffRequest = { audience: ProjectionPreviewAudience | null, path: string, };
+export type HistoryEntryFileDiffRequest = { visibility_change: string | null, audience: ProjectionPreviewAudience | null, path: string, };
 
 export type RequestFileDiffRequest = { path: string, };
 
@@ -150,11 +150,13 @@ export type ReviewFileContentResponse = { "kind": "text", text: string, } | { "k
 
 export type ReviewFileDiffResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_content: ReviewFileContentResponse | null, new_content: ReviewFileContentResponse | null, };
 
-export type HistoryPageResponse = { audience: ProjectionPreviewAudience, repo_id: string, view_key: string, generation: string, entries: Array<HistoryEntrySummaryResponse>, next_cursor: string | null, };
+export type HistoryPageResponse = { feed: HistoryFeed, audience: ProjectionPreviewAudience, repo_id: string, view_key: string, generation: string, entries: Array<HistoryEntrySummaryResponse>, next_cursor: string | null, };
 
 export type HistoryEntrySummaryResponse = { id: string, source_id: string, parent_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, };
 
 export type HistoryEntryKind = "push" | "merged_request" | "visibility_change";
+
+export type HistoryFeed = "updates" | "all";
 
 export type HistoryEntryDetailResponse = { audience: ProjectionPreviewAudience, repo_id: string, view_key: string, id: string, source_id: string, parent_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, };
 
@@ -162,7 +164,7 @@ export type HistoryEntryFileResponse = { path: string, kind: FileChangeKind, old
 
 export type HistoryVisibilitySummaryResponse = { made_public_count: number, made_private_count: number, };
 
-export type HistoryVisibilityChangeResponse = { path: string, old_visibility: Visibility, new_visibility: Visibility, };
+export type HistoryVisibilityChangeResponse = { id: string, file: HistoryEntryFileResponse | null, path: string, old_visibility: Visibility, new_visibility: Visibility, };
 
 export type CommitFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, visibility: Visibility, };
 

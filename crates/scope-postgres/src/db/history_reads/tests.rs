@@ -87,6 +87,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
             audience: ProjectionViewKey::Private,
+            feed: HistoryFeed::All,
             before: None,
             entry_source_id: None,
             limit: 50,
@@ -96,7 +97,10 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
     let cold_elapsed = cold.elapsed();
     assert!(first.next_boundary.is_some());
     assert_eq!(first.view.entries, expected_private.entries[..50]);
-    assert_eq!(first.view.generation, expected_private.generation);
+    assert_eq!(
+        first.view.generation,
+        HistoryFeed::All.generation(&expected_private.generation, &repo.record.id, "private")
+    );
 
     let held = store.db.begin().await.unwrap();
     held.execute_unprepared("LOCK TABLE scope_logical_commits, scope_file_changes, scope_live_files IN ACCESS EXCLUSIVE MODE").await.unwrap();
@@ -109,6 +113,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
                 incarnation: &repo.incarnation(),
                 version: repo.record.change_version,
                 audience: ProjectionViewKey::Private,
+                feed: HistoryFeed::All,
                 before: first.next_boundary.as_ref(),
                 entry_source_id: None,
                 limit: 50,
@@ -141,6 +146,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
             audience: ProjectionViewKey::Public,
+            feed: HistoryFeed::All,
             before: None,
             entry_source_id: None,
             limit: 50,
@@ -148,13 +154,17 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         .await
         .unwrap();
     assert_eq!(public.view.entries, expected_public.entries[..50]);
-    assert_eq!(public.view.generation, expected_public.generation);
+    assert_eq!(
+        public.view.generation,
+        HistoryFeed::All.generation(&expected_public.generation, &repo.record.id, "public")
+    );
     let detail = store
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
             audience: ProjectionViewKey::Public,
+            feed: HistoryFeed::All,
             before: None,
             entry_source_id: Some(&public.view.entries[10].source_id),
             limit: 1,
@@ -169,12 +179,12 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
 }
 
 #[tokio::test]
-async fn visibility_fragments_keep_repeated_sources_and_page_by_exact_position() {
+async fn actions_group_repeated_projection_sources_and_page_by_exact_position() {
     use scope_domain::visibility_changes::{VisibilityChange, VisibilityChangeSet};
 
     let (store, mut repo) = fixture(5);
-    // A visibility boundary for the latest push is anchored before another visible
-    // commit, so its deletion and content update are separate semantic entries.
+    // The projection boundary precedes another commit, but history groups the
+    // visibility effect under the latest push that caused it.
     repo.visibility_change_sets.push(
         VisibilityChangeSet::new(
             "vchg_split".into(),
@@ -202,12 +212,12 @@ async fn visibility_fragments_keep_repeated_sources_and_page_by_exact_position()
             .iter()
             .map(|entry| entry.source_id.as_str())
             .collect::<Vec<_>>(),
-        ["logical_4", "logical_2", "logical_4", "logical_0"],
+        ["logical_4", "logical_2", "logical_0"],
     );
-    assert_ne!(expected.entries[0].files, expected.entries[2].files);
+    assert_eq!(expected.entries[0].visibility_changes.len(), 1);
 
     // Repository writes enqueue projection rebuilds: their history persistence must
-    // accept both fragments, as must a subsequent cold history read.
+    // persist one action, as must a subsequent cold history read.
     store
         .repositories()
         .replace_repository_for_tests(repo.clone())
@@ -251,6 +261,7 @@ async fn visibility_fragments_keep_repeated_sources_and_page_by_exact_position()
                 incarnation: &repo.incarnation(),
                 version: repo.record.change_version,
                 audience: ProjectionViewKey::Public,
+                feed: HistoryFeed::All,
                 before: before.as_ref(),
                 entry_source_id: None,
                 limit: 1,
@@ -258,7 +269,10 @@ async fn visibility_fragments_keep_repeated_sources_and_page_by_exact_position()
             .await
             .unwrap();
         assert_eq!(page.view.entries, vec![expected_entry.clone()]);
-        assert_eq!(page.view.generation, expected.generation);
+        assert_eq!(
+            page.view.generation,
+            HistoryFeed::All.generation(&expected.generation, &repo.record.id, "public")
+        );
         if collected.is_empty() {
             first_boundary = page.next_boundary.clone();
         }
@@ -274,6 +288,7 @@ async fn visibility_fragments_keep_repeated_sources_and_page_by_exact_position()
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
             audience: ProjectionViewKey::Public,
+            feed: HistoryFeed::All,
             before: None,
             entry_source_id: Some("logical_4"),
             limit: 1,
@@ -285,6 +300,7 @@ async fn visibility_fragments_keep_repeated_sources_and_page_by_exact_position()
     let mut next_commit = repo.graph.commits.last().unwrap().clone();
     next_commit.id = "logical_5".into();
     next_commit.message = "Another update".into();
+    next_commit.changes[0].path = ScopePath::parse("/another-file.txt").unwrap();
     repo.graph.commits.push(next_commit);
     repo.record.change_version += 1;
     store
@@ -298,6 +314,7 @@ async fn visibility_fragments_keep_repeated_sources_and_page_by_exact_position()
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
             audience: ProjectionViewKey::Public,
+            feed: HistoryFeed::All,
             before: first_boundary.as_ref(),
             entry_source_id: None,
             limit: 1,
@@ -322,7 +339,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .unwrap();
     store
         .db
-        .execute_unprepared("UPDATE scope_repository_history_views SET identity_version=-1")
+        .execute_unprepared("UPDATE scope_repository_history_views SET history_version='stale'")
         .await
         .unwrap();
     store
@@ -347,20 +364,31 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
             audience: ProjectionViewKey::Private,
+            feed: HistoryFeed::All,
             before: Some(&RepositoryHistoryBoundary {
-                generation: history_view(
-                    &repo.graph,
-                    &repo.visibility_change_sets,
-                    ProjectionViewKey::Private,
-                )
-                .generation,
+                generation: HistoryFeed::All.generation(
+                    &history_view(
+                        &repo.graph,
+                        &repo.visibility_change_sets,
+                        ProjectionViewKey::Private,
+                    )
+                    .generation,
+                    &repo.record.id,
+                    "private",
+                ),
                 position: 999,
             }),
             entry_source_id: None,
             limit: 50,
         })
         .await;
-    assert!(missing.is_err());
+    assert!(
+        missing
+            .err()
+            .unwrap()
+            .message
+            .contains("boundary is no longer available")
+    );
     store.db.execute_unprepared("UPDATE scope_repositories SET change_version=change_version+1 WHERE id='owner/history'").await.unwrap();
     assert!(
         store
@@ -369,6 +397,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
                 incarnation: &repo.incarnation(),
                 version: repo.record.change_version,
                 audience: ProjectionViewKey::Private,
+                feed: HistoryFeed::All,
                 before: None,
                 entry_source_id: None,
                 limit: 50
@@ -493,4 +522,100 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
             .unwrap()
             .is_some()
     );
+}
+
+#[tokio::test]
+async fn feed_filters_before_limit_and_binds_boundaries() {
+    use scope_domain::visibility_changes::{VisibilityChange, VisibilityChangeSet};
+    let (store, mut repo) = fixture(55);
+    for index in 0..60 {
+        let (old_visibility, new_visibility) = if index % 2 == 0 {
+            (Visibility::Public, Visibility::Private)
+        } else {
+            (Visibility::Private, Visibility::Public)
+        };
+        repo.visibility_change_sets.push(
+            VisibilityChangeSet::new(
+                format!("visibility_{index}"),
+                Some("logical_54".into()),
+                None,
+                "history_owner".into(),
+                vec![VisibilityChange {
+                    path: repo.graph.commits[0].changes[0].path.clone(),
+                    old_visibility,
+                    new_visibility,
+                    current_content: repo.graph.commits[0].changes[0].new_content.clone(),
+                }],
+            )
+            .unwrap(),
+        );
+    }
+    repo.record.change_version += 1;
+    store
+        .repositories()
+        .replace_repository_for_tests(repo.clone())
+        .await
+        .unwrap();
+    let incarnation = repo.incarnation();
+    let query = |feed, before| RepositoryHistoryQuery {
+        incarnation: &incarnation,
+        version: repo.record.change_version,
+        audience: ProjectionViewKey::Private,
+        feed,
+        before,
+        entry_source_id: None,
+        limit: 50,
+    };
+    let first = store
+        .repositories()
+        .repository_history_page(query(HistoryFeed::Updates, None))
+        .await
+        .unwrap();
+    assert_eq!(first.view.entries.len(), 50);
+    assert_eq!(first.view.entries[0].source_id, "logical_54");
+    assert!(
+        first
+            .view
+            .entries
+            .iter()
+            .all(|entry| entry.kind != scope_domain::history::HistoryEntryKind::VisibilityChange)
+    );
+    let next = store
+        .repositories()
+        .repository_history_page(query(HistoryFeed::Updates, first.next_boundary.as_ref()))
+        .await
+        .unwrap();
+    assert_eq!(next.view.entries.len(), 5);
+    assert!(next.next_boundary.is_none());
+    let all = store
+        .repositories()
+        .repository_history_page(query(HistoryFeed::All, None))
+        .await
+        .unwrap();
+    assert_eq!(all.view.entries.len(), 50);
+    assert!(
+        all.view
+            .entries
+            .iter()
+            .all(|entry| entry.kind == scope_domain::history::HistoryEntryKind::VisibilityChange)
+    );
+    assert_ne!(all.view.generation, first.view.generation);
+    let mismatch = store
+        .repositories()
+        .repository_history_page(query(HistoryFeed::All, first.next_boundary.as_ref()))
+        .await
+        .err()
+        .unwrap();
+    assert!(mismatch.message.contains("history changed"));
+    let detail = store
+        .repositories()
+        .repository_history_page(RepositoryHistoryQuery {
+            entry_source_id: Some("visibility_59"),
+            ..query(HistoryFeed::All, None)
+        })
+        .await
+        .unwrap();
+    assert_eq!(detail.view.entries[0].source_id, "visibility_59");
+    // The database enforces the domain's one-row-per-action invariant.
+    assert!(store.db.execute_unprepared("INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload) SELECT repo_id, audience, position + 10000, source_id, payload FROM scope_repository_history_entries LIMIT 1").await.is_err());
 }

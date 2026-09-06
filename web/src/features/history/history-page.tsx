@@ -1,15 +1,17 @@
 import type {
-  CommitDetail,
   CommitFile,
-  HistoryEntryDetail,
   HistoryEntrySummary,
+  HistoryEntryDetail,
   HistoryPage as HistoryPageResponse,
   ProjectionPreviewAudience,
   RepoParams,
 } from '@/api/types'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { AudienceToggle } from '@/features/history/history-audience-toggle'
-import { CommitDetailPanel } from '@/features/history/history-commit-detail'
+import { HistoryEntryDetailPanel } from './history-entry-detail'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Button } from '@/components/ui/button'
+import type { HistoryVisibilityChange } from './history-visibility-changes'
 import { HistoryEntryList } from '@/features/history/history-entry-list'
 import {
   appendHistoryPage,
@@ -29,11 +31,10 @@ import {
 } from '@/features/history/history-resource-cache'
 import {
   resourceToDiffState,
-  type CommitDetailState,
   type CommitFileDiffState,
 } from '@/features/history/history-state'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
-import { useCachedResource, type CachedResource } from '@/lib/use-cached-resource'
+import { useCachedResource } from '@/lib/use-cached-resource'
 import {
   loadHistoryEntry,
   loadHistoryEntryFileDiff,
@@ -41,13 +42,16 @@ import {
 } from '@/routes/-repo-history-actions'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useCallback, useState } from 'react'
-import { historySelectedFilePath } from './history-selection'
+import { historyFileSelection } from './history-selection'
 
 type HistoryPageProps = {
   initialPage: HistoryPageResponse
+  initialEntry: HistoryEntryDetail | null
   params: RepoParams
   search: {
     audience?: ProjectionPreviewAudience
+    feed?: 'updates' | 'all'
+    visibility_change?: string
     entry?: string
     path?: string
   }
@@ -58,7 +62,11 @@ export function HistoryPage(props: HistoryPageProps) {
     audience,
     availableAudiences,
     closeDiff,
-    detailState,
+    entryResource,
+    feed,
+    selectFeed,
+    selectVisibility,
+    selectedVisibilityId,
     entries,
     fileDiffState,
     loadOlder,
@@ -69,15 +77,12 @@ export function HistoryPage(props: HistoryPageProps) {
     selectAudience,
     selectEntry,
     selectFile,
-    selectedDetail,
     selectedEntryId,
     selectedFilePath,
     showLoadOlder,
     diffIdentity,
     saveDiffScroll,
   } = useHistoryPageModel(props)
-
-  const [updatesOpen, setUpdatesOpen] = useState(false)
 
   return (
     <WorkbenchPane>
@@ -89,58 +94,54 @@ export function HistoryPage(props: HistoryPageProps) {
             onSelect={selectAudience}
           />
         ) : undefined}
-        summary={`${historySummary(entries, showLoadOlder)}${selectedDetail ? ` · ${historyDetailCountLabel(selectedDetail)}` : ''}`}
+        summary={historySummary(entries, showLoadOlder)}
         title="history"
       />
       <section className="border-t border-border">
+        <div className="border-b border-border px-5 py-3 sm:px-6">
+          <ToggleGroup type="single" value={feed} onValueChange={(value) => {
+            if (value === 'updates' || value === 'all') selectFeed(value)
+          }} aria-label="History activity">
+            <ToggleGroupItem value="updates">Pushes &amp; merges</ToggleGroupItem>
+            <ToggleGroupItem value="all">All activity</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
         {entries.length === 0 && !selectedEntryId ? (
           <div className="px-5 py-12 text-center sm:px-6">
-            <h2 className="text-sm font-semibold">No updates yet</h2>
+            <h2 className="text-sm font-semibold">{feed === 'updates' ? 'No pushes or merges yet' : 'No activity yet'}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              History appears here after Scope applies an update.
+              {feed === 'updates' ? 'Visibility changes appear in All activity.' : 'History appears here after Scope applies an update.'}
             </p>
+            {feed === 'updates' ? <Button className="mt-3" onClick={() => selectFeed('all')} variant="secondary" size="sm">All activity</Button> : null}
           </div>
         ) : (
           <div>
-            <details
-              className="border-b border-border"
-              open={updatesOpen}
-              onToggle={(event) => setUpdatesOpen(event.currentTarget.open)}
-            >
-              <summary className="cursor-pointer px-5 py-3 text-sm font-medium sm:px-6">
-                updates <span className="font-normal text-muted-foreground">· {entries.length}</span>
-              </summary>
-              <div className="max-h-72 overflow-y-auto">
-                <HistoryEntryList
-                  entries={entries}
-                  loadOlderError={loadOlderError}
-                  loadingOlder={loadingOlder}
-                  onLoadOlder={loadOlder}
-                  onSelectEntry={(entry) => {
-                    selectEntry(entry)
-                    setUpdatesOpen(false)
-                  }}
-                  selectedEntryId={selectedEntryId}
-                  showLoadOlder={showLoadOlder}
-                />
-              </div>
-            </details>
-            <div className="min-w-0">
-              <CommitDetailPanel
-                commitState={detailState}
-                diffIdentity={diffIdentity}
-                diffScrollTop={readHistoryDiffScroll(diffIdentity)}
-                fileDiffState={fileDiffState}
-                onCloseDiff={closeDiff}
-                onDiffScroll={saveDiffScroll}
-                onRetryCommit={retryDetail}
-                onRetryDiff={retryDiff}
-                onSelectFile={selectFile}
-                selectedFilePath={selectedFilePath}
-                terminology="update"
-                visibilityChanges={selectedDetail?.visibility_changes}
+            <div aria-label="History updates" className="max-h-80 overflow-y-auto border-b border-border">
+              <HistoryEntryList
+                entries={entries}
+                loadOlderError={loadOlderError}
+                loadingOlder={loadingOlder}
+                onLoadOlder={loadOlder}
+                onSelectEntry={selectEntry}
+                selectedEntryId={selectedEntryId}
+                showLoadOlder={showLoadOlder}
               />
             </div>
+            <HistoryEntryDetailPanel
+              key={selectedEntryId}
+              resource={entryResource}
+              diffIdentity={diffIdentity}
+              diffScrollTop={readHistoryDiffScroll(diffIdentity)}
+              fileDiffState={fileDiffState}
+              onCloseDiff={closeDiff}
+              onDiffScroll={saveDiffScroll}
+              onRetryDetail={retryDetail}
+              onRetryDiff={retryDiff}
+              onSelectFile={selectFile}
+              onSelectVisibility={selectVisibility}
+              selectedFilePath={selectedFilePath}
+              selectedVisibilityId={selectedVisibilityId}
+            />
           </div>
         )}
       </section>
@@ -148,7 +149,7 @@ export function HistoryPage(props: HistoryPageProps) {
   )
 }
 
-function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) {
+function useHistoryPageModel({ initialPage, initialEntry, params, search }: HistoryPageProps) {
   const navigate = useNavigate()
   const locationKey = useLocation({ select: (location) => location.state.__TSR_key })
   const [diffSelection, setDiffSelection] = useState({ locationKey, dismissed: false })
@@ -162,6 +163,7 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
   }))
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [loadOlderError, setLoadOlderError] = useState<string | null>(null)
+  const feed = initialPage.feed
   const audience = initialPage.audience
   const availableAudiences: ProjectionPreviewAudience[] = repo.access.can_read_private_files
     ? ['private', 'public']
@@ -177,7 +179,9 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
       })
     : null
   const loadSelectedEntry = useCallback(
-    (signal: AbortSignal) => loadHistoryEntry({
+    (signal: AbortSignal) => initialEntry?.source_id === selectedEntryId
+      ? Promise.resolve(initialEntry)
+      : loadHistoryEntry({
       data: {
         audience,
         entry: selectedEntryId ?? '',
@@ -186,7 +190,7 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
       },
       signal,
     }),
-    [audience, params.owner, params.repo, selectedEntryId],
+    [audience, initialEntry, params.owner, params.repo, selectedEntryId],
   )
   const entryResource = useCachedResource({
     fallbackError: 'This history update is unavailable.',
@@ -197,19 +201,17 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
     write: writeHistoryEntryCache,
   })
   const selectedEntry = entryResource.value
-  const selectedFilePath = historySelectedFilePath(
-    search.path,
-    selectedEntry?.files,
+  const { path: selectedFilePath, file: selectedFile, visibilityId: selectedVisibilityId } = historyFileSelection(
+    search,
+    selectedEntry,
     diffSelection.locationKey === locationKey && diffSelection.dismissed,
   )
-  const selectedFile = selectedEntry?.files.find(
-    (file) => file.path === selectedFilePath,
-  ) ?? null
   const diffIdentity = selectedEntryId && selectedFile
     ? historyEntryDiffCacheKey({
         audience,
         entry: selectedEntryId,
         generation: initialPage.generation,
+        visibilityChange: selectedVisibilityId,
         newOid: selectedFile.new_oid,
         oldOid: selectedFile.old_oid,
         path: selectedFile.path,
@@ -224,11 +226,12 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
         entry: selectedEntryId ?? '',
         owner: params.owner,
         path: selectedFilePath ?? '',
+        visibility_change: selectedVisibilityId,
         repo: params.repo,
       },
       signal,
     }),
-    [audience, params.owner, params.repo, selectedEntryId, selectedFilePath],
+    [audience, params.owner, params.repo, selectedEntryId, selectedFilePath, selectedVisibilityId],
   )
   const diffResource = useCachedResource({
     fallbackError: 'This file diff is unavailable.',
@@ -238,15 +241,15 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
     read: readHistoryDiffCache,
     write: writeHistoryDiffCache,
   })
-  const detailState = historyEntryToCommitState(entryResource, initialPage)
   const fileDiffState: CommitFileDiffState =
     selectedFilePath && selectedEntry && !selectedFile
-      ? { diff: null, error: 'This file is not part of the selected update.', status: 'failed' }
+      ? { diff: null, error: selectedVisibilityId ? 'This visibility preview is unavailable.' : 'This file is not part of the selected update.', status: 'failed' }
       : resourceToDiffState(diffResource)
 
   const replaceHistorySelection = useCallback((
     nextEntryId: string | null,
     nextPath: string | null = null,
+    visibilityId: string | null = null,
   ) => {
     return navigate({
       params,
@@ -256,6 +259,7 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
         ...current,
         entry: nextEntryId ?? undefined,
         path: nextPath ?? undefined,
+        visibility_change: visibilityId ?? undefined,
       }),
       to: '/$owner/$repo/history',
     })
@@ -268,7 +272,7 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
     setLoadOlderError(null)
     try {
       const page = await loadHistoryPage({
-        data: { audience, before, owner: params.owner, repo: params.repo },
+        data: { audience, feed, before, owner: params.owner, repo: params.repo },
       })
       setLoaded((current) => appendHistoryPage(current, page, before))
     } catch (error) {
@@ -276,7 +280,7 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
     } finally {
       setLoadingOlder(false)
     }
-  }, [audience, loaded.next_cursor, loadingOlder, params.owner, params.repo])
+  }, [audience, feed, loaded.next_cursor, loadingOlder, params.owner, params.repo])
 
   const closeDiff = useCallback(
     () => setDiffSelection({ locationKey, dismissed: true }),
@@ -287,10 +291,25 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
       params,
       replace: true,
       resetScroll: false,
-      search: { audience: nextAudience },
+      search: { audience: nextAudience, feed },
       to: '/$owner/$repo/history',
     }),
-    [navigate, params],
+    [feed, navigate, params],
+  )
+  const selectFeed = useCallback(
+    (nextFeed: 'updates' | 'all') => navigate({
+      params, replace: true, resetScroll: false,
+      search: { audience, feed: nextFeed },
+      to: '/$owner/$repo/history',
+    }),
+    [audience, navigate, params],
+  )
+  const selectVisibility = useCallback(
+    (change: HistoryVisibilityChange) => {
+      setDiffSelection({ locationKey, dismissed: false })
+      return replaceHistorySelection(selectedEntryId, change.path, change.id)
+    },
+    [locationKey, replaceHistorySelection, selectedEntryId],
   )
   const selectEntry = useCallback(
     (entry: HistoryEntrySummary) => {
@@ -315,7 +334,11 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
     audience,
     availableAudiences,
     closeDiff,
-    detailState,
+    entryResource,
+    feed,
+    selectFeed,
+    selectVisibility,
+    selectedVisibilityId,
     diffIdentity,
     entries: loaded.entries,
     fileDiffState,
@@ -330,51 +353,8 @@ function useHistoryPageModel({ initialPage, params, search }: HistoryPageProps) 
     selectAudience,
     selectEntry,
     selectFile,
-    selectedDetail: selectedEntry,
     selectedEntryId,
     selectedFilePath,
     showLoadOlder: loaded.next_cursor !== null,
   }
-}
-
-function historyEntryToCommitState(
-  resource: CachedResource<HistoryEntryDetail>,
-  page: HistoryPageResponse,
-): CommitDetailState {
-  if (resource.status === 'loaded') {
-    return {
-      commit: {
-        audience: page.audience,
-        author: resource.value.author,
-        change_count: resource.value.file_change_count,
-        files_truncated: false,
-        files: resource.value.files,
-        logical_commit_id: resource.value.source_id,
-        message: resource.value.message,
-        parent_projected_id: resource.value.parent_id,
-        projected_id: resource.value.id,
-        repo_id: page.repo_id,
-        view_key: page.view_key,
-      } satisfies CommitDetail,
-      error: null,
-      status: 'loaded',
-    }
-  }
-  if (resource.status === 'failed') {
-    return { commit: null, error: resource.error, status: 'failed' }
-  }
-  return { commit: null, error: null, status: resource.status }
-}
-
-function historyDetailCountLabel(detail: HistoryEntryDetail) {
-  const visibilityCount = detail.visibility_summary.made_public_count
-    + detail.visibility_summary.made_private_count
-  const parts = []
-  if (detail.kind !== 'visibility_change' && detail.file_change_count > 0) {
-    parts.push(`${detail.file_change_count} file ${detail.file_change_count === 1 ? 'change' : 'changes'}`)
-  }
-  if (visibilityCount > 0) {
-    parts.push(`${visibilityCount} visibility ${visibilityCount === 1 ? 'change' : 'changes'}`)
-  }
-  return parts.join(' · ')
 }

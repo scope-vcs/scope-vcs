@@ -436,6 +436,7 @@ mod tests {
         let native = ProjectedCommit {
             projected_id: native_oid.clone(),
             logical_commit_id: "native".to_string(),
+            visibility_change_set_id: None,
             parent_projected_id: Some("base".to_string()),
             author: None,
             message: "Native projection".to_string(),
@@ -551,6 +552,7 @@ mod tests {
                 ProjectedCommit {
                     projected_id: merge_oid.to_string(),
                     logical_commit_id: "native-merge".to_string(),
+                    visibility_change_set_id: None,
                     parent_projected_id: Some(base_oid.clone()),
                     author: None,
                     message: "Native merge".to_string(),
@@ -629,6 +631,7 @@ mod tests {
                 ProjectedCommit {
                     projected_id: "1111111111111111111111111111111111111111".to_string(),
                     logical_commit_id: "native".to_string(),
+                    visibility_change_set_id: None,
                     parent_projected_id: Some("base".to_string()),
                     author: None,
                     message: "Native".to_string(),
@@ -675,6 +678,7 @@ mod tests {
                 ProjectedCommit {
                     projected_id: skipped_head.to_string(),
                     logical_commit_id: "native".to_string(),
+                    visibility_change_set_id: None,
                     parent_projected_id: Some("second".to_string()),
                     author: None,
                     message: "Native".to_string(),
@@ -722,6 +726,7 @@ mod tests {
         ProjectedCommit {
             projected_id: id.to_string(),
             logical_commit_id: id.to_string(),
+            visibility_change_set_id: None,
             parent_projected_id: parent.map(str::to_string),
             author: None,
             message: message.to_string(),

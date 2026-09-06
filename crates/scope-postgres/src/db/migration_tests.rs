@@ -12,7 +12,7 @@ mod git_compaction_scheduler;
 mod git_pack_spans;
 mod git_segment_streaming_v2;
 mod git_segment_streaming_v2_support;
-mod history_entry_positions;
+mod history_action_feed;
 mod logical_run_sources;
 mod maintenance_cutover;
 mod repository_incarnations;
@@ -68,6 +68,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0036_request_queue_indexes",
     "m0037_repository_history_views",
     "m0038_history_entry_positions",
+    "m0039_history_action_feed",
 ];
 
 pub(super) async fn isolated_database() -> (
