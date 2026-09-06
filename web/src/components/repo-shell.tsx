@@ -33,15 +33,26 @@ export function RepoShell({
       active: active === section.key,
       label: section.label,
       node: (
-        <Link
-          activeOptions={{ exact: section.key === 'code' }}
-          aria-current={active === section.key ? 'page' : undefined}
-          className="flex h-full items-center px-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:px-3"
-          params={params}
-          to={section.to}
-        >
-          {section.label}
-        </Link>
+        <>
+          <Link
+            activeOptions={{ exact: section.key === 'code' }}
+            aria-current={active === section.key ? 'page' : undefined}
+            aria-describedby={section.key === 'requests' && repo.open_request_count > 0 ? 'repo-open-requests' : undefined}
+            className="flex h-full items-center gap-1.5 px-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:px-3"
+            params={params}
+            to={section.to}
+          >
+            {section.label}
+            {section.key === 'requests' && repo.open_request_count > 0 && (
+              <span aria-hidden="true" className="text-[11px] tabular-nums text-muted-foreground">
+                {repo.open_request_count}
+              </span>
+            )}
+          </Link>
+          {section.key === 'requests' && repo.open_request_count > 0 && (
+            <span hidden id="repo-open-requests">{repo.open_request_count} open requests</span>
+          )}
+        </>
       ),
     }),
   )
@@ -58,12 +69,6 @@ export function RepoShell({
                   label: 'Awaiting first push',
                   semantic: 'warning' as const,
                 }]),
-            ...(repo.open_request_count > 0
-              ? [{
-                  id: 'requests',
-                  label: `${repo.open_request_count} open`,
-                }]
-              : []),
           ]}
           items={items}
           repository={params}

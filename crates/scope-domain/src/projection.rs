@@ -45,6 +45,8 @@ pub struct FileChange {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogicalCommit {
+    /// Source Git head committer time, when captured at import.
+    pub occurred_at_unix: Option<i64>,
     pub id: String,
     pub origin: LogicalCommitOrigin,
     pub author_id: String,

@@ -283,6 +283,7 @@ async fn private_upload_pack_without_credentials_challenges_for_auth() {
         repo.repo_config = repo_config(Visibility::Private);
         repo.policy = Policy::new(Visibility::Private);
         repo.graph.commits.push(LogicalCommit {
+            occurred_at_unix: None,
             id: "rv1".to_string(),
             origin: LogicalCommitOrigin::CanonicalPush {
                 source_head_oid: "rv1".to_string(),

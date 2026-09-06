@@ -20,6 +20,7 @@ fn history_commit(
     changes: Vec<FileChange>,
 ) -> LogicalCommit {
     LogicalCommit {
+        occurred_at_unix: None,
         id: id.into(),
         origin: LogicalCommitOrigin::CanonicalPush {
             source_head_oid: id.to_string(),
@@ -67,6 +68,72 @@ async fn first_history_source_id(state: AppState, audience: &str) -> String {
         .as_str()
         .unwrap()
         .to_string()
+}
+
+#[tokio::test]
+async fn latest_history_metadata_and_revision_ignore_private_only_activity() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let mut repo = paged_history_repo(&state, 1);
+    repo.graph.commits[0].occurred_at_unix = Some(1_700_000_000);
+    let public_blob_oid = repo.graph.commits[0].changes[0]
+        .new_content
+        .as_ref()
+        .unwrap()
+        .git_oid
+        .clone();
+    let expected_head = scope_git::projection_head_oid(&scope_domain::projection::project_graph(
+        &repo.graph,
+        &repo.visibility_change_sets,
+        scope_domain::projection::ProjectionViewKey::Public,
+    ))
+    .unwrap()
+    .unwrap();
+    replace_test_repo(&state, repo.clone()).await;
+    let before = history_get(
+        state.clone(),
+        "/v1/repos/owner/repo/history?feed=all",
+        false,
+    )
+    .await;
+    assert_eq!(before.status(), StatusCode::OK);
+    let before = response_json(before).await;
+    assert_eq!(before["entries"][0]["occurred_at_unix"], 1_700_000_000_i64);
+    assert_eq!(before["head_oid"], expected_head);
+    assert_ne!(before["head_oid"], public_blob_oid);
+
+    let mut private = history_commit(
+        "private-update",
+        None,
+        "Secret change",
+        vec![history_change(
+            "/secret.txt",
+            Visibility::Private,
+            None,
+            Some(source_blob(&state, "secret")),
+        )],
+    );
+    private.author_id = "private-author".into();
+    private.occurred_at_unix = Some(1_800_000_000);
+    repo.graph.commits.push(private);
+    repo.record.change_version += 1;
+    replace_test_repo(&state, repo).await;
+
+    let public = history_get(
+        state.clone(),
+        "/v1/repos/owner/repo/history?feed=all",
+        false,
+    )
+    .await;
+    assert_eq!(public.status(), StatusCode::OK);
+    assert_eq!(response_json(public).await, before);
+    let owner = history_get(state, "/v1/repos/owner/repo/history?feed=all", true).await;
+    assert_eq!(owner.status(), StatusCode::OK);
+    let owner = response_json(owner).await;
+    assert_eq!(owner["entries"][0]["message"], "Secret change");
+    assert_eq!(owner["entries"][0]["author"], "private-author");
+    assert_eq!(owner["entries"][0]["occurred_at_unix"], 1_800_000_000_i64);
+    assert_ne!(owner["head_oid"], before["head_oid"]);
 }
 
 #[tokio::test]
@@ -651,6 +718,7 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
     let mut repo = paged_history_repo(&state, 51);
     repo.visibility_change_sets
         .push(scope_domain::visibility_changes::VisibilityChangeSet {
+            occurred_at_unix: None,
             id: "visibility-after-rv1".into(),
             anchor_commit_id: Some("rv1".into()),
             source_update_id: None,
@@ -784,6 +852,7 @@ async fn history_entries_report_their_update_kind() {
                 )],
             ),
             LogicalCommit {
+                occurred_at_unix: None,
                 id: "rv2".into(),
                 origin: LogicalCommitOrigin::PrivateRequestMerge {
                     request_id: "request-1".into(),
@@ -803,6 +872,7 @@ async fn history_entries_report_their_update_kind() {
     );
     repo.visibility_change_sets
         .push(scope_domain::visibility_changes::VisibilityChangeSet {
+            occurred_at_unix: None,
             id: "visibility-1".into(),
             anchor_commit_id: Some("rv2".into()),
             source_update_id: None,

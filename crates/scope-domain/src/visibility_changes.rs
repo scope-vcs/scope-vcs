@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisibilityChangeSet {
+    pub occurred_at_unix: Option<i64>,
     pub id: String,
     pub anchor_commit_id: Option<String>,
     pub source_update_id: Option<String>,
@@ -51,6 +52,7 @@ impl VisibilityChangeSet {
         }
 
         Ok(Self {
+            occurred_at_unix: None,
             id,
             anchor_commit_id,
             source_update_id,

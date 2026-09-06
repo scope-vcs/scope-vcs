@@ -39,6 +39,10 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
             )
             .unwrap(),
         );
+        repo.visibility_change_sets
+            .last_mut()
+            .unwrap()
+            .occurred_at_unix = Some(1_700_000_000 + index);
     }
     replace_test_repo(&state, repo).await;
     for audience in ["public", "private"] {
@@ -80,6 +84,14 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         assert_eq!(all.status(), StatusCode::OK);
         let all = response_json(all).await;
         assert_eq!(all["feed"], "all");
+        assert_eq!(all["entries"][0]["source_id"], "visibility_59");
+        if audience == "private" {
+            assert_eq!(all["entries"][0]["occurred_at_unix"], 1_700_000_059_i64);
+            assert_eq!(all["entries"][0]["author"], test_owner_id());
+        } else {
+            assert!(all["entries"][0]["occurred_at_unix"].is_null());
+            assert!(all["entries"][0]["author"].is_null());
+        }
         assert!(
             all["entries"]
                 .as_array()

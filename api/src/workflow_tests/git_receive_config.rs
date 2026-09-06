@@ -100,6 +100,7 @@ async fn push_only_member_cannot_restore_stale_public_config_after_visibility_ch
         &test_owner_id(),
         std::slice::from_ref(&readme_path),
         Visibility::Private,
+        None,
     )
     .unwrap();
     assert_eq!(

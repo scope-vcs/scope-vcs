@@ -35,7 +35,8 @@ use scope_api_contract::{
     RequestRatingParticipantResponse, RequestRatingResponse, RequestRatingsResponse,
     RequestRevisionCommitResponse, RequestRevisionInspectionState, RequestRevisionListResponse,
     RequestRevisionResponse, RequestState, RequestSummaryResponse, RunChangeKind, RunResponse,
-    RunState, SessionIdentity, StartRequestRequest, SubmitRequestRequest, UserResponse, Visibility,
+    RunState, SessionIdentity, StartRequestRequest, SubmitRequestRequest,
+    UpdateRepoMetadataRequest, UserResponse, Visibility,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 use ts_rs::TS;
@@ -112,6 +113,7 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         OwnerProfileResponse,
         RepoRequestPermissionsResponse,
         CreateRepoRequest,
+        UpdateRepoMetadataRequest,
         CreateRepoResponse,
         DeleteRepoResponse,
         CreatePushIntentRequest,
@@ -314,6 +316,7 @@ fn api_route_template_declarations() -> String {
         ("ownerRepositories", routes::OWNER_REPOSITORIES),
         ("repo", routes::REPO),
         ("repoConfig", routes::REPO_CONFIG),
+        ("repoMetadata", routes::REPO_METADATA),
         ("repoRunWorkflows", routes::REPO_RUN_WORKFLOWS),
         ("repoRuns", routes::REPO_RUNS),
         ("repoRunDetail", routes::REPO_RUN_DETAIL),

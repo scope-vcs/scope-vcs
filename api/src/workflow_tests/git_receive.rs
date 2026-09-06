@@ -54,12 +54,33 @@ async fn published_receive_pack_push_applies_from_seeded_git_repo() {
 
     assert_eq!(update.branch, format!("refs/heads/{DEFAULT_GIT_BRANCH}"));
     assert_eq!(update.message, "update from git");
+    let expected_commit_time: i64 = git_stdout_text(
+        &clone,
+        &["log", "-1", "--format=%ct"],
+        "read source commit time",
+    )
+    .unwrap()
+    .trim()
+    .parse()
+    .unwrap();
+    assert_eq!(update.occurred_at_unix, Some(expected_commit_time));
     assert_eq!(update.durable_objects.len(), 1);
     assert!(update.durable_objects.iter().all(|object| !matches!(
         object.content_ref,
         scope_domain::content_ref::ContentRef::GitBundleSha256(_)
     )));
     persist_test_update(&state, update).await.unwrap();
+    let persisted = state
+        .metadata
+        .repositories()
+        .repository(TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        persisted.graph.commits.last().unwrap().occurred_at_unix,
+        Some(expected_commit_time)
+    );
     assert_eq!(
         live_file_content(&state, "/README.md").await.as_deref(),
         Some("staged readme")

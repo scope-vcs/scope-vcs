@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 import type { RequestActorSummary } from './request-discussion-types'
-import { RequestTimestamp } from './request-timestamp'
+import { RelativeTimestamp } from '@/components/timestamp'
 
 /**
  * Author, time, and state for one discussion or reply. Threads and replies
@@ -25,7 +25,7 @@ export function RequestDiscussionByline({
       >
         {author.handle}
       </span>
-      <RequestTimestamp
+      <RelativeTimestamp
         className="whitespace-nowrap text-[13px] text-muted-foreground"
         value={createdAtUnix}
       />

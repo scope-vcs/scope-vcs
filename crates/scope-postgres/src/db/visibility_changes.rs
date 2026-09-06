@@ -45,7 +45,14 @@ impl RepositoryStore {
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
         let mut repo = repository_from_model(&tx, repo).await?;
         let before = repo.clone();
-        let mutation = set_visibility(&mut repo, &user_id, &update_paths, visibility)?;
+        let occurred_at_unix = entities::u64_to_i64(now_unix, "visibility change time")?;
+        let mutation = set_visibility(
+            &mut repo,
+            &user_id,
+            &update_paths,
+            visibility,
+            Some(occurred_at_unix),
+        )?;
         save_repo_mutation(
             &tx,
             &before,

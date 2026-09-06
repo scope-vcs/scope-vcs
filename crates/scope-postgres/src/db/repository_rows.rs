@@ -103,6 +103,8 @@ where
     }
     set_if_changed!(owner_handle, before_row.owner_handle, row.owner_handle);
     set_if_changed!(name, before_row.name, row.name);
+    set_if_changed!(description, before_row.description, row.description);
+    set_if_changed!(website_url, before_row.website_url, row.website_url);
     set_if_changed!(owner_user_id, before_row.owner_user_id, row.owner_user_id);
     set_if_changed!(
         publication_state,

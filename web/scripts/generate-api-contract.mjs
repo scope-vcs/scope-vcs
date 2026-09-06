@@ -103,6 +103,7 @@ function constrainIntegerFormats(value) {
 
   const limits = {
     int32: [-2_147_483_648, 2_147_483_647],
+    int64: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
     uint8: [0, 255],
     uint32: [0, 4_294_967_295],
     uint64: [0, Number.MAX_SAFE_INTEGER],

@@ -8,6 +8,10 @@ import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
 import { RepositoryCodeView } from './repository-code-view'
+import { RepositoryContext } from './repository-context'
+import { RepositoryLatestActivity } from './repository-latest-activity'
+import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
+import { displayRouteFilePath } from '@/lib/route-file'
 
 export function RepoDetailPage({
   content,
@@ -38,9 +42,17 @@ export function RepoDetailPage({
   selectedFileRetry: () => void
   selectedPath: string | null
 }) {
+  const workspaceTabs = useWorkspaceTabs({ activeId: selectedPath })
+
+  function selectResource(path: string) {
+    workspaceTabs.open(displayRouteFilePath(path), false)
+    onSelectFilePath(path)
+  }
+
   return (
     <WorkbenchPane>
       <WorkbenchBar
+        className="items-start border-b border-border"
         actions={(
           <>
             {content && repo.lifecycle_state === 'Ready' && (
@@ -57,11 +69,17 @@ export function RepoDetailPage({
             />
           </>
         )}
-        summary={content
-          ? `${content.files.length} ${content.files.length === 1 ? 'file' : 'files'}`
-          : contentLoading ? undefined : 'Files unavailable'}
+        summary={(
+          <RepositoryContext
+            content={content}
+            contentLoading={contentLoading}
+            onSelectFilePath={selectResource}
+            repo={repo}
+          />
+        )}
         title="Code"
       />
+      <RepositoryLatestActivity params={params} repo={repo} />
       <RepositoryCodeView
         content={content}
         contentError={contentError}
@@ -74,6 +92,7 @@ export function RepoDetailPage({
         selectedFileLoading={selectedFileLoading}
         selectedFileRetry={selectedFileRetry}
         selectedPath={selectedPath}
+        workspaceTabs={workspaceTabs}
       />
     </WorkbenchPane>
   )

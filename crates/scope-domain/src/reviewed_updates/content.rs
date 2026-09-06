@@ -28,6 +28,7 @@ pub struct ReviewedContentChange {
 
 #[derive(Clone, Debug)]
 pub struct ReviewedUpdateInput {
+    pub occurred_at_unix: Option<i64>,
     pub branch: String,
     pub author_id: String,
     pub message: String,
@@ -220,19 +221,20 @@ pub fn apply_reviewed_update_to_repo(
     let next_config = update.config.clone();
 
     if !visibility_changes.is_empty() {
-        repo.visibility_change_sets.push(
-            VisibilityChangeSet::new(
-                visibility_change_set_id(repo.record.change_version.saturating_add(1)),
-                after_commit_id,
-                Some(logical_id.clone()),
-                update.author_id.clone(),
-                visibility_changes,
-            )
-            .map_err(ReviewedUpdateError::Conflict)?,
-        );
+        let mut set = VisibilityChangeSet::new(
+            visibility_change_set_id(repo.record.change_version.saturating_add(1)),
+            after_commit_id,
+            Some(logical_id.clone()),
+            update.author_id.clone(),
+            visibility_changes,
+        )
+        .map_err(ReviewedUpdateError::Conflict)?;
+        set.occurred_at_unix = update.occurred_at_unix;
+        repo.visibility_change_sets.push(set);
     }
 
     repo.graph.commits.push(LogicalCommit {
+        occurred_at_unix: update.occurred_at_unix,
         id: logical_id,
         origin: LogicalCommitOrigin::CanonicalPush {
             source_head_oid: update.git_head.head_oid.clone(),
@@ -407,6 +409,7 @@ fn accept_content_update(
     };
     let logical_id = format!("{logical_prefix}_{}", update.git_head.head_oid);
     let logical_commit = LogicalCommit {
+        occurred_at_unix: update.occurred_at_unix,
         id: logical_id,
         origin,
         author_id: update.author_id,

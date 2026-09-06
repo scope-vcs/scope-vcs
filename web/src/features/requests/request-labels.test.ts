@@ -5,8 +5,8 @@ import {
   formatRelativeUnix,
   formatUnixDate,
   formatUnixDateUtc,
-  requestEventBody,
-} from './request-labels'
+} from '../../lib/date-format'
+import { requestEventBody } from './request-labels'
 
 test('request dates are stable across server and browser time zones', () => {
   assert.equal(formatUnixDate(0), 'Jan 01, 1970, 12:00 AM')

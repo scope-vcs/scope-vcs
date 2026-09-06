@@ -80,6 +80,7 @@ pub(crate) async fn get_history_page(
         &view,
         entries,
         next_cursor,
+        page.head_oid,
     )))
 }
 

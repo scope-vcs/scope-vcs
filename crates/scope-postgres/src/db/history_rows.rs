@@ -179,6 +179,7 @@ where
     for row in commits {
         if let Some(history) = histories.get_mut(&row.repo_id) {
             history.graph.commits.push(LogicalCommit {
+                occurred_at_unix: row.occurred_at_unix,
                 id: row.id.clone(),
                 origin: serde_json::from_value(row.origin).map_err(PostgresError::internal)?,
                 author_id: row.author_id,
@@ -228,6 +229,7 @@ where
         if let Some(history) = histories.get_mut(&row.repo_id) {
             let key = (row.repo_id.clone(), row.id.clone());
             history.visibility_change_sets.push(VisibilityChangeSet {
+                occurred_at_unix: row.occurred_at_unix,
                 id: row.id,
                 anchor_commit_id: row.anchor_commit_id,
                 source_update_id: row.source_update_id,
@@ -372,6 +374,7 @@ where
         .enumerate()
         .map(|(offset, commit)| {
             Ok(entities::logical_commit::Model {
+                occurred_at_unix: commit.occurred_at_unix,
                 id: commit.id.clone(),
                 repo_id: repo_id.to_string(),
                 ordinal: usize_to_i64(ordinal_offset + offset)?,
@@ -452,6 +455,7 @@ where
 {
     for (offset, set) in sets.iter().enumerate() {
         entities::visibility_change_set::Model {
+            occurred_at_unix: set.occurred_at_unix,
             repo_id: repo_id.to_string(),
             id: set.id.clone(),
             ordinal: usize_to_i64(ordinal_offset + offset)?,

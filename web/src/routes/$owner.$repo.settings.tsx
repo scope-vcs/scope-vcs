@@ -10,6 +10,8 @@ import {
   parseRepoParams,
   parseUpdateRepoMemberInput,
   updateRepoMemberForRequest,
+  updateRepoMetadataForRequest,
+  parseUpdateRepoMetadataInput,
 } from '@/api/repos'
 import { HttpError } from '@/api/client'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
@@ -43,6 +45,10 @@ const updateRepoMember = createServerFn({ method: 'POST' })
   .validator(parseUpdateRepoMemberInput)
   .handler(({ data }) => updateRepoMemberForRequest(data))
 
+const updateRepoMetadata = createServerFn({ method: 'POST' })
+  .validator(parseUpdateRepoMetadataInput)
+  .handler(({ data }) => updateRepoMetadataForRequest(data))
+
 const deleteRepoMember = createServerFn({ method: 'POST' })
   .validator(parseDeleteRepoMemberInput)
   .handler(({ data }) => deleteRepoMemberForRequest(data))
@@ -70,6 +76,7 @@ function RepoSettingsRoute() {
       initialCollaboration={collaboration}
       params={params}
       updateMember={(data) => updateRepoMember({ data })}
+      updateMetadata={(data) => updateRepoMetadata({ data })}
     />
   )
 }

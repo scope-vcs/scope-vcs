@@ -24,6 +24,17 @@ use scope_object_store::{ContentObjectKind, content_object_for_bytes, object_key
 use scope_postgres::db::ContentRefFence;
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
+pub(super) fn pushed_commit_time(staging_repo: &FsPath, head_oid: &str) -> Result<i64, ApiError> {
+    git_stdout_text(
+        staging_repo,
+        &["log", "-1", "--format=%ct", head_oid],
+        "reading pushed commit time",
+    )?
+    .trim()
+    .parse()
+    .map_err(|_| ApiError::internal_message("invalid pushed Git commit time"))
+}
+
 pub(super) fn pushed_commit_message(
     staging_repo: &FsPath,
     head_oid: &str,

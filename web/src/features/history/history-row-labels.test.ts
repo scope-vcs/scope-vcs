@@ -51,6 +51,7 @@ test('uses singular file wording', () => {
 test('labels repository history entries by their actual update kind', () => {
   const base = {
     author: null,
+    occurred_at_unix: null,
     file_change_count: 2,
     id: 'entry-1',
     message: 'Ship the history page',

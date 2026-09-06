@@ -5,10 +5,10 @@ import {
   RELATIVE_HORIZON_SECONDS,
   formatUnixDate,
   formatUnixDateUtc,
-} from './request-labels'
+} from '@/lib/date-format'
 
-/** Relative request time with the reader's absolute local time on hover. */
-export function RequestTimestamp({
+/** Relative time with the reader's absolute local time on hover. */
+export function RelativeTimestamp({
   className,
   value,
 }: {
@@ -18,6 +18,7 @@ export function RequestTimestamp({
   const hydrated = useHydrated()
   const nowUnix = useUnixClock()
   const date = new Date(value * 1_000)
+  if (Number.isNaN(date.getTime())) return null
 
   return (
     <time
@@ -35,9 +36,9 @@ export function RequestTimestamp({
 }
 
 /**
- * Absolute request time that switches from deterministic UTC to browser local.
+ * Absolute time that switches from deterministic UTC to browser local.
  */
-export function RequestAbsoluteTimestamp({
+export function AbsoluteTimestamp({
   className,
   prefix = '',
   compact = false,
@@ -58,6 +59,7 @@ export function RequestAbsoluteTimestamp({
     )
   }
   const date = new Date(value * 1_000)
+  if (Number.isNaN(date.getTime())) return null
 
   return (
     <time

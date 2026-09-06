@@ -13,7 +13,7 @@ import {
   sameUtcDate,
   shouldGroupReplies,
 } from './request-discussion-reply-presentation'
-import { RequestTimestamp } from './request-timestamp'
+import { RelativeTimestamp } from '@/components/timestamp'
 import type { RequestDiscussionReplyView } from './request-discussion-types'
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
@@ -124,7 +124,7 @@ function DiscussionReply({
       <div className="min-w-0">
         {grouped ? (
           <span className="sr-only">
-            {reply.author.handle}, <RequestTimestamp value={reply.created_at_unix} />
+            {reply.author.handle}, <RelativeTimestamp value={reply.created_at_unix} />
           </span>
         ) : null}
         {!grouped ? (

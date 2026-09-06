@@ -71,6 +71,8 @@ pub struct RepoRecord {
     pub owner_handle: String,
     pub name: String,
     pub owner_user_id: String,
+    pub description: Option<String>,
+    pub website_url: Option<String>,
     pub lifecycle_state: RepoLifecycleState,
     pub change_version: u64,
 }
@@ -109,6 +111,8 @@ impl Repository {
                 owner_handle: owner.handle.clone(),
                 name,
                 owner_user_id: owner.id.clone(),
+                description: None,
+                website_url: None,
                 lifecycle_state: RepoLifecycleState::AwaitingFirstPush,
                 change_version: 1,
             },

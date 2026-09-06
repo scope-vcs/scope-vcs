@@ -13,6 +13,7 @@ export {
   loadRepoCollaborationForRequest,
   loadRepoInviteForRequest,
   updateRepoMemberForRequest,
+  updateRepoMetadataForRequest,
 } from './repo-settings'
 export {
   parseCreateRepoInviteInput,
@@ -20,6 +21,7 @@ export {
   parseDeleteRepoMemberInput,
   parseRepoInviteTokenInput,
   parseUpdateRepoMemberInput,
+  parseUpdateRepoMetadataInput,
 } from './repo-inputs'
 export {
   loadRequestForRequest,

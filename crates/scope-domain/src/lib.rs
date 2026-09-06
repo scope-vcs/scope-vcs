@@ -11,6 +11,7 @@ pub mod repo_actions;
 pub mod repo_collaboration;
 pub mod repo_config;
 pub mod repo_control;
+pub mod repo_metadata;
 pub mod repo_visibility;
 pub mod repository;
 #[cfg(test)]

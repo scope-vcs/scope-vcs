@@ -13,9 +13,24 @@ import type {
   RepoMember,
   RepoParams,
   UpdateRepoMemberInput,
+  UpdateRepoMetadataInput,
+  RepoSummary,
 } from './types'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import { apiValidators } from './validators.generated'
+
+export async function updateRepoMetadataForRequest(
+  data: UpdateRepoMetadataInput,
+): Promise<RepoSummary> {
+  return createApiClient().patch(
+    repoRoute(ApiRouteTemplates.repoMetadata, data),
+    apiValidators.RepoSummaryResponse,
+    {
+      auth: 'required',
+      body: { description: data.description, website_url: data.website_url },
+    },
+  )
+}
 
 export async function deleteRepoForRequest(data: DeleteRepoInput) {
   return createApiClient().delete(

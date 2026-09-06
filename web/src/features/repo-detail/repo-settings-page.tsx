@@ -10,6 +10,7 @@ import type {
   RepoParams,
   RepoSummary,
   UpdateRepoMemberInput,
+  UpdateRepoMetadataInput,
 } from '@/api/types'
 import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
@@ -22,6 +23,7 @@ import {
   RepositoryMembersSection,
 } from './repo-members-section'
 import { SettingsSections } from './repo-settings-sections'
+import { RepositoryMetadataForm } from './repository-metadata-form'
 import { useRepoLayout } from './repo-layout-context'
 import {
   initialRepoSettingsPageState,
@@ -36,6 +38,7 @@ export function RepoSettingsPage({
   initialCollaboration,
   params,
   updateMember,
+  updateMetadata,
 }: {
   createInvite: (
     input: CreateRepoInviteInput,
@@ -46,6 +49,7 @@ export function RepoSettingsPage({
   initialCollaboration: RepoCollaboration | null
   params: RepoParams
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepoMember>
+  updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummary>
 }) {
   const navigate = useNavigate()
   const router = useRouter()
@@ -116,6 +120,13 @@ export function RepoSettingsPage({
             Sign in as the owner or a repository member to view repository
             access.
           </PageErrorAlert>
+        )}
+
+        {repo.access.actor !== 'Public' && (
+          <RepositoryMetadataForm
+            repo={repo}
+            save={(metadata) => mutateAndRefresh(updateMetadata({ ...params, ...metadata }))}
+          />
         )}
 
         {repo.access.actor === 'Owner' && (

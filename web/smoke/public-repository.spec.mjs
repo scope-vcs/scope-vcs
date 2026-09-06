@@ -266,7 +266,7 @@ test('public repository exposes only its projected source', async () => {
       const sample = () => {
         if (!globalThis.__scopeTrackTransitionFrames) return
         if (document.body.textContent?.includes(
-          'Select a file to inspect its projected contents.',
+          'Select a file to inspect its contents.',
         )) {
           globalThis.__scopeTransitionFrames.emptyViewer = true
         }
@@ -657,7 +657,7 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
         name: /Add bounded retry timing/,
       })
       await readyRow.waitFor()
-      await page.getByText(/^\d+ open$/).waitFor()
+      await page.getByRole('link', { name: 'Requests', exact: true }).getByText(/^\d+$/).waitFor()
       await readyRow.focus()
       assert.equal(
         await readyRow.evaluate(
@@ -809,10 +809,10 @@ async function assertCurrentRepoSection(page, section) {
         ...document.querySelectorAll(
           'nav[aria-label="Primary"] a[aria-current="page"]',
         ),
-      ].map((link) => link.textContent?.trim())
+      ].map((link) => link.getAttribute('href'))
       return current.length === 1 && current[0] === expected
     },
-    section,
+    await link.getAttribute('href'),
   )
 }
 

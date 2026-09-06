@@ -35,6 +35,8 @@ pub struct RepoSummaryRead {
     pub id: String,
     pub owner_handle: String,
     pub name: String,
+    pub description: Option<String>,
+    pub website_url: Option<String>,
     pub lifecycle_state: RepoLifecycleState,
     pub change_version: u64,
     pub access: RepositoryAccess,
@@ -57,6 +59,8 @@ struct RepoReadRow {
     id: String,
     owner_handle: String,
     name: String,
+    description: Option<String>,
+    website_url: Option<String>,
     owner_user_id: String,
     publication_state: String,
     change_version: i64,
@@ -338,6 +342,8 @@ fn repo_read_query() -> sea_orm::Select<entities::repository::Entity> {
         .column(entities::repository::Column::Id)
         .column(entities::repository::Column::OwnerHandle)
         .column(entities::repository::Column::Name)
+        .column(entities::repository::Column::Description)
+        .column(entities::repository::Column::WebsiteUrl)
         .column(entities::repository::Column::OwnerUserId)
         .column(entities::repository::Column::PublicationState)
         .column(entities::repository::Column::ChangeVersion)
@@ -448,6 +454,8 @@ fn summary_from_row(
         id: row.id,
         owner_handle: row.owner_handle,
         name: row.name,
+        description: row.description,
+        website_url: row.website_url,
         lifecycle_state,
         change_version,
         access,

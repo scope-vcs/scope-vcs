@@ -3,6 +3,7 @@ import test from 'node:test'
 import type { RepoFileContent } from '@/api/types'
 import {
   loadRepoFileWhenReady,
+  repositoryLandingPath,
   repoCodeResourceLoader,
   settleRepoCodeResource,
   type RepoFileLoadResult,
@@ -103,4 +104,16 @@ test('loads current access scope when previous route data no longer matches', as
   const load = repoCodeResourceLoader(null, async () => { reloads += 1; return readme })
   assert.equal(await load(new AbortController().signal), readme)
   assert.equal(reloads, 1)
+})
+
+
+test('chooses the visible root HTML README before Markdown regardless of file order', () => {
+  assert.equal(repositoryLandingPath([{ path: '/README.md' }, { path: '/README.html' }]), 'README.html')
+  assert.equal(repositoryLandingPath([{ path: '/README.html' }]), 'README.html')
+  assert.equal(repositoryLandingPath([{ path: '/README.md' }]), 'README.md')
+})
+
+test('does not invent a landing file for empty views or nested READMEs', () => {
+  assert.equal(repositoryLandingPath([]), null)
+  assert.equal(repositoryLandingPath([{ path: '/docs/README.md' }, { path: '/src/index.ts' }]), null)
 })

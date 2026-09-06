@@ -166,6 +166,7 @@ async fn create_push_intent_rejects_oversized_config_for_git_header_transport() 
 async fn create_push_intent_applies_config_when_reviewed_head_is_current() {
     let (state, _source, head_oid) = published_git_fixture("config-only-intent").await;
     let config = readme_private_config();
+    let started_at = unix_now();
     let response = owner_post(
         state.clone(),
         "/v1/repos/owner/repo/push-intents",
@@ -175,6 +176,20 @@ async fn create_push_intent_applies_config_when_reviewed_head_is_current() {
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(stored_config(&state).await, config);
+    let history = router(state)
+        .oneshot(
+            Request::builder()
+                .uri("/v1/repos/owner/repo/history?feed=all&audience=private")
+                .header(AUTHORIZATION, bearer_header())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(history.status(), StatusCode::OK);
+    let history = response_json(history).await;
+    let occurred_at = history["entries"][0]["occurred_at_unix"].as_u64().unwrap();
+    assert!((started_at..=unix_now()).contains(&occurred_at));
 }
 
 #[tokio::test]
@@ -303,6 +318,7 @@ async fn content_push_rejects_stale_reviewed_config() {
             scope_domain::reviewed_updates::config::apply_reviewed_config_to_repo(
                 repo,
                 scope_domain::reviewed_updates::config::ReviewedConfigUpdateInput {
+                    occurred_at_unix: 1_788_700_000,
                     author_id: test_owner_id(),
                     config: newer_config.clone(),
                 },

@@ -24,7 +24,7 @@ import {
   RequestDiscussionReplyList,
   RequestDiscussionUnreadBoundary,
 } from './request-discussion-reply-list'
-import { RequestTimestamp } from './request-timestamp'
+import { RelativeTimestamp } from '@/components/timestamp'
 import type {
   RequestDiscussion,
   RequestDiscussionReplyView,
@@ -306,7 +306,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
             {latestReply ? (
               <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:inline">
                 Last reply{' '}
-                <RequestTimestamp value={latestReply.created_at_unix} />
+                <RelativeTimestamp value={latestReply.created_at_unix} />
               </span>
             ) : null}
           </button>

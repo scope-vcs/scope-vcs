@@ -37,6 +37,8 @@ mod m0036_request_queue_indexes;
 mod m0037_repository_history_views;
 mod m0038_history_entry_positions;
 mod m0039_history_action_feed;
+mod m0040_repository_metadata;
+mod m0041_history_occurrence_time;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -174,6 +176,11 @@ fn inventory() -> Vec<MigrationSpec> {
             MaintenanceRequired,
         ),
         spec(m0039_history_action_feed::Migration, MaintenanceRequired),
+        spec(m0040_repository_metadata::Migration, Online),
+        spec(
+            m0041_history_occurrence_time::Migration,
+            MaintenanceRequired,
+        ),
     ]
 }
 

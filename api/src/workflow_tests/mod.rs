@@ -72,6 +72,7 @@ mod push_intent_completion;
 mod repo_cleanup;
 mod repo_events;
 mod repo_lifecycle;
+mod repo_metadata;
 mod repo_visibility;
 mod request_discussions;
 mod requests;
@@ -703,6 +704,8 @@ fn test_repo(owner_id: &str) -> Repository {
             owner_handle: TEST_REPO_OWNER.to_string(),
             name: TEST_REPO_NAME.to_string(),
             owner_user_id: owner_id.to_string(),
+            description: None,
+            website_url: None,
             lifecycle_state: RepoLifecycleState::Ready,
             change_version: 1,
         },
@@ -799,6 +802,7 @@ fn repo_with_readme(state: &AppState) -> Repository {
     let rules_path = ScopePath::parse("/.scope/RULES.md").unwrap();
     let rules_content = source_blob(state, "");
     repo.graph.commits.push(LogicalCommit {
+        occurred_at_unix: None,
         id: "rv1".to_string(),
         origin: LogicalCommitOrigin::CanonicalPush {
             source_head_oid: "rv1".to_string(),
@@ -850,6 +854,7 @@ fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> 
     let head_oid = "1111111111111111111111111111111111111111";
     manifest.git_oid = head_oid.to_string();
     ReceivePackUpdate {
+        occurred_at_unix: None,
         branch: format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
         head_oid: head_oid.to_string(),
         base_git_manifest_ref: None,

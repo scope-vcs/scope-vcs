@@ -6,7 +6,21 @@ import type {
   RepoMemberPermissions,
   RepoParams,
   UpdateRepoMemberInput,
+  UpdateRepoMetadataInput,
 } from './types'
+import { parseRepoParams } from './repo-params'
+
+export function parseUpdateRepoMetadataInput(input: unknown): UpdateRepoMetadataInput {
+  const params = parseRepoParams(input)
+  const data = input as Partial<UpdateRepoMetadataInput>
+  if (
+    data.description !== null && typeof data.description !== 'string' ||
+    data.website_url !== null && typeof data.website_url !== 'string'
+  ) {
+    throw new Error('Repository description and website must be text or empty.')
+  }
+  return { ...params, description: data.description, website_url: data.website_url }
+}
 
 export function parseCreateRepoInviteInput(
   input: unknown,

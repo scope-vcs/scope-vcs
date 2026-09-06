@@ -19,6 +19,7 @@ export {
 
 export async function loadHistoryPageForRequest(
   data: HistoryPageInput,
+  signal?: AbortSignal,
 ): Promise<HistoryPage> {
   const query = new URLSearchParams()
   if (data.audience) query.set('audience', parseHistoryAudience(data.audience))
@@ -31,7 +32,7 @@ export async function loadHistoryPageForRequest(
       repo: data.repo,
     })}?${query}`,
     apiValidators.HistoryPageResponse,
-    { auth: 'optional' },
+    { auth: 'optional', signal },
   )
 }
 

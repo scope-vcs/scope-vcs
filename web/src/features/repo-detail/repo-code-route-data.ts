@@ -1,6 +1,14 @@
 import type { RepoFileContent } from '@/api/types'
+import { displayRouteFilePath } from '../../lib/route-file'
 
-export const DEFAULT_REPO_FILE_PATH = 'README.html'
+// Only the audience's visible root files can become the repository introduction.
+export function repositoryLandingPath(files: ReadonlyArray<{ path: string }>) {
+  for (const candidate of ['README.html', 'README.md']) {
+    const file = files.find((file) => displayRouteFilePath(file.path) === candidate)
+    if (file) return displayRouteFilePath(file.path)
+  }
+  return null
+}
 
 const REBUILD_RETRY_DELAYS = [0, 250, 500, 1_000, 2_000] as const
 

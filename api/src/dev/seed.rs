@@ -541,6 +541,7 @@ fn repo(owner: &UserAccount, name: &str, visibility: Visibility) -> Result<Repos
 
 fn commit(repo: &Repository, id: &str, message: &str, changes: Vec<FileChange>) -> LogicalCommit {
     LogicalCommit {
+        occurred_at_unix: None,
         id: id.to_string(),
         origin: LogicalCommitOrigin::CanonicalPush {
             source_head_oid: id.to_string(),

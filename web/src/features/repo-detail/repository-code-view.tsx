@@ -1,12 +1,10 @@
 import type {
   RepoContent,
-  RepoFile,
   RepoFileContent,
   RepoParams,
 } from '@/api/types'
-import { EmptyState, PanelState } from '@/components/empty-state'
+import { PanelState } from '@/components/empty-state'
 import { FileWorkbench } from '@/components/file-workbench'
-import { FileSystemTree } from '@/components/file-system-tree'
 import { PendingSurface } from '@/components/pending-surface'
 import { isRepositoryHtmlPath } from '@/components/repository-html'
 import { RepositoryHtmlRenderer } from '@/components/repository-html-renderer'
@@ -26,7 +24,7 @@ import {
   displayRouteFilePath,
   selectedRouteFilePath,
 } from '@/lib/route-file'
-import { FileQuestion, TriangleAlert } from 'lucide-react'
+import { FileQuestion, Info, TriangleAlert } from 'lucide-react'
 import {
   useLayoutEffect,
   useMemo,
@@ -42,6 +40,8 @@ import {
   FileNavigatorSkeleton,
   SourceCodeSkeleton,
 } from './repository-code-skeletons'
+import { RepositoryFileNavigator } from './repository-file-navigator'
+import { repositoryLandingPath } from './repo-code-route-data'
 
 const CODE_TAB_SET_ID = 'repository-code-files'
 
@@ -57,6 +57,7 @@ export function RepositoryCodeView({
   selectedFileLoading,
   selectedFileRetry,
   selectedPath,
+  workspaceTabs,
 }: {
   content: RepoContent | null
   contentError: string | null
@@ -69,15 +70,20 @@ export function RepositoryCodeView({
   selectedFileLoading: boolean
   selectedFileRetry: () => void
   selectedPath: string | null
+  workspaceTabs: ReturnType<typeof useWorkspaceTabs>
 }) {
-  const workspaceTabs = useWorkspaceTabs({
-    activeId: selectedPath,
-  })
   const [navigationOpen, setNavigationOpen] = useState(false)
   const fileNavigatorRef = useRef<HTMLDivElement>(null)
   const openPath = workspaceTabs.state.openIds.includes(selectedPath ?? '')
     ? selectedPath
     : null
+  const visiblePaths = content
+    ? content.files.map((file) => displayRouteFilePath(file.path))
+    : workspaceTabs.state.openIds
+  // An explicit URL keeps its tab and file error even when the tree omits it.
+  const availablePaths = selectedPath && !visiblePaths.includes(selectedPath)
+    ? [...visiblePaths, selectedPath]
+    : visiblePaths
 
   // Closing the last tab keeps the route pointing at the file it was showing:
   // an empty workspace is this session's state, not something worth sharing.
@@ -105,6 +111,7 @@ export function RepositoryCodeView({
             <div className="scope-content-enter">
               <RepositoryFileNavigator
                 files={content.files}
+                onOpenNavigation={() => setNavigationOpen(true)}
                 onSelectFile={selectFile}
                 selectedPath={selectedRouteFilePath(
                   content.files,
@@ -127,12 +134,15 @@ export function RepositoryCodeView({
           )}
         </div>
         <SourcePane
-          availablePaths={content
-            ? content.files.map((file) => displayRouteFilePath(file.path))
-            : workspaceTabs.state.openIds}
+          availablePaths={availablePaths}
+          emptyMessage={content && !selectedPath
+            ? content.files.length
+              ? 'No README in this view. Browse the files or use Find file to get started.'
+              : 'Run scope push from the CLI to add files to this repository.'
+            : 'Select a file to inspect its contents.'}
           error={selectedFileError}
           file={selectedFile}
-          loading={selectedFileLoading}
+          loading={selectedFileLoading || (!content && !contentError && !selectedPath)}
           onActivateTab={onSelectFilePath}
           onEmptyTabFocus={() => {
             setNavigationOpen(true)
@@ -140,45 +150,13 @@ export function RepositoryCodeView({
           }}
           onPinTab={(path) => workspaceTabs.open(path, true)}
           params={params}
-          retry={selectedFileRetry}
+          retry={selectedPath ? selectedFileRetry : contentRetry}
           scrollKey={selectedFileIdentity}
           selectedPath={openPath}
           workspaceTabs={workspaceTabs}
         />
       </FileWorkbench>
     </section>
-  )
-}
-
-function RepositoryFileNavigator({
-  files,
-  onSelectFile,
-  selectedPath,
-}: {
-  files: RepoFile[]
-  onSelectFile: (path: string, pinned: boolean) => void
-  selectedPath: string | null
-}) {
-  if (files.length === 0) {
-    return (
-      <EmptyState
-        description="Run scope push from the CLI to add files to this repository."
-        icon={<FileQuestion />}
-        title="No files yet"
-      />
-    )
-  }
-
-  return (
-    <FileSystemTree
-      compactVisibility
-      files={files}
-      getFileMeta={fileStatus}
-      metaColumnLabel="status"
-      onActivateFile={(file) => onSelectFile(file.path, true)}
-      onSelectFile={(file) => onSelectFile(file.path, false)}
-      selectedFilePath={selectedPath}
-    />
   )
 }
 
@@ -202,6 +180,7 @@ function FileNavigatorError({
 
 function SourcePane({
   availablePaths,
+  emptyMessage,
   error,
   file,
   loading,
@@ -215,6 +194,7 @@ function SourcePane({
   workspaceTabs,
 }: {
   availablePaths: string[]
+  emptyMessage: string
   error: string | null
   file: RepoFileContent | null
   loading: boolean
@@ -268,6 +248,7 @@ function SourcePane({
         tabIndex={selectedPath ? 0 : undefined}
       >
         <SourceContent
+          emptyMessage={emptyMessage}
           error={error}
           file={file}
           loading={loading}
@@ -329,6 +310,7 @@ function RepositoryTabStrip({
 }
 
 function SourceContent({
+  emptyMessage,
   error,
   file,
   loading,
@@ -336,6 +318,7 @@ function SourceContent({
   retry,
   selectedPath,
 }: {
+  emptyMessage: string
   error: string | null
   file: RepoFileContent | null
   loading: boolean
@@ -343,28 +326,28 @@ function SourceContent({
   retry: () => void
   selectedPath: string | null
 }) {
-  if (!selectedPath) {
-    return (
-      <PanelState>
-        <FileQuestion className="size-5" />
-        <span>Select a file to inspect its projected contents.</span>
-      </PanelState>
-    )
-  }
-
   if (loading) {
     return (
       <PendingSurface
         className="min-h-[220px]"
         delay
-        label={`Loading ${displayPath(selectedPath)}`}
+        label={selectedPath ? `Loading ${displayPath(selectedPath)}` : 'Loading repository introduction'}
         delayedLabel="this file is taking longer than usual"
-        key={selectedPath}
+        key={selectedPath ?? 'introduction'}
         onRetry={retry}
         retryLabel="retry file"
       >
         <SourceCodeSkeleton />
       </PendingSurface>
+    )
+  }
+
+  if (!selectedPath) {
+    return (
+      <PanelState>
+        <FileQuestion className="size-5" />
+        <span>{emptyMessage}</span>
+      </PanelState>
     )
   }
 
@@ -399,9 +382,28 @@ function SourceContent({
 function FileMeta({ file }: { file: RepoFileContent }) {
   return (
     <>
-      <span>
-        {formatBytes(file.size_bytes)} · {file.oid.slice(0, 12)}
-      </span>
+      {repositoryLandingPath([file]) ? (
+        <details className="relative">
+          <summary
+            aria-label="File details"
+            className="flex cursor-pointer list-none items-center rounded p-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') event.currentTarget.parentElement?.removeAttribute('open')
+            }}
+          >
+            <Info aria-hidden="true" className="size-3.5" />
+          </summary>
+          <div className="absolute right-0 top-full z-50 mt-2 w-[min(280px,calc(100vw-3rem))] rounded border border-border bg-popover p-3 text-xs text-popover-foreground shadow-[var(--shadow-pop)]">
+            <p>{formatBytes(file.size_bytes)}</p>
+            <p className="mt-1 break-all">Blob: {file.oid}</p>
+            {isRepositoryHtmlPath(file.path) && (
+              <p className="mt-2 font-sans text-muted-foreground">
+                Sandboxed document. Repository HTML runs in an isolated preview.
+              </p>
+            )}
+          </div>
+        </details>
+      ) : <span>{formatBytes(file.size_bytes)} · {file.oid.slice(0, 12)}</span>}
       <VisibilityBadge compact visibility={file.visibility} />
     </>
   )
@@ -442,6 +444,7 @@ function SourceFileContent({
         identity={`${file.path}\0${file.oid}`}
         key={`${file.path}:${file.oid}`}
         path={file.path}
+        quietDetails={repositoryLandingPath([file]) !== null}
         source={file.content.text}
       />
     )
@@ -452,10 +455,6 @@ function SourceFileContent({
       <code>{file.content.text}</code>
     </pre>
   )
-}
-
-function fileStatus(file: RepoFile) {
-  return <span className="text-muted-foreground">{file.tracked ? 'Tracked' : 'Missing'}</span>
 }
 
 function displayPath(path: string) {

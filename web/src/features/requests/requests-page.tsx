@@ -32,7 +32,7 @@ import {
   requestStatusLabel,
   requestStatusTone,
 } from './request-labels'
-import { RequestAbsoluteTimestamp } from './request-timestamp'
+import { AbsoluteTimestamp } from '@/components/timestamp'
 
 const SECTION_DETAILS = {
   your_work: {
@@ -392,7 +392,7 @@ function QueueDate({
 }) {
   if (section === 'open' && request.submitted_at_unix !== null) {
     return (
-      <RequestAbsoluteTimestamp
+      <AbsoluteTimestamp
         className="tabular-nums"
         compact
         prefix="Submitted "
@@ -401,7 +401,7 @@ function QueueDate({
     )
   }
   return (
-    <RequestAbsoluteTimestamp
+    <AbsoluteTimestamp
       className="tabular-nums"
       compact
       prefix="Updated "

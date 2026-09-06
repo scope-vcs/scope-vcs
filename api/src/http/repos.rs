@@ -249,6 +249,8 @@ pub(crate) async fn create_push_intent(
         .map(|head| head.manifest.content_ref.clone());
     let config_changed = repo.repo_config != input_config;
     if base_head_oid.as_deref() == Some(head_oid.as_str()) && config_changed {
+        let now = unix_now()?;
+        let occurred_at_unix = i64::try_from(now).map_err(ApiError::internal)?;
         let author_id = user.id.clone();
         let config = input_config.clone();
         let expected_config_hash = base_config_hash.clone();
@@ -259,7 +261,7 @@ pub(crate) async fn create_push_intent(
             .mutate_repository(
                 &owner,
                 &repo_name,
-                unix_now()?,
+                now,
                 &crate::persistence_ids::generate_persistence_id,
                 move |repo| {
                     let access = repo.access_for_user_id(&author_id);
@@ -291,7 +293,11 @@ pub(crate) async fn create_push_intent(
                     }
                     let changed = apply_reviewed_config_to_repo(
                         repo,
-                        ReviewedConfigUpdateInput { author_id, config },
+                        ReviewedConfigUpdateInput {
+                            author_id,
+                            config,
+                            occurred_at_unix,
+                        },
                     )
                     .map_err(reviewed_update_domain_error)?;
                     Ok(RepositoryMutation::new(changed))
@@ -477,7 +483,7 @@ pub(crate) async fn get_file_content(
     }))
 }
 
-fn repo_summary_response(
+pub(super) fn repo_summary_response(
     state: &AppState,
     summary: RepoSummaryRead,
 ) -> Result<RepoSummaryResponse, ApiError> {
@@ -493,6 +499,8 @@ fn repo_summary_response(
         ),
         owner_handle: summary.owner_handle,
         name: summary.name,
+        description: summary.description,
+        website_url: summary.website_url,
         lifecycle_state: summary.lifecycle_state.into(),
         change_version: summary.change_version,
         access: repository_access_response(summary.access),

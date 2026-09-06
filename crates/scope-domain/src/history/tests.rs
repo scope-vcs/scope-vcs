@@ -28,6 +28,7 @@ fn file(name: &str, visibility: Visibility, old: Option<&str>, new: Option<&str>
 
 fn commit(id: &str, changes: Vec<FileChange>) -> LogicalCommit {
     LogicalCommit {
+        occurred_at_unix: None,
         id: id.into(),
         origin: LogicalCommitOrigin::CanonicalPush {
             source_head_oid: id.into(),
@@ -243,7 +244,7 @@ fn standalone_actions_stay_between_their_source_anchors_even_when_the_anchor_is_
 
 #[test]
 fn a_push_can_have_visibility_effects_without_any_visible_content_changes() {
-    let graph = graph(vec![
+    let mut graph = graph(vec![
         commit(
             "base",
             vec![file("/doc", Visibility::Private, None, Some("baseline"))],
@@ -253,6 +254,7 @@ fn a_push_can_have_visibility_effects_without_any_visible_content_changes() {
             vec![file("/private", Visibility::Private, None, Some("hidden"))],
         ),
     ]);
+    graph.commits[1].occurred_at_unix = Some(1_700_000_000);
     let sets = vec![visibility(
         "publish",
         Some("base"),
@@ -267,6 +269,9 @@ fn a_push_can_have_visibility_effects_without_any_visible_content_changes() {
     assert_eq!(view.entries[0].kind, HistoryEntryKind::Push);
     assert_eq!(view.entries[0].message, "Projected public update");
     assert_eq!(view.entries[0].author, None);
+    assert_eq!(view.entries[0].occurred_at_unix, None);
+    let private = history_view(&graph, &sets, ProjectionViewKey::Private);
+    assert_eq!(private.entries[0].occurred_at_unix, Some(1_700_000_000));
     assert!(view.entries[0].visibility_changes[0].file.is_some());
 }
 
@@ -419,4 +424,75 @@ fn same_blob_with_a_mode_change_is_a_content_change() {
     let view = history_view(&graph, &[], ProjectionViewKey::Public);
     assert_eq!(sources(&view), ["mode", "base"]);
     assert_eq!(view.entries[0].files[0].new_content, Some(executable));
+}
+
+#[test]
+fn visible_occurrence_time_changes_history_generation_without_changing_projection() {
+    let mut graph = graph(vec![commit(
+        "push",
+        vec![file("/doc", Visibility::Public, None, Some("body"))],
+    )]);
+    graph.commits[0].occurred_at_unix = Some(1_700_000_000);
+    for audience in [ProjectionViewKey::Public, ProjectionViewKey::Private] {
+        let before = history_view(&graph, &[], audience);
+        let projection = project_graph(&graph, &[], audience);
+        assert_eq!(before.entries[0].occurred_at_unix, Some(1_700_000_000));
+        graph.commits[0].occurred_at_unix = Some(1_800_000_000);
+        let after = history_view(&graph, &[], audience);
+        assert_eq!(after.entries[0].occurred_at_unix, Some(1_800_000_000));
+        assert_ne!(before.generation, after.generation);
+        assert_eq!(project_graph(&graph, &[], audience), projection);
+        graph.commits[0].occurred_at_unix = Some(1_700_000_000);
+    }
+}
+
+#[test]
+fn standalone_visibility_time_is_recorded_privately_and_redacted_publicly() {
+    let graph = graph(vec![commit(
+        "push",
+        vec![file("/doc", Visibility::Private, None, Some("body"))],
+    )]);
+    let mut sets = vec![visibility(
+        "publish",
+        Some("push"),
+        None,
+        "/doc",
+        Visibility::Public,
+        Some("body"),
+    )];
+    sets[0].occurred_at_unix = Some(1_700_000_000);
+    let public = history_view(&graph, &sets, ProjectionViewKey::Public);
+    assert_eq!(sources(&public), ["publish"]);
+    assert_eq!(public.entries[0].author, None);
+    assert_eq!(public.entries[0].occurred_at_unix, None);
+    let private = history_view(&graph, &sets, ProjectionViewKey::Private);
+    assert_eq!(sources(&private), ["publish", "push"]);
+    assert_eq!(private.entries[0].occurred_at_unix, Some(1_700_000_000));
+    sets[0].occurred_at_unix = Some(1_800_000_000);
+    assert_eq!(
+        history_view(&graph, &sets, ProjectionViewKey::Public),
+        public
+    );
+    assert_ne!(
+        history_view(&graph, &sets, ProjectionViewKey::Private).generation,
+        private.generation
+    );
+}
+
+#[test]
+fn partial_public_push_does_not_disclose_its_occurrence_time() {
+    let mut graph = graph(vec![commit(
+        "push",
+        vec![
+            file("/public", Visibility::Public, None, Some("visible")),
+            file("/secret", Visibility::Private, None, Some("hidden")),
+        ],
+    )]);
+    graph.commits[0].occurred_at_unix = Some(1_700_000_000);
+    let public = history_view(&graph, &[], ProjectionViewKey::Public);
+    assert_eq!(sources(&public), ["push"]);
+    assert_eq!(public.entries[0].author, None);
+    assert_eq!(public.entries[0].occurred_at_unix, None);
+    graph.commits[0].occurred_at_unix = Some(1_800_000_000);
+    assert_eq!(history_view(&graph, &[], ProjectionViewKey::Public), public);
 }
