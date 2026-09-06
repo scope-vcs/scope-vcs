@@ -1,7 +1,6 @@
 import type {
   RepoRunDetail,
   RepoRunJobDetail,
-  RepoRunLog,
   RepoRunStepLogPage,
   RunActionInput,
   RunStepLogsInput,
@@ -24,24 +23,21 @@ import {
   type StepSelection,
 } from './repository-run-detail-model'
 import { useRunLiveRefresh, type RunRefresh } from './run-live-refresh'
+import {
+  canReuseRunLogs,
+  completedRunLogVersion,
+  EMPTY_LOG_STATE,
+  readRunLogCache,
+  stepKey,
+  withBoundedLogStates,
+  writeRunLogCache,
+  type StepLogState,
+} from './run-log-cache'
 
 export type { StepSelection } from './repository-run-detail-model'
+export type { StepLogState } from './run-log-cache'
 
-const MAX_CACHED_LOG_STEPS = 8
 const DETAIL_CHANGES = ['StatusChanged', 'LogsAppended'] as const
-
-export type StepLogState = {
-  error: string | null
-  loading: boolean
-  logs: RepoRunLog[]
-  logsTruncated: boolean
-  nextAfter: number
-  initialized: boolean
-  hasEarlier: boolean
-  hasMore: boolean
-  viewingEarlier: boolean
-  failedPage: { after?: number; before?: number } | null
-}
 
 type DetailViewState = {
   actionError: string | null
@@ -59,26 +55,16 @@ type DetailViewState = {
 
 type DetailViewUpdate = (state: DetailViewState) => DetailViewState
 
-const EMPTY_LOG_STATE: StepLogState = {
-  error: null,
-  loading: false,
-  logs: [],
-  logsTruncated: false,
-  nextAfter: 0,
-  initialized: false,
-  hasEarlier: false,
-  hasMore: false,
-  viewingEarlier: false,
-  failedPage: null,
-}
-
-function createDetailViewState(detail: RepoRunDetail): DetailViewState {
+function createDetailViewState({ detail, cacheKey }: {
+  detail: RepoRunDetail
+  cacheKey: string | null
+}): DetailViewState {
   const initialView = selectInitialView(detail.jobs)
   return {
     actionError: null,
     attemptOverrides: {},
     detail,
-    logStates: {},
+    logStates: cacheKey ? readRunLogCache(cacheKey) : {},
     manualSelection: false,
     metadataError: null,
     pendingAction: null,
@@ -97,11 +83,13 @@ function updateDetailView(
 }
 
 export function useRepositoryRunDetailController({
+  cacheKey,
   initialDetail,
   loadDetail,
   loadLogs,
   params,
 }: {
+  cacheKey: string | null
   initialDetail: RepoRunDetail
   loadDetail: (signal?: AbortSignal) => Promise<RepoRunDetail>
   loadLogs: (
@@ -112,9 +100,10 @@ export function useRepositoryRunDetailController({
 }) {
   const [view, updateView] = useReducer(
     updateDetailView,
-    initialDetail,
+    { detail: initialDetail, cacheKey },
     createDetailViewState,
   )
+  const detailRef = useRef(initialDetail)
   const detailInFlightRef = useRef<Promise<void> | null>(null)
   const detailGenerationRef = useRef(0)
   const logInFlightRef = useRef<Map<string, Promise<boolean>> | null>(null)
@@ -145,6 +134,7 @@ export function useRepositoryRunDetailController({
     const request = loadDetail(signal)
       .then((nextDetail) => {
         if (!mountedRef.current) return
+        detailRef.current = nextDetail
         updateView((current) => {
           const reconciledAction = current.reconciliationGeneration !== null &&
             generation >= current.reconciliationGeneration
@@ -234,6 +224,9 @@ export function useRepositoryRunDetailController({
         loadingState,
       ),
     }))
+    // A response started while running may still omit the final output, even
+    // if the run finishes before that response arrives.
+    const completedVersion = completedRunLogVersion(detailRef.current)
     const request = loadLogs(
       {
         ...params,
@@ -259,12 +252,14 @@ export function useRepositoryRunDetailController({
           viewingEarlier: before !== undefined,
           failedPage: null,
           nextAfter: page.next_after,
+          completedVersion,
         }
         logStatesRef.current = withBoundedLogStates(
           logStatesRef.current,
           key,
           nextState,
         )
+        if (cacheKey) writeRunLogCache(cacheKey, target, nextState)
         updateView((state) => ({
           ...state,
           logStates: withBoundedLogStates(
@@ -303,7 +298,7 @@ export function useRepositoryRunDetailController({
       })
     inFlight.set(key, request)
     return request
-  }, [loadLogs, params])
+  }, [cacheKey, loadLogs, params])
 
   const refreshLogsAfterInFlight = useCallback(async (
     target: StepSelection,
@@ -351,9 +346,12 @@ export function useRepositoryRunDetailController({
     }
   }, [])
 
+  const completedVersion = completedRunLogVersion(view.detail)
   useEffect(() => {
     const selection = view.selection
     if (!selection) return
+    const cached = logStatesRef.current[stepKey(selection)]
+    if (cached && canReuseRunLogs(cached, detailRef.current)) return
     if (!runCanChange(view.detail.run.state)) {
       void refreshLogsAfterInFlight(selection)
       return
@@ -362,6 +360,7 @@ export function useRepositoryRunDetailController({
   }, [
     refreshLogs,
     refreshLogsAfterInFlight,
+    completedVersion,
     view.detail.run.state,
     view.selection,
   ])
@@ -435,10 +434,6 @@ export function useRepositoryRunDetailController({
   }
 }
 
-function stepKey(selection: StepSelection) {
-  return `${selection.jobKey}:${selection.attemptId}:${selection.stepIndex}`
-}
-
 function selectionExists(
   selection: StepSelection,
   jobs: readonly RepoRunJobDetail[],
@@ -454,21 +449,6 @@ function selectionExists(
 
 function jobExists(jobKey: string | null, jobs: readonly RepoRunJobDetail[]) {
   return jobKey !== null && jobs.some(({ job }) => job.key === jobKey)
-}
-
-function withBoundedLogStates(
-  states: Record<string, StepLogState>,
-  key: string,
-  value: StepLogState,
-) {
-  const next = { ...states }
-  delete next[key]
-  next[key] = value
-  const keys = Object.keys(next)
-  for (const staleKey of keys.slice(0, -MAX_CACHED_LOG_STEPS)) {
-    delete next[staleKey]
-  }
-  return next
 }
 
 function errorMessage(error: unknown) {

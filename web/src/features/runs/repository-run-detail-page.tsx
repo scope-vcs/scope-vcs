@@ -10,15 +10,12 @@ import { RouteErrorContent } from '@/components/route-error-page'
 import { useRepositoryRunDetailController } from './repository-run-detail-controller'
 import { RunDetailHeader } from './run-detail-header'
 import { RunDetailJobs } from './run-detail-jobs'
+import { useAuth } from '@clerk/tanstack-react-start'
+import { useRepoLayout } from '../repo-detail/repo-layout-context'
+import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { runLogCacheKey } from './run-log-cache'
 
-export function RepositoryRunDetailPage({
-  cancelRun,
-  initialDetail,
-  loadDetail,
-  loadLogs,
-  params,
-  retryRun,
-}: {
+type RunDetailPageProps = {
   cancelRun: () => Promise<void>
   initialDetail: RepoRunDetail
   loadDetail: (signal?: AbortSignal) => Promise<RepoRunDetail>
@@ -28,7 +25,26 @@ export function RepositoryRunDetailPage({
   ) => Promise<RepoRunStepLogPage>
   params: RunActionInput
   retryRun: () => Promise<void>
-}) {
+}
+
+export function RepositoryRunDetailPage(props: RunDetailPageProps) {
+  const { userId, isLoaded } = useAuth()
+  const { repo } = useRepoLayout()
+  const cacheKey = isLoaded
+    ? runLogCacheKey(repoResourceScope(repo, userId ?? null), props.params.run_id)
+    : null
+  return <RunDetailView cancelRun={props.cancelRun} initialDetail={props.initialDetail} loadDetail={props.loadDetail} loadLogs={props.loadLogs} params={props.params} retryRun={props.retryRun} cacheKey={cacheKey} key={cacheKey ?? 'auth-pending'} />
+}
+
+function RunDetailView({
+  cacheKey,
+  cancelRun,
+  initialDetail,
+  loadDetail,
+  loadLogs,
+  params,
+  retryRun,
+}: RunDetailPageProps & { cacheKey: string | null }) {
   const {
     actionError,
     attemptOverrides,
@@ -47,6 +63,7 @@ export function RepositoryRunDetailPage({
     toggleJob,
     toggleStep,
   } = useRepositoryRunDetailController({
+    cacheKey,
     initialDetail,
     loadDetail,
     loadLogs,
