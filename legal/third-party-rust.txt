@@ -798,6 +798,16 @@ LICENSE-APACHE: text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197
 LICENSE-MIT: text 4498464c2864825d7bb4c83e2ac4e9dbb533d49964fbf218c24f8d44ee4e87a9
 
 ==============================================================================
+clap_complete 4.6.9
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/clap_complete/clap_complete-4.6.9.crate
+
+Repository: "https://github.com/clap-rs/clap"
+LICENSE-APACHE: text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a
+LICENSE-MIT: text 4498464c2864825d7bb4c83e2ac4e9dbb533d49964fbf218c24f8d44ee4e87a9
+
+==============================================================================
 clap_derive 4.6.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
