@@ -107,6 +107,9 @@ export function requestQueueViewReducer(
 ): RequestQueueViewState {
   switch (action.type) {
     case 'loader_snapshot_received':
+      if (JSON.stringify(state.snapshot) === JSON.stringify(action.pages)) {
+        return { ...state, snapshot: action.pages }
+      }
       return {
         ...createRequestQueueViewState(action.pages),
         generation: state.generation + 1,

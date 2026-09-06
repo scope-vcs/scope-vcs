@@ -17,6 +17,11 @@ import {
   runMatchesStatusFilter,
 } from './runs-filter-model'
 
+import { useAuth } from '@clerk/tanstack-react-start'
+import { useRepoLayout } from '../repo-detail/repo-layout-context'
+import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { restoreRunHistory, retainRunHistory, runHistoryCacheKey, type RetainedRunHistory } from './run-history-cache'
+
 const HISTORY_CHANGES = ['Created', 'StatusChanged'] as const
 
 type RunPageResources = {
@@ -25,12 +30,7 @@ type RunPageResources = {
   workflowsError: string | null
 }
 
-export function RepositoryRunsPage({
-  initialResources,
-  loadHistory,
-  params,
-  workflow,
-}: {
+type RepositoryRunsPageProps = {
   initialResources: RunPageResources | null
   loadHistory: (
     input: RepoRunHistoryInput,
@@ -38,13 +38,33 @@ export function RepositoryRunsPage({
   ) => Promise<RepoRunHistoryPage | null>
   params: RepoParams
   workflow?: string
-}) {
-  const [history, setHistory] = useState(initialResources?.history ?? null)
+}
+
+export function RepositoryRunsPage(props: RepositoryRunsPageProps) {
+  const { userId, isLoaded } = useAuth()
+  const { repo } = useRepoLayout()
+  const cacheKey = isLoaded && props.initialResources
+    ? runHistoryCacheKey(repoResourceScope(repo, userId ?? null), props.workflow)
+    : null
+  return <RepositoryRunsPageContent initialResources={props.initialResources} loadHistory={props.loadHistory} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} />
+}
+
+function RepositoryRunsPageContent({
+  cacheKey,
+  initialResources,
+  loadHistory,
+  params,
+  workflow,
+}: RepositoryRunsPageProps & { cacheKey: string | null }) {
+  const retainedRef = useRef<RetainedRunHistory | null>(null)
+  if (retainedRef.current === null) retainedRef.current = restoreRunHistory(cacheKey, initialResources?.history ?? null)
+  const retained = retainedRef.current
+  const [history, setHistory] = useState(retained.history)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [statusFilter, setStatusFilter] = useState<RunStatusFilter>('any')
   const historyRef = useRef(history)
-  const loadedPageCountRef = useRef(1)
+  const loadedPageCountRef = useRef(retained.pageCount)
   const loadingMoreRef = useRef(false)
   const loadMoreInFlightRef = useRef<Promise<void> | null>(null)
   const refreshAfterLoadMoreRef = useRef(false)
@@ -149,7 +169,8 @@ export function RepositoryRunsPage({
 
   useEffect(() => {
     historyRef.current = history
-  }, [history])
+    retainRunHistory(cacheKey, { history, snapshot: retained.snapshot, pageCount: loadedPageCountRef.current })
+  }, [cacheKey, history, retained.snapshot])
 
   useEffect(() => {
     mountedRef.current = true

@@ -198,7 +198,7 @@ test('request queue reducer replaces stale state from an authoritative snapshot'
   }
 })
 
-test('a newly delivered identical snapshot discards pagination state', () => {
+test('a newly delivered identical snapshot preserves pagination state', () => {
   const initial = createRequestQueueViewState(queuePages())
   const paginated = requestQueueViewReducer(initial, {
     type: 'load_succeeded',
@@ -217,11 +217,11 @@ test('a newly delivered identical snapshot discards pagination state', () => {
     pages: identicalSnapshot,
   })
 
-  assert.equal(refreshed.generation, paginated.generation + 1)
+  assert.equal(refreshed.generation, paginated.generation)
   assert.equal(refreshed.snapshot, identicalSnapshot)
   assert.deepEqual(
     refreshed.pages.open.requests.map(({ id }) => id),
-    ['open-1'],
+    ['open-1', 'open-2'],
   )
 })
 

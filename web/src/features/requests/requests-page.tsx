@@ -17,9 +17,8 @@ import {
   Search,
   UserRound,
 } from 'lucide-react'
-import { type FormEvent, useReducer } from 'react'
+import { type FormEvent, useEffect, useReducer } from 'react'
 import {
-  createRequestQueueViewState,
   requestQueueViewReducer,
   requestCountLabel,
   REQUEST_QUEUE_SECTION_ORDER,
@@ -33,6 +32,10 @@ import {
   requestStatusTone,
 } from './request-labels'
 import { AbsoluteTimestamp } from '@/components/timestamp'
+
+import { useRepoLayout } from '../repo-detail/repo-layout-context'
+import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { restoreRequestQueue, retainRequestQueue } from './request-queue-cache'
 
 const SECTION_DETAILS = {
   your_work: {
@@ -52,28 +55,35 @@ const SECTION_DETAILS = {
   },
 } as const
 
-export function RequestsPage({
+export function RequestsPage(props: RequestsPageProps) {
+  const { userId, isLoaded } = useAuth()
+  const { repo } = useRepoLayout()
+  const cacheKey = isLoaded ? `${repoResourceScope(repo, userId ?? null)}\0${repo.change_version}` : null
+  return <RequestsPageContent initialPages={props.initialPages} loadPage={props.loadPage} params={props.params} key={cacheKey ?? 'pending'} cacheKey={cacheKey} />
+}
+
+type RequestsPageProps = {
+  initialPages: RequestQueuePages
+  loadPage: (section: RequestQueueSection, cursor: string | null, search: string | null) => Promise<RequestList>
+  params: RepoParams
+}
+
+function RequestsPageContent({
+  cacheKey,
   initialPages,
   loadPage,
   params,
-}: {
-  initialPages: RequestQueuePages
-  loadPage: (
-    section: RequestQueueSection,
-    cursor: string | null,
-    search: string | null,
-  ) => Promise<RequestList>
-  params: RepoParams
-}) {
+}: RequestsPageProps & { cacheKey: string | null }) {
   const { isSignedIn } = useAuth()
   const [state, dispatch] = useReducer(
     requestQueueViewReducer,
     initialPages,
-    createRequestQueueViewState,
+    (pages) => restoreRequestQueue(cacheKey, pages),
   )
   if (state.snapshot !== initialPages) {
     dispatch({ type: 'loader_snapshot_received', pages: initialPages })
   }
+  useEffect(() => retainRequestQueue(cacheKey, state), [cacheKey, state])
   const {
     generation,
     loadingSection,
