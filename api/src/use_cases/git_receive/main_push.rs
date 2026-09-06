@@ -317,7 +317,7 @@ fn ensure_receive_pack_config_base_matches(
         return Ok(());
     }
     Err(DomainError::conflict(
-        "repo config changed since review; rerun scope push",
+        "repo config changed since review; rerun scope push --main",
     ))
 }
 
@@ -336,7 +336,7 @@ fn ensure_receive_pack_base_matches(
         Ok(())
     } else {
         Err(DomainError::conflict(
-            "repo changed since push was reviewed; rerun scope push",
+            "repo changed since push was reviewed; rerun scope push --main",
         ))
     }
 }

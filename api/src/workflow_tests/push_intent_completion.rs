@@ -125,7 +125,7 @@ async fn create_push_intent_rejects_stale_local_config_base_hash() {
     assert_eq!(response.status(), StatusCode::CONFLICT);
     assert_eq!(
         response_json(response).await["message"],
-        "repo config changed since review; rerun scope review"
+        "repo config changed since review; rerun scope visibility edit"
     );
 
     assert_eq!(
@@ -342,7 +342,7 @@ async fn content_push_rejects_stale_reviewed_config() {
     assert_eq!(error.status(), StatusCode::CONFLICT);
     assert_eq!(
         error.public_message(),
-        "repo config changed since review; rerun scope push"
+        "repo config changed since review; rerun scope push --main"
     );
     assert_eq!(stored_config(&state).await, newer_config);
 }

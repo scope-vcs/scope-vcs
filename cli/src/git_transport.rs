@@ -1,6 +1,4 @@
-use crate::git_repo::{
-    GitRepo, git_remote_fetch_url, git_remote_names, git_remote_push_url, scope_git_origin,
-};
+use crate::git_repo::GitRepo;
 use anyhow::{Context, bail};
 use reqwest::Url;
 
@@ -79,21 +77,7 @@ pub fn select_scope_fetch_remote(
     api_url: &str,
     explicit_remote: Option<&str>,
 ) -> anyhow::Result<String> {
-    let git_origin = scope_git_origin(repo, api_url)?;
-    if let Some(remote) = normalized_remote(explicit_remote) {
-        ScopeRemote::parse(&git_origin, &remote, &git_remote_fetch_url(repo, &remote)?)?;
-        return Ok(remote);
-    }
-
-    for candidate in scope_remote_candidates(repo)? {
-        let Ok(url) = git_remote_fetch_url(repo, &candidate) else {
-            continue;
-        };
-        if ScopeRemote::parse(&git_origin, &candidate, &url).is_ok() {
-            return Ok(candidate);
-        }
-    }
-    bail!("no Scope Git remote found; pass --remote <name> or run scope init")
+    crate::context::select_remote(repo, api_url, explicit_remote, false)
 }
 
 pub fn select_scope_push_remote(
@@ -101,50 +85,7 @@ pub fn select_scope_push_remote(
     api_url: &str,
     explicit_remote: Option<&str>,
 ) -> anyhow::Result<String> {
-    let git_origin = scope_git_origin(repo, api_url)?;
-    if let Some(remote) = normalized_remote(explicit_remote) {
-        ScopeRemote::parse(&git_origin, &remote, &git_remote_push_url(repo, &remote)?)?;
-        return Ok(remote);
-    }
-
-    for candidate in scope_remote_candidates(repo)? {
-        let Ok(push_url) = git_remote_push_url(repo, &candidate) else {
-            continue;
-        };
-        let Ok(push_target) = ScopeRemote::parse(&git_origin, &candidate, &push_url) else {
-            continue;
-        };
-        if push_target.access != GitAccess::Permissioned {
-            continue;
-        }
-        let Ok(fetch_url) = git_remote_fetch_url(repo, &candidate) else {
-            continue;
-        };
-        let Ok(fetch_target) = ScopeRemote::parse(&git_origin, &candidate, &fetch_url) else {
-            continue;
-        };
-        if fetch_target.owner == push_target.owner && fetch_target.repo == push_target.repo {
-            return Ok(candidate);
-        }
-    }
-    bail!("no Scope Git remote found; pass --remote <name> or run scope init")
-}
-
-fn normalized_remote(remote: Option<&str>) -> Option<String> {
-    remote
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-fn scope_remote_candidates(repo: &GitRepo) -> anyhow::Result<Vec<String>> {
-    let mut remotes = git_remote_names(repo)?;
-    remotes.sort_by_key(|remote| match remote.as_str() {
-        DEFAULT_SCOPE_REMOTE => 0,
-        "origin" => 1,
-        _ => 2,
-    });
-    Ok(remotes)
+    crate::context::select_remote(repo, api_url, explicit_remote, true)
 }
 
 fn url_for_access(remote: &Url, access: GitAccess, owner: &str, repo: &str) -> String {
@@ -276,10 +217,7 @@ mod tests {
         };
 
         assert!(select_scope_push_remote(&repo, "https://scope.example", None).is_err());
-        assert_eq!(
-            select_scope_push_remote(&repo, "https://scope.example", Some("origin")).unwrap(),
-            "origin"
-        );
+        assert!(select_scope_push_remote(&repo, "https://scope.example", Some("origin")).is_err());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use super::text::terminal_text;
 use super::*;
 pub(super) fn load_exact_request(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -46,7 +46,7 @@ fn api_target<'a>(context: &'a local::RequestContext, request_id: &'a str) -> Re
 }
 
 pub(super) fn submit_request_command(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -76,7 +76,7 @@ pub(super) fn submit_request_command(
 }
 
 pub(super) fn edit_request(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -84,12 +84,7 @@ pub(super) fn edit_request(
     title: Option<String>,
     description_file: Option<std::path::PathBuf>,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let description = description_file
-        .map(|path| {
-            fs::read_to_string(&path)
-                .with_context(|| format!("read request description from {}", path.display()))
-        })
-        .transpose()?;
+    let description = description_file.map(text::read_markdown).transpose()?;
     let (context, request_id, before) =
         load_exact_request(git_repo, client, api_url, session_token, target)?;
     let response = edit_request_identity(
@@ -121,7 +116,7 @@ fn exact_handle(handle: String) -> anyhow::Result<String> {
 }
 
 pub(super) fn invite_request(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -164,7 +159,7 @@ pub(super) fn invite_request(
 }
 
 pub(super) fn leave_invited_request(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -191,7 +186,7 @@ pub(super) fn leave_invited_request(
 }
 
 pub(super) fn merge_request_command(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -224,7 +219,7 @@ pub(super) fn merge_request_command(
 }
 
 pub(super) fn rate_request_command(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -313,7 +308,7 @@ fn full_request_activity(
 }
 
 pub(super) fn show_one_request(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -343,14 +338,32 @@ pub(super) fn show_one_request(
 }
 
 pub(super) fn list_request_status(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
-    remote: Option<String>,
+    args: args::RequestListArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let context = load_context(git_repo, client, api_url, session_token, remote.as_deref())?;
-    let requests = load_request_list(client, api_url, session_token, &context)?;
+    let context = load_context(
+        git_repo,
+        client,
+        api_url,
+        session_token,
+        args.remote.as_deref(),
+    )?;
+    let mut requests = load_request_list(client, api_url, session_token, &context)?;
+    requests.retain(|request| {
+        args.state.is_none_or(|state| request.state == state.into())
+            && args
+                .audience
+                .is_none_or(|audience| request.audience == audience.into())
+            && args.search.as_ref().is_none_or(|search| {
+                let search = search.to_lowercase();
+                request.name.to_lowercase().contains(&search)
+                    || request.title.to_lowercase().contains(&search)
+            })
+    });
+    requests.truncate(args.limit as usize);
     let mut human_lines = repo_access_lines(&context.repo);
     human_lines.extend(request_list_lines(&requests)?);
     Ok(RequestCommandOutcome::new(

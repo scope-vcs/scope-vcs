@@ -109,7 +109,7 @@ jobs:
           if-no-files-found: error
 
   build:
-    name: Build ${{ matrix.label }}
+    name: ${{ matrix.label }} / ${{ matrix.smoke && 'native checks' || 'build only' }}
     needs: [checks, prepare]
     if: inputs.validate_targets
     runs-on: ${{ matrix.runner }}
@@ -154,11 +154,39 @@ jobs:
             cargo build --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --bin scope
           fi
 
-      - name: Smoke test
+      - name: Test portable command contracts
         if: matrix.smoke
-        working-directory: cli
         shell: bash
-        run: ./${{ matrix.binary }} --help
+        run: >
+          cargo test --manifest-path cli/Cargo.toml --release --locked
+          --target "${{ matrix.target }}" --test version --test licenses
+
+      - name: Test authentication boundaries without accessing native credential stores
+        if: matrix.smoke
+        shell: bash
+        run: |
+          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib auth::tests
+          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib git_credential::tests
+          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib login::tests
+
+      - name: Build native installer service
+        if: matrix.smoke
+        shell: bash
+        run: >
+          cargo build --manifest-path cli/Cargo.toml --release --locked
+          --target "${{ matrix.target }}" --bin scope-cli-service
+
+      - name: Install Node for installer checks
+        if: matrix.smoke
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Verify native install, update, checksum, and PATH
+        if: matrix.smoke
+        env:
+          SCOPE_TEST_BINARY: cli/${{ matrix.binary }}
+        run: node --test cli/distribution/install-smoke.test.mjs
 
       - name: Stage artifact
         working-directory: cli

@@ -132,10 +132,7 @@ fn parse_run_event_stream(
     let mut event_name = String::new();
     let mut data = Vec::new();
     for line in reader.lines() {
-        let line = match line {
-            Ok(line) => line,
-            Err(_) => return Ok(()),
-        };
+        let line = line.context("read Scope run event stream")?;
         if line.is_empty() {
             if !data.is_empty() {
                 let payload = data.join("\n");
@@ -241,6 +238,81 @@ fn successful(
     context: &str,
 ) -> anyhow::Result<reqwest::blocking::Response> {
     successful_response(response, context)
+}
+
+pub fn run_workflows(
+    client: &Client,
+    api_url: &str,
+    token: &str,
+    owner: &str,
+    repo: &str,
+) -> anyhow::Result<RepositoryRunWorkflowListResponse> {
+    parse_json(
+        client
+            .get(format!(
+                "{api_url}{}",
+                routes::repo_run_workflows(owner, repo)
+            ))
+            .bearer_auth(token)
+            .send()
+            .context("list run workflows")?,
+        "list run workflows",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_history(
+    client: &Client,
+    api_url: &str,
+    token: &str,
+    owner: &str,
+    repo: &str,
+    workflow: Option<&str>,
+    limit: u32,
+    after: Option<&str>,
+) -> anyhow::Result<RepositoryRunHistoryPageResponse> {
+    let mut query = vec![("limit", limit.to_string())];
+    if let Some(workflow) = workflow {
+        query.push(("workflow", workflow.into()));
+    }
+    if let Some(after) = after {
+        query.push(("after", after.into()));
+    }
+    parse_json(
+        client
+            .get(format!("{api_url}{}", routes::repo_runs(owner, repo)))
+            .bearer_auth(token)
+            .query(&query)
+            .send()
+            .context("list runs")?,
+        "list runs",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_step_logs(
+    client: &Client,
+    api_url: &str,
+    token: &str,
+    owner: &str,
+    repo: &str,
+    run_id: &str,
+    attempt: &str,
+    step: u32,
+    after: u64,
+) -> anyhow::Result<RepositoryRunStepLogPageResponse> {
+    parse_json(
+        client
+            .get(format!(
+                "{api_url}{}",
+                routes::repo_run_step_logs(owner, repo, run_id, attempt, step)
+            ))
+            .bearer_auth(token)
+            .query(&[("after", after)])
+            .send()
+            .context("load run logs")?,
+        "load run logs",
+    )
 }
 
 #[cfg(test)]

@@ -55,6 +55,9 @@ fn licenses_json_contains_complete_texts_as_one_document() {
         assert!(output.status.success(), "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
         let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(document["command"], "licenses");
+        assert_eq!(document["version"], 1);
+        let document = &document["result"];
         assert_eq!(document["license"], "Apache-2.0");
         assert_eq!(document["license_text"], include_str!("../../LICENSE"));
         assert_eq!(document["notice"], include_str!("../../NOTICE"));

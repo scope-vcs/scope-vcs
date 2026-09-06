@@ -304,6 +304,50 @@ pub struct RunEventsQuery {
     pub after: u64,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RepositoryRunWorkflowResponse {
+    pub key: String,
+    pub name: String,
+    pub path: String,
+    pub manual: bool,
+    pub push_main: bool,
+    pub job_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RepositoryRunWorkflowListResponse {
+    pub workflows: Vec<RepositoryRunWorkflowResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RepositoryRunHistoryPageResponse {
+    pub runs: Vec<RepositoryRunSummaryResponse>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RepositoryRunLogResponse {
+    pub byte_length: usize,
+    pub position: u64,
+    pub sequence: u64,
+    pub text: String,
+    pub created_at_unix: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RepositoryRunStepLogPageResponse {
+    pub logs: Vec<RepositoryRunLogResponse>,
+    pub next_after: u64,
+    pub logs_truncated: bool,
+    pub has_earlier: bool,
+    pub has_more: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

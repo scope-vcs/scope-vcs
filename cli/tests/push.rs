@@ -9,7 +9,7 @@ fn push_stops_at_repository_preconditions_before_login() {
     let non_git = TempDir::new("non-git");
     scope_failure(
         non_git.path(),
-        ["push"],
+        ["push", "--main"],
         "run scope push from inside an existing Git repository",
     );
 
@@ -17,7 +17,7 @@ fn push_stops_at_repository_preconditions_before_login() {
     run_git(no_head.path(), ["-c", "init.defaultBranch=main", "init"]);
     scope_failure(
         no_head.path(),
-        ["push"],
+        ["push", "--main"],
         "create at least one Git commit before running scope push",
     );
 }
@@ -28,7 +28,7 @@ fn push_creates_missing_config_before_remote_lookup() {
     create_repo_with_head(dir.path());
     let stderr = scope_failure(
         dir.path(),
-        ["push", "--no-review"],
+        ["push", "--main", "--no-review"],
         "no Scope Git remote found; pass --remote <name> or run scope init",
     );
     assert!(repo_config_path(dir.path()).unwrap().is_file());
@@ -52,7 +52,7 @@ fn push_validates_config_before_remote_lookup() {
     .unwrap();
     let stderr = scope_failure(
         dir.path(),
-        ["push", "--no-review"],
+        ["push", "--main", "--no-review"],
         "repo config kind must be scope.repo-config",
     );
     assert!(!stderr.contains("Scope remote 'scope' is not configured"));
@@ -64,7 +64,7 @@ fn push_warns_about_dirty_state_before_remote_lookup() {
     fs::write(dir.path().join("README.md"), "uncommitted\n").unwrap();
     let stderr = scope_failure(
         dir.path(),
-        ["push", "--no-review"],
+        ["push", "--main", "--no-review"],
         "no Scope Git remote found; pass --remote <name> or run scope init",
     );
     assert!(stderr.contains("Working tree has uncommitted changes."));
@@ -76,7 +76,7 @@ fn push_requires_review_tty_before_remote_lookup() {
     let dir = configured_repo("review-non-tty");
     let stderr = scope_failure(
         dir.path(),
-        ["push"],
+        ["push", "--main"],
         "scope push review requires an interactive terminal",
     );
     assert!(!stderr.contains("Scope remote 'scope' is not configured"));
@@ -97,4 +97,53 @@ fn configured_repo(label: &str) -> TempDir {
     )
     .unwrap();
     dir
+}
+
+#[test]
+fn push_requires_explicit_main_before_any_repository_changes() {
+    let dir = TempDir::new("push-explicit-main");
+    create_repo_with_head(dir.path());
+    let output = scope_command(dir.path())
+        .args(["--json", "push", "--no-review"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let value: serde_json::Value = serde_json::from_str(
+        String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .last()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(value["code"], "bad_request");
+    assert!(
+        value["message"]
+            .as_str()
+            .unwrap()
+            .contains("scope request push")
+    );
+    assert!(!repo_config_path(dir.path()).unwrap().exists());
+}
+
+#[test]
+fn missing_repository_and_commit_are_usage_errors_in_json() {
+    let dir = TempDir::new("push-json-preconditions");
+    for initialize in [false, true] {
+        if initialize {
+            run_git(dir.path(), ["-c", "init.defaultBranch=main", "init"]);
+        }
+        let output = scope_command(dir.path())
+            .args(["--json", "push", "--main", "--no-review"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let value: serde_json::Value = serde_json::from_str(
+            String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .last()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(value["code"], "bad_request");
+    }
 }

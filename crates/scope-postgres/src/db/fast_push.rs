@@ -87,7 +87,7 @@ impl RepositoryStore {
             .try_into_domain()?;
         if head.manifest.content_ref != expected_manifest_ref {
             return Err(PostgresError::conflict(
-                "repo changed since push was reviewed; rerun scope push",
+                "repo changed since push was reviewed; rerun scope push --main",
             ));
         }
         let member_permissions = entities::repository_member::Entity::find()

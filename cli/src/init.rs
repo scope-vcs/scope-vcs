@@ -1,8 +1,6 @@
 use crate::{
     agent_context::sync_repo_rules,
-    api::{
-        RepoInitResponse, api_url, create_repo, display_user, http_client, rollback_created_repo,
-    },
+    api::{RepoInitResponse, api_url, create_repo, display_user, http_client},
     git_repo::{
         discover_git_repo, git_repo_has_head, install_scope_fetch_auth, warn_if_dirty_working_tree,
     },
@@ -12,7 +10,12 @@ use crate::{
         mark_worktree_scope_repo_config_synced, repo_config_path,
     },
 };
+use crate::{
+    error::CliError,
+    execution::{emit, interactive},
+};
 use anyhow::{Context, bail};
+use serde_json::json;
 use std::{
     collections::BTreeSet,
     io::{self, Write},
@@ -26,7 +29,12 @@ pub fn run(name: Option<String>) -> anyhow::Result<()> {
     let api_url = api_url();
     let repo_name = match name.as_deref() {
         Some(name) => normalize_repo_name(name)?,
-        None => prompt_repo_name(&git_repo.root)?,
+        None if interactive() => prompt_repo_name(&git_repo.root)?,
+        None => {
+            return Err(
+                CliError::usage("scope init requires --name when input is noninteractive").into(),
+            );
+        }
     };
     let rules_sync = sync_repo_rules(&git_repo.root)?;
     if has_head {
@@ -41,8 +49,14 @@ pub fn run(name: Option<String>) -> anyhow::Result<()> {
     let remote_snapshot = match RemoteConfigSnapshot::capture(&git_repo.root, &created.init) {
         Ok(snapshot) => snapshot,
         Err(error) => {
-            rollback_created_repo(&client, &api_url, &session.token, &created.repo);
-            return Err(error);
+            return Err(init_setup_error(
+                &created.repo.owner_handle,
+                &created.repo.name,
+                &created.init,
+                &api_url,
+                error,
+                None,
+            ));
         }
     };
     let config_created = match configure_remote(&git_repo.root, &created.init, &api_url)
@@ -54,43 +68,83 @@ pub fn run(name: Option<String>) -> anyhow::Result<()> {
         Ok(config_created) => config_created,
         Err(error) => {
             let restore_result = remote_snapshot.restore(&git_repo.root);
-            rollback_created_repo(&client, &api_url, &session.token, &created.repo);
-            return match restore_result {
-                Ok(()) => Err(error),
-                Err(restore_error) => Err(error.context(format!(
-                    "restore prior Git remote configuration: {restore_error:#}"
-                ))),
-            };
+            return Err(init_setup_error(
+                &created.repo.owner_handle,
+                &created.repo.name,
+                &created.init,
+                &api_url,
+                error,
+                Some(restore_result),
+            ));
         }
     };
 
-    println!(
-        "Created Scope repo: {}/{}",
-        created.repo.owner_handle, created.repo.name
-    );
-    println!("Configured Git remote: {}", created.init.remote_name);
-    println!(
-        "{} {}",
-        if config_created {
-            "Created"
-        } else {
-            "Using existing"
-        },
-        repo_config_path(&git_repo.root)?.display()
-    );
-    for path in &rules_sync.changed_paths {
-        println!("Updated {}", path.display());
-    }
-    if !has_head {
-        println!(
-            "Create your first commit including the generated Scope files, then run: scope push"
-        );
+    let config_path = repo_config_path(&git_repo.root)?;
+    let next_step = if !has_head {
+        "Create your first commit including the generated Scope files, then run: scope push --main"
     } else if rules_sync.changed_paths.is_empty() {
-        println!("Run: scope push");
+        "Run: scope push --main"
     } else {
-        println!("Commit the generated rules files, then run: scope push");
-    }
-    Ok(())
+        "Commit the generated rules files, then run: scope push --main"
+    };
+    let mut lines = vec![
+        format!(
+            "Created Scope repo: {}/{}",
+            created.repo.owner_handle, created.repo.name
+        ),
+        format!("Configured Git remote: {}", created.init.remote_name),
+        format!(
+            "{} {}",
+            if config_created {
+                "Created"
+            } else {
+                "Using existing"
+            },
+            config_path.display()
+        ),
+    ];
+    lines.extend(
+        rules_sync
+            .changed_paths
+            .iter()
+            .map(|path| format!("Updated {}", path.display())),
+    );
+    lines.push(next_step.to_owned());
+    emit(
+        "init",
+        &json!({"repository": format!("{}/{}", created.repo.owner_handle, created.repo.name), "remote": created.init.remote_name, "remote_url": created.init.git_remote_url, "config_path": config_path, "config_created": config_created, "changed_paths": rules_sync.changed_paths, "next_step": next_step}),
+        lines,
+    )
+}
+
+fn init_setup_error(
+    owner: &str,
+    name: &str,
+    init: &RepoInitResponse,
+    api_url: &str,
+    error: anyhow::Error,
+    restored: Option<anyhow::Result<()>>,
+) -> anyhow::Error {
+    let restore_error = restored
+        .as_ref()
+        .and_then(|result| result.as_ref().err())
+        .map(|error| format!("{error:#}"));
+    CliError::partial(
+        format!("Created {owner}/{name}, but local setup failed: {error:#}. The server repository was retained; do not repeat scope init."),
+        json!({
+            "operation": "init", "repository": format!("{owner}/{name}"), "created": true, "configured": false,
+            "remote": init.remote_name, "remote_url": init.git_remote_url, "api_url": api_url,
+            "prior_remote_restored": restored.as_ref().map(|result| result.is_ok()), "restore_error": restore_error,
+            "recovery": "Fix the reported local Git or filesystem error. Attach the retained repository using the commands below, then run scope push --main after committing the generated Scope rules. Inspect any restored remote before replacing it.",
+            "recovery_commands": [
+                ["git", "config", "--local", "--replace-all", &format!("remote.{}.url", init.remote_name), &init.git_remote_url],
+                ["git", "config", "--local", "--replace-all", &format!("remote.{}.fetch", init.remote_name), &format!("+refs/heads/*:refs/remotes/{}/*", init.remote_name)],
+                ["git", "config", "--local", "--replace-all", "scope.apiUrl", api_url],
+                ["git", "config", "--local", "--replace-all", "scope.gitOrigin", &reqwest::Url::parse(&init.git_remote_url).map(|url| url.origin().ascii_serialization()).unwrap_or_default()],
+                ["git", "remote", "set-url", "--push", &init.remote_name, &init.git_remote_url]
+            ]
+        })
+    ).into()
 }
 
 fn configure_remote(git_root: &Path, init: &RepoInitResponse, api_url: &str) -> anyhow::Result<()> {
@@ -294,7 +348,7 @@ fn default_repo_name(git_root: &Path) -> String {
 fn normalize_repo_name(name: &str) -> anyhow::Result<String> {
     let name = name.trim().to_ascii_lowercase();
     if name.is_empty() {
-        bail!("repository name is required");
+        return Err(CliError::usage("repository name is required").into());
     }
     Ok(name)
 }

@@ -506,3 +506,87 @@ fn repo(dir: &TestDir) -> GitRepo {
         root: dir.path().to_path_buf(),
     }
 }
+
+#[test]
+fn changed_paths_preserve_whitespace_unicode_and_rename_identity() {
+    let dir = TestDir::git_repo("exact-changed-paths", "main");
+    dir.run_git(["config", "user.name", "Scope Test"]);
+    dir.run_git(["config", "user.email", "scope@example.test"]);
+    let names = [
+        " leading ",
+        "tab\tname",
+        "line\nname",
+        "café",
+        "old -> name",
+    ];
+    for name in names {
+        fs::write(dir.path().join(name), name).unwrap();
+    }
+    dir.run_git(["add", "."]);
+    dir.run_git(["commit", "--quiet", "-m", "initial"]);
+    let repo = GitRepo {
+        root: dir.path().to_path_buf(),
+    };
+    let base = head_oid(&repo).unwrap();
+    let initial = changed_paths_since_scope_base_at_commit(&repo, None, &base).unwrap();
+    let actual = initial
+        .iter()
+        .map(|change| change.path.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(actual, names.into_iter().collect());
+    assert!(initial.iter().all(|change| change.previous_path.is_none()));
+
+    fs::rename(
+        dir.path().join("old -> name"),
+        dir.path().join(" new\t→\nname "),
+    )
+    .unwrap();
+    for name in &names[..4] {
+        fs::write(dir.path().join(name), format!("modified {name}")).unwrap();
+    }
+    dir.run_git(["add", "."]);
+    dir.run_git(["commit", "--quiet", "-m", "changes"]);
+    let changes =
+        changed_paths_since_scope_base_at_commit(&repo, Some(&base), &head_oid(&repo).unwrap())
+            .unwrap();
+    let rename = changes
+        .iter()
+        .find(|change| change.status.starts_with('R'))
+        .unwrap();
+    assert_eq!(rename.previous_path.as_deref(), Some("old -> name"));
+    assert_eq!(rename.path, " new\t→\nname ");
+    for name in &names[..4] {
+        assert!(
+            changes
+                .iter()
+                .any(|change| change.path == *name && change.status == "M")
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn changed_paths_reject_invalid_utf8_without_changing_path_identity() {
+    use std::os::unix::ffi::OsStringExt;
+    let dir = TestDir::git_repo("invalid-utf8-path", "main");
+    let name = std::ffi::OsString::from_vec(vec![b'a', 0xff]);
+    fs::write(dir.path().join(name), "content").unwrap();
+    dir.run_git(["add", "."]);
+    dir.run_git([
+        "-c",
+        "user.name=Scope Test",
+        "-c",
+        "user.email=scope@example.test",
+        "commit",
+        "--quiet",
+        "-m",
+        "initial",
+    ]);
+    let repo = GitRepo {
+        root: dir.path().to_path_buf(),
+    };
+    let error = changed_paths_since_scope_base_at_commit(&repo, None, &head_oid(&repo).unwrap())
+        .unwrap_err();
+    assert_eq!(crate::error::exit_code(&error), 2);
+    assert!(error.to_string().contains("not UTF-8"));
+}

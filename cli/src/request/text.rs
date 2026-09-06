@@ -37,15 +37,23 @@ pub(super) fn discussion_body_with_stdin(
 ) -> anyhow::Result<String> {
     match (body, body_file) {
         (Some(body), None) => Ok(body),
-        (None, Some(path)) if path == Path::new("-") => {
-            let mut body = String::new();
-            stdin
-                .read_to_string(&mut body)
-                .context("read discussion body from stdin")?;
-            Ok(body)
-        }
-        (None, Some(path)) => fs::read_to_string(&path)
-            .with_context(|| format!("read discussion body from {}", path.display())),
+        (None, Some(path)) => read_markdown_with_stdin(path, stdin),
         _ => bail!("exactly one of --body or --body-file is required"),
+    }
+}
+
+pub(super) fn read_markdown(path: PathBuf) -> anyhow::Result<String> {
+    read_markdown_with_stdin(path, &mut io::stdin().lock())
+}
+
+fn read_markdown_with_stdin(path: PathBuf, stdin: &mut dyn Read) -> anyhow::Result<String> {
+    if path == Path::new("-") {
+        let mut body = String::new();
+        stdin
+            .read_to_string(&mut body)
+            .context("read Markdown from stdin")?;
+        Ok(body)
+    } else {
+        fs::read_to_string(&path).with_context(|| format!("read Markdown from {}", path.display()))
     }
 }

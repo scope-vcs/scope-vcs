@@ -10,8 +10,8 @@ pub(crate) use scope_api_contract::CommitFileResponse;
 use scope_api_contract::{
     DeviceLoginStatus, FileChangeKind, FirstPushTokenResponse, GitOid, GitPushTokenResponse,
     RepoInitResponse, RepoLifecycleState, RepoRequestPermissionsResponse, RepoSummaryResponse,
-    RepositoryAccessResponse, RepositoryRunSummaryResponse, RequestActorSummaryResponse,
-    SessionIdentity, UserResponse, Visibility,
+    RepositoryAccessResponse, RequestActorSummaryResponse, SessionIdentity, UserResponse,
+    Visibility,
 };
 
 use crate::{config::DEFAULT_GIT_BRANCH, error::ApiError};
@@ -42,49 +42,10 @@ pub(crate) fn request_actor_summary_response(
     })
 }
 
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct RepositoryRunWorkflowResponse {
-    pub(crate) key: String,
-    pub(crate) name: String,
-    pub(crate) path: String,
-    pub(crate) manual: bool,
-    pub(crate) push_main: bool,
-    pub(crate) job_count: usize,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct RepositoryRunWorkflowListResponse {
-    pub(crate) workflows: Vec<RepositoryRunWorkflowResponse>,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct RepositoryRunHistoryPageResponse {
-    pub(crate) runs: Vec<RepositoryRunSummaryResponse>,
-    pub(crate) next_cursor: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct RepositoryRunLogResponse {
-    pub(crate) byte_length: usize,
-    pub(crate) position: u64,
-    pub(crate) sequence: u64,
-    pub(crate) text: String,
-    pub(crate) created_at_unix: u64,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct RepositoryRunStepLogPageResponse {
-    pub(crate) logs: Vec<RepositoryRunLogResponse>,
-    pub(crate) next_after: u64,
-    pub(crate) logs_truncated: bool,
-    pub(crate) has_earlier: bool,
-    pub(crate) has_more: bool,
-}
+pub(crate) use scope_api_contract::{
+    RepositoryRunHistoryPageResponse, RepositoryRunLogResponse, RepositoryRunStepLogPageResponse,
+    RepositoryRunWorkflowListResponse, RepositoryRunWorkflowResponse,
+};
 
 #[derive(Debug, Serialize)]
 pub(crate) struct HealthResponse {
@@ -249,25 +210,7 @@ pub(crate) struct RepoFileContentRequest {
     pub(crate) path: String,
 }
 
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct ReviewFileDiffResponse {
-    pub(crate) path: String,
-    pub(crate) kind: FileChangeKind,
-    pub(crate) old_mode: Option<String>,
-    pub(crate) new_mode: Option<String>,
-    pub(crate) old_content: Option<ReviewFileContentResponse>,
-    pub(crate) new_content: Option<ReviewFileContentResponse>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "type-export", ts(rename_all = "lowercase"))]
-pub(crate) enum ReviewFileContentResponse {
-    Text { text: String },
-    Binary { oid: String, size_bytes: u64 },
-}
+pub(crate) use scope_api_contract::{ReviewFileContentResponse, ReviewFileDiffResponse};
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]

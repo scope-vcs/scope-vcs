@@ -4,9 +4,9 @@ use crate::{
         BrowserLoginStartResponse, CLI_BROWSER_LOGIN_PATH, CLI_DEVICE_LOGIN_PATH,
         CLI_EXCHANGE_GRANTS_EXCHANGE_PATH, CliExchangeGrantExchangeRequest,
         CliSessionTokenResponse, DeviceLoginPollResponse, DeviceLoginStartResponse,
-        DeviceLoginStatus, account_session, api_url, cli_browser_login_exchange_path,
-        cli_device_login_poll_path, decode_json_response, display_user, http_client,
-        revoke_cli_session, validate_session_token,
+        DeviceLoginStatus, api_url, cli_browser_login_exchange_path, cli_device_login_poll_path,
+        decode_json_response, display_user, http_client, revoke_cli_session,
+        validate_session_token,
     },
     auth::{
         cached_cli_session, delete_stored_session_token, read_stored_session_token,
@@ -52,8 +52,11 @@ pub fn login(
     if let Some(exchange_token) = exchange_token {
         let session = exchange_login(&client, &api_url, &exchange_token)?;
         store_session_token(&api_url, &session.token)?;
-        println!("Signed in as {}", display_user(&session.user));
-        return Ok(());
+        return crate::execution::emit(
+            "login",
+            &session.user,
+            vec![format!("Signed in as {}", display_user(&session.user))],
+        );
     }
 
     let session = if headless {
@@ -63,8 +66,11 @@ pub fn login(
     } else {
         session_from_cache_or_browser(&client, &api_url)?
     };
-    println!("Signed in as {}", display_user(&session.user));
-    Ok(())
+    crate::execution::emit(
+        "login",
+        &session.user,
+        vec![format!("Signed in as {}", display_user(&session.user))],
+    )
 }
 
 fn read_private_exchange_token(path: &Path) -> anyhow::Result<String> {
@@ -91,16 +97,26 @@ pub fn logout() -> anyhow::Result<()> {
     let api_url = api_url();
     let client = http_client()?;
     let Some(token) = read_stored_session_token(&api_url)? else {
-        println!("Not signed in");
-        return Ok(());
+        return crate::execution::emit(
+            "logout",
+            &serde_json::json!({"signed_out": true, "revoked": false}),
+            vec!["Not signed in".to_string()],
+        );
     };
 
-    if let Err(error) = revoke_cli_session(&client, &api_url, &token) {
-        eprintln!("Could not revoke the server session: {error}");
-    }
+    let revoked = match revoke_cli_session(&client, &api_url, &token) {
+        Ok(()) => true,
+        Err(error) => {
+            eprintln!("Could not revoke the server session: {error}");
+            false
+        }
+    };
     delete_stored_session_token(&api_url)?;
-    println!("Signed out");
-    Ok(())
+    crate::execution::emit(
+        "logout",
+        &serde_json::json!({"signed_out": true, "revoked": revoked}),
+        vec!["Signed out".to_string()],
+    )
 }
 
 pub fn whoami() -> anyhow::Result<()> {
@@ -109,9 +125,7 @@ pub fn whoami() -> anyhow::Result<()> {
     let Some(session) = cached_cli_session(&client, &api_url)? else {
         return Err(CliError::authentication("not signed in; run scope login").into());
     };
-    println!("{}", display_user(&session.user));
-    let _ = account_session(&client, &api_url, &session.token)?;
-    Ok(())
+    crate::execution::emit("whoami", &session.user, vec![display_user(&session.user)])
 }
 
 pub fn session_from_cache_or_browser(
@@ -137,6 +151,9 @@ fn session_from_cache_or_login(
 ) -> anyhow::Result<AuthenticatedSession> {
     if let Some(session) = cached_cli_session(client, api_url)? {
         return Ok(session);
+    }
+    if !crate::execution::interactive() {
+        return Err(CliError::authentication("not signed in; run scope login in a terminal, or use scope login --exchange-file <private-file> for automation").into());
     }
     let session = login(client, api_url)?;
     store_session_token(api_url, &session.token)?;

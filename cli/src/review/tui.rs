@@ -77,7 +77,7 @@ fn render(frame: &mut Frame<'_>, state: &mut ReviewState) {
     .split(area);
 
     let mode = match state.mode() {
-        ReviewMode::Standalone => "scope review",
+        ReviewMode::Standalone => "scope visibility edit",
         ReviewMode::Push => "scope push review",
     };
     let dirty = if state.is_dirty() {

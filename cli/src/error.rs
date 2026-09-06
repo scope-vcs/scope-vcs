@@ -15,11 +15,22 @@ pub enum ExitCategory {
 #[derive(Debug)]
 pub struct CliError {
     response: ErrorResponse,
+    recovery: Option<serde_json::Value>,
 }
 
 impl CliError {
     pub fn new(response: ErrorResponse) -> Self {
-        Self { response }
+        Self {
+            response,
+            recovery: None,
+        }
+    }
+
+    pub fn partial(message: impl Into<String>, receipt: serde_json::Value) -> Self {
+        Self {
+            response: ErrorResponse::new(ErrorCode::Conflict, message),
+            recovery: Some(receipt),
+        }
     }
 
     pub fn usage(message: impl Into<String>) -> Self {
@@ -56,6 +67,39 @@ impl fmt::Display for CliError {
         write!(formatter, "{}", self.response.message)?;
         if let Some(instruction) = self.response.instruction.as_deref() {
             write!(formatter, "\n{instruction}")?;
+        }
+        if let Some(recovery) = &self.recovery {
+            if let Some(message) = recovery.get("recovery").and_then(serde_json::Value::as_str) {
+                write!(formatter, "\n{message}")?;
+            }
+            if let Some(commands) = recovery
+                .get("recovery_commands")
+                .and_then(serde_json::Value::as_array)
+            {
+                for command in commands {
+                    if let Some(command) = command.as_str() {
+                        write!(formatter, "\n  {command}")?;
+                    } else if let Some(arguments) = command.as_array() {
+                        let command = arguments
+                            .iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .map(|argument| {
+                                if argument
+                                    .chars()
+                                    .all(|c| c.is_ascii_alphanumeric() || "-_./:=+".contains(c))
+                                    && !argument.is_empty()
+                                {
+                                    argument.to_string()
+                                } else {
+                                    format!("'{}'", argument.replace('\'', "'\\''"))
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        write!(formatter, "\n  {command}")?;
+                    }
+                }
+            }
         }
         if let Some(error_reference) = self.response.error_reference.as_deref() {
             write!(formatter, "\nReference: {error_reference}")?;
@@ -94,6 +138,15 @@ pub fn response(error: &anyhow::Error) -> ErrorResponse {
         .retryable();
     }
     ErrorResponse::new(ErrorCode::Internal, format!("{error:#}"))
+}
+
+pub fn json_response(error: &anyhow::Error) -> scope_api_contract::CliFailureEnvelope {
+    scope_api_contract::CliFailureEnvelope {
+        error: response(error),
+        recovery: error
+            .downcast_ref::<CliError>()
+            .and_then(|error| error.recovery.clone()),
+    }
 }
 
 #[cfg(test)]

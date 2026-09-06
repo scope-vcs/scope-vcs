@@ -1,6 +1,6 @@
 use crate::error::CliError;
 use scope_api_contract::{ErrorCode, ErrorResponse};
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 
 pub(super) fn require_confirmation(
     prompt: &str,
@@ -10,7 +10,7 @@ pub(super) fn require_confirmation(
     if yes {
         return Ok(());
     }
-    if !interactive || !io::stdin().is_terminal() || !io::stderr().is_terminal() {
+    if !interactive || !crate::execution::interactive() {
         return Err(CliError::new(ErrorResponse::new(
             ErrorCode::BadRequest,
             format!("{prompt}; rerun with --yes to confirm"),

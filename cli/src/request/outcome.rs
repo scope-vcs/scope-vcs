@@ -45,6 +45,9 @@ impl RequestCommandOutcome {
 #[serde(untagged)]
 pub(super) enum RequestCommandResult {
     Started(StartResult),
+    Checkout(CheckoutResult),
+    Diff(DiffResult),
+    Checks(ChecksResult),
     Detail(DetailResult),
     List(ListResult),
     Mutation(RepoResponse<RequestMutationResponse>),
@@ -111,4 +114,36 @@ pub(super) struct DiscussionReplyResult {
     pub(super) request_id: String,
     pub(super) discussion: RequestDiscussionSummaryResponse,
     pub(super) reply: RequestDiscussionReplyResponse,
+}
+
+#[derive(Serialize)]
+pub(super) struct CheckoutResult {
+    pub(super) repo: RepoSummaryResponse,
+    pub(super) request: RequestSummaryResponse,
+    pub(super) branch: String,
+    pub(super) head_oid: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct DiffResult {
+    pub(super) repo: RepoSummaryResponse,
+    pub(super) request_id: String,
+    pub(super) revisions: scope_api_contract::RequestRevisionListResponse,
+    pub(super) files: Vec<InspectedFile>,
+}
+
+#[derive(Serialize)]
+pub(super) struct InspectedFile {
+    pub(super) commit_oid: String,
+    pub(super) diff: scope_api_contract::ReviewFileDiffResponse,
+}
+
+#[derive(Serialize)]
+pub(super) struct ChecksResult {
+    pub(super) repo: RepoSummaryResponse,
+    pub(super) request_id: String,
+    pub(super) head_oid: String,
+    pub(super) mergeability: scope_api_contract::RequestMergeabilityResponse,
+    pub(super) workflow_runs_available: bool,
+    pub(super) runs: Vec<scope_api_contract::RepositoryRunSummaryResponse>,
 }

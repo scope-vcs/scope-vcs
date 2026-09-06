@@ -90,8 +90,9 @@ pub fn ensure_repo_rules_ready_for_push(git_root: &Path, head_oid: &str) -> anyh
     })();
 
     result.map_err(|error: anyhow::Error| {
-        error
-            .context("Run `scope rules sync`, commit the generated files, then retry `scope push`.")
+        error.context(
+            "Run `scope rules sync`, commit the generated files, then retry `scope push --main`.",
+        )
     })
 }
 

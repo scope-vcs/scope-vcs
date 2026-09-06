@@ -140,7 +140,7 @@ fn short_oid(oid: &str) -> &str {
     oid.get(..7).unwrap_or(oid)
 }
 
-fn run_state_label(state: RepositoryRunState) -> &'static str {
+pub(super) fn run_state_label(state: RepositoryRunState) -> &'static str {
     match state {
         RepositoryRunState::Queued => "queued",
         RepositoryRunState::Dispatching => "dispatching",

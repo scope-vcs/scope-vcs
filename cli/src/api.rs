@@ -12,7 +12,7 @@ pub use scope_api_contract::routes::{
 pub use scope_api_contract::*;
 use scope_domain::repo_config::RepoConfig as DomainRepoConfig;
 use serde::de::DeserializeOwned;
-use std::{env, time::Duration};
+use std::time::Duration;
 
 mod requests;
 mod runs;
@@ -53,17 +53,15 @@ pub struct RepoConfigContext {
 }
 
 pub fn api_url() -> String {
-    env::var("SCOPE_API_URL")
-        .or_else(|_| env::var("SCOPE_API_PUBLIC_URL"))
-        .ok()
-        .or_else(|| option_env!("SCOPE_API_URL").map(str::to_string))
-        .or_else(|| option_env!("SCOPE_API_PUBLIC_URL").map(str::to_string))
-        .unwrap_or_else(|| DEFAULT_API_URL.to_string())
-        .trim_end_matches('/')
-        .to_string()
+    crate::context::api_url(
+        option_env!("SCOPE_API_URL")
+            .or(option_env!("SCOPE_API_PUBLIC_URL"))
+            .unwrap_or(DEFAULT_API_URL),
+    )
 }
 
 pub fn http_client() -> anyhow::Result<Client> {
+    crate::context::validate_api_url(&api_url())?;
     http_client_builder()
         .timeout(Duration::from_secs(20))
         .build()
@@ -346,36 +344,6 @@ pub fn create_push_intent(
         response,
         &format!("create push intent for {}/{}", params.owner, params.repo),
     )
-}
-
-pub fn rollback_created_repo(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
-    repo: &RepoSummaryResponse,
-) {
-    let result = client
-        .delete(format!(
-            "{api_url}{}",
-            scope_api_contract::routes::repo(&repo.owner_handle, &repo.name)
-        ))
-        .bearer_auth(session_token)
-        .send();
-
-    match result {
-        Ok(response) if response.status().is_success() => {
-            eprintln!("Deleted Scope repository after failed init");
-        }
-        Ok(response) => {
-            eprintln!(
-                "Scope repository was created, but rollback failed: {}",
-                response.status()
-            );
-        }
-        Err(error) => {
-            eprintln!("Scope repository was created, but rollback failed: {error}");
-        }
-    }
 }
 
 pub fn display_user(user: &UserResponse) -> String {

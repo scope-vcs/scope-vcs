@@ -17,7 +17,7 @@ pub struct ScopePath(String);
 
 impl ScopePath {
     pub fn parse(input: impl AsRef<str>) -> Result<Self, PolicyError> {
-        let raw = input.as_ref().trim();
+        let raw = input.as_ref();
         if !raw.starts_with('/') {
             return Err(PolicyError::RelativePath);
         }

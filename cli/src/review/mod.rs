@@ -1,7 +1,7 @@
-mod git_paths;
-mod policy;
+pub(crate) mod git_paths;
+pub(crate) mod policy;
 mod state;
-mod tree;
+pub(crate) mod tree;
 mod tui;
 
 use crate::{
@@ -22,7 +22,7 @@ use self::{
 };
 
 pub fn run_standalone_review(repo: &GitRepo) -> anyhow::Result<()> {
-    ensure_review_terminal_available("scope review")?;
+    ensure_review_terminal_available("scope visibility edit")?;
     ensure_scope_repo_config_exists(&repo.root)?;
     let config = load_worktree_scope_repo_config(&repo.root)?;
     let tree = worktree_review_tree(repo)?;
@@ -32,7 +32,7 @@ pub fn run_standalone_review(repo: &GitRepo) -> anyhow::Result<()> {
         write_worktree_scope_repo_config(&repo.root, config)
     })? {
         TuiOutcome::Exit => Ok(()),
-        TuiOutcome::Cancel => bail!("scope review cancelled"),
+        TuiOutcome::Cancel => bail!("scope visibility edit cancelled"),
         TuiOutcome::ContinuePush => Ok(()),
     }
 }
@@ -56,11 +56,11 @@ pub fn run_push_review(
 }
 
 pub fn ensure_review_terminal_available(command_name: &str) -> anyhow::Result<()> {
-    if io::stdin().is_terminal() && io::stdout().is_terminal() {
+    if crate::execution::interactive() && io::stdin().is_terminal() && io::stdout().is_terminal() {
         return Ok(());
     }
 
-    bail!(
-        "{command_name} requires an interactive terminal; use --no-review with scope push to skip review"
-    )
+    Err(crate::error::CliError::usage(format!(
+        "{command_name} requires an interactive terminal; use scope visibility show to inspect configuration, or scope push --no-review to skip editing"
+    )).into())
 }

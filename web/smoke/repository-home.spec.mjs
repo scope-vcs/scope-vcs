@@ -154,7 +154,7 @@ test('views without a README or any files open deliberately without guessing a f
       await navigateFromHome(page, `/${repo}`)
       await page.getByText(files.length
         ? 'No README in this view. Browse the files or use Find file to get started.'
-        : 'Run scope push from the CLI to add files to this repository.', { exact: true }).waitFor()
+        : 'Run scope push --main from the CLI to add files to this repository.', { exact: true }).waitFor()
       assert.equal(fileRequests, 0)
       assert.equal(await page.getByText('Resources', { exact: true }).count(), 0)
     })

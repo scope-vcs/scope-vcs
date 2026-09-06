@@ -3,7 +3,11 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const PULL_REQUEST_TARGET = "x86_64-unknown-linux-gnu";
+const PULL_REQUEST_TARGETS = new Set([
+  "x86_64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]);
 
 export function selectCliDistributionTargets(configuration, mode) {
   if (!Array.isArray(configuration?.targets)) {
@@ -15,7 +19,7 @@ export function selectCliDistributionTargets(configuration, mode) {
 
   const targets = mode === "release"
     ? configuration.targets
-    : configuration.targets.filter(({ triple }) => triple === PULL_REQUEST_TARGET);
+    : configuration.targets.filter(({ triple }) => PULL_REQUEST_TARGETS.has(triple));
   if (targets.length === 0) {
     throw new Error(`CLI distribution mode ${mode} selected no targets`);
   }

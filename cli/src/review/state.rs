@@ -504,13 +504,20 @@ impl ReviewState {
 fn split_change_paths(changed_paths: &[GitChangedPath]) -> (Vec<String>, Vec<String>) {
     let mut added = changed_paths
         .iter()
-        .filter(|path| path.status.starts_with('A'))
+        .filter(|path| matches!(path.status.chars().next(), Some('A' | 'R' | 'C')))
         .map(|path| path.path.clone())
         .collect::<Vec<_>>();
     let mut deleted = changed_paths
         .iter()
-        .filter(|path| path.status.starts_with('D'))
-        .map(|path| path.path.clone())
+        .filter_map(|path| {
+            if path.status.starts_with('D') {
+                Some(path.path.clone())
+            } else if path.status.starts_with('R') {
+                path.previous_path.clone()
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>();
     added.sort();
     deleted.sort();

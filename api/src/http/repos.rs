@@ -239,7 +239,7 @@ pub(crate) async fn create_push_intent(
     }
     if base_config_hash != input.base_config_hash && repo.repo_config != input_config {
         return Err(ApiError::conflict(
-            "repo config changed since review; rerun scope review",
+            "repo config changed since review; rerun scope visibility edit",
         ));
     }
     let base_head_oid = repo.git_head.as_ref().map(|head| head.head_oid.clone());
@@ -280,7 +280,7 @@ pub(crate) async fn create_push_intent(
                         != expected_manifest_ref.as_ref()
                     {
                         return Err(DomainError::conflict(
-                            "repo content changed since review; rerun scope push",
+                            "repo content changed since review; rerun scope push --main",
                         ));
                     }
                     if domain_repo_config_fingerprint(&repo.repo_config)
@@ -288,7 +288,7 @@ pub(crate) async fn create_push_intent(
                         != expected_config_hash
                     {
                         return Err(DomainError::conflict(
-                            "repo config changed since review; rerun scope push",
+                            "repo config changed since review; rerun scope push --main",
                         ));
                     }
                     let changed = apply_reviewed_config_to_repo(

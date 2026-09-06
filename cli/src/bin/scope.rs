@@ -1,122 +1,160 @@
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, error::ErrorKind};
 use scope_cli::{
     api::{api_url, http_client},
-    auth::cached_cli_session,
     error::CliError,
     git_credential::run_git_credential,
     git_repo::discover_git_repo,
     login::session_from_cache_or_browser,
     request::{RequestArgs, prepare_request_command, run_request_command},
-    review::run_standalone_review,
+    run::RunArgs,
+    visibility::VisibilityArgs,
 };
 use std::{path::PathBuf, process::ExitCode};
 
 #[derive(Parser)]
-#[command(name = "scope")]
-#[command(about = "Scope VCS command line")]
+#[command(
+    name = "scope",
+    about = "Work with Scope repositories, requests, visibility, and cloud runs"
+)]
+#[command(
+    after_help = "Start here: scope login, then scope clone owner/repo or scope init --name repo.\nInspect your checkout with scope status. Use --repo owner/repo for remote-only commands."
+)]
 struct Cli {
     #[arg(
         long,
         global = true,
-        help = "Print one machine-readable JSON document for supported commands"
+        help = "Print JSON results; run watch emits JSON lines"
     )]
     json: bool,
+    #[arg(
+        long,
+        global = true,
+        help = "Fail instead of opening a browser or prompting for input"
+    )]
+    non_interactive: bool,
+    #[arg(
+        long,
+        global = true,
+        value_name = "URL",
+        help = "Override the Scope API endpoint"
+    )]
+    api_url: Option<String>,
+    #[arg(
+        long,
+        global = true,
+        value_name = "OWNER/REPO",
+        help = "Select a repository, including outside a checkout"
+    )]
+    repo: Option<String>,
     #[command(subcommand)]
     command: CommandKind,
 }
 
 #[derive(Subcommand)]
 enum CommandKind {
+    #[command(about = "Create a Scope repository and configure this Git checkout")]
     Init(InitArgs),
+    #[command(about = "Publish the current commit to Scope main with --main")]
     Push(PushArgs),
-    #[command(about = "Pull main and every visible request from Scope")]
+    #[command(about = "Fetch visible branches and fast-forward the tracked local branch")]
     Pull(PullArgs),
-    #[command(about = "Review file visibility config locally")]
-    Review,
+    #[command(about = "Edit, inspect, explain, and preview file visibility")]
+    Visibility(VisibilityArgs),
     #[command(about = "Manage repository contribution rules for coding agents")]
     Rules(RulesArgs),
-    #[command(about = "Work with named Scope requests")]
+    #[command(about = "Create, inspect, discuss, and merge named requests")]
     Request(RequestArgs),
+    #[command(about = "Clone a Scope repository and configure Git authentication")]
     Clone(CloneArgs),
+    #[command(about = "Sign in through a browser, device code, or private exchange file")]
     Login(LoginArgs),
+    #[command(about = "Revoke the current session and remove its saved credentials")]
     Logout,
+    #[command(about = "Show the signed-in Scope account")]
     Whoami,
-    #[command(about = "Print the embedded Scope and third-party licenses (works offline)")]
+    #[command(about = "Explain checkout state, push target, and relevant Scope activity")]
+    Status(InspectionArgs),
+    #[command(about = "Diagnose Git, authentication, endpoint, and local setup problems")]
+    Doctor(InspectionArgs),
+    #[command(about = "Print embedded Scope and third-party licenses, including offline")]
     Licenses,
-    #[command(about = "Run committed workflows in Scope Cloud")]
+    #[command(about = "Discover workflows, launch runs, inspect logs, and control runs")]
     Run(RunArgs),
+    #[command(about = "Generate shell completions")]
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
     #[command(name = "git-credential", hide = true)]
     GitCredential(GitCredentialArgs),
 }
 
 #[derive(Parser)]
 struct InitArgs {
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Repository name; required outside an interactive terminal"
+    )]
     name: Option<String>,
 }
-
 #[derive(Parser)]
 struct PushArgs {
-    #[arg(long, help = "Scope Git remote to push (auto-detected by default)")]
+    #[arg(long, help = "Explicitly publish HEAD to remote main")]
+    main: bool,
+    #[arg(long, help = "Scope Git remote to publish to")]
     remote: Option<String>,
     #[arg(
         long,
-        help = "Skip local visibility review and push using committed config"
+        help = "Skip the TUI and use the local per-worktree visibility config"
     )]
     no_review: bool,
     #[arg(long, help = "Wait for push-triggered workflows to finish")]
     wait: bool,
 }
-
 #[derive(Parser)]
 struct PullArgs {
-    #[arg(long, help = "Scope Git remote to fetch (auto-detected by default)")]
+    #[arg(long, help = "Scope Git remote to fetch")]
     remote: Option<String>,
 }
-
 #[derive(Parser)]
 struct CloneArgs {
     repository: String,
     destination: Option<PathBuf>,
 }
-
 #[derive(Parser)]
 struct RulesArgs {
     #[command(subcommand)]
     command: RulesCommand,
 }
-
 #[derive(Subcommand)]
 enum RulesCommand {
-    #[command(about = "Create .scope/RULES.md and sync detected repo-level agent files")]
+    #[command(about = "Create rules and synchronize detected agent files")]
     Sync,
 }
-
 #[derive(Parser)]
 struct LoginArgs {
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["exchange", "exchange_file"], help = "Use a device code in a terminal without a browser")]
     headless: bool,
     #[arg(long, value_name = "TOKEN", conflicts_with = "exchange_file")]
     exchange: Option<String>,
-    #[arg(long, value_name = "PATH", conflicts_with = "exchange")]
+    #[arg(
+        long,
+        value_name = "PATH",
+        conflicts_with = "exchange",
+        help = "Exchange a token from an owner-only regular file"
+    )]
     exchange_file: Option<PathBuf>,
 }
-
 #[derive(Parser)]
 struct GitCredentialArgs {
     operation: String,
 }
-
 #[derive(Parser)]
-struct RunArgs {
-    #[arg(help = "Workflow name, or show/watch/cancel/retry")]
-    target: String,
-    #[arg(help = "Run ID for show/watch/cancel/retry")]
-    run_id: Option<String>,
-    #[arg(long, help = "Scope Git remote to use (auto-detected by default)")]
+struct InspectionArgs {
+    #[arg(long, help = "Scope Git remote to inspect")]
     remote: Option<String>,
-    #[arg(long, help = "Queue or retry without following logs")]
-    no_watch: bool,
+    #[arg(long, help = "Inspect local state without contacting Scope")]
+    offline: bool,
 }
 
 fn main() -> ExitCode {
@@ -135,11 +173,14 @@ fn main() -> ExitCode {
             error.exit()
         }
         Err(error) if json_requested => {
-            let response = scope_cli::api::ErrorResponse::new(
-                scope_cli::api::ErrorCode::BadRequest,
-                error.to_string(),
+            eprintln!(
+                "{}",
+                serde_json::to_string(&scope_cli::api::ErrorResponse::new(
+                    scope_cli::api::ErrorCode::BadRequest,
+                    error.to_string()
+                ))
+                .unwrap()
             );
-            eprintln!("{}", serde_json::to_string(&response).unwrap());
             return ExitCode::from(2);
         }
         Err(error) => error.exit(),
@@ -153,8 +194,10 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             if json {
-                let response = scope_cli::error::response(&error);
-                eprintln!("{}", serde_json::to_string(&response).unwrap());
+                eprintln!(
+                    "{}",
+                    serde_json::to_string(&scope_cli::error::json_response(&error)).unwrap()
+                );
             } else {
                 eprintln!("{error:#}");
             }
@@ -164,30 +207,22 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
-    let json_supported = match &cli.command {
-        CommandKind::Request(_) | CommandKind::Licenses => true,
-        CommandKind::Run(args) => args.target == "show" && args.run_id.is_some() && !args.no_watch,
-        _ => false,
-    };
-    if cli.json && !json_supported {
-        return Err(
-            scope_cli::error::CliError::new(scope_cli::api::ErrorResponse::new(
-                scope_cli::api::ErrorCode::BadRequest,
-                "--json currently supports request commands, `scope run show`, and `scope licenses`",
-            ))
-            .into(),
-        );
-    }
+    scope_cli::execution::configure(scope_cli::execution::Options {
+        json: cli.json,
+        non_interactive: cli.non_interactive,
+        api_url: cli.api_url,
+        repository: cli.repo,
+    })?;
     match cli.command {
         CommandKind::Init(args) => scope_cli::init::run(args.name),
         CommandKind::Push(args) => {
+            if !args.main {
+                return Err(CliError::usage("choose a push destination: use `scope request push` to update a request, or `scope push --main` to publish HEAD to main").into());
+            }
             scope_cli::push::run(args.remote.as_deref(), args.no_review, args.wait)
         }
         CommandKind::Pull(args) => scope_cli::pull::run(args.remote.as_deref()),
-        CommandKind::Review => {
-            let repo = discover_git_repo("scope review")?;
-            run_standalone_review(&repo)
-        }
+        CommandKind::Visibility(args) => scope_cli::visibility::run(args),
         CommandKind::Rules(args) => run_rules(args.command),
         CommandKind::Request(args) => run_request(args, cli.json),
         CommandKind::Clone(args) => {
@@ -198,83 +233,52 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
         CommandKind::Logout => scope_cli::login::logout(),
         CommandKind::Whoami => scope_cli::login::whoami(),
+        CommandKind::Status(args) => {
+            scope_cli::inspection::status(args.remote.as_deref(), args.offline)
+        }
+        CommandKind::Doctor(args) => {
+            scope_cli::inspection::doctor(args.remote.as_deref(), args.offline)
+        }
         CommandKind::Licenses => scope_cli::licenses::run(cli.json),
-        CommandKind::Run(args) => run_workflow(args, cli.json),
+        CommandKind::Run(args) => scope_cli::run::run_command(args),
         CommandKind::GitCredential(args) => run_git_credential(&args.operation),
+        CommandKind::Completions { shell } => {
+            if cli.json {
+                return Err(
+                    CliError::usage("shell completions are shell source; omit --json").into(),
+                );
+            }
+            clap_complete::generate(shell, &mut Cli::command(), "scope", &mut std::io::stdout());
+            Ok(())
+        }
     }
 }
-
 fn run_rules(command: RulesCommand) -> anyhow::Result<()> {
     let repo = discover_git_repo("scope rules")?;
     match command {
         RulesCommand::Sync => {
             let result = scope_cli::agent_context::sync_repo_rules(&repo.root)?;
-            if result.changed_paths.is_empty() {
-                println!("Scope rules context is already in sync.");
+            let lines = if result.changed_paths.is_empty() {
+                vec!["Scope rules context is already in sync.".to_string()]
             } else {
-                for path in result.changed_paths {
-                    println!("Updated {}", path.display());
-                }
-            }
-            Ok(())
+                result
+                    .changed_paths
+                    .iter()
+                    .map(|p| format!("Updated {}", p.display()))
+                    .collect()
+            };
+            scope_cli::execution::emit(
+                "rules.sync",
+                &serde_json::json!({"changed_paths":result.changed_paths}),
+                lines,
+            )
         }
     }
 }
-
 fn run_request(args: RequestArgs, json: bool) -> anyhow::Result<()> {
     let command = prepare_request_command(args)?;
     let api_url = api_url();
     let client = http_client()?;
-    let session = if json {
-        let Some(session) = cached_cli_session(&client, &api_url)? else {
-            return Err(CliError::new(scope_cli::api::ErrorResponse::new(
-                scope_cli::api::ErrorCode::Unauthorized,
-                "not signed in; run scope login",
-            ))
-            .into());
-        };
-        session
-    } else {
-        session_from_cache_or_browser(&client, &api_url)?
-    };
+    let session = session_from_cache_or_browser(&client, &api_url)?;
     run_request_command(command, &client, &api_url, &session.token, json)?.render(json)
-}
-
-fn run_workflow(args: RunArgs, json: bool) -> anyhow::Result<()> {
-    match (args.target.as_str(), args.run_id.as_deref()) {
-        ("show", Some(run_id)) if !args.no_watch => {
-            scope_cli::run::show(run_id, args.remote.as_deref(), json)
-        }
-        ("watch", Some(run_id)) if !args.no_watch => {
-            scope_cli::run::watch(run_id, args.remote.as_deref())
-        }
-        ("cancel", Some(run_id)) if !args.no_watch => {
-            scope_cli::run::cancel(run_id, args.remote.as_deref())
-        }
-        ("retry", Some(run_id)) => {
-            scope_cli::run::retry(run_id, args.remote.as_deref(), args.no_watch)
-        }
-        ("show" | "watch" | "cancel", Some(_)) => {
-            Err(CliError::usage(
-                "--no-watch is not valid for show, watch, or cancel"
-            )
-            .into())
-        }
-        ("show" | "watch" | "cancel" | "retry", None) => {
-            Err(CliError::usage(format!(
-                "scope run {} requires a run ID",
-                args.target
-            ))
-            .into())
-        }
-        (_, Some(_)) => Err(CliError::usage(
-            "a run ID is accepted only by `scope run show`, `scope run watch`, `scope run cancel`, or `scope run retry`"
-        )
-        .into()),
-        (workflow, None) => scope_cli::run::start(
-            workflow,
-            args.remote.as_deref(),
-            args.no_watch,
-        ),
-    }
 }
