@@ -35,12 +35,12 @@ test('backend variants preserve API feature coverage explicitly', () => {
   assert.equal(spawnSync('dev/checks/backend', ['invalid'], { cwd: root }).status, 2);
 });
 
-test('web gate includes contract and observer rules; CLI and integration retain their coverage', () => {
+test('web gate includes contract, observer, and resource rules; CLI and integration retain their coverage', () => {
   assert.deepEqual(commands('web'), [
     'pnpm test', 'pnpm check', 'pnpm build',
   ]);
   const webChecks = JSON.parse(read('web/package.json')).scripts.check;
-  assert.equal(webChecks, 'pnpm typecheck && ../dev/checks/contract && pnpm check:observer-boundary && pnpm check:react-doctor && pnpm check:konsistent');
+  assert.equal(webChecks, 'pnpm typecheck && ../dev/checks/contract && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   assert.ok(commands('cli').includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
   assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --nocapture']);
