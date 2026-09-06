@@ -15,7 +15,7 @@ import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/sign-in/$')({
   component: Page,
-  errorComponent: AuthRouteError,
+  errorComponent: RouteError,
 })
 
 function Page() {
@@ -26,14 +26,14 @@ function Page() {
         title="Sign in to Scope"
       >
         {forceSignedOut ? (
-          <AuthFailureState title="sign in unavailable" />
+          <AuthFailureState action="sign-in" />
         ) : (
           <>
             <ClerkLoading>
               <AuthLoadingState label="Loading sign in…" />
             </ClerkLoading>
             <ClerkFailed>
-              <AuthFailureState title="Sign in unavailable" />
+              <AuthFailureState action="sign-in" />
             </ClerkFailed>
             <ClerkLoaded>
               <div className="scope-content-enter">
@@ -45,4 +45,8 @@ function Page() {
       </AuthSurface>
     </AuthLayout>
   )
+}
+
+function RouteError() {
+  return <AuthRouteError action="sign-in" />
 }

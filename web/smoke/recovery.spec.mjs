@@ -108,6 +108,7 @@ test('a delayed file offers scoped retry and keeps its selection', async () => {
     await expand.click()
     await page.getByRole('button', { name: 'app.ts', exact: true }).click()
     await page.getByText('this file is taking longer than usual', { exact: true }).waitFor({ timeout: 30_000 })
+    assert.equal(await page.locator('[data-slot="pending-surface"]').getAttribute('aria-busy'), 'true')
     assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
     assert.equal(await page.getByLabel('Repository file navigator').isVisible(), true)
     await page.getByRole('button', { name: 'retry file', exact: true }).click()

@@ -4,15 +4,17 @@ import { Link } from '@tanstack/react-router'
 import { AuthLayout } from './auth-layout'
 import { AuthSurface } from './auth-loading-state'
 
-export function AuthFailureState({ title }: { title: string }) {
+type AuthAction = 'sign-in' | 'sign-up'
+
+export function AuthFailureState({ action }: { action: AuthAction }) {
   return (
     <>
       <div className="border-t border-border pt-5" role="alert">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="text-sm font-semibold">{action} unavailable</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {forceSignedOut
-            ? 'sign-in is disabled in this preview. You can still browse public repositories.'
-            : 'the sign-in form could not load. Try again to continue.'}
+            ? `${action} is disabled in this preview. You can still browse public repositories.`
+            : `the ${action} form could not load. Try again to continue.`}
         </p>
       </div>
       <div className="mt-4 flex flex-wrap gap-3">
@@ -27,11 +29,11 @@ export function AuthFailureState({ title }: { title: string }) {
   )
 }
 
-export function AuthRouteError() {
+export function AuthRouteError({ action }: { action: AuthAction }) {
   return (
     <AuthLayout>
-      <AuthSurface description="continue to your Scope account" title="sign-in couldn't start">
-        <AuthFailureState title="sign-in unavailable" />
+      <AuthSurface description="continue to your Scope account" title={`${action} couldn't start`}>
+        <AuthFailureState action={action} />
       </AuthSurface>
     </AuthLayout>
   )
