@@ -22,7 +22,7 @@ import {
 import { RepoDetailPage } from '@/features/repo-detail/repo-detail-page'
 import { RepositoryCodePending } from '@/features/repo-detail/repository-code-pending'
 import {
-  DEFAULT_REPO_FILE_PATH,
+  repositoryLandingPath,
   loadRepoFileWhenReady,
   settleRepoCodeResource,
   repoCodeResourceLoader,
@@ -32,7 +32,6 @@ import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import {
   displayRouteFilePath,
   parseRouteFileSearch,
-  selectedRouteFilePath,
 } from '@/lib/route-file'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import {
@@ -71,20 +70,20 @@ const loadRepoFile = createServerFn({ method: 'GET' })
 
 export const Route = createFileRoute('/$owner/$repo/_code/')({
   validateSearch: parseRepoCodeSearch,
-  loaderDeps: ({ search }) => ({ file: search.file ?? DEFAULT_REPO_FILE_PATH }),
+  loaderDeps: ({ search }) => ({ file: search.file ?? null }),
   loader: async ({ abortController, deps, params, parentMatchPromise }) => {
     const live = (await parentMatchPromise).loaderData as RepoLiveState
     const { contentIdentity, fileIdentity } = repoCodeCacheKeys(live.repo, deps.file)
     const cachedContent = typeof window === 'undefined' ? null : readRepoContentCache(contentIdentity)
-    const cachedFile = typeof window === 'undefined' ? null : readRepoFileCache(fileIdentity)
+    const cachedFile = typeof window === 'undefined' || !fileIdentity ? null : readRepoFileCache(fileIdentity)
     const signal = abortController.signal
     return {
       content: settleRepoCodeResource(cachedContent
         ? Promise.resolve(cachedContent)
         : loadRepoContent({ data: params, signal })),
-      file: settleRepoCodeResource(cachedFile
+      file: deps.file ? settleRepoCodeResource(cachedFile
         ? Promise.resolve(cachedFile)
-        : loadAddressedFile({ ...params, path: deps.file }, signal)),
+        : loadAddressedFile({ ...params, path: deps.file }, signal)) : null,
       contentIdentity,
       fileIdentity,
     }
@@ -100,10 +99,9 @@ function RepoIndexRoute() {
   const page = Route.useLoaderData()
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
-  const selectedPath = search.file ?? DEFAULT_REPO_FILE_PATH
   const owner = params.owner
   const repoName = params.repo
-  const { contentIdentity, fileIdentity: selectedFileIdentity } = repoCodeCacheKeys(repo, selectedPath)
+  const { contentIdentity } = repoCodeCacheKeys(repo, null)
   const loadContent = useMemo(() => repoCodeResourceLoader(
     page.contentIdentity === contentIdentity ? page.content : null,
     (signal: AbortSignal): Promise<RepoContent> => loadRepoContent({
@@ -119,14 +117,14 @@ function RepoIndexRoute() {
     write: writeRepoContentCache,
   })
   const content = contentResource.value
-  const selectedFilePath = content
-    ? selectedRouteFilePath(content.files, selectedPath)
-    : selectedPath
+  const selectedPath = search.file ?? (content ? repositoryLandingPath(content.files) : null)
+  const { fileIdentity: selectedFileIdentity } = repoCodeCacheKeys(repo, selectedPath)
   const loadSelectedFile = useMemo(() => repoCodeResourceLoader(
     page.fileIdentity === selectedFileIdentity ? page.file : null,
-    (signal: AbortSignal) => loadAddressedFile({
-      owner, path: selectedPath, repo: repoName,
-    }, signal),
+    (signal: AbortSignal) => {
+      if (!selectedPath) throw new Error('No file selected.')
+      return loadAddressedFile({ owner, path: selectedPath, repo: repoName }, signal)
+    },
   ), [owner, page.file, page.fileIdentity, repoName, selectedFileIdentity, selectedPath])
   const selectedFileResource = useCachedResource({
     fallbackError: 'File content is unavailable.',
@@ -138,11 +136,11 @@ function RepoIndexRoute() {
   })
   const selectFile = useCallback((path: string) => {
     const nextPath = displayRouteFilePath(path)
-    if (nextPath === displayRouteFilePath(selectedPath)) return
+    if (nextPath === selectedPath) return
     void navigate({
       resetScroll: false,
       search: {
-        file: nextPath === DEFAULT_REPO_FILE_PATH ? undefined : nextPath,
+        file: nextPath,
       },
     })
   }, [navigate, selectedPath])
@@ -161,7 +159,7 @@ function RepoIndexRoute() {
       selectedFileIdentity={selectedFileIdentity}
       selectedFileLoading={selectedFileResource.status === 'loading'}
       selectedFileRetry={selectedFileResource.retry}
-      selectedPath={selectedFilePath ? displayRouteFilePath(selectedFilePath) : null}
+      selectedPath={selectedPath}
     />
   )
 }
@@ -184,7 +182,7 @@ async function loadAddressedFile(
   return file
 }
 
-function repoCodeCacheKeys(repo: RepoSummary, path: string) {
+function repoCodeCacheKeys(repo: RepoSummary, path: string | null) {
   const scope = {
     audience: repo.access.can_read_private_files ? 'private' as const : 'public' as const,
     changeVersion: repo.change_version,
@@ -192,6 +190,6 @@ function repoCodeCacheKeys(repo: RepoSummary, path: string) {
   }
   return {
     contentIdentity: repoContentCacheKey(scope),
-    fileIdentity: repoFileCacheKey({ ...scope, path }),
+    fileIdentity: path ? repoFileCacheKey({ ...scope, path }) : null,
   }
 }

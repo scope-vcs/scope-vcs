@@ -36,6 +36,7 @@ pub(crate) fn ensure_default_branch(branch: &str) -> Result<(), DomainError> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReceivePackUpdate {
+    pub(crate) occurred_at_unix: Option<i64>,
     pub(crate) branch: String,
     pub(crate) head_oid: String,
     pub(crate) base_git_manifest_ref: Option<Option<scope_domain::content_ref::ContentRef>>,
@@ -64,6 +65,7 @@ pub(crate) fn apply_receive_pack_update(
 impl ReceivePackUpdate {
     pub(crate) fn into_reviewed_update(self) -> ReviewedUpdateInput {
         ReviewedUpdateInput {
+            occurred_at_unix: self.occurred_at_unix,
             branch: self.branch,
             author_id: self.author_id,
             message: self.message,

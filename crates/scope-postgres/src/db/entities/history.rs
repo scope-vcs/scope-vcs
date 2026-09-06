@@ -6,6 +6,7 @@ pub mod logical_commit {
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_logical_commits")]
     pub struct Model {
+        pub occurred_at_unix: Option<i64>,
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -50,6 +51,7 @@ pub mod visibility_change_set {
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_visibility_change_sets")]
     pub struct Model {
+        pub occurred_at_unix: Option<i64>,
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         #[sea_orm(primary_key, auto_increment = false)]

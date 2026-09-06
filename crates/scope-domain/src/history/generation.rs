@@ -29,6 +29,14 @@ pub(super) fn history_generation(
         );
         hash_optional_field(&mut hasher, b"parent", entry.parent_id.as_deref());
         hash_optional_field(&mut hasher, b"author", entry.author.as_deref());
+        hash_optional_field(
+            &mut hasher,
+            b"occurred_at",
+            entry
+                .occurred_at_unix
+                .map(|time| time.to_string())
+                .as_deref(),
+        );
         hash_field(&mut hasher, b"message", entry.message.as_bytes());
         for file in &entry.files {
             hash_field(&mut hasher, b"path", file.path.as_str().as_bytes());

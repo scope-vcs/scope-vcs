@@ -16,6 +16,8 @@ struct AccessRow {
     owner_handle: String,
     name: String,
     owner_user_id: String,
+    description: Option<String>,
+    website_url: Option<String>,
     publication_state: String,
     change_version: i64,
     root_visibility: String,
@@ -88,7 +90,8 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
         .select_only()
         .columns([
             Column::Id, Column::IncarnationId, Column::OwnerHandle, Column::Name,
-            Column::OwnerUserId, Column::PublicationState, Column::ChangeVersion,
+            Column::OwnerUserId, Column::Description, Column::WebsiteUrl,
+            Column::PublicationState, Column::ChangeVersion,
         ])
         .expr_as(sea_orm::sea_query::Expr::cust(
             "COALESCE(jsonb_path_query_first(policy, '$.rules[*] ? (@.path == \"/\")')->>'visibility', policy->>'default_visibility')"
@@ -105,6 +108,8 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
         owner_handle: row.owner_handle,
         name: row.name,
         owner_user_id: row.owner_user_id,
+        description: row.description,
+        website_url: row.website_url,
         lifecycle_state: entities::decode_enum(row.publication_state)?,
         change_version: entities::i64_to_u64(row.change_version, "repository change version")?,
     };

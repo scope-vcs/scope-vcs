@@ -348,6 +348,7 @@ mod tests {
             encoding_version: 2,
         };
         ReviewedUpdateInput {
+            occurred_at_unix: None,
             branch: "refs/heads/main".to_string(),
             author_id: "user_owner".to_string(),
             message: format!("update {head_oid}"),

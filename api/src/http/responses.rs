@@ -277,6 +277,7 @@ pub(crate) struct HistoryPageResponse {
     pub(crate) repo_id: String,
     pub(crate) view_key: String,
     pub(crate) generation: String,
+    pub(crate) head_oid: Option<String>,
     pub(crate) entries: Vec<HistoryEntrySummaryResponse>,
     pub(crate) next_cursor: Option<String>,
 }
@@ -284,6 +285,7 @@ pub(crate) struct HistoryPageResponse {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryEntrySummaryResponse {
+    pub(crate) occurred_at_unix: Option<i64>,
     pub(crate) id: String,
     pub(crate) source_id: String,
     pub(crate) parent_id: Option<String>,
@@ -375,6 +377,8 @@ pub(crate) fn repo_summary_for_user(
         id: repo.record.id.clone(),
         owner_handle: repo.record.owner_handle.clone(),
         name: repo.record.name.clone(),
+        description: repo.record.description.clone(),
+        website_url: repo.record.website_url.clone(),
         git_remote_url: repository_git_remote_url(
             git_origin,
             access.actor,
@@ -531,6 +535,7 @@ pub(crate) fn history_page_response(
     view: &HistoryView,
     entries: &[HistoryEntry],
     next_cursor: Option<String>,
+    head_oid: Option<String>,
 ) -> HistoryPageResponse {
     HistoryPageResponse {
         feed,
@@ -538,6 +543,7 @@ pub(crate) fn history_page_response(
         repo_id: view.repo_id.clone(),
         view_key: view.view_key.clone(),
         generation: view.generation.clone(),
+        head_oid,
         entries: entries.iter().map(history_entry_summary_response).collect(),
         next_cursor,
     }
@@ -575,6 +581,7 @@ pub(crate) fn history_entry_detail_response(
 
 fn history_entry_summary_response(entry: &HistoryEntry) -> HistoryEntrySummaryResponse {
     HistoryEntrySummaryResponse {
+        occurred_at_unix: entry.occurred_at_unix,
         id: entry.id.clone(),
         source_id: entry.source_id.clone(),
         parent_id: entry.parent_id.clone(),

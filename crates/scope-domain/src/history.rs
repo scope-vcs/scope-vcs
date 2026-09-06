@@ -18,7 +18,7 @@ pub use feed::HistoryFeed;
 use generation::history_generation;
 use projection_history::{ProjectedAction, ProjectionHistory};
 
-pub const HISTORY_GENERATION_VERSION: &str = "v5";
+pub const HISTORY_GENERATION_VERSION: &str = "v6";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FileChangeKind {
@@ -37,6 +37,8 @@ pub struct HistoryView {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntry {
+    /// Git head committer time or visibility operation time, when recorded.
+    pub occurred_at_unix: Option<i64>,
     pub id: String,
     pub source_id: String,
     /// Previous audience-visible action in all activity, not a Git diff base.
@@ -141,8 +143,9 @@ pub fn history_view_from_projection(
             .map(|action| action.files.clone())
             .unwrap_or_default();
         if !files.is_empty() || !visibility_changes.is_empty() {
-            let (author, message) = action_metadata(logical, source, view_key);
+            let (author, message, occurred_at_unix) = action_metadata(logical, source, view_key);
             entries.push(HistoryEntry {
+                occurred_at_unix,
                 id: logical.id.clone(),
                 source_id: logical.id.clone(),
                 parent_id: None,
@@ -185,15 +188,22 @@ fn action_metadata(
     logical: &LogicalCommit,
     projected: Option<&ProjectedAction>,
     view_key: ProjectionViewKey,
-) -> (Option<String>, String) {
-    if view_key == ProjectionViewKey::Private {
-        return (Some(logical.author_id.clone()), logical.message.clone());
-    }
-    // A public boundary can reveal files from an otherwise private push. Only the
-    // content projection may authorize disclosing that push's message or author.
-    projected
-        .map(|action| (action.author.clone(), action.message.clone()))
-        .unwrap_or_else(|| (None, "Projected public update".into()))
+) -> (Option<String>, String, Option<i64>) {
+    let (author, message) = if view_key == ProjectionViewKey::Private {
+        (Some(logical.author_id.clone()), logical.message.clone())
+    } else {
+        // A public boundary can reveal files from an otherwise private push. Only
+        // the content projection may authorize disclosing that push's metadata.
+        projected
+            .map(|action| (action.author.clone(), action.message.clone()))
+            .unwrap_or_else(|| (None, "Projected public update".into()))
+    };
+    let occurred_at_unix = if author.is_some() {
+        logical.occurred_at_unix
+    } else {
+        None
+    };
+    (author, message, occurred_at_unix)
 }
 
 fn append_visibility_actions(
@@ -209,6 +219,11 @@ fn append_visibility_actions(
             continue;
         }
         entries.push(HistoryEntry {
+            occurred_at_unix: if view_key == ProjectionViewKey::Private {
+                set.occurred_at_unix
+            } else {
+                None
+            },
             id: set.id.clone(),
             source_id: set.id.clone(),
             parent_id: None,

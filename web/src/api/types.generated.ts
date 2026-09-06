@@ -90,13 +90,15 @@ export type CliSessionsResponse = { sessions: Array<CliSessionResponse>, };
 
 export type CliSessionResponse = { id: string, label: string, created_at_unix: number, last_used_at_unix: number | null, expires_at_unix: number, };
 
-export type RepoSummaryResponse = { id: string, owner_handle: string, name: string, git_remote_url: string, lifecycle_state: RepoLifecycleState, change_version: number, access: RepositoryAccessResponse, open_request_count: number, request_permissions: RepoRequestPermissionsResponse, };
+export type RepoSummaryResponse = { description: string | null, website_url: string | null, id: string, owner_handle: string, name: string, git_remote_url: string, lifecycle_state: RepoLifecycleState, change_version: number, access: RepositoryAccessResponse, open_request_count: number, request_permissions: RepoRequestPermissionsResponse, };
 
 export type OwnerProfileResponse = { handle: string, repositories: Array<RepoSummaryResponse>, };
 
 export type RepoRequestPermissionsResponse = { can_start_request: boolean, };
 
 export type CreateRepoRequest = { name: string, file_default_visibility: Visibility | null, };
+
+export type UpdateRepoMetadataRequest = { description: string | null, website_url: string | null, };
 
 export type CreateRepoResponse = { repo: RepoSummaryResponse, init: RepoInitResponse, };
 
@@ -150,9 +152,9 @@ export type ReviewFileContentResponse = { "kind": "text", text: string, } | { "k
 
 export type ReviewFileDiffResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_content: ReviewFileContentResponse | null, new_content: ReviewFileContentResponse | null, };
 
-export type HistoryPageResponse = { feed: HistoryFeed, audience: ProjectionPreviewAudience, repo_id: string, view_key: string, generation: string, entries: Array<HistoryEntrySummaryResponse>, next_cursor: string | null, };
+export type HistoryPageResponse = { feed: HistoryFeed, audience: ProjectionPreviewAudience, repo_id: string, view_key: string, generation: string, head_oid: string | null, entries: Array<HistoryEntrySummaryResponse>, next_cursor: string | null, };
 
-export type HistoryEntrySummaryResponse = { id: string, source_id: string, parent_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, };
+export type HistoryEntrySummaryResponse = { occurred_at_unix: number | null, id: string, source_id: string, parent_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, };
 
 export type HistoryEntryKind = "push" | "merged_request" | "visibility_change";
 
@@ -339,6 +341,7 @@ export const ApiRouteTemplates = {
   ownerRepositories: "/v1/users/{handle}/repos",
   repo: "/v1/repos/{owner}/{repo}",
   repoConfig: "/v1/repos/{owner}/{repo}/config",
+  repoMetadata: "/v1/repos/{owner}/{repo}/metadata",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",
   repoRuns: "/v1/repos/{owner}/{repo}/runs",
   repoRunDetail: "/v1/repos/{owner}/{repo}/runs/{run_id}/detail",

@@ -45,6 +45,7 @@ function page(entries: HistoryEntrySummary[], nextCursor: string | null): Histor
     feed: 'updates',
     entries,
     generation: 'generation-1',
+    head_oid: null,
     next_cursor: nextCursor,
     repo_id: 'scope/demo',
     view_key: 'public',
@@ -54,6 +55,7 @@ function page(entries: HistoryEntrySummary[], nextCursor: string | null): Histor
 function entry(index: number): HistoryEntrySummary {
   return {
     author: null,
+    occurred_at_unix: null,
     file_change_count: 1,
     id: `entry-${index}`,
     kind: 'push',

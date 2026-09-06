@@ -17,6 +17,7 @@ fn commit(
     changes: Vec<FileChange>,
 ) -> LogicalCommit {
     LogicalCommit {
+        occurred_at_unix: None,
         id: id.into(),
         origin: LogicalCommitOrigin::CanonicalPush {
             source_head_oid: id.to_string(),

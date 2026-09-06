@@ -66,6 +66,7 @@ import type {
   HistoryPageRequest,
   HistoryPageResponse,
   UserResponse,
+  UpdateRepoMetadataRequest,
   Visibility as GeneratedVisibility,
 } from './types.generated'
 
@@ -197,6 +198,8 @@ export type RepoParams = {
   owner: string
   repo: string
 }
+
+export type UpdateRepoMetadataInput = RepoParams & UpdateRepoMetadataRequest
 
 export type RunActionInput = RepoParams & {
   run_id: string

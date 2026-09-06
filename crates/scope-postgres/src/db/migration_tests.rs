@@ -69,6 +69,8 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0037_repository_history_views",
     "m0038_history_entry_positions",
     "m0039_history_action_feed",
+    "m0040_repository_metadata",
+    "m0041_history_occurrence_time",
 ];
 
 pub(super) async fn isolated_database() -> (
@@ -211,6 +213,11 @@ fn without_migrated_repository_fields(snapshot: serde_json::Value) -> serde_json
                 .expect("repository snapshot is an object");
             repository.remove("default_visibility");
             repository.remove("incarnation_id");
+            for field in ["description", "website_url"] {
+                if let Some(value) = repository.remove(field) {
+                    assert!(value.is_null(), "new repository metadata must start empty");
+                }
+            }
             if repository
                 .get("publication_state")
                 .and_then(|state| state.as_str())

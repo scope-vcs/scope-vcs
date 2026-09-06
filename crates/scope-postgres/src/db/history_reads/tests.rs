@@ -25,6 +25,7 @@ fn fixture(commits: usize) -> (MetadataStore, Repository) {
     for index in 0..commits {
         let oid = format!("{:040x}", index + 1);
         repo.graph.commits.push(LogicalCommit {
+            occurred_at_unix: None,
             id: format!("logical_{index}"),
             origin: LogicalCommitOrigin::CanonicalPush {
                 source_head_oid: oid.clone(),

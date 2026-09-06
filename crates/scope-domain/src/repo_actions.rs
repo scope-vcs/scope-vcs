@@ -155,6 +155,7 @@ pub fn set_visibility(
     user_id: &str,
     update_paths: &[ScopePath],
     visibility: Visibility,
+    occurred_at_unix: Option<i64>,
 ) -> Result<RepoMutation<()>, DomainError> {
     if update_paths.is_empty() {
         return Err(DomainError::invalid_input(
@@ -200,7 +201,7 @@ pub fn set_visibility(
             .map_err(DomainError::invalid_input)?;
     }
     if !visibility_changes.is_empty() {
-        let set = VisibilityChangeSet::new(
+        let mut set = VisibilityChangeSet::new(
             visibility_change_set_id(repo.record.change_version.saturating_add(1)),
             after_commit_id,
             None,
@@ -208,6 +209,7 @@ pub fn set_visibility(
             visibility_changes,
         )
         .map_err(DomainError::invalid_input)?;
+        set.occurred_at_unix = occurred_at_unix;
         repo.visibility_change_sets.push(set);
     }
     let default_visibility = repo.repo_config.visibility.default_visibility().into();
@@ -289,6 +291,7 @@ mod tests {
             &owner.id,
             std::slice::from_ref(&path),
             Visibility::Private,
+            None,
         )
         .unwrap();
 
@@ -314,6 +317,7 @@ mod tests {
             &owner.id,
             std::slice::from_ref(&readme_path),
             Visibility::Private,
+            None,
         )
         .unwrap();
 
@@ -340,6 +344,7 @@ mod tests {
         repo.live_files.insert(first.clone(), source_blob("one"));
         repo.live_files.insert(second.clone(), source_blob("two"));
         repo.graph.commits.push(crate::projection::LogicalCommit {
+            occurred_at_unix: None,
             id: "rv1".into(),
             origin: crate::projection::LogicalCommitOrigin::CanonicalPush {
                 source_head_oid: "head-1".into(),
@@ -354,11 +359,13 @@ mod tests {
             &owner.id,
             &[first.clone(), second.clone()],
             Visibility::Private,
+            Some(1_700_000_000),
         )
         .unwrap();
 
         assert_eq!(repo.visibility_change_sets.len(), 1);
         let set = &repo.visibility_change_sets[0];
+        assert_eq!(set.occurred_at_unix, Some(1_700_000_000));
         assert_eq!(set.id, "vchg_2");
         assert_eq!(set.anchor_commit_id.as_deref(), Some("rv1"));
         assert_eq!(set.source_update_id, None);

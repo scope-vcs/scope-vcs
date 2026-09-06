@@ -9,10 +9,12 @@ type RepositoryHtmlMode = 'preview' | 'source'
 export function RepositoryHtmlRenderer({
   identity,
   path,
+  quietDetails = false,
   source,
 }: {
   identity: string
   path: string
+  quietDetails?: boolean
   source: string
 }) {
   const [mode, setMode] = useState<RepositoryHtmlMode>('preview')
@@ -29,10 +31,12 @@ export function RepositoryHtmlRenderer({
 
   return (
     <div className="min-w-0">
-      <div className="flex min-h-11 items-center justify-between gap-4 border-b border-border px-5 py-1.5 sm:px-8">
-        <span className="truncate font-mono text-[11px] text-muted-foreground">
-          Sandboxed document
-        </span>
+      <div className="flex min-h-11 items-center justify-end gap-4 border-b border-border px-5 py-1.5 sm:px-8">
+        {(!quietDetails || mode === 'source') && (
+          <span className="mr-auto truncate font-mono text-[11px] text-muted-foreground">
+            Sandboxed document
+          </span>
+        )}
         <ToggleGroup
           aria-label={`${displayPath} display mode`}
           onValueChange={selectMode}

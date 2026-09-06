@@ -1,7 +1,7 @@
 use super::repo_io::{
     FencedGitPush, GitTreeFile, describe_refs, git_changed_tree_entries, git_push_from_repo,
-    git_refs, git_tree_entries_under, pushed_commit_message, queue_failed_git_objects,
-    run_git_output_bounded, validate_pushed_commit_range,
+    git_refs, git_tree_entries_under, pushed_commit_message, pushed_commit_time,
+    queue_failed_git_objects, run_git_output_bounded, validate_pushed_commit_range,
 };
 use super::segment_upload::{GitSegmentUploadHeartbeat, best_effort_delete_staged_git_segment};
 use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
@@ -158,6 +158,7 @@ async fn reviewed_update_from_staging_repo_mode(
     }
     let base_config_hash = crate::push_intents::repo_config_fingerprint(&repo.repo_config)?;
     let message = pushed_commit_message(staging_repo, &head_oid)?;
+    let occurred_at_unix = Some(pushed_commit_time(staging_repo, &head_oid)?);
     let base_head_oid = repo.git_head.as_ref().map(|head| head.head_oid.as_str());
     validate_pushed_commit_range(staging_repo, base_head_oid, &head_oid)?;
     let diff_started = Instant::now();
@@ -249,6 +250,7 @@ async fn reviewed_update_from_staging_repo_mode(
     };
     Ok(PreparedReceivePackUpdate {
         update: ReceivePackUpdate {
+            occurred_at_unix,
             branch,
             head_oid,
             base_git_manifest_ref: None,

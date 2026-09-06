@@ -108,6 +108,13 @@ pub struct CreateRepoRequest {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct UpdateRepoMetadataRequest {
+    pub description: Option<String>,
+    pub website_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct CreateRepoResponse {
     pub repo: RepoSummaryResponse,
     pub init: RepoInitResponse,
@@ -116,6 +123,8 @@ pub struct CreateRepoResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RepoSummaryResponse {
+    pub description: Option<String>,
+    pub website_url: Option<String>,
     pub id: String,
     pub owner_handle: String,
     pub name: String,

@@ -384,6 +384,7 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
 
 fn history_commit(id: &str, _parent: Option<&str>, changes: Vec<FileChange>) -> LogicalCommit {
     LogicalCommit {
+        occurred_at_unix: None,
         id: id.into(),
         origin: LogicalCommitOrigin::CanonicalPush {
             source_head_oid: id.to_string(),

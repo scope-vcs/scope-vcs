@@ -24,6 +24,8 @@ use scope_domain::{
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 
+#[path = "domain_projection/history_metadata.rs"]
+mod history_metadata;
 #[path = "domain_projection/history_rewrite_baselines.rs"]
 mod history_rewrite_baselines;
 #[path = "domain_projection/rules.rs"]
@@ -63,6 +65,7 @@ fn added(path_value: &str, visibility: Visibility, content: &str) -> FileChange 
 
 fn commit(id: &str, _parent_id: Option<&str>, message: &str, change: FileChange) -> LogicalCommit {
     LogicalCommit {
+        occurred_at_unix: None,
         id: id.to_string(),
         origin: LogicalCommitOrigin::CanonicalPush {
             source_head_oid: id.to_string(),
@@ -89,6 +92,7 @@ fn visibility_event(
     current_content: SourceBlob,
 ) -> VisibilityChangeSet {
     VisibilityChangeSet {
+        occurred_at_unix: None,
         id: id.to_string(),
         anchor_commit_id: after_commit_id.map(str::to_string),
         source_update_id: source_commit_id.map(str::to_string),
@@ -275,6 +279,7 @@ fn reviewed_update(
     let mut manifest = blob("manifest v2");
     manifest.git_oid = head_oid.to_string();
     ReviewedUpdateInput {
+        occurred_at_unix: None,
         branch: "main".to_string(),
         author_id: "owner".to_string(),
         message: message.to_string(),

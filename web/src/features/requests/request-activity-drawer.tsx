@@ -11,7 +11,7 @@ import {
 import * as Dialog from '@radix-ui/react-dialog'
 import { History, TriangleAlert, X } from 'lucide-react'
 import { eventKindLabel, requestEventBody } from './request-labels'
-import { RequestTimestamp } from './request-timestamp'
+import { RelativeTimestamp } from '@/components/timestamp'
 import type {
   RequestActivityPage,
   RequestActorSummary,
@@ -118,7 +118,7 @@ export function RequestActivityDrawer({
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline">{eventKindLabel(event.kind)}</Badge>
-                      <RequestTimestamp
+                      <RelativeTimestamp
                         className="text-xs text-muted-foreground"
                         value={event.created_at_unix}
                       />

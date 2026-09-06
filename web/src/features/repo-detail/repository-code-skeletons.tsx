@@ -29,15 +29,16 @@ const PENDING_SOURCE_LINES: { id: string; length: LineSkeletonLength }[] = [
 
 export function FileNavigatorSkeleton() {
   return (
-    <div className="divide-y divide-border">
+    <div>
+      <BlockSkeleton className="mb-2 h-8 w-full" />
       {PENDING_FILES.map((file) => (
         <div
-          className="grid min-h-9 grid-cols-[18px_minmax(0,1fr)_64px] items-center gap-2"
+          className="grid min-h-9 grid-cols-[18px_minmax(0,1fr)_18px] items-center gap-2"
           key={file.id}
         >
           <BlockSkeleton className="size-3.5" />
           <TextSkeleton length={file.length} size="meta" />
-          <TextSkeleton length="short" size="meta" />
+          <BlockSkeleton className="size-3" />
         </div>
       ))}
     </div>

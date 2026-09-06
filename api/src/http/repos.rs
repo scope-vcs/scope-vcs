@@ -477,7 +477,7 @@ pub(crate) async fn get_file_content(
     }))
 }
 
-fn repo_summary_response(
+pub(super) fn repo_summary_response(
     state: &AppState,
     summary: RepoSummaryRead,
 ) -> Result<RepoSummaryResponse, ApiError> {
@@ -493,6 +493,8 @@ fn repo_summary_response(
         ),
         owner_handle: summary.owner_handle,
         name: summary.name,
+        description: summary.description,
+        website_url: summary.website_url,
         lifecycle_state: summary.lifecycle_state.into(),
         change_version: summary.change_version,
         access: repository_access_response(summary.access),

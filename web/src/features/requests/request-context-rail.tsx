@@ -9,7 +9,7 @@ import {
   requestAuthorRoleLabel,
   shortOid,
 } from './request-labels'
-import { RequestAbsoluteTimestamp } from './request-timestamp'
+import { AbsoluteTimestamp } from '@/components/timestamp'
 import type { RequestActionController } from './use-request-actions'
 
 export function RequestContextRail({
@@ -44,18 +44,18 @@ export function RequestContextRail({
             <RailValue label="Audience" value={requestAudienceLabel(request)} />
             <RailValue
               label="Submitted"
-              value={<RequestAbsoluteTimestamp value={request.submitted_at_unix} />}
+              value={<AbsoluteTimestamp value={request.submitted_at_unix} />}
             />
             {request.closed_at_unix !== null && (
               <RailValue
                 label="Closed"
-                value={<RequestAbsoluteTimestamp value={request.closed_at_unix} />}
+                value={<AbsoluteTimestamp value={request.closed_at_unix} />}
               />
             )}
             {request.merged_at_unix !== null && (
               <RailValue
                 label="Merged"
-                value={<RequestAbsoluteTimestamp value={request.merged_at_unix} />}
+                value={<AbsoluteTimestamp value={request.merged_at_unix} />}
               />
             )}
           </RailSection>

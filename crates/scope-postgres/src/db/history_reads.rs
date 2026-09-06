@@ -33,6 +33,8 @@ pub struct RepositoryHistoryBoundary {
 
 pub struct RepositoryHistoryPage {
     pub view: HistoryView,
+    /// Current Git revision of this audience's projection, read at the same frontier.
+    pub head_oid: Option<String>,
     pub next_boundary: Option<RepositoryHistoryBoundary>,
     pub available: bool,
 }
@@ -309,6 +311,7 @@ impl RepositoryStore {
                 },
                 next_boundary,
                 available: metadata.available,
+                head_oid: metadata.head_oid,
             });
         }
         Err(PostgresError::conflict(

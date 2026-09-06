@@ -45,6 +45,7 @@ pub const REPO_RUN_RETRY: &str = "/v1/repos/{owner}/{repo}/runs/{run_id}/retry";
 pub const REPO_RUN_EVENTS: &str = "/v1/repos/{owner}/{repo}/runs/{run_id}/events";
 pub const REPO_PUSH_TRIGGER_EVALUATION: &str =
     "/v1/repos/{owner}/{repo}/push-trigger-evaluations/{head_oid}";
+pub const REPO_METADATA: &str = "/v1/repos/{owner}/{repo}/metadata";
 pub const REPO_CONFIG: &str = "/v1/repos/{owner}/{repo}/config";
 pub const REPO_PUSH_INTENTS: &str = "/v1/repos/{owner}/{repo}/push-intents";
 pub const REPO_REQUESTS: &str = "/v1/repos/{owner}/{repo}/requests";

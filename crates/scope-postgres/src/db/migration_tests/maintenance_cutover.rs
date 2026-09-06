@@ -54,7 +54,7 @@ async fn truthful_log_truncation_cutover_requires_maintenance() {
 
     let plan = migrations::plan(db.as_ref()).await.unwrap();
 
-    assert_eq!(plan.pending.len(), 22);
+    assert_eq!(plan.pending.len(), 24);
     assert_eq!(plan.pending[0].name, "m0018_truthful_run_log_truncation");
     assert_eq!(plan.pending[0].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[1].name, "m0019_run_attempt_cache_observations");
@@ -143,7 +143,7 @@ async fn cache_service_cutover_requires_maintenance() {
 
     let plan = migrations::plan(db.as_ref()).await.unwrap();
 
-    assert_eq!(plan.pending.len(), 19);
+    assert_eq!(plan.pending.len(), 21);
     assert_eq!(plan.pending[0].name, "m0021_cache_service_cutover");
     assert_eq!(plan.pending[0].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[1].name, "m0022_git_pack_spans");
@@ -216,7 +216,7 @@ async fn compaction_scheduler_is_an_online_additive_migration() {
         .unwrap();
 
     let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert_eq!(plan.pending.len(), 16);
+    assert_eq!(plan.pending.len(), 18);
     assert_eq!(plan.pending[0].name, "m0024_git_compaction_scheduler");
     assert_eq!(plan.pending[0].impact, MigrationImpact::Online);
     assert_eq!(plan.pending[1].name, "m0025_visibility_change_sets");

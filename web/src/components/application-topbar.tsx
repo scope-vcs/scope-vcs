@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { ScopeMark } from '@/components/scope-logo'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { PageRail } from '@/components/page-header'
+import { ApplicationMenu } from '@/components/application-menu'
 
 export type TopbarItem = {
   active?: boolean
@@ -84,12 +85,7 @@ export function ApplicationTopbar({
         )}
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 md:ml-3">
-          <Link
-            className="rounded-sm px-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            to="/licenses"
-          >
-            Licenses
-          </Link>
+          <ApplicationMenu />
           <ThemeToggle />
           {children}
         </div>
@@ -111,14 +107,14 @@ function RepositoryIdentity({
     <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
       <div className="flex min-w-0 items-baseline gap-1.5">
         <Link
-          className="hidden max-w-[130px] truncate rounded-md text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:block"
+          className="max-w-[90px] truncate rounded-md text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:max-w-[130px]"
           params={{ owner }}
           title={owner}
           to="/$owner"
         >
           {owner}
         </Link>
-        <span aria-hidden className="hidden text-muted-foreground/50 sm:inline">
+        <span aria-hidden className="text-muted-foreground/50">
           /
         </span>
         <Link

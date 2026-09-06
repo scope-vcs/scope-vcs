@@ -28,6 +28,7 @@ pub struct ReviewedContentChange {
 
 #[derive(Clone, Debug)]
 pub struct ReviewedUpdateInput {
+    pub occurred_at_unix: Option<i64>,
     pub branch: String,
     pub author_id: String,
     pub message: String,
@@ -233,6 +234,7 @@ pub fn apply_reviewed_update_to_repo(
     }
 
     repo.graph.commits.push(LogicalCommit {
+        occurred_at_unix: update.occurred_at_unix,
         id: logical_id,
         origin: LogicalCommitOrigin::CanonicalPush {
             source_head_oid: update.git_head.head_oid.clone(),
@@ -407,6 +409,7 @@ fn accept_content_update(
     };
     let logical_id = format!("{logical_prefix}_{}", update.git_head.head_oid);
     let logical_commit = LogicalCommit {
+        occurred_at_unix: update.occurred_at_unix,
         id: logical_id,
         origin,
         author_id: update.author_id,
