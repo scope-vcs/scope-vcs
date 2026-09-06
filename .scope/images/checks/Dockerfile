@@ -68,6 +68,7 @@ RUN test "$(rustc --version | cut -d' ' -f2)" = "1.98.0" \
         | grep --quiet "^Google Chrome for Testing ${PLAYWRIGHT_CHROMIUM_VERSION} *$"
 
 COPY --from=scope-runtime-builder /build/target/release/scope-runner-runtime /scope/bin/scope-runner-runtime
+COPY LICENSE NOTICE legal/third-party-rust.txt /scope/licenses/
 
 RUN test -x /scope/bin/scope-runner-runtime
 

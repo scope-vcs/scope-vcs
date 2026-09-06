@@ -10,6 +10,7 @@ pub mod git_repo;
 pub mod git_transport;
 pub mod init;
 pub mod installers;
+pub mod licenses;
 pub mod login;
 pub mod pull;
 pub mod push;

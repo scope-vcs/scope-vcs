@@ -78,6 +78,7 @@ jobs:
 
       - name: Pack deployment binaries
         run: |
+          cp LICENSE NOTICE legal/third-party-rust.txt artifacts/bin/
           tar --create --gzip \
             --file artifacts/backend-release.tar.gz \
             --directory artifacts/bin \

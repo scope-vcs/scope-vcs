@@ -65,6 +65,7 @@ jobs:
             root=".railway-upload/$service"
             watch_root="$root/$service"
             mkdir -p "$root/bin" "$watch_root"
+            cp artifacts/backend-release/LICENSE artifacts/backend-release/NOTICE artifacts/backend-release/third-party-rust.txt "$root/bin/"
             cp deploy/railway/prebuilt-backend.railpack.json "$root/railpack.json"
             if [[ "$service" == "api" || "$service" == "worker" ]]; then
               cp deploy/railway/prebuilt-backend-git.railpack.json "$root/railpack.json"

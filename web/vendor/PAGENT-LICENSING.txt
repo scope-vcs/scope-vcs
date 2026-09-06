@@ -1,0 +1,17 @@
+Pagent licensing status
+
+The bundled pagent-v0.1.0-47b796c.tgz archive is excluded from Scope's
+Apache-2.0 license. Scope's license does not grant rights to use, modify,
+or redistribute Pagent.
+
+The archive declares no license and supplies no separate license text.
+It remains subject to its copyright owner's rights. Separate permission
+or applicable license terms must be established for Pagent independently.
+This notice records its status; it does not supply a license or assert
+that redistribution rights have been verified.
+
+Package: pagent 0.1.0
+Source repository: https://github.com/adamblumoff/pagent
+Source revision recorded by the vendor: 47b796c
+Archive SHA-256:
+62792ab450d5a2d8dd29f474b29b705e069c2a120e79e2c807f138657001f618

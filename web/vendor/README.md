@@ -8,3 +8,8 @@ Scope installs the archive from this directory so CI and Railway do not need
 credentials for the private Pagent repository. Replace the archive only with a
 package produced by Pagent's release builder, then update the commit and digest
 above.
+
+Pagent is excluded from Scope's Apache-2.0 license. The archive supplies no
+separate license terms. Its reviewed status is recorded in
+[`PAGENT-LICENSING.txt`](PAGENT-LICENSING.txt) and the dependency inventory;
+the archive remains unchanged.

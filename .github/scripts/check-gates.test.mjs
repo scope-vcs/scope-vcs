@@ -16,7 +16,7 @@ const gates = ['backend', 'cli', 'web', 'contract', 'policy', 'integration', 'op
 function commands(gate, ...args) {
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-gates-'));
   try {
-    for (const tool of ['cargo', 'pnpm', 'node', 'bash']) {
+    for (const tool of ['cargo', 'pnpm', 'node', 'bash', 'python3']) {
       writeFileSync(resolve(dir, tool), '#!/bin/sh\ncase "$1" in *dev/checks/*) exec /bin/bash "$@" ;; esac\nprintf "%s" "$(basename "$0")"\nprintf " %s" "$@"\nprintf "\\n"\n', { mode: 0o755 });
     }
     return execFileSync('/bin/bash', [resolve(root, `dev/checks/${gate}`), ...args], {
@@ -71,6 +71,7 @@ test('gate inputs select checks through change scopes', () => {
 });
 
 test('policy rejects oversized non-web source in a complete checkout', () => {
+  assert.ok(commands('policy').includes('python3 dev/licensing/generate.py --check'));
   assert.ok(commands('policy').includes('node .github/scripts/check-source-size.mjs'));
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-size-gate-'));
   try {

@@ -4,7 +4,8 @@
   "steps": {
     "build": {
       "commands": [
-        "cargo build --release --locked -p scope-cache-service && mkdir -p bin && cp target/release/scope-cache-service bin/scope-cache-service"
+        "cargo build --release --locked -p scope-cache-service && mkdir -p bin && cp target/release/scope-cache-service bin/scope-cache-service",
+        "cp LICENSE NOTICE legal/third-party-rust.txt bin/"
       ]
     }
   }

@@ -4,7 +4,8 @@
   "steps": {
     "build": {
       "commands": [
-        "cargo build --release --locked -p scope-repo-router && mkdir -p bin && cp target/release/scope-repo-router bin/scope-repo-router"
+        "cargo build --release --locked -p scope-repo-router && mkdir -p bin && cp target/release/scope-repo-router bin/scope-repo-router",
+        "cp LICENSE NOTICE legal/third-party-rust.txt bin/"
       ]
     }
   }

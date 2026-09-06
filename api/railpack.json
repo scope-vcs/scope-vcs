@@ -4,7 +4,8 @@
   "steps": {
     "build": {
       "commands": [
-        "cargo build --release --locked -p api && mkdir -p bin && cp target/release/api bin/scope-vcs"
+        "cargo build --release --locked -p api && mkdir -p bin && cp target/release/api bin/scope-vcs",
+        "cp LICENSE NOTICE legal/third-party-rust.txt bin/"
       ]
     }
   },
