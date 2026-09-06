@@ -62,12 +62,11 @@ test('labels repository history entries by their actual update kind', () => {
   assert.equal(historyEntryLabels({ ...base, kind: 'push' }).kind, 'Push')
   assert.equal(historyEntryLabels({ ...base, kind: 'merged_request' }).kind, 'Merged')
   assert.deepEqual(historyEntryLabels({ ...base, kind: 'visibility_change' }), {
-    ariaLabel: 'Visibility: Ship the history page, update push-1, 2 visibility changes',
+    ariaLabel: 'Visibility: Ship the history page, update push-1, 1 made public, 1 made private',
     compactId: 'push-1',
-    count: '2',
+    count: '1 made public, 1 made private',
     kind: 'Visibility',
     title: 'Ship the history page',
-    visibilityBreakdown: '1 public · 1 private',
   })
 })
 

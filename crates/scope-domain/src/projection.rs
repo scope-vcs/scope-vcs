@@ -69,6 +69,9 @@ pub struct ProjectedChange {
 pub struct ProjectedCommit {
     pub projected_id: String,
     pub logical_commit_id: String,
+    /// The visibility action that emitted this boundary; absent for content commits.
+    /// This provenance does not participate in Git commit identity.
+    pub visibility_change_set_id: Option<String>,
     pub parent_projected_id: Option<String>,
     pub author: Option<String>,
     pub message: String,
@@ -193,6 +196,7 @@ pub fn project_graph(
                 commits.push(ProjectedCommit {
                     projected_id: native.oid.clone(),
                     logical_commit_id: logical.id.clone(),
+                    visibility_change_set_id: None,
                     parent_projected_id: native.parent_oids.first().cloned(),
                     author: None,
                     message: if is_head {
@@ -240,6 +244,7 @@ pub fn project_graph(
         commits.push(ProjectedCommit {
             projected_id: projected_id.clone(),
             logical_commit_id: logical.id.clone(),
+            visibility_change_set_id: None,
             parent_projected_id: last_visible,
             author: (!partial).then(|| logical.author_id.clone()),
             message: if partial {
@@ -290,6 +295,7 @@ fn project_private_graph(graph: &SourceGraph, view_key: ProjectionViewKey) -> Pr
         commits.push(ProjectedCommit {
             projected_id: projected_id.clone(),
             logical_commit_id: logical.id.clone(),
+            visibility_change_set_id: None,
             parent_projected_id: last_visible,
             author: Some(logical.author_id.clone()),
             message: logical.message.clone(),
@@ -416,6 +422,7 @@ fn process_projection_boundary_events_after(
         commits.push(ProjectedCommit {
             projected_id: projected_id.clone(),
             logical_commit_id,
+            visibility_change_set_id: Some(set_id.to_string()),
             parent_projected_id: last_visible.clone(),
             author: None,
             message: if boundaries[0].source_update_resolved {

@@ -77,7 +77,9 @@ async fn history_defaults_to_the_readers_broadest_audience() {
 
     let public = history_get(state.clone(), "/v1/repos/owner/repo/history", false).await;
     assert_eq!(public.status(), StatusCode::OK);
-    assert_eq!(response_json(public).await["audience"], "public");
+    let public = response_json(public).await;
+    assert_eq!(public["audience"], "public");
+    assert_eq!(public["feed"], "updates");
 
     let maintainer = history_get(state, "/v1/repos/owner/repo/history", true).await;
     assert_eq!(maintainer.status(), StatusCode::OK);
@@ -129,7 +131,7 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
 
     let private = history_get(
         state.clone(),
-        "/v1/repos/owner/repo/history?audience=private",
+        "/v1/repos/owner/repo/history?feed=all&audience=private",
         true,
     )
     .await;
@@ -162,11 +164,16 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     assert_eq!(detail["visibility_changes"][0]["old_visibility"], "Public");
     assert_eq!(detail["visibility_changes"][0]["new_visibility"], "Private");
 
-    let public = history_get(state, "/v1/repos/owner/repo/history?audience=public", false).await;
+    let public = history_get(
+        state,
+        "/v1/repos/owner/repo/history?feed=all&audience=public",
+        false,
+    )
+    .await;
     let public = response_json(public).await;
     assert_eq!(public["entries"].as_array().unwrap().len(), 2);
     assert_eq!(public["entries"][0]["source_id"], "vchg_2");
-    assert_eq!(public["entries"][0]["file_change_count"], 2);
+    assert_eq!(public["entries"][0]["file_change_count"], 0);
     assert_eq!(
         public["entries"][0]["visibility_summary"]["made_public_count"],
         1
@@ -213,9 +220,21 @@ async fn unresolved_visibility_source_degrades_to_a_direct_update() {
     );
     replace_test_repo(&state, repo).await;
 
-    let public = history_get(
+    let updates = history_get(
         state.clone(),
         "/v1/repos/owner/repo/history?audience=public",
+        false,
+    )
+    .await;
+    assert_eq!(updates.status(), StatusCode::OK);
+    let updates = response_json(updates).await;
+    assert_eq!(updates["feed"], "updates");
+    assert!(updates["entries"].as_array().unwrap().is_empty());
+    assert!(updates["next_cursor"].is_null());
+
+    let public = history_get(
+        state.clone(),
+        "/v1/repos/owner/repo/history?feed=all&audience=public",
         false,
     )
     .await;
@@ -224,7 +243,12 @@ async fn unresolved_visibility_source_degrades_to_a_direct_update() {
     assert_eq!(public["entries"][0]["source_id"], "vchg_orphan");
     assert_eq!(public["entries"][0]["kind"], "visibility_change");
 
-    let private = history_get(state, "/v1/repos/owner/repo/history?audience=private", true).await;
+    let private = history_get(
+        state,
+        "/v1/repos/owner/repo/history?feed=all&audience=private",
+        true,
+    )
+    .await;
     assert_eq!(private.status(), StatusCode::OK);
     let private = response_json(private).await;
     assert_eq!(private["entries"][0]["source_id"], "vchg_orphan");
@@ -685,9 +709,8 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
     assert_eq!(second.status(), StatusCode::OK);
     let second = response_json(second).await;
     assert_eq!(second["generation"], restarted["generation"]);
-    assert_eq!(second["entries"].as_array().unwrap().len(), 2);
-    assert_eq!(second["entries"][0]["source_id"], "visibility-after-rv1");
-    assert_eq!(second["entries"][1]["source_id"], "rv1");
+    assert_eq!(second["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(second["entries"][0]["source_id"], "rv1");
     assert!(second["next_cursor"].is_null());
 
     let detail = history_get(
@@ -796,7 +819,7 @@ async fn history_entries_report_their_update_kind() {
 
     let public = history_get(
         state.clone(),
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?feed=all&audience=public",
         true,
     )
     .await;
@@ -807,7 +830,7 @@ async fn history_entries_report_their_update_kind() {
     assert_eq!(public_entries[1]["kind"], "merged_request");
     assert_eq!(public_entries[2]["kind"], "push");
 
-    let private = history_get(state.clone(), "/v1/repos/owner/repo/history", true).await;
+    let private = history_get(state.clone(), "/v1/repos/owner/repo/history?feed=all", true).await;
     assert_eq!(private.status(), StatusCode::OK);
     let private = response_json(private).await;
     assert_eq!(private["audience"], "private");
@@ -836,3 +859,5 @@ async fn history_entries_report_their_update_kind() {
     assert_eq!(detail["visibility_changes"][0]["old_visibility"], "Public");
     assert_eq!(detail["visibility_changes"][0]["new_visibility"], "Private");
 }
+
+mod feeds;

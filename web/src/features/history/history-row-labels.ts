@@ -33,41 +33,17 @@ export function historyCommitTitle(commit: Pick<CommitSummary, 'message'>) {
 export function historyEntryLabels(entry: HistoryEntrySummary) {
   const title = historyCommitTitle(entry)
   const kind = historyEntryKindLabel(entry.kind)
-  const visibilityCount = entry.visibility_summary.made_public_count
-    + entry.visibility_summary.made_private_count
-  const displayedFileCount = entry.kind === 'visibility_change' ? 0 : entry.file_change_count
-  const fileCount = `${displayedFileCount} ${displayedFileCount === 1 ? 'file change' : 'file changes'}`
-  const visibilityCountLabel = `${visibilityCount} ${visibilityCount === 1 ? 'visibility change' : 'visibility changes'}`
-  const counts = [
-    displayedFileCount > 0 ? fileCount : null,
-    visibilityCount > 0 ? visibilityCountLabel : null,
-  ].filter(Boolean).join(', ')
+  const counts = historyEntryCountLabel(entry)
   return {
     ariaLabel: `${kind}: ${title}, update ${entry.source_id}, ${counts}`,
     compactId: compactHistorySourceId(entry.source_id),
-    count: displayedFileCount > 0 && visibilityCount > 0
-      ? `${displayedFileCount} + ${visibilityCount}`
-      : `${displayedFileCount || visibilityCount}`,
+    count: counts,
     kind,
     title,
-    visibilityBreakdown: visibilityBreakdown(entry),
   }
 }
 
-function visibilityBreakdown(entry: HistoryEntrySummary) {
-  const {
-    made_private_count: madePrivateCount,
-    made_public_count: madePublicCount,
-  } = entry.visibility_summary
-  if (madePublicCount > 0 && madePrivateCount > 0) {
-    return `${madePublicCount} public · ${madePrivateCount} private`
-  }
-  if (madePublicCount > 0) return `${madePublicCount} public`
-  if (madePrivateCount > 0) return `${madePrivateCount} private`
-  return null
-}
-
-function historyEntryKindLabel(kind: HistoryEntryKind) {
+export function historyEntryKindLabel(kind: HistoryEntryKind) {
   switch (kind) {
     case 'push':
       return 'Push'
@@ -81,4 +57,14 @@ function historyEntryKindLabel(kind: HistoryEntryKind) {
 function compactHistorySourceId(sourceId: string) {
   const reviewedPush = REVIEWED_PUSH_ID.exec(sourceId)
   return reviewedPush ? reviewedPush[1].slice(0, 12) : sourceId
+}
+
+export function historyEntryCountLabel(entry: Pick<HistoryEntrySummary, 'file_change_count' | 'kind' | 'visibility_summary'>) {
+  const files = entry.kind === 'visibility_change' ? 0 : entry.file_change_count
+  const { made_public_count: madePublic, made_private_count: madePrivate } = entry.visibility_summary
+  return [
+    files > 0 ? `${files} file ${files === 1 ? 'change' : 'changes'}` : null,
+    madePublic > 0 ? `${madePublic} made public` : null,
+    madePrivate > 0 ? `${madePrivate} made private` : null,
+  ].filter(Boolean).join(', ')
 }

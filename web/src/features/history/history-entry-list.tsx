@@ -29,8 +29,7 @@ export function HistoryEntryList({
 }) {
   return (
     <div className="py-2">
-      {/* Pages append within a generation; row positions stay fixed even when source IDs repeat. */}
-      {entries.map((entry, position) => {
+      {entries.map((entry) => {
         const labels = historyEntryLabels(entry)
         const selected = selectedEntryId === entry.source_id
         return (
@@ -44,7 +43,7 @@ export function HistoryEntryList({
                 ? 'bg-accent shadow-[inset_2px_0_0_0_var(--brand)]'
                 : 'hover:bg-accent/50',
             )}
-            key={position}
+            key={entry.id}
             onClick={() => onSelectEntry(entry)}
             title={entry.source_id}
             type="button"
@@ -58,11 +57,10 @@ export function HistoryEntryList({
                 </span>
                 <span className="mt-0.5 block truncate font-mono text-[11px] leading-4 text-muted-foreground">
                   {labels.compactId}
-                  {labels.visibilityBreakdown ? ` · ${labels.visibilityBreakdown}` : null}
                 </span>
               </span>
             </span>
-            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            <span className="max-w-28 text-right text-xs tabular-nums text-muted-foreground sm:max-w-56">
               {labels.count}
             </span>
           </button>

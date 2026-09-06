@@ -36,6 +36,7 @@ mod m0035_retired_git_storage_cutover;
 mod m0036_request_queue_indexes;
 mod m0037_repository_history_views;
 mod m0038_history_entry_positions;
+mod m0039_history_action_feed;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -172,6 +173,7 @@ fn inventory() -> Vec<MigrationSpec> {
             m0038_history_entry_positions::Migration,
             MaintenanceRequired,
         ),
+        spec(m0039_history_action_feed::Migration, MaintenanceRequired),
     ]
 }
 

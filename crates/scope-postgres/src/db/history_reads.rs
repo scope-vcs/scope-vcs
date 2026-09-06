@@ -4,7 +4,10 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::{
-    history::{HistoryEntry, HistoryView, history_view_from_projection},
+    history::{
+        HISTORY_GENERATION_VERSION, HistoryEntry, HistoryEntryKind, HistoryFeed, HistoryView,
+        history_view_from_projection,
+    },
     projection::{Projection, ProjectionViewKey, project_graph},
     repo_control::is_repo_control_path,
     repository::{Repository, RepositoryIncarnation},
@@ -16,6 +19,7 @@ pub struct RepositoryHistoryQuery<'a> {
     pub incarnation: &'a RepositoryIncarnation,
     pub version: u64,
     pub audience: ProjectionViewKey,
+    pub feed: HistoryFeed,
     pub before: Option<&'a RepositoryHistoryBoundary>,
     pub entry_source_id: Option<&'a str>,
     pub limit: u64,
@@ -47,8 +51,8 @@ pub(super) async fn history_view_metadata<C: ConnectionTrait>(
     audience: ProjectionViewKey,
 ) -> Result<Option<HistoryViewMetadata>, PostgresError> {
     let row = conn.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-        "SELECT generation, available, visible_files, head_oid FROM scope_repository_history_views WHERE repo_id=$1 AND repo_version=$2 AND audience=$3 AND identity_version=$4",
-        [repo_id.into(), entities::u64_to_i64(version, "repository version")?.into(), audience.as_str().into(), scope_git::PROJECTION_IDENTITY_VERSION.into()],
+        "SELECT generation, available, visible_files, head_oid FROM scope_repository_history_views WHERE repo_id=$1 AND repo_version=$2 AND audience=$3 AND identity_version=$4 AND history_version=$5",
+        [repo_id.into(), entities::u64_to_i64(version, "repository version")?.into(), audience.as_str().into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
     )).await.map_err(PostgresError::internal)?;
     row.map(|row| {
         Ok(HistoryViewMetadata {
@@ -110,8 +114,8 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
     let visible_files = tree.into_iter().any(|path| !is_repo_control_path(path));
     let view = history_view_from_projection(projection, &repo.graph, &repo.visibility_change_sets);
     conn.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "INSERT INTO scope_repository_history_views (repo_id,audience,repo_version,generation,available,visible_files,head_oid,identity_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
-            [repo.record.id.clone().into(), audience.as_str().into(), entities::u64_to_i64(repo.record.change_version,"repository version")?.into(), view.generation.into(), available.into(), visible_files.into(), head_oid.into(), scope_git::PROJECTION_IDENTITY_VERSION.into()],
+            "INSERT INTO scope_repository_history_views (repo_id,audience,repo_version,generation,available,visible_files,head_oid,identity_version,history_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+            [repo.record.id.clone().into(), audience.as_str().into(), entities::u64_to_i64(repo.record.change_version,"repository version")?.into(), view.generation.into(), available.into(), visible_files.into(), head_oid.into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
         )).await.map_err(PostgresError::internal)?;
     for batch in view
         .entries
@@ -195,6 +199,7 @@ impl RepositoryStore {
             incarnation,
             version,
             audience,
+            feed,
             before,
             entry_source_id,
             limit,
@@ -217,9 +222,14 @@ impl RepositoryStore {
                 self.ensure_history_view(incarnation).await?;
                 continue;
             };
+            let generation = feed.generation(
+                &metadata.generation,
+                incarnation.repository_id(),
+                audience.as_str(),
+            );
             let boundary = match before {
                 Some(boundary) => {
-                    if boundary.generation != metadata.generation {
+                    if boundary.generation != generation {
                         return Err(PostgresError::invalid_input(
                             "history changed; restart pagination",
                         ));
@@ -238,15 +248,24 @@ impl RepositoryStore {
             let limit = limit.clamp(1, 50) as i64;
             // Separate predicates retain index bounds even after PostgreSQL chooses a generic plan.
             let mut values = vec![incarnation.repository_id().into(), audience.as_str().into()];
+            let feed_predicate = if !feed.includes(HistoryEntryKind::VisibilityChange) {
+                " AND payload->>'kind' != 'VisibilityChange'"
+            } else {
+                ""
+            };
             let sql = if let Some(source_id) = entry_source_id {
                 values.push(source_id.into());
-                "SELECT position, payload FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND source_id=$3 ORDER BY position DESC LIMIT 1"
+                "SELECT position, payload FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND source_id=$3".to_string()
             } else if let Some(position) = boundary {
                 values.extend([position.into(), (limit + 1).into()]);
-                "SELECT position, payload FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND position<$3 ORDER BY position DESC LIMIT $4"
+                format!(
+                    "SELECT position, payload FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND position<$3{feed_predicate} ORDER BY position DESC LIMIT $4"
+                )
             } else {
                 values.push((limit + 1).into());
-                "SELECT position, payload FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 ORDER BY position DESC LIMIT $3"
+                format!(
+                    "SELECT position, payload FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2{feed_predicate} ORDER BY position DESC LIMIT $3"
+                )
             };
             let rows = tx
                 .query_all(Statement::from_sql_and_values(
@@ -258,7 +277,7 @@ impl RepositoryStore {
                 .map_err(PostgresError::internal)?;
             let next_boundary = if rows.len() > limit as usize {
                 Some(RepositoryHistoryBoundary {
-                    generation: metadata.generation.clone(),
+                    generation: generation.clone(),
                     position: entities::i64_to_u64(
                         rows[limit as usize - 1]
                             .try_get("", "position")
@@ -285,7 +304,7 @@ impl RepositoryStore {
                 view: HistoryView {
                     repo_id: incarnation.repository_id().to_string(),
                     view_key: audience.as_str().to_string(),
-                    generation: metadata.generation,
+                    generation,
                     entries,
                 },
                 next_boundary,

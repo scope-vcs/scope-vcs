@@ -104,6 +104,7 @@ export function historyEntryDiffCacheKey({
   path,
   repoId,
   viewKey,
+  visibilityChange = null,
 }: {
   audience: ProjectionPreviewAudience
   entry: string
@@ -112,9 +113,10 @@ export function historyEntryDiffCacheKey({
   oldOid: string | null
   path: string
   repoId: string
+  visibilityChange?: string | null
   viewKey: string
 }) {
-  return historyDiffCacheKey({
+  return [historyDiffCacheKey({
     audience,
     commit: entry,
     generation,
@@ -123,7 +125,7 @@ export function historyEntryDiffCacheKey({
     path,
     repoId,
     viewKey,
-  })
+  }), visibilityChange ?? ''].join('\0')
 }
 
 export function readHistoryCommitCache(key: string) {

@@ -7,10 +7,8 @@ import {
   type LoadedHistory,
 } from './history-pagination'
 
-test('appends all 120 updates including repeated source fragments across page boundaries', () => {
+test('appends 120 distinct source actions across page boundaries', () => {
   const allEntries = Array.from({ length: 120 }, (_, index) => entry(index))
-  allEntries[50] = { ...allEntries[0], message: 'Later fragment of the same source' }
-  allEntries[100] = { ...allEntries[50], message: 'Another fragment of the same source' }
   let loaded: LoadedHistory = page(allEntries.slice(0, 50), 'cursor-50')
   loaded = appendHistoryPage(loaded, page(allEntries.slice(50, 100), 'cursor-100'), 'cursor-50')
   loaded = appendHistoryPage(loaded, page(allEntries.slice(100), null), 'cursor-100')
@@ -44,6 +42,7 @@ test('describes a partial page as the most recent updates', () => {
 function page(entries: HistoryEntrySummary[], nextCursor: string | null): HistoryPage {
   return {
     audience: 'public',
+    feed: 'updates',
     entries,
     generation: 'generation-1',
     next_cursor: nextCursor,

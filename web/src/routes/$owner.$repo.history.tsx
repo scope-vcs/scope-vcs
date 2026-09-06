@@ -1,29 +1,46 @@
+import { parseHistoryFeed, parseVisibilityChange } from '@/api/history-inputs'
 import type { ProjectionPreviewAudience } from '@/api/types'
 import { HistoryError } from '@/features/history/history-error'
 import { HistoryPagePending } from '@/features/history/history-page-pending'
 import { HistoryPage } from '@/features/history/history-page'
 import { parseRouteFileSearch } from '@/lib/route-file'
-import { loadHistoryPage } from '@/routes/-repo-history-actions'
-import { createFileRoute } from '@tanstack/react-router'
+import { loadHistoryEntry, loadHistoryPage } from '@/routes/-repo-history-actions'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/$owner/$repo/history')({
   validateSearch: parseHistorySearch,
-  loaderDeps: ({ search }) => ({ audience: search.audience ?? null }),
+  loaderDeps: ({ search }) => ({ audience: search.audience ?? null, feed: search.feed ?? 'updates' }),
   staleTime: Infinity,
-  loader: ({ deps, params }) => loadHistoryPage({
-    data: { ...params, audience: deps.audience, before: null },
-  }),
+  loader: async ({ deps, params, location }) => {
+    const search = parseHistorySearch(location.search)
+    const [page, initialEntry] = await Promise.all([
+      loadHistoryPage({ data: { ...params, audience: deps.audience, feed: deps.feed, before: null } }),
+      search.entry
+        ? loadHistoryEntry({ data: { ...params, audience: deps.audience, entry: search.entry } })
+        : Promise.resolve(null),
+    ])
+    if (deps.feed === 'updates' && initialEntry?.kind === 'visibility_change') {
+      throw redirect({
+        to: '/$owner/$repo/history',
+        params,
+        search: { ...search, feed: 'all' },
+        replace: true,
+      })
+    }
+    return { page, initialEntry }
+  },
   errorComponent: HistoryError,
   pendingComponent: HistoryPagePending,
   component: HistoryRoute,
 })
 
 function HistoryRoute() {
-  const page = Route.useLoaderData()
+  const { page, initialEntry } = Route.useLoaderData()
   return (
     <HistoryPage
       initialPage={page}
-      key={`${page.audience}:${page.generation}`}
+      initialEntry={initialEntry}
+      key={`${page.repo_id}:${page.audience}:${page.feed}:${page.generation}`}
       params={Route.useParams()}
       search={Route.useSearch()}
     />
@@ -32,6 +49,8 @@ function HistoryRoute() {
 
 export type HistorySearch = {
   audience?: ProjectionPreviewAudience
+  feed?: 'updates' | 'all'
+  visibility_change?: string
   entry?: string
   path?: string
 }
@@ -39,6 +58,8 @@ export type HistorySearch = {
 function parseHistorySearch(search: Record<string, unknown>): HistorySearch {
   return {
     audience: searchHistoryAudience(search.audience),
+    feed: parseHistoryFeed(search.feed),
+    visibility_change: parseVisibilityChange(search.visibility_change) ?? undefined,
     entry: searchHistoryEntryId(search.entry),
     path: searchHistoryPath(search.path),
   }

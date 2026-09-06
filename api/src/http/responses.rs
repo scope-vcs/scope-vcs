@@ -196,9 +196,29 @@ pub(crate) struct DeleteRepoResponse {
     pub(crate) deleted: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
+pub(crate) enum HistoryFeed {
+    #[default]
+    Updates,
+    All,
+}
+
+impl From<HistoryFeed> for scope_domain::history::HistoryFeed {
+    fn from(feed: HistoryFeed) -> Self {
+        match feed {
+            HistoryFeed::Updates => Self::Updates,
+            HistoryFeed::All => Self::All,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryPageRequest {
+    pub(crate) feed: Option<HistoryFeed>,
     pub(crate) audience: Option<ProjectionPreviewAudience>,
     pub(crate) before: Option<String>,
 }
@@ -212,6 +232,7 @@ pub(crate) struct HistoryEntryRequest {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryEntryFileDiffRequest {
+    pub(crate) visibility_change: Option<String>,
     pub(crate) audience: Option<ProjectionPreviewAudience>,
     pub(crate) path: String,
 }
@@ -251,6 +272,7 @@ pub(crate) enum ReviewFileContentResponse {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryPageResponse {
+    pub(crate) feed: HistoryFeed,
     pub(crate) audience: ProjectionPreviewAudience,
     pub(crate) repo_id: String,
     pub(crate) view_key: String,
@@ -310,6 +332,8 @@ pub(crate) struct HistoryVisibilitySummaryResponse {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryVisibilityChangeResponse {
+    pub(crate) id: String,
+    pub(crate) file: Option<HistoryEntryFileResponse>,
     pub(crate) path: String,
     pub(crate) old_visibility: Visibility,
     pub(crate) new_visibility: Visibility,
@@ -502,12 +526,14 @@ pub(crate) fn git_push_token_response(
 }
 
 pub(crate) fn history_page_response(
+    feed: HistoryFeed,
     audience: ProjectionPreviewAudience,
     view: &HistoryView,
     entries: &[HistoryEntry],
     next_cursor: Option<String>,
 ) -> HistoryPageResponse {
     HistoryPageResponse {
+        feed,
         audience,
         repo_id: view.repo_id.clone(),
         view_key: view.view_key.clone(),
@@ -576,6 +602,8 @@ fn history_visibility_change_response(
     change: &HistoryEntryVisibilityChange,
 ) -> HistoryVisibilityChangeResponse {
     HistoryVisibilityChangeResponse {
+        id: change.id.clone(),
+        file: change.file.as_ref().map(history_entry_file_response),
         path: change.path.as_str().to_string(),
         old_visibility: change.old_visibility.into(),
         new_visibility: change.new_visibility.into(),

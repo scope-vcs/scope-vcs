@@ -4,7 +4,7 @@ use crate::{
     http::{
         file_diffs::review_file_diff_response_for_blobs,
         responses::{
-            HistoryEntryFileDiffRequest, HistoryEntryRequest, HistoryPageRequest,
+            HistoryEntryFileDiffRequest, HistoryEntryRequest, HistoryFeed, HistoryPageRequest,
             ProjectionPreviewAudience, ReviewFileDiffResponse, history_entry_detail_response,
             history_page_response, repo_scope_path,
         },
@@ -26,11 +26,12 @@ use scope_domain::{
 use serde::{Deserialize, Serialize};
 
 const HISTORY_PAGE_SIZE: usize = 50;
-const HISTORY_CURSOR_VERSION: u8 = 2;
+const HISTORY_CURSOR_VERSION: u8 = 3;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct HistoryCursor {
     version: u8,
+    feed: HistoryFeed,
     repo_id: String,
     audience: ProjectionPreviewAudience,
     generation: String,
@@ -45,10 +46,11 @@ pub(crate) async fn get_history_page(
 ) -> Result<Json<crate::http::responses::HistoryPageResponse>, ApiError> {
     let (repo, audience) =
         repo_and_audience(&state, &headers, &owner, &repo_name, input.audience).await?;
+    let feed = input.feed.unwrap_or_default();
     let boundary = input
         .before
         .as_deref()
-        .map(|cursor| parse_history_cursor(cursor, &repo.record.id, audience))
+        .map(|cursor| parse_history_cursor(cursor, &repo.record.id, audience, feed))
         .transpose()?;
     let page = state
         .metadata
@@ -57,6 +59,7 @@ pub(crate) async fn get_history_page(
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
             audience: history_view_key(audience),
+            feed: feed.into(),
             before: boundary.as_ref(),
             entry_source_id: None,
             limit: HISTORY_PAGE_SIZE as u64,
@@ -68,10 +71,11 @@ pub(crate) async fn get_history_page(
     let next_cursor = page
         .next_boundary
         .as_ref()
-        .map(|boundary| encode_history_cursor(&repo.record.id, audience, boundary))
+        .map(|boundary| encode_history_cursor(&repo.record.id, audience, feed, boundary))
         .transpose()?;
 
     Ok(Json(history_page_response(
+        feed,
         audience,
         &view,
         entries,
@@ -94,6 +98,7 @@ pub(crate) async fn get_history_entry(
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
             audience: history_view_key(audience),
+            feed: scope_domain::history::HistoryFeed::All,
             before: None,
             entry_source_id: Some(&entry_id),
             limit: 1,
@@ -121,6 +126,7 @@ pub(crate) async fn get_history_entry_file_diff(
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
             audience: history_view_key(audience),
+            feed: scope_domain::history::HistoryFeed::All,
             before: None,
             entry_source_id: Some(&entry_id),
             limit: 1,
@@ -130,15 +136,28 @@ pub(crate) async fn get_history_entry_file_diff(
     let view = page.view;
     let entry = history_entry_for_id(&view.entries, &entry_id)?;
     let path = repo_scope_path(&input.path)?;
-    let file = entry
-        .files
-        .iter()
-        .find(|file| file.path.as_str() == path.as_str())
-        .ok_or_else(|| ApiError::not_found(format!("file {} not found", path.as_str())))?;
+    let file = history_entry_file(entry, path.as_str(), input.visibility_change.as_deref())?;
 
     Ok(Json(
         history_entry_file_diff_response(&state, &repo, file).await?,
     ))
+}
+
+fn history_entry_file<'a>(
+    entry: &'a HistoryEntry,
+    path: &str,
+    visibility_change: Option<&str>,
+) -> Result<&'a HistoryEntryFile, ApiError> {
+    let file = match visibility_change {
+        Some(id) => entry
+            .visibility_changes
+            .iter()
+            .find(|change| change.id == id && change.path.as_str() == path)
+            .and_then(|change| change.file.as_ref())
+            .filter(|file| file.path.as_str() == path),
+        None => entry.files.iter().find(|file| file.path.as_str() == path),
+    };
+    file.ok_or_else(|| ApiError::not_found(format!("file {path} not found")))
 }
 
 async fn repo_and_audience(
@@ -189,10 +208,12 @@ fn ensure_history_available(available: bool) -> Result<(), ApiError> {
 fn encode_history_cursor(
     repo_id: &str,
     audience: ProjectionPreviewAudience,
+    feed: HistoryFeed,
     boundary: &scope_postgres::db::RepositoryHistoryBoundary,
 ) -> Result<String, ApiError> {
     let cursor = HistoryCursor {
         version: HISTORY_CURSOR_VERSION,
+        feed,
         repo_id: repo_id.to_string(),
         audience,
         generation: boundary.generation.clone(),
@@ -206,6 +227,7 @@ fn parse_history_cursor(
     value: &str,
     repo_id: &str,
     audience: ProjectionPreviewAudience,
+    feed: HistoryFeed,
 ) -> Result<scope_postgres::db::RepositoryHistoryBoundary, ApiError> {
     let invalid = || ApiError::bad_request("invalid history cursor");
     let decoded = URL_SAFE_NO_PAD.decode(value).map_err(|_| invalid())?;
@@ -213,9 +235,9 @@ fn parse_history_cursor(
     if cursor.version != HISTORY_CURSOR_VERSION || cursor.boundary_position > i64::MAX as u64 {
         return Err(invalid());
     }
-    if cursor.repo_id != repo_id || cursor.audience != audience {
+    if cursor.repo_id != repo_id || cursor.audience != audience || cursor.feed != feed {
         return Err(ApiError::bad_request(
-            "history cursor does not match the repository and audience",
+            "history cursor does not match the repository, audience and feed",
         ));
     }
     Ok(scope_postgres::db::RepositoryHistoryBoundary {
@@ -261,43 +283,89 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cursor_is_bound_to_repository_and_audience() {
+    fn cursor_is_bound_to_repository_audience_feed_and_version() {
         let boundary = scope_postgres::db::RepositoryHistoryBoundary {
             generation: "generation-1".into(),
             position: 50,
         };
-        let encoded =
-            encode_history_cursor("owner/repo", ProjectionPreviewAudience::Public, &boundary)
-                .unwrap();
+        let encoded = encode_history_cursor(
+            "owner/repo",
+            ProjectionPreviewAudience::Public,
+            HistoryFeed::Updates,
+            &boundary,
+        )
+        .unwrap();
 
         assert_eq!(
-            parse_history_cursor(&encoded, "owner/repo", ProjectionPreviewAudience::Public)
-                .unwrap(),
+            parse_history_cursor(
+                &encoded,
+                "owner/repo",
+                ProjectionPreviewAudience::Public,
+                HistoryFeed::Updates
+            )
+            .unwrap(),
             boundary
         );
         assert!(
-            parse_history_cursor(&encoded, "owner/repo", ProjectionPreviewAudience::Private)
-                .is_err()
+            parse_history_cursor(
+                &encoded,
+                "owner/repo",
+                ProjectionPreviewAudience::Private,
+                HistoryFeed::Updates
+            )
+            .is_err()
         );
         assert!(
-            parse_history_cursor(&encoded, "owner/other", ProjectionPreviewAudience::Public)
-                .is_err()
+            parse_history_cursor(
+                &encoded,
+                "owner/other",
+                ProjectionPreviewAudience::Public,
+                HistoryFeed::Updates
+            )
+            .is_err()
         );
         assert!(
             parse_history_cursor(
                 "not-a-cursor",
                 "owner/repo",
-                ProjectionPreviewAudience::Public
+                ProjectionPreviewAudience::Public,
+                HistoryFeed::Updates,
+            )
+            .is_err()
+        );
+        assert!(
+            parse_history_cursor(
+                &encoded,
+                "owner/repo",
+                ProjectionPreviewAudience::Public,
+                HistoryFeed::All
             )
             .is_err()
         );
         let mut cursor: HistoryCursor =
             serde_json::from_slice(&URL_SAFE_NO_PAD.decode(&encoded).unwrap()).unwrap();
+        cursor.version = HISTORY_CURSOR_VERSION - 1;
+        let old = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&cursor).unwrap());
+        assert!(
+            parse_history_cursor(
+                &old,
+                "owner/repo",
+                ProjectionPreviewAudience::Public,
+                HistoryFeed::Updates
+            )
+            .is_err()
+        );
+        cursor.version = HISTORY_CURSOR_VERSION;
         cursor.boundary_position = u64::MAX;
         let overflow = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&cursor).unwrap());
         assert!(
-            parse_history_cursor(&overflow, "owner/repo", ProjectionPreviewAudience::Public)
-                .is_err()
+            parse_history_cursor(
+                &overflow,
+                "owner/repo",
+                ProjectionPreviewAudience::Public,
+                HistoryFeed::Updates
+            )
+            .is_err()
         );
     }
 }

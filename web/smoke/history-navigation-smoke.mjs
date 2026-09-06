@@ -63,3 +63,17 @@ function serverFunctionExport(request) {
   assert(encodedId, 'server function request is missing its encoded id')
   return JSON.parse(Buffer.from(encodedId, 'base64url')).export
 }
+
+export async function assertHistoryFeedNavigation(page) {
+  const activity = page.getByRole('radiogroup', { name: 'History activity' })
+  await activity.getByRole('radio', { name: 'All activity', exact: true }).click()
+  await page.waitForURL((url) => url.searchParams.get('feed') === 'all')
+  await activity.getByRole('radio', { name: 'All activity', exact: true, checked: true }).waitFor()
+  await page.getByLabel('History updates', { exact: true }).waitFor()
+  assert.equal(await activity.getByRole('radio', { name: 'All activity', exact: true }).getAttribute('aria-checked'), 'true')
+  await activity.getByRole('radio', { name: 'Pushes & merges', exact: true }).click()
+  await page.waitForURL((url) => url.searchParams.get('feed') === 'updates')
+  await activity.getByRole('radio', { name: 'Pushes & merges', exact: true, checked: true }).waitFor()
+  await page.getByLabel('History updates', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.__scopeHistoryDocument), 'scope-history-file-selection')
+}

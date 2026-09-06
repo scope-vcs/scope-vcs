@@ -59,6 +59,7 @@ fn generated_projection_matches_canonical_head_identity() {
         commits: vec![ProjectedCommit {
             projected_id: "generated-base".to_string(),
             logical_commit_id: "logical-base".to_string(),
+            visibility_change_set_id: None,
             parent_projected_id: None,
             author: Some("owner".to_string()),
             message: "base".to_string(),
@@ -98,6 +99,7 @@ fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
         commits: vec![ProjectedCommit {
             projected_id: "generated-base".to_string(),
             logical_commit_id: "logical-base".to_string(),
+            visibility_change_set_id: None,
             parent_projected_id: None,
             author: Some("owner".to_string()),
             message: "base".to_string(),
@@ -144,6 +146,7 @@ fn projection_identity_and_materializer_reject_the_same_reserved_path() {
         commits: vec![ProjectedCommit {
             projected_id: "generated-base".to_string(),
             logical_commit_id: "logical-base".to_string(),
+            visibility_change_set_id: None,
             parent_projected_id: None,
             author: Some("owner".to_string()),
             message: "base".to_string(),
@@ -289,6 +292,7 @@ fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     let generated = ProjectedCommit {
         projected_id: "generated-base".to_string(),
         logical_commit_id: "logical-base".to_string(),
+        visibility_change_set_id: None,
         parent_projected_id: None,
         author: Some("owner".to_string()),
         message: "base".to_string(),
@@ -298,6 +302,7 @@ fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     let preserved = ProjectedCommit {
         projected_id: native_oid.clone(),
         logical_commit_id: "logical-request".to_string(),
+        visibility_change_set_id: None,
         parent_projected_id: Some(base_oid.clone()),
         author: None,
         message: "contributor".to_string(),
@@ -339,6 +344,7 @@ fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     extended.commits.push(ProjectedCommit {
         projected_id: "after-native".into(),
         logical_commit_id: "after-native".into(),
+        visibility_change_set_id: None,
         parent_projected_id: Some(native_oid.clone()),
         author: None,
         message: "after native".into(),
@@ -432,6 +438,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
         commits: vec![ProjectedCommit {
             projected_id: "initial".into(),
             logical_commit_id: "initial".into(),
+            visibility_change_set_id: None,
             parent_projected_id: None,
             author: None,
             message: "initial".into(),
@@ -445,6 +452,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
         projection.commits.push(ProjectedCommit {
             projected_id: format!("commit-{i}"),
             logical_commit_id: format!("commit-{i}"),
+            visibility_change_set_id: None,
             parent_projected_id: Some(projection.commits.last().unwrap().projected_id.clone()),
             author: None,
             message: format!("edit {i}"),
@@ -486,6 +494,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     projection.commits.push(ProjectedCommit {
         projected_id: "append".into(),
         logical_commit_id: "append".into(),
+        visibility_change_set_id: None,
         parent_projected_id: Some("commit-19".into()),
         author: None,
         message: "append".into(),
@@ -546,6 +555,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     projection.commits.push(ProjectedCommit {
         projected_id: "mode".into(),
         logical_commit_id: "mode".into(),
+        visibility_change_set_id: None,
         parent_projected_id: Some("append".into()),
         author: None,
         message: "mode only".into(),
@@ -635,6 +645,7 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
             .map(|(i, changes)| ProjectedCommit {
                 projected_id: i.to_string(),
                 logical_commit_id: i.to_string(),
+                visibility_change_set_id: None,
                 parent_projected_id: i.checked_sub(1).map(|p| p.to_string()),
                 author: None,
                 message: i.to_string(),

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { chromium } from 'playwright'
-import { assertHistoryFirstFileStaysInRoute } from './history-navigation-smoke.mjs'
+import { assertHistoryFeedNavigation, assertHistoryFirstFileStaysInRoute } from './history-navigation-smoke.mjs'
 import { assertRepositoryMarkdownUsesClientNavigation } from './repository-markdown-navigation-smoke.mjs'
 
 const baseUrl = (
@@ -409,7 +409,6 @@ test('public repository history renders its seeded push as an update', async () 
   await withPage(`${repoPath}/history`, async (page) => {
     await assertCurrentRepoSection(page, 'History')
     await assertPageHeading(page, 'history')
-    await page.locator('summary').filter({ hasText: /^updates/ }).click()
     const update = page.getByRole('button', {
       name: 'Push: Projected public update, update dev-public-1, 2 file changes',
     })
@@ -434,6 +433,7 @@ test('public repository history renders its seeded push as an update', async () 
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
     assert.equal(new URL(page.url()).searchParams.get('entry'), 'dev-public-1')
     await assertHistoryFirstFileStaysInRoute(page)
+    await assertHistoryFeedNavigation(page)
     assert.equal(
       await page.evaluate(() => document.querySelector('#main-content')?.scrollTop),
       0,

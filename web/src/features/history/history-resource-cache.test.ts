@@ -4,6 +4,7 @@ import type { CommitDetail, ReviewFileDiff } from '@/api/types'
 import {
   historyCommitCacheKey,
   historyDiffCacheKey,
+  historyEntryDiffCacheKey,
   historyResourceCacheStats,
   peekHistoryCommitCache,
   readHistoryCommitCache,
@@ -114,4 +115,10 @@ test('evicts large text diffs at the byte budget', () => {
   const stats = historyResourceCacheStats()
   assert.ok(stats.diffs < 6)
   assert.ok(stats.diffBytes <= 32 * 1024 * 1024)
+})
+
+test('isolates content and exact visibility preview caches for the same file and blobs', () => {
+  const base = { audience: 'public' as const, entry: 'push-1', generation: 'g1', repoId: 'scope/demo', viewKey: 'public', path: '/same.ts', oldOid: null, newOid: 'blob' }
+  assert.notEqual(historyEntryDiffCacheKey(base), historyEntryDiffCacheKey({ ...base, visibilityChange: 'first' }))
+  assert.notEqual(historyEntryDiffCacheKey({ ...base, visibilityChange: 'first' }), historyEntryDiffCacheKey({ ...base, visibilityChange: 'second' }))
 })

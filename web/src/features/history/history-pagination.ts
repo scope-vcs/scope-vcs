@@ -8,8 +8,7 @@ export function appendHistoryPage(
   before: string,
 ): LoadedHistory {
   if (current.next_cursor !== before) return current
-  // Generation-bound cursor pages do not overlap. One source can legitimately
-  // contribute multiple visibility fragments, each of which must remain visible.
+  // Generation-bound cursor pages contain distinct source actions.
   return { entries: [...current.entries, ...page.entries], next_cursor: page.next_cursor }
 }
 
