@@ -9,7 +9,7 @@
     "dev/licensing/requirements.txt": "0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a",
     "legal/copied-sources.json": "190ff3e7315a2273ed650091869902f07b9fa47b39617029f43aebf1df62b3b8",
     "legal/license-selections.json": "82b2a41a4b78f9972a6ffdebbcde8232862eb4e4b799113ca28ddf55812320e6",
-    "legal/rust-supplements.json": "304936cb958f6232f67f32ceb5a9ede962dbb71c15ff7b6b2fc80f9a887fd0ac",
+    "legal/rust-supplements.json": "1b66a6e0128bed354c4281919748abb452c26b3f09e4f38e640b9f01cc3e4c2c",
     "legal/separate-licenses.json": "1d1ac763d3f16396cfba9048b1e0470ca9871ed36e63db0320540634b3b544b6",
     "legal/upstream/1564074e13439397.txt": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f",
     "legal/upstream/353fe762ba595bf1.txt": "353fe762ba595bf1ffe786acf0f5984bb164205901d74f258af195fc8228c67d",
@@ -17,7 +17,6 @@
     "legal/upstream/95ced5ecf1133fbf.txt": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3",
     "legal/upstream/Aleph-Alpha-ts-rs-7182ad828959-LICENSE": "db7f7f8e7236a2d0b41b855b2501b7b913caebbcda6ce498637a304ad1706ce1",
     "legal/upstream/Nugine-simd-d74c030d9dc4-LICENSE": "71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d",
-    "legal/upstream/SeaQL-sea-bae-69863a9b02bb-Cargo.toml": "7f748b7c48b37b31a27a154a3e235591d90fe5610594098814254b4698d352d3",
     "legal/upstream/SeaQL-sea-orm-2a99e6c81b2c-LICENSE-APACHE": "769f80b5bcb42ed0af4e4d2fd74e1ac9bf843cb80c5a29219d1ef3544428a6bb",
     "legal/upstream/SeaQL-sea-orm-2a99e6c81b2c-LICENSE-MIT": "b937e4dc7e279159e5e61f9360ebb516fefb622791c445cdc88f504c4b58b019",
     "legal/upstream/SeaQL-sea-query-b91ba14f680e-LICENSE-APACHE": "769f80b5bcb42ed0af4e4d2fd74e1ac9bf843cb80c5a29219d1ef3544428a6bb",
@@ -40,30 +39,11 @@
     "legal/upstream/jni-rs-jni-rs-5ae9458a4ec4-LICENSE-MIT": "fea1d5bf3dd71605ce5d7d2ff695c1837e914c77195e523a86b5391716477960",
     "legal/upstream/jni-rs-jni-sys-64d77b7a5f11-LICENSE-APACHE": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
     "legal/upstream/jni-rs-jni-sys-64d77b7a5f11-LICENSE-MIT": "1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1",
-    "legal/upstream/madsmtm-block2-b4167b582b2f-Cargo.toml": "d18aec0c39956f1a29b6d157c13ec51ce53d7c2a2982c307528215f8870720ac",
-    "legal/upstream/madsmtm-dispatch2-8852b424193c-Cargo.toml": "f6aeef4bfe348b9e65e33db2bfb079be4149f9ab0f4b0b3bf3f5d04c144545af",
     "legal/upstream/madsmtm-objc2-7b1abfd750a2-LICENSE.md": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
     "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd",
-    "legal/upstream/madsmtm-objc2-8852b424193c-Cargo.toml": "edff06609a6f76ba4aa4ead2f6219826f6c4fd82075fa178029085f37f931536",
     "legal/upstream/madsmtm-objc2-8852b424193c-LICENSE.md": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-    "legal/upstream/madsmtm-objc2-8852b424193c-workspace-Cargo.toml": "f93fce3a2814c16597140137b109c53042c0ae74909fd123a8a4d1f7d35090da",
     "legal/upstream/madsmtm-objc2-8d214f547736-LICENSE.md": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-    "legal/upstream/madsmtm-objc2-8d214f547736-workspace-Cargo.toml": "e87a02110f5eb621bfb789dded153094461049de1d62d0a0bd6e5f8ea87e13e9",
     "legal/upstream/madsmtm-objc2-b4167b582b2f-LICENSE.md": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
-    "legal/upstream/madsmtm-objc2-b4167b582b2f-workspace-Cargo.toml": "f93fce3a2814c16597140137b109c53042c0ae74909fd123a8a4d1f7d35090da",
-    "legal/upstream/madsmtm-objc2-cloud-kit-7b1abfd750a2-Cargo.toml": "f69323687923479e1e6c37b2020ffc2c5e2be5535c60007746d54e5962090d43",
-    "legal/upstream/madsmtm-objc2-core-data-7b1abfd750a2-Cargo.toml": "64ddcb77e8e099866d45311e0d6b9a40e7e93bd07f741039e6edef3d1bd86b2f",
-    "legal/upstream/madsmtm-objc2-core-foundation-7b1abfd750a2-Cargo.toml": "44cd6a4440c3ea1ba85df240ab9b9e7a95da3a5873ce623ac426ac5acfbe507f",
-    "legal/upstream/madsmtm-objc2-core-graphics-7b1abfd750a2-Cargo.toml": "8156455095991b7501f4fa30bdf29c5a541a41e3c479558e757932b07d0b16d1",
-    "legal/upstream/madsmtm-objc2-core-image-7b1abfd750a2-Cargo.toml": "9b80ba6d2f783dd4ae6cc1c3f6c18bcc5fe8d460dbd0f7d28c1ba802ed090241",
-    "legal/upstream/madsmtm-objc2-core-location-7b1abfd750a2-Cargo.toml": "7d8b256ebbaf23b094a02dbb1287eabac78e29c334d434529723ceadf5814002",
-    "legal/upstream/madsmtm-objc2-core-text-7b1abfd750a2-Cargo.toml": "03598c2d46443f2cff2d4898c72d78b8be884768ef946f42515babe773faf021",
-    "legal/upstream/madsmtm-objc2-encode-8d214f547736-Cargo.toml": "12972b1faf213492f9e78226f23642c461284b739f7be5437d9401465a2869a6",
-    "legal/upstream/madsmtm-objc2-foundation-7b1abfd750a2-Cargo.toml": "71158540d55a9b5ce073c856347f0ed1e0e71f4210cfb48a82b1f0e505ba6a50",
-    "legal/upstream/madsmtm-objc2-io-surface-7b1abfd750a2-Cargo.toml": "80c0f7bac2add855807e6abadbc220473b982041b99339bacf17e2885b3752c9",
-    "legal/upstream/madsmtm-objc2-quartz-core-7b1abfd750a2-Cargo.toml": "ca303efdd2bcb7958d3e0a08f9b7adb327a2942d0730cda5991365c48016f4d4",
-    "legal/upstream/madsmtm-objc2-ui-kit-7b1abfd750a2-Cargo.toml": "e775983c6d4a0e049038a52f5f94850336ae3060a03e3a1245e4583e298ea6f1",
-    "legal/upstream/madsmtm-objc2-user-notifications-7b1abfd750a2-Cargo.toml": "f389b8f73362305f31fbc4583b6048818f5d7abfe18f884d1058532d5396e3a0",
     "legal/upstream/nodejs-node-9774069718d9-path-LICENSE.txt": "36ad6fecf56b110df1453be95d352040f2ad0defcf2e5be1321b4cef353a33da",
     "legal/upstream/r-efi-r-efi-7e1b0322d31d-AUTHORS": "d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111",
     "legal/upstream/r-efi-r-efi-97b55bed1c2c-AUTHORS": "ff92bed461f50338dd703a9ba9aee496a425957873df1d91192776e4bdf5dda7",
@@ -79,7 +59,7 @@
     "web/vendor/pagent-v0.1.0-47b796c.tgz": "62792ab450d5a2d8dd29f474b29b705e069c2a120e79e2c807f138657001f618"
   },
   "artifacts": {
-    "legal/third-party-rust.txt": "9c2cb5307e35f77c5226ba26b422c9e5b2302fbbe80fb38d28d7301c7cbec868",
+    "legal/third-party-rust.txt": "97dd95c317717937bee94e0766135a69ef15db34ca63b62e444328f335b5fc07",
     "web/public/third-party-licenses.txt": "3a5917ebc71a482c5e382715d2262e82870512bf43d2e65ae869f2e09595ff84",
     "web/public/LICENSE.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "web/public/NOTICE.txt": "43ac7a76c0fd5d817638e5e9016ecced17e622dac19e18834805b9008d2f5228"
@@ -1606,25 +1586,19 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-block2-b4167b582b2f-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/b4167b582b2f75f9a1be75495c41b765344fd03c/crates/block2/Cargo.toml",
-          "sha256": "d18aec0c39956f1a29b6d157c13ec51ce53d7c2a2982c307528215f8870720ac"
-        },
-        {
-          "path": "legal/upstream/madsmtm-objc2-b4167b582b2f-workspace-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/b4167b582b2f75f9a1be75495c41b765344fd03c/Cargo.toml",
-          "sha256": "f93fce3a2814c16597140137b109c53042c0ae74909fd123a8a4d1f7d35090da"
-        },
-        {
           "path": "legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt",
           "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
           "sha256": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958",
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "7688fb91a3276fa09478567ba40a244051a8ad245d090190d3b9921ead5c9a71"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -3254,25 +3228,19 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-dispatch2-8852b424193c-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/8852b424193ca41602281b3d7540d7c8ed51e49a/crates/dispatch2/Cargo.toml",
-          "sha256": "f6aeef4bfe348b9e65e33db2bfb079be4149f9ab0f4b0b3bf3f5d04c144545af"
-        },
-        {
-          "path": "legal/upstream/madsmtm-objc2-8852b424193c-workspace-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/8852b424193ca41602281b3d7540d7c8ed51e49a/Cargo.toml",
-          "sha256": "f93fce3a2814c16597140137b109c53042c0ae74909fd123a8a4d1f7d35090da"
-        },
-        {
           "path": "legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt",
           "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
           "sha256": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958",
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "3b50be6b91a86b578a0fbc15ce581f250d8bddac47a4fbca2578779d94fa21e2"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -6919,25 +6887,19 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-8852b424193c-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/8852b424193ca41602281b3d7540d7c8ed51e49a/crates/objc2/Cargo.toml",
-          "sha256": "edff06609a6f76ba4aa4ead2f6219826f6c4fd82075fa178029085f37f931536"
-        },
-        {
-          "path": "legal/upstream/madsmtm-objc2-8852b424193c-workspace-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/8852b424193ca41602281b3d7540d7c8ed51e49a/Cargo.toml",
-          "sha256": "f93fce3a2814c16597140137b109c53042c0ae74909fd123a8a4d1f7d35090da"
-        },
-        {
           "path": "legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt",
           "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
           "sha256": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958",
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "db7c42bff1020a8b24483d64562b228ab8aeee376ad29a77c84fded3142e8cf5"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -6960,11 +6922,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-cloud-kit-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-cloud-kit/Cargo.toml",
-          "sha256": "f69323687923479e1e6c37b2020ffc2c5e2be5535c60007746d54e5962090d43"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -6976,9 +6933,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "1fbedf305c34132de34b1f1e91fde145622d36c56b937cb1d624ec014046bc0b"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7001,11 +6962,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-core-data-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-core-data/Cargo.toml",
-          "sha256": "64ddcb77e8e099866d45311e0d6b9a40e7e93bd07f741039e6edef3d1bd86b2f"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7017,9 +6973,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "28b95eb8717f86d5a6475c0c5a65e3ac48ae6223d63b74e00127cbbd0f2e0803"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7042,11 +7002,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-core-foundation-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-core-foundation/Cargo.toml",
-          "sha256": "44cd6a4440c3ea1ba85df240ab9b9e7a95da3a5873ce623ac426ac5acfbe507f"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7058,9 +7013,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "9f1b59f145a4184430c2aa487294e726f6b86095fadad30c7a864eb90fd310d5"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7083,11 +7042,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-core-graphics-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-core-graphics/Cargo.toml",
-          "sha256": "8156455095991b7501f4fa30bdf29c5a541a41e3c479558e757932b07d0b16d1"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7099,9 +7053,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "bbf7c6b74634b24698f6116fd8ebaf3a9d5cef6ffaf68d758f31a681d6c2c43a"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7124,11 +7082,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-core-image-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-core-image/Cargo.toml",
-          "sha256": "9b80ba6d2f783dd4ae6cc1c3f6c18bcc5fe8d460dbd0f7d28c1ba802ed090241"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7140,9 +7093,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "9d963853fc144a1528a7ab51b616342ebc5722d75a2031b197ca871c1950c60d"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7165,11 +7122,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-core-location-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-core-location/Cargo.toml",
-          "sha256": "7d8b256ebbaf23b094a02dbb1287eabac78e29c334d434529723ceadf5814002"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7181,9 +7133,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "e349b7da01d8114df4cc79af9cfe76cfc22c78df360cf82e1088517f9d72f063"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7206,11 +7162,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-core-text-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-core-text/Cargo.toml",
-          "sha256": "03598c2d46443f2cff2d4898c72d78b8be884768ef946f42515babe773faf021"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7222,9 +7173,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "93428f975c5be10fcdb8e8f8b252ced5d9d6411db48029eebaa0d2e68607ab20"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7250,25 +7205,19 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-encode-8d214f547736-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/8d214f5477365ffcbcbb7de058c86ed9a518efb7/crates/objc2-encode/Cargo.toml",
-          "sha256": "12972b1faf213492f9e78226f23642c461284b739f7be5437d9401465a2869a6"
-        },
-        {
-          "path": "legal/upstream/madsmtm-objc2-8d214f547736-workspace-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/8d214f5477365ffcbcbb7de058c86ed9a518efb7/Cargo.toml",
-          "sha256": "e87a02110f5eb621bfb789dded153094461049de1d62d0a0bd6e5f8ea87e13e9"
-        },
-        {
           "path": "legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt",
           "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
           "sha256": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958",
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "9d210403861490ead9f7fc3dc2f6beafb6313d125c8125133dab70fd019860ce"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7292,11 +7241,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-foundation-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-foundation/Cargo.toml",
-          "sha256": "71158540d55a9b5ce073c856347f0ed1e0e71f4210cfb48a82b1f0e505ba6a50"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7308,9 +7252,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "73c681f28fe43f90ebcd0519b7e0ab65b88ba8ec49b8041969ecf1bdf01bb196"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7333,11 +7281,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-io-surface-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-io-surface/Cargo.toml",
-          "sha256": "80c0f7bac2add855807e6abadbc220473b982041b99339bacf17e2885b3752c9"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7349,9 +7292,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "8d0db8a3d111c2e08504b7a58aa52cd4bfe8b619f7a742da616b65d6c465b4e3"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7374,11 +7321,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-quartz-core-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-quartz-core/Cargo.toml",
-          "sha256": "ca303efdd2bcb7958d3e0a08f9b7adb327a2942d0730cda5991365c48016f4d4"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7390,9 +7332,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "a7bde4cda77f5a2edafa34d73390b072510638e9863023b7f6ba548eedc44837"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7415,11 +7361,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-ui-kit-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-ui-kit/Cargo.toml",
-          "sha256": "e775983c6d4a0e049038a52f5f94850336ae3060a03e3a1245e4583e298ea6f1"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7431,9 +7372,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "4577e588db3e6dc47505bc29c3a39d74ec917e6bd5c387f2d3e335c2f62eea7e"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -7456,11 +7401,6 @@
           "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
         },
         {
-          "path": "legal/upstream/madsmtm-objc2-user-notifications-7b1abfd750a2-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/framework-crates/objc2-user-notifications/Cargo.toml",
-          "sha256": "f389b8f73362305f31fbc4583b6048818f5d7abfe18f884d1058532d5396e3a0"
-        },
-        {
           "path": "legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml",
           "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/Cargo.toml",
           "sha256": "2a5d4807cb132ce1d3f5b591a760643db49ca835dedefddcbd3087ad962360cd"
@@ -7472,9 +7412,13 @@
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "5f42d1e1f22dcb2fce3ea0f31c95e765373962295a0a097b57db116b8f124381"
         }
       ],
-      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note plus Cargo.toml attribution at the published .cargo_vcs_info.json revision. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
+      "license_evidence": "MIT license selected. Published crate omits license documents. Preserve its exact upstream LICENSE.md declaration and Apple SDK note at the published .cargo_vcs_info.json revision. License and author fields come from the checksum-verified published Cargo.toml and match the upstream package declaration after resolving workspace inheritance. The upstream workspace attribution is retained separately because this package omits its author field. Upstream declares MIT by reference without its full terms; supplement with canonical SPDX MIT terms, omitting only the template copyright placeholder and inventing no copyright notice.",
       "selected_license": "MIT"
     },
     {
@@ -9808,20 +9752,19 @@
       "archive_sha256": "260bbc7148a8d6818ac5032a1b9970da1a68bdd723d45b12d59f7c1bf3565e24",
       "documents": [
         {
-          "path": "legal/upstream/SeaQL-sea-bae-69863a9b02bb-Cargo.toml",
-          "url": "https://raw.githubusercontent.com/SeaQL/sea-bae/69863a9b02bbc2eed3d04fe20a5845a147e3a749/Cargo.toml",
-          "sha256": "7f748b7c48b37b31a27a154a3e235591d90fe5610594098814254b4698d352d3"
-        },
-        {
           "path": "legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt",
           "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
           "sha256": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958",
           "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
           "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
           "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+        },
+        {
+          "path": "Published package license and author metadata",
+          "sha256": "7acc6890131f53b8213ec648898d95ab41f9fc3200bc5f20d6fe91f03030c8ba"
         }
       ],
-      "license_evidence": "Published crate and pinned upstream Cargo.toml explicitly declare MIT and author David Pedersen <david.pdrsn@gmail.com>; neither the fork nor original bae repository supplies a separate license or copyright notice. Preserve the declaration and attribution without inventing a copyright year, and supply the referenced standard MIT terms from SPDX. The canonical template copyright placeholder is omitted; the raw canonical source is retained for provenance.",
+      "license_evidence": "The checksum-verified published Cargo.toml declares MIT and author David Pedersen <david.pdrsn@gmail.com>. These fields match the pinned upstream declaration. Neither the fork nor original bae repository supplies a separate license or copyright notice. Preserve the published declaration and attribution without inventing a copyright year, and supply the referenced standard MIT terms from SPDX. The canonical template copyright placeholder is omitted; the raw canonical source is retained for provenance.",
       "selected_license": "MIT"
     },
     {
