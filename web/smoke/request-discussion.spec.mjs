@@ -135,17 +135,19 @@ test('seeded request discussion and changes stay reciprocal and ordered', async 
     })
     const mainContent = page.locator('#main-content')
     await page.evaluate(() => {
-      window.location.hash =
-        '#discussion=discussion_demo_jitter&reply=discussion_reply_demo_jitter'
+      const hash = 'discussion=discussion_demo_jitter&reply=discussion_reply_demo_jitter'
+      window.__scopeDiscussionHashRendered = false
+      const unsubscribe = globalThis.__TSR_ROUTER__.subscribe('onRendered', (event) => {
+        if (event.toLocation.hash !== hash) return
+        window.__scopeDiscussionHashRendered = true
+        unsubscribe()
+      })
+      window.location.hash = `#${hash}`
     })
-    // Existing replies can be visible before the router has restored scroll for
-    // the hash navigation. Measure the collapse only after that navigation ends.
-    await page.waitForFunction(() => {
-      const router = globalThis.__TSR_ROUTER__
-      return router?.state.status === 'idle' &&
-        router.state.resolvedLocation?.hash === 'discussion=discussion_demo_jitter&reply=discussion_reply_demo_jitter' &&
-        document.activeElement?.id === 'reply-discussion_reply_demo_jitter'
-    })
+    // The router marks its location resolved before onRendered restores scroll.
+    // Wait for that event before measuring whether collapsing a reply moves it.
+    await page.waitForFunction(() => window.__scopeDiscussionHashRendered &&
+      document.activeElement?.id === 'reply-discussion_reply_demo_jitter')
     await hideJitterReplies.evaluate((element) => {
       element.scrollIntoView({ block: 'center' })
     })
