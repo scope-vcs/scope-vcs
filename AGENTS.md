@@ -12,6 +12,8 @@ We want the architecture centered around durable domain code: the layer that def
 
 Keep sources of truth singular, make side effects explicit, and prefer small behavior-owned modules over broad catch-all files. When ownership gets blurry, refactor toward clearer boundaries; when code exists only for speculation, compatibility, or half-owned future surfaces, delete it.
 
+Frontend server data must reuse the existing resource and cache owners, survive navigation and reopening within the same viewer and access scope, refresh from relevant changes without blanking valid data, and include checks for reuse and invalidation rather than introducing component-owned fetch lifecycles.
+
 Please don't use cards for ui, only use them if absolutely necessary.
 
 Once you approach around 1000 LOC in a single file, do an audit of the file and modularize accordingly unless there is a good justification. 
