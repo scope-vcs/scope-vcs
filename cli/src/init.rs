@@ -135,7 +135,7 @@ fn init_setup_error(
             "operation": "init", "repository": format!("{owner}/{name}"), "created": true, "configured": false,
             "remote": init.remote_name, "remote_url": init.git_remote_url, "api_url": api_url,
             "prior_remote_restored": restored.as_ref().map(|result| result.is_ok()), "restore_error": restore_error,
-            "recovery": "Fix the reported local Git or filesystem error. Attach the retained repository using the commands below, then run scope push --main after committing the generated Scope rules. Inspect any restored remote before replacing it.",
+            "recovery": "Keep this checkout and its local work. Fix the reported Git or filesystem error. The commands below restore remote wiring only; inspect any restored remote before replacing it. Run scope doctor to identify missing local Scope configuration. To obtain a fully configured checkout, clone the retained owner/repository into a different empty directory using the API URL in this receipt, then transfer your original commits or files into it. Do not repeat scope init.",
             "recovery_commands": [
                 ["git", "config", "--local", "--replace-all", &format!("remote.{}.url", init.remote_name), &init.git_remote_url],
                 ["git", "config", "--local", "--replace-all", &format!("remote.{}.fetch", init.remote_name), &format!("+refs/heads/*:refs/remotes/{}/*", init.remote_name)],

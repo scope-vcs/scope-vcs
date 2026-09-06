@@ -1,6 +1,115 @@
 mod support;
 use serde_json::Value;
 use std::fs;
+use std::process::Command;
+
+#[test]
+fn status_counts_unpublished_scope_commits_even_when_github_is_up_to_date() {
+    let dir = TempDir::new("status-scope-comparison");
+    create_repo_with_head(dir.path());
+    run_git(
+        dir.path(),
+        [
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/owner/repo.git",
+        ],
+    );
+    run_git(
+        dir.path(),
+        [
+            "remote",
+            "add",
+            "scope",
+            "http://127.0.0.1:9/git/permissioned/owner/repo",
+        ],
+    );
+    run_git(
+        dir.path(),
+        ["update-ref", "refs/remotes/scope/main", "HEAD"],
+    );
+    fs::write(dir.path().join("new.txt"), "not yet on Scope\n").unwrap();
+    run_git(dir.path(), ["add", "new.txt"]);
+    run_git(
+        dir.path(),
+        [
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-m",
+            "Unpublished",
+        ],
+    );
+    run_git(
+        dir.path(),
+        ["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    let branch = Command::new("git")
+        .current_dir(dir.path())
+        .args(["branch", "--show-current"])
+        .output()
+        .unwrap();
+    let branch = String::from_utf8(branch.stdout).unwrap();
+    run_git(
+        dir.path(),
+        [
+            "config",
+            &format!("branch.{}.remote", branch.trim()),
+            "origin",
+        ],
+    );
+    run_git(
+        dir.path(),
+        [
+            "config",
+            &format!("branch.{}.merge", branch.trim()),
+            "refs/heads/main",
+        ],
+    );
+    let output = scope_command(dir.path())
+        .args(["--json", "status", "--offline"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["result"]["local"]["upstream"], "origin/main");
+    assert_eq!(
+        value["result"]["local"]["comparison_ref"],
+        "refs/remotes/scope/main"
+    );
+    assert_eq!(value["result"]["local"]["unpushed_commits"], 1);
+    assert_eq!(value["result"]["main_push_target"], "scope/main");
+}
+
+#[test]
+fn status_does_not_advertise_main_push_for_public_only_remote() {
+    let dir = TempDir::new("status-public-destination");
+    create_repo_with_head(dir.path());
+    run_git(
+        dir.path(),
+        [
+            "remote",
+            "add",
+            "origin",
+            "http://127.0.0.1:9/git/public/owner/repo",
+        ],
+    );
+    let output = scope_command(dir.path())
+        .args(["--json", "status", "--offline"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["result"]["main_push_target"], Value::Null);
+    assert!(
+        !value["result"]["next_actions"]
+            .to_string()
+            .contains("push --main")
+    );
+}
 use support::*;
 
 #[test]

@@ -184,7 +184,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         .map_err(|error| applied_push_error(&receipt, format!("Push applied, but local tracking setup failed: {error:#}"), "Keep this commit. Fix the reported local Git error, then run scope pull before publishing again."))?;
     receipt["tracking_updated"] = json!(true);
     mark_worktree_scope_repo_config_synced(&git_repo.root, &config)
-        .map_err(|error| applied_push_error(&receipt, format!("Push applied, but saving local visibility configuration failed: {error:#}"), "Keep this commit. Fix the reported local filesystem error, then run scope visibility inspect before publishing again."))?;
+        .map_err(|error| applied_push_error(&receipt, format!("Push applied, but saving local visibility configuration failed: {error:#}"), "Keep this commit. Fix the reported local filesystem error, then run scope visibility show before publishing again."))?;
     receipt["config_synced"] = json!(true);
     if wait {
         eprintln!("Push applied at {reviewed_head_oid}; waiting for workflows.");

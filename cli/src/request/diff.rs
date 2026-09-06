@@ -41,6 +41,17 @@ pub(super) fn file_diff_lines(diff: &ReviewFileDiffResponse) -> Vec<String> {
                     ));
                 }
             }
+            match (old, new) {
+                (Some(text), None) if !text.is_empty() => {
+                    lines.push(format!("--- a/{path} (text)"));
+                    lines.extend(text_hunk(text, ""));
+                }
+                (None, Some(text)) if !text.is_empty() => {
+                    lines.push(format!("+++ b/{path} (text)"));
+                    lines.extend(text_hunk("", text));
+                }
+                _ => {}
+            }
         }
     }
     lines
@@ -109,6 +120,30 @@ fn append_lines(output: &mut Vec<String>, prefix: char, lines: &[&str]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binary_text_conversions_render_both_sides() {
+        let mut diff = ReviewFileDiffResponse {
+            path: "converted.dat".into(),
+            kind: scope_api_contract::FileChangeKind::Modified,
+            old_mode: Some("100644".into()),
+            new_mode: Some("100644".into()),
+            old_content: Some(ReviewFileContentResponse::Binary {
+                oid: "blob".into(),
+                size_bytes: 3,
+            }),
+            new_content: Some(ReviewFileContentResponse::Text {
+                text: "visible text\n".into(),
+            }),
+        };
+        let added = file_diff_lines(&diff).join("\n");
+        assert!(added.contains("Before: binary blob (3 bytes)"));
+        assert!(added.contains("+visible text"));
+        std::mem::swap(&mut diff.old_content, &mut diff.new_content);
+        let removed = file_diff_lines(&diff).join("\n");
+        assert!(removed.contains("After: binary blob (3 bytes)"));
+        assert!(removed.contains("-visible text"));
+    }
 
     #[test]
     fn text_diff_marks_additions_deletions_and_missing_newlines() {

@@ -1,12 +1,10 @@
 //! Read-only checkout status and setup diagnostics.
-use crate::{
-    api, context, execution,
-    git_repo::{self, GitRepo},
-    repo_config,
-};
-use anyhow::Context;
+use crate::{api, context, execution, git_repo::GitRepo};
 use serde::Serialize;
 use std::{path::PathBuf, process::Command, time::Duration};
+
+mod local;
+use local::{compare_scope_ref, git_text, git_version_supported, local_state, local_visibility};
 
 #[derive(Serialize)]
 struct LocalState {
@@ -15,6 +13,7 @@ struct LocalState {
     head_oid: Option<String>,
     dirty: bool,
     upstream: Option<String>,
+    comparison_ref: Option<String>,
     unpushed_commits: Option<u64>,
     visibility: Option<VisibilityState>,
 }
@@ -206,9 +205,6 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
         match context::resolve_repository(checkout.as_ref(), remote) {
             Ok(target) => {
                 report.target = Some(format!("{}/{}", target.owner, target.repo));
-                if !target.remote.is_empty() {
-                    report.main_push_target = Some(format!("{}/main", target.remote));
-                }
                 record(
                     &mut report,
                     "repository",
@@ -217,6 +213,16 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                     None,
                 );
                 if let Some(repo) = &checkout {
+                    let push_remote = context::select_remote(repo, &endpoint, remote, true).ok();
+                    report.main_push_target =
+                        push_remote.as_ref().map(|remote| format!("{remote}/main"));
+                    if let Some(local) = &mut report.local {
+                        compare_scope_ref(
+                            local,
+                            repo,
+                            push_remote.as_deref().unwrap_or(&target.remote),
+                        );
+                    }
                     check_fetch_auth(&mut report, repo, &target);
                 }
                 Some(target)
@@ -255,7 +261,11 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
         .is_some_and(|local| local.head_oid.is_some())
         && report.target.is_some()
     {
-        report.next_actions.push("Start a contribution with scope request start NAME, or publish deliberately with scope push --main".into());
+        report.next_actions.push(if report.main_push_target.is_some() {
+            "Start a contribution with scope request start NAME, or publish deliberately with scope push --main"
+        } else {
+            "Start a contribution with scope request start NAME"
+        }.into());
     }
     report
 }
@@ -377,6 +387,9 @@ fn inspect_remote(
             ),
         }
     }
+    if !summary.access.can_push {
+        report.main_push_target = None;
+    }
     report.repository = Some(summary);
     if let Some(checkout) = checkout {
         let remote = (!target.remote.is_empty()).then_some(target.remote.as_str());
@@ -459,73 +472,6 @@ fn record(
     });
 }
 
-fn local_state(repo: &GitRepo) -> anyhow::Result<LocalState> {
-    let output = Command::new("git")
-        .current_dir(&repo.root)
-        .args(["status", "--porcelain", "-z"])
-        .output()
-        .context("inspect working tree")?;
-    if !output.status.success() {
-        anyhow::bail!("Git could not inspect the working tree");
-    }
-    let upstream = git_text(
-        repo,
-        &[
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
-        ],
-    );
-    let unpushed_commits = upstream
-        .as_ref()
-        .and_then(|_| git_text(repo, &["rev-list", "--count", "@{upstream}..HEAD"]))
-        .and_then(|count| count.parse().ok());
-    Ok(LocalState {
-        root: repo.root.clone(),
-        branch: git_repo::current_branch(repo).ok(),
-        head_oid: git_text(repo, &["rev-parse", "--verify", "HEAD"]),
-        dirty: !output.stdout.is_empty(),
-        upstream,
-        unpushed_commits,
-        visibility: None,
-    })
-}
-
-fn local_visibility(repo: &GitRepo) -> anyhow::Result<VisibilityState> {
-    let config = repo_config::load_worktree_scope_repo_config(&repo.root)?;
-    let local_hash = scope_domain::repo_config::repo_config_fingerprint(&config)?;
-    let base_hash = Some(repo_config::load_worktree_scope_repo_config_base_hash(
-        &repo.root,
-    )?);
-    let local_edits = base_hash.as_ref().map(|base| base != &local_hash);
-    Ok(VisibilityState {
-        path: repo_config::repo_config_path(&repo.root)?,
-        local_hash,
-        base_hash,
-        local_edits,
-        server_hash: None,
-        server_changed: None,
-    })
-}
-
-fn git_text(repo: &GitRepo, args: &[&str]) -> Option<String> {
-    let output = Command::new("git")
-        .current_dir(&repo.root)
-        .args(args)
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| {
-            String::from_utf8_lossy(&output.stdout)
-                .trim_end_matches(['\r', '\n'])
-                .to_string()
-        })
-        .filter(|value| !value.is_empty())
-}
-
 fn check_fetch_auth(
     report: &mut Report,
     repo: &GitRepo,
@@ -588,7 +534,10 @@ fn status_lines(report: &Report) -> Vec<String> {
             }
         ));
         if let Some(count) = local.unpushed_commits {
-            lines.push(format!("Unpushed commits: {count}"));
+            lines.push(format!(
+                "Unpushed commits: {count} relative to {}",
+                local.comparison_ref.as_deref().unwrap_or("Scope")
+            ));
         }
         if let Some(visibility) = &local.visibility {
             lines.push(format!(
@@ -603,7 +552,14 @@ fn status_lines(report: &Report) -> Vec<String> {
         }
     }
     if let Some(target) = &report.main_push_target {
-        lines.push(format!("scope push --main destination: {target}"));
+        lines.push(format!(
+            "scope push --main destination: {target}{}",
+            if report.repository.is_none() {
+                " (server access not checked)"
+            } else {
+                ""
+            }
+        ));
     }
     if let Some(request) = &report.request {
         lines.push(format!(
@@ -629,30 +585,4 @@ fn status_lines(report: &Report) -> Vec<String> {
             .map(|action| format!("Next: {action}")),
     );
     lines
-}
-
-fn git_version_supported(version: &str) -> bool {
-    let Some(number) = version.split_whitespace().nth(2) else {
-        return false;
-    };
-    let mut parts = number
-        .split('.')
-        .filter_map(|part| part.parse::<u32>().ok());
-    matches!((parts.next(), parts.next()), (Some(major), Some(minor)) if (major,minor) >= (2,38))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn git_version_support_handles_native_suffixes() {
-        for supported in [
-            "git version 2.38.0",
-            "git version 2.48.1.windows.1",
-            "git version 2.39.5 (Apple Git-154)",
-        ] {
-            assert!(git_version_supported(supported));
-        }
-        assert!(!git_version_supported("git version 2.37.4"));
-    }
 }

@@ -40,7 +40,9 @@ pub(super) fn completion(
                 resume_command(connection, run_id, cursor)
             )));
         }
-        let client = run_client(remaining.min(Duration::from_secs(120)))?;
+        // A quiet SSE connection can remain healthy through server keep-alives.
+        // Only the overall watch deadline should time it out.
+        let client = run_client(remaining)?;
         let mut terminal = None;
         let previous_cursor = cursor;
         let result = api::stream_run_events(

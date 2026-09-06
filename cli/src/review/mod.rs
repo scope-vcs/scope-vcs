@@ -61,6 +61,6 @@ pub fn ensure_review_terminal_available(command_name: &str) -> anyhow::Result<()
     }
 
     Err(crate::error::CliError::usage(format!(
-        "{command_name} requires an interactive terminal; use scope visibility show to inspect configuration, or scope push --no-review to skip editing"
+        "{command_name} requires an interactive terminal; use scope visibility show to inspect configuration, or scope push --main --no-review to skip editing"
     )).into())
 }
