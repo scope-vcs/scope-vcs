@@ -138,7 +138,14 @@ test('seeded request discussion and changes stay reciprocal and ordered', async 
       window.location.hash =
         '#discussion=discussion_demo_jitter&reply=discussion_reply_demo_jitter'
     })
-    await page.locator('#reply-discussion_reply_demo_jitter').waitFor()
+    // Existing replies can be visible before the router has restored scroll for
+    // the hash navigation. Measure the collapse only after that navigation ends.
+    await page.waitForFunction(() => {
+      const router = globalThis.__TSR_ROUTER__
+      return router?.state.status === 'idle' &&
+        router.state.resolvedLocation?.hash === 'discussion=discussion_demo_jitter&reply=discussion_reply_demo_jitter' &&
+        document.activeElement?.id === 'reply-discussion_reply_demo_jitter'
+    })
     await hideJitterReplies.evaluate((element) => {
       element.scrollIntoView({ block: 'center' })
     })
