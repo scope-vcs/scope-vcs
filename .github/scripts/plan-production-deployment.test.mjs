@@ -141,6 +141,9 @@ test("changes select the required deployment lanes", () => {
     cliDistribution: true,
   };
   const cases = [
+    ["license changes rebuild all distributions", ["LICENSE"], allLanes],
+    ["attribution changes rebuild all distributions", ["NOTICE"], allLanes],
+    ["dependency notices rebuild all distributions", ["legal/third-party-rust.txt"], allLanes],
     ["documentation-only changes do not deploy", ["docs/cache.md"], {}],
     ["cache service changes run backend only", ["cache-service/src/main.rs"], { cache: true }],
     [

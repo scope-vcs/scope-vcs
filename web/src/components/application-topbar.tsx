@@ -84,6 +84,12 @@ export function ApplicationTopbar({
         )}
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 md:ml-3">
+          <Link
+            className="rounded-sm px-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            to="/licenses"
+          >
+            Licenses
+          </Link>
           <ThemeToggle />
           {children}
         </div>

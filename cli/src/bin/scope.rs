@@ -41,6 +41,8 @@ enum CommandKind {
     Login(LoginArgs),
     Logout,
     Whoami,
+    #[command(about = "Print the embedded Scope and third-party licenses (works offline)")]
+    Licenses,
     #[command(about = "Run committed workflows in Scope Cloud")]
     Run(RunArgs),
     #[command(name = "git-credential", hide = true)]
@@ -163,7 +165,7 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> anyhow::Result<()> {
     let json_supported = match &cli.command {
-        CommandKind::Request(_) => true,
+        CommandKind::Request(_) | CommandKind::Licenses => true,
         CommandKind::Run(args) => args.target == "show" && args.run_id.is_some() && !args.no_watch,
         _ => false,
     };
@@ -171,7 +173,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         return Err(
             scope_cli::error::CliError::new(scope_cli::api::ErrorResponse::new(
                 scope_cli::api::ErrorCode::BadRequest,
-                "--json currently supports request commands and `scope run show`",
+                "--json currently supports request commands, `scope run show`, and `scope licenses`",
             ))
             .into(),
         );
@@ -196,6 +198,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
         CommandKind::Logout => scope_cli::login::logout(),
         CommandKind::Whoami => scope_cli::login::whoami(),
+        CommandKind::Licenses => scope_cli::licenses::run(cli.json),
         CommandKind::Run(args) => run_workflow(args, cli.json),
         CommandKind::GitCredential(args) => run_git_credential(&args.operation),
     }

@@ -60,6 +60,8 @@
   "changeScopes": {
     "all": {
       "files": [
+        "LICENSE",
+        "NOTICE",
         ".github/deployment-services.json",
         ".github/scripts/plan-production-deployment.mjs",
         ".github/scripts/plan-production-deployment.test.mjs",
@@ -88,6 +90,8 @@
         ".github/scripts/stop-staging-writers.test.mjs"
       ],
       "prefixes": [
+        "legal/",
+        "dev/licensing/",
         "dev/checks/",
         ".github/scripts/fixtures/",
         "bench/",

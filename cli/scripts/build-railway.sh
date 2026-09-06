@@ -8,3 +8,4 @@ cargo build --release --locked
 mkdir -p bin
 cp target/release/scope bin/scope
 cp target/release/scope-cli-service bin/scope-cli-service
+cp ../LICENSE ../NOTICE ../legal/third-party-rust.txt bin/

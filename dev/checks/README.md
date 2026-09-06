@@ -11,7 +11,7 @@ caller's working directory.
 | `cli` | Standalone formatting, tests, distribution selector, Clippy, both release binaries |
 | `web` | Tests, types, generated API contract, observer boundary, React health, structure, build |
 | `contract` | Generated API TypeScript and validator comparison |
-| `policy` | Complete-tree source size, Rust boundaries, toolchain pins, gate inventory |
+| `policy` | License inventory freshness, complete-tree source size, Rust boundaries, toolchain pins, gate inventory |
 | `integration web` | Browser smoke against a running seeded stack |
 | `integration cli` | Opt-in two-actor contribution flow against a running seeded stack |
 | `ops` | Deployment, staging, benchmark, and AWS infrastructure tests |

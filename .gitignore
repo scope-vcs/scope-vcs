@@ -25,3 +25,4 @@ web/.tanstack/tmp/
 !.env.example
 *.log
 *.tsbuildinfo
+__pycache__/

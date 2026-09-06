@@ -1,2 +1,15 @@
 web/src/api/types.generated.ts linguist-generated=true
 web/src/api/validators.generated.ts linguist-generated=true
+LICENSE text eol=lf
+NOTICE text eol=lf
+dev/licensing/** text eol=lf
+legal/** text eol=lf
+legal/upstream/** -text
+legal/upstream/** linguist-vendored=true
+legal/dependency-inventory.json linguist-generated=true
+legal/third-party-rust.txt linguist-generated=true
+web/public/*.txt text eol=lf
+web/public/LICENSE.txt linguist-generated=true
+web/public/NOTICE.txt linguist-generated=true
+web/public/third-party-licenses.txt linguist-generated=true
+web/vendor/PAGENT-LICENSING.txt text eol=lf

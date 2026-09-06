@@ -7,6 +7,7 @@ const routeAliases: Readonly<Record<string, AnalyticsRoute>> = {
   '/': { name: 'home', path: '/' },
   '/account': { name: 'account', path: '/account' },
   '/cli-login': { name: 'cli_login', path: '/cli-login' },
+  '/licenses': { name: 'licenses', path: '/licenses' },
   '/invites/$token': { name: 'invite', path: '/invite' },
   '/sign-in/$': { name: 'sign_in', path: '/sign-in' },
   '/sign-up/$': { name: 'sign_up', path: '/sign-up' },

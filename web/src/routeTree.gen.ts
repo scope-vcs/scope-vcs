@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LicensesRouteImport } from './routes/licenses'
 import { Route as CliLoginRouteImport } from './routes/cli-login'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as OwnerRouteImport } from './routes/$owner'
@@ -32,6 +33,11 @@ import { Route as OwnerRepoRequestsRequestIdIndexRouteImport } from './routes/$o
 import { Route as OwnerRepoRunsWorkflowsWorkflowRouteImport } from './routes/$owner.$repo.runs.workflows.$workflow'
 import { Route as OwnerRepoRequestsRequestIdChangesRouteImport } from './routes/$owner.$repo.requests.$requestId.changes'
 
+const LicensesRoute = LicensesRouteImport.update({
+  id: '/licenses',
+  path: '/licenses',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CliLoginRoute = CliLoginRouteImport.update({
   id: '/cli-login',
   path: '/cli-login',
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/$owner': typeof OwnerRouteWithChildren
   '/account': typeof AccountRoute
   '/cli-login': typeof CliLoginRoute
+  '/licenses': typeof LicensesRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/invites/$token': typeof InvitesTokenRoute
   '/sign-in/$': typeof SignInSplatRoute
@@ -173,6 +180,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/cli-login': typeof CliLoginRoute
+  '/licenses': typeof LicensesRoute
   '/$owner/$repo': typeof OwnerRepoCodeIndexRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/sign-in/$': typeof SignInSplatRoute
@@ -193,6 +201,7 @@ export interface FileRoutesById {
   '/$owner': typeof OwnerRouteWithChildren
   '/account': typeof AccountRoute
   '/cli-login': typeof CliLoginRoute
+  '/licenses': typeof LicensesRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/invites/$token': typeof InvitesTokenRoute
   '/sign-in/$': typeof SignInSplatRoute
@@ -219,6 +228,7 @@ export interface FileRouteTypes {
     | '/$owner'
     | '/account'
     | '/cli-login'
+    | '/licenses'
     | '/$owner/$repo'
     | '/invites/$token'
     | '/sign-in/$'
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/cli-login'
+    | '/licenses'
     | '/$owner/$repo'
     | '/invites/$token'
     | '/sign-in/$'
@@ -260,6 +271,7 @@ export interface FileRouteTypes {
     | '/$owner'
     | '/account'
     | '/cli-login'
+    | '/licenses'
     | '/$owner/$repo'
     | '/invites/$token'
     | '/sign-in/$'
@@ -285,6 +297,7 @@ export interface RootRouteChildren {
   OwnerRoute: typeof OwnerRouteWithChildren
   AccountRoute: typeof AccountRoute
   CliLoginRoute: typeof CliLoginRoute
+  LicensesRoute: typeof LicensesRoute
   InvitesTokenRoute: typeof InvitesTokenRoute
   SignInSplatRoute: typeof SignInSplatRoute
   SignUpSplatRoute: typeof SignUpSplatRoute
@@ -292,6 +305,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/licenses': {
+      id: '/licenses'
+      path: '/licenses'
+      fullPath: '/licenses'
+      preLoaderRoute: typeof LicensesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cli-login': {
       id: '/cli-login'
       path: '/cli-login'
@@ -544,6 +564,7 @@ const rootRouteChildren: RootRouteChildren = {
   OwnerRoute: OwnerRouteWithChildren,
   AccountRoute: AccountRoute,
   CliLoginRoute: CliLoginRoute,
+  LicensesRoute: LicensesRoute,
   InvitesTokenRoute: InvitesTokenRoute,
   SignInSplatRoute: SignInSplatRoute,
   SignUpSplatRoute: SignUpSplatRoute,

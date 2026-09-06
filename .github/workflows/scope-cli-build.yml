@@ -95,10 +95,11 @@ jobs:
       - name: Pack service
         run: |
           mkdir -p artifacts
+          cp LICENSE NOTICE legal/third-party-rust.txt cli/target/release/
           tar --create --gzip \
             --file artifacts/scope-cli-service.tar.gz \
             --directory cli/target/release \
-            scope-cli-service
+            scope-cli-service LICENSE NOTICE third-party-rust.txt
 
       - name: Upload service
         uses: actions/upload-artifact@v7
