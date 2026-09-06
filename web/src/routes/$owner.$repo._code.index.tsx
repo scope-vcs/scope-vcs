@@ -117,6 +117,8 @@ function RepoIndexRoute() {
     write: writeRepoContentCache,
   })
   const content = contentResource.value
+  // A new version can remove file visibility. Revalidate the landing path from
+  // the current tree instead of retaining the previous version's README.
   const selectedPath = search.file ?? (content ? repositoryLandingPath(content.files) : null)
   const { fileIdentity: selectedFileIdentity } = repoCodeCacheKeys(repo, selectedPath)
   const loadSelectedFile = useMemo(() => repoCodeResourceLoader(

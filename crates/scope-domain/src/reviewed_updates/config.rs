@@ -13,6 +13,7 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Debug)]
 pub struct ReviewedConfigUpdateInput {
+    pub occurred_at_unix: i64,
     pub author_id: String,
     pub config: RepoConfig,
 }
@@ -68,16 +69,16 @@ pub fn apply_reviewed_config_to_repo(
     repo.policy = policy_from_config_for_tree(&update.config, live_tree.keys())?;
     repo.repo_config = update.config;
     if !visibility_changes.is_empty() {
-        repo.visibility_change_sets.push(
-            VisibilityChangeSet::new(
-                visibility_change_set_id(repo.record.change_version.saturating_add(1)),
-                after_commit_id,
-                None,
-                update.author_id,
-                visibility_changes,
-            )
-            .map_err(ReviewedUpdateError::Conflict)?,
-        );
+        let mut set = VisibilityChangeSet::new(
+            visibility_change_set_id(repo.record.change_version.saturating_add(1)),
+            after_commit_id,
+            None,
+            update.author_id,
+            visibility_changes,
+        )
+        .map_err(ReviewedUpdateError::Conflict)?;
+        set.occurred_at_unix = Some(update.occurred_at_unix);
+        repo.visibility_change_sets.push(set);
     }
     repo.bump_change_version();
     Ok(true)

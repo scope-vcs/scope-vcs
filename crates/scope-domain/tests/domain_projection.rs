@@ -630,6 +630,7 @@ fn config_only_update_changes_policy_without_content_commit() {
     let changed = apply_reviewed_config_to_repo(
         &mut repo,
         ReviewedConfigUpdateInput {
+            occurred_at_unix: 1_788_700_000,
             author_id: "owner".to_string(),
             config: config(
                 Visibility::Private,
@@ -648,6 +649,10 @@ fn config_only_update_changes_policy_without_content_commit() {
     );
     assert_eq!(repo.visibility_change_sets.len(), 1);
     assert_eq!(repo.visibility_change_sets[0].source_update_id, None);
+    assert_eq!(
+        repo.visibility_change_sets[0].occurred_at_unix,
+        Some(1_788_700_000)
+    );
     assert_eq!(
         repo.repo_config.visibility_for_path(&path("/README.md")),
         Visibility::Public

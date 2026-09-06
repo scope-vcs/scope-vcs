@@ -15,6 +15,7 @@ fn config_only_rewrite_coalesces_its_visibility_baseline() {
     apply_reviewed_config_to_repo(
         &mut repo,
         ReviewedConfigUpdateInput {
+            occurred_at_unix: 1_788_700_000,
             author_id: "owner".to_string(),
             config: config(Visibility::Public, None, Some("/README.md")),
         },
@@ -50,15 +51,21 @@ fn push_rewrite_coalesces_its_visibility_baseline() {
         .unwrap();
     repo.repo_config = previous_config.clone();
 
-    apply_update(
-        &mut repo,
+    let mut update = reviewed_update(
+        "2222222222222222222222222222222222222222",
         "redact and reveal",
         vec![reviewed_change("/.scope/runs/test.yml", Some("name: Test"))],
         Some(previous_config),
         config(Visibility::Public, None, Some("/README.md")),
     );
+    update.occurred_at_unix = Some(1_788_700_000);
+    apply_reviewed_update_to_repo(&mut repo, update).unwrap();
 
     assert_eq!(repo.visibility_change_sets.len(), 1);
+    assert_eq!(
+        repo.visibility_change_sets[0].occurred_at_unix,
+        Some(1_788_700_000)
+    );
     assert_eq!(repo.visibility_change_sets[0].changes.len(), 1);
     assert_eq!(
         repo.visibility_change_sets[0].changes[0].path,
