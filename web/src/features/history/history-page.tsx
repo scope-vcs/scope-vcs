@@ -20,14 +20,10 @@ import {
 import {
   historyEntryCacheKey,
   historyEntryDiffCacheKey,
-  peekHistoryDiffCache,
-  peekHistoryEntryCache,
-  readHistoryDiffCache,
+  historyDiffResource,
+  historyEntryResource,
   readHistoryDiffScroll,
-  readHistoryEntryCache,
-  writeHistoryDiffCache,
   writeHistoryDiffScroll,
-  writeHistoryEntryCache,
 } from '@/features/history/history-resource-cache'
 import {
   resourceToDiffState,
@@ -41,7 +37,10 @@ import {
   loadHistoryPage,
 } from '@/routes/-repo-history-actions'
 import { useLocation, useNavigate } from '@tanstack/react-router'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useAuth } from '@clerk/tanstack-react-start'
+import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { historyPageCacheKey, restoreHistoryPages, retainHistoryPages } from './history-page-cache'
 import { historyFileSelection } from './history-selection'
 
 type HistoryPageProps = {
@@ -58,6 +57,15 @@ type HistoryPageProps = {
 }
 
 export function HistoryPage(props: HistoryPageProps) {
+  const { userId, isLoaded } = useAuth()
+  const { repo } = useRepoLayout()
+  const cacheKey = isLoaded
+    ? historyPageCacheKey(repoResourceScope(repo, userId ?? null), props.initialPage)
+    : null
+  return <HistoryPageContent initialPage={props.initialPage} initialEntry={props.initialEntry} params={props.params} search={props.search} key={cacheKey ?? 'pending'} cacheKey={cacheKey} />
+}
+
+function HistoryPageContent(props: HistoryPageProps & { cacheKey: string | null }) {
   const {
     audience,
     availableAudiences,
@@ -149,7 +157,7 @@ export function HistoryPage(props: HistoryPageProps) {
   )
 }
 
-function useHistoryPageModel({ initialPage, initialEntry, params, search }: HistoryPageProps) {
+function useHistoryPageModel({ initialPage, initialEntry, params, search, cacheKey }: HistoryPageProps & { cacheKey: string | null }) {
   const navigate = useNavigate()
   const locationKey = useLocation({ select: (location) => location.state.__TSR_key })
   const [diffSelection, setDiffSelection] = useState({ locationKey, dismissed: false })
@@ -157,10 +165,8 @@ function useHistoryPageModel({ initialPage, initialEntry, params, search }: Hist
     setDiffSelection({ locationKey, dismissed: false })
   }
   const { repo } = useRepoLayout()
-  const [loaded, setLoaded] = useState(() => ({
-    entries: initialPage.entries,
-    next_cursor: initialPage.next_cursor,
-  }))
+  const [loaded, setLoaded] = useState(() => restoreHistoryPages(cacheKey, initialPage))
+  useEffect(() => retainHistoryPages(cacheKey, loaded), [cacheKey, loaded])
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [loadOlderError, setLoadOlderError] = useState<string | null>(null)
   const feed = initialPage.feed
@@ -196,9 +202,7 @@ function useHistoryPageModel({ initialPage, initialEntry, params, search }: Hist
     fallbackError: 'This history update is unavailable.',
     identity: entryIdentity,
     load: loadSelectedEntry,
-    peek: peekHistoryEntryCache,
-    read: readHistoryEntryCache,
-    write: writeHistoryEntryCache,
+    resource: historyEntryResource,
   })
   const selectedEntry = entryResource.value
   const { path: selectedFilePath, file: selectedFile, visibilityId: selectedVisibilityId } = historyFileSelection(
@@ -237,9 +241,7 @@ function useHistoryPageModel({ initialPage, initialEntry, params, search }: Hist
     fallbackError: 'This file diff is unavailable.',
     identity: diffIdentity,
     load: loadSelectedDiff,
-    peek: peekHistoryDiffCache,
-    read: readHistoryDiffCache,
-    write: writeHistoryDiffCache,
+    resource: historyDiffResource,
   })
   const fileDiffState: CommitFileDiffState =
     selectedFilePath && selectedEntry && !selectedFile

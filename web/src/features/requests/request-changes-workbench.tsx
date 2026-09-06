@@ -12,9 +12,7 @@ import { PendingSurface } from '@/components/pending-surface'
 import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
 import {
   historyDiffCacheKey,
-  peekHistoryDiffCache,
-  readHistoryDiffCache,
-  writeHistoryDiffCache,
+  historyDiffResource,
 } from '@/features/history/history-resource-cache'
 import { HistoryWorkbench } from '@/features/history/history-workbench'
 import type {
@@ -332,9 +330,7 @@ function useRequestChangesModel({
     fallbackError: 'Request file diff is unavailable.',
     identity: diffIdentity,
     load: loadSelectedDiff,
-    peek: peekHistoryDiffCache,
-    read: readHistoryDiffCache,
-    write: writeHistoryDiffCache,
+    resource: historyDiffResource,
   })
   const commitState: CommitDetailState = selection.error
     ? { commit: null, error: selection.error, status: 'failed' }

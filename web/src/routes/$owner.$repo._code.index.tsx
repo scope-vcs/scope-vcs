@@ -8,16 +8,12 @@ import {
 import type { RepoContent, RepoFileContent, RepoLiveState, RepoSummary } from '@/api/types'
 import { RepoContentError } from '@/components/repo-content-error'
 import {
-  peekRepoContentCache,
-  readRepoContentCache,
+  repoContentResource,
   repoContentCacheKey,
-  writeRepoContentCache,
 } from '@/features/repo-detail/repo-content-cache'
 import {
-  peekRepoFileCache,
-  readRepoFileCache,
+  repoFileResource,
   repoFileCacheKey,
-  writeRepoFileCache,
 } from '@/features/repo-detail/repo-file-cache'
 import { RepoDetailPage } from '@/features/repo-detail/repo-detail-page'
 import { RepositoryCodePending } from '@/features/repo-detail/repository-code-pending'
@@ -74,16 +70,18 @@ export const Route = createFileRoute('/$owner/$repo/_code/')({
   loader: async ({ abortController, deps, params, parentMatchPromise }) => {
     const live = (await parentMatchPromise).loaderData as RepoLiveState
     const { contentIdentity, fileIdentity } = repoCodeCacheKeys(live.repo, deps.file)
-    const cachedContent = typeof window === 'undefined' ? null : readRepoContentCache(contentIdentity)
-    const cachedFile = typeof window === 'undefined' || !fileIdentity ? null : readRepoFileCache(fileIdentity)
     const signal = abortController.signal
+    const content = typeof window === 'undefined'
+      ? loadRepoContent({ data: params, signal })
+      : repoContentResource.load(contentIdentity, '', (signal) => loadRepoContent({ data: params, signal }))
+    const file = deps.file && fileIdentity
+      ? typeof window === 'undefined'
+        ? loadAddressedFile({ ...params, path: deps.file }, signal)
+        : repoFileResource.load(fileIdentity, '', (signal) => loadAddressedFile({ ...params, path: deps.file! }, signal))
+      : null
     return {
-      content: settleRepoCodeResource(cachedContent
-        ? Promise.resolve(cachedContent)
-        : loadRepoContent({ data: params, signal })),
-      file: deps.file ? settleRepoCodeResource(cachedFile
-        ? Promise.resolve(cachedFile)
-        : loadAddressedFile({ ...params, path: deps.file }, signal)) : null,
+      content: settleRepoCodeResource(content),
+      file: file ? settleRepoCodeResource(file) : null,
       contentIdentity,
       fileIdentity,
     }
@@ -112,9 +110,7 @@ function RepoIndexRoute() {
     fallbackError: 'Repository files are unavailable.',
     identity: contentIdentity,
     load: loadContent,
-    peek: peekRepoContentCache,
-    read: readRepoContentCache,
-    write: writeRepoContentCache,
+    resource: repoContentResource,
   })
   const content = contentResource.value
   // A new version can remove file visibility. Revalidate the landing path from
@@ -132,9 +128,7 @@ function RepoIndexRoute() {
     fallbackError: 'File content is unavailable.',
     identity: selectedFileIdentity,
     load: loadSelectedFile,
-    peek: peekRepoFileCache,
-    read: readRepoFileCache,
-    write: writeRepoFileCache,
+    resource: repoFileResource,
   })
   const selectFile = useCallback((path: string) => {
     const nextPath = displayRouteFilePath(path)

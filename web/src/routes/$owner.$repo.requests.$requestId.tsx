@@ -128,7 +128,7 @@ function RequestRoute() {
     <RequestDetailPage
       detail={page.detail}
       live={live}
-      loadActivity={() => loadActivity({ data: requestParams })}
+      loadActivity={(signal) => loadActivity({ data: requestParams, signal })}
       params={repoParams}
       performAction={performAction}
       ratings={page.ratings}

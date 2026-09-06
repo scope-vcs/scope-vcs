@@ -32,6 +32,9 @@ import {
 import { RequestLifecycleActions } from './request-lifecycle-actions'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
+import { requestActivityIdentity } from './request-activity-resource'
+import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { useAuth } from '@clerk/tanstack-react-start'
 
 export function RequestUnavailablePage({ params }: { params: RepoParams }) {
   return (
@@ -56,7 +59,7 @@ type RequestDetailPageProps = {
   children: ReactNode
   detail: RequestDetail
   live: RepoLiveState
-  loadActivity: () => Promise<RequestActivityPage>
+  loadActivity: (signal: AbortSignal) => Promise<RequestActivityPage>
   params: RepoParams
   performAction: (command: RequestActionCommand) => Promise<RequestActionResult>
   ratings: RequestRatings
@@ -78,7 +81,14 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   } = props
   const { request } = detail
   const serverDescription = request.description_markdown
-  const history = useRequestActivityHistory(loadActivity)
+  const { isLoaded, userId } = useAuth()
+  const history = useRequestActivityHistory({
+    identity: isLoaded && request.permissions.can_view_activity
+      ? requestActivityIdentity(repoResourceScope(live.repo, userId ?? null), request.id)
+      : null,
+    load: loadActivity,
+    version: String(request.activity_version),
+  })
   const requestActions = useRequestActions(performAction)
   const [descriptionOverride, setDescriptionOverride] = useState<{
     server: string

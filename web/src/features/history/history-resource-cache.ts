@@ -5,32 +5,30 @@ import type {
   ReviewFileDiff,
 } from '@/api/types'
 import { createBoundedCache } from '../../lib/bounded-cache'
+import { createCachedResource } from '../../lib/cached-resource'
 
 const MAX_COMMIT_ENTRIES = 48
 const MAX_COMMIT_BYTES = 4 * 1024 * 1024
 const MAX_DIFF_ENTRIES = 20
 const MAX_DIFF_BYTES = 32 * 1024 * 1024
 
-type DiffCacheEntry = {
-  scrollTop: number
-  value: ReviewFileDiff
-}
-
 const commitEntries = createBoundedCache<string, CommitDetail>({
   maxEntries: MAX_COMMIT_ENTRIES,
   maxWeight: MAX_COMMIT_BYTES,
   weightOf: approximateSerializedBytes,
 })
-const historyEntries = createBoundedCache<string, HistoryEntryDetail>({
+export const historyEntryResource = createCachedResource<HistoryEntryDetail>({
   maxEntries: MAX_COMMIT_ENTRIES,
   maxWeight: MAX_COMMIT_BYTES,
   weightOf: approximateSerializedBytes,
 })
-const diffEntries = createBoundedCache<string, DiffCacheEntry>({
+export const historyDiffResource = createCachedResource<ReviewFileDiff>({
   maxEntries: MAX_DIFF_ENTRIES,
   maxWeight: MAX_DIFF_BYTES,
-  weightOf: (entry) => approximateSerializedBytes(entry.value),
+  weightOf: approximateSerializedBytes,
 })
+
+const diffScroll = createBoundedCache<string, number>({ maxEntries: MAX_DIFF_ENTRIES })
 
 export function historyCommitCacheKey({
   audience,
@@ -140,52 +138,35 @@ export function writeHistoryCommitCache(key: string, value: CommitDetail) {
   commitEntries.set(key, value)
 }
 
-export function readHistoryEntryCache(key: string) {
-  return historyEntries.get(key) ?? null
-}
-
-export function peekHistoryEntryCache(key: string) {
-  return historyEntries.peek(key) ?? null
-}
-
-export function writeHistoryEntryCache(key: string, value: HistoryEntryDetail) {
-  historyEntries.set(key, value)
-}
-
 export function readHistoryDiffCache(key: string) {
-  return diffEntries.get(key)?.value ?? null
-}
-
-export function peekHistoryDiffCache(key: string) {
-  return diffEntries.peek(key)?.value ?? null
+  return historyDiffResource.read(key) ?? null
 }
 
 export function writeHistoryDiffCache(key: string, value: ReviewFileDiff) {
-  const scrollTop = diffEntries.peek(key)?.scrollTop ?? 0
-  diffEntries.set(key, { scrollTop, value })
+  historyDiffResource.write(key, value)
 }
 
 export function readHistoryDiffScroll(key: string | null) {
-  if (!key) return 0
-  return diffEntries.peek(key)?.scrollTop ?? 0
+  if (!key || !historyDiffResource.peek(key)) return 0
+  return diffScroll.peek(key) ?? 0
 }
 
 export function writeHistoryDiffScroll(key: string | null, scrollTop: number) {
   if (!key) return
-  const entry = diffEntries.peek(key)
-  if (entry) entry.scrollTop = scrollTop
+  if (historyDiffResource.peek(key)) diffScroll.set(key, scrollTop)
 }
 
 export function resetHistoryResourceCache() {
   commitEntries.clear()
-  historyEntries.clear()
-  diffEntries.clear()
+  historyEntryResource.clear()
+  historyDiffResource.clear()
+  diffScroll.clear()
 }
 
 export function historyResourceCacheStats() {
   const commits = commitEntries.stats()
-  const diffs = diffEntries.stats()
-  const entries = historyEntries.stats()
+  const diffs = historyDiffResource.stats()
+  const entries = historyEntryResource.stats()
   return {
     commitBytes: commits.totalWeight,
     commits: commits.entries,

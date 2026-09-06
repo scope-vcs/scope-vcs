@@ -80,7 +80,13 @@ export function RequestActivityDrawer({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {loading ? (
+            {error && activity ? (
+              <div className="flex items-center gap-3 border-b border-border px-5 py-3 text-sm" role="alert">
+                <span>{error}</span>
+                <Button onClick={load} size="sm" variant="secondary">Retry</Button>
+              </div>
+            ) : null}
+            {loading && !activity ? (
               <PendingSurface
                 className="min-h-full"
                 delay
@@ -88,7 +94,7 @@ export function RequestActivityDrawer({
               >
                 <RequestActivitySkeleton />
               </PendingSurface>
-            ) : error ? (
+            ) : error && !activity ? (
               <div
                 className="flex items-start gap-3 px-5 py-8 text-sm"
                 role="alert"

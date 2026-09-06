@@ -1,25 +1,21 @@
 import type { RepoFileContent } from '@/api/types'
-import { createBoundedCache } from '../../lib/bounded-cache'
+import { createCachedResource } from '../../lib/cached-resource'
 
 const MAX_CACHE_ENTRIES = 32
 const MAX_CACHE_BYTES = 24 * 1024 * 1024
 
-const entries = createBoundedCache<string, RepoFileContent>({
+export const repoFileResource = createCachedResource<RepoFileContent>({
   maxEntries: MAX_CACHE_ENTRIES,
   maxWeight: MAX_CACHE_BYTES,
   weightOf: approximateFileBytes,
 })
 
 export function readRepoFileCache(key: string) {
-  return entries.get(key) ?? null
-}
-
-export function peekRepoFileCache(key: string) {
-  return entries.peek(key) ?? null
+  return repoFileResource.read(key) ?? null
 }
 
 export function writeRepoFileCache(key: string, file: RepoFileContent) {
-  entries.set(key, file)
+  repoFileResource.write(key, file)
 }
 
 export function repoFileCacheKey({
@@ -37,11 +33,11 @@ export function repoFileCacheKey({
 }
 
 export function resetRepoFileCache() {
-  entries.clear()
+  repoFileResource.clear()
 }
 
 export function repoFileCacheStats() {
-  const stats = entries.stats()
+  const stats = repoFileResource.stats()
   return { entries: stats.entries, totalBytes: stats.totalWeight }
 }
 

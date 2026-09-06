@@ -1,51 +1,33 @@
-import type { HistoryEntrySummary, ProjectionPreviewAudience, RepoParams, RepoSummary } from '@/api/types'
+import type { RepoParams, RepoSummary } from '@/api/types'
 import { PendingSurface } from '@/components/pending-surface'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { TextSkeleton } from '@/components/ui/skeleton'
-import { startAbortableResourceAttempt } from '@/lib/use-cached-resource'
+import { useCachedResource } from '@/lib/use-cached-resource'
+import { useAuth } from '@clerk/tanstack-react-start'
 import { loadRepositoryLatestActivity } from '@/routes/-repo-activity-actions'
 import { Link } from '@tanstack/react-router'
 import { History } from 'lucide-react'
-import { useCallback, useEffect, useReducer, useState } from 'react'
-import { useRepoChangeSubscription } from './repo-layout-context'
-
-type Activity = {
-  audience: ProjectionPreviewAudience
-  entry: HistoryEntrySummary | null
-  head_oid: string | null
-}
-type ActivityState = {
-  identity: string
-} & (
-  | { status: 'loaded'; value: Activity }
-  | { status: 'failed' }
-)
+import { useCallback } from 'react'
+import { repoResourceScope } from './repo-resource-scope'
+import { repositoryActivityResource } from './repository-activity-resource'
 
 export function RepositoryLatestActivity({ params, repo }: { params: RepoParams; repo: RepoSummary }) {
-  const [refresh, retry] = useReducer((version: number) => version + 1, 0)
-  const [state, setState] = useState<ActivityState | null>(null)
-  const identity = [repo.id, repo.access.can_read_private_files, repo.change_version].join('\0')
+  const { isLoaded, userId } = useAuth()
   const ready = repo.lifecycle_state === 'Ready'
-
-  useRepoChangeSubscription(useCallback((event) => {
-    if (event.repo_id !== repo.id) return
-    if (event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
-      retry()
-    }
-  }, [repo.id]))
-
-  useEffect(() => {
-    if (!ready) return
-    return startAbortableResourceAttempt({
-      load: (signal) => loadRepositoryLatestActivity({ data: { owner: params.owner, repo: params.repo }, signal }),
-      onLoaded: (value) => setState({ identity, status: 'loaded', value }),
-      onFailed: () => setState({ identity, status: 'failed' }),
-    })
-  }, [identity, params.owner, params.repo, ready, refresh])
+  const identity = ready && isLoaded ? repoResourceScope(repo, userId ?? null) : null
+  const load = useCallback((signal: AbortSignal) => loadRepositoryLatestActivity({
+    data: { owner: params.owner, repo: params.repo }, signal,
+  }), [params.owner, params.repo])
+  const current = useCachedResource({
+    identity,
+    load,
+    resource: repositoryActivityResource,
+    version: String(repo.change_version),
+    fallbackError: 'Latest change unavailable.',
+  })
 
   if (!ready) return null
-  const current = state?.identity === identity ? state : null
-  if (!current) {
+  if (current.status === 'loading' || current.status === 'idle') {
     return (
       <div className="border-b border-border px-5 py-3 sm:px-6 lg:px-8">
         <PendingSurface delay label="Loading latest repository change">
@@ -58,7 +40,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
     return (
       <div className="flex items-center gap-3 border-b border-border px-5 py-3 text-xs text-muted-foreground sm:px-6 lg:px-8">
         <output>Latest change unavailable.</output>
-        <button className="rounded underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" onClick={retry} type="button">
+        <button className="rounded underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" onClick={current.retry} type="button">
           Retry latest change
         </button>
       </div>
@@ -90,6 +72,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       <Link className="flex shrink-0 items-center gap-1.5 rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" params={params} search={{ audience, feed: 'all' }} to="/$owner/$repo/history">
         <History aria-hidden="true" className="size-3.5" /> History
       </Link>
+      {current.error && <button className="basis-full text-left underline" onClick={current.retry} type="button">Could not refresh latest change. Retry</button>}
     </div>
   )
 }

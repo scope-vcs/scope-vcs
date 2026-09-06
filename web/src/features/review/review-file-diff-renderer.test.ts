@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { Worker } from 'node:worker_threads'
 import type { ReviewFileDiffResponse } from '../../api/types.generated'
-import { startAbortableResourceAttempt } from '../../lib/use-cached-resource'
+import { createCachedResource } from '../../lib/cached-resource'
 import {
   REVIEW_FILE_DIFF_RENDER_BUDGET,
   type ReviewFileDiffWorkerInput,
@@ -269,25 +269,20 @@ async function runSourceWorker(input: ReviewFileDiffWorkerInput) {
   }
 }
 
-function assertTransientNotPublished(
+async function assertTransientNotPublished(
   load: () => Promise<object>,
   expectedFailure: 'busy' | 'deadline',
 ) {
-  return new Promise<void>((resolveAttempt, rejectAttempt) => {
-    startAbortableResourceAttempt({
-      load: async () => load(),
-      onFailed: (error) => {
-        try {
-          assert.ok(error instanceof ReviewDiffTransientError)
-          assert.equal(error.failure, expectedFailure)
-          resolveAttempt()
-        } catch (assertionError) {
-          rejectAttempt(assertionError)
-        }
-      },
-      onLoaded: () => rejectAttempt(
-        new Error('transient failures must not be published to the cache'),
-      ),
-    })
-  })
+  const resource = createCachedResource<object>({ maxEntries: 1 })
+  await resource.ensure('diff', '1', load)
+  const snapshot = resource.getSnapshot('diff')
+  assert.equal(snapshot.value, null, 'transient failures must not become cached render results')
+  assert.ok(snapshot.error instanceof ReviewDiffTransientError)
+  assert.equal(snapshot.error.failure, expectedFailure)
+
+  resource.invalidate('diff')
+  const recovered = { presentation: { kind: 'empty' } }
+  await resource.ensure('diff', '1', async () => recovered)
+  assert.deepEqual(resource.peek('diff'), recovered)
+  assert.equal(resource.getSnapshot('diff').error, null)
 }

@@ -32,6 +32,9 @@ export function createBoundedCache<Key, Value>({
     peek(key: Key) {
       return entries.get(key)?.value
     },
+    keys() {
+      return [...entries.keys()]
+    },
     set(key: Key, value: Value) {
       const previous = entries.get(key)
       if (previous) {
