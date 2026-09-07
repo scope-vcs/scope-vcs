@@ -23,7 +23,7 @@ function providerStatus(activeDeployments) {
   };
 }
 
-function deploy(t, status, predecessors = []) {
+function deploy(t, status, predecessors = [], failedPolls = []) {
   const root = mkdtempSync(join(tmpdir(), "scope-railway-teardown-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const scripts = join(root, ".github/scripts");
@@ -51,6 +51,11 @@ function deploy(t, status, predecessors = []) {
     } else if (command === "deployment list") {
       const count = (existsSync("polls") ? Number(readFileSync("polls", "utf8")) : 0) + 1;
       writeFileSync("polls", String(count));
+      if (${JSON.stringify(failedPolls)}.includes(count)) {
+        console.log("incomplete provider response");
+        console.error("provider read timed out");
+        process.exit(1);
+      }
       if (count > 10) process.exit(1);
       console.log(JSON.stringify([
         { id: "new-cache", status: "SUCCESS" },
@@ -116,4 +121,22 @@ test("missing or malformed provider state fails before activation", (t) => {
     assert.notEqual(result.status, 0);
     assert.ok(!result.events.includes("activate"));
   }
+});
+
+test("retries metadata and teardown reads without repeating activation", (t) => {
+  const result = deploy(t, providerStatus([{ id: "old-cache", status: "SUCCESS" }]), ["old-cache"], [2, 4]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.events.filter((event) => event === "activate").length, 1);
+  assert.equal(result.events.filter((event) => event === "verify").length, 1);
+  assert.match(result.stdout, /Previous deployment old-cache completed teardown/);
+  assert.ok(!result.stdout.includes("incomplete provider response"));
+});
+
+test("fails after three unsuccessful metadata reads without repeating activation", (t) => {
+  const result = deploy(t, providerStatus([]), [], [2, 3, 4]);
+  assert.notEqual(result.status, 0);
+  assert.equal(result.events.filter((event) => event === "deployment list").length, 4);
+  assert.equal(result.events.filter((event) => event === "activate").length, 1);
+  assert.ok(!result.events.includes("verify"));
+  assert.match(result.stderr, /Railway read failed after 3 attempts/);
 });

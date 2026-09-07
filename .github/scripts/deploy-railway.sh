@@ -52,12 +52,32 @@ deploy_message_from_event() {
   fi
 }
 
+railway_read() {
+  local output attempt
+  case "$1 ${2:-}" in
+    'status '*|'service list'|'deployment list') ;;
+    *) echo 'Only Railway status/list reads may be retried.' >&2; return 2 ;;
+  esac
+  for attempt in 1 2 3; do
+    if output="$(timeout --kill-after=5s 30s railway "$@")"; then
+      printf '%s\n' "$output"
+      return 0
+    fi
+    if ((attempt < 3)); then
+      echo "Railway read failed; retrying ($attempt/3)." >&2
+      sleep 2
+    fi
+  done
+  echo 'Railway read failed after 3 attempts.' >&2
+  return 1
+}
+
 ensure_service_exists() {
   local service_name="$1"
   local services_json
 
   services_json="$(
-    railway service list \
+    railway_read service list \
       --project "$RAILWAY_PROJECT_ID" \
       --environment "$railway_environment" \
       --json
@@ -75,7 +95,7 @@ service_is_healthy() {
   local expected_deployment_id="${2:-}"
   local services_json
   services_json="$(
-    railway status \
+    railway_read status \
       --project "$RAILWAY_PROJECT_ID" \
       --environment "$railway_environment" \
       --json
@@ -183,7 +203,7 @@ wait_for_deployment() {
 
   while true; do
     if deployment_json="$(
-      railway deployment list \
+      railway_read deployment list \
         --project "$RAILWAY_PROJECT_ID" \
         --service "$service_name" \
         --environment "$railway_environment" \
@@ -262,7 +282,7 @@ if [[ -n "$prepared_release" ]]; then
     router) expected_config=repo-router/railway.json ;;
     *) expected_config="$deployment_component/railway.json" ;;
   esac
-  previous_deployment_ids="$(railway status \
+  previous_deployment_ids="$(railway_read status \
     --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" --json |
     jq -ce --arg environment "$railway_environment" --arg service "$service_name" '
       [.environments.edges[].node | select(.id == $environment or .name == $environment)]
@@ -295,7 +315,7 @@ deployment_id="$(printf '%s\n' "$deploy_output" | jq -er 'select(.deploymentId |
 wait_for_deployment "$service_name" "$deployment_id"
 if [[ -n "$prepared_release" ]]; then
   deployed_metadata="$(mktemp)"
-  railway deployment list --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" \
+  railway_read deployment list --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" \
     --service "$service_name" --limit 100 --json > "$deployed_metadata"
   if ! node .github/scripts/railway-artifact.mjs verify "$prepared_release" \
     "$deployment_component" "$deployed_metadata" "$deployment_id"; then
@@ -325,7 +345,7 @@ if [[ -n "$prepared_release" ]]; then
   while IFS= read -r previous_deployment_id; do
     [[ "$previous_deployment_id" != "$deployment_id" ]] || continue
     while true; do
-      previous_status="$(railway deployment list \
+      previous_status="$(railway_read deployment list \
         --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" \
         --service "$service_name" --limit 100 --json |
         jq -r --arg id "$previous_deployment_id" '.[] | select(.id == $id) | .status')"
