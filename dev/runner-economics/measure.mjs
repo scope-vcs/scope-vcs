@@ -1,4 +1,4 @@
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, openSync, closeSync } from 'node:fs';
 import { cpus, totalmem } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -42,9 +42,17 @@ const metadata = {
 };
 const before = snapshot();
 const start = performance.now();
-const child = spawnSync('/usr/bin/time', ['-v', '-o', `${output}/time.txt`, ...command], {
-  stdio: 'inherit',
-});
+const timing = openSync(`${output}/time.txt`, 'w');
+let child;
+try {
+  // Preserve workload stderr on fd 3 and record Bash's timing separately on fd 4.
+  child = spawnSync('bash', [
+    '-c', 'TIMEFORMAT="elapsed_seconds=%R user_seconds=%U system_seconds=%S"; { time "$@" 2>&3; } 2>&4',
+    'runner-economics', ...command,
+  ], { stdio: ['inherit', 'inherit', 'inherit', 2, timing] });
+} finally {
+  closeSync(timing);
+}
 const elapsedSeconds = (performance.now() - start) / 1000;
 const result = {
   ...metadata, before, after: snapshot(), elapsedSeconds,
