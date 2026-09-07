@@ -157,3 +157,9 @@
     font-size: 11px;
   }
 }
+
+@media (pointer: coarse) {
+  .marketing-page .platform {
+    min-height: 44px;
+  }
+}

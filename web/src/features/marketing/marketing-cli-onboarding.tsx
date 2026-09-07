@@ -46,7 +46,11 @@ export function MarketingCliOnboarding({
         copyLabel={`Copy ${option.copyName} install command`}
         key={platform}
         onCopy={() => {
-          if (nextStepsRef.current) nextStepsRef.current.open = true
+          const details = nextStepsRef.current
+          if (details && !details.open) {
+            details.open = true
+            details.querySelector('summary')?.focus()
+          }
         }}
         value={commands[platform]}
       />

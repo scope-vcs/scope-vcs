@@ -4,9 +4,10 @@ import { chromium } from 'playwright'
 
 const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000'
 
-async function withPage(run) {
+async function withPage(run, hasTouch = false) {
   const browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({
+    hasTouch,
     permissions: ['clipboard-read', 'clipboard-write'],
     viewport: { width: 1440, height: 1000 },
   })
@@ -16,7 +17,13 @@ async function withPage(run) {
   try {
     await page.goto(baseUrl)
     await page.getByRole('heading', { name: 'One repository. You choose what’s public.' }).waitFor()
-    await page.getByRole('button', { name: 'Switch to light mode' }).click()
+    const themeToggle = page.getByRole('button', { name: 'Switch to light mode' })
+    await themeToggle.waitFor()
+    await page.waitForFunction(
+      (element) => Object.keys(element).some((key) => key.startsWith('__reactProps$')),
+      await themeToggle.elementHandle(),
+    )
+    await themeToggle.click()
     await page.getByRole('button', { name: 'Switch to dark mode' }).waitFor()
     await run(page)
     assert.deepEqual(errors, [])
@@ -44,6 +51,7 @@ test('landing install controls copy the selected command and keep the theme afte
       await page.getByRole('button', { name: `Copy ${copyName} install command` }).click()
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), command)
       assert.equal(await page.locator('details').getAttribute('open'), '')
+      assert.equal(await page.locator('summary').evaluate((element) => document.activeElement === element), true)
       await page.getByText('Already installed?', { exact: true }).click()
       assert.equal(await page.locator('details').getAttribute('open'), null)
     }
@@ -112,4 +120,17 @@ test('landing visuals stay aligned and loop through public sharing, review and m
       assert.equal(frames.commentFits, true)
     }
   })
+})
+
+
+test('install platform controls retain touch-sized targets on tablets', async () => {
+  await withPage(async (page) => {
+    await page.setViewportSize({ width: 768, height: 1000 })
+    assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), true)
+    const controls = page.getByRole('group', { name: 'Operating system' }).getByRole('button')
+    assert.equal(await controls.count(), 2)
+    for (const control of await controls.all()) {
+      assert((await control.boundingBox()).height >= 44)
+    }
+  }, true)
 })
