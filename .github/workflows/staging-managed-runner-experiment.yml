@@ -46,6 +46,23 @@ jobs:
           mkdir -p /tmp/staging-runner-infrastructure
           aws cloudformation describe-stacks --stack-name scope-cloud-runner-staging-mi-experiment > /tmp/staging-runner-infrastructure/stack.json
           aws cloudformation list-stack-resources --stack-name scope-cloud-runner-staging-mi-experiment > /tmp/staging-runner-infrastructure/resources.json
+      - name: Encrypt staging dispatcher credential for local provisioning
+        env:
+          TRANSFER_PUBLIC_KEY: ${{ vars.SCOPE_RUNNER_ECONOMICS_TRANSFER_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          dispatcher=scope-cloud-runner-staging-mi-experiment-railway-dispatcher
+          test "$(aws iam list-access-keys --user-name "$dispatcher" --query 'length(AccessKeyMetadata)' --output text)" = 0
+          printf '%s\n' "$TRANSFER_PUBLIC_KEY" > "$RUNNER_TEMP/dispatcher-transfer-public.pem"
+          openssl pkey -pubin -in "$RUNNER_TEMP/dispatcher-transfer-public.pem" -noout
+          credential=$(aws iam create-access-key --user-name "$dispatcher")
+          printf '::add-mask::%s\n' "$(jq -r '.AccessKey.AccessKeyId' <<< "$credential")"
+          printf '::add-mask::%s\n' "$(jq -r '.AccessKey.SecretAccessKey' <<< "$credential")"
+          jq -c '.AccessKey | {AccessKeyId, SecretAccessKey}' <<< "$credential" |
+            openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/dispatcher-transfer-public.pem" \
+              -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 \
+              -out /tmp/staging-runner-infrastructure/dispatcher.enc
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: staging-runner-infrastructure
