@@ -12,11 +12,47 @@ use scope_domain::runs::cache::definition::CacheKeyInputs;
 use std::{
     collections::BTreeMap,
     fs,
-    io::Write as _,
+    io::{Read as _, Write as _},
     os::unix::fs::{PermissionsExt as _, symlink},
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
+
+#[test]
+fn runtime_metadata_does_not_reserve_payload_names() {
+    for directory in [false, true] {
+        let source = tempfile::tempdir().unwrap();
+        let relative = if directory {
+            fs::create_dir(source.path().join(".scope-cache.json")).unwrap();
+            ".scope-cache.json/content"
+        } else {
+            ".scope-cache.json"
+        };
+        fs::write(source.path().join(relative), "cached payload").unwrap();
+        let archive = tempfile::NamedTempFile::new().unwrap();
+        create_archive(source.path(), archive.path(), None).unwrap();
+        let restored = tempfile::tempdir().unwrap();
+        extract_archive(archive.path(), restored.path(), None).unwrap();
+        assert_eq!(
+            fs::read_to_string(restored.path().join(relative)).unwrap(),
+            "cached payload"
+        );
+    }
+}
+
+#[test]
+fn invalid_metadata_framing_is_rejected_before_extracting_payloads() {
+    for length in [u64::MAX, 32 * 1024 * 1024 + 1, 16] {
+        let archive = tempfile::NamedTempFile::new().unwrap();
+        let mut encoder = zstd::Encoder::new(archive.reopen().unwrap(), 3).unwrap();
+        encoder.write_all(&length.to_be_bytes()).unwrap();
+        encoder.write_all(b"{}").unwrap();
+        encoder.finish().unwrap();
+        let restored = tempfile::tempdir().unwrap();
+        assert!(extract_archive(archive.path(), restored.path(), None).is_err());
+        assert_eq!(fs::read_dir(restored.path()).unwrap().count(), 0);
+    }
+}
 
 #[test]
 fn archives_are_identical_across_creation_order() {
@@ -52,7 +88,15 @@ fn archives_normalize_ownership_and_preserve_precise_timestamps() {
     let output = tempfile::NamedTempFile::new().unwrap();
     create_archive(source.path(), output.path(), None).unwrap();
 
-    let decoder = zstd::Decoder::new(fs::File::open(output.path()).unwrap()).unwrap();
+    let mut decoder = zstd::Decoder::new(fs::File::open(output.path()).unwrap()).unwrap();
+    let mut length = [0_u8; 8];
+    decoder.read_exact(&mut length).unwrap();
+    let mut metadata = vec![0_u8; u64::from_be_bytes(length) as usize];
+    decoder.read_exact(&mut metadata).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&metadata).unwrap(),
+        serde_json::json!({"sources": null})
+    );
     let mut archive = tar::Archive::new(decoder);
     let headers = archive
         .entries()
@@ -76,15 +120,9 @@ fn archives_normalize_ownership_and_preserve_precise_timestamps() {
         .collect::<Vec<_>>();
     assert_eq!(
         paths,
-        [
-            "bin",
-            "bin/run",
-            "data.txt",
-            "run-link",
-            ".scope-cache.json"
-        ]
-        .map(PathBuf::from)
-        .to_vec()
+        ["bin", "bin/run", "data.txt", "run-link"]
+            .map(PathBuf::from)
+            .to_vec()
     );
     assert!(
         headers

@@ -11,7 +11,6 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-const METADATA_PATH: &str = ".scope-cache.json";
 const MAX_METADATA_BYTES: u64 = 32 * 1024 * 1024;
 
 #[derive(Deserialize, Serialize)]
@@ -37,28 +36,24 @@ pub(super) fn extract_archive(
     source_root: Option<&Path>,
 ) -> anyhow::Result<RestoredArchive> {
     let file = fs::File::open(archive)?;
-    let decoder = zstd::Decoder::new(file).context("open compressed cache")?;
+    let mut decoder = zstd::Decoder::new(file).context("open compressed cache")?;
+    // Frame runtime metadata before the tar stream so every payload name remains valid.
+    let mut length = [0_u8; 8];
+    decoder.read_exact(&mut length)?;
+    let length = u64::from_be_bytes(length);
+    if length > MAX_METADATA_BYTES {
+        bail!("cache source metadata is too large");
+    }
+    let mut metadata = vec![0_u8; length as usize];
+    decoder.read_exact(&mut metadata)?;
+    let metadata: ArchiveMetadata = serde_json::from_slice(&metadata)?;
     let mut archive = tar::Archive::new(decoder);
-    let mut metadata = None;
     let mut directories = Vec::new();
     let mut newest_output = SystemTime::UNIX_EPOCH;
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?.into_owned();
         files::validate_relative(&path)?;
-        if path == Path::new(METADATA_PATH) {
-            if metadata.is_some()
-                || !entry.header().entry_type().is_file()
-                || entry.size() > MAX_METADATA_BYTES
-            {
-                bail!("invalid cache archive metadata entry");
-            }
-            metadata = Some(serde_json::from_reader::<_, ArchiveMetadata>(&mut entry)?);
-            continue;
-        }
-        if path.starts_with(METADATA_PATH) {
-            bail!("cache payload overlaps its metadata");
-        }
         let kind = entry.header().entry_type();
         if !(kind.is_file() || kind.is_dir() || kind.is_symlink()) {
             bail!("unsupported cache archive entry type");
@@ -77,7 +72,6 @@ pub(super) fn extract_archive(
             files::set_modified(destination, &path, modified)?;
         }
     }
-    let metadata = metadata.context("cache archive metadata is missing")?;
     if let Some(sources) = &metadata.sources {
         sources.validate()?;
     }
@@ -110,22 +104,17 @@ pub(super) fn create_archive(
         .truncate(true)
         .open(destination)?;
     let bounded = BoundedWriter::new(file, MAX_CACHE_OBJECT_BYTES);
-    let encoder = zstd::Encoder::new(bounded, 3).context("create compressed cache")?;
-    let mut archive = tar::Builder::new(encoder);
-    append_directory_contents(&mut archive, source, Path::new(""))?;
+    let mut encoder = zstd::Encoder::new(bounded, 3).context("create compressed cache")?;
     let metadata = serde_json::to_vec(&ArchiveMetadata {
         sources: sources.map(SourceSnapshot::for_save).transpose()?,
     })?;
     if metadata.len() as u64 > MAX_METADATA_BYTES {
         bail!("cache source metadata is too large");
     }
-    let mut header = normalized_header(tar::EntryType::Regular, metadata.len() as u64, 0o644)?;
-    append_entry(
-        &mut archive,
-        &mut header,
-        Path::new(METADATA_PATH),
-        metadata.as_slice(),
-    )?;
+    encoder.write_all(&(metadata.len() as u64).to_be_bytes())?;
+    encoder.write_all(&metadata)?;
+    let mut archive = tar::Builder::new(encoder);
+    append_directory_contents(&mut archive, source, Path::new(""))?;
     let encoder = archive.into_inner()?;
     let writer = encoder.finish()?;
     Ok(writer.identity())
@@ -143,9 +132,6 @@ fn append_directory_contents<W: Write>(
     entries.sort_by_key(fs::DirEntry::file_name);
     for entry in entries {
         let relative_path = relative.join(entry.file_name());
-        if relative_path == Path::new(METADATA_PATH) {
-            bail!("cache contains reserved runtime metadata path {METADATA_PATH}");
-        }
         let path = entry.path();
         let metadata = fs::symlink_metadata(&path)
             .with_context(|| format!("read cache entry metadata {}", path.display()))?;
