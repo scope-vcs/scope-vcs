@@ -12,7 +12,7 @@ function ContributionTree({ merged = false }: { merged?: boolean }): ReactElemen
         const Icon = name.endsWith('/') ? Folder : File
         const StateIcon = privateFile ? LockKeyhole : Check
         return (
-          <li key={name} className={cn('scene-file relative flex h-10 items-center gap-[9px] rounded-[3px] font-mono text-landing-body [line-height:normal]', changed && (merged ? 'merged-file' : 'submitted-file'))}>
+          <li key={name} className={cn('scene-file relative flex h-8 items-center gap-[9px] rounded-[3px] font-mono text-landing-body [line-height:normal]', changed && (merged ? 'merged-file' : 'submitted-file'))}>
             <Icon className="icon size-[15px] text-landing-muted" />
             {name}
             {(changed || privateFile) && (
@@ -34,13 +34,13 @@ export function ContributionFlow(): ReactElement {
       aria-label="A request to handle empty API responses moves from a public clone to maintainer review. The maintainer reads the one-line change, comments that it looks good, then merges it into the full repository. Internal code remains private."
       className="contribution-flow min-w-0 [--landing-request-cycle:14s]"
     >
-      <div aria-hidden className="request-progress mb-6 grid grid-cols-3 gap-3.5 max-[521px]:mb-[19px] max-[521px]:gap-2.5">
+      <div aria-hidden className="request-progress mb-4 grid grid-cols-3 gap-3.5 max-[521px]:mb-4 max-[521px]:gap-2.5">
         {['Submitted', 'Your review', 'Merged'].map((step) => (
-          <div key={step} className="request-step relative border-b border-landing-line pb-3 text-landing-title text-landing-muted">{step}</div>
+          <div key={step} className="request-step relative border-b border-landing-line pb-2 text-landing-title text-landing-muted">{step}</div>
         ))}
       </div>
       <div aria-hidden className="request-sheet relative border-y border-landing-line bg-landing-paper [--landing-request-inset:18px] max-[521px]:[--landing-request-inset:12px]">
-        <div className="request-heading flex min-h-[65px] items-center gap-3 border-b border-landing-line py-4 pr-[var(--landing-request-inset)] max-[521px]:min-h-[70px] max-[521px]:gap-2">
+        <div className="request-heading flex min-h-[52px] items-center gap-3 border-b border-landing-line py-3 px-[var(--landing-request-inset)] max-[521px]:min-h-[56px] max-[521px]:gap-2">
           <GitBranch className="icon size-[18px] text-landing-green max-[521px]:hidden" />
           <h3 className="m-0 min-w-0 font-sans text-landing-title leading-[1.35] font-medium tracking-normal max-[521px]:max-w-[195px] max-[361px]:max-w-[175px]">Handle empty responses</h3>
           <div className="request-state-stack relative ml-auto h-5 w-[9ch] shrink-0 text-right font-mono text-landing-meta leading-5 whitespace-nowrap text-landing-muted *:absolute *:inset-0">
@@ -49,14 +49,14 @@ export function ContributionFlow(): ReactElement {
             <span className="state-merged text-landing-green">Merged</span>
           </div>
         </div>
-        <div className="request-scenes relative h-[280px] overflow-hidden *:pointer-events-none *:absolute *:inset-0 *:pt-[22px] *:pr-[var(--landing-request-inset)] *:pb-[18px] *:will-change-[opacity,transform] max-[521px]:*:pt-[19px]">
+        <div className="request-scenes relative h-[240px] max-[521px]:h-[260px] overflow-hidden *:pointer-events-none *:absolute *:inset-0 *:pt-4 *:px-[var(--landing-request-inset)] *:pb-4 *:will-change-[opacity,transform] max-[521px]:*:pt-4">
           <div className="request-scene submission-scene">
             <div className="scene-context mb-[15px] flex items-center gap-2 text-landing-title leading-5 font-medium">
               <Globe className="icon size-[15px] text-landing-muted" />
               Public clone
             </div>
             <ContributionTree />
-            <div className="scene-receipt absolute inset-x-0 bottom-[21px] flex items-center gap-2 text-landing-meta text-landing-muted">
+            <div className="scene-receipt absolute inset-x-[var(--landing-request-inset)] bottom-[21px] flex items-center gap-2 text-landing-meta text-landing-muted">
               <Check className="icon size-3.5 text-landing-green" />
               Submitted to your review queue
             </div>
@@ -70,13 +70,13 @@ export function ContributionFlow(): ReactElement {
               <span className="text-landing-meta text-landing-green">+1 line</span>
             </div>
             <div className="review-code m-0 font-mono text-landing-body leading-[1.9] text-landing-muted *:block *:px-2 *:whitespace-pre-wrap *:[overflow-wrap:anywhere] max-[521px]:leading-[1.8] max-[361px]:*:px-[5px]">
-              <span>  const response = await fetch(url);</span>
+              <span>  const res = await fetch(url);</span>
               <span className="added-line relative overflow-hidden bg-landing-green-soft text-landing-green">
-                + if (response.status === 204) return null;
+                + if (res.status === 204) return null;
               </span>
-              <span>  return response.json();</span>
+              <span>  return res.json();</span>
             </div>
-            <div className="maintainer-review mt-[19px] grid grid-cols-[26px_minmax(0,1fr)] gap-2.5 max-[521px]:mt-4">
+            <div className="maintainer-review mt-4 grid grid-cols-[26px_minmax(0,1fr)] gap-2.5 max-[521px]:mt-4">
               <span className="reviewer-mark grid size-[26px] place-items-center rounded-full border border-landing-line bg-landing-panel font-mono text-[11px] text-landing-muted [line-height:normal]">M</span>
               <div>
                 <div className="reviewer-name text-landing-meta leading-[1.4] font-medium">Maintainer</div>
@@ -85,7 +85,7 @@ export function ContributionFlow(): ReactElement {
                 </p>
               </div>
             </div>
-            <div className="review-decision absolute bottom-5 left-9 flex items-center gap-[7px] text-landing-meta text-landing-green max-[521px]:bottom-[18px]">
+            <div className="review-decision absolute bottom-5 left-[calc(var(--landing-request-inset)+36px)] flex items-center gap-[7px] text-landing-meta text-landing-green max-[521px]:bottom-[18px]">
               <Check className="icon size-3.5" />
               Ready to merge
             </div>
@@ -97,7 +97,7 @@ export function ContributionFlow(): ReactElement {
               <span className="scene-branch ml-auto font-mono text-landing-meta font-normal text-landing-muted [line-height:normal]">main</span>
             </div>
             <ContributionTree merged />
-            <div className="scene-receipt absolute inset-x-0 bottom-[21px] flex items-center gap-2 text-landing-meta text-landing-muted">
+            <div className="scene-receipt absolute inset-x-[var(--landing-request-inset)] bottom-[21px] flex items-center gap-2 text-landing-meta text-landing-muted">
               <Check className="icon size-3.5 text-landing-green" />
               Merged by the maintainer
             </div>

@@ -146,19 +146,11 @@
   }
 }
 
-/* Show the private examples folder without moving files or changing labels. */
+/* These passive illustrations retain their timeline by product choice. */
 @media (prefers-reduced-motion: reduce) {
   .marketing-page .repository *,
   .marketing-page .repository *::after {
-    animation: none !important;
-  }
-
-  .marketing-page .visibility-changing .is-public,
-  .marketing-page .shared-example {
-    visibility: hidden;
-  }
-
-  .marketing-page .source-example::after {
-    display: none;
+    animation-duration: var(--landing-cycle) !important;
+    animation-iteration-count: infinite !important;
   }
 }

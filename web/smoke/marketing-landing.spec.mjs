@@ -62,16 +62,23 @@ test('landing install controls copy the selected command and keep the theme afte
 
 test('landing visuals stay aligned and loop through public sharing, review and merge', async () => {
   await withPage(async (page) => {
+    await page.waitForFunction(() => [...document.querySelectorAll('.enter')].every((element) => element.getAnimations().every((animation) => animation.playState === 'finished')))
     for (const colorScheme of ['light', 'dark']) {
       if (colorScheme === 'dark') await page.getByRole('button', { name: 'Switch to dark mode' }).click()
       for (const width of [1920, 1440, 1024, 900, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 })
+        await page.waitForFunction(() => document.getAnimations().every((animation) => !(animation instanceof CSSTransition)))
         const layout = await page.evaluate(() => {
           const boxes = ['.repository', '.request-progress', '.request-sheet', '.terminal']
             .map((selector) => document.querySelector(selector).getBoundingClientRect())
           const size = (selector) => getComputedStyle(document.querySelector(selector)).fontSize
           return {
             edges: boxes.map(({ left, right }) => [left, right]),
+            tops: innerWidth > 900 ? [
+              ['#hero-title', '.repository'],
+              ['#contribution-title', '.request-progress'],
+              ['#install-title', '.platforms'],
+            ].map((pair) => pair.map((selector) => document.querySelector(selector).getBoundingClientRect().top)) : [],
             overflow: document.documentElement.scrollWidth > innerWidth,
             fonts: [size('.repository-file'), size('.scene-file'), size('.review-code')],
             dividers: ['.topbar', '.contributions', '.install', '.footer'].map((selector) => {
@@ -81,70 +88,64 @@ test('landing visuals stay aligned and loop through public sharing, review and m
           }
         })
         for (const edges of layout.edges) assert.deepEqual(edges, layout.edges[0], `${colorScheme} at ${width}px`)
+        for (const [copy, figure] of layout.tops) assert.equal(copy, figure)
         assert.equal(layout.overflow, false)
         assert.equal(new Set(layout.fonts).size, 1)
         assert(layout.dividers.every(([top, bottom]) => top === '0px' && bottom === '0px'))
       }
     }
-    await page.emulateMedia({ reducedMotion: 'no-preference' })
-    const frames = await page.evaluate(() => {
-      function seek(selector, time) {
+    for (const reducedMotion of ['no-preference', 'reduce']) {
+      await page.emulateMedia({ reducedMotion })
+      const clocks = await page.evaluate(() => ['.repository', '.contribution-flow'].map((selector) => {
         const animations = document.querySelector(selector).getAnimations({ subtree: true })
-        for (const animation of animations) {
-          animation.pause()
-          animation.currentTime = time
+          .filter((animation) => animation instanceof CSSAnimation)
+        for (const animation of animations) animation.play()
+        return { selector, time: animations[0]?.currentTime ?? null }
+      }))
+      assert(clocks.every(({ time }) => time !== null))
+      await page.waitForFunction((clocks) => clocks.every(({ selector, time }) => {
+        const animation = document.querySelector(selector).getAnimations({ subtree: true })
+          .find((animation) => animation instanceof CSSAnimation)
+        return animation?.playState === 'running' && animation.currentTime > time + 200
+      }), clocks)
+      const frames = await page.evaluate(() => {
+        function seek(selector, time) {
+          const animations = document.querySelector(selector).getAnimations({ subtree: true })
+          for (const animation of animations) {
+            animation.pause()
+            animation.currentTime = time
+          }
+          return animations.length
         }
-        return animations.length
-      }
-      const opacity = (selector) => Number(getComputedStyle(document.querySelector(selector)).opacity)
-      const sharing = [0, 4000, 8000].map((time) => {
-        const count = seek('.repository', time)
-        return { count, public: opacity('.shared-example'), private: opacity('.source-example .is-private') }
-      })
-      const requests = [0, 6500, 11500, 14000].map((time) => {
-        const count = seek('.contribution-flow', time)
-        return { count, scenes: ['.submission-scene', '.review-scene', '.merged-scene'].map(opacity) }
-      })
-      seek('.contribution-flow', 9300)
-      const comment = document.querySelector('.maintainer-review').getBoundingClientRect()
-      const decision = document.querySelector('.review-decision').getBoundingClientRect()
-      return { sharing, requests, commentFits: comment.bottom <= decision.top }
-    })
-    assert(frames.sharing.every(({ count }) => count > 0))
-    assert.deepEqual(frames.sharing.map(({ public: shared }) => shared), [0, 1, 0])
-    assert.deepEqual(frames.sharing.map(({ private: hidden }) => hidden), [1, 0, 1])
-    assert(frames.requests.every(({ count }) => count > 0))
-    assert.deepEqual(frames.requests.map(({ scenes }) => scenes), [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]])
-    assert.equal(frames.commentFits, true)
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    for (const width of [320, 768, 1440]) {
-      await page.setViewportSize({ width, height: 1000 })
-      await page.waitForFunction(
-        () => document.querySelector('.marketing-page').getAnimations({ subtree: true }).length === 0,
-      )
-      const still = await page.evaluate(() => {
-        const visible = (selector) => getComputedStyle(document.querySelector(selector)).visibility === 'visible'
+        const opacity = (selector) => Number(getComputedStyle(document.querySelector(selector)).opacity)
+        const sharing = [0, 4000, 8000].map((time) => {
+          const count = seek('.repository', time)
+          return { count, public: opacity('.shared-example'), private: opacity('.source-example .is-private') }
+        })
+        const requests = [0, 6500, 11500, 14000].map((time) => {
+          const count = seek('.contribution-flow', time)
+          return { count, scenes: ['.submission-scene', '.review-scene', '.merged-scene'].map(opacity) }
+        })
+        seek('.contribution-flow', 9300)
         const comment = document.querySelector('.maintainer-review').getBoundingClientRect()
         const decision = document.querySelector('.review-decision').getBoundingClientRect()
-        return {
-          animations: document.querySelector('.marketing-page').getAnimations({ subtree: true }).length,
-          publicExamples: visible('.shared-example'),
-          privateLabel: visible('.source-example .is-private'),
-          publicLabel: visible('.source-example .is-public'),
-          scenes: ['.submission-scene', '.review-scene', '.merged-scene'].map(visible),
-          labels: ['.state-submitted', '.state-review', '.state-merged'].map(visible),
-          commentFits: comment.bottom <= decision.top,
-        }
+        return { sharing, requests, commentFits: comment.bottom <= decision.top }
       })
-      assert.deepEqual(still, {
-        animations: 0,
-        publicExamples: false,
-        privateLabel: true,
-        publicLabel: false,
-        scenes: [false, true, false],
-        labels: [false, true, false],
-        commentFits: true,
-      })
+      assert(frames.sharing.every(({ count }) => count > 0))
+      assert.deepEqual(frames.sharing.map(({ public: shared }) => shared), [0, 1, 0])
+      assert.deepEqual(frames.sharing.map(({ private: hidden }) => hidden), [1, 0, 1])
+      assert(frames.requests.every(({ count }) => count > 0))
+      assert.deepEqual(frames.requests.map(({ scenes }) => scenes), [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]])
+      assert.equal(frames.commentFits, true)
+      for (const width of [320, 768, 1440]) {
+        await page.setViewportSize({ width, height: 1000 })
+        await page.waitForFunction(() => document.getAnimations().every((animation) => !(animation instanceof CSSTransition)))
+        assert.equal(await page.evaluate(() => {
+          const comment = document.querySelector('.maintainer-review').getBoundingClientRect()
+          const decision = document.querySelector('.review-decision').getBoundingClientRect()
+          return comment.bottom <= decision.top
+        }), true, `${reducedMotion} at ${width}px`)
+      }
     }
   })
 })

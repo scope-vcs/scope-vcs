@@ -18,11 +18,11 @@ function RepositoryColumn({ publicClone = false }: { publicClone?: boolean }): R
   const TitleIcon = publicClone ? Globe : LockKeyhole
   return (
     <div className={cn('repository-column min-w-0', publicClone && 'public-column border-l border-landing-line bg-landing-panel')}>
-      <div className="repository-title flex h-15 items-center gap-[9px] border-b border-landing-line px-5 text-landing-title font-medium max-[1151px]:gap-[7px] max-[1151px]:px-4 max-[521px]:h-13 max-[521px]:gap-1.5 max-[521px]:px-[11px] max-[361px]:gap-1 max-[361px]:px-[7px]">
+      <div className="repository-title flex h-11 items-center gap-[9px] border-b border-landing-line px-5 text-landing-title font-medium max-[1151px]:gap-[7px] max-[1151px]:px-4 max-[521px]:gap-1.5 max-[521px]:px-[11px] max-[361px]:gap-1 max-[361px]:px-[7px]">
         <TitleIcon aria-hidden className={cn('icon size-4 max-[521px]:size-3.5 max-[361px]:size-3', publicClone ? 'text-landing-green' : 'text-landing-muted')} />
         {publicClone ? 'Public clone' : 'Your repository'}
       </div>
-      <ul className="repository-files m-0 list-none px-3.5 pt-[13px] pb-5 max-[1151px]:px-2.5 max-[521px]:px-1.5 max-[521px]:pt-2.5 max-[521px]:pb-[15px] max-[361px]:px-[3px]">
+      <ul className="repository-files m-0 list-none px-3.5 py-3 max-[1151px]:px-2.5 max-[521px]:px-1.5 max-[521px]:py-2 max-[361px]:px-[3px]">
         {files.map((name) => {
           const isExample = name === 'examples/'
           const absent = publicClone && name === 'internal/'
@@ -32,7 +32,7 @@ function RepositoryColumn({ publicClone = false }: { publicClone?: boolean }): R
               key={name}
               aria-hidden={absent || undefined}
               className={cn(
-                'repository-file relative flex h-[50px] min-w-0 items-center gap-[9px] rounded-sm px-1.5 font-mono text-landing-body [line-height:normal] max-[1151px]:gap-[7px] max-[521px]:h-[46px] max-[521px]:gap-1.5 max-[521px]:px-[5px] max-[361px]:gap-1 max-[361px]:px-1',
+                'repository-file relative flex h-[38px] min-w-0 items-center gap-[9px] rounded-sm px-1.5 font-mono text-landing-body [line-height:normal] max-[1151px]:gap-[7px] max-[521px]:gap-1.5 max-[521px]:px-[5px] max-[361px]:gap-1 max-[361px]:px-1',
                 absent && 'absent',
                 isExample && (publicClone ? 'shared-example' : 'source-example'),
               )}
@@ -59,12 +59,12 @@ function RepositoryColumn({ publicClone = false }: { publicClone?: boolean }): R
 
 export function RepositoryProjection(): ReactElement {
   return (
-    <div className="demo min-w-0 w-full self-center">
+    <div className="demo min-w-0 w-full">
       <figure
         aria-label="One repository with public and private files. The public clone contains shared folders. The examples folder is shared and then made private in a repeating illustration; internal code stays private."
         className="repository overflow-hidden rounded-md border border-landing-line bg-landing-paper [--landing-cycle:8s]"
       >
-        <div aria-hidden className="repository-header flex h-[58px] items-center justify-between gap-4 border-b border-landing-line px-5 font-mono text-landing-title [line-height:normal] max-[1151px]:px-4 max-[521px]:h-[50px] max-[521px]:px-3.5">
+        <div aria-hidden className="repository-header flex h-11 items-center justify-between gap-4 border-b border-landing-line px-5 font-mono text-landing-title [line-height:normal] max-[1151px]:px-4 max-[521px]:px-3.5">
           <span className="repository-name flex items-center gap-2.5">
             <GitBranch aria-hidden className="icon size-4 text-landing-muted" />
             acme / toolkit
