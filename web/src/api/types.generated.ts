@@ -44,6 +44,56 @@ export type RequestAudience = "Public" | "Private";
 
 export type RequestState = "Draft" | "Open" | "Closed" | "Merged";
 
+export type RequestAttachmentTargetKind = "Description" | "Discussion" | "Reply";
+
+export type RequestAttachmentTargetInput = { kind: RequestAttachmentTargetKind, discussion_id: string | null, };
+
+export type RequestAttachmentKind = "Photo" | "Video";
+
+export type RequestAttachmentState = "Prepared" | "Uploaded" | "Processing" | "Ready" | "Failed" | "Rejected";
+
+export type RequestAttachmentDerivativeKind = "ImagePreview" | "VideoPlayback" | "VideoPoster";
+
+export type RequestAttachmentFailureCode = "InvalidMedia" | "CorruptMedia" | "UnsupportedMedia" | "MediaLimitExceeded" | "CodecFailed" | "StorageUnavailable" | "Internal";
+
+export type RequestAttachmentLimitsResponse = { accepted_photo_media_types: Array<string>, accepted_video_media_types: Array<string>, max_photo_bytes: number, max_video_bytes: number, max_video_duration_seconds: number, max_attachments_per_content: number, max_request_source_bytes: number, max_repository_storage_bytes: number, max_photo_pixels: number, preferred_part_bytes: number, max_concurrent_parts: number, incomplete_upload_ttl_seconds: number, unbound_attachment_ttl_seconds: number, };
+
+export type PrepareRequestAttachmentRequest = { operation_id: string, target: RequestAttachmentTargetInput, filename: string, declared_media_type: string, size_bytes: number, sha256: string, };
+
+export type PrepareRequestAttachmentResponse = { attachment: RequestAttachmentResponse, transfer: RequestAttachmentTransferResponse, };
+
+export type RequestAttachmentTransferResponse = { upload_id: string, media_base_url: string, grant: string, expires_at_unix: number, preferred_part_bytes: number, max_concurrent_parts: number, acknowledged_parts: Array<RequestAttachmentPartReceiptResponse>, };
+
+export type RequestAttachmentPartReceiptResponse = { part_number: number, size_bytes: number, sha256: string, };
+
+export type FinishRequestAttachmentRequest = { upload_id: string, parts: Array<RequestAttachmentPartReceiptResponse>, };
+
+export type RetryRequestAttachmentRequest = { operation_id: string, };
+
+export type RequestAttachmentListResponse = { attachments: Array<RequestAttachmentResponse>, };
+
+export type RequestAttachmentResponse = { id: string, request_id: string, uploader_user_id: string, filename: string, declared_media_type: string, detected_media_type: string | null, kind: RequestAttachmentKind, size_bytes: number, sha256: string, state: RequestAttachmentState, original_download_available: boolean, failure: RequestAttachmentFailureResponse | null, image: RequestAttachmentImageMetadataResponse | null, video: RequestAttachmentVideoMetadataResponse | null, derivatives: Array<RequestAttachmentDerivativeResponse>, created_at_unix: number, updated_at_unix: number, };
+
+export type RequestAttachmentImageMetadataResponse = { width: number, height: number, };
+
+export type RequestAttachmentVideoMetadataResponse = { width: number, height: number, duration_millis: number, };
+
+export type RequestAttachmentDerivativeResponse = { id: string, kind: RequestAttachmentDerivativeKind, media_type: string, size_bytes: number, width: number | null, height: number | null, duration_millis: number | null, };
+
+export type RequestAttachmentFailureResponse = { code: RequestAttachmentFailureCode, message: string, retryable: boolean, };
+
+export type RequestAttachmentMediaTarget = { "kind": "original" } | { "kind": "derivative", derivative_id: string, };
+
+export type CreateRequestAttachmentMediaGrantRequest = { target: RequestAttachmentMediaTarget, };
+
+export type CreateRequestAttachmentMediaGrantResponse = { media_url: string, grant: string, expires_at_unix: number, };
+
+export type RequestAttachmentMediaGrantMethod = "Get";
+
+export type RequestAttachmentMediaGrantClaims = { attachment_id: string, repository_id: string, request_id: string, viewer_user_id: string | null, method: RequestAttachmentMediaGrantMethod, target: RequestAttachmentMediaTarget, expires_at_unix: number, };
+
+export type RequestAttachmentUploadGrantClaims = { attachment_id: string, repository_id: string, request_id: string, uploader_user_id: string, upload_id: string, expires_at_unix: number, };
+
 export type GitOid = string;
 
 export type RequestEventKind = "Started" | "Submitted" | "RevisionPushed" | "Merged" | "Closed" | "IdentityEdited" | "DiscussionResolved" | "DiscussionReopened";
@@ -266,7 +316,7 @@ export type StartRequestRequest = { name: string, title: string | null, audience
 
 export type SubmitRequestRequest = Record<symbol, never>;
 
-export type EditRequestIdentityRequest = { title: string | null, description_markdown: string | null, };
+export type EditRequestIdentityRequest = { title: string | null, description_markdown: string | null, expected_description_markdown: string | null, };
 
 export type CreateRequestDiscussionRequest = { body_markdown: string, client_discussion_id: string, anchor: RequestDiscussionAnchorInput | null, };
 
@@ -276,7 +326,7 @@ export type ReopenAndReplyRequest = { body_markdown: string, client_reply_id: st
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
-export type RepoChangeKind = "Connected" | "Lagged" | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, audience: RequestAudience, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
+export type RepoChangeKind = "Connected" | "Lagged" | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, audience: RequestAudience, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, audience: RequestAudience, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
 
 export type RunChangeKind = "Created" | "StatusChanged" | "LogsAppended";
 
@@ -357,6 +407,13 @@ export const ApiRouteTemplates = {
   repoRequestRatings: "/v1/repos/{owner}/{repo}/requests/{request_id}/ratings",
   repoRequestInvitees: "/v1/repos/{owner}/{repo}/requests/{request_id}/invitees",
   repoRequestInviteesMe: "/v1/repos/{owner}/{repo}/requests/{request_id}/invitees/me",
+  repoRequestAttachments: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments",
+  repoRequestAttachmentLimits: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/limits",
+  repoRequestAttachmentPrepare: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/prepare",
+  repoRequestAttachment: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}",
+  repoRequestAttachmentFinish: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/finish",
+  repoRequestAttachmentRetry: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/retry",
+  repoRequestAttachmentMediaGrant: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/media-grant",
   repoSession: "/v1/repos/{owner}/{repo}/session",
   repoFiles: "/v1/repos/{owner}/{repo}/files",
   repoFileContent: "/v1/repos/{owner}/{repo}/files/content",

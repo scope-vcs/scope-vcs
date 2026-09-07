@@ -2,7 +2,16 @@
 
 import { pathToFileURL } from "node:url";
 
-export const RAILWAY_COMPONENTS = ["cache", "worker", "router", "api", "web", "cli"];
+export const RAILWAY_COMPONENTS = [
+  "cache",
+  "worker",
+  "mediaWorker",
+  "router",
+  "media",
+  "api",
+  "web",
+  "cli",
+];
 
 const SOURCE_SHA_PATTERN = /^[0-9a-f]{40}$/;
 
@@ -52,6 +61,9 @@ export function verifyProductionRailwayServices({ deployments, manifest, service
       || evidence.evidenceId.length === 0
     ) {
       throw new Error(`Production ${component} has no exact Railway deployment evidence`);
+    }
+    if (component === "mediaWorker" && !/^sha256:[0-9a-f]{64}$/.test(evidence.artifactDigest ?? "")) {
+      throw new Error("Production mediaWorker has no exact OCI artifact evidence");
     }
     assertHealthyRailwayService(services, serviceId, evidence.evidenceId);
     verified.push({ component, ...evidence });

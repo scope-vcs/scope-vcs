@@ -43,6 +43,12 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
     attempts.get(identity)?.controller.abort()
     attempts.delete(identity)
   }
+  const remove = (identity: string) => {
+    cancel(identity)
+    entries.delete(identity)
+    visible.delete(identity)
+    for (const listener of listeners.get(identity) ?? []) listener()
+  }
   const identities = () => new Set([...entries.keys(), ...attempts.keys(), ...visible.keys()])
 
   function invalidate(identity: string) {
@@ -96,6 +102,9 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
     },
     invalidateMatching(matches: (identity: string) => boolean) {
       for (const identity of identities()) if (matches(identity)) invalidate(identity)
+    },
+    removeMatching(matches: (identity: string) => boolean) {
+      for (const identity of identities()) if (matches(identity)) remove(identity)
     },
     peek: (identity: string) => getSnapshot(identity).value,
     read: (identity: string) => entries.get(identity)?.value ?? null,

@@ -5,6 +5,13 @@ import type {
   CreateDiscussionInput, CreateReplyInput, LoadDiscussionsInput, LoadRepliesInput,
   MarkDiscussionReadInput, RequestDiscussionActionInput, UpdateDescriptionInput,
 } from '../features/requests/request-discussion-api'
+import type {
+  FinishAttachmentInput,
+  GrantAttachmentInput,
+  PrepareAttachmentInput,
+  RetryAttachmentInput,
+} from '../features/requests/request-attachment-api'
+import { apiValidators, type ApiValidator } from './validators.generated'
 
 function object(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -140,7 +147,59 @@ export function parseCreateReplyInput(input: unknown): CreateReplyInput {
 
 export function parseUpdateDescriptionInput(input: unknown): UpdateDescriptionInput {
   const data = object(input)
-  return { ...parseRequestParams(data), description_markdown: text(data.description_markdown, 'description_markdown', 256 * 1024, true) }
+  return {
+    ...parseRequestParams(data),
+    description_markdown: text(data.description_markdown, 'description_markdown', 256 * 1024, true),
+    expected_description_markdown: text(data.expected_description_markdown, 'expected_description_markdown', 256 * 1024, true),
+  }
+}
+
+export function parsePrepareAttachmentInput(input: unknown): PrepareAttachmentInput {
+  const data = object(input)
+  const body = {
+    declared_media_type: data.declared_media_type,
+    filename: data.filename,
+    operation_id: data.operation_id,
+    sha256: data.sha256,
+    size_bytes: data.size_bytes,
+    target: data.target,
+  }
+  return { ...parseRequestParams(data), ...validated('attachment preparation', apiValidators.PrepareRequestAttachmentRequest, body) }
+}
+
+export function parseFinishAttachmentInput(input: unknown): FinishAttachmentInput {
+  const data = object(input)
+  const body = { parts: data.parts, upload_id: data.upload_id }
+  return {
+    ...parseRequestParams(data),
+    attachment_id: id(data.attachment_id, 'attachment_id'),
+    ...validated('attachment completion', apiValidators.FinishRequestAttachmentRequest, body),
+  }
+}
+
+export function parseRetryAttachmentInput(input: unknown): RetryAttachmentInput {
+  const data = object(input)
+  const body = { operation_id: data.operation_id }
+  return {
+    ...parseRequestParams(data),
+    attachment_id: id(data.attachment_id, 'attachment_id'),
+    ...validated('attachment retry', apiValidators.RetryRequestAttachmentRequest, body),
+  }
+}
+
+export function parseGrantAttachmentInput(input: unknown): GrantAttachmentInput {
+  const data = object(input)
+  const body = { target: data.target }
+  return {
+    ...parseRequestParams(data),
+    attachment_id: id(data.attachment_id, 'attachment_id'),
+    ...validated('attachment media grant', apiValidators.CreateRequestAttachmentMediaGrantRequest, body),
+  }
+}
+
+function validated<T>(label: string, validator: ApiValidator<T>, value: unknown): T {
+  if (!validator(value)) throw new Error(`Invalid ${label} input.`)
+  return value
 }
 
 export function parseRateRequestInput(input: unknown) {

@@ -240,6 +240,7 @@ pub fn edit_request_identity(
     target: RequestTarget<'_>,
     title: Option<String>,
     description_markdown: Option<String>,
+    expected_description_markdown: Option<String>,
 ) -> anyhow::Result<RequestMutationResponse> {
     execute_request(
         client
@@ -248,6 +249,7 @@ pub fn edit_request_identity(
             .json(&EditRequestIdentityRequest {
                 title,
                 description_markdown,
+                expected_description_markdown,
             }),
         target,
         "edit request identity",
@@ -471,7 +473,7 @@ fn execute_repo_request<R: DeserializeOwned>(
     decode_json_response(response, &context)
 }
 
-fn execute_request<R: DeserializeOwned>(
+pub(super) fn execute_request<R: DeserializeOwned>(
     request: RequestBuilder,
     target: RequestTarget<'_>,
     action: &str,

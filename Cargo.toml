@@ -2,6 +2,9 @@
 members = [
     "api",
     "cache-service",
+    "media-worker",
+    "media-service",
+    "crates/scope-media-storage",
     "repo-router",
     "crates/scope-api-contract",
     "crates/scope-cache-contract",
@@ -71,3 +74,5 @@ scope_git_storage = { package = "scope-git-storage", path = "crates/scope-git-st
 scope_object_store = { package = "scope-object-store", path = "crates/scope-object-store" }
 scope_postgres = { package = "scope-postgres", path = "crates/scope-postgres" }
 scope_run_config = { package = "scope-run-config", path = "crates/scope-run-config" }
+
+scope_media_storage = { package = "scope-media-storage", path = "crates/scope-media-storage" }

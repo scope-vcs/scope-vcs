@@ -74,6 +74,7 @@ mod repo_events;
 mod repo_lifecycle;
 mod repo_metadata;
 mod repo_visibility;
+mod request_attachments;
 mod request_discussions;
 mod requests;
 mod run_inspection;

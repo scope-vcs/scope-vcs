@@ -8,20 +8,35 @@ on:
         description: Exact repository commit SHA to deploy
         type: string
         required: true
+      run_media_capacity:
+        description: Run the large-video and concurrent-photo staging capacity proof
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: scope-railway-staging
   cancel-in-progress: false
 
 jobs:
+  media-worker-image:
+    name: Build candidate media worker
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/scope-media-worker-image.yml
+    with:
+      publish: true
+      source_sha: ${{ inputs.source_sha }}
+
   prove:
     name: Deploy and smoke staging
-    if: github.ref == 'refs/heads/main'
+    needs: media-worker-image
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 45
+    timeout-minutes: 90
     environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -108,6 +123,7 @@ jobs:
         run: |
           cargo build --release --locked -p api --bin scope-maintenance
           cargo build --release --locked -p api --bin scope-smoke-seed --features smoke-seed
+          cargo build --release --locked -p scope-media-service
           cargo build --release --locked --manifest-path cli/Cargo.toml --bin scope
 
       - name: Stage exact upload roots
@@ -129,6 +145,18 @@ jobs:
             printf '%s\n' "$SOURCE_SHA" > "$root/$service/.scope-deployment-sha"
             printf '%s:%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$root/$service/.scope-deployment-attempt"
           done
+          media_root=.railway-staging-upload/media-service
+          mkdir -p "$media_root/bin" "$media_root/media-service"
+          install -m 0755 candidate/target/release/scope-media-service "$media_root/bin/scope-media-service"
+          install -m 0755 candidate/deploy/railway/start-prebuilt.sh "$media_root/start.sh"
+          cp candidate/deploy/railway/prebuilt-media.railpack.json "$media_root/railpack.json"
+          cp candidate/media-service/railway.json "$media_root/railway.json"
+          printf '%s\n' "$SOURCE_SHA" | tee \
+            "$media_root/.scope-deployment-sha" \
+            "$media_root/media-service/.scope-deployment-sha" >/dev/null
+          printf '%s:%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" | tee \
+            "$media_root/.scope-deployment-attempt" \
+            "$media_root/media-service/.scope-deployment-attempt" >/dev/null
           region="$(jq -er '.railway.regionId' .github/deployment-services.json)"
           api_replicas="$(jq -er '.railway.staging.apiReplicas' .github/deployment-services.json)"
           router_replicas="$(jq -er '.railway.staging.routerReplicas' .github/deployment-services.json)"
@@ -152,6 +180,7 @@ jobs:
           test -s .railway-staging-upload/web-root/web/.scope-deployment-sha
           test -s .railway-staging-upload/web-root/web/package.json
           test -s .railway-staging-upload/web-root/railway.json
+          test -x .railway-staging-upload/media-service/bin/scope-media-service
 
       - name: Migrate, seed, and deploy staging services
         shell: bash
@@ -159,6 +188,7 @@ jobs:
           GITHUB_SHA: ${{ inputs.source_sha }}
           SCOPE_MAINTENANCE_BINARY: ./candidate/target/release/scope-maintenance
           SCOPE_SMOKE_SEED_BINARY: ./candidate/target/release/scope-smoke-seed
+          SCOPE_MEDIA_WORKER_IMAGE: ${{ needs.media-worker-image.outputs.image_ref }}
         run: |
           smoke_dir="$(mktemp -d "${RUNNER_TEMP}/scope-staging-git-smoke.XXXXXX")"
           chmod 0700 "$smoke_dir"
@@ -168,13 +198,15 @@ jobs:
             .railway-staging-upload/cache-service \
             .railway-staging-upload/worker \
             .railway-staging-upload/api \
-            .railway-staging-upload/repo-router
+            .railway-staging-upload/repo-router \
+            .railway-staging-upload/media-service
 
       - name: Deploy staging web and record evidence
         shell: bash
         env:
           GITHUB_SHA: ${{ inputs.source_sha }}
           SCOPE_STAGING_EVIDENCE_PATH: staging-deployments.json
+          SCOPE_MEDIA_WORKER_IMAGE: ${{ needs.media-worker-image.outputs.image_ref }}
         run: |
           bash .github/scripts/deploy-staging-railway.sh finish \
             .railway-staging-upload/web-root
@@ -202,14 +234,63 @@ jobs:
         shell: bash
         env:
           GITHUB_SHA: ${{ inputs.source_sha }}
+          RUN_MEDIA_CAPACITY: ${{ inputs.run_media_capacity }}
           SCOPE_CLI_BINARY: ${{ github.workspace }}/candidate/cli/target/release/scope
+          SCOPE_MEDIA_SMOKE_SCRIPT: ${{ github.workspace }}/candidate/dev/media-smoke.mjs
+          SCOPE_MEDIA_SMOKE_RECEIPT: ${{ github.workspace }}/staging-media-smoke.json
+          SCOPE_MEDIA_SMOKE_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           api_domain="$(jq -er '.railway.staging.apiDomain' .github/deployment-services.json)"
           router_domain="$(jq -er '.railway.staging.routerDomain' .github/deployment-services.json)"
+          media_domain="$(jq -er '.mediaResources.staging.gatewayDomain' .github/deployment-services.json)"
+          fixture_dir="$(mktemp -d "${RUNNER_TEMP}/scope-media-fixtures.XXXXXX")"
+          trap 'rm -rf -- "$fixture_dir"' EXIT
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes ffmpeg
+          fi
+          ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=96x64 -frames:v 1 "$fixture_dir/fixture.png"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=96x64:rate=12 -t 1 \
+            -pix_fmt yuv420p "$fixture_dir/fixture.mp4"
+          if [[ "$RUN_MEDIA_CAPACITY" == "true" ]]; then
+            ffmpeg -hide_banner -loglevel error -y \
+              -f lavfi -i testsrc2=size=1920x1080:rate=30 \
+              -f lavfi -i sine=frequency=1000:sample_rate=48000 \
+              -t 240 -c:v libx264 -threads 2 -preset ultrafast \
+              -b:v 17M -minrate 17M -maxrate 17M -bufsize 34M \
+              -x264-params 'nal-hrd=cbr:force-cfr=1' \
+              -c:a aac -b:a 128k -movflags +faststart \
+              "$fixture_dir/capacity-recording.mp4"
+            export SCOPE_MEDIA_CAPACITY_SCRIPT="$GITHUB_WORKSPACE/candidate/dev/media-capacity.mjs"
+            export SCOPE_MEDIA_CAPACITY_VIDEO="$fixture_dir/capacity-recording.mp4"
+            export SCOPE_MEDIA_CAPACITY_RECEIPT="$GITHUB_WORKSPACE/staging-media-capacity/receipt.json"
+          fi
           SCOPE_API_URL="https://$api_domain" \
             SCOPE_GIT_ROUTER_URL="https://$router_domain" \
+            SCOPE_MEDIA_GATEWAY_URL="https://$media_domain" \
+            SCOPE_MEDIA_SMOKE_PNG="$fixture_dir/fixture.png" \
+            SCOPE_MEDIA_SMOKE_MP4="$fixture_dir/fixture.mp4" \
             SCOPE_EXCHANGE_TOKEN_PATH="$SCOPE_GIT_SMOKE_DIR/exchange-token" \
             bash .github/scripts/staging-git-smoke.sh
+
+      - name: Bind media smoke receipt to staging evidence
+        shell: bash
+        env:
+          RUN_MEDIA_CAPACITY: ${{ inputs.run_media_capacity }}
+        run: |
+          jq -e '.passed == true and .request_deleted == true' staging-media-smoke.json >/dev/null
+          jq --slurpfile mediaSmoke staging-media-smoke.json \
+            '. + {mediaSmoke: $mediaSmoke[0]}' staging-deployments.json > staging-deployments.json.tmp
+          mv staging-deployments.json.tmp staging-deployments.json
+          if [[ "$RUN_MEDIA_CAPACITY" == "true" ]]; then
+            jq -e --arg sha '${{ inputs.source_sha }}' \
+              '.passed == true and .source_sha == $sha and .loaded.failed_requests == 0' \
+              staging-media-capacity/receipt.json >/dev/null
+            jq --slurpfile mediaCapacity staging-media-capacity/receipt.json \
+              '. + {mediaCapacity: $mediaCapacity[0]}' \
+              staging-deployments.json > staging-deployments.json.tmp
+            mv staging-deployments.json.tmp staging-deployments.json
+          fi
 
       - name: Remove staging Git smoke credentials
         if: always()
@@ -224,14 +305,17 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: staging-deployments-${{ inputs.source_sha }}
-          path: staging-deployments.json
+          path: |
+            staging-deployments.json
+            staging-media-smoke.json
+            staging-media-capacity/*.json
           if-no-files-found: error
           retention-days: 14
 
   cleanup:
     name: Revoke staging proof access
     needs: prove
-    if: always() && github.ref == 'refs/heads/main'
+    if: always()
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     environment: staging

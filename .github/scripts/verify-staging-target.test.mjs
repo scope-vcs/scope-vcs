@@ -24,8 +24,14 @@ function fixture() {
     services: {
       api: { id: 'api', name: 'scope-api' },
       cache: { id: 'cache', name: 'scope-cache-service' },
+      media: { id: 'media', name: 'scope-media' },
+      mediaWorker: { id: 'media-worker', name: 'scope-media-worker' },
       web: { id: 'web', name: 'scope-web' },
       worker: { id: 'worker', name: 'scope-worker' },
+    },
+    mediaResources: {
+      bucket: { id: 'media-bucket' },
+      staging: { gatewayDomain: 'media-staging.example.test' },
     },
   }
   const services = [
@@ -34,6 +40,8 @@ function fixture() {
     { id: 'worker', name: 'scope-worker', status: 'SUCCESS', replicas: healthyReplicas(1) },
     { id: 'api', name: 'scope-api', status: 'SUCCESS', replicas: healthyReplicas(3) },
     { id: 'router', name: 'scope-repo-router', status: 'SUCCESS', replicas: healthyReplicas(1) },
+    { id: 'media', name: 'scope-media', status: 'SUCCESS', replicas: healthyReplicas(1) },
+    { id: 'media-worker', name: 'scope-media-worker', status: 'SUCCESS', replicas: healthyReplicas(1) },
     { id: 'web', name: 'scope-web' },
   ]
   const status = {
@@ -92,6 +100,8 @@ test('accepts only the reviewed healthy staging topology', () => {
     (input) => { input.services.find(({ id }) => id === 'router').replicas.configured = 2 },
     (input) => { input.services.find(({ id }) => id === 'worker').status = 'CRASHED' },
     (input) => { input.services.find(({ id }) => id === 'cache').replicas.crashed = 1 },
+    (input) => { input.services.find(({ id }) => id === 'media').replicas.running = 0 },
+    (input) => { input.services.find(({ id }) => id === 'media-worker').status = 'CRASHED' },
   ]) {
     const input = fixture()
     mutate(input)

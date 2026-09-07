@@ -77,6 +77,24 @@ pub const REPO_REQUEST_DISCUSSION_REOPEN_AND_REPLY: &str =
 pub const REPO_REQUEST_DISCUSSION_READ: &str =
     "/v1/repos/{owner}/{repo}/requests/{request_id}/threads/{discussion_id}/read";
 pub const REPO_REQUEST_ACTIVITY: &str = "/v1/repos/{owner}/{repo}/requests/{request_id}/activity";
+pub const REPO_REQUEST_ATTACHMENTS: &str =
+    "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments";
+pub const REPO_REQUEST_ATTACHMENT_LIMITS: &str =
+    "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/limits";
+pub const REPO_REQUEST_ATTACHMENT_PREPARE: &str =
+    "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/prepare";
+pub const REPO_REQUEST_ATTACHMENT: &str =
+    "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}";
+pub const REPO_REQUEST_ATTACHMENT_FINISH: &str =
+    "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/finish";
+pub const REPO_REQUEST_ATTACHMENT_RETRY: &str =
+    "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/retry";
+pub const REPO_REQUEST_ATTACHMENT_MEDIA_GRANT: &str =
+    "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/media-grant";
+pub const MEDIA_UPLOAD_PART: &str = "/v1/uploads/{upload_id}/parts/{part_number}";
+pub const MEDIA_ATTACHMENT_ORIGINAL: &str = "/v1/attachments/{attachment_id}/original";
+pub const MEDIA_ATTACHMENT_DERIVATIVE: &str =
+    "/v1/attachments/{attachment_id}/derivatives/{derivative_id}";
 pub const REPO_EVENTS: &str = "/v1/repos/{owner}/{repo}/events";
 pub const REPO_HISTORY: &str = "/v1/repos/{owner}/{repo}/history";
 pub const REPO_HISTORY_ENTRY: &str = "/v1/repos/{owner}/{repo}/history/{entry_id}";
@@ -282,6 +300,97 @@ pub fn repo_request_action(owner: &str, repo: &str, request_id: &str, action: &s
     )
 }
 
+pub fn repo_request_attachments(owner: &str, repo: &str, request_id: &str) -> String {
+    format!("{}/attachments", repo_request(owner, repo, request_id))
+}
+
+pub fn repo_request_attachment_limits(owner: &str, repo: &str, request_id: &str) -> String {
+    format!(
+        "{}/limits",
+        repo_request_attachments(owner, repo, request_id)
+    )
+}
+
+pub fn repo_request_attachment_prepare(owner: &str, repo: &str, request_id: &str) -> String {
+    format!(
+        "{}/prepare",
+        repo_request_attachments(owner, repo, request_id)
+    )
+}
+
+pub fn repo_request_attachment(
+    owner: &str,
+    repo: &str,
+    request_id: &str,
+    attachment_id: &str,
+) -> String {
+    format!(
+        "{}/{}",
+        repo_request_attachments(owner, repo, request_id),
+        path_segment(attachment_id)
+    )
+}
+
+fn repo_request_attachment_action(
+    owner: &str,
+    repo: &str,
+    request_id: &str,
+    attachment_id: &str,
+    action: &str,
+) -> String {
+    format!(
+        "{}/{}",
+        repo_request_attachment(owner, repo, request_id, attachment_id),
+        action
+    )
+}
+
+pub fn repo_request_attachment_finish(
+    owner: &str,
+    repo: &str,
+    request_id: &str,
+    attachment_id: &str,
+) -> String {
+    repo_request_attachment_action(owner, repo, request_id, attachment_id, "finish")
+}
+
+pub fn repo_request_attachment_retry(
+    owner: &str,
+    repo: &str,
+    request_id: &str,
+    attachment_id: &str,
+) -> String {
+    repo_request_attachment_action(owner, repo, request_id, attachment_id, "retry")
+}
+
+pub fn repo_request_attachment_media_grant(
+    owner: &str,
+    repo: &str,
+    request_id: &str,
+    attachment_id: &str,
+) -> String {
+    repo_request_attachment_action(owner, repo, request_id, attachment_id, "media-grant")
+}
+
+pub fn media_upload_part(upload_id: &str, part_number: u32) -> String {
+    format!(
+        "/v1/uploads/{}/parts/{part_number}",
+        path_segment(upload_id)
+    )
+}
+
+pub fn media_attachment_original(attachment_id: &str) -> String {
+    format!("/v1/attachments/{}/original", path_segment(attachment_id))
+}
+
+pub fn media_attachment_derivative(attachment_id: &str, derivative_id: &str) -> String {
+    format!(
+        "/v1/attachments/{}/derivatives/{}",
+        path_segment(attachment_id),
+        path_segment(derivative_id)
+    )
+}
+
 pub fn repo_request_discussion(
     owner: &str,
     repo: &str,
@@ -405,6 +514,23 @@ mod tests {
                     "commit?#1",
                 ),
                 "/v1/repos/owner/repo/requests/req%2Fone/changes/rev%2Fold/commits/commit%3F%231/file-diff",
+            ),
+            (
+                repo_request_attachment_media_grant(
+                    "an owner",
+                    "r/name",
+                    "request?#1",
+                    "attachment/#1",
+                ),
+                "/v1/repos/an%20owner/r%2Fname/requests/request%3F%231/attachments/attachment%2F%231/media-grant",
+            ),
+            (
+                media_upload_part("upload/with space", 4),
+                "/v1/uploads/upload%2Fwith%20space/parts/4",
+            ),
+            (
+                media_attachment_derivative("attachment/#1", "preview #1"),
+                "/v1/attachments/attachment%2F%231/derivatives/preview%20%231",
             ),
             (
                 cli_device_login_poll("code/with space"),

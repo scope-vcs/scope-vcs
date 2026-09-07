@@ -82,6 +82,44 @@ test ! -e "$public_checkout/internal/notes.md"
 
 SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" login --exchange-file "$token_path"
 rm -f -- "$token_path"
+if [[ -n "${SCOPE_MEDIA_SMOKE_SCRIPT:-}" ]]; then
+  : "${SCOPE_MEDIA_GATEWAY_URL:?SCOPE_MEDIA_GATEWAY_URL is required for media smoke}"
+  : "${SCOPE_MEDIA_SMOKE_PNG:?SCOPE_MEDIA_SMOKE_PNG is required for media smoke}"
+  : "${SCOPE_MEDIA_SMOKE_MP4:?SCOPE_MEDIA_SMOKE_MP4 is required for media smoke}"
+  : "${SCOPE_MEDIA_SMOKE_RECEIPT:?SCOPE_MEDIA_SMOKE_RECEIPT is required for media smoke}"
+  : "${SCOPE_MEDIA_SMOKE_SOURCE_SHA:?SCOPE_MEDIA_SMOKE_SOURCE_SHA is required for media smoke}"
+  [[ -f "$SCOPE_MEDIA_SMOKE_SCRIPT" && -f "$SCOPE_MEDIA_SMOKE_PNG" && -f "$SCOPE_MEDIA_SMOKE_MP4" ]]
+  mapfile -t session_files < <(find "$XDG_CONFIG_HOME/scope/sessions" -type f -print)
+  if [[ "${#session_files[@]}" -ne 1 || "$(stat -c '%a' "${session_files[0]}")" != "600" ]]; then
+    echo "The staging media smoke requires exactly one private CLI session." >&2
+    exit 1
+  fi
+  SCOPE_MEDIA_SMOKE_TOKEN="$(tr -d '\r\n' < "${session_files[0]}")" \
+    node "$SCOPE_MEDIA_SMOKE_SCRIPT" \
+      --api "$SCOPE_API_URL" \
+      --media-origin "$SCOPE_MEDIA_GATEWAY_URL" \
+      --repo dev/update-demo \
+      --source-sha "$SCOPE_MEDIA_SMOKE_SOURCE_SHA" \
+      --file "$SCOPE_MEDIA_SMOKE_PNG" \
+      --file "$SCOPE_MEDIA_SMOKE_MP4" \
+      --require-video \
+      --receipt "$SCOPE_MEDIA_SMOKE_RECEIPT"
+  if [[ -n "${SCOPE_MEDIA_CAPACITY_SCRIPT:-}" ]]; then
+    : "${SCOPE_MEDIA_CAPACITY_VIDEO:?SCOPE_MEDIA_CAPACITY_VIDEO is required for capacity proof}"
+    : "${SCOPE_MEDIA_CAPACITY_RECEIPT:?SCOPE_MEDIA_CAPACITY_RECEIPT is required for capacity proof}"
+    [[ -f "$SCOPE_MEDIA_CAPACITY_SCRIPT" && -f "$SCOPE_MEDIA_CAPACITY_VIDEO" ]]
+    SCOPE_MEDIA_SMOKE_TOKEN="$(tr -d '\r\n' < "${session_files[0]}")" \
+      node "$SCOPE_MEDIA_CAPACITY_SCRIPT" \
+        --api "$SCOPE_API_URL" \
+        --media-origin "$SCOPE_MEDIA_GATEWAY_URL" \
+        --repo dev/update-demo \
+        --source-sha "$SCOPE_MEDIA_SMOKE_SOURCE_SHA" \
+        --large-video "$SCOPE_MEDIA_CAPACITY_VIDEO" \
+        --photo "$SCOPE_MEDIA_SMOKE_PNG" \
+        --small-uploads 4 \
+        --output "$SCOPE_MEDIA_CAPACITY_RECEIPT"
+  fi
+fi
 SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" clone "$repo" "$permissioned_checkout"
 test "$(git -C "$permissioned_checkout" remote get-url origin)" = "$permissioned_url"
 test -f "$permissioned_checkout/internal/notes.md"

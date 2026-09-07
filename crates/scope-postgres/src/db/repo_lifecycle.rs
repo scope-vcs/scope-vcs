@@ -11,6 +11,7 @@ use super::{
     repo_effects::save_repo_effects,
     repository_from_model,
     repository_rows::insert_repository,
+    request_media::tombstone_repository_attachments,
     request_revision_rows::revisions_for_request_ids,
     request_rows::requests_by_repo_id,
 };
@@ -164,6 +165,7 @@ impl RepositoryStore {
         }
         let mutation = delete_repo_command(&repo, &user_id, &owner, &name)?;
         let requests = lock_requests_for_repo_postgres(&tx, &repo_id).await?;
+        tombstone_repository_attachments(&tx, &repo_id, now_unix).await?;
         let request_ids = requests
             .iter()
             .map(|request| request.id.clone())

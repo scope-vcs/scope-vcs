@@ -469,6 +469,7 @@ fn seed_owner_request(
                 event_id: format!("event_{id}_identity_edited"),
                 title: None,
                 description_markdown: Some(description_markdown.to_string()),
+                expected_description_markdown: None,
                 now_unix: now_unix + 2,
             },
         )?;

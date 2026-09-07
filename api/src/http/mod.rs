@@ -11,6 +11,7 @@ pub(crate) mod repo_collaboration;
 pub(crate) mod repo_events;
 pub(crate) mod repo_metadata;
 pub(crate) mod repos;
+pub(crate) mod request_attachments;
 pub(crate) mod request_discussions;
 pub(crate) mod request_queue;
 pub(crate) mod request_ratings;

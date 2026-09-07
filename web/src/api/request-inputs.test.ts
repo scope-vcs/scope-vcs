@@ -68,8 +68,50 @@ test('discussion and reply payloads validate identifiers, anchors, and body byte
   const reply = { ...discussion, body_markdown: 'reply', client_reply_id: 'client', reply_to_reply_id: null }
   assert.deepEqual(parsers.parseCreateReplyInput(reply), reply)
   assert.throws(() => parsers.parseCreateReplyInput({ ...reply, reply_to_reply_id: 1 }))
-  assert.equal(parsers.parseUpdateDescriptionInput({ ...request, description_markdown: '' }).description_markdown, '')
-  assert.throws(() => parsers.parseUpdateDescriptionInput({ ...request, description_markdown: 'x'.repeat(256 * 1024 + 1) }))
+  assert.equal(parsers.parseUpdateDescriptionInput({ ...request, description_markdown: '', expected_description_markdown: 'old' }).description_markdown, '')
+  assert.throws(() => parsers.parseUpdateDescriptionInput({ ...request, description_markdown: 'x'.repeat(256 * 1024 + 1), expected_description_markdown: 'old' }))
+})
+
+test('attachment inputs enforce generated transfer and media target shapes', () => {
+  const prepare = {
+    ...request,
+    declared_media_type: 'image/png',
+    filename: 'screen.png',
+    operation_id: 'operation-one',
+    sha256: 'a'.repeat(64),
+    size_bytes: 42,
+    target: { discussion_id: null, kind: 'Discussion' as const },
+  }
+  assert.deepEqual(parsers.parsePrepareAttachmentInput(prepare), prepare)
+  for (const patch of [
+    { size_bytes: -1 },
+    { sha256: 42 },
+    { target: { discussion_id: null, kind: 'Unknown' } },
+  ]) {
+    assert.throws(() => parsers.parsePrepareAttachmentInput({ ...prepare, ...patch }))
+  }
+
+  const finish = {
+    ...request,
+    attachment_id: 'attachment-one',
+    parts: [{ part_number: 1, sha256: 'b'.repeat(64), size_bytes: 42 }],
+    upload_id: 'upload-one',
+  }
+  assert.deepEqual(parsers.parseFinishAttachmentInput(finish), finish)
+  assert.throws(() => parsers.parseFinishAttachmentInput({ ...finish, parts: [{ ...finish.parts[0], part_number: '1' }] }))
+  assert.deepEqual(
+    parsers.parseRetryAttachmentInput({ ...request, attachment_id: 'attachment-one', operation_id: 'retry-one' }),
+    { ...request, attachment_id: 'attachment-one', operation_id: 'retry-one' },
+  )
+  assert.deepEqual(
+    parsers.parseGrantAttachmentInput({ ...request, attachment_id: 'attachment-one', target: { kind: 'original' } }),
+    { ...request, attachment_id: 'attachment-one', target: { kind: 'original' } },
+  )
+  assert.throws(() => parsers.parseGrantAttachmentInput({
+    ...request,
+    attachment_id: 'attachment-one',
+    target: { kind: 'derivative' },
+  }))
 })
 
 test('request and file server functions use named unknown-input parsers', () => {

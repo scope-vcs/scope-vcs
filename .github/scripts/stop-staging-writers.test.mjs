@@ -25,6 +25,8 @@ async function fixture() {
     services: {
       api: { id: 'api' },
       cache: { id: 'cache' },
+      media: { id: 'media' },
+      mediaWorker: { id: 'media-worker' },
       worker: { id: 'worker' },
     },
   }))
@@ -35,11 +37,15 @@ if [[ "$*" == *"deployment list"* ]]; then
     printf '%s\\n' '[{"id":"api-deployment","status":"SUCCESS"}]'
   elif [[ "$*" == *"--service cache"* ]]; then
     printf '%s\\n' '[{"id":"cache-deployment","status":"SUCCESS"}]'
+  elif [[ "$*" == *"--service media-worker"* ]]; then
+    printf '%s\\n' '[{"id":"media-worker-deployment","status":"SUCCESS"}]'
+  elif [[ "$*" == *"--service media"* ]]; then
+    printf '%s\\n' '[{"id":"media-deployment","status":"SUCCESS"}]'
   else
     printf '%s\\n' '[{"id":"worker-deployment","status":"SUCCESS"}]'
   fi
 elif [[ "$*" == *"service list"* ]]; then
-  printf '%s\\n' '[{"id":"api","replicas":{"running":0,"crashed":0}},{"id":"cache","replicas":{"running":0,"crashed":0}},{"id":"worker","replicas":{"running":0,"crashed":0}}]'
+  printf '%s\\n' '[{"id":"api","replicas":{"running":0,"crashed":0}},{"id":"cache","replicas":{"running":0,"crashed":0}},{"id":"worker","replicas":{"running":0,"crashed":0}},{"id":"media","replicas":{"running":0,"crashed":0}},{"id":"media-worker","replicas":{"running":0,"crashed":0}}]'
 else
   exit 2
 fi
@@ -81,6 +87,8 @@ test('stops only the reviewed staging metadata-writer deployments', async () => 
     'api-deployment',
     'worker-deployment',
     'cache-deployment',
+    'media-deployment',
+    'media-worker-deployment',
   ])
 })
 

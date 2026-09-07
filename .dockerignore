@@ -1,6 +1,11 @@
 .git
 .entire
 .tmp
+.scope/dev
+.env
+.env.*
+**/.env
+**/.env.*
 target
 cli/target
 web/node_modules

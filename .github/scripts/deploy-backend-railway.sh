@@ -1,25 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-api_upload_root="${1:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root>}"
-worker_upload_root="${2:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root>}"
-cache_upload_root="${3:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root>}"
-router_upload_root="${4:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root>}"
+api_upload_root="${1:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
+worker_upload_root="${2:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
+cache_upload_root="${3:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
+router_upload_root="${4:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
+media_upload_root="${5:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
 maintenance_binary="${SCOPE_MAINTENANCE_BINARY:-./target/release/scope-maintenance}"
 environment="${SCOPE_RAILWAY_ENVIRONMENT_ID:?SCOPE_RAILWAY_ENVIRONMENT_ID is required}"
 api_service="${SCOPE_RAILWAY_API_SERVICE_ID:?SCOPE_RAILWAY_API_SERVICE_ID is required}"
 worker_service="${SCOPE_RAILWAY_WORKER_SERVICE_ID:?SCOPE_RAILWAY_WORKER_SERVICE_ID is required}"
 cache_service="${SCOPE_RAILWAY_CACHE_SERVICE_ID:?SCOPE_RAILWAY_CACHE_SERVICE_ID is required}"
 router_service="${SCOPE_RAILWAY_ROUTER_SERVICE_ID:?SCOPE_RAILWAY_ROUTER_SERVICE_ID is required}"
+media_service="${SCOPE_RAILWAY_MEDIA_SERVICE_ID:?SCOPE_RAILWAY_MEDIA_SERVICE_ID is required}"
+media_worker_service="${SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID:?SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID is required}"
 router_group="${SCOPE_RAILWAY_ROUTER_GROUP_ID:?SCOPE_RAILWAY_ROUTER_GROUP_ID is required}"
 database_service="${SCOPE_RAILWAY_DATABASE_SERVICE_ID:?SCOPE_RAILWAY_DATABASE_SERVICE_ID is required}"
 api_region="${SCOPE_RAILWAY_API_REGION_ID:?SCOPE_RAILWAY_API_REGION_ID is required}"
 worker_region="${SCOPE_RAILWAY_WORKER_REGION_ID:?SCOPE_RAILWAY_WORKER_REGION_ID is required}"
+media_region="${SCOPE_RAILWAY_MEDIA_REGION_ID:?SCOPE_RAILWAY_MEDIA_REGION_ID is required}"
+media_worker_image="${SCOPE_MEDIA_WORKER_IMAGE:-}"
 recover_closed_cutover="${SCOPE_RECOVER_CLOSED_CUTOVER:-0}"
 deploy_cache_requested="${SCOPE_DEPLOY_CACHE:-1}"
 deploy_worker_requested="${SCOPE_DEPLOY_WORKER:-1}"
 deploy_router_requested="${SCOPE_DEPLOY_ROUTER:-1}"
 deploy_api_requested="${SCOPE_DEPLOY_API:-1}"
+deploy_media_requested="${SCOPE_DEPLOY_MEDIA:-1}"
+deploy_media_worker_requested="${SCOPE_DEPLOY_MEDIA_WORKER:-1}"
 successful_deployments="${SCOPE_SUCCESSFUL_DEPLOYMENTS:-}"
 [[ -n "$successful_deployments" ]] || successful_deployments='{}'
 deployment_evidence_path="${SCOPE_DEPLOYMENT_EVIDENCE_PATH:-}"
@@ -30,7 +37,7 @@ if [[ -n "$deployment_evidence_path" ]]; then
 fi
 
 for deployment_flag in deploy_cache_requested deploy_worker_requested deploy_router_requested \
-  deploy_api_requested; do
+  deploy_api_requested deploy_media_requested deploy_media_worker_requested; do
   if [[ "${!deployment_flag}" != "0" && "${!deployment_flag}" != "1" ]]; then
     echo "${deployment_flag} must be 0 or 1." >&2
     exit 2
@@ -38,7 +45,13 @@ for deployment_flag in deploy_cache_requested deploy_worker_requested deploy_rou
 done
 if [[ "$deploy_cache_requested" == "0" && "$deploy_worker_requested" == "0" \
   && "$deploy_router_requested" == "0" && "$deploy_api_requested" == "0" ]]; then
+  if [[ "$deploy_media_requested" == "0" && "$deploy_media_worker_requested" == "0" ]]; then
   echo "At least one backend service must be selected for deployment." >&2
+  exit 2
+  fi
+fi
+if [[ ! "$media_worker_image" =~ ^ghcr\.io/scope-vcs/scope-media-worker@sha256:[0-9a-f]{64}$ ]]; then
+  echo "SCOPE_MEDIA_WORKER_IMAGE must pin the reviewed GHCR image by sha256 digest." >&2
   exit 2
 fi
 
@@ -61,6 +74,10 @@ cutover_committed=0
 api_closed=0
 worker_closed=0
 cache_closed=0
+media_closed=0
+media_worker_closed=0
+media_had_history=1
+media_worker_had_history=1
 
 validate_production_target() {
   local status_json services_json environment_config_json
@@ -78,9 +95,12 @@ validate_production_target() {
     EXPECTED_WORKER_SERVICE_ID="$worker_service" \
     EXPECTED_CACHE_SERVICE_ID="$cache_service" \
     EXPECTED_ROUTER_SERVICE_ID="$router_service" \
+    EXPECTED_MEDIA_SERVICE_ID="$media_service" \
+    EXPECTED_MEDIA_WORKER_SERVICE_ID="$media_worker_service" \
     EXPECTED_DATABASE_SERVICE_ID="$database_service" \
     EXPECTED_API_REGION="$api_region" \
     EXPECTED_WORKER_REGION="$worker_region" \
+    EXPECTED_MEDIA_REGION="$media_region" \
     node -e '
 const status = JSON.parse(process.env.RAILWAY_STATUS_JSON || "{}");
 const serviceStates = JSON.parse(process.env.RAILWAY_SERVICES_JSON || "[]");
@@ -94,6 +114,8 @@ const expectedServices = new Map([
   [process.env.EXPECTED_WORKER_SERVICE_ID, "scope-worker"],
   [process.env.EXPECTED_CACHE_SERVICE_ID, "scope-cache-service"],
   [process.env.EXPECTED_ROUTER_SERVICE_ID, "scope-repo-router"],
+  [process.env.EXPECTED_MEDIA_SERVICE_ID, "scope-media"],
+  [process.env.EXPECTED_MEDIA_WORKER_SERVICE_ID, "scope-media-worker"],
   [process.env.EXPECTED_DATABASE_SERVICE_ID, "scope-postgres"],
 ]);
 const environments = status.environments?.edges?.map(({node}) => node) || [];
@@ -110,6 +132,8 @@ for (const [id, name] of expectedServices) {
 for (const [id, name, expectedRegion] of [
   [process.env.EXPECTED_API_SERVICE_ID, "scope-api", process.env.EXPECTED_API_REGION],
   [process.env.EXPECTED_WORKER_SERVICE_ID, "scope-worker", process.env.EXPECTED_WORKER_REGION],
+  [process.env.EXPECTED_MEDIA_SERVICE_ID, "scope-media", process.env.EXPECTED_MEDIA_REGION],
+  [process.env.EXPECTED_MEDIA_WORKER_SERVICE_ID, "scope-media-worker", process.env.EXPECTED_MEDIA_REGION],
 ]) {
   const service = serviceStates.find((candidate) => candidate.id === id);
   if (!service) fail(`Railway service ${name} has no production state`);
@@ -658,6 +682,22 @@ quiesce_writers() {
     deployment_action Stop "$cache_service"
     cache_closed=1
   fi
+  if [[ "$media_service" != "$api_service" && "$media_closed" == "0" ]]; then
+    if [[ "$cutover_committed" == "0" ]] && ! carried_service_is_healthy media "$media_service"; then
+      echo "Refusing maintenance because $media_service is not healthy before shutdown." >&2
+      return 1
+    fi
+    deployment_action Stop "$media_service"
+    media_closed=1
+  fi
+  if [[ "$media_worker_closed" == "0" ]]; then
+    if [[ "$cutover_committed" == "0" ]] && ! carried_service_is_healthy mediaWorker "$media_worker_service"; then
+      echo "Refusing maintenance because $media_worker_service is not healthy before shutdown." >&2
+      return 1
+    fi
+    deployment_action Stop "$media_worker_service"
+    media_worker_closed=1
+  fi
   # Railway's replica counts can remain stale after a successful stop mutation. The database
   # fence is the authoritative proof that every metadata writer has actually quiesced.
   wait_for_writer_fence
@@ -676,6 +716,18 @@ restore_old_release() {
   if [[ "$api_closed" == "1" ]]; then
     restart_service "$api_service" "$(require_successful_deployment_id api)"
     api_closed=0
+  fi
+  if [[ "$media_closed" == "1" ]]; then
+    if [[ "$media_had_history" == "1" ]]; then
+      restart_service "$media_service" "$(require_successful_deployment_id media)"
+    fi
+    media_closed=0
+  fi
+  if [[ "$media_worker_closed" == "1" ]]; then
+    if [[ "$media_worker_had_history" == "1" ]]; then
+      restart_service "$media_worker_service" "$(require_successful_deployment_id mediaWorker)"
+    fi
+    media_worker_closed=0
   fi
 }
 
@@ -724,6 +776,23 @@ activate_release() {
   wait_for_service_health "$service_name" "$expected_deployment_id"
 }
 
+activate_image_release() {
+  local component="$1"
+  local service_name="$2"
+  local image="$3"
+  local expected_deployment_id
+  RAILWAY_API_TOKEN="$railway_api_token" \
+    SCOPE_DEPLOYMENT_COMPONENT="$component" \
+    SCOPE_DEPLOYMENT_EVIDENCE_PATH="$pending_evidence_path" \
+    node .github/scripts/deploy-railway-image.mjs "$service_name" "$image"
+  expected_deployment_id="$(pending_deployment_id "$component")"
+  [[ -n "$expected_deployment_id" ]] || {
+    echo "Pinned image deployment produced no Railway evidence for $component." >&2
+    return 1
+  }
+  wait_for_service_health "$service_name" "$expected_deployment_id"
+}
+
 promote_pending_evidence() {
   [[ -n "$deployment_evidence_path" && -s "$pending_evidence_path" ]] || return 0
   FINAL_EVIDENCE_PATH="$deployment_evidence_path" \
@@ -748,6 +817,14 @@ deploy_selected_releases() {
     activate_release worker "$worker_service" "$worker_upload_root"
     promote_pending_evidence
   fi
+  if [[ "$deploy_media_requested" == "1" ]]; then
+    activate_release media "$media_service" "$media_upload_root"
+    promote_pending_evidence
+  fi
+  if [[ "$deploy_media_worker_requested" == "1" ]]; then
+    activate_image_release mediaWorker "$media_worker_service" "$media_worker_image"
+    promote_pending_evidence
+  fi
   if [[ "$deploy_api_requested" == "1" ]]; then
     activate_release api "$api_service" "$api_upload_root"
     promote_pending_evidence
@@ -763,9 +840,13 @@ deploy_and_reopen() {
   promote_pending_evidence
   activate_release worker "$worker_service" "$worker_upload_root"
   worker_closed=0
+  activate_release media "$media_service" "$media_upload_root"
+  media_closed=0
+  activate_image_release mediaWorker "$media_worker_service" "$media_worker_image"
+  media_worker_closed=0
   activate_release api "$api_service" "$api_upload_root"
   api_closed=0
-  # Worker and API form one cutover. Publish their evidence only after both writers are healthy
+  # Every database writer forms one cutover. Publish their evidence only after all writers are healthy
   # so the durable ledger cannot claim a deployment that the failure trap subsequently closes.
   promote_pending_evidence
 }
@@ -775,7 +856,8 @@ leave_failure_state() {
   trap - EXIT
   if [[ "$exit_status" -ne 0 ]]; then
     if [[ "$cutover_committed" == "0" \
-      && ( "$api_closed" == "1" || "$worker_closed" == "1" || "$cache_closed" == "1" ) ]]; then
+      && ( "$api_closed" == "1" || "$worker_closed" == "1" || "$cache_closed" == "1" \
+      || "$media_closed" == "1" || "$media_worker_closed" == "1" ) ]]; then
       restore_old_release || echo "Failed to restore the previous release; writers remain closed." >&2
     elif [[ "$cutover_committed" == "1" ]]; then
       quiesce_writers || echo "Failed to re-close metadata writers after the committed cutover." >&2
@@ -810,13 +892,20 @@ case "$plan_status" in
     api_running="$(running_replicas "$api_service")"
     worker_running="$(running_replicas "$worker_service")"
     cache_running="$(running_replicas "$cache_service")"
-    if [[ "$api_running" == "0" && "$worker_running" == "0" && "$cache_running" == "0" ]]; then
+    media_running="$(running_replicas "$media_service")"
+    media_worker_running="$(running_replicas "$media_worker_service")"
+    if [[ "$api_running" == "0" && "$worker_running" == "0" && "$cache_running" == "0" \
+      && "$media_running" == "0" && "$media_worker_running" == "0" ]]; then
       api_has_history=0
       worker_has_history=0
       cache_has_history=0
       service_has_deployment_history "$api_service" && api_has_history=1
       service_has_deployment_history "$worker_service" && worker_has_history=1
       service_has_deployment_history "$cache_service" && cache_has_history=1
+      media_had_history=0
+      media_worker_had_history=0
+      service_has_deployment_history "$media_service" && media_had_history=1
+      service_has_deployment_history "$media_worker_service" && media_worker_had_history=1
       if [[ "$api_has_history" != "$worker_has_history" ]] \
         || [[ "$api_has_history" != "$cache_has_history" ]]; then
         echo "Closed writers have inconsistent deployment history." >&2
@@ -829,6 +918,8 @@ case "$plan_status" in
       api_closed=1
       worker_closed=1
       cache_closed=1
+      media_closed=1
+      media_worker_closed=1
       cutover_committed=1
       deploy_and_reopen
       trap - EXIT
@@ -839,6 +930,13 @@ case "$plan_status" in
       echo "Metadata-writer replica state is inconsistent; refusing deployment." >&2
       exit 1
     fi
+    for bootstrap_service in "$media_service" "$media_worker_service"; do
+      bootstrap_running="$(running_replicas "$bootstrap_service")"
+      if [[ "$bootstrap_running" == "0" ]] && service_has_deployment_history "$bootstrap_service"; then
+        echo "Media writer $bootstrap_service is unexpectedly stopped; refusing deployment." >&2
+        exit 1
+      fi
+    done
     maintenance_read verify
     run_api_maintenance cleanup-git-segments-v1
     deploy_selected_releases
@@ -857,6 +955,25 @@ if ! carried_service_is_healthy api "$api_service" \
   || ! carried_service_is_healthy cache "$cache_service"; then
   echo "Maintenance cutover requires healthy metadata-writer deployments before closing writers." >&2
   exit 1
+fi
+
+if service_has_deployment_history "$media_service"; then
+  carried_service_is_healthy media "$media_service" || {
+    echo "Maintenance cutover requires a healthy media gateway before closing writers." >&2
+    exit 1
+  }
+else
+  media_had_history=0
+  media_closed=1
+fi
+if service_has_deployment_history "$media_worker_service"; then
+  carried_service_is_healthy mediaWorker "$media_worker_service" || {
+    echo "Maintenance cutover requires a healthy media worker before closing writers." >&2
+    exit 1
+  }
+else
+  media_worker_had_history=0
+  media_worker_closed=1
 fi
 
 quiesce_writers

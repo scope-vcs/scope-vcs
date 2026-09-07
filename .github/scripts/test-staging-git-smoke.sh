@@ -44,6 +44,11 @@ case "$1" in
   login)
     test "$2" = '--exchange-file'
     test -s "$3"
+    if [[ -n "${FAKE_SCOPE_SESSION_TOKEN:-}" ]]; then
+      mkdir -p "$XDG_CONFIG_HOME/scope/sessions"
+      printf '%s\n' "$FAKE_SCOPE_SESSION_TOKEN" > "$XDG_CONFIG_HOME/scope/sessions/session"
+      chmod 0600 "$XDG_CONFIG_HOME/scope/sessions/session"
+    fi
     printf 'scope-login-file\n' >> "$TRACE_PATH"
     ;;
   clone)
@@ -114,6 +119,58 @@ test "$(sed -n '4p' "$trace_path")" = 'scope-clone'
 grep -Fxq 'scope-push' "$trace_path"
 if grep -Fq 'scope_otc_do_not_log_this_value' "$output" "$trace_path"; then
   echo "staging Git smoke exposed its exchange token" >&2
+  exit 1
+fi
+
+cat > "$test_root/media-smoke.mjs" <<'EOF'
+import { appendFileSync, writeFileSync } from 'node:fs'
+import assert from 'node:assert/strict'
+const args = process.argv.slice(2)
+const value = (name) => args[args.indexOf(name) + 1]
+assert.equal(process.env.SCOPE_MEDIA_SMOKE_TOKEN, 'scope_private_session_value')
+writeFileSync(value('--receipt'), '{"passed":true,"request_deleted":true}\n')
+appendFileSync(process.env.TRACE_PATH, 'media-smoke\n')
+EOF
+cat > "$test_root/media-capacity.mjs" <<'EOF'
+import { appendFileSync, writeFileSync } from 'node:fs'
+import assert from 'node:assert/strict'
+const args = process.argv.slice(2)
+const value = (name) => args[args.indexOf(name) + 1]
+assert.equal(process.env.SCOPE_MEDIA_SMOKE_TOKEN, 'scope_private_session_value')
+assert.equal(value('--small-uploads'), '4')
+writeFileSync(value('--output'), '{"passed":true,"loaded":{"failed_requests":0}}\n')
+appendFileSync(process.env.TRACE_PATH, 'media-capacity\n')
+EOF
+
+capacity_dir="$test_root/capacity-smoke"
+capacity_token="$capacity_dir/exchange-token"
+mkdir -m 0700 "$capacity_dir"
+printf '%s\n' 'scope_otc_capacity_exchange' > "$capacity_token"
+chmod 0600 "$capacity_token"
+printf 'photo' > "$test_root/photo.png"
+printf 'video' > "$test_root/video.mp4"
+FAKE_SCOPE_SESSION_TOKEN='scope_private_session_value' \
+  SCOPE_API_URL='https://api-staging.example.test' \
+  SCOPE_GIT_ROUTER_URL='https://router-staging.example.test' \
+  SCOPE_CLI_BINARY="$fake_bin/scope" \
+  SCOPE_EXCHANGE_TOKEN_PATH="$capacity_token" \
+  SCOPE_GIT_SMOKE_DIR="$capacity_dir" \
+  SCOPE_MEDIA_GATEWAY_URL='https://media-staging.example.test' \
+  SCOPE_MEDIA_SMOKE_SCRIPT="$test_root/media-smoke.mjs" \
+  SCOPE_MEDIA_SMOKE_PNG="$test_root/photo.png" \
+  SCOPE_MEDIA_SMOKE_MP4="$test_root/video.mp4" \
+  SCOPE_MEDIA_SMOKE_RECEIPT="$test_root/media-receipt.json" \
+  SCOPE_MEDIA_SMOKE_SOURCE_SHA='1111111111111111111111111111111111111111' \
+  SCOPE_MEDIA_CAPACITY_SCRIPT="$test_root/media-capacity.mjs" \
+  SCOPE_MEDIA_CAPACITY_VIDEO="$test_root/video.mp4" \
+  SCOPE_MEDIA_CAPACITY_RECEIPT="$test_root/capacity-receipt.json" \
+  GITHUB_SHA='test-sha' \
+  bash "$repo_root/.github/scripts/staging-git-smoke.sh" > "$test_root/capacity-output" 2>&1
+test ! -e "$capacity_dir"
+grep -Fxq 'media-smoke' "$trace_path"
+grep -Fxq 'media-capacity' "$trace_path"
+if grep -Fq 'scope_private_session_value' "$test_root/capacity-output" "$trace_path"; then
+  echo "staging capacity proof exposed its private session" >&2
   exit 1
 fi
 

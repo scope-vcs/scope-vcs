@@ -123,6 +123,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
         object_store,
         git_segment_store,
         cache_grants: crate::cache_grants::CacheGrantIssuer::test(),
+        media_grants: crate::media_grants::MediaGrantIssuer::local()?,
         runtime_budgets,
         operator_token: non_empty_env(SCOPE_OPERATOR_TOKEN_ENV).map(Arc::from),
         product_analytics: ProductAnalytics::disabled(),

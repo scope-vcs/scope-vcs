@@ -16,6 +16,7 @@ pub(crate) mod http;
 mod landing_file_backfill;
 mod retired_git_storage;
 pub use retired_git_storage::scrub_retired_git_storage_for_maintenance;
+pub(crate) mod media_grants;
 pub(crate) mod object_store_config;
 pub(crate) mod persistence;
 pub(crate) mod persistence_ids;

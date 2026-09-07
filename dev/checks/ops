@@ -6,6 +6,11 @@ node --test .github/scripts/production-deployment-progress.test.mjs
 node --test .github/scripts/plan-production-deployment.test.mjs
 node --test .github/scripts/verify-staging-target.test.mjs
 node --test .github/scripts/stop-staging-writers.test.mjs
+node --test deploy/railway/reconcile-media.test.mjs
+node --check .github/scripts/deploy-railway-image.mjs
+node --check dev/media-smoke.mjs
+bash -n .github/scripts/deploy-staging-railway.sh
+bash -n .github/scripts/staging-git-smoke.sh
 bash .github/scripts/test-deploy-backend-railway.sh
 bash .github/scripts/test-staging-git-smoke.sh
 node --test bench/*.test.mjs

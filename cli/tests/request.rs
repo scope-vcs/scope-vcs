@@ -56,6 +56,47 @@ fn request_discussion_body_rules_are_validated_before_login() {
 }
 
 #[test]
+fn request_attachments_are_valid_content_before_login() {
+    let dir = TempDir::new("request-attachment-content");
+    create_repo_with_head(dir.path());
+
+    for args in [
+        vec![
+            "request", "edit", "--attach", "shot.png", "--attach", "clip.mov",
+        ],
+        vec!["request", "discussion", "start", "--attach", "shot.png"],
+        vec![
+            "request",
+            "discussion",
+            "reply",
+            "dsc_one",
+            "--attach",
+            "clip.mov",
+        ],
+        vec![
+            "request",
+            "discussion",
+            "reopen",
+            "dsc_one",
+            "--attach",
+            "clip.mov",
+        ],
+    ] {
+        let output = scope_command(dir.path()).args(&args).output().unwrap();
+        assert_failure(&output, "attachment-only request command");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(!stderr.contains("required arguments"), "{args:?}: {stderr}");
+        assert!(stderr.contains("scope login"), "{args:?}: {stderr}");
+    }
+
+    scope_failure(
+        dir.path(),
+        ["request", "edit", "--title", "Updated", "--wait"],
+        "--attach <PATH>",
+    );
+}
+
+#[test]
 fn request_discussion_anchor_dependencies_are_validated_before_login() {
     let dir = TempDir::new("discussion-anchor");
     create_repo_with_head(dir.path());

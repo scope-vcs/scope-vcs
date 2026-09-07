@@ -71,6 +71,9 @@ jobs:
           cargo build --release --locked -p api --bin api
           install -m 0755 target/release/api artifacts/bin/scope-vcs
 
+          cargo build --release --locked -p scope-media-service
+          install -m 0755 target/release/scope-media-service artifacts/bin/scope-media-service
+
           if [[ "$BUILD_ROUTER" == "1" ]]; then
             cargo build --release --locked -p scope-repo-router
             install -m 0755 target/release/scope-repo-router artifacts/bin/scope-repo-router

@@ -33,6 +33,13 @@ impl CliError {
         }
     }
 
+    pub fn with_recovery(response: ErrorResponse, receipt: serde_json::Value) -> Self {
+        Self {
+            response,
+            recovery: Some(receipt),
+        }
+    }
+
     pub fn usage(message: impl Into<String>) -> Self {
         Self::new(ErrorResponse::new(ErrorCode::BadRequest, message))
     }

@@ -9,7 +9,7 @@ Supported local-development entrypoint.
 
 commands:
   doctor  validate required tools, local environment, and Clerk development keys
-  up      migrate and seed Postgres, then start API, worker, and web processes
+  up      migrate and seed Postgres, then start API, workers, media, and web
   down    stop processes started by this script
   status  show owned process and HTTP readiness state (default)
   reset   stop owned processes and remove .scope/dev and .tmp/local-dev
@@ -24,6 +24,8 @@ required configuration:
 local services:
   web  http://localhost:3000
   API  http://localhost:8080
+  media gateway  http://localhost:8083
+  media worker health  http://localhost:8084
 
 The local API uses filesystem object storage under .scope/dev. Startup strips
 inherited Railway and bucket variables and rejects production-looking Clerk or
@@ -52,15 +54,26 @@ STATE_DIR="$ROOT/.tmp/local-dev"
 DATA_DIR="$ROOT/.scope/dev"
 OBJECT_DIR="$DATA_DIR/objects"
 KEY_FILE="$DATA_DIR/object-key.txt"
+MEDIA_KEY_FILE="$DATA_DIR/media-key.txt"
+MEDIA_PRIVATE_KEY_FILE="$DATA_DIR/media-grant-private.pem"
+MEDIA_PUBLIC_KEY_FILE="$DATA_DIR/media-grant-public.pem"
+MEDIA_OBJECT_DIR="$DATA_DIR/media-objects"
 API_PID_FILE="$STATE_DIR/api.pid"
 WEB_PID_FILE="$STATE_DIR/web.pid"
 WORKER_PID_FILE="$STATE_DIR/worker.pid"
+MEDIA_PID_FILE="$STATE_DIR/media.pid"
+MEDIA_WORKER_PID_FILE="$STATE_DIR/media-worker.pid"
 API_OUT_LOG="$STATE_DIR/api.out.log"
 API_ERR_LOG="$STATE_DIR/api.err.log"
 WEB_OUT_LOG="$STATE_DIR/web.out.log"
 WEB_ERR_LOG="$STATE_DIR/web.err.log"
 WORKER_OUT_LOG="$STATE_DIR/worker.out.log"
 WORKER_ERR_LOG="$STATE_DIR/worker.err.log"
+MEDIA_OUT_LOG="$STATE_DIR/media.out.log"
+MEDIA_ERR_LOG="$STATE_DIR/media.err.log"
+MEDIA_WORKER_OUT_LOG="$STATE_DIR/media-worker.out.log"
+MEDIA_WORKER_ERR_LOG="$STATE_DIR/media-worker.err.log"
+LOCAL_CARGO_TARGET_DIR=""
 LOCAL_WEB_ORIGIN="http://localhost:3000"
 LOCAL_API_ORIGIN="http://localhost:8080"
 PUBLIC_HOST="${SCOPE_DEV_PUBLIC_HOST:-}"
@@ -179,6 +192,19 @@ get_object_key() {
   tr -d '\r\n' < "$KEY_FILE"
 }
 
+ensure_media_keys() {
+  ensure_dir "$DATA_DIR"
+  if [[ ! -f "$MEDIA_KEY_FILE" ]]; then
+    openssl rand -base64 32 > "$MEDIA_KEY_FILE"
+  fi
+  if [[ ! -f "$MEDIA_PRIVATE_KEY_FILE" || ! -f "$MEDIA_PUBLIC_KEY_FILE" ]]; then
+    rm -f -- "$MEDIA_PRIVATE_KEY_FILE" "$MEDIA_PUBLIC_KEY_FILE"
+    openssl genpkey -algorithm ED25519 -out "$MEDIA_PRIVATE_KEY_FILE"
+    openssl pkey -in "$MEDIA_PRIVATE_KEY_FILE" -pubout -out "$MEDIA_PUBLIC_KEY_FILE"
+  fi
+  chmod 0600 "$MEDIA_KEY_FILE" "$MEDIA_PRIVATE_KEY_FILE" "$MEDIA_PUBLIC_KEY_FILE"
+}
+
 assert_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "$1 is required for local dev" >&2
@@ -223,6 +249,8 @@ stop_pid_file() {
 }
 
 stop_owned_processes() {
+  stop_pid_file "$MEDIA_WORKER_PID_FILE"
+  stop_pid_file "$MEDIA_PID_FILE"
   stop_pid_file "$WORKER_PID_FILE"
   stop_pid_file "$API_PID_FILE"
   stop_pid_file "$WEB_PID_FILE"
@@ -249,6 +277,7 @@ cd "$ROOT"
 while IFS='=' read -r name _; do
   [[ "\$name" == RAILWAY_* ]] && unset "\$name"
   [[ "\$name" == SCOPE_BUCKET_* ]] && unset "\$name"
+  [[ "\$name" == SCOPE_MEDIA_BUCKET_* ]] && unset "\$name"
 done < <(env)
 export SCOPE_ENV="local"
 export SCOPE_OBJECT_STORE="filesystem"
@@ -259,6 +288,8 @@ export PORT="8080"
 export SCOPE_APP_ORIGIN="$LOCAL_WEB_ORIGIN"
 export SCOPE_API_PUBLIC_URL="$LOCAL_API_ORIGIN"
 export SCOPE_GIT_PUBLIC_URL="$LOCAL_API_ORIGIN"
+export SCOPE_MEDIA_PUBLIC_URL="http://localhost:8083"
+export SCOPE_MEDIA_GRANT_PRIVATE_KEY="\$(cat "$MEDIA_PRIVATE_KEY_FILE")"
 export CLERK_ISSUER="$issuer"
 export CLERK_JWKS_URL="$issuer/.well-known/jwks.json"
 export CLERK_AUTHORIZED_PARTIES="$CLERK_AUTHORIZED_PARTIES_VALUE"
@@ -272,10 +303,65 @@ EOF
   fi
   cat >> "$runner" <<'EOF'
 if [[ "${SCOPE_DEV_MAINTENANCE_ONLY:-0}" == "1" ]]; then
-  exec cargo run -p api --features local-dev --bin scope-maintenance -- apply
-fi
-exec cargo run -p api --features local-dev
 EOF
+  printf '  exec %q apply\n' "$LOCAL_CARGO_TARGET_DIR/debug/scope-maintenance" >> "$runner"
+  cat >> "$runner" <<'EOF'
+fi
+EOF
+  printf 'exec %q\n' "$LOCAL_CARGO_TARGET_DIR/debug/api" >> "$runner"
+  chmod +x "$runner"
+}
+
+write_media_runner() {
+  local database_url runner
+  database_url="$(local_database_url)"
+  runner="$STATE_DIR/media.sh"
+  [[ -n "$database_url" ]] || { echo "DATABASE_URL is required for the media gateway" >&2; exit 1; }
+
+  cat > "$runner" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$ROOT"
+while IFS='=' read -r name _; do
+  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
+  [[ "\$name" == SCOPE_BUCKET_* ]] && unset "\$name"
+  [[ "\$name" == SCOPE_MEDIA_BUCKET_* ]] && unset "\$name"
+done < <(env)
+export PORT="8083"
+export SCOPE_MEDIA_OBJECT_STORE="filesystem"
+export SCOPE_MEDIA_OBJECT_STORE_DIR="$MEDIA_OBJECT_DIR"
+export SCOPE_MEDIA_ENCRYPTION_KEY="\$(tr -d '\\r\\n' < "$MEDIA_KEY_FILE")"
+export SCOPE_MEDIA_GRANT_PUBLIC_KEY="\$(cat "$MEDIA_PUBLIC_KEY_FILE")"
+export SCOPE_MEDIA_ALLOWED_ORIGIN="$LOCAL_WEB_ORIGIN"
+EOF
+  printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
+  printf 'exec %q\n' "$LOCAL_CARGO_TARGET_DIR/debug/scope-media-service" >> "$runner"
+  chmod +x "$runner"
+}
+
+write_media_worker_runner() {
+  local database_url runner
+  database_url="$(local_database_url)"
+  runner="$STATE_DIR/media-worker.sh"
+  [[ -n "$database_url" ]] || { echo "DATABASE_URL is required for the media worker" >&2; exit 1; }
+
+  cat > "$runner" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$ROOT"
+while IFS='=' read -r name _; do
+  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
+  [[ "\$name" == SCOPE_BUCKET_* ]] && unset "\$name"
+  [[ "\$name" == SCOPE_MEDIA_BUCKET_* ]] && unset "\$name"
+done < <(env)
+export PORT="8084"
+export SCOPE_MEDIA_WORKER_ID="local-dev-media-worker"
+export SCOPE_MEDIA_OBJECT_STORE="filesystem"
+export SCOPE_MEDIA_OBJECT_STORE_DIR="$MEDIA_OBJECT_DIR"
+export SCOPE_MEDIA_ENCRYPTION_KEY="\$(tr -d '\\r\\n' < "$MEDIA_KEY_FILE")"
+EOF
+  printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
+  printf 'exec %q\n' "$LOCAL_CARGO_TARGET_DIR/debug/scope-media-worker" >> "$runner"
   chmod +x "$runner"
 }
 
@@ -304,9 +390,7 @@ export SCOPE_OBJECT_STORE_DIR="$OBJECT_DIR"
 export SCOPE_OBJECT_ENCRYPTION_KEY="$object_key"
 EOF
   printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
-  cat >> "$runner" <<'EOF'
-exec cargo run -p worker
-EOF
+  printf 'exec %q\n' "$LOCAL_CARGO_TARGET_DIR/debug/worker" >> "$runner"
   chmod +x "$runner"
 }
 
@@ -349,10 +433,45 @@ prepare_local_schema() {
   SCOPE_DEV_MAINTENANCE_ONLY=1 "$STATE_DIR/api.sh"
 }
 
+build_local_services() {
+  LOCAL_CARGO_TARGET_DIR="$(
+    cd "$ROOT"
+    cargo metadata --locked --no-deps --format-version 1 |
+      node -e 'const fs = require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(0, "utf8")).target_directory)'
+  )"
+  (
+    cd "$ROOT"
+    cargo build --locked --features api/local-dev \
+      -p api \
+      -p worker \
+      -p scope-media-service \
+      -p scope-media-worker
+  )
+  local binary
+  for binary in api scope-maintenance worker scope-media-service scope-media-worker; do
+    if [[ ! -x "$LOCAL_CARGO_TARGET_DIR/debug/$binary" ]]; then
+      echo "local build did not produce $LOCAL_CARGO_TARGET_DIR/debug/$binary" >&2
+      exit 1
+    fi
+  done
+}
+
 start_worker() {
   write_worker_runner
   setsid "$STATE_DIR/worker.sh" > "$WORKER_OUT_LOG" 2> "$WORKER_ERR_LOG" &
   echo "$!" > "$WORKER_PID_FILE"
+}
+
+start_media() {
+  write_media_runner
+  setsid "$STATE_DIR/media.sh" > "$MEDIA_OUT_LOG" 2> "$MEDIA_ERR_LOG" &
+  echo "$!" > "$MEDIA_PID_FILE"
+}
+
+start_media_worker() {
+  write_media_worker_runner
+  setsid "$STATE_DIR/media-worker.sh" > "$MEDIA_WORKER_OUT_LOG" 2> "$MEDIA_WORKER_ERR_LOG" &
+  echo "$!" > "$MEDIA_WORKER_PID_FILE"
 }
 
 start_web() {
@@ -490,13 +609,19 @@ up() {
   doctor >/dev/null
   stop_owned_processes
   assert_port_free 8080 "api"
+  assert_port_free 8083 "media gateway"
+  assert_port_free 8084 "media worker health"
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     assert_port_free 3000 "web"
   fi
   ensure_dir "$STATE_DIR"
   ensure_dir "$DATA_DIR"
+  ensure_dir "$MEDIA_OBJECT_DIR"
+  ensure_media_keys
   rm -f "$API_OUT_LOG" "$API_ERR_LOG" "$WEB_OUT_LOG" "$WEB_ERR_LOG"
   rm -f "$WORKER_OUT_LOG" "$WORKER_ERR_LOG"
+  rm -f "$MEDIA_OUT_LOG" "$MEDIA_ERR_LOG" "$MEDIA_WORKER_OUT_LOG" "$MEDIA_WORKER_ERR_LOG"
+  build_local_services
   prepare_local_schema
   start_api
   if ! wait_http "http://localhost:8080/readyz" 45; then
@@ -504,6 +629,16 @@ up() {
     exit 1
   fi
   start_worker
+  start_media
+  if ! wait_http "http://localhost:8083/healthz" 90; then
+    echo "media gateway did not become ready; see $MEDIA_ERR_LOG" >&2
+    exit 1
+  fi
+  start_media_worker
+  if ! wait_http "http://localhost:8084/healthz" 90; then
+    echo "media worker did not become ready; see $MEDIA_WORKER_ERR_LOG" >&2
+    exit 1
+  fi
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     start_web
     if ! wait_http "http://localhost:3000" 180; then
@@ -517,11 +652,23 @@ up() {
 status() {
   echo "api process: $(pid_status "$API_PID_FILE")"
   echo "worker process: $(pid_status "$WORKER_PID_FILE")"
+  echo "media process: $(pid_status "$MEDIA_PID_FILE")"
+  echo "media worker process: $(pid_status "$MEDIA_WORKER_PID_FILE")"
   echo "web process: $(pid_status "$WEB_PID_FILE")"
   if body="$(curl -fsS --max-time 3 "http://localhost:8080/readyz" 2>/dev/null)"; then
     echo "api readyz: $body"
   else
     echo "api readyz: unavailable"
+  fi
+  if body="$(curl -fsS --max-time 3 "http://localhost:8083/healthz" 2>/dev/null)"; then
+    echo "media healthz: $body"
+  else
+    echo "media healthz: unavailable"
+  fi
+  if body="$(curl -fsS --max-time 3 "http://localhost:8084/healthz" 2>/dev/null)"; then
+    echo "media worker healthz: $body"
+  else
+    echo "media worker healthz: unavailable"
   fi
   if code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "http://localhost:3000" 2>/dev/null)"; then
     echo "web: HTTP $code"

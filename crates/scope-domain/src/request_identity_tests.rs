@@ -21,6 +21,7 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
             event_id: "event_title".to_string(),
             title: Some("Focused title".to_string()),
             description_markdown: None,
+            expected_description_markdown: None,
             now_unix: 20,
         },
     )
@@ -42,6 +43,7 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
             event_id: "event_description".to_string(),
             title: None,
             description_markdown: Some("Focused description".to_string()),
+            expected_description_markdown: Some(original_description.clone()),
             now_unix: 21,
         },
     )
@@ -62,6 +64,7 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
             event_id: "event_empty".to_string(),
             title: None,
             description_markdown: None,
+            expected_description_markdown: None,
             now_unix: 22,
         },
     )
@@ -78,6 +81,7 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
             event_id: "event_unchanged".to_string(),
             title: Some("Focused title".to_string()),
             description_markdown: Some("Focused description".to_string()),
+            expected_description_markdown: Some("Focused description".to_string()),
             now_unix: 22,
         },
     )
@@ -99,6 +103,7 @@ fn open_request_identity_edits_preserve_submission() {
             event_id: "event_identity".to_string(),
             title: None,
             description_markdown: Some("Changed while open".to_string()),
+            expected_description_markdown: None,
             now_unix: 22,
         },
     )
@@ -106,4 +111,29 @@ fn open_request_identity_edits_preserve_submission() {
     assert_eq!(mutation.request.state(), RequestState::Open);
     assert_eq!(mutation.request.submitted_at_unix, Some(20));
     assert_eq!(mutation.request.description_markdown, "Changed while open");
+}
+
+#[test]
+fn description_edit_rejects_a_stale_expected_value_without_mutation() {
+    let request = working_request();
+    let original = request.clone();
+    let mut requests = BTreeMap::from([(request.id.clone(), request)]);
+    let error = edit_request_identity(
+        &mut requests,
+        &mut BTreeMap::new(),
+        EditRequestIdentityInput {
+            request_id: original.id.clone(),
+            actor_user_id: original.author_user_id.clone(),
+            actor_can_edit_identity: true,
+            event_id: "event_stale_description".to_string(),
+            title: None,
+            description_markdown: Some("new description".to_string()),
+            expected_description_markdown: Some("stale description".to_string()),
+            now_unix: original.updated_at_unix + 1,
+        },
+    )
+    .unwrap_err();
+
+    assert_eq!(error.kind, crate::error::DomainErrorKind::Conflict);
+    assert_eq!(requests[&original.id], original);
 }

@@ -34,6 +34,8 @@ jobs:
             - Cargo.toml
             - api/Cargo.toml
             - cache-service/Cargo.toml
+            - media-service/Cargo.toml
+            - media-worker/Cargo.toml
             - crates/scope-api-contract/Cargo.toml
             - crates/scope-cache-contract/Cargo.toml
             - crates/scope-cache-domain/Cargo.toml
@@ -42,6 +44,7 @@ jobs:
             - crates/scope-git-process/Cargo.toml
             - crates/scope-git/Cargo.toml
             - crates/scope-object-store/Cargo.toml
+            - crates/scope-media-storage/Cargo.toml
             - crates/scope-postgres/Cargo.toml
             - crates/scope-run-config/Cargo.toml
             - runner-runtime/Cargo.toml

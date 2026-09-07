@@ -6,6 +6,7 @@ use crate::{
         git_public_url_from_env, git_repo_root, non_empty_env,
     },
     git::repository_engine::RepositoryEngine,
+    media_grants::MediaGrantIssuer,
     object_store_config::{encryption_key_from_env, git_segment_store_from_env, s3_from_env},
     persistence::ensure_private_dir,
     product_analytics::ProductAnalytics,
@@ -31,6 +32,7 @@ pub struct AppState {
     pub(crate) object_store: Arc<dyn ObjectStore>,
     pub(crate) git_segment_store: Arc<GitSegmentStore>,
     pub(crate) cache_grants: CacheGrantIssuer,
+    pub(crate) media_grants: MediaGrantIssuer,
     pub(crate) runtime_budgets: Arc<RuntimeBudgets>,
     pub(crate) operator_token: Option<Arc<str>>,
     pub(crate) product_analytics: ProductAnalytics,
@@ -71,6 +73,7 @@ impl AppState {
             runtime_budgets.clone(),
         ));
         let cache_grants = CacheGrantIssuer::from_env()?;
+        let media_grants = MediaGrantIssuer::from_env()?;
         let listener_bus = repo_events.clone();
         metadata
             .repositories()
@@ -90,6 +93,7 @@ impl AppState {
             object_store,
             git_segment_store,
             cache_grants,
+            media_grants,
             runtime_budgets,
             operator_token: non_empty_env(SCOPE_OPERATOR_TOKEN_ENV).map(Arc::from),
             product_analytics,
@@ -244,6 +248,7 @@ impl AppState {
             )),
             git_segment_store,
             cache_grants: CacheGrantIssuer::test(),
+            media_grants: MediaGrantIssuer::test(),
             runtime_budgets,
             operator_token: None,
             product_analytics: ProductAnalytics::disabled(),

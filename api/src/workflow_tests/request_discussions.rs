@@ -624,6 +624,7 @@ async fn request_activity_clamps_latest_and_after_pages_to_fifty_events() {
                 event_id: format!("event_description_{index}"),
                 title: None,
                 description_markdown: Some(format!("description {index}")),
+                expected_description_markdown: None,
                 now_unix: 10 + index,
             })
             .await

@@ -664,7 +664,7 @@ fn request_ids(body: &serde_json::Value) -> Vec<&str> {
         .collect()
 }
 
-async fn api_request(
+pub(super) async fn api_request(
     app: axum::Router,
     method: &str,
     uri: &str,

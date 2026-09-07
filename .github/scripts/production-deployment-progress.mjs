@@ -57,6 +57,7 @@ function deploymentEvidence(component, deployment) {
     sourceSha: payload.sourceSha,
     provider: payload.provider,
     evidenceId: payload.evidenceId,
+    ...(payload.artifactDigest ? { artifactDigest: payload.artifactDigest } : {}),
   };
 }
 
@@ -99,11 +100,15 @@ export async function recordSuccessfulDeployment({
   sourceSha,
   provider,
   evidenceId,
+  artifactDigest = "",
   logUrl = "",
 }, fetchImpl = fetch) {
   if (!COMPONENTS.includes(component)) throw new Error(`Unknown deployment component: ${component}`);
   if (!SOURCE_SHA_PATTERN.test(sourceSha)) throw new Error("sourceSha must be a full lowercase commit SHA");
   if (!provider || !evidenceId) throw new Error("provider and evidenceId are required");
+  if (component === "mediaWorker" && !/^sha256:[0-9a-f]{64}$/.test(artifactDigest)) {
+    throw new Error("mediaWorker requires an exact OCI artifact digest");
+  }
 
   const environment = `production/${component}`;
   const deployment = await githubRequest("/deployments", {
@@ -117,7 +122,13 @@ export async function recordSuccessfulDeployment({
       production_environment: true,
       transient_environment: false,
       description: `Deploy ${component} from ${sourceSha.slice(0, 12)}`,
-      payload: { component, sourceSha, provider, evidenceId },
+      payload: {
+        component,
+        sourceSha,
+        provider,
+        evidenceId,
+        ...(artifactDigest ? { artifactDigest } : {}),
+      },
     }),
   }, fetchImpl);
 

@@ -279,6 +279,11 @@ pub enum RepoChangeKind {
         through_position: u64,
         audience: RequestAudience,
     },
+    RequestAttachmentChanged {
+        request_id: String,
+        attachment_id: String,
+        audience: RequestAudience,
+    },
     RunChanged {
         run_id: String,
         change: RunChangeKind,
@@ -312,6 +317,31 @@ mod tests {
                         "run_id": "run_1",
                         "change": "Created"
                     }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn attachment_change_identifies_the_request_attachment_and_audience() {
+        let event = RepoChangeEvent {
+            repo_id: "owner/repo".to_string(),
+            incarnation_id: "inc_1".to_string(),
+            version: 7,
+            kind: RepoChangeKind::RequestAttachmentChanged {
+                request_id: "request_1".to_string(),
+                attachment_id: "attachment_1".to_string(),
+                audience: RequestAudience::Private,
+            },
+        };
+
+        assert_eq!(
+            serde_json::to_value(event).unwrap()["kind"],
+            serde_json::json!({
+                "RequestAttachmentChanged": {
+                    "request_id": "request_1",
+                    "attachment_id": "attachment_1",
+                    "audience": "Private"
                 }
             })
         );

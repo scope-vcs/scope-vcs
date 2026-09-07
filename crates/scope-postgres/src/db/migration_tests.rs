@@ -71,6 +71,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0039_history_action_feed",
     "m0040_repository_metadata",
     "m0041_history_occurrence_time",
+    "m0042_request_media",
 ];
 
 pub(super) async fn isolated_database() -> (

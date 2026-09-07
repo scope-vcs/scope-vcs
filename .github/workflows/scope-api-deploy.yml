@@ -15,6 +15,15 @@ on:
       deploy_api:
         type: boolean
         default: false
+      deploy_media:
+        type: boolean
+        default: false
+      deploy_media_worker:
+        type: boolean
+        default: false
+      media_worker_image:
+        type: string
+        required: true
       successful_deployments:
         type: string
         default: "{}"
@@ -61,7 +70,7 @@ jobs:
           SUCCESSFUL_DEPLOYMENTS: ${{ inputs.successful_deployments }}
         run: |
           rm -rf .railway-upload
-          for service in api worker cache-service repo-router; do
+          for service in api worker cache-service repo-router media-service; do
             root=".railway-upload/$service"
             watch_root="$root/$service"
             mkdir -p "$root/bin" "$watch_root"
@@ -71,7 +80,11 @@ jobs:
               cp deploy/railway/prebuilt-backend-git.railpack.json "$root/railpack.json"
             fi
             install -m 0755 deploy/railway/start-prebuilt.sh "$root/start.sh"
-            cp "$service/railway.json" "$root/railway.json"
+            if [[ "$service" == "media-service" ]]; then
+              cp media-service/railway.json "$root/railway.json"
+            else
+              cp "$service/railway.json" "$root/railway.json"
+            fi
             printf '%s\n' "$GITHUB_SHA" | tee \
               "$root/.scope-deployment-sha" \
               "$watch_root/.scope-deployment-sha" >/dev/null
@@ -89,6 +102,7 @@ jobs:
           install -m 0755 artifacts/backend-release/scope-vcs .railway-upload/api/bin/scope-vcs
           install -m 0755 artifacts/backend-release/scope-cache-service .railway-upload/cache-service/bin/scope-cache-service
           install -m 0755 artifacts/backend-release/scope-worker .railway-upload/worker/bin/scope-worker
+          install -m 0755 artifacts/backend-release/scope-media-service .railway-upload/media-service/bin/scope-media-service
           [[ "$DEPLOY_ROUTER" == "0" ]] || install -m 0755 artifacts/backend-release/scope-repo-router .railway-upload/repo-router/bin/scope-repo-router
 
       - name: Install Railway CLI
@@ -109,6 +123,9 @@ jobs:
           SCOPE_DEPLOY_WORKER: ${{ inputs.deploy_worker && '1' || '0' }}
           SCOPE_DEPLOY_ROUTER: ${{ inputs.deploy_router && '1' || '0' }}
           SCOPE_DEPLOY_API: ${{ inputs.deploy_api && '1' || '0' }}
+          SCOPE_DEPLOY_MEDIA: ${{ inputs.deploy_media && '1' || '0' }}
+          SCOPE_DEPLOY_MEDIA_WORKER: ${{ inputs.deploy_media_worker && '1' || '0' }}
+          SCOPE_MEDIA_WORKER_IMAGE: ${{ inputs.media_worker_image }}
         run: |
           manifest=.github/deployment-services.json
           RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"
@@ -117,21 +134,27 @@ jobs:
           SCOPE_RAILWAY_WORKER_SERVICE_ID="$(jq -r '.services.worker.id' "$manifest")"
           SCOPE_RAILWAY_CACHE_SERVICE_ID="$(jq -r '.services.cache.id' "$manifest")"
           SCOPE_RAILWAY_ROUTER_SERVICE_ID="$(jq -r '.services.router.id' "$manifest")"
+          SCOPE_RAILWAY_MEDIA_SERVICE_ID="$(jq -er '.services.media.id | strings | select(length > 0)' "$manifest")"
+          SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID="$(jq -er '.services.mediaWorker.id | strings | select(length > 0)' "$manifest")"
           SCOPE_RAILWAY_DATABASE_SERVICE_ID="$(jq -r '.railway.databaseServiceId' "$manifest")"
           SCOPE_RAILWAY_ROUTER_GROUP_ID="$(jq -r '.railway.runtimeGroupId' "$manifest")"
           SCOPE_RAILWAY_API_REGION_ID="$(jq -r '.railway.regionId' "$manifest")"
           SCOPE_RAILWAY_WORKER_REGION_ID="$SCOPE_RAILWAY_API_REGION_ID"
+          SCOPE_RAILWAY_MEDIA_REGION_ID="$SCOPE_RAILWAY_API_REGION_ID"
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
           export SCOPE_RAILWAY_API_SERVICE_ID SCOPE_RAILWAY_WORKER_SERVICE_ID
           export SCOPE_RAILWAY_CACHE_SERVICE_ID SCOPE_RAILWAY_ROUTER_SERVICE_ID
+          export SCOPE_RAILWAY_MEDIA_SERVICE_ID SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID
           export SCOPE_RAILWAY_DATABASE_SERVICE_ID
           export SCOPE_RAILWAY_ROUTER_GROUP_ID
           export SCOPE_RAILWAY_API_REGION_ID SCOPE_RAILWAY_WORKER_REGION_ID
+          export SCOPE_RAILWAY_MEDIA_REGION_ID
           bash .github/scripts/deploy-backend-railway.sh \
             .railway-upload/api \
             .railway-upload/worker \
             .railway-upload/cache-service \
-            .railway-upload/repo-router
+            .railway-upload/repo-router \
+            .railway-upload/media-service
 
       - name: Record successful Railway deployments
         if: always()

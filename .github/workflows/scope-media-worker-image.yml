@@ -1,0 +1,81 @@
+name: Scope Media Worker Image
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+      source_sha:
+        type: string
+        required: true
+    outputs:
+      image_ref:
+        value: ${{ jobs.image.outputs.image_ref }}
+      image_digest:
+        value: ${{ jobs.image.outputs.image_digest }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: Build pinned media worker image
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    outputs:
+      image_ref: ${{ steps.identity.outputs.image_ref }}
+      image_digest: ${{ steps.identity.outputs.image_digest }}
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+
+      - name: Verify checked out revision
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Set up Docker builder
+        uses: useblacksmith/setup-docker-builder@9309da73a81f66976a6d750572e221508b1e2682 # v1
+
+      - name: Log in to GHCR
+        if: inputs.publish
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build media worker
+        id: build
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: media-worker/Dockerfile
+          platforms: linux/amd64
+          provenance: false
+          push: ${{ inputs.publish }}
+          tags: ghcr.io/scope-vcs/scope-media-worker:${{ inputs.source_sha }}
+          cache-from: type=gha,scope=scope-media-worker
+          cache-to: type=gha,mode=max,scope=scope-media-worker
+
+      - name: Bind image to source and digest
+        id: identity
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PUBLISH: ${{ inputs.publish && '1' || '0' }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$PUBLISH" == "1" ]]; then
+            [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "image_ref=ghcr.io/scope-vcs/scope-media-worker@$DIGEST" >> "$GITHUB_OUTPUT"
+            echo "image_digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          fi

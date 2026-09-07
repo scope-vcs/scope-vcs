@@ -14,8 +14,10 @@ use scope_domain::repo_config::RepoConfig as DomainRepoConfig;
 use serde::de::DeserializeOwned;
 use std::time::Duration;
 
+mod request_attachments;
 mod requests;
 mod runs;
+pub use request_attachments::*;
 pub use requests::*;
 pub use runs::*;
 

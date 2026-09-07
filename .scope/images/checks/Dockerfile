@@ -7,6 +7,8 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates crates
 COPY api api
 COPY cache-service cache-service
+COPY media-service media-service
+COPY media-worker media-worker
 COPY repo-router repo-router
 COPY worker worker
 COPY runner-runtime runner-runtime
@@ -32,8 +34,10 @@ RUN sed -i \
     && printf '%s\n' 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
+        ffmpeg \
         iproute2 \
         jq \
+        libheif-examples \
         "postgresql-15=${POSTGRES_VERSION}" \
         "postgresql-client-15=${POSTGRES_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
@@ -63,6 +67,10 @@ RUN test "$(rustc --version | cut -d' ' -f2)" = "1.98.0" \
     && test "$(node --version)" = "v${NODE_VERSION}" \
     && test "$(pnpm --version)" = "${PNPM_VERSION}" \
     && jq --version \
+    && ffmpeg -version \
+    && ffprobe -version \
+    && heif-convert --version \
+    && heif-info --version \
     && test "$(psql --version | cut -d' ' -f3)" = "15.18" \
     && test "$(playwright --version)" = "Version ${PLAYWRIGHT_VERSION}" \
     && test -x "${PLAYWRIGHT_BROWSERS_PATH}/chromium-${PLAYWRIGHT_CHROMIUM_REVISION}/chrome-linux64/chrome" \

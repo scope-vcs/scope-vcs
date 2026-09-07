@@ -51,11 +51,14 @@ pub(super) enum RequestCommandResult {
     Detail(DetailResult),
     List(ListResult),
     Mutation(RepoResponse<RequestMutationResponse>),
+    AttachmentMutation(AttachmentMutationResult),
     Invitee(RepoResponse<RequestInviteeMutationResponse>),
     Leave(TargetResponse<LeaveRequestResponse>),
     Close(TargetResponse<RequestCloseResponse>),
     Discussion(DiscussionResult),
+    AttachmentDiscussion(AttachmentDiscussionResult),
     DiscussionReply(DiscussionReplyResult),
+    AttachmentDiscussionReply(AttachmentDiscussionReplyResult),
     Rating(TargetResponse<RequestRatingResponse>),
 }
 
@@ -114,6 +117,30 @@ pub(super) struct DiscussionReplyResult {
     pub(super) request_id: String,
     pub(super) discussion: RequestDiscussionSummaryResponse,
     pub(super) reply: RequestDiscussionReplyResponse,
+}
+
+#[derive(Serialize)]
+pub(super) struct AttachmentMutationResult {
+    pub(super) repo: RepoSummaryResponse,
+    pub(super) response: RequestMutationResponse,
+    pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
+}
+
+#[derive(Serialize)]
+pub(super) struct AttachmentDiscussionResult {
+    pub(super) repo: RepoSummaryResponse,
+    pub(super) request_id: String,
+    pub(super) discussion: RequestDiscussionSummaryResponse,
+    pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
+}
+
+#[derive(Serialize)]
+pub(super) struct AttachmentDiscussionReplyResult {
+    pub(super) repo: RepoSummaryResponse,
+    pub(super) request_id: String,
+    pub(super) discussion: RequestDiscussionSummaryResponse,
+    pub(super) reply: RequestDiscussionReplyResponse,
+    pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
 }
 
 #[derive(Serialize)]
