@@ -44,7 +44,8 @@ jobs:
     needs: media-worker-image
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 90
-    environment: ${{ inputs.target_environment || 'staging' }}
+    # Reuse the protected staging credential boundary for all reviewed non-production targets.
+    environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -347,7 +348,8 @@ jobs:
     if: always()
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
-    environment: ${{ inputs.target_environment || 'staging' }}
+    # Reuse the protected staging credential boundary for all reviewed non-production targets.
+    environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
