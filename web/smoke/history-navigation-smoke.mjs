@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 
 export async function assertHistoryFirstFileStaysInRoute(page) {
   const defaultDiff = page.getByLabel('README.html diff', { exact: true })
@@ -20,7 +21,7 @@ export async function assertHistoryFirstFileStaysInRoute(page) {
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
-      const name = serverFunctionExport(request)
+      const name = serverFunctionName(request)
       // Live repository refresh can run independently of file selection.
       if (name.startsWith('loadHistoryEntry')) serverFunctions.push(name)
     }
@@ -56,12 +57,6 @@ export async function assertHistoryFirstFileStaysInRoute(page) {
       host.shadowRoot.textContent?.trim().length > 0
     )
   }, 'README.html diff')
-}
-
-function serverFunctionExport(request) {
-  const encodedId = new URL(request.url()).pathname.split('/').at(-1)
-  assert(encodedId, 'server function request is missing its encoded id')
-  return JSON.parse(Buffer.from(encodedId, 'base64url')).export
 }
 
 export async function assertHistoryFeedNavigation(page) {
