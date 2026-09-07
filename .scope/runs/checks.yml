@@ -1,9 +1,6 @@
 name: Scope checks
 on:
   manual: true
-  push:
-    branches:
-      - main
 container:
   image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:a3ed25023a60d000a8c93264518e9cdfd656f6832a6940a2eda7991db2ebbc9f
 timeout: 60m
