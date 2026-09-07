@@ -8,7 +8,7 @@ on:
       - dev/runner-economics/observe-aws.sh
 
 concurrency:
-  group: scope-railway-staging
+  group: scope-runner-economics-staging-8743c2e9
   cancel-in-progress: false
 
 permissions:

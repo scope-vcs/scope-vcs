@@ -6,6 +6,13 @@ cluster=scope-vcs-staging-runner
 stack=scope-cloud-runner-staging-mi-experiment
 aws cloudformation describe-stacks --stack-name "$stack" > "$output/stack.json"
 aws cloudformation list-stack-resources --stack-name "$stack" > "$output/resources.json"
+aws pricing get-products --service-code AmazonEC2 --filters \
+  Type=TERM_MATCH,Field=instanceType,Value=m8a.xlarge \
+  'Type=TERM_MATCH,Field=location,Value=US East (N. Virginia)' \
+  Type=TERM_MATCH,Field=operatingSystem,Value=Linux \
+  Type=TERM_MATCH,Field=tenancy,Value=Shared \
+  Type=TERM_MATCH,Field=preInstalledSw,Value=NA \
+  Type=TERM_MATCH,Field=capacitystatus,Value=Used > "$output/ec2-price.json"
 vpc=$(jq -er '.StackResourceSummaries[] | select(.ResourceType == "AWS::EC2::VPC") | .PhysicalResourceId' "$output/resources.json")
 nat=$(jq -er '.StackResourceSummaries[] | select(.ResourceType == "AWS::EC2::NatGateway") | .PhysicalResourceId' "$output/resources.json")
 started=$(date -u +%FT%TZ)
@@ -34,7 +41,8 @@ while (( SECONDS < deadline )); do
       echo "$now discovered host $id $(jq -r '.InstanceType' <<< "$host")"
     fi
     mapfile -t volumes < <(jq -r '.BlockDeviceMappings[].Ebs.VolumeId' <<< "$host")
-    if (( ${#volumes[@]} )) && [[ ! -e "$output/hosts/$id-volumes.json" ]]; then
+    state=$(jq -r '.State.Name' <<< "$host")
+    if (( ${#volumes[@]} )) && [[ "$state" == running || "$state" == pending ]] && [[ ! -e "$output/hosts/$id-volumes.json" ]]; then
       aws ec2 describe-volumes --volume-ids "${volumes[@]}" > "$output/hosts/$id-volumes.json"
     fi
   done < <(jq -c '.Reservations[].Instances[]' "$output/current-hosts.json")
