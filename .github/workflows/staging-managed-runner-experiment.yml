@@ -5,11 +5,10 @@ on:
     branches: [experiment/runner-economics]
     paths:
       - .github/workflows/staging-managed-runner-experiment.yml
-      - deploy/aws/apply-cloud-runner.sh
-      - deploy/aws/cloud-runner.yaml
+      - dev/runner-economics/observe-aws.sh
 
 concurrency:
-  group: staging-managed-runner-infrastructure-experiment
+  group: scope-railway-staging
   cancel-in-progress: false
 
 permissions:
@@ -17,10 +16,10 @@ permissions:
   id-token: write
 
 jobs:
-  deploy:
-    name: Deploy isolated staging stack
+  observe:
+    name: Observe isolated staging runners
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Configure temporary AWS role
@@ -29,42 +28,26 @@ jobs:
           aws-region: us-east-1
           role-to-assume: arn:aws:iam::957143340948:role/scope-staging-experiment-github-94d56973
           role-session-name: scope-staging-managed-runner-${{ github.run_id }}
-      - name: Deploy staging Managed Instances stack
-        env:
-          ADDITIONAL_CHECKS_IMAGE_REPOSITORY_ARN: arn:aws:ecr:us-east-1:957143340948:repository/scope-vcs/production/checks
-          AWS_REGION: us-east-1
-          ENABLE_GITHUB_ADMINISTRATION: "false"
-          ENVIRONMENT_NAME: staging
-          MANAGED_INSTANCE_TYPE: m8a.xlarge
-          RUNNER_CAPACITY: MANAGED_INSTANCES
-          STACK_NAME: scope-cloud-runner-staging-mi-experiment
-          TASK_FAMILY_PREFIX: scope-staging-runner-
-          TASK_MEMORY_MIB: "14336"
-        run: bash deploy/aws/apply-cloud-runner.sh apply
-      - name: Record isolated stack resources
-        run: |
-          mkdir -p /tmp/staging-runner-infrastructure
-          aws cloudformation describe-stacks --stack-name scope-cloud-runner-staging-mi-experiment > /tmp/staging-runner-infrastructure/stack.json
-          aws cloudformation list-stack-resources --stack-name scope-cloud-runner-staging-mi-experiment > /tmp/staging-runner-infrastructure/resources.json
-      - name: Encrypt staging dispatcher credential for local provisioning
-        env:
-          TRANSFER_PUBLIC_KEY: ${{ vars.SCOPE_RUNNER_ECONOMICS_TRANSFER_PUBLIC_KEY }}
-        run: |
-          set -euo pipefail
-          umask 077
-          dispatcher=scope-cloud-runner-staging-mi-experiment-railway-dispatcher
-          test "$(aws iam list-access-keys --user-name "$dispatcher" --query 'length(AccessKeyMetadata)' --output text)" = 0
-          printf '%s\n' "$TRANSFER_PUBLIC_KEY" > "$RUNNER_TEMP/dispatcher-transfer-public.pem"
-          openssl pkey -pubin -in "$RUNNER_TEMP/dispatcher-transfer-public.pem" -noout
-          credential=$(aws iam create-access-key --user-name "$dispatcher")
-          printf '::add-mask::%s\n' "$(jq -r '.AccessKey.AccessKeyId' <<< "$credential")"
-          printf '::add-mask::%s\n' "$(jq -r '.AccessKey.SecretAccessKey' <<< "$credential")"
-          jq -c '.AccessKey | {AccessKeyId, SecretAccessKey}' <<< "$credential" |
-            openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/dispatcher-transfer-public.pem" \
-              -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 \
-              -out /tmp/staging-runner-infrastructure/dispatcher.enc
+      - name: Observe first measurement window
+        run: timeout 50m bash dev/runner-economics/observe-aws.sh /tmp/staging-runner-evidence/first
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
         with:
-          name: staging-runner-infrastructure
-          path: /tmp/staging-runner-infrastructure
+          name: staging-runner-evidence-first
+          path: /tmp/staging-runner-evidence/first
+          retention-days: 14
+      - name: Refresh temporary AWS role
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
+        with:
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::957143340948:role/scope-staging-experiment-github-94d56973
+          role-session-name: scope-staging-managed-runner-${{ github.run_id }}-second
+          unset-current-credentials: true
+      - name: Observe second measurement window
+        run: timeout 50m bash dev/runner-economics/observe-aws.sh /tmp/staging-runner-evidence/second
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: staging-runner-evidence-second
+          path: /tmp/staging-runner-evidence/second
           retention-days: 14

@@ -4,6 +4,7 @@ on:
   push:
     branches: [experiment/runner-economics]
     paths:
+      - '.scope/runs/economics-*.yml'
       - dev/runner-economics/measure.mjs
       - dev/checks/backend
       - Cargo.toml
