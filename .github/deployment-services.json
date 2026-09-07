@@ -17,7 +17,22 @@
       "webDomain": "scope-web-staging.up.railway.app"
     },
     "databaseServiceId": "44c41a90-2d1a-4a1b-85c9-6af85d179be3",
-    "regionId": "us-east4-eqdc4a"
+    "regionId": "us-east4-eqdc4a",
+    "proofEnvironments": {
+      "media-proof": {
+        "environmentId": "93ae668a-a0e3-4c57-b6c0-4ad0592ab68c",
+        "environmentName": "media-proof",
+        "apiReplicas": 3,
+        "apiDomain": "scope-api-media-proof.up.railway.app",
+        "cacheDomain": "scope-cache-service-media-proof.up.railway.app",
+        "routerDomain": "scope-repo-router-media-proof.up.railway.app",
+        "routerReplicas": 1,
+        "routerServiceId": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c",
+        "routerServiceName": "scope-repo-router",
+        "webDomain": "scope-web-media-proof.up.railway.app",
+        "mediaGatewayDomain": "scope-media-media-proof.up.railway.app"
+      }
+    }
   },
   "deploymentAuthority": "github-actions",
   "source": {
@@ -121,6 +136,8 @@
         ".github/scripts/stop-staging-writers.sh",
         ".github/scripts/staging-railway-token.sh",
         ".github/scripts/verify-staging-target.mjs",
+        ".github/scripts/select-proof-environment.mjs",
+        ".github/scripts/select-proof-environment.test.mjs",
         ".github/scripts/staging-git-smoke.sh",
         ".github/scripts/verify-staging-target.test.mjs",
         ".github/scripts/deploy-staging-railway.sh",

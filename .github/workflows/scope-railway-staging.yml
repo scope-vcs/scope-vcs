@@ -1,5 +1,5 @@
 name: Scope Railway staging proof
-run-name: Scope staging ${{ inputs.source_sha }}
+run-name: Scope ${{ inputs.target_environment || 'staging' }} proof ${{ inputs.source_sha }}
 
 on:
   workflow_dispatch:
@@ -8,6 +8,13 @@ on:
         description: Exact repository commit SHA to deploy
         type: string
         required: true
+      target_environment:
+        description: Reviewed Railway environment for this proof
+        type: choice
+        options:
+          - staging
+          - media-proof
+        default: staging
       run_media_capacity:
         description: Run the large-video and concurrent-photo staging capacity proof
         type: boolean
@@ -18,7 +25,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: scope-railway-staging
+  group: scope-railway-${{ inputs.target_environment || 'staging' }}
   cancel-in-progress: false
 
 jobs:
@@ -37,10 +44,10 @@ jobs:
     needs: media-worker-image
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 90
-    environment: staging
+    environment: ${{ inputs.target_environment || 'staging' }}
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-staging-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Validate requested revision
         shell: bash
@@ -59,8 +66,12 @@ jobs:
           ref: ${{ github.sha }}
 
       - name: Load staging target from trusted manifest
+        id: target
         shell: bash
+        env:
+          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'staging' }}
         run: |
+          node .github/scripts/select-proof-environment.mjs "$PROOF_ENVIRONMENT"
           {
             echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
             echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.railway.staging.environmentId' .github/deployment-services.json)"
@@ -336,10 +347,10 @@ jobs:
     if: always()
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
-    environment: staging
+    environment: ${{ inputs.target_environment || 'staging' }}
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-staging-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout trusted cleanup
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -348,8 +359,12 @@ jobs:
           ref: ${{ github.sha }}
 
       - name: Load staging target from trusted manifest
+        id: target
         shell: bash
+        env:
+          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'staging' }}
         run: |
+          node .github/scripts/select-proof-environment.mjs "$PROOF_ENVIRONMENT"
           {
             echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
             echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.railway.staging.environmentId' .github/deployment-services.json)"
@@ -363,7 +378,7 @@ jobs:
       # A failed migration or partial rollout may be incompatible with the old writers.
       # Keep staging fail-closed for diagnosis instead of automatically reviving them.
       - name: Keep staging writers fenced after unsuccessful proof
-        if: needs.prove.result != 'success'
+        if: needs.prove.result != 'success' && steps.target.outcome == 'success'
         shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
