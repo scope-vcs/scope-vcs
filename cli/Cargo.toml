@@ -41,3 +41,6 @@ apple-native-keyring-store = { version = "1.0.0", features = ["keychain"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store = { version = "1.1.0", default-features = false }
+
+# Keep the CLI independent when a checkout is nested inside another workspace.
+[workspace]
