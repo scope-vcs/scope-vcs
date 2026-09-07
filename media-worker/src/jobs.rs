@@ -128,7 +128,7 @@ async fn settle_claim(
                 }
                 Err(error) => {
                     delete_objects(storage, &completion.objects).await;
-                    return Err(error);
+                    return record_source_validation_error(metadata, settings, lease, error).await;
                 }
             }
             let now = crate::unix_now()?;
@@ -150,10 +150,15 @@ async fn settle_claim(
             failure,
             validated_source,
         }) => {
-            if let Some(source) = validated_source
-                && !mark_source_validated(metadata, lease, source).await?
-            {
-                return Ok(ProcessingOutcome::LeaseLost);
+            if let Some(source) = validated_source {
+                match mark_source_validated(metadata, lease, source).await {
+                    Ok(true) => {}
+                    Ok(false) => return Ok(ProcessingOutcome::LeaseLost),
+                    Err(error) => {
+                        return record_source_validation_error(metadata, settings, lease, error)
+                            .await;
+                    }
+                }
             }
             record_processing_failure(metadata, settings, lease, failure).await
         }
@@ -533,8 +538,27 @@ async fn mark_source_validated(
             now_unix: crate::unix_now()?,
         })
         .await
-        .map_err(db_error)?;
+        .map_err(anyhow::Error::new)?;
     Ok(matches!(result, MediaLeaseMutation::Applied(_)))
+}
+
+async fn record_source_validation_error(
+    metadata: &MetadataStore,
+    settings: &WorkerSettings,
+    lease: &RequestAttachmentProcessingLease,
+    error: anyhow::Error,
+) -> anyhow::Result<ProcessingOutcome> {
+    if error
+        .downcast_ref::<scope_postgres::error::PostgresError>()
+        .is_some_and(|error| error.kind == scope_postgres::error::PostgresErrorKind::InvalidInput)
+    {
+        return record_processing_failure(metadata, settings, lease, RequestAttachmentFailure {
+            code: RequestAttachmentFailureCode::CorruptMedia,
+            message: "The uploaded media does not match its declared type. Upload it with the correct file type.".to_owned(),
+            retryable: false,
+        }).await;
+    }
+    Err(error)
 }
 
 async fn record_processing_failure(

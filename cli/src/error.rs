@@ -62,7 +62,9 @@ impl CliError {
             ErrorCode::CliUpgradeRequired | ErrorCode::Forbidden | ErrorCode::ProtectedPath => {
                 ExitCategory::Policy
             }
-            ErrorCode::Conflict | ErrorCode::NotFound => ExitCategory::StateConflict,
+            ErrorCode::AttachmentUploadExpired | ErrorCode::Conflict | ErrorCode::NotFound => {
+                ExitCategory::StateConflict
+            }
             ErrorCode::ServiceUnavailable | ErrorCode::TooManyRequests => ExitCategory::Temporary,
             ErrorCode::Internal | ErrorCode::NotImplemented => ExitCategory::Unexpected,
         }

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { HttpError } from '../../api/http'
+import { sha256Blob } from './request-attachment-hash'
 import {
   addRequestAttachmentDraftFiles,
   readRequestAttachmentDraft,
@@ -65,6 +67,7 @@ test('uploads with the server concurrency bound and replaces the pending referen
     }
 
     await uploadRequestAttachment({
+      hashFile: (blob) => sha256Blob(blob),
       actions,
       draftKey: key,
       localId: attachment.localId,
@@ -136,6 +139,7 @@ test('reauthorizes an expired transfer and reconciles acknowledged parts', async
     }
 
     await uploadRequestAttachment({
+      hashFile: (blob) => sha256Blob(blob),
       actions,
       draftKey: key,
       localId: attachment.localId,
@@ -157,6 +161,41 @@ type FakeRequest = {
   respond: (status: number, body: unknown) => void
   url: string
 }
+
+test('rotates an expired operation and persists the replacement before retrying', async () => {
+  const key = 'expired-operation-draft'
+  const [attachment] = addRequestAttachmentDraftFiles(key, [new File(['data'], 'photo.png', { type: 'image/png' })])
+  assert.ok(attachment)
+  const operations: string[] = []
+  const actions: AttachmentUploadActions = {
+    prepare: async (input) => {
+      operations.push(input.operation_id)
+      if (operations.length === 1) throw new HttpError(409, {
+        code: 'attachment_upload_expired', message: 'expired', retryable: false,
+      })
+      assert.equal(readRequestAttachmentDraft(key).attachments[0]?.operationId, input.operation_id)
+      return {
+        attachment: { id: 'fresh-attachment' },
+        transfer: {
+          acknowledged_parts: [{ part_number: 1, sha256: 'part-1', size_bytes: 4 }],
+          expires_at_unix: Math.floor(Date.now() / 1000) + 300,
+          grant: 'fresh', max_concurrent_parts: 1, preferred_part_bytes: 4,
+          media_base_url: 'https://media.example.test', upload_id: 'fresh-upload',
+        },
+      }
+    },
+    finish: async () => ({ id: 'fresh-attachment' }),
+  }
+  await uploadRequestAttachment({
+    actions, draftKey: key, localId: attachment.localId,
+    params: { owner: 'scope', repo: 'vcs', request_id: 'request' },
+    target: { discussion_id: null, kind: 'Description' },
+    hashFile: (blob) => sha256Blob(blob),
+  })
+  assert.equal(operations.length, 2)
+  assert.notEqual(operations[0], operations[1])
+  assert.equal(readRequestAttachmentDraft(key).attachments[0]?.status, 'uploaded')
+})
 
 function installFakeXhr(
   send: (request: FakeRequest, part: Blob) => Promise<void>,

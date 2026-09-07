@@ -45,6 +45,7 @@
     "dompurify": "^3.4.14",
     "github-slugger": "2.0.0",
     "lucide-react": "^0.562.0",
+    "mdast-util-from-markdown": "2.0.3",
     "motion": "^12.42.2",
     "pagent": "file:vendor/pagent-v0.1.0-47b796c.tgz",
     "posthog-js": "1.417.1",

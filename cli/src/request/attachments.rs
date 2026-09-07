@@ -1,36 +1,31 @@
+mod journal;
 use super::text::terminal_text;
 use crate::api::{
     RequestTarget, finish_request_attachment, get_request_attachment,
     get_request_attachment_limits, prepare_request_attachment, upload_request_attachment_part,
 };
 use anyhow::{Context, bail};
+pub(super) use journal::{begin_mutation, complete_mutation, complete_uploads};
+use journal::{fingerprint, rotate_upload_operation, unix_now, upload_operations};
 use scope_api_contract::attachments::{
     FinishRequestAttachmentRequest, PrepareRequestAttachmentRequest, RequestAttachmentKind,
     RequestAttachmentPartReceiptResponse, RequestAttachmentResponse, RequestAttachmentState,
     RequestAttachmentTargetInput,
 };
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env,
-    ffi::OsString,
-    fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    fs::{self, File},
+    io::{self, Read},
     path::{Path, PathBuf},
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 const MAX_PART_BYTES: usize = 8 * 1024 * 1024;
 const HASH_BUFFER_BYTES: usize = 1024 * 1024;
-const MAX_JOURNAL_BYTES: u64 = 2 * 1024 * 1024;
-const MAX_UPLOAD_RECEIPTS: usize = 256;
-const MAX_PENDING_MUTATIONS: usize = 64;
 const WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 const WAIT_POLL_INTERVAL: Duration = Duration::from_secs(1);
-const JOURNAL_KIND: &str = "scope.request-attachment-receipts";
-const JOURNAL_VERSION: u8 = 1;
 
 pub(super) struct UploadedAttachments {
     pub(super) attachments: Vec<RequestAttachmentResponse>,
@@ -47,44 +42,6 @@ struct AttachmentFile {
     size_bytes: u64,
     sha256: String,
     receipt_key: String,
-}
-
-#[derive(Deserialize, Serialize)]
-struct ReceiptJournal {
-    kind: String,
-    version: u8,
-    uploads: Vec<UploadReceipt>,
-    pending_mutations: Vec<PendingMutationReceipt>,
-}
-
-#[derive(Deserialize, Serialize)]
-struct UploadReceipt {
-    key: String,
-    operation_id: String,
-    updated_at_unix: u64,
-}
-
-#[derive(Deserialize, Serialize)]
-struct PendingMutationReceipt {
-    key: String,
-    client_id: String,
-    updated_at_unix: u64,
-}
-
-pub(super) struct PendingMutation {
-    key: String,
-    pub(super) client_id: String,
-}
-
-impl Default for ReceiptJournal {
-    fn default() -> Self {
-        Self {
-            kind: JOURNAL_KIND.to_string(),
-            version: JOURNAL_VERSION,
-            uploads: Vec::new(),
-            pending_mutations: Vec::new(),
-        }
-    }
 }
 
 pub(super) fn upload(
@@ -144,19 +101,17 @@ pub(super) fn upload(
         }
     }
 
-    let journal_path = journal_path()?;
-    let mut journal = load_journal(&journal_path)?;
-    let now = unix_now()?;
-    let operations = files
-        .iter()
-        .map(|file| journal.upload_operation_id(&file.receipt_key, now))
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    save_journal(&journal_path, &mut journal)?;
+    let operations = upload_operations(
+        &files
+            .iter()
+            .map(|file| file.receipt_key.as_str())
+            .collect::<Vec<_>>(),
+    )?;
 
     let mut attachments = Vec::with_capacity(files.len());
     let mut references = Vec::with_capacity(files.len());
     for (file, operation_id) in files.iter().zip(operations) {
-        let prepare_request = PrepareRequestAttachmentRequest {
+        let mut prepare_request = PrepareRequestAttachmentRequest {
             operation_id,
             target: attachment_target.clone(),
             filename: file.filename.clone(),
@@ -164,8 +119,30 @@ pub(super) fn upload(
             size_bytes: file.size_bytes,
             sha256: file.sha256.clone(),
         };
-        let prepared =
-            prepare_request_attachment(client, api_url, session_token, target, &prepare_request)?;
+        let prepared = match prepare_request_attachment(
+            client,
+            api_url,
+            session_token,
+            target,
+            &prepare_request,
+        ) {
+            Ok(prepared) => prepared,
+            Err(error)
+                if crate::error::response(&error).code
+                    == scope_api_contract::ErrorCode::AttachmentUploadExpired =>
+            {
+                prepare_request.operation_id =
+                    rotate_upload_operation(&file.receipt_key, &prepare_request.operation_id)?;
+                prepare_request_attachment(
+                    client,
+                    api_url,
+                    session_token,
+                    target,
+                    &prepare_request,
+                )?
+            }
+            Err(error) => return Err(error),
+        };
         let attachment = if prepared.attachment.state == RequestAttachmentState::Prepared {
             transfer_and_finish(
                 client,
@@ -605,251 +582,6 @@ fn is_processing(attachment: &RequestAttachmentResponse) -> bool {
         attachment.state,
         RequestAttachmentState::Uploaded | RequestAttachmentState::Processing
     )
-}
-
-pub(super) fn begin_mutation(
-    api_url: &str,
-    scope_fields: &[&str],
-    id_prefix: &str,
-) -> anyhow::Result<PendingMutation> {
-    let mut key_fields = Vec::with_capacity(scope_fields.len() + 1);
-    key_fields.push(api_url);
-    key_fields.extend_from_slice(scope_fields);
-    let key = fingerprint(&key_fields);
-    let path = journal_path()?;
-    let mut journal = load_journal(&path)?;
-    let now = unix_now()?;
-    let client_id = if let Some(receipt) = journal
-        .pending_mutations
-        .iter_mut()
-        .find(|receipt| receipt.key == key)
-    {
-        receipt.updated_at_unix = now;
-        receipt.client_id.clone()
-    } else {
-        let client_id = fresh_id(id_prefix)?;
-        journal.pending_mutations.insert(
-            0,
-            PendingMutationReceipt {
-                key: key.clone(),
-                client_id: client_id.clone(),
-                updated_at_unix: now,
-            },
-        );
-        client_id
-    };
-    save_journal(&path, &mut journal)?;
-    Ok(PendingMutation { key, client_id })
-}
-
-pub(super) fn complete_uploads(receipt_keys: &[String]) -> anyhow::Result<()> {
-    let path = journal_path()?;
-    let mut journal = load_journal(&path)?;
-    journal
-        .uploads
-        .retain(|receipt| !receipt_keys.contains(&receipt.key));
-    save_journal(&path, &mut journal)
-}
-
-pub(super) fn complete_mutation(
-    mutation: &PendingMutation,
-    receipt_keys: &[String],
-) -> anyhow::Result<()> {
-    let path = journal_path()?;
-    let mut journal = load_journal(&path)?;
-    journal
-        .uploads
-        .retain(|receipt| !receipt_keys.contains(&receipt.key));
-    journal
-        .pending_mutations
-        .retain(|receipt| receipt.key != mutation.key);
-    save_journal(&path, &mut journal)
-}
-
-fn fingerprint(fields: &[&str]) -> String {
-    let mut hasher = Sha256::new();
-    for field in fields {
-        hasher.update((field.len() as u64).to_be_bytes());
-        hasher.update(field.as_bytes());
-    }
-    hex::encode(hasher.finalize())
-}
-
-impl ReceiptJournal {
-    fn upload_operation_id(&mut self, key: &str, now: u64) -> anyhow::Result<String> {
-        if let Some(receipt) = self.uploads.iter_mut().find(|receipt| receipt.key == key) {
-            receipt.updated_at_unix = now;
-            return Ok(receipt.operation_id.clone());
-        }
-        let operation_id = fresh_id("cli_attachment")?;
-        self.uploads.insert(
-            0,
-            UploadReceipt {
-                key: key.to_string(),
-                operation_id: operation_id.clone(),
-                updated_at_unix: now,
-            },
-        );
-        Ok(operation_id)
-    }
-
-    fn prune(&mut self) {
-        self.uploads
-            .sort_by_key(|receipt| std::cmp::Reverse(receipt.updated_at_unix));
-        self.uploads.truncate(MAX_UPLOAD_RECEIPTS);
-        self.pending_mutations
-            .sort_by_key(|receipt| std::cmp::Reverse(receipt.updated_at_unix));
-        self.pending_mutations.truncate(MAX_PENDING_MUTATIONS);
-    }
-}
-
-fn fresh_id(prefix: &str) -> anyhow::Result<String> {
-    let mut random = [0_u8; 16];
-    getrandom::fill(&mut random)
-        .map_err(|error| anyhow::anyhow!("generate attachment operation ID: {error}"))?;
-    Ok(format!("{prefix}_{}", hex::encode(random)))
-}
-
-fn load_journal(path: &Path) -> anyhow::Result<ReceiptJournal> {
-    reject_symlink(path, "Scope attachment receipt journal")?;
-    match fs::metadata(path) {
-        Ok(metadata) if metadata.len() > MAX_JOURNAL_BYTES => {
-            bail!("Scope attachment receipt journal is unexpectedly large")
-        }
-        Ok(_) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return Ok(ReceiptJournal::default());
-        }
-        Err(error) => return Err(error).context("inspect Scope attachment receipt journal"),
-    }
-    let bytes = fs::read(path).context("read Scope attachment receipt journal")?;
-    let journal: ReceiptJournal =
-        serde_json::from_slice(&bytes).context("parse Scope attachment receipt journal")?;
-    if journal.kind != JOURNAL_KIND || journal.version != JOURNAL_VERSION {
-        bail!("Scope attachment receipt journal has an unsupported format");
-    }
-    Ok(journal)
-}
-
-fn save_journal(path: &Path, journal: &mut ReceiptJournal) -> anyhow::Result<()> {
-    journal.prune();
-    let bytes =
-        serde_json::to_vec(journal).context("serialize Scope attachment receipt journal")?;
-    if bytes.len() as u64 > MAX_JOURNAL_BYTES {
-        bail!("Scope attachment receipt journal exceeded its size bound");
-    }
-    let parent = path
-        .parent()
-        .context("Scope attachment receipt journal path has no parent")?;
-    ensure_journal_directory(parent)?;
-    reject_symlink(path, "Scope attachment receipt journal")?;
-    let temp_path = parent.join(format!(
-        ".request-attachments.{}.{}.tmp",
-        std::process::id(),
-        unix_now()?
-    ));
-    let result = (|| -> anyhow::Result<()> {
-        write_private_file(&temp_path, &bytes)?;
-        replace_journal_file(&temp_path, path)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temp_path);
-    }
-    result
-}
-
-fn replace_journal_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
-    #[cfg(not(windows))]
-    {
-        fs::rename(temp_path, path).context("replace Scope attachment receipt journal")
-    }
-    #[cfg(windows)]
-    {
-        match fs::remove_file(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(error).context("replace Scope attachment receipt journal");
-            }
-        }
-        fs::rename(temp_path, path).context("replace Scope attachment receipt journal")
-    }
-}
-
-fn journal_path() -> anyhow::Result<PathBuf> {
-    let base = non_empty_path(env::var_os("XDG_CONFIG_HOME"))
-        .or_else(|| non_empty_path(env::var_os("HOME")).map(|path| path.join(".config")))
-        .or_else(|| non_empty_path(env::var_os("USERPROFILE")).map(|path| path.join(".config")))
-        .context("locate Scope attachment receipt journal; set XDG_CONFIG_HOME or HOME")?;
-    Ok(base.join("scope").join("request-attachments.json"))
-}
-
-fn non_empty_path(value: Option<OsString>) -> Option<PathBuf> {
-    value.filter(|path| !path.is_empty()).map(PathBuf::from)
-}
-
-fn ensure_journal_directory(path: &Path) -> anyhow::Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            bail!("Scope attachment receipt directory cannot be a symlink")
-        }
-        Ok(metadata) if !metadata.is_dir() => {
-            bail!("Scope attachment receipt path must be a directory")
-        }
-        Ok(_) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            fs::create_dir_all(path).context("create Scope attachment receipt directory")?;
-        }
-        Err(error) => return Err(error).context("inspect Scope attachment receipt directory"),
-    }
-    secure_directory(path)
-}
-
-fn reject_symlink(path: &Path, label: &str) -> anyhow::Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => bail!("{label} cannot be a symlink"),
-        Ok(metadata) if !metadata.is_file() => bail!("{label} must be a regular file"),
-        Ok(_) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error).with_context(|| format!("inspect {label}")),
-    }
-}
-
-fn write_private_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options
-        .open(path)
-        .context("create temporary Scope attachment receipt journal")?;
-    file.write_all(bytes)
-        .context("write Scope attachment receipt journal")?;
-    file.sync_all()
-        .context("sync Scope attachment receipt journal")
-}
-
-fn secure_directory(path: &Path) -> anyhow::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(path)?.permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(path, permissions)
-            .context("secure Scope attachment receipt directory")?;
-    }
-    Ok(())
-}
-
-fn unix_now() -> anyhow::Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock is before Unix epoch")?
-        .as_secs())
 }
 
 fn print_progress(filename: &str, uploaded_bytes: u64, total_bytes: u64) {

@@ -36,6 +36,7 @@ import {
 import {
   insertRequestAttachmentReferences,
   requestAttachmentDraftReference,
+  requestAttachmentContentCount,
 } from './request-attachment-reference'
 
 const FALLBACK_ACCEPTED_MEDIA = [
@@ -113,7 +114,9 @@ export function RequestAttachmentEditor({
   const hasFailedTransfer = draft.attachments.some(
     (attachment) => attachment.status === 'failed',
   )
-  const canSubmit = !pending && transfersReady && (
+  const attachmentCount = requestAttachmentContentCount(draft.text, draft.attachments)
+  const attachmentLimit = environment.limits?.max_attachments_per_content ?? 10
+  const canSubmit = !pending && transfersReady && attachmentCount <= attachmentLimit && (
     target === 'description' || Boolean(draft.text.trim()) || readyAttachments.length > 0
   )
 
@@ -136,12 +139,12 @@ export function RequestAttachmentEditor({
   }
 
   function addFiles(files: File[]) {
-    const resumableCount = files.filter((file) => draft.attachments.some((attachment) =>
-      attachment.file === null && attachment.name === (file.name || 'Pasted image') && attachment.size === file.size,
+    const resumableCount = draft.attachments.filter((attachment) => attachment.file === null && files.some((file) =>
+      attachment.name === (file.name || 'Pasted image') && attachment.size === file.size,
     )).length
     const accepted = validateFiles(
       files,
-      draft.attachments.length - resumableCount,
+      attachmentCount - resumableCount,
       environment.limits,
     )
     setValidationError(accepted.error)
@@ -285,7 +288,9 @@ export function RequestAttachmentEditor({
       {validationError ? <p className="mt-2 text-sm text-destructive" role="alert">{validationError}</p> : null}
       <div className="mt-2 flex items-center justify-between gap-3">
         <p aria-live="polite" className="text-xs text-muted-foreground">
-          {hasFailedTransfer
+          {attachmentCount > attachmentLimit
+            ? `You can attach up to ${attachmentLimit} files here.`
+            : hasFailedTransfer
             ? 'Remove or retry failed files before saving.'
             : transferPending
               ? 'Uploading files… Draft kept while you navigate.'

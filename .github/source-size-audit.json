@@ -62,11 +62,6 @@
       "reason": "Command dispatch, repository and request context resolution, discussion lifecycles, and local request identity coordinate one authenticated request-command boundary; behavior-specific policy and rendering remain in focused submodules."
     },
     {
-      "path": "cli/src/request/attachments.rs",
-      "owner": "CLI request attachment transaction",
-      "reason": "File validation, resumable bounded-part transfer, stable reference creation, conversion polling, and the bounded receipt journal form one retry-safe attachment transaction."
-    },
-    {
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
       "owner": "request attachment aggregate",
       "reason": "Upload, processing, binding, access, and cleanup transitions share source, derivative, lease, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."

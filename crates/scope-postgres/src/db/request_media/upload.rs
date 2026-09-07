@@ -45,12 +45,19 @@ impl MediaStore {
                     "request attachment target write access required",
                 ));
             }
+            ensure_prepare_intent_matches(&existing, &command)?;
+            if existing.state == RequestAttachmentState::Prepared
+                && command.now_unix >= existing.upload_expires_at_unix
+            {
+                return Err(PostgresError::attachment_upload_expired(
+                    "attachment upload expired; prepare a new upload operation",
+                ));
+            }
             if cleanup_tombstone_exists(&tx, &existing.id).await? {
                 return Err(PostgresError::conflict(
                     "request attachment is being deleted",
                 ));
             }
-            ensure_prepare_intent_matches(&existing, &command)?;
             let acknowledged_parts = stored_receipts(&tx, &existing.id).await?;
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(PreparedRequestAttachment {

@@ -4,6 +4,7 @@ import {
   insertRequestAttachmentReferences,
   requestAttachmentDraftReference,
   requestAttachmentIdFromUrl,
+  requestAttachmentContentCount,
 } from './request-attachment-reference'
 
 test('accepts only exact Scope attachment references', () => {
@@ -23,4 +24,18 @@ test('inserts a pending stable-shaped reference at the editor cursor', () => {
     insertRequestAttachmentReferences('before after', 6, [reference]),
     `before\n\n${reference}\n\n after`,
   )
+})
+
+test('content capacity counts unique existing and pending references without double counting uploads', () => {
+  const text = '![one](/request-attachments/one) ![one again](/request-attachments/one) [video](/request-attachments/two)'
+  assert.equal(requestAttachmentContentCount(text, []), 2)
+  assert.equal(requestAttachmentContentCount(text, [
+    { localId: 'pending-one', attachmentId: 'one' },
+    { localId: 'pending-three', attachmentId: null },
+  ]), 3)
+})
+
+test('content capacity follows Markdown references and ignores code or unused definitions', () => {
+  const text = '[photo][image] ![same][IMAGE]\n\n[image]: /request-attachments/one\n[unused]: /request-attachments/two\n\n`![code](/request-attachments/three)`'
+  assert.equal(requestAttachmentContentCount(text, []), 1)
 })

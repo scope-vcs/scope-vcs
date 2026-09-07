@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { invalidateRepoResources } from '../repo-detail/repo-resource-invalidation'
 import {
   activateRequestAttachmentResourceScope,
   requestAttachmentResource,
@@ -94,4 +95,22 @@ function resourceValue(state: 'Processing'): RequestAttachmentResourceValue {
       unbound_attachment_ttl_seconds: 604_800,
     },
   }
+}
+
+for (const kind of [
+  { RequestAttachmentChanged: { request_id: 'request', attachment_id: 'attachment', audience: 'Public' as const } },
+  { RequestTimelineChanged: { request_id: 'request', discussion_id: 'discussion', through_position: 2, audience: 'Public' as const } },
+  'Lagged' as const,
+  { RepositoryChanged: { reason: 'recovery' } },
+]) {
+  test(`repository events invalidate an unmounted attachment cache: ${JSON.stringify(kind)}`, () => {
+    const identity = requestAttachmentResourceIdentity('viewer/private', 'request')
+    const other = requestAttachmentResourceIdentity('other-viewer', 'request')
+    requestAttachmentResource.write(identity, resourceValue('Processing'))
+    requestAttachmentResource.write(other, resourceValue('Processing'))
+    invalidateRepoResources('viewer/private', { repo_id: 'repo', incarnation_id: 'incarnation', version: 2, kind })
+    assert.equal(requestAttachmentResource.getSnapshot(identity).stale, true)
+    assert.equal(requestAttachmentResource.peek(identity)?.attachments[0]?.state, 'Processing')
+    assert.equal(requestAttachmentResource.getSnapshot(other).stale, false)
+  })
 }

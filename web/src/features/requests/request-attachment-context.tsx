@@ -5,8 +5,6 @@ import type {
   RequestAttachmentMediaTarget,
   RequestAttachmentResponse,
 } from '@/api/types.generated'
-import type { RepoChangeEvent } from '@/api/types.generated'
-import { useRepoChangeSubscription } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { createContext, type ReactNode, use, useCallback, useEffect, useMemo } from 'react'
@@ -99,23 +97,6 @@ export function RequestAttachmentProvider({
     load,
     resource: requestAttachmentResource,
   })
-
-  const onRepoChange = useCallback((event: RepoChangeEvent) => {
-    if (event.kind === 'Lagged') {
-      requestAttachmentResource.invalidate(identity)
-      return
-    }
-    if (
-      typeof event.kind === 'object' &&
-      (('RequestAttachmentChanged' in event.kind &&
-        event.kind.RequestAttachmentChanged.request_id === requestId) ||
-       ('RequestTimelineChanged' in event.kind &&
-        event.kind.RequestTimelineChanged.request_id === requestId))
-    ) {
-      requestAttachmentResource.invalidate(identity)
-    }
-  }, [identity, requestId])
-  useRepoChangeSubscription(onRepoChange)
 
   const attachments = useMemo(() => new Map(
     (resource.value?.attachments ?? []).map((attachment) => [attachment.id, attachment]),

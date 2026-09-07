@@ -325,3 +325,7 @@ test("unwraps raw Railway variable references without resolving them", () => {
     SIMPLE: "value",
   });
 });
+
+test("production reconciliation requires a pinned worker image before reading live state", () => {
+  assert.throws(() => desiredMediaState(manifest(), "production"), /requires --worker-image/);
+});

@@ -814,3 +814,49 @@ async fn binding_a_ready_attachment_notifies_only_after_the_transaction_commits(
         "notification_attachment"
     );
 }
+
+#[tokio::test]
+async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discovery() {
+    let fixture = fixture();
+    start_request(&fixture, "expiry_request", "expiry-request", 1).await;
+    let prepared = prepare_attachment(&fixture, "expiry_request", "expired_attachment", 10).await;
+    let expires = prepared.attachment.upload_expires_at_unix;
+    let command = |operation_id: &str| PrepareRequestAttachmentCommand {
+        attachment_id: "replacement_attachment".to_string(),
+        upload_id: "replacement_upload".to_string(),
+        operation_id: operation_id.to_string(),
+        request_id: "expiry_request".to_string(),
+        actor_user_id: OWNER_ID.to_string(),
+        target: RequestAttachmentTarget::Description,
+        filename: "expired_attachment.png".to_string(),
+        declared_media_type: "image/png".to_string(),
+        size_bytes: 4,
+        sha256: SOURCE_SHA256.to_string(),
+        now_unix: expires,
+    };
+    for cleanup_discovered in [false, true] {
+        if cleanup_discovered {
+            fixture
+                .store
+                .media()
+                .enqueue_expired_attachment_cleanup(expires)
+                .await
+                .unwrap();
+        }
+        let error = fixture
+            .store
+            .media()
+            .prepare_request_attachment(command("operation_expired_attachment"), default_limits())
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, PostgresErrorKind::AttachmentUploadExpired);
+    }
+    let replacement = fixture
+        .store
+        .media()
+        .prepare_request_attachment(command("replacement_operation"), default_limits())
+        .await
+        .unwrap();
+    assert_ne!(replacement.attachment.id, prepared.attachment.id);
+    assert_ne!(replacement.upload_id, prepared.upload_id);
+}

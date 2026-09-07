@@ -517,6 +517,10 @@ doctor() {
   assert_command pnpm
   assert_command setsid
   assert_command ss
+  assert_command "${SCOPE_MEDIA_FFMPEG:-ffmpeg}"
+  assert_command "${SCOPE_MEDIA_FFPROBE:-ffprobe}"
+  assert_command "${SCOPE_MEDIA_HEIF_CONVERT:-heif-convert}"
+  assert_command "${SCOPE_MEDIA_HEIF_INFO:-heif-info}"
 
   local issuer dev_email secret_key
   issuer="$(get_clerk_issuer)"

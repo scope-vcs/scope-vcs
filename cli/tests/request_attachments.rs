@@ -24,6 +24,38 @@ use tokio::sync::oneshot;
 const OID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[test]
+fn expired_upload_operations_rotate_without_manual_journal_edits() {
+    let cwd = TempDir::new("expired-upload-cwd");
+    let file = cwd.path().join("photo.png");
+    fs::write(&file, b"photo").unwrap();
+    let server = MediaFixture::start(false);
+    server.state.lock().unwrap().fail_expired_upload_once = true;
+    let output = server
+        .command(cwd.path())
+        .args([
+            "--json",
+            "--repo",
+            "owner/repo",
+            "request",
+            "edit",
+            "--request",
+            "req_one",
+            "--attach",
+            file.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let state = server.state.lock().unwrap();
+    assert_eq!(state.prepare_operation_ids.len(), 2);
+    assert_ne!(
+        state.prepare_operation_ids[0],
+        state.prepare_operation_ids[1]
+    );
+    assert_eq!(state.edits.len(), 1);
+}
+
+#[test]
 fn attachment_only_edit_resumes_parts_and_preserves_machine_output() {
     let cwd = TempDir::new("attachment-resume-cwd");
     let file = cwd.path().join("walkthrough.mp4");
@@ -460,6 +492,7 @@ struct FixtureState {
     fail_second_part_once: bool,
     fail_discussion_once: bool,
     fail_grant_once: bool,
+    fail_expired_upload_once: bool,
     fail_edit_once: bool,
     fail_get_once: bool,
     finished: bool,
@@ -630,11 +663,21 @@ async fn attachment_limits() -> Json<Value> {
 async fn prepare_attachment(
     State(state): State<Arc<Mutex<FixtureState>>>,
     Json(body): Json<Value>,
-) -> Json<Value> {
+) -> Response {
     let mut state = state.lock().unwrap();
     state
         .prepare_operation_ids
         .push(body["operation_id"].as_str().unwrap().to_string());
+    if state.fail_expired_upload_once {
+        state.fail_expired_upload_once = false;
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "code":"attachment_upload_expired", "message":"upload expired", "retryable":false,
+            })),
+        )
+            .into_response();
+    }
     state.prepare_targets.push(body["target"].clone());
     state.last_prepare = body.clone();
     let acknowledged = state.acknowledged.values().cloned().collect::<Vec<_>>();
@@ -652,6 +695,7 @@ async fn prepare_attachment(
             "acknowledged_parts":acknowledged
         }
     }))
+    .into_response()
 }
 
 async fn upload_part(

@@ -1,5 +1,6 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PostgresErrorKind {
+    AttachmentUploadExpired,
     InvalidInput,
     Conflict,
     PermissionDenied,
@@ -35,6 +36,7 @@ impl PostgresError {
     }
 
     message_errors! {
+        attachment_upload_expired => AttachmentUploadExpired,
         permission_denied => PermissionDenied,
         conflict => Conflict,
         resource_exhausted => ResourceExhausted,

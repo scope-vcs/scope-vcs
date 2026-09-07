@@ -2,7 +2,7 @@
   "lockfiles": {
     "Cargo.lock": "67cf470cdda8a86aa20cf82df75baf70352e0909156418e662ce3c4482a780eb",
     "cli/Cargo.lock": "6daddd70bb0c67db9fed45f10beb272adc51988aa25b22bacf29a2839f6f05e6",
-    "web/pnpm-lock.yaml": "a207257e89a9107fd4a850033919c1bc334e420cc9039abb2b26b5889d61c352"
+    "web/pnpm-lock.yaml": "2be660784f376524e059efbe5eeba99a98cbf4c23d5d103178fb1c8e139a5bd6"
   },
   "inputs": {
     "dev/licensing/generate.py": "ac0887b5c9af145e2605a1d9b2d3c445e835ad04efbe7edebd1b431f5826ae8e",

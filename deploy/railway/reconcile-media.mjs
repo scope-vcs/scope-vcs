@@ -68,6 +68,9 @@ export function desiredMediaState(manifest, environmentName, workerImageDigest =
     ? requiredString(resources.production?.webOrigin, "production web origin")
     : `https://${requiredString(railway.staging?.webDomain, "staging web domain")}`;
   const image = workerImageDigest || resources.workerImageDigest || "";
+  if (environmentName === "production" && !image) {
+    throw new Error("Production media reconciliation requires --worker-image pinned by sha256 digest");
+  }
   if (image && !IMAGE_DIGEST.test(image)) {
     throw new Error("Media worker image must be the reviewed GHCR repository pinned by sha256 digest");
   }

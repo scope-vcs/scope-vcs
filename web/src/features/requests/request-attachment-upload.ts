@@ -7,7 +7,8 @@ import {
   registerRequestAttachmentDraftUploadCanceller,
   type RequestAttachmentDraftTarget,
 } from './request-attachment-drafts'
-import { sha256Blob } from './request-attachment-hash'
+import { hashAttachmentFile } from './request-attachment-hash-client'
+import { HttpError } from '../../api/http'
 
 export type AttachmentUploadParams = {
   owner: string
@@ -70,6 +71,7 @@ export async function uploadRequestAttachment({
   params,
   target,
   onCompleted,
+  hashFile = hashAttachmentFile,
 }: {
   actions: AttachmentUploadActions
   draftKey: string
@@ -77,6 +79,7 @@ export async function uploadRequestAttachment({
   params: AttachmentUploadParams
   target: AttachmentUploadTarget
   onCompleted?: () => void
+  hashFile?: typeof hashAttachmentFile
 }) {
   const attachment = readRequestAttachmentDraft(draftKey).attachments.find(
     (candidate) => candidate.localId === localId,
@@ -91,8 +94,8 @@ export async function uploadRequestAttachment({
     status: 'uploading',
   })
   try {
-    const sha256 = await sha256Blob(file)
-    const operationId = attachment.sha256 && attachment.sha256 !== sha256
+    const sha256 = await hashFile(file, controller.signal)
+    let operationId = attachment.sha256 && attachment.sha256 !== sha256
       ? crypto.randomUUID()
       : attachment.operationId
     patchRequestAttachmentDraftFile(draftKey, localId, {
@@ -104,15 +107,23 @@ export async function uploadRequestAttachment({
     let prepared: Awaited<ReturnType<AttachmentUploadActions['prepare']>> | null = null
     let receipts: AttachmentPartReceipt[] | null = null
     for (let authorizationAttempt = 0; authorizationAttempt < 3; authorizationAttempt += 1) {
-      prepared = await actions.prepare({
-        ...params,
-        declared_media_type: attachment.contentType,
-        filename: attachment.name,
-        operation_id: operationId,
-        sha256,
-        size_bytes: file.size,
-        target,
-      })
+      try {
+        prepared = await actions.prepare({
+          ...params,
+          declared_media_type: attachment.contentType,
+          filename: attachment.name,
+          operation_id: operationId,
+          sha256,
+          size_bytes: file.size,
+          target,
+        })
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.response.code !== 'attachment_upload_expired' || authorizationAttempt === 2) throw error
+        assertActive(controller)
+        operationId = crypto.randomUUID()
+        patchRequestAttachmentDraftFile(draftKey, localId, { operationId })
+        continue
+      }
       assertActive(controller)
       try {
         receipts = await uploadParts({
