@@ -3,6 +3,9 @@ name: Scope Web Deploy
 on:
   workflow_call:
     inputs:
+      source_sha:
+        type: string
+        required: true
       verified_successful_sha:
         type: string
         default: ""
@@ -21,28 +24,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
 
       - name: Install Node
         uses: actions/setup-node@v6
         with:
           node-version: 24
 
-      - name: Stage Railway upload root
-        shell: bash
-        env:
-          VERIFIED_SUCCESSFUL_SHA: ${{ inputs.verified_successful_sha }}
-        run: |
-          rm -rf .railway-upload
-          mkdir -p .railway-upload/web
-          cp -a web/. .railway-upload/web/
-          cp web/railway.json .railway-upload/railway.json
-          printf '%s\n' "$GITHUB_SHA" > .railway-upload/web/.scope-deployment-sha
-          if [[ "$VERIFIED_SUCCESSFUL_SHA" != "$GITHUB_SHA" ]]; then
-            printf '%s:%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > .railway-upload/web/.scope-deployment-attempt
-          fi
-          test -s .railway-upload/web/package.json
-          test -s .railway-upload/railway.json
-          test ! -e .railway-upload/package.json
+      - name: Download prepared release manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: prepared-release-${{ inputs.source_sha }}
 
       - name: Install Railway CLI
         run: |
@@ -52,11 +45,14 @@ jobs:
       - name: Deploy to Railway
         shell: bash
         env:
+          SCOPE_PREPARED_RELEASE_PATH: prepared-release.json
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
           RAILWAY_DEPLOY_MESSAGE: ${{ github.event.head_commit.message || github.workflow }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SCOPE_DEPLOYMENT_COMPONENT: web
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
-          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ github.sha }}
+          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
           SCOPE_VERIFIED_SUCCESSFUL_SHA: ${{ inputs.verified_successful_sha }}
         run: |
           manifest=.github/deployment-services.json
@@ -64,7 +60,7 @@ jobs:
           SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.railway.environmentId' "$manifest")"
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
           service_id="$(jq -r '.services.web.id' "$manifest")"
-          bash .github/scripts/deploy-railway.sh "$service_id" .railway-upload
+          bash .github/scripts/deploy-monitored-railway.sh web bash .github/scripts/deploy-railway.sh "$service_id" web
 
       - name: Record successful Railway deployment
         if: always()
@@ -76,3 +72,12 @@ jobs:
           node .github/scripts/production-deployment-progress.mjs record-file \
             --file production-deployments.ndjson \
             --log-url "$LOG_URL"
+
+      - name: Upload release transition evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-web-transition-${{ inputs.source_sha }}-${{ github.run_attempt }}
+          path: release-evidence/
+          if-no-files-found: warn
+          retention-days: 90

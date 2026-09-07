@@ -12,7 +12,9 @@
   },
   "deploy": {
     "startCommand": "exec ./bin/scope-vcs",
-    "healthcheckPath": "/healthz",
-    "healthcheckTimeout": 60
+    "healthcheckPath": "/readyz",
+    "healthcheckTimeout": 60,
+    "overlapSeconds": "30",
+    "drainingSeconds": "30"
   }
 }

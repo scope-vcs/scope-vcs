@@ -1,0 +1,129 @@
+name: Prepare Railway release
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        type: string
+        required: true
+      prepare_backend:
+        type: boolean
+        default: false
+      prepare_router:
+        type: boolean
+        default: false
+      prepare_web:
+        type: boolean
+        default: false
+      recover_cutover_id:
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+  deployments: read
+
+jobs:
+  prepare:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout trusted release orchestration
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Restore interrupted release artifacts
+        if: inputs.recover_cutover_id != ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CUTOVER_ID: ${{ inputs.recover_cutover_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          node .github/scripts/production-deployment-progress.mjs cutover-restore \
+            --id "$CUTOVER_ID" --source-sha "$SOURCE_SHA" --manifest prepared-release.json
+
+      - name: Download backend binaries
+        if: inputs.prepare_backend && inputs.recover_cutover_id == ''
+        uses: actions/download-artifact@v8
+        with:
+          name: backend-release-${{ inputs.source_sha }}
+          path: artifacts/backend
+
+      - name: Download web runtime
+        if: inputs.prepare_web && inputs.recover_cutover_id == ''
+        uses: actions/download-artifact@v8
+        with:
+          name: web-release-${{ inputs.source_sha }}
+          path: artifacts/web
+
+      - name: Set up image builder
+        if: inputs.recover_cutover_id == ''
+        uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate image publishing
+        if: inputs.recover_cutover_id == ''
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Prepare immutable release images
+        if: inputs.recover_cutover_id == ''
+        shell: bash
+        env:
+          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
+          SCOPE_MAINTENANCE_BINARY: artifacts/backend/bin/scope-maintenance
+          PREPARE_BACKEND: ${{ inputs.prepare_backend && '1' || '0' }}
+          PREPARE_ROUTER: ${{ inputs.prepare_router && '1' || '0' }}
+          PREPARE_WEB: ${{ inputs.prepare_web && '1' || '0' }}
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: |
+          [[ "$PREPARE_BACKEND" == 1 ]] || unset SCOPE_MAINTENANCE_BINARY
+          preparation_failed=0
+          if [[ "$PREPARE_BACKEND" == 1 ]]; then
+            mkdir -p artifacts/backend/bin
+            python3 .github/scripts/extract-railway-release.py backend artifacts/backend/backend-release.tar.gz artifacts/backend/bin
+            components=(api worker cache)
+            [[ "$PREPARE_ROUTER" == 0 ]] || components+=(router)
+            for component in "${components[@]}"; do
+              root=".railway-prepared/$component"
+              mkdir -p "$root/bin"
+              cp artifacts/backend/bin/LICENSE artifacts/backend/bin/NOTICE artifacts/backend/bin/third-party-rust.txt "$root/bin/"
+              case "$component" in
+                api) binary=scope-vcs ;;
+                worker) binary=scope-worker ;;
+                cache) binary=scope-cache-service ;;
+                router) binary=scope-repo-router ;;
+              esac
+              install -m 0755 "artifacts/backend/bin/$binary" "$root/bin/$binary"
+              if ! bash .github/scripts/prepare-railway-artifact.sh "$component" "$root" prepared-release.json; then
+                preparation_failed=1
+              fi
+            done
+          fi
+          if [[ "$PREPARE_WEB" == 1 ]]; then
+            mkdir -p .railway-prepared/web
+            python3 .github/scripts/extract-railway-release.py web artifacts/web/web-release.tar.gz .railway-prepared/web
+            if ! bash .github/scripts/prepare-railway-artifact.sh web .railway-prepared/web prepared-release.json; then
+              preparation_failed=1
+            fi
+          fi
+          [[ "$preparation_failed" == 0 ]]
+          test -s prepared-release.json
+
+      - name: Upload immutable release manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: prepared-release-${{ inputs.source_sha }}
+          path: prepared-release.json
+          if-no-files-found: error
+          retention-days: 90

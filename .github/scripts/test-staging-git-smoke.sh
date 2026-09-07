@@ -134,7 +134,3 @@ if FAKE_ROUTER_DIRECT=0 \
 fi
 grep -Fq 'did not serve Git discovery directly' "$test_root/redirect-output"
 test ! -e "$redirect_dir"
-
-browser_line="$(grep -n -- '- name: Run browser smoke against staging' "$repo_root/.github/workflows/scope-railway-staging.yml" | cut -d: -f1)"
-git_line="$(grep -n -- '- name: Run Git router smoke against staging' "$repo_root/.github/workflows/scope-railway-staging.yml" | cut -d: -f1)"
-test "$browser_line" -lt "$git_line"

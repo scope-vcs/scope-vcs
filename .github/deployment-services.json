@@ -34,7 +34,9 @@
     "worker": {
       "name": "scope-worker",
       "id": "a474a0d1-3000-4a95-9ca3-cd3a7f3ef669",
-      "dependsOn": ["cache"]
+      "dependsOn": [
+        "cache"
+      ]
     },
     "router": {
       "name": "scope-repo-router",
@@ -44,17 +46,24 @@
     "api": {
       "name": "scope-api",
       "id": "9456cd8d-40bd-489a-a181-72b7f777c4a8",
-      "dependsOn": ["worker", "router"]
+      "dependsOn": [
+        "worker",
+        "router"
+      ]
     },
     "web": {
       "name": "scope-web",
       "id": "df831355-3056-4d1a-a4be-37735fb83d00",
-      "dependsOn": ["api"]
+      "dependsOn": [
+        "api"
+      ]
     },
     "cli": {
       "name": "scope-cli",
       "id": "a212bccb-ed1a-4574-a031-2b0183e08a2d",
-      "dependsOn": ["api"]
+      "dependsOn": [
+        "api"
+      ]
     }
   },
   "changeScopes": {
@@ -87,7 +96,21 @@
         ".github/scripts/verify-staging-target.test.mjs",
         ".github/scripts/deploy-staging-railway.sh",
         ".github/scripts/test-staging-git-smoke.sh",
-        ".github/scripts/stop-staging-writers.test.mjs"
+        ".github/scripts/stop-staging-writers.test.mjs",
+        ".github/workflows/scope-release-prepare.yml",
+        ".github/workflows/scope-railway-staging.yml",
+        ".github/scripts/deploy-monitored-railway.sh",
+        ".github/scripts/production-availability-config.mjs",
+        ".github/scripts/prepare-railway-artifact.sh",
+        ".github/scripts/railway-artifact.mjs",
+        ".github/scripts/railway-artifact.test.mjs",
+        ".github/scripts/railway-backend-control.sh",
+        ".github/scripts/backend-cutover-test-provider.sh",
+        ".github/scripts/with-release-availability.sh",
+        ".github/scripts/rehearse-release.mjs",
+        ".github/scripts/rehearse-release.test.mjs",
+        ".github/scripts/extract-railway-release.py",
+        ".github/scripts/extract-railway-release.test.mjs"
       ],
       "prefixes": [
         "legal/",
@@ -95,7 +118,8 @@
         "dev/checks/",
         ".github/scripts/fixtures/",
         "bench/",
-        "deploy/aws/"
+        "deploy/aws/",
+        ".github/scripts/release-"
       ]
     },
     "checksImage": {
@@ -123,11 +147,10 @@
         ".github/workflows/scope-api-deploy.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
-        "deploy/railway/prebuilt-backend.railpack.json",
-        "deploy/railway/start-prebuilt.sh",
         "Cargo.lock",
         "Cargo.toml",
-        "rust-toolchain.toml"
+        "rust-toolchain.toml",
+        "deploy/railway/prebuilt.Dockerfile"
       ],
       "prefixes": [
         "cache-service/",
@@ -142,11 +165,10 @@
         ".github/workflows/scope-api-deploy.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
-        "deploy/railway/prebuilt-backend-git.railpack.json",
-        "deploy/railway/start-prebuilt.sh",
         "Cargo.lock",
         "Cargo.toml",
-        "rust-toolchain.toml"
+        "rust-toolchain.toml",
+        "deploy/railway/prebuilt.Dockerfile"
       ],
       "prefixes": [
         "crates/",
@@ -162,13 +184,12 @@
         ".github/workflows/scope-api-deploy.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
-        "deploy/railway/prebuilt-backend-git.railpack.json",
-        "deploy/railway/start-prebuilt.sh",
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
         "web/scripts/check-api-contract.mjs",
-        "web/src/api/types.generated.ts"
+        "web/src/api/types.generated.ts",
+        "deploy/railway/prebuilt.Dockerfile"
       ],
       "prefixes": [
         "api/",
@@ -183,11 +204,10 @@
         ".github/workflows/scope-api-deploy.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
-        "deploy/railway/prebuilt-backend.railpack.json",
-        "deploy/railway/start-prebuilt.sh",
         "Cargo.lock",
         "Cargo.toml",
-        "rust-toolchain.toml"
+        "rust-toolchain.toml",
+        "deploy/railway/prebuilt.Dockerfile"
       ],
       "prefixes": [
         "crates/",
@@ -201,7 +221,8 @@
         ".github/workflows/scope-integration-ci.yml",
         ".github/workflows/scope-web-ci.yml",
         "Cargo.lock",
-        "Cargo.toml"
+        "Cargo.toml",
+        "deploy/railway/web.Dockerfile"
       ],
       "prefixes": [
         "api/",
@@ -251,6 +272,19 @@
         "crates/scope-api-contract/",
         "crates/scope-domain/"
       ]
+    }
+  },
+  "releaseAvailability": {
+    "production": {
+      "webOrigin": "https://scopevcs.com",
+      "apiOrigin": "https://scope-api-production-0251.up.railway.app",
+      "fixture": {
+        "owner": "adamblumoff",
+        "repo": "pagent",
+        "filePath": "/README.md",
+        "expectedText": "# Pagent",
+        "expectedRequestIds": []
+      }
     }
   }
 }

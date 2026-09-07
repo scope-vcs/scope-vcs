@@ -160,10 +160,10 @@ case "$action" in
     rm -rf -- "$workflow_backfill_dir"
     unset SCOPE_STAGING_DATABASE_PUBLIC_URL
 
-    bash .github/scripts/deploy-railway.sh "$cache_service" "$1"
-    bash .github/scripts/deploy-railway.sh "$worker_service" "$2"
-    bash .github/scripts/deploy-railway.sh "$api_service" "$3"
-    bash .github/scripts/deploy-railway.sh "$router_service" "$4"
+    SCOPE_DEPLOYMENT_COMPONENT=cache bash .github/scripts/deploy-railway.sh "$cache_service" "$1"
+    SCOPE_DEPLOYMENT_COMPONENT=worker bash .github/scripts/deploy-railway.sh "$worker_service" "$2"
+    SCOPE_DEPLOYMENT_COMPONENT=api bash .github/scripts/deploy-railway.sh "$api_service" "$3"
+    SCOPE_DEPLOYMENT_COMPONENT=router bash .github/scripts/deploy-railway.sh "$router_service" "$4"
     ;;
   finish)
     if [[ "$#" -ne 1 ]]; then
@@ -171,7 +171,7 @@ case "$action" in
       exit 2
     fi
     assert_staging_topology
-    bash .github/scripts/deploy-railway.sh "$web_service" "$1"
+    SCOPE_DEPLOYMENT_COMPONENT=web bash .github/scripts/deploy-railway.sh "$web_service" "$1"
     evidence_lines="$(mktemp)"
     trap 'rm -f "$evidence_lines"' EXIT
     for service in "$cache_service" "$worker_service" "$api_service" "$router_service" "$web_service"; do

@@ -2,12 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  RAILWAY_CONFIG_PATHS,
   RAILWAY_COMPONENTS,
+  assertEffectiveRailwayDeployConfig,
   assertHealthyRailwayService,
+  railwayServicesFromStatus,
   verifyProductionRailwayServices,
 } from "./railway-service-health.mjs";
 
 const SOURCE_SHA = "a".repeat(40);
+const expectedDeploy = {
+  healthcheckPath: "/readyz",
+  healthcheckTimeout: 60,
+  overlapSeconds: "30",
+  drainingSeconds: "30",
+};
 
 function healthyService(id) {
   return {
@@ -17,6 +26,11 @@ function healthyService(id) {
     deploymentId: `deployment-${id}`,
     deploymentStopped: false,
     replicas: { configured: 2, running: 2, crashed: 0 },
+    effectiveDeploy: {
+      ...expectedDeploy,
+      overlapSeconds: 30,
+      drainingSeconds: 30,
+    },
   };
 }
 
@@ -60,10 +74,115 @@ test("rejects unavailable Railway service states", () => {
   }
 });
 
+test("extracts the serving deployment and effective config from Railway status", () => {
+  const services = railwayServicesFromStatus({
+    environments: {
+      edges: [{
+        node: {
+          id: "production-id",
+          name: "production",
+          serviceInstances: {
+            edges: [{
+              node: {
+                serviceId: "api-id",
+                serviceName: "scope-api",
+                numReplicas: 1,
+                latestDeployment: {
+                  id: "deploying-api",
+                  status: "DEPLOYING",
+                  deploymentStopped: false,
+                  instances: [],
+                  meta: { serviceManifest: { deploy: expectedDeploy } },
+                },
+                activeDeployments: [{
+                  id: "serving-api",
+                  status: "SUCCESS",
+                  deploymentStopped: false,
+                  instances: [
+                    { status: "RUNNING" },
+                    { status: "RUNNING" },
+                  ],
+                  meta: {
+                    serviceManifest: {
+                      deploy: {
+                        ...expectedDeploy,
+                        multiRegionConfig: {
+                          "us-east4": { numReplicas: 2 },
+                        },
+                      },
+                    },
+                  },
+                }],
+              },
+            }],
+          },
+        },
+      }],
+    },
+  }, "production-id");
+
+  assert.equal(services[0].deploymentId, "serving-api");
+  assert.equal(services[0].status, "SUCCESS");
+  assert.deepEqual(services[0].replicas, {
+    configured: 2,
+    running: 2,
+    crashed: 0,
+  });
+  assert.equal(services[0].effectiveDeploy.healthcheckPath, "/readyz");
+});
+
+test("effective deployment config must contain and match every transition setting", () => {
+  const service = healthyService("api");
+  assert.equal(
+    assertEffectiveRailwayDeployConfig(service, { deploy: expectedDeploy }, "api/railway.json"),
+    service,
+  );
+
+  for (const setting of Object.keys(expectedDeploy)) {
+    const deploy = { ...expectedDeploy };
+    delete deploy[setting];
+    assert.throws(
+      () => assertEffectiveRailwayDeployConfig(service, { deploy }, "api/railway.json"),
+      new RegExp(`api/railway\\.json is missing deploy\\.${setting}`),
+      setting,
+    );
+
+    const effectiveDeploy = { ...service.effectiveDeploy };
+    delete effectiveDeploy[setting];
+    assert.throws(
+      () => assertEffectiveRailwayDeployConfig(
+        { ...service, effectiveDeploy },
+        { deploy: expectedDeploy },
+      ),
+      new RegExp(`effective deployment is missing deploy\\.${setting}`),
+      setting,
+    );
+  }
+
+  assert.throws(
+    () => assertEffectiveRailwayDeployConfig(
+      { ...service, effectiveDeploy: undefined },
+      { deploy: expectedDeploy },
+    ),
+    /missing meta\.serviceManifest\.deploy/,
+  );
+  assert.throws(
+    () => assertEffectiveRailwayDeployConfig(
+      {
+        ...service,
+        effectiveDeploy: { ...service.effectiveDeploy, healthcheckPath: "/healthz" },
+      },
+      { deploy: expectedDeploy },
+    ),
+    /effective deploy\.healthcheckPath is "\/healthz", expected "\/readyz"/,
+  );
+});
+
 test("production verification binds every live service to durable Railway evidence", () => {
   const manifest = { services: {} };
   const deployments = {};
   const services = [];
+  const serviceConfigs = {};
   for (const component of RAILWAY_COMPONENTS) {
     manifest.services[component] = { id: component };
     deployments[component] = {
@@ -71,18 +190,40 @@ test("production verification binds every live service to durable Railway eviden
       provider: "railway",
       evidenceId: `deployment-${component}`,
     };
-    services.push(healthyService(component));
+    const service = healthyService(component);
+    if (component === "cli") service.effectiveDeploy = undefined;
+    services.push(service);
+    if (RAILWAY_CONFIG_PATHS[component]) {
+      serviceConfigs[component] = { deploy: expectedDeploy };
+    }
   }
 
   assert.deepEqual(
-    verifyProductionRailwayServices({ deployments, manifest, services })
+    verifyProductionRailwayServices({ deployments, manifest, serviceConfigs, services })
       .map(({ component }) => component),
     RAILWAY_COMPONENTS,
   );
 
+  const incompleteConfigs = { ...serviceConfigs };
+  delete incompleteConfigs.cache;
+  assert.throws(
+    () => verifyProductionRailwayServices({
+      deployments,
+      manifest,
+      serviceConfigs: incompleteConfigs,
+      services,
+    }),
+    /cache is missing expected Railway config/,
+  );
+
   delete deployments.web;
   assert.throws(
-    () => verifyProductionRailwayServices({ deployments, manifest, services }),
+    () => verifyProductionRailwayServices({
+      deployments,
+      manifest,
+      serviceConfigs,
+      services,
+    }),
     /web has no exact Railway deployment evidence/,
   );
 });

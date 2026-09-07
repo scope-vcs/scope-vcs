@@ -26,6 +26,9 @@ deployment_evidence_path="${SCOPE_DEPLOYMENT_EVIDENCE_PATH:-}"
 verified_successful_sha="${SCOPE_VERIFIED_SUCCESSFUL_SHA:-}"
 defer_service_health="${SCOPE_DEFER_SERVICE_HEALTH:-0}"
 deployment_was_skipped=0
+prepared_release="${SCOPE_PREPARED_RELEASE_PATH:-}"
+previous_deployment_id=""
+expected_config=""
 
 if [[ "$defer_service_health" != "0" && "$defer_service_health" != "1" ]]; then
   echo "SCOPE_DEFER_SERVICE_HEALTH must be 0 or 1." >&2
@@ -72,12 +75,14 @@ service_is_healthy() {
   local expected_deployment_id="${2:-}"
   local services_json
   services_json="$(
-    railway service list \
+    railway status \
       --project "$RAILWAY_PROJECT_ID" \
       --environment "$railway_environment" \
       --json
   )"
-  SCOPE_RAILWAY_SERVICES_JSON="$services_json" \
+  SCOPE_RAILWAY_ENVIRONMENT_ID="$railway_environment" \
+    SCOPE_EXPECTED_RAILWAY_CONFIG="$expected_config" \
+    SCOPE_RAILWAY_SERVICES_JSON="$services_json" \
     SCOPE_RAILWAY_SERVICE_ID="$service_name" \
     SCOPE_EXPECTED_RAILWAY_DEPLOYMENT_ID="$expected_deployment_id" \
     node .github/scripts/railway-service-health.mjs >/dev/null
@@ -143,7 +148,9 @@ record_deployment_evidence() {
     echo "SCOPE_DEPLOYMENT_COMPONENT and SCOPE_DEPLOYMENT_SOURCE_SHA are required when recording evidence." >&2
     return 1
   fi
-  if ! upload_contains_source_revision; then
+  if [[ -n "$prepared_release" ]]; then
+    node .github/scripts/railway-artifact.mjs validate "$prepared_release" "$deployment_source_sha" "$deployment_component" >/dev/null
+  elif ! upload_contains_source_revision; then
     echo "Railway upload for ${deployment_component} does not contain source revision ${deployment_source_sha}." >&2
     return 1
   fi
@@ -198,6 +205,10 @@ wait_for_deployment() {
             return 0
             ;;
           SKIPPED)
+            if [[ -n "$prepared_release" ]]; then
+              echo "Prepared activation $deployment_id was skipped; refusing to substitute another deployment." >&2
+              return 1
+            fi
             echo "Railway skipped deployment: ${skipped_reason:-no reason provided}."
             if [[ -n "$deployment_component" && -n "$deployment_source_sha" \
               && "$verified_successful_sha" == "$deployment_source_sha" ]]; then
@@ -235,36 +246,55 @@ deployment_id=""
 
 ensure_service_exists "$service_name"
 
-deploy_output="$(
-  railway up "$upload_root" \
-  --path-as-root \
-  --no-gitignore \
-  --project "$RAILWAY_PROJECT_ID" \
-  --service "$service_name" \
-  --environment "$railway_environment" \
-  --message "$deploy_message" \
-  --detach \
-  --json
-)"
+if [[ -n "$prepared_release" ]]; then
+  [[ -n "$deployment_component" && -n "$deployment_source_sha" ]] || {
+    echo 'Prepared activation requires a component and exact source revision.' >&2
+    exit 2
+  }
+  node .github/scripts/railway-artifact.mjs validate "$prepared_release" "$deployment_source_sha" "$deployment_component" >/dev/null
+  expected_service="$(jq -er --arg component "$deployment_component" '.components[$component].serviceId' "$prepared_release")"
+  [[ "$expected_service" == "$service_name" ]] || {
+    echo 'Prepared artifact service does not match the activation target.' >&2
+    exit 2
+  }
+  case "$deployment_component" in
+    cache) expected_config=cache-service/railway.json ;;
+    router) expected_config=repo-router/railway.json ;;
+    *) expected_config="$deployment_component/railway.json" ;;
+  esac
+  previous_deployment_id="$(railway service list \
+    --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" --json |
+    jq -r --arg service "$service_name" '.[] | select(.id == $service or .name == $service) | .deploymentId // ""')"
+  deploy_output="$(node .github/scripts/railway-artifact.mjs activate \
+    "$prepared_release" "$deployment_component" "$railway_environment")"
+else
+  deploy_output="$(
+    railway up "$upload_root" \
+      --path-as-root \
+      --no-gitignore \
+      --project "$RAILWAY_PROJECT_ID" \
+      --service "$service_name" \
+      --environment "$railway_environment" \
+      --message "$deploy_message" \
+      --detach \
+      --json
+  )"
+fi
 printf '%s\n' "$deploy_output"
-
-deployment_id="$(
-  DEPLOY_OUTPUT="$deploy_output" node -e '
-const lines = (process.env.DEPLOY_OUTPUT || "").split(/\r?\n/).filter(Boolean);
-for (const line of lines) {
-  try {
-    const parsed = JSON.parse(line);
-    if (parsed && typeof parsed.deploymentId === "string" && parsed.deploymentId.length > 0) {
-      process.stdout.write(parsed.deploymentId);
-      process.exit(0);
-    }
-  } catch {}
-}
-process.exit(1);
-'
-)"
+deployment_id="$(printf '%s\n' "$deploy_output" | jq -er 'select(.deploymentId | type == "string" and length > 0) | .deploymentId' | tail -1)"
 
 wait_for_deployment "$service_name" "$deployment_id"
+if [[ -n "$prepared_release" ]]; then
+  deployed_metadata="$(mktemp)"
+  railway deployment list --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" \
+    --service "$service_name" --limit 100 --json > "$deployed_metadata"
+  if ! node .github/scripts/railway-artifact.mjs verify "$prepared_release" \
+    "$deployment_component" "$deployed_metadata" "$deployment_id"; then
+    rm -f "$deployed_metadata"
+    exit 1
+  fi
+  rm -f "$deployed_metadata"
+fi
 if [[ "$defer_service_health" == "0" ]]; then
   if [[ "$deployment_was_skipped" == "1" ]]; then
     service_is_healthy "$service_name"
@@ -272,6 +302,28 @@ if [[ "$defer_service_health" == "0" ]]; then
     wait_for_service_health "$service_name" "$deployment_id"
   fi
 fi
+if [[ -n "${SCOPE_RELEASE_DEPLOYMENTS_FILE:-}" ]]; then
+  jq --arg component "$deployment_component" --arg id "$deployment_id" \
+    '.[$component] = $id' "$SCOPE_RELEASE_DEPLOYMENTS_FILE" > "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp"
+  mv "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp" "$SCOPE_RELEASE_DEPLOYMENTS_FILE"
+fi
 if [[ "$deployment_was_skipped" == "0" ]]; then
   record_deployment_evidence "$deployment_id"
+fi
+
+if [[ -n "$prepared_release" && -n "$previous_deployment_id" && "$previous_deployment_id" != "$deployment_id" ]]; then
+  deadline=$((SECONDS + 600))
+  while true; do
+    previous_status="$(railway deployment list \
+      --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" \
+      --service "$service_name" --limit 100 --json |
+      jq -r --arg id "$previous_deployment_id" '.[] | select(.id == $id) | .status')"
+    [[ "$previous_status" != REMOVED ]] || break
+    if ((SECONDS >= deadline)); then
+      echo "Previous deployment $previous_deployment_id has not completed teardown ($previous_status)." >&2
+      exit 1
+    fi
+    sleep 5
+  done
+  echo "Previous deployment $previous_deployment_id completed teardown."
 fi
