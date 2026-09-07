@@ -3,6 +3,14 @@ name: Runner economics experiment
 on:
   push:
     branches: [experiment/runner-economics]
+    paths:
+      - dev/runner-economics/measure.mjs
+      - dev/checks/backend
+      - Cargo.toml
+      - Cargo.lock
+      - 'worker/**/*.rs'
+      - 'api/**/*.rs'
+      - 'crates/**/*.rs'
   workflow_dispatch:
 
 permissions:
