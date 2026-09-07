@@ -1,6 +1,7 @@
 use super::{
-    archive::{extract_archive, reset_cache_directory},
+    archive::{RestoredArchive, extract_archive, reset_cache_directory},
     identity::digest_inputs,
+    sources::SourceSnapshot,
     types::{PreparedCache, elapsed_ms},
 };
 use crate::api::{RuntimeClient, cache_client::CacheDownloadError};
@@ -19,6 +20,7 @@ use scope_domain::runs::cache::{
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Instant,
 };
 
@@ -26,6 +28,7 @@ pub(crate) fn prepare_caches(
     client: &RuntimeClient,
     job: &RunJobResponse,
     definition: &scope_domain::runs::workflow::definition::WorkflowJob,
+    workspace: &Path,
 ) -> anyhow::Result<Vec<PreparedCache>> {
     let setup_started = Instant::now();
     let workflow_path =
@@ -64,13 +67,33 @@ pub(crate) fn prepare_caches(
     let authorization_ms = elapsed_ms(authorization_started);
     let mut prepared = Vec::new();
     let mut reports = Vec::new();
+    let mut restored_archives = Vec::new();
+    // Source-free dependency caches can remain exact across commits. They must
+    // not decide whether a checkout matches cached compiler inputs.
+    let mut sources = definition
+        .caches()
+        .iter()
+        .any(|cache| cache.includes_source())
+        .then(|| SourceSnapshot::capture(workspace))
+        .transpose()?;
     for (cache, (identity, key_ms)) in definition.caches().iter().zip(identities) {
         let exact_digest = identity.exact_digest();
         let compatibility_group_digest = identity.compatibility_group_digest();
         let path = PathBuf::from(cache.mount_path());
         fs::create_dir_all(&path)
             .with_context(|| format!("create cache path {}", path.display()))?;
-        let restore = restore_cache(client, &exact_digest, &compatibility_group_digest, &path)?;
+        let resolved_path = fs::canonicalize(&path)?;
+        if resolved_path.starts_with(workspace) || workspace.starts_with(&resolved_path) {
+            anyhow::bail!("cache path overlaps the checkout: {}", path.display());
+        }
+        let source_root = cache.includes_source().then_some(workspace);
+        let restore = restore_cache(
+            client,
+            &exact_digest,
+            &compatibility_group_digest,
+            &path,
+            source_root,
+        )?;
         let phases = CachePreparationPhases {
             key_ms,
             ..restore.phases
@@ -92,7 +115,20 @@ pub(crate) fn prepare_caches(
             compatibility_group_digest,
             path,
             exact_hit: restore.exact_hit,
+            sources: None,
         });
+        if let Some(archive) = restore.archive {
+            restored_archives.push(archive);
+        }
+    }
+    if let Some(snapshot) = &mut sources {
+        snapshot.restore(&restored_archives)?;
+    }
+    let sources = sources.map(Arc::new);
+    for (cache, definition) in prepared.iter_mut().zip(definition.caches()) {
+        if definition.includes_source() {
+            cache.sources = sources.clone();
+        }
     }
     let wall_ms = elapsed_ms(setup_started);
     if let Err(error) = client.report_cache_preparations(&ReportAttemptCachePreparationsRequest {
@@ -109,6 +145,7 @@ fn restore_cache(
     exact_digest: &str,
     compatibility_group_digest: &str,
     destination: &Path,
+    source_root: Option<&Path>,
 ) -> anyhow::Result<CacheRestore> {
     let exact_identity_digest = CacheDigest::parse(exact_digest.to_string())?;
     let compatibility_group_digest = CacheDigest::parse(compatibility_group_digest.to_string())?;
@@ -179,13 +216,16 @@ fn restore_cache(
         return Ok(CacheRestore::cold(reason, phases));
     }
     let extraction_started = Instant::now();
-    let extraction = extract_archive(&archive, destination);
+    let extraction = extract_archive(&archive, destination, source_root);
     phases.extraction_ms = elapsed_ms(extraction_started);
-    if let Err(error) = extraction {
-        reset_cache_directory(destination)?;
-        eprintln!("runtime cache restore was corrupt for {exact_digest}: {error:#}");
-        return Ok(CacheRestore::cold(CacheColdReason::MetadataInvalid, phases));
-    }
+    let archive = match extraction {
+        Ok(archive) => archive,
+        Err(error) => {
+            reset_cache_directory(destination)?;
+            eprintln!("runtime cache restore was corrupt for {exact_digest}: {error:#}");
+            return Ok(CacheRestore::cold(CacheColdReason::MetadataInvalid, phases));
+        }
+    };
     Ok(CacheRestore {
         preparation: match source {
             CacheRestoreSource::Exact => CachePreparation::Exact,
@@ -193,12 +233,14 @@ fn restore_cache(
         },
         exact_hit: source == CacheRestoreSource::Exact,
         phases,
+        archive: Some(archive),
     })
 }
 struct CacheRestore {
     preparation: CachePreparation,
     exact_hit: bool,
     phases: CachePreparationPhases,
+    archive: Option<RestoredArchive>,
 }
 
 impl CacheRestore {
@@ -207,6 +249,7 @@ impl CacheRestore {
             preparation: CachePreparation::Cold { reason },
             exact_hit: false,
             phases,
+            archive: None,
         }
     }
 }

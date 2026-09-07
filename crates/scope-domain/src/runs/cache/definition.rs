@@ -204,6 +204,10 @@ impl WorkflowCache {
     pub fn exact_inputs(&self) -> &CacheKeyInputs {
         &self.exact
     }
+
+    pub fn includes_source(&self) -> bool {
+        self.compatibility.includes_source() || self.exact.includes_source()
+    }
 }
 
 pub(super) fn validate_cache_name(name: &str) -> Result<(), CacheError> {

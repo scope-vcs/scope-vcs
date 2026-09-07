@@ -1,4 +1,5 @@
-use std::{path::PathBuf, time::Instant};
+use super::sources::SourceSnapshot;
+use std::{path::PathBuf, sync::Arc, time::Instant};
 
 const _: () = assert!(
     scope_domain::runs::cache::observation::MAX_CACHE_OBSERVATION_SIZE_BYTES
@@ -10,6 +11,7 @@ pub(crate) struct PreparedCache {
     pub(super) compatibility_group_digest: String,
     pub(super) path: PathBuf,
     pub(super) exact_hit: bool,
+    pub(super) sources: Option<Arc<SourceSnapshot>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]

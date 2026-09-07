@@ -59,10 +59,11 @@ pub(super) fn save_cache(
         Ok(temp) => temp,
         Err(error) => return skipped(CacheSkipReason::ArchiveFailed, error),
     };
-    let (size_bytes, checksum_sha256) = match create_archive(&cache.path, temp.path()) {
-        Ok(identity) => identity,
-        Err(error) => return skipped(CacheSkipReason::ArchiveFailed, error),
-    };
+    let (size_bytes, checksum_sha256) =
+        match create_archive(&cache.path, temp.path(), cache.sources.as_deref()) {
+            Ok(identity) => identity,
+            Err(error) => return skipped(CacheSkipReason::ArchiveFailed, error),
+        };
     let exact_identity_digest = match CacheDigest::parse(cache.exact_digest.clone()) {
         Ok(digest) => digest,
         Err(error) => return skipped(CacheSkipReason::ServiceUnavailable, error.into()),
