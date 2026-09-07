@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { chromium } from 'playwright'
 import { assertHistoryFeedNavigation, assertHistoryFirstFileStaysInRoute } from './history-navigation-smoke.mjs'
 import { assertRepositoryMarkdownUsesClientNavigation } from './repository-markdown-navigation-smoke.mjs'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 
 const baseUrl = (
   process.env.SCOPE_WEB_BASE_URL ??
@@ -670,7 +671,7 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
       })
       const queueRequests = []
       page.on('request', (request) => {
-        if (request.url().includes('/_serverFn/')) {
+        if (serverFunctionName(request) === 'loadRequestQueuePage_createServerFn_handler') {
           queueRequests.push(request.url())
         }
       })
