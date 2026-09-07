@@ -107,7 +107,7 @@ function RepositoryIdentity({
     <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
       <div className="flex min-w-0 items-baseline gap-1.5">
         <Link
-          className="max-w-[90px] truncate rounded-md text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:max-w-[130px]"
+          className="max-w-[90px] truncate text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:max-w-[130px]"
           params={{ owner }}
           title={owner}
           to="/$owner"
@@ -118,7 +118,7 @@ function RepositoryIdentity({
           /
         </span>
         <Link
-          className="min-w-0 truncate rounded-md text-[14px] font-semibold tracking-[-0.01em] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="min-w-0 truncate text-[14px] font-semibold tracking-[-0.01em] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           params={{ owner, repo }}
           title={`${owner}/${repo}`}
           to="/$owner/$repo"
