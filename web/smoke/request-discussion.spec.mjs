@@ -239,6 +239,7 @@ test('request details disclose on mobile without replacing discussion or quote t
     const context = page.locator('.request-context-rail > details')
     const summary = context.locator(':scope > summary')
     await summary.waitFor()
+    await waitForClientHydration(page, summary)
     assert.equal(await context.getAttribute('open'), null)
     assert.doesNotMatch(await context.ariaSnapshot(), /Public request/)
     assert.equal(await context.count(), 1)
