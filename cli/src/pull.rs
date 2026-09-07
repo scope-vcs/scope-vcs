@@ -1,18 +1,22 @@
 use crate::{
     api::{api_url, http_client},
     git_repo::{
-        GitRepo, current_branch, ensure_git_repo_ready, git_remote_fetch_url,
+        GitRepo, current_branch, ensure_git_repo_ready, git_remote_fetch_url, head_oid,
         install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
     },
     git_transport::{ScopeRemote, select_scope_fetch_remote},
     login::session_from_cache_or_browser,
     push::DEFAULT_SCOPE_BRANCH,
 };
+use crate::{error::CliError, execution::emit};
 use anyhow::{Context, bail};
+use serde_json::json;
 use std::{collections::BTreeMap, process::Command};
 
 pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     let repo = ensure_git_repo_ready("scope pull")?;
+    let branch = current_branch(&repo)?;
+    let previous_head = head_oid(&repo)?;
     let api_url = api_url();
     let remote = select_scope_fetch_remote(&repo, &api_url, explicit_remote)?;
     let git_origin = scope_git_origin(&repo, &api_url)?;
@@ -31,23 +35,30 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     let before = remote_refs(&repo, &remote)?;
     run_git_in_repo(&repo, &["fetch", "--prune", &remote])?;
     let after = remote_refs(&repo, &remote)?;
-    print_ref_changes(&remote, &before, &after);
-
-    let branch = current_branch(&repo)?;
+    let mut lines = ref_change_lines(&remote, &before, &after);
     let tracked = format!("refs/remotes/{remote}/{branch}");
+    let mut moved = false;
     if after.contains_key(&branch) && current_branch_tracks(&repo, &remote, &branch)? {
-        run_git_in_repo(&repo, &["merge", "--ff-only", &tracked])?;
-        println!("{branch} is up to date with {remote}/{branch}.");
+        eprintln!(
+            "Fast-forward {}/{} local {branch} to {tracked} at {}",
+            target.owner, target.repo, after[&branch]
+        );
+        run_git_in_repo(&repo, &["merge", "--ff-only", &tracked]).map_err(|error| CliError::partial(
+            format!("Fetched Scope refs, but could not fast-forward {branch}: {error:#}"),
+            json!({"operation": "pull", "repository": format!("{}/{}", target.owner, target.repo), "fetched": true, "branch": branch, "previous_head": previous_head, "remote_refs": after, "recovery": "Inspect git status and the local branch divergence. Resolve local changes or divergence, then repeat scope pull; no force reset is needed."})
+        ))?;
+        moved = head_oid(&repo)? != previous_head;
+        lines.push(format!("{branch} is up to date with {remote}/{branch}."));
     } else if after.contains_key(&branch) {
-        println!(
-            "Fetched every visible Scope ref; local branch {branch} does not track {remote}/{branch}, so it was not moved."
-        );
+        lines.push(format!("Fetched every visible Scope ref; local branch {branch} does not track {remote}/{branch}, so it was not moved."));
     } else {
-        println!(
-            "Fetched every visible Scope ref; local branch {branch} has no {remote}/{branch} counterpart."
-        );
+        lines.push(format!("Fetched every visible Scope ref; local branch {branch} has no {remote}/{branch} counterpart."));
     }
-    Ok(())
+    emit(
+        "pull",
+        &json!({"repository": format!("{}/{}", target.owner, target.repo), "remote": remote, "branch": branch, "previous_head": previous_head, "head": head_oid(&repo)?, "branch_moved": moved, "refs_before": before, "refs_after": after}),
+        lines,
+    )
 }
 
 fn current_branch_tracks(repo: &GitRepo, remote: &str, branch: &str) -> anyhow::Result<bool> {
@@ -89,11 +100,12 @@ fn remote_refs(repo: &GitRepo, remote: &str) -> anyhow::Result<BTreeMap<String, 
         .collect())
 }
 
-fn print_ref_changes(
+fn ref_change_lines(
     remote: &str,
     before: &BTreeMap<String, String>,
     after: &BTreeMap<String, String>,
-) {
+) -> Vec<String> {
+    let mut lines = Vec::new();
     let mut changed = false;
     for (name, oid) in after {
         match before.get(name) {
@@ -104,26 +116,27 @@ fn print_ref_changes(
                 } else {
                     "request"
                 };
-                println!("  [new {kind}] {name} -> {remote}/{name}");
+                lines.push(format!("  [new {kind}] {name} -> {remote}/{name}"));
             }
             Some(previous) if previous != oid => {
                 changed = true;
-                println!(
+                lines.push(format!(
                     "  [updated] {name} {}..{}",
                     short_oid(previous),
                     short_oid(oid)
-                );
+                ));
             }
             _ => {}
         }
     }
     for name in before.keys().filter(|name| !after.contains_key(*name)) {
         changed = true;
-        println!("  [removed] {remote}/{name}");
+        lines.push(format!("  [removed] {remote}/{name}"));
     }
     if !changed {
-        println!("No remote refs changed.");
+        lines.push("No remote refs changed.".to_owned());
     }
+    lines
 }
 
 fn short_oid(oid: &str) -> &str {

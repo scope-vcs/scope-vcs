@@ -219,7 +219,7 @@ pub fn validate_config_path(path: &str) -> Result<ScopePath, RepoConfigError> {
         super::policy::PolicyError::InvalidSegment => RepoConfigError::InvalidSegment,
         super::policy::PolicyError::PublicIsland { .. } => RepoConfigError::InvalidSegment,
     })?;
-    if parsed.as_str() != path {
+    if parsed.as_str() != path || path.trim() != path {
         return Err(RepoConfigError::InvalidSegment);
     }
     Ok(parsed)

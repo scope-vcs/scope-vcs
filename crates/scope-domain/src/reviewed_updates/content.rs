@@ -351,7 +351,7 @@ fn accept_content_update(
     }
     if update.config != state.repo_config {
         return Err(ReviewedUpdateError::Conflict(
-            "repo config changed since review; rerun scope push",
+            "repo config changed since review; rerun scope push --main",
         ));
     }
     ensure_rules_remain_present(

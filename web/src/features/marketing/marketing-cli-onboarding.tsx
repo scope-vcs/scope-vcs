@@ -32,7 +32,7 @@ const nextSteps = [
     description: 'Run from an existing Git repository with at least one commit.',
   },
   {
-    command: 'scope push',
+    command: 'scope push --main',
     copyLabel: 'Copy push command',
     description: 'Review and push the repository’s first version.',
   },

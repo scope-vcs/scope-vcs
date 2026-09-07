@@ -4,6 +4,55 @@ fn path(value: &str) -> ScopePath {
     ScopePath::parse(value).unwrap()
 }
 
+#[test]
+fn scope_paths_preserve_filename_whitespace_without_relaxing_absolute_paths() {
+    for value in ["/ leading.txt", "/trailing.txt ", "/tab\t", "/line\n"] {
+        assert_eq!(path(value).as_str(), value);
+    }
+    assert_eq!(ScopePath::parse(" /file"), Err(PolicyError::RelativePath));
+    assert_eq!(
+        ScopePath::parse("/../file"),
+        Err(PolicyError::InvalidSegment)
+    );
+    assert_eq!(
+        ScopePath::parse("/./file"),
+        Err(PolicyError::InvalidSegment)
+    );
+    assert_eq!(path("//docs///file").as_str(), "/docs/file");
+}
+
+#[test]
+fn filename_whitespace_does_not_inherit_another_files_visibility() {
+    use scope_domain::repo_config::{ConfigVisibility, RepoConfig, RepoConfigVisibilityRule};
+
+    let mut config = RepoConfig::with_default_visibility(ConfigVisibility::Private);
+    config.visibility.rules.push(RepoConfigVisibilityRule {
+        path: "/public.txt".to_string(),
+        visibility: ConfigVisibility::Public,
+    });
+    config.validate().unwrap();
+    assert_eq!(
+        config.visibility_for_path(&path("/public.txt")),
+        Visibility::Public
+    );
+    for value in [
+        "/public.txt ",
+        "/public.txt\t",
+        "/public.txt\n",
+        "/.scope/RULES.md ",
+    ] {
+        assert_eq!(
+            config.visibility_for_path(&path(value)),
+            Visibility::Private,
+            "{value:?}"
+        );
+    }
+    assert_eq!(
+        config.visibility_for_path(&path("/.scope/RULES.md")),
+        Visibility::Public
+    );
+}
+
 fn policy_with_private_internal() -> Policy {
     let mut policy = Policy::new(Visibility::Public);
     policy

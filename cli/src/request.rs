@@ -19,16 +19,19 @@ use reqwest::blocking::Client;
 use scope_api_contract::{ErrorCode, ErrorResponse, RequestAudience, RequestDiscussionAnchorInput};
 use scope_domain::{policy::ScopePath, repo_control::is_public_request_protected_path};
 use std::{
-    fs,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 mod actions;
 mod args;
+mod branches;
 mod confirm;
+mod diff;
+mod inspect;
 mod local;
 mod outcome;
+mod recovery;
 mod remote;
 mod render;
 #[cfg(test)]
@@ -41,6 +44,7 @@ use args::{
     RequestDiscussionReopenArgs, RequestDiscussionReplyArgs, RequestDiscussionResolveArgs,
     RequestDiscussionStartArgs, RequestStartArgs, RequestTargetArgs,
 };
+use branches::*;
 use confirm::require_confirmation;
 use local::{
     load_context, load_context_and_request_id, maybe_request_id_for_context,
@@ -61,39 +65,32 @@ static CLIENT_REPLY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub struct PreparedRequestCommand {
     args: RequestArgs,
-    git_repo: GitRepo,
-}
-
-fn discussion_command_name(command: &RequestDiscussionCommand) -> &'static str {
-    match command {
-        RequestDiscussionCommand::Start(_) => "scope request discussion start",
-        RequestDiscussionCommand::Reply(_) => "scope request discussion reply",
-        RequestDiscussionCommand::Resolve(_) => "scope request discussion resolve",
-        RequestDiscussionCommand::Reopen(_) => "scope request discussion reopen",
-    }
+    git_repo: Option<GitRepo>,
 }
 
 pub fn prepare_request_command(args: RequestArgs) -> anyhow::Result<PreparedRequestCommand> {
-    let (command_name, needs_clean_tree) = match &args.command {
-        RequestCommand::Start(_) => ("scope request start", true),
-        RequestCommand::Push(_) => ("scope request push", false),
-        RequestCommand::Submit(_) => ("scope request submit", false),
-        RequestCommand::Close(_) => ("scope request close", false),
-        RequestCommand::Edit(_) => ("scope request edit", false),
-        RequestCommand::Invite(_) => ("scope request invite", false),
-        RequestCommand::Uninvite(_) => ("scope request uninvite", false),
-        RequestCommand::Leave(_) => ("scope request leave", false),
-        RequestCommand::Merge(_) => ("scope request merge", false),
-        RequestCommand::Rate(_) => ("scope request rate", false),
-        RequestCommand::Discussion(args) => (discussion_command_name(&args.command), false),
-        RequestCommand::Show(_) => ("scope request show", false),
-        RequestCommand::List(_) => ("scope request list", false),
-        RequestCommand::Status(_) => ("scope request status", false),
+    let local_command = match &args.command {
+        RequestCommand::Start(_) => Some(("scope request start", true)),
+        RequestCommand::Push(_) => Some(("scope request push", false)),
+        RequestCommand::Checkout(_) => Some(("scope request checkout", true)),
+        _ => None,
     };
-    let git_repo = ensure_git_repo_ready(command_name)?;
-    if needs_clean_tree {
-        ensure_clean_working_tree(&git_repo, command_name)?;
-    }
+    let git_repo = if let Some((name, clean)) = local_command {
+        let repo = ensure_git_repo_ready(name)?;
+        if clean {
+            ensure_clean_working_tree(&repo, name)?;
+        }
+        Some(repo)
+    } else {
+        let repo = crate::context::discover_optional()?;
+        if repo.is_none() && crate::context::explicit_repository().is_none() {
+            return Err(crate::error::CliError::usage(
+                "outside a Git checkout, pass --repo <owner/repo>",
+            )
+            .into());
+        }
+        repo
+    };
     Ok(PreparedRequestCommand { args, git_repo })
 }
 
@@ -105,12 +102,17 @@ pub fn run_request_command(
     machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let PreparedRequestCommand { args, git_repo } = command;
+    let git_repo = git_repo.as_ref();
     match args.command {
-        RequestCommand::Start(args) => {
-            start_request_branch(&git_repo, client, api_url, session_token, args)
-        }
+        RequestCommand::Start(args) => start_request_branch(
+            git_repo.expect("prepared local command"),
+            client,
+            api_url,
+            session_token,
+            args,
+        ),
         RequestCommand::Push(args) => push_request_branch(
-            &git_repo,
+            git_repo.expect("prepared local command"),
             client,
             api_url,
             session_token,
@@ -119,7 +121,7 @@ pub fn run_request_command(
             machine_output,
         ),
         RequestCommand::Submit(args) => submit_request_command(
-            &git_repo,
+            git_repo,
             client,
             api_url,
             session_token,
@@ -128,7 +130,7 @@ pub fn run_request_command(
             machine_output,
         ),
         RequestCommand::Close(args) => close_request_branch(
-            &git_repo,
+            git_repo,
             client,
             api_url,
             session_token,
@@ -137,7 +139,7 @@ pub fn run_request_command(
             machine_output,
         ),
         RequestCommand::Edit(args) => edit_request(
-            &git_repo,
+            git_repo,
             client,
             api_url,
             session_token,
@@ -146,7 +148,7 @@ pub fn run_request_command(
             args.description_file,
         ),
         RequestCommand::Invite(args) => invite_request(
-            &git_repo,
+            git_repo,
             client,
             api_url,
             session_token,
@@ -155,7 +157,7 @@ pub fn run_request_command(
             true,
         ),
         RequestCommand::Uninvite(args) => invite_request(
-            &git_repo,
+            git_repo,
             client,
             api_url,
             session_token,
@@ -164,10 +166,10 @@ pub fn run_request_command(
             false,
         ),
         RequestCommand::Leave(args) => {
-            leave_invited_request(&git_repo, client, api_url, session_token, args.target)
+            leave_invited_request(git_repo, client, api_url, session_token, args.target)
         }
         RequestCommand::Merge(args) => merge_request_command(
-            &git_repo,
+            git_repo,
             client,
             api_url,
             session_token,
@@ -176,7 +178,7 @@ pub fn run_request_command(
             machine_output,
         ),
         RequestCommand::Rate(args) => rate_request_command(
-            &git_repo,
+            git_repo,
             client,
             api_url,
             session_token,
@@ -185,16 +187,29 @@ pub fn run_request_command(
             args.reason,
         ),
         RequestCommand::Discussion(args) => {
-            run_request_discussion_command(&git_repo, client, api_url, session_token, args)
+            run_request_discussion_command(git_repo, client, api_url, session_token, args)
         }
         RequestCommand::Show(args) => {
-            show_one_request(&git_repo, client, api_url, session_token, args.target)
+            show_one_request(git_repo, client, api_url, session_token, args.target)
         }
         RequestCommand::List(args) => {
-            list_request_status(&git_repo, client, api_url, session_token, args.remote)
+            list_request_status(git_repo, client, api_url, session_token, args)
+        }
+        RequestCommand::Checkout(args) => inspect::checkout_request(
+            git_repo.expect("prepared local command"),
+            client,
+            api_url,
+            session_token,
+            args,
+        ),
+        RequestCommand::Diff(args) => {
+            inspect::diff_request(git_repo, client, api_url, session_token, args)
+        }
+        RequestCommand::Checks(args) => {
+            inspect::request_checks(git_repo, client, api_url, session_token, args.target)
         }
         RequestCommand::Status(args) => show_request_status(
-            &git_repo,
+            git_repo,
             client,
             api_url,
             session_token,
@@ -204,242 +219,8 @@ pub fn run_request_command(
     }
 }
 
-fn start_request_branch(
-    git_repo: &GitRepo,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
-    args: RequestStartArgs,
-) -> anyhow::Result<RequestCommandOutcome> {
-    let context = load_context(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        args.remote.as_deref(),
-    )?;
-    let audience = start_audience(context.repo.access.actor, args.audience)?;
-    let base_oid = refresh_main_projection(git_repo, &context.target, audience, session_token)?;
-    let branch = args.name.trim().to_string();
-    scope_domain::requests::validate_request_name(&branch)
-        .map_err(|error| anyhow::anyhow!(error.message))?;
-    let local_ref = format!("refs/heads/{branch}");
-    if try_run_git_in_repo(git_repo, &["show-ref", "--verify", "--quiet", &local_ref])? {
-        bail!("local branch '{branch}' already exists");
-    }
-    let remote_main = remote_main_ref(&context.target.remote);
-    let response = api_start_request(
-        client,
-        api_url,
-        session_token,
-        StartRequestParams {
-            owner: &context.target.owner,
-            repo: &context.target.repo,
-            name: branch.clone(),
-            title: args.title,
-            audience,
-        },
-    )?;
-    if let Err(switch_error) = run_git_in_repo(
-        git_repo,
-        &[
-            "switch",
-            "--quiet",
-            "--no-track",
-            "-c",
-            &branch,
-            &remote_main,
-        ],
-    ) {
-        let cleanup = api_close_request(
-            client,
-            api_url,
-            session_token,
-            &context.target.owner,
-            &context.target.repo,
-            &response.request.id,
-        );
-        return match cleanup {
-            Ok(_) => Err(switch_error).context(
-                "create local request branch failed; the empty request was closed and removed, so it is safe to retry",
-            ),
-            Err(cleanup_error) => Err(switch_error).context(format!(
-                "create local request branch failed and cleanup also failed ({cleanup_error}); run `scope request close {branch}` before retrying"
-            )),
-        };
-    }
-    store_request_metadata(git_repo, &branch, &context, &response.request)?;
-    let request_head_oid = head_oid(git_repo)?;
-    push_request_head(
-        &context.target,
-        session_token,
-        &request_head_oid,
-        &response.request.id,
-        &response.request.name,
-    )?;
-    track_request_branch_ref(
-        git_repo,
-        &branch,
-        &context.target,
-        &response.request.name,
-        &request_head_oid,
-    )?;
-
-    let mut human_lines = repo_access_lines(&context.repo);
-    human_lines.extend([
-        format!(
-            "Started request {} ({}) on branch {branch} from {} ({})",
-            response.request.name,
-            response.request.id,
-            projection_label_for_audience(audience),
-            short_oid(&base_oid)
-        ),
-        "Next: commit changes, then run scope request push".to_string(),
-        format!(
-            "Remote: {}/{}",
-            context.target.remote, response.request.name
-        ),
-        "Useful while working: scope pull, scope request status".to_string(),
-    ]);
-    let result = StartResult {
-        repo: context.repo,
-        request: response.request,
-        branch,
-        base_oid,
-        remote: context.target.remote,
-    };
-    Ok(RequestCommandOutcome::new(
-        "request.start",
-        RequestCommandResult::Started(result),
-        human_lines,
-    ))
-}
-
-fn push_request_branch(
-    git_repo: &GitRepo,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
-    remote: Option<String>,
-    request_id: Option<String>,
-    machine_output: bool,
-) -> anyhow::Result<RequestCommandOutcome> {
-    if !machine_output {
-        warn_if_dirty_working_tree(git_repo)?;
-    }
-    let context = load_context(git_repo, client, api_url, session_token, remote.as_deref())?;
-    let request_id = request_id_for_context(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        &context,
-        request_id,
-    )?;
-    let detail = get_request(
-        client,
-        api_url,
-        session_token,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )?;
-    if !detail.request.permissions.can_push_branch {
-        return Err(crate::error::CliError::new(ErrorResponse::new(
-            ErrorCode::Forbidden,
-            format!(
-                "request {} cannot be pushed by this user",
-                detail.request.id
-            ),
-        ))
-        .into());
-    }
-    let request_head_oid = head_oid(git_repo)?;
-    let current_main_oid = refresh_main_projection(
-        git_repo,
-        &context.target,
-        detail.request.audience,
-        session_token,
-    )?;
-    ensure_public_request_paths_allowed(git_repo, &detail, &current_main_oid, &request_head_oid)?;
-    push_request_head(
-        &context.target,
-        session_token,
-        &request_head_oid,
-        &detail.request.id,
-        &detail.request.name,
-    )?;
-    let branch = current_branch(git_repo)?;
-    track_request_branch_ref(
-        git_repo,
-        &branch,
-        &context.target,
-        &detail.request.name,
-        &request_head_oid,
-    )?;
-    store_request_metadata(git_repo, &branch, &context, &detail.request)?;
-    let detail = get_request(
-        client,
-        api_url,
-        session_token,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )?;
-    let mut human_lines = repo_access_lines(&context.repo);
-    human_lines.extend(request_detail_lines_for_response(&detail));
-    let result = DetailResult {
-        repo: context.repo,
-        request: detail.request,
-        activity: None,
-    };
-    Ok(RequestCommandOutcome::new(
-        "request.push",
-        RequestCommandResult::Detail(result),
-        human_lines,
-    ))
-}
-
-fn ensure_public_request_paths_allowed(
-    git_repo: &GitRepo,
-    detail: &crate::api::RequestDetailResponse,
-    current_main_oid: &str,
-    request_head_oid: &str,
-) -> anyhow::Result<()> {
-    if detail.request.audience != RequestAudience::Public {
-        return Ok(());
-    }
-    let changed_paths = request_side_changed_file_paths(
-        git_repo,
-        detail.request.base_main_oid.as_str(),
-        current_main_oid,
-        request_head_oid,
-    )?;
-    let protected_paths = changed_paths
-        .into_iter()
-        .filter_map(|path| {
-            let scope_path = ScopePath::parse(format!("/{path}")).ok()?;
-            is_public_request_protected_path(&scope_path).then_some(path)
-        })
-        .collect::<Vec<_>>();
-    if protected_paths.is_empty() {
-        return Ok(());
-    }
-
-    let message = format!(
-        "public request cannot change maintainer-controlled paths: {}",
-        protected_paths.join(", ")
-    );
-    let response = ErrorResponse::new(ErrorCode::ProtectedPath, message)
-        .with_paths(protected_paths)
-        .with_instruction(
-            "Move maintainer-controlled changes to a maintainer-authored change, then retry.",
-        );
-    Err(crate::error::CliError::new(response).into())
-}
-
 fn show_request_status(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -489,7 +270,7 @@ fn show_request_status(
 }
 
 fn run_request_discussion_command(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -512,7 +293,7 @@ fn run_request_discussion_command(
 }
 
 fn start_request_discussion(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -562,7 +343,7 @@ fn start_request_discussion(
 }
 
 fn reply_to_request_discussion(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -606,7 +387,7 @@ fn reply_to_request_discussion(
 }
 
 fn resolve_one_request_discussion(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -644,7 +425,7 @@ fn resolve_one_request_discussion(
 }
 
 fn reopen_request_discussion(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -709,7 +490,7 @@ fn new_client_mutation_id(kind: &str, sequence: &AtomicU64) -> anyhow::Result<St
 }
 
 fn close_request_branch(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -763,6 +544,39 @@ fn start_audience(
             .map(Into::into)
             .unwrap_or(RequestAudience::Private)),
     }
+}
+
+/// Read the request associated with the current branch without changing local state.
+pub fn inspect_current_request(
+    git_repo: &GitRepo,
+    client: &Client,
+    api_url: &str,
+    session_token: &str,
+    remote: Option<&str>,
+) -> anyhow::Result<Option<crate::api::RequestSummaryResponse>> {
+    let context = load_context(Some(git_repo), client, api_url, session_token, remote)?;
+    let Some(request_id) = maybe_request_id_for_context(
+        Some(git_repo),
+        client,
+        api_url,
+        session_token,
+        &context,
+        None,
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(
+        get_request(
+            client,
+            api_url,
+            session_token,
+            &context.target.owner,
+            &context.target.repo,
+            &request_id,
+        )?
+        .request,
+    ))
 }
 
 #[cfg(test)]

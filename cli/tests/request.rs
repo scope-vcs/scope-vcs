@@ -126,24 +126,18 @@ fn json_usage_errors_use_the_shared_schema_and_exit_two() {
 }
 
 #[test]
-fn global_json_rejects_commands_without_typed_results() {
+fn global_json_supports_local_rule_sync_results() {
     let dir = TempDir::new("json-command-scope");
     create_repo_with_head(dir.path());
-
     let output = scope_command(dir.path())
         .args(["--json", "rules", "sync"])
         .output()
         .unwrap();
-
-    assert_failure(&output, "unsupported JSON command");
-    assert!(output.stdout.is_empty());
-    assert_eq!(output.status.code(), Some(2));
-    let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(error.code, scope_api_contract::ErrorCode::BadRequest);
-    assert_eq!(
-        error.message,
-        "--json currently supports request commands, `scope run show`, and `scope licenses`"
-    );
+    assert_success(&output, "rules sync JSON");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["command"], "rules.sync");
+    assert!(value["result"]["changed_paths"].is_array());
+    assert!(output.stderr.is_empty());
 }
 
 #[test]
@@ -179,7 +173,8 @@ fn request_submit_reaches_auth_without_extra_arguments() {
     assert_failure(&output, "scope request submit");
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(!stderr.contains("required arguments"), "{stderr}");
-    assert!(stderr.contains("start browser login"), "{stderr}");
+    assert!(stderr.contains("scope login"), "{stderr}");
+    assert!(!stderr.contains("start browser login"), "{stderr}");
 }
 
 #[test]
@@ -226,6 +221,9 @@ fn every_request_command_accepts_the_global_json_mode_and_returns_json_failures(
             "New evidence",
             "--json",
         ],
+        vec!["--json", "request", "checkout"],
+        vec!["--json", "request", "diff"],
+        vec!["--json", "request", "checks"],
         vec!["--json", "request", "show"],
         vec!["request", "list", "--json"],
         vec!["--json", "request", "status"],
@@ -264,6 +262,9 @@ fn request_help_exposes_the_complete_approved_vocabulary() {
     let stdout = String::from_utf8(output.stdout).unwrap();
 
     for command in [
+        "checkout",
+        "checks",
+        "diff",
         "close",
         "discussion",
         "edit",
@@ -295,7 +296,8 @@ fn request_command_help_uses_the_shared_target_flags() {
     create_repo_with_head(dir.path());
 
     for command in [
-        "close", "edit", "invite", "leave", "merge", "push", "show", "status", "submit", "uninvite",
+        "checkout", "checks", "diff", "close", "edit", "invite", "leave", "merge", "push", "show",
+        "status", "submit", "uninvite",
     ] {
         let output = scope_command(dir.path())
             .args(["request", command, "--help"])

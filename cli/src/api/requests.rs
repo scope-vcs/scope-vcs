@@ -81,6 +81,61 @@ pub fn get_request(
     )
 }
 
+pub fn request_revisions(
+    client: &Client,
+    api_url: &str,
+    session_token: &str,
+    target: RequestTarget<'_>,
+    revision: Option<&str>,
+    commit: Option<&str>,
+) -> anyhow::Result<RequestRevisionListResponse> {
+    let mut request = client
+        .get(format!(
+            "{api_url}{}",
+            routes::repo_request_revisions(target.owner, target.repo, target.request_id)
+        ))
+        .bearer_auth(session_token);
+    if let Some(revision) = revision {
+        request = request.query(&[("revision", revision)]);
+    }
+    if let Some(commit) = commit {
+        request = request.query(&[("commit", commit)]);
+    }
+    execute_request(request, target, "inspect request revisions")
+}
+
+pub struct RequestFileDiffParams<'a> {
+    pub target: RequestTarget<'a>,
+    pub revision: &'a str,
+    pub commit: &'a str,
+    pub path: &'a str,
+}
+
+pub fn request_file_diff(
+    client: &Client,
+    api_url: &str,
+    session_token: &str,
+    params: RequestFileDiffParams<'_>,
+) -> anyhow::Result<ReviewFileDiffResponse> {
+    execute_request(
+        client
+            .get(format!(
+                "{api_url}{}",
+                routes::repo_request_revision_commit_file_diff(
+                    params.target.owner,
+                    params.target.repo,
+                    params.target.request_id,
+                    params.revision,
+                    params.commit
+                )
+            ))
+            .query(&[("path", params.path)])
+            .bearer_auth(session_token),
+        params.target,
+        "inspect request file diff",
+    )
+}
+
 pub fn close_request(
     client: &Client,
     api_url: &str,

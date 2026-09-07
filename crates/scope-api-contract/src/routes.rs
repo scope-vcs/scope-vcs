@@ -336,6 +336,25 @@ pub fn path_segment(value: &str) -> String {
     encoded
 }
 
+pub fn repo_request_revisions(owner: &str, repo: &str, request_id: &str) -> String {
+    format!("{}/changes", repo_request(owner, repo, request_id))
+}
+
+pub fn repo_request_revision_commit_file_diff(
+    owner: &str,
+    repo: &str,
+    request_id: &str,
+    revision_id: &str,
+    commit_oid: &str,
+) -> String {
+    format!(
+        "{}/{}/commits/{}/file-diff",
+        repo_request_revisions(owner, repo, request_id),
+        path_segment(revision_id),
+        path_segment(commit_oid)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,6 +395,16 @@ mod tests {
                     "reopen-and-reply",
                 ),
                 "/v1/repos/an%20owner/r%2Fname/requests/request%3F%231/threads/thread%2F%231/reopen-and-reply",
+            ),
+            (
+                repo_request_revision_commit_file_diff(
+                    "owner",
+                    "repo",
+                    "req/one",
+                    "rev/old",
+                    "commit?#1",
+                ),
+                "/v1/repos/owner/repo/requests/req%2Fone/changes/rev%2Fold/commits/commit%3F%231/file-diff",
             ),
             (
                 cli_device_login_poll("code/with space"),

@@ -1,11 +1,6 @@
-use crate::{
-    api::api_url, auth::read_stored_session_token, git_repo::scope_api_url_from_git_config,
-};
+use crate::{api::api_url, auth::read_stored_session_token};
 use anyhow::Context;
-use std::{
-    env,
-    io::{self, BufRead, Write},
-};
+use std::io::{self, BufRead, Write};
 
 #[derive(Debug, Default, Eq, PartialEq)]
 struct GitCredentialRequest {
@@ -25,10 +20,7 @@ fn write_git_credential_response(
     reader: impl BufRead,
     writer: impl Write,
 ) -> anyhow::Result<()> {
-    let configured_api_url = env::current_dir()
-        .ok()
-        .and_then(|directory| scope_api_url_from_git_config(&directory).ok().flatten())
-        .unwrap_or_else(api_url);
+    let configured_api_url = api_url();
     write_git_credential_response_with(
         operation,
         reader,

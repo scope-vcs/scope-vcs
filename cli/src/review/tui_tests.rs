@@ -52,6 +52,18 @@ fn change_section_rows_are_compact_and_descriptive() {
 }
 
 #[test]
+fn change_rows_escape_control_characters_without_splitting_literal_arrows() {
+    let row = ReviewRow::ChangePath {
+        kind: ChangeListKind::Added,
+        path: " old -> new\t\n\u{1b}[31m.rs".to_string(),
+    };
+    let line = row_line(&row, false, 100).to_string();
+    assert!(line.contains("old -> new\\t\\n\\u{1b}[31m.rs"), "{line:?}");
+    assert!(!line.chars().any(char::is_control), "{line:?}");
+    assert_eq!(UnicodeWidthStr::width(line.as_str()), 100);
+}
+
+#[test]
 fn narrow_footer_keeps_required_push_actions_visible() {
     let hints = footer_hints(ReviewMode::Push, 40);
     let text = hints.join(" ");

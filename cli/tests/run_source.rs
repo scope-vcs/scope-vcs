@@ -34,6 +34,7 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
         let upload = Arc::new(Mutex::new(None));
         let uploaded = upload.clone();
         let known_oid = oid.clone();
+        let changing_checkout = checkout.path().to_path_buf();
         let uploaded_oid = oid.clone();
         let (stop, stopped) = oneshot::channel();
         let server = thread::spawn(move || {
@@ -42,7 +43,13 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
                     .route("/v1/session", get(|| async { Json(serde_json::json!({"identity":null,"user":{"id":"user-test","handle":"owner","email":"owner@example.test","email_verified":true}})) }))
                     .route("/v1/repos/owner/repo/runs/resolve", post(move |Query(query): Query<CreateManualRunQuery>, headers: HeaderMap, body: Bytes| {
                         let oid = known_oid.clone();
+                        let checkout = changing_checkout.clone();
                         async move {
+                            if !known {
+                                fs::write(checkout.join("concurrent.txt"), "later commit").unwrap();
+                                run_git(&checkout, ["add", "."]);
+                                commit_all(&checkout, "concurrent commit");
+                            }
                             assert_eq!(headers["authorization"], "Bearer test-token");
                             assert!(body.is_empty());
                             assert_eq!(query.git_oid, oid);
@@ -83,7 +90,7 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
             .env("SCOPE_API_URL", &api_url)
             .env("XDG_CONFIG_HOME", config.path())
             .env("GIT_TRACE", &trace)
-            .args(["run", "checks", "--no-watch"])
+            .args(["--json", "run", "start", "checks", "--no-watch"])
             .output()
             .unwrap();
         let _ = stop.send(());
@@ -94,6 +101,8 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(receipt["command"], "run.start");
         let trace = fs::read_to_string(trace).unwrap();
         assert_eq!(trace.contains("git bundle create"), !known, "{trace}");
         let upload = upload.lock().unwrap().take();

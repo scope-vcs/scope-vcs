@@ -12,6 +12,25 @@ fn state() -> ReviewState {
     state_with_mode(ReviewMode::Standalone)
 }
 
+#[test]
+fn rename_and_copy_changes_show_destination_and_only_rename_deletes_source() {
+    let changes = [
+        GitChangedPath {
+            status: "R100".to_string(),
+            path: "dest -> literal\n.rs".to_string(),
+            previous_path: Some("old\t.rs".to_string()),
+        },
+        GitChangedPath {
+            status: "C100".to_string(),
+            path: "copy.rs".to_string(),
+            previous_path: Some("original.rs".to_string()),
+        },
+    ];
+    let (added, deleted) = split_change_paths(&changes);
+    assert_eq!(added, vec!["copy.rs", "dest -> literal\n.rs"]);
+    assert_eq!(deleted, vec!["old\t.rs"]);
+}
+
 fn tree_path(row: &ReviewRow) -> Option<&str> {
     match row {
         ReviewRow::TreeNode { path, .. } => Some(path),
@@ -24,10 +43,12 @@ fn state_with_changes() -> ReviewState {
         GitChangedPath {
             status: "D".to_string(),
             path: "old.txt".to_string(),
+            previous_path: None,
         },
         GitChangedPath {
             status: "A".to_string(),
             path: "src/new.rs".to_string(),
+            previous_path: None,
         },
     ];
     let tree = ReviewTree::from_paths(

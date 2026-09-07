@@ -6,9 +6,7 @@ use crate::{
         set_branch_config_value,
     },
     push::DEFAULT_SCOPE_BRANCH,
-    request::remote::{
-        REQUEST_REMOTE_KEY, RequestRemoteTarget, load_request_remote, request_remote_name,
-    },
+    request::remote::{REQUEST_REMOTE_KEY, RequestRemoteTarget},
 };
 use anyhow::{Context, bail};
 use reqwest::blocking::Client;
@@ -25,20 +23,19 @@ pub(super) struct RequestContext {
 }
 
 pub(super) fn load_context(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
     remote: Option<&str>,
 ) -> anyhow::Result<RequestContext> {
-    let remote = request_remote_name(git_repo, api_url, remote)?;
-    let target = load_request_remote(git_repo, api_url, &remote)?;
+    let target = crate::context::resolve_repository(git_repo, remote)?;
     let repo = get_repo(client, api_url, session_token, &target.owner, &target.repo)?;
     Ok(RequestContext { target, repo })
 }
 
 pub(super) fn load_context_and_request_id(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -96,7 +93,7 @@ pub(super) fn push_request_head(
 }
 
 pub(super) fn request_id_for_context(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -111,11 +108,16 @@ pub(super) fn request_id_for_context(
         context,
         request_id,
     )?
-    .context("current branch is not a visible Scope request; switch to origin/<request-name> or pass a request id")
+    .ok_or_else(|| {
+        crate::error::CliError::usage(
+            "select a visible request with --request <name-or-id>, or check out its branch",
+        )
+        .into()
+    })
 }
 
 pub(super) fn maybe_request_id_for_context(
-    git_repo: &GitRepo,
+    git_repo: Option<&GitRepo>,
     client: &Client,
     api_url: &str,
     session_token: &str,
@@ -129,25 +131,27 @@ pub(super) fn maybe_request_id_for_context(
     {
         return Ok(Some(request_id.to_string()));
     }
-    let branch = current_branch(git_repo)?;
-    if explicit.is_none()
-        && let Some(request_id) = branch_config_value(git_repo, &branch, REQUEST_ID_KEY)?
-    {
-        validate_stored_request_target(git_repo, &branch, context)?;
-        return Ok(Some(request_id));
-    }
-    let request_name = match explicit {
-        Some(request_name) => request_name,
-        None => {
-            let tracking_remote = branch_config_value(git_repo, &branch, "remote")?;
-            let merge_ref = branch_config_value(git_repo, &branch, "merge")?;
-            inferred_request_name(
-                branch,
-                &context.target.remote,
-                tracking_remote.as_deref(),
-                merge_ref.as_deref(),
-            )
+    let request_name = if let Some(request_name) = explicit {
+        request_name
+    } else if let Some(git_repo) = git_repo {
+        let branch = match current_branch(git_repo) {
+            Ok(branch) => branch,
+            Err(_) => return Ok(None),
+        };
+        if let Some(request_id) = branch_config_value(git_repo, &branch, REQUEST_ID_KEY)? {
+            validate_stored_request_target(git_repo, &branch, context)?;
+            return Ok(Some(request_id));
         }
+        let tracking_remote = branch_config_value(git_repo, &branch, "remote")?;
+        let merge_ref = branch_config_value(git_repo, &branch, "merge")?;
+        inferred_request_name(
+            branch,
+            &context.target.remote,
+            tracking_remote.as_deref(),
+            merge_ref.as_deref(),
+        )
+    } else {
+        return Ok(None);
     };
     let mut cursor = None;
     loop {
@@ -295,6 +299,16 @@ fn normalized_optional_arg(value: Option<String>) -> Option<String> {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
 }
+pub(super) fn require_git_remote(context: &RequestContext) -> anyhow::Result<()> {
+    if context.target.remote.is_empty() {
+        return Err(crate::error::CliError::usage(
+            "this operation requires a configured Scope Git remote; pass --remote <name>",
+        )
+        .into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{inferred_request_name, refresh_main_projection};

@@ -605,3 +605,23 @@ pub struct ReopenAndReplyRequest {
 pub struct MarkRequestDiscussionReadRequest {
     pub through_position: u64,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct ReviewFileDiffResponse {
+    pub path: String,
+    pub kind: FileChangeKind,
+    pub old_mode: Option<String>,
+    pub new_mode: Option<String>,
+    pub old_content: Option<ReviewFileContentResponse>,
+    pub new_content: Option<ReviewFileContentResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(rename_all = "lowercase"))]
+pub enum ReviewFileContentResponse {
+    Text { text: String },
+    Binary { oid: String, size_bytes: u64 },
+}

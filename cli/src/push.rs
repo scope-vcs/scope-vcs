@@ -19,9 +19,14 @@ use crate::{
     },
     review::{ensure_review_terminal_available, run_push_review},
 };
+use crate::{
+    error::CliError,
+    execution::{emit, json as json_output},
+};
 use anyhow::bail;
-use scope_api_contract::PushTriggerEvaluationState;
+use scope_api_contract::{ErrorCode, ErrorResponse, PushTriggerEvaluationState};
 use scope_domain::repo_config::repo_config_fingerprint;
+use serde_json::json;
 use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -84,17 +89,15 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
                     config_path.display()
                 );
             }
-            Ok(_) => bail!(
-                "Scope repo config changed, and local {} has unsynced edits. Run scope review, resolve the config, then retry scope push.",
-                config_path.display()
-            ),
+            Ok(_) => return Err(CliError::new(ErrorResponse::new(ErrorCode::Conflict, format!(
+                "Scope repo config changed, and local {} has unsynced edits. Run scope visibility edit, resolve the config, then retry scope push --main.", config_path.display()
+            ))).into()),
             Err(_) if local_config_hash == push_context.config_hash => {
                 mark_worktree_scope_repo_config_synced(&git_repo.root, &config)?;
             }
-            Err(error) => bail!(
-                "{error}. Local {} has unsynced edits, so Scope will not overwrite it.",
-                config_path.display()
-            ),
+            Err(error) => return Err(CliError::new(ErrorResponse::new(ErrorCode::Conflict, format!(
+                "{error}. Local {} has unsynced edits, so Scope will not overwrite it.", config_path.display()
+            ))).into()),
         }
     }
     let local_remote_head = scope_remote_head_oid(&git_repo, &remote, DEFAULT_SCOPE_BRANCH)?;
@@ -155,6 +158,10 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         intent.base_head_oid.as_deref(),
     )?;
     ensure_push_intent_not_expired(intent.expires_at_unix)?;
+    eprintln!(
+        "Publish {}/{} refs/heads/{} at commit {}",
+        target.owner, target.repo, DEFAULT_SCOPE_BRANCH, reviewed_head_oid
+    );
 
     let outcome = match push_reviewed_head_with_intent(
         &session.token,
@@ -164,34 +171,52 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     ) {
         Ok(outcome) => outcome,
         Err(_) if push_intent_expired(intent.expires_at_unix) => {
-            bail!("Scope push review expired; rerun scope push")
+            return Err(CliError::new(ErrorResponse::new(
+                ErrorCode::Conflict,
+                "Scope push review expired; rerun scope push --main",
+            ))
+            .into());
         }
         Err(error) => return Err(error),
     };
-    mark_scope_remote_pushed(&git_repo, &remote, DEFAULT_SCOPE_BRANCH, &reviewed_head_oid)?;
-    mark_worktree_scope_repo_config_synced(&git_repo.root, &config)?;
-    println!(
-        "Pushed to Scope: {}/{}\nPush applied by Scope.",
-        outcome.owner, outcome.repo
-    );
-    if !wait {
-        return Ok(());
+    let mut receipt = json!({"repository": format!("{}/{}", outcome.owner, outcome.repo), "remote": remote, "ref": format!("refs/heads/{DEFAULT_SCOPE_BRANCH}"), "commit": reviewed_head_oid, "applied": true, "tracking_updated": false, "config_synced": false});
+    mark_scope_remote_pushed(&git_repo, &remote, DEFAULT_SCOPE_BRANCH, &reviewed_head_oid)
+        .map_err(|error| applied_push_error(&receipt, format!("Push applied, but local tracking setup failed: {error:#}"), "Keep this commit. Fix the reported local Git error, then run scope pull before publishing again."))?;
+    receipt["tracking_updated"] = json!(true);
+    mark_worktree_scope_repo_config_synced(&git_repo.root, &config)
+        .map_err(|error| applied_push_error(&receipt, format!("Push applied, but saving local visibility configuration failed: {error:#}"), "Keep this commit. Fix the reported local filesystem error, then run scope visibility show before publishing again."))?;
+    receipt["config_synced"] = json!(true);
+    if wait {
+        eprintln!("Push applied at {reviewed_head_oid}; waiting for workflows.");
+        let wait_result = get_push_trigger_evaluation(
+            &client,
+            &api_url,
+            &session.token,
+            &target.owner,
+            &target.repo,
+            &reviewed_head_oid,
+        )
+        .and_then(|evaluation| {
+            wait_for_push_runs(
+                &client,
+                &api_url,
+                &session.token,
+                &target,
+                &remote,
+                evaluation,
+            )
+        });
+        receipt["workflows"] = wait_result.map_err(|error| applied_push_error(&receipt,
+            format!("Push applied, but workflow waiting failed: {error:#}"),
+            "Inspect scope run list and scope run show for this commit. Do not repeat the push to retry waiting."))?;
     }
-    let evaluation = get_push_trigger_evaluation(
-        &client,
-        &api_url,
-        &session.token,
-        &target.owner,
-        &target.repo,
-        &reviewed_head_oid,
-    )?;
-    wait_for_push_runs(
-        &client,
-        &api_url,
-        &session.token,
-        &target,
-        &remote,
-        evaluation,
+    emit(
+        "push",
+        &receipt,
+        vec![format!(
+            "Pushed to Scope: {}/{}\nPush applied by Scope.",
+            outcome.owner, outcome.repo
+        )],
     )
 }
 
@@ -202,7 +227,7 @@ fn wait_for_push_runs(
     target: &ScopeRemote,
     remote: &str,
     mut evaluation: PushTriggerEvaluationResponse,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<serde_json::Value> {
     let mut polls = 0;
     while evaluation.state == PushTriggerEvaluationState::Pending {
         ensure_evaluation_poll_remaining(polls)?;
@@ -231,21 +256,36 @@ fn wait_for_push_runs(
         PushTriggerEvaluationState::Succeeded => {}
     }
     if evaluation.checks.is_empty() {
-        println!("No main-push workflows matched.");
-        return Ok(());
+        eprintln!("No main-push workflows matched.");
+        return Ok(json!([]));
     }
     let mut failures = Vec::new();
+    let mut completed = Vec::new();
     for check in evaluation.checks {
-        println!("Queued {} · {}", check.workflow_name, check.run.id);
-        if let Err(error) = crate::run::watch(&check.run.id, Some(remote)) {
-            failures.push(error.to_string());
+        eprintln!("Queued {} · {}", check.workflow_name, check.run.id);
+        let result = if json_output() {
+            crate::run::wait_completion(&check.run.id, Some(remote)).map(|run| json!(run))
+        } else {
+            crate::run::watch(&check.run.id, Some(remote))
+                .map(|_| json!({"id": check.run.id, "workflow_name": check.workflow_name}))
+        };
+        match result {
+            Ok(run) => completed.push(run),
+            Err(error) => failures.push(error.to_string()),
         }
     }
     if failures.is_empty() {
-        Ok(())
+        Ok(json!(completed))
     } else {
         bail!("push workflows failed: {}", failures.join("; "))
     }
+}
+
+fn applied_push_error(receipt: &serde_json::Value, message: String, recovery: &str) -> CliError {
+    let mut receipt = receipt.clone();
+    receipt["operation"] = json!("push");
+    receipt["recovery"] = json!(recovery);
+    CliError::partial(message, receipt)
 }
 
 fn ensure_evaluation_poll_remaining(polls: usize) -> anyhow::Result<()> {
@@ -259,7 +299,11 @@ fn ensure_evaluation_poll_remaining(polls: usize) -> anyhow::Result<()> {
 
 fn ensure_push_intent_not_expired(expires_at_unix: u64) -> anyhow::Result<()> {
     if push_intent_expired(expires_at_unix) {
-        bail!("Scope push review expired; rerun scope push");
+        return Err(CliError::new(ErrorResponse::new(
+            ErrorCode::Conflict,
+            "Scope push review expired; rerun scope push --main",
+        ))
+        .into());
     }
     Ok(())
 }
@@ -296,7 +340,11 @@ fn ensure_review_base_matches_intent(
     {
         return Ok(());
     }
-    bail!("Scope changed while preparing push review; rerun scope push")
+    Err(CliError::new(ErrorResponse::new(
+        ErrorCode::Conflict,
+        "Scope changed while preparing push review; rerun scope push --main",
+    ))
+    .into())
 }
 
 fn ensure_reviewed_base_matches_intent(
@@ -304,7 +352,11 @@ fn ensure_reviewed_base_matches_intent(
     intent_base_head_oid: Option<&str>,
 ) -> anyhow::Result<()> {
     if reviewed_base_oid != intent_base_head_oid {
-        bail!("Scope changed while preparing push review; rerun scope push");
+        return Err(CliError::new(ErrorResponse::new(
+            ErrorCode::Conflict,
+            "Scope changed while preparing push review; rerun scope push --main",
+        ))
+        .into());
     }
     Ok(())
 }
@@ -325,7 +377,9 @@ pub fn load_scope_remote(
     let git_origin = scope_git_origin(git_repo, api_url)?;
     let target = ScopeRemote::parse(&git_origin, remote, &push_url)?;
     if target.access != GitAccess::Permissioned {
-        bail!("Scope remote must have path /git/permissioned/owner/repo");
+        return Err(
+            CliError::usage("Scope remote must have path /git/permissioned/owner/repo").into(),
+        );
     }
     Ok(target)
 }
@@ -377,7 +431,11 @@ fn ensure_awaiting_first_push_repo_can_receive_first_push(
     actor: RepositoryActor,
 ) -> anyhow::Result<()> {
     if actor != RepositoryActor::Owner {
-        bail!("you do not have owner access to first-push {owner}/{repo}");
+        return Err(CliError::new(ErrorResponse::new(
+            ErrorCode::Forbidden,
+            format!("you do not have owner access to first-push {owner}/{repo}"),
+        ))
+        .into());
     }
     Ok(())
 }
@@ -396,7 +454,11 @@ fn ensure_ready_repo_can_receive_push(
     }
 
     if !can_push {
-        bail!("you do not have write access to {owner}/{repo}");
+        return Err(CliError::new(ErrorResponse::new(
+            ErrorCode::Forbidden,
+            format!("you do not have write access to {owner}/{repo}"),
+        ))
+        .into());
     }
 
     Ok(())
@@ -409,10 +471,11 @@ mod tests {
     #[test]
     fn expired_push_intent_reports_rerun_message() {
         let error = ensure_push_intent_not_expired(0).unwrap_err();
+        assert_eq!(crate::error::exit_code(&error), 5);
         assert!(
             error
                 .to_string()
-                .contains("Scope push review expired; rerun scope push")
+                .contains("Scope push review expired; rerun scope push --main")
         );
         ensure_push_intent_not_expired(unix_now().saturating_add(60)).unwrap();
     }
@@ -429,10 +492,11 @@ mod tests {
         ensure_reviewed_base_matches_intent(None, None).unwrap();
         ensure_reviewed_base_matches_intent(Some("abc"), Some("abc")).unwrap();
         let error = ensure_reviewed_base_matches_intent(Some("abc"), Some("def")).unwrap_err();
+        assert_eq!(crate::error::exit_code(&error), 5);
         assert!(
             error
                 .to_string()
-                .contains("Scope changed while preparing push review; rerun scope push")
+                .contains("Scope changed while preparing push review; rerun scope push --main")
         );
         assert!(ensure_reviewed_base_matches_intent(None, Some("def")).is_err());
         assert!(ensure_reviewed_base_matches_intent(Some("abc"), None).is_err());

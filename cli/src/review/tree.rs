@@ -151,14 +151,7 @@ fn node_sort_rank(kind: ReviewNodeKind) -> u8 {
 fn changed_statuses_by_path(changed_paths: &[GitChangedPath]) -> BTreeMap<String, String> {
     changed_paths
         .iter()
-        .map(|changed| {
-            let path = changed
-                .path
-                .rsplit_once(" -> ")
-                .map(|(_, new_path)| new_path)
-                .unwrap_or(&changed.path);
-            (format!("/{path}"), changed.status.clone())
-        })
+        .map(|changed| (format!("/{}", changed.path), changed.status.clone()))
         .collect()
 }
 

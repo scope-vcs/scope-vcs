@@ -92,7 +92,7 @@ fn init_keeps_the_existing_committed_repository_flow() {
 }
 
 #[test]
-fn init_restores_the_remote_when_later_local_setup_fails() {
+fn init_restores_the_remote_and_retains_created_repo_when_local_setup_fails() {
     let dir = TempDir::new("rollback");
     create_repo_with_head(dir.path());
     run_git(
@@ -115,8 +115,8 @@ fn init_restores_the_remote_when_later_local_setup_fails() {
 
     assert_failure(&output, "scope init with failed local config");
     assert!(
-        rolled_back,
-        "the created server repository was not rolled back"
+        !rolled_back,
+        "the created server repository must remain available for recovery"
     );
     assert_eq!(
         git_stdout(dir.path(), ["remote", "get-url", "scope"]),
@@ -145,7 +145,77 @@ fn init_warns_on_dirty_working_tree_and_continues_to_auth() {
         stderr.contains("Only committed HEAD will be pushed to Scope."),
         "{stderr}"
     );
-    assert!(stderr.contains("start browser login"), "{stderr}");
+    assert!(stderr.contains("scope login"), "{stderr}");
+}
+
+#[test]
+fn init_json_is_one_complete_result() {
+    let dir = TempDir::new("init-json");
+    create_repo_with_head(dir.path());
+    let config_dir = TempDir::new("init-json-config");
+    let server = InitServer::start();
+    let output = authenticated_init_command(dir.path(), config_dir.path(), &server.api_url)
+        .args(["--json", "init", "--name", "sample"])
+        .output()
+        .unwrap();
+    server.finish();
+    assert_success(&output, "scope init --json");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["command"], "init");
+    assert_eq!(value["result"]["repository"], "adam/sample");
+    assert_eq!(value["result"]["remote"], "scope");
+}
+
+#[test]
+fn init_requires_explicit_name_when_noninteractive() {
+    let dir = TempDir::new("init-no-name");
+    create_repo_with_head(dir.path());
+    let output = scope_command(dir.path())
+        .args(["--json", "init"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let value: serde_json::Value = serde_json::from_str(
+        String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .last()
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(value["message"].as_str().unwrap().contains("--name"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("Repository name ["));
+}
+
+#[test]
+fn init_partial_failure_json_identifies_retained_repository() {
+    let dir = TempDir::new("init-partial-json");
+    create_repo_with_head(dir.path());
+    fs::write(dir.path().join(".git/scope"), "block state directory").unwrap();
+    let config_dir = TempDir::new("init-partial-json-config");
+    let server = InitServer::start();
+    let output = authenticated_init_command(dir.path(), config_dir.path(), &server.api_url)
+        .args(["--json", "init", "--name", "sample"])
+        .output()
+        .unwrap();
+    assert!(!server.finish());
+    assert_eq!(output.status.code(), Some(5));
+    let value: serde_json::Value = serde_json::from_str(
+        String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .last()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(value["recovery"]["repository"], "adam/sample");
+    assert_eq!(value["recovery"]["created"], true);
+    assert_eq!(value["recovery"]["configured"], false);
+    assert!(
+        value["recovery"]["recovery_commands"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 3
+    );
 }
 
 fn authenticated_init_command(

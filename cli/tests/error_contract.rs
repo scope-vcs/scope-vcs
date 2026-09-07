@@ -28,6 +28,6 @@ fn local_authentication_and_usage_failures_use_stable_exit_categories() {
     assert!(
         String::from_utf8(invalid_login.stderr)
             .unwrap()
-            .contains("cannot be used together")
+            .contains("cannot be used with")
     );
 }

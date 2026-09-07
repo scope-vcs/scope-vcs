@@ -38,6 +38,12 @@ pub(super) enum RequestCommand {
     List(RequestListArgs),
     #[command(about = "Show the current request or repository request status")]
     Status(RequestStatusArgs),
+    #[command(about = "Fetch a request and safely switch to its local branch")]
+    Checkout(RequestCheckoutArgs),
+    #[command(about = "Inspect the server-visible changes in a request revision")]
+    Diff(RequestDiffArgs),
+    #[command(about = "Show request mergeability and visible workflow runs for its head")]
+    Checks(RequestShowArgs),
 }
 
 #[derive(Parser)]
@@ -105,7 +111,7 @@ pub(super) struct RequestEditArgs {
     #[arg(
         long,
         value_name = "PATH",
-        help = "Read the new Markdown description from this file"
+        help = "Read the new Markdown description from a file, or - for stdin"
     )]
     pub(super) description_file: Option<PathBuf>,
 }
@@ -243,6 +249,64 @@ pub(super) struct RequestShowArgs {
 pub(super) struct RequestListArgs {
     #[arg(long, help = "Scope Git remote for the target repository")]
     pub(super) remote: Option<String>,
+    #[arg(long, value_enum, help = "Filter by request state")]
+    pub(super) state: Option<RequestStateArg>,
+    #[arg(long, value_enum, help = "Filter by audience")]
+    pub(super) audience: Option<RequestAudienceArg>,
+    #[arg(long, help = "Match request names or titles")]
+    pub(super) search: Option<String>,
+    #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..), help = "Maximum matching requests to show")]
+    pub(super) limit: u32,
+}
+
+#[derive(Parser)]
+pub(super) struct RequestCheckoutArgs {
+    #[command(flatten)]
+    pub(super) target: RequestTargetArgs,
+    #[arg(long, help = "Local branch name (defaults to the request name)")]
+    pub(super) branch: Option<String>,
+}
+
+#[derive(Parser)]
+pub(super) struct RequestDiffArgs {
+    #[command(flatten)]
+    pub(super) target: RequestTargetArgs,
+    #[arg(
+        long,
+        help = "Revision ID (defaults to the server-selected review revision)"
+    )]
+    pub(super) revision: Option<String>,
+    #[arg(
+        long,
+        requires = "revision",
+        help = "Inspect one commit in the selected revision"
+    )]
+    pub(super) commit: Option<String>,
+    #[arg(
+        long,
+        requires = "commit",
+        help = "Show the old and new content for this file"
+    )]
+    pub(super) path: Option<String>,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub(super) enum RequestStateArg {
+    Draft,
+    Open,
+    Closed,
+    Merged,
+}
+
+impl From<RequestStateArg> for scope_api_contract::RequestState {
+    fn from(state: RequestStateArg) -> Self {
+        match state {
+            RequestStateArg::Draft => Self::Draft,
+            RequestStateArg::Open => Self::Open,
+            RequestStateArg::Closed => Self::Closed,
+            RequestStateArg::Merged => Self::Merged,
+        }
+    }
 }
 
 #[derive(Parser)]

@@ -218,7 +218,7 @@ impl From<scope_postgres::db::RepositoryCreationError<ApiError>> for ApiError {
                 let error = Self::from(error);
                 if error.kind == ErrorKind::Conflict {
                     error.with_instruction(
-                        "Use `scope init --name <new-name>` to create a different repository, or run `scope push` if this checkout is already linked to Scope.",
+                        "Use `scope init --name <new-name>` to create a different repository, or run `scope push --main` if this checkout is already linked to Scope.",
                     )
                 } else {
                     error

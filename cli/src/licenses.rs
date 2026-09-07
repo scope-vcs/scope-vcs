@@ -27,7 +27,10 @@ pub fn run(json: bool) -> anyhow::Result<()> {
 
 fn write_licenses(mut output: impl Write, json: bool) -> io::Result<()> {
     if json {
-        serde_json::to_writer(&mut output, &LICENSES)?;
+        serde_json::to_writer(
+            &mut output,
+            &scope_api_contract::CliSuccessEnvelope::new("licenses", &LICENSES),
+        )?;
         writeln!(output)?;
     } else {
         writeln!(output, "Scope — {}\n", LICENSES.license)?;

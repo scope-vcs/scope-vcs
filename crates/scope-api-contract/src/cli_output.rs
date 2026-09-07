@@ -19,3 +19,12 @@ impl<T> CliSuccessEnvelope<T> {
         }
     }
 }
+
+/// CLI errors preserve the API error shape and can describe completed local/remote effects.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CliFailureEnvelope {
+    #[serde(flatten)]
+    pub error: crate::ErrorResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<serde_json::Value>,
+}

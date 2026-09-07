@@ -138,7 +138,7 @@ export function RepositoryCodeView({
           emptyMessage={content && !selectedPath
             ? content.files.length
               ? 'No README in this view. Browse the files or use Find file to get started.'
-              : 'Run scope push from the CLI to add files to this repository.'
+              : 'Run scope push --main from the CLI to add files to this repository.'
             : 'Select a file to inspect its contents.'}
           error={selectedFileError}
           file={selectedFile}

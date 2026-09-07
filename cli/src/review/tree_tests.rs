@@ -33,7 +33,8 @@ fn tree_maps_rename_status_to_new_path() {
         &["new.rs".to_string()],
         &[GitChangedPath {
             status: "R100".to_string(),
-            path: "old.rs -> new.rs".to_string(),
+            path: "new.rs".to_string(),
+            previous_path: Some("old.rs".to_string()),
         }],
     );
 
@@ -43,4 +44,32 @@ fn tree_maps_rename_status_to_new_path() {
         .find(|node| node.path == "/new.rs")
         .unwrap();
     assert_eq!(file.change_status.as_deref(), Some("R100"));
+}
+
+#[test]
+fn change_paths_preserve_literal_arrows_spaces_and_control_characters() {
+    let paths = [" old -> new\t.rs\n".to_string(), "unrelated.rs".to_string()];
+    let tree = ReviewTree::from_paths(
+        &paths,
+        &[GitChangedPath {
+            status: "M".to_string(),
+            path: paths[0].clone(),
+            previous_path: None,
+        }],
+    );
+    let file = tree
+        .nodes()
+        .iter()
+        .find(|node| node.path == format!("/{}", paths[0]))
+        .unwrap();
+    assert_eq!(file.name, paths[0]);
+    assert_eq!(file.change_status.as_deref(), Some("M"));
+    assert_eq!(
+        tree.nodes()
+            .iter()
+            .find(|node| node.path == "/unrelated.rs")
+            .unwrap()
+            .change_status,
+        None
+    );
 }

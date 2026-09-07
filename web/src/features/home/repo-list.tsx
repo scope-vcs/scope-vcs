@@ -29,7 +29,7 @@ export function RepoList({
               value={cliInstallCommands.windows}
             />
             <CopyableCodeBlock copyLabel="Copy init command" value="scope init" />
-            <CopyableCodeBlock copyLabel="Copy push command" value="scope push" />
+            <CopyableCodeBlock copyLabel="Copy push command" value="scope push --main" />
           </div>
         ) : undefined}
         className="mt-6"

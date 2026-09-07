@@ -8,11 +8,15 @@ const configuration = JSON.parse(
   readFileSync(new URL("../../cli/distribution/targets.json", import.meta.url), "utf8"),
 );
 
-test("pull requests build only the Linux x64 smoke target", () => {
+test("pull requests exercise native Linux, macOS, and Windows targets", () => {
   const plan = selectCliDistributionTargets(configuration, "pull-request");
 
-  assert.deepEqual(plan.include.map(({ target }) => target), ["x86_64-unknown-linux-gnu"]);
-  assert.equal(plan.include[0].smoke, true);
+  assert.deepEqual(plan.include.map(({ target }) => target), [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+  ]);
+  assert.ok(plan.include.every(({ smoke, builder }) => smoke && builder === "cargo"));
 });
 
 test("release runs retain every configured native target", () => {
