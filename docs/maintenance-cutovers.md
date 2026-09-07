@@ -137,3 +137,9 @@ remains unresolved; registry cleanup must not remove those digests. Recovery
 cannot rebuild or substitute a deleted image.
 The public `VITE_POSTHOG_HOST` and `VITE_POSTHOG_PROJECT_TOKEN` repository variables
 supply the same analytics build configuration that Railway previously supplied.
+
+The release rehearsal uses the dedicated Railway `release-proof` environment
+configured under `railway.staging` in the deployment manifest. Keep runner and
+load experiments in separate environments so they cannot replace services during
+the availability measurement. The GitHub environment remains `staging` for its
+secrets and deployment protection rules.
