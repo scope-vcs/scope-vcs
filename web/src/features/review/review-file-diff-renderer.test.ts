@@ -1,0 +1,288 @@
+import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import test from 'node:test'
+import { Worker } from 'node:worker_threads'
+import type { ReviewFileDiffResponse } from '../../api/types.generated'
+import { createCachedResource } from '../../lib/cached-resource'
+import {
+  REVIEW_FILE_DIFF_RENDER_BUDGET,
+  type ReviewFileDiffWorkerInput,
+  reviewFileTextMetrics,
+} from './review-file-diff-render-contract'
+import {
+  boundedText,
+  createReviewFileDiffRenderer,
+  ReviewDiffTransientError,
+} from './review-file-diff-renderer'
+import { createReviewFileDiffWorkerPool, runReviewFileDiffWorker } from './review-file-diff-worker-pool'
+
+function textDiff(oldText: string, newText: string): ReviewFileDiffResponse {
+  return {
+    kind: 'Modified',
+    new_content: { kind: 'text', text: newText },
+    new_mode: '100644',
+    old_content: { kind: 'text', text: oldText },
+    old_mode: '100644',
+    path: '/fixture.ts',
+  }
+}
+
+test('counts UTF-8 bytes, lines, and the longest line exactly', () => {
+  assert.deepEqual(reviewFileTextMetrics('a😀\nβ'), {
+    bytes: 8,
+    lines: 2,
+    maxLineBytes: 5,
+  })
+  assert.deepEqual(reviewFileTextMetrics(''), {
+    bytes: 0,
+    lines: 0,
+    maxLineBytes: 0,
+  })
+})
+
+test('rejects input and line amplification before worker admission', async () => {
+  let renders = 0
+  const render = createReviewFileDiffRenderer({
+    isolatedRender: async () => {
+      renders += 1
+      return { kind: 'empty' }
+    },
+  })
+
+  const bytes = await render(textDiff('', 'x'.repeat(
+    REVIEW_FILE_DIFF_RENDER_BUDGET.maxInputBytes + 1,
+  )))
+  assert.deepEqual(bytes.presentation, { kind: 'omitted', reason: 'input' })
+
+  const longLine = await render(textDiff('', 'x'.repeat(
+    REVIEW_FILE_DIFF_RENDER_BUDGET.maxInputLineBytes + 1,
+  )))
+  assert.deepEqual(longLine.presentation, { kind: 'omitted', reason: 'input' })
+
+  const lines = await render(textDiff('', 'x\n'.repeat(10_000)))
+  assert.deepEqual(lines.presentation, { kind: 'omitted', reason: 'lines' })
+  assert.equal(renders, 0)
+})
+
+test('bounds mixed content without returning raw transport fields', async () => {
+  const render = createReviewFileDiffRenderer({
+    isolatedRender: async () => assert.fail('mixed content must not enter Pierre'),
+  })
+  const source = '😀'.repeat(REVIEW_FILE_DIFF_RENDER_BUDGET.maxMixedTextBytes)
+  const result = await render({
+    kind: 'Modified',
+    new_content: { kind: 'text', text: source },
+    new_mode: '100644',
+    old_content: { kind: 'binary', oid: 'abc123', size_bytes: 42 },
+    old_mode: '100644',
+    path: '/fixture.dat',
+  })
+
+  assert.equal(result.presentation.kind, 'mixed')
+  assert.equal('old_content' in result, false)
+  assert.equal('new_content' in result, false)
+  if (result.presentation.kind !== 'mixed') return
+  assert.equal(result.presentation.text[0]?.truncated, true)
+  assert.ok(
+    Buffer.byteLength(result.presentation.text[0]?.content ?? '') <=
+      REVIEW_FILE_DIFF_RENDER_BUDGET.maxMixedTextBytes,
+  )
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(result)) <
+      REVIEW_FILE_DIFF_RENDER_BUDGET.maxMixedTextBytes + 1_024,
+  )
+})
+
+test('admits no queue and allows retry after a transient busy failure', async () => {
+  const releases: Array<() => void> = []
+  const state = { active: 0 }
+  const render = createReviewFileDiffRenderer({
+    isolatedRender: () => new Promise((resolveRender) => {
+      releases.push(() => resolveRender({ kind: 'empty' }))
+    }),
+    state,
+  })
+
+  const first = render(textDiff('a', 'b'))
+  const second = render(textDiff('c', 'd'))
+  await assert.rejects(
+    render(textDiff('e', 'f')),
+    (error: unknown) => error instanceof ReviewDiffTransientError &&
+      error.failure === 'busy',
+  )
+  assert.equal(releases.length, 2)
+
+  releases.shift()?.()
+  await first
+  const retry = render(textDiff('e', 'f'))
+  assert.equal(releases.length, 2)
+  releases.shift()?.()
+  releases.shift()?.()
+  await Promise.all([second, retry])
+  assert.equal(state.active, 0)
+})
+
+test('terminates a CPU-bound worker at the deadline', async () => {
+  const worker = new Worker('while (true) {}', { eval: true })
+  const exited = once(worker, 'exit')
+  const started = performance.now()
+  await assert.rejects(
+    createReviewFileDiffWorkerPool(() => worker, 1)(workerInput('a', 'b'), 25),
+    (error: unknown) => error instanceof ReviewDiffTransientError &&
+      error.failure === 'deadline',
+  )
+  await exited
+  assert.ok(performance.now() - started < 1_000)
+})
+
+test('does not publish transient busy or deadline failures to a cache', async () => {
+  const busyRender = createReviewFileDiffRenderer({
+    isolatedRender: async () => assert.fail('busy render must not start'),
+    state: { active: REVIEW_FILE_DIFF_RENDER_BUDGET.maxConcurrentRenders },
+  })
+  const deadlineRender = createReviewFileDiffRenderer({
+    isolatedRender: async () => {
+      throw new ReviewDiffTransientError('deadline')
+    },
+  })
+
+  await assertTransientNotPublished(() => busyRender(textDiff('a', 'b')), 'busy')
+  await assertTransientNotPublished(
+    () => deadlineRender(textDiff('a', 'b')),
+    'deadline',
+  )
+})
+
+test('zero-hunk and adversarial fixtures return bounded worker results', async () => {
+  assert.deepEqual(
+    await runSourceWorker(workerInput('same\n', 'same\n')),
+    { kind: 'empty' },
+  )
+  assert.deepEqual(
+    await runSourceWorker(workerInput('a\n', 'b\n', {
+      maxHighlightLanguages: 0,
+    })),
+    { kind: 'error' },
+  )
+  assert.deepEqual(
+    await runSourceWorker(workerInput('a\n', 'b\n', { maxHunks: 0 })),
+    { kind: 'omitted', reason: 'hunks' },
+  )
+  assert.deepEqual(
+    await runSourceWorker(workerInput('a\n', 'b\n', { maxRenderedLines: 1 })),
+    { kind: 'omitted', reason: 'lines' },
+  )
+  assert.deepEqual(
+    await runSourceWorker(workerInput('a\n', 'b\n', { maxOutputBytes: 100 })),
+    { kind: 'omitted', reason: 'output' },
+  )
+
+  const thousandOld = Array.from(
+    { length: 1_000 },
+    (_, index) => `export const before${index} = "aaaaaaaaaaaa"\n`,
+  ).join('')
+  const thousandNew = Array.from(
+    { length: 1_000 },
+    (_, index) => `export const after${index} = "bbbbbbbbbbbb"\n`,
+  ).join('')
+  assert.deepEqual(
+    await runSourceWorker(workerInput(thousandOld, thousandNew)),
+    { kind: 'omitted', reason: 'lines' },
+  )
+})
+
+test('bounds text excerpts without splitting UTF-8 characters', () => {
+  assert.deepEqual(boundedText('a😀b', 5), {
+    content: 'a😀',
+    truncated: true,
+  })
+})
+
+test('caches presentation by content and language, retaining current diff metadata', async () => {
+  let renders = 0
+  const render = createReviewFileDiffRenderer({
+    isolatedRender: async () => {
+      renders += 1
+      return { kind: 'html', html: 'rendered' }
+    },
+  })
+  const original = textDiff('a', 'b')
+  await render(original)
+  const changedMode = await render({ ...original, new_mode: '100755' })
+  assert.equal(renders, 1)
+  assert.equal(changedMode.new_mode, '100755')
+  await render({ ...original, path: '/fixture.rs' })
+  await render(textDiff('a', 'c'))
+  assert.equal(renders, 3)
+})
+
+test('bounds cached presentation bytes and excludes canceled work', async () => {
+  let renders = 0
+  const render = createReviewFileDiffRenderer({
+    isolatedRender: async () => {
+      renders += 1
+      return { kind: 'html', html: 'x'.repeat(256 * 1_024) }
+    },
+  })
+  for (let index = 0; index < 17; index += 1) {
+    await render(textDiff('a', `${index}`))
+  }
+  await render(textDiff('a', '0'))
+  assert.equal(renders, 18)
+  const controller = new AbortController()
+  controller.abort()
+  await assert.rejects(render(textDiff('a', '0'), controller.signal), { name: 'AbortError' })
+  assert.equal(renders, 18)
+})
+
+function workerInput(
+  oldText: string,
+  newText: string,
+  budgetOverrides: Partial<ReviewFileDiffWorkerInput['budget']> = {},
+): ReviewFileDiffWorkerInput {
+  return {
+    budget: {
+      maxHighlightLanguages: REVIEW_FILE_DIFF_RENDER_BUDGET.maxHighlightLanguages,
+      maxHunks: REVIEW_FILE_DIFF_RENDER_BUDGET.maxHunks,
+      maxOutputBytes: REVIEW_FILE_DIFF_RENDER_BUDGET.maxOutputBytes,
+      maxRenderedLines: REVIEW_FILE_DIFF_RENDER_BUDGET.maxRenderedLines,
+      ...budgetOverrides,
+    },
+    newText,
+    oldText,
+    path: '/fixture.ts',
+  }
+}
+
+async function runSourceWorker(input: ReviewFileDiffWorkerInput) {
+  const workerPath = resolve(
+    process.cwd(),
+    'src/features/review/review-file-diff-render-worker.ts',
+  )
+  const worker = new Worker(pathToFileURL(workerPath))
+  try {
+    return await runReviewFileDiffWorker(worker, input, REVIEW_FILE_DIFF_RENDER_BUDGET.deadlineMs)
+  } finally {
+    await worker.terminate()
+  }
+}
+
+async function assertTransientNotPublished(
+  load: () => Promise<object>,
+  expectedFailure: 'busy' | 'deadline',
+) {
+  const resource = createCachedResource<object>({ maxEntries: 1 })
+  await resource.ensure('diff', '1', load)
+  const snapshot = resource.getSnapshot('diff')
+  assert.equal(snapshot.value, null, 'transient failures must not become cached render results')
+  assert.ok(snapshot.error instanceof ReviewDiffTransientError)
+  assert.equal(snapshot.error.failure, expectedFailure)
+
+  resource.invalidate('diff')
+  const recovered = { presentation: { kind: 'empty' } }
+  await resource.ensure('diff', '1', async () => recovered)
+  assert.deepEqual(resource.peek('diff'), recovered)
+  assert.equal(resource.getSnapshot('diff').error, null)
+}

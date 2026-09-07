@@ -1,0 +1,168 @@
+use super::{RunStore, entities};
+use crate::error::PostgresError;
+use scope_domain::runs::{
+    attempt::{MAX_RUN_ATTEMPTS, RunAttempt},
+    cache::observation::{AttemptCacheObservation, AttemptCacheSetupObservation},
+    job::RunJob,
+    run::Run,
+    step::RunAttemptStep,
+    workflow::{definition::MAX_WORKFLOW_JOBS, revision::WorkflowRevision},
+};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use std::collections::HashMap;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunAttemptDetail {
+    pub attempt: RunAttempt,
+    pub cache_setup: Option<AttemptCacheSetupObservation>,
+    pub caches: Vec<AttemptCacheObservation>,
+    pub steps: Vec<RunAttemptStep>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunDetail {
+    pub run: Run,
+    pub jobs: Vec<RunJob>,
+    pub workflow_revision: WorkflowRevision,
+    pub attempts: Vec<RunAttemptDetail>,
+}
+
+impl RunStore {
+    pub async fn run_detail(&self, run_id: &str) -> Result<Option<RunDetail>, PostgresError> {
+        let tx = super::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let Some(run) = entities::run::Entity::find_by_id(run_id.to_string())
+            .one(&tx)
+            .await
+            .map_err(PostgresError::internal)?
+            .map(entities::run::Model::try_into_domain)
+            .transpose()?
+        else {
+            tx.commit().await.map_err(PostgresError::internal)?;
+            return Ok(None);
+        };
+        let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
+        let jobs = super::run_attempt_persistence::jobs_for_run(&tx, run_id).await?;
+        if jobs.is_empty() {
+            return Err(PostgresError::internal_message(
+                "run is missing its persisted jobs",
+            ));
+        }
+        let attempts = run_attempt_details_with(&tx, run_id).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(Some(RunDetail {
+            run,
+            jobs,
+            workflow_revision,
+            attempts,
+        }))
+    }
+
+    pub async fn run_attempt_details(
+        &self,
+        run_id: &str,
+    ) -> Result<Vec<RunAttemptDetail>, PostgresError> {
+        run_attempt_details_with(self.db.as_ref(), run_id).await
+    }
+}
+
+async fn run_attempt_details_with<C>(
+    conn: &C,
+    run_id: &str,
+) -> Result<Vec<RunAttemptDetail>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let max_attempts = u64::from(MAX_RUN_ATTEMPTS)
+        .checked_mul(u64::try_from(MAX_WORKFLOW_JOBS).map_err(|_| {
+            PostgresError::internal_message("workflow job limit does not fit the database query")
+        })?)
+        .ok_or_else(|| PostgresError::internal_message("run attempt query limit overflow"))?;
+    let attempts = entities::run_attempt::Entity::find()
+        .filter(entities::run_attempt::Column::RunId.eq(run_id))
+        .order_by_desc(entities::run_attempt::Column::CreatedAtUnix)
+        .order_by_desc(entities::run_attempt::Column::Number)
+        .limit(max_attempts)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    let attempt_ids = attempts
+        .iter()
+        .map(|attempt| attempt.id.clone())
+        .collect::<Vec<_>>();
+    let step_models = if attempt_ids.is_empty() {
+        Vec::new()
+    } else {
+        entities::run_attempt_step::Entity::find()
+            .filter(entities::run_attempt_step::Column::AttemptId.is_in(attempt_ids.clone()))
+            .order_by_asc(entities::run_attempt_step::Column::AttemptId)
+            .order_by_asc(entities::run_attempt_step::Column::StepIndex)
+            .all(conn)
+            .await
+            .map_err(PostgresError::internal)?
+    };
+    let cache_models = if attempt_ids.is_empty() {
+        Vec::new()
+    } else {
+        entities::run_attempt_cache::Entity::find()
+            .filter(entities::run_attempt_cache::Column::AttemptId.is_in(attempt_ids.clone()))
+            .order_by_asc(entities::run_attempt_cache::Column::AttemptId)
+            .order_by_asc(entities::run_attempt_cache::Column::CacheName)
+            .all(conn)
+            .await
+            .map_err(PostgresError::internal)?
+    };
+    let cache_setup_models = if attempt_ids.is_empty() {
+        Vec::new()
+    } else {
+        entities::run_attempt_cache_setup::Entity::find()
+            .filter(entities::run_attempt_cache_setup::Column::AttemptId.is_in(attempt_ids.clone()))
+            .all(conn)
+            .await
+            .map_err(PostgresError::internal)?
+    };
+    let mut steps_by_attempt = HashMap::<String, Vec<RunAttemptStep>>::new();
+    for step in step_models {
+        let attempt_id = step.attempt_id.clone();
+        steps_by_attempt
+            .entry(attempt_id)
+            .or_default()
+            .push(step.try_into_domain()?);
+    }
+    let mut caches_by_attempt = HashMap::<String, Vec<AttemptCacheObservation>>::new();
+    for cache in cache_models {
+        let attempt_id = cache.attempt_id.clone();
+        caches_by_attempt
+            .entry(attempt_id)
+            .or_default()
+            .push(cache.try_into_domain()?);
+    }
+    let mut cache_setups_by_attempt = cache_setup_models
+        .into_iter()
+        .map(|setup| {
+            let attempt_id = setup.attempt_id.clone();
+            setup.try_into_domain().map(|setup| (attempt_id, setup))
+        })
+        .collect::<Result<HashMap<_, _>, PostgresError>>()?;
+    let mut details = Vec::with_capacity(attempts.len());
+    for attempt in attempts {
+        let steps = steps_by_attempt.remove(&attempt.id).unwrap_or_default();
+        let caches = caches_by_attempt.remove(&attempt.id).unwrap_or_default();
+        let cache_setup = cache_setups_by_attempt.remove(&attempt.id);
+        let attempt = attempt.try_into_domain()?;
+        attempt
+            .validate_execution(&steps)
+            .map_err(PostgresError::invalid_input)?;
+        details.push(RunAttemptDetail {
+            attempt,
+            cache_setup,
+            caches,
+            steps,
+        });
+    }
+    if !cache_setups_by_attempt.is_empty() {
+        return Err(PostgresError::internal_message(
+            "cache setup observation does not belong to a persisted attempt",
+        ));
+    }
+    Ok(details)
+}

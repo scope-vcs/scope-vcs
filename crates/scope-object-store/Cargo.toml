@@ -1,0 +1,23 @@
+[package]
+name = "scope-object-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+test-support = []
+
+[dependencies]
+base64.workspace = true
+chacha20poly1305.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+hmac.workspace = true
+reqwest = { workspace = true, features = ["blocking", "rustls-tls"] }
+scope_domain.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }

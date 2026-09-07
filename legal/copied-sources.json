@@ -1,0 +1,18 @@
+[
+  {
+    "ecosystem": "web",
+    "name": "shadcn/ui",
+    "version": "copied-components",
+    "license": "MIT",
+    "url": "https://github.com/shadcn-ui/ui",
+    "authors": null,
+    "documents": [
+      {
+        "path": "legal/upstream/1564074e13439397.txt",
+        "url": "https://raw.githubusercontent.com/shadcn-ui/ui/6ea6856f5a1082d4d9c231559b6bc3ee73827493/LICENSE.md",
+        "sha256": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f"
+      }
+    ],
+    "license_evidence": "web/components.json declares the shadcn radix-nova component source. Scope UI components include adapted source. Preserve the upstream MIT notice. The license file revision is pinned; the original component import revision was not recorded."
+  }
+]

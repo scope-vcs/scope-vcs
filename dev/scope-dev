@@ -1,0 +1,553 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: ./dev/scope-dev [command]
+
+Supported local-development entrypoint.
+
+commands:
+  doctor  validate required tools, local environment, and Clerk development keys
+  up      migrate and seed Postgres, then start API, worker, and web processes
+  down    stop processes started by this script
+  status  show owned process and HTTP readiness state (default)
+  reset   stop owned processes and remove .scope/dev and .tmp/local-dev
+  bench   run the short deployed-system benchmark against the running local API
+  help    show this help
+
+required configuration:
+  .env.local       DATABASE_URL, SCOPE_DEV_USER_EMAIL, optional SCOPE_DEV_USER_HANDLE
+  web/.env.local   VITE_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY using matching
+                   Clerk development keys
+
+local services:
+  web  http://localhost:3000
+  API  http://localhost:8080
+
+The local API uses filesystem object storage under .scope/dev. Startup strips
+inherited Railway and bucket variables and rejects production-looking Clerk or
+database settings. reset refuses to remove data outside this repository.
+
+After `up`, run `./dev/check smoke` for the anonymous browser smoke suite. See
+bench/README.md for benchmark controls beyond the short local defaults.
+EOF
+}
+
+COMMAND="${1:-status}"
+case "$COMMAND" in
+  bench|doctor|up|down|status|reset) ;;
+  help|-h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STATE_DIR="$ROOT/.tmp/local-dev"
+DATA_DIR="$ROOT/.scope/dev"
+OBJECT_DIR="$DATA_DIR/objects"
+KEY_FILE="$DATA_DIR/object-key.txt"
+API_PID_FILE="$STATE_DIR/api.pid"
+WEB_PID_FILE="$STATE_DIR/web.pid"
+WORKER_PID_FILE="$STATE_DIR/worker.pid"
+API_OUT_LOG="$STATE_DIR/api.out.log"
+API_ERR_LOG="$STATE_DIR/api.err.log"
+WEB_OUT_LOG="$STATE_DIR/web.out.log"
+WEB_ERR_LOG="$STATE_DIR/web.err.log"
+WORKER_OUT_LOG="$STATE_DIR/worker.out.log"
+WORKER_ERR_LOG="$STATE_DIR/worker.err.log"
+LOCAL_WEB_ORIGIN="http://localhost:3000"
+LOCAL_API_ORIGIN="http://localhost:8080"
+PUBLIC_HOST="${SCOPE_DEV_PUBLIC_HOST:-}"
+
+if [[ -z "$PUBLIC_HOST" ]] && command -v tailscale >/dev/null 2>&1; then
+  PUBLIC_HOST="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
+fi
+PUBLIC_HOST="${PUBLIC_HOST:-localhost}"
+PUBLIC_WEB_ORIGIN="${SCOPE_DEV_PUBLIC_WEB_ORIGIN:-http://$PUBLIC_HOST:3000}"
+PUBLIC_API_ORIGIN="${SCOPE_DEV_PUBLIC_API_ORIGIN:-http://$PUBLIC_HOST:8080}"
+CLERK_AUTHORIZED_PARTIES_VALUE="$LOCAL_WEB_ORIGIN"
+if [[ "$PUBLIC_WEB_ORIGIN" != "$LOCAL_WEB_ORIGIN" ]]; then
+  CLERK_AUTHORIZED_PARTIES_VALUE="$CLERK_AUTHORIZED_PARTIES_VALUE,$PUBLIC_WEB_ORIGIN"
+fi
+
+if [[ -d "$HOME/.local/share/scope-vcs-tools/node-24/bin" ]]; then
+  export PATH="$HOME/.local/share/scope-vcs-tools/node-24/bin:$PATH"
+fi
+if [[ -d "$HOME/.cargo/bin" ]]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
+ensure_dir() {
+  mkdir -p "$1"
+}
+
+read_dotenv_value() {
+  local path="$1"
+  local key="$2"
+  [[ -f "$path" ]] || return 0
+
+  awk -v key="$key" '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    {
+      split($0, parts, "=")
+      name = parts[1]
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+      if (name != key) {
+        next
+      }
+      value = substr($0, index($0, "=") + 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      if ((substr(value, 1, 1) == "\"" && substr(value, length(value), 1) == "\"") ||
+          (substr(value, 1, 1) == "'"'"'" && substr(value, length(value), 1) == "'"'"'")) {
+        value = substr(value, 2, length(value) - 2)
+      }
+      print value
+      exit
+    }
+  ' "$path"
+}
+
+get_clerk_issuer() {
+  local publishable_key payload mod clerk_host
+  publishable_key="$(read_dotenv_value "$ROOT/web/.env.local" "VITE_CLERK_PUBLISHABLE_KEY")"
+  if [[ -z "$publishable_key" ]]; then
+    echo "web/.env.local must define VITE_CLERK_PUBLISHABLE_KEY" >&2
+    exit 1
+  fi
+  if [[ "$publishable_key" != pk_test_* ]]; then
+    echo "local dev requires a Clerk development publishable key (pk_test_)" >&2
+    exit 1
+  fi
+
+  payload="${publishable_key#pk_test_}"
+  payload="${payload//_/\/}"
+  payload="${payload//-/+}"
+  mod=$(( ${#payload} % 4 ))
+  if [[ "$mod" -eq 2 ]]; then
+    payload="${payload}=="
+  elif [[ "$mod" -eq 3 ]]; then
+    payload="${payload}="
+  fi
+
+  if ! clerk_host="$(printf '%s' "$payload" | base64 --decode 2>/dev/null)"; then
+    echo "VITE_CLERK_PUBLISHABLE_KEY is not valid base64url" >&2
+    exit 1
+  fi
+  clerk_host="${clerk_host%$}"
+  if [[ "$clerk_host" != *.clerk.accounts.dev ]]; then
+    echo "local dev Clerk issuer must end with .clerk.accounts.dev, got $clerk_host" >&2
+    exit 1
+  fi
+  printf 'https://%s\n' "$clerk_host"
+}
+
+get_dev_user_email() {
+  local email
+  email="$(read_dotenv_value "$ROOT/.env.local" "SCOPE_DEV_USER_EMAIL")"
+  if [[ -z "$email" ]]; then
+    echo "root .env.local must define SCOPE_DEV_USER_EMAIL for seeded local repos" >&2
+    exit 1
+  fi
+  printf '%s\n' "$email"
+}
+
+get_dev_user_handle() {
+  read_dotenv_value "$ROOT/.env.local" "SCOPE_DEV_USER_HANDLE"
+}
+
+local_database_url() {
+  local value
+  value="${DATABASE_URL:-}"
+  if [[ -z "$value" ]]; then
+    value="$(read_dotenv_value "$ROOT/.env.local" "DATABASE_URL")"
+  fi
+  printf '%s\n' "$value"
+}
+
+get_object_key() {
+  ensure_dir "$DATA_DIR"
+  if [[ ! -f "$KEY_FILE" ]]; then
+    openssl rand -base64 32 > "$KEY_FILE"
+  fi
+  tr -d '\r\n' < "$KEY_FILE"
+}
+
+assert_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "$1 is required for local dev" >&2
+    exit 1
+  fi
+}
+
+port_owner() {
+  local port="$1"
+  ss -H -ltnp "sport = :$port" 2>/dev/null |
+    sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' |
+    head -n 1
+}
+
+assert_port_free() {
+  local port="$1"
+  local name="$2"
+  local owner
+  owner="$(port_owner "$port")"
+  if [[ -n "$owner" ]]; then
+    echo "$name port $port is already in use by PID $owner" >&2
+    exit 1
+  fi
+}
+
+stop_pid_file() {
+  local pid_file="$1"
+  local pid
+  [[ -f "$pid_file" ]] || return 0
+  pid="$(tr -d '[:space:]' < "$pid_file")"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    for _ in {1..30}; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$pid_file"
+}
+
+stop_owned_processes() {
+  stop_pid_file "$WORKER_PID_FILE"
+  stop_pid_file "$API_PID_FILE"
+  stop_pid_file "$WEB_PID_FILE"
+}
+
+write_api_runner() {
+  local issuer="$1"
+  local dev_email="$2"
+  local dev_handle="$3"
+  local object_key="$4"
+  local database_url
+  database_url="$(local_database_url)"
+  local runner="$STATE_DIR/api.sh"
+
+  if [[ -z "$database_url" ]]; then
+    echo "DATABASE_URL is required for local development" >&2
+    exit 1
+  fi
+
+  cat > "$runner" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$ROOT"
+while IFS='=' read -r name _; do
+  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
+  [[ "\$name" == SCOPE_BUCKET_* ]] && unset "\$name"
+done < <(env)
+export SCOPE_ENV="local"
+export SCOPE_OBJECT_STORE="filesystem"
+export SCOPE_DATA_DIR="$DATA_DIR"
+export SCOPE_OBJECT_STORE_DIR="$OBJECT_DIR"
+export SCOPE_OBJECT_ENCRYPTION_KEY="$object_key"
+export PORT="8080"
+export SCOPE_APP_ORIGIN="$LOCAL_WEB_ORIGIN"
+export SCOPE_API_PUBLIC_URL="$LOCAL_API_ORIGIN"
+export SCOPE_GIT_PUBLIC_URL="$LOCAL_API_ORIGIN"
+export CLERK_ISSUER="$issuer"
+export CLERK_JWKS_URL="$issuer/.well-known/jwks.json"
+export CLERK_AUTHORIZED_PARTIES="$CLERK_AUTHORIZED_PARTIES_VALUE"
+export SCOPE_DEV_USER_EMAIL="$dev_email"
+EOF
+  printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
+  if [[ -n "$dev_handle" ]]; then
+    printf 'export SCOPE_DEV_USER_HANDLE=%q\n' "$dev_handle" >> "$runner"
+  else
+    printf 'unset SCOPE_DEV_USER_HANDLE\n' >> "$runner"
+  fi
+  cat >> "$runner" <<'EOF'
+if [[ "${SCOPE_DEV_MAINTENANCE_ONLY:-0}" == "1" ]]; then
+  exec cargo run -p api --features local-dev --bin scope-maintenance -- apply
+fi
+exec cargo run -p api --features local-dev
+EOF
+  chmod +x "$runner"
+}
+
+write_worker_runner() {
+  local database_url object_key runner
+  database_url="$(local_database_url)"
+  object_key="$(get_object_key)"
+  runner="$STATE_DIR/worker.sh"
+  if [[ -z "$database_url" ]]; then
+    echo "DATABASE_URL is required for the worker" >&2
+    exit 1
+  fi
+
+  cat > "$runner" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$ROOT"
+while IFS='=' read -r name _; do
+  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
+  [[ "\$name" == SCOPE_BUCKET_* ]] && unset "\$name"
+done < <(env)
+export SCOPE_WORKER_ID="local-dev-worker"
+export SCOPE_OBJECT_STORE="filesystem"
+export SCOPE_DATA_DIR="$DATA_DIR"
+export SCOPE_OBJECT_STORE_DIR="$OBJECT_DIR"
+export SCOPE_OBJECT_ENCRYPTION_KEY="$object_key"
+EOF
+  printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
+  cat >> "$runner" <<'EOF'
+exec cargo run -p worker
+EOF
+  chmod +x "$runner"
+}
+
+write_web_runner() {
+  local runner="$STATE_DIR/web.sh"
+
+  cat > "$runner" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$ROOT/web"
+while IFS='=' read -r name _; do
+  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
+done < <(env)
+export SCOPE_API_INTERNAL_URL="http://localhost:8080"
+export SCOPE_API_PUBLIC_URL="$PUBLIC_API_ORIGIN"
+export VITE_SCOPE_WEB_FORCE_SIGNED_OUT="${VITE_SCOPE_WEB_FORCE_SIGNED_OUT:-1}"
+exec pnpm dev --host 0.0.0.0
+EOF
+  chmod +x "$runner"
+}
+
+start_api() {
+  local issuer dev_email dev_handle object_key
+  issuer="$(get_clerk_issuer)"
+  dev_email="$(get_dev_user_email)"
+  dev_handle="$(get_dev_user_handle)"
+  object_key="$(get_object_key)"
+  write_api_runner "$issuer" "$dev_email" "$dev_handle" "$object_key"
+  setsid "$STATE_DIR/api.sh" > "$API_OUT_LOG" 2> "$API_ERR_LOG" &
+  echo "$!" > "$API_PID_FILE"
+}
+
+prepare_local_schema() {
+  local issuer dev_email dev_handle object_key
+  issuer="$(get_clerk_issuer)"
+  dev_email="$(get_dev_user_email)"
+  dev_handle="$(get_dev_user_handle)"
+  object_key="$(get_object_key)"
+  write_api_runner "$issuer" "$dev_email" "$dev_handle" "$object_key"
+  SCOPE_DEV_MAINTENANCE_ONLY=1 "$STATE_DIR/api.sh"
+}
+
+start_worker() {
+  write_worker_runner
+  setsid "$STATE_DIR/worker.sh" > "$WORKER_OUT_LOG" 2> "$WORKER_ERR_LOG" &
+  echo "$!" > "$WORKER_PID_FILE"
+}
+
+start_web() {
+  write_web_runner
+  setsid "$STATE_DIR/web.sh" > "$WEB_OUT_LOG" 2> "$WEB_ERR_LOG" &
+  echo "$!" > "$WEB_PID_FILE"
+}
+
+wait_http() {
+  local url="$1"
+  local seconds="$2"
+  local deadline=$((SECONDS + seconds))
+  while (( SECONDS < deadline )); do
+    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+pid_status() {
+  local pid_file="$1"
+  local pid
+  if [[ ! -f "$pid_file" ]]; then
+    echo "stopped"
+    return
+  fi
+  pid="$(tr -d '[:space:]' < "$pid_file")"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    echo "running pid $pid"
+    return
+  fi
+  echo "stale"
+}
+
+doctor() {
+  assert_command cargo
+  assert_command curl
+  assert_command git
+  assert_command node
+  assert_command openssl
+  assert_command pnpm
+  assert_command setsid
+  assert_command ss
+
+  local issuer dev_email secret_key
+  issuer="$(get_clerk_issuer)"
+  dev_email="$(get_dev_user_email)"
+  if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
+    secret_key="$(read_dotenv_value "$ROOT/web/.env.local" "CLERK_SECRET_KEY")"
+    if [[ -z "$secret_key" || "$secret_key" != sk_test_* ]]; then
+      echo "web/.env.local must define a Clerk development secret key (sk_test_)" >&2
+      exit 1
+    fi
+  fi
+
+  echo "doctor ok"
+  echo "metadata: postgres"
+  echo "clerk issuer: $issuer"
+  echo "seed user: $dev_email"
+  echo "api: $LOCAL_API_ORIGIN"
+  echo "web: $LOCAL_WEB_ORIGIN"
+  if [[ "$PUBLIC_HOST" != "localhost" ]]; then
+    echo "tailscale api: $PUBLIC_API_ORIGIN"
+    echo "tailscale web: $PUBLIC_WEB_ORIGIN"
+  fi
+}
+
+mint_bench_auth_token() {
+  local api_origin="$1"
+  curl -fsS --max-time 3 -X POST "$api_origin/v1/dev/bench/cli-session" \
+    | node -e '
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  input += chunk;
+});
+process.stdin.on("end", () => {
+  try {
+    const body = JSON.parse(input);
+    if (typeof body.session_token !== "string" || !body.session_token.startsWith("scope_cli_")) {
+      process.exit(1);
+    }
+    process.stdout.write(body.session_token);
+  } catch {
+    process.exit(1);
+  }
+});
+'
+}
+
+bench() {
+  assert_command curl
+  assert_command git
+  assert_command node
+
+  local bench_api_origin
+  bench_api_origin="${SCOPE_BENCH_API_URL:-$LOCAL_API_ORIGIN}"
+  bench_api_origin="${bench_api_origin%/}"
+
+  if ! wait_http "$bench_api_origin/readyz" 5; then
+    echo "api is not ready at $bench_api_origin; run ./dev/scope-dev up first or set SCOPE_BENCH_API_URL" >&2
+    exit 1
+  fi
+
+  local dev_email dev_handle
+  dev_email="$(get_dev_user_email)"
+  dev_handle="$(get_dev_user_handle)"
+
+  local bench_auth_token
+  bench_auth_token="${SCOPE_BENCH_AUTH_TOKEN:-}"
+  if [[ -z "$bench_auth_token" ]]; then
+    if ! bench_auth_token="$(mint_bench_auth_token "$bench_api_origin" 2>/dev/null)"; then
+      bench_auth_token=""
+      echo "warning: could not mint a local benchmark CLI session; authenticated benchmark cases may be skipped" >&2
+    fi
+  fi
+
+  SCOPE_BENCH_API_URL="$bench_api_origin" \
+  SCOPE_BENCH_AUTH_TOKEN="$bench_auth_token" \
+    SCOPE_DEV_USER_EMAIL="${SCOPE_DEV_USER_EMAIL:-$dev_email}" \
+    SCOPE_DEV_USER_HANDLE="${SCOPE_DEV_USER_HANDLE:-$dev_handle}" \
+    SCOPE_LOAD_WORKLOADS="${SCOPE_LOAD_WORKLOADS:-warm-fetch,full-clone,tree-read,blob-read,history-read,mixed,consistency}" \
+    SCOPE_LOAD_STAGES="${SCOPE_LOAD_STAGES:-1,2}" \
+    SCOPE_LOAD_STAGE_SECONDS="${SCOPE_LOAD_STAGE_SECONDS:-5}" \
+    SCOPE_LOAD_CONFIRM_SECONDS="${SCOPE_LOAD_CONFIRM_SECONDS:-0}" \
+    SCOPE_LOAD_HISTORY_DEPTHS="${SCOPE_LOAD_HISTORY_DEPTHS:-1,8}" \
+    SCOPE_LOAD_CHURN_REPOS="${SCOPE_LOAD_CHURN_REPOS:-2}" \
+    SCOPE_LOAD_MIXED_REPOS="${SCOPE_LOAD_MIXED_REPOS:-2}" \
+    node "$ROOT/bench/railway-load.mjs"
+}
+
+up() {
+  doctor >/dev/null
+  stop_owned_processes
+  assert_port_free 8080 "api"
+  if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
+    assert_port_free 3000 "web"
+  fi
+  ensure_dir "$STATE_DIR"
+  ensure_dir "$DATA_DIR"
+  rm -f "$API_OUT_LOG" "$API_ERR_LOG" "$WEB_OUT_LOG" "$WEB_ERR_LOG"
+  rm -f "$WORKER_OUT_LOG" "$WORKER_ERR_LOG"
+  prepare_local_schema
+  start_api
+  if ! wait_http "http://localhost:8080/readyz" 45; then
+    echo "api did not become ready; see $API_ERR_LOG" >&2
+    exit 1
+  fi
+  start_worker
+  if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
+    start_web
+    if ! wait_http "http://localhost:3000" 180; then
+      echo "web did not become ready; see $WEB_ERR_LOG" >&2
+      exit 1
+    fi
+  fi
+  status
+}
+
+status() {
+  echo "api process: $(pid_status "$API_PID_FILE")"
+  echo "worker process: $(pid_status "$WORKER_PID_FILE")"
+  echo "web process: $(pid_status "$WEB_PID_FILE")"
+  if body="$(curl -fsS --max-time 3 "http://localhost:8080/readyz" 2>/dev/null)"; then
+    echo "api readyz: $body"
+  else
+    echo "api readyz: unavailable"
+  fi
+  if code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "http://localhost:3000" 2>/dev/null)"; then
+    echo "web: HTTP $code"
+  else
+    echo "web: unavailable"
+  fi
+}
+
+reset() {
+  stop_owned_processes
+  local resolved_data resolved_root
+  resolved_data="$(realpath -m "$DATA_DIR")"
+  resolved_root="$(realpath -m "$ROOT")"
+  if [[ "$resolved_data" != "$resolved_root"/* ]]; then
+    echo "refusing to remove data outside repo: $resolved_data" >&2
+    exit 1
+  fi
+  rm -rf "$DATA_DIR" "$STATE_DIR"
+  echo "local dev state reset"
+}
+
+case "$COMMAND" in
+  bench) bench ;;
+  doctor) doctor ;;
+  up) up ;;
+  down) stop_owned_processes; echo "local dev stopped" ;;
+  status) status ;;
+  reset) reset ;;
+esac

@@ -1,0 +1,912 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Scope cloud runner infrastructure
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedPattern: "^[a-z0-9-]+$"
+  VpcCidr:
+    Type: String
+    Default: 10.42.0.0/16
+  PublicSubnetOneCidr:
+    Type: String
+    Default: 10.42.0.0/20
+  PublicSubnetTwoCidr:
+    Type: String
+    Default: 10.42.16.0/20
+  PrivateSubnetOneCidr:
+    Type: String
+    Default: 10.42.32.0/20
+  PrivateSubnetTwoCidr:
+    Type: String
+    Default: 10.42.48.0/20
+  RunnerCapacity:
+    Type: String
+    Default: FARGATE
+    AllowedValues:
+      - FARGATE
+      - MANAGED_INSTANCES
+  ManagedInstanceType:
+    Type: String
+    Default: m8a.xlarge
+    AllowedValues:
+      - m8a.xlarge
+  TaskMemoryMiB:
+    Type: Number
+    Default: 16384
+    MinValue: 1
+  TaskFamilyPrefix:
+    Type: String
+    Default: scope-runner-
+    AllowedPattern: "^[A-Za-z0-9_-]{1,128}$"
+  AdditionalChecksImageRepositoryArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:(aws|aws-us-gov|aws-cn):ecr:[a-z0-9-]+:[0-9]{12}:repository/[A-Za-z0-9/_+=.@-]+$"
+    Description: Optional second ECR repository that runner tasks may pull from.
+  EnableGitHubAdministration:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+  BudgetNotificationEmail:
+    Type: String
+    Default: ""
+    Description: Leave empty to omit the monthly project budget.
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 100
+    MinValue: 1
+  GitHubRepository:
+    Type: String
+    Default: scope-vcs/scope-vcs
+    AllowedPattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    Description: GitHub owner and repository allowed to publish checks images.
+  GitHubRepositoryId:
+    Type: String
+    Default: "1272896256"
+    AllowedPattern: "^[0-9]+$"
+    Description: Immutable GitHub repository ID allowed to publish checks images.
+  GitHubRepositoryOwnerId:
+    Type: String
+    Default: "321219119"
+    AllowedPattern: "^[0-9]+$"
+    Description: Immutable GitHub repository owner ID used in OIDC subjects.
+  ExistingGitHubOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: Supply the account's token.actions.githubusercontent.com provider ARN, or leave empty for this stack to create it.
+  RegistryCredentialsSecretArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:(aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$"
+    Description: Optional Secrets Manager ARN containing private registry username and password JSON.
+
+Conditions:
+  HasBudgetNotification: !Not [!Equals [!Ref BudgetNotificationEmail, ""]]
+  ManageGitHubInfrastructure: !Equals [!Ref EnableGitHubAdministration, "true"]
+  CreateGitHubOidcProvider: !And
+    - !Condition ManageGitHubInfrastructure
+    - !Equals [!Ref ExistingGitHubOidcProviderArn, ""]
+  UseExistingGitHubOidcProvider: !Not [!Equals [!Ref ExistingGitHubOidcProviderArn, ""]]
+  HasRegistryCredentialsSecret: !Not [!Equals [!Ref RegistryCredentialsSecretArn, ""]]
+  UseManagedInstances: !Equals [!Ref RunnerCapacity, MANAGED_INSTANCES]
+  HasAdditionalChecksImageRepository: !Not [!Equals [!Ref AdditionalChecksImageRepositoryArn, ""]]
+
+Resources:
+  RunnerVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref RunnerInternetGateway
+      VpcId: !Ref RunnerVpc
+
+  RunnerPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref RunnerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner-public
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: RunnerInternetGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref RunnerInternetGateway
+      RouteTableId: !Ref RunnerPublicRouteTable
+
+  RunnerPublicSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Ref PublicSubnetOneCidr
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref RunnerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner-public-a
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerPublicSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Ref PublicSubnetTwoCidr
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref RunnerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner-public-b
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerPublicSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RunnerPublicRouteTable
+      SubnetId: !Ref RunnerPublicSubnetOne
+
+  RunnerPublicSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RunnerPublicRouteTable
+      SubnetId: !Ref RunnerPublicSubnetTwo
+
+  RunnerNatElasticIp:
+    Type: AWS::EC2::EIP
+    Condition: UseManagedInstances
+    DependsOn: RunnerInternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner-nat
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerNatGateway:
+    Type: AWS::EC2::NatGateway
+    Condition: UseManagedInstances
+    Properties:
+      AllocationId: !GetAtt RunnerNatElasticIp.AllocationId
+      ConnectivityType: public
+      SubnetId: !Ref RunnerPublicSubnetOne
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: UseManagedInstances
+    Properties:
+      VpcId: !Ref RunnerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner-private
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerPrivateRoute:
+    Type: AWS::EC2::Route
+    Condition: UseManagedInstances
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref RunnerNatGateway
+      RouteTableId: !Ref RunnerPrivateRouteTable
+
+  RunnerPrivateSubnetOne:
+    Type: AWS::EC2::Subnet
+    Condition: UseManagedInstances
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Ref PrivateSubnetOneCidr
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref RunnerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner-private-a
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerPrivateSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Condition: UseManagedInstances
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Ref PrivateSubnetTwoCidr
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref RunnerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner-private-b
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerPrivateSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: UseManagedInstances
+    Properties:
+      RouteTableId: !Ref RunnerPrivateRouteTable
+      SubnetId: !Ref RunnerPrivateSubnetOne
+
+  RunnerPrivateSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: UseManagedInstances
+    Properties:
+      RouteTableId: !Ref RunnerPrivateRouteTable
+      SubnetId: !Ref RunnerPrivateSubnetTwo
+
+  RunnerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Outbound HTTPS for Scope ECS runner tasks
+      SecurityGroupEgress:
+        - Description: HTTPS to the Scope API, cache, source hosts, and image registry
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref RunnerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub scope-vcs-${Environment}-runner
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub scope-vcs-${Environment}-runner
+      CapacityProviders: !If
+        - UseManagedInstances
+        - !Ref AWS::NoValue
+        - [FARGATE]
+      DefaultCapacityProviderStrategy: !If
+        - UseManagedInstances
+        - !Ref AWS::NoValue
+        - [{CapacityProvider: FARGATE, Weight: 1}]
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  ManagedInstanceInfrastructureRole:
+    Type: AWS::IAM::Role
+    Condition: UseManagedInstances
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonECSInfrastructureRolePolicyForManagedInstances
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  ManagedInstanceRole:
+    Type: AWS::IAM::Role
+    Condition: UseManagedInstances
+    Properties:
+      RoleName: !Sub ecsInstanceRole-scope-${Environment}-runner
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonECSInstanceRolePolicyForManagedInstances
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  ManagedInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: UseManagedInstances
+    Properties:
+      InstanceProfileName: !Sub ecsInstanceRole-scope-${Environment}-runner
+      Roles:
+        - !Ref ManagedInstanceRole
+
+  ManagedCapacityProvider:
+    Type: AWS::ECS::CapacityProvider
+    Condition: UseManagedInstances
+    Properties:
+      Name: !Sub scope-vcs-${Environment}-managed
+      ClusterName: !Ref RunnerCluster
+      ManagedInstancesProvider:
+        InfrastructureOptimization:
+          ScaleInAfter: 0
+        InfrastructureRoleArn: !GetAtt ManagedInstanceInfrastructureRole.Arn
+        InstanceLaunchTemplate:
+          CapacityOptionType: ON_DEMAND
+          Ec2InstanceProfileArn: !GetAtt ManagedInstanceProfile.Arn
+          InstanceMetadataTagsPropagation: false
+          InstanceRequirements:
+            AllowedInstanceTypes:
+              - !Ref ManagedInstanceType
+            BurstablePerformance: excluded
+            MemoryMiB:
+              Min: 16384
+              Max: 16384
+            VCpuCount:
+              Min: 4
+              Max: 4
+          Monitoring: DETAILED
+          NetworkConfiguration:
+            SecurityGroups:
+              - !GetAtt RunnerSecurityGroup.GroupId
+            Subnets:
+              - !Ref RunnerPrivateSubnetOne
+              - !Ref RunnerPrivateSubnetTwo
+          StorageConfiguration:
+            StorageSizeGiB: 30
+        PropagateTags: CAPACITY_PROVIDER
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerClusterCapacityProviders:
+    Type: AWS::ECS::ClusterCapacityProviderAssociations
+    Condition: UseManagedInstances
+    Properties:
+      CapacityProviders:
+        - FARGATE
+        - !Ref ManagedCapacityProvider
+      Cluster: !Ref RunnerCluster
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  RunnerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /scope-vcs/${Environment}/cloud-runner
+      RetentionInDays: 14
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  ChecksImageRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Sub scope-vcs/${Environment}/checks
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Delete untagged artifacts after fourteen days",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 14
+                },
+                "action": {"type": "expire"}
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: checks-image
+        - Key: ManagedBy
+          Value: cloudformation
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateGitHubOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: checks-image
+        - Key: ManagedBy
+          Value: cloudformation
+
+  ChecksImagePublisherRole:
+    Type: AWS::IAM::Role
+    Condition: ManageGitHubInfrastructure
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-github-checks-publisher
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - UseExistingGitHubOidcProvider
+                - !Ref ExistingGitHubOidcProviderArn
+                - !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:repository_id: !Ref GitHubRepositoryId
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub
+                  - repo:${RepositoryOwner}@${GitHubRepositoryOwnerId}/${RepositoryName}@${GitHubRepositoryId}:ref:refs/heads/*
+                  - RepositoryOwner: !Select [0, !Split ["/", !Ref GitHubRepository]]
+                    RepositoryName: !Select [1, !Split ["/", !Ref GitHubRepository]]
+                token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepository}/.github/workflows/scope-checks-image.yml@refs/heads/*
+      Policies:
+        - PolicyName: publish-checks-images
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !GetAtt ChecksImageRepository.Arn
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: checks-image
+        - Key: ManagedBy
+          Value: cloudformation
+
+  GitHubInfrastructureRole:
+    Type: AWS::IAM::Role
+    Condition: ManageGitHubInfrastructure
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-github-infrastructure
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - UseExistingGitHubOidcProvider
+                - !Ref ExistingGitHubOidcProviderArn
+                - !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:repository_id: !Ref GitHubRepositoryId
+                token.actions.githubusercontent.com:sub: !Sub
+                  - repo:${RepositoryOwner}@${GitHubRepositoryOwnerId}/${RepositoryName}@${GitHubRepositoryId}:ref:refs/heads/main
+                  - RepositoryOwner: !Select [0, !Split ["/", !Ref GitHubRepository]]
+                    RepositoryName: !Select [1, !Split ["/", !Ref GitHubRepository]]
+                token.actions.githubusercontent.com:ref: refs/heads/main
+                token.actions.githubusercontent.com:workflow: Scope AWS Infrastructure
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: infrastructure
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RunnerTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-task-execution
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:*
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: write-runner-logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub '${RunnerLogGroup.Arn}:*'
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:scope-vcs/${RunnerCluster}/attempts/*
+              - !If
+                - HasRegistryCredentialsSecret
+                - Sid: ReadPrivateRegistryCredentials
+                  Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref RegistryCredentialsSecretArn
+                - !Ref AWS::NoValue
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource:
+                  - !GetAtt ChecksImageRepository.Arn
+                  - !If
+                    - HasAdditionalChecksImageRepository
+                    - !Ref AdditionalChecksImageRepositoryArn
+                    - !Ref AWS::NoValue
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RailwayDispatcherUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub ${AWS::StackName}-railway-dispatcher
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+  RailwayDispatcherPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Dispatch Scope cloud runner tasks from Railway
+      Users:
+        - !Ref RailwayDispatcherUser
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenySecretReads
+            Effect: Deny
+            Action:
+              - secretsmanager:BatchGetSecretValue
+              - secretsmanager:DescribeSecret
+              - secretsmanager:GetSecretValue
+              - secretsmanager:ListSecretVersionIds
+              - secretsmanager:ListSecrets
+            Resource: "*"
+          - Sid: ListTaskDefinitions
+            Effect: Allow
+            Action: ecs:ListTaskDefinitions
+            Resource: "*"
+          - Sid: RegisterTaggedTaskDefinitions
+            Effect: Allow
+            Action: ecs:RegisterTaskDefinition
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:RequestTag/Project: scope-vcs
+              ForAllValues:StringEquals:
+                aws:TagKeys:
+                  - Project
+                  - Component
+                  - ImageDigest
+          - Sid: DeregisterAttemptTaskDefinitions
+            Effect: Allow
+            Action: ecs:DeregisterTaskDefinition
+            # ECS task-definition lifecycle actions do not support resource-level
+            # permissions. The dedicated dispatcher can only register tagged
+            # definitions, but AWS requires this cleanup action against `*`.
+            Resource: "*"
+          - Sid: RunScopeTaskDefinitions
+            Effect: Allow
+            Action: ecs:RunTask
+            Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${TaskFamilyPrefix}*:*
+            Condition:
+              ArnEquals:
+                ecs:cluster: !GetAtt RunnerCluster.Arn
+              StringEquals:
+                aws:RequestTag/Project: scope-vcs
+              ForAllValues:StringEquals:
+                aws:TagKeys:
+                  - Project
+                  - Component
+                  - AttemptId
+          - Sid: ManageScopeRunnerTasks
+            Effect: Allow
+            Action:
+              - ecs:DescribeTasks
+              - ecs:StopTask
+            Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/scope-vcs-${Environment}-runner/*
+            Condition:
+              ArnEquals:
+                ecs:cluster: !GetAtt RunnerCluster.Arn
+          - Sid: DiscoverScopeRunnerTasks
+            Effect: Allow
+            Action: ecs:ListTasks
+            Resource: "*"
+            Condition:
+              ArnEquals:
+                ecs:cluster: !GetAtt RunnerCluster.Arn
+          - Sid: TagScopeRunnerResources
+            Effect: Allow
+            Action: ecs:TagResource
+            Resource:
+              - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${TaskFamilyPrefix}*:*
+              - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/scope-vcs-${Environment}-runner/*
+            Condition:
+              StringEquals:
+                ecs:CreateAction:
+                  - RegisterTaskDefinition
+                  - RunTask
+          - Sid: CreateAttemptBootstrapSecrets
+            Effect: Allow
+            Action:
+              - secretsmanager:CreateSecret
+              - secretsmanager:TagResource
+            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:scope-vcs/${RunnerCluster}/attempts/*
+            Condition:
+              StringEquals:
+                aws:RequestTag/Project: scope-vcs
+                aws:RequestTag/Component: cloud-runner
+              ForAllValues:StringEquals:
+                aws:TagKeys:
+                  - Project
+                  - Component
+                  - AttemptId
+          - Sid: DeleteAttemptBootstrapSecrets
+            Effect: Allow
+            Action: secretsmanager:DeleteSecret
+            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:scope-vcs/${RunnerCluster}/attempts/*
+            Condition:
+              StringEquals:
+                aws:ResourceTag/Project: scope-vcs
+                aws:ResourceTag/Component: cloud-runner
+          - Sid: PassRunnerExecutionRole
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !GetAtt RunnerTaskExecutionRole.Arn
+            Condition:
+              StringEquals:
+                iam:PassedToService: ecs-tasks.amazonaws.com
+
+  RunnerBudget:
+    Type: AWS::Budgets::Budget
+    Condition: HasBudgetNotification
+    Properties:
+      Budget:
+        BudgetName: !Sub scope-vcs-${Environment}-cloud-runner
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+        BudgetType: COST
+        CostFilters:
+          TagKeyValue:
+            - user:Project$scope-vcs
+        TimeUnit: MONTHLY
+      NotificationsWithSubscribers:
+        - Notification:
+            ComparisonOperator: GREATER_THAN
+            NotificationType: ACTUAL
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - Address: !Ref BudgetNotificationEmail
+              SubscriptionType: EMAIL
+      ResourceTags:
+        - Key: Project
+          Value: scope-vcs
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: cloud-runner
+        - Key: ManagedBy
+          Value: cloudformation
+
+Outputs:
+  AwsRegion:
+    Description: Worker AWS_REGION
+    Value: !Ref AWS::Region
+  RunnerClusterArn:
+    Description: Worker SCOPE_ECS_CLUSTER_ARN
+    Value: !GetAtt RunnerCluster.Arn
+  RunnerSubnetIds:
+    Description: Worker SCOPE_ECS_SUBNET_IDS
+    Value: !If
+      - UseManagedInstances
+      - !Join [",", [!Ref RunnerPrivateSubnetOne, !Ref RunnerPrivateSubnetTwo]]
+      - !Join [",", [!Ref RunnerPublicSubnetOne, !Ref RunnerPublicSubnetTwo]]
+  RunnerSecurityGroupId:
+    Description: Worker SCOPE_ECS_SECURITY_GROUP_ID
+    Value: !GetAtt RunnerSecurityGroup.GroupId
+  RunnerExecutionRoleArn:
+    Description: Worker SCOPE_ECS_EXECUTION_ROLE_ARN
+    Value: !GetAtt RunnerTaskExecutionRole.Arn
+  RunnerLogGroupName:
+    Description: Worker SCOPE_ECS_LOG_GROUP
+    Value: !Ref RunnerLogGroup
+  RunnerCapacityProvider:
+    Description: Worker SCOPE_ECS_CAPACITY_PROVIDER
+    Value: !If [UseManagedInstances, !Ref ManagedCapacityProvider, FARGATE]
+  RunnerTaskMemoryMiB:
+    Description: Worker SCOPE_ECS_TASK_MEMORY_MIB
+    Value: !Ref TaskMemoryMiB
+  RunnerTaskFamilyPrefix:
+    Description: Worker SCOPE_ECS_TASK_FAMILY_PREFIX
+    Value: !Ref TaskFamilyPrefix
+  RailwayDispatcherUserName:
+    Description: IAM user for the Railway worker; create its access key outside CloudFormation.
+    Value: !Ref RailwayDispatcherUser
+  ChecksImageRepositoryName:
+    Description: Private ECR repository name for raw and SOCI v2 checks images.
+    Value: !Ref ChecksImageRepository
+  ChecksImageRepositoryUri:
+    Description: Private ECR repository URI for raw and SOCI v2 checks images.
+    Value: !GetAtt ChecksImageRepository.RepositoryUri
+  ChecksImagePublisherRoleArn:
+    Condition: ManageGitHubInfrastructure
+    Description: GitHub Actions OIDC role for publishing checks images.
+    Value: !GetAtt ChecksImagePublisherRole.Arn
+  GitHubInfrastructureRoleArn:
+    Condition: ManageGitHubInfrastructure
+    Description: GitHub Actions OIDC role for CLI-driven infrastructure plans and applies.
+    Value: !GetAtt GitHubInfrastructureRole.Arn

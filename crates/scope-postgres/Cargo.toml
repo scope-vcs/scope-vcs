@@ -1,0 +1,30 @@
+[package]
+name = "scope-postgres"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+local-dev = []
+smoke-seed = []
+test-support = []
+
+[dependencies]
+anyhow.workspace = true
+hex.workspace = true
+sea-orm = { version = "1.1.20", default-features = false, features = ["macros", "mock", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-json"] }
+sea-orm-migration = { version = "1.1.20", default-features = false, features = ["runtime-tokio-rustls", "sqlx-postgres"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+scope_domain.workspace = true
+scope_cache_domain.workspace = true
+scope_git.workspace = true
+scope_run_config.workspace = true
+sqlx = { version = "0.8.6", default-features = false, features = ["postgres", "runtime-tokio-rustls"] }
+thiserror.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tracing.workspace = true

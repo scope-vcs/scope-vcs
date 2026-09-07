@@ -1,0 +1,13 @@
+[package]
+name = "scope-cache-contract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+scope_cache_domain.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

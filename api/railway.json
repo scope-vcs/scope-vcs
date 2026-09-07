@@ -1,0 +1,18 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "watchPatterns": [
+      "/api/**",
+      "/runner-runtime/**",
+      "/crates/**",
+      "/Cargo.toml",
+      "/Cargo.lock",
+      "/rust-toolchain.toml"
+    ]
+  },
+  "deploy": {
+    "startCommand": "exec ./bin/scope-vcs",
+    "healthcheckPath": "/healthz",
+    "healthcheckTimeout": 60
+  }
+}

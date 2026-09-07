@@ -1,0 +1,54 @@
+import { loadRequestQueueForRequest } from '@/api/repos'
+import {
+  parseLoadRequestQueueInput,
+  type RequestQueueSection,
+} from '@/api/request-queue-input'
+import { RequestsPage } from '@/features/requests/requests-page'
+import { RequestsPagePending } from '@/features/requests/requests-page-pending'
+import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
+import { createFileRoute } from '@tanstack/react-router'
+import { createServerFn } from '@tanstack/react-start'
+import { useCallback } from 'react'
+
+const loadRequestQueuePage = createServerFn({ method: 'GET' })
+  .validator(parseLoadRequestQueueInput)
+  .handler(async ({ data }) => loadRequestQueueForRequest(data))
+
+export const Route = createFileRoute('/$owner/$repo/requests/')({
+  loader: async ({ params }) => {
+    const [yourWork, open, closed] = await Promise.all([
+      loadRequestQueuePage({ data: { ...params, section: 'your_work' } }),
+      loadRequestQueuePage({ data: { ...params, section: 'open' } }),
+      loadRequestQueuePage({ data: { ...params, section: 'closed' } }),
+    ])
+    return { closed, open, your_work: yourWork }
+  },
+  pendingComponent: RequestsPagePending,
+  component: RequestsRoute,
+})
+
+function RequestsRoute() {
+  const params = Route.useParams()
+  const { owner, repo } = params
+  const live = useRepoLayout()
+  const initialPages = Route.useLoaderData()
+  const loadPage = useCallback(
+    (
+      section: RequestQueueSection,
+      cursor: string | null,
+      search: string | null,
+    ) =>
+      loadRequestQueuePage({
+        data: { cursor, owner, repo, search, section },
+      }),
+    [owner, repo],
+  )
+
+  return (
+    <RequestsPage
+      initialPages={initialPages}
+      loadPage={loadPage}
+      params={params}
+    />
+  )
+}

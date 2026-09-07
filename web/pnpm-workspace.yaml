@@ -1,0 +1,27 @@
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  - konsistent
+  - '@konsistent/convention'
+trustPolicy: no-downgrade
+# pnpm compares trust across semver majors, which incorrectly flags semver 6.
+# @types/node 22 requires this pre-provenance undici-types release.
+trustPolicyExclude:
+  - semver@6.3.1
+  - undici-types@6.21.0
+blockExoticSubdeps: true
+supportedArchitectures:
+  os:
+    - current
+    - linux
+    - win32
+  cpu:
+    - current
+    - x64
+    - arm64
+  libc:
+    - current
+    - glibc
+allowBuilds:
+  bufferutil: false
+  core-js: false
+  utf-8-validate: false

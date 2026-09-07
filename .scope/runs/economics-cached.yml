@@ -1,0 +1,42 @@
+name: Runner economics cached
+on:
+  manual: true
+container:
+  image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:a3ed25023a60d000a8c93264518e9cdfd656f6832a6940a2eda7991db2ebbc9f
+timeout: 30m
+env:
+  CARGO_HOME: /scope/cache/cargo
+  CARGO_TARGET_DIR: /scope/cache/cargo-target
+  RUSTUP_TOOLCHAIN: 1.98.0-x86_64-unknown-linux-gnu
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  SCOPE_TEST_DATABASE_URL: postgres://scope:scope@127.0.0.1:5432/scope_test
+  BENCH_RUNNER: scope-managed-m8a.xlarge
+  BENCH_CACHE: cached
+caches:
+  - name: economics-cargo
+    path: /scope/cache/cargo
+    format: v1
+    compatibility: &compatibility
+      files: [rust-toolchain.toml]
+      environment: [RUSTUP_TOOLCHAIN, CARGO_INCREMENTAL, CARGO_PROFILE_DEV_DEBUG, CARGO_PROFILE_TEST_DEBUG]
+      source: false
+    exact: &exact
+      files: [Cargo.lock, Cargo.toml]
+      environment: []
+      source: true
+  - name: economics-target
+    path: /scope/cache/cargo-target
+    format: v1
+    compatibility: *compatibility
+    exact: *exact
+jobs:
+  backend:
+    steps:
+      - name: Full backend workload
+        run: |
+          service postgresql start
+          su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN PASSWORD 'scope'\""
+          su postgres -c "createdb --owner=scope scope_test"
+          node dev/runner-economics/measure.mjs

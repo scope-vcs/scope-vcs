@@ -1,0 +1,18 @@
+[package]
+name = "scope-api-contract"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/adamblumoff/scope-vcs"
+
+[features]
+default = []
+ts = ["dep:schemars", "dep:ts-rs"]
+
+[dependencies]
+scope_domain = { package = "scope-domain", path = "../scope-domain" }
+serde = { version = "1.0.228", features = ["derive"] }
+schemars = { version = "1.2.1", optional = true }
+ts-rs = { version = "12.0.1", optional = true }
+
+serde_json = "1.0.147"

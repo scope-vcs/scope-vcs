@@ -1,0 +1,92 @@
+name: Scope Backend CI
+
+on:
+  workflow_call:
+    inputs:
+      build_release_artifact:
+        type: boolean
+        default: false
+      build_router_release:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/rust-workspace-checks.yml
+    with:
+      include_api: true
+
+  deployment-tests:
+    name: Check backend deployment cutover
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Check deployment operations
+        run: ./dev/checks/ops
+
+  release-artifact:
+    name: Build backend deployment binaries
+    if: inputs.build_release_artifact
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.0
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          cache-bin: false
+          shared-key: backend-deploy
+          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+      - name: Build deployment binaries
+        env:
+          BUILD_ROUTER: ${{ inputs.build_router_release && '1' || '0' }}
+        run: |
+          mkdir -p artifacts/bin
+          cargo build --release --locked -p api --bin scope-maintenance
+          install -m 0755 target/release/scope-maintenance artifacts/bin/scope-maintenance
+
+          cargo build --release --locked -p scope-cache-service
+          install -m 0755 target/release/scope-cache-service artifacts/bin/scope-cache-service
+
+          cargo build --release --locked -p worker
+          install -m 0755 target/release/worker artifacts/bin/scope-worker
+
+          cargo build --release --locked -p api --bin api
+          install -m 0755 target/release/api artifacts/bin/scope-vcs
+
+          if [[ "$BUILD_ROUTER" == "1" ]]; then
+            cargo build --release --locked -p scope-repo-router
+            install -m 0755 target/release/scope-repo-router artifacts/bin/scope-repo-router
+          fi
+
+      - name: Pack deployment binaries
+        run: |
+          cp LICENSE NOTICE legal/third-party-rust.txt artifacts/bin/
+          tar --create --gzip \
+            --file artifacts/backend-release.tar.gz \
+            --directory artifacts/bin \
+            .
+
+      - name: Upload deployment binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-release-${{ github.sha }}
+          path: artifacts/backend-release.tar.gz
+          if-no-files-found: error

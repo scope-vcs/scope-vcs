@@ -1,0 +1,622 @@
+use super::*;
+
+#[tokio::test]
+async fn published_receive_pack_accepts_git_push_token() {
+    let secret = "scope_git_test";
+    let state = test_state_with_git_push_token(secret).await;
+    let mut headers = git_push_token_headers(secret);
+    insert_push_intent_header(&state, &mut headers, &test_owner_id(), TEST_PUSH_HEAD_OID).await;
+
+    let access = receive_pack_access(&state, &headers, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        access,
+        ReceivePackAccess::ReadyMember { author_id, .. } if author_id == test_owner_id()
+    ));
+}
+
+#[tokio::test]
+async fn push_intent_is_signed_instead_of_process_local() {
+    let issuer = test_state_with_repo();
+    let verifier = test_state_with_repo();
+    let token = issuer
+        .create_push_intent(
+            TEST_REPO_ID,
+            &test_owner_id(),
+            TEST_PUSH_HEAD_OID,
+            repo_config(Visibility::Public),
+            repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap(),
+            None,
+        )
+        .unwrap()
+        .token;
+
+    let intent = verifier.validate_push_intent_secret(&token).unwrap();
+    intent
+        .ensure_repo_user(TEST_REPO_ID, &test_owner_id())
+        .unwrap();
+    let base = intent.base_for_head(TEST_PUSH_HEAD_OID).unwrap();
+
+    assert_eq!(base, None);
+}
+
+#[tokio::test]
+async fn create_push_intent_hides_repo_before_head_validation_for_non_writer() {
+    let state = test_state_with_repo();
+    let response = request_push_intent(
+        state,
+        &bearer_header_for("user_other", "other@example.com"),
+        "not-a-git-oid",
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn owner_can_create_first_push_intent_for_unpublished_repo() {
+    let state = test_state_with_repo();
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            repo.record.lifecycle_state = RepoLifecycleState::AwaitingFirstPush;
+        })
+        .await
+        .unwrap();
+    let response = request_push_intent(state, &bearer_header(), TEST_PUSH_HEAD_OID).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_json(response).await;
+    assert!(body["token"].as_str().unwrap().starts_with("scope_pi_"));
+    assert!(body["base_head_oid"].is_null());
+    assert!(body["expires_at_unix"].as_u64().unwrap() > unix_now());
+}
+
+fn push_intent_request_json(head_oid: &str) -> String {
+    serde_json::json!({
+        "head_oid": head_oid,
+        "base_config_hash": repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap(),
+        "config": repo_config(Visibility::Public),
+    })
+    .to_string()
+}
+
+async fn request_push_intent(state: AppState, authorization: &str, head_oid: &str) -> Response {
+    cache_test_jwks(&state);
+    router(state)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/repos/owner/repo/push-intents")
+                .header(AUTHORIZATION, authorization)
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(push_intent_request_json(head_oid)))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+fn permissioned_git_service(repo: &str, service: &str) -> String {
+    format!("/git/permissioned/owner/{repo}/info/refs?service={service}")
+}
+
+async fn git_get(app: &axum::Router, uri: String, authorization: Option<&str>) -> Response {
+    let mut request = Request::builder().method("GET").uri(uri);
+    if let Some(authorization) = authorization {
+        request = request.header(AUTHORIZATION, authorization);
+    }
+    app.clone()
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+}
+
+async fn assert_challenges(app: &axum::Router, service: &str, repos: &[&str]) {
+    for repo in repos {
+        let response = git_get(app, permissioned_git_service(repo, service), None).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(response.headers().contains_key(WWW_AUTHENTICATE));
+    }
+}
+
+async fn insert_push_member(state: &AppState, subject: &str) -> String {
+    let user_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", subject);
+    state
+        .metadata
+        .auth()
+        .insert_user_for_tests(test_user(user_id.clone(), "member", "member@example.com"))
+        .await
+        .unwrap();
+    let member_id = user_id.clone();
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, move |repo| {
+            repo.members.push(test_repository_member(
+                TEST_REPO_ID,
+                member_id,
+                member_permissions(true, false, false),
+            ));
+        })
+        .await
+        .unwrap();
+    user_id
+}
+
+#[tokio::test]
+async fn receive_pack_rejects_git_push_without_push_intent() {
+    let secret = "scope_git_test";
+    let state = test_state_with_git_push_token(secret).await;
+    let headers = git_push_token_headers(secret);
+
+    let error = receive_pack_access(&state, &headers, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.status(), StatusCode::FORBIDDEN);
+    assert_eq!(error.public_message(), "valid Scope push intent required");
+}
+
+#[tokio::test]
+async fn receive_pack_requires_credentials_before_repo_state_is_revealed() {
+    let state = test_state_with_repo();
+    let app = router(state.clone());
+    assert_challenges(&app, "git-receive-pack", &["repo", "missing"]).await;
+
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            repo.record.lifecycle_state = RepoLifecycleState::AwaitingFirstPush;
+        })
+        .await
+        .unwrap();
+    assert_challenges(&app, "git-receive-pack", &["repo"]).await;
+}
+
+#[tokio::test]
+async fn public_git_remote_cannot_receive_pack() {
+    let state = test_state_with_repo();
+    let response = git_get(
+        &router(state),
+        "/git/public/owner/repo/info/refs?service=git-receive-pack".to_string(),
+        None,
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn receive_pack_advertisement_prepares_without_persisting_first_push() {
+    let (state, secret) = test_state_with_first_push_token().await;
+    let intent = create_test_push_intent(&state, &test_owner_id(), TEST_PUSH_HEAD_OID).await;
+    let response = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/git/permissioned/owner/repo/info/refs?service=git-receive-pack")
+                .header(
+                    AUTHORIZATION,
+                    format!("Basic {}", BASE64.encode(format!("scope:{secret}"))),
+                )
+                .header("x-scope-push-intent", intent)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert_eq!(
+        repo.record.lifecycle_state,
+        RepoLifecycleState::AwaitingFirstPush
+    );
+    assert!(repo.first_push_token.is_some());
+    assert!(repo.git_head.is_none());
+    assert!(repo.graph.commits.is_empty());
+}
+
+#[tokio::test]
+async fn published_receive_pack_accepts_member_scope_session() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let member_subject = "user_member";
+    let member_id = insert_push_member(&state, member_subject).await;
+    let mut headers =
+        authorization_headers(bearer_header_for(member_subject, "member@example.com"));
+    insert_push_intent_header(&state, &mut headers, &member_id, TEST_PUSH_HEAD_OID).await;
+
+    let access = receive_pack_access(&state, &headers, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        access,
+        ReceivePackAccess::ReadyMember { author_id, .. } if author_id == member_id
+    ));
+}
+
+#[tokio::test]
+async fn upload_pack_wrong_basic_credentials_do_not_reveal_repo_existence() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let app = router(state);
+    let wrong_basic = format!("Basic {}", BASE64.encode("scope:scope_git_wrong"));
+
+    let existing = git_get(
+        &app,
+        permissioned_git_service("repo", "git-upload-pack"),
+        Some(&wrong_basic),
+    )
+    .await;
+    let missing = git_get(
+        &app,
+        permissioned_git_service("missing", "git-upload-pack"),
+        Some(&wrong_basic),
+    )
+    .await;
+    assert_eq!(existing.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
+    assert!(existing.headers().contains_key(WWW_AUTHENTICATE));
+    assert!(missing.headers().contains_key(WWW_AUTHENTICATE));
+    let existing_body = to_bytes(existing.into_body(), 1024 * 1024).await.unwrap();
+    let missing_body = to_bytes(missing.into_body(), 1024 * 1024).await.unwrap();
+
+    assert_eq!(existing_body, missing_body);
+    assert!(String::from_utf8_lossy(&existing_body).contains("invalid Git credentials"));
+    assert!(!String::from_utf8_lossy(&existing_body).contains("owner/repo"));
+}
+
+#[tokio::test]
+async fn private_upload_pack_without_credentials_challenges_for_auth() {
+    let state = test_state_with_repo();
+    {
+        let mut repo = test_repo(&test_owner_id());
+        repo.repo_config = repo_config(Visibility::Private);
+        repo.policy = Policy::new(Visibility::Private);
+        repo.graph.commits.push(LogicalCommit {
+            occurred_at_unix: None,
+            id: "rv1".to_string(),
+            origin: LogicalCommitOrigin::CanonicalPush {
+                source_head_oid: "rv1".to_string(),
+            },
+            author_id: repo.record.owner_user_id.clone(),
+            message: "initial".to_string(),
+            changes: vec![FileChange {
+                visibility: Visibility::Private,
+                path: ScopePath::parse("/secret.txt").unwrap(),
+                old_content: None,
+                new_content: Some(source_blob(&state, "secret")),
+            }],
+        });
+
+        replace_test_repo(&state, repo).await;
+    }
+    let app = router(state);
+
+    assert_challenges(&app, "git-upload-pack", &["repo", "missing"]).await;
+}
+
+#[tokio::test]
+async fn unpublished_upload_pack_member_scope_session_stays_hidden() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let member_subject = "user_member";
+    let member_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", member_subject);
+    state
+        .metadata
+        .auth()
+        .insert_user_for_tests(test_user(member_id.clone(), "member", "member@example.com"))
+        .await
+        .unwrap();
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, move |repo| {
+            repo.record.lifecycle_state = RepoLifecycleState::AwaitingFirstPush;
+            repo.members.push(test_repository_member(
+                TEST_REPO_ID,
+                member_id,
+                RepositoryMemberPermissions::default(),
+            ));
+        })
+        .await
+        .unwrap();
+    let headers = authorization_headers(bearer_header_for(member_subject, "member@example.com"));
+
+    let error = git_upload_pack_repo_for_request(
+        &state,
+        &headers,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        GitRemoteMode::Permissioned,
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.status(), StatusCode::NOT_FOUND);
+}
+#[tokio::test]
+async fn first_push_staging_repo_head_points_to_default_branch() {
+    let state = test_state_with_repo();
+    let staging_repo =
+        ensure_first_push_receive_pack_staging_repo(&state, &test_repo_incarnation()).unwrap();
+    let head = git_stdout_text(
+        &staging_repo,
+        &["symbolic-ref", "HEAD"],
+        "read staging head",
+    )
+    .unwrap();
+
+    assert_eq!(head.trim(), format!("refs/heads/{DEFAULT_GIT_BRANCH}"));
+    let _ = fs::remove_dir_all(staging_repo);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn real_git_first_push_over_http_applies_immediately() {
+    let (state, source, _server) = first_push_fixture(
+        "real-first-http-push",
+        "hello over http\n",
+        Some(("script.sh", "#!/bin/sh\necho hi\n")),
+    )
+    .await;
+    run_git(
+        Some(&source),
+        &["push", "-u", "scope", "HEAD:main"],
+        "push first import over http",
+    )
+    .unwrap();
+
+    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert_eq!(repo.record.lifecycle_state, RepoLifecycleState::Ready);
+    assert!(repo.first_push_token.is_none());
+    let live_tree = repo.live_tree();
+    assert_eq!(repo.repo_config, repo_config(Visibility::Public));
+    assert_eq!(
+        live_tree
+            .get(&ScopePath::parse("/script.sh").unwrap())
+            .unwrap()
+            .git_file_mode,
+        "100755"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chunked_real_git_published_push_over_http_accepts_image_context() {
+    let secret = "scope_git_test";
+    let state = test_state_with_git_push_token(secret).await;
+    let (origin, _server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}").replacen(
+        "http://",
+        &format!("http://scope:{secret}@"),
+        1,
+    );
+    let public_remote = format!("{origin}/git/public/{TEST_REPO_ID}");
+    let source = TempGitRepo(unique_test_path("chunked-real-published-http-push"));
+    run_git(
+        None,
+        &["clone", &public_remote, source.to_str().unwrap()],
+        "clone published repo",
+    )
+    .unwrap();
+    run_git(
+        Some(&source),
+        &["remote", "set-url", "origin", &remote],
+        "point origin at permissioned Scope remote",
+    )
+    .unwrap();
+
+    fs::write(
+        source.join("README.md"),
+        "hello over published chunked http\n",
+    )
+    .unwrap();
+    let image_dir = source.join(".scope/images/checks");
+    fs::create_dir_all(&image_dir).unwrap();
+    fs::write(image_dir.join("Dockerfile"), "FROM scratch\n").unwrap();
+    fs::create_dir_all(image_dir.join("scripts")).unwrap();
+    fs::write(image_dir.join("scripts/install.sh"), "#!/bin/sh\n").unwrap();
+    run_git(
+        Some(&source),
+        &["add", "-A"],
+        "add readme and image context update",
+    )
+    .unwrap();
+    commit_all(&source, "add image context");
+    configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
+    run_git(
+        Some(&source),
+        &["-c", "http.postBuffer=1", "push", "origin", "HEAD:main"],
+        "push published update over chunked http",
+    )
+    .unwrap();
+
+    assert_eq!(
+        live_file_content(&state, "/README.md").await.as_deref(),
+        Some("hello over published chunked http\n")
+    );
+    assert_eq!(
+        live_file_content(&state, "/.scope/images/checks/Dockerfile")
+            .await
+            .as_deref(),
+        Some("FROM scratch\n")
+    );
+    assert_eq!(
+        live_file_content(&state, "/.scope/images/checks/scripts/install.sh")
+            .await
+            .as_deref(),
+        Some("#!/bin/sh\n")
+    );
+    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    let image_path = ScopePath::parse("/.scope/images/checks/Dockerfile").unwrap();
+    assert_eq!(
+        repo.repo_config.visibility_for_path(&image_path),
+        Visibility::Private
+    );
+    assert!(
+        !project_graph(
+            &repo.graph,
+            &repo.visibility_change_sets,
+            ProjectionViewKey::Public,
+        )
+        .visible_paths()
+        .iter()
+        .any(|path| path == image_path.as_str())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn first_push_accepts_history_from_before_scope_rules_existed() {
+    let (state, secret) = test_state_with_first_push_token().await;
+    let (origin, _server) = spawn_test_server(&state).await;
+    let source = temp_git_repo("pre-scope-history-http");
+    run_git(
+        Some(&source),
+        &["rm", "--cached", ".scope/RULES.md"],
+        "unstage rules from original history",
+    )
+    .unwrap();
+    fs::write(source.join("README.md"), "existing project\n").unwrap();
+    run_git(Some(&source), &["add", "README.md"], "stage original files").unwrap();
+    commit_all(&source, "before Scope");
+    let original_head = git_head_oid(&source);
+    run_git(Some(&source), &["add", ".scope/RULES.md"], "stage rules").unwrap();
+    commit_all(&source, "adopt Scope");
+    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}").replacen(
+        "http://",
+        &format!("http://scope:{secret}@"),
+        1,
+    );
+    configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
+
+    run_git(
+        Some(&source),
+        &["push", &remote, "HEAD:main"],
+        "import existing history",
+    )
+    .unwrap();
+
+    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert_eq!(repo.record.lifecycle_state, RepoLifecycleState::Ready);
+    assert_eq!(
+        repo.git_head.as_ref().unwrap().head_oid,
+        git_head_oid(&source)
+    );
+    assert_eq!(
+        live_file_content(&state, "/.scope/RULES.md")
+            .await
+            .as_deref(),
+        Some("")
+    );
+    let clone = TempGitRepo(unique_test_path("pre-scope-history-clone"));
+    cache_test_jwks(&state);
+    clone_with_bearer(
+        &format!("{origin}/git/permissioned/{TEST_REPO_ID}"),
+        &clone,
+        &bearer_header(),
+        "clone imported history",
+    );
+    run_git(
+        Some(&clone),
+        &[
+            "merge-base",
+            "--is-ancestor",
+            &original_head,
+            "refs/remotes/origin/main",
+        ],
+        "verify original history survives",
+    )
+    .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn first_push_missing_tip_rules_displays_rejection_without_persisting() {
+    let (state, source, _server) =
+        first_push_fixture("missing-tip-rules-http", "hello\n", None).await;
+    run_git(
+        Some(&source),
+        &["rm", ".scope/RULES.md"],
+        "remove tip rules",
+    )
+    .unwrap();
+    commit_all(&source, "remove rules");
+    let remote = git_stdout_text(&source, &["remote", "get-url", "scope"], "read remote").unwrap();
+    configure_push_intent_header(&state, &source, remote.trim(), &test_owner_id()).await;
+    let object_count = state.test_object_store.object_count();
+
+    let output = run_git_output(
+        Some(&source),
+        &["push", "scope", "HEAD:main"],
+        "push missing rules",
+    )
+    .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pushed main tree must contain .scope/RULES.md"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("HTTP 400"), "{stderr}");
+    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert_eq!(
+        repo.record.lifecycle_state,
+        RepoLifecycleState::AwaitingFirstPush
+    );
+    assert!(repo.git_head.is_none());
+    assert!(repo.first_push_token.is_some());
+    assert_eq!(state.test_object_store.object_count(), object_count);
+}
+
+async fn first_push_fixture(
+    label: &str,
+    readme: &str,
+    executable: Option<(&str, &str)>,
+) -> (AppState, TempGitRepo, TestServer) {
+    let (state, secret) = test_state_with_first_push_token().await;
+    let (origin, server) = spawn_test_server(&state).await;
+    let source = temp_git_repo(label);
+    fs::write(source.join("README.md"), readme).unwrap();
+    if let Some((path, content)) = executable {
+        fs::write(source.join(path), content).unwrap();
+    }
+    run_git(Some(&source), &["add", "-A"], "add first push files").unwrap();
+    if let Some((path, _)) = executable {
+        run_git(
+            Some(&source),
+            &["update-index", "--chmod=+x", path],
+            "make first push file executable",
+        )
+        .unwrap();
+    }
+    commit_all(&source, "initial");
+    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}").replacen(
+        "http://",
+        &format!("http://scope:{secret}@"),
+        1,
+    );
+    run_git(
+        Some(&source),
+        &["remote", "add", "scope", &remote],
+        "add scope remote",
+    )
+    .unwrap();
+    configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
+    (state, source, server)
+}

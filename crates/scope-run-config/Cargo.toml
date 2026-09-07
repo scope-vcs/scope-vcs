@@ -1,0 +1,12 @@
+[package]
+name = "scope-run-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+scope_domain.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+yaml_serde = "0.10.4"

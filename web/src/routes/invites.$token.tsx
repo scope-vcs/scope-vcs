@@ -1,0 +1,86 @@
+import {
+  acceptRepoInviteForRequest,
+  loadRepoInviteForRequest,
+  parseRepoInviteTokenInput,
+} from '@/api/repos'
+import { ApplicationPendingShell } from '@/components/pending-surface'
+import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
+import { InvitePage } from '@/features/invites/invite-page'
+import { createFileRoute } from '@tanstack/react-router'
+import { createServerFn } from '@tanstack/react-start'
+
+const loadInvite = createServerFn({ method: 'GET' })
+  .validator(parseRepoInviteTokenInput)
+  .handler(({ data }) => loadRepoInviteForRequest(data))
+
+const acceptInvite = createServerFn({ method: 'POST' })
+  .validator(parseRepoInviteTokenInput)
+  .handler(({ data }) => acceptRepoInviteForRequest(data))
+
+export const Route = createFileRoute('/invites/$token')({
+  loader: ({ params }) => loadInvite({ data: params }),
+  pendingComponent: InvitePending,
+  component: InviteRoute,
+})
+
+function InvitePending() {
+  return (
+    <ApplicationPendingShell
+      contextLabel="Repository invite"
+      label="Loading repository invite"
+    >
+      <div className="py-8 lg:py-10">
+        <h1 className="text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[32px]">
+          Repository invite
+        </h1>
+        <TextSkeleton className="mt-3" length="medium" size="title" />
+        <TextSkeleton className="mt-2" length="long" size="meta" />
+        <div className="mt-6 divide-y divide-border">
+          {['Access', 'Continue'].map((title, index) => (
+            <section
+              className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]"
+              key={title}
+            >
+              <div>
+                <div className="text-sm font-semibold leading-5">{title}</div>
+                <TextSkeleton className="mt-2" length="medium" size="meta" />
+                <TextSkeleton className="mt-1.5" length="short" size="meta" />
+              </div>
+              <div className="space-y-3">
+                {index === 0 ? (
+                  <>
+                    <div className="flex items-center justify-between gap-4">
+                      <TextSkeleton length="short" />
+                      <BlockSkeleton className="h-5 w-9 rounded-full" />
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <TextSkeleton length="short" />
+                      <BlockSkeleton className="h-5 w-9 rounded-full" />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    <BlockSkeleton className="h-9 w-32" />
+                    <BlockSkeleton className="h-9 w-20" />
+                  </div>
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    </ApplicationPendingShell>
+  )
+}
+
+function InviteRoute() {
+  const invite = Route.useLoaderData()
+  const params = Route.useParams()
+  return (
+    <InvitePage
+      acceptInvite={(input) => acceptInvite({ data: input })}
+      invite={invite}
+      token={params.token}
+    />
+  )
+}

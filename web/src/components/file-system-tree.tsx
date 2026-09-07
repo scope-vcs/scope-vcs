@@ -1,0 +1,339 @@
+import type { ReactNode } from 'react'
+import { useMemo, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { VisibilityBadge, VisibilityLegend } from '@/components/visibility-badge'
+import { cn } from '@/lib/utils'
+import {
+  ChevronDown,
+  ChevronRight,
+  File,
+  Folder,
+  FolderOpen,
+} from 'lucide-react'
+import {
+  buildFileSystemTree,
+  ancestorFolderKeys,
+  displayPath,
+  folderVisibility,
+  type FileSystemTreeFileBase,
+  type FileSystemTreeNode,
+} from './file-system-tree-model'
+
+const FULL_TREE_COLUMNS =
+  'grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_110px_120px]'
+const COMPACT_TREE_COLUMNS =
+  'grid-cols-[minmax(0,1fr)_auto_20px]'
+
+export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
+  compactVisibility = false,
+  files,
+  getFileMeta,
+  metaColumnLabel = 'Status',
+  onActivateFile,
+  onSelectFile,
+  selectedFilePath = null,
+}: {
+  compactVisibility?: boolean
+  files: TFile[]
+  getFileMeta?: (file: TFile) => ReactNode
+  metaColumnLabel?: ReactNode
+  onActivateFile?: (file: TFile) => void
+  onSelectFile?: (file: TFile) => void
+  selectedFilePath?: string | null
+}) {
+  const root = useMemo(() => buildFileSystemTree(files), [files])
+  const treeKey = useMemo(
+    () => files.map((file) => displayPath(file.path)).join('\0'),
+    [files],
+  )
+  const columnsClassName = compactVisibility
+    ? COMPACT_TREE_COLUMNS
+    : FULL_TREE_COLUMNS
+
+  return (
+    <FileSystemTreeRows
+      columnsClassName={columnsClassName}
+      compactVisibility={compactVisibility}
+      getFileMeta={getFileMeta}
+      key={treeKey}
+      onActivateFile={onActivateFile}
+      onSelectFile={onSelectFile}
+      root={root}
+      selectedFilePath={selectedFilePath}
+      metaColumnLabel={metaColumnLabel}
+    />
+  )
+}
+
+function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
+  columnsClassName,
+  compactVisibility,
+  getFileMeta,
+  metaColumnLabel,
+  onActivateFile,
+  onSelectFile,
+  root,
+  selectedFilePath,
+}: {
+  columnsClassName: string
+  compactVisibility: boolean
+  getFileMeta?: (file: TFile) => ReactNode
+  metaColumnLabel: ReactNode
+  onActivateFile?: (file: TFile) => void
+  onSelectFile?: (file: TFile) => void
+  root: Extract<FileSystemTreeNode<TFile>, { type: 'folder' }>
+  selectedFilePath: string | null
+}) {
+  const [folderState, setFolderState] = useState<FolderState>(() => ({
+    collapsedForSelection: new Map(),
+    expanded: new Set(),
+  }))
+  const selectedPath = displayPath(selectedFilePath ?? '')
+  const selectedAncestorKeys = useMemo(
+    () => new Set(ancestorFolderKeys(selectedPath)),
+    [selectedPath],
+  )
+
+  function toggleFolder(key: string) {
+    setFolderState((current) => {
+      const next: FolderState = {
+        collapsedForSelection: new Map(current.collapsedForSelection),
+        expanded: new Set(current.expanded),
+      }
+      if (folderIsCollapsed(current, key, selectedAncestorKeys, selectedPath)) {
+        next.expanded.add(key)
+        next.collapsedForSelection.delete(key)
+      } else {
+        next.expanded.delete(key)
+        if (selectedAncestorKeys.has(key)) {
+          next.collapsedForSelection.set(key, selectedPath)
+        }
+      }
+      return next
+    })
+  }
+
+  return (
+    <div>
+      <div
+        className={cn(
+          'hidden gap-3 px-3 pb-1.5 pt-1 text-[11px] font-medium text-muted-foreground sm:grid sm:items-center',
+          columnsClassName,
+        )}
+      >
+        <div>path</div>
+        <div>{metaColumnLabel}</div>
+        <div className={compactVisibility ? 'text-center' : undefined}>
+          {compactVisibility ? (
+            <span className="sr-only">Visibility</span>
+          ) : (
+            'Visibility'
+          )}
+        </div>
+      </div>
+      <ul className="space-y-0.5">
+        {root.children.map((node) => (
+          <FileSystemTreeNodeRow
+            folderState={folderState}
+            columnsClassName={columnsClassName}
+            compactVisibility={compactVisibility}
+            depth={0}
+            getFileMeta={getFileMeta}
+            key={node.key}
+            node={node}
+            onActivateFile={onActivateFile}
+            onSelectFile={onSelectFile}
+            onToggleFolder={toggleFolder}
+            selectedAncestorKeys={selectedAncestorKeys}
+            selectedFilePath={selectedFilePath}
+          />
+        ))}
+      </ul>
+      {compactVisibility ? <div className="px-3 pt-4 pb-2"><VisibilityLegend /></div> : null}
+    </div>
+  )
+}
+
+function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
+  folderState,
+  columnsClassName,
+  compactVisibility,
+  depth,
+  getFileMeta,
+  node,
+  onActivateFile,
+  onSelectFile,
+  onToggleFolder,
+  selectedAncestorKeys,
+  selectedFilePath,
+}: {
+  folderState: FolderState
+  columnsClassName: string
+  compactVisibility: boolean
+  depth: number
+  getFileMeta?: (file: TFile) => ReactNode
+  node: FileSystemTreeNode<TFile>
+  onActivateFile?: (file: TFile) => void
+  onSelectFile?: (file: TFile) => void
+  onToggleFolder: (key: string) => void
+  selectedAncestorKeys: ReadonlySet<string>
+  selectedFilePath: string | null
+}) {
+  if (node.type === 'file') {
+    const selected =
+      selectedFilePath !== null &&
+      displayPath(selectedFilePath) === displayPath(node.file.path)
+    return (
+      <li
+        className={cn(
+          'relative grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-[background-color,border-color] hover:bg-accent/50',
+          selected &&
+            'border-[var(--border-strong)] bg-muted shadow-[inset_2px_0_0_0_var(--platinum-bright)] hover:bg-muted',
+          columnsClassName,
+        )}
+      >
+        <div
+          className="flex min-w-0 items-center gap-2"
+          style={{ paddingLeft: `${depth * 18}px` }}
+        >
+          {onSelectFile ? (
+            <button
+              aria-current={selected ? 'true' : undefined}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              onClick={() => onSelectFile(node.file)}
+              onDoubleClick={
+                onActivateFile ? () => onActivateFile(node.file) : undefined
+              }
+              type="button"
+            >
+              <FilePathLabel compact={compactVisibility} name={node.name} path={node.path} />
+            </button>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <FilePathLabel compact={compactVisibility} name={node.name} path={node.path} />
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 text-xs leading-4">
+          {getFileMeta?.(node.file)}
+        </div>
+        <div
+          className={cn(
+            'flex items-center gap-1.5',
+            compactVisibility && 'justify-end sm:justify-center',
+          )}
+        >
+          <VisibilityBadge
+            compact={compactVisibility}
+            visibility={node.file.visibility}
+          />
+        </div>
+      </li>
+    )
+  }
+
+  const isCollapsed = folderIsCollapsed(
+    folderState,
+    node.key,
+    selectedAncestorKeys,
+    displayPath(selectedFilePath ?? ''),
+  )
+  const visibility = folderVisibility(node.files)
+
+  return (
+    <>
+      <li
+        className={cn(
+          'grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-colors hover:bg-accent/50',
+          columnsClassName,
+        )}
+      >
+        <div
+          className="flex min-w-0 items-center gap-2"
+          style={{ paddingLeft: `${depth * 18}px` }}
+        >
+          <Button
+            aria-expanded={!isCollapsed}
+            aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${node.name}`}
+            onClick={() => onToggleFolder(node.key)}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            {isCollapsed ? (
+              <ChevronRight className="size-3" />
+            ) : (
+              <ChevronDown className="size-3" />
+            )}
+          </Button>
+          {isCollapsed ? (
+            <Folder className="size-4 shrink-0 text-[var(--platinum)]" strokeWidth={1.7} />
+          ) : (
+            <FolderOpen className="size-4 shrink-0 text-[var(--platinum)]" strokeWidth={1.7} />
+          )}
+          <span className="min-w-0 truncate font-mono text-xs" title={node.path}>
+            {node.name}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
+          {node.files.length} {node.files.length === 1 ? 'file' : 'files'}
+        </div>
+        <div
+          className={cn(
+            'flex items-center gap-1.5',
+            compactVisibility && 'justify-end sm:justify-center',
+          )}
+        >
+          <VisibilityBadge compact={compactVisibility} visibility={visibility} />
+        </div>
+      </li>
+      {!isCollapsed &&
+        node.children.map((child) => (
+          <FileSystemTreeNodeRow
+            folderState={folderState}
+            columnsClassName={columnsClassName}
+            compactVisibility={compactVisibility}
+            depth={depth + 1}
+            getFileMeta={getFileMeta}
+            key={child.key}
+            node={child}
+            onActivateFile={onActivateFile}
+            onSelectFile={onSelectFile}
+            onToggleFolder={onToggleFolder}
+            selectedAncestorKeys={selectedAncestorKeys}
+            selectedFilePath={selectedFilePath}
+          />
+        ))}
+    </>
+  )
+}
+
+type FolderState = {
+  collapsedForSelection: Map<string, string>
+  expanded: Set<string>
+}
+
+function folderIsCollapsed(
+  state: FolderState,
+  key: string,
+  selectedAncestorKeys: ReadonlySet<string>,
+  selectedPath: string,
+) {
+  if (state.expanded.has(key)) return false
+  return !(
+    selectedAncestorKeys.has(key) &&
+    state.collapsedForSelection.get(key) !== selectedPath
+  )
+}
+
+function FilePathLabel({ compact, name, path }: { compact: boolean; name: string; path: string }) {
+  return (
+    <>
+      {!compact ? <span className="size-6 shrink-0" /> : null}
+      <File className="size-4 shrink-0 text-[var(--platinum)]" strokeWidth={1.7} />
+      <span className="min-w-0 truncate font-mono text-xs" title={displayPath(path)}>
+        {name}
+      </span>
+    </>
+  )
+}

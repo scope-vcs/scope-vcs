@@ -1,0 +1,78 @@
+import { createApiClient } from '@/api/client'
+import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
+import { parseHistoryAudience, parseHistoryFeed } from './history-inputs'
+import type {
+  HistoryEntryDetail,
+  HistoryEntryDetailInput,
+  HistoryEntryFileDiffInput,
+  HistoryPage,
+  HistoryPageInput,
+  ReviewFileDiff,
+} from './types'
+import { ApiRouteTemplates, buildApiPath } from './types.generated'
+import { apiValidators } from './validators.generated'
+export {
+  parseHistoryEntryDetailInput,
+  parseHistoryEntryFileDiffInput,
+  parseHistoryPageInput,
+} from './history-inputs'
+
+export async function loadHistoryPageForRequest(
+  data: HistoryPageInput,
+  signal?: AbortSignal,
+): Promise<HistoryPage> {
+  const query = new URLSearchParams()
+  if (data.audience) query.set('audience', parseHistoryAudience(data.audience))
+  if (data.before) query.set('before', data.before)
+  query.set('feed', parseHistoryFeed(data.feed))
+
+  return createApiClient().get(
+    `${buildApiPath(ApiRouteTemplates.repoHistory, {
+      owner: data.owner,
+      repo: data.repo,
+    })}?${query}`,
+    apiValidators.HistoryPageResponse,
+    { auth: 'optional', signal },
+  )
+}
+
+export async function loadHistoryEntryForRequest(
+  data: HistoryEntryDetailInput,
+): Promise<HistoryEntryDetail> {
+  const query = new URLSearchParams()
+  if (data.audience) query.set('audience', parseHistoryAudience(data.audience))
+
+  return createApiClient().get(
+    `${buildApiPath(ApiRouteTemplates.repoHistoryEntry, {
+      owner: data.owner,
+      repo: data.repo,
+      entry_id: data.entry,
+    })}?${query}`,
+    apiValidators.HistoryEntryDetailResponse,
+    { auth: 'optional' },
+  )
+}
+
+export async function loadHistoryEntryFileDiffForRequest(
+  data: HistoryEntryFileDiffInput,
+  signal?: AbortSignal,
+): Promise<ReviewFileDiff> {
+  const query = new URLSearchParams({
+    audience: parseHistoryAudience(data.audience),
+    path: data.path,
+  })
+
+  if (data.visibility_change) query.set('visibility_change', data.visibility_change)
+
+  const diff = await createApiClient().get(
+    `${buildApiPath(ApiRouteTemplates.repoHistoryEntryFileDiff, {
+      owner: data.owner,
+      repo: data.repo,
+      entry_id: data.entry,
+    })}?${query}`,
+    apiValidators.ReviewFileDiffResponse,
+    { auth: 'optional', signal },
+  )
+
+  return renderReviewFileDiff(diff, signal)
+}

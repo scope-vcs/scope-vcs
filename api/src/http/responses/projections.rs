@@ -1,0 +1,221 @@
+use crate::error::ApiError;
+use scope_api_contract::Visibility;
+use scope_domain::{
+    policy::ScopePath,
+    projection::project_graph,
+    projection_views::{
+        ProjectionAudience, ProjectionPreviewCommit, ProjectionPreviewCommitVisibility,
+        ProjectionPreviewFile, ProjectionPreviewSummary, ProjectionViewFile, projection_preview,
+        repo_scope_path as domain_repo_scope_path,
+    },
+    repository::Repository,
+};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "type-export", ts(rename_all = "lowercase"))]
+pub(crate) enum ProjectionPreviewAudience {
+    Private,
+    Public,
+}
+
+impl From<ProjectionPreviewAudience> for ProjectionAudience {
+    fn from(audience: ProjectionPreviewAudience) -> Self {
+        match audience {
+            ProjectionPreviewAudience::Private => Self::Private,
+            ProjectionPreviewAudience::Public => Self::Public,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "type-export", ts(rename_all = "lowercase"))]
+pub(crate) enum ProjectionPreviewSource {
+    Live,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct ProjectionPreviewRequest {
+    pub(crate) audience: ProjectionPreviewAudience,
+    pub(crate) source: Option<ProjectionPreviewSource>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct ProjectionPreviewResponse {
+    pub(crate) audience: ProjectionPreviewAudience,
+    pub(crate) source: ProjectionPreviewSource,
+    pub(crate) repo_id: String,
+    pub(crate) view_key: String,
+    pub(crate) head_oid: Option<String>,
+    pub(crate) files: Vec<ProjectionPreviewFileResponse>,
+    pub(crate) commits: Vec<ProjectionPreviewCommitResponse>,
+    pub(crate) summary: ProjectionPreviewSummaryResponse,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct ProjectionPreviewFileResponse {
+    pub(crate) path: String,
+    pub(crate) oid: String,
+    pub(crate) visibility: Visibility,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct ProjectionPreviewCommitResponse {
+    pub(crate) projected_id: String,
+    pub(crate) logical_commit_id: String,
+    pub(crate) parent_projected_id: Option<String>,
+    pub(crate) author: Option<String>,
+    pub(crate) message: String,
+    pub(crate) visibility: ProjectionPreviewCommitVisibilityResponse,
+    pub(crate) change_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) enum ProjectionPreviewCommitVisibilityResponse {
+    FullyPublic,
+    Mixed,
+    FullyPrivate,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct ProjectionPreviewSummaryResponse {
+    pub(crate) visible_files: usize,
+    pub(crate) hidden_files: usize,
+    pub(crate) visible_commits: usize,
+    pub(crate) hidden_commits: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct RepoFileResponse {
+    pub(crate) path: String,
+    pub(crate) oid: String,
+    pub(crate) tracked: bool,
+    pub(crate) visibility: Visibility,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct RepoFileContentResponse {
+    pub(crate) path: String,
+    pub(crate) oid: String,
+    pub(crate) visibility: Visibility,
+    pub(crate) size_bytes: u64,
+    pub(crate) content: super::ReviewFileContentResponse,
+}
+
+pub(crate) fn projection_preview_response(
+    repo: &Repository,
+    audience: ProjectionPreviewAudience,
+    source: ProjectionPreviewSource,
+    include_private_counts: bool,
+) -> Result<ProjectionPreviewResponse, ApiError> {
+    let projection_audience = ProjectionAudience::from(audience);
+    let projection = project_graph(
+        &repo.graph,
+        &repo.visibility_change_sets,
+        projection_audience.into(),
+    );
+    if projection.preserves_git_commits() {
+        return Err(ApiError::not_implemented(
+            "projection preview is unavailable for preserved public request commits until native per-commit metadata is represented accurately",
+        ));
+    }
+    let preview = projection_preview(repo, projection_audience, include_private_counts);
+    let head_oid = scope_git::projection_head_oid(&projection).map_err(ApiError::internal)?;
+
+    Ok(ProjectionPreviewResponse {
+        audience,
+        source,
+        repo_id: preview.repo_id,
+        view_key: preview.view_key,
+        head_oid,
+        files: preview
+            .files
+            .into_iter()
+            .map(projection_preview_file_response)
+            .collect(),
+        commits: preview
+            .commits
+            .into_iter()
+            .map(projection_preview_commit_response)
+            .collect(),
+        summary: projection_preview_summary_response(preview.summary),
+    })
+}
+
+pub(crate) fn projection_file_responses(files: Vec<ProjectionViewFile>) -> Vec<RepoFileResponse> {
+    files.into_iter().map(repo_file_response).collect()
+}
+
+pub(crate) fn repo_scope_path(path: &str) -> Result<ScopePath, ApiError> {
+    Ok(domain_repo_scope_path(path)?)
+}
+
+fn projection_preview_file_response(file: ProjectionPreviewFile) -> ProjectionPreviewFileResponse {
+    ProjectionPreviewFileResponse {
+        path: file.path.as_str().to_string(),
+        oid: file.oid,
+        visibility: file.visibility.into(),
+    }
+}
+
+fn projection_preview_commit_response(
+    commit: ProjectionPreviewCommit,
+) -> ProjectionPreviewCommitResponse {
+    ProjectionPreviewCommitResponse {
+        projected_id: commit.projected_id,
+        logical_commit_id: commit.logical_commit_id,
+        parent_projected_id: commit.parent_projected_id,
+        author: commit.author,
+        message: commit.message,
+        visibility: projection_preview_commit_visibility_response(commit.visibility),
+        change_count: commit.change_count,
+    }
+}
+
+fn projection_preview_commit_visibility_response(
+    visibility: ProjectionPreviewCommitVisibility,
+) -> ProjectionPreviewCommitVisibilityResponse {
+    match visibility {
+        ProjectionPreviewCommitVisibility::FullyPublic => {
+            ProjectionPreviewCommitVisibilityResponse::FullyPublic
+        }
+        ProjectionPreviewCommitVisibility::Mixed => {
+            ProjectionPreviewCommitVisibilityResponse::Mixed
+        }
+        ProjectionPreviewCommitVisibility::FullyPrivate => {
+            ProjectionPreviewCommitVisibilityResponse::FullyPrivate
+        }
+    }
+}
+
+fn projection_preview_summary_response(
+    summary: ProjectionPreviewSummary,
+) -> ProjectionPreviewSummaryResponse {
+    ProjectionPreviewSummaryResponse {
+        visible_files: summary.visible_files,
+        hidden_files: summary.hidden_files,
+        visible_commits: summary.visible_commits,
+        hidden_commits: summary.hidden_commits,
+    }
+}
+
+fn repo_file_response(file: ProjectionViewFile) -> RepoFileResponse {
+    RepoFileResponse {
+        path: file.path.as_str().to_string(),
+        oid: file.oid,
+        tracked: file.tracked,
+        visibility: file.visibility.into(),
+    }
+}

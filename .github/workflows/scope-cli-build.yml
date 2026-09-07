@@ -1,0 +1,218 @@
+name: Scope CLI Build
+
+on:
+  workflow_call:
+    inputs:
+      validate_targets:
+        type: boolean
+        default: false
+      validate_service_release:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prepare:
+    name: Prepare distribution matrix
+    if: inputs.validate_targets
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Read distribution targets
+        id: targets
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          mode=release
+          [[ "$EVENT_NAME" == "pull_request" ]] && mode=pull-request
+          matrix="$(node .github/scripts/select-cli-distribution-targets.mjs --mode "$mode")"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  checks:
+    name: Check scope-cli
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          cache-bin: false
+          shared-key: cli-checks
+          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          workspaces: cli -> target
+
+      - name: Check CLI
+        run: ./dev/checks/cli
+
+  service-release:
+    name: Build scope-cli service
+    if: inputs.validate_service_release
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.0
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          cache-bin: false
+          shared-key: cli-service-release
+          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          workspaces: cli -> target
+
+      - name: Build service
+        run: >
+          cargo build
+          --manifest-path cli/Cargo.toml
+          --release
+          --locked
+          --bin scope-cli-service
+
+      - name: Pack service
+        run: |
+          mkdir -p artifacts
+          cp LICENSE NOTICE legal/third-party-rust.txt cli/target/release/
+          tar --create --gzip \
+            --file artifacts/scope-cli-service.tar.gz \
+            --directory cli/target/release \
+            scope-cli-service LICENSE NOTICE third-party-rust.txt
+
+      - name: Upload service
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-service-release-${{ github.sha }}
+          path: artifacts/scope-cli-service.tar.gz
+          if-no-files-found: error
+
+  build:
+    name: ${{ matrix.label }} / ${{ matrix.smoke && 'native checks' || 'build only' }}
+    env:
+      SCOPE_BUILD_SHA: ${{ github.sha }}
+      CROSS_CONFIG: ${{ github.workspace }}/Cross.toml
+    needs: [checks, prepare]
+    if: inputs.validate_targets
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.0
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          cache-bin: ${{ matrix.builder == 'cross' }}
+          shared-key: cli-build-${{ matrix.target }}
+          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          workspaces: cli -> target
+
+      - name: Install cross
+        if: matrix.builder == 'cross'
+        working-directory: cli
+        env:
+          CARGO_TARGET_DIR: target/cargo-install
+        run: cargo install cross --locked
+
+      - name: Build scope
+        shell: bash
+        run: |
+          # Cross mounts the current directory; include the root license files.
+          if [ "${{ matrix.builder }}" = "cross" ]; then
+            cross build --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --bin scope
+          else
+            cargo build --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --bin scope
+          fi
+
+      - name: Test portable command contracts
+        if: matrix.smoke
+        shell: bash
+        run: >
+          cargo test --manifest-path cli/Cargo.toml --release --locked
+          --target "${{ matrix.target }}" --test version --test licenses
+
+      - name: Test authentication boundaries without accessing native credential stores
+        if: matrix.smoke
+        shell: bash
+        run: |
+          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib auth::tests
+          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib git_credential::tests
+          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib login::tests
+
+      - name: Build native installer service
+        if: matrix.smoke
+        shell: bash
+        run: >
+          cargo build --manifest-path cli/Cargo.toml --release --locked
+          --target "${{ matrix.target }}" --bin scope-cli-service
+
+      - name: Install Node for installer checks
+        if: matrix.smoke
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Verify native install, update, checksum, and PATH
+        if: matrix.smoke
+        env:
+          SCOPE_TEST_BINARY: cli/${{ matrix.binary }}
+        run: node --test cli/distribution/install-smoke.test.mjs
+
+      - name: Stage artifact
+        working-directory: cli
+        shell: bash
+        run: |
+          # Check the final binary after every Cargo invocation that can rebuild it.
+          : "${SCOPE_BUILD_SHA:?Release build SHA is required}"
+          grep -aFq "$SCOPE_BUILD_SHA" "${{ matrix.binary }}" || {
+            echo "Release binary is missing build $SCOPE_BUILD_SHA" >&2
+            exit 1
+          }
+          if [ "${{ matrix.smoke }}" = "true" ]; then
+            identity="$("./${{ matrix.binary }}" --version)"
+            expected="^scope [^ ]+ \(build $SCOPE_BUILD_SHA; protocol [0-9]+\)$"
+            [[ "$identity" =~ $expected ]] || {
+              echo "Unexpected release identity: $identity" >&2
+              exit 1
+            }
+          fi
+          mkdir -p dist
+          cp "${{ matrix.binary }}" "dist/${{ matrix.artifact }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: cli/dist/${{ matrix.artifact }}
+          if-no-files-found: error

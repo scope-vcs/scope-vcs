@@ -1,0 +1,613 @@
+{
+  "web:@humanfs/types@0.15.0": {
+    "reason": "Published package declares Apache-2.0. License text recovered from packages/core/LICENSE in the same monorepo at the published npm gitHead.",
+    "documents": [
+      {
+        "path": "legal/upstream/c71d239df91726fc.txt",
+        "url": "https://raw.githubusercontent.com/humanwhocodes/humanfs/85069f193cbacc371c3beb649ce746f8c5a493be/packages/core/LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      }
+    ]
+  },
+  "web:@napi-rs/wasm-runtime@1.1.5": {
+    "reason": "License text recovered from the upstream repository at the published npm gitHead.",
+    "documents": [
+      {
+        "path": "legal/upstream/3f1ce66533302df3.txt",
+        "url": "https://raw.githubusercontent.com/napi-rs/napi-rs/670e5d319506beb9b7f37683d75b9b4e0edba253/LICENSE",
+        "sha256": "3f1ce66533302df3a32edbfdfc0b78f0dd34659e4c1f5817162e5ea3c2297215"
+      }
+    ]
+  },
+  "web:@oxc-parser/binding-android-arm-eabi@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-android-arm-eabi@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-android-arm64@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-android-arm64@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-darwin-arm64@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-darwin-arm64@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-darwin-x64@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-darwin-x64@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-freebsd-x64@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-freebsd-x64@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-arm-gnueabihf@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-arm-gnueabihf@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-arm-musleabihf@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-arm-musleabihf@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-arm64-gnu@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-arm64-gnu@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-arm64-musl@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-arm64-musl@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-ppc64-gnu@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-ppc64-gnu@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-riscv64-gnu@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-riscv64-gnu@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-riscv64-musl@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-riscv64-musl@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-s390x-gnu@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-s390x-gnu@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-x64-gnu@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-x64-gnu@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-linux-x64-musl@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-linux-x64-musl@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-openharmony-arm64@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-openharmony-arm64@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-wasm32-wasi@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-wasm32-wasi@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-win32-arm64-msvc@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-win32-arm64-msvc@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-win32-ia32-msvc@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-win32-ia32-msvc@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-parser/binding-win32-x64-msvc@0.132.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.132.0"
+  },
+  "web:@oxc-parser/binding-win32-x64-msvc@0.135.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-parser. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-parser@0.135.0"
+  },
+  "web:@oxc-resolver/binding-android-arm-eabi@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-android-arm64@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-darwin-arm64@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-darwin-x64@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-freebsd-x64@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-arm-gnueabihf@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-arm-musleabihf@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-arm64-gnu@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-arm64-musl@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-ppc64-gnu@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-riscv64-gnu@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-riscv64-musl@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-s390x-gnu@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-x64-gnu@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-linux-x64-musl@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-openharmony-arm64@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-wasm32-wasi@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-win32-arm64-msvc@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxc-resolver/binding-win32-x64-msvc@11.21.3": {
+    "reason": "Native binding distributed by the same project and exact package version as oxc-resolver. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxc-resolver@11.21.3"
+  },
+  "web:@oxlint/binding-android-arm-eabi@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-android-arm64@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-darwin-arm64@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-darwin-x64@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-freebsd-x64@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-arm-gnueabihf@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-arm-musleabihf@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-arm64-gnu@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-arm64-musl@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-ppc64-gnu@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-riscv64-gnu@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-riscv64-musl@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-s390x-gnu@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-x64-gnu@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-linux-x64-musl@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-openharmony-arm64@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-win32-arm64-msvc@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-win32-ia32-msvc@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@oxlint/binding-win32-x64-msvc@1.66.0": {
+    "reason": "Native binding distributed by the same project and exact package version as oxlint. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:oxlint@1.66.0"
+  },
+  "web:@posthog/browser-common@0.5.0": {
+    "reason": "MIT declaration in the published package. Shared upstream monorepo copyright and MIT terms retained from posthog-js 1.417.1.",
+    "from_package": "web:posthog-js@1.417.1"
+  },
+  "web:@posthog/core@1.48.1": {
+    "reason": "MIT declaration in the published package. Shared upstream monorepo copyright and MIT terms retained from posthog-js 1.417.1.",
+    "from_package": "web:posthog-js@1.417.1"
+  },
+  "web:@rolldown/binding-android-arm64@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-android-arm64@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-darwin-arm64@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-darwin-arm64@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-darwin-x64@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-darwin-x64@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-freebsd-x64@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-freebsd-x64@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-linux-arm-gnueabihf@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-linux-arm-gnueabihf@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-linux-arm64-gnu@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-linux-arm64-gnu@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-linux-arm64-musl@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-linux-arm64-musl@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-linux-ppc64-gnu@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-linux-ppc64-gnu@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-linux-s390x-gnu@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-linux-s390x-gnu@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-linux-x64-gnu@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-linux-x64-gnu@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-linux-x64-musl@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-linux-x64-musl@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-openharmony-arm64@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-openharmony-arm64@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-wasm32-wasi@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-wasm32-wasi@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-win32-arm64-msvc@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-win32-arm64-msvc@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@rolldown/binding-win32-x64-msvc@1.0.3": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.0.3"
+  },
+  "web:@rolldown/binding-win32-x64-msvc@1.1.1": {
+    "reason": "Native binding distributed by the same project and exact package version as rolldown. The binding manifest declares MIT; retain the parent release license texts.",
+    "from_package": "web:rolldown@1.1.1"
+  },
+  "web:@sentry/server-utils@10.59.0": {
+    "reason": "MIT declaration in the published package. Shared upstream monorepo copyright and MIT terms retained from @sentry/core 10.59.0.",
+    "from_package": "web:@sentry/core@10.59.0"
+  },
+  "web:esrecurse@4.3.0": {
+    "reason": "The published archive includes its complete license and copyright notice in README.md rather than a separate license file.",
+    "archive_document": {
+      "path": "README.md",
+      "start": "### License"
+    }
+  },
+  "web:glob-to-regexp@0.4.1": {
+    "reason": "The published archive includes its complete license and copyright notice in README.md rather than a separate license file.",
+    "archive_document": {
+      "path": "README.md",
+      "start": "## License"
+    }
+  },
+  "web:imurmurhash@0.1.4": {
+    "reason": "The published archive includes its complete license and copyright notice in README.md rather than a separate license file.",
+    "archive_document": {
+      "path": "README.md",
+      "start": "License (MIT)"
+    }
+  },
+  "web:keyv@4.5.4": {
+    "reason": "The checksum-verified package manifest explicitly declares MIT. Upstream omits a separate license text. Preserve the published license and author metadata and supply the named standard MIT terms from SPDX. No copyright holder or year is inferred. Published package declares MIT but omits the license file. Preserve upstream copyright and license file from the pinned repository revision; this revision supplies missing notice text and is not asserted to be the package source revision.",
+    "declared_metadata": true,
+    "documents": [
+      {
+        "path": "legal/upstream/f3a25fb846504d92.txt",
+        "url": "https://raw.githubusercontent.com/jaredwray/keyv/0028843696c059f4b1bca69b28ac3df664a4e694/LICENSE",
+        "sha256": "f3a25fb846504d92627388f112f326ce91a9202e65d787d0b6ec79c96076d84d"
+      },
+      {
+        "path": "legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt",
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
+        "sha256": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958",
+        "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
+        "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+        "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+      }
+    ]
+  },
+  "web:lru_map@0.4.1": {
+    "reason": "The published archive includes its complete license and copyright notice in README.md rather than a separate license file.",
+    "archive_document": {
+      "path": "README.md",
+      "start": "# MIT license"
+    }
+  },
+  "web:natural-compare@1.4.0": {
+    "reason": "Published package declares MIT but omits the license file. Preserve upstream copyright and license file from the pinned repository revision; this revision supplies missing notice text and is not asserted to be the package source revision.",
+    "documents": [
+      {
+        "path": "legal/upstream/353fe762ba595bf1.txt",
+        "url": "https://raw.githubusercontent.com/litejs/natural-compare-lite/a8e1e32c85713ba7d079445207a808ce6f4852f9/LICENSE",
+        "sha256": "353fe762ba595bf1ffe786acf0f5984bb164205901d74f258af195fc8228c67d"
+      }
+    ]
+  },
+  "web:oxc-resolver@11.21.3": {
+    "reason": "License text recovered from the upstream repository at the published npm gitHead.",
+    "documents": [
+      {
+        "path": "legal/upstream/95ced5ecf1133fbf.txt",
+        "url": "https://raw.githubusercontent.com/oxc-project/oxc-resolver/517961d13419600470d74d0fe9d0ddb8ce36f7a5/LICENSE",
+        "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+      }
+    ]
+  },
+  "web:react-remove-scroll-bar@2.3.8": {
+    "reason": "Published package declares MIT but omits the license file. Preserve upstream copyright and license file from the pinned repository revision; this revision supplies missing notice text and is not asserted to be the package source revision.",
+    "documents": [
+      {
+        "path": "legal/upstream/a79aae0c0f21990d.txt",
+        "url": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/8ca9ba5ea52de03308fe8ced94f7b159a44d28ff/LICENSE",
+        "sha256": "a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84"
+      }
+    ]
+  },
+  "web:standardwebhooks@1.0.0": {
+    "reason": "License text recovered from the upstream repository at the published npm gitHead.",
+    "documents": [
+      {
+        "path": "legal/upstream/c71d239df91726fc.txt",
+        "url": "https://raw.githubusercontent.com/standard-webhooks/standard-webhooks/929bf0c1928b188287eaf88d0a9f0a4e87df6499/LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      }
+    ]
+  },
+  "web:@apm-js-collab/code-transformer-bundler-plugins@0.5.0": {
+    "reason": "The checksum-verified package manifest explicitly declares MIT. Upstream omits a separate license text. Preserve the published license and author metadata and supply the named standard MIT terms from SPDX. No copyright holder or year is inferred. ",
+    "declared_metadata": true,
+    "documents": [
+      {
+        "path": "legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt",
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
+        "sha256": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958",
+        "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
+        "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+        "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+      }
+    ]
+  },
+  "web:@tybys/wasm-util@0.10.2": {
+    "reason": "The checksum-verified package manifest explicitly declares MIT. Upstream omits a separate license text. Preserve the published license and author metadata and supply the named standard MIT terms from SPDX. No copyright holder or year is inferred.  The pinned @tybys/wasm-util source src/wasi/path.ts lines 25-42 explicitly attributes its Windows path resolver to Node.js lib/path.js. Upstream does not identify the copied Node.js revision. This additional attribution preserves the unmodified license comment from lib/path.js in Node.js v22.16.0, commit 9774069718d9f80578079d252dddf37ae6fd550d, a release predating the wasm-util copy. It is an attribution snapshot for the identified Node.js code, not a claim that this is the exact source revision or a license grant for wasm-util's own code. The document contains the original leading comment and blank line only, before 'use strict'. Pinned copy evidence: https://github.com/toyobayashi/wasm-util/blob/cded8e894fe40c7c6200a3fdb2bd33e328b7bb65/src/wasi/path.ts#L25-L42",
+    "declared_metadata": true,
+    "documents": [
+      {
+        "path": "legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt",
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
+        "sha256": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958",
+        "source_path": "legal/upstream/spdx-d46e94e2c78c-MIT.txt",
+        "source_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+        "transformation": "Remove only the template line Copyright (c) <year> <copyright holders> and its following blank line; preserve all license terms."
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nodejs/node/9774069718d9f80578079d252dddf37ae6fd550d/lib/path.js",
+        "path": "legal/upstream/nodejs-node-9774069718d9-path-LICENSE.txt",
+        "sha256": "36ad6fecf56b110df1453be95d352040f2ad0defcf2e5be1321b4cef353a33da"
+      }
+    ]
+  },
+  "web:@pierre/theming@0.0.1": {
+    "reason": "The checksum-verified package.json explicitly declares apache-2.0. No license file, repository URL, or copyright notice is supplied. Preserve published metadata and provide the standard Apache-2.0 terms. No copyright holder or year is inferred.",
+    "declared_metadata": true,
+    "documents": [
+      {
+        "path": "legal/upstream/apache-2.0.txt",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    ]
+  },
+  "web:@tailwindcss/oxide-wasm32-wasi@4.3.1": {
+    "reason": "The published native binding declares MIT. Retain exact-version Tailwind CSS project MIT license in addition to separately bundled dependency notices.",
+    "from_package": "web:tailwindcss@4.3.1"
+  },
+  "web:pagent@0.1.0": {
+    "reason": "Pagent declares Apache-2.0 in its upstream LICENSE at d0e8ba60e39e058d189d7dd121740afc30f32900. Compared with the bundled source revision 47b796c169381be68c43db20b7324c8172d82512, only LICENSE, AGENTS.md, and .scope/RULES.md changed; application code is unchanged. The original release archive omits the license and its package manifest has no license field. Preserve the upstream grant here for this exact archive.",
+    "upstream_license": "Apache-2.0",
+    "archive_sha256": "62792ab450d5a2d8dd29f474b29b705e069c2a120e79e2c807f138657001f618",
+    "documents": [
+      {
+        "path": "legal/upstream/pagent-d0e8ba60e39e-LICENSE",
+        "url": "https://github.com/adamblumoff/pagent/blob/d0e8ba60e39e058d189d7dd121740afc30f32900/LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    ]
+  }
+}

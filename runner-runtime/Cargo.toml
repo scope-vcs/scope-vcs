@@ -1,0 +1,27 @@
+[package]
+name = "scope-runner-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "scope-runner-runtime"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+libc.workspace = true
+reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls"] }
+scope_api_contract.workspace = true
+scope_cache_contract.workspace = true
+scope_cache_domain.workspace = true
+scope_domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tar = "0.4.44"
+tempfile.workspace = true
+zstd = "0.13.3"

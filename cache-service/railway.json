@@ -1,0 +1,20 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "watchPatterns": [
+      "/cache-service/**",
+      "/crates/scope-cache-contract/**",
+      "/crates/scope-cache-domain/**",
+      "/crates/scope-object-store/**",
+      "/crates/scope-postgres/**",
+      "/Cargo.toml",
+      "/Cargo.lock",
+      "/rust-toolchain.toml"
+    ]
+  },
+  "deploy": {
+    "startCommand": "exec ./bin/scope-cache-service",
+    "healthcheckPath": "/readyz",
+    "healthcheckTimeout": 60
+  }
+}

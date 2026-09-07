@@ -1,0 +1,289 @@
+//! Shared repository-content persistence for transactions with additional domain effects.
+
+use super::{
+    GeneratedIdSource, entities,
+    git_compaction::schedule_git_compaction,
+    git_segments::{load_git_pack_spans, publish_git_segment},
+    history_rows::{insert_commits, save_live_files},
+    landing_files::apply_repository_landing_file_mutation,
+    object_references::replace_object_reference,
+    outbox::enqueue_projection_read_model_rebuild,
+    push_triggers::enqueue_push_main_trigger_evaluation,
+    workflow_catalogs::apply_repository_workflow_catalog,
+};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseTransaction, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder,
+};
+use std::{collections::BTreeMap, time::Instant};
+use {
+    crate::error::PostgresError,
+    scope_domain::{
+        landing_file::RepositoryLandingFileMutation,
+        policy::{Policy, ScopePath},
+        repo_actions::reviewed_update_domain_error,
+        repo_config::RepoConfig,
+        repo_control::REPO_RULES_PATH,
+        repository::git::GitHead,
+        repository::updates::RequestMergeOrigin,
+        reviewed_updates::content::{
+            AcceptedContentPush, ContentPushState, ReviewedUpdateInput, accept_content_push,
+            accept_request_merge,
+        },
+        runs::catalog::RepositoryWorkflowCatalog,
+        runs::trigger::PushTriggerInput,
+    },
+};
+
+pub(super) async fn accept_and_persist_content_push(
+    tx: &DatabaseTransaction,
+    repo_row: entities::repository::Model,
+    update: ReviewedUpdateInput,
+    snapshots: RepositoryContentSnapshots,
+    push_trigger_input: PushTriggerInput,
+    now_unix: u64,
+    generated_ids: &dyn GeneratedIdSource,
+) -> Result<(GitHead, ContentPushPersistenceTiming), PostgresError> {
+    accept_and_persist_content_update(
+        tx,
+        repo_row,
+        update,
+        snapshots,
+        ContentUpdateKind::MainPush(push_trigger_input),
+        now_unix,
+        generated_ids,
+    )
+    .await
+}
+
+pub(super) async fn accept_and_persist_request_merge(
+    tx: &DatabaseTransaction,
+    repo_row: entities::repository::Model,
+    update: ReviewedUpdateInput,
+    snapshots: RepositoryContentSnapshots,
+    origin: RequestMergeOrigin,
+    now_unix: u64,
+    generated_ids: &dyn GeneratedIdSource,
+) -> Result<GitHead, PostgresError> {
+    let (git_head, _) = accept_and_persist_content_update(
+        tx,
+        repo_row,
+        update,
+        snapshots,
+        ContentUpdateKind::RequestMerge(origin),
+        now_unix,
+        generated_ids,
+    )
+    .await?;
+    Ok(git_head)
+}
+
+pub(super) struct ContentPushPersistenceTiming {
+    pub(super) load_live_files_us: u128,
+    pub(super) load_previous_commit_us: u128,
+    pub(super) load_git_head_us: u128,
+    pub(super) domain_apply_us: u128,
+    pub(super) repository_facts_us: u128,
+    pub(super) load_pack_spans_us: u128,
+    pub(super) history_rows_us: u128,
+    pub(super) live_file_rows_us: u128,
+    pub(super) landing_file_us: u128,
+    pub(super) workflow_catalog_us: u128,
+    pub(super) projection_us: u128,
+    pub(super) push_trigger_us: u128,
+}
+
+enum ContentUpdateKind {
+    MainPush(PushTriggerInput),
+    RequestMerge(RequestMergeOrigin),
+}
+
+pub(super) struct RepositoryContentSnapshots {
+    pub(super) landing_file_mutation: RepositoryLandingFileMutation,
+    pub(super) workflow_catalog: RepositoryWorkflowCatalog,
+}
+
+async fn accept_and_persist_content_update(
+    tx: &DatabaseTransaction,
+    repo_row: entities::repository::Model,
+    mut update: ReviewedUpdateInput,
+    snapshots: RepositoryContentSnapshots,
+    kind: ContentUpdateKind,
+    now_unix: u64,
+    generated_ids: &dyn GeneratedIdSource,
+) -> Result<(GitHead, ContentPushPersistenceTiming), PostgresError> {
+    let RepositoryContentSnapshots {
+        landing_file_mutation,
+        workflow_catalog,
+    } = snapshots;
+    let repo_id = repo_row.id.clone();
+    let mut changed_paths = update
+        .changes
+        .iter()
+        .map(|change| change.path.as_str().to_string())
+        .collect::<Vec<_>>();
+    if !changed_paths.iter().any(|path| path == REPO_RULES_PATH) {
+        changed_paths.push(REPO_RULES_PATH.to_string());
+    }
+    let load_live_files_started = Instant::now();
+    let live_files = entities::live_file::Entity::find()
+        .filter(entities::live_file::Column::RepoId.eq(&repo_id))
+        .filter(entities::live_file::Column::Path.is_in(changed_paths))
+        .all(tx)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(|row| {
+            Ok((
+                ScopePath::parse(row.path).map_err(PostgresError::internal)?,
+                serde_json::from_value(row.content).map_err(PostgresError::internal)?,
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, PostgresError>>()?;
+    let load_live_files_us = load_live_files_started.elapsed().as_micros();
+    let load_previous_commit_started = Instant::now();
+    let previous_commit = entities::logical_commit::Entity::find()
+        .filter(entities::logical_commit::Column::RepoId.eq(&repo_id))
+        .order_by_desc(entities::logical_commit::Column::Ordinal)
+        .one(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    let load_previous_commit_us = load_previous_commit_started.elapsed().as_micros();
+    let next_ordinal = previous_commit
+        .as_ref()
+        .map_or(0, |commit| commit.ordinal.saturating_add(1));
+    let repo_config: RepoConfig =
+        serde_json::from_value(repo_row.repo_config.clone()).map_err(PostgresError::internal)?;
+    let policy: Policy =
+        serde_json::from_value(repo_row.policy.clone()).map_err(PostgresError::internal)?;
+    let change_version = u64::try_from(repo_row.change_version).map_err(|_| {
+        PostgresError::internal_message("repository change version cannot be negative")
+    })?;
+    let load_git_head_started = Instant::now();
+    let git_head = entities::git_head::Entity::find_by_id(&repo_id)
+        .one(tx)
+        .await
+        .map_err(PostgresError::internal)?
+        .map(entities::git_head::Model::try_into_domain)
+        .transpose()?;
+    let load_git_head_us = load_git_head_started.elapsed().as_micros();
+    update.previous_config = Some(repo_config.clone());
+    let domain_apply_started = Instant::now();
+    let (accepted, push_trigger_input) = {
+        let state = ContentPushState {
+            change_version,
+            policy,
+            repo_config,
+            live_files,
+            git_head,
+        };
+        match kind {
+            ContentUpdateKind::MainPush(input) => (accept_content_push(state, update), Some(input)),
+            ContentUpdateKind::RequestMerge(origin) => {
+                (accept_request_merge(state, update, origin), None)
+            }
+        }
+    };
+    let accepted = accepted.map_err(reviewed_update_domain_error)?;
+    let domain_apply_us = domain_apply_started.elapsed().as_micros();
+    let AcceptedContentPush {
+        change_version,
+        policy,
+        git_head,
+        git_pack_span,
+        logical_commit,
+    } = accepted;
+    let workflow_catalog = workflow_catalog
+        .rebind_source_change_version(&repo_id, &git_head.head_oid, git_head.change_version)
+        .map_err(PostgresError::internal)?;
+
+    let repository_facts_started = Instant::now();
+    let persisted_change_version = i64::try_from(change_version).map_err(|_| {
+        PostgresError::internal_message("repository change version exceeds PostgreSQL bigint range")
+    })?;
+    let mut repo_update = repo_row.into_active_model();
+    repo_update.change_version = Set(persisted_change_version);
+    repo_update.policy = Set(serde_json::to_value(&policy).map_err(PostgresError::internal)?);
+    repo_update
+        .update(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    entities::git_head::Entity::delete_by_id(&repo_id)
+        .exec(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    entities::git_head::Model::from_domain(&repo_id, &git_head)?
+        .into_active_model()
+        .insert(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    replace_object_reference(tx, "git_manifest", &repo_id, Some(&git_head.manifest)).await?;
+    entities::git_pack_span::Model::from_domain(&repo_id, &git_pack_span)?
+        .into_active_model()
+        .insert(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    publish_git_segment(tx, &repo_id, &git_pack_span.segment, now_unix).await?;
+    schedule_git_compaction(tx, &repo_id, git_head.push_sequence, now_unix).await?;
+    let repository_facts_us = repository_facts_started.elapsed().as_micros();
+    let load_pack_spans_started = Instant::now();
+    let pinned_pack_spans = load_git_pack_spans(tx, &repo_id).await?;
+    let load_pack_spans_us = load_pack_spans_started.elapsed().as_micros();
+    let ordinal = usize::try_from(next_ordinal)
+        .map_err(|_| PostgresError::internal_message("logical commit ordinal is invalid"))?;
+    let history_rows_started = Instant::now();
+    insert_commits(tx, &repo_id, ordinal, std::slice::from_ref(&logical_commit)).await?;
+    let history_rows_us = history_rows_started.elapsed().as_micros();
+    let live_file_rows_started = Instant::now();
+    save_live_files(
+        tx,
+        &repo_id,
+        logical_commit
+            .changes
+            .iter()
+            .map(|change| (&change.path, change.new_content.as_ref())),
+    )
+    .await?;
+    let live_file_rows_us = live_file_rows_started.elapsed().as_micros();
+    let landing_file_started = Instant::now();
+    apply_repository_landing_file_mutation(tx, &repo_id, landing_file_mutation).await?;
+    let landing_file_us = landing_file_started.elapsed().as_micros();
+    let workflow_catalog_started = Instant::now();
+    apply_repository_workflow_catalog(tx, &workflow_catalog).await?;
+    let workflow_catalog_us = workflow_catalog_started.elapsed().as_micros();
+    let projection_started = Instant::now();
+    enqueue_projection_read_model_rebuild(tx, &repo_id, change_version, now_unix, generated_ids)
+        .await?;
+    let projection_us = projection_started.elapsed().as_micros();
+    let push_trigger_started = Instant::now();
+    if let Some(input) = push_trigger_input {
+        enqueue_push_main_trigger_evaluation(
+            tx,
+            &repo_id,
+            &git_head,
+            &pinned_pack_spans,
+            &input,
+            now_unix,
+            generated_ids,
+        )
+        .await?;
+    }
+    let push_trigger_us = push_trigger_started.elapsed().as_micros();
+    Ok((
+        git_head,
+        ContentPushPersistenceTiming {
+            load_live_files_us,
+            load_previous_commit_us,
+            load_git_head_us,
+            domain_apply_us,
+            repository_facts_us,
+            load_pack_spans_us,
+            history_rows_us,
+            live_file_rows_us,
+            landing_file_us,
+            workflow_catalog_us,
+            projection_us,
+            push_trigger_us,
+        },
+    ))
+}

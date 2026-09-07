@@ -1,0 +1,432 @@
+import type { RequestParams } from '@/api/types'
+import type { RepoChangeEvent } from '@/api/types.generated'
+import { useRepoChangeSubscription } from '@/features/repo-detail/repo-layout-context'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import {
+  readRequestDiscussionCache,
+  requestDiscussionCacheKey,
+  writeRequestDiscussionCache,
+} from './request-discussion-cache'
+import {
+  collectionFromPage,
+  type DiscussionCollection,
+  insertOptimisticDiscussion,
+  markDiscussionFailed,
+  markDiscussionRead,
+  mergeDiscussion,
+  orderedDiscussions,
+  reconcileDiscussionMutation,
+} from './request-discussion-model'
+import { createRequestDiscussionSync } from './request-discussion-sync'
+import type {
+  CreateDiscussionInput,
+  LoadDiscussionsInput,
+  MarkDiscussionReadInput,
+  RequestDiscussionActionInput,
+} from './request-discussion-api'
+import type {
+  RequestActorSummary,
+  RequestDiscussion,
+  RequestDiscussionChanges,
+  RequestDiscussionMutation,
+  RequestDiscussionPage,
+  RequestDiscussionView,
+} from './request-discussion-types'
+
+export type RequestDiscussionActions = {
+  create: (input: CreateDiscussionInput) => Promise<RequestDiscussionMutation>
+  load: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
+  loadChanges: (
+    input: RequestParams & { after: number },
+  ) => Promise<RequestDiscussionChanges>
+  markRead: (input: MarkDiscussionReadInput) => Promise<unknown>
+  resolve: (
+    input: RequestDiscussionActionInput,
+  ) => Promise<RequestDiscussionMutation>
+}
+
+export function useRequestDiscussionStore({
+  actions,
+  actor,
+  initialPage,
+  params,
+  repoId,
+}: {
+  actions: RequestDiscussionActions
+  actor: RequestActorSummary
+  initialPage: RequestDiscussionPage
+  params: RequestParams
+  repoId: string
+}) {
+  const key = requestDiscussionCacheKey({
+    repoId,
+    requestId: params.request_id,
+    viewerId: actor.id,
+  })
+  const [collection, setCollection] = useState(() =>
+    collectionWithCachedUi(initialPage, readRequestDiscussionCache(key)),
+  )
+  const [error, setError] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const collectionRef = useRef(collection)
+  const dataGenerationRef = useRef(0)
+  const activeKeyRef = useRef(key)
+  const syncContextRef = useRef({ actions, params })
+  syncContextRef.current = { actions, params }
+
+  const updateCollection = useCallback(
+    (
+      update: (current: DiscussionCollection) => DiscussionCollection,
+      dataChanged = true,
+    ) => {
+      const current = collectionRef.current
+      const next = update(current)
+      if (next === current) return
+      collectionRef.current = next
+      if (dataChanged) dataGenerationRef.current += 1
+      setCollection(next)
+    },
+    [],
+  )
+
+  const setCurrentCollection = useCallback((next: DiscussionCollection) => {
+    if (next === collectionRef.current) return
+    collectionRef.current = next
+    dataGenerationRef.current += 1
+    setCollection(next)
+  }, [])
+
+  const sync = useMemo(
+    () =>
+      createRequestDiscussionSync({
+        getCollection: () => collectionRef.current,
+        getDataGeneration: () => dataGenerationRef.current,
+        loadChanges: (after) => {
+          const context = syncContextRef.current
+          return context.actions.loadChanges({ ...context.params, after })
+        },
+        onCatchUpError: (requestError) => {
+          setError(
+            messageFor(
+              requestError,
+              'New discussion activity could not be loaded.',
+            ),
+          )
+        },
+        setCollection: setCurrentCollection,
+      }),
+    [setCurrentCollection],
+  )
+  const isCurrent = useCallback(
+    (operationKey: string) => activeKeyRef.current === operationKey,
+    [],
+  )
+
+  useEffect(() => {
+    const keyChanged = activeKeyRef.current !== key
+    activeKeyRef.current = key
+    if (keyChanged) {
+      setCurrentCollection(
+        collectionWithCachedUi(
+          initialPage,
+          readRequestDiscussionCache(key),
+        ),
+      )
+      setError(null)
+      setLoadingMore(false)
+    }
+    sync.reset(key)
+
+    async function initialize() {
+      if (!keyChanged) {
+        await sync.refresh(() =>
+          Promise.resolve(initialPage),
+        )
+      }
+      await sync.catchUp()
+    }
+    void initialize()
+
+    return () => {
+      sync.stop()
+    }
+  }, [initialPage, key, setCurrentCollection, sync])
+
+  useEffect(() => {
+    writeRequestDiscussionCache(key, collectionRef.current)
+  }, [collection, key])
+
+  const onRepoChange = useCallback(
+    (event: RepoChangeEvent) => {
+      if (event.kind === 'Lagged') {
+        void sync.catchUp({ lagged: true })
+        return
+      }
+      if (
+        typeof event.kind === 'object' &&
+        'RequestTimelineChanged' in event.kind &&
+        event.kind.RequestTimelineChanged.request_id === params.request_id &&
+        event.kind.RequestTimelineChanged.through_position >
+          collectionRef.current.snapshotVersion
+      ) {
+        void sync.catchUp({
+          target: event.kind.RequestTimelineChanged.through_position,
+        })
+      }
+    },
+    [params.request_id, sync],
+  )
+  useRepoChangeSubscription(onRepoChange)
+
+  const loadMore = useCallback(async () => {
+    const cursor = collection.nextCursor
+    if (!cursor || loadingMore) return
+    const operationKey = key
+    setLoadingMore(true)
+    setError(null)
+    try {
+      await sync.paginate(cursor, () => actions.load({ ...params, cursor }))
+    } catch (requestError) {
+      if (isCurrent(operationKey)) {
+        setError(messageFor(requestError, 'Older discussions could not be loaded.'))
+      }
+    } finally {
+      if (isCurrent(operationKey)) {
+        setLoadingMore(false)
+      }
+    }
+  }, [
+    actions,
+    collection.nextCursor,
+    isCurrent,
+    key,
+    loadingMore,
+    params,
+    sync,
+  ])
+
+  const create = useCallback(
+    async (
+      body: string,
+      clientDiscussionId: string = crypto.randomUUID(),
+    ) => {
+      const operationKey = key
+      const optimistic = optimisticDiscussion({
+        actor,
+        body,
+        clientDiscussionId,
+        requestId: params.request_id,
+      })
+      updateCollection((current) =>
+        insertOptimisticDiscussion(current, optimistic),
+      )
+      setError(null)
+      try {
+        const result = await actions.create({
+          ...params,
+          anchor: null,
+          body_markdown: body,
+          client_discussion_id: clientDiscussionId,
+        })
+        if (!isCurrent(operationKey)) {
+          return false
+        }
+        updateCollection((current) =>
+          reconcileDiscussionMutation(
+            current,
+            result.discussion,
+            clientDiscussionId,
+          ),
+        )
+        void sync.catchUp({
+          target: result.discussion.last_activity_position,
+        })
+        return true
+      } catch (requestError) {
+        if (isCurrent(operationKey)) {
+          updateCollection((current) =>
+            markDiscussionFailed(current, clientDiscussionId),
+          )
+          setError(messageFor(requestError, 'Discussion could not be posted.'))
+        }
+        return false
+      }
+    },
+    [actions, actor, isCurrent, key, params, sync, updateCollection],
+  )
+
+  const retry = useCallback(
+    (discussion: RequestDiscussionView) =>
+      discussion.body_markdown
+        ? create(discussion.body_markdown, discussion.id)
+        : Promise.resolve(false),
+    [create],
+  )
+
+  const patch = useCallback(
+    (discussion: RequestDiscussion) => {
+      if (
+        !isCurrent(key) ||
+        discussion.request_id !== params.request_id
+      ) {
+        return
+      }
+      updateCollection((current) => mergeDiscussion(current, discussion))
+      void sync.catchUp({ target: discussion.last_activity_position })
+    },
+    [isCurrent, key, params.request_id, sync, updateCollection],
+  )
+
+  const markRead = useCallback(
+    async (discussion: RequestDiscussion) => {
+      if (discussion.unread_count === 0) return
+      const operationKey = key
+      updateCollection((current) =>
+        markDiscussionRead(current, discussion.id),
+      )
+      try {
+        await actions.markRead({
+          ...params,
+          discussion_id: discussion.id,
+          through_position: discussion.last_activity_position,
+        })
+      } catch {
+        if (!isCurrent(operationKey)) {
+          return
+        }
+        updateCollection((current) => {
+          const existing = current.byId.get(discussion.id)
+          if (
+            !existing ||
+            existing.last_activity_position !==
+              discussion.last_activity_position
+          ) {
+            return current
+          }
+          return mergeDiscussion(current, {
+            ...existing,
+            unread_count: discussion.unread_count,
+          })
+        })
+      }
+    },
+    [actions, isCurrent, key, params, updateCollection],
+  )
+
+  const resolve = useCallback(
+    async (discussion: RequestDiscussion) => {
+      const operationKey = key
+      setError(null)
+      try {
+        const result = await actions.resolve({
+          ...params,
+          discussion_id: discussion.id,
+        })
+        if (isCurrent(operationKey)) {
+          patch(result.discussion)
+        }
+      } catch (requestError) {
+        if (isCurrent(operationKey)) {
+          setError(
+            messageFor(
+              requestError,
+              'Discussion could not be resolved.',
+            ),
+          )
+        }
+      }
+    },
+    [actions, isCurrent, key, params, patch],
+  )
+
+  const setExpanded = useCallback(
+    (discussionId: string, expanded: boolean) => {
+      updateCollection((current) => {
+        const discussion = current.byId.get(discussionId)
+        return discussion
+          ? mergeDiscussion(current, { ...discussion, expanded })
+          : current
+      }, false)
+    },
+    [updateCollection],
+  )
+
+  return {
+    cacheKey: key,
+    collection,
+    create,
+    discussions: orderedDiscussions(collection),
+    error,
+    loadMore,
+    loadingMore,
+    markRead,
+    patch,
+    retry,
+    setExpanded,
+    resolve,
+  }
+}
+
+function collectionWithCachedUi(
+  page: RequestDiscussionPage,
+  cached: ReturnType<typeof readRequestDiscussionCache>,
+) {
+  const collection = collectionFromPage(page)
+  if (!cached) return collection
+  const byId = new Map(collection.byId)
+  for (const [discussionId, discussion] of byId) {
+    const cachedDiscussion = cached.byId.get(discussionId)
+    if (cachedDiscussion?.expanded !== undefined) {
+      byId.set(discussionId, {
+        ...discussion,
+        expanded: cachedDiscussion.expanded,
+      })
+    }
+  }
+  return { ...collection, byId }
+}
+
+function optimisticDiscussion({
+  actor,
+  body,
+  clientDiscussionId,
+  requestId,
+}: {
+  actor: RequestActorSummary
+  body: string
+  clientDiscussionId: string
+  requestId: string
+}): RequestDiscussionView {
+  const position = Number.MAX_SAFE_INTEGER
+  return {
+    author: actor,
+    anchor: null,
+    body_markdown: body,
+    client_discussion_id: clientDiscussionId,
+    created_at_unix: Math.floor(Date.now() / 1000),
+    id: clientDiscussionId,
+    last_activity_position: position,
+    latest_replies: [],
+    opened_position: position,
+    pending: 'sending',
+    read_through_position: position,
+    reply_count: 0,
+    request_id: requestId,
+    resolved_at_unix: null,
+    resolved_by: null,
+    status: 'Open',
+    unread_count: 0,
+  }
+}
+
+function messageFor(error: unknown, fallback: string) {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : fallback
+}

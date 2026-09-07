@@ -1,0 +1,114 @@
+name: Scope CLI Deploy
+
+on:
+  workflow_call:
+    inputs:
+      verified_successful_sha:
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  deployments: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    name: Deploy scope-cli
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: scope-*
+          path: cli/dist
+          merge-multiple: true
+
+      - name: Download service
+        uses: actions/download-artifact@v8
+        with:
+          name: cli-service-release-${{ github.sha }}
+          path: artifacts
+
+      - name: Verify artifacts and write checksums
+        shell: bash
+        run: |
+          mapfile -t expected < <(jq -r '.targets[].artifact' cli/distribution/targets.json)
+
+          for artifact in "${expected[@]}"; do
+            test -s "cli/dist/$artifact"
+          done
+
+          (
+            cd cli/dist
+            for artifact in "${expected[@]}"; do
+              sha256sum "$artifact" > "$artifact.sha256"
+            done
+          )
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Stage Railway upload root
+        shell: bash
+        env:
+          VERIFIED_SUCCESSFUL_SHA: ${{ inputs.verified_successful_sha }}
+        run: |
+          rm -rf .railway-upload
+          mkdir -p .railway-upload/cli/bin .railway-upload/cli/dist
+          tar --extract --gzip \
+            --file artifacts/scope-cli-service.tar.gz \
+            --directory .railway-upload/cli/bin
+          cp -a cli/dist/. .railway-upload/cli/dist/
+          cp deploy/railway/prebuilt-cli.railpack.json .railway-upload/cli/railpack.json
+          install -m 0755 deploy/railway/start-prebuilt.sh .railway-upload/cli/start.sh
+          cp cli/railway.json .railway-upload/railway.json
+          chmod 0755 .railway-upload/cli/bin/scope-cli-service
+          printf '%s\n' "$GITHUB_SHA" > .railway-upload/cli/.scope-deployment-sha
+          if [[ "$VERIFIED_SUCCESSFUL_SHA" != "$GITHUB_SHA" ]]; then
+            printf '%s:%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > .railway-upload/cli/.scope-deployment-attempt
+          fi
+          test -x .railway-upload/cli/bin/scope-cli-service
+          test -s .railway-upload/cli/railpack.json
+          test -s .railway-upload/railway.json
+          test ! -e .railway-upload/Cargo.toml
+
+      - name: Install Railway CLI
+        run: |
+          railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
+          npm install -g "@railway/cli@$railway_cli_version"
+
+      - name: Deploy artifacts to Railway
+        shell: bash
+        env:
+          RAILWAY_DEPLOY_MESSAGE: ${{ github.event.head_commit.message || github.workflow }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SCOPE_DEPLOYMENT_COMPONENT: cli
+          SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
+          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ github.sha }}
+          SCOPE_VERIFIED_SUCCESSFUL_SHA: ${{ inputs.verified_successful_sha }}
+        run: |
+          manifest=.github/deployment-services.json
+          RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"
+          SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.railway.environmentId' "$manifest")"
+          export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
+          service_id="$(jq -r '.services.cli.id' "$manifest")"
+          bash .github/scripts/deploy-railway.sh "$service_id" .railway-upload
+
+      - name: Record successful Railway deployment
+        if: always()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node .github/scripts/production-deployment-progress.mjs record-file \
+            --file production-deployments.ndjson \
+            --log-url "$LOG_URL"
