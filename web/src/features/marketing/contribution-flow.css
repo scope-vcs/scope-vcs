@@ -577,12 +577,29 @@
 
 }
 
-/* Scene visibility depends on this timeline; the illustration has no playback controls. */
+/* Keep the review, its comment and its decision visible as one static scene. */
 @media (prefers-reduced-motion: reduce) {
   .marketing-page .contribution-flow *,
   .marketing-page .contribution-flow *::after {
-    animation-duration: var(--landing-request-cycle) !important;
-    animation-iteration-count: infinite !important;
+    animation: none !important;
+  }
+
+  .marketing-page .request-scene,
+  .marketing-page .request-state-stack span {
+    visibility: hidden;
+  }
+
+  .marketing-page .review-scene,
+  .marketing-page .request-state-stack .state-review {
+    visibility: visible;
+  }
+
+  .marketing-page .request-step:nth-child(-n+2)::after {
+    transform: scaleX(1);
+  }
+
+  .marketing-page .added-line::after {
+    display: none;
   }
 }
 

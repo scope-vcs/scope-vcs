@@ -86,38 +86,65 @@ test('landing visuals stay aligned and loop through public sharing, review and m
         assert(layout.dividers.every(([top, bottom]) => top === '0px' && bottom === '0px'))
       }
     }
-    // The illustrations are passive timelines, including with the app's reduced-motion preference.
-    for (const reducedMotion of ['no-preference', 'reduce']) {
-      await page.emulateMedia({ reducedMotion })
-      const frames = await page.evaluate(() => {
-        function seek(selector, time) {
-          const animations = document.querySelector(selector).getAnimations({ subtree: true })
-          for (const animation of animations) {
-            animation.pause()
-            animation.currentTime = time
-          }
-          return animations.length
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    const frames = await page.evaluate(() => {
+      function seek(selector, time) {
+        const animations = document.querySelector(selector).getAnimations({ subtree: true })
+        for (const animation of animations) {
+          animation.pause()
+          animation.currentTime = time
         }
-        const opacity = (selector) => Number(getComputedStyle(document.querySelector(selector)).opacity)
-        const sharing = [0, 4000, 8000].map((time) => {
-          const count = seek('.repository', time)
-          return { count, public: opacity('.shared-example'), private: opacity('.source-example .is-private') }
-        })
-        const requests = [0, 6500, 11500, 14000].map((time) => {
-          const count = seek('.contribution-flow', time)
-          return { count, scenes: ['.submission-scene', '.review-scene', '.merged-scene'].map(opacity) }
-        })
-        seek('.contribution-flow', 9300)
+        return animations.length
+      }
+      const opacity = (selector) => Number(getComputedStyle(document.querySelector(selector)).opacity)
+      const sharing = [0, 4000, 8000].map((time) => {
+        const count = seek('.repository', time)
+        return { count, public: opacity('.shared-example'), private: opacity('.source-example .is-private') }
+      })
+      const requests = [0, 6500, 11500, 14000].map((time) => {
+        const count = seek('.contribution-flow', time)
+        return { count, scenes: ['.submission-scene', '.review-scene', '.merged-scene'].map(opacity) }
+      })
+      seek('.contribution-flow', 9300)
+      const comment = document.querySelector('.maintainer-review').getBoundingClientRect()
+      const decision = document.querySelector('.review-decision').getBoundingClientRect()
+      return { sharing, requests, commentFits: comment.bottom <= decision.top }
+    })
+    assert(frames.sharing.every(({ count }) => count > 0))
+    assert.deepEqual(frames.sharing.map(({ public: shared }) => shared), [0, 1, 0])
+    assert.deepEqual(frames.sharing.map(({ private: hidden }) => hidden), [1, 0, 1])
+    assert(frames.requests.every(({ count }) => count > 0))
+    assert.deepEqual(frames.requests.map(({ scenes }) => scenes), [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]])
+    assert.equal(frames.commentFits, true)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    for (const width of [320, 768, 1440]) {
+      await page.setViewportSize({ width, height: 1000 })
+      await page.waitForFunction(
+        () => document.querySelector('.marketing-page').getAnimations({ subtree: true }).length === 0,
+      )
+      const still = await page.evaluate(() => {
+        const visible = (selector) => getComputedStyle(document.querySelector(selector)).visibility === 'visible'
         const comment = document.querySelector('.maintainer-review').getBoundingClientRect()
         const decision = document.querySelector('.review-decision').getBoundingClientRect()
-        return { sharing, requests, commentFits: comment.bottom <= decision.top }
+        return {
+          animations: document.querySelector('.marketing-page').getAnimations({ subtree: true }).length,
+          publicExamples: visible('.shared-example'),
+          privateLabel: visible('.source-example .is-private'),
+          publicLabel: visible('.source-example .is-public'),
+          scenes: ['.submission-scene', '.review-scene', '.merged-scene'].map(visible),
+          labels: ['.state-submitted', '.state-review', '.state-merged'].map(visible),
+          commentFits: comment.bottom <= decision.top,
+        }
       })
-      assert(frames.sharing.every(({ count }) => count > 0))
-      assert.deepEqual(frames.sharing.map(({ public: shared }) => shared), [0, 1, 0])
-      assert.deepEqual(frames.sharing.map(({ private: hidden }) => hidden), [1, 0, 1])
-      assert(frames.requests.every(({ count }) => count > 0))
-      assert.deepEqual(frames.requests.map(({ scenes }) => scenes), [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]])
-      assert.equal(frames.commentFits, true)
+      assert.deepEqual(still, {
+        animations: 0,
+        publicExamples: false,
+        privateLabel: true,
+        publicLabel: false,
+        scenes: [false, true, false],
+        labels: [false, true, false],
+        commentFits: true,
+      })
     }
   })
 })
