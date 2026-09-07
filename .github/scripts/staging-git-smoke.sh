@@ -97,7 +97,7 @@ git -C "$permissioned_checkout" \
 expected_head="$(git -C "$permissioned_checkout" rev-parse HEAD)"
 (
   cd "$permissioned_checkout"
-  SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" push --no-review --remote origin
+  SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" push --main --no-review --remote origin
 )
 
 GIT_TERMINAL_PROMPT=0 git -C "$public_checkout" -c credential.helper= fetch --quiet origin main

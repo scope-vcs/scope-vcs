@@ -55,6 +55,7 @@ case "$1" in
     printf 'scope-clone\n' >> "$TRACE_PATH"
     ;;
   push)
+    test "$*" = 'push --main --no-review --remote origin'
     printf 'scope-push\n' >> "$TRACE_PATH"
     ;;
   *) exit 2 ;;
