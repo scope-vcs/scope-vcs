@@ -270,18 +270,32 @@ fn real_cargo_cache_reuses_unchanged_checkout_and_rebuilds_changed_inputs() {
 
 #[test]
 fn inputs_changed_during_the_job_are_not_certified_as_unchanged() {
-    let fixture = Fixture::new();
-    let snapshot = fixture.snapshot();
-    fixture.replace("input.txt", "one", "two");
-    assert!(!fixture.build(None));
-    assert_eq!(fixture.output(), "1:two:A");
-    // Even reverting the contents after compiling must not bless the binary.
-    fixture.replace("input.txt", "two", "one");
-    fixture.save(&snapshot);
-    fixture.checkout();
-    fixture.restore();
-    assert!(!fixture.build(None));
-    assert_eq!(fixture.output(), "1:one:A");
+    for restore_timestamp in [false, true] {
+        let fixture = Fixture::new();
+        let snapshot = fixture.snapshot();
+        let original_modified = fs::metadata(fixture.workspace.join("input.txt"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        fixture.replace("input.txt", "one", "two");
+        assert!(!fixture.build(None));
+        assert_eq!(fixture.output(), "1:two:A");
+        // Even reverting the contents after compiling must not bless the binary.
+        fixture.replace("input.txt", "two", "one");
+        if restore_timestamp {
+            set_modified(
+                &fixture.workspace,
+                Path::new("input.txt"),
+                original_modified,
+            )
+            .unwrap();
+        }
+        fixture.save(&snapshot);
+        fixture.checkout();
+        fixture.restore();
+        assert!(!fixture.build(None));
+        assert_eq!(fixture.output(), "1:one:A");
+    }
 }
 
 #[test]
