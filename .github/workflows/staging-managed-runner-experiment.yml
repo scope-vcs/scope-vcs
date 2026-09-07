@@ -5,7 +5,7 @@ on:
     branches: [experiment/runner-economics]
     paths:
       - .github/workflows/staging-managed-runner-experiment.yml
-      - dev/runner-economics/observe-aws.sh
+      - dev/runner-economics/cleanup-aws.sh
 
 concurrency:
   group: scope-runner-economics-staging-8743c2e9
@@ -16,10 +16,10 @@ permissions:
   id-token: write
 
 jobs:
-  observe:
-    name: Observe isolated staging runners
+  cleanup:
+    name: Remove isolated staging runner infrastructure
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Configure temporary AWS role
@@ -27,27 +27,12 @@ jobs:
         with:
           aws-region: us-east-1
           role-to-assume: arn:aws:iam::957143340948:role/scope-staging-experiment-github-94d56973
-          role-session-name: scope-staging-managed-runner-${{ github.run_id }}
-      - name: Observe first measurement window
-        run: timeout 50m bash dev/runner-economics/observe-aws.sh /tmp/staging-runner-evidence/first
+          role-session-name: scope-staging-managed-runner-cleanup-${{ github.run_id }}
+      - name: Save final measurements and remove experiment resources
+        run: bash dev/runner-economics/cleanup-aws.sh /tmp/staging-runner-cleanup
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: staging-runner-evidence-first
-          path: /tmp/staging-runner-evidence/first
-          retention-days: 14
-      - name: Refresh temporary AWS role
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
-        with:
-          aws-region: us-east-1
-          role-to-assume: arn:aws:iam::957143340948:role/scope-staging-experiment-github-94d56973
-          role-session-name: scope-staging-managed-runner-${{ github.run_id }}-second
-          unset-current-credentials: true
-      - name: Observe second measurement window
-        run: timeout 50m bash dev/runner-economics/observe-aws.sh /tmp/staging-runner-evidence/second
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: staging-runner-evidence-second
-          path: /tmp/staging-runner-evidence/second
+          name: staging-runner-cleanup
+          path: /tmp/staging-runner-cleanup
           retention-days: 14
