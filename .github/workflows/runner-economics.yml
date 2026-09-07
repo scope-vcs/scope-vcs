@@ -4,6 +4,7 @@ on:
   push:
     branches: [experiment/runner-economics]
     paths:
+      - .github/workflows/runner-economics.yml
       - '.scope/runs/economics-*.yml'
       - dev/runner-economics/measure.mjs
       - dev/checks/backend
@@ -49,6 +50,8 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: d9289bd7737a22251c99dce9a7138f88cc9c4b06
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
           toolchain: 1.98.0
@@ -92,6 +95,8 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: d9289bd7737a22251c99dce9a7138f88cc9c4b06
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
           toolchain: 1.98.0
