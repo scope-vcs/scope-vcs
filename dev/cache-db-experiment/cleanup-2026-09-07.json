@@ -1,0 +1,94 @@
+{
+  "date": "2026-09-07",
+  "aws": {
+    "stackDeleted": true,
+    "ciRoleDeleted": true,
+    "dispatcherUserDeleted": true,
+    "experimentSecretsRemaining": 0,
+    "taskDefinitionStatuses": {
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_089c7d24e88f9c731cde1e55b9e9096c:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_0d167660189ef4296b0a837f29009aab:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_16a499bf72265adfebbb5b03790ef8e6:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_1e3d394efa8e7bf00e17d048419b5850:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_28de3dda93c44566610316b89906fa18:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_6c9fdd0820a2830da9255ef0327a0fdd:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_6d8d5ac27d106f6a92e31a26ed1d2945:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_7a20dd1dc5493b1188b3ce4b34e01dbd:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_8204388f8a21de31e4343ca918faaf47:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_8ad1c3e793bbf44691e1a5b3895ed9e1:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_91fe0988da02567e36585b9a8b7dff2c:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_968619548a771def2a3a8cc5ab04e9c1:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_9e9460cc6fce6c95523d218c041870ba:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_b23b0cc9f290afd27e11c4099f6b3b04:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_b79748a2152d37e1edc2275ae5d6b87c:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_b8e8ee6bde6e3adddf1f84768c3d6e8e:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_b995e18e2173676d0467dafb4fa4fa06:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_c418f5e471b06d5fa9fafbe16427875e:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_cc8ea25263d7f0eb868a7de994613639:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_d28d24c23dd53d29f6770d2e06a41537:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_d904c8447da526932ac4592195d1da51:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_e3472f6a0fddf7a28ff92bf14c82b81c:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_ebfab7479e8b77189ea33561eafcbc4c:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_f3a9a014dadba1fb476aba658d298273:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_f630db287eba31f9feb449d409b2eff1:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_f727169326cdfb680597f934d77f4f0a:1": "DELETE_IN_PROGRESS",
+      "arn:aws:ecs:us-east-1:957143340948:task-definition/scope-runner-attempt_fd3c85fc9ccabad8059f16df168df22e:1": "DELETE_IN_PROGRESS"
+    },
+    "workflow": "https://github.com/scope-vcs/scope-vcs/actions/runs/34161149240"
+  },
+  "cacheObjects": {
+    "prefix": "repos/dev/cache-db-experiment-20260907/",
+    "deleted": 11,
+    "remaining": 0
+  },
+  "fixtureRepository": {
+    "repository": "dev/cache-db-experiment-20260907",
+    "deleted": true,
+    "verifiedStatus": 404
+  },
+  "session": {
+    "revoked": true,
+    "localCredentialRemoved": true
+  },
+  "worker": {
+    "restoredKeys": [
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_REGION",
+      "SCOPE_ECS_CLUSTER_ARN",
+      "SCOPE_ECS_SUBNET_IDS",
+      "SCOPE_ECS_SECURITY_GROUP_ID",
+      "SCOPE_ECS_EXECUTION_ROLE_ARN",
+      "SCOPE_ECS_LOG_GROUP",
+      "SCOPE_ECS_SECRET_NAME_KEY",
+      "SCOPE_CLOUD_RUNS_ENABLED"
+    ],
+    "cloudRunsEnabled": false,
+    "experimentKeysAbsent": true,
+    "stopped": true
+  },
+  "services": [
+    {
+      "service": "api",
+      "deployment": "8a266b15-3b0e-4234-a366-128d320e5dd4",
+      "status": "REMOVED"
+    },
+    {
+      "service": "cache",
+      "deployment": "808255de-00a7-44da-98ee-a85eb74382db",
+      "status": "REMOVED"
+    }
+  ],
+  "sourceTrees": [
+    {
+      "measured": "c8354f512cf8ecc11ff5835a7414d166ae0a7984",
+      "github": "1719df6a",
+      "tree": "8f6171f2d81a6cea2d6050e02799db58e1cc4333"
+    },
+    {
+      "measured": "130eb16b627d9ff42befe6affe4dcbee557de149",
+      "github": "da1de403",
+      "tree": "2e7597a9bd679fd2392724458d260f20925d80dc"
+    }
+  ]
+}
