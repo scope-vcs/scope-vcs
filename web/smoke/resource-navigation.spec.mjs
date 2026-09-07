@@ -1,15 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { chromium } from 'playwright'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 
 const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000'
 const repo = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
-
-function serverFunctionName(request) {
-  try {
-    return JSON.parse(Buffer.from(new URL(request.url()).pathname.split('/').at(-1), 'base64url')).export
-  } catch { return '' }
-}
 
 test('latest repository activity survives child navigation without another request or pending state', async () => {
   const browser = await chromium.launch({ headless: true })

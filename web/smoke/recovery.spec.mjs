@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { chromium } from 'playwright'
 import { waitForClientHydration } from './request-changes-smoke.mjs'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 
 const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000'
 const repo = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
@@ -34,8 +35,7 @@ test('changes retry keeps the document and selected revision', async () => {
   try {
     let injected = false
     await page.route('**/_serverFn/**', async (route) => {
-      const id = new URL(route.request().url()).pathname.split('/').at(-1)
-      const name = JSON.parse(Buffer.from(id, 'base64url')).export
+      const name = serverFunctionName(route.request())
       if (!injected && name === 'loadChangesPage_createServerFn_handler') {
         injected = true
         await route.fulfill({
@@ -60,8 +60,7 @@ test('changes retry keeps the document and selected revision', async () => {
     const requests = []
     page.on('request', (request) => {
       if (request.url().includes('/_serverFn/')) {
-        const id = new URL(request.url()).pathname.split('/').at(-1)
-        requests.push(JSON.parse(Buffer.from(id, 'base64url')).export)
+        requests.push(serverFunctionName(request))
       }
     })
     await waitForClientHydration(page, retry)
