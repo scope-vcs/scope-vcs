@@ -105,6 +105,20 @@ body {
 }
 
 @theme inline {
+  --color-landing-bg: var(--landing-bg);
+  --color-landing-paper: var(--landing-paper);
+  --color-landing-panel: var(--landing-panel);
+  --color-landing-ink: var(--landing-ink);
+  --color-landing-muted: var(--landing-muted);
+  --color-landing-faint: var(--landing-faint);
+  --color-landing-line: var(--landing-line);
+  --color-landing-green: var(--landing-green);
+  --color-landing-green-soft: var(--landing-green-soft);
+  --text-landing-title: var(--landing-figure-title);
+  --text-landing-body: var(--landing-figure-body);
+  --text-landing-meta: var(--landing-figure-meta);
+
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

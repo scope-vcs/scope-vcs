@@ -1,23 +1,4 @@
-.marketing-page .contribution-flow {
-  --landing-request-cycle: 14s;
-  min-width: 0;
-}
-
-.marketing-page .request-progress {
-  display: grid;
-  grid-template-columns: repeat(3,minmax(0,1fr));
-  gap: 14px;
-  margin-bottom: 24px;
-}
-
-.marketing-page .request-step {
-  position: relative;
-  padding: 0 0 12px;
-  color: var(--landing-muted);
-  border-bottom: 1px solid var(--landing-line);
-}
-
-.marketing-page .request-step:after {
+.marketing-page .request-step::after {
   content: '';
   position: absolute;
   inset: auto 0 -1px;
@@ -27,158 +8,31 @@
   transform-origin: left;
 }
 
-.marketing-page .request-step:nth-child(1):after {
+.marketing-page .request-step:nth-child(1)::after {
   animation: landing-submission-progress var(--landing-request-cycle) ease-in-out infinite;
 }
 
-.marketing-page .request-step:nth-child(2):after {
+.marketing-page .request-step:nth-child(2)::after {
   animation: landing-reviewing-progress var(--landing-request-cycle) ease-in-out infinite;
 }
 
-.marketing-page .request-step:nth-child(3):after {
+.marketing-page .request-step:nth-child(3)::after {
   animation: landing-merging-progress var(--landing-request-cycle) ease-in-out infinite;
 }
 
-.marketing-page .request-sheet {
-  --landing-request-inset: 18px;
-  border-top: 1px solid var(--landing-line);
-  border-bottom: 1px solid var(--landing-line);
-  background: var(--landing-paper);
-  position: relative;
-}
-
-.marketing-page .request-heading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 65px;
-  padding: 16px var(--landing-request-inset) 16px 0;
-  border-bottom: 1px solid var(--landing-line);
-}
-
-.marketing-page .request-heading>.icon {
-  width: 18px;
-  height: 18px;
-  color: var(--landing-green);
-}
-
-.marketing-page .request-heading h3 {
-  font: 500 var(--landing-figure-title)/1.35 var(--landing-sans);
-  letter-spacing: 0;
-  margin: 0;
-  min-width: 0;
-}
-
-.marketing-page .request-state-stack {
-  position: relative;
-  margin-left: auto;
-  width: 9ch;
-  white-space: nowrap;
-  height: 20px;
-  flex-shrink: 0;
-  font: var(--landing-figure-meta)/20px var(--landing-mono);
-  text-align: right;
-  color: var(--landing-muted);
-}
-
-.marketing-page .request-state-stack span {
-  position: absolute;
-  inset: 0;
-}
-
-.marketing-page .request-state-stack .state-submitted {
+.marketing-page .submission-scene,
+.marketing-page .state-submitted {
   animation: landing-submission-scene var(--landing-request-cycle) ease-in-out infinite;
 }
 
-.marketing-page .request-state-stack .state-review {
-  animation: landing-review-scene var(--landing-request-cycle) ease-in-out infinite;
-  color: var(--landing-green);
-}
-
-.marketing-page .request-state-stack .state-merged {
-  animation: landing-merged-scene var(--landing-request-cycle) ease-in-out infinite;
-  color: var(--landing-green);
-}
-
-.marketing-page .request-scenes {
-  position: relative;
-  height: 280px;
-  overflow: hidden;
-}
-
-.marketing-page .request-scene {
-  position: absolute;
-  inset: 0;
-  padding: 22px var(--landing-request-inset) 18px 0;
-  pointer-events: none;
-  will-change: opacity,transform;
-}
-
-.marketing-page .submission-scene {
-  animation: landing-submission-scene var(--landing-request-cycle) ease-in-out infinite;
-}
-
-.marketing-page .review-scene {
+.marketing-page .review-scene,
+.marketing-page .state-review {
   animation: landing-review-scene var(--landing-request-cycle) ease-in-out infinite;
 }
 
-.marketing-page .merged-scene {
+.marketing-page .merged-scene,
+.marketing-page .state-merged {
   animation: landing-merged-scene var(--landing-request-cycle) ease-in-out infinite;
-}
-
-.marketing-page .scene-context {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font: var(--landing-figure-title)/20px var(--landing-sans);
-  font-weight: 500;
-  margin-bottom: 15px;
-}
-
-.marketing-page .scene-context .icon {
-  width: 15px;
-  height: 15px;
-  color: var(--landing-muted);
-}
-
-.marketing-page .scene-tree {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.marketing-page .scene-file {
-  height: 40px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font: var(--landing-figure-body) var(--landing-mono);
-  border-radius: 3px;
-  position: relative;
-}
-
-.marketing-page .scene-file>.icon {
-  width: 15px;
-  height: 15px;
-  color: var(--landing-muted);
-}
-
-.marketing-page .scene-file .file-state {
-  margin-left: auto;
-  color: var(--landing-green);
-  font: var(--landing-figure-meta) var(--landing-mono);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.marketing-page .scene-file .file-state .icon {
-  width: 12px;
-  height: 12px;
-}
-
-.marketing-page .scene-file .private-state {
-  color: var(--landing-muted);
 }
 
 .marketing-page .submitted-file {
@@ -189,69 +43,7 @@
   animation: landing-merge-file-glow var(--landing-request-cycle) ease-in-out infinite;
 }
 
-.marketing-page .scene-receipt {
-  position: absolute;
-  bottom: 21px;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--landing-muted);
-}
-
-.marketing-page .scene-receipt .icon {
-  height: 14px;
-  width: 14px;
-  color: var(--landing-green);
-}
-
-.marketing-page .review-file-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  font: var(--landing-figure-body) var(--landing-mono);
-  margin-bottom: 13px;
-}
-
-.marketing-page .review-file-header>span:first-child {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.marketing-page .review-file-header .icon {
-  height: 14px;
-  width: 14px;
-  color: var(--landing-muted);
-}
-
-.marketing-page .review-file-header>span:last-child {
-  color: var(--landing-green);
-}
-
-.marketing-page .review-code {
-  font: var(--landing-figure-body)/1.9 var(--landing-mono);
-  margin: 0;
-  color: var(--landing-muted);
-}
-
-.marketing-page .review-code>span {
-  display: block;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  padding-inline: 8px;
-}
-
-.marketing-page .review-code .added-line {
-  position: relative;
-  color: var(--landing-green);
-  background: var(--landing-green-soft);
-  overflow: hidden;
-}
-
-.marketing-page .added-line:after {
+.marketing-page .added-line::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -261,50 +53,11 @@
 }
 
 .marketing-page .maintainer-review {
-  display: grid;
-  grid-template-columns: 26px minmax(0,1fr);
-  gap: 10px;
-  margin-top: 19px;
   animation: landing-review-comment var(--landing-request-cycle) ease-in-out infinite;
 }
 
-.marketing-page .reviewer-mark {
-  height: 26px;
-  width: 26px;
-  border: 1px solid var(--landing-line);
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: var(--landing-muted);
-  font: 11px var(--landing-mono);
-  background: var(--landing-panel);
-}
-
-.marketing-page .reviewer-name {
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.marketing-page .review-comment-text {
-  margin-top: 4px;
-  color: var(--landing-muted);
-  line-height: 1.5;
-}
-
 .marketing-page .review-decision {
-  position: absolute;
-  bottom: 20px;
-  left: 36px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--landing-green);
   animation: landing-review-decision var(--landing-request-cycle) ease-in-out infinite;
-}
-
-.marketing-page .review-decision .icon {
-  width: 14px;
-  height: 14px;
 }
 
 @keyframes landing-submission-scene {
@@ -519,64 +272,6 @@
   }
 }
 
-@media(max-width:520px) {
-  .marketing-page .request-sheet {
-    --landing-request-inset: 12px;
-  }
-
-  .marketing-page .request-progress {
-    gap: 10px;
-    margin-bottom: 19px;
-  }
-
-
-
-  .marketing-page .request-heading {
-    gap: 8px;
-    min-height: 70px;
-  }
-
-  .marketing-page .request-heading h3 {
-    max-width: 195px;
-  }
-
-  .marketing-page .request-heading>.icon {
-    display: none;
-  }
-
-  .marketing-page .request-scene {
-    padding-top: 19px;
-  }
-
-  .marketing-page .review-code {
-    line-height: 1.8;
-  }
-
-  .marketing-page .maintainer-review {
-    margin-top: 16px;
-  }
-
-
-
-  .marketing-page .review-decision {
-    bottom: 18px;
-  }
-}
-
-@media(max-width:360px) {
-  .marketing-page .request-heading h3 {
-    max-width: 175px;
-  }
-
-  .marketing-page .review-code>span {
-    padding-inline: 5px;
-  }
-
-
-
-
-}
-
 /* Keep the review, its comment and its decision visible as one static scene. */
 @media (prefers-reduced-motion: reduce) {
   .marketing-page .contribution-flow *,
@@ -601,10 +296,4 @@
   .marketing-page .added-line::after {
     display: none;
   }
-}
-
-.marketing-page .scene-branch {
-  color: var(--landing-muted);
-  font: var(--landing-figure-meta) var(--landing-mono);
-  margin-left: auto;
 }
