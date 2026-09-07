@@ -29,15 +29,16 @@ export function RequestContextRail({
   const [mobileOpen, setMobileOpen] = useState(false)
   return (
     <aside className="request-context-rail min-w-0 xl:col-start-2 xl:row-start-1 xl:row-span-3 border-y border-border px-5 py-4 xl:border-y-0 xl:border-l xl:py-6">
-      <details
-        open={desktop || mobileOpen}
-        onToggle={(event) => {
-          if (!desktop && event.target === event.currentTarget) {
-            setMobileOpen(event.currentTarget.open)
-          }
-        }}
-      >
-        <summary className="cursor-pointer text-sm font-medium xl:hidden">details</summary>
+      <details open={desktop || mobileOpen}>
+        <summary
+          className="cursor-pointer text-sm font-medium xl:hidden"
+          onClick={(event) => {
+            event.preventDefault()
+            if (!desktop) setMobileOpen((open) => !open)
+          }}
+        >
+          details
+        </summary>
         <div className="grid min-w-0 gap-6 pt-5 xl:pt-0">
           <RailSection title="lifecycle">
             <RailValue label="Author" value={requestAuthorRoleLabel(request)} />
