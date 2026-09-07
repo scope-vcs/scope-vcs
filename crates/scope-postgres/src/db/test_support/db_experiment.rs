@@ -184,6 +184,13 @@ pub(super) async fn connect_template_store(
 }
 
 pub(super) async fn drop_database(admin_url: &str, name: &str) {
+    // Slow DROP DATABASE operations must not accumulate one admin connection per
+    // completed test while the next tests are already opening their own pools.
+    static CLEANUPS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+    let _permit = CLEANUPS
+        .acquire()
+        .await
+        .expect("cleanup semaphore stays open");
     let Ok(admin) = Database::connect(admin_url).await else {
         return;
     };
