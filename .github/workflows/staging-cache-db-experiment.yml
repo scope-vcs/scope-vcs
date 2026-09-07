@@ -1,0 +1,66 @@
+name: Scope staging cache database experiment
+
+on:
+  push:
+    branches: [experiment/cache-db-staging]
+    paths:
+      - dev/cache-db-experiment/aws-request.json
+      - .github/workflows/staging-cache-db-experiment.yml
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Disposable experiment operation
+        type: choice
+        required: true
+        default: observe
+        options: [provision, observe, cleanup]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scope-cache-db-staging-20260907
+  cancel-in-progress: false
+
+jobs:
+  experiment:
+    if: github.ref == 'refs/heads/experiment/cache-db-staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure experiment role
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::957143340948:role/scope-cache-db-staging-20260907-ci-admin
+          role-session-name: scope-cache-db-${{ github.run_id }}
+          allowed-account-ids: '957143340948'
+
+      - name: Prepare experiment template
+        run: |
+          python3 -m pip install --user PyYAML==6.0.2
+          mkdir -p "$RUNNER_TEMP/cache-db-evidence"
+          python3 dev/cache-db-experiment/create-template.py "$RUNNER_TEMP/cache-db-template.json"
+
+      - name: Run experiment operation
+        env:
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+        run: >-
+          python3 dev/cache-db-experiment/aws-operation.py
+          --template "$RUNNER_TEMP/cache-db-template.json"
+          --evidence "$RUNNER_TEMP/cache-db-evidence"
+
+      - name: Upload experiment evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cache-db-aws-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cache-db-evidence/
+          if-no-files-found: warn
+          retention-days: 3

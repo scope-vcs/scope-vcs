@@ -46,17 +46,23 @@ use {
 };
 
 #[cfg(any(test, feature = "test-support"))]
+mod db_experiment;
+
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Debug)]
 pub struct TestDatabaseTarget {
     database_url: String,
     schema_name: String,
+    experiment_lease: Arc<tokio::sync::Mutex<std::sync::Weak<TestSchemaLease>>>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
+#[derive(Debug)]
 pub(super) struct TestSchemaLease {
     database: Arc<sea_orm::DatabaseConnection>,
     database_url: String,
     schema_name: String,
+    experiment_database: Option<(String, String)>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -65,8 +71,14 @@ impl Drop for TestSchemaLease {
         let database_url = self.database_url.clone();
         let schema_name = self.schema_name.clone();
         let database = Arc::clone(&self.database);
+        let experiment_database = self.experiment_database.clone();
         test_runtime().spawn(async move {
+            let _timer = db_experiment::Timer::new("cleanup", &schema_name);
             let _ = database.close_by_ref().await;
+            if let Some((admin_url, database_name)) = experiment_database {
+                db_experiment::drop_database(&admin_url, &database_name).await;
+                return;
+            }
             let Ok(db) = Database::connect(database_url).await else {
                 return;
             };
@@ -95,6 +107,7 @@ impl TestDatabaseTarget {
         Ok(Self {
             database_url,
             schema_name: unique_test_schema_name(),
+            experiment_lease: Arc::default(),
         })
     }
 
@@ -114,10 +127,18 @@ impl TestDatabaseTarget {
 
 #[cfg(any(test, feature = "test-support"))]
 pub fn connect_postgres_test_store(target: &TestDatabaseTarget) -> anyhow::Result<MetadataStore> {
+    if db_experiment::template_enabled()? {
+        let target = target.clone();
+        return run_test_future(
+            async move { db_experiment::connect_template_store(&target).await },
+        );
+    }
     let postgres_database_url = Arc::from(target.database_url.clone());
     let target = target.clone();
     let (db, test_schema) = run_test_future(async move {
+        let _timer = db_experiment::Timer::new("store_setup", &target.schema_name);
         let (db, test_schema) = connect_isolated_test_database(&target).await?;
+        let _timer = db_experiment::Timer::new("migrate", &target.schema_name);
         crate::migrations::apply_in_maintenance(db.as_ref()).await?;
         Ok::<_, anyhow::Error>((db, test_schema))
     })?;
@@ -133,7 +154,10 @@ pub fn connect_postgres_test_store(target: &TestDatabaseTarget) -> anyhow::Resul
 pub(super) async fn connect_isolated_test_database(
     target: &TestDatabaseTarget,
 ) -> anyhow::Result<(Arc<DatabaseConnection>, Arc<TestSchemaLease>)> {
+    let timer = db_experiment::Timer::new("admin_connect", &target.schema_name);
     let admin = Database::connect(&target.database_url).await?;
+    drop(timer);
+    let timer = db_experiment::Timer::new("schema_create", &target.schema_name);
     admin
         .execute(Statement::from_string(
             admin.get_database_backend(),
@@ -143,17 +167,20 @@ pub(super) async fn connect_isolated_test_database(
             ),
         ))
         .await?;
+    drop(timer);
 
     let mut options = ConnectOptions::new(target.database_url.clone());
     options
         .max_connections(8)
         .min_connections(1)
         .set_schema_search_path(target.schema_name.clone());
+    let _timer = db_experiment::Timer::new("pool_connect", &target.schema_name);
     let db = Arc::new(Database::connect(options).await?);
     let test_schema = Arc::new(TestSchemaLease {
         database: Arc::clone(&db),
         database_url: target.database_url.clone(),
         schema_name: target.schema_name.clone(),
+        experiment_database: None,
     });
     Ok((db, test_schema))
 }
@@ -504,6 +531,7 @@ async fn seed_catalog(
     conn: &sea_orm::DatabaseConnection,
     catalog: CatalogFixture,
 ) -> Result<(), PostgresError> {
+    let _timer = db_experiment::Timer::new("catalog_fixture", "catalog");
     let tx = conn.begin().await.map_err(PostgresError::internal)?;
     seed_catalog_rows(&tx, catalog).await?;
     tx.commit().await.map_err(PostgresError::internal)
