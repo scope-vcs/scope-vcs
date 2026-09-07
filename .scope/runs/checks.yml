@@ -66,7 +66,7 @@ jobs:
       - name: Check Rust workspace
         run: |
           service postgresql start
-          su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN PASSWORD 'scope'\""
+          su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN CREATEDB PASSWORD 'scope'\""
           su postgres -c "createdb --owner=scope scope_test"
           ./dev/checks/backend with-api
   cli-checks:

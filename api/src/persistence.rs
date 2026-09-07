@@ -3,13 +3,16 @@ use std::{fs, path::Path};
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_data_dir() -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("test clock must be after UNIX epoch")
         .as_nanos();
     std::env::temp_dir().join(format!(
-        "scope-vcs-test-data-{}-{nanos}",
-        std::process::id()
+        "scope-vcs-test-data-{}-{nanos}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
     ))
 }
 

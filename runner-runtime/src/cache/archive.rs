@@ -1,12 +1,29 @@
-use anyhow::Context as _;
+use super::{files, sources::SourceSnapshot};
+use anyhow::{Context as _, bail};
 use scope_cache_domain::MAX_CACHE_OBJECT_BYTES;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use std::{
     fs,
     io::{Read, Write},
     os::unix::fs::PermissionsExt as _,
     path::Path,
+    time::{Duration, SystemTime},
 };
+
+const METADATA_PATH: &str = ".scope-cache.json";
+const MAX_METADATA_BYTES: u64 = 32 * 1024 * 1024;
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ArchiveMetadata {
+    sources: Option<SourceSnapshot>,
+}
+
+pub(super) struct RestoredArchive {
+    pub(super) sources: Option<SourceSnapshot>,
+    pub(super) newest_output: SystemTime,
+}
 
 pub(super) fn reset_cache_directory(path: &Path) -> anyhow::Result<()> {
     fs::remove_dir_all(path)
@@ -14,15 +31,80 @@ pub(super) fn reset_cache_directory(path: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(path).with_context(|| format!("recreate cache directory {}", path.display()))
 }
 
-pub(super) fn extract_archive(archive: &Path, destination: &Path) -> anyhow::Result<()> {
+pub(super) fn extract_archive(
+    archive: &Path,
+    destination: &Path,
+    source_root: Option<&Path>,
+) -> anyhow::Result<RestoredArchive> {
     let file = fs::File::open(archive)?;
     let decoder = zstd::Decoder::new(file).context("open compressed cache")?;
-    tar::Archive::new(decoder)
-        .unpack(destination)
-        .context("extract cache archive")
+    let mut archive = tar::Archive::new(decoder);
+    let mut metadata = None;
+    let mut directories = Vec::new();
+    let mut newest_output = SystemTime::UNIX_EPOCH;
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.into_owned();
+        files::validate_relative(&path)?;
+        if path == Path::new(METADATA_PATH) {
+            if metadata.is_some()
+                || !entry.header().entry_type().is_file()
+                || entry.size() > MAX_METADATA_BYTES
+            {
+                bail!("invalid cache archive metadata entry");
+            }
+            metadata = Some(serde_json::from_reader::<_, ArchiveMetadata>(&mut entry)?);
+            continue;
+        }
+        if path.starts_with(METADATA_PATH) {
+            bail!("cache payload overlaps its metadata");
+        }
+        let kind = entry.header().entry_type();
+        if !(kind.is_file() || kind.is_dir() || kind.is_symlink()) {
+            bail!("unsupported cache archive entry type");
+        }
+        let modified = entry_modified(&mut entry)?;
+        newest_output = newest_output.max(modified);
+        if !entry
+            .unpack_in(destination)
+            .context("extract cache archive entry")?
+        {
+            bail!("cache archive entry escapes its destination");
+        }
+        if kind.is_dir() {
+            directories.push((path, modified));
+        } else {
+            files::set_modified(destination, &path, modified)?;
+        }
+    }
+    let metadata = metadata.context("cache archive metadata is missing")?;
+    if let Some(sources) = &metadata.sources {
+        sources.validate()?;
+    }
+    match (source_root, &metadata.sources) {
+        (Some(root), Some(sources)) if root == sources.root => {}
+        (None, None) => {}
+        _ => bail!("cache source metadata does not match this workspace"),
+    }
+    // A clock-skewed cache could otherwise make newly generated build inputs
+    // appear older than their cached outputs.
+    if newest_output > SystemTime::now() {
+        bail!("cache contains future output timestamps");
+    }
+    for (path, modified) in directories.into_iter().rev() {
+        files::set_modified(destination, &path, modified)?;
+    }
+    Ok(RestoredArchive {
+        sources: metadata.sources,
+        newest_output,
+    })
 }
 
-pub(super) fn create_archive(source: &Path, destination: &Path) -> anyhow::Result<(u64, String)> {
+pub(super) fn create_archive(
+    source: &Path,
+    destination: &Path,
+    sources: Option<&SourceSnapshot>,
+) -> anyhow::Result<(u64, String)> {
     let file = fs::OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -31,6 +113,19 @@ pub(super) fn create_archive(source: &Path, destination: &Path) -> anyhow::Resul
     let encoder = zstd::Encoder::new(bounded, 3).context("create compressed cache")?;
     let mut archive = tar::Builder::new(encoder);
     append_directory_contents(&mut archive, source, Path::new(""))?;
+    let metadata = serde_json::to_vec(&ArchiveMetadata {
+        sources: sources.map(SourceSnapshot::for_save).transpose()?,
+    })?;
+    if metadata.len() as u64 > MAX_METADATA_BYTES {
+        bail!("cache source metadata is too large");
+    }
+    let mut header = normalized_header(tar::EntryType::Regular, metadata.len() as u64, 0o644)?;
+    append_entry(
+        &mut archive,
+        &mut header,
+        Path::new(METADATA_PATH),
+        metadata.as_slice(),
+    )?;
     let encoder = archive.into_inner()?;
     let writer = encoder.finish()?;
     Ok(writer.identity())
@@ -48,10 +143,14 @@ fn append_directory_contents<W: Write>(
     entries.sort_by_key(fs::DirEntry::file_name);
     for entry in entries {
         let relative_path = relative.join(entry.file_name());
+        if relative_path == Path::new(METADATA_PATH) {
+            bail!("cache contains reserved runtime metadata path {METADATA_PATH}");
+        }
         let path = entry.path();
         let metadata = fs::symlink_metadata(&path)
             .with_context(|| format!("read cache entry metadata {}", path.display()))?;
         let file_type = metadata.file_type();
+        append_modified(archive, metadata.modified()?)?;
         if file_type.is_dir() {
             let mut header = normalized_header(tar::EntryType::Directory, 0, 0o755)?;
             append_entry(archive, &mut header, &relative_path, std::io::empty())?;
@@ -81,6 +180,50 @@ fn append_directory_contents<W: Write>(
         }
     }
     Ok(())
+}
+
+fn append_modified<W: Write>(
+    archive: &mut tar::Builder<W>,
+    modified: SystemTime,
+) -> anyhow::Result<()> {
+    let time = modified.duration_since(SystemTime::UNIX_EPOCH)?;
+    let value = format!("{}.{:09}", time.as_secs(), time.subsec_nanos());
+    archive.append_pax_extensions([("mtime", value.as_bytes())])?;
+    Ok(())
+}
+
+fn entry_modified<R: Read>(entry: &mut tar::Entry<'_, R>) -> anyhow::Result<SystemTime> {
+    let mut modified = None;
+    for extension in entry
+        .pax_extensions()?
+        .context("cache timestamp is missing")?
+    {
+        let extension = extension?;
+        if extension.key_bytes() != b"mtime" {
+            continue;
+        }
+        if modified.is_some() {
+            bail!("cache timestamp is duplicated");
+        }
+        let (seconds, nanos) = extension
+            .value()?
+            .split_once('.')
+            .context("cache timestamp is invalid")?;
+        if nanos.len() != 9 {
+            bail!("cache timestamp precision is invalid");
+        }
+        let nanos = nanos.parse::<u32>()?;
+        if nanos >= 1_000_000_000 {
+            bail!("cache timestamp nanoseconds are invalid");
+        }
+        let duration = Duration::new(seconds.parse::<u64>()?, nanos);
+        modified = Some(
+            SystemTime::UNIX_EPOCH
+                .checked_add(duration)
+                .context("cache timestamp overflow")?,
+        );
+    }
+    modified.context("cache timestamp is missing")
 }
 
 fn normalized_header(

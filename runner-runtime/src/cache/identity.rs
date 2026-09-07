@@ -1,7 +1,8 @@
+use super::files;
 use anyhow::Context as _;
 use scope_domain::runs::cache::definition::CacheKeyInputs;
 use sha2::{Digest as _, Sha256};
-use std::{fs, io::Read, os::unix::fs::OpenOptionsExt as _, path::Path};
+use std::{fs, io::Read, os::unix::ffi::OsStrExt as _, path::Path};
 
 pub(super) const MAX_CACHE_KEY_FILE_BYTES: u64 = 8 * 1024 * 1024;
 pub(super) fn digest_inputs(
@@ -19,7 +20,13 @@ pub(super) fn digest_inputs_at(
     git_oid: &str,
 ) -> anyhow::Result<String> {
     let mut digest = Sha256::new();
-    digest.update(b"scope-cache-inputs-v1");
+    // Timestamp-preserving archives and the stable checkout path cannot reuse
+    // entries written by the previous runtime cache format.
+    digest.update(b"scope-cache-inputs-v2");
+    let workspace = fs::canonicalize(root).context("resolve cache input workspace")?;
+    let workspace_bytes = workspace.as_os_str().as_bytes();
+    digest.update((workspace_bytes.len() as u64).to_be_bytes());
+    digest.update(workspace_bytes);
     for path in inputs.files() {
         update_component(&mut digest, "file");
         update_component(&mut digest, path);
@@ -65,46 +72,21 @@ pub(super) fn open_key_file(
     root: &Path,
     relative: &str,
 ) -> anyhow::Result<Option<(fs::File, u64)>> {
-    let mut path = root.to_path_buf();
-    let mut components = Path::new(relative).components().peekable();
-    while let Some(component) = components.next() {
-        path.push(component);
-        let metadata = match fs::symlink_metadata(&path) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("inspect cache key input {}", path.display()));
-            }
-        };
-        if components.peek().is_some() {
-            if !metadata.file_type().is_dir() {
-                anyhow::bail!(
-                    "cache key input {} traverses a non-directory or symlink",
-                    path.display()
-                );
-            }
-        } else if !metadata.file_type().is_file() {
-            anyhow::bail!("cache key input {} is not a regular file", path.display());
-        }
+    let Some(metadata) = files::inspect(root, Path::new(relative))? else {
+        return Ok(None);
+    };
+    let path = root.join(relative);
+    if !metadata.is_file() {
+        anyhow::bail!("cache key input {} is not a regular file", path.display());
     }
-    let metadata = fs::symlink_metadata(&path)
-        .with_context(|| format!("inspect cache key input {}", path.display()))?;
     if metadata.len() > MAX_CACHE_KEY_FILE_BYTES {
         anyhow::bail!(
             "cache key input {} exceeds {MAX_CACHE_KEY_FILE_BYTES} bytes",
             path.display()
         );
     }
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(&path)
-        .with_context(|| format!("open cache key input {}", path.display()))?;
+    let file = files::open_file(&path)?;
     let opened_metadata = file.metadata()?;
-    if !opened_metadata.is_file() {
-        anyhow::bail!("cache key input {} is not a regular file", path.display());
-    }
     if opened_metadata.len() > MAX_CACHE_KEY_FILE_BYTES {
         anyhow::bail!(
             "cache key input {} exceeds {MAX_CACHE_KEY_FILE_BYTES} bytes",

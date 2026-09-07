@@ -46,40 +46,71 @@ use {
 };
 
 #[cfg(any(test, feature = "test-support"))]
+mod database_templates;
+
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Debug)]
 pub struct TestDatabaseTarget {
     database_url: String,
+    #[cfg(test)]
     schema_name: String,
+    active_database: Arc<tokio::sync::Mutex<std::sync::Weak<TestSchemaLease>>>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
+#[derive(Clone, Debug)]
+pub(super) enum TestDatabaseCleanup {
+    #[cfg(test)]
+    Schema {
+        database_url: String,
+        schema_name: String,
+    },
+    Database {
+        admin_url: String,
+        database_name: String,
+    },
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Debug)]
 pub(super) struct TestSchemaLease {
     database: Arc<sea_orm::DatabaseConnection>,
     database_url: String,
-    schema_name: String,
+    cleanup: TestDatabaseCleanup,
 }
 
 #[cfg(any(test, feature = "test-support"))]
 impl Drop for TestSchemaLease {
     fn drop(&mut self) {
-        let database_url = self.database_url.clone();
-        let schema_name = self.schema_name.clone();
         let database = Arc::clone(&self.database);
+        let cleanup = self.cleanup.clone();
         test_runtime().spawn(async move {
             let _ = database.close_by_ref().await;
-            let Ok(db) = Database::connect(database_url).await else {
-                return;
-            };
-            let _ = db
-                .execute(Statement::from_string(
-                    db.get_database_backend(),
-                    format!(
-                        "DROP SCHEMA IF EXISTS {} CASCADE",
-                        quote_pg_ident(&schema_name)
-                    ),
-                ))
-                .await;
-            let _ = db.close().await;
+            match cleanup {
+                TestDatabaseCleanup::Database {
+                    admin_url,
+                    database_name,
+                } => database_templates::drop_database(&admin_url, &database_name).await,
+                #[cfg(test)]
+                TestDatabaseCleanup::Schema {
+                    database_url,
+                    schema_name,
+                } => {
+                    let Ok(db) = Database::connect(database_url).await else {
+                        return;
+                    };
+                    let _ = db
+                        .execute(Statement::from_string(
+                            db.get_database_backend(),
+                            format!(
+                                "DROP SCHEMA IF EXISTS {} CASCADE",
+                                quote_pg_ident(&schema_name)
+                            ),
+                        ))
+                        .await;
+                    let _ = db.close().await;
+                }
+            }
         });
     }
 }
@@ -94,7 +125,9 @@ impl TestDatabaseTarget {
         validate_test_database_url(&database_url)?;
         Ok(Self {
             database_url,
+            #[cfg(test)]
             schema_name: unique_test_schema_name(),
+            active_database: Arc::default(),
         })
     }
 
@@ -114,22 +147,11 @@ impl TestDatabaseTarget {
 
 #[cfg(any(test, feature = "test-support"))]
 pub fn connect_postgres_test_store(target: &TestDatabaseTarget) -> anyhow::Result<MetadataStore> {
-    let postgres_database_url = Arc::from(target.database_url.clone());
     let target = target.clone();
-    let (db, test_schema) = run_test_future(async move {
-        let (db, test_schema) = connect_isolated_test_database(&target).await?;
-        crate::migrations::apply_in_maintenance(db.as_ref()).await?;
-        Ok::<_, anyhow::Error>((db, test_schema))
-    })?;
-
-    Ok(MetadataStore {
-        db,
-        postgres_database_url: Some(postgres_database_url),
-        _test_schema: Some(test_schema),
-    })
+    run_test_future(async move { database_templates::connect_store(&target).await })
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 pub(super) async fn connect_isolated_test_database(
     target: &TestDatabaseTarget,
 ) -> anyhow::Result<(Arc<DatabaseConnection>, Arc<TestSchemaLease>)> {
@@ -153,7 +175,10 @@ pub(super) async fn connect_isolated_test_database(
     let test_schema = Arc::new(TestSchemaLease {
         database: Arc::clone(&db),
         database_url: target.database_url.clone(),
-        schema_name: target.schema_name.clone(),
+        cleanup: TestDatabaseCleanup::Schema {
+            database_url: target.database_url.clone(),
+            schema_name: target.schema_name.clone(),
+        },
     });
     Ok((db, test_schema))
 }
@@ -667,7 +692,7 @@ fn has_scope_test_marker(value: &str) -> bool {
         || value.contains("scope-vcs-test")
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 fn unique_test_schema_name() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = std::time::SystemTime::now()

@@ -3598,6 +3598,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
+ "libc",
  "scope-cache-domain",
  "scope-domain",
  "scope-git",
@@ -3643,6 +3644,7 @@ name = "scope-runner-runtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "filetime",
  "getrandom 0.3.4",
  "hex",
  "libc",

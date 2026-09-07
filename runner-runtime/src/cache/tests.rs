@@ -1,5 +1,6 @@
 use super::{
-    archive::{BoundedWriter, create_archive},
+    archive::{BoundedWriter, create_archive, extract_archive},
+    files::set_modified,
     finalize::save_cache,
     identity::{MAX_CACHE_KEY_FILE_BYTES, digest_inputs_at, open_key_file},
     restore::CachePreparationPhases,
@@ -18,16 +19,16 @@ use std::{
 };
 
 #[test]
-fn archives_are_identical_across_creation_order_and_metadata() {
+fn archives_are_identical_across_creation_order() {
     let first = tempfile::tempdir().unwrap();
     let second = tempfile::tempdir().unwrap();
     populate_cache(first.path(), false, Duration::from_secs(10));
-    populate_cache(second.path(), true, Duration::from_secs(20));
+    populate_cache(second.path(), true, Duration::from_secs(10));
     let first_archive = tempfile::NamedTempFile::new().unwrap();
     let second_archive = tempfile::NamedTempFile::new().unwrap();
 
-    let first_identity = create_archive(first.path(), first_archive.path()).unwrap();
-    let second_identity = create_archive(second.path(), second_archive.path()).unwrap();
+    let first_identity = create_archive(first.path(), first_archive.path(), None).unwrap();
+    let second_identity = create_archive(second.path(), second_archive.path(), None).unwrap();
 
     let first_bytes = fs::read(first_archive.path()).unwrap();
     let second_bytes = fs::read(second_archive.path()).unwrap();
@@ -44,11 +45,12 @@ fn archives_are_identical_across_creation_order_and_metadata() {
 }
 
 #[test]
-fn archives_have_sorted_paths_and_normalized_headers() {
+fn archives_normalize_ownership_and_preserve_precise_timestamps() {
     let source = tempfile::tempdir().unwrap();
-    populate_cache(source.path(), true, Duration::from_secs(30));
+    let modified = Duration::new(30, 123_456_789);
+    populate_cache(source.path(), true, modified);
     let output = tempfile::NamedTempFile::new().unwrap();
-    create_archive(source.path(), output.path()).unwrap();
+    create_archive(source.path(), output.path(), None).unwrap();
 
     let decoder = zstd::Decoder::new(fs::File::open(output.path()).unwrap()).unwrap();
     let mut archive = tar::Archive::new(decoder);
@@ -74,9 +76,15 @@ fn archives_have_sorted_paths_and_normalized_headers() {
         .collect::<Vec<_>>();
     assert_eq!(
         paths,
-        ["bin", "bin/run", "data.txt", "run-link"]
-            .map(PathBuf::from)
-            .to_vec()
+        [
+            "bin",
+            "bin/run",
+            "data.txt",
+            "run-link",
+            ".scope-cache.json"
+        ]
+        .map(PathBuf::from)
+        .to_vec()
     );
     assert!(
         headers
@@ -91,6 +99,90 @@ fn archives_have_sorted_paths_and_normalized_headers() {
     assert_eq!(modes[Path::new("bin/run")], 0o755);
     assert_eq!(modes[Path::new("data.txt")], 0o644);
     assert_eq!(modes[Path::new("run-link")], 0o777);
+    let restored = tempfile::tempdir().unwrap();
+    extract_archive(output.path(), restored.path(), None).unwrap();
+    assert!(!restored.path().join(".scope-cache.json").exists());
+    for path in ["bin", "bin/run", "data.txt", "run-link"] {
+        let metadata = fs::symlink_metadata(restored.path().join(path)).unwrap();
+        assert_eq!(
+            metadata.modified().unwrap(),
+            SystemTime::UNIX_EPOCH + modified
+        );
+    }
+    assert_eq!(
+        fs::read_link(restored.path().join("run-link")).unwrap(),
+        Path::new("bin/run")
+    );
+}
+
+#[test]
+fn output_timestamps_are_part_of_the_cache_object_identity() {
+    let source = tempfile::tempdir().unwrap();
+    populate_cache(source.path(), false, Duration::from_secs(10));
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let before = create_archive(source.path(), output.path(), None).unwrap();
+    set_modified(
+        source.path(),
+        Path::new("data.txt"),
+        SystemTime::UNIX_EPOCH + Duration::from_secs(11),
+    )
+    .unwrap();
+    let after = create_archive(source.path(), output.path(), None).unwrap();
+    assert_ne!(before, after);
+}
+
+#[test]
+fn future_outputs_and_workspace_mismatches_are_rejected() {
+    let source = tempfile::tempdir().unwrap();
+    populate_cache(source.path(), false, Duration::from_secs(10));
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let restored = tempfile::tempdir().unwrap();
+    create_archive(source.path(), output.path(), None).unwrap();
+    assert!(
+        extract_archive(
+            output.path(),
+            restored.path(),
+            Some(Path::new("/workspace"))
+        )
+        .is_err()
+    );
+    set_modified(
+        source.path(),
+        Path::new("data.txt"),
+        SystemTime::now() + Duration::from_secs(60),
+    )
+    .unwrap();
+    create_archive(source.path(), output.path(), None).unwrap();
+    assert!(extract_archive(output.path(), restored.path(), None).is_err());
+}
+
+#[test]
+fn timestamp_restoration_never_follows_symlinks_outside_its_root() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("file"), "outside").unwrap();
+    let before = fs::metadata(outside.path().join("file"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    symlink(outside.path(), root.path().join("parent")).unwrap();
+    assert!(
+        set_modified(
+            root.path(),
+            Path::new("parent/file"),
+            SystemTime::UNIX_EPOCH
+        )
+        .is_err()
+    );
+    symlink(outside.path().join("file"), root.path().join("link")).unwrap();
+    set_modified(root.path(), Path::new("link"), SystemTime::UNIX_EPOCH).unwrap();
+    assert_eq!(
+        fs::metadata(outside.path().join("file"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        before
+    );
 }
 
 #[test]
@@ -153,6 +245,7 @@ fn exact_hit_skips_archive_hash_and_upload() {
         compatibility_group_digest: "b".repeat(64),
         path: PathBuf::from("/path/that/does/not/exist"),
         exact_hit: true,
+        sources: None,
     };
 
     assert_eq!(
@@ -188,6 +281,17 @@ fn cache_input_digest_distinguishes_missing_empty_content_and_environment() {
     assert_ne!(empty, content);
     assert_ne!(content, environment_changed);
     assert_ne!(source_a, source_b);
+    let other_workspace = tempfile::tempdir().unwrap();
+    assert_ne!(
+        source_a,
+        digest_inputs_at(
+            &source_inputs,
+            &environment,
+            other_workspace.path(),
+            "source-a"
+        )
+        .unwrap()
+    );
 }
 
 #[test]
@@ -225,4 +329,12 @@ fn populate_cache(root: &Path, reverse: bool, modified_offset: Duration) {
             .unwrap();
     }
     symlink("bin/run", root.join("run-link")).unwrap();
+    for path in ["bin", "run-link"] {
+        set_modified(
+            root,
+            Path::new(path),
+            SystemTime::UNIX_EPOCH + modified_offset,
+        )
+        .unwrap();
+    }
 }
