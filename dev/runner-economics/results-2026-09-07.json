@@ -1,0 +1,565 @@
+{
+  "date": "2026-09-07",
+  "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+  "githubRunId": 34142773221,
+  "observerRunId": 34142228731,
+  "cleanupRunId": 34145677148,
+  "groups": {
+    "github-cold": {
+      "workSeconds": {
+        "n": 3,
+        "median": 416.82948641999997,
+        "max": 418.46695267699994
+      },
+      "endToEndSeconds": {
+        "n": 3,
+        "median": 447,
+        "max": 447
+      }
+    },
+    "github-warm": {
+      "workSeconds": {
+        "n": 3,
+        "median": 261.619635045,
+        "max": 265.846195818
+      },
+      "endToEndSeconds": {
+        "n": 3,
+        "median": 312,
+        "max": 319
+      }
+    },
+    "scope-cold": {
+      "workSeconds": {
+        "n": 3,
+        "median": 337.753375374,
+        "max": 352.24171695100006
+      },
+      "endToEndSeconds": {
+        "n": 3,
+        "median": 402,
+        "max": 415
+      }
+    },
+    "scope-warm": {
+      "workSeconds": {
+        "n": 3,
+        "median": 253.49175242899997,
+        "max": 258.451488359
+      },
+      "endToEndSeconds": {
+        "n": 3,
+        "median": 347,
+        "max": 354
+      }
+    },
+    "scope-burst": {
+      "workSeconds": {
+        "n": 8,
+        "median": 251.022852132,
+        "max": 270.37777223399996
+      },
+      "endToEndSeconds": {
+        "n": 8,
+        "median": 346.5,
+        "max": 364
+      }
+    }
+  },
+  "samples": [
+    {
+      "provider": "github",
+      "cache": "cold",
+      "sample": 1,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "jobId": 101808213289,
+      "workSeconds": 397.84420566899996,
+      "endToEndSeconds": 436,
+      "runnerSeconds": 435,
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "cpuCount": 4
+    },
+    {
+      "provider": "github",
+      "cache": "cold",
+      "sample": 2,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "jobId": 101808213670,
+      "workSeconds": 418.46695267699994,
+      "endToEndSeconds": 447,
+      "runnerSeconds": 446,
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "cpuCount": 4
+    },
+    {
+      "provider": "github",
+      "cache": "cold",
+      "sample": 3,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "jobId": 101808213504,
+      "workSeconds": 416.82948641999997,
+      "endToEndSeconds": 447,
+      "runnerSeconds": 446,
+      "exitCode": 0,
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "cpuCount": 4
+    },
+    {
+      "provider": "github",
+      "cache": "warm",
+      "sample": 1,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "jobId": 101810012495,
+      "workSeconds": 261.619635045,
+      "endToEndSeconds": 312,
+      "runnerSeconds": 310,
+      "exitCode": 0,
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "cpuCount": 4
+    },
+    {
+      "provider": "github",
+      "cache": "warm",
+      "sample": 2,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "jobId": 101810012516,
+      "workSeconds": 254.51130094500002,
+      "endToEndSeconds": 298,
+      "runnerSeconds": 297,
+      "exitCode": 0,
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "cpuCount": 4
+    },
+    {
+      "provider": "github",
+      "cache": "warm",
+      "sample": 3,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "jobId": 101810012479,
+      "workSeconds": 265.846195818,
+      "endToEndSeconds": 319,
+      "runnerSeconds": 317,
+      "exitCode": 0,
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "cold",
+      "sample": 1,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_7837de5d365321de64bf7567089a9b03",
+      "taskId": "833da5e8dee44078be4f57dbad05569b",
+      "containerInstanceId": "48d4cb9bde2f4f5d9f52e6c0e8dc5ef1",
+      "workSeconds": 352.24171695100006,
+      "endToEndSeconds": 415,
+      "ecsCreatedToStoppedSeconds": 437.798,
+      "availabilityZone": "us-east-1b",
+      "attempts": 1,
+      "cacheSetupMs": 61,
+      "cacheKinds": [],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "cold",
+      "sample": 2,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_935a4142dc96ba7eb114aad19064ea93",
+      "taskId": "23ce3079b9004354afdb8dfc90f2300e",
+      "containerInstanceId": "de060fd047af4f8db8de74215e0a223e",
+      "workSeconds": 315.89128712400003,
+      "endToEndSeconds": 387,
+      "ecsCreatedToStoppedSeconds": 411.002,
+      "availabilityZone": "us-east-1a",
+      "attempts": 1,
+      "cacheSetupMs": 48,
+      "cacheKinds": [],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "cold",
+      "sample": 3,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_4f4aedb3429c94949f030c193fb2a398",
+      "taskId": "5b0471c2cb7f4f5eb22eef67b4a459f8",
+      "containerInstanceId": "f19140826a7447e8b01db0e019e3ae6a",
+      "workSeconds": 337.753375374,
+      "endToEndSeconds": 402,
+      "ecsCreatedToStoppedSeconds": 434.679,
+      "availabilityZone": "us-east-1a",
+      "attempts": 1,
+      "cacheSetupMs": 54,
+      "cacheKinds": [],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "warm",
+      "sample": 1,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_45c73669bf22eb277357b6263069d923",
+      "taskId": "c78e7415f05e4aa1af1f6ce8a414bc81",
+      "containerInstanceId": "ea0cb9cbc4674b2a95787656314ba07a",
+      "workSeconds": 258.451488359,
+      "endToEndSeconds": 354,
+      "ecsCreatedToStoppedSeconds": 378.356,
+      "availabilityZone": "us-east-1a",
+      "attempts": 1,
+      "cacheSetupMs": 25268,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "warm",
+      "sample": 2,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_b0f7bbd5c71285f41baf5f3aedfaf327",
+      "taskId": "eea2ddf9788b4cbab0ebcad14ffe6164",
+      "containerInstanceId": "7862dc66361f43ada060a582eeac5c95",
+      "workSeconds": 246.078319369,
+      "endToEndSeconds": 341,
+      "ecsCreatedToStoppedSeconds": 368.544,
+      "availabilityZone": "us-east-1a",
+      "attempts": 1,
+      "cacheSetupMs": 20281,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "warm",
+      "sample": 3,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_d70bf3a86d61ad54c907f036437277d3",
+      "taskId": "34c00802b7b44a1f9b8ca8e4918e4a27",
+      "containerInstanceId": "d9d7437aa33046828e22d909e70b34e2",
+      "workSeconds": 253.49175242899997,
+      "endToEndSeconds": 347,
+      "ecsCreatedToStoppedSeconds": 370.943,
+      "availabilityZone": "us-east-1a",
+      "attempts": 1,
+      "cacheSetupMs": 20602,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "burst",
+      "sample": 1,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_53e2d5f0ed8d7979f88882fce5d43e08",
+      "taskId": "414c8480297d4c29be077e3ad2ce5a9c",
+      "containerInstanceId": "2dbb81211ca745209e8e1671eb2c4e60",
+      "workSeconds": 256.61885552,
+      "endToEndSeconds": 348,
+      "ecsCreatedToStoppedSeconds": 368.921,
+      "availabilityZone": "us-east-1a",
+      "attempts": 1,
+      "cacheSetupMs": 18657,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "burst",
+      "sample": 2,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_797c69c073a76a72b63ff0b1f96e2ea3",
+      "taskId": "29799ec3630c41498f6808a1eabb262b",
+      "containerInstanceId": "e7a02f52b2a742d68f4a1ba68c470d81",
+      "workSeconds": 249.31199031699998,
+      "endToEndSeconds": 352,
+      "ecsCreatedToStoppedSeconds": 385.648,
+      "availabilityZone": "us-east-1a",
+      "attempts": 1,
+      "cacheSetupMs": 19598,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "burst",
+      "sample": 3,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_6c4d6d366f0c99125303358e29e743e0",
+      "taskId": "929622f08a66458b960fc369e1bd6652",
+      "containerInstanceId": "528c4e4d452e47eb98ff4a9ea4dd0526",
+      "workSeconds": 258.222551942,
+      "endToEndSeconds": 347,
+      "ecsCreatedToStoppedSeconds": 368.296,
+      "availabilityZone": "us-east-1b",
+      "attempts": 1,
+      "cacheSetupMs": 18603,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "burst",
+      "sample": 4,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_a5221867fe9029a11abe4da93bf70b40",
+      "taskId": "654c6a05f5414095be5789005bed4132",
+      "containerInstanceId": "6a76dcf8ccf54bd19eba0c53ea156f4d",
+      "workSeconds": 252.043319662,
+      "endToEndSeconds": 346,
+      "ecsCreatedToStoppedSeconds": 367.601,
+      "availabilityZone": "us-east-1b",
+      "attempts": 1,
+      "cacheSetupMs": 18619,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "burst",
+      "sample": 5,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_21902d32c576702b31ffd8d9d8a21142",
+      "taskId": "2e2a12a8405a461cafd8acd2b5f7a1f0",
+      "containerInstanceId": "c7f49a1f49e2403f840af30eba26f155",
+      "workSeconds": 250.002384602,
+      "endToEndSeconds": 343,
+      "ecsCreatedToStoppedSeconds": 365.621,
+      "availabilityZone": "us-east-1b",
+      "attempts": 1,
+      "cacheSetupMs": 18561,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "burst",
+      "sample": 6,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_bccfbb43d499d75d776759e100543471",
+      "taskId": "d2fddf0a591f4896bee0f7b2581f0a6b",
+      "containerInstanceId": "9977d2deaa0d41d79596fda479181906",
+      "workSeconds": 248.116989677,
+      "endToEndSeconds": 340,
+      "ecsCreatedToStoppedSeconds": 359.929,
+      "availabilityZone": "us-east-1b",
+      "attempts": 1,
+      "cacheSetupMs": 18921,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "burst",
+      "sample": 7,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_9cd02c6326fa474ddf49b0dd982d8288",
+      "taskId": "01891d7e05194e159cb623b81de194a6",
+      "containerInstanceId": "002139c719f4451c935fc9bb158f1217",
+      "workSeconds": 270.37777223399996,
+      "endToEndSeconds": 364,
+      "ecsCreatedToStoppedSeconds": 384.302,
+      "availabilityZone": "us-east-1b",
+      "attempts": 1,
+      "cacheSetupMs": 18615,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    },
+    {
+      "provider": "scope",
+      "cache": "burst",
+      "sample": 8,
+      "sourceSha": "4dab568ac939063c488b2b9b280a05f674cb7094",
+      "runId": "run_9b161b1706b23cad849a81479c5968b1",
+      "taskId": "0f8ca19f14f24c82aa4d4d04f9fbf825",
+      "containerInstanceId": "11dae753383d432199d10646ba7ab472",
+      "workSeconds": 248.324774102,
+      "endToEndSeconds": 338,
+      "ecsCreatedToStoppedSeconds": 360.819,
+      "availabilityZone": "us-east-1a",
+      "attempts": 1,
+      "cacheSetupMs": 18283,
+      "cacheKinds": [
+        "exact",
+        "exact"
+      ],
+      "exitCode": 0,
+      "cpu": "AMD EPYC 9R45",
+      "cpuCount": 4
+    }
+  ],
+  "network": {
+    "cohorts": [
+      {
+        "name": "failed-setup",
+        "fromUtc": "16:13",
+        "toUtcExclusive": "16:18",
+        "jobs": 1,
+        "bytesFromSource": 1365061,
+        "bytesFromDestination": 1138052317,
+        "bytesPerJob": 1139417378
+      },
+      {
+        "name": "cold-and-cache-seed",
+        "fromUtc": "16:18",
+        "toUtcExclusive": "16:29",
+        "jobs": 4,
+        "bytesFromSource": 810738620,
+        "bytesFromDestination": 4972787098,
+        "bytesPerJob": 1445881429.5
+      },
+      {
+        "name": "warm",
+        "fromUtc": "16:29",
+        "toUtcExclusive": "16:38",
+        "jobs": 3,
+        "bytesFromSource": 13038139,
+        "bytesFromDestination": 5840932299,
+        "bytesPerJob": 1951323479.3333333
+      },
+      {
+        "name": "burst",
+        "fromUtc": "16:38",
+        "toUtcExclusive": "16:47",
+        "jobs": 8,
+        "bytesFromSource": 35424767,
+        "bytesFromDestination": 15549051960,
+        "bytesPerJob": 1948059590.875
+      }
+    ],
+    "warmAndBurstBytesPerJob": 1948949742.2727273,
+    "cacheArchiveBytes": 769066894,
+    "checksImageCompressedBytes": 1118978788
+  },
+  "costModel": {
+    "status": "Sensitivity model, not reconciled billing. EC2 host lifetime and EBS inventory were not captured.",
+    "networkConversion": "Decimal GB for conservative estimate; raw byte counts retained.",
+    "pricing": {
+      "ec2UsdPerHour": 0.24344,
+      "ecsManagementUsdPerHour": 0.029208,
+      "natUsdPerHour": 0.045,
+      "natUsdPerDecimalGB": 0.045,
+      "publicIpv4UsdPerHour": 0.005,
+      "crossAzUsdPerDecimalGBBothEnds": 0.02,
+      "ebsBaselineUsdPerGiBMonth": 0.08,
+      "assumedTotalEbsGiB": 34,
+      "configuredDataGiB": 30,
+      "assumedCrossAzFraction": 0.5,
+      "monthlyHours": 730,
+      "railwayCacheUsdPerMonth": 0.015,
+      "githubPaid4CoreUsdPerMinute": 0.012
+    },
+    "scenarios": [
+      {
+        "billedHostMinutes": 6.5,
+        "computePerJob": 0.029536866666666668,
+        "ebsPerJob": 0.00040365296803652974,
+        "natPerJob": 0.08770273840227273,
+        "crossAzPerJob": 0.019489497422727275,
+        "variablePerJob": 0.1371327554597032,
+        "fixedMonthly": 36.515,
+        "jobs500": 105.0813777298516,
+        "jobs10000": 1407.842554597032
+      },
+      {
+        "billedHostMinutes": 8,
+        "computePerJob": 0.03635306666666667,
+        "ebsPerJob": 0.0004968036529680366,
+        "natPerJob": 0.08770273840227273,
+        "crossAzPerJob": 0.019489497422727275,
+        "variablePerJob": 0.1440421061446347,
+        "fixedMonthly": 36.515,
+        "jobs500": 108.53605307231734,
+        "jobs10000": 1476.9360614463471
+      },
+      {
+        "billedHostMinutes": 10,
+        "computePerJob": 0.045441333333333334,
+        "ebsPerJob": 0.0006210045662100457,
+        "natPerJob": 0.08770273840227273,
+        "crossAzPerJob": 0.019489497422727275,
+        "variablePerJob": 0.15325457372454337,
+        "fixedMonthly": 36.515,
+        "jobs500": 113.14228686227169,
+        "jobs10000": 1569.0607372454338
+      }
+    ],
+    "excludes": [
+      "Railway API/worker/cache control-plane services",
+      "CloudWatch detailed metrics and logs",
+      "Secrets Manager API and short-lived secret storage",
+      "Retries and changing-cache uploads",
+      "Additional cache generations and ECR storage allocation"
+    ],
+    "githubPublicRunnerCost": 0,
+    "githubPaid4CoreWarmProxyPerJob": [
+      0.06,
+      0.07200000000000001
+    ],
+    "githubPaid4CoreColdProxyPerJob": 0.096
+  },
+  "cleanup": {
+    "stackDeleted": true,
+    "retainedEcrDeleted": true,
+    "dispatcherKeysRevoked": 1,
+    "roleStatus": "deleted",
+    "collectedThrough": "2026-09-07T16:59:38Z"
+  }
+}

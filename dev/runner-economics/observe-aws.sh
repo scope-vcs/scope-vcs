@@ -32,7 +32,8 @@ while (( SECONDS < deadline )); do
       done < <(jq -c '.tasks[]' "$output/current-tasks-$status.json")
     fi
   done
-  aws ec2 describe-instances --filters "Name=vpc-id,Values=$vpc" > "$output/current-hosts.json"
+  # Managed resources can be hidden from inventory even while ECS runs tasks.
+  aws ec2 describe-instances --include-managed-resources --filters "Name=vpc-id,Values=$vpc" > "$output/current-hosts.json"
   jq -c --arg at "$now" '{at: $at, instances: [.Reservations[].Instances[]]}' "$output/current-hosts.json" >> "$output/host-timeline.jsonl"
   while IFS= read -r host; do
     id=$(jq -r '.InstanceId' <<< "$host")
