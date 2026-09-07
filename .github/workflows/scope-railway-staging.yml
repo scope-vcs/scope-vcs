@@ -44,6 +44,8 @@ jobs:
         with:
           fetch-depth: 1
           ref: ${{ github.sha }}
+          sparse-checkout: .github
+          sparse-checkout-cone-mode: false
 
       - name: Load staging target from trusted manifest
         shell: bash
@@ -246,6 +248,8 @@ jobs:
         with:
           fetch-depth: 1
           ref: ${{ github.sha }}
+          sparse-checkout: .github
+          sparse-checkout-cone-mode: false
 
       - name: Load staging target from trusted manifest
         shell: bash
