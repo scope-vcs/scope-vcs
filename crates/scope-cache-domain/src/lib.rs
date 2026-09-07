@@ -14,6 +14,6 @@ pub use types::*;
 #[test]
 fn staging_cache_experiment_executes_current_source() {
     if let Ok(expected) = std::env::var("SCOPE_CACHE_EXPERIMENT_REVISION") {
-        assert_eq!("one", expected, "restored cache executed stale test code");
+        assert_eq!("two", expected, "restored cache executed stale test code");
     }
 }

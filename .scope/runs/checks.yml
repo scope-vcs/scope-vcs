@@ -8,7 +8,7 @@ env:
   CARGO_HOME: /scope/cache/cargo
   CARGO_TARGET_DIR: /workspace/target
   RUSTUP_TOOLCHAIN: 1.98.0-x86_64-unknown-linux-gnu
-  SCOPE_CACHE_EXPERIMENT_REVISION: one
+  SCOPE_CACHE_EXPERIMENT_REVISION: two
 jobs:
   baseline:
     timeout: 45m
@@ -63,7 +63,11 @@ jobs:
       SCOPE_DB_EXPERIMENT_MODE: baseline
     steps:
     - name: Measure backend cache and test setup
-      run: 'service postgresql start
+      run: 'test "$SCOPE_CACHE_EXPERIMENT_REVISION" = two || exit 1
+
+        printf ''CACHE_DB_REVISION=%s\n'' "$SCOPE_CACHE_EXPERIMENT_REVISION"
+
+        service postgresql start
 
         su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN
         CREATEDB PASSWORD ''scope''\""
@@ -124,7 +128,11 @@ jobs:
       SCOPE_DB_EXPERIMENT_MODE: baseline
     steps:
     - name: Measure backend cache and test setup
-      run: 'service postgresql start
+      run: 'test "$SCOPE_CACHE_EXPERIMENT_REVISION" = two || exit 1
+
+        printf ''CACHE_DB_REVISION=%s\n'' "$SCOPE_CACHE_EXPERIMENT_REVISION"
+
+        service postgresql start
 
         su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN
         CREATEDB PASSWORD ''scope''\""
@@ -185,7 +193,11 @@ jobs:
       SCOPE_DB_EXPERIMENT_MODE: template
     steps:
     - name: Measure backend cache and test setup
-      run: 'service postgresql start
+      run: 'test "$SCOPE_CACHE_EXPERIMENT_REVISION" = two || exit 1
+
+        printf ''CACHE_DB_REVISION=%s\n'' "$SCOPE_CACHE_EXPERIMENT_REVISION"
+
+        service postgresql start
 
         su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN
         CREATEDB PASSWORD ''scope''\""
