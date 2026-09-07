@@ -110,6 +110,9 @@ jobs:
 
   build:
     name: ${{ matrix.label }} / ${{ matrix.smoke && 'native checks' || 'build only' }}
+    env:
+      SCOPE_BUILD_SHA: ${{ github.sha }}
+      CROSS_CONFIG: ${{ github.workspace }}/Cross.toml
     needs: [checks, prepare]
     if: inputs.validate_targets
     runs-on: ${{ matrix.runner }}
@@ -144,8 +147,6 @@ jobs:
 
       - name: Build scope
         shell: bash
-        env:
-          SCOPE_BUILD_SHA: ${{ github.sha }}
         run: |
           # Cross mounts the current directory; include the root license files.
           if [ "${{ matrix.builder }}" = "cross" ]; then
@@ -192,6 +193,20 @@ jobs:
         working-directory: cli
         shell: bash
         run: |
+          # Check the final binary after every Cargo invocation that can rebuild it.
+          : "${SCOPE_BUILD_SHA:?Release build SHA is required}"
+          grep -aFq "$SCOPE_BUILD_SHA" "${{ matrix.binary }}" || {
+            echo "Release binary is missing build $SCOPE_BUILD_SHA" >&2
+            exit 1
+          }
+          if [ "${{ matrix.smoke }}" = "true" ]; then
+            identity="$("./${{ matrix.binary }}" --version)"
+            expected="^scope [^ ]+ \(build $SCOPE_BUILD_SHA; protocol [0-9]+\)$"
+            [[ "$identity" =~ $expected ]] || {
+              echo "Unexpected release identity: $identity" >&2
+              exit 1
+            }
+          fi
           mkdir -p dist
           cp "${{ matrix.binary }}" "dist/${{ matrix.artifact }}"
 
