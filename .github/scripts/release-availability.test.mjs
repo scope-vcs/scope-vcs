@@ -121,6 +121,22 @@ test("constructs and verifies the real public release requests", async (t) => {
   }
 });
 
+test("reads the homepage without a browser handshake and still rejects redirects", async (t) => {
+  let redirectPage = false;
+  const web = await listen((request, response) => {
+    if (request.headers.accept?.includes("text/html") || redirectPage) {
+      response.writeHead(307, { location: "/handshake" }).end();
+      return;
+    }
+    html(response, homepage());
+  });
+  t.after(() => close(web.server));
+  const target = availabilityTargets(parseAvailabilityConfig(config(web.origin, web.origin)))[0];
+  assert.equal((await probeTarget(target, { timeoutMs: 1_000 })).ok, true);
+  redirectPage = true;
+  assert.equal((await probeTarget(target, { timeoutMs: 1_000 })).ok, false);
+});
+
 test("rejects application errors returned with HTTP 200", async () => {
   const parsed = parseAvailabilityConfig(config("https://web.example.test", "https://api.example.test"));
   const requestList = availabilityTargets(parsed).find(({ name }) => name === "fixture-request-list");

@@ -83,7 +83,9 @@ export async function probeTarget(target, { fetchImpl = fetch, timeoutMs }) {
   const timeout = setTimeout(() => controller.abort(new Error("request timed out")), timeoutMs);
   try {
     const response = await fetchImpl(target.url, {
-      headers: { accept: target.name === "public-homepage" ? "text/html" : "application/json" },
+      // Browser navigation is covered separately. An HTML Accept header triggers
+      // Clerk's development-browser handshake instead of this finite page read.
+      headers: { accept: target.name === "public-homepage" ? "*/*" : "application/json" },
       redirect: "error",
       signal: controller.signal,
     });
