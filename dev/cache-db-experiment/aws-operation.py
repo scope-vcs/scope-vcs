@@ -154,13 +154,16 @@ def observe(folder, current):
     return tasks, config
 
 
-def cleanup(folder, current):
+def cleanup(folder, current, retained_definitions):
     tasks, config = observe(folder, current)
     if any(task["lastStatus"] != "STOPPED" for task in tasks):
         raise RuntimeError("Refusing cleanup while experiment tasks are still active")
     # Check all definition ownership before deleting any resource.
     definitions = []
-    for arn in sorted({task["taskDefinitionArn"] for task in tasks}):
+    # ECS stops listing old stopped tasks before a long experiment finishes.
+    # Earlier observations retain their definitions; ownership is still checked here.
+    definition_arns = {task["taskDefinitionArn"] for task in tasks} | set(retained_definitions)
+    for arn in sorted(definition_arns):
         assert arn.startswith(f"arn:aws:ecs:{REGION}:{ACCOUNT}:task-definition/scope-runner-attempt_")
         definition = aws("ecs", "describe-task-definition", "--task-definition", arn)["taskDefinition"]
         assert definition["executionRoleArn"] == config["RunnerExecutionRoleArn"]
@@ -201,6 +204,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--template", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--retained-task-definitions", type=Path,
+                        default=ROOT / "dev/cache-db-experiment/retained-task-definitions.json")
     args = parser.parse_args()
     args.evidence.mkdir(parents=True, exist_ok=True)
     operation = os.environ.get("REQUESTED_OPERATION") or json.loads((ROOT / "dev/cache-db-experiment/aws-request.json").read_text())["operation"]
@@ -223,7 +228,10 @@ def main():
             elif operation == "observe":
                 observe(args.evidence, current)
             else:
-                cleanup(args.evidence, current)
+                retained = (json.loads(args.retained_task_definitions.read_text())
+                            if args.retained_task_definitions.exists() else [])
+                assert isinstance(retained, list) and all(isinstance(arn, str) for arn in retained)
+                cleanup(args.evidence, current, retained)
     except Exception as error:
         save(args.evidence, "error.json", {"error": str(error)})
         try:
