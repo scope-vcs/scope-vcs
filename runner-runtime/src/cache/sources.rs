@@ -6,7 +6,10 @@ use std::{
     collections::BTreeMap,
     fs,
     io::Read as _,
-    os::unix::{ffi::OsStrExt as _, fs::PermissionsExt as _},
+    os::unix::{
+        ffi::OsStrExt as _,
+        fs::{MetadataExt as _, PermissionsExt as _},
+    },
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{Duration, SystemTime},
@@ -24,6 +27,10 @@ pub(super) struct SourceSnapshot {
 struct SourceEntry {
     digest: String,
     modified: SystemTime,
+    // Kernel change time detects edits even if a step restores bytes and mtime.
+    // It is local to this checkout and must not be carried across cache restores.
+    #[serde(skip)]
+    changed: (i64, i64),
 }
 
 impl SourceSnapshot {
@@ -81,6 +88,7 @@ impl SourceSnapshot {
             if let Some(current) = fingerprint(&self.root, path)?
                 && current.digest == original.digest
                 && current.modified == original.modified
+                && current.changed == original.changed
             {
                 entries.insert(path.clone(), original.clone());
             }
@@ -140,6 +148,9 @@ impl SourceSnapshot {
             };
             files::set_modified(&self.root, path, modified)?;
             current.modified = modified;
+            let metadata = files::inspect(&self.root, path)?
+                .context("source disappeared after restoring its timestamp")?;
+            current.changed = (metadata.ctime(), metadata.ctime_nsec());
         }
         Ok(())
     }
@@ -175,5 +186,6 @@ fn fingerprint(root: &Path, relative: &Path) -> anyhow::Result<Option<SourceEntr
     Ok(Some(SourceEntry {
         digest: hex::encode(digest.finalize()),
         modified: metadata.modified()?,
+        changed: (metadata.ctime(), metadata.ctime_nsec()),
     }))
 }
