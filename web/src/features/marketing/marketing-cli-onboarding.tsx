@@ -1,41 +1,17 @@
 import type { CliInstallCommands, CliPlatform } from '@/api/types'
 import { CopyableCodeBlock } from '@/components/copyable-code-block'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { CheckCircle2 } from 'lucide-react'
-import {
-  AnimatePresence,
-  domAnimation,
-  LazyMotion,
-  m,
-  useReducedMotion,
-} from 'motion/react'
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useRef, useState, type ReactElement } from 'react'
+import './marketing-cli-onboarding.css'
 
 const platformOptions = [
   { copyName: 'macOS and Linux', label: 'macOS / Linux', value: 'posix' },
   { copyName: 'Windows', label: 'Windows', value: 'windows' },
-] as const satisfies ReadonlyArray<{
-  copyName: string
-  label: string
-  value: CliPlatform
-}>
+] as const
 
 const nextSteps = [
-  {
-    command: 'scope login',
-    copyLabel: 'Copy login command',
-    description: 'Sign in from your terminal. This opens your browser.',
-  },
-  {
-    command: 'scope init',
-    copyLabel: 'Copy init command',
-    description: 'Run from an existing Git repository with at least one commit.',
-  },
-  {
-    command: 'scope push --main',
-    copyLabel: 'Copy push command',
-    description: 'Review and push the repository’s first version.',
-  },
+  { command: 'scope login', description: 'Sign in from your terminal.' },
+  { command: 'scope init', description: 'Run inside an existing Git repository.' },
+  { command: 'scope push --main', description: 'Review and push your first version.' },
 ] as const
 
 export function MarketingCliOnboarding({
@@ -46,154 +22,48 @@ export function MarketingCliOnboarding({
   initialPlatform: CliPlatform
 }): ReactElement {
   const [platform, setPlatform] = useState<CliPlatform>(initialPlatform)
-  const [showNextSteps, setShowNextSteps] = useState(false)
-  const prefersReducedMotion = useReducedMotion()
-  const nextStepsHeadingRef = useRef<HTMLHeadingElement>(null)
-  const shouldFocusNextStepsRef = useRef(false)
-
-  const installCommand = commands[platform]
-  const platformOption = platformOptions.find(
-    (option) => option.value === platform,
-  ) ?? platformOptions[0]
-
-  useEffect(() => {
-    if (showNextSteps && shouldFocusNextStepsRef.current) {
-      shouldFocusNextStepsRef.current = false
-      nextStepsHeadingRef.current?.focus()
-    }
-  }, [showNextSteps])
-
-  function revealNextSteps(moveFocus = false) {
-    shouldFocusNextStepsRef.current = moveFocus
-    setShowNextSteps(true)
-  }
+  const nextStepsRef = useRef<HTMLDetailsElement>(null)
+  const option = platformOptions.find((item) => item.value === platform) ?? platformOptions[0]
 
   return (
-    <section
-      aria-labelledby="install-scope"
-      className="marketing-cli-onboarding min-w-0"
-    >
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-sm font-semibold" id="install-scope">
-            install scope
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Install now. Sign in when you connect a repository.
-          </p>
-        </div>
-        <ToggleGroup
-          aria-label="Operating system"
-          className="grid w-full grid-cols-2 sm:w-auto"
-          onValueChange={(value) => {
-            if (value) {
-              setPlatform(value as CliPlatform)
-            }
-          }}
-          type="single"
-          value={platform}
-        >
-          {platformOptions.map((option) => (
-            <ToggleGroupItem
-              className="px-3 text-xs"
-              key={option.value}
-              value={option.value}
-            >
-              {option.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-
+    <div className="install-ui">
+      <fieldset className="platforms">
+        <legend className="sr-only">Operating system</legend>
+        {platformOptions.map((item) => (
+          <button
+            aria-pressed={item.value === platform}
+            className="platform"
+            key={item.value}
+            onClick={() => setPlatform(item.value)}
+            type="button"
+          >
+            {item.label}
+          </button>
+        ))}
+      </fieldset>
       <CopyableCodeBlock
-        buttonLabel="copy install command"
-        className="shadow-none"
-        copyLabel={`Copy ${platformOption.copyName} install command`}
+        className="terminal"
+        copyLabel={`Copy ${option.copyName} install command`}
         key={platform}
-        onCopy={revealNextSteps}
-        value={installCommand}
+        onCopy={() => {
+          if (nextStepsRef.current) nextStepsRef.current.open = true
+        }}
+        value={commands[platform]}
       />
-
-      <a
-        className="mt-4 inline-flex text-sm text-muted-foreground underline decoration-border-strong underline-offset-4 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-        href="https://scopevcs.com/adamblumoff/scope-vcs"
-      >
-        explore a public repository ↗
-      </a>
-
-      <LazyMotion features={domAnimation}>
-        <AnimatePresence initial={false}>
-          {!showNextSteps && (
-            <m.div
-              className="mt-3 overflow-hidden"
-              exit={{ height: 0, marginTop: 0, opacity: 0 }}
-              key="manual-reveal"
-              transition={{
-                duration: prefersReducedMotion ? 0 : 0.2,
-                ease: 'easeOut',
-              }}
-            >
-              <button
-                className="text-xs text-muted-foreground underline decoration-border-strong underline-offset-4 transition-colors hover:text-foreground"
-                onClick={() => revealNextSteps(true)}
-                type="button"
-              >
-                already installed? next steps
-              </button>
-            </m.div>
-          )}
-
-          {showNextSteps && (
-            <m.div
-              animate={{ height: 'auto', opacity: 1 }}
-              aria-live="polite"
-              className="overflow-hidden"
-              initial={{ height: 0, opacity: 0 }}
-              key="next-steps"
-              transition={{
-                duration: prefersReducedMotion ? 0 : 0.24,
-                ease: 'easeOut',
-              }}
-            >
-              <div className="mt-5 border-t border-border pt-5">
-                <div className="mb-4 flex items-center gap-2 font-mono text-[11px] font-semibold text-[var(--success-strong)]">
-                  <CheckCircle2 className="size-3.5" />
-                  ready for the next step
-                </div>
-                <h3
-                  className="text-sm font-semibold outline-none"
-                  ref={nextStepsHeadingRef}
-                  tabIndex={-1}
-                >
-                  connect a repository
-                </h3>
-                <div className="mt-4 space-y-4">
-                  {nextSteps.map((step, index) => (
-                    <div
-                      className="grid grid-cols-[22px_minmax(0,1fr)] gap-2.5"
-                      key={step.command}
-                    >
-                      <span className="mt-0.5 grid size-[22px] place-items-center rounded-full border border-border font-mono text-[9px] text-muted-foreground">
-                        {index + 1}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="mb-2 text-xs leading-5 text-muted-foreground">
-                          {step.description}
-                        </p>
-                        <CopyableCodeBlock
-                          className="shadow-none"
-                          copyLabel={step.copyLabel}
-                          value={step.command}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+      <details ref={nextStepsRef}>
+        <summary>Already installed?</summary>
+        <ol className="steps">
+          {nextSteps.map((step, index) => (
+            <li key={step.command}>
+              <span className="step-number" aria-hidden>{index + 1}</span>
+              <div>
+                <p>{step.description}</p>
+                <code>{step.command}</code>
               </div>
-            </m.div>
-          )}
-        </AnimatePresence>
-      </LazyMotion>
-    </section>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </div>
   )
 }
