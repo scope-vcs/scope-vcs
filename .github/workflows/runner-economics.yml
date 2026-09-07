@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: d9289bd7737a22251c99dce9a7138f88cc9c4b06
+          ref: 4dab568ac939063c488b2b9b280a05f674cb7094
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
           toolchain: 1.98.0
@@ -96,7 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: d9289bd7737a22251c99dce9a7138f88cc9c4b06
+          ref: 4dab568ac939063c488b2b9b280a05f674cb7094
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
           toolchain: 1.98.0
