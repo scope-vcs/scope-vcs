@@ -1,5 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { activateArtifact, artifactDeploymentInput, assertActivatedArtifact, configureStagingRegistry, releaseImageRepository, validateMaintenanceArtifact, validatePreparedRelease, verifyPrivateReleasePackage } from './railway-artifact.mjs';
@@ -8,6 +11,44 @@ const sourceSha = 'a'.repeat(40);
 const image = `ghcr.io/owner/repo/railway-private-api@sha256:${'b'.repeat(64)}`;
 const release = () => ({ schemaVersion: 1, sourceSha, components: { api: { sourceSha, image, serviceId: 'api-id' } } });
 const config = { deploy: { healthcheckPath: '/readyz', healthcheckTimeout: 60, overlapSeconds: 30, drainingSeconds: 30, numReplicas: 1 } };
+
+test('default Railway transport retries a failed source read without repeating either mutation', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'scope-artifact-read-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const events = join(directory, 'events');
+  writeFileSync(join(directory, 'railway'), `#!/usr/bin/env node
+    const fs = require('node:fs');
+    const query = process.argv[3];
+    const variables = JSON.parse(fs.readFileSync(0, 'utf8'));
+    const events = ${JSON.stringify(events)};
+    const previous = fs.existsSync(events) ? fs.readFileSync(events, 'utf8') : '';
+    const operation = query.match(/^(?:query|mutation) (\\w+)/)[1];
+    fs.appendFileSync(events, operation + '\\n');
+    if (operation === 'SelectedSource' && !previous.includes('SelectedSource')) {
+      console.log('partial failed response');
+      process.exit(1);
+    }
+    const image = ${JSON.stringify(image)};
+    const data = operation === 'ActivateSource' ? { serviceInstanceUpdate: true }
+      : operation === 'SelectedSource' ? { serviceInstance: { source: { image } } }
+      : operation === 'SelectedConfig' ? { environment: { config: { services: { 'api-id': { source: { image } } } } } }
+      : { serviceInstanceDeployV2: 'new-api' };
+    console.log(JSON.stringify({ data }));
+  `, { mode: 0o755 });
+  const script = `
+    import { activateArtifact } from ${JSON.stringify(new URL('./railway-artifact.mjs', import.meta.url).href)};
+    console.log(JSON.stringify(activateArtifact(${JSON.stringify(release())}, 'api', 'staging-id', { config: ${JSON.stringify(config)} })));
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
+    encoding: 'utf8', timeout: 10000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).deploymentId, 'new-api');
+  assert.deepEqual(readFileSync(events, 'utf8').trim().split('\n'), [
+    'ActivateSource', 'SelectedSource', 'SelectedSource', 'SelectedConfig', 'ActivateImage',
+  ]);
+});
 
 test('release rejects mutable tags, missing components, wrong revision and wrong service before activation', () => {
   assert.throws(() => validatePreparedRelease(release(), { sourceSha: 'c'.repeat(40) }), /revision/);

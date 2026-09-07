@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { verifyStagingTarget } from './verify-staging-target.mjs';
+import { readRailway } from './railway-read.mjs';
 
 const deploymentOrder = ['router', 'cache', 'worker', 'api', 'web'];
 
@@ -18,14 +19,12 @@ export function previousDeploymentsRemoved(previous, deployments) {
   });
 }
 
-function processTask(command, args, env = process.env, capture = false) {
-  const child = spawn(command, args, { env, stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit' });
-  let output = '';
-  child.stdout?.on('data', (chunk) => { output += chunk; });
+function processTask(command, args, env = process.env) {
+  const child = spawn(command, args, { env, stdio: 'inherit' });
   const done = new Promise((accept, reject) => {
     child.once('error', reject);
     child.once('exit', (code, signal) => code === 0
-      ? accept(output)
+      ? accept()
       : reject(new Error(`${command} failed: ${signal ?? code}`)));
   });
   // Background browser errors remain observable when the deployment finishes.
@@ -60,7 +59,7 @@ async function main() {
   assert(components.length > 0, 'Prepared release has no staging application components');
   const provesActivity = process.env.SCOPE_REHEARSAL_IMPORTED !== '1';
   const scope = ['--project', railway.projectId, '--environment', railway.staging.environmentId];
-  const query = async (...args) => JSON.parse(await processTask('railway', [...args, ...scope, '--json'], process.env, true).done);
+  const query = async (...args) => readRailway([...args, ...scope, '--json']);
   verifyStagingTarget({ manifest, status: await query('status'), services: await query('service', 'list') });
   const env = {
     ...process.env,

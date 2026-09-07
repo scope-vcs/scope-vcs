@@ -13,6 +13,7 @@ node --test .github/scripts/railway-service-health.test.mjs
 node --test .github/scripts/deploy-railway.test.mjs
 node --test deploy/aws/cloud-runner-contract.test.mjs
 node --test .github/scripts/railway-artifact.test.mjs
+node --test .github/scripts/railway-read.test.mjs
 node --test .github/scripts/release-availability.test.mjs
 node --test .github/scripts/release-cutover-journal.test.mjs
 node --test .github/scripts/recovery-preparation-trust.test.mjs

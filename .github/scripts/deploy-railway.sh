@@ -53,23 +53,7 @@ deploy_message_from_event() {
 }
 
 railway_read() {
-  local output attempt
-  case "$1 ${2:-}" in
-    'status '*|'service list'|'deployment list') ;;
-    *) echo 'Only Railway status/list reads may be retried.' >&2; return 2 ;;
-  esac
-  for attempt in 1 2 3; do
-    if output="$(timeout --kill-after=5s 30s railway "$@")"; then
-      printf '%s\n' "$output"
-      return 0
-    fi
-    if ((attempt < 3)); then
-      echo "Railway read failed; retrying ($attempt/3)." >&2
-      sleep 2
-    fi
-  done
-  echo 'Railway read failed after 3 attempts.' >&2
-  return 1
+  node "$(dirname "${BASH_SOURCE[0]}")/railway-read.mjs" "$@"
 }
 
 ensure_service_exists() {

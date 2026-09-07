@@ -108,6 +108,8 @@
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/railway-artifact.mjs",
         ".github/scripts/railway-artifact.test.mjs",
+        ".github/scripts/railway-read.mjs",
+        ".github/scripts/railway-read.test.mjs",
         ".github/scripts/railway-backend-control.sh",
         ".github/scripts/backend-cutover-test-provider.sh",
         ".github/scripts/with-release-availability.sh",

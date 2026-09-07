@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { readRailway } from './railway-read.mjs';
 
 const componentPaths = { api: 'api', worker: 'worker', cache: 'cache-service', router: 'repo-router', web: 'web', cli: 'cli' };
 const componentBinaries = { api: 'scope-vcs', worker: 'scope-worker', cache: 'scope-cache-service', router: 'scope-repo-router', cli: 'scope-cli-service' };
@@ -176,7 +177,9 @@ export function activateArtifact(release, component, environmentId, { config, se
 
 function runRailway(query, variables) {
   // Variables go through stdin to keep private registry credentials out of process arguments.
-  const result = JSON.parse(execFileSync('railway', ['api', query, '--variables', '@-'], {
+  const args = ['api', query, '--variables', '@-'];
+  if (query.startsWith('query ')) return readRailway(args, { input: JSON.stringify(variables) });
+  const result = JSON.parse(execFileSync('railway', args, {
     input: JSON.stringify(variables), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
   }));
   if (result.errors?.length) throw new Error('Railway GraphQL request failed.');
