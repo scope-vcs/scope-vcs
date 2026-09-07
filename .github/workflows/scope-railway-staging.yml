@@ -1,5 +1,5 @@
 name: Scope Railway staging proof
-run-name: Scope staging ${{ inputs.source_sha }}
+run-name: Scope cache-db-proof ${{ inputs.source_sha }}
 
 on:
   workflow_dispatch:
@@ -13,19 +13,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: scope-railway-staging
+  group: scope-railway-cache-db-proof
   cancel-in-progress: false
 
 jobs:
   prove:
     name: Deploy and smoke staging
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/experiment/pr292-staging-smoke'
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 45
+    timeout-minutes: 90
     environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-staging-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-cache-db-proof-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Validate requested revision
         shell: bash
@@ -36,6 +36,8 @@ jobs:
             echo "source_sha must be a lowercase 40-character commit SHA." >&2
             exit 2
           fi
+
+          test "$SOURCE_SHA" = "846f3c8d017d82af6bbc95d133110d8f094203b6"
 
       - name: Checkout trusted orchestration
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -98,7 +100,7 @@ jobs:
         with:
           cache-bin: false
           shared-key: staging-proof
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/experiment/pr292-staging-smoke' }}
           workspaces: |
             candidate -> target
             candidate/cli -> target
@@ -231,13 +233,13 @@ jobs:
   cleanup:
     name: Revoke staging proof access
     needs: prove
-    if: always() && github.ref == 'refs/heads/main'
+    if: always() && github.ref == 'refs/heads/experiment/pr292-staging-smoke'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-staging-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-cache-db-proof-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout trusted cleanup
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
