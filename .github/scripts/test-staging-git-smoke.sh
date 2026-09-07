@@ -76,6 +76,7 @@ fi
 test "$1" = '-C'
 directory="$2"
 shift 2
+if [[ "$1" = '-c' && "$2" = 'credential.helper=' ]]; then shift 2; fi
 case "$1" in
   remote)
     cat "$directory/.origin"
@@ -86,10 +87,29 @@ case "$1" in
   add) ;;
   -c) ;;
   rev-parse)
-    printf '1111111111111111111111111111111111111111\n'
+    if [[ "$directory" = */public ]]; then
+      if [[ "$2" = HEAD || "${FAKE_PUBLIC_STALE:-0}" = 1 ]]; then
+        printf '2222222222222222222222222222222222222222\n'
+      else
+        printf '3333333333333333333333333333333333333333\n'
+      fi
+    else
+      if [[ "$2" = FETCH_HEAD && "${FAKE_PERMISSIONED_STALE:-0}" = 1 ]]; then
+        printf '4444444444444444444444444444444444444444\n'
+      else
+        printf '1111111111111111111111111111111111111111\n'
+      fi
+    fi
     ;;
   show)
-    printf 'initial\nScope staging router smoke test-sha\n'
+    if [[ "${FAKE_PUBLIC_MISSING_MARKER:-0}" = 1 ]]; then
+      printf 'initial\n'
+    else
+      cat "$SCOPE_GIT_SMOKE_DIR/permissioned/README.md"
+    fi
+    ;;
+  cat-file)
+    test "${FAKE_PUBLIC_LEAK:-0}" = 1
     ;;
   *) exit 2 ;;
 esac
@@ -135,3 +155,32 @@ if FAKE_ROUTER_DIRECT=0 \
 fi
 grep -Fq 'did not serve Git discovery directly' "$test_root/redirect-output"
 test ! -e "$redirect_dir"
+
+for failure in stale leak permissioned marker; do
+  case_dir="$test_root/$failure-smoke"
+  mkdir -m 0700 "$case_dir"
+  printf '%s\n' 'scope_otc_test' > "$case_dir/exchange-token"
+  chmod 0600 "$case_dir/exchange-token"
+  if FAKE_PUBLIC_STALE="$([[ "$failure" = stale ]] && echo 1 || echo 0)" \
+    FAKE_PUBLIC_LEAK="$([[ "$failure" = leak ]] && echo 1 || echo 0)" \
+    FAKE_PERMISSIONED_STALE="$([[ "$failure" = permissioned ]] && echo 1 || echo 0)" \
+    FAKE_PUBLIC_MISSING_MARKER="$([[ "$failure" = marker ]] && echo 1 || echo 0)" \
+    SCOPE_API_URL='https://api-staging.example.test' \
+    SCOPE_GIT_ROUTER_URL='https://router-staging.example.test' \
+    SCOPE_CLI_BINARY="$fake_bin/scope" \
+    SCOPE_EXCHANGE_TOKEN_PATH="$case_dir/exchange-token" \
+    SCOPE_GIT_SMOKE_DIR="$case_dir" \
+    GITHUB_SHA='test-sha' \
+    bash "$repo_root/.github/scripts/staging-git-smoke.sh" > "$test_root/$failure-output" 2>&1; then
+    echo "staging Git smoke accepted a $failure public projection" >&2
+    exit 1
+  fi
+  if [[ "$failure" = stale ]]; then
+    grep -Fq 'public projection did not advance' "$test_root/$failure-output"
+  elif [[ "$failure" = leak ]]; then
+    grep -Fq 'public projection exposed a private file' "$test_root/$failure-output"
+  elif [[ "$failure" = permissioned ]]; then
+    grep -Fq 'permissioned remote did not retain' "$test_root/$failure-output"
+  fi
+  test ! -e "$case_dir"
+done

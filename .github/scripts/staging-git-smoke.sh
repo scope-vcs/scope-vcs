@@ -79,6 +79,7 @@ GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone --quiet "$public_url" "$pu
 test "$(git -C "$public_checkout" remote get-url origin)" = "$public_url"
 test -f "$public_checkout/README.md"
 test ! -e "$public_checkout/internal/notes.md"
+previous_public_head="$(git -C "$public_checkout" rev-parse HEAD)"
 
 SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" login --exchange-file "$token_path"
 rm -f -- "$token_path"
@@ -87,7 +88,7 @@ test "$(git -C "$permissioned_checkout" remote get-url origin)" = "$permissioned
 test -f "$permissioned_checkout/internal/notes.md"
 GIT_TERMINAL_PROMPT=0 git -C "$permissioned_checkout" fetch --quiet --prune origin
 
-marker="Scope staging router smoke ${GITHUB_SHA:-manual}"
+marker="Scope staging router smoke ${GITHUB_SHA:-manual} $(basename "$smoke_dir")"
 printf '\n%s\n' "$marker" >> "$permissioned_checkout/README.md"
 git -C "$permissioned_checkout" add README.md
 git -C "$permissioned_checkout" \
@@ -100,11 +101,21 @@ expected_head="$(git -C "$permissioned_checkout" rev-parse HEAD)"
   SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" push --main --no-review --remote origin
 )
 
+GIT_TERMINAL_PROMPT=0 git -C "$permissioned_checkout" fetch --quiet origin main
+if [[ "$(git -C "$permissioned_checkout" rev-parse FETCH_HEAD)" != "$expected_head" ]]; then
+  echo "The permissioned remote did not retain the accepted staging commit." >&2
+  exit 1
+fi
+
 GIT_TERMINAL_PROMPT=0 git -C "$public_checkout" -c credential.helper= fetch --quiet origin main
-actual_head="$(git -C "$public_checkout" rev-parse FETCH_HEAD)"
-if [[ "$actual_head" != "$expected_head" ]]; then
-  echo "The public projection did not advance to the accepted staging push." >&2
+public_head="$(git -C "$public_checkout" rev-parse FETCH_HEAD)"
+if [[ "$public_head" == "$previous_public_head" ]]; then
+  echo "The public projection did not advance after the staging push." >&2
   exit 1
 fi
 git -C "$public_checkout" show FETCH_HEAD:README.md | grep -Fqx "$marker"
+if git -C "$public_checkout" cat-file -e FETCH_HEAD:internal/notes.md 2>/dev/null; then
+  echo "The updated public projection exposed a private file." >&2
+  exit 1
+fi
 echo "Staging Git router smoke passed for dev/update-demo."
