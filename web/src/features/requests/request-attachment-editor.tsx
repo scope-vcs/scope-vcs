@@ -26,7 +26,8 @@ import {
   type DraftAttachment,
   type RequestAttachmentDraftTarget,
 } from './request-attachment-drafts'
-import { refreshRequestAttachments, useRequestAttachments } from './request-attachment-context'
+import { useRequestAttachments } from './request-attachment-context'
+import { refreshRequestAttachments } from './request-attachment-resource'
 import {
   attachmentTargetForDraft,
   removeUploadingRequestAttachment,
@@ -173,12 +174,12 @@ export function RequestAttachmentEditor({
   }
 
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
-    const files = [...event.clipboardData.items]
-      .filter((item) => item.kind === 'file')
-      .flatMap((item) => {
-        const file = item.getAsFile()
-        return file ? [file] : []
-      })
+    const files: File[] = []
+    for (const item of event.clipboardData.items) {
+      if (item.kind !== 'file') continue
+      const file = item.getAsFile()
+      if (file) files.push(file)
+    }
     if (files.length === 0) return
     event.preventDefault()
     addFiles(files)
@@ -264,6 +265,7 @@ export function RequestAttachmentEditor({
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/25 px-3 py-2">
           <input
             accept={acceptedMedia.join(',')}
+            aria-label="Attach photos or videos"
             className="sr-only"
             multiple
             onChange={(event) => {
@@ -334,9 +336,12 @@ function DraftAttachmentRow({
               : `${formatBytes(attachment.size)} · ${Math.round(attachment.progress * 100)}%`}
         </p>
         {attachment.status === 'uploading' ? (
-          <div aria-label={`${Math.round(attachment.progress * 100)}% uploaded`} className="mt-1 h-1 max-w-60 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemax={100} aria-valuemin={0} aria-valuenow={Math.round(attachment.progress * 100)}>
-            <div className="h-full bg-brand transition-[width]" style={{ width: `${attachment.progress * 100}%` }} />
-          </div>
+          <progress
+            aria-label={`${attachment.name}: ${Math.round(attachment.progress * 100)}% uploaded`}
+            className="mt-1 block h-1 w-full max-w-60 appearance-none overflow-hidden rounded-full bg-muted [&::-moz-progress-bar]:bg-brand [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-brand"
+            max={1}
+            value={attachment.progress}
+          />
         ) : null}
       </div>
       <div className="flex items-center">
@@ -380,14 +385,14 @@ function validateFiles(
   let error: string | null = files.length > available
     ? `You can attach up to ${limits?.max_attachments_per_content ?? 10} files here.`
     : null
+  const photoTypes = new Set(limits?.accepted_photo_media_types ??
+    FALLBACK_ACCEPTED_MEDIA.filter((type) => type.startsWith('image/')))
+  const videoTypes = new Set(limits?.accepted_video_media_types ??
+    FALLBACK_ACCEPTED_MEDIA.filter((type) => type.startsWith('video/')))
   for (const file of files.slice(0, available)) {
     const mediaType = browserMediaType(file)
-    const isPhoto = limits
-      ? limits.accepted_photo_media_types.includes(mediaType)
-      : FALLBACK_ACCEPTED_MEDIA.includes(mediaType) && mediaType.startsWith('image/')
-    const isVideo = limits
-      ? limits.accepted_video_media_types.includes(mediaType)
-      : FALLBACK_ACCEPTED_MEDIA.includes(mediaType) && mediaType.startsWith('video/')
+    const isPhoto = photoTypes.has(mediaType)
+    const isVideo = videoTypes.has(mediaType)
     if (!isPhoto && !isVideo) {
       error = `${file.name} is not a supported photo or video.`
       continue

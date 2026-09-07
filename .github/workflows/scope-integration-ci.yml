@@ -50,6 +50,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Install media codecs
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg libheif-examples
+          ffprobe -version
+          heif-convert --version
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:

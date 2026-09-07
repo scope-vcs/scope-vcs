@@ -1,6 +1,5 @@
 import type {
   RequestAttachmentDerivativeKind,
-  RequestAttachmentMediaTarget,
   RequestAttachmentResponse,
 } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
@@ -47,7 +46,7 @@ function PhotoAttachment({
 }) {
   const [open, setOpen] = useState(false)
   const derivative = derivativeOf(attachment, 'ImagePreview')
-  const media = useAttachmentMediaGrant(attachment.id, derivativeTarget(derivative?.id))
+  const media = useAttachmentMediaGrant(attachment.id, derivative?.id)
   const alt = label || attachment.filename
   if (!derivative) return <MissingDerivative attachment={attachment} label="Photo preview" />
   if (media.status !== 'loaded') {
@@ -102,8 +101,8 @@ function VideoAttachment({
 }) {
   const playback = derivativeOf(attachment, 'VideoPlayback')
   const poster = derivativeOf(attachment, 'VideoPoster')
-  const media = useAttachmentMediaGrant(attachment.id, derivativeTarget(playback?.id))
-  const posterMedia = useAttachmentMediaGrant(attachment.id, derivativeTarget(poster?.id), Boolean(poster))
+  const media = useAttachmentMediaGrant(attachment.id, playback?.id)
+  const posterMedia = useAttachmentMediaGrant(attachment.id, poster?.id, Boolean(poster))
   const videoRef = useRef<HTMLVideoElement>(null)
   const positionRef = useRef(0)
   const playingRef = useRef(false)
@@ -131,6 +130,8 @@ function VideoAttachment({
   }
   return (
     <figure className="my-3 min-w-0">
+      {/* Uploaded recordings have no caption asset; revisit when caption upload or transcription is supported. */}
+      {/* eslint-disable-next-line react-doctor/media-has-caption */}
       <video
         aria-label={label || attachment.filename}
         className="max-h-[38rem] w-full rounded-md border border-border bg-black"
@@ -158,6 +159,25 @@ function AttachmentNotReady({ attachment }: { attachment: RequestAttachmentRespo
   const canRetry = attachment.state === 'Failed' && failure?.retryable && (
     environment.isMaintainer || environment.viewerId === attachment.uploader_user_id
   )
+  function retryProcessing() {
+    setRetrying(true)
+    setRetryError(null)
+    void environment.actions.retry({
+      ...environment.params,
+      attachment_id: attachment.id,
+      operation_id: crypto.randomUUID(),
+    }).then((updated) => {
+      const identity = requestAttachmentResourceIdentity(environment.accessScope, environment.requestId)
+      const current = requestAttachmentResource.peek(identity)
+      if (current) requestAttachmentResource.write(identity, {
+        ...current,
+        attachments: current.attachments.map((value) => value.id === updated.id ? updated : value),
+      })
+    }).catch((error: unknown) => {
+      setRetryError(error instanceof Error ? error.message : 'Processing could not be retried.')
+    }).finally(() => setRetrying(false))
+  }
+
   return (
     <AttachmentStatus icon={failure ? <CircleAlert /> : <LoaderCircle className="animate-spin" />}>
       <span className="font-medium text-foreground">{attachment.filename}</span>
@@ -165,24 +185,7 @@ function AttachmentNotReady({ attachment }: { attachment: RequestAttachmentRespo
       {canRetry ? (
         <Button
           disabled={retrying}
-          onClick={() => {
-            setRetrying(true)
-            setRetryError(null)
-            void environment.actions.retry({
-              ...environment.params,
-              attachment_id: attachment.id,
-              operation_id: crypto.randomUUID(),
-            }).then((updated) => {
-              const identity = requestAttachmentResourceIdentity(environment.accessScope, environment.requestId)
-              const current = requestAttachmentResource.peek(identity)
-              if (current) requestAttachmentResource.write(identity, {
-                ...current,
-                attachments: current.attachments.map((value) => value.id === updated.id ? updated : value),
-              })
-            }).catch((error: unknown) => {
-              setRetryError(error instanceof Error ? error.message : 'Processing could not be retried.')
-            }).finally(() => setRetrying(false))
-          }}
+          onClick={retryProcessing}
           size="sm"
           type="button"
           variant="secondary"
@@ -271,23 +274,23 @@ function MissingDerivative({
 
 function useAttachmentMediaGrant(
   attachmentId: string,
-  target: RequestAttachmentMediaTarget | null,
+  derivativeId: string | undefined,
   enabled = true,
 ) {
   const environment = useRequestAttachments()
-  const targetKey = JSON.stringify(target)
-  const identity = target
+  const targetKey = JSON.stringify({ kind: 'derivative', derivative_id: derivativeId })
+  const identity = derivativeId
     ? `${environment.accessScope}\0${attachmentId}\0${targetKey}`
     : null
   const load = useCallback(
     () => {
-      if (!target) throw new Error('The media derivative is unavailable.')
+      if (!derivativeId) throw new Error('The media derivative is unavailable.')
       return environment.actions.grant({
         ...environment.params,
         attachment_id: attachmentId,
-        target,
+        target: { kind: 'derivative', derivative_id: derivativeId },
       }).then((grant) => ({ ...grant, media_url: safeMediaUrl(grant.media_url) }))
-    }, [attachmentId, environment.actions, environment.params, targetKey],
+    }, [attachmentId, derivativeId, environment.actions, environment.params],
   )
   const media = useCachedResource({
     enabled,
@@ -310,10 +313,6 @@ function derivativeOf(
   kind: RequestAttachmentDerivativeKind,
 ) {
   return attachment.derivatives.find((derivative) => derivative.kind === kind)
-}
-
-function derivativeTarget(derivativeId: string | undefined): RequestAttachmentMediaTarget | null {
-  return derivativeId ? { kind: 'derivative', derivative_id: derivativeId } : null
 }
 
 function formatBytes(bytes: number) {

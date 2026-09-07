@@ -8,6 +8,7 @@ node --test .github/scripts/verify-staging-target.test.mjs
 node --test .github/scripts/stop-staging-writers.test.mjs
 node --test deploy/railway/reconcile-media.test.mjs
 node --check .github/scripts/deploy-railway-image.mjs
+node --test .github/scripts/deploy-railway-image.test.mjs
 node --check dev/media-smoke.mjs
 bash -n .github/scripts/deploy-staging-railway.sh
 bash -n .github/scripts/staging-git-smoke.sh

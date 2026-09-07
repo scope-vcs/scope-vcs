@@ -48,8 +48,8 @@ export function RequestDiscussionMarkdown({
   )
 }
 
-function textOf(children: ReactNode): string {
-  if (typeof children === 'string' || typeof children === 'number') return String(children)
-  if (Array.isArray(children)) return children.map(textOf).join('')
+function textOf(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join('')
   return ''
 }

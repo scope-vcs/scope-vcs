@@ -46,6 +46,12 @@ export function requestAttachmentResourceIdentity(
   return `${accessScope}\0${requestId}`
 }
 
+export function refreshRequestAttachments(accessScope: string, requestId: string) {
+  requestAttachmentResource.invalidate(
+    requestAttachmentResourceIdentity(accessScope, requestId),
+  )
+}
+
 function accessScopeOwner(accessScope: string) {
   try {
     const value: unknown = JSON.parse(accessScope)

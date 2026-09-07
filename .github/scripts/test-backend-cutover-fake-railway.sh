@@ -22,9 +22,13 @@ fi
 if [[ "$1" == "api" ]]; then
   [[ -z "${RAILWAY_TOKEN:-}" ]]
   [[ "${RAILWAY_API_TOKEN:-}" == "token-graphql" ]]
-  if [[ "$*" == *"serviceInstanceUpdate"* ]]; then
+  if [[ "$*" == *"serviceInstanceDeployV2"* ]]; then
     touch "$FAKE_RAILWAY_STATE/up-scope-media-worker"
     rm -f "$FAKE_RAILWAY_STATE/stopped-scope-media-worker"
+    echo '{"data":{"serviceInstanceDeployV2":"new-scope-media-worker"}}'
+    exit 0
+  fi
+  if [[ "$*" == *"serviceInstanceUpdate"* ]]; then
     echo '{"data":{"serviceInstanceUpdate":true}}'
     exit 0
   fi

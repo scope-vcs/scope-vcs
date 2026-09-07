@@ -129,6 +129,7 @@
         ".github/workflows/scope-railway-staging.yml",
         ".github/workflows/scope-media-worker-image.yml",
         "dev/media-smoke.mjs",
+        "dev/media-capacity.mjs",
         "dev/run-ci-local-stack",
         "dev/scope-dev",
         "deploy/railway/reconcile-media.mjs",
@@ -206,6 +207,7 @@
       "files": [
         ".github/scripts/deploy-backend-railway.sh",
         ".github/scripts/deploy-railway-image.mjs",
+        ".github/scripts/deploy-railway-image.test.mjs",
         ".github/scripts/test-deploy-backend-railway.sh",
         ".github/scripts/test-backend-cutover-fake-railway.sh",
         ".github/workflows/scope-api-deploy.yml",
@@ -258,6 +260,7 @@
         ".github/workflows/scope-railway-staging.yml",
         ".github/scripts/deploy-staging-railway.sh",
         "dev/media-smoke.mjs",
+        "dev/media-capacity.mjs",
         "dev/run-ci-local-stack",
         "dev/scope-dev",
         "deploy/railway/prebuilt-media.railpack.json",

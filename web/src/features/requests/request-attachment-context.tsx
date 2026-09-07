@@ -158,9 +158,3 @@ export function useRequestAttachments() {
   if (!context) throw new Error('request attachment context is unavailable')
   return context
 }
-
-export function refreshRequestAttachments(accessScope: string, requestId: string) {
-  requestAttachmentResource.invalidate(
-    requestAttachmentResourceIdentity(accessScope, requestId),
-  )
-}

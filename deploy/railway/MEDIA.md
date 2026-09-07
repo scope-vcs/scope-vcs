@@ -87,6 +87,11 @@ worker image pinned by digest.
 
 ## Staging proof
 
+The `scope-media-worker` GHCR package remains private. The staging and production environments
+must provide `RAILWAY_REGISTRY_USERNAME` and `RAILWAY_REGISTRY_PASSWORD`; the trusted deployment
+owner stores those pull credentials on the Railway media worker service before activating the
+digest-pinned image. Candidate code never receives the credentials.
+
 Once an exact reviewed commit is pushed, dispatch its workflow and candidate from that same
 commit:
 
