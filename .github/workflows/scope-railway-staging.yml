@@ -21,7 +21,6 @@ permissions:
   actions: read
   contents: read
   deployments: read
-  packages: write
 
 concurrency:
   group: scope-railway-staging
@@ -127,6 +126,11 @@ jobs:
 
   prepare-images:
     name: Prepare immutable staging images
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      packages: write
     needs: prepare
     uses: ./.github/workflows/scope-release-prepare.yml
     with:

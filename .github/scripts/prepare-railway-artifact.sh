@@ -6,9 +6,11 @@ context_root="${2:?context-root is required}"
 release_path="${3:?manifest-path is required}"
 source_sha="${SCOPE_DEPLOYMENT_SOURCE_SHA:-${GITHUB_SHA:-}}"
 [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'A full source revision is required.' >&2; exit 2; }
+: "${SCOPE_RAILWAY_REGISTRY_USERNAME:?Private image preparation requires durable registry username}"
+: "${SCOPE_RAILWAY_REGISTRY_PASSWORD:?Private image preparation requires durable registry password}"
+: "${GITHUB_TOKEN:?Private image preparation requires publishing token for visibility verification}"
 service_id="$(jq -er --arg component "$component" '.services[$component].id' "${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}")"
-image_repository="${SCOPE_ARTIFACT_IMAGE_REPOSITORY:-ghcr.io/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}/railway-$component}"
-image_repository="${image_repository,,}"
+image_repository="$(node .github/scripts/railway-artifact.mjs image-repository "$component")"
 image_tag="$image_repository:$component-$source_sha-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 metadata="$(mktemp)"
 pull_config="$(mktemp -d)"
@@ -50,15 +52,12 @@ image="$image_repository@$digest"
 
 # Verify that Railway can pull after the workflow token expires. A clean Docker
 # config prevents accidental validation with the short-lived publishing token.
-if [[ -n "${SCOPE_RAILWAY_REGISTRY_USERNAME:-}" || -n "${SCOPE_RAILWAY_REGISTRY_PASSWORD:-}" ]]; then
-  : "${SCOPE_RAILWAY_REGISTRY_USERNAME:?Registry username is required}"
-  : "${SCOPE_RAILWAY_REGISTRY_PASSWORD:?Registry password is required}"
-  printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" |
-    DOCKER_CONFIG="$pull_config" docker login "${image_repository%%/*}" \
-      --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null
-fi
+printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" |
+  DOCKER_CONFIG="$pull_config" docker login "${image_repository%%/*}" \
+    --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null
 DOCKER_CONFIG="$pull_config" docker manifest inspect "$image" >/dev/null || {
-  echo 'Prepared image is not pullable anonymously or with the durable Railway registry credentials. Configure registry credentials before cutover.' >&2
+  echo 'Prepared private image is not pullable with the durable Railway registry credentials.' >&2
   exit 1
 }
+node .github/scripts/railway-artifact.mjs verify-private-package "$component"
 node .github/scripts/railway-artifact.mjs record "$release_path" "$component" "$image" "$source_sha" "$service_id"

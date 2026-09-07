@@ -113,13 +113,20 @@ code.
 
 ## Release image storage
 
-Each prepared image lives in `ghcr.io/OWNER/REPOSITORY/railway-COMPONENT`, addressed
-by digest. Newly created GHCR packages are private. Make the release packages
-public, or configure `RAILWAY_REGISTRY_USERNAME` and
-`RAILWAY_REGISTRY_PASSWORD` with durable pull-only access to those packages.
-The short-lived publishing token is never used as Railway's recovery credential.
-Preparation verifies anonymous or durable authenticated pulls before recording
-an artifact; a missing pull permission cannot close production writers.
+Release images use private GHCR packages, addressed by digest. The package prefix
+is owned by `railway.releaseImagePrefix` in `.github/deployment-services.json`;
+its value is `railway-private`, giving packages such as
+`ghcr.io/OWNER/REPOSITORY/railway-private-api`. Publishing and recovery validate
+against that same namespace.
+
+Configure the GitHub Actions secrets `RAILWAY_REGISTRY_USERNAME` and
+`RAILWAY_REGISTRY_PASSWORD` with durable pull-only access to these packages.
+Preparation requires both before publishing. It verifies an authenticated pull
+and checks that GitHub reports the package visibility as private before recording
+the artifact. The short-lived publishing token is never used
+as Railway's recovery credential. Keep the new packages private. Existing public
+packages cannot become private; retire them only after private deployment is
+verified and no active deployment or unresolved cutover references them.
 
 The API image contains the original maintenance binary at
 `/app/bin/scope-maintenance`. Ordinary deployments and recovery extract it from

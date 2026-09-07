@@ -8,6 +8,44 @@ const componentBinaries = { api: 'scope-vcs', worker: 'scope-worker', cache: 'sc
 const digestReference = /^[a-z0-9][a-z0-9./_-]*@sha256:[a-f0-9]{64}$/;
 const sourceRevision = /^[a-f0-9]{40}$/;
 
+export function releaseImageRepository(manifest, repository, component) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(repository ?? '')) {
+    throw new Error('Release images require a trusted OWNER/REPOSITORY.');
+  }
+  const prefix = manifest?.railway?.releaseImagePrefix;
+  if (typeof prefix !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(prefix)) {
+    throw new Error('Deployment manifest requires a valid railway.releaseImagePrefix.');
+  }
+  if (!Object.hasOwn(componentPaths, component)) throw new Error(`Unknown release component ${component}.`);
+  return `ghcr.io/${repository.toLowerCase()}/${prefix}-${component}`;
+}
+
+export async function verifyPrivateReleasePackage(manifest, repository, component, { token, fetchImpl = fetch } = {}) {
+  const imageRepository = releaseImageRepository(manifest, repository, component);
+  if (!token) throw new Error('GITHUB_TOKEN is required to verify private package visibility.');
+  const owner = repository.split('/')[0].toLowerCase();
+  const packageName = imageRepository.slice(`ghcr.io/${owner}/`.length);
+  async function metadata(path) {
+    const response = await fetchImpl(`https://api.github.com${path}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+      redirect: 'error', signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw new Error(`GitHub package metadata request failed with HTTP ${response.status}.`);
+    return response.json();
+  }
+  const account = await metadata(`/users/${owner}`);
+  if (account.login?.toLowerCase() !== owner || !['Organization', 'User'].includes(account.type)) {
+    throw new Error('GitHub did not confirm the release package owner.');
+  }
+  const namespace = account.type === 'Organization' ? 'orgs' : 'users';
+  const packageInfo = await metadata(`/${namespace}/${owner}/packages/container/${encodeURIComponent(packageName)}`);
+  if (packageInfo.name !== packageName || packageInfo.package_type !== 'container' || packageInfo.owner?.login?.toLowerCase() !== owner) {
+    throw new Error('GitHub returned a different release package.');
+  }
+  if (packageInfo.visibility !== 'private') throw new Error(`Release package ${imageRepository} must be private.`);
+  return { imageRepository, visibility: 'private' };
+}
+
 export function validatePreparedRelease(release, { sourceSha, components = [], services } = {}) {
   if (!release || release.schemaVersion !== 1 || !sourceRevision.test(release.sourceSha ?? '')) {
     throw new Error('Prepared release requires schemaVersion 1 and a full sourceSha.');
@@ -145,9 +183,15 @@ function runRailway(query, variables) {
   return result;
 }
 
-function main() {
+async function main() {
   const [command, file, ...args] = process.argv.slice(2);
-  if (command === 'configure-staging-registry') {
+  if (command === 'image-repository') {
+    const manifest = JSON.parse(readFileSync(process.env.SCOPE_DEPLOYMENT_MANIFEST || '.github/deployment-services.json', 'utf8'));
+    console.log(releaseImageRepository(manifest, process.env.GITHUB_REPOSITORY, file));
+  } else if (command === 'verify-private-package') {
+    const manifest = JSON.parse(readFileSync(process.env.SCOPE_DEPLOYMENT_MANIFEST || '.github/deployment-services.json', 'utf8'));
+    await verifyPrivateReleasePackage(manifest, process.env.GITHUB_REPOSITORY, file, { token: process.env.GITHUB_TOKEN });
+  } else if (command === 'configure-staging-registry') {
     const manifest = JSON.parse(readFileSync(process.env.SCOPE_DEPLOYMENT_MANIFEST || '.github/deployment-services.json', 'utf8'));
     configureStagingRegistry(manifest, { username: process.env.SCOPE_RAILWAY_REGISTRY_USERNAME, password: process.env.SCOPE_RAILWAY_REGISTRY_PASSWORD });
   } else if (command === 'record') {
@@ -188,9 +232,9 @@ function main() {
       const password = process.env.SCOPE_RAILWAY_REGISTRY_PASSWORD;
       const registryCredentials = username || password ? { username, password } : undefined;
       console.log(JSON.stringify(activateArtifact(release, component, environmentId, { config, services, registryCredentials })));
-    } else throw new Error('usage: railway-artifact.mjs <validate|record|activate|verify|verify-maintenance|configure-staging-registry> <manifest> <arguments...>');
+    } else throw new Error('usage: railway-artifact.mjs <validate|record|activate|verify|verify-maintenance|configure-staging-registry|image-repository|verify-private-package> <manifest> <arguments...>');
   }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; }
+  main().catch((error) => { console.error(error.message); process.exitCode = 1; });
 }

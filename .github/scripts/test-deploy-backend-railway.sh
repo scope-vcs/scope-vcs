@@ -189,7 +189,7 @@ const fs = require("node:fs");
 const sourceSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const names = { api:"scope-api",worker:"scope-worker",cache:"scope-cache-service",router:"scope-repo-router" };
 const components = Object.fromEntries(Object.entries(names).map(([component,serviceId]) => [component,{
-serviceId,sourceSha,image:`ghcr.io/test/repo/railway-${component}@sha256:${"b".repeat(64)}`}]))
+serviceId,sourceSha,image:`ghcr.io/test/repo/railway-private-${component}@sha256:${"b".repeat(64)}`}]))
 const maintenanceSha256 = require("node:crypto").createHash("sha256").update(fs.readFileSync(process.argv[2])).digest("hex");
 fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,components,maintenanceSha256,preparationRunId:"123"}));
 ' "$test_dir/$name-prepared.json" "$test_dir/maintenance"

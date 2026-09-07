@@ -10,6 +10,7 @@ bash .github/scripts/test-deploy-backend-railway.sh
 bash .github/scripts/test-staging-git-smoke.sh
 node --test bench/*.test.mjs
 node --test .github/scripts/railway-service-health.test.mjs
+node --test .github/scripts/deploy-railway.test.mjs
 node --test deploy/aws/cloud-runner-contract.test.mjs
 node --test .github/scripts/railway-artifact.test.mjs
 node --test .github/scripts/release-availability.test.mjs

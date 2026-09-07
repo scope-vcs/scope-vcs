@@ -1,6 +1,7 @@
 {
   "railway": {
     "cliVersion": "5.41.2",
+    "releaseImagePrefix": "railway-private",
     "projectId": "45dd67fa-6d69-48ad-9680-1313d41b4490",
     "environmentId": "2f21f6b6-6817-4338-9e08-cf18e78b8f46",
     "runtimeGroupId": "74120aef-735e-4959-bf8d-5cd36d10cab1",
@@ -85,6 +86,7 @@
         ".github/scripts/recovery-preparation-trust.test.mjs",
         ".github/scripts/railway-service-health.mjs",
         ".github/scripts/railway-service-health.test.mjs",
+        ".github/scripts/deploy-railway.test.mjs",
         ".github/workflows/scope-production-deploy.yml",
         "dev/check",
         ".scope/runs/checks.yml",

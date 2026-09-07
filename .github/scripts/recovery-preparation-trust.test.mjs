@@ -10,7 +10,7 @@ function fixture() {
     schemaVersion: 1, sourceSha, preparationRunId: "123", maintenanceSha256: "c".repeat(64),
     components: Object.fromEntries(["api", "worker", "cache", "router"].map(component => [component, {
       sourceSha, serviceId: component,
-      image: `ghcr.io/${repository}/railway-${component}@sha256:${"b".repeat(64)}`,
+      image: `ghcr.io/${repository}/railway-private-${component}@sha256:${"b".repeat(64)}`,
     }])),
   };
   const run = {
@@ -90,10 +90,11 @@ test("requires the source itself to be main's merge base", async () => {
 });
 
 for (const image of [
-  `ghcr.io/attacker/repo/railway-api@sha256:${"b".repeat(64)}`,
-  `ghcr.io/scope-vcs/scope-vcs-evil/railway-api@sha256:${"b".repeat(64)}`,
-  `ghcr.io/scope-vcs/scope-vcs/railway-worker@sha256:${"b".repeat(64)}`,
-  `registry.example/scope-vcs/scope-vcs/railway-api@sha256:${"b".repeat(64)}`,
+  `ghcr.io/scope-vcs/scope-vcs/railway-api@sha256:${"b".repeat(64)}`,
+  `ghcr.io/attacker/repo/railway-private-api@sha256:${"b".repeat(64)}`,
+  `ghcr.io/scope-vcs/scope-vcs-evil/railway-private-api@sha256:${"b".repeat(64)}`,
+  `ghcr.io/scope-vcs/scope-vcs/railway-private-worker@sha256:${"b".repeat(64)}`,
+  `registry.example/scope-vcs/scope-vcs/railway-private-api@sha256:${"b".repeat(64)}`,
 ]) {
   test(`rejects foreign or substituted package ${image.split("@")[0]}`, async () => {
     const state = fixture();
@@ -128,4 +129,16 @@ test("finds successful preparation from an earlier attempt beyond the first jobs
 test("refuses recovery when GitHub cannot establish the original run", async () => {
   const state = fixture();
   await assert.rejects(validateRecoveryPreparation(state.prepared, async () => { throw new Error("GitHub unavailable"); }, repository), /GitHub unavailable/);
+});
+
+
+test("recovery uses the same manifest package prefix as publishing", async () => {
+  const state = fixture();
+  const manifest = { railway: { releaseImagePrefix: "separate-release-set" } };
+  await assert.rejects(validateRecoveryPreparation(state.prepared, state.request, repository, manifest), /trusted production package/);
+  assert.deepEqual(state.calls, []);
+  for (const artifact of Object.values(state.prepared.components)) {
+    artifact.image = artifact.image.replace("/railway-private-", "/separate-release-set-");
+  }
+  await validateRecoveryPreparation(state.prepared, state.request, repository, manifest);
 });

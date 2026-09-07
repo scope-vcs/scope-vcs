@@ -12,7 +12,7 @@ const extractor = join(repository, '.github/scripts/extract-railway-maintenance.
 const preparer = join(repository, '.github/scripts/prepare-railway-artifact.sh');
 const sourceSha = 'a'.repeat(40);
 const digest = `sha256:${'b'.repeat(64)}`;
-const image = `ghcr.io/example/release/railway-api@${digest}`;
+const image = `ghcr.io/example/release/railway-private-api@${digest}`;
 const serviceId = JSON.parse(readFileSync(join(repository, '.github/deployment-services.json'))).services.api.id;
 const fakeDocker = `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -59,10 +59,19 @@ function fixture(t) {
   };
   writeFileSync(manifest, JSON.stringify(release));
   const log = join(root, 'docker.ndjson');
+  const fetchMock = join(root, 'github-metadata-mock.mjs');
+  writeFileSync(fetchMock, `
+    globalThis.fetch = async (url) => {
+      if (url === 'https://api.github.com/users/example') return new Response(JSON.stringify({ login: 'example', type: 'Organization' }));
+      if (url !== 'https://api.github.com/orgs/example/packages/container/release%2Frailway-private-api') throw new Error('Unexpected package metadata URL');
+      return new Response(JSON.stringify({ name: 'release/railway-private-api', package_type: 'container', owner: { login: 'example' }, visibility: process.env.GITHUB_TEST_PACKAGE_VISIBILITY || 'private' }));
+    };
+  `);
   const env = {
     ...process.env, PATH: `${bin}:${process.env.PATH}`, DOCKER_CONFIG: inheritedConfig,
     DOCKER_TEST_LOG: log, DOCKER_TEST_IMAGE_BINARY: imageBinary, DOCKER_TEST_DIGEST: digest,
     SCOPE_DEPLOYMENT_SOURCE_SHA: sourceSha,
+    GITHUB_TOKEN: 'publishing-token', NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --import=${fetchMock}`,
     SCOPE_RAILWAY_REGISTRY_USERNAME: '', SCOPE_RAILWAY_REGISTRY_PASSWORD: '',
   };
   return { root, manifest, release, imageBinary, env, inheritedConfig, log, destination: join(root, 'target/release/scope-maintenance') };
@@ -120,7 +129,7 @@ test('hash mismatch and symlink copies leave an existing maintenance binary unto
 test('fails before Docker access for mutable image, missing hash, wrong source, or partial credentials', (t) => {
   for (const failure of ['mutable', 'missing-hash', 'source', 'credentials']) {
     const f = fixture(t);
-    if (failure === 'mutable') f.release.components.api.image = 'ghcr.io/example/release/railway-api:latest';
+    if (failure === 'mutable') f.release.components.api.image = 'ghcr.io/example/release/railway-private-api:latest';
     if (failure === 'missing-hash') delete f.release.maintenanceSha256;
     writeFileSync(f.manifest, JSON.stringify(f.release));
     const result = extract(f, {
@@ -142,10 +151,12 @@ test('API preparation embeds and binds the original maintenance binary before pu
   const original = join(f.root, 'build-artifact-maintenance');
   writeFileSync(original, readFileSync(f.imageBinary));
   const result = spawnSync('bash', [preparer, 'api', context, f.manifest], {
-    cwd: repository, encoding: 'utf8', env: { ...f.env, GITHUB_REPOSITORY: 'example/release', SCOPE_MAINTENANCE_BINARY: original },
+    cwd: repository, encoding: 'utf8', env: { ...f.env, GITHUB_REPOSITORY: 'example/release', SCOPE_MAINTENANCE_BINARY: original, SCOPE_RAILWAY_REGISTRY_USERNAME: 'pull-user', SCOPE_RAILWAY_REGISTRY_PASSWORD: 'durable-read-token', SCOPE_ARTIFACT_IMAGE_REPOSITORY: 'ghcr.io/attacker/ignored-override' },
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(readFileSync(f.manifest)).maintenanceSha256, f.release.maintenanceSha256);
+  const prepared = JSON.parse(readFileSync(f.manifest));
+  assert.equal(prepared.maintenanceSha256, f.release.maintenanceSha256);
+  assert.equal(prepared.components.api.image, image);
   rmSync(original);
   rmSync(context, { recursive: true });
   assert.equal(extract(f).status, 0);
@@ -158,8 +169,43 @@ test('API preparation rejects a different embedded maintenance binary before pub
   writeFileSync(join(context, 'bin/scope-vcs'), 'api binary', { mode: 0o755 });
   writeFileSync(join(context, 'bin/scope-maintenance'), 'wrong binary');
   const result = spawnSync('bash', [preparer, 'api', context, f.manifest], {
-    cwd: repository, encoding: 'utf8', env: { ...f.env, GITHUB_REPOSITORY: 'example/release', SCOPE_MAINTENANCE_BINARY: f.imageBinary },
+    cwd: repository, encoding: 'utf8', env: { ...f.env, GITHUB_REPOSITORY: 'example/release', SCOPE_MAINTENANCE_BINARY: f.imageBinary, SCOPE_RAILWAY_REGISTRY_USERNAME: 'pull-user', SCOPE_RAILWAY_REGISTRY_PASSWORD: 'durable-read-token' },
   });
   assert.notEqual(result.status, 0);
   assert.equal(commands(f).length, 0);
+});
+
+
+test('private preparation requires both durable credentials before publishing or touching candidate files', (t) => {
+  for (const credentials of [
+    {}, { SCOPE_RAILWAY_REGISTRY_USERNAME: 'pull-user' }, { SCOPE_RAILWAY_REGISTRY_PASSWORD: 'durable-read-token' },
+  ]) {
+    const f = fixture(t);
+    const result = spawnSync('bash', [preparer, 'api', join(f.root, 'not-extracted-yet'), f.manifest], {
+      cwd: repository, encoding: 'utf8', env: { ...f.env, ...credentials, GITHUB_REPOSITORY: 'example/release' },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Private image preparation requires durable registry (username|password)/);
+    assert.equal(commands(f).length, 0);
+    assert.deepEqual(JSON.parse(readFileSync(f.manifest)), f.release);
+  }
+});
+
+
+test('published public or internal packages cannot enter the prepared release manifest', (t) => {
+  for (const visibility of ['public', 'internal']) {
+    const f = fixture(t);
+    rmSync(f.manifest);
+    const context = join(f.root, 'api-context');
+    mkdirSync(join(context, 'bin'), { recursive: true });
+    writeFileSync(join(context, 'bin/scope-vcs'), 'api binary', { mode: 0o755 });
+    writeFileSync(join(context, 'bin/scope-maintenance'), readFileSync(f.imageBinary));
+    const result = spawnSync('bash', [preparer, 'api', context, f.manifest], {
+      cwd: repository, encoding: 'utf8', env: { ...f.env, GITHUB_REPOSITORY: 'example/release', SCOPE_MAINTENANCE_BINARY: f.imageBinary, SCOPE_RAILWAY_REGISTRY_USERNAME: 'pull-user', SCOPE_RAILWAY_REGISTRY_PASSWORD: 'durable-read-token', GITHUB_TEST_PACKAGE_VISIBILITY: visibility },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /must be private/);
+    assert.equal(existsSync(f.manifest), false);
+    assert.ok(commands(f).some(({ args }) => args[0] === 'buildx'));
+  }
 });

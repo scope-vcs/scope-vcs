@@ -80,6 +80,7 @@ jobs:
         if: inputs.recover_cutover_id == ''
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
           SCOPE_MAINTENANCE_BINARY: artifacts/backend/bin/scope-maintenance
           PREPARE_BACKEND: ${{ inputs.prepare_backend && '1' || '0' }}

@@ -16,7 +16,7 @@ const instances = states.map(s => {
   const deployment = {id:s.deploymentId,status:s.status,deploymentStopped:s.deploymentStopped,
     meta:{serviceManifest:{deploy:{...deploy,numReplicas:s.replicas?.configured}}},
     instances:[...Array.from({length:s.replicas?.running||0},()=>({status:"RUNNING"})),...Array.from({length:s.replicas?.crashed||0},()=>({status:"CRASHED"}))]};
-  return {node:{serviceId:s.id,serviceName:s.name,numReplicas:s.replicas?.configured,latestDeployment:deployment,activeDeployments:[deployment]}};
+  return {node:{serviceId:s.id,serviceName:s.name,numReplicas:s.replicas?.configured,latestDeployment:deployment,activeDeployments:s.deploymentId ? [deployment] : []}};
 });
 console.log(JSON.stringify({id:"project-test",environments:{edges:[{node:{id:"production",name:"production",serviceInstances:{edges:instances}}}]},services:{edges:[...Object.entries(paths).map(([id])=>({node:{id,name:id}})),{node:{id:"scope-postgres",name:"scope-postgres"}}]}}));
 '

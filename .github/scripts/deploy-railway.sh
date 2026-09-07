@@ -27,7 +27,7 @@ verified_successful_sha="${SCOPE_VERIFIED_SUCCESSFUL_SHA:-}"
 defer_service_health="${SCOPE_DEFER_SERVICE_HEALTH:-0}"
 deployment_was_skipped=0
 prepared_release="${SCOPE_PREPARED_RELEASE_PATH:-}"
-previous_deployment_id=""
+previous_deployment_ids="[]"
 expected_config=""
 
 if [[ "$defer_service_health" != "0" && "$defer_service_health" != "1" ]]; then
@@ -262,9 +262,18 @@ if [[ -n "$prepared_release" ]]; then
     router) expected_config=repo-router/railway.json ;;
     *) expected_config="$deployment_component/railway.json" ;;
   esac
-  previous_deployment_id="$(railway service list \
+  previous_deployment_ids="$(railway status \
     --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" --json |
-    jq -r --arg service "$service_name" '.[] | select(.id == $service or .name == $service) | .deploymentId // ""')"
+    jq -ce --arg environment "$railway_environment" --arg service "$service_name" '
+      [.environments.edges[].node | select(.id == $environment or .name == $environment)]
+      | if length == 1 then .[0] else error("Railway environment is missing or ambiguous") end
+      | [.serviceInstances.edges[].node | select(.serviceId == $service or .serviceName == $service)]
+      | if length == 1 then .[0] else error("Railway service is missing or ambiguous") end
+      | .activeDeployments
+      | if type != "array" then error("Railway service is missing active deployments")
+        elif all(.[]; (.id | type == "string" and test("^[A-Za-z0-9-]+$"))) then map(.id) | unique
+        else error("Railway active deployment has an invalid ID") end
+    ')"
   deploy_output="$(node .github/scripts/railway-artifact.mjs activate \
     "$prepared_release" "$deployment_component" "$railway_environment")"
 else
@@ -311,19 +320,22 @@ if [[ "$deployment_was_skipped" == "0" ]]; then
   record_deployment_evidence "$deployment_id"
 fi
 
-if [[ -n "$prepared_release" && -n "$previous_deployment_id" && "$previous_deployment_id" != "$deployment_id" ]]; then
+if [[ -n "$prepared_release" ]]; then
   deadline=$((SECONDS + 600))
-  while true; do
-    previous_status="$(railway deployment list \
-      --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" \
-      --service "$service_name" --limit 100 --json |
-      jq -r --arg id "$previous_deployment_id" '.[] | select(.id == $id) | .status')"
-    [[ "$previous_status" != REMOVED ]] || break
-    if ((SECONDS >= deadline)); then
-      echo "Previous deployment $previous_deployment_id has not completed teardown ($previous_status)." >&2
-      exit 1
-    fi
-    sleep 5
-  done
-  echo "Previous deployment $previous_deployment_id completed teardown."
+  while IFS= read -r previous_deployment_id; do
+    [[ "$previous_deployment_id" != "$deployment_id" ]] || continue
+    while true; do
+      previous_status="$(railway deployment list \
+        --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" \
+        --service "$service_name" --limit 100 --json |
+        jq -r --arg id "$previous_deployment_id" '.[] | select(.id == $id) | .status')"
+      [[ "$previous_status" != REMOVED ]] || break
+      if ((SECONDS >= deadline)); then
+        echo "Previous deployment $previous_deployment_id has not completed teardown ($previous_status)." >&2
+        exit 1
+      fi
+      sleep 5
+    done
+    echo "Previous deployment $previous_deployment_id completed teardown."
+  done < <(jq -r '.[]' <<< "$previous_deployment_ids")
 fi

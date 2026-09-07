@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activateArtifact, artifactDeploymentInput, assertActivatedArtifact, configureStagingRegistry, validateMaintenanceArtifact, validatePreparedRelease } from './railway-artifact.mjs';
+import { activateArtifact, artifactDeploymentInput, assertActivatedArtifact, configureStagingRegistry, releaseImageRepository, validateMaintenanceArtifact, validatePreparedRelease, verifyPrivateReleasePackage } from './railway-artifact.mjs';
 
 const sourceSha = 'a'.repeat(40);
-const image = `ghcr.io/owner/repo/api@sha256:${'b'.repeat(64)}`;
+const image = `ghcr.io/owner/repo/railway-private-api@sha256:${'b'.repeat(64)}`;
 const release = () => ({ schemaVersion: 1, sourceSha, components: { api: { sourceSha, image, serviceId: 'api-id' } } });
 const config = { deploy: { healthcheckPath: '/readyz', healthcheckTimeout: 60, overlapSeconds: 30, drainingSeconds: 30, numReplicas: 1 } };
 
@@ -13,7 +13,7 @@ test('release rejects mutable tags, missing components, wrong revision and wrong
   assert.throws(() => validatePreparedRelease(release(), { sourceSha: 'c'.repeat(40) }), /revision/);
   assert.throws(() => validatePreparedRelease(release(), { components: ['worker'] }), /missing worker/);
   assert.throws(() => validatePreparedRelease(release(), { services: { api: { id: 'wrong' } } }), /wrong service/);
-  const mutable = release(); mutable.components.api.image = 'ghcr.io/owner/repo/api:latest';
+  const mutable = release(); mutable.components.api.image = 'ghcr.io/owner/repo/railway-private-api:latest';
   assert.throws(() => validatePreparedRelease(mutable), /immutable/);
   const wrongSource = release(); wrongSource.components.api.sourceSha = 'c'.repeat(40);
   assert.throws(() => validatePreparedRelease(wrongSource), /source revision/);
@@ -132,4 +132,49 @@ test('trusted staging registry configuration touches only fixed environment cred
   assert.throws(() => configureStagingRegistry(manifest, { username: 'partial' }), /Both/);
   assert.throws(() => configureStagingRegistry({ ...manifest, railway: { ...manifest.railway, staging: { ...manifest.railway.staging, environmentId: manifest.railway.environmentId } } }, credentials), /distinct/);
   assert.throws(() => configureStagingRegistry({ ...manifest, services: { ...manifest.services, api: {} } }, credentials), /api service/);
+});
+
+
+test('release package naming has one validated manifest owner', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url), 'utf8'));
+  assert.equal(manifest.railway.releaseImagePrefix, 'railway-private');
+  assert.equal(releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', 'api'), 'ghcr.io/scope-vcs/scope-vcs/railway-private-api');
+  assert.equal(releaseImageRepository({ railway: { releaseImagePrefix: 'another-release-set' } }, 'owner/repo', 'web'), 'ghcr.io/owner/repo/another-release-set-web');
+  for (const prefix of [undefined, '', '../escape', 'registry/package', 'MixedCase']) {
+    assert.throws(() => releaseImageRepository({ railway: { releaseImagePrefix: prefix } }, 'owner/repo', 'api'), /releaseImagePrefix/);
+  }
+  assert.throws(() => releaseImageRepository(manifest, 'owner/repo/escape', 'api'), /OWNER\/REPOSITORY/);
+  assert.throws(() => releaseImageRepository(manifest, 'owner/repo', '../api'), /Unknown release component/);
+});
+
+
+for (const [accountType, namespace] of [['Organization', 'orgs'], ['User', 'users']]) {
+  test(`private package verification uses the exact encoded package for a ${accountType}`, async () => {
+    const manifest = { railway: { releaseImagePrefix: 'railway-private' } };
+    const calls = [];
+    const result = await verifyPrivateReleasePackage(manifest, 'Owner/Repo', 'api', {
+      token: 'publishing-token', fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        const body = calls.length === 1 ? { login: 'Owner', type: accountType } : { name: 'repo/railway-private-api', package_type: 'container', owner: { login: 'owner' }, visibility: 'private' };
+        return new Response(JSON.stringify(body));
+      },
+    });
+    assert.deepEqual(calls.map(({ url }) => url), ['https://api.github.com/users/owner', `https://api.github.com/${namespace}/owner/packages/container/repo%2Frailway-private-api`]);
+    assert.ok(calls.every(({ options }) => options.headers.Authorization === 'Bearer publishing-token' && options.redirect === 'error'));
+    assert.deepEqual(result, { imageRepository: 'ghcr.io/owner/repo/railway-private-api', visibility: 'private' });
+  });
+}
+
+test('package verification rejects public, internal, mismatched and unreadable package metadata', async () => {
+  const manifest = { railway: { releaseImagePrefix: 'railway-private' } };
+  for (const bad of [{ visibility: 'public' }, { visibility: 'internal' }, { name: 'repo/other' }, { package_type: 'npm' }, { owner: { login: 'someone-else' } }, { status: 403 }]) {
+    await assert.rejects(verifyPrivateReleasePackage(manifest, 'owner/repo', 'api', {
+      token: 'publishing-token', fetchImpl: async (url) => {
+        if (url.endsWith('/users/owner')) return new Response(JSON.stringify({ login: 'owner', type: 'Organization' }));
+        if (bad.status) return new Response('do not include response secrets', { status: bad.status });
+        return new Response(JSON.stringify({ name: 'repo/railway-private-api', package_type: 'container', owner: { login: 'owner' }, visibility: 'private', ...bad }));
+      },
+    }), /must be private|different release package|HTTP 403/);
+  }
+  await assert.rejects(verifyPrivateReleasePackage(manifest, 'owner/repo', 'api'), /GITHUB_TOKEN/);
 });
