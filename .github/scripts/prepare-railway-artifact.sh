@@ -29,6 +29,15 @@ esac
 if [[ "$component" != web ]]; then
   test -x "$context_root/bin/$binary"
 fi
+if [[ "$component" == api ]]; then
+  : "${SCOPE_MAINTENANCE_BINARY:?API preparation requires the original maintenance binary}"
+  test -f "$context_root/bin/scope-maintenance"
+  test ! -L "$context_root/bin/scope-maintenance"
+  cmp -- "$SCOPE_MAINTENANCE_BINARY" "$context_root/bin/scope-maintenance" || {
+    echo 'API image maintenance binary differs from the prepared release binary.' >&2
+    exit 1
+  }
+fi
 printf '%s\n' "$source_sha" > "$context_root/.scope-deployment-sha"
 docker buildx build --platform linux/amd64 --provenance=false --push \
   --file "$dockerfile" --tag "$image_tag" --metadata-file "$metadata" \

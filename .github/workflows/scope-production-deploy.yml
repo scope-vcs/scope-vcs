@@ -45,8 +45,7 @@ concurrency:
 permissions:
   actions: read
   contents: read
-  deployments: write
-  packages: write
+  deployments: read
 
 jobs:
   plan:
@@ -73,6 +72,7 @@ jobs:
       - name: Select immutable release revision
         id: release
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           RECOVER_ID: ${{ inputs.recover_cutover_id || '' }}
           RECOVER_SHA: ${{ inputs.recover_source_sha || '' }}
         run: |
@@ -81,6 +81,9 @@ jobs:
               echo 'Recovery requires a numeric cutover ID and its exact source SHA.' >&2
               exit 2
             }
+            test "$GITHUB_REF" = refs/heads/main
+            node .github/scripts/production-deployment-progress.mjs cutover-validate-recovery \
+              --id "$RECOVER_ID" --source-sha "$RECOVER_SHA" >/dev/null
             echo "sha=$RECOVER_SHA" >> "$GITHUB_OUTPUT"
           else
             test -z "$RECOVER_SHA"
@@ -275,6 +278,11 @@ jobs:
       (needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.router == 'true' || needs.plan.outputs.api == 'true' ||
       needs.plan.outputs.web == 'true')
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      packages: write
     uses: ./.github/workflows/scope-release-prepare.yml
     with:
       source_sha: ${{ needs.plan.outputs.release_sha }}
@@ -306,11 +314,12 @@ jobs:
           GH_REPO: ${{ github.repository }}
           SOURCE_SHA: ${{ needs.plan.outputs.release_sha }}
         run: |
-          title="Scope staging $SOURCE_SHA"
+          proof_id="$(cat /proc/sys/kernel/random/uuid)"
+          title="Scope staging $SOURCE_SHA / $proof_id"
           seen="$(gh run list --workflow scope-railway-staging.yml --event workflow_dispatch \
             --limit 100 --json databaseId | jq -c '[.[].databaseId]')"
           gh workflow run scope-railway-staging.yml --ref main \
-            -f source_sha="$SOURCE_SHA" -f prepared_run_id="$GITHUB_RUN_ID"
+            -f source_sha="$SOURCE_SHA" -f prepared_run_id="$GITHUB_RUN_ID" -f proof_request_id="$proof_id"
           for _ in {1..60}; do
             id="$(gh run list --workflow scope-railway-staging.yml --event workflow_dispatch \
               --limit 100 --json databaseId,displayTitle | jq -r --arg title "$title" --argjson seen "$seen" \
@@ -336,6 +345,10 @@ jobs:
       needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.router == 'true' ||
       needs.plan.outputs.api == 'true')
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
     uses: ./.github/workflows/scope-api-deploy.yml
     with:
       source_sha: ${{ needs.plan.outputs.release_sha }}
@@ -367,6 +380,9 @@ jobs:
       needs.plan.outputs.router != 'true' &&
       needs.plan.outputs.api != 'true') &&
       needs.backend-deploy.result == 'skipped'))
+    permissions:
+      contents: read
+      deployments: write
     uses: ./.github/workflows/scope-web-deploy.yml
     with:
       source_sha: ${{ needs.plan.outputs.release_sha }}
@@ -391,6 +407,9 @@ jobs:
       needs.plan.outputs.router != 'true' &&
       needs.plan.outputs.api != 'true') &&
       needs.backend-deploy.result == 'skipped'))
+    permissions:
+      contents: read
+      deployments: write
     uses: ./.github/workflows/scope-cli-deploy.yml
     with:
       verified_successful_sha: ${{ fromJSON(needs.plan.outputs.deployed_revisions || '{}').cli || '' }}

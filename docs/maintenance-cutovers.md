@@ -30,8 +30,8 @@ active backfill list in `.github/scripts/deploy-backend-railway.sh` and
 ## Recovery rule
 
 Dispatch the production workflow on `main` with the cutover deployment ID and
-source SHA printed by the failed run. The workflow checks out the pinned revision
-and downloads the maintenance binary from the original preparation run:
+source SHA printed by the failed run. The workflow uses the current main orchestration and extracts the maintenance binary from the recorded API image digest without
+starting its container. Its contents must match the manifest's recorded SHA-256:
 
 ```sh
 gh workflow run scope-production-deploy.yml --ref main \
@@ -121,7 +121,12 @@ The short-lived publishing token is never used as Railway's recovery credential.
 Preparation verifies anonymous or durable authenticated pulls before recording
 an artifact; a missing pull permission cannot close production writers.
 
-Keep the original backend binary artifact for the lifetime of an unresolved
-cutover. Recovery checks its recorded SHA-256 and cannot rebuild or substitute it.
+The API image contains the original maintenance binary at
+`/app/bin/scope-maintenance`. Ordinary deployments and recovery extract it from
+the manifest's API digest and check its recorded SHA-256 before use. Recovery
+does not depend on the retention period of GitHub Actions build artifacts.
+Keep every release image and its unique tag while a cutover that references it
+remains unresolved; registry cleanup must not remove those digests. Recovery
+cannot rebuild or substitute a deleted image.
 The public `VITE_POSTHOG_HOST` and `VITE_POSTHOG_PROJECT_TOKEN` repository variables
 supply the same analytics build configuration that Railway previously supplied.

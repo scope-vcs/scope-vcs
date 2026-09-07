@@ -23,6 +23,22 @@ global.fetch = async (url, options = {}) => {
   const path = new URL(url).pathname.replace("/repos/test/repo", "");
   const file = `${process.env.FAKE_RAILWAY_STATE}/journal.json`;
   const state = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { deployments: [], statuses: {} };
+  const sourceSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const apiResponse = result => new Response(JSON.stringify(result), { status: 200 });
+  if (path === "/actions/runs/123") return apiResponse({
+    id:123, path:".github/workflows/scope-production-deploy.yml", event:"push",
+    head_branch:"main", head_sha:sourceSha, conclusion:"cancelled",
+    repository:{id:1,full_name:"test/repo"}, head_repository:{id:1,full_name:"test/repo"},
+  });
+  if (path === "/branches/main") return apiResponse({name:"main",commit:{sha:sourceSha}});
+  if (path === `/compare/${sourceSha}...${sourceSha}`) return apiResponse({
+    status:"identical",base_commit:{sha:sourceSha},merge_base_commit:{sha:sourceSha},
+  });
+  if (path === "/actions/runs/123/jobs") return apiResponse({jobs:[{
+    id:456,run_id:123,head_sha:sourceSha,name:"Prepare Railway artifacts / prepare",
+    status:"completed",conclusion:"success",
+    steps:[{name:"Prepare immutable release images",conclusion:"success"}],
+  }]});
   const body = options.body ? JSON.parse(options.body) : null;
   let result;
   if (path === "/deployments" && body) {
@@ -173,7 +189,7 @@ const fs = require("node:fs");
 const sourceSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const names = { api:"scope-api",worker:"scope-worker",cache:"scope-cache-service",router:"scope-repo-router" };
 const components = Object.fromEntries(Object.entries(names).map(([component,serviceId]) => [component,{
-serviceId,sourceSha,image:`ghcr.io/scope/${component}@sha256:${"b".repeat(64)}`}]))
+serviceId,sourceSha,image:`ghcr.io/test/repo/railway-${component}@sha256:${"b".repeat(64)}`}]))
 const maintenanceSha256 = require("node:crypto").createHash("sha256").update(fs.readFileSync(process.argv[2])).digest("hex");
 fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,components,maintenanceSha256,preparationRunId:"123"}));
 ' "$test_dir/$name-prepared.json" "$test_dir/maintenance"

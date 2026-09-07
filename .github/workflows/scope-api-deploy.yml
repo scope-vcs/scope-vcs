@@ -41,10 +41,11 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - name: Checkout
+      - name: Checkout trusted deployment orchestration
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Install Node
         uses: actions/setup-node@v6
@@ -56,28 +57,11 @@ jobs:
         with:
           name: prepared-release-${{ inputs.source_sha }}
 
-      - name: Locate original prepared binaries
-        id: prepared
-        run: echo "run_id=$(jq -er '.preparationRunId' prepared-release.json)" >> "$GITHUB_OUTPUT"
-
-      - name: Download original backend deployment binaries
-        uses: actions/download-artifact@v8
-        with:
-          name: backend-release-${{ inputs.source_sha }}
-          path: artifacts
-          run-id: ${{ steps.prepared.outputs.run_id }}
-          github-token: ${{ github.token }}
-
-      - name: Extract backend deployment binaries
-        run: |
-          mkdir -p artifacts/backend-release target/release
-          tar --extract --gzip \
-            --file artifacts/backend-release.tar.gz \
-            --directory artifacts/backend-release
-          install -m 0755 artifacts/backend-release/scope-maintenance target/release/scope-maintenance
-          test -x target/release/scope-maintenance
-          node .github/scripts/railway-artifact.mjs verify-maintenance \
-            prepared-release.json target/release/scope-maintenance
+      - name: Extract pinned maintenance binary from the API image
+        env:
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: bash .github/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
 
       - name: Install Railway CLI
         run: |
@@ -85,6 +69,7 @@ jobs:
           npm install -g "@railway/cli@$railway_cli_version"
 
       - name: Deploy to Railway
+        id: transition
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -130,7 +115,7 @@ jobs:
             repo-router
 
       - name: Record successful Railway deployments
-        if: always()
+        if: steps.transition.outcome == 'success'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}

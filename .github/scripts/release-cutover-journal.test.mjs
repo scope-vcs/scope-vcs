@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beginCutover, guardCutovers, readCutover, recordCutoverPhase, cutoverCommand } from "./release-cutover-journal.mjs";
 
 const sourceSha = "a".repeat(40);
 const prepared = { schemaVersion: 1, sourceSha, maintenanceSha256: "c".repeat(64), preparationRunId: "123", components: Object.fromEntries(
   ["api", "worker", "cache", "router"].map(component => [component, {
-    serviceId: component, sourceSha, image: `ghcr.io/scope/${component}@sha256:${"b".repeat(64)}`,
+    serviceId: component, sourceSha, image: `ghcr.io/scope-vcs/scope-vcs/railway-${component}@sha256:${"b".repeat(64)}`,
   }]),
 ) };
 const baseline = { exact: false, pending: [{ name: "m0033", impact: "maintenance-required" }] };
@@ -90,4 +93,66 @@ test("recovery retains the original closure timestamp after more than one status
   const journal = await readCutover(id, store.request);
   assert.equal(journal.events.length, 102);
   assert.equal(journal.events.at(-1).at, "2026-09-06T00:00:00Z");
+});
+
+function recoveryRequest(store, event = "push") {
+  return async (path, options) => {
+    if (path === "/actions/runs/123") return {
+      id: 123, path: ".github/workflows/scope-production-deploy.yml", event,
+      head_branch: "main", head_sha: sourceSha, conclusion: "cancelled",
+      repository: { id: 1, full_name: "scope-vcs/scope-vcs" },
+      head_repository: { id: 1, full_name: "scope-vcs/scope-vcs" },
+    };
+    if (path === "/branches/main") return { name: "main", commit: { sha: sourceSha } };
+    if (path === `/compare/${sourceSha}...${sourceSha}`) return {
+      status: "identical", base_commit: { sha: sourceSha }, merge_base_commit: { sha: sourceSha },
+    };
+    if (path.startsWith("/actions/runs/123/jobs?")) return { jobs: [{
+      id: 456, run_id: 123, head_sha: sourceSha, name: "Prepare Railway artifacts / prepare",
+      status: "completed", conclusion: "success",
+      steps: [{ name: "Prepare immutable release images", conclusion: "success" }],
+    }] };
+    return store.request(path, options);
+  };
+}
+
+for (const command of ["cutover-read", "cutover-restore", "cutover-validate-recovery"]) {
+  test(`${command} rejects a forged PR-run journal before returning or writing it`, async () => {
+    const store = storage();
+    const id = await beginCutover({ prepared, baseline, previous: {} }, store.request);
+    const directory = mkdtempSync(join(tmpdir(), "cutover-trust-"));
+    const manifest = join(directory, "prepared.json");
+    writeFileSync(manifest, "existing trusted manifest");
+    try {
+      await assert.rejects(cutoverCommand(command, name => ({
+        "--id": id, "--source-sha": sourceSha, "--manifest": manifest,
+      })[name], recoveryRequest(store, "pull_request"), { repository: "scope-vcs/scope-vcs" }), /production workflow on main/);
+      assert.equal(readFileSync(manifest, "utf8"), "existing trusted manifest");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}
+
+test("validated restore retains a successful preparation from a cancelled production run", async () => {
+  const store = storage();
+  const id = await beginCutover({ prepared, baseline, previous: {} }, store.request);
+  const directory = mkdtempSync(join(tmpdir(), "cutover-trust-"));
+  const manifest = join(directory, "prepared.json");
+  try {
+    const result = await cutoverCommand("cutover-restore", name => ({
+      "--id": id, "--source-sha": sourceSha, "--manifest": manifest,
+    })[name], recoveryRequest(store), { repository: "scope-vcs/scope-vcs" });
+    assert.deepEqual(JSON.parse(readFileSync(manifest, "utf8")), prepared);
+    assert.equal(result.trustedPreparation.preparationJobId, 456);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("payload fields cannot override the GitHub deployment identity", async () => {
+  const store = storage();
+  const id = await beginCutover({ prepared, baseline, previous: {} }, store.request);
+  store.deployments[0].payload.id = "999";
+  assert.equal((await readCutover(id, store.request)).id, id);
 });

@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { validatePreparedRelease } from "./railway-artifact.mjs";
+import { validateRecoveryPreparation } from "./recovery-preparation-trust.mjs";
 
 const environment = "production/cutover";
 const terminal = new Set(["complete", "restored"]);
@@ -36,7 +37,7 @@ export async function readCutover(id, request) {
     return { phase: match[1], at: status.created_at };
   });
   // The deployment itself is the durable closure intent if cancellation preceded the first status.
-  return { id: String(id), ...payload, phase: events[0]?.phase ?? "prepared", events };
+  return { ...payload, id: String(id), phase: events[0]?.phase ?? "prepared", events };
 }
 
 export async function guardCutovers(request, recoveryId = "") {
@@ -78,7 +79,7 @@ export async function beginCutover({ prepared, baseline, previous }, request) {
   return String(deployment.id);
 }
 
-export async function cutoverCommand(command, argument, request) {
+export async function cutoverCommand(command, argument, request, { repository = process.env.GITHUB_REPOSITORY } = {}) {
   const id = argument("--id");
   const json = (path) => JSON.parse(readFileSync(path, "utf8"));
   if (command === "cutover-guard") return guardCutovers(request, id);
@@ -86,13 +87,14 @@ export async function cutoverCommand(command, argument, request) {
     return beginCutover({ prepared: json(argument("--manifest")), baseline: json(argument("--baseline")), previous: json(argument("--previous")) }, request);
   }
   if (command === "cutover-phase") return recordCutoverPhase(id, argument("--phase"), request);
-  if (command === "cutover-restore" || command === "cutover-read") {
+  if (["cutover-restore", "cutover-read", "cutover-validate-recovery"].includes(command)) {
     await guardCutovers(request, id);
     const journal = await readCutover(id, request);
     if (terminal.has(journal.phase)) throw new Error(`Cutover ${id} is already ${journal.phase}`);
     if (journal.prepared.sourceSha !== argument("--source-sha")) throw new Error("Recovery source SHA must match the pinned cutover revision");
+    const trustedPreparation = await validateRecoveryPreparation(journal.prepared, request, repository);
     if (command === "cutover-restore") writeFileSync(argument("--manifest"), `${JSON.stringify(journal.prepared, null, 2)}\n`);
-    return journal;
+    return { ...journal, trustedPreparation };
   }
   throw new Error(`Unknown cutover command: ${command}`);
 }

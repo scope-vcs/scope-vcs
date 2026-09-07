@@ -495,9 +495,10 @@ test("prepared web and backend jobs cannot build after activation begins", () =>
   }
   assert.match(preparation, /prepare-railway-artifact\.sh/);
   assert.match(backendCiWorkflow, /name: backend-release-\$\{\{ github\.sha \}\}/);
-  assert.match(backendDeployWorkflow, /run-id: \$\{\{ steps\.prepared\.outputs\.run_id \}\}/);
-  assert.match(backendDeployWorkflow, /verify-maintenance/);
+  assert.match(backendDeployWorkflow, /extract-railway-maintenance\.sh prepared-release\.json/);
+  assert.doesNotMatch(backendDeployWorkflow, /backend-release-\$\{\{ inputs\.source_sha \}\}/);
   assert.match(preparation, /cutover-restore/);
+  assert.match(preparation.split("\njobs:")[0], /actions: read/);
   assert.match(cliDeployWorkflow, /cp cli\/railway\.json \.railway-upload\/railway\.json/);
   assert.doesNotMatch(cliDeployWorkflow, /cargo build/);
 });
@@ -532,4 +533,36 @@ test("Node workflows cache pnpm and browser downloads by the web lockfile", () =
     integrationCiWorkflow,
     /key: playwright-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('web\/pnpm-lock\.yaml'\) \}\}/,
   );
+});
+
+
+test("production success follows the complete monitored transition", () => {
+  for (const workflow of [backendDeployWorkflow, webDeployWorkflow]) {
+    const recordStep = workflow.slice(workflow.indexOf("      - name: Record successful Railway"));
+    assert.match(recordStep, /if: steps\.transition\.outcome == 'success'/);
+    assert.match(workflow, /name: Deploy to Railway\n\s+id: transition/);
+  }
+});
+
+test("staging dispatch has a unique identity beyond the candidate SHA", () => {
+  const proof = productionWorkflow.slice(productionWorkflow.indexOf("  release-staging-proof:"), productionWorkflow.indexOf("  backend-deploy:"));
+  assert.match(proof, /proof_id="\$\(cat \/proc\/sys\/kernel\/random\/uuid\)"/);
+  assert.match(proof, /title="Scope staging \$SOURCE_SHA \/ \$proof_id"/);
+  assert.match(proof, /-f proof_request_id="\$proof_id"/);
+  assert.match(stagingWorkflow, /run-name:.*inputs\.proof_request_id/);
+});
+
+
+test("recovery validates provenance before selecting its source revision", () => {
+  const selection = productionWorkflow.slice(productionWorkflow.indexOf("      - name: Select immutable release revision"), productionWorkflow.indexOf("      - name: Read successful production revisions"));
+  assert(selection.indexOf("cutover-validate-recovery") < selection.indexOf('echo "sha=$RECOVER_SHA"'));
+  assert.match(selection, /test "\$GITHUB_REF" = refs\/heads\/main/);
+  assert.match(backendDeployWorkflow, /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
+  assert.match(productionWorkflow.split("\njobs:")[0], /deployments: read/);
+  assert.doesNotMatch(productionWorkflow.split("\njobs:")[0], /: write/);
+  const checks = readFileSync(new URL("../workflows/scope-checks-image.yml", import.meta.url), "utf8");
+  const candidate = checks.slice(checks.indexOf("  validate:"), checks.indexOf("  build:"));
+  assert.match(candidate, /if: github\.event_name == 'pull_request'/);
+  assert.doesNotMatch(candidate, /: write/);
+  assert.match(checks.slice(checks.indexOf("  build:")), /if: github\.event_name != 'pull_request'/);
 });

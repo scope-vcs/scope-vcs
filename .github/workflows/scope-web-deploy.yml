@@ -43,6 +43,7 @@ jobs:
           npm install -g "@railway/cli@$railway_cli_version"
 
       - name: Deploy to Railway
+        id: transition
         shell: bash
         env:
           SCOPE_PREPARED_RELEASE_PATH: prepared-release.json
@@ -63,7 +64,7 @@ jobs:
           bash .github/scripts/deploy-monitored-railway.sh web bash .github/scripts/deploy-railway.sh "$service_id" web
 
       - name: Record successful Railway deployment
-        if: always()
+        if: steps.transition.outcome == 'success'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}

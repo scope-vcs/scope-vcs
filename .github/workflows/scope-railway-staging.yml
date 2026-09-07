@@ -1,5 +1,5 @@
 name: Scope Railway staging proof
-run-name: Scope staging ${{ inputs.source_sha }}
+run-name: Scope staging ${{ inputs.source_sha }}${{ inputs.proof_request_id && format(' / {0}', inputs.proof_request_id) || '' }}
 
 on:
   workflow_dispatch:
@@ -8,6 +8,10 @@ on:
         description: Exact repository commit SHA to deploy
         type: string
         required: true
+      proof_request_id:
+        description: Unique dispatch identity used by the production release gate
+        type: string
+        default: ''
       prepared_run_id:
         description: Optional production workflow run containing the exact prepared images
         type: string
