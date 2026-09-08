@@ -1,3 +1,4 @@
+import { retryRailway } from './railway-retry.mjs';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -147,10 +148,12 @@ export function configureStagingRegistry(manifest, credentials, railway = runRai
   // Configure only provider-held pull credentials. Candidate activation receives
   // the staging token and retains these credentials without ever reading them.
   for (const serviceId of serviceIds) {
-    const result = railway('mutation ConfigureRegistry($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}', {
-      serviceId, environmentId, input: { registryCredentials: credentials },
+    retryRailway(() => {
+      const result = railway('mutation ConfigureRegistry($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}', {
+        serviceId, environmentId, input: { registryCredentials: credentials },
+      });
+      if (result.errors?.length || result.data?.serviceInstanceUpdate !== true) throw new Error('Railway did not confirm staging registry configuration.');
     });
-    if (result.data?.serviceInstanceUpdate !== true) throw new Error('Railway did not confirm staging registry configuration.');
   }
   return { configured: true, serviceCount: serviceIds.length };
 }
@@ -181,6 +184,7 @@ function runRailway(query, variables) {
   if (query.startsWith('query ')) return readRailway(args, { input: JSON.stringify(variables) });
   const result = JSON.parse(execFileSync('railway', args, {
     input: JSON.stringify(variables), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+    timeout: 30_000, killSignal: 'SIGKILL',
   }));
   if (result.errors?.length) throw new Error('Railway GraphQL request failed.');
   return result;

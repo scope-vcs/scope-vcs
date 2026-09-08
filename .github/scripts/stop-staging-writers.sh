@@ -2,7 +2,8 @@
 set -euo pipefail
 
 manifest_path="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
-endpoint="https://backboard.railway.com/graphql/v2"
+# shellcheck source=.github/scripts/railway-graphql.sh
+source "$(dirname "${BASH_SOURCE[0]}")/railway-graphql.sh"
 
 if [[ -z "${RAILWAY_API_TOKEN:-}" || -n "${RAILWAY_TOKEN:-}" ]]; then
   echo "Stopping staging writers requires only RAILWAY_API_TOKEN." >&2
@@ -30,34 +31,20 @@ railway_scope=(
 
 remove_deployment() {
   local deployment_id="$1"
-  local request response
-  request="$(
-    jq -cn --arg id "$deployment_id" '{
-      query: "mutation DeploymentRemove($id: String!) { deploymentRemove(id: $id) }",
-      variables: {id: $id}
-    }'
-  )"
-  response="$(
-    curl --silent --show-error --fail-with-body \
-      --request POST \
-      --url "$endpoint" \
-      --header "Authorization: Bearer $RAILWAY_API_TOKEN" \
-      --header 'Content-Type: application/json' \
-      --data-binary "$request"
-  )"
-  if jq -e '.errors | length > 0' >/dev/null 2>&1 <<< "$response"; then
-    jq -r '.errors[]?.message // "Railway GraphQL request failed"' <<< "$response" >&2
-    return 1
-  fi
-  jq -e '.data.deploymentRemove == true' >/dev/null <<< "$response"
+  local response
+  # shellcheck disable=SC2016
+  response="$(railway_graphql once \
+    'mutation DeploymentRemove($id: String!) { deploymentRemove(id: $id) }' \
+    "$(jq -cn --arg id "$deployment_id" '{id: $id}')")" || return $?
+  jq -e '.data.deploymentRemove == true' <<< "$response" >/dev/null
 }
 
 stop_service() {
   local service="$1"
   local deployments deployment_id
   deployments="$(
-    railway deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json
-  )"
+    node .github/scripts/railway-read.mjs deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json
+  )" || return $?
   deployment_id="$(
     jq -er '
       first(
@@ -65,11 +52,20 @@ stop_service() {
           .status != "REMOVED" and .status != "FAILED" and .status != "CRASHED" and
           .status != "SKIPPED"
         )
-      ).id // empty
-    ' <<< "$deployments" || true
-  )"
+      ).id // ""
+    ' <<< "$deployments"
+  )" || return $?
   if [[ -n "$deployment_id" ]]; then
-    remove_deployment "$deployment_id"
+    local attempt remaining
+    for attempt in 1 2 3; do
+      if remove_deployment "$deployment_id"; then return 0; fi
+      deployments="$(node .github/scripts/railway-read.mjs deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json)" || return $?
+      remaining="$(jq -er --arg id "$deployment_id" 'map(select(.id == $id and .status != "REMOVED")) | length' <<< "$deployments")" || return $?
+      [[ "$remaining" == 0 ]] && return 0
+      sleep 2
+    done
+    echo "Could not confirm staging deployment removal." >&2
+    return 1
   fi
 }
 
@@ -79,13 +75,13 @@ wait_until_stopped() {
   local running crashed
 
   while [[ "$SECONDS" -lt "$deadline" ]]; do
-    IFS=$'\t' read -r running crashed < <(
-      railway service list "${railway_scope[@]}" --json |
-        jq -er --arg service "$service" '
-          .[] | select(.id == $service) |
-          [(.replicas.running // 0), (.replicas.crashed // 0)] | @tsv
-        '
-    )
+    local services replicas
+    services="$(node .github/scripts/railway-read.mjs service list "${railway_scope[@]}" --json)" || return $?
+    replicas="$(jq -er --arg service "$service" '
+      .[] | select(.id == $service) |
+      [(.replicas.running // 0), (.replicas.crashed // 0)] | @tsv
+    ' <<< "$services")" || return $?
+    IFS=$'\t' read -r running crashed <<< "$replicas"
     if [[ "$running" == "0" && "$crashed" == "0" ]]; then
       return 0
     fi

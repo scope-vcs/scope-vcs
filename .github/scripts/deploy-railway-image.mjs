@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { retryRailway } from "./railway-retry.mjs";
+import { readRailway } from "./railway-read.mjs";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
@@ -12,6 +14,7 @@ if (process.env.RAILWAY_API_TOKEN) delete railwayEnvironment.RAILWAY_TOKEN;
 function railway(args, { input } = {}) {
   return execFileSync("railway", args, {
     encoding: "utf8",
+    timeout: 30_000, killSignal: "SIGKILL",
     env: railwayEnvironment,
     input,
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
@@ -32,14 +35,14 @@ function graphql(query, variables) {
 }
 
 function deployments(serviceId) {
-  return JSON.parse(railway([
+  return readRailway([
     "deployment", "list",
     "--project", projectId,
     "--environment", environmentId,
     "--service", serviceId,
     "--limit", "20",
     "--json",
-  ]));
+  ], { execute: (_command, args, options) => railway(args, options) });
 }
 
 const [first, second, third] = process.argv.slice(2);
@@ -50,11 +53,13 @@ if (first === "configure-registry") {
   if (!serviceId || !projectId || !environmentId || !mutationToken || !username || !password) {
     throw new Error("Railway registry configuration requires service, project, environment, API token, username, and password");
   }
-  const data = graphql(
-    "mutation ConfigureRegistry($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}",
-    { serviceId, environmentId, input: { registryCredentials: { username, password } } },
-  );
-  if (data?.serviceInstanceUpdate !== true) throw new Error("Railway did not confirm registry configuration");
+  retryRailway(() => {
+    const data = graphql(
+      "mutation ConfigureRegistry($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}",
+      { serviceId, environmentId, input: { registryCredentials: { username, password } } },
+    );
+    if (data?.serviceInstanceUpdate !== true) throw new Error("Railway did not confirm registry configuration");
+  });
   process.exit(0);
 }
 

@@ -21,6 +21,8 @@ node --test .github/scripts/deploy-railway.test.mjs
 node --test deploy/aws/cloud-runner-contract.test.mjs
 node --test .github/scripts/railway-artifact.test.mjs
 node --test .github/scripts/railway-read.test.mjs
+node --test .github/scripts/railway-retry.test.mjs
+node --test .github/scripts/staging-railway-token.test.mjs
 node --test .github/scripts/release-availability.test.mjs
 node --test .github/scripts/release-cutover-journal.test.mjs
 node --test .github/scripts/recovery-preparation-trust.test.mjs

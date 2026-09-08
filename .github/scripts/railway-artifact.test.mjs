@@ -219,3 +219,19 @@ test('package verification rejects public, internal, mismatched and unreadable p
   }
   await assert.rejects(verifyPrivateReleasePackage(manifest, 'owner/repo', 'api'), /GITHUB_TOKEN/);
 });
+
+test('registry configuration retries the same service credentials without deploying', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url), 'utf8'));
+  const calls = [];
+  const credentials = { username: 'registry-user', password: 'private-pull-token' };
+  configureStagingRegistry(manifest, credentials, (query, variables) => {
+    calls.push({ query, variables });
+    if (calls.length === 1) throw new Error('HTTP 500 with SECRET provider body');
+    if (calls.length === 2) return { errors: [{ message: 'SECRET' }], data: { serviceInstanceUpdate: true } };
+    return { data: { serviceInstanceUpdate: true } };
+  });
+  assert.equal(calls.length, 9);
+  assert.deepEqual(calls[0], calls[1]);
+  assert.deepEqual(calls[1], calls[2]);
+  assert.ok(calls.every(({ query }) => !query.includes('Deploy')));
+});

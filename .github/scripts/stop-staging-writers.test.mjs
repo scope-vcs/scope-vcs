@@ -33,6 +33,14 @@ async function fixture() {
   await writeFile(join(root, 'railway'), `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *"deployment list"* ]]; then
+  if [[ "\${SCOPE_TEST_SCENARIO:-}" == "list-fails" ]]; then
+    printf '%s\\n' '[]'
+    exit 1
+  fi
+  if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && -f "$SCOPE_TEST_REMOVALS" && "$*" == *"--service api"* ]]; then
+    printf '%s\\n' '[{"id":"api-deployment","status":"REMOVED"}]'
+    exit 0
+  fi
   if [[ "$*" == *"--service api"* ]]; then
     printf '%s\\n' '[{"id":"api-deployment","status":"SUCCESS"}]'
   elif [[ "$*" == *"--service cache"* ]]; then
@@ -59,8 +67,17 @@ while [[ "$#" -gt 0 ]]; do
   fi
   shift
 done
+if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-false" ]]; then
+  printf '%s\\n' '{"data":{"deploymentRemove":false}}'
+  exit 0
+fi
+if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && "$(wc -l < "$SCOPE_TEST_REMOVALS")" == 1 ]]; then
+  printf '%s\\n' '{"data":{"deploymentRemove":true}}'
+  exit 22
+fi
 printf '%s\\n' '{"data":{"deploymentRemove":true}}'
 `)
+  await writeFile(join(root, 'sleep'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
   await chmod(join(root, 'railway'), 0o755)
   await chmod(join(root, 'curl'), 0o755)
   return { manifest, removals, root }
@@ -109,3 +126,26 @@ test('rejects mixed Railway token privileges before making requests', async () =
   assert.equal(result.status, 1)
   assert.match(result.stderr, /requires only RAILWAY_API_TOKEN/)
 })
+
+for (const scenario of ['list-fails', 'remove-false', 'remove-ambiguous']) {
+  test(`reconciles staging shutdown failure: ${scenario}`, async () => {
+    const { manifest, removals, root } = await fixture()
+    const result = spawnSync('bash', ['.github/scripts/stop-staging-writers.sh'], {
+      encoding: 'utf8', timeout: 15_000,
+      env: {
+        ...process.env, PATH: `${root}:${process.env.PATH}`,
+        RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
+        SCOPE_DEPLOYMENT_MANIFEST: manifest, SCOPE_TEST_REMOVALS: removals,
+        SCOPE_TEST_SCENARIO: scenario,
+      },
+    })
+    assert.equal(result.status, scenario === 'remove-ambiguous' ? 0 : 1, result.stderr)
+    if (scenario === 'list-fails') {
+      await assert.rejects(readFile(removals), { code: 'ENOENT' })
+    } else {
+      const calls = (await readFile(removals, 'utf8')).trim().split('\n').map(JSON.parse)
+      assert.equal(calls.filter(({ variables }) => variables.id === 'api-deployment').length,
+        scenario === 'remove-ambiguous' ? 1 : 3)
+    }
+  })
+}
