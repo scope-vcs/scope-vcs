@@ -20,8 +20,8 @@ function manifest() {
       regionId: "us-east4-eqdc4a",
       staging: {
         environmentId: "staging",
-        environmentName: "staging",
-        webDomain: "scope-web-staging.up.railway.app",
+        environmentName: "release-proof",
+        webDomain: "scope-web-release-proof.up.railway.app",
       },
     },
     services: {
@@ -41,7 +41,7 @@ function manifest() {
 function desired() {
   return desiredMediaState(
     manifest(),
-    "staging",
+    "release-proof",
     `ghcr.io/scope-vcs/scope-media-worker@sha256:${"a".repeat(64)}`,
   );
 }
@@ -62,7 +62,7 @@ function convergedState() {
   const state = {
     projectId: "project",
     environmentId: "staging",
-    environmentName: "staging",
+    environmentName: "release-proof",
     buckets: [{ id: "bucket", name: "scope-request-media" }],
     services: [
       {
@@ -81,11 +81,11 @@ function convergedState() {
           ...variables(),
           SCOPE_MEDIA_ENCRYPTION_KEY: "<sealed>",
           SCOPE_MEDIA_GRANT_PUBLIC_KEY: "public-key",
-          SCOPE_MEDIA_ALLOWED_ORIGIN: "https://scope-web-staging.up.railway.app",
+          SCOPE_MEDIA_ALLOWED_ORIGIN: "https://scope-web-release-proof.up.railway.app",
         },
         variableMetadata: [{ name: "SCOPE_MEDIA_ENCRYPTION_KEY", isSealed: true }],
         config: wanted.services.gateway.config,
-        domains: [{ type: "service", domain: "scope-media-staging.up.railway.app" }],
+        domains: [{ type: "service", domain: "scope-media-release-proof.up.railway.app" }],
       },
       {
         id: "worker",
@@ -106,7 +106,7 @@ test("plans exactly one of each missing resource and repeats without duplicates"
   const empty = {
     projectId: "project",
     environmentId: "staging",
-    environmentName: "staging",
+    environmentName: "release-proof",
     buckets: [],
     services: [{ id: "api", name: "scope-api", variables: {}, variableMetadata: [] }],
   };
@@ -123,7 +123,7 @@ test("plans exactly one of each missing resource and repeats without duplicates"
   assert.deepEqual(planMediaReconcile(desired(), convergedState()), {
     blockers: [],
     manualActions: [],
-    liveDomain: "scope-media-staging.up.railway.app",
+    liveDomain: "scope-media-release-proof.up.railway.app",
     operations: [],
   });
 });
@@ -262,12 +262,12 @@ test("attachment failure detaches only target-environment instances", async () =
 
 test("worker source accepts only the reviewed digest-pinned GHCR image", () => {
   assert.throws(
-    () => desiredMediaState(manifest(), "staging", "ghcr.io/scope-vcs/scope-media-worker:latest"),
+    () => desiredMediaState(manifest(), "release-proof", "ghcr.io/scope-vcs/scope-media-worker:latest"),
     /pinned by sha256 digest/,
   );
 });
 
-test("fresh staging plans one key generation operation without exposing values", () => {
+test("fresh release-proof staging plans one key generation operation without exposing values", () => {
   const state = convergedState();
   for (const service of state.services) {
     service.variables = Object.fromEntries(
@@ -283,6 +283,28 @@ test("fresh staging plans one key generation operation without exposing values",
     services: { api: "api", gateway: "gateway", worker: "worker" },
   }]);
   assert(!JSON.stringify(plan).includes("PRIVATE KEY"));
+});
+
+test("production never plans automatic key generation", () => {
+  const state = convergedState();
+  state.environmentId = "production";
+  state.environmentName = "production";
+  for (const service of state.services) {
+    service.variables = Object.fromEntries(
+      Object.entries(service.variables).filter(([name]) => !name.includes("GRANT_") && name !== "SCOPE_MEDIA_ENCRYPTION_KEY"),
+    );
+    service.variableMetadata = [];
+  }
+  const productionDesired = desiredMediaState(
+    manifest(),
+    "production",
+    `ghcr.io/scope-vcs/scope-media-worker@sha256:${"a".repeat(64)}`,
+  );
+
+  const plan = planMediaReconcile(productionDesired, state);
+
+  assert.equal(plan.operations.some(({ action }) => action === "generateStagingSecrets"), false);
+  assert(plan.manualActions.length > 0);
 });
 
 test("staging keys form one signing pair and one shared encryption key", async () => {

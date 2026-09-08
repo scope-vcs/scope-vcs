@@ -482,7 +482,11 @@ test("deployment manifest is a single coherent production graph", () => {
   assert.match(manifest.services.media.id, /^[0-9a-f-]{36}$/);
   assert.match(manifest.services.mediaWorker.id, /^[0-9a-f-]{36}$/);
   assert.match(manifest.mediaResources.bucket.id, /^[0-9a-f-]{36}$/);
-  assert.equal(manifest.mediaResources.staging.gatewayDomain, null);
+  const mediaDomains = ["production", "staging"].map((environment) => (
+    manifest.mediaResources[environment].gatewayDomain
+  ));
+  for (const domain of mediaDomains) assert.match(domain, /^[a-z0-9-]+\.up\.railway\.app$/);
+  assert.equal(new Set(mediaDomains).size, mediaDomains.length);
   for (const [service, configuration] of Object.entries(manifest.services)) {
     for (const dependency of configuration.dependsOn) {
       assert.ok(order.indexOf(dependency) < order.indexOf(service));

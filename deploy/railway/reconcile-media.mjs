@@ -221,7 +221,7 @@ export function planMediaReconcile(desired, current, { requireManifestIds = fals
     }
   }
 
-  if (desired.environmentName === "staging") {
+  if (desired.environmentName !== "production") {
     const keyedServices = Object.fromEntries(Object.entries(desired.services).map(([role, wanted]) => [
       role,
       oneNamed(current.services ?? [], wanted.name, "service"),

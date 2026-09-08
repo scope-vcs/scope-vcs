@@ -103,11 +103,11 @@
       "region": "iad"
     },
     "production": {
-      "gatewayDomain": null,
+      "gatewayDomain": "scope-media-production.up.railway.app",
       "webOrigin": "https://scopevcs.com"
     },
     "staging": {
-      "gatewayDomain": null
+      "gatewayDomain": "scope-media-release-proof.up.railway.app"
     },
     "workerImage": "ghcr.io/scope-vcs/scope-media-worker"
   },

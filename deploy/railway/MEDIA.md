@@ -6,20 +6,22 @@ environment domains live in `.github/deployment-services.json`. The reconciler c
 project resources with environment instances separately so adding production uses the same
 recorded service and bucket IDs rather than creating duplicate project resources.
 
-## Production gates
+## Pre-alpha rollout policy
 
-Do not enable production media until every item below has an owner and recorded evidence:
+The owner approved temporary downtime for the initial rollout on 2026-09-08. Keep a private
+recovery copy on the deployment operator's machine until production verification passes, then
+delete that copy. This is a one-time cutover backup; no recurring backup schedule or retained
+history is configured by this rollout.
 
-- Choose an independent backup destination for the Postgres snapshot, encrypted bucket
-  objects, and encryption-key escrow. The live Railway project or live media bucket is not an
-  independent backup destination.
-- Choose backup frequency, retention, recovery point objective, and recovery time objective.
-- Run a restore drill from that destination and retain its manifest and verification receipt.
-- Run the capacity proof against staging, set numeric service objectives and alert thresholds
-  from its receipt, and record the accepted receipt with the deployment evidence.
+Before cutover, close writes and capture the database, existing repository objects, service
+configuration, and keys in that private copy. Verify the database can restore and the copied
+objects match their inventory. Production has no existing media objects before this first
+activation. Subsequent backups containing media must include the full backup unit below.
 
-The backup destination and retention policy are intentionally undecided. A production apply
-does not resolve either decision.
+Use the passing staging capacity receipt and deployment checks to verify the release. The
+pre-alpha rollout does not require zero downtime or a new monitoring service. Production
+verification must cover service health, existing repository reads, Git access, and media
+upload, processing, playback, and cleanup before deleting the recovery copy.
 
 ## Reconcile Railway
 
@@ -54,7 +56,7 @@ The public signing key is configuration, not a secret. Keep the private signing 
 encryption key separate. Rotating the signing pair invalidates grants. Replacing the encryption
 key without re-encrypting every stored chunk makes existing media unreadable.
 
-After the production gates and sealed variables are complete, rerun apply and verification:
+After the recovery copy and sealed variables are complete, rerun apply and verification:
 
 ```bash
 node deploy/railway/reconcile-media.mjs apply --environment production \
@@ -137,8 +139,8 @@ Do not log or store the smoke token in the receipt. Retain the capacity receipt 
 - initial playback and cross-chunk seek duration;
 - conversion failure rate, scratch-space high-water mark, cleanup backlog age, and upload bytes.
 
-Set alerts only after the staging run supplies those values. Production remains gated while any
-threshold is blank; do not turn local measurements into claimed staging results.
+Set alerts only after the staging run supplies those values. Unmeasured values remain explicit
+verification limits; do not turn local measurements into claimed staging results.
 
 ## Lifecycle and cleanup
 
@@ -204,5 +206,4 @@ cargo test --locked -p scope-media-storage --test recovery
 ```
 
 That test is evidence for the storage format and key dependency. It does not prove an external
-backup destination, retention policy, database snapshot, or Railway restore procedure; only the
-full restore drill closes the production backup gate.
+backup destination, retention policy, database snapshot, or Railway restore procedure.
