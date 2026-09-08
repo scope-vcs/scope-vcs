@@ -18,7 +18,7 @@ export function RequestDescription({
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <section className="min-w-0 px-5 py-5 lg:px-7">
+    <section className="min-w-0 px-5 pb-5 lg:px-7">
       {canEdit && !editing ? (
         <div className="flex justify-end">
           <Button

@@ -193,7 +193,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     <WorkbenchPane>
       <div className={hasLifecycleActions ? 'pb-20 xl:pb-0' : undefined}>
         {requestHeader()}
-        <div className="grid min-h-0 xl:grid-cols-[minmax(0,1fr)_320px] xl:grid-rows-[auto_auto_1fr]">
+        <div className="grid min-h-0 pt-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:grid-rows-[auto_auto_1fr]">
           <RequestDescription
             canEdit={request.permissions.can_edit_identity}
             description={description}

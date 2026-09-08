@@ -24,7 +24,7 @@ const requestMarkdownComponents = {
     )
   },
   p: ({ className, ...props }: ComponentProps<'p'>) => (
-    <div className={cn('my-2 text-pretty', className)} {...props} />
+    <div className={cn('my-2 text-pretty [&>:first-child]:mt-0 [&>:last-child]:mb-0', className)} {...props} />
   ),
 }
 

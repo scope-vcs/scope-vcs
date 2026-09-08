@@ -28,7 +28,7 @@ export function RequestContextRail({
   const desktop = useSyncExternalStore(subscribeDesktop, isDesktop, () => false)
   const [mobileOpen, setMobileOpen] = useState(false)
   return (
-    <aside className="request-context-rail min-w-0 xl:col-start-2 xl:row-start-1 xl:row-span-3 border-y border-border px-5 py-4 xl:border-y-0 xl:border-l xl:py-6">
+    <aside className="request-context-rail min-w-0 xl:col-start-2 xl:row-start-1 xl:row-span-3 border-y border-border px-5 py-4 xl:border-y-0 xl:border-l xl:pb-6 xl:pt-0">
       <details open={desktop || mobileOpen}>
         <summary
           className="cursor-pointer text-sm font-medium xl:hidden"
