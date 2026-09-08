@@ -37,6 +37,7 @@ export default defineConfig(({ mode }) => {
           gzip: true,
         },
         plugins: [
+          './src/server/readiness-endpoint.ts',
           './src/server/compress-responses.ts',
           './src/server/pagent-invalid-api-response.ts',
         ],

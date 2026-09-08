@@ -5,6 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 node --test .github/scripts/production-deployment-progress.test.mjs
 node --test .github/scripts/plan-production-deployment.test.mjs
 node --test .github/scripts/verify-staging-target.test.mjs
+node --test .github/scripts/select-proof-environment.test.mjs
 node --test .github/scripts/stop-staging-writers.test.mjs
 node --test deploy/railway/reconcile-media.test.mjs
 node --check .github/scripts/deploy-railway-image.mjs
@@ -16,4 +17,13 @@ bash .github/scripts/test-deploy-backend-railway.sh
 bash .github/scripts/test-staging-git-smoke.sh
 node --test bench/*.test.mjs
 node --test .github/scripts/railway-service-health.test.mjs
+node --test .github/scripts/deploy-railway.test.mjs
 node --test deploy/aws/cloud-runner-contract.test.mjs
+node --test .github/scripts/railway-artifact.test.mjs
+node --test .github/scripts/railway-read.test.mjs
+node --test .github/scripts/release-availability.test.mjs
+node --test .github/scripts/release-cutover-journal.test.mjs
+node --test .github/scripts/recovery-preparation-trust.test.mjs
+node --test .github/scripts/rehearse-release.test.mjs
+node --test .github/scripts/extract-railway-release.test.mjs
+node --test .github/scripts/extract-railway-maintenance.test.mjs

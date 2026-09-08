@@ -16,6 +16,8 @@
   "deploy": {
     "startCommand": "exec ./bin/scope-media-service",
     "healthcheckPath": "/readyz",
-    "healthcheckTimeout": 60
+    "healthcheckTimeout": 60,
+    "overlapSeconds": "30",
+    "drainingSeconds": "30"
   }
 }

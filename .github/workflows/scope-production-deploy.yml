@@ -7,6 +7,18 @@ on:
       - main
   workflow_dispatch:
     inputs:
+      maintenance_budget_seconds:
+        description: Approved staging-derived outage budget; 0 prevents a new maintenance cutover
+        type: number
+        default: 0
+      recover_source_sha:
+        description: Exact source SHA recorded by the interrupted cutover
+        type: string
+        default: ""
+      recover_cutover_id:
+        description: Interrupted cutover deployment ID; reuse its revision and artifacts
+        type: string
+        default: ""
       scope:
         description: Component to validate and deploy
         type: choice
@@ -33,15 +45,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
+  actions: read
   contents: read
-  deployments: write
-  packages: write
+  deployments: read
 
 jobs:
   plan:
     name: Plan selected components
     runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
+      release_sha: ${{ steps.release.outputs.sha }}
       deployed_revisions: ${{ steps.progress.outputs.revisions }}
       deployed_components: ${{ steps.progress.outputs.deployments }}
       checks_image: ${{ steps.plan.outputs.checks_image }}
@@ -60,6 +73,27 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Select immutable release revision
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RECOVER_ID: ${{ inputs.recover_cutover_id || '' }}
+          RECOVER_SHA: ${{ inputs.recover_source_sha || '' }}
+        run: |
+          if [[ -n "$RECOVER_ID" ]]; then
+            [[ "$RECOVER_ID" =~ ^[0-9]+$ && "$RECOVER_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+              echo 'Recovery requires a numeric cutover ID and its exact source SHA.' >&2
+              exit 2
+            }
+            test "$GITHUB_REF" = refs/heads/main
+            node .github/scripts/production-deployment-progress.mjs cutover-validate-recovery \
+              --id "$RECOVER_ID" --source-sha "$RECOVER_SHA" >/dev/null
+            echo "sha=$RECOVER_SHA" >> "$GITHUB_OUTPUT"
+          else
+            test -z "$RECOVER_SHA"
+            echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Read successful production revisions
         id: progress
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -73,7 +107,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          REQUESTED_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'changed' }}
+          REQUESTED_SCOPE: ${{ inputs.recover_cutover_id != '' && 'api' || (github.event_name == 'workflow_dispatch' && inputs.scope || 'changed') }}
           DEPLOYED_REVISIONS: ${{ steps.progress.outputs.revisions }}
         run: >-
           node .github/scripts/plan-production-deployment.mjs
@@ -166,6 +200,7 @@ jobs:
     name: Backend validation
     needs: plan
     if: >-
+      inputs.recover_cutover_id == '' &&
       (needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.media_worker == 'true' ||
@@ -175,39 +210,42 @@ jobs:
     uses: ./.github/workflows/scope-api-ci.yml
     with:
       build_release_artifact: ${{ github.event_name != 'pull_request' }}
-      build_router_release: ${{ github.event_name != 'pull_request' && needs.plan.outputs.router == 'true' }}
+      build_router_release: ${{ github.event_name != 'pull_request' }}
     secrets: inherit
 
   media-worker-image:
     name: Media worker image
     needs: plan
     if: >-
+      inputs.recover_cutover_id == '' && (
       needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.media_worker == 'true' ||
       needs.plan.outputs.router == 'true' ||
       needs.plan.outputs.media == 'true' ||
-      needs.plan.outputs.api == 'true'
+      needs.plan.outputs.api == 'true')
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/scope-media-worker-image.yml
     with:
       publish: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
-      source_sha: ${{ github.sha }}
+      source_sha: ${{ needs.plan.outputs.release_sha }}
     secrets: inherit
 
   web-validation:
     name: Web validation
     needs: plan
-    if: needs.plan.outputs.web == 'true'
+    if: inputs.recover_cutover_id == '' && (needs.plan.outputs.web == 'true')
     uses: ./.github/workflows/scope-web-ci.yml
+    with:
+      build_release_artifact: ${{ github.event_name != 'pull_request' }}
     secrets: inherit
 
   cli-validation:
     name: CLI validation
     needs: plan
-    if: needs.plan.outputs.cli == 'true'
+    if: inputs.recover_cutover_id == '' && (needs.plan.outputs.cli == 'true')
     uses: ./.github/workflows/scope-cli-build.yml
     with:
       validate_targets: >-
@@ -223,7 +261,7 @@ jobs:
   integration-validation:
     name: Integration validation
     needs: plan
-    if: needs.plan.outputs.web == 'true' || needs.plan.outputs.cli == 'true'
+    if: inputs.recover_cutover_id == '' && (needs.plan.outputs.web == 'true' || needs.plan.outputs.cli == 'true')
     uses: ./.github/workflows/scope-integration-ci.yml
     with:
       run_web: ${{ needs.plan.outputs.web == 'true' }}
@@ -243,6 +281,7 @@ jobs:
     if: >-
       !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
       needs.plan.result == 'success' &&
+      (inputs.recover_cutover_id != '' || (
       (needs.plan.outputs.checks_image != 'true' || needs.checks-image.result == 'success') &&
       ((needs.plan.outputs.cache != 'true' &&
       needs.plan.outputs.worker != 'true' &&
@@ -255,41 +294,121 @@ jobs:
       (needs.plan.outputs.web != 'true' || needs.web-validation.result == 'success') &&
       (needs.plan.outputs.cli != 'true' || needs.cli-validation.result == 'success') &&
       ((needs.plan.outputs.web != 'true' && needs.plan.outputs.cli != 'true') ||
-      needs.integration-validation.result == 'success')
+      needs.integration-validation.result == 'success')))
     runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - run: echo 'All selected production validations passed.'
 
+  release-preparation:
+    name: Prepare Railway artifacts
+    needs: [plan, production-validation-gate, media-worker-image]
+    if: >-
+      !cancelled() &&
+      (needs.media-worker-image.result == 'success' || inputs.recover_cutover_id != '') &&
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      needs.production-validation-gate.result == 'success' &&
+      (needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' ||
+      needs.plan.outputs.web == 'true')
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      packages: write
+    uses: ./.github/workflows/scope-release-prepare.yml
+    with:
+      source_sha: ${{ needs.plan.outputs.release_sha }}
+      prepare_backend: >-
+        ${{ needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
+        needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+        needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' }}
+      prepare_router: >-
+        ${{ needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
+        needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+        needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' }}
+      prepare_web: ${{ needs.plan.outputs.web == 'true' }}
+      recover_cutover_id: ${{ inputs.recover_cutover_id || '' }}
+      media_worker_image: ${{ needs.media-worker-image.outputs.image_ref || '' }}
+    secrets: inherit
+
+  release-staging-proof:
+    name: Prove prepared release in staging
+    needs: [plan, release-preparation]
+    if: >-
+      !cancelled() && inputs.recover_cutover_id == '' &&
+      needs.release-preparation.result == 'success'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 60
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch and await exact artifact rehearsal
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.plan.outputs.release_sha }}
+        run: |
+          proof_id="$(cat /proc/sys/kernel/random/uuid)"
+          title="Scope staging $SOURCE_SHA / $proof_id"
+          seen="$(gh run list --workflow scope-railway-staging.yml --event workflow_dispatch \
+            --limit 100 --json databaseId | jq -c '[.[].databaseId]')"
+          gh workflow run scope-railway-staging.yml --ref main \
+            -f source_sha="$SOURCE_SHA" -f prepared_run_id="$GITHUB_RUN_ID" -f proof_request_id="$proof_id"
+          for _ in {1..60}; do
+            id="$(gh run list --workflow scope-railway-staging.yml --event workflow_dispatch \
+              --limit 100 --json databaseId,displayTitle | jq -r --arg title "$title" --argjson seen "$seen" \
+              '[.[] | select(.displayTitle == $title) | select(.databaseId as $id | $seen | index($id) | not)][0].databaseId // empty')"
+            if [[ -n "$id" ]]; then
+              gh run watch "$id" --exit-status
+              exit
+            fi
+            sleep 5
+          done
+          echo 'Could not locate the exact prepared release staging rehearsal.' >&2
+          exit 1
+
   backend-deploy:
     name: Backend deploy
-    needs: [plan, production-validation-gate, media-worker-image]
+    needs: [plan, production-validation-gate, release-preparation, release-staging-proof]
     if: >-
       !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
+      needs.release-preparation.result == 'success' &&
+      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success') &&
       (needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.media_worker == 'true' ||
       needs.plan.outputs.router == 'true' ||
       needs.plan.outputs.media == 'true' ||
       needs.plan.outputs.api == 'true')
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
     uses: ./.github/workflows/scope-api-deploy.yml
     with:
+      source_sha: ${{ needs.plan.outputs.release_sha }}
       deploy_cache: ${{ needs.plan.outputs.cache == 'true' }}
       deploy_worker: ${{ needs.plan.outputs.worker == 'true' }}
       deploy_media_worker: ${{ needs.plan.outputs.media_worker == 'true' }}
       deploy_router: ${{ needs.plan.outputs.router == 'true' }}
       deploy_media: ${{ needs.plan.outputs.media == 'true' }}
       deploy_api: ${{ needs.plan.outputs.api == 'true' }}
-      media_worker_image: ${{ needs.media-worker-image.outputs.image_ref }}
       successful_deployments: ${{ needs.plan.outputs.deployed_components || '{}' }}
+      recover_cutover_id: ${{ inputs.recover_cutover_id || '' }}
+      maintenance_budget_seconds: ${{ inputs.maintenance_budget_seconds || 0 }}
     secrets: inherit
 
   web-deploy:
     name: Web deploy
-    needs: [plan, production-validation-gate, backend-deploy]
+    needs: [plan, production-validation-gate, release-preparation, release-staging-proof, backend-deploy]
     if: >-
       !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
+      needs.release-preparation.result == 'success' &&
+      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success') &&
       needs.plan.outputs.web == 'true' &&
       (((needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
@@ -305,8 +424,12 @@ jobs:
       needs.plan.outputs.media != 'true' &&
       needs.plan.outputs.api != 'true') &&
       needs.backend-deploy.result == 'skipped'))
+    permissions:
+      contents: read
+      deployments: write
     uses: ./.github/workflows/scope-web-deploy.yml
     with:
+      source_sha: ${{ needs.plan.outputs.release_sha }}
       verified_successful_sha: ${{ fromJSON(needs.plan.outputs.deployed_revisions || '{}').web || '' }}
     secrets: inherit
 
@@ -314,6 +437,7 @@ jobs:
     name: CLI deploy
     needs: [plan, production-validation-gate, backend-deploy]
     if: >-
+      inputs.recover_cutover_id == '' &&
       !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
       needs.plan.outputs.cli == 'true' &&
@@ -331,6 +455,9 @@ jobs:
       needs.plan.outputs.media != 'true' &&
       needs.plan.outputs.api != 'true') &&
       needs.backend-deploy.result == 'skipped'))
+    permissions:
+      contents: read
+      deployments: write
     uses: ./.github/workflows/scope-cli-deploy.yml
     with:
       verified_successful_sha: ${{ fromJSON(needs.plan.outputs.deployed_revisions || '{}').cli || '' }}
@@ -394,7 +521,7 @@ jobs:
           project_id="$(jq -er '.railway.projectId' "$manifest")"
           environment_id="$(jq -er '.railway.environmentId' "$manifest")"
           services_json="$(
-            railway service list \
+            railway status \
               --project "$project_id" \
               --environment "$environment_id" \
               --json

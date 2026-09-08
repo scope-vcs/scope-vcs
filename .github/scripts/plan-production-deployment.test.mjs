@@ -85,7 +85,7 @@ function productionJobCondition(jobName) {
 function evaluateProductionCondition(expression, context) {
   const resolve = (path) => path.split(".").reduce((value, key) => value?.[key], context);
   const executable = expression.replace(
-    /cancelled\(\)|(?:github|needs)(?:\.[A-Za-z0-9_-]+)+/g,
+    /cancelled\(\)|(?:github|needs|inputs)(?:\.[A-Za-z0-9_-]+)+/g,
     (reference) => JSON.stringify(
       reference === "cancelled()" ? context.cancelled : resolve(reference),
     ),
@@ -102,11 +102,14 @@ function productionConditionContext(overrides = {}) {
   const backendSelected = overrides.backendSelected ?? false;
   return {
     cancelled: overrides.cancelled ?? false,
+    inputs: { recover_cutover_id: overrides.recoveryId ?? "" },
     github: {
       event_name: overrides.eventName ?? "push",
       ref: overrides.ref ?? "refs/heads/main",
     },
     needs: {
+      "release-preparation": { result: overrides.preparationResult ?? "success" },
+      "release-staging-proof": { result: overrides.stagingResult ?? "success" },
       "backend-deploy": { result: overrides.backendResult ?? "skipped" },
       "cli-deploy": {
         result: overrides.cliResult ?? (overrides.cliSelected === false ? "skipped" : "success"),
@@ -180,19 +183,19 @@ test("changes select the required deployment lanes", () => {
     ],
     ["router changes deploy the Git router", ["repo-router/src/main.rs"], { router: true }],
     [
-      "shared prebuilt launcher selects every binary service",
+      "CLI prebuilt launcher selects the CLI service",
       ["deploy/railway/start-prebuilt.sh"],
-      { cache: true, worker: true, router: true, media: true, api: true, cli: true },
+      { media: true, cli: true },
     ],
     [
-      "backend prebuilt config selects cache and router",
-      ["deploy/railway/prebuilt-backend.railpack.json"],
-      { cache: true, router: true },
+      "backend runtime image selects every backend service",
+      ["deploy/railway/prebuilt.Dockerfile"],
+      { cache: true, worker: true, router: true, api: true },
     ],
     [
-      "git-enabled backend prebuilt config selects API and worker",
-      ["deploy/railway/prebuilt-backend-git.railpack.json"],
-      { worker: true, api: true },
+      "web runtime image selects the web service",
+      ["deploy/railway/web.Dockerfile"],
+      { web: true },
     ],
     [
       "CLI prebuilt config selects CLI without rebuilding distributions",
@@ -337,15 +340,12 @@ test("web and CLI deployment conditions are cancellation-safe after optional bac
     productionJobCondition(job),
   ]));
   for (const condition of Object.values(conditions)) {
-    assert.match(condition, /^!cancelled\(\) && github\.event_name/);
+    assert.match(condition, /!cancelled\(\) && github\.event_name/);
     assert.match(condition, /needs\.production-validation-gate\.result == 'success'/);
     assert.match(condition, /needs\.backend-deploy\.result == 'success'/);
     assert.match(condition, /needs\.backend-deploy\.result == 'skipped'/);
   }
-  assert.equal(
-    conditions["web-deploy"].replace("needs.plan.outputs.web", "needs.plan.outputs.component"),
-    conditions["cli-deploy"].replace("needs.plan.outputs.cli", "needs.plan.outputs.component"),
-  );
+
 });
 
 test("frontend production deployment eligibility covers optional backend and failure states", () => {
@@ -482,7 +482,7 @@ test("deployment manifest is a single coherent production graph", () => {
   assert.match(manifest.services.media.id, /^[0-9a-f-]{36}$/);
   assert.match(manifest.services.mediaWorker.id, /^[0-9a-f-]{36}$/);
   assert.match(manifest.mediaResources.bucket.id, /^[0-9a-f-]{36}$/);
-  assert.match(manifest.mediaResources.staging.gatewayDomain, /^[a-z0-9.-]+$/);
+  assert.equal(manifest.mediaResources.staging.gatewayDomain, null);
   for (const [service, configuration] of Object.entries(manifest.services)) {
     for (const dependency of configuration.dependsOn) {
       assert.ok(order.indexOf(dependency) < order.indexOf(service));
@@ -492,13 +492,13 @@ test("deployment manifest is a single coherent production graph", () => {
 
 test("service config does not override Railway scaling or restart defaults", () => {
   const configs = {
-    "api/railway.json": "/healthz",
+    "api/railway.json": "/readyz",
     "worker/railway.json": "/healthz",
     "cache-service/railway.json": "/readyz",
     "repo-router/railway.json": "/readyz",
     "media-service/railway.json": "/readyz",
     "cli/railway.json": "/readyz",
-    "web/railway.json": "/",
+    "web/railway.json": "/readyz",
   };
   for (const [path, healthcheckPath] of Object.entries(configs)) {
     const { deploy } = repositoryJson(path);
@@ -511,39 +511,36 @@ test("service config does not override Railway scaling or restart defaults", () 
   }
 });
 
-test("web and CLI healthcheck configs are staged at Railway upload roots", () => {
+test("prepared web and backend jobs cannot build after activation begins", () => {
+  const preparation = readFileSync(new URL("../workflows/scope-release-prepare.yml", import.meta.url), "utf8");
+  for (const workflow of [backendDeployWorkflow, webDeployWorkflow]) {
+    assert.match(workflow, /name: prepared-release-\$\{\{ inputs\.source_sha \}\}/);
+    assert.match(workflow, /SCOPE_PREPARED_RELEASE_PATH: prepared-release\.json/);
+    assert.doesNotMatch(workflow, /cargo build|docker build|railway up|pnpm build/);
+  }
+  assert.match(preparation, /prepare-railway-artifact\.sh/);
+  assert.match(backendCiWorkflow, /name: backend-release-\$\{\{ github\.sha \}\}/);
+  assert.match(backendDeployWorkflow, /extract-railway-maintenance\.sh prepared-release\.json/);
+  assert.doesNotMatch(backendDeployWorkflow, /backend-release-\$\{\{ inputs\.source_sha \}\}/);
+  assert.match(preparation, /cutover-restore/);
+  assert.match(preparation.split("\njobs:")[0], /actions: read/);
   assert.match(cliDeployWorkflow, /cp cli\/railway\.json \.railway-upload\/railway\.json/);
-  assert.match(webDeployWorkflow, /cp web\/railway\.json \.railway-upload\/railway\.json/);
-  assert.match(
-    stagingWorkflow,
-    /cp candidate\/web\/railway\.json \.railway-staging-upload\/web-root\/railway\.json/,
-  );
+  assert.doesNotMatch(cliDeployWorkflow, /cargo build/);
 });
 
-test("Railway deploy jobs consume release binaries instead of rebuilding Rust", () => {
-  assert.match(backendCiWorkflow, /name: backend-release-\$\{\{ github\.sha \}\}/);
-  assert.match(backendDeployWorkflow, /name: backend-release-\$\{\{ github\.sha \}\}/);
-  for (const binary of ["scope-cache-service", "scope-worker", "scope-vcs"]) {
-    assert.match(backendCiWorkflow, new RegExp(`artifacts/bin/${binary}`));
-    assert.match(backendDeployWorkflow, new RegExp(`artifacts/backend-release/${binary}`));
+test("application activation requires completed preparation and staging proof", () => {
+  for (const job of ["backend-deploy", "web-deploy"]) {
+    const condition = productionJobCondition(job);
+    const ready = { backendSelected: true, backendResult: "success" };
+    assert.equal(evaluateProductionCondition(condition, productionConditionContext(ready)), true);
+    for (const failure of ["failure", "cancelled", "skipped"]) {
+      assert.equal(evaluateProductionCondition(condition, productionConditionContext({ ...ready, preparationResult: failure })), false);
+      assert.equal(evaluateProductionCondition(condition, productionConditionContext({ ...ready, stagingResult: failure })), false);
+    }
   }
-  assert.match(backendDeployWorkflow, /prebuilt-backend\.railpack\.json/);
-  assert.match(backendDeployWorkflow, /watch_root="\$root\/\$service"/);
-  assert.match(backendDeployWorkflow, /"\$watch_root\/\.scope-deployment-sha"/);
-  assert.doesNotMatch(backendDeployWorkflow, /cargo build/);
-  assert.match(
-    JSON.stringify(repositoryJson("deploy/railway/prebuilt-backend.railpack.json")),
-    /\.scope-deployment-\*/,
-  );
-
-  assert.match(cliBuildWorkflow, /name: cli-service-release-\$\{\{ github\.sha \}\}/);
-  assert.match(cliDeployWorkflow, /name: cli-service-release-\$\{\{ github\.sha \}\}/);
-  assert.match(cliDeployWorkflow, /prebuilt-cli\.railpack\.json/);
-  assert.doesNotMatch(cliDeployWorkflow, /cargo build/);
-  assert.match(
-    JSON.stringify(repositoryJson("deploy/railway/prebuilt-cli.railpack.json")),
-    /\.scope-deployment-\*/,
-  );
+  assert.equal(evaluateProductionCondition(productionJobCondition("backend-deploy"), productionConditionContext({
+    backendSelected: true, recoveryId: "123", stagingResult: "skipped",
+  })), true, "pinned recovery must not delay reopening for another staging run");
 });
 
 test("Node workflows cache pnpm and browser downloads by the web lockfile", () => {
@@ -561,4 +558,36 @@ test("Node workflows cache pnpm and browser downloads by the web lockfile", () =
     integrationCiWorkflow,
     /key: playwright-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('web\/pnpm-lock\.yaml'\) \}\}/,
   );
+});
+
+
+test("production success follows the complete monitored transition", () => {
+  for (const workflow of [backendDeployWorkflow, webDeployWorkflow]) {
+    const recordStep = workflow.slice(workflow.indexOf("      - name: Record successful Railway"));
+    assert.match(recordStep, /if: steps\.transition\.outcome == 'success'/);
+    assert.match(workflow, /name: Deploy to Railway\n\s+id: transition/);
+  }
+});
+
+test("staging dispatch has a unique identity beyond the candidate SHA", () => {
+  const proof = productionWorkflow.slice(productionWorkflow.indexOf("  release-staging-proof:"), productionWorkflow.indexOf("  backend-deploy:"));
+  assert.match(proof, /proof_id="\$\(cat \/proc\/sys\/kernel\/random\/uuid\)"/);
+  assert.match(proof, /title="Scope staging \$SOURCE_SHA \/ \$proof_id"/);
+  assert.match(proof, /-f proof_request_id="\$proof_id"/);
+  assert.match(stagingWorkflow, /run-name:.*inputs\.proof_request_id/);
+});
+
+
+test("recovery validates provenance before selecting its source revision", () => {
+  const selection = productionWorkflow.slice(productionWorkflow.indexOf("      - name: Select immutable release revision"), productionWorkflow.indexOf("      - name: Read successful production revisions"));
+  assert(selection.indexOf("cutover-validate-recovery") < selection.indexOf('echo "sha=$RECOVER_SHA"'));
+  assert.match(selection, /test "\$GITHUB_REF" = refs\/heads\/main/);
+  assert.match(backendDeployWorkflow, /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
+  assert.match(productionWorkflow.split("\njobs:")[0], /deployments: read/);
+  assert.doesNotMatch(productionWorkflow.split("\njobs:")[0], /: write/);
+  const checks = readFileSync(new URL("../workflows/scope-checks-image.yml", import.meta.url), "utf8");
+  const candidate = checks.slice(checks.indexOf("  validate:"), checks.indexOf("  build:"));
+  assert.match(candidate, /if: github\.event_name == 'pull_request'/);
+  assert.doesNotMatch(candidate, /: write/);
+  assert.match(checks.slice(checks.indexOf("  build:")), /if: github\.event_name != 'pull_request'/);
 });

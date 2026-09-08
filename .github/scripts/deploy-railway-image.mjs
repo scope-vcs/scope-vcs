@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
 const projectId = process.env.RAILWAY_PROJECT_ID;
 const environmentId = process.env.SCOPE_RAILWAY_ENVIRONMENT_ID;
@@ -112,3 +112,11 @@ appendFileSync(evidencePath, `${JSON.stringify({
   evidenceId: deploymentId,
   artifactDigest: match[1],
 })}\n`);
+
+if (process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE) {
+  const deploymentsPath = process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE;
+  const active = JSON.parse(readFileSync(deploymentsPath, "utf8"));
+  active[component] = deploymentId;
+  writeFileSync(`${deploymentsPath}.tmp`, `${JSON.stringify(active)}\n`);
+  renameSync(`${deploymentsPath}.tmp`, deploymentsPath);
+}

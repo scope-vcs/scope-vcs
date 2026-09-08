@@ -2,6 +2,10 @@ name: Scope Web CI
 
 on:
   workflow_call:
+    inputs:
+      build_release_artifact:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,4 +52,19 @@ jobs:
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
       - name: Check scope-web
+        env:
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
+          VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.VITE_POSTHOG_PROJECT_TOKEN }}
         run: ../dev/checks/web
+
+      - name: Pack validated web runtime
+        if: inputs.build_release_artifact
+        run: tar --create --gzip --file web-release.tar.gz .output
+
+      - name: Upload web runtime
+        if: inputs.build_release_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-release-${{ github.sha }}
+          path: web/web-release.tar.gz
+          if-no-files-found: error

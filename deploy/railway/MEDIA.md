@@ -47,10 +47,15 @@ checks run to pass. Do not leave the old checks-image digest on the ready PR.
 Use the Railway CLI version pinned in `.github/deployment-services.json`. Every command below
 asserts the project and environment IDs from that manifest.
 
+Use the actual Railway name in `railway.staging.environmentName` for the default rehearsal
+target, currently `release-proof`. Its media gateway domain remains unset until the reconciler
+creates and records that environment's resources. A domain from another environment cannot be
+reused as its readiness endpoint.
+
 Read-only plans:
 
 ```bash
-node deploy/railway/reconcile-media.mjs plan --environment staging
+node deploy/railway/reconcile-media.mjs plan --environment release-proof
 node deploy/railway/reconcile-media.mjs plan --environment production \
   --worker-image 'ghcr.io/scope-vcs/scope-media-worker@sha256:<digest>'
 ```
@@ -100,8 +105,14 @@ sha="$(git rev-parse HEAD)"
 gh workflow run scope-railway-staging.yml \
   --ref feat/request-media-attachments \
   -f source_sha="$sha" \
+  -f target_environment=media-proof \
   -f run_media_capacity=true
 ```
+
+The `media-proof` selection uses its own database, bucket instances, URLs, and media keys.
+The default `staging` selection follows the manifest's rehearsal target. Both selections use
+GitHub's protected `staging` environment for credentials, so a temporary branch policy must
+remain in place until the proof and its access-revocation job have finished.
 
 The selected workflow revision owns the manifest and fencing steps. The account token exists
 only in the token create/delete steps; candidate deployment receives an environment-scoped
@@ -129,8 +140,8 @@ For a local diagnostic run only, invoke the same harness with a short-lived test
 ```bash
 SCOPE_MEDIA_SMOKE_TOKEN='<short-lived private smoke session>' \
 node dev/media-capacity.mjs \
-  --api 'https://scope-api-staging.up.railway.app' \
-  --media-origin 'https://scope-media-staging.up.railway.app' \
+  --api 'https://scope-api-media-proof.up.railway.app' \
+  --media-origin 'https://scope-media-media-proof.up.railway.app' \
   --repo dev/public-demo \
   --source-sha '<exact 40-character deployed commit>' \
   --large-video /secure/path/valid-500mb-recording.mp4 \

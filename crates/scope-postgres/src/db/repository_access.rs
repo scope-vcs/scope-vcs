@@ -202,21 +202,6 @@ impl RepositoryStore {
         &self,
         context: &RepositoryAccessContext,
     ) -> Result<Option<String>, PostgresError> {
-        self.repository_main_oid_from(context, false).await
-    }
-
-    pub async fn repository_committed_main_oid(
-        &self,
-        context: &RepositoryAccessContext,
-    ) -> Result<Option<String>, PostgresError> {
-        self.repository_main_oid_from(context, true).await
-    }
-
-    async fn repository_main_oid_from(
-        &self,
-        context: &RepositoryAccessContext,
-        build_projection: bool,
-    ) -> Result<Option<String>, PostgresError> {
         let audience = scope_domain::projection::ProjectionViewKey::from_access(context.access);
         for _ in 0..2 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
@@ -233,17 +218,8 @@ impl RepositoryStore {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 return Ok(Some(head.head_oid));
             }
-            if !build_projection {
-                let oid = super::projection_read_models::live_projection_head_oid_for_frontier(
-                    &tx,
-                    &context.record.id,
-                    context.record.change_version,
-                    audience,
-                )
-                .await?;
-                tx.commit().await.map_err(PostgresError::internal)?;
-                return Ok(oid);
-            }
+            // History owns the current audience's head independently of the
+            // asynchronously rebuilt projection file cache.
             let metadata = super::history_reads::history_view_metadata(
                 &tx,
                 &context.record.id,

@@ -13,6 +13,8 @@
   "deploy": {
     "startCommand": "exec ./bin/scope-worker",
     "healthcheckPath": "/healthz",
-    "healthcheckTimeout": 60
+    "healthcheckTimeout": 60,
+    "overlapSeconds": "30",
+    "drainingSeconds": "30"
   }
 }

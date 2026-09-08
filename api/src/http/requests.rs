@@ -146,7 +146,7 @@ pub(crate) async fn submit_request(
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
     let analytics_event =
         ProductEvent::request_submitted(&user.id, request.audience, request_actor_role(access));
-    let current_main_oid = committed_main_oid_for_context(&state, &repo).await?;
+    let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let mutation = state
         .metadata
         .requests()
@@ -266,7 +266,7 @@ pub(crate) async fn close_request(
         return Err(ApiError::forbidden("request close access required"));
     }
     let request_ref = canonical_request_ref(&request.name);
-    let current_main_oid = committed_main_oid_for_context(&state, &repo).await?;
+    let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let mutation = state
         .metadata
         .requests()
@@ -405,7 +405,7 @@ pub(crate) async fn edit_request_identity(
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let request =
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
-    let current_main_oid = committed_main_oid_for_context(&state, &repo).await?;
+    let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let mutation = state
         .metadata
         .requests()
@@ -446,7 +446,7 @@ pub(crate) async fn add_request_invitee(
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
-    let current_main_oid = committed_main_oid_for_context(&state, &repo).await?;
+    let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let invitee = state
         .metadata
         .requests()
@@ -478,7 +478,7 @@ pub(crate) async fn remove_request_invitee(
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
-    let current_main_oid = committed_main_oid_for_context(&state, &repo).await?;
+    let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let invitee = state
         .metadata
         .requests()
@@ -740,16 +740,5 @@ pub(crate) async fn current_main_oid_for_context(
         .metadata
         .repositories()
         .repository_main_oid(repo)
-        .await?)
-}
-
-async fn committed_main_oid_for_context(
-    state: &AppState,
-    repo: &RepositoryAccessContext,
-) -> Result<Option<String>, ApiError> {
-    Ok(state
-        .metadata
-        .repositories()
-        .repository_committed_main_oid(repo)
         .await?)
 }

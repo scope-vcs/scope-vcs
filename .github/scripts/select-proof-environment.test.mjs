@@ -5,8 +5,10 @@ import { selectProofEnvironment } from './select-proof-environment.mjs'
 
 const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url)))
 
-test('shared staging retains its existing target', () => {
-  assert.deepEqual(selectProofEnvironment(manifest, 'staging'), manifest)
+test('default staging follows its reviewed target even when the Railway name differs', () => {
+  const changed = structuredClone(manifest)
+  changed.railway.staging.environmentName = 'release-proof'
+  assert.deepEqual(selectProofEnvironment(changed, 'staging'), changed)
 })
 
 test('isolated proof selects its own environment and domains without changing production', () => {
@@ -29,4 +31,10 @@ test('unreviewed, production, and shared-staging aliases cannot become isolated 
     changed.railway.proofEnvironments['media-proof'].environmentId = environmentId
     assert.throws(() => selectProofEnvironment(changed, 'media-proof'), /must differ/)
   }
+})
+
+test('an isolated target must retain its reviewed environment name', () => {
+  const changed = structuredClone(manifest)
+  changed.railway.proofEnvironments['media-proof'].environmentName = 'another-proof'
+  assert.throws(() => selectProofEnvironment(changed, 'media-proof'), /name does not match/)
 })

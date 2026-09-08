@@ -11,10 +11,11 @@ export function selectProofEnvironment(manifest, name) {
   const selected = name === 'staging'
     ? manifest.railway.staging
     : manifest.railway.proofEnvironments[name]
-  assert(selected.environmentName === name, 'Proof environment name does not match')
   assert(selected.environmentId && selected.environmentId !== manifest.railway.environmentId,
     'Proof environment must differ from production')
+  // The default staging slot may point at a named Railway rehearsal environment.
   if (name === 'staging') return manifest
+  assert(selected.environmentName === name, 'Proof environment name does not match')
   assert(selected.environmentId !== manifest.railway.staging.environmentId,
     'Separate proof environment must differ from shared staging')
   const { mediaGatewayDomain, ...staging } = selected

@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
+# Provider doubles shared by the backend cutover regression scenarios.
+cat > "$test_dir/bin/railway" <<'FAKE'
+#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_RAILWAY_TRACE"
 
 if [[ "$1" == "status" ]]; then
-  cat <<'JSON'
-{"id":"project-test","environments":{"edges":[{"node":{"id":"production","name":"production"}}]},"services":{"edges":[{"node":{"id":"scope-api","name":"scope-api"}},{"node":{"id":"scope-worker","name":"scope-worker"}},{"node":{"id":"scope-cache-service","name":"scope-cache-service"}},{"node":{"id":"scope-repo-router","name":"scope-repo-router"}},{"node":{"id":"scope-media","name":"scope-media"}},{"node":{"id":"scope-media-worker","name":"scope-media-worker"}},{"node":{"id":"scope-postgres","name":"scope-postgres"}}]}}
-JSON
+  states="$("$0" service list)"
+  STATES="$states" node -e '
+const fs = require("node:fs");
+const states = JSON.parse(process.env.STATES);
+const paths = {"scope-api":"api","scope-worker":"worker","scope-cache-service":"cache-service","scope-repo-router":"repo-router","scope-media":"media-service","scope-media-worker":"media-service"};
+const instances = states.map(s => {
+  const deploy = JSON.parse(fs.readFileSync(`${paths[s.id]}/railway.json`,"utf8")).deploy;
+  const deployment = {id:s.deploymentId,status:s.status,deploymentStopped:s.deploymentStopped,
+    meta:{serviceManifest:{deploy:{...deploy,numReplicas:s.replicas?.configured}}},
+    instances:[...Array.from({length:s.replicas?.running||0},()=>({status:"RUNNING"})),...Array.from({length:s.replicas?.crashed||0},()=>({status:"CRASHED"}))]};
+  return {node:{serviceId:s.id,serviceName:s.name,numReplicas:s.replicas?.configured,latestDeployment:deployment,activeDeployments:s.deploymentId ? [deployment] : []}};
+});
+console.log(JSON.stringify({id:"project-test",environments:{edges:[{node:{id:"production",name:"production",serviceInstances:{edges:instances}}}]},services:{edges:[...Object.entries(paths).map(([id])=>({node:{id,name:id}})),{node:{id:"scope-postgres",name:"scope-postgres"}}]}}));
+'
   exit 0
 fi
 
@@ -19,19 +33,38 @@ if [[ "$1 $2" == "environment config" ]]; then
   exit 0
 fi
 
+if [[ "$1" == "api" && "$2" == *"SelectedConfig"* ]]; then
+  cat >/dev/null
+  node -e '
+const fs = require("node:fs");
+const directory = process.env.FAKE_RAILWAY_STATE;
+const services = Object.fromEntries(fs.readdirSync(directory).filter(f=>f.startsWith("image-")).map(f=>[f.slice(6),{source:{image:fs.readFileSync(`${directory}/${f}`,"utf8").trim(),repo:null}}]));
+console.log(JSON.stringify({data:{environment:{config:{services}}}}));
+'
+  exit 0
+fi
+
+if [[ "$1" == "api" && "$2" == *"serviceInstance"* ]]; then
+  variables="$(cat)"
+  service="$(jq -r .serviceId <<< "$variables")"
+  if [[ "$2" == *"serviceInstanceUpdate("* ]]; then
+    jq -r .input.source.image <<< "$variables" > "$FAKE_RAILWAY_STATE/image-$service"
+    echo '{"data":{"serviceInstanceUpdate":true}}'
+  elif [[ "$2" == *"serviceInstance("* ]]; then
+    jq -cn --arg image "$(cat "$FAKE_RAILWAY_STATE/image-$service")" '{data:{serviceInstance:{source:{image:$image,repo:null}}}}'
+  else
+    component="${service#scope-}"
+    [[ "$component" != cache-service ]] || component=cache
+    [[ "$component" != repo-router ]] || component=router
+    deployed="$(FAKE_IMMUTABLE_ACTIVATION=1 "$0" up "$FAKE_UPLOAD_ROOT/$component" --service "$service")"
+    jq -c '{data:{serviceInstanceDeployV2:.deploymentId}}' <<< "$deployed"
+  fi
+  exit 0
+fi
+
 if [[ "$1" == "api" ]]; then
   [[ -z "${RAILWAY_TOKEN:-}" ]]
   [[ "${RAILWAY_API_TOKEN:-}" == "token-graphql" ]]
-  if [[ "$*" == *"serviceInstanceDeployV2"* ]]; then
-    touch "$FAKE_RAILWAY_STATE/up-scope-media-worker"
-    rm -f "$FAKE_RAILWAY_STATE/stopped-scope-media-worker"
-    echo '{"data":{"serviceInstanceDeployV2":"new-scope-media-worker"}}'
-    exit 0
-  fi
-  if [[ "$*" == *"serviceInstanceUpdate"* ]]; then
-    echo '{"data":{"serviceInstanceUpdate":true}}'
-    exit 0
-  fi
   variables=""
   while [[ "$#" -gt 0 ]]; do
     if [[ "$1" == "--variables" ]]; then variables="$2"; shift 2; else shift; fi
@@ -160,8 +193,11 @@ if [[ "$1 $2" == "deployment list" ]]; then
     printf '[{"id":"%s","status":"CRASHED","createdAt":"2026-01-02T00:00:00Z"}]\n' "$id"
     exit 0
   fi
-  if [[ "$service" == "scope-media-worker" && "$id" == new-* ]]; then
-    printf '[{"id":"%s","status":"SUCCESS","createdAt":"2026-01-01T00:00:00Z","meta":{"imageDigest":"sha256:%s"}}]\n' "$id" "$(printf 'a%.0s' {1..64})"
+  if [[ "$id" == new-* ]]; then
+    image=""
+    [[ ! -f "$FAKE_RAILWAY_STATE/image-$service" ]] || image="$(cat "$FAKE_RAILWAY_STATE/image-$service")"
+    jq -cn --arg id "$id" --arg service "$service" --arg image "$image" \
+      '[{id:$id,status:"SUCCESS",createdAt:"2026-01-01T00:00:00Z",meta:{image:$image,imageDigest:($image | split("@") | .[1] // "")}},{id:("old-"+$service),status:"REMOVED"}]'
   else
     printf '[{"id":"%s","status":"SUCCESS","createdAt":"2026-01-01T00:00:00Z"}]\n' "$id"
   fi
@@ -198,6 +234,7 @@ if [[ "$1 $2" == "service list" ]]; then
   worker_regions='[{"name":"us-east4-eqdc4a","configured":1}]'
   router_regions='[{"name":"us-east4-eqdc4a","configured":1}]'
   media_regions='[{"name":"us-east4-eqdc4a","configured":1}]'
+  media_worker_regions='[{"name":"us-east4-eqdc4a","configured":1}]'
   if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-api" && ! -f "$FAKE_RAILWAY_STATE/up-scope-api" ]]; then
     api_deployment=null
     api_replicas=null
@@ -213,6 +250,14 @@ if [[ "$1 $2" == "service list" ]]; then
   if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-repo-router" && ! -f "$FAKE_RAILWAY_STATE/up-scope-repo-router" ]]; then
     router_deployment=null
     router_replicas=null
+  fi
+  if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-media" && ! -f "$FAKE_RAILWAY_STATE/up-scope-media" ]]; then
+    media_deployment=null
+    media_replicas=null
+  fi
+  if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-media-worker" && ! -f "$FAKE_RAILWAY_STATE/up-scope-media-worker" ]]; then
+    media_worker_deployment=null
+    media_worker_replicas=null
   fi
   [[ -f "$FAKE_RAILWAY_STATE/up-scope-api" ]] && api_deployment='"new-scope-api"'
   [[ -f "$FAKE_RAILWAY_STATE/up-scope-worker" ]] && worker_deployment='"new-scope-worker"'
@@ -251,6 +296,12 @@ if [[ "$1 $2" == "service list" ]]; then
   fi
   if [[ -f "$FAKE_RAILWAY_STATE/up-scope-repo-router" && ! -f "$FAKE_RAILWAY_STATE/crashed-scope-repo-router" ]]; then
     router_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
+  fi
+  if [[ -f "$FAKE_RAILWAY_STATE/up-scope-media" && "$media_stopped" == "false" && ! -f "$FAKE_RAILWAY_STATE/crashed-scope-media" ]]; then
+    media_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
+  fi
+  if [[ -f "$FAKE_RAILWAY_STATE/up-scope-media-worker" && "$media_worker_stopped" == "false" && ! -f "$FAKE_RAILWAY_STATE/crashed-scope-media-worker" ]]; then
+    media_worker_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
   fi
   if [[ -f "$FAKE_RAILWAY_STATE/crashed-scope-api" && "$api_stopped" == "false" ]]; then
     api_status=CRASHED
@@ -295,7 +346,7 @@ if [[ "$1 $2" == "service list" ]]; then
     || -f "$FAKE_RAILWAY_STATE/router-instance-created" ]]; then
     router_json=",{\"id\":\"scope-repo-router\",\"name\":\"scope-repo-router\",\"status\":\"${router_status}\",\"deploymentId\":${router_deployment},\"deploymentStopped\":${router_stopped},\"replicas\":${router_replicas},\"regions\":${router_regions}}"
   fi
-  printf '[{"id":"scope-api","name":"scope-api","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-worker","name":"scope-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-cache-service","name":"scope-cache-service","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s},{"id":"scope-media","name":"scope-media","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-media-worker","name":"scope-media-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s}%s]\n' "$api_status" "$api_deployment" "$api_stopped" "$api_replicas" "$api_regions" "$worker_status" "$worker_deployment" "$worker_stopped" "$worker_replicas" "$worker_regions" "$cache_status" "$cache_deployment" "$cache_stopped" "$cache_replicas" "$media_status" "$media_deployment" "$media_stopped" "$media_replicas" "$media_regions" "$media_worker_status" "$media_worker_deployment" "$media_worker_stopped" "$media_worker_replicas" "$media_regions" "$router_json"
+  printf '[{"id":"scope-api","name":"scope-api","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-worker","name":"scope-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-cache-service","name":"scope-cache-service","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s},{"id":"scope-media","name":"scope-media","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-media-worker","name":"scope-media-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s}%s]\n' "$api_status" "$api_deployment" "$api_stopped" "$api_replicas" "$api_regions" "$worker_status" "$worker_deployment" "$worker_stopped" "$worker_replicas" "$worker_regions" "$cache_status" "$cache_deployment" "$cache_stopped" "$cache_replicas" "$media_status" "$media_deployment" "$media_stopped" "$media_replicas" "$media_regions" "$media_worker_status" "$media_worker_deployment" "$media_worker_stopped" "$media_worker_replicas" "$media_worker_regions" "$router_json"
   exit 0
 fi
 
@@ -321,7 +372,7 @@ if [[ "$1" == "up" ]]; then
     printf '{"deploymentId":"new-%s"}\n' "$service"
     exit 0
   fi
-  if [[ -f "$FAKE_RAILWAY_STATE/up-${service}" ]]; then
+  if [[ -f "$FAKE_RAILWAY_STATE/up-${service}" && "${FAKE_IMMUTABLE_ACTIVATION:-0}" != "1" ]]; then
     touch "$FAKE_RAILWAY_STATE/skipped-${service}"
     printf '{"deploymentId":"skip-%s"}\n' "$service"
     exit 0
@@ -334,3 +385,50 @@ fi
 
 echo "unexpected fake Railway invocation: $*" >&2
 exit 2
+FAKE
+chmod +x "$test_dir/bin/railway"
+
+cat > "$test_dir/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+headers="$(cat)"
+[[ "$headers" == *"Authorization: Bearer token-graphql"* ]]
+[[ "$headers" == *"Content-Type: application/json"* ]]
+
+request=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --data-binary) request="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+read -r action deployment_id < <(
+  REQUEST_JSON="$request" node -e '
+const request = JSON.parse(process.env.REQUEST_JSON || "{}");
+const match = request.query?.match(/deployment(Stop|Restart)/);
+console.log(`${match?.[1]?.toLowerCase() || ""} ${request.variables?.id || ""}`);
+'
+)
+service="${deployment_id#old-}"
+service="${service#new-}"
+printf 'graphql %s %s %s\n' "$action" "$service" "$deployment_id" >> "$FAKE_RAILWAY_TRACE"
+if [[ "${FAKE_DENY_DEPLOYMENT_ACTION_SERVICE:-}" == "$service" ]]; then
+  echo '{"errors":[{"message":"permission denied"}]}'
+  exit 0
+fi
+if [[ "$action" == "stop" ]]; then
+  touch "$FAKE_RAILWAY_STATE/stop-requested-${service}"
+  if [[ "${FAKE_STALE_STOP_STATUS:-0}" != "1" ]]; then
+    touch "$FAKE_RAILWAY_STATE/stopped-${service}"
+  fi
+  echo '{"data":{"deploymentStop":true}}'
+elif [[ "$action" == "restart" ]]; then
+  rm -f "$FAKE_RAILWAY_STATE/stopped-${service}" \
+    "$FAKE_RAILWAY_STATE/stop-requested-${service}" \
+    "$FAKE_RAILWAY_STATE/crashed-${service}"
+  echo '{"data":{"deploymentRestart":true}}'
+else
+  exit 2
+fi
+FAKE
+chmod +x "$test_dir/bin/curl"
