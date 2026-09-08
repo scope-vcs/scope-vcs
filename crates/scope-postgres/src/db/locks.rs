@@ -68,6 +68,29 @@ async fn acquire_aggregate_lock_with_mode<C: ConnectionTrait>(
     Ok(())
 }
 
+/// Observe a waiter blocked by this transaction. The deadline detects hangs, not ordering.
+#[cfg(test)]
+pub(super) async fn wait_for_transaction_waiter(
+    store: &super::MetadataStore,
+    blocker_pid: i32,
+) -> i32 {
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            let waiting = store.db.query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)) LIMIT 1",
+                [blocker_pid.into()],
+            )).await.unwrap();
+            if let Some(waiting) = waiting {
+                break waiting.try_get::<i32>("", "pid").unwrap();
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("expected a waiter blocked by the held transaction")
+}
+
 /// Observe the exact schema-scoped advisory lock, so unrelated database work cannot
 /// satisfy a test's waiting barrier. The deadline detects hangs, not ordering.
 #[cfg(test)]

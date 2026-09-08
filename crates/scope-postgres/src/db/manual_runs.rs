@@ -1,16 +1,44 @@
 use super::{
     EnqueueRunResult, RunStore, acquire_aggregate_lock, entities,
-    git_push_reads::git_push_context_for_id, runs::enqueue_run_in_transaction,
-    workflow_catalogs::repository_workflow_catalog,
+    git_push_reads::git_push_context_for_id, repository_access::repository_access,
+    runs::enqueue_run_in_transaction, workflow_catalogs::repository_workflow_catalog,
 };
 use crate::error::PostgresError;
 use scope_domain::{
+    content::SourceBlob,
     projection::ProjectionViewKey,
-    runs::{manual::ManualRunRequest, source::RunSource},
+    runs::{manual::ManualRunRequest, source::RunSource, workflow::revision::WorkflowRevision},
 };
 use sea_orm::{EntityTrait, TransactionTrait};
 
+#[cfg(test)]
+mod tests;
+
 impl RunStore {
+    /// Rechecks membership after upload and commits the source, revision and jobs together.
+    pub async fn enqueue_uploaded_manual_run(
+        &self,
+        request: &ManualRunRequest,
+        object: SourceBlob,
+        revision: WorkflowRevision,
+        now_unix: u64,
+    ) -> Result<EnqueueRunResult, PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        acquire_aggregate_lock(&tx, "repository", request.repository_id()).await?;
+        let context = repository_access(&tx, request.repository_id(), Some(request.user_id()))
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        request.require_access(context.access)?;
+        let run = request.create_run(
+            &revision,
+            RunSource::ephemeral_git_bundle(object)?,
+            now_unix,
+        )?;
+        let enqueued = enqueue_run_in_transaction(&tx, run, revision).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(enqueued)
+    }
+
     /// Pins a known source and its workflow while repository mutation is excluded.
     /// A missing exact source leaves no run behind, allowing the caller to upload it.
     pub async fn enqueue_known_manual_run(
