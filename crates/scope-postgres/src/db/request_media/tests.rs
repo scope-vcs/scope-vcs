@@ -25,7 +25,6 @@ const SOURCE_SHA256: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 struct Fixture {
     store: MetadataStore,
-    target: TestDatabaseTarget,
     repository_id: String,
 }
 
@@ -50,7 +49,6 @@ fn fixture() -> Fixture {
     store.admin().seed_catalog_for_tests(catalog).unwrap();
     Fixture {
         store,
-        target,
         repository_id,
     }
 }
@@ -778,9 +776,10 @@ async fn binding_a_ready_attachment_notifies_only_after_the_transaction_commits(
         .await
         .unwrap();
 
-    let mut listener = sqlx::postgres::PgListener::connect(&fixture.target.schema_database_url())
-        .await
-        .unwrap();
+    let mut listener =
+        sqlx::postgres::PgListener::connect_with(fixture.store.db.get_postgres_connection_pool())
+            .await
+            .unwrap();
     listener.listen("scope_repo_changes").await.unwrap();
     let tx = fixture.store.db.begin().await.unwrap();
     replace_bindings_for_markdown(
