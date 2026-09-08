@@ -239,6 +239,7 @@ test('request details disclose on mobile without replacing discussion or quote t
     const context = page.locator('.request-context-rail > details')
     const summary = context.locator(':scope > summary')
     await summary.waitFor()
+    await waitForClientHydration(page, summary)
     assert.equal(await context.getAttribute('open'), null)
     assert.doesNotMatch(await context.ariaSnapshot(), /Public request/)
     assert.equal(await context.count(), 1)
@@ -269,6 +270,56 @@ test('request details disclose on mobile without replacing discussion or quote t
     await quote.click()
     await page.waitForFunction(() => document.activeElement?.id === 'reply-discussion_reply_demo_retry_cap_maintainer')
     assert.equal(await page.locator('h1').innerText(), 'Add bounded retry timing')
+  })
+})
+
+test('mobile details close survives desktop resize before native toggle delivery', async () => {
+  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const context = page.locator('.request-context-rail > details')
+    const summary = context.locator(':scope > summary')
+    await waitForClientHydration(page, summary)
+    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
+    await summary.press('Enter')
+    await context.getByText('Public request', { exact: true }).waitFor()
+    const invitees = context.locator('details').filter({ has: page.getByRole('heading', { name: 'invitees', exact: true }) })
+    await invitees.locator('summary').click()
+    await invitees.getByText('No invitees.', { exact: false }).waitFor()
+    const originalContext = await context.elementHandle()
+    const originalInvitees = await invitees.elementHandle()
+
+    await context.evaluate((element) => {
+      window.__scopeHeldContextToggle = null
+      const holdClose = (event) => {
+        if (event.target !== element || event.newState !== 'closed') return
+        event.stopImmediatePropagation()
+        document.removeEventListener('toggle', holdClose, true)
+        window.__scopeHeldContextToggle = { oldState: event.oldState, newState: event.newState }
+      }
+      document.addEventListener('toggle', holdClose, true)
+    })
+    await summary.press('Space')
+    await page.waitForFunction(() => window.__scopeHeldContextToggle !== null)
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    // Deliver the native close event after the desktop media-query render.
+    // This reproduces the browser's deferred toggle ordering without replacing
+    // the application component or reaching into its React state.
+    await page.evaluate(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve))
+    }))
+    await originalContext.evaluate((element) => {
+      element.dispatchEvent(new ToggleEvent('toggle', window.__scopeHeldContextToggle))
+      delete window.__scopeHeldContextToggle
+    })
+    await context.getByText('Public request', { exact: true }).waitFor({ timeout: 5_000 })
+    assert(await originalContext.evaluate((element) => element === document.querySelector('.request-context-rail > details')))
+    assert(await originalInvitees.evaluate((element) => element.isConnected && element.open))
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
+    await summary.press('Enter')
+    await invitees.getByText('No invitees.', { exact: false }).waitFor()
+    assert(await originalInvitees.evaluate((element) => element.isConnected && element.open))
   })
 })
 

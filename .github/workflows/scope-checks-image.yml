@@ -25,8 +25,35 @@ env:
   SOCI_VERSION: 0.15.0
 
 jobs:
+  validate:
+    name: Validate checks image
+    if: github.event_name == 'pull_request'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@9309da73a81f66976a6d750572e221508b1e2682 # v1
+
+      - name: Build candidate image
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: .scope/images/checks/Dockerfile
+          platforms: linux/amd64
+          provenance: false
+          push: false
+
   build:
     name: Build checks image
+    if: github.event_name != 'pull_request'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read

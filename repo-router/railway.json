@@ -11,6 +11,8 @@
   "deploy": {
     "startCommand": "exec ./bin/scope-repo-router",
     "healthcheckPath": "/readyz",
-    "healthcheckTimeout": 60
+    "healthcheckTimeout": 60,
+    "overlapSeconds": "30",
+    "drainingSeconds": "30"
   }
 }

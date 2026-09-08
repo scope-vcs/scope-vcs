@@ -33,12 +33,16 @@ if [[ "$staging_environment_id" == "$production_environment_id" ]]; then
   exit 1
 fi
 
+railway_read() {
+  node "$(dirname "${BASH_SOURCE[0]}")/railway-read.mjs" "$@"
+}
+
 railway_scope=(
   --project "$project_id"
   --environment "$staging_environment_id"
 )
-status_json="$(railway status "${railway_scope[@]}" --json)"
-services_json="$(railway service list "${railway_scope[@]}" --json)"
+status_json="$(railway_read status "${railway_scope[@]}" --json)"
+services_json="$(railway_read service list "${railway_scope[@]}" --json)"
 SCOPE_DEPLOYMENT_MANIFEST_JSON="$manifest_json" \
   SCOPE_RAILWAY_STATUS_JSON="$status_json" \
   SCOPE_RAILWAY_SERVICES_JSON="$services_json" \
@@ -50,7 +54,7 @@ railway variable set "${railway_scope[@]}" --service "$router_service" --skip-de
   "SCOPE_REPO_ROUTER_BACKEND=scope-api.railway.internal:8080" \
   "SCOPE_REPO_ROUTER_READ_REPLICAS=$staging_api_replicas" >/dev/null
 
-api_variables="$(railway variable list "${railway_scope[@]}" --service "$api_service" --json)"
+api_variables="$(railway_read variable list "${railway_scope[@]}" --service "$api_service" --json)"
 if ! jq -e --arg expected "$staging_cache_url" '.SCOPE_CACHE_URL == $expected' \
   <<< "$api_variables" >/dev/null; then
   echo "Staging API SCOPE_CACHE_URL does not match the reviewed staging cache domain." >&2
@@ -62,7 +66,7 @@ if ! jq -e --arg expected "$staging_router_url" '.SCOPE_GIT_PUBLIC_URL == $expec
   exit 1
 fi
 
-router_variables="$(railway variable list "${railway_scope[@]}" --service "$router_service" --json)"
+router_variables="$(railway_read variable list "${railway_scope[@]}" --service "$router_service" --json)"
 if ! jq -e \
   --arg backend 'scope-api.railway.internal:8080' \
   --arg replicas "$staging_api_replicas" \
@@ -79,7 +83,7 @@ export RAILWAY_DEPLOY_MESSAGE="Staging ${GITHUB_SHA:-candidate}"
 assert_writer_state() {
   local expected_running="$1"
   local current_services
-  current_services="$(railway service list "${railway_scope[@]}" --json)"
+  current_services="$(railway_read service list "${railway_scope[@]}" --json)"
   SERVICES_JSON="$current_services" \
     API_SERVICE="$api_service" \
     CACHE_SERVICE="$cache_service" \
@@ -102,7 +106,7 @@ for (const id of [process.env.API_SERVICE, process.env.CACHE_SERVICE, process.en
 
 assert_staging_topology() {
   local current_services
-  current_services="$(railway service list "${railway_scope[@]}" --json)"
+  current_services="$(railway_read service list "${railway_scope[@]}" --json)"
   SCOPE_DEPLOYMENT_MANIFEST_JSON="$manifest_json" \
     SCOPE_RAILWAY_STATUS_JSON="$status_json" \
     SCOPE_RAILWAY_SERVICES_JSON="$current_services" \
@@ -112,7 +116,7 @@ assert_staging_topology() {
 
 record_deployment() {
   local service="$1"
-  railway deployment list "${railway_scope[@]}" --service "$service" --limit 1 --json |
+  railway_read deployment list "${railway_scope[@]}" --service "$service" --limit 1 --json |
     jq -ec --arg service "$service" '
       first | select(.status == "SUCCESS") |
       {service: $service, deploymentId: .id, status: .status}
@@ -133,7 +137,7 @@ case "$action" in
       sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" exec "$@"' \
       scope-maintenance "$maintenance_binary" apply
 
-    database_variables="$(railway variable list "${railway_scope[@]}" --service "$database_service" --json)"
+    database_variables="$(railway_read variable list "${railway_scope[@]}" --service "$database_service" --json)"
     SCOPE_STAGING_DATABASE_PUBLIC_URL="$(
       jq -er '.DATABASE_PUBLIC_URL | strings | select(length > 0)' <<< "$database_variables"
     )"
@@ -152,18 +156,20 @@ case "$action" in
     railway run "${railway_scope[@]}" --service "$api_service" --no-local -- \
       sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH="$SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH" exec "$@"' \
       scope-smoke-seed "$seed_binary"
-    workflow_backfill_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/scope-workflow-catalog-backfill.XXXXXX")"
-    SCOPE_STAGING_WORKFLOW_BACKFILL_DIR="$workflow_backfill_dir" \
-      railway run "${railway_scope[@]}" --service "$api_service" --no-local -- \
-        sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_DATA_DIR="$SCOPE_STAGING_WORKFLOW_BACKFILL_DIR" exec "$@"' \
-        scope-maintenance "$maintenance_binary" backfill-workflow-catalogs
-    rm -rf -- "$workflow_backfill_dir"
+    snapshot_backfill_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/scope-repository-snapshot-backfill.XXXXXX")"
+    for backfill_command in backfill-landing-files backfill-workflow-catalogs; do
+      SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR="$snapshot_backfill_dir" \
+        railway run "${railway_scope[@]}" --service "$api_service" --no-local -- \
+          sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_DATA_DIR="$SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR" exec "$@"' \
+          scope-maintenance "$maintenance_binary" "$backfill_command"
+    done
+    rm -rf -- "$snapshot_backfill_dir"
     unset SCOPE_STAGING_DATABASE_PUBLIC_URL
 
-    bash .github/scripts/deploy-railway.sh "$cache_service" "$1"
-    bash .github/scripts/deploy-railway.sh "$worker_service" "$2"
-    bash .github/scripts/deploy-railway.sh "$api_service" "$3"
-    bash .github/scripts/deploy-railway.sh "$router_service" "$4"
+    SCOPE_DEPLOYMENT_COMPONENT=cache bash .github/scripts/deploy-railway.sh "$cache_service" "$1"
+    SCOPE_DEPLOYMENT_COMPONENT=worker bash .github/scripts/deploy-railway.sh "$worker_service" "$2"
+    SCOPE_DEPLOYMENT_COMPONENT=api bash .github/scripts/deploy-railway.sh "$api_service" "$3"
+    SCOPE_DEPLOYMENT_COMPONENT=router bash .github/scripts/deploy-railway.sh "$router_service" "$4"
     ;;
   finish)
     if [[ "$#" -ne 1 ]]; then
@@ -171,7 +177,7 @@ case "$action" in
       exit 2
     fi
     assert_staging_topology
-    bash .github/scripts/deploy-railway.sh "$web_service" "$1"
+    SCOPE_DEPLOYMENT_COMPONENT=web bash .github/scripts/deploy-railway.sh "$web_service" "$1"
     evidence_lines="$(mktemp)"
     trap 'rm -f "$evidence_lines"' EXIT
     for service in "$cache_service" "$worker_service" "$api_service" "$router_service" "$web_service"; do

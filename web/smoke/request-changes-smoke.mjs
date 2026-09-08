@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 
 export async function assertRequestCrossLinksStayInDocument(page) {
   const requestViews = page.getByRole('navigation', { name: 'Request views' })
@@ -64,8 +65,7 @@ export async function assertFileSelectionSkipsRevisionReload(page, fileName, pat
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
-      const id = new URL(request.url()).pathname.split('/').at(-1)
-      serverFunctions.push(JSON.parse(Buffer.from(id, 'base64url')).export)
+      serverFunctions.push(serverFunctionName(request))
     }
   }
   page.on('request', recordServerFunction)
@@ -104,8 +104,7 @@ export async function assertUpdateSelectionReloadsSelectedPayload(page) {
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
-      const id = new URL(request.url()).pathname.split('/').at(-1)
-      serverFunctions.push(JSON.parse(Buffer.from(id, 'base64url')).export)
+      serverFunctions.push(serverFunctionName(request))
     }
   }
   page.on('request', recordServerFunction)

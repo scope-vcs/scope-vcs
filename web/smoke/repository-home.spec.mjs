@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { chromium } from 'playwright'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 
 const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000'
 const repo = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
@@ -90,13 +91,6 @@ test('README details preserve inspection without exposing repeated navigator met
     assert.equal(await page.getByText(/^Blob:/).isVisible(), false)
   })
 })
-
-function serverFunctionName(request) {
-  try {
-    const id = new URL(request.url()).pathname.split('/').at(-1)
-    return JSON.parse(Buffer.from(id, 'base64url')).export
-  } catch { return '' }
-}
 
 async function navigateFromHome(page, path) {
   await page.goto(baseUrl)

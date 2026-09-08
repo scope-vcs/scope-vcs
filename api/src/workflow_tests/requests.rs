@@ -1,6 +1,7 @@
 use super::*;
 
 mod helpers;
+mod publication;
 mod queue;
 mod ratings;
 pub(super) use helpers::{create_owner_request, create_public_request, rebuild_request_projection};
@@ -116,7 +117,7 @@ async fn private_request_bases_select_the_native_private_head() {
 }
 
 #[tokio::test]
-async fn stale_request_projection_identity_returns_the_rebuilding_response() {
+async fn request_reads_rebuild_current_history_before_projection_jobs_run() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
     create_owner_request(&state, "req_stale_projection", REQUEST_HEAD).await;
@@ -130,7 +131,7 @@ async fn stale_request_projection_identity_returns_the_rebuilding_response() {
         .unwrap();
     let app = router(state);
 
-    let stale = api_request(
+    let response = api_request(
         app.clone(),
         "GET",
         "/v1/repos/owner/repo/requests/req_stale_projection",
@@ -138,10 +139,11 @@ async fn stale_request_projection_identity_returns_the_rebuilding_response() {
         None,
     )
     .await;
-    assert_eq!(stale.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        response_json(stale).await["message"],
-        "repository projection is rebuilding; retry shortly"
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response_json(response).await["request"]["mergeability"]["current_main_oid"]
+            .as_str()
+            .is_some_and(|head| head.len() == 40)
     );
 
     for uri in [

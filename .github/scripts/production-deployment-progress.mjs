@@ -3,6 +3,8 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+import { cutoverCommand } from "./release-cutover-journal.mjs";
+
 import { COMPONENTS } from "./plan-production-deployment.mjs";
 
 const API_VERSION = "2022-11-28";
@@ -155,6 +157,11 @@ export async function recordEvidenceFile(path, logUrl = "", fetchImpl = fetch) {
 
 async function main() {
   const command = process.argv[2];
+  if (command?.startsWith("cutover-")) {
+    const result = await cutoverCommand(command, argument, githubRequest);
+    if (result !== undefined) process.stdout.write(`${typeof result === "string" ? result : JSON.stringify(result)}\n`);
+    return;
+  }
   if (command === "read") {
     const deployments = await latestSuccessfulDeployments();
     const revisions = Object.fromEntries(COMPONENTS.map((component) => [

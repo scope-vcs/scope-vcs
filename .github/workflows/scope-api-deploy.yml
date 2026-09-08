@@ -3,6 +3,15 @@ name: Scope Backend Deploy
 on:
   workflow_call:
     inputs:
+      source_sha:
+        type: string
+        required: true
+      maintenance_budget_seconds:
+        type: number
+        default: 0
+      recover_cutover_id:
+        type: string
+        default: ""
       deploy_cache:
         type: boolean
         default: false
@@ -22,6 +31,7 @@ on:
 permissions:
   contents: read
   deployments: write
+  actions: read
 
 jobs:
   deploy:
@@ -31,65 +41,27 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - name: Checkout
+      - name: Checkout trusted deployment orchestration
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Install Node
         uses: actions/setup-node@v6
         with:
           node-version: 24
 
-      - name: Download backend deployment binaries
+      - name: Download prepared release manifest
         uses: actions/download-artifact@v8
         with:
-          name: backend-release-${{ github.sha }}
-          path: artifacts
+          name: prepared-release-${{ inputs.source_sha }}
 
-      - name: Extract backend deployment binaries
-        run: |
-          mkdir -p artifacts/backend-release target/release
-          tar --extract --gzip \
-            --file artifacts/backend-release.tar.gz \
-            --directory artifacts/backend-release
-          install -m 0755 artifacts/backend-release/scope-maintenance target/release/scope-maintenance
-          test -x target/release/scope-maintenance
-
-      - name: Stage Railway upload roots
-        shell: bash
+      - name: Extract pinned maintenance binary from the API image
         env:
-          DEPLOY_ROUTER: ${{ inputs.deploy_router && '1' || '0' }}
-          SUCCESSFUL_DEPLOYMENTS: ${{ inputs.successful_deployments }}
-        run: |
-          rm -rf .railway-upload
-          for service in api worker cache-service repo-router; do
-            root=".railway-upload/$service"
-            watch_root="$root/$service"
-            mkdir -p "$root/bin" "$watch_root"
-            cp artifacts/backend-release/LICENSE artifacts/backend-release/NOTICE artifacts/backend-release/third-party-rust.txt "$root/bin/"
-            cp deploy/railway/prebuilt-backend.railpack.json "$root/railpack.json"
-            if [[ "$service" == "api" || "$service" == "worker" ]]; then
-              cp deploy/railway/prebuilt-backend-git.railpack.json "$root/railpack.json"
-            fi
-            install -m 0755 deploy/railway/start-prebuilt.sh "$root/start.sh"
-            cp "$service/railway.json" "$root/railway.json"
-            printf '%s\n' "$GITHUB_SHA" | tee \
-              "$root/.scope-deployment-sha" \
-              "$watch_root/.scope-deployment-sha" >/dev/null
-            component="$service"
-            [[ "$component" == "cache-service" ]] && component=cache
-            [[ "$component" == "repo-router" ]] && component=router
-            successful_sha="$(jq -r --arg component "$component" '.[$component].sourceSha // ""' <<< "$SUCCESSFUL_DEPLOYMENTS")"
-            if [[ "$successful_sha" != "$GITHUB_SHA" ]]; then
-              printf '%s:%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" | tee \
-                "$root/.scope-deployment-attempt" \
-                "$watch_root/.scope-deployment-attempt" >/dev/null
-            fi
-          done
-
-          install -m 0755 artifacts/backend-release/scope-vcs .railway-upload/api/bin/scope-vcs
-          install -m 0755 artifacts/backend-release/scope-cache-service .railway-upload/cache-service/bin/scope-cache-service
-          install -m 0755 artifacts/backend-release/scope-worker .railway-upload/worker/bin/scope-worker
-          [[ "$DEPLOY_ROUTER" == "0" ]] || install -m 0755 artifacts/backend-release/scope-repo-router .railway-upload/repo-router/bin/scope-repo-router
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: bash .github/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
 
       - name: Install Railway CLI
         run: |
@@ -97,19 +69,28 @@ jobs:
           npm install -g "@railway/cli@$railway_cli_version"
 
       - name: Deploy to Railway
+        id: transition
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SCOPE_PREPARED_RELEASE_PATH: prepared-release.json
+          MAINTENANCE_BUDGET_SECONDS: ${{ inputs.maintenance_budget_seconds }}
+          SCOPE_RELEASE_CUTOVER_ID: ${{ inputs.recover_cutover_id }}
+          SCOPE_RECOVER_CLOSED_CUTOVER: ${{ inputs.recover_cutover_id != '' && '1' || '0' }}
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
           RAILWAY_DEPLOY_MESSAGE: ${{ github.event.head_commit.message || github.workflow }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
-          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ github.sha }}
+          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
           SCOPE_SUCCESSFUL_DEPLOYMENTS: ${{ inputs.successful_deployments }}
           SCOPE_DEPLOY_CACHE: ${{ inputs.deploy_cache && '1' || '0' }}
           SCOPE_DEPLOY_WORKER: ${{ inputs.deploy_worker && '1' || '0' }}
           SCOPE_DEPLOY_ROUTER: ${{ inputs.deploy_router && '1' || '0' }}
           SCOPE_DEPLOY_API: ${{ inputs.deploy_api && '1' || '0' }}
         run: |
+          export SCOPE_MAINTENANCE_OUTAGE_BUDGET_MS=$((MAINTENANCE_BUDGET_SECONDS * 1000))
           manifest=.github/deployment-services.json
           RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"
           SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.railway.environmentId' "$manifest")"
@@ -127,14 +108,14 @@ jobs:
           export SCOPE_RAILWAY_DATABASE_SERVICE_ID
           export SCOPE_RAILWAY_ROUTER_GROUP_ID
           export SCOPE_RAILWAY_API_REGION_ID SCOPE_RAILWAY_WORKER_REGION_ID
-          bash .github/scripts/deploy-backend-railway.sh \
-            .railway-upload/api \
-            .railway-upload/worker \
-            .railway-upload/cache-service \
-            .railway-upload/repo-router
+          bash .github/scripts/deploy-monitored-railway.sh backend bash .github/scripts/deploy-backend-railway.sh \
+            api \
+            worker \
+            cache-service \
+            repo-router
 
       - name: Record successful Railway deployments
-        if: always()
+        if: steps.transition.outcome == 'success'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -143,3 +124,12 @@ jobs:
           node .github/scripts/production-deployment-progress.mjs record-file \
             --file production-deployments.ndjson \
             --log-url "$LOG_URL"
+
+      - name: Upload release transition evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-backend-transition-${{ inputs.source_sha }}-${{ github.run_attempt }}
+          path: release-evidence/
+          if-no-files-found: warn
+          retention-days: 90

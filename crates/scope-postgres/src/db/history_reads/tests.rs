@@ -390,7 +390,20 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
             .message
             .contains("boundary is no longer available")
     );
+    let previous_context = store
+        .repositories()
+        .repository_access("owner", "history", Some("history_owner"))
+        .await
+        .unwrap()
+        .unwrap();
     store.db.execute_unprepared("UPDATE scope_repositories SET change_version=change_version+1 WHERE id='owner/history'").await.unwrap();
+    assert!(
+        store
+            .repositories()
+            .repository_main_oid(&previous_context)
+            .await
+            .is_err()
+    );
     assert!(
         store
             .repositories()
