@@ -404,7 +404,7 @@ jobs:
       deploy_api: ${{ needs.plan.outputs.api == 'true' }}
       successful_deployments: ${{ needs.plan.outputs.deployed_components || '{}' }}
       recover_cutover_id: ${{ inputs.recover_cutover_id || '' }}
-      maintenance_budget_seconds: ${{ inputs.maintenance_budget_seconds || 0 }}
+      maintenance_budget_seconds: ${{ fromJSON(format('{0}', inputs.maintenance_budget_seconds || 0)) }}
     secrets: inherit
 
   web-deploy:
