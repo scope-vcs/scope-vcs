@@ -119,6 +119,7 @@ jobs:
 
       - name: Build web artifact
         env:
+          VITE_SCOPE_WEB_FORCE_SIGNED_OUT: '1'
           VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
           VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.VITE_POSTHOG_PROJECT_TOKEN }}
         working-directory: web
