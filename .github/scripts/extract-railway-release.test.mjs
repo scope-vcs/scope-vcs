@@ -33,11 +33,13 @@ function extract(kind, { archive, destination }) {
 }
 
 test('extracts backend executables and notices as regular files with sanitized permissions', (t) => {
-  const f = fixture(t, [{ name: './', type: 'directory' }, { name: './scope-vcs', mode: 0o6755, data: 'binary' }, { name: './LICENSE', data: 'license' }]);
+  const f = fixture(t, [{ name: './', type: 'directory' }, { name: './scope-vcs', mode: 0o6755, data: 'binary' }, { name: './scope-media-service', mode: 0o755, data: 'media gateway' }, { name: './LICENSE', data: 'license' }]);
   const result = extract('backend', f);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(join(f.destination, 'scope-vcs'), 'utf8'), 'binary');
   assert.equal(statSync(join(f.destination, 'scope-vcs')).mode & 0o7777, 0o755);
+  assert.equal(readFileSync(join(f.destination, 'scope-media-service'), 'utf8'), 'media gateway');
+  assert.equal(statSync(join(f.destination, 'scope-media-service')).mode & 0o7777, 0o755);
 });
 
 test('extracts the compiled web tree including hidden data', (t) => {
