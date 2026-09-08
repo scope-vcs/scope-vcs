@@ -24,6 +24,7 @@ case "$component" in
   worker) install_git=1; binary=scope-worker ;;
   cache) binary=scope-cache-service ;;
   router) binary=scope-repo-router ;;
+  media) binary=scope-media-service ;;
   cli) binary=scope-cli-service ;;
   web) dockerfile=deploy/railway/web.Dockerfile; test -s "$context_root/.output/server/index.mjs" ;;
   *) echo "Unknown release component $component" >&2; exit 2 ;;

@@ -17,9 +17,12 @@ validate_production_target() {
     EXPECTED_WORKER_SERVICE_ID="$worker_service" \
     EXPECTED_CACHE_SERVICE_ID="$cache_service" \
     EXPECTED_ROUTER_SERVICE_ID="$router_service" \
+    EXPECTED_MEDIA_SERVICE_ID="$media_service" \
+    EXPECTED_MEDIA_WORKER_SERVICE_ID="$media_worker_service" \
     EXPECTED_DATABASE_SERVICE_ID="$database_service" \
     EXPECTED_API_REGION="$api_region" \
     EXPECTED_WORKER_REGION="$worker_region" \
+    EXPECTED_MEDIA_REGION="$media_region" \
     node -e '
 const status = JSON.parse(process.env.RAILWAY_STATUS_JSON || "{}");
 const serviceStates = JSON.parse(process.env.RAILWAY_SERVICES_JSON || "[]");
@@ -33,6 +36,8 @@ const expectedServices = new Map([
   [process.env.EXPECTED_WORKER_SERVICE_ID, "scope-worker"],
   [process.env.EXPECTED_CACHE_SERVICE_ID, "scope-cache-service"],
   [process.env.EXPECTED_ROUTER_SERVICE_ID, "scope-repo-router"],
+  [process.env.EXPECTED_MEDIA_SERVICE_ID, "scope-media"],
+  [process.env.EXPECTED_MEDIA_WORKER_SERVICE_ID, "scope-media-worker"],
   [process.env.EXPECTED_DATABASE_SERVICE_ID, "scope-postgres"],
 ]);
 const environments = status.environments?.edges?.map(({node}) => node) || [];
@@ -49,6 +54,8 @@ for (const [id, name] of expectedServices) {
 for (const [id, name, expectedRegion] of [
   [process.env.EXPECTED_API_SERVICE_ID, "scope-api", process.env.EXPECTED_API_REGION],
   [process.env.EXPECTED_WORKER_SERVICE_ID, "scope-worker", process.env.EXPECTED_WORKER_REGION],
+  [process.env.EXPECTED_MEDIA_SERVICE_ID, "scope-media", process.env.EXPECTED_MEDIA_REGION],
+  [process.env.EXPECTED_MEDIA_WORKER_SERVICE_ID, "scope-media-worker", process.env.EXPECTED_MEDIA_REGION],
 ]) {
   const service = serviceStates.find((candidate) => candidate.id === id);
   if (!service) fail(`Railway service ${name} has no production state`);
@@ -124,6 +131,8 @@ service_is_healthy() {
     "$worker_service") expected_config=worker/railway.json ;;
     "$cache_service") expected_config=cache-service/railway.json ;;
     "$router_service") expected_config=repo-router/railway.json ;;
+    "$media_service") expected_config=media-service/railway.json ;;
+    "$media_worker_service") expected_config="" ;;
     *) echo "Unknown backend service: $service_name" >&2; return 1 ;;
   esac
   [[ "$verify_config" == "1" ]] || expected_config=""

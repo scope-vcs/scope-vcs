@@ -22,6 +22,13 @@ export function createBoundedCache<Key, Value>({
       entries.clear()
       totalWeight = 0
     },
+    delete(key: Key) {
+      const entry = entries.get(key)
+      if (!entry) return false
+      entries.delete(key)
+      totalWeight -= entry.weight
+      return true
+    },
     get(key: Key) {
       const entry = entries.get(key)
       if (!entry) return undefined

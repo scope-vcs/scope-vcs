@@ -237,6 +237,12 @@ async fn workflow_catalog_backfill_is_idempotent() {
         .delete_repository_workflow_catalog_for_tests(TEST_REPO_ID)
         .await
         .unwrap();
+    let cache_path = state
+        .repository_engine
+        .repository_path(&test_repo_incarnation());
+    if cache_path.exists() {
+        fs::remove_dir_all(cache_path).unwrap();
+    }
 
     assert_eq!(
         state.backfill_repository_workflow_catalogs().await.unwrap(),

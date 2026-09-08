@@ -164,6 +164,24 @@ async fn stream_event_for_user(
             return Ok(None);
         }
     }
+    if let RepoChangeKind::RequestAttachmentChanged {
+        request_id,
+        attachment_id,
+        ..
+    } = &event.kind
+        && state
+            .metadata
+            .media()
+            .request_attachment_for_viewer(
+                request_id,
+                attachment_id,
+                user.map(|user| user.id.as_str()),
+            )
+            .await?
+            .is_none()
+    {
+        return Ok(None);
+    }
     Ok(event_for_access(&repo, event))
 }
 
@@ -179,7 +197,9 @@ fn event_for_access(
         return None;
     }
 
-    if let RepoChangeKind::RequestTimelineChanged { audience, .. } = &event.kind {
+    if let RepoChangeKind::RequestTimelineChanged { audience, .. }
+    | RepoChangeKind::RequestAttachmentChanged { audience, .. } = &event.kind
+    {
         if matches!(audience, scope_api_contract::RequestAudience::Public) {
             return Some(RepoChangeEvent {
                 version: 0,

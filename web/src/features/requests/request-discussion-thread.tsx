@@ -387,6 +387,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
           {canPostReply && composerOpen ? (
             <div className="mt-4 border-t border-border pt-3">
               <RequestReplyComposer
+                discussionId={discussion.id}
                 onCancel={() => {
                   setQuoteId(null)
                   onCloseComposer()

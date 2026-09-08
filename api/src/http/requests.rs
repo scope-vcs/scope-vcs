@@ -416,6 +416,7 @@ pub(crate) async fn edit_request_identity(
             event_id: random_id("event_request_identity_edited")?,
             title: input.title,
             description_markdown: input.description_markdown,
+            expected_description_markdown: input.expected_description_markdown,
             now_unix: unix_now()?,
         })
         .await?;

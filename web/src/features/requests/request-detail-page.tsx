@@ -34,7 +34,10 @@ import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
 import { requestActivityIdentity } from './request-activity-resource'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { useAuth } from '@clerk/tanstack-react-start'
+import {
+  RequestAttachmentProvider,
+  type RequestAttachmentActions,
+} from './request-attachment-context'
 
 export function RequestUnavailablePage({ params }: { params: RepoParams }) {
   return (
@@ -56,6 +59,7 @@ export function RequestUnavailablePage({ params }: { params: RepoParams }) {
 }
 
 type RequestDetailPageProps = {
+  attachmentActions: RequestAttachmentActions
   children: ReactNode
   detail: RequestDetail
   live: RepoLiveState
@@ -65,11 +69,13 @@ type RequestDetailPageProps = {
   ratings: RequestRatings
   rateRequest: (input: RateRequestInput) => Promise<RequestRating>
   updateDescription: (input: UpdateDescriptionInput) => Promise<RequestMutation>
+  viewerId: string
 }
 
 export function RequestDetailPage(props: RequestDetailPageProps) {
   const {
     children,
+    attachmentActions,
     detail,
     live,
     loadActivity,
@@ -78,13 +84,16 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     ratings,
     rateRequest,
     updateDescription,
+    viewerId,
   } = props
   const { request } = detail
   const serverDescription = request.description_markdown
-  const { isLoaded, userId } = useAuth()
   const history = useRequestActivityHistory({
-    identity: isLoaded && request.permissions.can_view_activity
-      ? requestActivityIdentity(repoResourceScope(live.repo, userId ?? null), request.id)
+    identity: request.permissions.can_view_activity
+      ? requestActivityIdentity(
+          repoResourceScope(live.repo, viewerId === 'anonymous' ? null : viewerId),
+          request.id,
+        )
       : null,
     load: loadActivity,
     version: String(request.activity_version),
@@ -106,11 +115,12 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     request.permissions.can_merge ||
     request.permissions.can_close
 
-  async function saveDescription(nextDescription: string) {
+  async function saveDescription(nextDescription: string, expectedDescription: string) {
     try {
       await updateDescription({
         ...requestParams,
         description_markdown: nextDescription,
+        expected_description_markdown: expectedDescription,
       })
       setDescriptionOverride({ server: serverDescription, value: nextDescription })
       return true
@@ -174,10 +184,16 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   }
 
   return (
+    <RequestAttachmentProvider
+      actions={attachmentActions}
+      live={live}
+      requestId={request.id}
+      viewerId={viewerId}
+    >
     <WorkbenchPane>
       <div className={hasLifecycleActions ? 'pb-20 xl:pb-0' : undefined}>
         {requestHeader()}
-        <div className="grid min-h-0 xl:grid-cols-[minmax(0,1fr)_320px] xl:grid-rows-[auto_auto_1fr]">
+        <div className="grid min-h-0 pt-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:grid-rows-[auto_auto_1fr]">
           <RequestDescription
             canEdit={request.permissions.can_edit_identity}
             description={description}
@@ -204,6 +220,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
         />
       </div>
     </WorkbenchPane>
+    </RequestAttachmentProvider>
   )
 }
 

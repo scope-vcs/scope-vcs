@@ -140,7 +140,7 @@ test('maintenance binary is bound to the original prepared release', () => {
 
 
 test('checked-in Railway string durations become GraphQL integers', () => {
-  for (const [component, directory] of [['api', 'api'], ['worker', 'worker'], ['cache', 'cache-service'], ['router', 'repo-router'], ['web', 'web']]) {
+  for (const [component, directory] of [['api', 'api'], ['worker', 'worker'], ['cache', 'cache-service'], ['router', 'repo-router'], ['media', 'media-service'], ['web', 'web']]) {
     const actualConfig = JSON.parse(readFileSync(new URL(`../../${directory}/railway.json`, import.meta.url), 'utf8'));
     const input = artifactDeploymentInput(component, release().components.api, actualConfig);
     assert.equal(input.overlapSeconds, 30);
@@ -160,9 +160,9 @@ test('trusted staging registry configuration touches only fixed environment cred
     calls.push({ query, variables });
     return { data: { serviceInstanceUpdate: true } };
   });
-  assert.deepEqual(result, { configured: true, serviceCount: 5 });
-  assert.equal(calls.length, 5);
-  assert.deepEqual(calls.map(({ variables }) => variables.serviceId), [manifest.services.cache.id, manifest.services.worker.id, manifest.railway.staging.routerServiceId, manifest.services.api.id, manifest.services.web.id]);
+  assert.deepEqual(result, { configured: true, serviceCount: 7 });
+  assert.equal(calls.length, 7);
+  assert.deepEqual(calls.map(({ variables }) => variables.serviceId), [manifest.services.cache.id, manifest.services.worker.id, manifest.railway.staging.routerServiceId, manifest.services.media.id, manifest.services.mediaWorker.id, manifest.services.api.id, manifest.services.web.id]);
   for (const { query, variables } of calls) {
     assert.equal(variables.environmentId, manifest.railway.staging.environmentId);
     assert.deepEqual(variables.input, { registryCredentials: credentials });
@@ -218,4 +218,20 @@ test('package verification rejects public, internal, mismatched and unreadable p
     }), /must be private|different release package|HTTP 403/);
   }
   await assert.rejects(verifyPrivateReleasePackage(manifest, 'owner/repo', 'api'), /GITHUB_TOKEN/);
+});
+
+test('registry configuration retries the same service credentials without deploying', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url), 'utf8'));
+  const calls = [];
+  const credentials = { username: 'registry-user', password: 'private-pull-token' };
+  configureStagingRegistry(manifest, credentials, (query, variables) => {
+    calls.push({ query, variables });
+    if (calls.length === 1) throw new Error('HTTP 500 with SECRET provider body');
+    if (calls.length === 2) return { errors: [{ message: 'SECRET' }], data: { serviceInstanceUpdate: true } };
+    return { data: { serviceInstanceUpdate: true } };
+  });
+  assert.equal(calls.length, 9);
+  assert.deepEqual(calls[0], calls[1]);
+  assert.deepEqual(calls[1], calls[2]);
+  assert.ok(calls.every(({ query }) => !query.includes('Deploy')));
 });

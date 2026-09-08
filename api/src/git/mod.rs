@@ -1,5 +1,6 @@
 pub(crate) mod cache;
 pub(crate) mod content;
+mod context;
 mod credentials;
 pub(crate) mod import;
 pub(crate) mod projection_repo;
@@ -10,6 +11,8 @@ pub(crate) mod restore;
 pub(crate) mod run_source;
 pub(crate) mod storage;
 pub(crate) mod upload;
+
+pub(crate) use context::GitContext;
 
 pub(crate) use credentials::*;
 

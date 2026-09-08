@@ -1,0 +1,33 @@
+[package]
+name = "scope-media-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+base64.workspace = true
+bytes.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+jsonwebtoken.workspace = true
+scope_api_contract.workspace = true
+scope_domain.workspace = true
+scope_media_storage.workspace = true
+scope_object_store.workspace = true
+scope_postgres.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
+tokio-stream = "0.1.17"
+tower-http = { workspace = true, features = ["cors", "trace"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url = "2.5.7"
+
+[dev-dependencies]
+scope_object_store = { workspace = true, features = ["test-support"] }
+scope_postgres = { workspace = true, features = ["test-support"] }
+sha2.workspace = true
+tower = { workspace = true, features = ["util"] }

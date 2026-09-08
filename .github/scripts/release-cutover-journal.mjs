@@ -5,7 +5,7 @@ import { validateRecoveryPreparation } from "./recovery-preparation-trust.mjs";
 const environment = "production/cutover";
 const terminal = new Set(["complete", "restored"]);
 function validateCutoverArtifacts(prepared) {
-  validatePreparedRelease(prepared, { sourceSha: prepared.sourceSha, components: ["api", "worker", "cache", "router"] });
+  validatePreparedRelease(prepared, { sourceSha: prepared.sourceSha, components: ["api", "worker", "cache", "router", "media", "mediaWorker"] });
   if (!/^[a-f0-9]{64}$/.test(prepared.maintenanceSha256 ?? "") || !/^[0-9]+$/.test(prepared.preparationRunId ?? "")) {
     throw new Error("Cutover preparation must pin the maintenance binary digest and its artifact run ID");
   }
@@ -13,7 +13,8 @@ function validateCutoverArtifacts(prepared) {
 
 const phases = new Set([
   "prepared", "closing", "closed", "pre-migration", "applying", "committed",
-  "verifying", "backfills", "activating-cache", "activating-worker", "activating-api",
+  "verifying", "backfills", "activating-cache", "activating-worker", "activating-media",
+  "activating-media-worker", "activating-api",
   "reclosing", "restoring", "restored", "complete", "recovery-required",
 ]);
 

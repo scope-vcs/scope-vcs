@@ -101,7 +101,7 @@ pub(super) struct RequestCloseArgs {
     ArgGroup::new("request_edit")
         .required(true)
         .multiple(true)
-        .args(["title", "description_file"])
+        .args(["title", "description_file", "attach"])
 ))]
 pub(super) struct RequestEditArgs {
     #[command(flatten)]
@@ -114,6 +114,8 @@ pub(super) struct RequestEditArgs {
         help = "Read the new Markdown description from a file, or - for stdin"
     )]
     pub(super) description_file: Option<PathBuf>,
+    #[command(flatten)]
+    pub(super) attachments: RequestAttachmentArgs,
 }
 
 #[derive(Parser)]
@@ -175,9 +177,9 @@ pub(super) enum RequestDiscussionCommand {
 }
 
 #[derive(Args)]
-#[group(id = "discussion_body", required = true, multiple = false)]
+#[group(id = "discussion_body", required = true, multiple = true, args = ["body", "body_file", "attach"])]
 pub(super) struct RequestDiscussionBodyArgs {
-    #[arg(long, help = "Literal Markdown body")]
+    #[arg(long, conflicts_with = "body_file", help = "Literal Markdown body")]
     pub(super) body: Option<String>,
     #[arg(
         long,
@@ -185,6 +187,25 @@ pub(super) struct RequestDiscussionBodyArgs {
         help = "Read the Markdown body from a file, or - for stdin"
     )]
     pub(super) body_file: Option<PathBuf>,
+    #[command(flatten)]
+    pub(super) attachments: RequestAttachmentArgs,
+}
+
+#[derive(Args)]
+pub(super) struct RequestAttachmentArgs {
+    #[arg(
+        id = "attach",
+        long = "attach",
+        value_name = "PATH",
+        help = "Attach a photo or video; repeat for multiple files"
+    )]
+    pub(super) paths: Vec<PathBuf>,
+    #[arg(
+        long,
+        requires = "attach",
+        help = "Wait a bounded time for attached media processing"
+    )]
+    pub(super) wait: bool,
 }
 
 #[derive(Parser)]
@@ -327,5 +348,34 @@ impl From<RequestAudienceArg> for RequestAudience {
             RequestAudienceArg::Public => RequestAudience::Public,
             RequestAudienceArg::Private => RequestAudience::Private,
         }
+    }
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::{RequestArgs, RequestCommand};
+    use clap::Parser;
+    use std::path::PathBuf;
+
+    #[test]
+    fn request_edit_collects_repeated_attachments() {
+        let args = RequestArgs::try_parse_from([
+            "scope-request",
+            "edit",
+            "--attach",
+            "one.png",
+            "--attach",
+            "two.mov",
+            "--wait",
+        ])
+        .unwrap();
+        let RequestCommand::Edit(edit) = args.command else {
+            panic!("expected request edit");
+        };
+        assert_eq!(
+            edit.attachments.paths,
+            [PathBuf::from("one.png"), PathBuf::from("two.mov")]
+        );
+        assert!(edit.attachments.wait);
     }
 }

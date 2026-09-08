@@ -11,6 +11,7 @@ import {
 import { lazy, Suspense, type ReactNode } from 'react'
 import { Toaster } from 'sonner'
 import { scopeClerkAppearance } from '../clerk-appearance'
+import { RequestAttachmentSessionBoundary } from '@/features/requests/request-attachment-session'
 import '../styles.css'
 
 const AnalyticsRoot = lazy(() => import('@/analytics/analytics-root').then(
@@ -131,6 +132,7 @@ function RootDocument({ children }: { children: ReactNode }) {
               }
             : {})}
         >
+          <RequestAttachmentSessionBoundary />
           {children}
           <Suspense fallback={null}>
             <AnalyticsRoot />

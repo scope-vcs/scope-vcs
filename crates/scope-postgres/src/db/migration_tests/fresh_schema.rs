@@ -102,7 +102,7 @@ async fn fresh_database_reaches_exact_latest_schema() {
         .unwrap()
         .try_get::<i64>("", "count")
         .unwrap();
-    assert_eq!(scope_table_count, 55);
+    assert_eq!(scope_table_count, 67);
     assert!(relation_exists(db.as_ref(), "scope_repository_history_views").await);
     assert!(relation_exists(db.as_ref(), "scope_repository_history_entries").await);
     assert!(relation_exists(db.as_ref(), "scope_git_segment_uploads").await);

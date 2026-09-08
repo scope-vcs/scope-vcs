@@ -264,6 +264,7 @@ if [[ -n "$prepared_release" ]]; then
   case "$deployment_component" in
     cache) expected_config=cache-service/railway.json ;;
     router) expected_config=repo-router/railway.json ;;
+    media) expected_config=media-service/railway.json ;;
     *) expected_config="$deployment_component/railway.json" ;;
   esac
   previous_deployment_ids="$(railway_read status \

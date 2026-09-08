@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
+    AttachmentUploadExpired,
     BadRequest,
     CliUpgradeRequired,
     Conflict,
@@ -21,6 +22,7 @@ pub enum ErrorCode {
 impl ErrorCode {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::AttachmentUploadExpired => "attachment_upload_expired",
             Self::BadRequest => "bad_request",
             Self::CliUpgradeRequired => "cli_upgrade_required",
             Self::Conflict => "conflict",

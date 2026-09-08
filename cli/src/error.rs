@@ -33,6 +33,13 @@ impl CliError {
         }
     }
 
+    pub fn with_recovery(response: ErrorResponse, receipt: serde_json::Value) -> Self {
+        Self {
+            response,
+            recovery: Some(receipt),
+        }
+    }
+
     pub fn usage(message: impl Into<String>) -> Self {
         Self::new(ErrorResponse::new(ErrorCode::BadRequest, message))
     }
@@ -55,7 +62,9 @@ impl CliError {
             ErrorCode::CliUpgradeRequired | ErrorCode::Forbidden | ErrorCode::ProtectedPath => {
                 ExitCategory::Policy
             }
-            ErrorCode::Conflict | ErrorCode::NotFound => ExitCategory::StateConflict,
+            ErrorCode::AttachmentUploadExpired | ErrorCode::Conflict | ErrorCode::NotFound => {
+                ExitCategory::StateConflict
+            }
             ErrorCode::ServiceUnavailable | ErrorCode::TooManyRequests => ExitCategory::Temporary,
             ErrorCode::Internal | ErrorCode::NotImplemented => ExitCategory::Unexpected,
         }

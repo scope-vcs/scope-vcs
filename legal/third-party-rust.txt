@@ -3332,6 +3332,16 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text b35c3cb20c9c1c76b462cda6f8fee75cac8a60351e6280a8d919cf581b70f198
 
 ==============================================================================
+pulldown-cmark 0.13.4
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate
+
+Published author metadata: ["Raph Levien <raph.levien@gmail.com>", "Marcus Klaas de Vries <mail@marcusklaas.nl>"]
+Repository: "https://github.com/raphlinus/pulldown-cmark"
+LICENSE: text bef062f5b1d5daaed70df06859eca2a556109195fc6f97fdb95a769875fabfef
+
+==============================================================================
 quinn 0.11.11
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -4910,6 +4920,17 @@ Repository: "https://github.com/paholg/typenum"
 LICENSE: text db11fec9946737df39ca3898d9cd8c10ec6f6c3a884a6802b0ad0b81b4e8f23a
 LICENSE-APACHE: text 65dc2a869ff7fe71d6c062f9f0977b0274e109e0a407fa4eea2570063902c2e7
 LICENSE-MIT: text 87ebb37988efc3285a41635c6a9fd38147e1e581b5f0556a284d5ab8fa5cdd4c
+
+==============================================================================
+unicase 2.9.0
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/unicase/unicase-2.9.0.crate
+
+Published author metadata: ["Sean McArthur <sean@seanmonstar.com>"]
+Repository: "https://github.com/seanmonstar/unicase"
+LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
+LICENSE-MIT: text 05f344491a7d18e1a3188acbddf6f921284cb192e49d16391128d453000468ff
 
 ==============================================================================
 unicode-bidi 0.3.18
@@ -10018,6 +10039,13 @@ Copyright (c) 2016-2026 Sean McArthur
 MIT License
 
 Copyright (c) 2017 crc-rs Developers
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text bef062f5b1d5daaed70df06859eca2a556109195fc6f97fdb95a769875fabfef ---
+The MIT License
+
+Copyright 2015 Google Inc. All rights reserved.
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 

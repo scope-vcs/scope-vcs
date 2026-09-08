@@ -4,11 +4,21 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const RAILWAY_COMPONENTS = ["cache", "worker", "router", "api", "web", "cli"];
+export const RAILWAY_COMPONENTS = [
+  "cache",
+  "worker",
+  "mediaWorker",
+  "router",
+  "media",
+  "api",
+  "web",
+  "cli",
+];
 export const RAILWAY_CONFIG_PATHS = {
   cache: "cache-service/railway.json",
   worker: "worker/railway.json",
   router: "repo-router/railway.json",
+  media: "media-service/railway.json",
   api: "api/railway.json",
   web: "web/railway.json",
 };
@@ -119,6 +129,9 @@ export function verifyProductionRailwayServices({
       || evidence.evidenceId.length === 0
     ) {
       throw new Error(`Production ${component} has no exact Railway deployment evidence`);
+    }
+    if (component === "mediaWorker" && !/^sha256:[0-9a-f]{64}$/.test(evidence.artifactDigest ?? "")) {
+      throw new Error("Production mediaWorker has no exact OCI artifact evidence");
     }
     const service = assertHealthyRailwayService(services, serviceId, evidence.evidenceId);
     const configPath = RAILWAY_CONFIG_PATHS[component];

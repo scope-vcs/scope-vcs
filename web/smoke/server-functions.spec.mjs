@@ -11,6 +11,11 @@ test('server function interception recognizes production IDs from the built mani
     'loadRequestQueuePage_createServerFn_handler')
 })
 
+test('attachment metadata requests use the production request-page ID', () => {
+  assert.equal(serverFunctionName(request('/_serverFn/5bbd567bcd27c0c8b8cddec5cf03ca8ce15a58fcde87e8af3a0e0509bde421b7')),
+    'listRequestAttachments_createServerFn_handler')
+})
+
 test('server function interception also decodes the development compiler format', () => {
   const id = Buffer.from(JSON.stringify({
     file: 'src/routes/$owner.$repo._code.index.tsx',

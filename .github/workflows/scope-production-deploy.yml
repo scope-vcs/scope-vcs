@@ -28,7 +28,9 @@ on:
           - checksImage
           - cache
           - worker
+          - mediaWorker
           - router
+          - media
           - api
           - web
           - cli
@@ -58,7 +60,9 @@ jobs:
       checks_image: ${{ steps.plan.outputs.checks_image }}
       cache: ${{ steps.plan.outputs.cache }}
       worker: ${{ steps.plan.outputs.worker }}
+      media_worker: ${{ steps.plan.outputs.media_worker }}
       router: ${{ steps.plan.outputs.router }}
+      media: ${{ steps.plan.outputs.media }}
       api: ${{ steps.plan.outputs.api }}
       web: ${{ steps.plan.outputs.web }}
       cli: ${{ steps.plan.outputs.cli }}
@@ -199,12 +203,34 @@ jobs:
       inputs.recover_cutover_id == '' &&
       (needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
       needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
       needs.plan.outputs.api == 'true')
     uses: ./.github/workflows/scope-api-ci.yml
     with:
       build_release_artifact: ${{ github.event_name != 'pull_request' }}
       build_router_release: ${{ github.event_name != 'pull_request' }}
+    secrets: inherit
+
+  media-worker-image:
+    name: Media worker image
+    needs: plan
+    if: >-
+      inputs.recover_cutover_id == '' && (
+      needs.plan.outputs.cache == 'true' ||
+      needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
+      needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
+      needs.plan.outputs.api == 'true')
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/scope-media-worker-image.yml
+    with:
+      publish: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+      source_sha: ${{ needs.plan.outputs.release_sha }}
     secrets: inherit
 
   web-validation:
@@ -248,6 +274,7 @@ jobs:
       - plan
       - checks-image
       - backend-validation
+      - media-worker-image
       - web-validation
       - cli-validation
       - integration-validation
@@ -258,9 +285,12 @@ jobs:
       (needs.plan.outputs.checks_image != 'true' || needs.checks-image.result == 'success') &&
       ((needs.plan.outputs.cache != 'true' &&
       needs.plan.outputs.worker != 'true' &&
+      needs.plan.outputs.media_worker != 'true' &&
       needs.plan.outputs.router != 'true' &&
+      needs.plan.outputs.media != 'true' &&
       needs.plan.outputs.api != 'true') ||
-      needs.backend-validation.result == 'success') &&
+      (needs.backend-validation.result == 'success' &&
+      needs.media-worker-image.result == 'success')) &&
       (needs.plan.outputs.web != 'true' || needs.web-validation.result == 'success') &&
       (needs.plan.outputs.cli != 'true' || needs.cli-validation.result == 'success') &&
       ((needs.plan.outputs.web != 'true' && needs.plan.outputs.cli != 'true') ||
@@ -271,12 +301,15 @@ jobs:
 
   release-preparation:
     name: Prepare Railway artifacts
-    needs: [plan, production-validation-gate]
+    needs: [plan, production-validation-gate, media-worker-image]
     if: >-
-      !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      !cancelled() &&
+      (needs.media-worker-image.result == 'success' || inputs.recover_cutover_id != '') &&
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
       (needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
-      needs.plan.outputs.router == 'true' || needs.plan.outputs.api == 'true' ||
+      needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' ||
       needs.plan.outputs.web == 'true')
     permissions:
       actions: read
@@ -288,12 +321,15 @@ jobs:
       source_sha: ${{ needs.plan.outputs.release_sha }}
       prepare_backend: >-
         ${{ needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
-        needs.plan.outputs.router == 'true' || needs.plan.outputs.api == 'true' }}
+        needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+        needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' }}
       prepare_router: >-
         ${{ needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
-        needs.plan.outputs.router == 'true' || needs.plan.outputs.api == 'true' }}
+        needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+        needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' }}
       prepare_web: ${{ needs.plan.outputs.web == 'true' }}
       recover_cutover_id: ${{ inputs.recover_cutover_id || '' }}
+      media_worker_image: ${{ needs.media-worker-image.outputs.image_ref || '' }}
     secrets: inherit
 
   release-staging-proof:
@@ -343,7 +379,9 @@ jobs:
       (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success') &&
       (needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
       needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
       needs.plan.outputs.api == 'true')
     permissions:
       actions: read
@@ -354,7 +392,9 @@ jobs:
       source_sha: ${{ needs.plan.outputs.release_sha }}
       deploy_cache: ${{ needs.plan.outputs.cache == 'true' }}
       deploy_worker: ${{ needs.plan.outputs.worker == 'true' }}
+      deploy_media_worker: ${{ needs.plan.outputs.media_worker == 'true' }}
       deploy_router: ${{ needs.plan.outputs.router == 'true' }}
+      deploy_media: ${{ needs.plan.outputs.media == 'true' }}
       deploy_api: ${{ needs.plan.outputs.api == 'true' }}
       successful_deployments: ${{ needs.plan.outputs.deployed_components || '{}' }}
       recover_cutover_id: ${{ inputs.recover_cutover_id || '' }}
@@ -372,12 +412,16 @@ jobs:
       needs.plan.outputs.web == 'true' &&
       (((needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
       needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
       needs.plan.outputs.api == 'true') &&
       needs.backend-deploy.result == 'success') ||
       ((needs.plan.outputs.cache != 'true' &&
       needs.plan.outputs.worker != 'true' &&
+      needs.plan.outputs.media_worker != 'true' &&
       needs.plan.outputs.router != 'true' &&
+      needs.plan.outputs.media != 'true' &&
       needs.plan.outputs.api != 'true') &&
       needs.backend-deploy.result == 'skipped'))
     permissions:
@@ -399,12 +443,16 @@ jobs:
       needs.plan.outputs.cli == 'true' &&
       (((needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
       needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
       needs.plan.outputs.api == 'true') &&
       needs.backend-deploy.result == 'success') ||
       ((needs.plan.outputs.cache != 'true' &&
       needs.plan.outputs.worker != 'true' &&
+      needs.plan.outputs.media_worker != 'true' &&
       needs.plan.outputs.router != 'true' &&
+      needs.plan.outputs.media != 'true' &&
       needs.plan.outputs.api != 'true') &&
       needs.backend-deploy.result == 'skipped'))
     permissions:
@@ -423,12 +471,16 @@ jobs:
       needs.production-validation-gate.result == 'success' &&
       (((needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
       needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
       needs.plan.outputs.api == 'true') &&
       needs.backend-deploy.result == 'success') ||
       ((needs.plan.outputs.cache != 'true' &&
       needs.plan.outputs.worker != 'true' &&
+      needs.plan.outputs.media_worker != 'true' &&
       needs.plan.outputs.router != 'true' &&
+      needs.plan.outputs.media != 'true' &&
       needs.plan.outputs.api != 'true') &&
       needs.backend-deploy.result == 'skipped')) &&
       ((needs.plan.outputs.web == 'true' && needs.web-deploy.result == 'success') ||

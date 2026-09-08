@@ -7,6 +7,7 @@ pub use access::{
     RequestPolicyDecision, RequestViewer, request_actor_role, request_list_mergeability,
     request_list_predicate, request_mergeability, request_policy,
 };
+pub mod attachments;
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};
 mod identity;

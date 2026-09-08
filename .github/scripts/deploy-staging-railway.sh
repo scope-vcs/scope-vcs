@@ -26,7 +26,14 @@ cache_service="$(jq -er '.services.cache.id' "$manifest_path")"
 worker_service="$(jq -er '.services.worker.id' "$manifest_path")"
 api_service="$(jq -er '.services.api.id' "$manifest_path")"
 router_service="$(jq -er '.railway.staging.routerServiceId' "$manifest_path")"
+media_service="$(jq -er '.services.media.id' "$manifest_path")"
+media_worker_service="$(jq -er '.services.mediaWorker.id' "$manifest_path")"
 web_service="$(jq -er '.services.web.id' "$manifest_path")"
+media_worker_image="${SCOPE_MEDIA_WORKER_IMAGE:-}"
+if [[ ! "$media_worker_image" =~ ^ghcr\.io/scope-vcs/scope-media-worker@sha256:[0-9a-f]{64}$ ]]; then
+  echo "SCOPE_MEDIA_WORKER_IMAGE must pin the staging worker image by digest." >&2
+  exit 2
+fi
 
 if [[ "$staging_environment_id" == "$production_environment_id" ]]; then
   echo "Staging environment matches production." >&2
@@ -88,11 +95,14 @@ assert_writer_state() {
     API_SERVICE="$api_service" \
     CACHE_SERVICE="$cache_service" \
     WORKER_SERVICE="$worker_service" \
+    MEDIA_SERVICE="$media_service" \
+    MEDIA_WORKER_SERVICE="$media_worker_service" \
     EXPECTED_RUNNING="$expected_running" \
     node -e '
 const services = JSON.parse(process.env.SERVICES_JSON || "[]");
 const expected = Number(process.env.EXPECTED_RUNNING);
-for (const id of [process.env.API_SERVICE, process.env.CACHE_SERVICE, process.env.WORKER_SERVICE]) {
+for (const id of [process.env.API_SERVICE, process.env.CACHE_SERVICE, process.env.WORKER_SERVICE,
+  process.env.MEDIA_SERVICE, process.env.MEDIA_WORKER_SERVICE]) {
   const service = services.find((candidate) => candidate.id === id);
   if (!service) process.exit(1);
   const replicas = service.replicas || {};
@@ -125,8 +135,8 @@ record_deployment() {
 
 case "$action" in
   prepare)
-    if [[ "$#" -ne 4 || ! -x "$maintenance_binary" || ! -x "$seed_binary" ]]; then
-      echo "usage: deploy-staging-railway.sh prepare <cache-root> <worker-root> <api-root> <router-root>" >&2
+    if [[ "$#" -ne 5 || ! -x "$maintenance_binary" || ! -x "$seed_binary" ]]; then
+      echo "usage: deploy-staging-railway.sh prepare <cache-root> <worker-root> <api-root> <router-root> <media-root>" >&2
       exit 2
     fi
     : "${SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH:?SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH is required}"
@@ -168,6 +178,11 @@ case "$action" in
 
     SCOPE_DEPLOYMENT_COMPONENT=cache bash .github/scripts/deploy-railway.sh "$cache_service" "$1"
     SCOPE_DEPLOYMENT_COMPONENT=worker bash .github/scripts/deploy-railway.sh "$worker_service" "$2"
+    SCOPE_DEPLOYMENT_COMPONENT=media bash .github/scripts/deploy-railway.sh "$media_service" "$5"
+    SCOPE_DEPLOYMENT_COMPONENT=mediaWorker \
+      SCOPE_DEPLOYMENT_SOURCE_SHA="${GITHUB_SHA:-}" \
+      SCOPE_DEPLOYMENT_EVIDENCE_PATH=.staging-media-worker.ndjson \
+      node .github/scripts/deploy-railway-image.mjs "$media_worker_service" "$media_worker_image"
     SCOPE_DEPLOYMENT_COMPONENT=api bash .github/scripts/deploy-railway.sh "$api_service" "$3"
     SCOPE_DEPLOYMENT_COMPONENT=router bash .github/scripts/deploy-railway.sh "$router_service" "$4"
     ;;
@@ -180,13 +195,14 @@ case "$action" in
     SCOPE_DEPLOYMENT_COMPONENT=web bash .github/scripts/deploy-railway.sh "$web_service" "$1"
     evidence_lines="$(mktemp)"
     trap 'rm -f "$evidence_lines"' EXIT
-    for service in "$cache_service" "$worker_service" "$api_service" "$router_service" "$web_service"; do
+    for service in "$cache_service" "$worker_service" "$media_service" "$media_worker_service" "$api_service" "$router_service" "$web_service"; do
       record_deployment "$service" >> "$evidence_lines"
     done
     jq -s \
       --arg commit "${GITHUB_SHA:-unknown}" \
       --arg environmentId "$staging_environment_id" \
-      '{commit: $commit, environmentId: $environmentId, deployments: .}' \
+      --arg workerImage "$media_worker_image" \
+      '{commit: $commit, environmentId: $environmentId, workerImage: $workerImage, deployments: .}' \
       "$evidence_lines" > "$evidence_path"
     ;;
   *)

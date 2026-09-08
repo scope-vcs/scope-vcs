@@ -37,6 +37,7 @@ export type MarkDiscussionReadInput = RequestDiscussionActionInput & {
 }
 export type UpdateDescriptionInput = RequestParams & {
   description_markdown: string
+  expected_description_markdown: string
 }
 
 export type RequestDiscussionRepliesPage = {
@@ -196,7 +197,10 @@ export async function updateRequestDescriptionForRequest(
     apiValidators.RequestMutationResponse,
     {
       auth: 'required',
-      body: { description_markdown: data.description_markdown },
+      body: {
+        description_markdown: data.description_markdown,
+        expected_description_markdown: data.expected_description_markdown,
+      },
     },
   )
 }

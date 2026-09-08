@@ -7,8 +7,10 @@ import { beginCutover, guardCutovers, readCutover, recordCutoverPhase, cutoverCo
 
 const sourceSha = "a".repeat(40);
 const prepared = { schemaVersion: 1, sourceSha, maintenanceSha256: "c".repeat(64), preparationRunId: "123", components: Object.fromEntries(
-  ["api", "worker", "cache", "router"].map(component => [component, {
-    serviceId: component, sourceSha, image: `ghcr.io/scope-vcs/scope-vcs/railway-private-${component}@sha256:${"b".repeat(64)}`,
+  ["api", "worker", "cache", "router", "media", "mediaWorker"].map(component => [component, {
+    serviceId: component, sourceSha, image: component === "mediaWorker"
+      ? `ghcr.io/scope-vcs/scope-media-worker@sha256:${"b".repeat(64)}`
+      : `ghcr.io/scope-vcs/scope-vcs/railway-private-${component}@sha256:${"b".repeat(64)}`,
   }]),
 ) };
 const baseline = { exact: false, pending: [{ name: "m0033", impact: "maintenance-required" }] };

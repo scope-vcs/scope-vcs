@@ -273,6 +273,39 @@ test('request details disclose on mobile without replacing discussion or quote t
   })
 })
 
+test('details opened before hydration close on the next click and stay closed on mobile', async () => {
+  const browser = await chromium.launch({ headless: true })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  let releaseScripts
+  const scriptsHeld = new Promise((resolve) => { releaseScripts = resolve })
+  try {
+    await page.route('**/*', async (route) => {
+      if (route.request().resourceType() === 'script') await scriptsHeld
+      await route.continue().catch(() => {})
+    })
+    await page.goto(new URL(`/${owner}/update-demo/requests/req_demo_ready`, baseUrl).href, {
+      waitUntil: 'commit',
+    })
+    const context = page.locator('.request-context-rail > details')
+    const summary = context.locator(':scope > summary')
+    await summary.waitFor()
+    assert.equal(await summary.evaluate((element) => Object.keys(element).some((key) => key.startsWith('__reactProps$'))), false)
+    await summary.click()
+    assert.equal(await context.getAttribute('open'), '')
+    releaseScripts()
+    await waitForClientHydration(page, summary)
+    await summary.click()
+    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await context.getByText('Public request', { exact: true }).waitFor()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
+  } finally {
+    releaseScripts()
+    await browser.close()
+  }
+})
+
 test('mobile details close survives desktop resize before native toggle delivery', async () => {
   await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
     await page.setViewportSize({ width: 390, height: 844 })

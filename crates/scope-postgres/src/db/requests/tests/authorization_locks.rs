@@ -29,6 +29,7 @@ async fn independent_request_writes_share_repository_guard_without_hydrating_his
                 event_id: "edit_independent".to_string(),
                 title: Some("Independent progress".to_string()),
                 description_markdown: Some("Still authorized".to_string()),
+                expected_description_markdown: None,
                 now_unix: 5,
             }),
     )
@@ -91,6 +92,7 @@ async fn request_write_waits_for_membership_revocation_and_rechecks_permissions(
                 event_id: "revoked_edit".to_string(),
                 title: Some("Must not change".to_string()),
                 description_markdown: Some(String::new()),
+                expected_description_markdown: None,
                 now_unix: 5,
             })
             .await

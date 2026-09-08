@@ -4,7 +4,7 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useCallback, useEffect, useRef } from 'react'
 import { runRepoEventStream, streamRepoEvents } from './repo-event-stream'
 import { repoResourceScope } from './repo-resource-scope'
-import { invalidateRepoActivityResources } from './repo-resource-invalidation'
+import { invalidateRepoResources } from './repo-resource-invalidation'
 
 const REFRESH_RETRY_DELAY_MS = 2_000
 
@@ -35,7 +35,7 @@ export function useRepoLiveRefresh(
   useEffect(() => () => {
     // Once we leave this repository/access scope, its disconnected interval
     // needs reconciliation on return, including public views without versions.
-    if (scope) invalidateRepoActivityResources(scope)
+    if (scope) invalidateRepoResources(scope)
   }, [scope])
 
   useEffect(() => {
@@ -61,12 +61,12 @@ export function useRepoLiveRefresh(
       }
     }
     const onEvent = (event: RepoChangeEvent) => {
-      if (scope && event.repo_id === live.repo.id) invalidateRepoActivityResources(scope, event)
+      if (scope && event.repo_id === live.repo.id) invalidateRepoResources(scope, event)
       coordinator.onEvent(event)
       notifyListeners(event)
     }
     const onStreamInterrupted = () => {
-      if (scope) invalidateRepoActivityResources(scope)
+      if (scope) invalidateRepoResources(scope)
       coordinator.onStreamInterrupted()
       const event: RepoChangeEvent = {
         incarnation_id: 'local-stream-interruption',

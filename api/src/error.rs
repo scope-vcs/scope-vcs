@@ -187,6 +187,11 @@ impl From<scope_postgres::error::PostgresError> for ApiError {
         use scope_postgres::error::PostgresErrorKind;
 
         match error.kind {
+            PostgresErrorKind::AttachmentUploadExpired => {
+                let mut error = Self::new(ErrorKind::Conflict, error.message);
+                error.code = ErrorCode::AttachmentUploadExpired;
+                error
+            }
             PostgresErrorKind::InvalidInput => Self::new(ErrorKind::BadRequest, error.message),
             PostgresErrorKind::Conflict => Self::new(ErrorKind::Conflict, error.message),
             PostgresErrorKind::PermissionDenied => Self::new(ErrorKind::Forbidden, error.message),
@@ -353,6 +358,18 @@ mod tests {
         assert!(reference.starts_with("err_"));
         assert_eq!(reference.len(), 36);
         assert!(reference[4..].bytes().all(|byte| byte.is_ascii_hexdigit()));
+    }
+
+    #[tokio::test]
+    async fn attachment_upload_expiry_has_a_distinct_conflict_code() {
+        let error = ApiError::from(
+            scope_postgres::error::PostgresError::attachment_upload_expired("expired"),
+        );
+        assert_eq!(error.kind, ErrorKind::Conflict);
+        assert_eq!(
+            response_error(error).await.code,
+            ErrorCode::AttachmentUploadExpired
+        );
     }
 
     #[tokio::test]

@@ -18,6 +18,7 @@ mod tests {
             .expect("identity edit with only a title");
         assert_eq!(edit.title.as_deref(), Some("New title"));
         assert_eq!(edit.description_markdown, None);
+        assert_eq!(edit.expected_description_markdown, None);
     }
 }
 
@@ -574,6 +575,7 @@ pub struct SubmitRequestRequest {}
 pub struct EditRequestIdentityRequest {
     pub title: Option<String>,
     pub description_markdown: Option<String>,
+    pub expected_description_markdown: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

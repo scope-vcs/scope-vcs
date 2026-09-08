@@ -39,6 +39,7 @@ mod m0038_history_entry_positions;
 mod m0039_history_action_feed;
 mod m0040_repository_metadata;
 mod m0041_history_occurrence_time;
+mod m0042_request_media;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -181,6 +182,7 @@ fn inventory() -> Vec<MigrationSpec> {
             m0041_history_occurrence_time::Migration,
             MaintenanceRequired,
         ),
+        spec(m0042_request_media::Migration, MaintenanceRequired),
     ]
 }
 

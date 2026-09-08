@@ -4,7 +4,17 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-export const COMPONENTS = ["checksImage", "cache", "worker", "router", "api", "web", "cli"];
+export const COMPONENTS = [
+  "checksImage",
+  "cache",
+  "worker",
+  "mediaWorker",
+  "router",
+  "media",
+  "api",
+  "web",
+  "cli",
+];
 const SELECTIONS = [...COMPONENTS, "cliDistribution"];
 
 function matchesScope(path, scope) {
@@ -108,6 +118,7 @@ function main() {
     const outputName = {
       checksImage: "checks_image",
       cliDistribution: "cli_distribution",
+      mediaWorker: "media_worker",
     }[component] ?? component;
     const line = `${outputName}=${selected}\n`;
     if (outputPath) appendFileSync(outputPath, line);

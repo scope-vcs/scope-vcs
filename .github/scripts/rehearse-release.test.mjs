@@ -19,7 +19,7 @@ test('teardown proof requires every exact predecessor to be removed', () => {
 test('candidate preparation precedes the job that can stop staging writers', () => {
   const workflow = readFileSync(new URL('../workflows/scope-railway-staging.yml', import.meta.url), 'utf8');
   const proof = workflow.slice(workflow.indexOf('\n  prove:'));
-  assert.match(proof, /needs: \[prepare, prepare-images\]/);
+  assert.match(proof, /needs: \[prepare, prepare-images, media-worker-image\]/);
   assert(proof.indexOf('Close staging writers') < proof.indexOf('Checkout exact candidate revision'));
   assert.doesNotMatch(proof, /cargo build/);
   assert.match(proof, /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);

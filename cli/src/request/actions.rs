@@ -80,23 +80,82 @@ pub(super) fn edit_request(
     client: &Client,
     api_url: &str,
     session_token: &str,
-    target: RequestTargetArgs,
-    title: Option<String>,
-    description_file: Option<std::path::PathBuf>,
+    args: args::RequestEditArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let description = description_file.map(text::read_markdown).transpose()?;
+    let supplied_description = args.description_file.map(text::read_markdown).transpose()?;
     let (context, request_id, before) =
-        load_exact_request(git_repo, client, api_url, session_token, target)?;
+        load_exact_request(git_repo, client, api_url, session_token, args.target)?;
+    let has_attachments = !args.attachments.paths.is_empty();
+    let uploaded = attachments::upload(
+        client,
+        api_url,
+        session_token,
+        api_target(&context, &request_id),
+        scope_api_contract::attachments::RequestAttachmentTargetInput {
+            kind: scope_api_contract::attachments::RequestAttachmentTargetKind::Description,
+            discussion_id: None,
+        },
+        args.attachments.paths,
+    )?;
+    let description = if has_attachments {
+        let base =
+            supplied_description.unwrap_or_else(|| before.request.description_markdown.clone());
+        let existing = scope_domain::requests::attachments::request_attachment_references(&base)
+            .context("inspect existing request attachment references")?;
+        Some(text::append_attachment_references(
+            base,
+            uploaded
+                .attachments
+                .iter()
+                .zip(uploaded.references)
+                .filter_map(|(attachment, reference)| {
+                    (!existing.contains(&attachment.id)).then_some(reference)
+                }),
+        ))
+    } else {
+        supplied_description
+    };
     let response = edit_request_identity(
         client,
         api_url,
         session_token,
         api_target(&context, &request_id),
-        title,
+        args.title,
         description,
+        has_attachments.then(|| before.request.description_markdown.clone()),
     )?;
-    let human_lines =
+    let mut human_lines =
         request_mutation_receipt_lines("Edited request", Some(&before.request), &response);
+    human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
+    let attachments = if args.attachments.wait {
+        attachments::wait_for_processing(
+            client,
+            api_url,
+            session_token,
+            api_target(&context, &request_id),
+            uploaded.attachments,
+            serde_json::json!({
+                "operation": "request.edit",
+                "saved": true,
+                "request_id": &request_id,
+                "request": &response.request,
+            }),
+        )?
+    } else {
+        uploaded.attachments
+    };
+    attachments::complete_uploads(&uploaded.receipt_keys)?;
+    if has_attachments {
+        return Ok(RequestCommandOutcome::new(
+            "request.edit",
+            RequestCommandResult::AttachmentMutation(AttachmentMutationResult {
+                repo: context.repo,
+                response,
+                attachments,
+            }),
+            human_lines,
+        ));
+    }
     Ok(RequestCommandOutcome::new(
         "request.edit",
         RequestCommandResult::Mutation(RepoResponse {
@@ -105,6 +164,21 @@ pub(super) fn edit_request(
         }),
         human_lines,
     ))
+}
+
+pub(super) fn attachment_receipt_lines(
+    attachments: &[scope_api_contract::attachments::RequestAttachmentResponse],
+) -> Vec<String> {
+    attachments
+        .iter()
+        .map(|attachment| {
+            format!(
+                "Attached {} · {}",
+                terminal_text(&attachment.filename),
+                terminal_text(&attachment.id)
+            )
+        })
+        .collect()
 }
 
 fn exact_handle(handle: String) -> anyhow::Result<String> {

@@ -4,14 +4,15 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 test_dir="$(mktemp -d)"
 trap 'rm -rf "$test_dir"' EXIT
-mkdir -p "$test_dir/bin" "$test_dir/api" "$test_dir/worker" "$test_dir/cache" "$test_dir/router"
+mkdir -p "$test_dir/bin" "$test_dir/api" "$test_dir/worker" "$test_dir/cache" "$test_dir/router" "$test_dir/media"
 printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/api/.scope-deployment-sha"
 printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/worker/.scope-deployment-sha"
 printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/cache/.scope-deployment-sha"
 printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/router/.scope-deployment-sha"
+printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/media/.scope-deployment-sha"
 
 cat > "$test_dir/services.json" <<'JSON'
-{"services":{"api":{"id":"scope-api"},"worker":{"id":"scope-worker"},"cache":{"id":"scope-cache-service"},"router":{"id":"scope-repo-router"}}}
+{"services":{"api":{"id":"scope-api"},"worker":{"id":"scope-worker"},"cache":{"id":"scope-cache-service"},"router":{"id":"scope-repo-router"},"media":{"id":"scope-media"},"mediaWorker":{"id":"scope-media-worker"}}}
 JSON
 
 # Persist the real journal API requests in fake remote storage across runner invocations.
@@ -163,7 +164,7 @@ run_cutover() {
   local router_domain_state="${27:-valid}" router_instance_exists="${28:-1}"
   local unhealthy_after_up_service="${29:-}" skip_up_service="${30:-}"
   if [[ -z "$successful_deployments" ]]; then
-    successful_deployments='{"api":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-api"},"worker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-worker"},"cache":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-cache-service"},"router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}'
+    successful_deployments='{"api":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-api"},"worker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-worker"},"cache":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-cache-service"},"media":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-media"},"mediaWorker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-media-worker","artifactDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}'
   fi
   if [[ "$no_history" == "1" ]]; then
     successful_deployments='{"router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}'
@@ -174,11 +175,13 @@ run_cutover() {
   [[ "$initial_exact" == "1" ]] && touch "$state/exact"
   if [[ "$initial_closed" == "1" ]]; then
     touch "$state/stopped-scope-api" "$state/stopped-scope-worker" \
-      "$state/stopped-scope-cache-service"
+      "$state/stopped-scope-cache-service" "$state/stopped-scope-media" \
+      "$state/stopped-scope-media-worker"
   fi
   if [[ "$no_history" == "1" ]]; then
     touch "$state/no-history-scope-api" "$state/no-history-scope-worker" \
-      "$state/no-history-scope-cache-service"
+      "$state/no-history-scope-cache-service" "$state/no-history-scope-media" \
+      "$state/no-history-scope-media-worker"
   fi
   [[ "$router_configured" == "0" ]] && touch "$state/no-history-scope-repo-router"
   : > "$trace"
@@ -187,9 +190,11 @@ run_cutover() {
   node -e '
 const fs = require("node:fs");
 const sourceSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const names = { api:"scope-api",worker:"scope-worker",cache:"scope-cache-service",router:"scope-repo-router" };
+const names = { api:"scope-api",worker:"scope-worker",cache:"scope-cache-service",router:"scope-repo-router",media:"scope-media",mediaWorker:"scope-media-worker" };
 const components = Object.fromEntries(Object.entries(names).map(([component,serviceId]) => [component,{
-serviceId,sourceSha,image:`ghcr.io/test/repo/railway-private-${component}@sha256:${"b".repeat(64)}`}]))
+serviceId,sourceSha,image:component === "mediaWorker"
+  ? `ghcr.io/scope-vcs/scope-media-worker@sha256:${"a".repeat(64)}`
+  : `ghcr.io/test/repo/railway-private-${component}@sha256:${"b".repeat(64)}`}]))
 const maintenanceSha256 = require("node:crypto").createHash("sha256").update(fs.readFileSync(process.argv[2])).digest("hex");
 fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,components,maintenanceSha256,preparationRunId:"123"}));
 ' "$test_dir/$name-prepared.json" "$test_dir/maintenance"
@@ -238,14 +243,20 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     SCOPE_RAILWAY_WORKER_SERVICE_ID="scope-worker" \
     SCOPE_RAILWAY_CACHE_SERVICE_ID="scope-cache-service" \
     SCOPE_RAILWAY_ROUTER_SERVICE_ID="scope-repo-router" \
+    SCOPE_RAILWAY_MEDIA_SERVICE_ID="scope-media" \
+    SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID="scope-media-worker" \
     SCOPE_RAILWAY_ROUTER_GROUP_ID="runtime-group" \
     SCOPE_RAILWAY_DATABASE_SERVICE_ID="scope-postgres" \
     SCOPE_RAILWAY_API_REGION_ID="us-east4-eqdc4a" \
     SCOPE_RAILWAY_WORKER_REGION_ID="us-east4-eqdc4a" \
+    SCOPE_RAILWAY_MEDIA_REGION_ID="us-east4-eqdc4a" \
+    SCOPE_MEDIA_WORKER_IMAGE="ghcr.io/scope-vcs/scope-media-worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
     SCOPE_DEPLOY_CACHE="$deploy_cache" \
     SCOPE_DEPLOY_WORKER="$deploy_worker" \
     SCOPE_DEPLOY_ROUTER="$deploy_router" \
     SCOPE_DEPLOY_API="$deploy_api" \
+    SCOPE_DEPLOY_MEDIA=0 \
+    SCOPE_DEPLOY_MEDIA_WORKER=0 \
     SCOPE_SUCCESSFUL_DEPLOYMENTS="$successful_deployments" \
     SCOPE_DEPLOYMENT_EVIDENCE_PATH="$test_dir/$name-evidence.jsonl" \
     SCOPE_MAINTENANCE_OUTAGE_BUDGET_MS="${FAKE_OUTAGE_BUDGET_MS:-180000}" \
@@ -256,7 +267,7 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     SCOPE_MAINTENANCE_BINARY="$test_dir/maintenance" \
     bash -c 'export FAKE_CUTOVER_PID=$$; exec bash "$@"' _ \
       "$root/.github/scripts/deploy-backend-railway.sh" \
-      "$test_dir/api" "$test_dir/worker" "$test_dir/cache" "$test_dir/router"
+      "$test_dir/api" "$test_dir/worker" "$test_dir/cache" "$test_dir/router" "$test_dir/media"
   result=$?
   set -e
   printf '%s\n' "$result" > "$test_dir/$name-result"
@@ -319,7 +330,7 @@ fi
 
 run_cutover success 0
 [[ "$(cat "$test_dir/success-result")" == "0" ]]
-assert_evidence_components success cache,worker,api
+assert_evidence_components success cache,worker,media,mediaWorker,api
 if grep -F -- '--path-as-root' "$test_dir/success-trace"; then
   echo "maintenance activation must not upload a build context" >&2
   exit 1
@@ -626,7 +637,7 @@ run_cutover interrupted 0 0 "" 0 1 0 0 "" 0 "" "" 1 "" 0 \
   us-east4-eqdc4a us-east4-eqdc4a 0 1 1 0 0 \
   '{"cache":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"new-scope-cache-service"},"router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}'
 [[ "$(cat "$test_dir/interrupted-result")" == "0" ]]
-assert_evidence_components interrupted cache,cache,worker,api
+assert_evidence_components interrupted cache,cache,worker,media,mediaWorker,api
 assert_in_order "$test_dir/interrupted-trace" \
   "$test_dir/maintenance plan" \
   "$test_dir/maintenance verify" \

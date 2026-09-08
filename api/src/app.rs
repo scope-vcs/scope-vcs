@@ -205,6 +205,34 @@ pub fn router(state: AppState) -> Router {
             get(http::request_review::get_request_revision_commit_file_diff),
         )
         .route(
+            routes::REPO_REQUEST_ATTACHMENTS,
+            get(http::request_attachments::list),
+        )
+        .route(
+            routes::REPO_REQUEST_ATTACHMENT_LIMITS,
+            get(http::request_attachments::limits),
+        )
+        .route(
+            routes::REPO_REQUEST_ATTACHMENT_PREPARE,
+            post(http::request_attachments::prepare),
+        )
+        .route(
+            routes::REPO_REQUEST_ATTACHMENT,
+            get(http::request_attachments::get),
+        )
+        .route(
+            routes::REPO_REQUEST_ATTACHMENT_FINISH,
+            post(http::request_attachments::finish),
+        )
+        .route(
+            routes::REPO_REQUEST_ATTACHMENT_RETRY,
+            post(http::request_attachments::retry),
+        )
+        .route(
+            routes::REPO_REQUEST_ATTACHMENT_MEDIA_GRANT,
+            post(http::request_attachments::media_grant),
+        )
+        .route(
             routes::REPO_REQUEST_DISCUSSIONS,
             get(http::request_discussions::list_discussions)
                 .post(http::request_discussions::create_discussion),

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "watchPatterns": [
+      "/media-service/**",
+      "/crates/scope-api-contract/**",
+      "/crates/scope-domain/**",
+      "/crates/scope-media-storage/**",
+      "/crates/scope-object-store/**",
+      "/crates/scope-postgres/**",
+      "/Cargo.toml",
+      "/Cargo.lock",
+      "/rust-toolchain.toml"
+    ]
+  },
+  "deploy": {
+    "startCommand": "exec ./bin/scope-media-service",
+    "healthcheckPath": "/readyz",
+    "healthcheckTimeout": 60,
+    "overlapSeconds": "30",
+    "drainingSeconds": "30"
+  }
+}

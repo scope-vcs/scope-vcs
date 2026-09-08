@@ -189,6 +189,7 @@ test("production verification binds every live service to durable Railway eviden
       sourceSha: SOURCE_SHA,
       provider: "railway",
       evidenceId: `deployment-${component}`,
+      ...(component === "mediaWorker" ? { artifactDigest: `sha256:${"b".repeat(64)}` } : {}),
     };
     const service = healthyService(component);
     if (component === "cli") service.effectiveDeploy = undefined;

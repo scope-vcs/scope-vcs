@@ -83,7 +83,9 @@ impl From<PostgresError> for ServiceError {
     fn from(error: PostgresError) -> Self {
         match error.kind {
             PostgresErrorKind::InvalidInput => Self::bad_request(error.message),
-            PostgresErrorKind::Conflict => Self::conflict(error.message),
+            PostgresErrorKind::AttachmentUploadExpired | PostgresErrorKind::Conflict => {
+                Self::conflict(error.message)
+            }
             PostgresErrorKind::PermissionDenied => Self::forbidden(error.message),
             PostgresErrorKind::NotFound => Self::new(StatusCode::NOT_FOUND, error.message),
             PostgresErrorKind::ResourceExhausted => {

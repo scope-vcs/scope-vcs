@@ -2,8 +2,7 @@ use super::run_source::operation::{RunSourceOperation, spawn_blocking};
 use crate::{
     config::DEFAULT_GIT_BRANCH,
     error::ApiError,
-    git::{import::run_git, upload::truncated_git_stderr},
-    state::AppState,
+    git::{GitContext, import::run_git, upload::truncated_git_stderr},
 };
 use scope_domain::repository::git::{GitHead, GitPackSpan, validate_git_pack_layout};
 use scope_git_process::{ProcessLimits, run_with_stdin_reader};
@@ -16,8 +15,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) async fn restore_git_pack_spans(
-    state: &AppState,
+pub(crate) async fn restore_git_pack_spans<C: GitContext>(
+    context: &C,
     repository_id: &str,
     head: &GitHead,
     pack_spans: &[GitPackSpan],
@@ -30,7 +29,7 @@ pub(crate) async fn restore_git_pack_spans(
         .map(|span| span.segment.plaintext_bytes)
         .sum::<u64>();
     let result =
-        restore_git_pack_spans_inner(state, repository_id, head, pack_spans, repo_root, owner)
+        restore_git_pack_spans_inner(context, repository_id, head, pack_spans, repo_root, owner)
             .await;
     tracing::info!(
         repository_id,
@@ -45,8 +44,8 @@ pub(crate) async fn restore_git_pack_spans(
     result
 }
 
-async fn restore_git_pack_spans_inner(
-    state: &AppState,
+async fn restore_git_pack_spans_inner<C: GitContext>(
+    context: &C,
     repository_id: &str,
     head: &GitHead,
     pack_spans: &[GitPackSpan],
@@ -89,7 +88,7 @@ async fn restore_git_pack_spans_inner(
     .await?;
     for (index, span) in pack_spans.iter().enumerate() {
         index_git_pack(
-            state,
+            context,
             repo_root,
             repository_id,
             span,
@@ -140,8 +139,8 @@ async fn restore_git_pack_spans_inner(
     Ok(())
 }
 
-pub(crate) async fn index_git_pack(
-    state: &AppState,
+pub(crate) async fn index_git_pack<C: GitContext>(
+    context: &C,
     repo_root: &Path,
     repository_id: &str,
     span: &GitPackSpan,
@@ -159,8 +158,8 @@ pub(crate) async fn index_git_pack(
         let mut output = tokio::fs::File::create(&temp_pack)
             .await
             .map_err(scope_git_storage::GitStorageError::Local)?;
-        let timings = state
-            .git_segment_store
+        let timings = context
+            .git_segment_store()
             .restore_to_prefer_local(repository_id, &span.segment, &mut output)
             .await?;
         output
@@ -185,7 +184,7 @@ pub(crate) async fn index_git_pack(
         let _ = tokio::fs::remove_file(&temp_pack).await;
         return Err(ApiError::infrastructure_unavailable(error.to_string()));
     }
-    let timeout = state.runtime_budgets.git_command_timeout();
+    let timeout = context.runtime_budgets().git_command_timeout();
     let repo_root = repo_root.to_path_buf();
     let repository_id = repository_id.to_string();
     let span = span.clone();

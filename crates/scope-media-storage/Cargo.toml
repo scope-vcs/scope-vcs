@@ -1,0 +1,22 @@
+[package]
+name = "scope-media-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bytes.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+scope_object_store.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "rt", "sync"] }
+tokio-stream = "0.1.17"
+
+[dev-dependencies]
+serde_json.workspace = true
+scope_object_store = { workspace = true, features = ["test-support"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread"] }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const requiredServices = ['cache', 'worker', 'api', 'web']
+const requiredServices = ['cache', 'worker', 'media', 'mediaWorker', 'api', 'web']
 
 export function verifyStagingTarget({ manifest, services, status }) {
   const railway = manifest?.railway
@@ -83,6 +83,12 @@ export function verifyStagingTarget({ manifest, services, status }) {
       `staging ${key} must be a hostname without a scheme or path`,
     )
   }
+  const mediaDomain = requiredString(
+    manifest.mediaResources?.staging?.gatewayDomain,
+    'staging media gateway domain',
+  )
+  assert.match(mediaDomain, /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/)
+  requiredString(manifest.mediaResources?.bucket?.id, 'media bucket ID')
 
   return {
     apiReplicas,
@@ -106,6 +112,8 @@ export function verifyStagingTopology({ manifest, services }) {
     ['cache', manifest.services.cache?.id, 1],
     ['router', railway.staging.routerServiceId, railway.staging.routerReplicas],
     ['worker', manifest.services.worker?.id, 1],
+    ['media', manifest.services.media?.id, 1],
+    ['mediaWorker', manifest.services.mediaWorker?.id, 1],
   ]
   for (const [name, id, count] of expected) {
     const serviceId = requiredString(id, `${name} service ID`)

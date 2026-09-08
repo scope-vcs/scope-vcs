@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { verifyStagingTarget } from './verify-staging-target.mjs';
 import { readRailway } from './railway-read.mjs';
 
-const deploymentOrder = ['router', 'cache', 'worker', 'api', 'web'];
+const deploymentOrder = ['router', 'cache', 'worker', 'media', 'mediaWorker', 'api', 'web'];
 
 export function previousDeploymentsRemoved(previous, deployments) {
   return previous.every(({ serviceId, deploymentId }) => {
@@ -124,11 +124,17 @@ async function main() {
     await recordActive();
     await writeFile(activationPath, new Date().toISOString());
     for (const { component, serviceId } of previous) {
-      await processTask('bash', ['.github/scripts/deploy-railway.sh', serviceId,
-        component === 'cache' ? 'cache-service' : component === 'router' ? 'repo-router' : component], {
+      const deploymentEnv = {
         ...env, SCOPE_DEPLOYMENT_COMPONENT: component,
         SCOPE_DEPLOYMENT_EVIDENCE_PATH: resolve(directory, 'deployments.ndjson'),
-      }).done;
+      };
+      if (component === 'mediaWorker') {
+        await processTask(process.execPath, ['.github/scripts/deploy-railway-image.mjs', serviceId,
+          prepared.components.mediaWorker.image], deploymentEnv).done;
+      } else {
+        await processTask('bash', ['.github/scripts/deploy-railway.sh', serviceId,
+          component === 'cache' ? 'cache-service' : component === 'router' ? 'repo-router' : component], deploymentEnv).done;
+      }
       const records = (await readFile(resolve(directory, 'deployments.ndjson'), 'utf8'))
         .trim().split('\n').map(JSON.parse);
       const evidence = records.findLast((record) => record.component === component);

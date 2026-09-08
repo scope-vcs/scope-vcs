@@ -5,7 +5,7 @@ on:
     branches:
       - main
 container:
-  image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:a3ed25023a60d000a8c93264518e9cdfd656f6832a6940a2eda7991db2ebbc9f
+  image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:93db408cc8496c2a1f980e7dac6c073c24c54cc64cbdeef776e48767a7b3c405
 timeout: 60m
 caches: []
 env:
@@ -34,6 +34,8 @@ jobs:
             - Cargo.toml
             - api/Cargo.toml
             - cache-service/Cargo.toml
+            - media-service/Cargo.toml
+            - media-worker/Cargo.toml
             - crates/scope-api-contract/Cargo.toml
             - crates/scope-cache-contract/Cargo.toml
             - crates/scope-cache-domain/Cargo.toml
@@ -42,6 +44,7 @@ jobs:
             - crates/scope-git-process/Cargo.toml
             - crates/scope-git/Cargo.toml
             - crates/scope-object-store/Cargo.toml
+            - crates/scope-media-storage/Cargo.toml
             - crates/scope-postgres/Cargo.toml
             - crates/scope-run-config/Cargo.toml
             - runner-runtime/Cargo.toml

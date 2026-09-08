@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { RepoChangeEvent } from '../../api/types.generated'
 import { repositoryActivityResource } from './repository-activity-resource'
 import { requestActivityIdentity, requestActivityResource } from '../requests/request-activity-resource'
-import { invalidateRepoActivityResources } from './repo-resource-invalidation'
+import { invalidateRepoResources } from './repo-resource-invalidation'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
 function seed() {
@@ -16,7 +16,7 @@ function seed() {
 
 test('repository updates invalidate retained activity even when its page is unmounted', () => {
   seed()
-  invalidateRepoActivityResources('viewer-a', event({ RepositoryChanged: { reason: 'push' } }))
+  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'push' } }))
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, true)
   assert.equal(repositoryActivityResource.peek('viewer-a')?.head_oid, 'head')
   assert.equal(repositoryActivityResource.getSnapshot('viewer-b').stale, false)
@@ -25,7 +25,7 @@ test('repository updates invalidate retained activity even when its page is unmo
 
 test('request changes target one request and leave latest repository activity reusable', () => {
   seed()
-  invalidateRepoActivityResources('viewer-a', event({ RequestTimelineChanged: {
+  invalidateRepoResources('viewer-a', event({ RequestTimelineChanged: {
     request_id: 'one', discussion_id: 'discussion', through_position: 2, audience: 'Public',
   } }))
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
@@ -35,9 +35,9 @@ test('request changes target one request and leave latest repository activity re
 
 test('recovery invalidates cached activity but ordinary connection and run events do not', () => {
   seed()
-  invalidateRepoActivityResources('viewer-a', event('Connected'))
-  invalidateRepoActivityResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'LogsAppended' } }))
+  invalidateRepoResources('viewer-a', event('Connected'))
+  invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'LogsAppended' } }))
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, false)
-  invalidateRepoActivityResources('viewer-a', event('Lagged'))
+  invalidateRepoResources('viewer-a', event('Lagged'))
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, true)
 })

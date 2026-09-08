@@ -10,7 +10,7 @@ import tarfile
 BACKEND_FILES = {
     'LICENSE', 'NOTICE', 'third-party-rust.txt', 'scope-maintenance',
     'scope-vcs', 'scope-worker', 'scope-cache-service', 'scope-repo-router',
-    'scope-smoke-seed',
+    'scope-media-service', 'scope-smoke-seed',
 }
 
 

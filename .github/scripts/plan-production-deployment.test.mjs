@@ -61,7 +61,9 @@ function deploymentSelection(overrides = {}) {
     checksImage: false,
     cache: false,
     worker: false,
+    mediaWorker: false,
     router: false,
+    media: false,
     api: false,
     web: false,
     cli: false,
@@ -116,6 +118,8 @@ function productionConditionContext(overrides = {}) {
         outputs: {
           api: backendSelected ? "true" : "false",
           cache: backendSelected ? "true" : "false",
+          media: backendSelected ? "true" : "false",
+          media_worker: backendSelected ? "true" : "false",
           cli: overrides.cliSelected === false ? "false" : "true",
           router: backendSelected ? "true" : "false",
           web: overrides.webSelected === false ? "false" : "true",
@@ -137,7 +141,9 @@ test("changes select the required deployment lanes", () => {
     checksImage: true,
     cache: true,
     worker: true,
+    mediaWorker: true,
     router: true,
+    media: true,
     api: true,
     web: true,
     cli: true,
@@ -161,7 +167,9 @@ test("changes select the required deployment lanes", () => {
         checksImage: true,
         cache: true,
         worker: true,
+        mediaWorker: true,
         router: true,
+        media: true,
         api: true,
         cli: true,
         cliDistribution: true,
@@ -177,7 +185,7 @@ test("changes select the required deployment lanes", () => {
     [
       "CLI prebuilt launcher selects the CLI service",
       ["deploy/railway/start-prebuilt.sh"],
-      { cli: true },
+      { media: true, cli: true },
     ],
     [
       "backend runtime image selects every backend service",
@@ -221,7 +229,9 @@ test("changes select the required deployment lanes", () => {
         checksImage: true,
         cache: true,
         worker: true,
+        mediaWorker: true,
         router: true,
+        media: true,
         api: true,
         web: true,
         cli: true,
@@ -293,7 +303,9 @@ test("skipped components remain selected across a later backend-only change", ()
     checksImage: [],
     cache: ["cache-service/src/main.rs"],
     worker: [],
+    mediaWorker: [],
     router: [],
+    media: [],
     api: [],
     // Web last succeeded before commit A. Its component-specific range still includes A's
     // web change when commit B changes only the cache service after A's web job was skipped.
@@ -305,7 +317,9 @@ test("skipped components remain selected across a later backend-only change", ()
     checksImage: false,
     cache: true,
     worker: false,
+    mediaWorker: false,
     router: false,
+    media: false,
     api: false,
     web: true,
     cli: false,
@@ -417,7 +431,9 @@ test("CLI deployment progress selects distribution builds only for binary inputs
     checksImage: [],
     cache: [],
     worker: [],
+    mediaWorker: [],
     router: [],
+    media: [],
     api: [],
     web: [],
     cli: ["api/src/main.rs"],
@@ -426,7 +442,9 @@ test("CLI deployment progress selects distribution builds only for binary inputs
     checksImage: [],
     cache: [],
     worker: [],
+    mediaWorker: [],
     router: [],
+    media: [],
     api: [],
     web: [],
     cli: ["crates/scope-api-contract/src/lib.rs"],
@@ -444,7 +462,9 @@ test("manual scopes ignore pending production components", () => {
     checksImage: false,
     cache: false,
     worker: false,
+    mediaWorker: false,
     router: false,
+    media: false,
     api: false,
     web: true,
     cli: false,
@@ -453,12 +473,20 @@ test("manual scopes ignore pending production components", () => {
 });
 
 test("deployment manifest is a single coherent production graph", () => {
-  const order = ["cache", "worker", "router", "api", "web", "cli"];
-  const serviceIds = order.map((service) => manifest.services[service].id);
+  const order = ["cache", "worker", "router", "media", "mediaWorker", "api", "web", "cli"];
+  const serviceIds = order.map((service) => manifest.services[service].id).filter(Boolean);
 
   assert.equal(manifest.deploymentAuthority, "github-actions");
   assert.equal(manifest.source.nativeAutodeploy, false);
   assert.equal(new Set(serviceIds).size, serviceIds.length);
+  assert.match(manifest.services.media.id, /^[0-9a-f-]{36}$/);
+  assert.match(manifest.services.mediaWorker.id, /^[0-9a-f-]{36}$/);
+  assert.match(manifest.mediaResources.bucket.id, /^[0-9a-f-]{36}$/);
+  const mediaDomains = ["production", "staging"].map((environment) => (
+    manifest.mediaResources[environment].gatewayDomain
+  ));
+  for (const domain of mediaDomains) assert.match(domain, /^[a-z0-9-]+\.up\.railway\.app$/);
+  assert.equal(new Set(mediaDomains).size, mediaDomains.length);
   for (const [service, configuration] of Object.entries(manifest.services)) {
     for (const dependency of configuration.dependsOn) {
       assert.ok(order.indexOf(dependency) < order.indexOf(service));
@@ -472,6 +500,7 @@ test("service config does not override Railway scaling or restart defaults", () 
     "worker/railway.json": "/healthz",
     "cache-service/railway.json": "/readyz",
     "repo-router/railway.json": "/readyz",
+    "media-service/railway.json": "/readyz",
     "cli/railway.json": "/readyz",
     "web/railway.json": "/readyz",
   };

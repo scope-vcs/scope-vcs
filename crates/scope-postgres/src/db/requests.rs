@@ -7,6 +7,7 @@ use super::{
         request_policy_for_user,
     },
     request_invitees::delete_request_invitees,
+    request_media::{replace_bindings_for_markdown, tombstone_request_attachments},
     request_revision_rows::{insert_revision, revisions_for_request_ids},
     request_rows::{
         delete_request_rows, insert_request_event_row, insert_request_row, latest_request_events,
@@ -201,6 +202,14 @@ impl RequestStore {
         &self,
         mut input: EditRequestIdentityInput,
     ) -> Result<RequestTimelineMutation, PostgresError> {
+        let attachment_binding = input.description_markdown.as_ref().map(|markdown| {
+            (
+                input.request_id.clone(),
+                input.actor_user_id.clone(),
+                markdown.clone(),
+                input.now_unix,
+            )
+        });
         let db = Arc::clone(&self.db);
         let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
@@ -219,6 +228,17 @@ impl RequestStore {
         let mutation = edit_request_identity(&mut requests, &mut events, input)?;
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
+        if let Some((request_id, actor_user_id, markdown, now_unix)) = attachment_binding {
+            replace_bindings_for_markdown(
+                &tx,
+                &request_id,
+                &actor_user_id,
+                &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Description,
+                &markdown,
+                now_unix,
+            )
+            .await?;
+        }
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)
     }
@@ -255,6 +275,7 @@ impl RequestStore {
                 orphan_objects,
                 ..
             } => {
+                tombstone_request_attachments(&tx, &request.id, now_unix).await?;
                 for revision in revisions {
                     delete_object_reference(&tx, "request_revision_snapshot", &revision.id).await?;
                 }

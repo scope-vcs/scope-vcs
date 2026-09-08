@@ -16,6 +16,7 @@ pub struct EditRequestIdentityInput {
     pub event_id: String,
     pub title: Option<String>,
     pub description_markdown: Option<String>,
+    pub expected_description_markdown: Option<String>,
     pub now_unix: u64,
 }
 
@@ -48,6 +49,16 @@ pub fn edit_request_identity(
         )?;
     }
     let request = open_request_mut(requests, &input.request_id)?;
+    if input.description_markdown.is_some()
+        && input
+            .expected_description_markdown
+            .as_ref()
+            .is_some_and(|expected| expected != &request.description_markdown)
+    {
+        return Err(DomainError::conflict(
+            "request description changed since it was loaded",
+        ));
+    }
     let title = input.title.unwrap_or_else(|| request.title.clone());
     let description_markdown = input
         .description_markdown

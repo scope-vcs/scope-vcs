@@ -3,6 +3,10 @@ import {
   parseUpdateDescriptionInput,
   parseRequestActionInput,
   parseRateRequestInput,
+  parseFinishAttachmentInput,
+  parseGrantAttachmentInput,
+  parsePrepareAttachmentInput,
+  parseRetryAttachmentInput,
 } from '@/api/request-inputs'
 import { createApiClient, HttpError } from '@/api/client'
 import { ApiRouteTemplates, buildApiPath } from '@/api/types.generated'
@@ -21,6 +25,15 @@ import {
   loadRequestActivityForRequest,
   updateRequestDescriptionForRequest,
 } from '@/features/requests/request-discussion-api'
+import {
+  finishRequestAttachment,
+  grantRequestAttachmentMedia,
+  loadRequestAttachmentLimits,
+  loadRequestAttachments,
+  prepareRequestAttachment,
+  retryRequestAttachment,
+} from '@/features/requests/request-attachment-api'
+import type { RequestAttachmentActions } from '@/features/requests/request-attachment-context'
 import {
   RequestDetailPage,
   RequestUnavailablePage,
@@ -73,6 +86,30 @@ const rateRequest = createServerFn({ method: 'POST' })
   .validator(parseRateRequestInput)
   .handler(({ data }) => rateRequestForRequest(data))
 
+const listRequestAttachments = createServerFn({ method: 'GET' })
+  .validator(parseRequestParams)
+  .handler(({ data }) => loadRequestAttachments(data))
+
+const loadAttachmentLimits = createServerFn({ method: 'GET' })
+  .validator(parseRequestParams)
+  .handler(({ data }) => loadRequestAttachmentLimits(data))
+
+const prepareAttachment = createServerFn({ method: 'POST' })
+  .validator(parsePrepareAttachmentInput)
+  .handler(({ data }) => prepareRequestAttachment(data))
+
+const finishAttachment = createServerFn({ method: 'POST' })
+  .validator(parseFinishAttachmentInput)
+  .handler(({ data }) => finishRequestAttachment(data))
+
+const retryAttachment = createServerFn({ method: 'POST' })
+  .validator(parseRetryAttachmentInput)
+  .handler(({ data }) => retryRequestAttachment(data))
+
+const grantAttachmentMedia = createServerFn({ method: 'POST' })
+  .validator(parseGrantAttachmentInput)
+  .handler(({ data }) => grantRequestAttachmentMedia(data))
+
 export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
   validateSearch: parseRequestDetailSearch,
   loader: ({ params }) => loadRequestPage({ data: requestParamsForRoute(params) }),
@@ -114,6 +151,14 @@ function RequestRoute() {
       }
     }
   }, [navigate, repoParams, requestParams, router])
+  const attachmentActions = useMemo<RequestAttachmentActions>(() => ({
+    finish: (data) => finishAttachment({ data }),
+    grant: (data) => grantAttachmentMedia({ data }),
+    limits: (data, signal) => loadAttachmentLimits({ data, signal }),
+    list: (data, signal) => listRequestAttachments({ data, signal }),
+    prepare: (data) => prepareAttachment({ data }),
+    retry: (data) => retryAttachment({ data }),
+  }), [])
   const rateParticipant = useCallback(async (input: RateRequestInput) => {
     const rating = await rateRequest({ data: input })
     await router.invalidate()
@@ -126,6 +171,7 @@ function RequestRoute() {
 
   return (
     <RequestDetailPage
+      attachmentActions={attachmentActions}
       detail={page.detail}
       live={live}
       loadActivity={(signal) => loadActivity({ data: requestParams, signal })}
@@ -134,6 +180,7 @@ function RequestRoute() {
       ratings={page.ratings}
       rateRequest={rateParticipant}
       updateDescription={(data) => updateDescription({ data })}
+      viewerId={page.account?.user?.id ?? 'anonymous'}
     >
       <Outlet />
     </RequestDetailPage>

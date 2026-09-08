@@ -1,4 +1,4 @@
-use crate::{error::ApiError, git::import::run_git_output, state::AppState};
+use crate::{error::ApiError, git::GitContext, git::import::run_git_output};
 use scope_domain::{
     content::SourceBlob,
     content_ref::ContentRef,
@@ -23,13 +23,13 @@ pub(crate) fn git_blob_reference(
     )?)
 }
 
-pub(crate) async fn source_content_bytes(
-    state: &AppState,
+pub(crate) async fn source_content_bytes<C: GitContext>(
+    context: &C,
     blob: &SourceBlob,
     git_source: Option<(RepositoryIncarnation, &GitHead, &[GitPackSpan])>,
 ) -> Result<Vec<u8>, ApiError> {
     if !matches!(blob.content_ref, ContentRef::GitBlob { .. }) {
-        let object_store = state.object_store.clone();
+        let object_store = context.object_store().clone();
         let blob = blob.clone();
         return tokio::task::spawn_blocking(move || {
             source_blob_bytes(object_store.as_ref(), &blob).map_err(ApiError::from)
@@ -47,21 +47,21 @@ pub(crate) async fn source_content_bytes(
             "Git blob content locator must be a Git manifest",
         ));
     }
-    let repo = state
-        .repository_engine
-        .materialize_repository(state, &repository_id, head, pack_spans)
+    let repo = context
+        .repository_engine()
+        .materialize_repository(context, &repository_id, head, pack_spans)
         .await?;
-    let state = state.clone();
+    let context = context.clone();
     let blob = blob.clone();
     tokio::task::spawn_blocking(move || {
-        source_content_bytes_from_repo(&state, &blob, Some(repo.as_ref()))
+        source_content_bytes_from_repo(&context, &blob, Some(repo.as_ref()))
     })
     .await
     .map_err(|error| ApiError::internal_message(format!("Git blob read task failed: {error}")))?
 }
 
-pub(crate) fn source_content_bytes_from_repo(
-    state: &AppState,
+pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
+    context: &C,
     blob: &SourceBlob,
     git_repo: Option<&Path>,
 ) -> Result<Vec<u8>, ApiError> {
@@ -69,7 +69,7 @@ pub(crate) fn source_content_bytes_from_repo(
         git_oid: content_oid,
     } = &blob.content_ref
     else {
-        return Ok(source_blob_bytes(state.object_store.as_ref(), blob)?);
+        return Ok(source_blob_bytes(context.object_store().as_ref(), blob)?);
     };
     if content_oid != &blob.git_oid {
         return Err(ApiError::internal_message(

@@ -1,5 +1,5 @@
 name: Scope Railway staging proof
-run-name: Scope staging ${{ inputs.source_sha }}${{ inputs.proof_request_id && format(' / {0}', inputs.proof_request_id) || '' }}
+run-name: Scope ${{ inputs.target_environment || 'staging' }} ${{ inputs.source_sha }}${{ inputs.proof_request_id && format(' / {0}', inputs.proof_request_id) || '' }}
 
 on:
   workflow_dispatch:
@@ -8,6 +8,17 @@ on:
         description: Exact repository commit SHA to deploy
         type: string
         required: true
+      target_environment:
+        description: Reviewed Railway environment for this proof
+        type: choice
+        options:
+          - staging
+          - media-proof
+        default: staging
+      run_media_capacity:
+        description: Run the large-video and concurrent-photo staging capacity proof
+        type: boolean
+        default: false
       proof_request_id:
         description: Unique dispatch identity used by the production release gate
         type: string
@@ -20,13 +31,25 @@ on:
 permissions:
   actions: read
   contents: read
+  packages: write
   deployments: read
 
 concurrency:
-  group: scope-railway-staging
+  group: scope-railway-${{ inputs.target_environment || 'staging' }}
   cancel-in-progress: false
 
 jobs:
+  media-worker-image:
+    name: Build candidate media worker
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/scope-media-worker-image.yml
+    with:
+      publish: true
+      source_sha: ${{ inputs.source_sha }}
+    if: inputs.prepared_run_id == '' && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha)
+
   prepare:
     name: Build candidate before closing staging
     permissions:
@@ -67,12 +90,13 @@ jobs:
         run: |
           mkdir -p artifacts/backend artifacts/commands
           cargo build --release --locked -p api --bin scope-maintenance --bin api
-          cargo build --release --locked -p scope-cache-service -p worker -p scope-repo-router
+          cargo build --release --locked -p scope-cache-service -p worker -p scope-repo-router -p scope-media-service
           install -m 0755 target/release/scope-maintenance artifacts/backend/scope-maintenance
           install -m 0755 target/release/api artifacts/backend/scope-vcs
           install -m 0755 target/release/scope-cache-service artifacts/backend/scope-cache-service
           install -m 0755 target/release/worker artifacts/backend/scope-worker
           install -m 0755 target/release/scope-repo-router artifacts/backend/scope-repo-router
+          install -m 0755 target/release/scope-media-service artifacts/backend/scope-media-service
           cp LICENSE NOTICE legal/third-party-rust.txt artifacts/backend/
           cargo build --release --locked -p api --bin scope-smoke-seed --features smoke-seed
           cargo build --release --locked --manifest-path cli/Cargo.toml --bin scope
@@ -95,6 +119,7 @@ jobs:
 
       - name: Build web artifact
         env:
+          VITE_SCOPE_WEB_FORCE_SIGNED_OUT: '1'
           VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
           VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.VITE_POSTHOG_PROJECT_TOKEN }}
         working-directory: web
@@ -131,27 +156,31 @@ jobs:
       contents: read
       deployments: read
       packages: write
-    needs: prepare
+    needs: [prepare, media-worker-image]
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' && needs.media-worker-image.result == 'success'
     uses: ./.github/workflows/scope-release-prepare.yml
     with:
       source_sha: ${{ inputs.source_sha }}
       prepare_backend: true
       prepare_router: true
       prepare_web: true
+      media_worker_image: ${{ needs.media-worker-image.outputs.image_ref }}
     secrets: inherit
 
   prove:
     name: Deploy and smoke staging
-    needs: [prepare, prepare-images]
+    needs: [prepare, prepare-images, media-worker-image]
     if: >-
       !cancelled() && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha) &&
       ((inputs.prepared_run_id == '' && needs.prepare-images.result == 'success') || inputs.prepared_run_id != '')
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 60
+    timeout-minutes: 90
+    # Reuse the protected staging credential boundary for all reviewed non-production targets.
     environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-staging-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Validate requested revision
         shell: bash
@@ -171,8 +200,12 @@ jobs:
           persist-credentials: false
 
       - name: Load staging target from trusted manifest
+        id: target
         shell: bash
+        env:
+          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'staging' }}
         run: |
+          node .github/scripts/select-proof-environment.mjs "$PROOF_ENVIRONMENT"
           {
             echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
             echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.railway.staging.environmentId' .github/deployment-services.json)"
@@ -247,6 +280,7 @@ jobs:
         run: |
           echo "SCOPE_PREPARED_RELEASE_PATH=$GITHUB_WORKSPACE/artifacts/prepared-release.json" >> "$GITHUB_ENV"
           echo "SCOPE_DEPLOYMENT_MANIFEST=$GITHUB_WORKSPACE/.github/deployment-services.json" >> "$GITHUB_ENV"
+          echo "SCOPE_MEDIA_WORKER_IMAGE=$(jq -er '.components.mediaWorker.image' artifacts/prepared-release.json)" >> "$GITHUB_ENV"
 
       - name: Extract candidate commands
         if: inputs.prepared_run_id == ''
@@ -270,7 +304,7 @@ jobs:
           echo "SCOPE_GIT_SMOKE_DIR=$smoke_dir" >> "$GITHUB_ENV"
           export SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH="$smoke_dir/exchange-token"
           bash .github/scripts/deploy-staging-railway.sh prepare \
-            cache-service worker api repo-router
+            cache-service worker api repo-router media
 
       - name: Deploy staging web and record evidence
         if: inputs.prepared_run_id == ''
@@ -310,6 +344,68 @@ jobs:
           web_domain="$(jq -er '.railway.staging.webDomain' ../../.github/deployment-services.json)"
           SCOPE_WEB_BASE_URL="https://$web_domain" pnpm test:smoke
 
+      - name: Run Git router smoke against staging
+        shell: bash
+        env:
+          GITHUB_SHA: ${{ inputs.source_sha }}
+          RUN_MEDIA_CAPACITY: ${{ inputs.run_media_capacity }}
+          SCOPE_CLI_BINARY: ${{ github.workspace }}/candidate/cli/target/release/scope
+          SCOPE_MEDIA_SMOKE_SCRIPT: ${{ github.workspace }}/candidate/dev/media-smoke.mjs
+          SCOPE_MEDIA_SMOKE_RECEIPT: ${{ github.workspace }}/staging-media-smoke.json
+          SCOPE_MEDIA_SMOKE_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          api_domain="$(jq -er '.railway.staging.apiDomain' .github/deployment-services.json)"
+          router_domain="$(jq -er '.railway.staging.routerDomain' .github/deployment-services.json)"
+          media_domain="$(jq -er '.mediaResources.staging.gatewayDomain' .github/deployment-services.json)"
+          fixture_dir="$(mktemp -d "${RUNNER_TEMP}/scope-media-fixtures.XXXXXX")"
+          trap 'rm -rf -- "$fixture_dir"' EXIT
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes ffmpeg
+          fi
+          ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=96x64 -frames:v 1 "$fixture_dir/fixture.png"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=96x64:rate=12 -t 1 \
+            -pix_fmt yuv420p "$fixture_dir/fixture.mp4"
+          if [[ "$RUN_MEDIA_CAPACITY" == "true" ]]; then
+            ffmpeg -hide_banner -loglevel error -y \
+              -f lavfi -i testsrc2=size=1920x1080:rate=30 \
+              -f lavfi -i sine=frequency=1000:sample_rate=48000 \
+              -t 240 -c:v libx264 -threads 2 -preset ultrafast \
+              -b:v 17M -minrate 17M -maxrate 17M -bufsize 34M \
+              -x264-params 'nal-hrd=cbr:force-cfr=1' \
+              -c:a aac -b:a 128k -movflags +faststart \
+              "$fixture_dir/capacity-recording.mp4"
+            export SCOPE_MEDIA_CAPACITY_SCRIPT="$GITHUB_WORKSPACE/candidate/dev/media-capacity.mjs"
+            export SCOPE_MEDIA_CAPACITY_VIDEO="$fixture_dir/capacity-recording.mp4"
+            export SCOPE_MEDIA_CAPACITY_RECEIPT="$GITHUB_WORKSPACE/staging-media-capacity/receipt.json"
+          fi
+          SCOPE_API_URL="https://$api_domain" \
+            SCOPE_GIT_ROUTER_URL="https://$router_domain" \
+            SCOPE_MEDIA_GATEWAY_URL="https://$media_domain" \
+            SCOPE_MEDIA_SMOKE_PNG="$fixture_dir/fixture.png" \
+            SCOPE_MEDIA_SMOKE_MP4="$fixture_dir/fixture.mp4" \
+            SCOPE_EXCHANGE_TOKEN_PATH="$SCOPE_GIT_SMOKE_DIR/exchange-token" \
+            bash .github/scripts/staging-git-smoke.sh
+
+      - name: Bind media smoke receipt to staging evidence
+        shell: bash
+        env:
+          RUN_MEDIA_CAPACITY: ${{ inputs.run_media_capacity }}
+        run: |
+          jq -e '.passed == true and .request_deleted == true' staging-media-smoke.json >/dev/null
+          jq --slurpfile mediaSmoke staging-media-smoke.json \
+            '. + {mediaSmoke: $mediaSmoke[0]}' staging-deployments.json > staging-deployments.json.tmp
+          mv staging-deployments.json.tmp staging-deployments.json
+          if [[ "$RUN_MEDIA_CAPACITY" == "true" ]]; then
+            jq -e --arg sha '${{ inputs.source_sha }}' \
+              '.passed == true and .source_sha == $sha and .loaded.failed_requests == 0' \
+              staging-media-capacity/receipt.json >/dev/null
+            jq --slurpfile mediaCapacity staging-media-capacity/receipt.json \
+              '. + {mediaCapacity: $mediaCapacity[0]}' \
+              staging-deployments.json > staging-deployments.json.tmp
+            mv staging-deployments.json.tmp staging-deployments.json
+          fi
+
       - name: Remove staging Git smoke credentials
         if: always()
         shell: bash
@@ -332,7 +428,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: staging-deployments-${{ inputs.source_sha }}
-          path: staging-deployments.json
+          path: |
+            staging-deployments.json
+            staging-media-smoke.json
+            staging-media-capacity/*.json
           if-no-files-found: error
           retention-days: 14
 
@@ -342,10 +441,11 @@ jobs:
     if: always() && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha)
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
+    # Reuse the protected staging credential boundary for all reviewed non-production targets.
     environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-staging-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout trusted cleanup
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -355,8 +455,12 @@ jobs:
           persist-credentials: false
 
       - name: Load staging target from trusted manifest
+        id: target
         shell: bash
+        env:
+          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'staging' }}
         run: |
+          node .github/scripts/select-proof-environment.mjs "$PROOF_ENVIRONMENT"
           {
             echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
             echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.railway.staging.environmentId' .github/deployment-services.json)"
@@ -370,7 +474,7 @@ jobs:
       # A failed migration or partial rollout may be incompatible with the old writers.
       # Keep staging fail-closed for diagnosis instead of automatically reviving them.
       - name: Keep staging writers fenced after unsuccessful proof
-        if: inputs.prepared_run_id == '' && needs.prove.result != 'success' && needs.prove.result != 'skipped'
+        if: inputs.prepared_run_id == '' && needs.prove.result != 'success' && needs.prove.result != 'skipped' && steps.target.outcome == 'success'
         shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}

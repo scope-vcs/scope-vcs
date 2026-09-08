@@ -15,14 +15,17 @@ export async function validateRecoveryPreparation(prepared, request, repository,
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? "")) {
     throw new Error("Recovery requires the trusted GITHUB_REPOSITORY");
   }
-  validatePreparedRelease(prepared, { components: ["api", "worker", "cache", "router"] });
+  validatePreparedRelease(prepared, { components: ["api", "worker", "cache", "router", "media", "mediaWorker"] });
   const { sourceSha, preparationRunId } = prepared;
   if (!/^[1-9][0-9]*$/.test(preparationRunId ?? "")) {
     throw new Error("Recovery requires its original preparation run ID");
   }
   const owner = repository.toLowerCase();
   for (const [component, artifact] of Object.entries(prepared.components)) {
-    if (artifact.image.split("@")[0] !== releaseImageRepository(manifest, repository, component)) {
+    const expectedRepository = component === "mediaWorker"
+      ? "ghcr.io/scope-vcs/scope-media-worker"
+      : releaseImageRepository(manifest, repository, component);
+    if (artifact.image.split("@")[0] !== expectedRepository) {
       throw new Error(`Recovery ${component} image is outside its trusted production package`);
     }
   }

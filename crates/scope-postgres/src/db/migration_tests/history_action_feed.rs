@@ -32,7 +32,7 @@ async fn history_action_feed_migration_invalidates_fragments_and_enforces_unique
     db.execute_unprepared(repeated_fragment).await.unwrap();
 
     let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert_eq!(plan.pending.len(), 3);
+    assert_eq!(plan.pending.len(), LATEST_MIGRATIONS.len() - 38);
     assert_eq!(plan.pending[0].name, "m0039_history_action_feed");
     assert_eq!(plan.pending[0].impact, MigrationImpact::MaintenanceRequired);
     assert!(migrations::apply_online(db.as_ref()).await.is_err());

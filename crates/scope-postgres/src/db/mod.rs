@@ -98,7 +98,18 @@ pub use request_queue::{RequestQueueCursor, RequestQueuePageQuery, RequestQueueR
 mod request_ratings;
 mod request_rows;
 pub use request_rows::{RequestListPageQuery, RequestListRow};
+mod request_media;
 mod request_merge;
+pub use request_media::{
+    AuthorizedRequestAttachment, CompleteRequestAttachmentProcessingCommand,
+    CompletedRequestAttachmentDerivative, CompletedRequestMediaManifest,
+    FailRequestAttachmentProcessingCommand, FinishRequestAttachmentUploadCommand,
+    MediaLeaseMutation, PrepareRequestAttachmentCommand, PreparedRequestAttachment,
+    RequestAttachmentCleanupReason, RequestMediaChunk, RequestMediaManifest,
+    RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+    StoredRequestAttachmentPart, ValidateRequestAttachmentSourceCommand,
+    ValidatedRequestAttachmentSource,
+};
 mod request_submission_transactions;
 mod requests;
 mod run_admission;
@@ -220,6 +231,11 @@ pub struct RequestStore {
 }
 
 #[derive(Clone)]
+pub struct MediaStore {
+    db: Arc<DatabaseConnection>,
+}
+
+#[derive(Clone)]
 pub struct RunStore {
     db: Arc<DatabaseConnection>,
 }
@@ -270,6 +286,12 @@ impl MetadataStore {
 
     pub fn requests(&self) -> RequestStore {
         RequestStore {
+            db: Arc::clone(&self.db),
+        }
+    }
+
+    pub fn media(&self) -> MediaStore {
+        MediaStore {
             db: Arc::clone(&self.db),
         }
     }

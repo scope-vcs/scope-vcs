@@ -52,6 +52,16 @@
       "reason": "Typed request and discussion calls share URL construction, authenticated execution, decoding, and client tests."
     },
     {
+      "path": "cli/src/request.rs",
+      "owner": "CLI request command orchestration",
+      "reason": "Command dispatch, repository and request context resolution, discussion lifecycles, and local request identity coordinate one authenticated request-command boundary; behavior-specific policy and rendering remain in focused submodules."
+    },
+    {
+      "path": "crates/scope-domain/src/requests/attachments/rules.rs",
+      "owner": "request attachment aggregate",
+      "reason": "Upload, processing, binding, access, and cleanup transitions share source, derivative, lease, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."
+    },
+    {
       "path": "crates/scope-domain/src/requests/discussions.rs",
       "owner": "request discussion aggregate",
       "reason": "Discussion creation, replies, transitions, read state, validation, and transition tests enforce one aggregate."
@@ -87,9 +97,39 @@
       "reason": "Durable evaluation input, trigger selection, atomic run enqueue, source release, and workflow tests form one job."
     },
     {
+      "path": "crates/scope-postgres/src/db/request_discussions.rs",
+      "owner": "request discussion persistence",
+      "reason": "Discussion and reply mutations, visibility, read state, attachment binding, and notifications share the same request discussion transaction boundary."
+    },
+    {
+      "path": "crates/scope-postgres/src/db/request_media/cleanup.rs",
+      "owner": "request media deletion lifecycle",
+      "reason": "Request and repository tombstones, orphan inventory, claim revalidation, lease grace, and reconciliation share one deletion-wins lock order; row mapping and supporting SQL are already isolated in cleanup_support."
+    },
+    {
+      "path": "crates/scope-postgres/src/db/request_media/processing_support.rs",
+      "owner": "request media processing persistence",
+      "reason": "Lease locking, immutable manifest adoption, derivative budgeting, and final attachment writes support one fenced processing transaction; public job operations remain in processing."
+    },
+    {
+      "path": "crates/scope-postgres/src/db/request_media/upload.rs",
+      "owner": "request media upload persistence",
+      "reason": "Prepare, part reservation, acknowledgement, and finalization share current authorization, idempotency, repository quota locks, and the durable upload inventory."
+    },
+    {
       "path": "crates/scope-run-config/src/lib.rs",
       "owner": "workflow configuration compiler",
       "reason": "YAML decoding, validation, domain compilation, repository catalog parsing, and grammar fixtures define one compiler."
+    },
+    {
+      "path": "media-worker/src/codec.rs",
+      "owner": "request media codec pipeline",
+      "reason": "Photo and video conversion share verified codec capabilities, output inspection, bounded subprocess policy, and failure classification; container and source inspection are already isolated in codec/inspection."
+    },
+    {
+      "path": "media-worker/src/jobs.rs",
+      "owner": "leased request media processing",
+      "reason": "Source verification, conversion, durable output reservation, heartbeat renewal, completion, and failure recovery form one leased job; codec execution, storage, scratch, health, and cleanup each have separate owners."
     }
   ]
 }

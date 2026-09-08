@@ -18,6 +18,9 @@ on:
       recover_cutover_id:
         type: string
         default: ""
+      media_worker_image:
+        type: string
+        default: ""
 
 permissions:
   actions: read
@@ -86,6 +89,7 @@ jobs:
           PREPARE_BACKEND: ${{ inputs.prepare_backend && '1' || '0' }}
           PREPARE_ROUTER: ${{ inputs.prepare_router && '1' || '0' }}
           PREPARE_WEB: ${{ inputs.prepare_web && '1' || '0' }}
+          MEDIA_WORKER_IMAGE: ${{ inputs.media_worker_image }}
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: |
@@ -94,7 +98,7 @@ jobs:
           if [[ "$PREPARE_BACKEND" == 1 ]]; then
             mkdir -p artifacts/backend/bin
             python3 .github/scripts/extract-railway-release.py backend artifacts/backend/backend-release.tar.gz artifacts/backend/bin
-            components=(api worker cache)
+            components=(api worker cache media)
             [[ "$PREPARE_ROUTER" == 0 ]] || components+=(router)
             for component in "${components[@]}"; do
               root=".railway-prepared/$component"
@@ -105,6 +109,7 @@ jobs:
                 worker) binary=scope-worker ;;
                 cache) binary=scope-cache-service ;;
                 router) binary=scope-repo-router ;;
+                media) binary=scope-media-service ;;
               esac
               install -m 0755 "artifacts/backend/bin/$binary" "$root/bin/$binary"
               if [[ "$component" == api ]]; then
@@ -114,6 +119,10 @@ jobs:
                 preparation_failed=1
               fi
             done
+            [[ "$MEDIA_WORKER_IMAGE" =~ ^ghcr\.io/scope-vcs/scope-media-worker@sha256:[0-9a-f]{64}$ ]]
+            media_worker_service="$(jq -er '.services.mediaWorker.id' .github/deployment-services.json)"
+            node .github/scripts/railway-artifact.mjs record prepared-release.json \
+              mediaWorker "$MEDIA_WORKER_IMAGE" "$SCOPE_DEPLOYMENT_SOURCE_SHA" "$media_worker_service"
           fi
           if [[ "$PREPARE_WEB" == 1 ]]; then
             mkdir -p .railway-prepared/web

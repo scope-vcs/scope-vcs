@@ -41,7 +41,7 @@ begin_cutover() {
     echo "A positive SCOPE_MAINTENANCE_OUTAGE_BUDGET_MS must be approved from staging measurements before writer closure." >&2
     return 1
   fi
-  validate_prepared_release api worker cache router
+  validate_prepared_release api worker cache router media mediaWorker
   validate_maintenance_artifact
   temporary="$(mktemp -d)"
   printf '%s\n' "$plan_json" > "$temporary/baseline.json"
@@ -63,7 +63,7 @@ recover_cutover() {
     echo "Recovery artifacts do not match the durable cutover manifest." >&2
     return 1
   fi
-  validate_prepared_release api worker cache router
+  validate_prepared_release api worker cache router media mediaWorker
   validate_maintenance_artifact
   successful_deployments="$(jq -c .previous <<< "$record")"
   plan_json="$(jq -c .baseline <<< "$record")"

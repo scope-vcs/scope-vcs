@@ -8,9 +8,11 @@ const mainSha = "d".repeat(40);
 function fixture() {
   const prepared = {
     schemaVersion: 1, sourceSha, preparationRunId: "123", maintenanceSha256: "c".repeat(64),
-    components: Object.fromEntries(["api", "worker", "cache", "router"].map(component => [component, {
+    components: Object.fromEntries(["api", "worker", "cache", "router", "media", "mediaWorker"].map(component => [component, {
       sourceSha, serviceId: component,
-      image: `ghcr.io/${repository}/railway-private-${component}@sha256:${"b".repeat(64)}`,
+      image: component === "mediaWorker"
+        ? `ghcr.io/scope-vcs/scope-media-worker@sha256:${"b".repeat(64)}`
+        : `ghcr.io/${repository}/railway-private-${component}@sha256:${"b".repeat(64)}`,
     }])),
   };
   const run = {
