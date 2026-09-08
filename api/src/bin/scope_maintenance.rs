@@ -64,15 +64,15 @@ async fn main() -> anyhow::Result<()> {
             println!(r#"{{"legacyGitSegmentObjectsDeleted":{deleted}}}"#);
         }
         "backfill-landing-files" => {
-            verify_schema(database_url).await?;
-            let state = api::AppState::from_env().await?;
-            let stored = state.backfill_repository_landing_files().await?;
+            verify_schema(database_url.clone()).await?;
+            let stored =
+                api::backfill_repository_landing_files_for_maintenance(database_url).await?;
             println!(r#"{{"landingFilesBackfilled":{stored}}}"#);
         }
         "backfill-workflow-catalogs" => {
-            verify_schema(database_url).await?;
-            let state = api::AppState::from_env().await?;
-            let stored = state.backfill_repository_workflow_catalogs().await?;
+            verify_schema(database_url.clone()).await?;
+            let stored =
+                api::backfill_repository_workflow_catalogs_for_maintenance(database_url).await?;
             println!(r#"{{"workflowCatalogsBackfilled":{stored}}}"#);
         }
         "fence" => {

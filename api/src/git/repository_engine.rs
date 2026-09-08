@@ -3,6 +3,7 @@ use crate::git::import::run_git_output;
 use crate::{
     config::DEFAULT_GIT_BRANCH,
     error::ApiError,
+    git::GitContext,
     git::{
         cache::{
             GitDerivedCacheCoordinator, GitDerivedCacheNamespace, GitRepoHandle,
@@ -14,7 +15,6 @@ use crate::{
             run_timed_git_restore_phase_async,
         },
     },
-    state::AppState,
 };
 use scope_domain::repository::{
     RepositoryIncarnation,
@@ -132,9 +132,9 @@ impl RepositoryEngine {
 
     /// Opens the local replica at or beyond the requested durable frontier,
     /// serializing any repair or catch-up with post-push replica updates.
-    pub(crate) async fn materialize_repository(
+    pub(crate) async fn materialize_repository<C: GitContext>(
         self: &Arc<Self>,
-        state: &AppState,
+        context: &C,
         incarnation: &RepositoryIncarnation,
         head: &GitHead,
         pack_spans: &[GitPackSpan],
@@ -159,7 +159,7 @@ impl RepositoryEngine {
         let built = Arc::new(AtomicBool::new(false));
         let materialization_path = Arc::new(AtomicU8::new(MATERIALIZATION_PATH_HIT));
         let engine_for_build = self.clone();
-        let state_for_build = state.clone();
+        let context_for_build = context.clone();
         let incarnation_for_build = incarnation.clone();
         let head_for_build = head.clone();
         let pack_spans_for_build = pack_spans.to_vec();
@@ -174,7 +174,9 @@ impl RepositoryEngine {
         let result = self.coordinate_repository(incarnation, is_ready, move || async move {
             let _build_repo_lease = build_repo_lease;
             built_for_build.store(true, Ordering::Relaxed);
-            let _permit = state_for_build.runtime_budgets.try_git_materialization()?;
+            let _permit = context_for_build
+                .runtime_budgets()
+                .try_git_materialization()?;
             match engine_for_build
                 .cache
                 .applied_sequence(&incarnation_for_build, &repo_path_for_build)
@@ -187,7 +189,7 @@ impl RepositoryEngine {
                         .store(MATERIALIZATION_PATH_CATCH_UP, Ordering::Relaxed);
                     engine_for_build
                         .catch_up(
-                            &state_for_build,
+                            &context_for_build,
                             &repository_id_for_build,
                             &head_for_build,
                             &pack_spans_for_build,
@@ -224,7 +226,7 @@ impl RepositoryEngine {
                         attempt
                     ));
                     if let Err(error) = restore_git_pack_spans(
-                        &state_for_build,
+                        &context_for_build,
                         &repository_id_for_build,
                         &head_for_build,
                         &pack_spans_for_build,
@@ -448,9 +450,9 @@ impl RepositoryEngine {
         )
     }
 
-    async fn catch_up(
+    async fn catch_up<C: GitContext>(
         &self,
-        state: &AppState,
+        context: &C,
         repository_id: &str,
         head: &GitHead,
         pack_spans: &[GitPackSpan],
@@ -480,7 +482,7 @@ impl RepositoryEngine {
         let missing_count = missing.len();
         for (index, span) in missing.into_iter().enumerate() {
             index_git_pack(
-                state,
+                context,
                 repo_root,
                 repository_id,
                 span,

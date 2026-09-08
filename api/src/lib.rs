@@ -24,6 +24,7 @@ pub(crate) mod product_analytics;
 pub(crate) mod push_intents;
 pub(crate) mod repo_access;
 pub(crate) mod repo_events;
+mod repository_backfill;
 pub(crate) mod run_recovery;
 pub(crate) mod run_retention;
 pub(crate) mod runtime_budgets;
@@ -43,8 +44,12 @@ pub use app::router;
 pub use git_segment_v2_backfill::{
     backfill_git_segments_v2_for_maintenance, cleanup_git_segments_v1_for_maintenance,
 };
+pub use landing_file_backfill::backfill_repository_landing_files_for_maintenance;
 pub use state::AppState;
-pub use workflow_catalog_backfill::validate_repository_workflow_catalogs_for_maintenance;
+pub use workflow_catalog_backfill::{
+    backfill_repository_workflow_catalogs_for_maintenance,
+    validate_repository_workflow_catalogs_for_maintenance,
+};
 
 #[cfg(feature = "type-export")]
 pub fn export_api_contract(output_path: &std::path::Path, schema_output_path: &std::path::Path) {
