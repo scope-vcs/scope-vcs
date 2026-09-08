@@ -10,6 +10,8 @@ import { chromium } from "playwright";
 const DEFAULT_TRANSITION_TIMEOUT_MS = 15 * 60 * 1_000;
 const DEFAULT_RECONNECT_BOUND_MS = 10_000;
 const DEFAULT_ACTIVITY_TIMEOUT_MS = 60_000;
+const MAX_DIAGNOSTICS = 20;
+const MAX_DIAGNOSTIC_TEXT_LENGTH = 300;
 
 export async function verifyReleaseTransition(options) {
   validateOptions(options);
@@ -32,29 +34,69 @@ export async function verifyReleaseTransition(options) {
 
   const startedAt = new Date().toISOString();
   const pageErrors = [];
+  const consoleWarnings = [];
+  const failedFetches = [];
   const streamStarts = [];
   const streamEnds = [];
   const streamRequests = new Map();
   const streamPathSuffix = `/v1/repos/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repo)}/events`;
   let browser;
+  let page;
   let result;
   try {
     browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { height: 900, width: 1280 } });
-    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page = await browser.newPage({ viewport: { height: 900, width: 1280 } });
+    page.on("pageerror", (error) => {
+      pushBounded(pageErrors, redactDiagnosticText(error.message));
+    });
+    page.on("console", (message) => {
+      if (!["warning", "error"].includes(message.type())) return;
+      pushBounded(consoleWarnings, {
+        at: new Date().toISOString(),
+        level: message.type(),
+        text: redactDiagnosticText(message.text()),
+      });
+    });
     page.on("request", (request) => {
       if (!isEventRequest(request.url(), streamPathSuffix)) return;
       const event = { at: new Date().toISOString(), sequence: streamStarts.length + 1 };
       streamRequests.set(request, event);
       streamStarts.push(event);
     });
-    const recordStreamEnd = (request, outcome) => {
+    const recordStreamEnd = (request, outcome, errorText) => {
       const started = streamRequests.get(request);
       if (!started || streamEnds.some(({ sequence }) => sequence === started.sequence)) return;
-      streamEnds.push({ at: new Date().toISOString(), outcome, sequence: started.sequence });
+      streamEnds.push({
+        at: new Date().toISOString(),
+        outcome,
+        sequence: started.sequence,
+        ...(started.status ? { status: started.status } : {}),
+        ...(errorText ? { errorText: redactDiagnosticText(errorText) } : {}),
+      });
     };
-    page.on("requestfailed", (request) => recordStreamEnd(request, "failed"));
+    page.on("requestfailed", (request) => {
+      if (isEventRequest(request.url(), streamPathSuffix)) {
+        recordStreamEnd(request, "failed", request.failure()?.errorText);
+      } else {
+        recordFailedFetch(failedFetches, request, options.baseUrl, {
+          outcome: "failed",
+          errorText: request.failure()?.errorText,
+        });
+      }
+    });
     page.on("requestfinished", (request) => recordStreamEnd(request, "finished"));
+    page.on("response", (response) => {
+      const request = response.request();
+      const stream = streamRequests.get(request);
+      if (stream) {
+        stream.status = response.status();
+      } else if (response.status() >= 400) {
+        recordFailedFetch(failedFetches, request, options.baseUrl, {
+          outcome: "response",
+          status: response.status(),
+        });
+      }
+    });
     const repoUrl = new URL(
       `/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repo)}`,
       `${options.baseUrl}/`,
@@ -152,6 +194,8 @@ export async function verifyReleaseTransition(options) {
       initialActivity,
       activationAt,
       observedActivity,
+      consoleWarnings,
+      failedFetches,
       pageErrors,
       passed: true,
       reconnect,
@@ -164,7 +208,10 @@ export async function verifyReleaseTransition(options) {
     };
   } catch (error) {
     result = {
+      consoleWarnings,
       error: safeErrorMessage(error),
+      failedFetches,
+      failureState: await captureFailureState(page),
       pageErrors,
       passed: false,
       repo: `${options.owner}/${options.repo}`,
@@ -291,6 +338,64 @@ function isEventRequest(value, suffix) {
     return new URL(value).pathname === suffix;
   } catch {
     return false;
+  }
+}
+
+function recordFailedFetch(failures, request, baseUrl, details) {
+  if (request.resourceType() !== "fetch" || new URL(request.url()).origin !== baseUrl) return;
+  pushBounded(failures, {
+    at: new Date().toISOString(),
+    method: request.method(),
+    url: safeRequestUrl(request.url()),
+    ...details,
+    ...(details.errorText ? { errorText: redactDiagnosticText(details.errorText) } : {}),
+  });
+}
+
+function pushBounded(target, value) {
+  if (target.length < MAX_DIAGNOSTICS) target.push(value);
+}
+
+export function safeRequestUrl(value) {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "invalid-url";
+  }
+}
+
+export function redactDiagnosticText(value) {
+  return value
+    .replace(/\bBearer\s+[^\s,;]+/gi, "Bearer [redacted]")
+    .replace(/\b(authorization|cookie|set-cookie)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
+    .replace(/https?:\/\/[^\s\"'<>]+/gi, safeRequestUrl)
+    .replace(/([?&][A-Za-z0-9_.~-]+)=([^&#\s\"']*)/g, "$1=[redacted]")
+    .slice(0, MAX_DIAGNOSTIC_TEXT_LENGTH);
+}
+
+async function captureFailureState(page) {
+  if (!page || page.isClosed()) return null;
+  try {
+    return await page.evaluate(() => {
+      const router = globalThis.__TSR_ROUTER__?.state;
+      return {
+        pendingSurfacePresent: Boolean(document.querySelector('[data-slot="pending-surface"]')),
+        repositoryActivityPresent: Boolean(document.querySelector('[aria-label="Latest repository change"]')),
+        repositoryNavigatorPresent: Boolean(document.querySelector('[aria-label="Repository file navigator"]')),
+        repositoryUnavailablePresent: Array.from(document.querySelectorAll('h1, h2')).some(
+          (heading) => heading.textContent?.trim() === 'Repository unavailable',
+        ),
+        routerStatus: router?.status ?? null,
+        routeMatches: router?.matches?.slice(-8).map((match) => ({
+          fetching: match.isFetching,
+          routeId: match.routeId,
+          status: match.status,
+        })) ?? [],
+      };
+    });
+  } catch {
+    return null;
   }
 }
 

@@ -6,6 +6,8 @@ import test from "node:test";
 import {
   findReconnect,
   parseArguments,
+  redactDiagnosticText,
+  safeRequestUrl,
   verifyReleaseTransition,
 } from "./release-transition.mjs";
 
@@ -82,6 +84,19 @@ test("reconnect evidence is paired after interruption and bounded", () => {
     ], "2026-09-06T12:00:04.000Z", 10_000),
     null,
   );
+});
+
+test("browser diagnostics omit request secrets and bound console text", () => {
+  assert.equal(
+    safeRequestUrl("https://scope.example.test/_server?token=secret#fragment"),
+    "https://scope.example.test/_server",
+  );
+  const diagnostic = redactDiagnosticText(
+    `authorization: Bearer secret https://scope.example.test/_server?token=secret ${"x".repeat(400)}`,
+  );
+  assert.equal(diagnostic.includes("secret"), false);
+  assert.equal(diagnostic.includes("?"), false);
+  assert.equal(diagnostic.length, 300);
 });
 
 test("browser refuses a stale teardown signal before opening", async (t) => {

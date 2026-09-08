@@ -11,6 +11,12 @@ import { RouteNotFoundPage } from '@/components/route-not-found-page'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
 import { useRepoLiveRefresh } from '@/features/repo-detail/repo-live-refresh'
 import {
+  fetchRepoRouteState,
+  isRetryableRepoLoadError,
+  loadRepoRouteState,
+  type RepoRouteLoadResult,
+} from '@/features/repo-detail/repo-route-recovery'
+import {
   Outlet,
   createFileRoute,
   notFound,
@@ -21,19 +27,30 @@ import { useCallback } from 'react'
 
 const loadRepoLiveState = createServerFn({ method: 'GET' })
   .validator(parseRepoParams)
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<RepoRouteLoadResult> => {
     try {
-      return await loadRepoLiveStateForRequest(data)
+      return { live: await loadRepoLiveStateForRequest(data) }
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) {
         throw notFound()
+      }
+      if (isRetryableRepoLoadError(error)) {
+        return { unavailable: 'Repository refresh is temporarily unavailable.' }
       }
       throw error
     }
   })
 
 export const Route = createFileRoute('/$owner/$repo')({
-  loader: ({ params }) => loadRepoLiveState({ data: params }),
+  loader: ({ params, cause, abortController }) => loadRepoRouteState({
+    load: () => loadRepoLiveState({
+      data: params,
+      fetch: fetchRepoRouteState,
+      signal: abortController.signal,
+    }),
+    refresh: cause === 'stay',
+    signal: abortController.signal,
+  }),
   errorComponent: RepoLayoutError,
   notFoundComponent: RouteNotFoundPage,
   pendingComponent: RepositoryRoutePending,
