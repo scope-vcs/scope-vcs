@@ -495,10 +495,8 @@ mod tests {
         .unwrap();
         let attempt = WriteAttempt::new("att_test", "original", "upload_test").unwrap();
         let plaintext = b"0123456789".to_vec();
-        let part = storage
-            .stage_part(&attempt, 1, plaintext.clone())
-            .await
-            .unwrap();
+        let part = storage.plan_part(&attempt, 1, &plaintext).unwrap();
+        storage.write_part(&part, plaintext.clone()).await.unwrap();
         let object = storage
             .seal_parts(
                 "video/mp4",

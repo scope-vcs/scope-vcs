@@ -1,3 +1,5 @@
+mod support;
+
 use scope_media_storage::{
     MAX_CHUNK_BYTES, MediaObject, MediaStorage, MediaStorageErrorKind, WriteAttempt,
 };
@@ -13,12 +15,8 @@ async fn metadata_encrypted_chunks_and_key_restore_into_an_independent_store() {
     let mut plaintext = vec![13; MAX_CHUNK_BYTES];
     plaintext.extend_from_slice(b"restored recording tail");
     let expected_tail = plaintext[MAX_CHUNK_BYTES - 4..].to_vec();
-    let mut reader = std::io::Cursor::new(plaintext);
     let attempt = WriteAttempt::new("att_restore", "original", "restore_fixture").unwrap();
-    let manifest = source
-        .upload_from_reader(&attempt, "video/mp4", &mut reader)
-        .await
-        .unwrap();
+    let manifest = support::store_bytes(&source, &attempt, &plaintext).await;
 
     let metadata_backup = serde_json::to_vec(&manifest).unwrap();
     let encrypted_backup: Vec<_> = manifest

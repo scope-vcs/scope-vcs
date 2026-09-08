@@ -1,5 +1,4 @@
 use super::*;
-use crate::requests::attachments::RequestAttachmentCleanupReason;
 
 fn prepared() -> RequestAttachment {
     validate_prepare_attachment(
@@ -359,21 +358,4 @@ fn rejected_is_terminal_but_retryable_failure_can_restart() {
     )
     .unwrap();
     assert!(retry_attachment_processing(&rejected, true, 13).is_err());
-}
-
-#[test]
-fn cleanup_retains_bound_evidence_and_deletion_wins() {
-    let upload = uploaded();
-    assert_eq!(
-        request_attachment_cleanup_reason(&upload, false, Some(20), false, 20),
-        Some(RequestAttachmentCleanupReason::UnboundAttachmentExpired)
-    );
-    assert_eq!(
-        request_attachment_cleanup_reason(&upload, true, Some(20), false, 20),
-        None
-    );
-    assert_eq!(
-        request_attachment_cleanup_reason(&upload, true, None, true, 20),
-        Some(RequestAttachmentCleanupReason::RepositoryDeleted)
-    );
 }

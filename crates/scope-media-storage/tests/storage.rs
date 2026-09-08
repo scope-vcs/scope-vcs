@@ -1,16 +1,16 @@
+mod support;
+
 use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, MediaStorageErrorKind, WriteAttempt};
 use scope_object_store::{MemoryObjectStore, ObjectStore, ObjectStoreError};
 use sha2::{Digest, Sha256};
 use std::{
-    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    task::{Context, Poll},
     time::Duration,
 };
-use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+use tokio::io::AsyncReadExt;
 use tokio_stream::StreamExt;
 
 #[tokio::test]
@@ -22,11 +22,17 @@ async fn encrypted_chunks_support_verified_ranges_across_boundaries() {
     plaintext.extend_from_slice(b"second chunk");
     let digest = hex::encode(Sha256::digest(&plaintext));
     let first = storage
-        .stage_part(&attempt, 1, plaintext[..MAX_CHUNK_BYTES].to_vec())
+        .plan_part(&attempt, 1, &plaintext[..MAX_CHUNK_BYTES])
+        .unwrap();
+    storage
+        .write_part(&first, plaintext[..MAX_CHUNK_BYTES].to_vec())
         .await
         .unwrap();
     let second = storage
-        .stage_part(&attempt, 2, plaintext[MAX_CHUNK_BYTES..].to_vec())
+        .plan_part(&attempt, 2, &plaintext[MAX_CHUNK_BYTES..])
+        .unwrap();
+    storage
+        .write_part(&second, plaintext[MAX_CHUNK_BYTES..].to_vec())
         .await
         .unwrap();
 
@@ -62,7 +68,8 @@ async fn tampered_encrypted_chunk_fails_closed() {
     let attempt = WriteAttempt::new("att_2", "original", "upload_2").unwrap();
     let plaintext = b"private recording bytes".to_vec();
     let digest = hex::encode(Sha256::digest(&plaintext));
-    let part = storage.stage_part(&attempt, 1, plaintext).await.unwrap();
+    let part = storage.plan_part(&attempt, 1, &plaintext).unwrap();
+    storage.write_part(&part, plaintext).await.unwrap();
     let object = storage
         .seal_parts("video/mp4", 23, &digest, vec![part.clone()])
         .await
@@ -77,16 +84,12 @@ async fn tampered_encrypted_chunk_fails_closed() {
 }
 
 #[tokio::test]
-async fn reader_upload_and_writer_download_stay_chunked() {
+async fn writer_download_preserves_all_chunks() {
     let raw = Arc::new(MemoryObjectStore::new());
     let storage = MediaStorage::encrypted(raw, [11; 32], 2).unwrap();
     let attempt = WriteAttempt::new("att_3", "video-playback", "lease_3").unwrap();
     let plaintext = vec![0x5a; MAX_CHUNK_BYTES + 17];
-    let mut reader = std::io::Cursor::new(plaintext.clone());
-    let object = storage
-        .upload_from_reader(&attempt, "video/mp4", &mut reader)
-        .await
-        .unwrap();
+    let object = support::store_bytes(&storage, &attempt, &plaintext).await;
     assert_eq!(object.chunks.len(), 2);
     assert!(object.chunks.iter().all(|chunk| {
         chunk.plaintext_bytes > 0 && chunk.plaintext_bytes <= MAX_CHUNK_BYTES as u64
@@ -104,23 +107,6 @@ async fn reader_upload_and_writer_download_stay_chunked() {
     assert_eq!(received, plaintext);
 }
 
-#[tokio::test]
-async fn reader_failure_removes_every_part_planned_before_the_error() {
-    let raw = Arc::new(MemoryObjectStore::new());
-    let storage = MediaStorage::encrypted(raw.clone(), [12; 32], 1).unwrap();
-    let attempt = WriteAttempt::new("att_fail", "video-playback", "lease_fail").unwrap();
-    let mut reader = FailingReader {
-        remaining: vec![0x6b; MAX_CHUNK_BYTES],
-    };
-    assert!(
-        storage
-            .upload_from_reader(&attempt, "video/mp4", &mut reader)
-            .await
-            .is_err()
-    );
-    assert_eq!(raw.object_count(), 0);
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn blocking_store_work_never_exceeds_configured_slots() {
     let tracker = Arc::new(TrackingStore::default());
@@ -130,7 +116,9 @@ async fn blocking_store_work_never_exceeds_configured_slots() {
         let storage = storage.clone();
         tasks.push(tokio::spawn(async move {
             let attempt = WriteAttempt::new("att_4", "original", format!("try_{index}"))?;
-            storage.stage_part(&attempt, 1, vec![index as u8]).await
+            let bytes = vec![index as u8];
+            let part = storage.plan_part(&attempt, 1, &bytes)?;
+            storage.write_part(&part, bytes).await
         }));
     }
     for task in tasks {
@@ -143,26 +131,6 @@ async fn blocking_store_work_never_exceeds_configured_slots() {
 struct TrackingStore {
     active: AtomicUsize,
     high_water: AtomicUsize,
-}
-
-struct FailingReader {
-    remaining: Vec<u8>,
-}
-
-impl AsyncRead for FailingReader {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        _context: &mut Context<'_>,
-        buffer: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        if self.remaining.is_empty() {
-            return Poll::Ready(Err(std::io::Error::other("fixture read failure")));
-        }
-        let bytes = buffer.remaining().min(self.remaining.len());
-        buffer.put_slice(&self.remaining[..bytes]);
-        self.remaining.drain(..bytes);
-        Poll::Ready(Ok(()))
-    }
 }
 
 impl ObjectStore for TrackingStore {

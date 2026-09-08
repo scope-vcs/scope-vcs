@@ -4,6 +4,7 @@ pub mod config;
 pub mod health;
 pub mod jobs;
 pub mod process;
+mod runtime;
 pub mod scratch;
 pub mod storage;
 

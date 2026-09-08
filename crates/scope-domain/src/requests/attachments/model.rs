@@ -176,22 +176,6 @@ pub struct RequestAttachmentPartReceipt {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RequestAttachmentChunk {
-    pub part_number: u32,
-    pub plaintext_offset: u64,
-    pub object: RequestAttachmentStoredObject,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RequestAttachmentUploadManifest {
-    pub attachment_id: String,
-    pub upload_id: String,
-    pub size_bytes: u64,
-    pub sha256: String,
-    pub chunks: Vec<RequestAttachmentChunk>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RequestAttachmentProcessingLease {
     pub attachment_id: String,
     pub repository_id: String,
@@ -211,13 +195,6 @@ pub struct RequestAttachmentCleanupLease {
     pub lease_generation: u64,
     pub attempt: u32,
     pub lease_expires_at_unix: u64,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum RequestAttachmentCleanupReason {
-    RepositoryDeleted,
-    IncompleteUploadExpired,
-    UnboundAttachmentExpired,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -5,6 +5,9 @@ use crate::{
     },
     config::WorkerSettings,
     health::WorkerHealth,
+    runtime::{
+        db_error, dependencies_ready, lease_expiry, random_id, retry_delay, wait_or_shutdown,
+    },
     scratch::ScratchSpace,
 };
 use scope_domain::requests::attachments::{
@@ -647,27 +650,6 @@ async fn renew_processing(
         .map_err(db_error)
 }
 
-async fn dependencies_ready(
-    metadata: &MetadataStore,
-    storage: &MediaStorage,
-    health: &WorkerHealth,
-) -> bool {
-    let schema = metadata.admin().readiness_check().await;
-    let object_store = storage.readiness_check().await;
-    if schema.is_ok() && object_store.is_ok() {
-        health.mark_dependencies_ready();
-        return true;
-    }
-    health.mark_dependencies_waiting();
-    if let Err(error) = schema {
-        tracing::warn!(error = %error.message, "media worker schema fence is unavailable");
-    }
-    if let Err(error) = object_store {
-        tracing::warn!(%error, "media worker object storage is unavailable");
-    }
-    false
-}
-
 async fn sha256_file(path: &Path) -> anyhow::Result<(u64, String)> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut digest = Sha256::new();
@@ -754,33 +736,12 @@ fn domain_derivative_kind(kind: &DerivativeKind) -> RequestAttachmentDerivativeK
     }
 }
 
-fn random_id(prefix: &str) -> anyhow::Result<String> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes)
-        .map_err(|error| anyhow::anyhow!("secure random generation failed: {error}"))?;
-    Ok(format!("{prefix}-{}", hex::encode(bytes)))
-}
-
-fn lease_expiry(now_unix: u64, duration: Duration) -> anyhow::Result<u64> {
-    now_unix
-        .checked_add(duration.as_secs())
-        .ok_or_else(|| anyhow::anyhow!("media lease expiry overflow"))
-}
-
 fn heartbeat_interval(lease_duration: Duration) -> Duration {
     (lease_duration / 3).max(Duration::from_millis(10))
 }
 
-fn retry_delay(attempt: u32) -> Duration {
-    Duration::from_secs(5_u64.saturating_mul(1_u64 << attempt.min(7)).min(600))
-}
-
 fn io_storage_error(error: std::io::Error) -> UploadError {
     UploadError::Internal(anyhow::Error::new(error).context("reading derivative"))
-}
-
-fn db_error(error: scope_postgres::error::PostgresError) -> anyhow::Error {
-    anyhow::anyhow!(error.message)
 }
 
 fn codec_user_message(kind: CodecFailureKind) -> &'static str {
@@ -809,13 +770,6 @@ async fn delete_objects(storage: &MediaStorage, objects: &[MediaObject]) {
         if let Err(error) = storage.delete_object(object).await {
             tracing::warn!(%error, "failed to discard unpublished media derivative");
         }
-    }
-}
-
-async fn wait_or_shutdown(duration: Duration) -> bool {
-    tokio::select! {
-        _ = crate::shutdown_signal() => true,
-        _ = tokio::time::sleep(duration) => false,
     }
 }
 

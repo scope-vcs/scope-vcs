@@ -313,17 +313,21 @@ export async function applyCreationOperations(operations, adapter) {
     }
     return created;
   } catch (error) {
-    for (const resource of created.reverse()) {
-      try {
-        if (resource.action === "createBucket") await adapter.deleteBucket(resource);
-        else if (resource.action === "createService") await adapter.deleteService(resource);
-        else if (resource.action === "attachBucket") await adapter.detachBucket(resource);
-        else await adapter.detachService(resource);
-      } catch (rollbackError) {
-        error.message += `; rollback failed for ${resource.name}: ${rollbackError.message}`;
-      }
-    }
+    await rollbackCreatedResources(created, adapter, error);
     throw error;
+  }
+}
+
+async function rollbackCreatedResources(created, adapter, error) {
+  for (const resource of created.reverse()) {
+    try {
+      if (resource.action === "createBucket") await adapter.deleteBucket(resource);
+      else if (resource.action === "createService") await adapter.deleteService(resource);
+      else if (resource.action === "attachBucket") await adapter.detachBucket(resource);
+      else await adapter.detachService(resource);
+    } catch (rollbackError) {
+      error.message += `; rollback failed for ${resource.name}: ${rollbackError.message}`;
+    }
   }
 }
 
@@ -522,17 +526,7 @@ async function main() {
         plan = planMediaReconcile(desired, current);
       }
     } catch (error) {
-      const adapter = liveAdapter(desired);
-      for (const resource of created.reverse()) {
-        try {
-          if (resource.action === "createBucket") await adapter.deleteBucket(resource);
-          else if (resource.action === "createService") await adapter.deleteService(resource);
-          else if (resource.action === "attachBucket") await adapter.detachBucket(resource);
-          else await adapter.detachService(resource);
-        } catch (rollbackError) {
-          error.message += `; rollback failed for ${resource.name}: ${rollbackError.message}`;
-        }
-      }
+      await rollbackCreatedResources(created, liveAdapter(desired), error);
       throw error;
     }
     if (process.argv.includes("--write-manifest") && plan.operations.length === 0 && plan.blockers.length === 0) {

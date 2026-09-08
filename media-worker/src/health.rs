@@ -135,10 +135,6 @@ impl Drop for ActivityGuard {
     }
 }
 
-pub fn spawn(health: WorkerHealth, port: u16) -> tokio::task::JoinHandle<anyhow::Result<()>> {
-    tokio::spawn(health.serve(port))
-}
-
 fn recent(value: &AtomicU64, now_unix: u64, stale_after_secs: u64) -> bool {
     let value = value.load(Ordering::Acquire);
     value > 0 && now_unix.saturating_sub(value) <= stale_after_secs

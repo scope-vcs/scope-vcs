@@ -5,13 +5,6 @@ use std::collections::BTreeSet;
 pub const REQUEST_ATTACHMENT_REFERENCE_PREFIX: &str = "/request-attachments/";
 pub const REQUEST_ATTACHMENT_ID_MAX_BYTES: usize = 128;
 
-pub fn request_attachment_reference(attachment_id: &str) -> Result<String, DomainError> {
-    validate_attachment_id(attachment_id)?;
-    Ok(format!(
-        "{REQUEST_ATTACHMENT_REFERENCE_PREFIX}{attachment_id}"
-    ))
-}
-
 /// Extracts attachment IDs from links and images recognized by CommonMark.
 pub fn request_attachment_references(markdown: &str) -> Result<BTreeSet<String>, DomainError> {
     let mut references = BTreeSet::new();

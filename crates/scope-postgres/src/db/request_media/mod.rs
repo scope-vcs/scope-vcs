@@ -13,11 +13,9 @@ pub(in crate::db) use cleanup::{tombstone_repository_attachments, tombstone_requ
 #[cfg(test)]
 mod tests;
 
-use scope_domain::requests::RequestAudience;
 use scope_domain::requests::attachments::{
-    RequestAttachment, RequestAttachmentBinding, RequestAttachmentDerivative,
-    RequestAttachmentFailure, RequestAttachmentLimits, RequestAttachmentPartReceipt,
-    RequestAttachmentTarget,
+    RequestAttachment, RequestAttachmentDerivative, RequestAttachmentFailure,
+    RequestAttachmentLimits, RequestAttachmentPartReceipt, RequestAttachmentTarget,
 };
 
 #[derive(Clone, Debug)]
@@ -76,8 +74,6 @@ pub struct FinishRequestAttachmentUploadCommand {
 pub struct AuthorizedRequestAttachment {
     pub attachment: RequestAttachment,
     pub repository_id: String,
-    pub request_audience: RequestAudience,
-    pub bindings: Vec<RequestAttachmentBinding>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

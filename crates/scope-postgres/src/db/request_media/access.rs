@@ -156,9 +156,7 @@ where
     }
     Ok(Some(AuthorizedRequestAttachment {
         repository_id: attachment.repository_id.clone(),
-        request_audience: request.audience,
         attachment,
-        bindings,
     }))
 }
 

@@ -17,30 +17,9 @@ Do not enable production media until every item below has an owner and recorded 
 - Run a restore drill from that destination and retain its manifest and verification receipt.
 - Run the capacity proof against staging, set numeric service objectives and alert thresholds
   from its receipt, and record the accepted receipt with the deployment evidence.
-- Complete the checks-image publish and digest-pin procedure below. The source image verifies
-  `ffmpeg`, `ffprobe`, `heif-convert`, and `heif-info`; the old pinned image cannot run the media
-  worker used by `cli-e2e` and `web-smoke`.
 
 The backup destination and retention policy are intentionally undecided. A production apply
 does not resolve either decision.
-
-## Publish and pin the checks image
-
-After the reviewed branch commit is pushed, use the branch-only `checksImage` dispatch. It builds
-the exact commit and publishes the GHCR, raw ECR, and SOCI ECR variants without deploying a
-production application service:
-
-```bash
-gh workflow run scope-production-deploy.yml \
-  --ref feat/request-media-attachments \
-  -f scope=checksImage
-```
-
-Download the `checks-image-<source-sha>` artifact from the successful run. Its
-`checks-image.txt` records `source_sha` and the three digest-pinned image references. Require the
-source SHA to equal the reviewed commit, then replace `.scope/runs/checks.yml` `container.image`
-with the exact `soci_ecr_image` value. Commit and push that pin, and require the normal Scope
-checks run to pass. Do not leave the old checks-image digest on the ready PR.
 
 ## Reconcile Railway
 
@@ -103,7 +82,7 @@ commit:
 ```bash
 sha="$(git rev-parse HEAD)"
 gh workflow run scope-railway-staging.yml \
-  --ref feat/request-media-attachments \
+  --ref "$(git branch --show-current)" \
   -f source_sha="$sha" \
   -f target_environment=media-proof \
   -f run_media_capacity=true
@@ -123,8 +102,7 @@ With `run_media_capacity=true`, it also creates the valid four-minute 1080p capa
 runs the concurrent capacity proof while the isolated private session exists. It uploads the
 capacity summary and every `flow-*.json` receipt in the same deployment-evidence artifact.
 
-Before these workflow changes reach `main`, do not dispatch with `--ref main`. After merge, the
-production workflow can use main's trusted orchestration with an exact candidate SHA.
+The production workflow uses main's trusted orchestration with an exact candidate SHA.
 
 ## Capacity proof
 

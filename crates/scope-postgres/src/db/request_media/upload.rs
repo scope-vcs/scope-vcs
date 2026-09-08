@@ -294,26 +294,6 @@ impl MediaStore {
         Ok(StorePartResult::Recorded)
     }
 
-    pub async fn acknowledged_upload_parts(
-        &self,
-        attachment_id: &str,
-        upload_id: &str,
-        uploader_user_id: &str,
-    ) -> Result<Vec<RequestAttachmentPartReceipt>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let attachment = lock_authorized_upload(&tx, attachment_id, uploader_user_id)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("request attachment upload not found"))?;
-        if attachment.upload_id != upload_id || attachment.uploader_user_id != uploader_user_id {
-            return Err(PostgresError::not_found(
-                "request attachment upload not found",
-            ));
-        }
-        let receipts = stored_receipts(&tx, attachment_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(receipts)
-    }
-
     pub async fn finish_request_attachment_upload(
         &self,
         command: FinishRequestAttachmentUploadCommand,

@@ -241,6 +241,7 @@ async fn request_attachment_original_grant_requires_fenced_source_validation() {
 #[tokio::test]
 async fn request_attachment_description_binding_is_atomic_and_checks_stale_text() {
     let state = fixture().await;
+    let writer_id = add_writer(&state).await;
     let prepared = prepare(&state, "bind-photo").await;
     let markdown = format!(
         "Photo: ![phone](/request-attachments/{})",
@@ -271,14 +272,16 @@ async fn request_attachment_description_binding_is_atomic_and_checks_stale_text(
     let status = response.status();
     let body = response_json(response).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let bound = state
+    let visible_to_writer = state
         .metadata
         .media()
-        .request_attachment_for_viewer("req_media", &prepared.attachment.id, Some(&test_owner_id()))
+        .request_attachment_for_viewer("req_media", &prepared.attachment.id, Some(&writer_id))
         .await
-        .unwrap()
         .unwrap();
-    assert_eq!(bound.bindings.len(), 1);
+    assert!(
+        visible_to_writer.is_some(),
+        "binding publishes the attachment to other maintainers"
+    );
 
     let stale = serde_json::json!({"description_markdown": "stale edit", "expected_description_markdown": ""}).to_string();
     let response = api_request(

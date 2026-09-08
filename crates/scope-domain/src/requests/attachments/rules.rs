@@ -504,29 +504,6 @@ pub fn validate_cleanup_lease(
     Ok(())
 }
 
-pub fn request_attachment_cleanup_reason(
-    attachment: &RequestAttachment,
-    has_binding: bool,
-    unbound_expires_at_unix: Option<u64>,
-    repository_deleted: bool,
-    now_unix: u64,
-) -> Option<super::RequestAttachmentCleanupReason> {
-    if repository_deleted {
-        return Some(super::RequestAttachmentCleanupReason::RepositoryDeleted);
-    }
-    if has_binding {
-        return None;
-    }
-    if attachment.state == RequestAttachmentState::Prepared
-        && now_unix >= attachment.upload_expires_at_unix
-    {
-        return Some(super::RequestAttachmentCleanupReason::IncompleteUploadExpired);
-    }
-    unbound_expires_at_unix
-        .filter(|expires_at| now_unix >= *expires_at)
-        .map(|_| super::RequestAttachmentCleanupReason::UnboundAttachmentExpired)
-}
-
 fn validate_processing_lease(
     attachment: &RequestAttachment,
     lease: &RequestAttachmentProcessingLease,

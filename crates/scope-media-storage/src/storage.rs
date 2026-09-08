@@ -7,7 +7,7 @@ use scope_object_store::{EncryptedObjectStore, ObjectStore};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, ops::RangeInclusive, pin::Pin, sync::Arc};
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncWrite, AsyncWriteExt},
     sync::{OwnedSemaphorePermit, Semaphore, mpsc},
 };
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
@@ -30,43 +30,19 @@ impl MediaStorage {
         encryption_key: [u8; 32],
         max_blocking_operations: usize,
     ) -> Result<Self, MediaStorageError> {
-        Self::new(
-            Arc::new(EncryptedObjectStore::new(raw_store, encryption_key)),
-            max_blocking_operations,
-        )
-    }
-
-    fn new(
-        encrypted_store: Arc<dyn ObjectStore>,
-        max_blocking_operations: usize,
-    ) -> Result<Self, MediaStorageError> {
         if max_blocking_operations == 0 {
             return Err(MediaStorageError::invalid(
                 "media blocking operation limit must be positive",
             ));
         }
         Ok(Self {
-            store: encrypted_store,
+            store: Arc::new(EncryptedObjectStore::new(raw_store, encryption_key)),
             blocking_slots: Arc::new(Semaphore::new(max_blocking_operations)),
         })
     }
 
     pub async fn readiness_check(&self) -> Result<(), MediaStorageError> {
         self.run_blocking(|store| store.readiness_check()).await
-    }
-
-    pub async fn stage_part(
-        &self,
-        attempt: &WriteAttempt,
-        part_number: u32,
-        bytes: Vec<u8>,
-    ) -> Result<StagedMediaPart, MediaStorageError> {
-        let part = self.plan_part(attempt, part_number, &bytes)?;
-        if let Err(error) = self.write_part(&part, bytes).await {
-            let _ = self.delete_object_key(&part.object_key).await;
-            return Err(error);
-        }
-        Ok(part)
     }
 
     /// Plans an immutable object key and digest before I/O. Durable workflows must inventory the
@@ -143,69 +119,6 @@ impl MediaStorage {
         };
         object.validate()?;
         Ok(object)
-    }
-
-    pub async fn upload_from_reader<R>(
-        &self,
-        attempt: &WriteAttempt,
-        content_type: impl Into<String>,
-        reader: &mut R,
-    ) -> Result<MediaObject, MediaStorageError>
-    where
-        R: AsyncRead + Unpin + Send,
-    {
-        let content_type = content_type.into();
-        let mut staged = Vec::new();
-        let result = async {
-            let mut digest = Sha256::new();
-            let mut total_bytes = 0_u64;
-            loop {
-                let mut chunk = Vec::with_capacity(MAX_CHUNK_BYTES);
-                while chunk.len() < MAX_CHUNK_BYTES {
-                    let read = (&mut *reader)
-                        .take((MAX_CHUNK_BYTES - chunk.len()) as u64)
-                        .read_to_end(&mut chunk)
-                        .await
-                        .map_err(|error| {
-                            MediaStorageError::new(
-                                MediaStorageErrorKind::ServiceUnavailable,
-                                format!("reading media input failed: {error}"),
-                            )
-                        })?;
-                    if read == 0 {
-                        break;
-                    }
-                }
-                if chunk.is_empty() {
-                    break;
-                }
-                digest.update(&chunk);
-                total_bytes = total_bytes
-                    .checked_add(chunk.len() as u64)
-                    .ok_or_else(|| MediaStorageError::invalid("media input size overflowed"))?;
-                let part_number = u32::try_from(staged.len() + 1)
-                    .map_err(|_| MediaStorageError::invalid("media input has too many parts"))?;
-                let part = self.plan_part(attempt, part_number, &chunk)?;
-                staged.push(part.clone());
-                self.write_part(&part, chunk).await?;
-            }
-            self.seal_parts(
-                content_type,
-                total_bytes,
-                &hex::encode(digest.finalize()),
-                staged.clone(),
-            )
-            .await
-        }
-        .await;
-        if result.is_err() {
-            for part in &staged {
-                if let Err(error) = self.delete_staged_part(part).await {
-                    tracing::warn!(%error, key = %part.object_key, "failed to clean staged media part");
-                }
-            }
-        }
-        result
     }
 
     pub async fn read_range(
