@@ -314,6 +314,9 @@ impl CodecPipeline {
             "file,pipe".into(),
             "-filter_threads".into(),
             self.limits.process_threads.to_string().into(),
+            // Input and output thread limits are separate FFmpeg options.
+            "-threads".into(),
+            self.limits.process_threads.to_string().into(),
             "-i".into(),
             path_arg(probe_path),
             "-map".into(),
@@ -439,6 +442,9 @@ impl CodecPipeline {
             "file,pipe".into(),
             "-filter_threads".into(),
             self.limits.process_threads.to_string().into(),
+            // Input and output thread limits are separate FFmpeg options.
+            "-threads".into(),
+            self.limits.process_threads.to_string().into(),
             "-i".into(),
             path_arg(source),
             "-map".into(),
@@ -536,6 +542,9 @@ impl CodecPipeline {
             "-protocol_whitelist".into(),
             "file,pipe".into(),
             "-filter_threads".into(),
+            self.limits.process_threads.to_string().into(),
+            // Input and output thread limits are separate FFmpeg options.
+            "-threads".into(),
             self.limits.process_threads.to_string().into(),
             "-i".into(),
             path_arg(&playback_derivative.path),
@@ -643,6 +652,8 @@ impl CodecPipeline {
                 .into(),
             "-of".into(),
             "json".into(),
+            "-threads".into(),
+            self.limits.process_threads.to_string().into(),
             path_arg(path),
         ];
         let output = self
@@ -672,6 +683,8 @@ impl CodecPipeline {
             "frame=width,height:frame_side_data=rotation".into(),
             "-of".into(),
             "json".into(),
+            "-threads".into(),
+            self.limits.process_threads.to_string().into(),
             path_arg(path),
         ];
         let output = self
@@ -701,6 +714,9 @@ impl CodecPipeline {
             "-protocol_whitelist".into(),
             "file,pipe".into(),
             "-filter_threads".into(),
+            self.limits.process_threads.to_string().into(),
+            // Input and output thread limits are separate FFmpeg options.
+            "-threads".into(),
             self.limits.process_threads.to_string().into(),
             "-i".into(),
             path_arg(path),

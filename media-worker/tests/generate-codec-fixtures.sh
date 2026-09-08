@@ -28,6 +28,15 @@ ffmpeg -hide_banner -loglevel error -y \
   -f lavfi -i "sine=frequency=880:sample_rate=48000:duration=1" \
   -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart \
   "$output_dir/fixture.mp4"
+# Exercise decoder and encoder allocations at the maximum playback resolution.
+ffmpeg -hide_banner -loglevel error -y \
+  -f lavfi -i "testsrc2=size=1920x1080:rate=30:duration=8" \
+  -f lavfi -i "sine=frequency=1000:sample_rate=48000:duration=8" \
+  -c:v libx264 -threads 2 -preset ultrafast \
+  -b:v 17M -minrate 17M -maxrate 17M -bufsize 34M \
+  -x264-params 'nal-hrd=cbr:force-cfr=1' \
+  -c:a aac -b:a 128k -shortest -movflags +faststart \
+  "$output_dir/fixture-1080p.mp4"
 ffmpeg -hide_banner -loglevel error -y \
   -i "$output_dir/fixture.mp4" -c copy "$output_dir/fixture.mov"
 ffmpeg -hide_banner -loglevel error -y \

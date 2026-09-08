@@ -11,7 +11,7 @@ if [ "${gif_frames:-0}" -le 1 ]; then
   exit 1
 fi
 
-for fixture in fixture.mp4 fixture.mov fixture.webm fixture-rotated.mov fixture-hdr.mp4; do
+for fixture in fixture.mp4 fixture-1080p.mp4 fixture.mov fixture.webm fixture-rotated.mov fixture-hdr.mp4; do
   playback="$output_dir/$fixture/video-playback.mp4"
   codecs="$(ffprobe -v error -show_entries stream=codec_name -of default=nw=1:nk=1 "$playback")"
   printf '%s\n' "$codecs" | grep -qx h264
@@ -33,5 +33,13 @@ rotated_size="$(ffprobe -v error -select_streams v:0 \
   "$output_dir/fixture-rotated.mov/video-playback.mp4")"
 if [ "$rotated_size" != 180x320 ]; then
   echo "rotated MOV playback has unexpected dimensions: $rotated_size" >&2
+  exit 1
+fi
+
+full_hd_size="$(ffprobe -v error -select_streams v:0 \
+  -show_entries stream=width,height -of csv=p=0:s=x \
+  "$output_dir/fixture-1080p.mp4/video-playback.mp4")"
+if [ "$full_hd_size" != 1920x1080 ]; then
+  echo "1080p playback has unexpected dimensions: $full_hd_size" >&2
   exit 1
 fi

@@ -21,9 +21,10 @@ COPY runner-runtime ./runner-runtime
 COPY worker ./worker
 RUN cargo test --locked --release -p scope-media-worker \
     && cargo build --locked --release -p scope-media-worker \
-    && chmod +x media-worker/tests/generate-codec-fixtures.sh media-worker/tests/assert-codec-output.sh \
+    && chmod +x media-worker/tests/*.sh \
     && media-worker/tests/generate-codec-fixtures.sh /tmp/scope-media-fixtures \
-    && target/release/scope-media-worker codec-self-test /tmp/scope-media-fixtures \
+    && SCOPE_MEDIA_FFMPEG=/scope/media-worker/tests/ffmpeg-many-cpus.sh \
+        target/release/scope-media-worker codec-self-test /tmp/scope-media-fixtures \
     && media-worker/tests/assert-codec-output.sh /tmp/scope-media-fixtures/processed
 
 FROM docker.io/library/debian:bookworm-slim@sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867
