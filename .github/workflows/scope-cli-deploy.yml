@@ -3,11 +3,18 @@ name: Scope CLI Deploy
 on:
   workflow_call:
     inputs:
+      source_sha:
+        type: string
+        default: ""
+      artifact_run_id:
+        type: string
+        default: ""
       verified_successful_sha:
         type: string
         default: ""
 
 permissions:
+  actions: read
   contents: read
   deployments: write
 
@@ -21,10 +28,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
 
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
+          run-id: ${{ inputs.artifact_run_id || github.run_id }}
+          github-token: ${{ github.token }}
           pattern: scope-*
           path: cli/dist
           merge-multiple: true
@@ -32,7 +43,9 @@ jobs:
       - name: Download service
         uses: actions/download-artifact@v8
         with:
-          name: cli-service-release-${{ github.sha }}
+          run-id: ${{ inputs.artifact_run_id || github.run_id }}
+          github-token: ${{ github.token }}
+          name: cli-service-release-${{ inputs.source_sha || github.sha }}
           path: artifacts
 
       - name: Verify artifacts and write checksums
@@ -60,6 +73,7 @@ jobs:
         shell: bash
         env:
           VERIFIED_SUCCESSFUL_SHA: ${{ inputs.verified_successful_sha }}
+          SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
         run: |
           rm -rf .railway-upload
           mkdir -p .railway-upload/cli/bin .railway-upload/cli/dist
@@ -71,8 +85,8 @@ jobs:
           install -m 0755 deploy/railway/start-prebuilt.sh .railway-upload/cli/start.sh
           cp cli/railway.json .railway-upload/railway.json
           chmod 0755 .railway-upload/cli/bin/scope-cli-service
-          printf '%s\n' "$GITHUB_SHA" > .railway-upload/cli/.scope-deployment-sha
-          if [[ "$VERIFIED_SUCCESSFUL_SHA" != "$GITHUB_SHA" ]]; then
+          printf '%s\n' "$SOURCE_SHA" > .railway-upload/cli/.scope-deployment-sha
+          if [[ "$VERIFIED_SUCCESSFUL_SHA" != "$SOURCE_SHA" ]]; then
             printf '%s:%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > .railway-upload/cli/.scope-deployment-attempt
           fi
           test -x .railway-upload/cli/bin/scope-cli-service
@@ -92,7 +106,7 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SCOPE_DEPLOYMENT_COMPONENT: cli
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
-          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ github.sha }}
+          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
           SCOPE_VERIFIED_SUCCESSFUL_SHA: ${{ inputs.verified_successful_sha }}
         run: |
           manifest=.github/deployment-services.json
