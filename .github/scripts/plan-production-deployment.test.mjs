@@ -520,6 +520,10 @@ test("service config does not override Railway scaling or restart defaults", () 
 
 test("prepared web and backend jobs cannot build after activation begins", () => {
   const preparation = readFileSync(new URL("../workflows/scope-release-prepare.yml", import.meta.url), "utf8");
+  assert.match(
+    productionWorkflow,
+    /maintenance_budget_seconds: \$\{\{ fromJSON\(format\('\{0\}', inputs\.maintenance_budget_seconds \|\| 0\)\) \}\}/,
+  );
   for (const workflow of [backendDeployWorkflow, webDeployWorkflow]) {
     assert.match(workflow, /name: prepared-release-\$\{\{ inputs\.source_sha \}\}/);
     assert.match(workflow, /SCOPE_PREPARED_RELEASE_PATH: prepared-release\.json/);
