@@ -102,7 +102,10 @@ function productionConditionContext(overrides = {}) {
   const backendSelected = overrides.backendSelected ?? false;
   return {
     cancelled: overrides.cancelled ?? false,
-    inputs: { recover_cutover_id: overrides.recoveryId ?? "" },
+    inputs: {
+      recover_cutover_id: overrides.recoveryId ?? "",
+      skip_staging_rehearsal: overrides.skipStagingRehearsal ?? false,
+    },
     github: {
       event_name: overrides.eventName ?? "push",
       ref: overrides.ref ?? "refs/heads/main",
@@ -545,6 +548,25 @@ test("application activation requires completed preparation and staging proof", 
   assert.equal(evaluateProductionCondition(productionJobCondition("backend-deploy"), productionConditionContext({
     backendSelected: true, recoveryId: "123", stagingResult: "skipped",
   })), true, "pinned recovery must not delay reopening for another staging run");
+});
+
+test("only an explicit manual rollout can omit staging while retaining preparation and validation", () => {
+  const manual = {
+    eventName: "workflow_dispatch", skipStagingRehearsal: true,
+    backendSelected: true, backendResult: "success", stagingResult: "skipped",
+  };
+  assert.equal(evaluateProductionCondition(productionJobCondition("release-staging-proof"), productionConditionContext(manual)), false);
+  for (const job of ["backend-deploy", "web-deploy"]) {
+    const condition = productionJobCondition(job);
+    assert.equal(evaluateProductionCondition(condition, productionConditionContext(manual)), true);
+    for (const overrides of [
+      { eventName: "push" }, { skipStagingRehearsal: false },
+      { preparationResult: "failure" }, { validationResult: "failure" },
+      { cancelled: true }, { ref: "refs/heads/feature" },
+    ]) {
+      assert.equal(evaluateProductionCondition(condition, productionConditionContext({ ...manual, ...overrides })), false);
+    }
+  }
 });
 
 test("Node workflows cache pnpm and browser downloads by the web lockfile", () => {
