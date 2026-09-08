@@ -34,7 +34,14 @@ export function RequestContextRail({
           className="cursor-pointer text-sm font-medium xl:hidden"
           onClick={(event) => {
             event.preventDefault()
-            if (!desktop) setMobileOpen((open) => !open)
+            if (!desktop) {
+              const details = event.currentTarget.parentElement as HTMLDetailsElement
+              const nextOpen = !details.open
+              // A native click before hydration can already have changed the DOM.
+              // Synchronize it even when React's stored preference is unchanged.
+              details.open = nextOpen
+              setMobileOpen(nextOpen)
+            }
           }}
         >
           details
