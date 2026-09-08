@@ -44,11 +44,10 @@ case "$1" in
   login)
     test "$2" = '--exchange-file'
     test -s "$3"
-    if [[ -n "${FAKE_SCOPE_SESSION_TOKEN:-}" ]]; then
-      mkdir -p "$XDG_CONFIG_HOME/scope/sessions"
-      printf '%s\n' "$FAKE_SCOPE_SESSION_TOKEN" > "$XDG_CONFIG_HOME/scope/sessions/session"
-      chmod 0600 "$XDG_CONFIG_HOME/scope/sessions/session"
-    fi
+    mkdir -p "$XDG_CONFIG_HOME/scope/sessions"
+    session_key="$(printf '%s' "$SCOPE_API_URL" | od -An -v -tx1 | tr -d ' \n')"
+    printf '%s\n' "${FAKE_SCOPE_SESSION_TOKEN:-scope_private_session_value}" > "$XDG_CONFIG_HOME/scope/sessions/cli-session-$session_key"
+    chmod 0600 "$XDG_CONFIG_HOME/scope/sessions/cli-session-$session_key"
     printf 'scope-login-file\n' >> "$TRACE_PATH"
     ;;
   clone)
@@ -76,6 +75,7 @@ if [[ "$1" = '-c' && "$3" = 'clone' ]]; then
   printf 'initial\n' > "$destination/README.md"
   printf '%s\n' "$5" > "$destination/.origin"
   printf 'git-public-clone\n' >> "$TRACE_PATH"
+  printf '%s\n' "$destination" >> "$TRACE_PATH.checkouts"
   exit 0
 fi
 test "$1" = '-C'
@@ -110,7 +110,7 @@ case "$1" in
     if [[ "${FAKE_PUBLIC_MISSING_MARKER:-0}" = 1 ]]; then
       printf 'initial\n'
     else
-      cat "$SCOPE_GIT_SMOKE_DIR/permissioned/README.md"
+      cat "$directory/../permissioned/README.md"
     fi
     ;;
   cat-file)
@@ -132,7 +132,9 @@ SCOPE_API_URL='https://api-staging.example.test' \
   GITHUB_SHA='test-sha' \
   bash "$repo_root/.github/scripts/staging-git-smoke.sh" > "$output" 2>&1
 
-test ! -e "$smoke_dir"
+test -d "$smoke_dir/config/scope/sessions"
+test ! -e "$token_path"
+test -z "$(find "$smoke_dir" -maxdepth 1 -name 'invocation.*' -print)"
 test "$(sed -n '1p' "$trace_path")" = 'curl-router'
 test "$(sed -n '2p' "$trace_path")" = 'git-public-clone'
 test "$(sed -n '3p' "$trace_path")" = 'scope-login-file'
@@ -163,11 +165,9 @@ writeFileSync(value('--output'), '{"passed":true,"loaded":{"failed_requests":0}}
 appendFileSync(process.env.TRACE_PATH, 'media-capacity\n')
 EOF
 
-capacity_dir="$test_root/capacity-smoke"
-capacity_token="$capacity_dir/exchange-token"
-mkdir -m 0700 "$capacity_dir"
-printf '%s\n' 'scope_otc_capacity_exchange' > "$capacity_token"
-chmod 0600 "$capacity_token"
+# The later workflow invocation reuses the same session after the exchange is consumed.
+capacity_dir="$smoke_dir"
+capacity_token="$token_path"
 printf 'photo' > "$test_root/photo.png"
 printf 'video' > "$test_root/video.mp4"
 FAKE_SCOPE_SESSION_TOKEN='scope_private_session_value' \
@@ -187,7 +187,11 @@ FAKE_SCOPE_SESSION_TOKEN='scope_private_session_value' \
   SCOPE_MEDIA_CAPACITY_RECEIPT="$test_root/capacity-receipt.json" \
   GITHUB_SHA='test-sha' \
   bash "$repo_root/.github/scripts/staging-git-smoke.sh" > "$test_root/capacity-output" 2>&1
-test ! -e "$capacity_dir"
+test -d "$capacity_dir/config/scope/sessions"
+test -z "$(find "$capacity_dir" -maxdepth 1 -name 'invocation.*' -print)"
+test "$(grep -c '^scope-login-file$' "$trace_path")" = 1
+test "$(sort -u "$trace_path.checkouts" | wc -l)" = 2
+while IFS= read -r checkout; do test ! -e "$checkout"; done < "$trace_path.checkouts"
 grep -Fxq 'media-smoke' "$trace_path"
 grep -Fxq 'media-capacity' "$trace_path"
 if grep -Fq 'scope_private_session_value' "$test_root/capacity-output" "$trace_path"; then
@@ -211,7 +215,8 @@ if FAKE_ROUTER_DIRECT=0 \
   exit 1
 fi
 grep -Fq 'did not serve Git discovery directly' "$test_root/redirect-output"
-test ! -e "$redirect_dir"
+test -f "$redirect_token"
+test -z "$(find "$redirect_dir" -maxdepth 1 -name 'invocation.*' -print)"
 
 for failure in stale leak permissioned marker; do
   case_dir="$test_root/$failure-smoke"
@@ -239,5 +244,68 @@ for failure in stale leak permissioned marker; do
   elif [[ "$failure" = permissioned ]]; then
     grep -Fq 'permissioned remote did not retain' "$test_root/$failure-output"
   fi
-  test ! -e "$case_dir"
+  test -d "$case_dir/config/scope/sessions"
+  test ! -e "$case_dir/exchange-token"
+  test -z "$(find "$case_dir" -maxdepth 1 -name 'invocation.*' -print)"
+done
+
+# Execute the workflow's actual final cleanup, which owns session removal.
+python3 - "$repo_root/.github/workflows/scope-railway-staging.yml" "$test_root/owner-cleanup.sh" <<'PYTHON'
+import pathlib, sys, textwrap
+workflow = pathlib.Path(sys.argv[1]).read_text()
+step = workflow.split('      - name: Remove staging Git smoke credentials\n', 1)[1].split('\n      - name:', 1)[0]
+assert 'if: always()' in step
+pathlib.Path(sys.argv[2]).write_text(textwrap.dedent(step.split('        run: |\n', 1)[1]))
+PYTHON
+RUNNER_TEMP="$test_root" SCOPE_GIT_SMOKE_DIR="$smoke_dir" bash "$test_root/owner-cleanup.sh"
+test ! -e "$smoke_dir"
+
+# Unsafe or unrelated credentials must fail before network access or ambient login.
+api_origin='https://api-staging.example.test'
+session_key="$(printf '%s' "$api_origin" | od -An -v -tx1 | tr -d ' \n')"
+ambient_config="$test_root/ambient-config"
+mkdir -p "$ambient_config/scope/sessions"
+printf 'ambient-session-do-not-use' > "$ambient_config/scope/sessions/cli-session-$session_key"
+chmod 0600 "$ambient_config/scope/sessions/cli-session-$session_key"
+for invalid in missing wrong-origin token-symlink session-symlink session-mode config-symlink root-mode; do
+  invalid_dir="$test_root/invalid-$invalid"
+  mkdir -m 0700 "$invalid_dir"
+  case "$invalid" in
+    missing) ;;
+    wrong-origin)
+      mkdir -m 0700 -p "$invalid_dir/config/scope/sessions"
+      chmod 0700 "$invalid_dir/config" "$invalid_dir/config/scope"
+      printf 'unrelated-session' > "$invalid_dir/config/scope/sessions/cli-session-deadbeef"
+      chmod 0600 "$invalid_dir/config/scope/sessions/cli-session-deadbeef"
+      ;;
+    token-symlink)
+      ln -s "$ambient_config/scope/sessions/cli-session-$session_key" "$invalid_dir/exchange-token"
+      ;;
+    session-symlink|session-mode)
+      mkdir -m 0700 -p "$invalid_dir/config/scope/sessions"
+      chmod 0700 "$invalid_dir/config" "$invalid_dir/config/scope"
+      if [[ "$invalid" == session-symlink ]]; then
+        ln -s "$ambient_config/scope/sessions/cli-session-$session_key" "$invalid_dir/config/scope/sessions/cli-session-$session_key"
+      else
+        printf 'unsafe-session' > "$invalid_dir/config/scope/sessions/cli-session-$session_key"
+        chmod 0644 "$invalid_dir/config/scope/sessions/cli-session-$session_key"
+      fi
+      ;;
+    config-symlink) ln -s "$ambient_config" "$invalid_dir/config" ;;
+    root-mode) chmod 0755 "$invalid_dir" ;;
+  esac
+  calls_before="$(wc -l < "$trace_path")"
+  if XDG_CONFIG_HOME="$ambient_config" \
+    SCOPE_API_URL="$api_origin" \
+    SCOPE_GIT_ROUTER_URL='https://router-staging.example.test' \
+    SCOPE_CLI_BINARY="$fake_bin/scope" \
+    SCOPE_EXCHANGE_TOKEN_PATH="$invalid_dir/exchange-token" \
+    SCOPE_GIT_SMOKE_DIR="$invalid_dir" \
+    bash "$repo_root/.github/scripts/staging-git-smoke.sh" > "$test_root/invalid-output" 2>&1; then
+    echo "staging Git smoke accepted $invalid credentials" >&2
+    exit 1
+  fi
+  test "$(wc -l < "$trace_path")" = "$calls_before"
+  test -z "$(find "$invalid_dir" -maxdepth 1 -name 'invocation.*' -print)"
+  test "$(cat "$ambient_config/scope/sessions/cli-session-$session_key")" = ambient-session-do-not-use
 done
