@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { retryRailway } from "./railway-retry.mjs";
+import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from "./railway-retry.mjs";
 import { readRailway } from "./railway-read.mjs";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -11,10 +11,10 @@ const mutationToken = process.env.RAILWAY_API_TOKEN || process.env.RAILWAY_TOKEN
 const railwayEnvironment = { ...process.env };
 if (process.env.RAILWAY_API_TOKEN) delete railwayEnvironment.RAILWAY_TOKEN;
 
-function railway(args, { input } = {}) {
+function railway(args, { input, timeout = RAILWAY_MUTATION_TIMEOUT_MS } = {}) {
   return execFileSync("railway", args, {
     encoding: "utf8",
-    timeout: 30_000, killSignal: "SIGKILL",
+    timeout, killSignal: "SIGKILL",
     env: railwayEnvironment,
     input,
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],

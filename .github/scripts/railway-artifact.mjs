@@ -1,4 +1,4 @@
-import { retryRailway } from './railway-retry.mjs';
+import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from './railway-retry.mjs';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -184,7 +184,7 @@ function runRailway(query, variables) {
   if (query.startsWith('query ')) return readRailway(args, { input: JSON.stringify(variables) });
   const result = JSON.parse(execFileSync('railway', args, {
     input: JSON.stringify(variables), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 30_000, killSignal: 'SIGKILL',
+    timeout: RAILWAY_MUTATION_TIMEOUT_MS, killSignal: 'SIGKILL',
   }));
   if (result.errors?.length) throw new Error('Railway GraphQL request failed.');
   return result;

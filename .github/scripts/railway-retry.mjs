@@ -1,3 +1,6 @@
+// Railway can finish activation before its API acknowledges the deployment ID.
+export const RAILWAY_MUTATION_TIMEOUT_MS = 120_000;
+
 // Call only for reads or operations that set the same desired state on every try.
 export function retryRailway(operation, {
   pause = (milliseconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds),
