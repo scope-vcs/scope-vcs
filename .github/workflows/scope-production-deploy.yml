@@ -7,6 +7,10 @@ on:
       - main
   workflow_dispatch:
     inputs:
+      skip_staging_rehearsal:
+        description: Deploy directly after validation and artifact preparation; omit the staging rehearsal
+        type: boolean
+        default: false
       maintenance_budget_seconds:
         description: Approved staging-derived outage budget; 0 prevents a new maintenance cutover
         type: number
@@ -337,6 +341,7 @@ jobs:
     needs: [plan, release-preparation]
     if: >-
       !cancelled() && inputs.recover_cutover_id == '' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.skip_staging_rehearsal == true) &&
       needs.release-preparation.result == 'success'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 60
@@ -376,7 +381,8 @@ jobs:
       !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
       needs.release-preparation.result == 'success' &&
-      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success') &&
+      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success' ||
+      (github.event_name == 'workflow_dispatch' && inputs.skip_staging_rehearsal == true)) &&
       (needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.media_worker == 'true' ||
@@ -408,7 +414,8 @@ jobs:
       !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
       needs.release-preparation.result == 'success' &&
-      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success') &&
+      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success' ||
+      (github.event_name == 'workflow_dispatch' && inputs.skip_staging_rehearsal == true)) &&
       needs.plan.outputs.web == 'true' &&
       (((needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
