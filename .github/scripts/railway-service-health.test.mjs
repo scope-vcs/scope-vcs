@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import {
   RAILWAY_CONFIG_PATHS,
@@ -189,10 +192,10 @@ test("production verification binds every live service to durable Railway eviden
       sourceSha: SOURCE_SHA,
       provider: "railway",
       evidenceId: `deployment-${component}`,
-      ...(component === "mediaWorker" ? { artifactDigest: `sha256:${"b".repeat(64)}` } : {}),
+      ...(component === "media-worker" ? { artifactDigest: `sha256:${"b".repeat(64)}` } : {}),
     };
     const service = healthyService(component);
-    if (component === "cli") service.effectiveDeploy = undefined;
+    if (component === "cli-downloads") service.effectiveDeploy = undefined;
     services.push(service);
     if (RAILWAY_CONFIG_PATHS[component]) {
       serviceConfigs[component] = { deploy: expectedDeploy };
@@ -227,4 +230,50 @@ test("production verification binds every live service to durable Railway eviden
     }),
     /web has no exact Railway deployment evidence/,
   );
+});
+
+
+test("production CLI verifies canonical receipts against the checked-in manifest and Railway status", () => {
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  const manifest = JSON.parse(readFileSync(new URL("../deployment-services.json", import.meta.url), "utf8"));
+  // Model the provider contract from the actual manifest, independently of the helper's component lists.
+  const configPaths = {
+    cache: "cache-service/railway.json", "run-worker": "worker/railway.json",
+    "git-router": "repo-router/railway.json", "media-api": "media-service/railway.json",
+    api: "api/railway.json", web: "web/railway.json",
+  };
+  const deployments = Object.fromEntries(Object.keys(manifest.services).map(component => [component, {
+    sourceSha: SOURCE_SHA, provider: "railway", evidenceId: `live-${component}`,
+    ...(component === "media-worker" ? { artifactDigest: `sha256:${"b".repeat(64)}` } : {}),
+  }]));
+  const state = { environments: { edges: [{ node: {
+    id: manifest.environments.production.environmentId, name: "production",
+    serviceInstances: { edges: Object.entries(manifest.services).map(([component, service]) => ({ node: {
+      serviceId: service.id, serviceName: service.name, numReplicas: 1,
+      activeDeployments: [{ id: deployments[component].evidenceId, status: "SUCCESS", deploymentStopped: false,
+        instances: [{ status: "RUNNING" }], meta: { serviceManifest: { deploy: {
+          ...(configPaths[component] ? JSON.parse(readFileSync(`${root}${configPaths[component]}`, "utf8")).deploy : {}),
+          numReplicas: 1, multiRegionConfig: { test: { numReplicas: 1 } },
+        } } },
+      }],
+    } })) },
+  } }] } };
+  const run = () => spawnSync(process.execPath, [fileURLToPath(new URL("./railway-service-health.mjs", import.meta.url))], {
+    cwd: root, encoding: "utf8", env: { ...process.env,
+      SCOPE_RAILWAY_SERVICES_JSON: JSON.stringify(state),
+      SCOPE_DEPLOYMENT_MANIFEST_JSON: JSON.stringify(manifest),
+      SCOPE_PRODUCTION_DEPLOYMENTS_JSON: JSON.stringify(deployments),
+    },
+  });
+  const success = run();
+  assert.equal(success.status, 0, success.stderr);
+  assert.deepEqual(JSON.parse(success.stdout).map(({ component }) => component).sort(), Object.keys(manifest.services).sort());
+  delete deployments["media-worker"].artifactDigest;
+  const missingDigest = run();
+  assert.equal(missingDigest.status, 1);
+  assert.match(missingDigest.stderr, /media-worker has no exact OCI artifact evidence/);
+  deployments["media-worker"].artifactDigest = "sha256:invalid";
+  const invalidDigest = run();
+  assert.equal(invalidDigest.status, 1);
+  assert.match(invalidDigest.stderr, /media-worker has no exact OCI artifact evidence/);
 });
