@@ -121,7 +121,7 @@ test("constructs and verifies the real public release requests", async (t) => {
   }
 });
 
-test("reads the homepage without a browser handshake and still rejects redirects", async (t) => {
+test("reads the current homepage without a browser handshake and still rejects redirects", async (t) => {
   let redirectPage = false;
   const web = await listen((request, response) => {
     if (request.headers.accept?.includes("text/html") || redirectPage) {
@@ -507,7 +507,7 @@ function readiness(service, checks = []) {
 }
 
 function homepage() {
-  return "<!doctype html><title>Scope</title><h1>One repository. Public and private.</h1>";
+  return "<!doctype html><title>Scope</title><h1>One repository. <span>You choose</span> what’s public.</h1>";
 }
 
 function html(response, body) {
