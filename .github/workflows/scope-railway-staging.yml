@@ -54,7 +54,7 @@ jobs:
     name: Build candidate before closing staging
     permissions:
       contents: read
-    if: inputs.prepared_run_id == '' && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha)
+    if: github.ref == 'refs/heads/main' || inputs.source_sha == github.sha
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 45
     steps:
@@ -87,16 +87,20 @@ jobs:
       - name: Build deployment and smoke binaries
         env:
           SCOPE_BUILD_SHA: ${{ inputs.source_sha }}
+          USE_PREPARED_IMAGES: ${{ inputs.prepared_run_id != '' && '1' || '0' }}
         run: |
           mkdir -p artifacts/backend artifacts/commands
-          cargo build --release --locked -p api --bin scope-maintenance --bin api
-          cargo build --release --locked -p scope-cache-service -p worker -p scope-repo-router -p scope-media-service
+          cargo build --release --locked -p api --bin scope-maintenance
           install -m 0755 target/release/scope-maintenance artifacts/backend/scope-maintenance
-          install -m 0755 target/release/api artifacts/backend/scope-vcs
-          install -m 0755 target/release/scope-cache-service artifacts/backend/scope-cache-service
-          install -m 0755 target/release/worker artifacts/backend/scope-worker
-          install -m 0755 target/release/scope-repo-router artifacts/backend/scope-repo-router
-          install -m 0755 target/release/scope-media-service artifacts/backend/scope-media-service
+          if [[ "$USE_PREPARED_IMAGES" == 0 ]]; then
+            cargo build --release --locked -p api --bin api
+            cargo build --release --locked -p scope-cache-service -p worker -p scope-repo-router -p scope-media-service
+            install -m 0755 target/release/api artifacts/backend/scope-vcs
+            install -m 0755 target/release/scope-cache-service artifacts/backend/scope-cache-service
+            install -m 0755 target/release/worker artifacts/backend/scope-worker
+            install -m 0755 target/release/scope-repo-router artifacts/backend/scope-repo-router
+            install -m 0755 target/release/scope-media-service artifacts/backend/scope-media-service
+          fi
           cp LICENSE NOTICE legal/third-party-rust.txt artifacts/backend/
           cargo build --release --locked -p api --bin scope-smoke-seed --features smoke-seed
           cargo build --release --locked --manifest-path cli/Cargo.toml --bin scope
@@ -106,11 +110,13 @@ jobs:
           tar -czf artifacts/staging-commands.tar.gz -C artifacts/commands .
 
       - name: Enable pnpm
+        if: inputs.prepared_run_id == ''
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           version: 11.1.0
 
       - name: Install Node
+        if: inputs.prepared_run_id == ''
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
@@ -118,6 +124,7 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Build web artifact
+        if: inputs.prepared_run_id == ''
         env:
           VITE_SCOPE_WEB_FORCE_SIGNED_OUT: '1'
           VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
@@ -136,6 +143,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload web build
+        if: inputs.prepared_run_id == ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: web-release-${{ inputs.source_sha }}
@@ -158,7 +166,8 @@ jobs:
       packages: write
     needs: [prepare, media-worker-image]
     if: >-
-      !cancelled() && needs.prepare.result == 'success' && needs.media-worker-image.result == 'success'
+      !cancelled() && inputs.prepared_run_id == '' &&
+      needs.prepare.result == 'success' && needs.media-worker-image.result == 'success'
     uses: ./.github/workflows/scope-release-prepare.yml
     with:
       source_sha: ${{ inputs.source_sha }}
@@ -172,7 +181,8 @@ jobs:
     name: Deploy and smoke staging
     needs: [prepare, prepare-images, media-worker-image]
     if: >-
-      !cancelled() && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha) &&
+      !cancelled() && needs.prepare.result == 'success' &&
+      (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha) &&
       ((inputs.prepared_run_id == '' && needs.prepare-images.result == 'success') || inputs.prepared_run_id != '')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 90
@@ -231,7 +241,6 @@ jobs:
           node .github/scripts/railway-artifact.mjs configure-staging-registry
 
       - name: Close staging writers
-        if: inputs.prepared_run_id == ''
         shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
@@ -260,7 +269,6 @@ jobs:
           node-version: 24
 
       - name: Download prepared candidate artifacts
-        if: inputs.prepared_run_id == ''
         uses: actions/download-artifact@v8
         with:
           pattern: '*-${{ inputs.source_sha }}'
@@ -283,7 +291,6 @@ jobs:
           echo "SCOPE_MEDIA_WORKER_IMAGE=$(jq -er '.components.mediaWorker.image' artifacts/prepared-release.json)" >> "$GITHUB_ENV"
 
       - name: Extract candidate commands
-        if: inputs.prepared_run_id == ''
         run: |
           mkdir -p candidate/target/release candidate/cli/target/release
           tar -xzf artifacts/backend-release.tar.gz -C candidate/target/release
@@ -291,7 +298,6 @@ jobs:
           install -m 0755 candidate/target/release/scope candidate/cli/target/release/scope
 
       - name: Migrate, seed, and deploy staging services
-        if: inputs.prepared_run_id == ''
         working-directory: candidate
         shell: bash
         env:
@@ -307,7 +313,6 @@ jobs:
             cache-service worker api repo-router media
 
       - name: Deploy staging web and record evidence
-        if: inputs.prepared_run_id == ''
         working-directory: candidate
         shell: bash
         env:
@@ -333,7 +338,6 @@ jobs:
         env:
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
           SCOPE_REHEARSAL_EVIDENCE_DIR: ${{ github.workspace }}/release-rehearsal
-          SCOPE_REHEARSAL_IMPORTED: ${{ inputs.prepared_run_id != '' && '1' || '0' }}
         run: node .github/scripts/rehearse-release.mjs
 
       - name: Run browser smoke against staging
@@ -474,7 +478,7 @@ jobs:
       # A failed migration or partial rollout may be incompatible with the old writers.
       # Keep staging fail-closed for diagnosis instead of automatically reviving them.
       - name: Keep staging writers fenced after unsuccessful proof
-        if: inputs.prepared_run_id == '' && needs.prove.result != 'success' && needs.prove.result != 'skipped' && steps.target.outcome == 'success'
+        if: needs.prove.result != 'success' && needs.prove.result != 'skipped' && steps.target.outcome == 'success'
         shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}

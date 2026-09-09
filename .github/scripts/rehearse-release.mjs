@@ -57,7 +57,6 @@ async function main() {
   assert.equal(prepared.sourceSha, sourceSha, 'Prepared images must match the requested revision');
   const components = deploymentOrder.filter((component) => prepared.components?.[component]);
   assert(components.length > 0, 'Prepared release has no staging application components');
-  const provesActivity = process.env.SCOPE_REHEARSAL_IMPORTED !== '1';
   const scope = ['--project', railway.projectId, '--environment', railway.staging.environmentId];
   const query = async (...args) => readRailway([...args, ...scope, '--json']);
   verifyStagingTarget({ manifest, status: await query('status'), services: await query('service', 'list') });
@@ -101,7 +100,7 @@ async function main() {
   const browser = processTask(process.execPath, ['web/smoke/release-transition.mjs',
     '--base-url', env.SCOPE_WEB_BASE_URL, '--require-sse-reconnect', String(components.includes('api')), '--repo', 'dev/update-demo', '--ready-file', readyPath, '--activation-file', activationPath, '--transition-file', teardownPath,
     '--summary', resolve(directory, 'browser-summary.json'),
-    ...(rotation === 3 && provesActivity ? [
+    ...(rotation === 3 ? [
       '--expected-activity-file', activityPath,
       '--update-ready-file', updateReadyPath,
     ] : [])], env);
@@ -153,7 +152,7 @@ async function main() {
       await delay(5000);
     }
     await writeFile(teardownPath, new Date().toISOString());
-    if (rotation === 3 && provesActivity) {
+    if (rotation === 3) {
       await waitForFile(updateReadyPath, browser);
       await processTask('bash', ['.github/scripts/staging-git-smoke.sh'], {
         ...env,
