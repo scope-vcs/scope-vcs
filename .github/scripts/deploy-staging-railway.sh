@@ -7,6 +7,9 @@ manifest_path="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 maintenance_binary="${SCOPE_MAINTENANCE_BINARY:-./target/release/scope-maintenance}"
 seed_binary="${SCOPE_SMOKE_SEED_BINARY:-./target/release/scope-smoke-seed}"
 evidence_path="${SCOPE_STAGING_EVIDENCE_PATH:-staging-deployments.json}"
+# The candidate checkout owns deployment identity even when the workflow runs from main.
+SCOPE_DEPLOYMENT_SOURCE_SHA="$(git rev-parse --verify HEAD)"
+export SCOPE_DEPLOYMENT_SOURCE_SHA
 
 if [[ -z "${RAILWAY_TOKEN:-}" || -n "${RAILWAY_API_TOKEN:-}" ]]; then
   echo "Staging deployment requires only a staging-scoped RAILWAY_TOKEN." >&2
@@ -85,7 +88,7 @@ fi
 
 export RAILWAY_PROJECT_ID="$project_id"
 export SCOPE_RAILWAY_ENVIRONMENT_ID="$staging_environment_id"
-export RAILWAY_DEPLOY_MESSAGE="Staging ${GITHUB_SHA:-candidate}"
+export RAILWAY_DEPLOY_MESSAGE="Staging $SCOPE_DEPLOYMENT_SOURCE_SHA"
 
 assert_writer_state() {
   local expected_running="$1"
@@ -180,7 +183,6 @@ case "$action" in
     SCOPE_DEPLOYMENT_COMPONENT=worker bash .github/scripts/deploy-railway.sh "$worker_service" "$2"
     SCOPE_DEPLOYMENT_COMPONENT=media bash .github/scripts/deploy-railway.sh "$media_service" "$5"
     SCOPE_DEPLOYMENT_COMPONENT=mediaWorker \
-      SCOPE_DEPLOYMENT_SOURCE_SHA="${GITHUB_SHA:-}" \
       SCOPE_DEPLOYMENT_EVIDENCE_PATH=.staging-media-worker.ndjson \
       node .github/scripts/deploy-railway-image.mjs "$media_worker_service" "$media_worker_image"
     SCOPE_DEPLOYMENT_COMPONENT=api bash .github/scripts/deploy-railway.sh "$api_service" "$3"
@@ -199,7 +201,7 @@ case "$action" in
       record_deployment "$service" >> "$evidence_lines"
     done
     jq -s \
-      --arg commit "${GITHUB_SHA:-unknown}" \
+      --arg commit "$SCOPE_DEPLOYMENT_SOURCE_SHA" \
       --arg environmentId "$staging_environment_id" \
       --arg workerImage "$media_worker_image" \
       '{commit: $commit, environmentId: $environmentId, workerImage: $workerImage, deployments: .}' \

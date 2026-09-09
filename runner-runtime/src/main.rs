@@ -76,6 +76,6 @@ fn setup(
     let workspace = work.join("workspace");
     checkout::checkout_exact_commit(&bundle, &workspace, &claim.job.git_oid)?;
     std::env::set_current_dir(&workspace).context("enter run workspace")?;
-    let caches = cache::restore::prepare_caches(client, &claim.job, definition)?;
+    let caches = cache::restore::prepare_caches(client, &claim.job, definition, &workspace)?;
     Ok((workspace, caches))
 }

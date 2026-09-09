@@ -5,7 +5,7 @@ on:
     branches:
       - main
 container:
-  image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:93db408cc8496c2a1f980e7dac6c073c24c54cc64cbdeef776e48767a7b3c405
+  image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:49b9de10106e28db1187a3f0d755c0329b45d22ac16705fa901669b6a36355c1
 timeout: 60m
 caches: []
 env:
@@ -69,7 +69,7 @@ jobs:
       - name: Check Rust workspace
         run: |
           service postgresql start
-          su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN PASSWORD 'scope'\""
+          su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN CREATEDB PASSWORD 'scope'\""
           su postgres -c "createdb --owner=scope scope_test"
           ./dev/checks/backend with-api
   cli-checks:
