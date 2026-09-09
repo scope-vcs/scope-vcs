@@ -113,7 +113,7 @@ function runStep(name, cwd, env) {
   assert.equal(result.status, 0, result.stderr);
 }
 
-test('imported releases extract smoke tools and initialize credentials without backend archives', (t) => {
+test('imported releases extract smoke tools and initialize private credentials', (t) => {
   const { root, env } = fixture(t);
   mkdirSync(join(root, 'artifacts/commands'), { recursive: true });
   for (const name of ['scope', 'scope-smoke-seed']) {
@@ -121,17 +121,20 @@ test('imported releases extract smoke tools and initialize credentials without b
   }
   const packed = spawnSync('tar', ['-czf', 'artifacts/staging-commands.tar.gz', '-C', 'artifacts/commands', '.'], { cwd: root });
   assert.equal(packed.status, 0);
+  mkdirSync(join(root, 'artifacts/backend'));
+  writeFileSync(join(root, 'artifacts/backend/scope-maintenance'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  assert.equal(spawnSync('tar', ['-czf', 'artifacts/backend-release.tar.gz', '-C', 'artifacts/backend', '.'], { cwd: root }).status, 0);
   env.GITHUB_ENV = join(root, 'github-env');
   env.RUNNER_TEMP = root;
-  runStep('Extract smoke tools', root, env);
+  runStep('Extract candidate commands', root, env);
   runStep('Initialize smoke credentials directory', root, env);
   const emitted = Object.fromEntries(readFileSync(env.GITHUB_ENV, 'utf8').trim().split('\n').map((line) => line.split('=')));
   assert.equal(statSync(join(root, 'candidate/cli/target/release/scope')).mode & 0o111, 0o111);
   assert.equal(statSync(join(root, 'candidate/target/release/scope-smoke-seed')).mode & 0o111, 0o111);
   assert.equal(statSync(emitted.SCOPE_GIT_SMOKE_DIR).mode & 0o777, 0o700);
   assert.equal(emitted.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH, join(emitted.SCOPE_GIT_SMOKE_DIR, 'exchange-token'));
-  for (const name of ['Build smoke tools', 'Upload staging commands', 'Extract smoke tools', 'Initialize smoke credentials directory']) {
+  for (const name of ['Build deployment and smoke binaries', 'Upload staging commands', 'Extract candidate commands', 'Initialize smoke credentials directory']) {
     assert.doesNotMatch(workflowStep(name), /\n        if:/);
   }
-  assert.match(workflowStep('Issue smoke login for imported release'), /staging-smoke-seed\.sh grant/);
+  assert.match(workflowStep('Issue smoke login for partial release'), /staging-smoke-seed\.sh grant/);
 });

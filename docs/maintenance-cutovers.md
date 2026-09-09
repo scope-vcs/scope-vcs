@@ -94,10 +94,10 @@ pushes a fixture update and waits for that update to appear without a refresh.
 Production uses the public `adamblumoff/pagent` README fixture; staging uses the
 seeded `dev/update-demo` repository.
 
-An imported production manifest requires healthy, seeded staging with the
-candidate schema already applied. For a migration candidate, run the full
-staging rehearsal first, then import the exact production artifacts. Imported
-proof does not silently migrate the shared staging database. Agree the production
+A complete application manifest fences writers, migrates, and resets release-proof
+fixtures before rehearsal. A partial manifest requires healthy, seeded release-proof
+with the candidate schema already applied. For a migration candidate with a partial
+manifest, run the full staging rehearsal first, then import the production artifacts. Agree the production
 outage budget from the maintenance exercise and supply
 `maintenance_budget_seconds`; its default of zero prevents a new maintenance
 cutover while ordinary releases continue to work.
@@ -167,8 +167,9 @@ Prepared application artifacts pass through Railway `release-proof` before produ
 There is no normal-release bypass. Interrupted cutover recovery reuses its pinned
 artifacts without repeating the rehearsal so production can reopen. The prepared
 release workflow requires a successful release-proof job from the source run.
-Imported releases build the smoke tools and issue a fresh test login without
-resetting the existing catalog or rebuilding the application images. Web-only
+Imported releases build the smoke tools without rebuilding application images.
+Complete manifests initialize fixtures; partial manifests issue a fresh test login
+without resetting the existing catalog or stopping unchanged backend services. Web-only
 releases use the same gate; a CLI release included with application changes waits
 for it too. CLI-only releases keep their build and distribution checks.
 

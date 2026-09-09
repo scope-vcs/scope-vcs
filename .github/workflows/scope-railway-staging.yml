@@ -51,7 +51,7 @@ jobs:
     if: inputs.prepared_run_id == '' && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha)
 
   prepare:
-    name: Build smoke tools and candidate artifacts
+    name: Build candidate before closing staging
     permissions:
       contents: read
     if: github.ref == 'refs/heads/main' || inputs.source_sha == github.sha
@@ -84,32 +84,29 @@ jobs:
             . -> target
             cli -> target
 
-      - name: Build deployment binaries
-        if: inputs.prepared_run_id == ''
+      - name: Build deployment and smoke binaries
         env:
           SCOPE_BUILD_SHA: ${{ inputs.source_sha }}
+          USE_PREPARED_IMAGES: ${{ inputs.prepared_run_id != '' && '1' || '0' }}
         run: |
           mkdir -p artifacts/backend artifacts/commands
-          cargo build --release --locked -p api --bin scope-maintenance --bin api
-          cargo build --release --locked -p scope-cache-service -p worker -p scope-repo-router -p scope-media-service
+          cargo build --release --locked -p api --bin scope-maintenance
           install -m 0755 target/release/scope-maintenance artifacts/backend/scope-maintenance
-          install -m 0755 target/release/api artifacts/backend/scope-vcs
-          install -m 0755 target/release/scope-cache-service artifacts/backend/scope-cache-service
-          install -m 0755 target/release/worker artifacts/backend/scope-worker
-          install -m 0755 target/release/scope-repo-router artifacts/backend/scope-repo-router
-          install -m 0755 target/release/scope-media-service artifacts/backend/scope-media-service
+          if [[ "$USE_PREPARED_IMAGES" == 0 ]]; then
+            cargo build --release --locked -p api --bin api
+            cargo build --release --locked -p scope-cache-service -p worker -p scope-repo-router -p scope-media-service
+            install -m 0755 target/release/api artifacts/backend/scope-vcs
+            install -m 0755 target/release/scope-cache-service artifacts/backend/scope-cache-service
+            install -m 0755 target/release/worker artifacts/backend/scope-worker
+            install -m 0755 target/release/scope-repo-router artifacts/backend/scope-repo-router
+            install -m 0755 target/release/scope-media-service artifacts/backend/scope-media-service
+          fi
           cp LICENSE NOTICE legal/third-party-rust.txt artifacts/backend/
-          tar -czf artifacts/backend-release.tar.gz -C artifacts/backend .
-
-      - name: Build smoke tools
-        env:
-          SCOPE_BUILD_SHA: ${{ inputs.source_sha }}
-        run: |
-          mkdir -p artifacts/commands
           cargo build --release --locked -p api --bin scope-smoke-seed --features smoke-seed
           cargo build --release --locked --manifest-path cli/Cargo.toml --bin scope
           install -m 0755 target/release/scope-smoke-seed artifacts/commands/scope-smoke-seed
           install -m 0755 cli/target/release/scope artifacts/commands/scope
+          tar -czf artifacts/backend-release.tar.gz -C artifacts/backend .
           tar -czf artifacts/staging-commands.tar.gz -C artifacts/commands .
 
       - name: Enable pnpm
@@ -139,7 +136,6 @@ jobs:
           tar -czf ../artifacts/web-release.tar.gz .output
 
       - name: Upload backend binaries
-        if: inputs.prepared_run_id == ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: backend-release-${{ inputs.source_sha }}
@@ -170,7 +166,8 @@ jobs:
       packages: write
     needs: [prepare, media-worker-image]
     if: >-
-      !cancelled() && needs.prepare.result == 'success' && needs.media-worker-image.result == 'success'
+      !cancelled() && inputs.prepared_run_id == '' &&
+      needs.prepare.result == 'success' && needs.media-worker-image.result == 'success'
     uses: ./.github/workflows/scope-release-prepare.yml
     with:
       source_sha: ${{ inputs.source_sha }}
@@ -184,11 +181,13 @@ jobs:
     name: Deploy and smoke staging
     needs: [prepare, prepare-images, media-worker-image]
     if: >-
-      !cancelled() && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha) &&
-      needs.prepare.result == 'success' &&
+      !cancelled() && needs.prepare.result == 'success' &&
+      (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha) &&
       ((inputs.prepared_run_id == '' && needs.prepare-images.result == 'success') || inputs.prepared_run_id != '')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 90
+    outputs:
+      writers_fenced: ${{ steps.fence.outcome == 'success' }}
     # Reuse the protected staging credential boundary for all reviewed non-production targets.
     environment: staging
     env:
@@ -243,8 +242,34 @@ jobs:
           unset RAILWAY_TOKEN
           node .github/scripts/railway-artifact.mjs configure-staging-registry
 
+      - name: Download prepared candidate artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '*-${{ inputs.source_sha }}'
+          path: artifacts
+          merge-multiple: true
+
+      - name: Download exact production images
+        if: inputs.prepared_run_id != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: prepared-release-${{ inputs.source_sha }}
+          path: artifacts
+          run-id: ${{ inputs.prepared_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Export release paths
+        id: release
+        run: |
+          initialize_fixtures="$(jq -r '[.components | has("api"), has("worker"), has("cache"), has("router"), has("media"), has("mediaWorker"), has("web")] | all' artifacts/prepared-release.json)"
+          echo "initialize_fixtures=$initialize_fixtures" >> "$GITHUB_OUTPUT"
+          echo "SCOPE_PREPARED_RELEASE_PATH=$GITHUB_WORKSPACE/artifacts/prepared-release.json" >> "$GITHUB_ENV"
+          echo "SCOPE_DEPLOYMENT_MANIFEST=$GITHUB_WORKSPACE/.github/deployment-services.json" >> "$GITHUB_ENV"
+          echo "SCOPE_MEDIA_WORKER_IMAGE=$(jq -r '.components.mediaWorker.image // empty' artifacts/prepared-release.json)" >> "$GITHUB_ENV"
+
       - name: Close staging writers
-        if: inputs.prepared_run_id == ''
+        if: steps.release.outputs.initialize_fixtures == 'true'
+        id: fence
         shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
@@ -272,45 +297,12 @@ jobs:
         with:
           node-version: 24
 
-      - name: Download prepared candidate artifacts
-        if: inputs.prepared_run_id == ''
-        uses: actions/download-artifact@v8
-        with:
-          pattern: '*-${{ inputs.source_sha }}'
-          path: artifacts
-          merge-multiple: true
-
-      - name: Download smoke tools for imported release
-        if: inputs.prepared_run_id != ''
-        uses: actions/download-artifact@v8
-        with:
-          name: staging-commands-${{ inputs.source_sha }}
-          path: artifacts
-
-      - name: Download exact production images
-        if: inputs.prepared_run_id != ''
-        uses: actions/download-artifact@v8
-        with:
-          name: prepared-release-${{ inputs.source_sha }}
-          path: artifacts
-          run-id: ${{ inputs.prepared_run_id }}
-          github-token: ${{ github.token }}
-
-      - name: Export release paths
-        run: |
-          echo "SCOPE_PREPARED_RELEASE_PATH=$GITHUB_WORKSPACE/artifacts/prepared-release.json" >> "$GITHUB_ENV"
-          echo "SCOPE_DEPLOYMENT_MANIFEST=$GITHUB_WORKSPACE/.github/deployment-services.json" >> "$GITHUB_ENV"
-          echo "SCOPE_MEDIA_WORKER_IMAGE=$(jq -r '.components.mediaWorker.image // empty' artifacts/prepared-release.json)" >> "$GITHUB_ENV"
-
-      - name: Extract smoke tools
+      - name: Extract candidate commands
         run: |
           mkdir -p candidate/target/release candidate/cli/target/release
+          tar -xzf artifacts/backend-release.tar.gz -C candidate/target/release
           tar -xzf artifacts/staging-commands.tar.gz -C candidate/target/release
           install -m 0755 candidate/target/release/scope candidate/cli/target/release/scope
-
-      - name: Extract candidate backend binaries
-        if: inputs.prepared_run_id == ''
-        run: tar -xzf artifacts/backend-release.tar.gz -C candidate/target/release
 
       - name: Initialize smoke credentials directory
         shell: bash
@@ -321,7 +313,7 @@ jobs:
           echo "SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH=$smoke_dir/exchange-token" >> "$GITHUB_ENV"
 
       - name: Migrate, seed, and deploy staging services
-        if: inputs.prepared_run_id == ''
+        if: steps.release.outputs.initialize_fixtures == 'true'
         working-directory: candidate
         shell: bash
         env:
@@ -333,7 +325,7 @@ jobs:
             cache-service worker api repo-router media
 
       - name: Deploy staging web and record evidence
-        if: inputs.prepared_run_id == ''
+        if: steps.release.outputs.initialize_fixtures == 'true'
         working-directory: candidate
         shell: bash
         env:
@@ -354,8 +346,8 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium
 
-      - name: Issue smoke login for imported release
-        if: inputs.prepared_run_id != ''
+      - name: Issue smoke login for partial release
+        if: steps.release.outputs.initialize_fixtures != 'true'
         working-directory: candidate
         env:
           SCOPE_SMOKE_SEED_BINARY: ./target/release/scope-smoke-seed
@@ -507,7 +499,7 @@ jobs:
       # A failed migration or partial rollout may be incompatible with the old writers.
       # Keep staging fail-closed for diagnosis instead of automatically reviving them.
       - name: Keep staging writers fenced after unsuccessful proof
-        if: inputs.prepared_run_id == '' && needs.prove.result != 'success' && needs.prove.result != 'skipped' && steps.target.outcome == 'success'
+        if: needs.prove.outputs.writers_fenced == 'true' && needs.prove.result != 'success' && needs.prove.result != 'skipped' && steps.target.outcome == 'success'
         shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
