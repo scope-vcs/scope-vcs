@@ -10,10 +10,7 @@ export function parseAvailabilityConfig(value) {
   const apiOrigin = parseOrigin(value.apiOrigin, "apiOrigin");
   const release = parseRelease(value.release);
   const fixture = parseFixture(value.fixture);
-  if (value.intervalMs !== undefined && value.intervalMs !== 1_000) {
-    throw new Error("intervalMs must be 1000 so release samples remain comparable");
-  }
-  const intervalMs = 1_000;
+  const intervalMs = optionalInteger(value.intervalMs, "intervalMs", 1_000, 1_000, 60_000);
   const requestTimeoutMs = optionalInteger(
     value.requestTimeoutMs,
     "requestTimeoutMs",
@@ -119,6 +116,7 @@ export class AvailabilityEvidence {
     this.requests = 0;
     this.failures = [];
     this.targets = new Map();
+    this.latestTargetSamples = new Map();
     this.maintenanceWindow = null;
     this.deploymentObservations = [];
   }
@@ -143,6 +141,9 @@ export class AvailabilityEvidence {
 
   record(event) {
     this.requests += 1;
+    const sampledAt = event.startedAt ?? event.at;
+    const previous = this.latestTargetSamples.get(event.target);
+    if (!previous || sampledAt > previous) this.latestTargetSamples.set(event.target, sampledAt);
     const totals = this.targets.get(event.target) ?? { failures: 0, requests: 0 };
     totals.requests += 1;
     if (!event.ok) {
@@ -161,25 +162,37 @@ export class AvailabilityEvidence {
     const outsideWindowFailures = failures.filter(({ phase }) => phase !== "maintenance");
     const maintenanceFailures = failures.filter(({ phase }) => phase === "maintenance");
     const violations = [];
-    if (this.config.mode === "ordinary" && failures.length > 0) {
-      violations.push(`${failures.length} finite requests failed during an ordinary release`);
+    const warnings = [];
+    // Regular releases measure the activation, but only gate on recovery observation.
+    // Dedicated transition tests omit this marker and retain strict availability checks.
+    const gatingFailures = this.config.release.observationStartFile
+      ? failures.filter(({ startedAt, at }) => this.observationStartedAt && (startedAt ?? at) >= this.observationStartedAt)
+      : failures;
+    const gatingOutsideWindowFailures = gatingFailures.filter(({ phase }) => phase !== "maintenance");
+    if (this.config.release.observationStartFile && !this.observationStartedAt) {
+      violations.push("post-release observation did not start");
+    }
+    if (this.observationStartedAt) {
+      for (const { name } of availabilityTargets(this.config)) {
+        if ((this.latestTargetSamples.get(name) ?? "") < this.observationStartedAt) {
+          violations.push(`no recovery observation for ${name}`);
+        }
+      }
+    }
+    if (this.config.mode === "ordinary" && gatingFailures.length > 0) {
+      violations.push(`${gatingFailures.length} finite requests failed during an ordinary release`);
     }
     if (this.config.mode === "maintenance") {
       if (window && !window.endedAt) violations.push("maintenance window was not closed");
       if (window?.endedAt && Date.parse(window.endedAt) < Date.parse(window.startedAt)) {
         violations.push("maintenance window ended before it started");
       }
-      if (outsideWindowFailures.length > 0) {
-        violations.push(`${outsideWindowFailures.length} finite requests failed outside maintenance`);
+      if (gatingOutsideWindowFailures.length > 0) {
+        violations.push(`${gatingOutsideWindowFailures.length} finite requests failed outside maintenance`);
       }
-      if (maintenanceFailures.length > this.config.maintenance.maxFailedRequests) {
-        violations.push(
-          `${maintenanceFailures.length} maintenance failures exceeded budget ${this.config.maintenance.maxFailedRequests}`,
-        );
-      }
-      if (window && window.durationMs > this.config.maintenance.maxDurationMs) {
-        violations.push(
-          `maintenance duration ${window.durationMs}ms exceeded budget ${this.config.maintenance.maxDurationMs}ms`,
+      if (window && window.durationMs > this.config.maintenance.warningAfterMs) {
+        warnings.push(
+          `maintenance duration ${window.durationMs}ms exceeded warning threshold ${this.config.maintenance.warningAfterMs}ms`,
         );
       }
     }
@@ -201,11 +214,15 @@ export class AvailabilityEvidence {
       stoppedAt,
       targets: Object.fromEntries(this.targets),
       violations,
+      warnings,
     };
   }
 }
 
 export async function readMaintenanceMarkers(config, evidence) {
+  if (config.release.observationStartFile) {
+    evidence.observationStartedAt = await markerTimestamp(config.release.observationStartFile);
+  }
   if (config.mode !== "maintenance") return;
   const start = await markerTimestamp(config.maintenance.startFile);
   if (start) evidence.openMaintenance(start);
@@ -223,7 +240,7 @@ export async function readDeploymentIds(release) {
     throw new Error("release deployment evidence is not valid JSON");
   }
   if (!isObject(value)) throw new Error("release deployment evidence must be an object");
-  const allowed = new Set(["api", "cache", "cli", "media", "mediaWorker", "router", "web", "worker"]);
+  const allowed = new Set(["api", "cache", "cli-downloads", "media-api", "media-worker", "git-router", "web", "run-worker"]);
   const entries = Object.entries(value);
   if (entries.length === 0) throw new Error("release deployment evidence must not be empty");
   for (const [component, deploymentId] of entries) {
@@ -382,8 +399,7 @@ function maintenanceWindowSummary(config, window, stoppedAt) {
   return {
     durationMs: Math.max(0, Date.parse(end) - Date.parse(window.startedAt)),
     endedAt: window.endedAt,
-    maxDurationMs: config.maintenance.maxDurationMs,
-    maxFailedRequests: config.maintenance.maxFailedRequests,
+    warningAfterMs: config.maintenance.warningAfterMs,
     startedAt: window.startedAt,
   };
 }
@@ -429,6 +445,9 @@ function parseRelease(value) {
   }
   return {
     attemptId: requiredString(value.attemptId, "release.attemptId"),
+    observationStartFile: value.observationStartFile === undefined
+      ? undefined
+      : requiredAbsolutePath(value.observationStartFile, "release.observationStartFile"),
     deploymentsFile: value.deploymentsFile === undefined
       ? undefined
       : requiredAbsolutePath(value.deploymentsFile, "release.deploymentsFile"),
@@ -454,20 +473,7 @@ function parseMaintenance(value) {
   if (!isObject(value)) throw new Error("maintenance config is required for maintenance mode");
   return {
     endFile: requiredAbsolutePath(value.endFile, "maintenance.endFile"),
-    maxDurationMs: optionalInteger(
-      value.maxDurationMs,
-      "maintenance.maxDurationMs",
-      undefined,
-      1,
-      86_400_000,
-    ),
-    maxFailedRequests: optionalInteger(
-      value.maxFailedRequests,
-      "maintenance.maxFailedRequests",
-      undefined,
-      0,
-      1_000_000,
-    ),
+    warningAfterMs: optionalInteger(value.warningAfterMs, "maintenance.warningAfterMs", undefined, 1, 86_400_000),
     startFile: requiredAbsolutePath(value.startFile, "maintenance.startFile"),
   };
 }

@@ -5,8 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { readRailway } from './railway-read.mjs';
 
-const componentPaths = { api: 'api', worker: 'worker', cache: 'cache-service', router: 'repo-router', media: 'media-service', mediaWorker: 'media-worker', web: 'web', cli: 'cli' };
-const componentBinaries = { api: 'scope-vcs', worker: 'scope-worker', cache: 'scope-cache-service', router: 'scope-repo-router', media: 'scope-media-service', cli: 'scope-cli-service' };
+const componentPaths = { api: 'api', 'run-worker': 'worker', cache: 'cache-service', 'git-router': 'repo-router', 'media-api': 'media-service', 'media-worker': 'media-worker', web: 'web', 'cli-downloads': 'cli' };
+const componentBinaries = { api: 'scope-vcs', 'run-worker': 'scope-worker', cache: 'scope-cache-service', 'git-router': 'scope-repo-router', 'media-api': 'scope-media-service', 'cli-downloads': 'scope-cli-service' };
+const componentImageNames = { api: 'api', 'run-worker': 'worker', cache: 'cache', 'git-router': 'router', 'media-api': 'media', 'media-worker': 'mediaWorker', web: 'web', 'cli-downloads': 'cli' };
 const digestReference = /^[a-z0-9][a-z0-9./_-]*@sha256:[a-f0-9]{64}$/;
 const sourceRevision = /^[a-f0-9]{40}$/;
 
@@ -19,7 +20,7 @@ export function releaseImageRepository(manifest, repository, component) {
     throw new Error('Deployment manifest requires a valid railway.releaseImagePrefix.');
   }
   if (!Object.hasOwn(componentPaths, component)) throw new Error(`Unknown release component ${component}.`);
-  return `ghcr.io/${repository.toLowerCase()}/${prefix}-${component}`;
+  return `ghcr.io/${repository.toLowerCase()}/${prefix}-${componentImageNames[component]}`;
 }
 
 export async function verifyPrivateReleasePackage(manifest, repository, component, { token, fetchImpl = fetch } = {}) {
@@ -133,14 +134,14 @@ export function artifactDeploymentInput(component, artifact, config, { registryC
 export function configureStagingRegistry(manifest, credentials, railway = runRailway) {
   if (!credentials?.username && !credentials?.password) return { configured: false };
   if (!credentials.username || !credentials.password) throw new Error('Both registry username and password are required.');
-  const environmentId = manifest?.railway?.staging?.environmentId;
-  const productionId = manifest?.railway?.environmentId;
+  const environmentId = manifest?.environments?.staging?.environmentId;
+  const productionId = manifest?.environments?.production?.environmentId;
   const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
   if (!uuid.test(environmentId ?? '') || !uuid.test(productionId ?? '') || environmentId === productionId) {
     throw new Error('Registry configuration requires a distinct, explicit staging environment.');
   }
-  const serviceIds = ['cache', 'worker', 'router', 'media', 'mediaWorker', 'api', 'web'].map((component) => {
-    const id = component === 'router' ? manifest.railway.staging.routerServiceId : manifest.services?.[component]?.id;
+  const serviceIds = ['cache', 'run-worker', 'git-router', 'media-api', 'media-worker', 'api', 'web'].map((component) => {
+    const id = component === 'git-router' ? manifest.environments.staging.routerServiceId : manifest.services?.[component]?.id;
     if (!uuid.test(id ?? '')) throw new Error(`Staging registry configuration is missing ${component} service ID.`);
     return id;
   });

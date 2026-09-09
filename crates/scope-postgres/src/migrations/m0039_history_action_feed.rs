@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-            SET LOCAL lock_timeout = '5s';
+
             DELETE FROM scope_repository_history_views;
             ALTER TABLE scope_repository_history_views ADD COLUMN history_version TEXT NOT NULL;
             DROP INDEX idx_scope_repository_history_entries_source;

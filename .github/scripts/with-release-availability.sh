@@ -35,11 +35,11 @@ for path in "$events_path" "$summary_path" "$ready_path" "$stop_path" "$log_path
   fi
 done
 
-baseline_seconds="${SCOPE_RELEASE_BASELINE_SECONDS:-60}"
-post_teardown_seconds="${SCOPE_RELEASE_POST_TEARDOWN_SECONDS:-120}"
+baseline_seconds="${SCOPE_RELEASE_BASELINE_SECONDS:-0}"
+observation_seconds="${SCOPE_RELEASE_OBSERVATION_SECONDS:-60}"
 ready_timeout_seconds="${SCOPE_RELEASE_READY_TIMEOUT_SECONDS:-30}"
 skip_baseline="${SCOPE_RELEASE_SKIP_BASELINE:-0}"
-for setting in baseline_seconds post_teardown_seconds ready_timeout_seconds; do
+for setting in baseline_seconds observation_seconds ready_timeout_seconds; do
   value="${!setting}"
   if [[ ! "$value" =~ ^[0-9]+$ ]]; then
     echo "$setting must be a non-negative integer" >&2
@@ -98,7 +98,7 @@ while [[ ! -f "$ready_path" ]]; do
     status=$?
     monitor_stopped=1
     echo "availability monitor exited before its ready marker (status $status)" >&2
-    exit "$status"
+    exit 1
   fi
   if ((ready_waited >= ready_timeout_seconds * 10)); then
     echo "availability monitor did not become ready within ${ready_timeout_seconds}s" >&2
@@ -126,7 +126,7 @@ if [[ "$skip_baseline" == 0 ]] && ! wait_while_monitoring "$baseline_seconds"; t
 fi
 minimum_samples="$baseline_seconds"
 if ((minimum_samples < 1)); then minimum_samples=1; fi
-if [[ "$skip_baseline" == 0 ]] && ! node --input-type=module - "$events_path" "$minimum_samples" <<'NODE'
+if [[ "$skip_baseline" == 0 && "$baseline_seconds" != 0 ]] && ! node --input-type=module - "$events_path" "$minimum_samples" <<'NODE'
 import { readFileSync } from "node:fs";
 const [, , path, minimumText] = process.argv;
 const events = readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
@@ -143,8 +143,14 @@ fi
 "$@"
 command_status=$?
 if ((command_status == 0)); then
-  if ! wait_while_monitoring "$post_teardown_seconds"; then
-    echo "availability monitor exited during the post-teardown observation" >&2
+  node --input-type=module - "$config_path" <<'NODE'
+import { readFileSync, writeFileSync } from "node:fs";
+const config = JSON.parse(readFileSync(process.argv[2], "utf8"));
+if (config.release.observationStartFile) writeFileSync(config.release.observationStartFile, `${Date.now()}\n`, { mode: 0o600 });
+NODE
+  if ! wait_while_monitoring "$observation_seconds"; then
+    echo "availability monitor exited during the post-release observation" >&2
+    command_status=1
   fi
 fi
 
@@ -152,4 +158,9 @@ stop_monitor
 if ((command_status != 0)); then
   exit "$command_status"
 fi
+node --input-type=module - "$summary_path" <<'NODE'
+import { readFileSync } from "node:fs";
+const summary = JSON.parse(readFileSync(process.argv[2], "utf8"));
+for (const warning of summary.warnings ?? []) console.log(`::warning::${warning}`);
+NODE
 exit "$monitor_status"

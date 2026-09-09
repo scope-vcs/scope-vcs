@@ -434,7 +434,9 @@ async fn v2_cutover_rejects_stale_exact_identity_backfills() {
 #[tokio::test]
 async fn v2_cutover_replaces_generic_object_columns_with_segment_identity() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
 
     let columns = db
         .query_all(Statement::from_string(

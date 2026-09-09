@@ -3,37 +3,9 @@
     "cliVersion": "5.41.2",
     "releaseImagePrefix": "railway-private",
     "projectId": "45dd67fa-6d69-48ad-9680-1313d41b4490",
-    "environmentId": "2f21f6b6-6817-4338-9e08-cf18e78b8f46",
     "runtimeGroupId": "74120aef-735e-4959-bf8d-5cd36d10cab1",
-    "staging": {
-      "environmentId": "f6cdb01a-7a42-40ff-b799-bffe254191b2",
-      "environmentName": "release-proof",
-      "apiReplicas": 3,
-      "apiDomain": "scope-api-release-proof.up.railway.app",
-      "cacheDomain": "scope-cache-service-release-proof.up.railway.app",
-      "routerDomain": "scope-repo-router-release-proof.up.railway.app",
-      "routerReplicas": 1,
-      "routerServiceId": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c",
-      "routerServiceName": "scope-repo-router",
-      "webDomain": "scope-web-release-proof.up.railway.app"
-    },
     "databaseServiceId": "44c41a90-2d1a-4a1b-85c9-6af85d179be3",
-    "regionId": "us-east4-eqdc4a",
-    "proofEnvironments": {
-      "media-proof": {
-        "environmentId": "93ae668a-a0e3-4c57-b6c0-4ad0592ab68c",
-        "environmentName": "media-proof",
-        "apiReplicas": 3,
-        "apiDomain": "scope-api-media-proof.up.railway.app",
-        "cacheDomain": "scope-cache-service-media-proof.up.railway.app",
-        "routerDomain": "scope-repo-router-media-proof.up.railway.app",
-        "routerReplicas": 1,
-        "routerServiceId": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c",
-        "routerServiceName": "scope-repo-router",
-        "webDomain": "scope-web-media-proof.up.railway.app",
-        "mediaGatewayDomain": "scope-media-media-proof.up.railway.app"
-      }
-    }
+    "regionId": "us-east4-eqdc4a"
   },
   "deploymentAuthority": "github-actions",
   "source": {
@@ -43,42 +15,42 @@
   },
   "services": {
     "cache": {
-      "name": "scope-cache-service",
+      "name": "scope-cache",
       "id": "668d47df-8f68-4f96-b52f-7c02324829e3",
       "dependsOn": []
     },
-    "worker": {
-      "name": "scope-worker",
+    "run-worker": {
+      "name": "scope-run-worker",
       "id": "a474a0d1-3000-4a95-9ca3-cd3a7f3ef669",
       "dependsOn": [
         "cache"
       ]
     },
-    "router": {
-      "name": "scope-repo-router",
+    "git-router": {
+      "name": "scope-git-router",
       "id": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c",
       "dependsOn": []
     },
-    "media": {
-      "name": "scope-media",
+    "media-api": {
+      "name": "scope-media-api",
       "id": "6d7b48da-e52e-47bb-b4af-d6fc2d03aec3",
       "dependsOn": []
     },
-    "mediaWorker": {
+    "media-worker": {
       "name": "scope-media-worker",
       "id": "8aaade33-a730-408b-bab3-298119369420",
       "dependsOn": [
-        "media"
+        "media-api"
       ]
     },
     "api": {
       "name": "scope-api",
       "id": "9456cd8d-40bd-489a-a181-72b7f777c4a8",
       "dependsOn": [
-        "worker",
-        "router",
-        "media",
-        "mediaWorker"
+        "run-worker",
+        "git-router",
+        "media-api",
+        "media-worker"
       ]
     },
     "web": {
@@ -88,8 +60,8 @@
         "api"
       ]
     },
-    "cli": {
-      "name": "scope-cli",
+    "cli-downloads": {
+      "name": "scope-cli-downloads",
       "id": "a212bccb-ed1a-4574-a031-2b0183e08a2d",
       "dependsOn": [
         "api"
@@ -130,13 +102,10 @@
         ".github/scripts/recovery-preparation-trust.test.mjs",
         ".github/scripts/check-daily-release.mjs",
         ".github/scripts/check-daily-release.test.mjs",
-        ".github/scripts/prepared-deploy-trust.mjs",
-        ".github/scripts/prepared-deploy-trust.test.mjs",
-        ".github/workflows/scope-prepared-deploy.yml",
         ".github/scripts/railway-service-health.mjs",
         ".github/scripts/railway-service-health.test.mjs",
         ".github/scripts/deploy-railway.test.mjs",
-        ".github/workflows/scope-production-deploy.yml",
+        ".github/workflows/release.yml",
         "dev/check",
         ".scope/runs/checks.yml",
         ".github/scripts/check-gates.test.mjs",
@@ -149,8 +118,6 @@
         ".github/scripts/railway-retry.mjs",
         ".github/scripts/railway-retry.test.mjs",
         ".github/scripts/verify-staging-target.mjs",
-        ".github/scripts/select-proof-environment.mjs",
-        ".github/scripts/select-proof-environment.test.mjs",
         ".github/scripts/staging-git-smoke.sh",
         ".github/scripts/staging-smoke-seed.sh",
         ".github/scripts/staging-smoke-seed.test.mjs",
@@ -158,7 +125,7 @@
         ".github/scripts/deploy-staging-railway.sh",
         ".github/scripts/test-staging-git-smoke.sh",
         ".github/scripts/stop-staging-writers.test.mjs",
-        ".github/workflows/scope-railway-staging.yml",
+        ".github/workflows/deploy-staging.yml",
         ".github/workflows/scope-media-worker-image.yml",
         "dev/media-smoke.mjs",
         "dev/media-capacity.mjs",
@@ -167,7 +134,7 @@
         "deploy/railway/reconcile-media.mjs",
         "deploy/railway/reconcile-media.test.mjs",
         "deploy/railway/MEDIA.md",
-        ".github/workflows/scope-release-prepare.yml",
+        ".github/workflows/prepare-release.yml",
         ".github/scripts/deploy-monitored-railway.sh",
         ".github/scripts/production-availability-config.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
@@ -183,7 +150,20 @@
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/extract-railway-release.test.mjs",
         ".github/scripts/extract-railway-maintenance.sh",
-        ".github/scripts/extract-railway-maintenance.test.mjs"
+        ".github/scripts/extract-railway-maintenance.test.mjs",
+        ".github/workflows/ci.yml",
+        ".github/workflows/validate.yml",
+        ".github/workflows/deployment-tests.yml",
+        ".github/scripts/railway-maintenance-gate.mjs",
+        ".github/scripts/railway-maintenance-gate.test.mjs",
+        ".github/scripts/release-selection.mjs",
+        ".github/scripts/release-selection.test.mjs",
+        ".github/scripts/staging-baseline.mjs",
+        ".github/scripts/staging-baseline.test.mjs",
+        ".github/scripts/staging-baseline.sh",
+        ".github/scripts/staging-baseline.integration.test.mjs",
+        "deploy/railway/rekey-deployment-receipts.mjs",
+        "deploy/railway/rekey-deployment-receipts.test.mjs"
       ],
       "prefixes": [
         "legal/",
@@ -195,7 +175,7 @@
         ".github/scripts/release-"
       ]
     },
-    "checksImage": {
+    "checks-image": {
       "files": [
         ".github/scripts/publish-soci-image.sh",
         ".github/workflows/scope-checks-image.yml",
@@ -217,7 +197,7 @@
         ".github/scripts/deploy-backend-railway.sh",
         ".github/scripts/deploy-railway.sh",
         ".github/scripts/test-deploy-backend-railway.sh",
-        ".github/workflows/scope-api-deploy.yml",
+        ".github/workflows/deploy-backend.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
         "Cargo.lock",
@@ -230,12 +210,12 @@
         "crates/"
       ]
     },
-    "worker": {
+    "run-worker": {
       "files": [
         ".github/scripts/deploy-backend-railway.sh",
         ".github/scripts/deploy-railway.sh",
         ".github/scripts/test-deploy-backend-railway.sh",
-        ".github/workflows/scope-api-deploy.yml",
+        ".github/workflows/deploy-backend.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
         "Cargo.lock",
@@ -249,16 +229,16 @@
         "worker/"
       ]
     },
-    "mediaWorker": {
+    "media-worker": {
       "files": [
         ".github/scripts/deploy-backend-railway.sh",
         ".github/scripts/deploy-railway-image.mjs",
         ".github/scripts/deploy-railway-image.test.mjs",
         ".github/scripts/test-deploy-backend-railway.sh",
-        ".github/workflows/scope-api-deploy.yml",
-        ".github/workflows/scope-production-deploy.yml",
+        ".github/workflows/deploy-backend.yml",
+        ".github/workflows/release.yml",
         ".github/workflows/scope-media-worker-image.yml",
-        ".github/workflows/scope-railway-staging.yml",
+        ".github/workflows/deploy-staging.yml",
         ".github/scripts/deploy-staging-railway.sh",
         "dev/run-ci-local-stack",
         "dev/scope-dev",
@@ -277,7 +257,7 @@
         ".github/scripts/deploy-backend-railway.sh",
         ".github/scripts/deploy-railway.sh",
         ".github/scripts/test-deploy-backend-railway.sh",
-        ".github/workflows/scope-api-deploy.yml",
+        ".github/workflows/deploy-backend.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
         "Cargo.lock",
@@ -292,14 +272,14 @@
         "crates/"
       ]
     },
-    "media": {
+    "media-api": {
       "files": [
         ".github/scripts/deploy-backend-railway.sh",
         ".github/scripts/deploy-railway.sh",
         ".github/scripts/test-deploy-backend-railway.sh",
-        ".github/workflows/scope-api-deploy.yml",
-        ".github/workflows/scope-production-deploy.yml",
-        ".github/workflows/scope-railway-staging.yml",
+        ".github/workflows/deploy-backend.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/deploy-staging.yml",
         ".github/scripts/deploy-staging-railway.sh",
         "dev/media-smoke.mjs",
         "dev/media-capacity.mjs",
@@ -316,12 +296,12 @@
         "crates/"
       ]
     },
-    "router": {
+    "git-router": {
       "files": [
         ".github/scripts/deploy-backend-railway.sh",
         ".github/scripts/deploy-railway.sh",
         ".github/scripts/test-deploy-backend-railway.sh",
-        ".github/workflows/scope-api-deploy.yml",
+        ".github/workflows/deploy-backend.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
         "Cargo.lock",
@@ -337,7 +317,7 @@
     "web": {
       "files": [
         ".github/scripts/deploy-railway.sh",
-        ".github/workflows/scope-web-deploy.yml",
+        ".github/workflows/deploy-web.yml",
         ".github/workflows/scope-integration-ci.yml",
         ".github/workflows/scope-web-ci.yml",
         "Cargo.lock",
@@ -352,10 +332,10 @@
         "worker/"
       ]
     },
-    "cli": {
+    "cli-downloads": {
       "files": [
         ".github/scripts/deploy-railway.sh",
-        ".github/workflows/scope-cli-deploy.yml",
+        ".github/workflows/publish-cli.yml",
         ".github/workflows/scope-integration-ci.yml",
         ".github/workflows/scope-cli-build.yml",
         "deploy/railway/prebuilt-cli.railpack.json",
@@ -376,7 +356,7 @@
         "worker/"
       ]
     },
-    "cliDistribution": {
+    "cli-distribution": {
       "files": [
         ".github/workflows/scope-cli-build.yml",
         ".github/scripts/select-cli-distribution-targets.mjs",
@@ -405,6 +385,32 @@
         "expectedText": "# Pagent",
         "expectedRequestIds": []
       }
+    }
+  },
+  "releasePolicy": {
+    "maintenanceEnabled": true,
+    "maintenanceWarningSeconds": 1800,
+    "writerDrainTimeoutSeconds": 120,
+    "migrationLockTimeoutSeconds": 120,
+    "migrationStatementTimeoutSeconds": 3600,
+    "postReleaseObservationSeconds": 60
+  },
+  "environments": {
+    "production": {
+      "environmentId": "2f21f6b6-6817-4338-9e08-cf18e78b8f46",
+      "environmentName": "production"
+    },
+    "staging": {
+      "environmentId": "f6cdb01a-7a42-40ff-b799-bffe254191b2",
+      "environmentName": "staging",
+      "apiReplicas": 3,
+      "apiDomain": "scope-api-release-proof.up.railway.app",
+      "cacheDomain": "scope-cache-service-release-proof.up.railway.app",
+      "routerDomain": "scope-repo-router-release-proof.up.railway.app",
+      "routerReplicas": 1,
+      "routerServiceId": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c",
+      "routerServiceName": "scope-git-router",
+      "webDomain": "scope-web-release-proof.up.railway.app"
     }
   }
 }

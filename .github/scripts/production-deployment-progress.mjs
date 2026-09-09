@@ -15,7 +15,7 @@ function argument(name, fallback = "") {
   return index === -1 ? fallback : process.argv[index + 1] ?? fallback;
 }
 
-async function githubRequest(path, options = {}, fetchImpl = fetch) {
+export async function githubRequest(path, options = {}, fetchImpl = fetch) {
   const token = process.env.GITHUB_TOKEN;
   const repository = process.env.GITHUB_REPOSITORY;
   if (!token || !repository) throw new Error("GITHUB_TOKEN and GITHUB_REPOSITORY are required");
@@ -108,8 +108,8 @@ export async function recordSuccessfulDeployment({
   if (!COMPONENTS.includes(component)) throw new Error(`Unknown deployment component: ${component}`);
   if (!SOURCE_SHA_PATTERN.test(sourceSha)) throw new Error("sourceSha must be a full lowercase commit SHA");
   if (!provider || !evidenceId) throw new Error("provider and evidenceId are required");
-  if (component === "mediaWorker" && !/^sha256:[0-9a-f]{64}$/.test(artifactDigest)) {
-    throw new Error("mediaWorker requires an exact OCI artifact digest");
+  if (component === "media-worker" && !/^sha256:[0-9a-f]{64}$/.test(artifactDigest)) {
+    throw new Error("media-worker requires an exact OCI artifact digest");
   }
 
   const environment = `production/${component}`;
@@ -166,11 +166,69 @@ export async function recordEvidenceFile(path, logUrl = "", fetchImpl = fetch) {
   return deploymentIds;
 }
 
+export async function latestSuccessfulRelease(fetchImpl = fetch) {
+  for (let page = 1; ; page += 1) {
+    const deployments = await githubRequest(`/deployments?environment=production%2Frelease&per_page=100&page=${page}`, {}, fetchImpl);
+    for (const deployment of deployments) {
+      const payload = typeof deployment.payload === "string" ? JSON.parse(deployment.payload) : deployment.payload;
+      if (payload?.kind !== "scope-production-release" || payload.sourceSha !== deployment.sha
+          || !SOURCE_SHA_PATTERN.test(payload.sourceSha ?? "") || !payload.components
+          || !Object.keys(payload.components).length) continue;
+      if (Object.entries(payload.components).some(([component, receipt]) =>
+        !COMPONENTS.includes(component) || !deploymentEvidence(component, { sha: deployment.sha,
+          payload: { component, ...receipt } }))) continue;
+      const statuses = await githubRequest(`/deployments/${deployment.id}/statuses?per_page=100`, {}, fetchImpl);
+      const success = statuses.find(({ state }) => state === "success");
+      if (success) return { ...payload, id: String(deployment.id), completedAt: success.created_at };
+    }
+    if (deployments.length < 100) return null;
+  }
+}
+
+export async function recordSuccessfulRelease({ sourceSha, components, warning = "", logUrl = "" }, fetchImpl = fetch) {
+  if (!SOURCE_SHA_PATTERN.test(sourceSha ?? "")) throw new Error("sourceSha must be a full lowercase commit SHA");
+  const selected = Array.isArray(components) ? components : Object.keys(components ?? {}).filter(key => components[key] === true);
+  if (!selected.length || selected.some(component => !COMPONENTS.includes(component))) {
+    throw new Error("Release receipt requires selected deployment components");
+  }
+  const deployments = await latestSuccessfulDeployments(fetchImpl);
+  const receipts = {};
+  for (const component of selected) {
+    const receipt = deployments[component];
+    if (receipt?.sourceSha !== sourceSha) throw new Error(`Release is missing successful ${component} evidence for ${sourceSha}`);
+    receipts[component] = receipt;
+  }
+  const environment = "production/release";
+  const deployment = await githubRequest("/deployments", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: sourceSha, auto_merge: false, required_contexts: [], environment,
+      production_environment: true, transient_environment: false,
+      description: `Release ${sourceSha.slice(0, 12)}`,
+      payload: { kind: "scope-production-release", sourceSha, components: receipts, warning } }),
+  }, fetchImpl);
+  await githubRequest(`/deployments/${deployment.id}/statuses`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state: "success", environment, auto_inactive: false,
+      description: "Release verified", ...(logUrl ? { log_url: logUrl } : {}) }),
+  }, fetchImpl);
+  return deployment.id;
+}
+
 async function main() {
   const command = process.argv[2];
   if (command?.startsWith("cutover-")) {
     const result = await cutoverCommand(command, argument, githubRequest);
     if (result !== undefined) process.stdout.write(`${typeof result === "string" ? result : JSON.stringify(result)}\n`);
+    return;
+  }
+  if (command === "read-release") {
+    process.stdout.write(`${JSON.stringify(await latestSuccessfulRelease())}\n`);
+    return;
+  }
+  if (command === "record-release") {
+    const id = await recordSuccessfulRelease({ sourceSha: argument("--source-sha"),
+      components: JSON.parse(argument("--components", "{}")), warning: argument("--warning"), logUrl: argument("--log-url") });
+    process.stdout.write(`Recorded release ${id}.\n`);
     return;
   }
   if (command === "read") {

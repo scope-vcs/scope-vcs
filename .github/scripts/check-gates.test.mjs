@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -48,7 +48,7 @@ test('web gate includes contract, observer, and resource rules; CLI and integrat
 });
 
 test('local and both CI callers use the shared inventory', () => {
-  const github = ['rust-workspace-checks', 'scope-api-ci', 'scope-cli-build', 'scope-web-ci', 'scope-production-deploy', 'scope-integration-ci']
+  const github = ['rust-workspace-checks', 'scope-api-ci', 'scope-cli-build', 'scope-web-ci', 'ci', 'release', 'scope-integration-ci']
     .map((name) => read(`.github/workflows/${name}.yml`)).join('\n');
   const scope = read('.scope/runs/checks.yml');
   for (const gate of gates.filter((gate) => gate !== 'contract')) {
@@ -62,7 +62,7 @@ test('local and both CI callers use the shared inventory', () => {
 
 test('gate inputs select checks through change scopes', () => {
   const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' }).trim().split('\n');
-  const gateInputs = paths.filter((path) => /^(dev\/|\.github\/scripts\/|bench\/|deploy\/aws\/)/.test(path));
+  const gateInputs = paths.filter((path) => existsSync(resolve(root, path)) && /^(dev\/|\.github\/scripts\/|bench\/|deploy\/aws\/)/.test(path));
   gateInputs.push('.scope/runs/checks.yml', '.github/source-size-audit.json');
   for (const path of gateInputs) {
     const selected = classifyChanges(manifest, [path]);
@@ -96,8 +96,8 @@ test('CLI release identity survives subsequent Cargo commands and cross containe
   assert.match(jobSettings, /CROSS_CONFIG: \$\{\{ github.workspace \}\}\/Cross.toml/);
   assert.match(read('Cross.toml'), /\[build.env\]\s+passthrough = \["SCOPE_BUILD_SHA"\]/);
   const selected = classifyChanges(manifest, ['Cross.toml']);
-  assert.equal(selected.cli, true);
-  assert.equal(selected.cliDistribution, true);
+  assert.equal(selected["cli-downloads"], true);
+  assert.equal(selected["cli-distribution"], true);
 });
 
 test('artifact staging rejects missing and stale release identities after all builds', () => {
@@ -128,4 +128,77 @@ test('artifact staging rejects missing and stale release identities after all bu
     assert.notEqual(run(true, 'scope 0.1.0 (build development; protocol 1)', sha).status, 0);
     assert.notEqual(run(true, `scope 0.1.0 (build ${sha})`).status, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+function releaseJobs() {
+  const workflow = read('.github/workflows/release.yml');
+  return Object.fromEntries([...workflow.matchAll(/^  ([\w-]+):\n([\s\S]*?)(?=^  [\w-]+:|$(?![\s\S]))/gm)]
+    .map(([, name, body]) => [name, { if: body.match(/^    if: >-\n((?:      .*\n)+)/m)?.[1].trim() }]));
+}
+
+function releasePath(selected, { reuse = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false } = {}) {
+  const jobs = releaseJobs();
+  const outputs = Object.fromEntries(['checks_image', 'cache', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
+    .map((key) => [key, String(selected.includes(key))]));
+  outputs.prepared_run_id = reuse ? '123' : '';
+  outputs.recover_cutover_id = reuse ? '456' : '';
+  const needs = { plan: { result: 'success', outputs }, validation: { result: 'success' } };
+  for (const key of ['release-preparation', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
+    const expression = jobs[key].if.replace(/needs\.([\w-]+)/g, 'needs["$1"]');
+    const enabled = Function('needs', 'github', 'cancelled', `return (${expression});`)(needs, { ref }, () => cancelled);
+    needs[key] = { result: enabled ? key === failure ? 'failure' : 'success' : 'skipped',
+      outputs: key === 'backend-deploy' ? { web_activated: String(enabled && key !== failure && backendActivatesWeb) } : {} };
+  }
+  return needs;
+}
+
+test('release paths stage applications once and leave no-op and distribution-only polls cheap', () => {
+  const empty = releasePath([]);
+  for (const key of ['release-preparation', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) assert.equal(empty[key].result, 'skipped', key);
+  const web = releasePath(['web']);
+  assert.equal(web.staging.result, 'success');
+  assert.equal(web['production-preflight'].result, 'skipped');
+  assert.equal(web['web-deploy'].result, 'success');
+  assert.equal(web['production-health-gate'].result, 'success');
+  const cli = releasePath(['cli']);
+  assert.equal(cli.staging.result, 'skipped');
+  assert.equal(cli['cli-deploy'].result, 'success');
+  assert.equal(cli['production-health-gate'].result, 'success');
+  const checks = releasePath(['checks_image']);
+  assert.equal(checks.staging.result, 'skipped');
+  assert.equal(checks['production-health-gate'].result, 'success');
+});
+
+test('failed preflight, staging or activation cannot publish a successful release', () => {
+  for (const failure of ['production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy']) {
+    const result = releasePath(['api', 'web', 'cli'], { failure });
+    assert.equal(result['production-health-gate'].result, 'skipped', failure);
+  }
+});
+
+test('interrupted releases reuse images and finish through the same final receipt', () => {
+  const result = releasePath(['api', 'worker', 'cache', 'router', 'media', 'media_worker', 'web'], { reuse: true });
+  assert.equal(result['release-preparation'].result, 'success');
+  assert.equal(result.staging.result, 'skipped');
+  assert.equal(result['backend-deploy'].result, 'success');
+  assert.equal(result['web-deploy'].result, 'success');
+  assert.equal(result['production-health-gate'].result, 'success');
+});
+
+
+test('cancelled releases and non-main refs cannot activate or record production', () => {
+  for (const options of [{ cancelled: true }, { ref: 'refs/heads/feature' }]) {
+    const result = releasePath(['api', 'web', 'cli'], options);
+    for (const key of ['backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) assert.equal(result[key].result, 'skipped', key);
+  }
+});
+
+
+test('maintenance publishes the backend-owned web receipt without deploying web twice', () => {
+  const result = releasePath(['api', 'web', 'cli'], { backendActivatesWeb: true });
+  assert.equal(result['backend-deploy'].result, 'success');
+  assert.equal(result['web-deploy'].result, 'skipped');
+  assert.equal(result['production-health-gate'].result, 'success');
+  const failed = releasePath(['api', 'web'], { backendActivatesWeb: true, failure: 'backend-deploy' });
+  assert.equal(failed['production-health-gate'].result, 'skipped');
 });

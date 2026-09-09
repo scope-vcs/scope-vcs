@@ -1,69 +1,94 @@
-# Maintenance migration recovery
+# Releases and maintenance recovery
 
-Migration impact is declared once in `crates/scope-postgres/src/migrations/mod.rs`.
-Use `Online` only when old and new runtime contracts can overlap safely. Renames,
-removals, rewrites, protocol resets, and changed invariants require
-`MaintenanceRequired`. Do not add dual readers or writers to avoid a cutover.
-
-Production builds and publishes release images before closing metadata writers.
-The prepared manifest pins the source revision and each Railway service's image
-digest. Maintenance requires prepared API, worker, cache, and router artifacts.
-Activation consumes those images without a build. A production maintenance cutover
-requires an explicit positive outage budget agreed from staging measurements.
-Recovery proceeds even when that budget has expired so it can restore service;
-availability reporting still records the full outage and budget failure.
-A fresh migration plan must match the baseline immediately before closure.
-
-The deployment workflow persists closure intent as a GitHub deployment in
-`production/cutover`. Its payload contains the prepared manifest, baseline plan,
-and previous deployment identities. Status records mark each phase before its
-mutations. GitHub timestamps retain the phase history if the runner is cancelled
-or killed; the workflow summary also reports phase durations. An unresolved
-record blocks ordinary deployments, including a deployment of a newer revision.
-
-The cutover closes API, worker, and cache, acquires the database writer fence,
-applies migrations, verifies the exact ledger, and runs the current idempotent
-backfills before activating the prepared services. Keep command ordering and the
-active backfill list in `.github/scripts/deploy-backend-railway.sh` and
-`.github/scripts/release-cutover.sh`, where the deployment tests exercise them.
-
-## Recovery rule
-
-Dispatch the production workflow on `main` with the cutover deployment ID and
-source SHA printed by the failed run. The workflow uses the current main orchestration and extracts the maintenance binary from the recorded API image digest without
-starting its container. Its contents must match the manifest's recorded SHA-256:
+`release.yml` is the production entry point. It polls at minutes 8 and 38 and
+releases once per Chicago calendar day after 9 AM. Failed runs remain eligible
+for the next poll. Manual dispatch bypasses the daily timing check:
 
 ```sh
-gh workflow run scope-production-deploy.yml --ref main \
-  -f recover_cutover_id=DEPLOYMENT_ID \
-  -f recover_source_sha=FULL_SHA \
-  -f maintenance_budget_seconds=APPROVED_SECONDS
+gh workflow run release.yml --ref main
 ```
 
-Recovery restores
-the recorded manifest and rejects a different source or image set. It closes
-all current metadata writers again, covering a runner killed during shutdown or
-a partial activation, then reads the ledger.
+Both paths pin the main revision before preparation and share the production
+concurrency lock. Later commits wait for another release. Component receipts
+skip unchanged work. `ci.yml` validates pull requests without deploying; it and
+Release call the same reusable validation workflow.
 
-An exact ledger proceeds through verification and backfills to forward
-activation. An unchanged baseline resumes the pinned migration. A different or
-unreadable ledger leaves writers closed. Recovery never builds replacement
-images and never chooses artifacts from a newer revision.
+Preparation publishes private GHCR images and records their immutable digests.
+Staging activates the candidate once and checks browser, Git, and media behavior.
+Production uses those exact images. Optional `deployment-tests.yml` runs repeated
+transition tests using a prepared release, outside the normal release path.
 
-The successful migration transaction is the point of no return. Ordinary failure
-handling restarts previous deployments only after a fresh ledger read proves
-the baseline is unchanged. Before `apply` starts, the workflow records the
-`applying` phase durably. A lost response or lost runner cannot erase the fact
-that the transaction might have committed. The record remains unresolved until
-all forward services are healthy or verified restoration succeeds.
+## Environments and names
 
-The database fence is the final concurrency boundary. Every API, worker, and
-cache database connection holds its shared side for the session. A writer racing
-shutdown either makes maintenance refuse or drains before the exclusive fence
-is acquired. Runtime startup verifies the exact schema before opening its writer
-pool, so an old binary cannot write after a committed migration.
+`.github/deployment-services.json` owns the two deployment targets under
+`environments.production` and `environments.staging`. The staging environment ID
+is the former release-proof environment. Its existing generated domains stay
+valid after the environment is renamed. GitHub uses the credential environment
+`staging` for staging work.
 
-## Read-only inspection
+Component keys describe their roles: `api`, `run-worker`, `cache`, `git-router`,
+`media-api`, `media-worker`, `web`, and `cli-downloads`. `checks-image` and
+`cli-distribution` track the other published artifacts. Runtime executable names
+and existing image repositories are independent of these orchestration keys.
+
+## Migration policy
+
+Every pending migration requires maintenance. Runtime startup checks the exact
+migration ledger and refuses a mismatch; it never applies migrations. Development
+and test setup invoke migration application explicitly. A production migration
+requires a complete prepared application set so schema participants move together.
+
+The manifest's `releasePolicy` owns these defaults:
+
+- Maintenance is enabled automatically for pending migrations.
+- Thirty minutes of maintenance produces a warning, not a failed healthy release.
+- Writer drain and migration lock acquisition each allow 120 seconds.
+- Each migration statement allows 3,600 seconds.
+- Production observation continues for 60 seconds after activation.
+
+Operation timeouts still fail their operation. The maintenance warning is separate
+from those limits, recovery, and the final health result.
+
+Before closure, the workflow records a durable `production/maintenance` deployment
+with the exact prepared manifest, baseline ledger, previous deployments, and
+maintenance service configuration. Phase statuses record intent before mutations.
+Public services temporarily run the prepared API image's `scope-maintenance serve`
+command. It serves an HTML maintenance page to browsers and a structured 503 to
+API, Git, and media clients, with `Retry-After`. It needs no database connection.
+Only its `/readyz` endpoint returns success.
+
+The cutover stops metadata writers, acquires the database writer fence, applies
+migrations and required backfills, and verifies the exact ledger. It then activates
+prepared services in dependency order. Public services reopen as their dependencies
+become ready; API activation follows its backend dependencies, and web opens last.
+The journal completes only after the coordinated activation succeeds.
+
+## Recovery
+
+Dispatch Release again. It automatically selects the sole unresolved cutover,
+including its original SHA and image digests. It refuses ambiguous multiple open
+cutovers. No copied deployment IDs or replacement builds are required.
+
+Recovery closes writers again before reading the ledger. An exact candidate ledger
+resumes forward activation. An unchanged baseline resumes the pinned migration.
+An unknown or unreadable ledger leaves writers closed.
+
+Once a maintenance gate starts replacing deployments, recovery proceeds forward:
+Railway may already have removed the previous deployment IDs. A committed migration
+or an uncertain external backfill also prevents old-binary restoration. Runtime
+schema verification and the exclusive database fence remain the final write boundary.
+
+To deploy an already prepared, validated release through the same workflow:
+
+```sh
+gh workflow run release.yml --ref main -f source_run_id=RUN_ID
+```
+
+Replay validates the source run, staging evidence, source revision, and immutable
+manifest. Interrupted cutover recovery uses the durable record directly so an
+unrelated staging failure cannot prevent production recovery.
+
+Read-only inspection uses the pinned maintenance binary:
 
 ```text
 scope-maintenance plan
@@ -71,118 +96,36 @@ scope-maintenance verify
 node .github/scripts/production-deployment-progress.mjs cutover-read --id DEPLOYMENT_ID --source-sha FULL_SHA
 ```
 
-`plan` and `verify` emit JSON. `verify` succeeds only when the database ledger
-exactly matches the binary. Run `scope-maintenance --help` for maintenance and
-backfill commands. Production cutovers should use the deployment workflow.
+`plan` emits `exact`, ordered `applied` migration names, and pending names. `verify`
+succeeds only for an exact ledger.
 
-## Readiness and availability rollout
+## Staging baseline
 
-Enable the readiness rollout before enabling production transition monitoring.
-The current web release must already answer `/readyz`; the monitor deliberately
-fails its baseline when that endpoint is missing. After reviewing the staging
-proof and approving production rollout, activate the prepared web image using
-`deploy-railway.sh` with its source SHA and prepared manifest. Confirm `/readyz`
-and the effective deployment manifest before enabling the production workflow.
-This is the one-time rollout order; there is no fallback readiness route.
+Staging records a private database snapshot keyed to the production applied ledger
+before testing a migration candidate. The Actions artifact is retained for seven
+days. If a failed candidate leaves staging ahead, the next attempt restores a
+matching retained baseline while writers are fenced. Unknown baselines and snapshots
+that cross known external storage transformations fail explicitly. Required
+backfills run in staging as well as production; physical object cleanup does not
+run as part of candidate testing.
 
-Ordinary production activation requires a successful staging rehearsal of the
-same immutable image digests. The rehearsal makes three transitions, checks
-finite requests once per second, and retains an open repository tab across each
-transition. Its 60-second baseline must pass before activation; monitoring lasts
-120 seconds after exact predecessor teardown. The full staging rehearsal also
-pushes a fixture update and waits for that update to appear without a refresh.
-Production uses the public `adamblumoff/pagent` README fixture; staging uses the
-seeded `dev/update-demo` repository.
-
-A complete application manifest fences writers, migrates, and resets release-proof
-fixtures before rehearsal. A partial manifest requires healthy, seeded release-proof
-with the candidate schema already applied. For a migration candidate with a partial
-manifest, run the full staging rehearsal first, then import the production artifacts. Agree the production
-outage budget from the maintenance exercise and supply
-`maintenance_budget_seconds`; its default of zero prevents a new maintenance
-cutover while ordinary releases continue to work.
-
-Dispatch staging on `main` to test an arbitrary candidate SHA. A manual branch
-dispatch is restricted to that branch's exact SHA and explicitly selects that
-branch's orchestration. Candidate compilation receives read-only repository
-permissions. Image preparation uses the selected trusted orchestration and
-Dockerfiles, treating candidate archives as data; unsafe archive links and paths
-are rejected before extraction. Trusted staging setup configures registry access
-before candidate code is introduced, without passing registry secrets into that
-code.
+A database snapshot does not back up object storage. Preserve the staging object
+stores and keys across these tests. Unseeded or incompatible staging needs an
+explicit baseline reset before the normal release path can proceed.
 
 ## Release image storage
 
-Release images use private GHCR packages, addressed by digest. The package prefix
-is owned by `railway.releaseImagePrefix` in `.github/deployment-services.json`;
-its value is `railway-private`, giving packages such as
-`ghcr.io/OWNER/REPOSITORY/railway-private-api`. Publishing and recovery validate
-against that same namespace.
+Release images use private GHCR packages addressed by digest. The prefix
+`railway.releaseImagePrefix` produces packages such as
+`ghcr.io/OWNER/REPOSITORY/railway-private-api`. Preparation verifies package privacy
+and an authenticated pull before recording artifacts.
 
-Configure the GitHub Actions secrets `RAILWAY_REGISTRY_USERNAME` and
-`RAILWAY_REGISTRY_PASSWORD` with durable pull-only access to these packages.
-Preparation requires both before publishing. It verifies an authenticated pull
-and checks that GitHub reports the package visibility as private before recording
-the artifact. The short-lived publishing token is never used
-as Railway's recovery credential. Keep the new packages private. Existing public
-packages cannot become private; retire them only after private deployment is
-verified and no active deployment or unresolved cutover references them.
+GitHub Actions secrets `RAILWAY_REGISTRY_USERNAME` and `RAILWAY_REGISTRY_PASSWORD`
+provide durable pull-only access. The short-lived publishing token is not a
+recovery credential. The API image contains `/app/bin/scope-maintenance`; extraction
+checks its SHA-256 against the prepared manifest without starting the container.
 
-The API image contains the original maintenance binary at
-`/app/bin/scope-maintenance`. Ordinary deployments and recovery extract it from
-the manifest's API digest and check its recorded SHA-256 before use. Recovery
-does not depend on the retention period of GitHub Actions build artifacts.
-Keep every release image and its unique tag while a cutover that references it
-remains unresolved; registry cleanup must not remove those digests. Recovery
-cannot rebuild or substitute a deleted image.
-The public `VITE_POSTHOG_HOST` and `VITE_POSTHOG_PROJECT_TOKEN` repository variables
-supply the same analytics build configuration that Railway previously supplied.
-
-The release rehearsal uses the dedicated Railway `release-proof` environment
-configured under `railway.staging` in the deployment manifest. Keep runner and
-load experiments in separate environments so they cannot replace services during
-the availability measurement. The GitHub environment remains `staging` for its
-secrets and deployment protection rules.
-
-
-## Daily releases
-
-`scope-production-deploy.yml` checks at minutes 8 and 38 of every hour, following
-T3 Code's polling pattern. It releases once per America/Chicago calendar day, on
-the first check after 9 AM. The check uses Chicago time across daylight-saving
-changes and runs after acquiring the production concurrency lock. A successful
-production health gate today suppresses further automatic releases; a missed
-trigger or failed release leaves the next check eligible. GitHub may delay polls.
-Pushes to `main` do not start this workflow. Pull requests run validation without
-deploying, and manual dispatch bypasses the daily timing check.
-
-Both scheduled and manual releases pin the main head at trigger time. Later
-commits wait for the next release. Runs serialize through the production
-concurrency group. The default `changed` scope compares each component with its
-last successful production revision, so unchanged components do not rebuild or
-deploy. Select `all` manually when a full redeployment is needed.
-
-To release the latest main head manually:
-
-```sh
-gh workflow run scope-production-deploy.yml --ref main
-```
-
-Prepared application artifacts pass through Railway `release-proof` before production.
-There is no normal-release bypass. Interrupted cutover recovery reuses its pinned
-artifacts without repeating the rehearsal so production can reopen. The prepared
-release workflow requires a successful release-proof job from the source run.
-Imported releases build the smoke tools without rebuilding application images.
-Complete manifests initialize fixtures; partial manifests issue a fresh test login
-without resetting the existing catalog or stopping unchanged backend services. Web-only
-releases use the same gate; a CLI release included with application changes waits
-for it too. CLI-only releases keep their build and distribution checks. The
-prepared-release replay workflow deploys only application components present in
-its validated manifest; CLI distribution remains a separate release lane.
-
-Railway `staging` is reserved for experiments and is outside this chain. The
-proof workflow calls its default target `release-proof`; its GitHub credential
-environment and internal manifest slot still use the name `staging`.
-
-This follows the scheduled/manual entry points, immutable revision, serialized
-publishing, and unchanged-release skipping in [T3's release workflow](https://github.com/pingdotgg/t3code/blob/main/.github/workflows/release.yml).
+Retain all image digests and their unique tags while a referencing cutover remains
+unresolved. Recovery cannot rebuild or substitute a deleted image. Public analytics
+build configuration comes from the repository variables `VITE_POSTHOG_HOST` and
+`VITE_POSTHOG_PROJECT_TOKEN`.

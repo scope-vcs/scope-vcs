@@ -262,9 +262,11 @@ if [[ -n "$prepared_release" ]]; then
     exit 2
   }
   case "$deployment_component" in
+    run-worker) expected_config=worker/railway.json ;;
+    cli-downloads) expected_config=cli/railway.json ;;
     cache) expected_config=cache-service/railway.json ;;
-    router) expected_config=repo-router/railway.json ;;
-    media) expected_config=media-service/railway.json ;;
+    git-router) expected_config=repo-router/railway.json ;;
+    media-api) expected_config=media-service/railway.json ;;
     *) expected_config="$deployment_component/railway.json" ;;
   esac
   previous_deployment_ids="$(railway_read status \

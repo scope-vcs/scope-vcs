@@ -63,7 +63,9 @@ async fn cache_service_cutover_replaces_legacy_objects_without_copying_them() {
 #[tokio::test]
 async fn cache_service_schema_enforces_content_and_lifecycle_invariants() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     db.execute_unprepared(&format!(
         "
         INSERT INTO scope_users (id, handle, email, email_verified)

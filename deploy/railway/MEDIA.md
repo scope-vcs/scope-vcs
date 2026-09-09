@@ -1,7 +1,7 @@
 # Request media operations
 
 Request media has three Railway resources: the `scope-request-media` bucket, the public
-`scope-media` gateway, and the private `scope-media-worker`. Their project-wide IDs and
+`scope-media-api` gateway, and the private `scope-media-worker`. Their project-wide IDs and
 environment domains live in `.github/deployment-services.json`. The reconciler compares
 project resources with environment instances separately so adding production uses the same
 recorded service and bucket IDs rather than creating duplicate project resources.
@@ -28,15 +28,15 @@ upload, processing, playback, and cleanup before deleting the recovery copy.
 Use the Railway CLI version pinned in `.github/deployment-services.json`. Every command below
 asserts the project and environment IDs from that manifest.
 
-Use the actual Railway name in `railway.staging.environmentName` for the default rehearsal
-target, currently `release-proof`. Its media gateway domain remains unset until the reconciler
+Use the actual Railway name in `environments.staging.environmentName` for the default rehearsal
+target, `staging`. Its media gateway domain remains unset until the reconciler
 creates and records that environment's resources. A domain from another environment cannot be
 reused as its readiness endpoint.
 
 Read-only plans:
 
 ```bash
-node deploy/railway/reconcile-media.mjs plan --environment release-proof
+node deploy/railway/reconcile-media.mjs plan --environment staging
 node deploy/railway/reconcile-media.mjs plan --environment production \
   --worker-image 'ghcr.io/scope-vcs/scope-media-worker@sha256:<digest>'
 ```
@@ -48,8 +48,8 @@ random 32-byte base64 encryption key offline. Save the encryption key to the cho
 destination before sealing it; Railway cannot return a sealed value later. In the Railway UI:
 
 - set and seal `scope-api.SCOPE_MEDIA_GRANT_PRIVATE_KEY` to the PKCS#8 private signing key;
-- set `scope-media.SCOPE_MEDIA_GRANT_PUBLIC_KEY` to the matching SPKI public key;
-- set and seal `scope-media.SCOPE_MEDIA_ENCRYPTION_KEY` and
+- set `scope-media-api.SCOPE_MEDIA_GRANT_PUBLIC_KEY` to the matching SPKI public key;
+- set and seal `scope-media-api.SCOPE_MEDIA_ENCRYPTION_KEY` and
   `scope-media-worker.SCOPE_MEDIA_ENCRYPTION_KEY` to the same encryption key.
 
 The public signing key is configuration, not a secret. Keep the private signing key and
@@ -78,33 +78,15 @@ must provide `RAILWAY_REGISTRY_USERNAME` and `RAILWAY_REGISTRY_PASSWORD`; the tr
 owner stores those pull credentials on the Railway media worker service before activating the
 digest-pinned image. Candidate code never receives the credentials.
 
-Once an exact reviewed commit is pushed, dispatch its workflow and candidate from that same
-commit:
+The normal Release workflow activates the exact prepared candidate in staging and
+runs browser, Git, and media smoke checks before production. It issues a temporary
+staging-scoped token and revokes it when the job finishes. The media receipt records
+the tested revision and deployments.
 
-```bash
-sha="$(git rev-parse HEAD)"
-gh workflow run scope-railway-staging.yml \
-  --ref "$(git branch --show-current)" \
-  -f source_sha="$sha" \
-  -f target_environment=media-proof \
-  -f run_media_capacity=true
-```
-
-The `media-proof` selection uses its own database, bucket instances, URLs, and media keys.
-The default `staging` selection follows the manifest's rehearsal target. Both selections use
-GitHub's protected `staging` environment for credentials, so a temporary branch policy must
-remain in place until the proof and its access-revocation job have finished.
-
-The selected workflow revision owns the manifest and fencing steps. The account token exists
-only in the token create/delete steps; candidate deployment receives an environment-scoped
-staging token. The run builds a digest-pinned worker image, fences writers, migrates, deploys all
-services, exercises browser and Git flows, uploads PNG and MP4 media, verifies range reads and
-privacy, deletes its draft request, and binds the media receipt to `staging-deployments.json`.
-With `run_media_capacity=true`, it also creates the valid four-minute 1080p capacity fixture and
-runs the concurrent capacity proof while the isolated private session exists. It uploads the
-capacity summary and every `flow-*.json` receipt in the same deployment-evidence artifact.
-
-The production workflow uses main's trusted orchestration with an exact candidate SHA.
+Use `deployment-tests.yml` with a prepared release run ID for repeated transition
+tests. Capacity testing remains available through `dev/media-capacity.mjs` against
+the retained staging environment. Staging and production have distinct physical
+bucket instances and keys.
 
 ## Capacity proof
 
@@ -120,8 +102,8 @@ For a local diagnostic run only, invoke the same harness with a short-lived test
 ```bash
 SCOPE_MEDIA_SMOKE_TOKEN='<short-lived private smoke session>' \
 node dev/media-capacity.mjs \
-  --api 'https://scope-api-media-proof.up.railway.app' \
-  --media-origin 'https://scope-media-media-proof.up.railway.app' \
+  --api 'https://scope-api-release-proof.up.railway.app' \
+  --media-origin 'https://scope-media-release-proof.up.railway.app' \
   --repo dev/public-demo \
   --source-sha '<exact 40-character deployed commit>' \
   --large-video /secure/path/valid-500mb-recording.mp4 \

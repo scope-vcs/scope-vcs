@@ -16,18 +16,20 @@ function manifest() {
   return {
     railway: {
       projectId: "project",
-      environmentId: "production",
       regionId: "us-east4-eqdc4a",
+    },
+    environments: {
+      production: { environmentId: "production", environmentName: "production" },
       staging: {
         environmentId: "staging",
-        environmentName: "release-proof",
+        environmentName: "staging",
         webDomain: "scope-web-release-proof.up.railway.app",
       },
     },
     services: {
       api: { id: "api", name: "scope-api" },
-      media: { id: null, name: "scope-media" },
-      mediaWorker: { id: null, name: "scope-media-worker" },
+      "media-api": { id: null, name: "scope-media-api" },
+      "media-worker": { id: null, name: "scope-media-worker" },
     },
     mediaResources: {
       bucket: { id: null, name: "scope-request-media", region: "iad" },
@@ -41,7 +43,7 @@ function manifest() {
 function desired() {
   return desiredMediaState(
     manifest(),
-    "release-proof",
+    "staging",
     `ghcr.io/scope-vcs/scope-media-worker@sha256:${"a".repeat(64)}`,
   );
 }
@@ -62,21 +64,21 @@ function convergedState() {
   const state = {
     projectId: "project",
     environmentId: "staging",
-    environmentName: "release-proof",
+    environmentName: "staging",
     buckets: [{ id: "bucket", name: "scope-request-media" }],
     services: [
       {
         id: "api",
         name: "scope-api",
         variables: {
-          SCOPE_MEDIA_PUBLIC_URL: "https://${{scope-media.RAILWAY_PUBLIC_DOMAIN}}",
+          SCOPE_MEDIA_PUBLIC_URL: "https://${{scope-media-api.RAILWAY_PUBLIC_DOMAIN}}",
           SCOPE_MEDIA_GRANT_PRIVATE_KEY: "<sealed>",
         },
         variableMetadata: [{ name: "SCOPE_MEDIA_GRANT_PRIVATE_KEY", isSealed: true }],
       },
       {
         id: "gateway",
-        name: "scope-media",
+        name: "scope-media-api",
         variables: {
           ...variables(),
           SCOPE_MEDIA_ENCRYPTION_KEY: "<sealed>",
@@ -106,7 +108,7 @@ test("plans exactly one of each missing resource and repeats without duplicates"
   const empty = {
     projectId: "project",
     environmentId: "staging",
-    environmentName: "release-proof",
+    environmentName: "staging",
     buckets: [],
     services: [{ id: "api", name: "scope-api", variables: {}, variableMetadata: [] }],
   };
@@ -115,7 +117,7 @@ test("plans exactly one of each missing resource and repeats without duplicates"
     first.operations.filter(({ action }) => action.startsWith("create")),
     [
       { action: "createBucket", name: "scope-request-media", region: "iad" },
-      { action: "createService", role: "gateway", name: "scope-media" },
+      { action: "createService", role: "gateway", name: "scope-media-api" },
       { action: "createService", role: "worker", name: "scope-media-worker" },
     ],
   );
@@ -141,9 +143,9 @@ test("rejects duplicate names and requires sealed production secrets", () => {
   const unsealed = convergedState();
   unsealed.environmentId = "production";
   unsealed.environmentName = "production";
-  unsealed.services.find(({ name }) => name === "scope-media").variableMetadata[0].isSealed = false;
+  unsealed.services.find(({ name }) => name === "scope-media-api").variableMetadata[0].isSealed = false;
   assert.deepEqual(planMediaReconcile(productionDesired, unsealed).manualActions, [
-    "seal scope-media.SCOPE_MEDIA_ENCRYPTION_KEY",
+    "seal scope-media-api.SCOPE_MEDIA_ENCRYPTION_KEY",
   ]);
 });
 
@@ -155,7 +157,7 @@ test("attaches project resources that have no instance in the target environment
   assert.deepEqual(result.blockers, []);
   assert.deepEqual(result.operations, [
     { action: "attachBucket", id: "bucket", name: "scope-request-media", region: "iad" },
-    { action: "attachService", role: "gateway", id: "gateway", name: "scope-media" },
+    { action: "attachService", role: "gateway", id: "gateway", name: "scope-media-api" },
     { action: "attachService", role: "worker", id: "worker", name: "scope-media-worker" },
   ]);
 });
@@ -167,12 +169,12 @@ test("recorded identities absent from the project block replacement creation", (
   const state = convergedState();
   state.buckets = [];
   state.projectBuckets = [];
-  state.services = state.services.filter(({ name }) => name !== "scope-media");
-  state.projectServices = state.projectServices.filter(({ name }) => name !== "scope-media");
+  state.services = state.services.filter(({ name }) => name !== "scope-media-api");
+  state.projectServices = state.projectServices.filter(({ name }) => name !== "scope-media-api");
   const result = planMediaReconcile(wanted, state);
   assert.deepEqual(result.blockers, [
     "manifest bucket recorded-bucket is absent from the Railway project",
-    "manifest service scope-media (recorded-gateway) is absent from the Railway project",
+    "manifest service scope-media-api (recorded-gateway) is absent from the Railway project",
   ]);
   assert.deepEqual(result.operations, []);
 });
@@ -183,7 +185,7 @@ test("post-creation drift blocks configuration", () => {
     /topology drift remains: wrong identity/,
   );
   assert.throws(
-    () => assertConfigurationReady({ blockers: [], operations: [{ action: "attachService", name: "scope-media" }] }),
+    () => assertConfigurationReady({ blockers: [], operations: [{ action: "attachService", name: "scope-media-api" }] }),
     /topology operations remain: attachService scope-media/,
   );
   assert.doesNotThrow(() => assertConfigurationReady({
@@ -221,15 +223,15 @@ test("creation failure rolls back only resources created by this apply", async (
   };
   const operations = [
     { action: "createBucket", name: "scope-request-media" },
-    { action: "createService", name: "scope-media" },
+    { action: "createService", name: "scope-media-api" },
     { action: "createService", name: "scope-media-worker" },
   ];
   await assert.rejects(applyCreationOperations(operations, adapter), /injected create failure/);
   assert.deepEqual(calls, [
     "create:scope-request-media",
-    "create:scope-media",
+    "create:scope-media-api",
     "create:scope-media-worker",
-    "delete:scope-media",
+    "delete:scope-media-api",
     "delete:scope-request-media",
   ]);
 });
@@ -248,26 +250,26 @@ test("attachment failure detaches only target-environment instances", async () =
   };
   await assert.rejects(applyCreationOperations([
     { action: "attachBucket", id: "bucket", name: "scope-request-media" },
-    { action: "attachService", id: "gateway", name: "scope-media" },
+    { action: "attachService", id: "gateway", name: "scope-media-api" },
     { action: "attachService", id: "worker", name: "scope-media-worker" },
   ], adapter), /injected attach failure/);
   assert.deepEqual(calls, [
     "attach:scope-request-media",
-    "attach:scope-media",
+    "attach:scope-media-api",
     "attach:scope-media-worker",
-    "detach:scope-media",
+    "detach:scope-media-api",
     "detach:scope-request-media",
   ]);
 });
 
 test("worker source accepts only the reviewed digest-pinned GHCR image", () => {
   assert.throws(
-    () => desiredMediaState(manifest(), "release-proof", "ghcr.io/scope-vcs/scope-media-worker:latest"),
+    () => desiredMediaState(manifest(), "staging", "ghcr.io/scope-vcs/scope-media-worker:latest"),
     /pinned by sha256 digest/,
   );
 });
 
-test("fresh release-proof staging plans one key generation operation without exposing values", () => {
+test("fresh staging plans one key generation operation without exposing values", () => {
   const state = convergedState();
   for (const service of state.services) {
     service.variables = Object.fromEntries(

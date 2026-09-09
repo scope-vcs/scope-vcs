@@ -98,7 +98,8 @@ async fn prepare_template_database(admin_url: &str) -> anyhow::Result<String> {
             .min_connections(1)
             .set_schema_search_path(TEMPLATE_SCHEMA);
         let database = Database::connect(options).await?;
-        let migration_result = crate::migrations::apply_in_maintenance(&database).await;
+        let migration_result =
+            crate::migrations::apply_in_maintenance(&database, Default::default()).await;
         database.close().await?;
         migration_result?;
         Ok::<_, anyhow::Error>(database_name.clone())

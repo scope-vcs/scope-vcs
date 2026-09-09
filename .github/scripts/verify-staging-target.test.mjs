@@ -10,8 +10,10 @@ function fixture() {
   const manifest = {
     railway: {
       databaseServiceId: 'database',
-      environmentId: 'production',
       projectId: 'project',
+    },
+    environments: {
+      production: { environmentId: 'production', environmentName: 'production' },
       staging: {
         apiReplicas: 3,
         apiDomain: 'api-staging.example.test',
@@ -28,10 +30,10 @@ function fixture() {
     services: {
       api: { id: 'api', name: 'scope-api' },
       cache: { id: 'cache', name: 'scope-cache-service' },
-      media: { id: 'media', name: 'scope-media' },
-      mediaWorker: { id: 'media-worker', name: 'scope-media-worker' },
+      'media-api': { id: 'media', name: 'scope-media' },
+      'media-worker': { id: 'media-worker', name: 'scope-media-worker' },
       web: { id: 'web', name: 'scope-web' },
-      worker: { id: 'worker', name: 'scope-worker' },
+      'run-worker': { id: 'worker', name: 'scope-worker' },
     },
     mediaResources: {
       bucket: { id: 'media-bucket' },
@@ -75,6 +77,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
   copyFileSync(new URL('./verify-staging-target.mjs', import.meta.url), join(scripts, 'verify-staging-target.mjs'))
   copyFileSync(new URL('./deploy-staging-railway.sh', import.meta.url), join(scripts, 'deploy-staging-railway.sh'))
   writeFileSync(join(scripts, 'railway-read.mjs'), `
+    if (process.argv[1]?.endsWith('railway-read.mjs')) {
     const input = ${JSON.stringify(input)};
     const args = process.argv.slice(2);
     const command = args.slice(0, 2).join(' ');
@@ -82,16 +85,24 @@ test('staging deploys and records the candidate checkout when the workflow revis
     if (args[0] === 'status') console.log(JSON.stringify(input.status));
     else if (command === 'service list') console.log(JSON.stringify(input.services));
     else if (command === 'variable list') console.log(JSON.stringify(service === 'api' ? {
-      SCOPE_CACHE_URL: 'https://' + input.manifest.railway.staging.cacheDomain,
-      SCOPE_GIT_PUBLIC_URL: 'https://' + input.manifest.railway.staging.routerDomain,
+      SCOPE_CACHE_URL: 'https://' + input.manifest.environments.staging.cacheDomain,
+      SCOPE_GIT_PUBLIC_URL: 'https://' + input.manifest.environments.staging.routerDomain,
     } : { SCOPE_REPO_ROUTER_BACKEND: 'scope-api.railway.internal:8080', SCOPE_REPO_ROUTER_READ_REPLICAS: '3' }));
     else if (command === 'deployment list') console.log(JSON.stringify([{ id: service + '-deployment', status: 'SUCCESS' }]));
     else throw new Error('Unexpected provider read: ' + args.join(' '));
+    }
   `)
   writeFileSync(join(bin, 'railway'), '#!/bin/sh\ntest "$1 $2" = "variable set"\n', { mode: 0o755 })
   writeFileSync(join(scripts, 'deploy-railway.sh'), `#!/bin/sh
     node -e 'require("node:fs").writeFileSync("deployment.json", JSON.stringify({ source: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, message: process.env.RAILWAY_DEPLOY_MESSAGE }))'
   `)
+  writeFileSync(join(root, 'prepared.json'), JSON.stringify({ schemaVersion: 1, sourceSha: candidate,
+    components: { web: { sourceSha: candidate, serviceId: 'web', image: `ghcr.io/scope-vcs/release-web@sha256:${'b'.repeat(64)}` } } }))
+  for (const name of ['railway-artifact.mjs', 'railway-retry.mjs']) {
+    copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
+  }
+  // The artifact module imports the provider reader but this test never calls it.
+  writeFileSync(join(scripts, 'railway-read.mjs'), 'export function readRailway() {}\n' + readFileSync(join(scripts, 'railway-read.mjs'), 'utf8'))
   const result = spawnSync('bash', [join(scripts, 'deploy-staging-railway.sh'), 'finish', 'web'], {
     cwd: root,
     encoding: 'utf8',
@@ -103,6 +114,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
       RAILWAY_TOKEN: 'test-token',
       RAILWAY_API_TOKEN: '',
       SCOPE_DEPLOYMENT_SOURCE_SHA: '',
+      SCOPE_PREPARED_RELEASE_PATH: join(root, 'prepared.json'),
       SCOPE_DEPLOYMENT_MANIFEST: join(root, '.github/deployment-services.json'),
       SCOPE_STAGING_EVIDENCE_PATH: join(root, 'evidence.json'),
       SCOPE_MEDIA_WORKER_IMAGE: `ghcr.io/scope-vcs/scope-media-worker@sha256:${'b'.repeat(64)}`,
@@ -130,7 +142,7 @@ test('accepts the reviewed staging target', () => {
 
 test('rejects production as staging', () => {
   const input = fixture()
-  input.manifest.railway.staging.environmentId = 'production'
+  input.manifest.environments.staging.environmentId = 'production'
   assert.throws(() => verifyStagingTarget(input), /differ from production/)
 })
 
@@ -150,7 +162,7 @@ test('rejects a different project, environment, or service', () => {
 test('rejects invalid staging replica counts', () => {
   for (const [key, value] of [['apiReplicas', 0], ['routerReplicas', 1.5]]) {
     const input = fixture()
-    input.manifest.railway.staging[key] = value
+    input.manifest.environments.staging[key] = value
     assert.throws(() => verifyStagingTarget(input), /positive integer/)
   }
 })
@@ -174,7 +186,7 @@ test('accepts only the reviewed healthy staging topology', () => {
 test('rejects missing or URL-shaped domains', () => {
   for (const domain of ['', 'https://api-staging.example.test/path']) {
     const input = fixture()
-    input.manifest.railway.staging.apiDomain = domain
+    input.manifest.environments.staging.apiDomain = domain
     assert.throws(() => verifyStagingTarget(input))
   }
 })

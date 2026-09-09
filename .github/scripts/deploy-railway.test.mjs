@@ -15,7 +15,7 @@ function providerStatus(activeDeployments) {
       name: "staging",
       serviceInstances: { edges: [{ node: {
         serviceId: "cache-id",
-        serviceName: "scope-cache-service",
+        serviceName: "scope-cache",
         latestDeployment: { id: "stale-failed", status: "FAILED" },
         activeDeployments,
       } }] },

@@ -2,32 +2,32 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const requiredServices = ['cache', 'worker', 'media', 'mediaWorker', 'api', 'web']
+const requiredServices = ['cache', 'run-worker', 'media-api', 'media-worker', 'api', 'web']
 
 export function verifyStagingTarget({ manifest, services, status }) {
   const railway = manifest?.railway
   assertObject(railway, 'manifest.railway')
-  assertObject(railway.staging, 'manifest.railway.staging')
+  assertObject(manifest.environments.staging, 'manifest.environments.staging')
 
   const projectId = requiredString(railway.projectId, 'Railway project ID')
   const productionEnvironmentId = requiredString(
-    railway.environmentId,
+    manifest.environments.production.environmentId,
     'Railway production environment ID',
   )
   const stagingEnvironmentId = requiredString(
-    railway.staging.environmentId,
+    manifest.environments.staging.environmentId,
     'Railway staging environment ID',
   )
   const stagingEnvironmentName = requiredString(
-    railway.staging.environmentName,
+    manifest.environments.staging.environmentName,
     'Railway staging environment name',
   )
   const apiReplicas = requiredPositiveInteger(
-    railway.staging.apiReplicas,
+    manifest.environments.staging.apiReplicas,
     'staging API replicas',
   )
   const routerReplicas = requiredPositiveInteger(
-    railway.staging.routerReplicas,
+    manifest.environments.staging.routerReplicas,
     'staging router replicas',
   )
   assert.notEqual(
@@ -62,8 +62,8 @@ export function verifyStagingTarget({ manifest, services, status }) {
       }
     }),
     {
-      id: requiredString(railway.staging.routerServiceId, 'staging router service ID'),
-      name: requiredString(railway.staging.routerServiceName, 'staging router service name'),
+      id: requiredString(manifest.environments.staging.routerServiceId, 'staging router service ID'),
+      name: requiredString(manifest.environments.staging.routerServiceName, 'staging router service name'),
     },
   ]
 
@@ -76,7 +76,7 @@ export function verifyStagingTarget({ manifest, services, status }) {
   }
 
   for (const key of ['apiDomain', 'cacheDomain', 'routerDomain', 'webDomain']) {
-    const domain = requiredString(railway.staging[key], `staging ${key}`)
+    const domain = requiredString(manifest.environments.staging[key], `staging ${key}`)
     assert.match(
       domain,
       /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/,
@@ -103,17 +103,17 @@ export function verifyStagingTarget({ manifest, services, status }) {
 export function verifyStagingTopology({ manifest, services }) {
   const railway = manifest?.railway
   assertObject(railway, 'manifest.railway')
-  assertObject(railway.staging, 'manifest.railway.staging')
+  assertObject(manifest.environments.staging, 'manifest.environments.staging')
   assertObject(manifest?.services, 'manifest.services')
   assert(Array.isArray(services), 'Railway service state must be an array')
 
   const expected = [
-    ['api', manifest.services.api?.id, railway.staging.apiReplicas],
+    ['api', manifest.services.api?.id, manifest.environments.staging.apiReplicas],
     ['cache', manifest.services.cache?.id, 1],
-    ['router', railway.staging.routerServiceId, railway.staging.routerReplicas],
-    ['worker', manifest.services.worker?.id, 1],
-    ['media', manifest.services.media?.id, 1],
-    ['mediaWorker', manifest.services.mediaWorker?.id, 1],
+    ['git-router', manifest.environments.staging.routerServiceId, manifest.environments.staging.routerReplicas],
+    ['run-worker', manifest.services['run-worker']?.id, 1],
+    ['media-api', manifest.services['media-api']?.id, 1],
+    ['media-worker', manifest.services['media-worker']?.id, 1],
   ]
   for (const [name, id, count] of expected) {
     const serviceId = requiredString(id, `${name} service ID`)

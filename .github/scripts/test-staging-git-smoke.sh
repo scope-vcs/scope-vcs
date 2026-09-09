@@ -250,7 +250,7 @@ for failure in stale leak permissioned marker; do
 done
 
 # Execute the workflow's actual final cleanup, which owns session removal.
-python3 - "$repo_root/.github/workflows/scope-railway-staging.yml" "$test_root/owner-cleanup.sh" <<'PYTHON'
+python3 - "$repo_root/.github/workflows/deploy-staging.yml" "$test_root/owner-cleanup.sh" <<'PYTHON'
 import pathlib, sys, textwrap
 workflow = pathlib.Path(sys.argv[1]).read_text()
 step = workflow.split('      - name: Remove staging Git smoke credentials\n', 1)[1].split('\n      - name:', 1)[0]

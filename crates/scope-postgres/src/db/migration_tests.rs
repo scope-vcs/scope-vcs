@@ -1,5 +1,5 @@
 use super::{
-    MigrationImpact, TestDatabaseTarget,
+    TestDatabaseTarget,
     test_support::{TestSchemaLease, connect_isolated_test_database},
 };
 use crate::migrations;
@@ -124,7 +124,9 @@ pub(super) async fn relation_exists(db: &DatabaseConnection, relation: &str) -> 
 }
 
 async fn assert_v6_adoption_refused(db: &DatabaseConnection, expected_diagnostic: &str) {
-    let error = migrations::apply_in_maintenance(db).await.unwrap_err();
+    let error = migrations::apply_in_maintenance(db, Default::default())
+        .await
+        .unwrap_err();
 
     assert!(
         error.to_string().contains(expected_diagnostic),
@@ -438,7 +440,9 @@ async fn populated_v6_is_adopted_without_changing_business_rows() {
         representative_business_snapshot(db.as_ref()).await,
     ));
 
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
 
     let after = without_migrated_repository_fields(without_migration_rewritten_state(
         representative_business_snapshot(db.as_ref()).await,
@@ -636,7 +640,9 @@ async fn structured_attempt_migration_preserves_runs_and_replaces_execution_stat
     .await
     .unwrap();
 
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
 
     for table in [
         "scope_runs",
@@ -687,7 +693,9 @@ async fn production_v6_with_retired_tables_is_adopted_and_cleaned_up() {
     initialize_ready_v6(db.as_ref()).await;
     add_retired_v6_tables(db.as_ref()).await;
 
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
 
     for table in RETIRED_V6_TABLES {
         assert!(
@@ -707,7 +715,7 @@ async fn rejected_v6_fingerprint_rolls_back_retired_table_cleanup() {
         .await
         .unwrap();
 
-    let error = migrations::apply_in_maintenance(db.as_ref())
+    let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap_err();
 
@@ -782,7 +790,7 @@ async fn partial_schema_is_refused_without_deleting_existing_objects() {
     .await
     .unwrap();
 
-    let error = migrations::apply_in_maintenance(db.as_ref())
+    let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap_err();
 
@@ -820,7 +828,9 @@ async fn multiple_v6_markers_are_refused_without_stamping_migration_state() {
 #[tokio::test]
 async fn reapplying_latest_migrations_is_a_data_preserving_noop() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     db.execute_unprepared(
         "
             INSERT INTO scope_users (id, handle, email, email_verified)
@@ -831,19 +841,21 @@ async fn reapplying_latest_migrations_is_a_data_preserving_noop() {
     .unwrap();
     let before = representative_business_snapshot(db.as_ref()).await;
 
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
 
     assert_eq!(representative_business_snapshot(db.as_ref()).await, before);
     assert_eq!(applied_versions(db.as_ref()).await, LATEST_MIGRATIONS);
 }
 
 #[tokio::test]
-async fn concurrent_api_migration_attempts_serialize() {
+async fn concurrent_maintenance_migration_attempts_serialize() {
     let (_target, db, _lease) = isolated_database().await;
 
     let (first, second) = tokio::join!(
-        migrations::apply_in_maintenance(db.as_ref()),
-        migrations::apply_in_maintenance(db.as_ref())
+        migrations::apply_in_maintenance(db.as_ref(), Default::default()),
+        migrations::apply_in_maintenance(db.as_ref(), Default::default())
     );
 
     first.unwrap();
@@ -858,7 +870,9 @@ async fn exact_state_check_is_read_only_and_rejects_behind_and_ahead() {
     assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
     assert!(!relation_exists(db.as_ref(), "seaql_migrations").await);
 
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     db.execute_unprepared(
         "DELETE FROM seaql_migrations WHERE version = 'm0002_retire_reset_schema'",
     )

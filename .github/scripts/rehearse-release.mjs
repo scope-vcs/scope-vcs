@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { verifyStagingTarget } from './verify-staging-target.mjs';
 import { readRailway } from './railway-read.mjs';
 
-const deploymentOrder = ['router', 'cache', 'worker', 'media', 'mediaWorker', 'api', 'web'];
+const deploymentOrder = ['git-router', 'cache', 'run-worker', 'media-api', 'media-worker', 'api', 'web'];
 
 export function previousDeploymentsRemoved(previous, deployments) {
   return previous.every(({ serviceId, deploymentId }) => {
@@ -57,14 +57,14 @@ async function main() {
   assert.equal(prepared.sourceSha, sourceSha, 'Prepared images must match the requested revision');
   const components = deploymentOrder.filter((component) => prepared.components?.[component]);
   assert(components.length > 0, 'Prepared release has no staging application components');
-  const scope = ['--project', railway.projectId, '--environment', railway.staging.environmentId];
+  const scope = ['--project', railway.projectId, '--environment', manifest.environments.staging.environmentId];
   const query = async (...args) => readRailway([...args, ...scope, '--json']);
   verifyStagingTarget({ manifest, status: await query('status'), services: await query('service', 'list') });
   const env = {
     ...process.env,
     RAILWAY_PROJECT_ID: railway.projectId,
-    SCOPE_RAILWAY_ENVIRONMENT_ID: railway.staging.environmentId,
-    SCOPE_WEB_BASE_URL: `https://${railway.staging.webDomain}`,
+    SCOPE_RAILWAY_ENVIRONMENT_ID: manifest.environments.staging.environmentId,
+    SCOPE_WEB_BASE_URL: `https://${manifest.environments.staging.webDomain}`,
     GITHUB_SHA: sourceSha,
   };
   const output = resolve(process.env.SCOPE_REHEARSAL_EVIDENCE_DIR ?? 'release-rehearsal');
@@ -77,7 +77,7 @@ async function main() {
       const configPath = resolve(directory, 'monitor.json');
       await writeFile(configPath, JSON.stringify({
         mode: 'ordinary', webOrigin: env.SCOPE_WEB_BASE_URL,
-        apiOrigin: `https://${railway.staging.apiDomain}`,
+        apiOrigin: `https://${manifest.environments.staging.apiDomain}`,
         intervalMs: 1000, requestTimeoutMs: 5000,
         release: { attemptId: `staging-rehearsal-${rotation}`, stage: `staging-ordinary-${rotation}`, sourceSha, deploymentsFile: resolve(directory, 'active-deployments.json') },
         fixture: { owner: 'dev', repo: 'update-demo', filePath: 'README.md', expectedText: '# Update Demo', expectedRequestIds: ['req_demo_ready'] },
@@ -89,9 +89,9 @@ async function main() {
     const active = JSON.parse(await readFile(resolve(output, 'ordinary-3/active-deployments.json'), 'utf8'));
     await writeFile(process.env.SCOPE_STAGING_EVIDENCE_PATH ?? 'staging-deployments.json', JSON.stringify({
       commit: sourceSha,
-      environmentId: railway.staging.environmentId,
+      environmentId: manifest.environments.staging.environmentId,
       deployments: components.map((component) => ({
-        service: component === 'router' ? railway.staging.routerServiceId : services[component].id,
+        service: component === 'git-router' ? manifest.environments.staging.routerServiceId : services[component].id,
         deploymentId: active[component],
         status: 'SUCCESS',
       })),
@@ -118,7 +118,7 @@ async function main() {
     await waitForFile(readyPath, browser);
     const current = await query('service', 'list');
     const previous = components.map((component) => {
-      const serviceId = component === 'router' ? railway.staging.routerServiceId : services[component].id;
+      const serviceId = component === 'git-router' ? manifest.environments.staging.routerServiceId : services[component].id;
       const live = current.find(({ id }) => id === serviceId);
       assert(live?.deploymentId && live.status === 'SUCCESS', `${component} must have a healthy predecessor`);
       return { component, serviceId, deploymentId: live.deploymentId };
@@ -137,12 +137,12 @@ async function main() {
         ...env, SCOPE_DEPLOYMENT_COMPONENT: component,
         SCOPE_DEPLOYMENT_EVIDENCE_PATH: resolve(directory, 'deployments.ndjson'),
       };
-      if (component === 'mediaWorker') {
+      if (component === 'media-worker') {
         await processTask(process.execPath, ['.github/scripts/deploy-railway-image.mjs', serviceId,
-          prepared.components.mediaWorker.image], deploymentEnv).done;
+          prepared.components['media-worker'].image], deploymentEnv).done;
       } else {
         await processTask('bash', ['.github/scripts/deploy-railway.sh', serviceId,
-          component === 'cache' ? 'cache-service' : component === 'router' ? 'repo-router' : component], deploymentEnv).done;
+          component === 'cache' ? 'cache-service' : component === 'git-router' ? 'repo-router' : component === 'run-worker' ? 'worker' : component === 'media-api' ? 'media' : component], deploymentEnv).done;
       }
       const records = (await readFile(resolve(directory, 'deployments.ndjson'), 'utf8'))
         .trim().split('\n').map(JSON.parse);
@@ -166,8 +166,8 @@ async function main() {
       await waitForFile(updateReadyPath, browser);
       await processTask('bash', ['.github/scripts/staging-git-smoke.sh'], {
         ...env,
-        SCOPE_API_URL: `https://${railway.staging.apiDomain}`,
-        SCOPE_GIT_ROUTER_URL: `https://${railway.staging.routerDomain}`,
+        SCOPE_API_URL: `https://${manifest.environments.staging.apiDomain}`,
+        SCOPE_GIT_ROUTER_URL: `https://${manifest.environments.staging.routerDomain}`,
         SCOPE_CLI_BINARY: resolve('cli/target/release/scope'),
         SCOPE_EXCHANGE_TOKEN_PATH: resolve(process.env.SCOPE_GIT_SMOKE_DIR, 'exchange-token'),
       }).done;

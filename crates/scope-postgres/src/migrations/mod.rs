@@ -52,176 +52,107 @@ const MIGRATION_TABLE: &str = "seaql_migrations";
 
 pub struct Migrator;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum MigrationImpact {
-    Online,
-    MaintenanceRequired,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PendingMigration {
     pub name: String,
-    pub impact: MigrationImpact,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct MigrationPlan {
     pub exact: bool,
+    pub applied: Vec<String>,
     pub pending: Vec<PendingMigration>,
-}
-
-struct MigrationSpec {
-    migration: Box<dyn MigrationTrait>,
-    impact: MigrationImpact,
-}
-
-fn spec(migration: impl MigrationTrait + 'static, impact: MigrationImpact) -> MigrationSpec {
-    MigrationSpec {
-        migration: Box::new(migration),
-        impact,
-    }
-}
-
-fn inventory() -> Vec<MigrationSpec> {
-    use MigrationImpact::{MaintenanceRequired, Online};
-
-    vec![
-        spec(m0001_adopt_v6::Migration, MaintenanceRequired),
-        spec(m0002_retire_reset_schema::Migration, MaintenanceRequired),
-        spec(
-            m0003_structured_run_attempts::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0004_runner_protocol_cutover::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0005_projection_head_oid::Migration, MaintenanceRequired),
-        spec(m0006_drop_request_credits::Migration, MaintenanceRequired),
-        spec(m0007_drop_review_ceremony::Migration, MaintenanceRequired),
-        spec(
-            m0008_one_way_request_submission::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0009_request_ratings::Migration, Online),
-        spec(
-            m0010_file_visibility_source_of_truth::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0011_compact_request_started_events::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0012_request_revisions::Migration, MaintenanceRequired),
-        spec(m0013_workflow_jobs::Migration, MaintenanceRequired),
-        spec(m0014_run_jobs::Migration, MaintenanceRequired),
-        spec(m0015_runner_capacity::Migration, MaintenanceRequired),
-        spec(
-            m0016_workflow_runtime_contract::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0017_run_history_indexes::Migration, Online),
-        spec(
-            m0018_truthful_run_log_truncation::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0019_run_attempt_cache_observations::Migration, Online),
-        spec(m0020_cloud_execution::Migration, MaintenanceRequired),
-        spec(m0021_cache_service_cutover::Migration, MaintenanceRequired),
-        spec(m0022_git_pack_spans::Migration, MaintenanceRequired),
-        spec(m0023_logical_run_sources::Migration, MaintenanceRequired),
-        spec(m0024_git_compaction_scheduler::Migration, Online),
-        spec(m0025_visibility_change_sets::Migration, MaintenanceRequired),
-        spec(
-            m0026_repository_landing_files::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0027_run_creation_sequence::Migration, MaintenanceRequired),
-        spec(
-            m0028_repository_workflow_catalogs::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0029_exact_compatible_caches::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0030_cache_preparation_timings::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0031_provider_neutral_run_attempts::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0032_flat_discussion_replies::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0033_git_segment_streaming_v2::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0034_repository_incarnations::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0035_retired_git_storage_cutover::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0036_request_queue_indexes::Migration, MaintenanceRequired),
-        spec(m0037_repository_history_views::Migration, Online),
-        spec(
-            m0038_history_entry_positions::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0039_history_action_feed::Migration, MaintenanceRequired),
-        spec(m0040_repository_metadata::Migration, Online),
-        spec(
-            m0041_history_occurrence_time::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0042_request_media::Migration, MaintenanceRequired),
-    ]
 }
 
 #[sea_orm_migration::async_trait::async_trait]
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        inventory().into_iter().map(|spec| spec.migration).collect()
+        vec![
+            Box::new(m0001_adopt_v6::Migration),
+            Box::new(m0002_retire_reset_schema::Migration),
+            Box::new(m0003_structured_run_attempts::Migration),
+            Box::new(m0004_runner_protocol_cutover::Migration),
+            Box::new(m0005_projection_head_oid::Migration),
+            Box::new(m0006_drop_request_credits::Migration),
+            Box::new(m0007_drop_review_ceremony::Migration),
+            Box::new(m0008_one_way_request_submission::Migration),
+            Box::new(m0009_request_ratings::Migration),
+            Box::new(m0010_file_visibility_source_of_truth::Migration),
+            Box::new(m0011_compact_request_started_events::Migration),
+            Box::new(m0012_request_revisions::Migration),
+            Box::new(m0013_workflow_jobs::Migration),
+            Box::new(m0014_run_jobs::Migration),
+            Box::new(m0015_runner_capacity::Migration),
+            Box::new(m0016_workflow_runtime_contract::Migration),
+            Box::new(m0017_run_history_indexes::Migration),
+            Box::new(m0018_truthful_run_log_truncation::Migration),
+            Box::new(m0019_run_attempt_cache_observations::Migration),
+            Box::new(m0020_cloud_execution::Migration),
+            Box::new(m0021_cache_service_cutover::Migration),
+            Box::new(m0022_git_pack_spans::Migration),
+            Box::new(m0023_logical_run_sources::Migration),
+            Box::new(m0024_git_compaction_scheduler::Migration),
+            Box::new(m0025_visibility_change_sets::Migration),
+            Box::new(m0026_repository_landing_files::Migration),
+            Box::new(m0027_run_creation_sequence::Migration),
+            Box::new(m0028_repository_workflow_catalogs::Migration),
+            Box::new(m0029_exact_compatible_caches::Migration),
+            Box::new(m0030_cache_preparation_timings::Migration),
+            Box::new(m0031_provider_neutral_run_attempts::Migration),
+            Box::new(m0032_flat_discussion_replies::Migration),
+            Box::new(m0033_git_segment_streaming_v2::Migration),
+            Box::new(m0034_repository_incarnations::Migration),
+            Box::new(m0035_retired_git_storage_cutover::Migration),
+            Box::new(m0036_request_queue_indexes::Migration),
+            Box::new(m0037_repository_history_views::Migration),
+            Box::new(m0038_history_entry_positions::Migration),
+            Box::new(m0039_history_action_feed::Migration),
+            Box::new(m0040_repository_metadata::Migration),
+            Box::new(m0041_history_occurrence_time::Migration),
+            Box::new(m0042_request_media::Migration),
+        ]
     }
 }
 
-pub async fn apply_in_maintenance(db: &DatabaseConnection) -> Result<(), DbErr> {
+/// Per-statement limits for the migration transaction, independent of outage reporting.
+#[derive(Clone, Copy, Debug)]
+pub struct MigrationLimits {
+    pub lock_timeout_seconds: u32,
+    pub statement_timeout_seconds: u32,
+}
+
+impl Default for MigrationLimits {
+    fn default() -> Self {
+        Self {
+            lock_timeout_seconds: 120,
+            statement_timeout_seconds: 3600,
+        }
+    }
+}
+
+pub async fn apply_in_maintenance(
+    db: &DatabaseConnection,
+    limits: MigrationLimits,
+) -> Result<(), DbErr> {
+    if limits.lock_timeout_seconds == 0 || limits.statement_timeout_seconds == 0 {
+        return Err(DbErr::Custom(
+            "migration operation limits must be positive".to_string(),
+        ));
+    }
     let tx = db.begin().await?;
+    tx.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT set_config('lock_timeout', $1, true), set_config('statement_timeout', $2, true)",
+        [
+            format!("{}s", limits.lock_timeout_seconds).into(),
+            format!("{}s", limits.statement_timeout_seconds).into(),
+        ],
+    ))
+    .await?;
     lock_migration_inventory(&tx).await?;
     Migrator::up(&tx, None).await?;
     assert_exact_state(&tx).await?;
     tx.commit().await
-}
-
-pub async fn apply_online(db: &DatabaseConnection) -> Result<(), DbErr> {
-    let tx = db.begin().await?;
-    lock_migration_inventory(&tx).await?;
-    let pending = plan(&tx).await?.pending;
-    let online_count = pending
-        .iter()
-        .take_while(|migration| migration.impact == MigrationImpact::Online)
-        .count();
-    if online_count > 0 {
-        Migrator::up(&tx, Some(online_count as u32)).await?;
-    }
-    tx.commit().await?;
-
-    let remaining = plan(db).await?.pending;
-    if let Some(blocked) = remaining.first() {
-        return Err(DbErr::Custom(format!(
-            "migration {} requires a maintenance cutover; ordinary startup will not apply it",
-            blocked.name
-        )));
-    }
-    Ok(())
 }
 
 pub async fn plan<C>(db: &C) -> Result<MigrationPlan, DbErr>
@@ -229,10 +160,10 @@ where
     C: ConnectionTrait,
 {
     let actual = applied_migration_names(db).await?;
-    let specs = inventory();
-    let expected = specs
+    let migrations = Migrator::migrations();
+    let expected = migrations
         .iter()
-        .map(|spec| spec.migration.name().to_string())
+        .map(|migration| migration.name().to_string())
         .collect::<Vec<_>>();
     if !expected.starts_with(&actual) {
         return Err(DbErr::Custom(format!(
@@ -241,16 +172,16 @@ where
             actual.join(", ")
         )));
     }
-    let pending = specs
+    let pending = migrations
         .into_iter()
         .skip(actual.len())
-        .map(|spec| PendingMigration {
-            name: spec.migration.name().to_string(),
-            impact: spec.impact,
+        .map(|migration| PendingMigration {
+            name: migration.name().to_string(),
         })
         .collect::<Vec<_>>();
     Ok(MigrationPlan {
         exact: pending.is_empty(),
+        applied: actual,
         pending,
     })
 }
