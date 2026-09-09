@@ -3,12 +3,11 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, EntityTrait,
     IntoActiveModel, QueryFilter, QueryOrder, QueryResult, QuerySelect, Statement, sea_query::Expr,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use {
     crate::error::PostgresError,
-    scope_domain::{
-        account::UserAccount,
-        requests::{RequestDiscussion, RequestDiscussionReadState, RequestDiscussionReply},
+    scope_domain::requests::{
+        RequestDiscussion, RequestDiscussionReadState, RequestDiscussionReply,
     },
 };
 
@@ -479,30 +478,6 @@ where
     .map_err(PostgresError::internal)?
     .map(entities::request_discussion_read_state::Model::try_into_domain)
     .transpose()
-}
-
-pub async fn users_by_ids<C>(
-    conn: &C,
-    user_ids: impl IntoIterator<Item = String>,
-) -> Result<BTreeMap<String, UserAccount>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let user_ids = user_ids.into_iter().collect::<BTreeSet<_>>();
-    if user_ids.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    entities::user::Entity::find()
-        .filter(entities::user::Column::Id.is_in(user_ids))
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(|row| {
-            let user = row.try_into_domain()?;
-            Ok((user.id.clone(), user))
-        })
-        .collect()
 }
 
 pub async fn insert_discussion<C>(conn: &C, value: &RequestDiscussion) -> Result<(), PostgresError>

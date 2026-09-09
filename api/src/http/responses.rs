@@ -479,25 +479,30 @@ pub(crate) fn history_page_response(
     entries: &[HistoryEntry],
     next_cursor: Option<String>,
     head_oid: Option<String>,
-) -> HistoryPageResponse {
-    HistoryPageResponse {
+    users: &BTreeMap<String, UserAccount>,
+) -> Result<HistoryPageResponse, ApiError> {
+    Ok(HistoryPageResponse {
         feed,
         audience,
         repo_id: view.repo_id.clone(),
         view_key: view.view_key.clone(),
         generation: view.generation.clone(),
         head_oid,
-        entries: entries.iter().map(history_entry_summary_response).collect(),
+        entries: entries
+            .iter()
+            .map(|entry| history_entry_summary_response(entry, users))
+            .collect::<Result<_, _>>()?,
         next_cursor,
-    }
+    })
 }
 
 pub(crate) fn history_entry_detail_response(
     audience: ProjectionPreviewAudience,
     view: &HistoryView,
     entry: &HistoryEntry,
-) -> HistoryEntryDetailResponse {
-    HistoryEntryDetailResponse {
+    users: &BTreeMap<String, UserAccount>,
+) -> Result<HistoryEntryDetailResponse, ApiError> {
+    Ok(HistoryEntryDetailResponse {
         audience,
         repo_id: view.repo_id.clone(),
         view_key: view.view_key.clone(),
@@ -505,7 +510,7 @@ pub(crate) fn history_entry_detail_response(
         source_id: entry.source_id.clone(),
         parent_id: entry.parent_id.clone(),
         kind: entry.kind.into(),
-        author: entry.author.clone(),
+        author: history_author_handle(entry, users)?,
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
         visibility_summary: history_visibility_summary_response(entry),
@@ -519,21 +524,40 @@ pub(crate) fn history_entry_detail_response(
             .iter()
             .map(history_visibility_change_response)
             .collect(),
-    }
+    })
 }
 
-fn history_entry_summary_response(entry: &HistoryEntry) -> HistoryEntrySummaryResponse {
-    HistoryEntrySummaryResponse {
+fn history_entry_summary_response(
+    entry: &HistoryEntry,
+    users: &BTreeMap<String, UserAccount>,
+) -> Result<HistoryEntrySummaryResponse, ApiError> {
+    Ok(HistoryEntrySummaryResponse {
         occurred_at_unix: entry.occurred_at_unix,
         id: entry.id.clone(),
         source_id: entry.source_id.clone(),
         parent_id: entry.parent_id.clone(),
         kind: entry.kind.into(),
-        author: entry.author.clone(),
+        author: history_author_handle(entry, users)?,
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
         visibility_summary: history_visibility_summary_response(entry),
-    }
+    })
+}
+
+fn history_author_handle(
+    entry: &HistoryEntry,
+    users: &BTreeMap<String, UserAccount>,
+) -> Result<Option<String>, ApiError> {
+    entry
+        .author
+        .as_ref()
+        .map(|id| {
+            users
+                .get(id)
+                .map(|user| user.handle.clone())
+                .ok_or_else(|| ApiError::internal_message("history author was not persisted"))
+        })
+        .transpose()
 }
 
 fn history_visibility_summary_response(entry: &HistoryEntry) -> HistoryVisibilitySummaryResponse {

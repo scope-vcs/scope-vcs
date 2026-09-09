@@ -68,7 +68,7 @@ pub(crate) async fn create_request_rating(
         .await;
     let users = state
         .metadata
-        .requests()
+        .auth()
         .users_by_ids([rating.rater_user_id.clone(), rating.subject_user_id.clone()])
         .await?;
     let participants = rating_participants(&state, &users).await?;
@@ -92,7 +92,7 @@ async fn ratings_response(
         .iter()
         .flat_map(|rating| [rating.rater_user_id.clone(), rating.subject_user_id.clone()])
         .chain(eligible_subject_id.iter().cloned());
-    let users = state.metadata.requests().users_by_ids(user_ids).await?;
+    let users = state.metadata.auth().users_by_ids(user_ids).await?;
     let participants = rating_participants(state, &users).await?;
     let ratings = ratings
         .into_iter()

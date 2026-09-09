@@ -93,7 +93,7 @@ pub(crate) async fn list_request_revisions(
         .map(|revision| revision.id.clone());
     let users = state
         .metadata
-        .requests()
+        .auth()
         .users_by_ids(
             revisions
                 .iter()

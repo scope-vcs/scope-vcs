@@ -87,7 +87,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         assert_eq!(all["entries"][0]["source_id"], "visibility_59");
         if audience == "private" {
             assert_eq!(all["entries"][0]["occurred_at_unix"], 1_700_000_059_i64);
-            assert_eq!(all["entries"][0]["author"], test_owner_id());
+            assert_eq!(all["entries"][0]["author"], TEST_REPO_OWNER);
         } else {
             assert!(all["entries"][0]["occurred_at_unix"].is_null());
             assert!(all["entries"][0]["author"].is_null());

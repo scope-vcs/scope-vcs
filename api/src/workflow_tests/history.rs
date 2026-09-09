@@ -1,5 +1,7 @@
 use super::*;
 
+mod authors;
+
 fn history_repo(commits: Vec<LogicalCommit>, public_path: Option<&str>) -> Repository {
     let mut repo = test_repo(&test_owner_id());
     repo.repo_config = repo_config(Visibility::Private);
@@ -113,7 +115,18 @@ async fn latest_history_metadata_and_revision_ignore_private_only_activity() {
             Some(source_blob(&state, "secret")),
         )],
     );
-    private.author_id = "private-author".into();
+    let private_author_id = "scope_usr_private_author";
+    state
+        .metadata
+        .auth()
+        .insert_user_for_tests(test_user(
+            private_author_id,
+            "private-author",
+            "private-author@example.com",
+        ))
+        .await
+        .unwrap();
+    private.author_id = private_author_id.into();
     private.occurred_at_unix = Some(1_800_000_000);
     repo.graph.commits.push(private);
     repo.record.change_version += 1;
@@ -205,6 +218,7 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     let private = response_json(private).await;
     assert_eq!(private["entries"].as_array().unwrap().len(), 2);
     assert_eq!(private["entries"][0]["source_id"], "vchg_2");
+    assert_eq!(private["entries"][0]["author"], TEST_REPO_OWNER);
     assert_eq!(
         private["entries"][0]["message"],
         "Updated visibility for 2 files"
@@ -226,6 +240,7 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     )
     .await;
     let detail = response_json(detail).await;
+    assert_eq!(detail["author"], TEST_REPO_OWNER);
     assert_eq!(detail["visibility_changes"].as_array().unwrap().len(), 2);
     assert_eq!(detail["visibility_changes"][0]["path"], "/one.md");
     assert_eq!(detail["visibility_changes"][0]["old_visibility"], "Public");
@@ -240,6 +255,7 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     let public = response_json(public).await;
     assert_eq!(public["entries"].as_array().unwrap().len(), 2);
     assert_eq!(public["entries"][0]["source_id"], "vchg_2");
+    assert!(public["entries"][0]["author"].is_null());
     assert_eq!(public["entries"][0]["file_change_count"], 0);
     assert_eq!(
         public["entries"][0]["visibility_summary"]["made_public_count"],

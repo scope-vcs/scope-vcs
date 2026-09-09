@@ -4,6 +4,7 @@ use super::request_discussion_commands::{
 };
 use super::{
     RequestStore,
+    auth::load_users_by_ids,
     request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
     request_discussion_rows::{
         DiscussionPageFilter, RequestDiscussionReplyReadModel,
@@ -11,7 +12,7 @@ use super::{
         discussion_by_client_id, discussion_by_id, discussions_page_for_request, insert_discussion,
         insert_reply, read_state, read_states_for_user, replies_for_discussion, reply_by_client_id,
         reply_by_id, reply_previews_for_discussions, save_discussion, save_read_state,
-        unread_content_counts, users_by_ids as load_users_by_ids,
+        unread_content_counts,
     },
     request_media::replace_bindings_for_markdown,
     request_revision_rows::{
@@ -272,13 +273,6 @@ impl RequestStore {
         self.request_discussion_reply_read_model(reply)
             .await
             .map(Some)
-    }
-
-    pub async fn users_by_ids(
-        &self,
-        user_ids: impl IntoIterator<Item = String>,
-    ) -> Result<BTreeMap<String, UserAccount>, PostgresError> {
-        load_users_by_ids(self.db.as_ref(), user_ids).await
     }
 
     pub async fn request_discussion_reply_read_model(

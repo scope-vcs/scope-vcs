@@ -10,9 +10,19 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
     TransactionTrait, sea_query::Expr,
 };
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 impl AuthStore {
+    pub async fn users_by_ids(
+        &self,
+        user_ids: impl IntoIterator<Item = String>,
+    ) -> Result<BTreeMap<String, UserAccount>, PostgresError> {
+        load_users_by_ids(self.db.as_ref(), user_ids).await
+    }
+
     pub async fn start_cli_device_login(
         &self,
         command: StartDeviceLoginCommand,
@@ -277,6 +287,30 @@ where
         pending_count,
         window_count,
     )?)
+}
+
+pub async fn load_users_by_ids<C>(
+    conn: &C,
+    user_ids: impl IntoIterator<Item = String>,
+) -> Result<BTreeMap<String, UserAccount>, PostgresError>
+where
+    C: sea_orm::ConnectionTrait,
+{
+    let user_ids = user_ids.into_iter().collect::<BTreeSet<_>>();
+    if user_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    entities::user::Entity::find()
+        .filter(entities::user::Column::Id.is_in(user_ids))
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(|row| {
+            let user = row.try_into_domain()?;
+            Ok((user.id.clone(), user))
+        })
+        .collect()
 }
 
 pub async fn load_user_by_id<C>(conn: &C, user_id: &str) -> Result<UserAccount, PostgresError>

@@ -74,6 +74,11 @@ pub(crate) async fn get_history_page(
         .map(|boundary| encode_history_cursor(&repo.record.id, audience, feed, boundary))
         .transpose()?;
 
+    let users = state
+        .metadata
+        .auth()
+        .users_by_ids(entries.iter().filter_map(|entry| entry.author.clone()))
+        .await?;
     Ok(Json(history_page_response(
         feed,
         audience,
@@ -81,7 +86,8 @@ pub(crate) async fn get_history_page(
         entries,
         next_cursor,
         page.head_oid,
-    )))
+        &users,
+    )?))
 }
 
 pub(crate) async fn get_history_entry(
@@ -109,7 +115,14 @@ pub(crate) async fn get_history_entry(
     let view = page.view;
     let entry = history_entry_for_id(&view.entries, &entry_id)?;
 
-    Ok(Json(history_entry_detail_response(audience, &view, entry)))
+    let users = state
+        .metadata
+        .auth()
+        .users_by_ids(entry.author.iter().cloned())
+        .await?;
+    Ok(Json(history_entry_detail_response(
+        audience, &view, entry, &users,
+    )?))
 }
 
 pub(crate) async fn get_history_entry_file_diff(

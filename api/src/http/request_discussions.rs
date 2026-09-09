@@ -448,7 +448,7 @@ pub(crate) async fn activity(
     };
     let users = state
         .metadata
-        .requests()
+        .auth()
         .users_by_ids(events.iter().map(|event| event.actor_user_id.clone()))
         .await?;
     let through_position = if latest {
