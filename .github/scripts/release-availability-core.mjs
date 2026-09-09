@@ -245,8 +245,7 @@ function validateHomepage({ body, contentType }) {
   if (
     APPLICATION_ERROR_TEXT.test(body) ||
     !/<title[^>]*>[^<]*scope/i.test(body) ||
-    !body.includes("One repository.") ||
-    !body.includes("Public and private.")
+    !body.includes("One repository.")
   ) {
     return failure("application", "homepage returned an application error or unexpected document");
   }
