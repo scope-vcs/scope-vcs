@@ -251,6 +251,7 @@ jobs:
           SCOPE_MAINTENANCE_BINARY: ./target/release/scope-maintenance
           SCOPE_PRODUCTION_MIGRATION_PLAN: ${{ github.workspace }}/artifacts/production-migration-plan.json
           SCOPE_STAGING_BASELINE_DIR: ${{ runner.temp }}/staging-baseline
+          SCOPE_STAGING_BASELINE_KEY: ${{ secrets.SCOPE_STAGING_BASELINE_KEY }}
         run: bash .github/scripts/staging-baseline.sh
 
       - name: Retain staging baseline before migration
@@ -259,7 +260,7 @@ jobs:
         with:
           name: ${{ steps.baseline.outputs.artifact_name }}
           path: |
-            ${{ runner.temp }}/staging-baseline/database.dump
+            ${{ runner.temp }}/staging-baseline/database.dump.enc
             ${{ runner.temp }}/staging-baseline/database.sha256
             ${{ runner.temp }}/staging-baseline/baseline.json
           retention-days: 7

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 # This snapshot contains staging fixture metadata only, not an object-store backup.
 # Restored fixtures must pass candidate backfills, browser reads, and Git clone before
 # staging succeeds. Never accept a production database URL.
 : "${SCOPE_PRODUCTION_MIGRATION_PLAN:?Production migration plan is required}"
-: "${SCOPE_STAGING_BASELINE_DIR:?Private staging baseline directory is required}"
+: "${SCOPE_STAGING_BASELINE_DIR:?Staging baseline directory is required}"
 : "${SCOPE_MAINTENANCE_BINARY:?Pinned maintenance binary is required}"
 [[ -n "${RAILWAY_TOKEN:-}" && -z "${RAILWAY_API_TOKEN:-}" ]]
 manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
@@ -29,11 +30,18 @@ NODE
 "$SCOPE_MAINTENANCE_BINARY" fence >/dev/null
 mkdir -p "$SCOPE_STAGING_BASELINE_DIR"
 chmod 0700 "$SCOPE_STAGING_BASELINE_DIR"
-gh api "repos/$GITHUB_REPOSITORY" --jq '.private' | grep -qx true
+# Clear plaintext and extracted artifacts even if authentication or restoration fails.
+cleanup() {
+  rm -f "$SCOPE_STAGING_BASELINE_DIR/database.dump"
+  rm -rf "$SCOPE_STAGING_BASELINE_DIR/restore" "$SCOPE_STAGING_BASELINE_DIR/restore.zip"
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
 key="$(node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
 if ! ("$SCOPE_MAINTENANCE_BINARY" plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
   node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null); then
-  # The artifact is private, captured with writers stopped, and tied to this exact environment.
+  # Retained artifacts contain authenticated ciphertext, captured with writers stopped.
+  : "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to restore a snapshot}"
   : "${GITHUB_REPOSITORY:?}"
   artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?name=staging-baseline-$key&per_page=100" \
     --jq '.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main") | .id' | sed -n '1p')"
@@ -45,7 +53,14 @@ if ! ("$SCOPE_MAINTENANCE_BINARY" plan > "$SCOPE_STAGING_BASELINE_DIR/current-pl
   unzip -q "$SCOPE_STAGING_BASELINE_DIR/restore.zip" -d "$SCOPE_STAGING_BASELINE_DIR/restore"
   jq -e --arg environment "$environment" --arg key "$key" \
     '.environmentId == $environment and .ledgerHash == $key and .metadataRestoreSafe == true' "$SCOPE_STAGING_BASELINE_DIR/restore/baseline.json" >/dev/null
-  (cd "$SCOPE_STAGING_BASELINE_DIR/restore" && sha256sum --check database.sha256 >/dev/null)
+  (cd "$SCOPE_STAGING_BASELINE_DIR/restore" &&
+    [[ "$(wc -l < database.sha256)" == 1 ]] &&
+    grep -Eq '^[0-9a-f]{64}  database\.dump\.enc$' database.sha256 &&
+    sha256sum --check database.sha256 >/dev/null)
+  node .github/scripts/staging-baseline-crypto.mjs decrypt \
+    "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump.enc" \
+    "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump" \
+    "$SCOPE_STAGING_BASELINE_DIR/restore/baseline.json"
   # Recreate the staging schema in one transaction so candidate-only tables cannot survive.
   pg_restore --no-owner --no-privileges --exit-on-error \
     --file="$SCOPE_STAGING_BASELINE_DIR/restore/database.sql" "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump"
@@ -60,10 +75,14 @@ fi
 if jq -e '.pending | length == 0' "$SCOPE_PRODUCTION_MIGRATION_PLAN" >/dev/null; then
   exit 0
 fi
+: "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to retain a snapshot}"
 pg_dump --dbname="$DATABASE_URL" --schema=public --format=custom --no-owner --no-privileges --file="$SCOPE_STAGING_BASELINE_DIR/database.dump"
-(cd "$SCOPE_STAGING_BASELINE_DIR" && sha256sum database.dump > database.sha256)
 restore_safe="$(jq -r '[.pending[].name | select(. == "m0033_git_segment_streaming_v2" or . == "m0035_retired_git_storage_cutover")] | length == 0' "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
 jq -n --argjson safe "$restore_safe" --arg environment "$environment" --arg key "$key" \
   '{environmentId: $environment, ledgerHash: $key, metadataRestoreSafe: $safe}' > "$SCOPE_STAGING_BASELINE_DIR/baseline.json"
-rm -rf "$SCOPE_STAGING_BASELINE_DIR/restore" "$SCOPE_STAGING_BASELINE_DIR/restore.zip"
+node .github/scripts/staging-baseline-crypto.mjs encrypt \
+  "$SCOPE_STAGING_BASELINE_DIR/database.dump" \
+  "$SCOPE_STAGING_BASELINE_DIR/database.dump.enc" \
+  "$SCOPE_STAGING_BASELINE_DIR/baseline.json"
+(cd "$SCOPE_STAGING_BASELINE_DIR" && sha256sum database.dump.enc > database.sha256)
 echo "artifact_name=staging-baseline-$key" >> "$GITHUB_OUTPUT"

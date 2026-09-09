@@ -163,6 +163,8 @@
         ".github/scripts/release-selection.mjs",
         ".github/scripts/release-selection.test.mjs",
         ".github/scripts/staging-baseline.mjs",
+        ".github/scripts/staging-baseline-crypto.mjs",
+        ".github/scripts/staging-baseline-crypto.test.mjs",
         ".github/scripts/staging-baseline.test.mjs",
         ".github/scripts/staging-baseline.sh",
         ".github/scripts/staging-baseline.integration.test.mjs",
