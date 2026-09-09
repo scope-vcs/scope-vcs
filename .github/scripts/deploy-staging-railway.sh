@@ -158,7 +158,9 @@ fi
 evidence_lines="$(mktemp)"
 trap 'rm -f "$evidence_lines"' EXIT
 export SCOPE_DEPLOYMENT_EVIDENCE_PATH="$evidence_lines"
-for component in git-router cache run-worker media-api media-worker api web; do
+# The router's readiness requires API replica discovery. Staging starts with
+# writers stopped, so restore the API before activating its router.
+for component in cache run-worker media-api media-worker api git-router web; do
   jq -e --arg component "$component" '.components[$component]' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null || continue
   service="$(jq -er --arg component "$component" '.services[$component].id' "$manifest_path")"
   export SCOPE_DEPLOYMENT_COMPONENT="$component"
