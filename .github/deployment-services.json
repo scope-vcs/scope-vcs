@@ -79,7 +79,7 @@
       "webOrigin": "https://scopevcs.com"
     },
     "staging": {
-      "gatewayDomain": "scope-media-release-proof.up.railway.app"
+      "gatewayDomain": "scope-media-api-staging.up.railway.app"
     },
     "workerImage": "ghcr.io/scope-vcs/scope-media-worker"
   },
@@ -404,13 +404,13 @@
       "environmentId": "f6cdb01a-7a42-40ff-b799-bffe254191b2",
       "environmentName": "staging",
       "apiReplicas": 3,
-      "apiDomain": "scope-api-release-proof.up.railway.app",
-      "cacheDomain": "scope-cache-service-release-proof.up.railway.app",
-      "routerDomain": "scope-repo-router-release-proof.up.railway.app",
+      "apiDomain": "scope-api-staging.up.railway.app",
+      "cacheDomain": "scope-cache-staging.up.railway.app",
+      "routerDomain": "scope-git-router-staging.up.railway.app",
       "routerReplicas": 1,
       "routerServiceId": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c",
       "routerServiceName": "scope-git-router",
-      "webDomain": "scope-web-release-proof.up.railway.app"
+      "webDomain": "scope-web-staging.up.railway.app"
     }
   }
 }

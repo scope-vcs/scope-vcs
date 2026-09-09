@@ -102,8 +102,8 @@ For a local diagnostic run only, invoke the same harness with a short-lived test
 ```bash
 SCOPE_MEDIA_SMOKE_TOKEN='<short-lived private smoke session>' \
 node dev/media-capacity.mjs \
-  --api 'https://scope-api-release-proof.up.railway.app' \
-  --media-origin 'https://scope-media-release-proof.up.railway.app' \
+  --api 'https://scope-api-staging.up.railway.app' \
+  --media-origin 'https://scope-media-api-staging.up.railway.app' \
   --repo dev/public-demo \
   --source-sha '<exact 40-character deployed commit>' \
   --large-video /secure/path/valid-500mb-recording.mp4 \
