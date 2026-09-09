@@ -1,20 +1,18 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { runInNewContext } from "node:vm";
 
 import {
   classifyChanges,
+  includeMigrationParticipants,
   planFromDeploymentProgress,
 } from "./plan-production-deployment.mjs";
 
 const manifest = JSON.parse(readFileSync(new URL("../deployment-services.json", import.meta.url), "utf8"));
 const productionWorkflow = readFileSync(
-  new URL("../workflows/scope-production-deploy.yml", import.meta.url),
+  new URL("../workflows/release.yml", import.meta.url),
   "utf8",
 );
 const backendCiWorkflow = readFileSync(
@@ -22,11 +20,7 @@ const backendCiWorkflow = readFileSync(
   "utf8",
 );
 const backendDeployWorkflow = readFileSync(
-  new URL("../workflows/scope-api-deploy.yml", import.meta.url),
-  "utf8",
-);
-const cliBuildWorkflow = readFileSync(
-  new URL("../workflows/scope-cli-build.yml", import.meta.url),
+  new URL("../workflows/deploy-backend.yml", import.meta.url),
   "utf8",
 );
 const integrationCiWorkflow = readFileSync(
@@ -38,15 +32,11 @@ const rustChecksWorkflow = readFileSync(
   "utf8",
 );
 const cliDeployWorkflow = readFileSync(
-  new URL("../workflows/scope-cli-deploy.yml", import.meta.url),
-  "utf8",
-);
-const stagingWorkflow = readFileSync(
-  new URL("../workflows/scope-railway-staging.yml", import.meta.url),
+  new URL("../workflows/publish-cli.yml", import.meta.url),
   "utf8",
 );
 const webDeployWorkflow = readFileSync(
-  new URL("../workflows/scope-web-deploy.yml", import.meta.url),
+  new URL("../workflows/deploy-web.yml", import.meta.url),
   "utf8",
 );
 const webCiWorkflow = readFileSync(
@@ -60,99 +50,32 @@ function repositoryJson(path) {
 
 function deploymentSelection(overrides = {}) {
   return {
-    checksImage: false,
+    "checks-image": false,
     cache: false,
-    worker: false,
-    mediaWorker: false,
-    router: false,
-    media: false,
+    "run-worker": false,
+    "media-worker": false,
+    "git-router": false,
+    "media-api": false,
     api: false,
     web: false,
-    cli: false,
-    cliDistribution: false,
+    "cli-downloads": false,
+    "cli-distribution": false,
     ...overrides,
-  };
-}
-
-function productionJobCondition(jobName) {
-  const block = productionWorkflow.match(
-    new RegExp(`\\n  ${jobName}:\\n([\\s\\S]*?)(?=\\n  [a-z][a-z-]+:|$)`),
-  )?.[1];
-  assert.ok(block, `${jobName} job is present`);
-  const condition = block.match(/\n    if: >-\n([\s\S]*?)(?=\n    [a-z])/i)?.[1];
-  assert.ok(condition, `${jobName} has a multiline condition`);
-  return condition.trim().replace(/\s+/g, " ");
-}
-
-function evaluateProductionCondition(expression, context) {
-  const resolve = (path) => path.split(".").reduce((value, key) => value?.[key], context);
-  const executable = expression.replace(
-    /cancelled\(\)|(?:github|needs|inputs)(?:\.[A-Za-z0-9_-]+)+/g,
-    (reference) => JSON.stringify(
-      reference === "cancelled()" ? context.cancelled : resolve(reference),
-    ),
-  );
-  const unsupported = executable.replace(
-    /true|false|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|&&|\|\||==|!=|!|\(|\)|\s+/g,
-    "",
-  );
-  assert.equal(unsupported, "", `unsupported workflow expression syntax: ${unsupported}`);
-  return Boolean(runInNewContext(executable, Object.create(null), { timeout: 100 }));
-}
-
-function productionConditionContext(overrides = {}) {
-  const backendSelected = overrides.backendSelected ?? false;
-  return {
-    cancelled: overrides.cancelled ?? false,
-    inputs: {
-      recover_cutover_id: overrides.recoveryId ?? "",
-      skip_staging_rehearsal: overrides.skipStagingRehearsal ?? false,
-    },
-    github: {
-      event_name: overrides.eventName ?? "push",
-      ref: overrides.ref ?? "refs/heads/main",
-    },
-    needs: {
-      "release-preparation": { result: overrides.preparationResult ?? "success" },
-      "release-staging-proof": { result: overrides.stagingResult ?? "success" },
-      "backend-deploy": { result: overrides.backendResult ?? "skipped" },
-      "cli-deploy": {
-        result: overrides.cliResult ?? (overrides.cliSelected === false ? "skipped" : "success"),
-      },
-      plan: {
-        outputs: {
-          api: backendSelected ? "true" : "false",
-          cache: backendSelected ? "true" : "false",
-          media: backendSelected ? "true" : "false",
-          media_worker: backendSelected ? "true" : "false",
-          cli: overrides.cliSelected === false ? "false" : "true",
-          router: backendSelected ? "true" : "false",
-          web: overrides.webSelected === false ? "false" : "true",
-          worker: backendSelected ? "true" : "false",
-        },
-      },
-      "production-validation-gate": {
-        result: overrides.validationResult ?? "success",
-      },
-      "web-deploy": {
-        result: overrides.webResult ?? (overrides.webSelected === false ? "skipped" : "success"),
-      },
-    },
   };
 }
 
 test("changes select the required deployment lanes", () => {
   const allLanes = {
-    checksImage: true,
+    "checks-image": true,
     cache: true,
-    worker: true,
-    mediaWorker: true,
-    router: true,
-    media: true,
+    "run-worker": true,
+    "media-worker": true,
+    "git-router": true,
+    "media-api": true,
     api: true,
     web: true,
-    cli: true,
-    cliDistribution: true,
+    "cli-downloads": true,
+    "cli-distribution": true,
   };
   const cases = [
     ["license changes rebuild all distributions", ["LICENSE"], allLanes],
@@ -163,39 +86,39 @@ test("changes select the required deployment lanes", () => {
     [
       "runner changes publish the image before the backend lane",
       ["runner-runtime/src/main.rs"],
-      { checksImage: true, worker: true },
+      { "checks-image": true, "run-worker": true },
     ],
     [
       "toolchain changes publish the checks image and rebuild Rust services",
       ["rust-toolchain.toml"],
       {
-        checksImage: true,
+        "checks-image": true,
         cache: true,
-        worker: true,
-        mediaWorker: true,
-        router: true,
-        media: true,
+        "run-worker": true,
+        "media-worker": true,
+        "git-router": true,
+        "media-api": true,
         api: true,
-        cli: true,
-        cliDistribution: true,
+        "cli-downloads": true,
+        "cli-distribution": true,
       },
     ],
     ["web-only changes deploy only web", ["web/src/routes/+page.svelte"], { web: true }],
     [
       "API implementation changes validate CLI without rebuilding distribution targets",
       ["api/src/main.rs"],
-      { api: true, web: true, cli: true },
+      { api: true, web: true, "cli-downloads": true },
     ],
-    ["router changes deploy the Git router", ["repo-router/src/main.rs"], { router: true }],
+    ["router changes deploy the Git router", ["repo-router/src/main.rs"], { "git-router": true }],
     [
       "CLI prebuilt launcher selects the CLI service",
       ["deploy/railway/start-prebuilt.sh"],
-      { media: true, cli: true },
+      { "media-api": true, "cli-downloads": true },
     ],
     [
       "backend runtime image selects every backend service",
       ["deploy/railway/prebuilt.Dockerfile"],
-      { cache: true, worker: true, router: true, api: true },
+      { cache: true, "run-worker": true, "git-router": true, api: true },
     ],
     [
       "web runtime image selects the web service",
@@ -205,41 +128,41 @@ test("changes select the required deployment lanes", () => {
     [
       "CLI prebuilt config selects CLI without rebuilding distributions",
       ["deploy/railway/prebuilt-cli.railpack.json"],
-      { cli: true },
+      { "cli-downloads": true },
     ],
     [
       "CLI tests validate CLI without rebuilding distribution targets",
       ["cli/tests/request.rs"],
-      { cli: true },
+      { "cli-downloads": true },
     ],
     [
       "CLI source changes rebuild distribution targets",
       ["cli/src/request.rs"],
-      { cli: true, cliDistribution: true },
+      { "cli-downloads": true, "cli-distribution": true },
     ],
     [
       "distribution config changes rebuild distribution targets",
       ["cli/distribution/targets.json"],
-      { cli: true, cliDistribution: true },
+      { "cli-downloads": true, "cli-distribution": true },
     ],
     [
       "distribution selector changes run CLI validation and rebuild distribution targets",
       [".github/scripts/select-cli-distribution-targets.mjs"],
-      { cli: true, cliDistribution: true },
+      { "cli-downloads": true, "cli-distribution": true },
     ],
     [
       "unrelated shared crates retain broad CLI validation without rebuilding targets",
       ["crates/scope-cache-contract/src/lib.rs"],
       {
-        checksImage: true,
+        "checks-image": true,
         cache: true,
-        worker: true,
-        mediaWorker: true,
-        router: true,
-        media: true,
+        "run-worker": true,
+        "media-worker": true,
+        "git-router": true,
+        "media-api": true,
         api: true,
         web: true,
-        cli: true,
+        "cli-downloads": true,
       },
     ],
     [
@@ -249,7 +172,7 @@ test("changes select the required deployment lanes", () => {
     ],
     [
       "conductor changes exercise every lane",
-      [".github/workflows/scope-production-deploy.yml"],
+      [".github/workflows/release.yml"],
       allLanes,
     ],
     [
@@ -267,12 +190,12 @@ test("changes select the required deployment lanes", () => {
 test("manual component and all scopes are explicit", () => {
   assert.deepEqual(classifyChanges(manifest, [], "web"), deploymentSelection({ web: true }));
   assert.deepEqual(
-    classifyChanges(manifest, [], "cli"),
-    deploymentSelection({ cli: true, cliDistribution: true }),
+    classifyChanges(manifest, [], "cli-downloads"),
+    deploymentSelection({ "cli-downloads": true, "cli-distribution": true }),
   );
   assert.ok(Object.values(classifyChanges(manifest, [], "all")).every(Boolean));
   assert.throws(
-    () => classifyChanges(manifest, [], "cliDistribution"),
+    () => classifyChanges(manifest, [], "cli-distribution"),
     /Unknown deployment scope/,
   );
   assert.throws(() => classifyChanges(manifest, [], "database"), /Unknown deployment scope/);
@@ -284,7 +207,7 @@ test("planner emits the CLI distribution selection as a snake-case workflow outp
     "--manifest",
     fileURLToPath(new URL("../deployment-services.json", import.meta.url)),
     "--scope",
-    "cli",
+    "cli-downloads",
   ], {
     encoding: "utf8",
     env: {
@@ -305,187 +228,93 @@ test("an unseeded production ledger deploys every component", () => {
 
 test("skipped components remain selected across a later backend-only change", () => {
   const selection = planFromDeploymentProgress(manifest, {
-    checksImage: [],
+    "checks-image": [],
     cache: ["cache-service/src/main.rs"],
-    worker: [],
-    mediaWorker: [],
-    router: [],
-    media: [],
+    "run-worker": [],
+    "media-worker": [],
+    "git-router": [],
+    "media-api": [],
     api: [],
     // Web last succeeded before commit A. Its component-specific range still includes A's
     // web change when commit B changes only the cache service after A's web job was skipped.
     web: ["web/src/routes/+page.svelte", "cache-service/src/main.rs"],
-    cli: [],
+    "cli-downloads": [],
   });
 
   assert.deepEqual(selection, {
-    checksImage: false,
+    "checks-image": false,
     cache: true,
-    worker: false,
-    mediaWorker: false,
-    router: false,
-    media: false,
+    "run-worker": false,
+    "media-worker": false,
+    "git-router": false,
+    "media-api": false,
     api: false,
     web: true,
-    cli: false,
-    cliDistribution: false,
+    "cli-downloads": false,
+    "cli-distribution": false,
   });
 });
 
-test("skipped validation ancestors do not suppress a selected backend deployment", () => {
-  assert.match(
-    productionJobCondition("backend-deploy"),
-    /^!cancelled\(\) && github\.event_name/,
-  );
-});
 
-test("web and CLI deployment conditions are cancellation-safe after optional backend jobs", () => {
-  const conditions = Object.fromEntries(["web-deploy", "cli-deploy"].map((job) => [
-    job,
-    productionJobCondition(job),
-  ]));
-  for (const condition of Object.values(conditions)) {
-    assert.match(condition, /!cancelled\(\) && github\.event_name/);
-    assert.match(condition, /needs\.production-validation-gate\.result == 'success'/);
-    assert.match(condition, /needs\.backend-deploy\.result == 'success'/);
-    assert.match(condition, /needs\.backend-deploy\.result == 'skipped'/);
-  }
 
-});
 
-test("frontend production deployment eligibility covers optional backend and failure states", () => {
-  const fixtures = [
-    ["backend selected", { backendSelected: true, backendResult: "success" }, true],
-    ["backend skipped", { backendSelected: false, backendResult: "skipped" }, true],
-    [
-      "failed validation",
-      { backendSelected: false, backendResult: "skipped", validationResult: "failure" },
-      false,
-    ],
-    ["failed backend", { backendSelected: true, backendResult: "failure" }, false],
-    [
-      "canceled workflow",
-      { backendSelected: false, backendResult: "skipped", cancelled: true },
-      false,
-    ],
-  ];
 
-  for (const job of ["web-deploy", "cli-deploy"]) {
-    const condition = productionJobCondition(job);
-    for (const [name, input, expected] of fixtures) {
-      assert.equal(
-        evaluateProductionCondition(condition, productionConditionContext(input)),
-        expected,
-        `${job}: ${name}`,
-      );
-    }
-  }
-});
-
-test("the final production gate verifies selected and carried-forward services", () => {
-  const condition = productionJobCondition("production-health-gate");
-  assert.match(condition, /^!cancelled\(\) && github\.event_name/);
-  const fixtures = [
-    [
-      "all Railway components carried forward",
-      { backendSelected: false, cliSelected: false, webSelected: false },
-      true,
-    ],
-    [
-      "backend selected and frontend carried forward",
-      {
-        backendSelected: true,
-        backendResult: "success",
-        cliSelected: false,
-        webSelected: false,
-      },
-      true,
-    ],
-    [
-      "selected web deployment failed",
-      { backendSelected: false, cliSelected: false, webResult: "failure" },
-      false,
-    ],
-    [
-      "selected backend deployment failed",
-      {
-        backendSelected: true,
-        backendResult: "failure",
-        cliSelected: false,
-        webSelected: false,
-      },
-      false,
-    ],
-    [
-      "workflow canceled after deploy jobs",
-      { backendSelected: false, cancelled: true, cliSelected: false, webSelected: false },
-      false,
-    ],
-  ];
-  for (const [name, input, expected] of fixtures) {
-    assert.equal(
-      evaluateProductionCondition(condition, productionConditionContext(input)),
-      expected,
-      name,
-    );
-  }
-});
 
 test("CLI deployment progress selects distribution builds only for binary inputs", () => {
   const broadOnly = planFromDeploymentProgress(manifest, {
-    checksImage: [],
+    "checks-image": [],
     cache: [],
-    worker: [],
-    mediaWorker: [],
-    router: [],
-    media: [],
+    "run-worker": [],
+    "media-worker": [],
+    "git-router": [],
+    "media-api": [],
     api: [],
     web: [],
-    cli: ["api/src/main.rs"],
+    "cli-downloads": ["api/src/main.rs"],
   });
   const binaryChange = planFromDeploymentProgress(manifest, {
-    checksImage: [],
+    "checks-image": [],
     cache: [],
-    worker: [],
-    mediaWorker: [],
-    router: [],
-    media: [],
+    "run-worker": [],
+    "media-worker": [],
+    "git-router": [],
+    "media-api": [],
     api: [],
     web: [],
-    cli: ["crates/scope-api-contract/src/lib.rs"],
+    "cli-downloads": ["crates/scope-api-contract/src/lib.rs"],
   });
 
-  assert.deepEqual(broadOnly, deploymentSelection({ cli: true }));
+  assert.deepEqual(broadOnly, deploymentSelection({ "cli-downloads": true }));
   assert.deepEqual(
     binaryChange,
-    deploymentSelection({ cli: true, cliDistribution: true }),
+    deploymentSelection({ "cli-downloads": true, "cli-distribution": true }),
   );
 });
 
 test("manual scopes ignore pending production components", () => {
   assert.deepEqual(planFromDeploymentProgress(manifest, {}, "web"), {
-    checksImage: false,
+    "checks-image": false,
     cache: false,
-    worker: false,
-    mediaWorker: false,
-    router: false,
-    media: false,
+    "run-worker": false,
+    "media-worker": false,
+    "git-router": false,
+    "media-api": false,
     api: false,
     web: true,
-    cli: false,
-    cliDistribution: false,
+    "cli-downloads": false,
+    "cli-distribution": false,
   });
 });
 
 test("deployment manifest is a single coherent production graph", () => {
-  const order = ["cache", "worker", "router", "media", "mediaWorker", "api", "web", "cli"];
+  const order = ["cache", "run-worker", "git-router", "media-api", "media-worker", "api", "web", "cli-downloads"];
   const serviceIds = order.map((service) => manifest.services[service].id).filter(Boolean);
 
   assert.equal(manifest.deploymentAuthority, "github-actions");
   assert.equal(manifest.source.nativeAutodeploy, false);
   assert.equal(new Set(serviceIds).size, serviceIds.length);
-  assert.match(manifest.services.media.id, /^[0-9a-f-]{36}$/);
-  assert.match(manifest.services.mediaWorker.id, /^[0-9a-f-]{36}$/);
+  assert.match(manifest.services["media-api"].id, /^[0-9a-f-]{36}$/);
+  assert.match(manifest.services["media-worker"].id, /^[0-9a-f-]{36}$/);
   assert.match(manifest.mediaResources.bucket.id, /^[0-9a-f-]{36}$/);
   const mediaDomains = ["production", "staging"].map((environment) => (
     manifest.mediaResources[environment].gatewayDomain
@@ -521,11 +350,8 @@ test("service config does not override Railway scaling or restart defaults", () 
 });
 
 test("prepared web and backend jobs cannot build after activation begins", () => {
-  const preparation = readFileSync(new URL("../workflows/scope-release-prepare.yml", import.meta.url), "utf8");
-  assert.match(
-    productionWorkflow,
-    /maintenance_budget_seconds: \$\{\{ fromJSON\(format\('\{0\}', inputs\.maintenance_budget_seconds \|\| 0\)\) \}\}/,
-  );
+  const preparation = readFileSync(new URL("../workflows/prepare-release.yml", import.meta.url), "utf8");
+  assert.doesNotMatch(productionWorkflow, /maintenance_budget_seconds/);
   for (const workflow of [backendDeployWorkflow, webDeployWorkflow]) {
     assert.match(workflow, /name: prepared-release-\$\{\{ inputs\.source_sha \}\}/);
     assert.match(workflow, /SCOPE_PREPARED_RELEASE_PATH: prepared-release\.json/);
@@ -535,45 +361,15 @@ test("prepared web and backend jobs cannot build after activation begins", () =>
   assert.match(backendCiWorkflow, /name: backend-release-\$\{\{ github\.sha \}\}/);
   assert.match(backendDeployWorkflow, /extract-railway-maintenance\.sh prepared-release\.json/);
   assert.doesNotMatch(backendDeployWorkflow, /backend-release-\$\{\{ inputs\.source_sha \}\}/);
-  assert.match(preparation, /cutover-restore/);
+  assert.match(preparation, /selected-release-\$\{\{ inputs\.source_sha \}\}/);
   assert.match(preparation.split("\njobs:")[0], /actions: read/);
   assert.match(cliDeployWorkflow, /cp cli\/railway\.json \.railway-upload\/railway\.json/);
   assert.doesNotMatch(cliDeployWorkflow, /cargo build/);
 });
 
-test("application activation requires completed preparation and staging proof", () => {
-  for (const job of ["backend-deploy", "web-deploy"]) {
-    const condition = productionJobCondition(job);
-    const ready = { backendSelected: true, backendResult: "success" };
-    assert.equal(evaluateProductionCondition(condition, productionConditionContext(ready)), true);
-    for (const failure of ["failure", "cancelled", "skipped"]) {
-      assert.equal(evaluateProductionCondition(condition, productionConditionContext({ ...ready, preparationResult: failure })), false);
-      assert.equal(evaluateProductionCondition(condition, productionConditionContext({ ...ready, stagingResult: failure })), false);
-    }
-  }
-  assert.equal(evaluateProductionCondition(productionJobCondition("backend-deploy"), productionConditionContext({
-    backendSelected: true, recoveryId: "123", stagingResult: "skipped",
-  })), true, "pinned recovery must not delay reopening for another staging run");
-});
 
-test("only an explicit manual rollout can omit staging while retaining preparation and validation", () => {
-  const manual = {
-    eventName: "workflow_dispatch", skipStagingRehearsal: true,
-    backendSelected: true, backendResult: "success", stagingResult: "skipped",
-  };
-  assert.equal(evaluateProductionCondition(productionJobCondition("release-staging-proof"), productionConditionContext(manual)), false);
-  for (const job of ["backend-deploy", "web-deploy"]) {
-    const condition = productionJobCondition(job);
-    assert.equal(evaluateProductionCondition(condition, productionConditionContext(manual)), true);
-    for (const overrides of [
-      { eventName: "push" }, { skipStagingRehearsal: false },
-      { preparationResult: "failure" }, { validationResult: "failure" },
-      { cancelled: true }, { ref: "refs/heads/feature" },
-    ]) {
-      assert.equal(evaluateProductionCondition(condition, productionConditionContext({ ...manual, ...overrides })), false);
-    }
-  }
-});
+
+
 
 test("Node workflows cache pnpm and browser downloads by the web lockfile", () => {
   for (const workflow of [integrationCiWorkflow, rustChecksWorkflow, webCiWorkflow]) {
@@ -601,53 +397,16 @@ test("production success follows the complete monitored transition", () => {
   }
 });
 
-test("staging dispatch has a unique identity beyond the candidate SHA", () => {
-  const proof = productionWorkflow.slice(productionWorkflow.indexOf("  release-staging-proof:"), productionWorkflow.indexOf("  backend-deploy:"));
-  assert.match(proof, /proof_id="\$\(cat \/proc\/sys\/kernel\/random\/uuid\)"/);
-  assert.match(proof, /title="Scope staging \$SOURCE_SHA \/ \$proof_id"/);
-  assert.match(proof, /-f proof_request_id="\$proof_id"/);
-  assert.match(stagingWorkflow, /run-name:.*inputs\.proof_request_id/);
-});
 
 
-test("recovery validates provenance before selecting its source revision", (t) => {
-  const selection = productionWorkflow.slice(productionWorkflow.indexOf("      - name: Select immutable release revision"), productionWorkflow.indexOf("      - name: Read successful production revisions"));
-  const validate = selection.indexOf("cutover-validate-recovery");
-  const emit = selection.indexOf('echo "sha=$RECOVER_SHA"');
-  assert(validate >= 0 && emit > validate);
-  assert.match(selection, /test "\$GITHUB_REF" = refs\/heads\/main/);
 
-  const directory = mkdtempSync(join(tmpdir(), "scope-recovery-selection-"));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const calls = join(directory, "validation-arguments");
-  const output = join(directory, "github-output");
-  writeFileSync(join(directory, "node"), '#!/bin/sh\nprintf "%s\\n" "$@" > "$VALIDATION_ARGUMENTS"\nexit "$VALIDATION_EXIT"\n', { mode: 0o755 });
-  const script = selection.split('        run: |\n')[1].replace(/^          /gm, '');
-  const sourceSha = "a".repeat(40);
-  for (const validationExit of [1, 0]) {
-    const result = spawnSync("bash", ["-euo", "pipefail", "-c", script], {
-      cwd: directory,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: `${directory}:${process.env.PATH}`,
-        RECOVER_ID: "42",
-        RECOVER_SHA: sourceSha,
-        GITHUB_REF: "refs/heads/main",
-        GITHUB_OUTPUT: output,
-        VALIDATION_ARGUMENTS: calls,
-        VALIDATION_EXIT: String(validationExit),
-      },
-    });
-    assert.equal(result.status, validationExit, result.stderr);
-    assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
-      ".github/scripts/production-deployment-progress.mjs", "cutover-validate-recovery",
-      "--id", "42", "--source-sha", sourceSha,
-    ]);
-    if (validationExit === 0) assert.equal(readFileSync(output, "utf8"), `sha=${sourceSha}\n`);
-    else assert.equal(existsSync(output), false, "failed validation must not select a recovery revision");
-  }
 
+test("release selection uses the trusted control revision before exposing a source revision", () => {
+  const requireMain = productionWorkflow.indexOf('- name: Require main for releases');
+  const selection = productionWorkflow.indexOf('run: node .github/scripts/release-selection.mjs');
+  const retain = productionWorkflow.indexOf('- name: Retain selected immutable release');
+  assert(requireMain >= 0 && selection > requireMain && retain > selection);
+  assert.match(productionWorkflow.slice(requireMain, selection), /test "\$GITHUB_REF" = refs\/heads\/main/);
   assert.match(backendDeployWorkflow, /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
   assert.match(productionWorkflow.split("\njobs:")[0], /deployments: read/);
   assert.doesNotMatch(productionWorkflow.split("\njobs:")[0], /: write/);
@@ -656,4 +415,30 @@ test("recovery validates provenance before selecting its source revision", (t) =
   assert.match(candidate, /if: github\.event_name == 'pull_request'/);
   assert.doesNotMatch(candidate, /: write/);
   assert.match(checks.slice(checks.indexOf("  build:")), /if: github\.event_name != 'pull_request'/);
+});
+
+test("migration changes promote every application participant but leave checks images independent", () => {
+  for (const apiChanges of [null, undefined, ["crates/scope-postgres/src/migrations/999_next.rs"]]) {
+    const selected = includeMigrationParticipants(deploymentSelection({ api: true }), apiChanges);
+    assert.equal(selected["checks-image"], false);
+    for (const [component, value] of Object.entries(selected)) if (component !== "checks-image") assert.equal(value, true, component);
+  }
+  const apiOnly = deploymentSelection({ api: true });
+  assert.deepEqual(includeMigrationParticipants(apiOnly, ["api/src/main.rs"]), apiOnly);
+  const webOnly = deploymentSelection({ web: true });
+  assert.deepEqual(includeMigrationParticipants(webOnly, null), webOnly);
+  assert.equal(planFromDeploymentProgress(manifest, { api: ["crates/scope-postgres/src/migrations/999_next.rs"] }, "run-worker").web, true);
+  assert.deepEqual(planFromDeploymentProgress(manifest, { api: [] }, "run-worker"), deploymentSelection({ "run-worker": true }));
+});
+
+test("CI is pull-request-only and Release is scheduled/manual with a shared check owner", () => {
+  const ci = readFileSync(new URL("../workflows/ci.yml", import.meta.url), "utf8");
+  assert.match(ci, /  pull_request:/);
+  assert.doesNotMatch(ci.split("\nconcurrency:")[0], /schedule:|workflow_dispatch:|push:/);
+  const triggers = productionWorkflow.split("\nconcurrency:")[0];
+  assert.match(triggers, /cron: "8,38 \* \* \* \*"/);
+  assert.match(triggers, /workflow_dispatch:/);
+  assert.doesNotMatch(triggers, /pull_request:|push:/);
+  for (const caller of [ci, productionWorkflow]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);
+  assert.doesNotMatch(productionWorkflow, /gh workflow run|gh run watch|proof_request_id/);
 });

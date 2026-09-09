@@ -1,5 +1,5 @@
 use super::{
-    MigrationImpact, TestDatabaseTarget,
+    TestDatabaseTarget,
     test_support::{TestSchemaLease, connect_isolated_test_database},
 };
 use crate::migrations;
@@ -104,7 +104,9 @@ async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
 #[tokio::test]
 async fn reapplying_latest_migrations_is_a_data_preserving_noop() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     db.execute_unprepared(
         "
             INSERT INTO scope_users (id, handle, email, email_verified)
@@ -115,19 +117,21 @@ async fn reapplying_latest_migrations_is_a_data_preserving_noop() {
     .unwrap();
     let before = representative_business_snapshot(db.as_ref()).await;
 
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
 
     assert_eq!(representative_business_snapshot(db.as_ref()).await, before);
     assert_eq!(applied_versions(db.as_ref()).await, LATEST_MIGRATIONS);
 }
 
 #[tokio::test]
-async fn concurrent_api_migration_attempts_serialize() {
+async fn concurrent_maintenance_migration_attempts_serialize() {
     let (_target, db, _lease) = isolated_database().await;
 
     let (first, second) = tokio::join!(
-        migrations::apply_in_maintenance(db.as_ref()),
-        migrations::apply_in_maintenance(db.as_ref())
+        migrations::apply_in_maintenance(db.as_ref(), Default::default()),
+        migrations::apply_in_maintenance(db.as_ref(), Default::default())
     );
 
     first.unwrap();
@@ -142,7 +146,9 @@ async fn exact_state_check_is_read_only_and_rejects_behind_and_ahead() {
     assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
     assert!(!relation_exists(db.as_ref(), "seaql_migrations").await);
 
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     db.execute_unprepared(
         "DELETE FROM seaql_migrations WHERE version = 'm0042_current_schema_baseline'",
     )

@@ -1,0 +1,156 @@
+.marketing-page .visibility-changing .is-public {
+  animation: landing-status-public var(--landing-cycle) linear infinite;
+}
+
+.marketing-page .visibility-changing .is-private {
+  animation: landing-status-private var(--landing-cycle) linear infinite;
+}
+
+.marketing-page .source-example {
+  animation: landing-source-sharing var(--landing-cycle) ease-in-out infinite;
+}
+
+.marketing-page .source-example:after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 0;
+  height: 1px;
+  background: var(--landing-green);
+  transform-origin: left;
+  animation: landing-share-line var(--landing-cycle) ease-in-out infinite;
+}
+
+.marketing-page .shared-example {
+  animation: landing-public-sharing var(--landing-cycle) ease-in-out infinite;
+}
+
+.marketing-page .shared-example>.icon:last-child {
+  animation: landing-share-check var(--landing-cycle) ease-in-out infinite;
+}
+
+@keyframes landing-status-public {
+  0%,
+  20%,
+  76%,
+  100% {
+    opacity: 0;
+  }
+
+  24%,
+  72% {
+    opacity: 1;
+  }
+}
+
+@keyframes landing-status-private {
+  0%,
+  20%,
+  76%,
+  100% {
+    opacity: 1;
+  }
+
+  24%,
+  72% {
+    opacity: 0;
+  }
+}
+
+@keyframes landing-source-sharing {
+  0%,
+  17%,
+  34%,
+  68%,
+  86%,
+  100% {
+    background: transparent;
+  }
+
+  23%,
+  76% {
+    background: var(--landing-green-soft);
+  }
+}
+
+@keyframes landing-share-line {
+  0%,
+  18% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+
+  21% {
+    opacity: 1;
+  }
+
+  29% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+
+  36%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+@keyframes landing-public-sharing {
+  0%,
+  23% {
+    opacity: 0;
+    transform: translateX(-12px);
+    background: transparent;
+  }
+
+  31% {
+    opacity: 1;
+    transform: translateX(0);
+    background: var(--landing-green-soft);
+  }
+
+  42%,
+  69% {
+    opacity: 1;
+    transform: translateX(0);
+    background: transparent;
+  }
+
+  77%,
+  100% {
+    opacity: 0;
+    transform: translateX(-8px);
+    background: transparent;
+  }
+}
+
+@keyframes landing-share-check {
+  0%,
+  29% {
+    opacity: 0;
+    transform: scale(.65);
+  }
+
+  35%,
+  69% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  77%,
+  100% {
+    opacity: 0;
+    transform: scale(.85);
+  }
+}
+
+/* These passive illustrations retain their timeline by product choice. */
+@media (prefers-reduced-motion: reduce) {
+  .marketing-page .repository *,
+  .marketing-page .repository *::after {
+    animation-duration: var(--landing-cycle) !important;
+    animation-iteration-count: infinite !important;
+  }
+}

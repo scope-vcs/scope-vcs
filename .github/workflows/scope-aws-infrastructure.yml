@@ -1,4 +1,4 @@
-name: Scope AWS Infrastructure
+name: AWS infrastructure
 
 on:
   workflow_dispatch:

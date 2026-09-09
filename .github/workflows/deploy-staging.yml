@@ -1,60 +1,36 @@
-name: Scope Railway staging proof
-run-name: Scope ${{ inputs.target_environment || 'staging' }} ${{ inputs.source_sha }}${{ inputs.proof_request_id && format(' / {0}', inputs.proof_request_id) || '' }}
+name: Deploy staging
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       source_sha:
-        description: Exact repository commit SHA to deploy
         type: string
         required: true
-      target_environment:
-        description: Reviewed Railway environment for this proof
-        type: choice
-        options:
-          - staging
-          - media-proof
-        default: staging
-      run_media_capacity:
-        description: Run the large-video and concurrent-photo staging capacity proof
+      prepared_run_id:
+        type: string
+        required: true
+      production_plan_artifact:
+        type: string
+        default: ''
+      run_transition_tests:
         type: boolean
         default: false
-      proof_request_id:
-        description: Unique dispatch identity used by the production release gate
-        type: string
-        default: ''
-      prepared_run_id:
-        description: Optional production workflow run containing the exact prepared images
-        type: string
-        default: ''
 
 permissions:
   actions: read
   contents: read
-  packages: write
+  packages: read
   deployments: read
 
 concurrency:
-  group: scope-railway-${{ inputs.target_environment || 'staging' }}
+  group: scope-railway-staging
   cancel-in-progress: false
 
 jobs:
-  media-worker-image:
-    name: Build candidate media worker
-    permissions:
-      contents: read
-      packages: write
-    uses: ./.github/workflows/scope-media-worker-image.yml
-    with:
-      publish: true
-      source_sha: ${{ inputs.source_sha }}
-    if: inputs.prepared_run_id == '' && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha)
-
   prepare:
-    name: Build candidate before closing staging
+    name: Build smoke tools
     permissions:
       contents: read
-    if: github.ref == 'refs/heads/main' || inputs.source_sha == github.sha
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 45
     steps:
@@ -78,77 +54,22 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           cache-bin: false
-          shared-key: staging-proof
+          shared-key: staging-smoke
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: |
             . -> target
             cli -> target
 
-      - name: Build deployment and smoke binaries
+      - name: Build smoke binaries
         env:
           SCOPE_BUILD_SHA: ${{ inputs.source_sha }}
-          USE_PREPARED_IMAGES: ${{ inputs.prepared_run_id != '' && '1' || '0' }}
         run: |
-          mkdir -p artifacts/backend artifacts/commands
-          cargo build --release --locked -p api --bin scope-maintenance
-          install -m 0755 target/release/scope-maintenance artifacts/backend/scope-maintenance
-          if [[ "$USE_PREPARED_IMAGES" == 0 ]]; then
-            cargo build --release --locked -p api --bin api
-            cargo build --release --locked -p scope-cache-service -p worker -p scope-repo-router -p scope-media-service
-            install -m 0755 target/release/api artifacts/backend/scope-vcs
-            install -m 0755 target/release/scope-cache-service artifacts/backend/scope-cache-service
-            install -m 0755 target/release/worker artifacts/backend/scope-worker
-            install -m 0755 target/release/scope-repo-router artifacts/backend/scope-repo-router
-            install -m 0755 target/release/scope-media-service artifacts/backend/scope-media-service
-          fi
-          cp LICENSE NOTICE legal/third-party-rust.txt artifacts/backend/
+          mkdir -p artifacts/commands
           cargo build --release --locked -p api --bin scope-smoke-seed --features smoke-seed
           cargo build --release --locked --manifest-path cli/Cargo.toml --bin scope
           install -m 0755 target/release/scope-smoke-seed artifacts/commands/scope-smoke-seed
           install -m 0755 cli/target/release/scope artifacts/commands/scope
-          tar -czf artifacts/backend-release.tar.gz -C artifacts/backend .
           tar -czf artifacts/staging-commands.tar.gz -C artifacts/commands .
-
-      - name: Enable pnpm
-        if: inputs.prepared_run_id == ''
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
-        with:
-          version: 11.1.0
-
-      - name: Install Node
-        if: inputs.prepared_run_id == ''
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: Build web artifact
-        if: inputs.prepared_run_id == ''
-        env:
-          VITE_SCOPE_WEB_FORCE_SIGNED_OUT: '1'
-          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
-          VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.VITE_POSTHOG_PROJECT_TOKEN }}
-        working-directory: web
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm build
-          tar -czf ../artifacts/web-release.tar.gz .output
-
-      - name: Upload backend binaries
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: backend-release-${{ inputs.source_sha }}
-          path: artifacts/backend-release.tar.gz
-          if-no-files-found: error
-
-      - name: Upload web build
-        if: inputs.prepared_run_id == ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: web-release-${{ inputs.source_sha }}
-          path: artifacts/web-release.tar.gz
-          if-no-files-found: error
 
       - name: Upload staging commands
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -157,40 +78,17 @@ jobs:
           path: artifacts/staging-commands.tar.gz
           if-no-files-found: error
 
-  prepare-images:
-    name: Prepare immutable staging images
-    permissions:
-      actions: read
-      contents: read
-      deployments: read
-      packages: write
-    needs: [prepare, media-worker-image]
-    if: >-
-      !cancelled() && inputs.prepared_run_id == '' &&
-      needs.prepare.result == 'success' && needs.media-worker-image.result == 'success'
-    uses: ./.github/workflows/scope-release-prepare.yml
-    with:
-      source_sha: ${{ inputs.source_sha }}
-      prepare_backend: true
-      prepare_router: true
-      prepare_web: true
-      media_worker_image: ${{ needs.media-worker-image.outputs.image_ref }}
-    secrets: inherit
-
   prove:
     name: Deploy and smoke staging
-    needs: [prepare, prepare-images, media-worker-image]
-    if: >-
-      !cancelled() && needs.prepare.result == 'success' &&
-      (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha) &&
-      ((inputs.prepared_run_id == '' && needs.prepare-images.result == 'success') || inputs.prepared_run_id != '')
+    needs: prepare
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 90
-    # Reuse the protected staging credential boundary for all reviewed non-production targets.
+    outputs:
+      writers_fenced: ${{ steps.close.outcome == 'success' }}
     environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-staging-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Validate requested revision
         shell: bash
@@ -212,13 +110,10 @@ jobs:
       - name: Load staging target from trusted manifest
         id: target
         shell: bash
-        env:
-          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'staging' }}
         run: |
-          node .github/scripts/select-proof-environment.mjs "$PROOF_ENVIRONMENT"
           {
             echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
-            echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.railway.staging.environmentId' .github/deployment-services.json)"
+            echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.environments.staging.environmentId' .github/deployment-services.json)"
           } >> "$GITHUB_ENV"
 
       - name: Install Railway CLI
@@ -240,7 +135,50 @@ jobs:
           unset RAILWAY_TOKEN
           node .github/scripts/railway-artifact.mjs configure-staging-registry
 
-      - name: Close staging writers
+      - name: Download prepared candidate artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: staging-commands-${{ inputs.source_sha }}
+          path: artifacts
+
+      - name: Download exact production images
+        uses: actions/download-artifact@v8
+        with:
+          name: prepared-release-${{ inputs.source_sha }}
+          path: artifacts
+          run-id: ${{ inputs.prepared_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Export release paths
+        id: release
+        run: |
+          has_backend="$(jq -r '.components | has("api")' artifacts/prepared-release.json)"
+          echo "has_backend=$has_backend" >> "$GITHUB_OUTPUT"
+          echo "SCOPE_PREPARED_RELEASE_PATH=$GITHUB_WORKSPACE/artifacts/prepared-release.json" >> "$GITHUB_ENV"
+          echo "SCOPE_DEPLOYMENT_MANIFEST=$GITHUB_WORKSPACE/.github/deployment-services.json" >> "$GITHUB_ENV"
+          echo "SCOPE_MEDIA_WORKER_IMAGE=$(jq -r '.components["media-worker"].image // empty' artifacts/prepared-release.json)" >> "$GITHUB_ENV"
+
+      - name: Download maintenance binary from prepared build
+        if: steps.release.outputs.has_backend == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: backend-release-${{ inputs.source_sha }}
+          path: artifacts
+          run-id: ${{ inputs.prepared_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Download production migration baseline
+        if: steps.release.outputs.has_backend == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.production_plan_artifact || format('production-migration-plan-{0}', inputs.source_sha) }}
+          path: artifacts
+          run-id: ${{ inputs.prepared_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Close staging writers for backend upgrade
+        id: close
+        if: steps.release.outputs.has_backend == 'true'
         shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
@@ -268,59 +206,75 @@ jobs:
         with:
           node-version: 24
 
-      - name: Download prepared candidate artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: '*-${{ inputs.source_sha }}'
-          path: artifacts
-          merge-multiple: true
-
-      - name: Download exact production images
-        if: inputs.prepared_run_id != ''
-        uses: actions/download-artifact@v8
-        with:
-          name: prepared-release-${{ inputs.source_sha }}
-          path: artifacts
-          run-id: ${{ inputs.prepared_run_id }}
-          github-token: ${{ github.token }}
-
-      - name: Export release paths
-        run: |
-          echo "SCOPE_PREPARED_RELEASE_PATH=$GITHUB_WORKSPACE/artifacts/prepared-release.json" >> "$GITHUB_ENV"
-          echo "SCOPE_DEPLOYMENT_MANIFEST=$GITHUB_WORKSPACE/.github/deployment-services.json" >> "$GITHUB_ENV"
-          echo "SCOPE_MEDIA_WORKER_IMAGE=$(jq -er '.components.mediaWorker.image' artifacts/prepared-release.json)" >> "$GITHUB_ENV"
-
       - name: Extract candidate commands
         run: |
           mkdir -p candidate/target/release candidate/cli/target/release
-          tar -xzf artifacts/backend-release.tar.gz -C candidate/target/release
+          if [[ -f artifacts/backend-release.tar.gz ]]; then
+            python3 .github/scripts/extract-railway-release.py backend artifacts/backend-release.tar.gz candidate/target/release
+          fi
           tar -xzf artifacts/staging-commands.tar.gz -C candidate/target/release
           install -m 0755 candidate/target/release/scope candidate/cli/target/release/scope
 
-      - name: Migrate, seed, and deploy staging services
-        working-directory: candidate
+      - name: Initialize smoke credentials directory
         shell: bash
-        env:
-          GITHUB_SHA: ${{ inputs.source_sha }}
-          SCOPE_MAINTENANCE_BINARY: ./target/release/scope-maintenance
-          SCOPE_SMOKE_SEED_BINARY: ./target/release/scope-smoke-seed
         run: |
           smoke_dir="$(mktemp -d "${RUNNER_TEMP}/scope-staging-git-smoke.XXXXXX")"
           chmod 0700 "$smoke_dir"
           echo "SCOPE_GIT_SMOKE_DIR=$smoke_dir" >> "$GITHUB_ENV"
-          export SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH="$smoke_dir/exchange-token"
-          bash .github/scripts/deploy-staging-railway.sh prepare \
-            cache-service worker api repo-router media
+          echo "SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH=$smoke_dir/exchange-token" >> "$GITHUB_ENV"
 
-      - name: Deploy staging web and record evidence
+      - name: Set up PostgreSQL 18 clients
+        if: steps.release.outputs.has_backend == 'true'
+        run: |
+          client_bin="$RUNNER_TEMP/postgres-client-bin"
+          mkdir -p "$client_bin"
+          docker pull --quiet postgres:18.6@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+          for command in pg_dump pg_restore psql; do
+            cat > "$client_bin/$command" <<'CLIENT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker run --rm -i --network host --user "$(id -u):$(id -g)" \
+            -v "$RUNNER_TEMP:$RUNNER_TEMP" -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -w "$PWD" --entrypoint "${0##*/}" \
+            postgres:18.6@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 "$@"
+          CLIENT
+            chmod 0755 "$client_bin/$command"
+          done
+          echo "$client_bin" >> "$GITHUB_PATH"
+
+      - name: Reconcile and snapshot staging baseline
+        id: baseline
+        if: steps.release.outputs.has_backend == 'true'
         working-directory: candidate
-        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCOPE_MAINTENANCE_BINARY: ./target/release/scope-maintenance
+          SCOPE_PRODUCTION_MIGRATION_PLAN: ${{ github.workspace }}/artifacts/production-migration-plan.json
+          SCOPE_STAGING_BASELINE_DIR: ${{ runner.temp }}/staging-baseline
+          SCOPE_STAGING_BASELINE_KEY: ${{ secrets.SCOPE_STAGING_BASELINE_KEY }}
+        run: bash .github/scripts/staging-baseline.sh
+
+      - name: Retain staging baseline before migration
+        if: steps.baseline.outputs.artifact_name != '' && !inputs.run_transition_tests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.baseline.outputs.artifact_name }}
+          path: |
+            ${{ runner.temp }}/staging-baseline/database.dump.enc
+            ${{ runner.temp }}/staging-baseline/database.sha256
+            ${{ runner.temp }}/staging-baseline/baseline.json
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: error
+
+      - name: Deploy candidate once
+        id: fence
+        working-directory: candidate
         env:
           GITHUB_SHA: ${{ inputs.source_sha }}
+          SCOPE_MAINTENANCE_BINARY: ./target/release/scope-maintenance
           SCOPE_STAGING_EVIDENCE_PATH: ${{ github.workspace }}/staging-deployments.json
-        run: |
-          bash .github/scripts/deploy-staging-railway.sh finish \
-            web
+        run: bash .github/scripts/deploy-staging-railway.sh
 
       - name: Enable pnpm
         run: |
@@ -333,33 +287,42 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium
 
-      - name: Rehearse three ordinary release transitions
+      - name: Issue smoke login without resetting existing data
+        working-directory: candidate
+        env:
+          SCOPE_SMOKE_SEED_BINARY: ./target/release/scope-smoke-seed
+        run: bash .github/scripts/staging-smoke-seed.sh grant
+
+      - name: Exercise optional release transitions
+        if: inputs.run_transition_tests
         working-directory: candidate
         env:
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
           SCOPE_REHEARSAL_EVIDENCE_DIR: ${{ github.workspace }}/release-rehearsal
+          SCOPE_STAGING_EVIDENCE_PATH: ${{ github.workspace }}/staging-deployments.json
         run: node .github/scripts/rehearse-release.mjs
 
+      # These read existing fixtures after migration/restore. No candidate catalog reset
+      # is allowed to replace the data whose survival this release must demonstrate.
       - name: Run browser smoke against staging
         working-directory: candidate/web
         env:
           SCOPE_SMOKE_REPO: dev/public-demo
         run: |
-          web_domain="$(jq -er '.railway.staging.webDomain' ../../.github/deployment-services.json)"
+          web_domain="$(jq -er '.environments.staging.webDomain' ../../.github/deployment-services.json)"
           SCOPE_WEB_BASE_URL="https://$web_domain" pnpm test:smoke
 
       - name: Run Git router smoke against staging
         shell: bash
         env:
           GITHUB_SHA: ${{ inputs.source_sha }}
-          RUN_MEDIA_CAPACITY: ${{ inputs.run_media_capacity }}
           SCOPE_CLI_BINARY: ${{ github.workspace }}/candidate/cli/target/release/scope
           SCOPE_MEDIA_SMOKE_SCRIPT: ${{ github.workspace }}/candidate/dev/media-smoke.mjs
           SCOPE_MEDIA_SMOKE_RECEIPT: ${{ github.workspace }}/staging-media-smoke.json
           SCOPE_MEDIA_SMOKE_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
-          api_domain="$(jq -er '.railway.staging.apiDomain' .github/deployment-services.json)"
-          router_domain="$(jq -er '.railway.staging.routerDomain' .github/deployment-services.json)"
+          api_domain="$(jq -er '.environments.staging.apiDomain' .github/deployment-services.json)"
+          router_domain="$(jq -er '.environments.staging.routerDomain' .github/deployment-services.json)"
           media_domain="$(jq -er '.mediaResources.staging.gatewayDomain' .github/deployment-services.json)"
           fixture_dir="$(mktemp -d "${RUNNER_TEMP}/scope-media-fixtures.XXXXXX")"
           trap 'rm -rf -- "$fixture_dir"' EXIT
@@ -370,19 +333,6 @@ jobs:
           ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=96x64 -frames:v 1 "$fixture_dir/fixture.png"
           ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=96x64:rate=12 -t 1 \
             -pix_fmt yuv420p "$fixture_dir/fixture.mp4"
-          if [[ "$RUN_MEDIA_CAPACITY" == "true" ]]; then
-            ffmpeg -hide_banner -loglevel error -y \
-              -f lavfi -i testsrc2=size=1920x1080:rate=30 \
-              -f lavfi -i sine=frequency=1000:sample_rate=48000 \
-              -t 240 -c:v libx264 -threads 2 -preset ultrafast \
-              -b:v 17M -minrate 17M -maxrate 17M -bufsize 34M \
-              -x264-params 'nal-hrd=cbr:force-cfr=1' \
-              -c:a aac -b:a 128k -movflags +faststart \
-              "$fixture_dir/capacity-recording.mp4"
-            export SCOPE_MEDIA_CAPACITY_SCRIPT="$GITHUB_WORKSPACE/candidate/dev/media-capacity.mjs"
-            export SCOPE_MEDIA_CAPACITY_VIDEO="$fixture_dir/capacity-recording.mp4"
-            export SCOPE_MEDIA_CAPACITY_RECEIPT="$GITHUB_WORKSPACE/staging-media-capacity/receipt.json"
-          fi
           SCOPE_API_URL="https://$api_domain" \
             SCOPE_GIT_ROUTER_URL="https://$router_domain" \
             SCOPE_MEDIA_GATEWAY_URL="https://$media_domain" \
@@ -393,22 +343,11 @@ jobs:
 
       - name: Bind media smoke receipt to staging evidence
         shell: bash
-        env:
-          RUN_MEDIA_CAPACITY: ${{ inputs.run_media_capacity }}
         run: |
           jq -e '.passed == true and .request_deleted == true' staging-media-smoke.json >/dev/null
           jq --slurpfile mediaSmoke staging-media-smoke.json \
             '. + {mediaSmoke: $mediaSmoke[0]}' staging-deployments.json > staging-deployments.json.tmp
           mv staging-deployments.json.tmp staging-deployments.json
-          if [[ "$RUN_MEDIA_CAPACITY" == "true" ]]; then
-            jq -e --arg sha '${{ inputs.source_sha }}' \
-              '.passed == true and .source_sha == $sha and .loaded.failed_requests == 0' \
-              staging-media-capacity/receipt.json >/dev/null
-            jq --slurpfile mediaCapacity staging-media-capacity/receipt.json \
-              '. + {mediaCapacity: $mediaCapacity[0]}' \
-              staging-deployments.json > staging-deployments.json.tmp
-            mv staging-deployments.json.tmp staging-deployments.json
-          fi
 
       - name: Remove staging Git smoke credentials
         if: always()
@@ -419,7 +358,7 @@ jobs:
           fi
 
       - name: Upload release transition evidence
-        if: always()
+        if: always() && inputs.run_transition_tests
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-rehearsal-${{ inputs.source_sha }}
@@ -435,21 +374,19 @@ jobs:
           path: |
             staging-deployments.json
             staging-media-smoke.json
-            staging-media-capacity/*.json
           if-no-files-found: error
           retention-days: 14
 
   cleanup:
-    name: Revoke staging proof access
+    name: Revoke staging access
     needs: prove
-    if: always() && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha)
+    if: always()
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
-    # Reuse the protected staging credential boundary for all reviewed non-production targets.
     environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-staging-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout trusted cleanup
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -461,13 +398,10 @@ jobs:
       - name: Load staging target from trusted manifest
         id: target
         shell: bash
-        env:
-          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'staging' }}
         run: |
-          node .github/scripts/select-proof-environment.mjs "$PROOF_ENVIRONMENT"
           {
             echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
-            echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.railway.staging.environmentId' .github/deployment-services.json)"
+            echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.environments.staging.environmentId' .github/deployment-services.json)"
           } >> "$GITHUB_ENV"
 
       - name: Install Railway CLI
@@ -477,8 +411,8 @@ jobs:
 
       # A failed migration or partial rollout may be incompatible with the old writers.
       # Keep staging fail-closed for diagnosis instead of automatically reviving them.
-      - name: Keep staging writers fenced after unsuccessful proof
-        if: needs.prove.result != 'success' && needs.prove.result != 'skipped' && steps.target.outcome == 'success'
+      - name: Keep staging writers fenced after unsuccessful deployment
+        if: needs.prove.outputs.writers_fenced == 'true' && needs.prove.result != 'success' && needs.prove.result != 'skipped' && steps.target.outcome == 'success'
         shell: bash
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}

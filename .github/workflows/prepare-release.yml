@@ -1,4 +1,4 @@
-name: Prepare Railway release
+name: Prepare release
 
 on:
   workflow_call:
@@ -16,6 +16,9 @@ on:
         type: boolean
         default: false
       recover_cutover_id:
+        type: string
+        default: ""
+      prepared_run_id:
         type: string
         default: ""
       media_worker_image:
@@ -43,36 +46,36 @@ jobs:
         with:
           node-version: 24
 
-      - name: Restore interrupted release artifacts
-        if: inputs.recover_cutover_id != ''
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          CUTOVER_ID: ${{ inputs.recover_cutover_id }}
-          SOURCE_SHA: ${{ inputs.source_sha }}
-        run: |
-          node .github/scripts/production-deployment-progress.mjs cutover-restore \
-            --id "$CUTOVER_ID" --source-sha "$SOURCE_SHA" --manifest prepared-release.json
+      - name: Restore selected immutable release
+        if: inputs.prepared_run_id != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: selected-release-${{ inputs.source_sha }}
+
+      - name: Use validated release manifest
+        if: inputs.prepared_run_id != ''
+        run: mv selected-release.json prepared-release.json
 
       - name: Download backend binaries
-        if: inputs.prepare_backend && inputs.recover_cutover_id == ''
+        if: inputs.prepare_backend && inputs.prepared_run_id == ''
         uses: actions/download-artifact@v8
         with:
           name: backend-release-${{ inputs.source_sha }}
           path: artifacts/backend
 
       - name: Download web runtime
-        if: inputs.prepare_web && inputs.recover_cutover_id == ''
+        if: inputs.prepare_web && inputs.prepared_run_id == ''
         uses: actions/download-artifact@v8
         with:
           name: web-release-${{ inputs.source_sha }}
           path: artifacts/web
 
       - name: Set up image builder
-        if: inputs.recover_cutover_id == ''
+        if: inputs.prepared_run_id == ''
         uses: docker/setup-buildx-action@v3
 
       - name: Authenticate image publishing
-        if: inputs.recover_cutover_id == ''
+        if: inputs.prepared_run_id == ''
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -80,7 +83,7 @@ jobs:
           password: ${{ github.token }}
 
       - name: Prepare immutable release images
-        if: inputs.recover_cutover_id == ''
+        if: inputs.prepared_run_id == ''
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -98,18 +101,18 @@ jobs:
           if [[ "$PREPARE_BACKEND" == 1 ]]; then
             mkdir -p artifacts/backend/bin
             python3 .github/scripts/extract-railway-release.py backend artifacts/backend/backend-release.tar.gz artifacts/backend/bin
-            components=(api worker cache media)
-            [[ "$PREPARE_ROUTER" == 0 ]] || components+=(router)
+            components=(api run-worker cache media-api)
+            [[ "$PREPARE_ROUTER" == 0 ]] || components+=(git-router)
             for component in "${components[@]}"; do
               root=".railway-prepared/$component"
               mkdir -p "$root/bin"
               cp artifacts/backend/bin/LICENSE artifacts/backend/bin/NOTICE artifacts/backend/bin/third-party-rust.txt "$root/bin/"
               case "$component" in
                 api) binary=scope-vcs ;;
-                worker) binary=scope-worker ;;
+                run-worker) binary=scope-worker ;;
                 cache) binary=scope-cache-service ;;
-                router) binary=scope-repo-router ;;
-                media) binary=scope-media-service ;;
+                git-router) binary=scope-repo-router ;;
+                media-api) binary=scope-media-service ;;
               esac
               install -m 0755 "artifacts/backend/bin/$binary" "$root/bin/$binary"
               if [[ "$component" == api ]]; then
@@ -120,9 +123,9 @@ jobs:
               fi
             done
             [[ "$MEDIA_WORKER_IMAGE" =~ ^ghcr\.io/scope-vcs/scope-media-worker@sha256:[0-9a-f]{64}$ ]]
-            media_worker_service="$(jq -er '.services.mediaWorker.id' .github/deployment-services.json)"
+            media_worker_service="$(jq -er '.services["media-worker"].id' .github/deployment-services.json)"
             node .github/scripts/railway-artifact.mjs record prepared-release.json \
-              mediaWorker "$MEDIA_WORKER_IMAGE" "$SCOPE_DEPLOYMENT_SOURCE_SHA" "$media_worker_service"
+              media-worker "$MEDIA_WORKER_IMAGE" "$SCOPE_DEPLOYMENT_SOURCE_SHA" "$media_worker_service"
           fi
           if [[ "$PREPARE_WEB" == 1 ]]; then
             mkdir -p .railway-prepared/web

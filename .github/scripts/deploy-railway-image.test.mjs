@@ -49,7 +49,7 @@ test("activates and verifies the exact deployment returned by Railway", (t) => {
   execFileSync(process.execPath, [script.pathname, "service-123", `ghcr.io/scope-vcs/scope-media-worker@${digest}`], {
     env: {
       ...baseEnv(files),
-      SCOPE_DEPLOYMENT_COMPONENT: "mediaWorker",
+      SCOPE_DEPLOYMENT_COMPONENT: "media-worker",
       SCOPE_DEPLOYMENT_SOURCE_SHA: "b".repeat(40),
       SCOPE_DEPLOYMENT_EVIDENCE_PATH: evidence,
     },
@@ -61,7 +61,7 @@ test("activates and verifies the exact deployment returned by Railway", (t) => {
   assert.ok(calls.slice(0, 2).every(call => call.args.includes("@-") && !call.args.join(" ").includes(digest)));
   assert.ok(calls.every(call => call.apiToken === "account-token" && call.railwayToken === undefined));
   assert.deepEqual(JSON.parse(readFileSync(evidence, "utf8")), {
-    component: "mediaWorker",
+    component: "media-worker",
     sourceSha: "b".repeat(40),
     provider: "railway",
     evidenceId: "deployment-123",
@@ -94,7 +94,7 @@ test("rejects a successful deployment with a different image digest", (t) => {
     env: {
       ...baseEnv(files),
       DIGEST: `sha256:${"c".repeat(64)}`,
-      SCOPE_DEPLOYMENT_COMPONENT: "mediaWorker",
+      SCOPE_DEPLOYMENT_COMPONENT: "media-worker",
       SCOPE_DEPLOYMENT_SOURCE_SHA: "b".repeat(40),
       SCOPE_DEPLOYMENT_EVIDENCE_PATH: join(files.directory, "evidence.ndjson"),
     },

@@ -1,0 +1,74 @@
+@layer base {
+  .marketing-page {
+    --landing-bg: #ffffff;
+    --landing-paper: #ffffff;
+    --landing-panel: #fafafa;
+    --landing-ink: #0a0a0a;
+    --landing-muted: #565656;
+    --landing-faint: #888888;
+    --landing-line: #cccccc;
+    --landing-green: #3f7a50;
+    --landing-green-soft: #e4f0e7;
+    --landing-figure-title: 13px;
+    --landing-figure-body: 13px;
+    --landing-figure-meta: 12px;
+  }
+
+  html.dark .marketing-page {
+    --landing-bg: #050505;
+    --landing-paper: #090909;
+    --landing-panel: #111111;
+    --landing-ink: #ffffff;
+    --landing-muted: #b7b7b7;
+    --landing-line: #333333;
+    --landing-green: #8dc197;
+    --landing-green-soft: #203929;
+  }
+
+  @media (width <= 520px) {
+    .marketing-page {
+      --landing-figure-title: 12px;
+      --landing-figure-body: 12px;
+      --landing-figure-meta: 11px;
+    }
+  }
+
+  :where(.marketing-page .icon) {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    stroke-width: 1.6;
+  }
+
+  .marketing-page :is(button, a, summary):focus-visible {
+    outline: 2px solid var(--landing-green);
+    outline-offset: 5px;
+  }
+}
+
+@layer components {
+  .marketing-page .enter {
+    animation: landing-enter .9s cubic-bezier(.16, 1, .3, 1) both;
+  }
+
+  .marketing-page .accent::after {
+    animation: landing-underline-in .6s .55s both;
+  }
+}
+
+@keyframes landing-enter {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes landing-underline-in {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-page .enter,
+  .marketing-page .accent::after {
+    animation: none !important;
+  }
+}

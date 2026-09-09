@@ -142,7 +142,7 @@ pub use workflow_catalogs::{
 };
 
 use crate::error::PostgresError;
-pub use crate::migrations::{MigrationImpact, MigrationPlan, PendingMigration};
+pub use crate::migrations::{MigrationLimits, MigrationPlan, PendingMigration};
 #[cfg(any(test, feature = "test-support"))]
 pub use clerk_users::scope_user_id_for_auth_identity;
 pub use fast_push::ApplyContentOnlyPushCommand;
@@ -344,12 +344,12 @@ impl AdminStore {
 
 async fn connect_postgres_store(database_url: String) -> anyhow::Result<MetadataStore> {
     let database_url = Arc::<str>::from(database_url);
-    let connect_database_url = database_url.to_string();
-    let setup_db = Database::connect(&connect_database_url).await?;
-    crate::migrations::apply_online(&setup_db).await?;
-    setup_db.close().await?;
-    let db = connect_writer_database(&connect_database_url).await?;
-    crate::migrations::assert_exact_state(&db).await?;
+    let db = connect_writer_database(&database_url).await?;
+    if let Err(error) = crate::migrations::assert_exact_state(&db).await {
+        // A rejected startup must release its writer fence before maintenance retries.
+        db.close().await?;
+        return Err(error.into());
+    }
     Ok(MetadataStore {
         db: Arc::new(db),
         postgres_database_url: Some(database_url),
@@ -359,20 +359,7 @@ async fn connect_postgres_store(database_url: String) -> anyhow::Result<Metadata
 }
 
 async fn connect_postgres_worker_store(database_url: String) -> anyhow::Result<MetadataStore> {
-    let database_url = Arc::<str>::from(database_url);
-    let connect_database_url = database_url.to_string();
-    let setup_db = Database::connect(&connect_database_url).await?;
-    crate::migrations::assert_exact_state(&setup_db).await?;
-    setup_db.close().await?;
-    let db = connect_writer_database(&connect_database_url).await?;
-    crate::migrations::assert_exact_state(&db).await?;
-
-    Ok(MetadataStore {
-        db: Arc::new(db),
-        postgres_database_url: Some(database_url),
-        #[cfg(any(test, feature = "test-support"))]
-        _test_schema: None,
-    })
+    connect_postgres_store(database_url).await
 }
 
 const WRITER_FENCE_KEY: &str = "scope:metadata-writers";
@@ -440,10 +427,13 @@ pub async fn terminate_metadata_writer_sessions(database_url: String) -> anyhow:
     Ok(terminated.into_iter().filter(|value| *value).count() as u64)
 }
 
-pub async fn apply_maintenance_migrations(database_url: String) -> anyhow::Result<()> {
+pub async fn apply_maintenance_migrations(
+    database_url: String,
+    limits: MigrationLimits,
+) -> anyhow::Result<()> {
     let fence = ExclusiveWriterFence::acquire(&database_url).await?;
     let db = Database::connect(database_url).await?;
-    let migration_result = crate::migrations::apply_in_maintenance(&db).await;
+    let migration_result = crate::migrations::apply_in_maintenance(&db, limits).await;
     let release_result = fence.release().await;
     migration_result?;
     release_result?;

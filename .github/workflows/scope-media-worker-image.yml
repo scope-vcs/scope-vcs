@@ -1,4 +1,4 @@
-name: Scope Media Worker Image
+name: Build media worker image
 
 on:
   workflow_call:

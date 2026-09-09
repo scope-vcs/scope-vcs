@@ -1,4 +1,4 @@
-name: Scope Web Deploy
+name: Deploy web
 
 on:
   workflow_call:
@@ -21,11 +21,13 @@ jobs:
   deploy:
     name: Deploy scope-web
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Install Node
         uses: actions/setup-node@v6
@@ -58,7 +60,7 @@ jobs:
         run: |
           manifest=.github/deployment-services.json
           RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"
-          SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.railway.environmentId' "$manifest")"
+          SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.environments.production.environmentId' "$manifest")"
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
           service_id="$(jq -r '.services.web.id' "$manifest")"
           bash .github/scripts/deploy-monitored-railway.sh web bash .github/scripts/deploy-railway.sh "$service_id" web

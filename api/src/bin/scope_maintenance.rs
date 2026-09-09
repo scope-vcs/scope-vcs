@@ -1,11 +1,12 @@
 use scope_postgres::db::{
-    apply_maintenance_migrations, migration_plan, terminate_metadata_writer_sessions,
-    verify_schema, verify_writer_fence_available,
+    MigrationLimits, apply_maintenance_migrations, migration_plan,
+    terminate_metadata_writer_sessions, verify_schema, verify_writer_fence_available,
 };
 
 const USAGE: &str = r#"usage: scope-maintenance <command>
 
 commands:
+  serve                       serve maintenance responses without database access
   plan                        print the pending migration plan as JSON (read-only)
   verify                      require the exact migration ledger (read-only)
   fence                       probe the exclusive writer fence (read-only)
@@ -18,7 +19,11 @@ commands:
   scrub-retired-git-storage   delete retired local Git paths with writers stopped
   help                        show this help
 
-Production cutovers are owned by the backend deployment workflow. If apply may
+Migration operation limits (positive seconds; independent of downtime warnings):
+  SCOPE_MIGRATION_LOCK_TIMEOUT_SECONDS       default 120
+  SCOPE_MIGRATION_STATEMENT_TIMEOUT_SECONDS  default 3600
+
+Production cutovers are owned by the release workflow. If apply may
 have committed and recovery cannot prove the old ledger is unchanged, keep API
 and worker writers closed and rerun the same revision to finish forward."#;
 
@@ -32,6 +37,9 @@ async fn main() -> anyhow::Result<()> {
     if matches!(command.as_str(), "help" | "-h" | "--help") {
         println!("{USAGE}");
         return Ok(());
+    }
+    if command == "serve" {
+        return api::maintenance_http::serve().await;
     }
     let database_url = maintenance_database_url()?;
 
@@ -50,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
             );
         }
         "apply" => {
-            apply_maintenance_migrations(database_url.clone()).await?;
+            apply_maintenance_migrations(database_url.clone(), migration_limits()?).await?;
             verify_schema(database_url).await?;
             println!(r#"{{"exact":true,"migration":"applied"}}"#);
         }
@@ -102,4 +110,31 @@ fn maintenance_database_url() -> anyhow::Result<String> {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| anyhow::anyhow!("DATABASE_URL is required for Scope metadata storage"))
+}
+
+fn migration_limits() -> anyhow::Result<MigrationLimits> {
+    let defaults = MigrationLimits::default();
+    Ok(MigrationLimits {
+        lock_timeout_seconds: operation_limit(
+            "SCOPE_MIGRATION_LOCK_TIMEOUT_SECONDS",
+            defaults.lock_timeout_seconds,
+        )?,
+        statement_timeout_seconds: operation_limit(
+            "SCOPE_MIGRATION_STATEMENT_TIMEOUT_SECONDS",
+            defaults.statement_timeout_seconds,
+        )?,
+    })
+}
+
+fn operation_limit(name: &str, default: u32) -> anyhow::Result<u32> {
+    let value = match std::env::var(name) {
+        Ok(value) => value,
+        Err(std::env::VarError::NotPresent) => return Ok(default),
+        Err(error) => return Err(error.into()),
+    };
+    value
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| anyhow::anyhow!("{name} must be a positive number of seconds"))
 }

@@ -1,0 +1,451 @@
+name: Release
+
+on:
+  schedule:
+    # Poll away from minute zero, as in pingdotgg/t3code.
+    - cron: "8,38 * * * *"
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Reuse a validated and staged release run without rebuilding (optional)
+        type: string
+        default: ""
+      scope:
+        description: Component to validate and deploy
+        type: choice
+        default: changed
+        options:
+          - changed
+          - all
+          - checks-image
+          - cache
+          - run-worker
+          - media-worker
+          - git-router
+          - media-api
+          - api
+          - web
+          - cli-downloads
+
+concurrency:
+  group: scope-release
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  deployments: read
+
+jobs:
+  release-due:
+    name: Check daily release time
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    outputs:
+      due: ${{ steps.due.outputs.due }}
+    steps:
+      - name: Checkout release scheduling code
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github
+
+      - name: Check whether today's release is due
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/check-daily-release.mjs
+
+  plan:
+    name: Plan selected components
+    needs: release-due
+    if: needs.release-due.outputs.due == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    outputs:
+      release_sha: ${{ steps.release.outputs.sha }}
+      recover_cutover_id: ${{ steps.release.outputs.recover_cutover_id }}
+      prepared_run_id: ${{ steps.release.outputs.prepared_run_id }}
+      deployed_revisions: ${{ steps.progress.outputs.revisions }}
+      deployed_components: ${{ steps.progress.outputs.deployments }}
+      checks_image: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['checks-image'] || false) || steps.plan.outputs.checks_image }}
+      cache: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['cache'] || false) || steps.plan.outputs.cache }}
+      worker: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['run-worker'] || false) || steps.plan.outputs.worker }}
+      media_worker: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['media-worker'] || false) || steps.plan.outputs.media_worker }}
+      router: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['git-router'] || false) || steps.plan.outputs.router }}
+      media: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['media-api'] || false) || steps.plan.outputs.media }}
+      api: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['api'] || false) || steps.plan.outputs.api }}
+      web: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['web'] || false) || steps.plan.outputs.web }}
+      cli: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['cli-downloads'] || false) || steps.plan.outputs.cli }}
+      cli_distribution: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['cli-distribution'] || false) || steps.plan.outputs.cli_distribution }}
+    steps:
+      - name: Require main for releases
+        run: test "$GITHUB_REF" = refs/heads/main
+
+      - name: Checkout exact revision
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Select immutable release or interrupted cutover
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: node .github/scripts/release-selection.mjs
+
+      - name: Retain selected immutable release
+        if: steps.release.outputs.prepared_run_id != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: selected-release-${{ steps.release.outputs.sha }}
+          path: selected-release.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Read successful production revisions
+        id: progress
+        if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/production-deployment-progress.mjs read
+
+      - name: Select affected components
+        if: steps.release.outputs.prepared_run_id == ''
+        id: plan
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ steps.release.outputs.sha }}
+          REQUESTED_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'changed' }}
+          DEPLOYED_REVISIONS: ${{ steps.progress.outputs.revisions }}
+        run: >-
+          node .github/scripts/plan-production-deployment.mjs
+          --manifest .github/deployment-services.json
+          --base "$BASE_SHA"
+          --head "$HEAD_SHA"
+          --scope "$REQUESTED_SCOPE"
+          --deployed-revisions "$DEPLOYED_REVISIONS"
+
+      - name: Install Rust for dependency metadata
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+
+      - name: Check repository policy
+        run: ./dev/checks/policy
+
+      - name: Check operations
+        run: ./dev/checks/ops
+
+  validation:
+    name: Validate selected components
+    needs: plan
+    permissions:
+      contents: read
+      deployments: write
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/validate.yml
+    with:
+      checks_image: ${{ needs.plan.outputs.checks_image }}
+      cache: ${{ needs.plan.outputs.cache }}
+      worker: ${{ needs.plan.outputs.worker }}
+      media_worker: ${{ needs.plan.outputs.media_worker }}
+      router: ${{ needs.plan.outputs.router }}
+      media: ${{ needs.plan.outputs.media }}
+      api: ${{ needs.plan.outputs.api }}
+      web: ${{ needs.plan.outputs.web }}
+      cli: ${{ needs.plan.outputs.cli }}
+      cli_distribution: ${{ needs.plan.outputs.cli_distribution }}
+      release_sha: ${{ needs.plan.outputs.release_sha }}
+      release: true
+      reuse_artifacts: ${{ needs.plan.outputs.prepared_run_id != '' }}
+    secrets: inherit
+
+  release-preparation:
+    name: Prepare Railway artifacts
+    needs: [plan, validation]
+    if: >-
+      !cancelled() &&
+      github.ref == 'refs/heads/main' &&
+      needs.validation.result == 'success' &&
+      (needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' ||
+      needs.plan.outputs.web == 'true')
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      packages: write
+    uses: ./.github/workflows/prepare-release.yml
+    with:
+      source_sha: ${{ needs.plan.outputs.release_sha }}
+      prepare_backend: >-
+        ${{ needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
+        needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+        needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' }}
+      prepare_router: >-
+        ${{ needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
+        needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+        needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' }}
+      prepare_web: ${{ needs.plan.outputs.web == 'true' }}
+      recover_cutover_id: ${{ needs.plan.outputs.recover_cutover_id || '' }}
+      prepared_run_id: ${{ needs.plan.outputs.prepared_run_id }}
+      media_worker_image: ${{ needs.validation.outputs.media_worker_image || '' }}
+    secrets: inherit
+
+  production-preflight:
+    name: Inspect production migration baseline
+    needs: [plan, release-preparation]
+    if: >-
+      !cancelled() && needs.plan.outputs.prepared_run_id == '' &&
+      needs.release-preparation.result == 'success' &&
+      (needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: prepared-release-${{ needs.plan.outputs.release_sha }}
+      - name: Extract pinned maintenance binary
+        env:
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: bash .github/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
+      - name: Install Railway CLI
+        run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
+      - name: Read production migration plan without applying changes
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          manifest=.github/deployment-services.json
+          railway run --project "$(jq -er '.railway.projectId' "$manifest")" \
+            --environment "$(jq -er '.environments.production.environmentId' "$manifest")" \
+            --service "$(jq -er '.railway.databaseServiceId' "$manifest")" --no-local -- \
+            sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" exec "$@"' \
+            scope-maintenance target/release/scope-maintenance plan > production-migration-plan.json
+          jq -e . production-migration-plan.json >/dev/null
+          if jq -e '.pending | length > 0' production-migration-plan.json >/dev/null; then
+            jq -e '.components | has("api") and has("run-worker") and has("cache") and has("git-router") and has("media-api") and has("media-worker") and has("web")' prepared-release.json >/dev/null || {
+              echo 'Pending migrations require the full application release. Run Release with scope all.' >&2
+              exit 1
+            }
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: production-migration-plan-${{ needs.plan.outputs.release_sha }}
+          path: production-migration-plan.json
+          if-no-files-found: error
+          retention-days: 90
+
+  staging:
+    name: Deploy staging
+    needs: [plan, release-preparation, production-preflight]
+    if: >-
+      !cancelled() && needs.plan.outputs.prepared_run_id == '' &&
+      needs.release-preparation.result == 'success' &&
+      (needs.production-preflight.result == 'success' || needs.production-preflight.result == 'skipped')
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      deployments: read
+    uses: ./.github/workflows/deploy-staging.yml
+    with:
+      source_sha: ${{ needs.plan.outputs.release_sha }}
+      prepared_run_id: ${{ github.run_id }}
+      production_plan_artifact: production-migration-plan-${{ needs.plan.outputs.release_sha }}
+    secrets: inherit
+
+  backend-deploy:
+    name: Backend deploy
+    needs: [plan, validation, release-preparation, staging]
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' &&
+      needs.validation.result == 'success' &&
+      needs.release-preparation.result == 'success' &&
+      (needs.plan.outputs.prepared_run_id != '' || needs.staging.result == 'success') &&
+      (needs.plan.outputs.cache == 'true' ||
+      needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
+      needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
+      needs.plan.outputs.api == 'true')
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+    uses: ./.github/workflows/deploy-backend.yml
+    with:
+      source_sha: ${{ needs.plan.outputs.release_sha }}
+      deploy_cache: ${{ needs.plan.outputs.cache == 'true' }}
+      deploy_worker: ${{ needs.plan.outputs.worker == 'true' }}
+      deploy_media_worker: ${{ needs.plan.outputs.media_worker == 'true' }}
+      deploy_router: ${{ needs.plan.outputs.router == 'true' }}
+      deploy_media: ${{ needs.plan.outputs.media == 'true' }}
+      deploy_api: ${{ needs.plan.outputs.api == 'true' }}
+      successful_deployments: ${{ needs.plan.outputs.deployed_components || '{}' }}
+      recover_cutover_id: ${{ needs.plan.outputs.recover_cutover_id || '' }}
+    secrets: inherit
+
+  web-deploy:
+    name: Web deploy
+    needs: [plan, validation, release-preparation, staging, backend-deploy]
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' &&
+      needs.validation.result == 'success' &&
+      needs.release-preparation.result == 'success' &&
+      (needs.plan.outputs.prepared_run_id != '' || needs.staging.result == 'success') &&
+      needs.plan.outputs.web == 'true' &&
+      needs.backend-deploy.outputs.web_activated != 'true' &&
+      (((needs.plan.outputs.cache == 'true' ||
+      needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
+      needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
+      needs.plan.outputs.api == 'true') &&
+      needs.backend-deploy.result == 'success') ||
+      ((needs.plan.outputs.cache != 'true' &&
+      needs.plan.outputs.worker != 'true' &&
+      needs.plan.outputs.media_worker != 'true' &&
+      needs.plan.outputs.router != 'true' &&
+      needs.plan.outputs.media != 'true' &&
+      needs.plan.outputs.api != 'true') &&
+      needs.backend-deploy.result == 'skipped'))
+    permissions:
+      contents: read
+      deployments: write
+    uses: ./.github/workflows/deploy-web.yml
+    with:
+      source_sha: ${{ needs.plan.outputs.release_sha }}
+      verified_successful_sha: ${{ fromJSON(needs.plan.outputs.deployed_revisions || '{}').web || '' }}
+    secrets: inherit
+
+  cli-deploy:
+    name: CLI deploy
+    needs: [plan, validation, staging, backend-deploy]
+    if: >-
+      needs.plan.outputs.prepared_run_id == '' &&
+      !cancelled() && github.ref == 'refs/heads/main' &&
+      needs.validation.result == 'success' &&
+      needs.plan.outputs.cli == 'true' &&
+      (needs.staging.result == 'success' ||
+      (needs.backend-deploy.result == 'skipped' && needs.plan.outputs.web != 'true')) &&
+      (((needs.plan.outputs.cache == 'true' ||
+      needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
+      needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
+      needs.plan.outputs.api == 'true') &&
+      needs.backend-deploy.result == 'success') ||
+      ((needs.plan.outputs.cache != 'true' &&
+      needs.plan.outputs.worker != 'true' &&
+      needs.plan.outputs.media_worker != 'true' &&
+      needs.plan.outputs.router != 'true' &&
+      needs.plan.outputs.media != 'true' &&
+      needs.plan.outputs.api != 'true') &&
+      needs.backend-deploy.result == 'skipped'))
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+    uses: ./.github/workflows/publish-cli.yml
+    with:
+      verified_successful_sha: ${{ fromJSON(needs.plan.outputs.deployed_revisions || '{}')['cli-downloads'] || '' }}
+    secrets: inherit
+
+  production-health-gate:
+    name: Verify and record release
+    needs: [plan, validation, backend-deploy, web-deploy, cli-deploy]
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' &&
+      needs.validation.result == 'success' &&
+      (needs.plan.outputs.checks_image == 'true' || needs.plan.outputs.cache == 'true' ||
+      needs.plan.outputs.worker == 'true' || needs.plan.outputs.media_worker == 'true' ||
+      needs.plan.outputs.router == 'true' || needs.plan.outputs.media == 'true' ||
+      needs.plan.outputs.api == 'true' || needs.plan.outputs.web == 'true' || needs.plan.outputs.cli == 'true') &&
+      (((needs.plan.outputs.cache == 'true' ||
+      needs.plan.outputs.worker == 'true' ||
+      needs.plan.outputs.media_worker == 'true' ||
+      needs.plan.outputs.router == 'true' ||
+      needs.plan.outputs.media == 'true' ||
+      needs.plan.outputs.api == 'true') &&
+      needs.backend-deploy.result == 'success') ||
+      ((needs.plan.outputs.cache != 'true' &&
+      needs.plan.outputs.worker != 'true' &&
+      needs.plan.outputs.media_worker != 'true' &&
+      needs.plan.outputs.router != 'true' &&
+      needs.plan.outputs.media != 'true' &&
+      needs.plan.outputs.api != 'true') &&
+      needs.backend-deploy.result == 'skipped')) &&
+      ((needs.plan.outputs.web == 'true' && (needs.web-deploy.result == 'success' ||
+      (needs.backend-deploy.outputs.web_activated == 'true' && needs.web-deploy.result == 'skipped'))) ||
+      (needs.plan.outputs.web != 'true' && needs.web-deploy.result == 'skipped')) &&
+      ((needs.plan.outputs.cli == 'true' && (needs.cli-deploy.result == 'success' || needs.plan.outputs.prepared_run_id != '')) ||
+      (needs.plan.outputs.cli != 'true' && needs.cli-deploy.result == 'skipped'))
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      deployments: write
+    environment: production
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v7
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Read final production deployment evidence
+        id: progress
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/production-deployment-progress.mjs read
+
+      - name: Install Railway CLI
+        if: needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' || needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' || needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' || needs.plan.outputs.web == 'true'
+        run: |
+          railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
+          npm install -g "@railway/cli@$railway_cli_version"
+
+      - name: Verify exact live production deployments
+        if: needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' || needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' || needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' || needs.plan.outputs.web == 'true'
+        shell: bash
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SCOPE_PRODUCTION_DEPLOYMENTS_JSON: ${{ steps.progress.outputs.deployments }}
+        run: |
+          manifest=.github/deployment-services.json
+          project_id="$(jq -er '.railway.projectId' "$manifest")"
+          environment_id="$(jq -er '.environments.production.environmentId' "$manifest")"
+          services_json="$(
+            railway status \
+              --project "$project_id" \
+              --environment "$environment_id" \
+              --json
+          )"
+          SCOPE_DEPLOYMENT_MANIFEST_JSON="$(jq -c . "$manifest")" \
+            SCOPE_RAILWAY_SERVICES_JSON="$services_json" \
+            node .github/scripts/railway-service-health.mjs
+
+      - name: Record successful release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.plan.outputs.release_sha }}
+          LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MAINTENANCE_WARNING: ${{ needs.backend-deploy.outputs.maintenance_warning }}
+          RELEASE_COMPONENTS: >-
+            {"checks-image":${{ needs.plan.outputs.checks_image }},"cache":${{ needs.plan.outputs.cache }},
+            "run-worker":${{ needs.plan.outputs.worker }},"media-worker":${{ needs.plan.outputs.media_worker }},
+            "git-router":${{ needs.plan.outputs.router }},"media-api":${{ needs.plan.outputs.media }},
+            "api":${{ needs.plan.outputs.api }},"web":${{ needs.plan.outputs.web }},"cli-downloads":${{ needs.plan.outputs.cli }}}
+        run: >-
+          node .github/scripts/production-deployment-progress.mjs record-release
+          --source-sha "$SOURCE_SHA" --log-url "$LOG_URL" --components "$RELEASE_COMPONENTS" --warning "$MAINTENANCE_WARNING"

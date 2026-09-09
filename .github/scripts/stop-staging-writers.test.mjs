@@ -18,16 +18,18 @@ async function fixture() {
   const removals = join(root, 'removals.jsonl')
   await writeFile(manifest, JSON.stringify({
     railway: {
-      environmentId: 'production',
       projectId: 'project',
+    },
+    environments: {
+      production: { environmentId: 'production' },
       staging: { environmentId: 'staging' },
     },
     services: {
       api: { id: 'api' },
       cache: { id: 'cache' },
-      media: { id: 'media' },
-      mediaWorker: { id: 'media-worker' },
-      worker: { id: 'worker' },
+      'media-api': { id: 'media' },
+      'media-worker': { id: 'media-worker' },
+      'run-worker': { id: 'worker' },
     },
   }))
   await writeFile(join(root, 'railway'), `#!/usr/bin/env bash

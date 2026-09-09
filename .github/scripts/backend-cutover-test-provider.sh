@@ -10,7 +10,7 @@ if [[ "$1" == "status" ]]; then
   STATES="$states" node -e '
 const fs = require("node:fs");
 const states = JSON.parse(process.env.STATES);
-const paths = {"scope-api":"api","scope-worker":"worker","scope-cache-service":"cache-service","scope-repo-router":"repo-router","scope-media":"media-service","scope-media-worker":"media-service"};
+const paths = {"scope-api":"api","scope-worker":"worker","scope-cache-service":"cache-service","scope-repo-router":"repo-router","scope-media":"media-service","scope-media-worker":"media-service","scope-web":"web"};
 const instances = states.map(s => {
   const deploy = JSON.parse(fs.readFileSync(`${paths[s.id]}/railway.json`,"utf8")).deploy;
   const deployment = {id:s.deploymentId,status:s.status,deploymentStopped:s.deploymentStopped,
@@ -18,7 +18,7 @@ const instances = states.map(s => {
     instances:[...Array.from({length:s.replicas?.running||0},()=>({status:"RUNNING"})),...Array.from({length:s.replicas?.crashed||0},()=>({status:"CRASHED"}))]};
   return {node:{serviceId:s.id,serviceName:s.name,numReplicas:s.replicas?.configured,latestDeployment:deployment,activeDeployments:s.deploymentId ? [deployment] : []}};
 });
-console.log(JSON.stringify({id:"project-test",environments:{edges:[{node:{id:"production",name:"production",serviceInstances:{edges:instances}}}]},services:{edges:[...Object.entries(paths).map(([id])=>({node:{id,name:id}})),{node:{id:"scope-postgres",name:"scope-postgres"}}]}}));
+console.log(JSON.stringify({id:"project-test",environments:{edges:[{node:{id:"production",name:"production",serviceInstances:{edges:instances}}}]},services:{edges:[...Object.entries(paths).map(([id])=>({node:{id,name:({"scope-worker":"scope-run-worker","scope-cache-service":"scope-cache","scope-repo-router":"scope-git-router","scope-media":"scope-media-api"})[id] || id}})),{node:{id:"scope-postgres",name:"scope-postgres"}}]}}));
 '
   exit 0
 fi
@@ -29,7 +29,7 @@ if [[ "$1 $2" == "environment config" ]]; then
   if [[ "${FAKE_ROUTER_CONFIGURED:-1}" == "1" || -f "$FAKE_RAILWAY_STATE/router-scale" ]]; then
     router_config='{"groupId":"runtime-group","deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}}'
   fi
-  printf '{"services":{"scope-api":{"deploy":{"multiRegionConfig":{"%s":{"numReplicas":1}}}},"scope-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-repo-router":%s}}\n' "$stored_api_region" "$router_config"
+  printf '{"services":{"scope-api":{"deploy":{"multiRegionConfig":{"%s":{"numReplicas":1}}}},"scope-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-web":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-repo-router":%s}}\n' "$stored_api_region" "$router_config"
   exit 0
 fi
 
@@ -55,7 +55,11 @@ if [[ "$1" == "api" && "$2" == *"serviceInstance"* ]]; then
   else
     component="${service#scope-}"
     [[ "$component" != cache-service ]] || component=cache
-    [[ "$component" != repo-router ]] || component=router
+    case "$component" in
+      worker) component=run-worker ;;
+      repo-router) component=git-router ;;
+      media) component=media-api ;;
+    esac
     deployed="$(FAKE_IMMUTABLE_ACTIVATION=1 "$0" up "$FAKE_UPLOAD_ROOT/$component" --service "$service")"
     jq -c '{data:{serviceInstanceDeployV2:.deploymentId}}' <<< "$deployed"
   fi
@@ -179,6 +183,11 @@ if [[ "$1 $2" == "deployment list" ]]; then
   while [[ "$#" -gt 0 ]]; do
     if [[ "$1" == "--service" ]]; then service="$2"; shift 2; else shift; fi
   done
+  if [[ -f "$FAKE_RAILWAY_STATE/gate-${service}" ]]; then
+    jq -cn --arg service "$service" --arg image "$(cat "$FAKE_RAILWAY_STATE/gate-${service}")" \
+      '[{id:("gate-"+$service),serviceId:$service,status:"SUCCESS",deploymentStopped:false,createdAt:"2026-01-01T00:00:00Z",meta:{serviceManifest:{source:{image:$image},deploy:{startCommand:"/app/bin/scope-maintenance serve",healthcheckPath:"/readyz"}}}},{id:("old-"+$service),serviceId:$service,status:"REMOVED",deploymentStopped:true}]'
+    exit 0
+  fi
   if [[ -f "$FAKE_RAILWAY_STATE/no-history-${service}" && ! -f "$FAKE_RAILWAY_STATE/up-${service}" ]]; then
     echo '[]'
     exit 0
@@ -197,7 +206,8 @@ if [[ "$1 $2" == "deployment list" ]]; then
     image=""
     [[ ! -f "$FAKE_RAILWAY_STATE/image-$service" ]] || image="$(cat "$FAKE_RAILWAY_STATE/image-$service")"
     jq -cn --arg id "$id" --arg service "$service" --arg image "$image" \
-      '[{id:$id,status:"SUCCESS",createdAt:"2026-01-01T00:00:00Z",meta:{image:$image,imageDigest:($image | split("@") | .[1] // "")}},{id:("old-"+$service),status:"REMOVED"}]'
+      --argjson had_gate "$([[ -f "$FAKE_RAILWAY_STATE/gate-history-${service}" ]] && echo true || echo false)" \
+      '[{id:$id,serviceId:$service,status:"SUCCESS",createdAt:"2026-01-01T00:00:00Z",meta:{image:$image,imageDigest:($image | split("@") | .[1] // "")}},{id:("old-"+$service),serviceId:$service,status:"REMOVED"}] + if $had_gate then [{id:("gate-"+$service),serviceId:$service,status:"REMOVED",deploymentStopped:true}] else [] end'
   else
     printf '[{"id":"%s","status":"SUCCESS","createdAt":"2026-01-01T00:00:00Z"}]\n' "$id"
   fi
@@ -344,9 +354,28 @@ if [[ "$1 $2" == "service list" ]]; then
   router_json=""
   if [[ "${FAKE_ROUTER_INSTANCE_EXISTS:-1}" == "1" \
     || -f "$FAKE_RAILWAY_STATE/router-instance-created" ]]; then
-    router_json=",{\"id\":\"scope-repo-router\",\"name\":\"scope-repo-router\",\"status\":\"${router_status}\",\"deploymentId\":${router_deployment},\"deploymentStopped\":${router_stopped},\"replicas\":${router_replicas},\"regions\":${router_regions}}"
+    router_json=",{\"id\":\"scope-repo-router\",\"name\":\"scope-git-router\",\"status\":\"${router_status}\",\"deploymentId\":${router_deployment},\"deploymentStopped\":${router_stopped},\"replicas\":${router_replicas},\"regions\":${router_regions}}"
   fi
-  printf '[{"id":"scope-api","name":"scope-api","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-worker","name":"scope-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-cache-service","name":"scope-cache-service","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s},{"id":"scope-media","name":"scope-media","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-media-worker","name":"scope-media-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s}%s]\n' "$api_status" "$api_deployment" "$api_stopped" "$api_replicas" "$api_regions" "$worker_status" "$worker_deployment" "$worker_stopped" "$worker_replicas" "$worker_regions" "$cache_status" "$cache_deployment" "$cache_stopped" "$cache_replicas" "$media_status" "$media_deployment" "$media_stopped" "$media_replicas" "$media_regions" "$media_worker_status" "$media_worker_deployment" "$media_worker_stopped" "$media_worker_replicas" "$media_worker_regions" "$router_json"
+  web_id=old-scope-web
+  [[ ! -f "$FAKE_RAILWAY_STATE/up-scope-web" ]] || web_id=new-scope-web
+  web_stopped=false
+  web_running=1
+  if [[ -f "$FAKE_RAILWAY_STATE/stopped-scope-web" ]]; then web_stopped=true; web_running=0; fi
+  web_json="$(jq -cn --arg id "$web_id" --argjson stopped "$web_stopped" --argjson running "$web_running" \
+    '{id:"scope-web",name:"scope-web",status:"SUCCESS",deploymentId:$id,deploymentStopped:$stopped,replicas:{configured:1,running:$running,crashed:0,exited:(1-$running),total:1}}')"
+  router_json+=",$web_json"
+  printf '[{"id":"scope-api","name":"scope-api","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-worker","name":"scope-run-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-cache-service","name":"scope-cache","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s},{"id":"scope-media","name":"scope-media-api","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-media-worker","name":"scope-media-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s}%s]\n' "$api_status" "$api_deployment" "$api_stopped" "$api_replicas" "$api_regions" "$worker_status" "$worker_deployment" "$worker_stopped" "$worker_replicas" "$worker_regions" "$cache_status" "$cache_deployment" "$cache_stopped" "$cache_replicas" "$media_status" "$media_deployment" "$media_stopped" "$media_replicas" "$media_regions" "$media_worker_status" "$media_worker_deployment" "$media_worker_stopped" "$media_worker_replicas" "$media_worker_regions" "$router_json" | node -e '
+const fs = require("node:fs");
+const states = JSON.parse(fs.readFileSync(0,"utf8"));
+for (const state of states) {
+  if (!fs.existsSync(`${process.env.FAKE_RAILWAY_STATE}/gate-${state.id}`)) continue;
+  state.deploymentId = `gate-${state.id}`;
+  state.status = "SUCCESS";
+  state.deploymentStopped = false;
+  state.replicas = {configured:1,running:1,crashed:0,exited:0,total:1};
+}
+console.log(JSON.stringify(states));
+'
   exit 0
 fi
 
@@ -360,6 +389,13 @@ if [[ "$1" == "up" ]]; then
   while [[ "$#" -gt 0 ]]; do
     if [[ "$1" == "--service" ]]; then service="$2"; shift 2; else shift; fi
   done
+  # Router readiness resolves the API private address; stopped API replicas
+  # provide no DNS target for a newly starting router.
+  if [[ "$service" == "scope-repo-router" ]] \
+    && [[ "$("$0" service list | jq -r '.[] | select(.id == "scope-api") | .replicas.running')" == "0" ]]; then
+    echo "Git router readiness failed: API private DNS has no running target." >&2
+    exit 1
+  fi
   [[ "${FAKE_FAIL_UP_SERVICE:-}" == "$service" ]] && exit 1
   if [[ "${FAKE_SKIP_UP_SERVICE:-}" == "$service" ]]; then
     touch "$FAKE_RAILWAY_STATE/skipped-${service}"
@@ -378,7 +414,7 @@ if [[ "$1" == "up" ]]; then
     exit 0
   fi
   touch "$FAKE_RAILWAY_STATE/up-${service}"
-  rm -f "$FAKE_RAILWAY_STATE/stopped-${service}"
+  rm -f "$FAKE_RAILWAY_STATE/stopped-${service}" "$FAKE_RAILWAY_STATE/gate-${service}"
   printf '{"deploymentId":"new-%s"}\n' "$service"
   exit 0
 fi
@@ -432,3 +468,50 @@ else
 fi
 FAKE
 chmod +x "$test_dir/bin/curl"
+
+# Gate provider behavior is covered by railway-maintenance-gate.test.mjs. The
+# orchestration fixture uses readable non-UUID IDs, so model only its CLI boundary.
+real_node="$(command -v node)"
+printf '#!/usr/bin/env bash\nif [[ "${1:-}" == */railway-maintenance-gate.mjs ]]; then\n  exec %q "$(dirname "$0")/gate-node.cjs" "$@"\nfi\nexec %q "$@"\n' "$real_node" "$real_node" > "$test_dir/bin/node"
+cat > "$test_dir/bin/gate-node.cjs" <<'FAKE'
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const [script, action, file] = args;
+const gate = JSON.parse(fs.readFileSync(file, 'utf8'));
+const state = process.env.FAKE_RAILWAY_STATE;
+const trace = message => fs.appendFileSync(process.env.FAKE_RAILWAY_TRACE, `${message}\n`);
+const marker = name => `${state}/${name}-${gate.serviceId}`;
+if (action === 'snapshot') {
+  gate.previous = {
+    source: { image: `ghcr.io/test/repo/baseline@sha256:${'a'.repeat(64)}` },
+    build: { rootDirectory: '/', railwayConfigFile: null, buildCommand: null },
+    deploy: { startCommand: '/app/bin/original', healthcheckPath: '/readyz', healthcheckTimeout: 60, preDeployCommand: [] },
+  };
+  gate.predecessorIds = [`${fs.existsSync(marker('up')) ? 'new' : 'old'}-${gate.serviceId}`];
+  gate.phase = 'snapshotted';
+  gate.capturedAt = new Date().toISOString();
+} else if (action === 'reclose' || action === 'enter') {
+  if (!gate.previous) throw new Error('Missing original gate snapshot');
+  gate.deploymentId = `gate-${gate.serviceId}`;
+  gate.phase = 'active';
+  fs.writeFileSync(marker('gate'), gate.image);
+  fs.writeFileSync(marker('gate-history'), gate.image);
+  const predecessor = `${fs.existsSync(marker('up')) ? 'new' : 'old'}-${gate.serviceId}`;
+  if (!fs.existsSync(marker('stopped'))) {
+    trace(`graphql stop ${gate.serviceId} ${predecessor}`);
+    if (process.env.FAKE_DENY_DEPLOYMENT_ACTION_SERVICE === gate.serviceId) {
+      throw new Error('Railway denied predecessor stop');
+    }
+  }
+  fs.writeFileSync(marker('stopped'), '');
+  fs.writeFileSync(marker('stop-requested'), '');
+  trace(`gate stop-predecessors ${gate.serviceId}`);
+} else if (action === 'restore') {
+  if (!gate.previous) throw new Error('Missing original gate snapshot');
+  gate.phase = 'restored';
+  // Restoring config does not reopen service or restart removed predecessors.
+} else throw new Error(`Unknown gate action ${action}`);
+trace(`gate ${action} ${gate.serviceId}`);
+fs.writeFileSync(file, JSON.stringify(gate));
+FAKE
+chmod +x "$test_dir/bin/node"

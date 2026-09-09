@@ -1,4 +1,4 @@
-name: Scope Backend Deploy
+name: Deploy backend
 
 on:
   workflow_call:
@@ -6,9 +6,6 @@ on:
       source_sha:
         type: string
         required: true
-      maintenance_budget_seconds:
-        type: number
-        default: 0
       recover_cutover_id:
         type: string
         default: ""
@@ -34,6 +31,12 @@ on:
         type: string
         default: "{}"
 
+    outputs:
+      web_activated:
+        value: ${{ jobs.deploy.outputs.web_activated }}
+      maintenance_warning:
+        value: ${{ jobs.deploy.outputs.maintenance_warning }}
+
 permissions:
   contents: read
   deployments: write
@@ -42,6 +45,9 @@ permissions:
 jobs:
   deploy:
     name: Deploy backend
+    outputs:
+      web_activated: ${{ steps.receipt.outputs.web_activated }}
+      maintenance_warning: ${{ steps.warning.outputs.maintenance_warning }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production
     env:
@@ -80,7 +86,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SCOPE_PREPARED_RELEASE_PATH: prepared-release.json
-          MAINTENANCE_BUDGET_SECONDS: ${{ inputs.maintenance_budget_seconds }}
           SCOPE_RELEASE_CUTOVER_ID: ${{ inputs.recover_cutover_id }}
           SCOPE_RECOVER_CLOSED_CUTOVER: ${{ inputs.recover_cutover_id != '' && '1' || '0' }}
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
@@ -98,23 +103,24 @@ jobs:
           SCOPE_DEPLOY_MEDIA: ${{ inputs.deploy_media && '1' || '0' }}
           SCOPE_DEPLOY_MEDIA_WORKER: ${{ inputs.deploy_media_worker && '1' || '0' }}
         run: |
-          export SCOPE_MAINTENANCE_OUTAGE_BUDGET_MS=$((MAINTENANCE_BUDGET_SECONDS * 1000))
           manifest=.github/deployment-services.json
           RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"
-          SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.railway.environmentId' "$manifest")"
+          SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.environments.production.environmentId' "$manifest")"
+          SCOPE_RAILWAY_WEB_SERVICE_ID="$(jq -er '.services.web.id' "$manifest")"
           SCOPE_RAILWAY_API_SERVICE_ID="$(jq -r '.services.api.id' "$manifest")"
-          SCOPE_RAILWAY_WORKER_SERVICE_ID="$(jq -r '.services.worker.id' "$manifest")"
+          SCOPE_RAILWAY_WORKER_SERVICE_ID="$(jq -r '.services["run-worker"].id' "$manifest")"
           SCOPE_RAILWAY_CACHE_SERVICE_ID="$(jq -r '.services.cache.id' "$manifest")"
-          SCOPE_RAILWAY_ROUTER_SERVICE_ID="$(jq -r '.services.router.id' "$manifest")"
-          SCOPE_RAILWAY_MEDIA_SERVICE_ID="$(jq -er '.services.media.id | strings | select(length > 0)' "$manifest")"
-          SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID="$(jq -er '.services.mediaWorker.id | strings | select(length > 0)' "$manifest")"
+          SCOPE_RAILWAY_ROUTER_SERVICE_ID="$(jq -r '.services["git-router"].id' "$manifest")"
+          SCOPE_RAILWAY_MEDIA_SERVICE_ID="$(jq -er '.services["media-api"].id | strings | select(length > 0)' "$manifest")"
+          SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID="$(jq -er '.services["media-worker"].id | strings | select(length > 0)' "$manifest")"
           SCOPE_RAILWAY_DATABASE_SERVICE_ID="$(jq -r '.railway.databaseServiceId' "$manifest")"
           SCOPE_RAILWAY_ROUTER_GROUP_ID="$(jq -r '.railway.runtimeGroupId' "$manifest")"
           SCOPE_RAILWAY_API_REGION_ID="$(jq -r '.railway.regionId' "$manifest")"
           SCOPE_RAILWAY_WORKER_REGION_ID="$SCOPE_RAILWAY_API_REGION_ID"
           SCOPE_RAILWAY_MEDIA_REGION_ID="$SCOPE_RAILWAY_API_REGION_ID"
-          SCOPE_MEDIA_WORKER_IMAGE="$(jq -er '.components.mediaWorker.image' prepared-release.json)"
+          SCOPE_MEDIA_WORKER_IMAGE="$(jq -er '.components["media-worker"].image' prepared-release.json)"
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
+          export SCOPE_RAILWAY_WEB_SERVICE_ID
           export SCOPE_RAILWAY_API_SERVICE_ID SCOPE_RAILWAY_WORKER_SERVICE_ID
           export SCOPE_RAILWAY_CACHE_SERVICE_ID SCOPE_RAILWAY_ROUTER_SERVICE_ID
           export SCOPE_RAILWAY_MEDIA_SERVICE_ID SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID
@@ -132,7 +138,14 @@ jobs:
             repo-router \
             media
 
+      - name: Read maintenance duration warning
+        id: warning
+        run: |
+          warning="$(jq -er '.warnings | join("; ")' release-evidence/backend/availability-summary.json)"
+          echo "maintenance_warning=$warning" >> "$GITHUB_OUTPUT"
+
       - name: Record successful Railway deployments
+        id: receipt
         if: steps.transition.outcome == 'success'
         shell: bash
         env:
@@ -142,6 +155,8 @@ jobs:
           node .github/scripts/production-deployment-progress.mjs record-file \
             --file production-deployments.ndjson \
             --log-url "$LOG_URL"
+          web_activated="$(jq -s 'any(.[]; .component == "web")' production-deployments.ndjson)"
+          echo "web_activated=$web_activated" >> "$GITHUB_OUTPUT"
 
       - name: Upload release transition evidence
         if: always()

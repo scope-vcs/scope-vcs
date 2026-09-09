@@ -87,7 +87,9 @@ async fn maintenance_has_no_catalogs_to_read_before_baseline_initialization() {
 #[tokio::test]
 async fn repository_workflow_catalog_schema_enforces_identity_bounds_and_cascade() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     insert_repository(db.as_ref()).await;
     insert_captured_catalog(db.as_ref()).await;
 
@@ -178,7 +180,9 @@ async fn repository_workflow_catalog_schema_enforces_identity_bounds_and_cascade
 #[tokio::test]
 async fn repository_workflow_catalog_schema_caps_files_and_rejects_files_for_errors() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     insert_repository(db.as_ref()).await;
     insert_captured_catalog(db.as_ref()).await;
 
@@ -243,7 +247,9 @@ async fn repository_workflow_catalog_schema_caps_files_and_rejects_files_for_err
 #[tokio::test]
 async fn repository_workflow_catalog_replaces_complete_snapshots_and_detects_corruption() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     insert_repository(db.as_ref()).await;
 
     let first_file = RepositoryWorkflowFile::from_content(
@@ -334,7 +340,9 @@ async fn repository_workflow_catalog_replaces_complete_snapshots_and_detects_cor
 #[tokio::test]
 async fn repository_workflow_catalog_backfill_rechecks_repository_and_live_blob_identity() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     insert_repository(db.as_ref()).await;
 
     let bytes = b"name: checks\n".to_vec();

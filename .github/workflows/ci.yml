@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+
+concurrency:
+  group: scope-ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan selected components
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    outputs:
+      checks_image: ${{ steps.plan.outputs.checks_image }}
+      cache: ${{ steps.plan.outputs.cache }}
+      worker: ${{ steps.plan.outputs.worker }}
+      media_worker: ${{ steps.plan.outputs.media_worker }}
+      router: ${{ steps.plan.outputs.router }}
+      media: ${{ steps.plan.outputs.media }}
+      api: ${{ steps.plan.outputs.api }}
+      web: ${{ steps.plan.outputs.web }}
+      cli: ${{ steps.plan.outputs.cli }}
+      cli_distribution: ${{ steps.plan.outputs.cli_distribution }}
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Select affected components
+        id: plan
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REQUESTED_SCOPE: changed
+        run: >-
+          node .github/scripts/plan-production-deployment.mjs
+          --manifest .github/deployment-services.json
+          --base "$BASE_SHA"
+          --head "$HEAD_SHA"
+          --scope "$REQUESTED_SCOPE"
+
+      - name: Install Rust for dependency metadata
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+
+      - name: Check repository policy
+        run: ./dev/checks/policy
+
+      - name: Check operations
+        run: ./dev/checks/ops
+
+  validation:
+    name: Validate selected components
+    needs: plan
+    permissions:
+      contents: read
+      deployments: write
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/validate.yml
+    with:
+      checks_image: ${{ needs.plan.outputs.checks_image }}
+      cache: ${{ needs.plan.outputs.cache }}
+      worker: ${{ needs.plan.outputs.worker }}
+      media_worker: ${{ needs.plan.outputs.media_worker }}
+      router: ${{ needs.plan.outputs.router }}
+      media: ${{ needs.plan.outputs.media }}
+      api: ${{ needs.plan.outputs.api }}
+      web: ${{ needs.plan.outputs.web }}
+      cli: ${{ needs.plan.outputs.cli }}
+      cli_distribution: ${{ needs.plan.outputs.cli_distribution }}
+      release_sha: ${{ github.sha }}
+    secrets: inherit
+

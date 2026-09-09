@@ -121,7 +121,7 @@ test("constructs and verifies the real public release requests", async (t) => {
   }
 });
 
-test("reads the homepage without a browser handshake and still rejects redirects", async (t) => {
+test("reads the current homepage without a browser handshake and still rejects redirects", async (t) => {
   let redirectPage = false;
   const web = await listen((request, response) => {
     if (request.headers.accept?.includes("text/html") || redirectPage) {
@@ -222,7 +222,7 @@ test("wrapper waits for a clean baseline, runs activation, and retains the tail 
     env: {
       ...process.env,
       SCOPE_RELEASE_BASELINE_SECONDS: "0",
-      SCOPE_RELEASE_POST_TEARDOWN_SECONDS: "0",
+      SCOPE_RELEASE_OBSERVATION_SECONDS: "0",
       SCOPE_RELEASE_READY_TIMEOUT_SECONDS: "5",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -255,8 +255,8 @@ test("wrapper waits for a clean baseline, runs activation, and retains the tail 
     intervalMs: 1_000,
     maintenance: {
       endFile: maintenanceEnd,
-      maxDurationMs: 10_000,
-      maxFailedRequests: 10,
+      warningAfterMs: 10_000,
+
       startFile: maintenanceStart,
     },
     mode: "maintenance",
@@ -275,7 +275,7 @@ test("wrapper waits for a clean baseline, runs activation, and retains the tail 
     env: {
       ...process.env,
       SCOPE_RELEASE_BASELINE_SECONDS: "60",
-      SCOPE_RELEASE_POST_TEARDOWN_SECONDS: "0",
+      SCOPE_RELEASE_OBSERVATION_SECONDS: "0",
       SCOPE_RELEASE_READY_TIMEOUT_SECONDS: "5",
       SCOPE_RELEASE_SKIP_BASELINE: "1",
     },
@@ -295,15 +295,15 @@ test("wrapper waits for a clean baseline, runs activation, and retains the tail 
   assert(recoverySummary.maintenanceWindow.endedAt);
 });
 
-test("accounts for an explicit maintenance window and its budgets", () => {
+test("accounts for an explicit maintenance window and warns without failing a restored release", () => {
   const parsed = parseAvailabilityConfig(config(
     "https://web.example.test",
     "https://api.example.test",
     {
       maintenance: {
         endFile: "/tmp/scope-maintenance-end",
-        maxDurationMs: 1_000,
-        maxFailedRequests: 2,
+        warningAfterMs: 1_000,
+
         startFile: "/tmp/scope-maintenance-start",
       },
       mode: "maintenance",
@@ -319,6 +319,16 @@ test("accounts for an explicit maintenance window and its budgets", () => {
   assert.equal(passing.passed, true);
   assert.equal(passing.maintenanceWindow.durationMs, 800);
   assert.equal(passing.maintenanceFailureCount, 2);
+
+  const overrun = new AvailabilityEvidence(parsed, "2026-09-06T12:00:00.000Z");
+  overrun.openMaintenance("2026-09-06T12:00:00.000Z");
+  for (let index = 0; index < 10; index += 1) {
+    overrun.record(failedEvent("2026-09-06T12:00:01.100Z", "maintenance"));
+  }
+  overrun.closeMaintenance("2026-09-06T12:00:02.000Z");
+  const restored = overrun.finish("2026-09-06T12:00:03.000Z");
+  assert.equal(restored.passed, true);
+  assert.match(restored.warnings[0], /exceeded warning threshold/);
 
   evidence.record(failedEvent("2026-09-06T12:00:01.900Z", "serving"));
   const failed = evidence.finish("2026-09-06T12:00:02.100Z");
@@ -452,8 +462,8 @@ async function runBoundaryCase(root, name, moveBoundary, { startBeforeRequest = 
     {
       maintenance: {
         endFile,
-        maxDurationMs: 10_000,
-        maxFailedRequests: 6,
+        warningAfterMs: 10_000,
+
         startFile,
       },
       mode: "maintenance",
@@ -507,7 +517,7 @@ function readiness(service, checks = []) {
 }
 
 function homepage() {
-  return "<!doctype html><title>Scope</title><h1>One repository. Public and private.</h1>";
+  return "<!doctype html><title>Scope</title><h1>One repository. <span>You choose</span> what’s public.</h1>";
 }
 
 function html(response, body) {
@@ -551,3 +561,24 @@ async function collect(stream) {
   for await (const chunk of stream) value += chunk;
   return value.trim();
 }
+
+
+test("regular release errors are informational until recovery observation, which must sample all targets", () => {
+  const parsed = parseAvailabilityConfig(config("https://web.example.test", "https://api.example.test"));
+  parsed.release.observationStartFile = "/tmp/observation-start";
+  const evidence = new AvailabilityEvidence(parsed, "2026-09-06T12:00:00.000Z");
+  evidence.record(failedEvent("2026-09-06T12:00:01.000Z", "serving"));
+  assert.equal(evidence.finish().passed, false);
+  evidence.observationStartedAt = "2026-09-06T12:00:02.000Z";
+  assert.equal(evidence.finish().passed, false);
+  for (const { name } of availabilityTargets(parsed)) {
+    evidence.record({ at: "2026-09-06T12:00:03.000Z", target: name, phase: "serving", ok: true });
+  }
+  evidence.record({
+    ...failedEvent("2026-09-06T12:00:03.500Z", "serving"),
+    startedAt: "2026-09-06T12:00:01.900Z",
+  });
+  assert.equal(evidence.finish().passed, true);
+  evidence.record(failedEvent("2026-09-06T12:00:04.000Z", "serving"));
+  assert.equal(evidence.finish().passed, false);
+});

@@ -62,23 +62,19 @@ async fn original_chain_bridge_preserves_rows_sequences_and_is_idempotent() {
     let sequence = sequence_state(&db).await;
     let plan = migrations::plan(db.as_ref()).await.unwrap();
     assert_eq!(plan.pending[0].name, BASELINE);
-    assert_eq!(plan.pending[0].impact, MigrationImpact::MaintenanceRequired);
     assert!(!plan.exact);
     assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
-    assert!(
-        migrations::apply_online(db.as_ref())
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("maintenance cutover")
-    );
     assert_eq!(applied_versions(&db).await.len(), 42);
 
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     assert_eq!(representative_business_snapshot(&db).await, before);
     assert_eq!(sequence_state(&db).await, sequence);
     assert_eq!(applied_versions(&db).await, LATEST_MIGRATIONS);
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     assert_eq!(representative_business_snapshot(&db).await, before);
     assert_eq!(sequence_state(&db).await, sequence);
 }
@@ -106,7 +102,9 @@ async fn baseline_bridge_preserves_historical_not_null_constraint_names() {
             name.replace('"', "\"\""),
         )).await.unwrap();
     }
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
     if named_constraint.is_some() {
         let retained = db
@@ -139,7 +137,7 @@ async fn failed_baseline_ledger_insert_rolls_back_the_old_ledger_and_data() {
     .unwrap();
     let before = representative_business_snapshot(&db).await;
     let ledger = applied_versions(&db).await;
-    let error = migrations::apply_in_maintenance(db.as_ref())
+    let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap_err();
     assert!(
@@ -152,7 +150,9 @@ async fn failed_baseline_ledger_insert_rolls_back_the_old_ledger_and_data() {
     db.execute_unprepared("ALTER TABLE seaql_migrations DROP CONSTRAINT injected_bridge_failure")
         .await
         .unwrap();
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
 }
 
@@ -169,7 +169,7 @@ async fn retained_older_unknown_and_incomplete_ledgers_are_rejected_without_chan
         }
         let ledger = applied_versions(&db).await;
         let before = representative_business_snapshot(&db).await;
-        let error = migrations::apply_in_maintenance(db.as_ref())
+        let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
             .await
             .unwrap_err();
         assert!(
@@ -201,7 +201,7 @@ async fn baseline_bridge_refuses_schema_drift_without_replacing_the_ledger() {
         db.execute_unprepared(drift).await.unwrap();
         let ledger = applied_versions(&db).await;
         let before = representative_business_snapshot(&db).await;
-        let error = migrations::apply_in_maintenance(db.as_ref())
+        let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
             .await
             .unwrap_err();
         assert!(
@@ -221,7 +221,7 @@ async fn baseline_initialization_refuses_an_untracked_nonempty_schema() {
     )
     .await
     .unwrap();
-    let error = migrations::apply_in_maintenance(db.as_ref())
+    let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap_err();
     assert!(error.to_string().contains("empty schema"));

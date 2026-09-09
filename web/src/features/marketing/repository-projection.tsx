@@ -1,271 +1,81 @@
-import type { Visibility, VisibilityState } from '@/api/types'
-import {
-  buildFileSystemTree,
-  folderVisibility,
-  type FileSystemTreeNode,
-} from '@/components/file-system-tree-model'
-import { VisibilityBadge, VisibilityLegend } from '@/components/visibility-badge'
-import {
-  ChevronDown,
-  ChevronRight,
-  File,
-  Folder,
-  FolderGit2,
-  FolderOpen,
-} from 'lucide-react'
-import { useState, type ReactElement } from 'react'
+import { Check, File, Folder, GitBranch, Globe, LockKeyhole } from 'lucide-react'
+import type { ReactElement } from 'react'
+import { cn } from '@/lib/utils'
 
-type ProjectionAudience = 'private' | 'public'
+const files = ['sdk/', 'docs/', 'examples/', 'internal/', 'README.md']
 
-type ProjectionFile = {
-  path: string
-  visibility: Visibility
+function VisibilityLabel({ isPublic }: { isPublic: boolean }): ReactElement {
+  const Icon = isPublic ? Globe : LockKeyhole
+  return (
+    <span className={`visibility-label ml-auto inline-flex items-center justify-end text-landing-meta ${isPublic ? 'is-public text-landing-green' : 'is-private text-landing-muted'}`}>
+      <Icon aria-hidden className="icon hidden size-3.5 max-[521px]:block min-[901px]:max-[1151px]:block max-[361px]:size-3" />
+      <span className="label-text max-[521px]:hidden min-[901px]:max-[1151px]:hidden">{isPublic ? 'Public' : 'Private'}</span>
+    </span>
+  )
 }
 
-type ProjectionRow = {
-  depth: number
-  expanded?: boolean
-  key: string
-  name: string
-  path: string
-  type: 'file' | 'folder'
-  visibility: VisibilityState
+function RepositoryColumn({ publicClone = false }: { publicClone?: boolean }): ReactElement {
+  const TitleIcon = publicClone ? Globe : LockKeyhole
+  return (
+    <div className={cn('repository-column min-w-0', publicClone && 'public-column border-l border-landing-line bg-landing-panel')}>
+      <div className="repository-title flex h-11 items-center gap-[9px] border-b border-landing-line px-5 text-landing-title font-medium max-[1151px]:gap-[7px] max-[1151px]:px-4 max-[521px]:gap-1.5 max-[521px]:px-[11px] max-[361px]:gap-1 max-[361px]:px-[7px]">
+        <TitleIcon aria-hidden className={cn('icon size-4 max-[521px]:size-3.5 max-[361px]:size-3', publicClone ? 'text-landing-green' : 'text-landing-muted')} />
+        {publicClone ? 'Public clone' : 'Your repository'}
+      </div>
+      <ul className="repository-files m-0 list-none px-3.5 py-3 max-[1151px]:px-2.5 max-[521px]:px-1.5 max-[521px]:py-2 max-[361px]:px-[3px]">
+        {files.map((name) => {
+          const isExample = name === 'examples/'
+          const absent = publicClone && name === 'internal/'
+          const Icon = name.endsWith('/') ? Folder : File
+          return (
+            <li
+              key={name}
+              aria-hidden={absent || undefined}
+              className={cn(
+                'repository-file relative flex h-[38px] min-w-0 items-center gap-[9px] rounded-sm px-1.5 font-mono text-landing-body [line-height:normal] max-[1151px]:gap-[7px] max-[521px]:gap-1.5 max-[521px]:px-[5px] max-[361px]:gap-1 max-[361px]:px-1',
+                absent && 'absent',
+                isExample && (publicClone ? 'shared-example' : 'source-example'),
+              )}
+            >
+              {!absent && <>
+                <Icon aria-hidden className="icon size-4 text-landing-muted max-[521px]:size-3.5 max-[361px]:size-3" />
+                <span className="repository-filename whitespace-nowrap">{name}</span>
+                {publicClone ? (
+                  <Check aria-hidden className="icon ml-auto size-3.5 text-landing-green max-[521px]:size-3 max-[361px]:size-[11px]" />
+                ) : isExample ? (
+                  <span className="visibility-changing relative ml-auto h-[18px] w-14 shrink-0 *:absolute *:inset-0 max-[521px]:w-4 min-[901px]:max-[1151px]:w-4 max-[361px]:w-3">
+                    <VisibilityLabel isPublic={false} />
+                    <VisibilityLabel isPublic />
+                  </span>
+                ) : <VisibilityLabel isPublic={name !== 'internal/'} />}
+              </>}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
 }
-
-type ProjectionViewDefinition = {
-  audience: ProjectionAudience
-  label: string
-  rows: readonly ProjectionRow[]
-}
-
-type ProjectionViewProps = ProjectionViewDefinition & {
-  hoveredPath: string | null
-  onHoverRow: (row: ProjectionRow | null) => void
-}
-
-const repositoryFiles: readonly ProjectionFile[] = [
-  { path: 'src/cli/index.ts', visibility: 'Public' },
-  { path: 'src/internal/policy.ts', visibility: 'Private' },
-  { path: 'src/shared/config.ts', visibility: 'Public' },
-  { path: '.env', visibility: 'Private' },
-  { path: 'README.md', visibility: 'Public' },
-]
-
-const expandedFolderPaths = new Set(['/src', '/src/cli'])
-
-const treeRowMetrics = {
-  chevronSize: 12,
-  disclosureSlotSize: 16,
-  fileIconSize: 16,
-  itemGap: 4,
-  levelIndent: 10,
-  rowInset: 4,
-} as const
-const fileIconInset = (
-  treeRowMetrics.disclosureSlotSize - treeRowMetrics.chevronSize
-) / 2
-const fileLabelGap = treeRowMetrics.disclosureSlotSize
-  + treeRowMetrics.itemGap
-  - fileIconInset
-  - treeRowMetrics.fileIconSize
-
-const projectionViews = [
-  {
-    audience: 'public',
-    label: 'public view',
-    rows: buildProjectionRows(
-      repositoryFiles.filter((file) => file.visibility === 'Public'),
-    ),
-  },
-  {
-    audience: 'private',
-    label: 'maintainer view',
-    rows: buildProjectionRows(repositoryFiles),
-  },
-] as const satisfies ReadonlyArray<ProjectionViewDefinition>
 
 export function RepositoryProjection(): ReactElement {
-  const [hoveredRow, setHoveredRow] = useState<ProjectionRow | null>(null)
-  const sourceContext = hoveredRow ? projectionSourcePath(hoveredRow) : null
-
   return (
-    <section
-      aria-labelledby="repository-views-title"
-      className="marketing-projection"
-      id="repository-views"
-    >
-      <h2 className="sr-only" id="repository-views-title">
-        One repository with public and maintainer views
-      </h2>
-
-      <div
-        className="marketing-source-node"
-        data-projection-node="repository"
-        id="repository-source"
+    <div className="demo min-w-0 w-full">
+      <figure
+        aria-label="One repository with public and private files. The public clone contains shared folders. The examples folder is shared and then made private in a repeating illustration; internal code stays private."
+        className="repository overflow-hidden rounded-md border border-landing-line bg-landing-paper [--landing-cycle:8s]"
       >
-        <span aria-hidden className="marketing-source-icon">
-          <FolderGit2 />
-        </span>
-        <span className="marketing-source-copy">
-          <strong>scope/</strong>
-          {sourceContext && <span title={sourceContext}>{sourceContext}</span>}
-        </span>
-        <span className="marketing-source-branch">main</span>
-      </div>
-
-      <div aria-hidden className="marketing-projection-arrows">
-        <span>↓</span>
-        <span>↓</span>
-      </div>
-      <div className="marketing-views">
-        {projectionViews.map((view) => (
-          <ProjectionView
-            hoveredPath={hoveredRow?.path ?? null}
-            key={view.audience}
-            onHoverRow={setHoveredRow}
-            {...view}
-          />
-        ))}
-      </div>
-      <div className="mt-4">
-        <VisibilityLegend />
-      </div>
-      <p className="mt-3 text-sm leading-relaxed text-muted-foreground" id="projection-explanation">
-        The public receives only shared files. Maintainers work with the complete repository.
-      </p>
-    </section>
+        <div aria-hidden className="repository-header flex h-11 items-center justify-between gap-4 border-b border-landing-line px-5 font-mono text-landing-title [line-height:normal] max-[1151px]:px-4 max-[521px]:px-3.5">
+          <span className="repository-name flex items-center gap-2.5">
+            <GitBranch aria-hidden className="icon size-4 text-landing-muted" />
+            acme / toolkit
+          </span>
+          <span className="repository-branch text-landing-meta text-landing-muted">main</span>
+        </div>
+        <div aria-hidden className="repository-views grid grid-cols-2">
+          <RepositoryColumn />
+          <RepositoryColumn publicClone />
+        </div>
+      </figure>
+    </div>
   )
-}
-
-function ProjectionView({
-  audience,
-  hoveredPath,
-  label,
-  onHoverRow,
-  rows,
-}: ProjectionViewProps): ReactElement {
-  return (
-    <article
-      className={`marketing-view marketing-view-${audience}`}
-      data-projection-node={audience}
-    >
-      <header className="marketing-view-header">
-        <h3>{label}</h3>
-      </header>
-      <ul className="p-1 sm:p-2">
-        {rows.map((row) => (
-          <li key={row.key}>
-            <button
-              aria-label={`${row.path}, ${row.visibility.toLowerCase()}`}
-              aria-describedby="projection-explanation"
-              className="marketing-file-row w-full text-left"
-              type="button"
-              onFocus={() => onHoverRow(row)}
-              onBlur={() => onHoverRow(null)}
-              data-highlighted={hoveredPath === row.path || undefined}
-              data-path={row.path}
-              onPointerEnter={() => onHoverRow(row)}
-              onPointerLeave={() => onHoverRow(null)}
-              style={{ paddingLeft: projectionRowInset(row) }}
-            >
-              <span
-                className="flex min-w-0 items-center"
-                style={{ gap: row.type === 'file' ? fileLabelGap : treeRowMetrics.itemGap }}
-              >
-                {row.type === 'folder' && (
-                  <span
-                    aria-hidden
-                    className="marketing-disclosure grid size-4 shrink-0 place-items-center text-[var(--platinum)]"
-                  >
-                    <ProjectionDisclosureIcon expanded={row.expanded} />
-                  </span>
-                )}
-                <ProjectionFileIcon expanded={row.expanded} type={row.type} />
-                <span className="min-w-0 truncate font-mono text-xs">{row.name}</span>
-              </span>
-              <VisibilityBadge compact visibility={row.visibility} />
-            </button>
-          </li>
-        ))}
-      </ul>
-    </article>
-  )
-}
-
-function buildProjectionRows(
-  files: readonly ProjectionFile[],
-): ProjectionRow[] {
-  const tree = buildFileSystemTree([...files])
-  return flattenProjectionTree(tree.children)
-}
-
-function flattenProjectionTree(
-  nodes: FileSystemTreeNode<ProjectionFile>[],
-  depth = 0,
-): ProjectionRow[] {
-  return nodes.flatMap((node) => {
-    if (node.type === 'file') {
-      return [{
-        depth,
-        key: node.key,
-        name: node.name,
-        path: node.path,
-        type: node.type,
-        visibility: node.file.visibility,
-      }]
-    }
-
-    const expanded = expandedFolderPaths.has(node.path)
-    const row: ProjectionRow = {
-      depth,
-      expanded,
-      key: node.key,
-      name: `${node.name}/`,
-      path: node.path,
-      type: node.type,
-      visibility: folderVisibility(node.files),
-    }
-
-    return expanded
-      ? [row, ...flattenProjectionTree(node.children, depth + 1)]
-      : [row]
-  })
-}
-
-function projectionRowInset(row: ProjectionRow): number {
-  const depthInset = treeRowMetrics.rowInset
-    + row.depth * treeRowMetrics.levelIndent
-
-  // A file icon replaces the disclosure slot: its edge aligns with a
-  // centered chevron, while the derived gap keeps labels aligned with folders.
-  return row.type === 'file' ? depthInset + fileIconInset : depthInset
-}
-
-function projectionSourcePath(row: ProjectionRow): string {
-  const path = row.path.replace(/^\//, '')
-  return row.type === 'folder' ? `${path}/` : path
-}
-
-function ProjectionDisclosureIcon({
-  expanded,
-}: Pick<ProjectionRow, 'expanded'>): ReactElement {
-  if (expanded) return <ChevronDown className="size-3" />
-  return <ChevronRight className="size-3" />
-}
-
-function ProjectionFileIcon({
-  expanded,
-  type,
-}: Pick<ProjectionRow, 'expanded' | 'type'>): ReactElement {
-  const className = 'size-4 shrink-0 text-[var(--platinum)]'
-
-  if (type === 'file') {
-    return <File aria-hidden className={className} strokeWidth={1.7} />
-  }
-
-  if (expanded) {
-    return <FolderOpen aria-hidden className={className} strokeWidth={1.7} />
-  }
-
-  return <Folder aria-hidden className={className} strokeWidth={1.7} />
 }

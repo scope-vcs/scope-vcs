@@ -3,14 +3,14 @@ import test from "node:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beginCutover, guardCutovers, readCutover, recordCutoverPhase, cutoverCommand } from "./release-cutover-journal.mjs";
+import { beginCutover, findOpenCutover, guardCutovers, readCutover, recordCutoverPhase, cutoverCommand } from "./release-cutover-journal.mjs";
 
 const sourceSha = "a".repeat(40);
 const prepared = { schemaVersion: 1, sourceSha, maintenanceSha256: "c".repeat(64), preparationRunId: "123", components: Object.fromEntries(
-  ["api", "worker", "cache", "router", "media", "mediaWorker"].map(component => [component, {
-    serviceId: component, sourceSha, image: component === "mediaWorker"
+  ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"].map(component => [component, {
+    serviceId: component, sourceSha, image: component === "media-worker"
       ? `ghcr.io/scope-vcs/scope-media-worker@sha256:${"b".repeat(64)}`
-      : `ghcr.io/scope-vcs/scope-vcs/railway-private-${component}@sha256:${"b".repeat(64)}`,
+      : `ghcr.io/scope-vcs/scope-vcs/railway-private-${({"run-worker":"worker","git-router":"router","media-api":"media"})[component] ?? component}@sha256:${"b".repeat(64)}`,
   }]),
 ) };
 const baseline = { exact: false, pending: [{ name: "m0033", impact: "maintenance-required" }] };
@@ -97,10 +97,10 @@ test("recovery retains the original closure timestamp after more than one status
   assert.equal(journal.events.at(-1).at, "2026-09-06T00:00:00Z");
 });
 
-function recoveryRequest(store, event = "push") {
+function recoveryRequest(store, event = "schedule") {
   return async (path, options) => {
     if (path === "/actions/runs/123") return {
-      id: 123, path: ".github/workflows/scope-production-deploy.yml", event,
+      id: 123, path: ".github/workflows/release.yml", event,
       head_branch: "main", head_sha: sourceSha, conclusion: "cancelled",
       repository: { id: 1, full_name: "scope-vcs/scope-vcs" },
       head_repository: { id: 1, full_name: "scope-vcs/scope-vcs" },
@@ -157,4 +157,24 @@ test("payload fields cannot override the GitHub deployment identity", async () =
   const id = await beginCutover({ prepared, baseline, previous: {} }, store.request);
   store.deployments[0].payload.id = "999";
   assert.equal((await readCutover(id, store.request)).id, id);
+});
+
+test("find-open returns null, the sole open journal, and fails on ambiguity", async () => {
+  const store = storage();
+  assert.equal(await findOpenCutover(store.request), null);
+  const maintenanceGates = { api: { previous: {source: {image: "old"}} } };
+  const id = await beginCutover({ prepared, baseline, previous: {}, maintenanceGates }, store.request);
+  assert.equal((await findOpenCutover(store.request)).id, id);
+  assert.deepEqual((await readCutover(id, store.request)).maintenanceGates, maintenanceGates);
+  store.deployments.push({ ...structuredClone(store.deployments[0]), id: 99 });
+  store.statuses.set("99", []);
+  await assert.rejects(findOpenCutover(store.request), /Multiple unresolved/);
+});
+
+test("maintenance rejects missing web artifacts before recording closure intent", async () => {
+  const store = storage();
+  const incomplete = structuredClone(prepared);
+  delete incomplete.components.web;
+  await assert.rejects(beginCutover({ prepared: incomplete, baseline, previous: {} }, store.request), /missing web/);
+  assert.equal(store.deployments.length, 0);
 });

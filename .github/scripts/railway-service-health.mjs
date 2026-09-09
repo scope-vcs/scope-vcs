@@ -6,19 +6,19 @@ import { pathToFileURL } from "node:url";
 
 export const RAILWAY_COMPONENTS = [
   "cache",
-  "worker",
-  "mediaWorker",
-  "router",
-  "media",
+  "run-worker",
+  "media-worker",
+  "git-router",
+  "media-api",
   "api",
   "web",
-  "cli",
+  "cli-downloads",
 ];
 export const RAILWAY_CONFIG_PATHS = {
   cache: "cache-service/railway.json",
-  worker: "worker/railway.json",
-  router: "repo-router/railway.json",
-  media: "media-service/railway.json",
+  "run-worker": "worker/railway.json",
+  "git-router": "repo-router/railway.json",
+  "media-api": "media-service/railway.json",
   api: "api/railway.json",
   web: "web/railway.json",
 };
@@ -130,8 +130,8 @@ export function verifyProductionRailwayServices({
     ) {
       throw new Error(`Production ${component} has no exact Railway deployment evidence`);
     }
-    if (component === "mediaWorker" && !/^sha256:[0-9a-f]{64}$/.test(evidence.artifactDigest ?? "")) {
-      throw new Error("Production mediaWorker has no exact OCI artifact evidence");
+    if (component === "media-worker" && !/^sha256:[0-9a-f]{64}$/.test(evidence.artifactDigest ?? "")) {
+      throw new Error("Production media-worker has no exact OCI artifact evidence");
     }
     const service = assertHealthyRailwayService(services, serviceId, evidence.evidenceId);
     const configPath = RAILWAY_CONFIG_PATHS[component];
@@ -168,7 +168,7 @@ function main() {
       deployments: environmentJson("SCOPE_PRODUCTION_DEPLOYMENTS_JSON"),
       manifest,
       serviceConfigs: loadRailwayServiceConfigs(),
-      services: servicesFromState(state, manifest.railway?.environmentId),
+      services: servicesFromState(state, manifest.environments?.production?.environmentId),
     });
     process.stdout.write(`${JSON.stringify(verified)}\n`);
     return;

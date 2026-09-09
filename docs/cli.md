@@ -216,7 +216,7 @@ on first use and has no injectable store constructor; a real-store test would
 mutate the runner's credential store and depend on its unlocked desktop session.
 Add an injectable boundary before claiming isolated native credential-store tests.
 
-The download service remains for now. `.github/workflows/scope-cli-deploy.yml`
+The download service remains for now. `.github/workflows/publish-cli.yml`
 stages the service, all six artifacts, and generated checksums into one Railway
 deployment. Railway uses `/readyz` to reject a release missing any required
 download, and the service generates installers using its configured public URL.

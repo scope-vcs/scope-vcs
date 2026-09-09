@@ -67,6 +67,12 @@ fi
 railway_api_token="$RAILWAY_API_TOKEN"
 unset RAILWAY_API_TOKEN
 
+# One release policy owns operation limits. The CLI validates the same bounds.
+policy_manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
+web_service="$(jq -er .services.web.id "$policy_manifest")"
+migration_lock_timeout_seconds="$(jq -er '.releasePolicy.migrationLockTimeoutSeconds | select(type == "number" and . > 0 and floor == .)' "$policy_manifest")"
+migration_statement_timeout_seconds="$(jq -er '.releasePolicy.migrationStatementTimeoutSeconds | select(type == "number" and . > 0 and floor == .)' "$policy_manifest")"
+
 railway_scope=(--project "$RAILWAY_PROJECT_ID" --environment "$environment")
 cutover_committed=0
 api_closed=0
@@ -83,7 +89,10 @@ maintenance() {
   # shellcheck disable=SC2016
   railway run "${railway_scope[@]}" --service "$database_service" --no-local -- \
     sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" exec "$@"' \
-    scope-maintenance "$maintenance_binary" "$1"
+    scope-maintenance env \
+      "SCOPE_MIGRATION_LOCK_TIMEOUT_SECONDS=$migration_lock_timeout_seconds" \
+      "SCOPE_MIGRATION_STATEMENT_TIMEOUT_SECONDS=$migration_statement_timeout_seconds" \
+      "$maintenance_binary" "$1"
 }
 
 maintenance_read() {
@@ -130,7 +139,9 @@ backfill_repository_snapshots() {
 wait_for_writer_fence() {
   local grace_seconds="${SCOPE_WRITER_FENCE_GRACE_SECONDS:-10}"
   local grace_deadline=$((SECONDS + grace_seconds))
-  local deadline=$((SECONDS + 120))
+  local timeout_seconds
+  timeout_seconds="$(jq -er '.releasePolicy.writerDrainTimeoutSeconds | select(type == "number" and . > 0 and floor == .)' "$policy_manifest")"
+  local deadline=$((SECONDS + timeout_seconds))
   local drained=0
   while (( SECONDS < deadline )); do
     if maintenance fence; then
@@ -151,7 +162,7 @@ plan_requires_maintenance() {
   PLAN_JSON="$1" node -e '
 const plan = JSON.parse(process.env.PLAN_JSON || "{}");
 if (!Array.isArray(plan.pending)) process.exit(2);
-process.exit(plan.pending.some((item) => item.impact === "maintenance-required") ? 0 : 1);
+process.exit(plan.pending.length > 0 ? 0 : 1);
 '
 }
 
@@ -167,12 +178,14 @@ plans_have_same_ledger() {
 const before = JSON.parse(process.env.BEFORE_PLAN_JSON || "{}");
 const after = JSON.parse(process.env.AFTER_PLAN_JSON || "{}");
 const ledger = (plan) => Array.isArray(plan.pending)
-  ? plan.pending.map(({name, impact}) => ({name, impact}))
+  ? plan.pending.map(({name}) => name)
   : null;
 const beforeLedger = ledger(before);
 const afterLedger = ledger(after);
 process.exit(
   before.exact === after.exact &&
+  Array.isArray(before.applied) && Array.isArray(after.applied) &&
+  JSON.stringify(before.applied) === JSON.stringify(after.applied) &&
   beforeLedger !== null &&
   afterLedger !== null &&
   JSON.stringify(beforeLedger) === JSON.stringify(afterLedger)
@@ -214,53 +227,45 @@ carried_service_is_healthy() {
   service_is_healthy "$service_name" "$expected_deployment_id"
 }
 
+close_writer() {
+  local service="$1" flag="$2" public="$3" id state
+  [[ "${!flag}" == "0" ]] || return 0
+  id="$(deployment_id "$service")" || return 1
+  if [[ "$public" == 1 && -n "$gates_directory" ]]; then
+    # A failed gate request can have succeeded at Railway. Identify the current
+    # deployment before stopping anything, so cleanup never kills a serving gate.
+    state="$(railway deployment list "${railway_scope[@]}" --service "$service" --limit 100 --json |
+      jq -er --arg id "$id" --arg image "$(jq -er .components.api.image "$prepared_release_path")" '
+        [.[] | select(.id == $id)] | if length != 1 then error("missing current deployment") else .[0] end
+        | .meta as $metadata | $metadata.serviceManifest as $manifest
+        | if ($manifest.deploy.startCommand | type) != "string" then error("unknown serving configuration")
+          elif $manifest.deploy.startCommand == "/app/bin/scope-maintenance serve" then
+            if $manifest.source.image == $image or $metadata.imageDigest == ($image | split("@")[1])
+            then "gate" else error("unknown maintenance image") end
+          else "writer" end
+      ')" || return 1
+    if [[ "$state" == gate ]]; then
+      printf -v "$flag" 1
+      return 0
+    fi
+  fi
+  deployment_action Stop "$service" "$id" || return 1
+  printf -v "$flag" 1
+}
+
 quiesce_writers() {
-  if [[ "$api_closed" == "0" ]]; then
-    if [[ "$cutover_committed" == "0" ]] && ! carried_service_is_healthy api "$api_service"; then
-      echo "Refusing maintenance because $api_service is not healthy before shutdown." >&2
-      return 1
-    fi
-    mark_maintenance_start
-    deployment_action Stop "$api_service"
-    api_closed=1
-  fi
-  if [[ "$worker_closed" == "0" ]]; then
-    if [[ "$cutover_committed" == "0" ]] && ! carried_service_is_healthy worker "$worker_service"; then
-      echo "Refusing maintenance because $worker_service is not healthy before shutdown." >&2
-      return 1
-    fi
-    mark_maintenance_start
-    deployment_action Stop "$worker_service"
-    worker_closed=1
-  fi
-  if [[ "$cache_closed" == "0" ]]; then
-    if [[ "$cutover_committed" == "0" ]] && ! carried_service_is_healthy cache "$cache_service"; then
-      echo "Refusing maintenance because $cache_service is not healthy before shutdown." >&2
-      return 1
-    fi
-    mark_maintenance_start
-    deployment_action Stop "$cache_service"
-    cache_closed=1
-  fi
-  if [[ "$media_service" != "$api_service" && "$media_closed" == "0" ]]; then
-    if [[ "$cutover_committed" == "0" ]] && ! carried_service_is_healthy media "$media_service"; then
-      echo "Refusing maintenance because $media_service is not healthy before shutdown." >&2
-      return 1
-    fi
-    deployment_action Stop "$media_service"
-    media_closed=1
-  fi
-  if [[ "$media_worker_closed" == "0" ]]; then
-    if [[ "$cutover_committed" == "0" ]] && ! carried_service_is_healthy mediaWorker "$media_worker_service"; then
-      echo "Refusing maintenance because $media_worker_service is not healthy before shutdown." >&2
-      return 1
-    fi
-    deployment_action Stop "$media_worker_service"
-    media_worker_closed=1
-  fi
-  # Railway's replica counts can remain stale after a successful stop mutation. The database
-  # fence is the authoritative proof that every metadata writer has actually quiesced.
-  wait_for_writer_fence
+  local failed=0
+  enter_public_gates || failed=1
+  # Even a failed public gate must not prevent cleanup of other writers after a
+  # partial activation. Each stop checks the exact current deployment identity.
+  close_writer "$api_service" api_closed 1 || failed=1
+  close_writer "$worker_service" worker_closed 0 || failed=1
+  close_writer "$cache_service" cache_closed 0 || failed=1
+  close_writer "$media_service" media_closed 1 || failed=1
+  close_writer "$media_worker_service" media_worker_closed 0 || failed=1
+  # Provider replica counts can be stale; the database fence proves writer closure.
+  wait_for_writer_fence || failed=1
+  return "$failed"
 }
 
 restore_old_release() {
@@ -270,7 +275,7 @@ restore_old_release() {
     cache_closed=0
   fi
   if [[ "$worker_closed" == "1" ]]; then
-    restart_service "$worker_service" "$(require_successful_deployment_id worker)"
+    restart_service "$worker_service" "$(require_successful_deployment_id run-worker)"
     worker_closed=0
   fi
   if [[ "$api_closed" == "1" ]]; then
@@ -279,13 +284,13 @@ restore_old_release() {
   fi
   if [[ "$media_closed" == "1" ]]; then
     if [[ "$media_had_history" == "1" ]]; then
-      restart_service "$media_service" "$(require_successful_deployment_id media)"
+      restart_service "$media_service" "$(require_successful_deployment_id media-api)"
     fi
     media_closed=0
   fi
   if [[ "$media_worker_closed" == "1" ]]; then
     if [[ "$media_worker_had_history" == "1" ]]; then
-      restart_service "$media_worker_service" "$(require_successful_deployment_id mediaWorker)"
+      restart_service "$media_worker_service" "$(require_successful_deployment_id media-worker)"
     fi
     media_worker_closed=0
   fi
@@ -322,6 +327,7 @@ activate_release() {
   local service_name="$2"
   local upload_root="$3"
   local actual_deployment_id expected_deployment_id
+  restore_candidate_configuration "$component"
   deploy_release "$component" "$service_name" "$upload_root"
   expected_deployment_id="$(pending_deployment_id "$component")"
   [[ -n "$expected_deployment_id" ]] \
@@ -375,15 +381,15 @@ deploy_selected_releases() {
     promote_pending_evidence
   fi
   if [[ "$deploy_worker_requested" == "1" ]]; then
-    activate_release worker "$worker_service" "$worker_upload_root"
+    activate_release run-worker "$worker_service" "$worker_upload_root"
     promote_pending_evidence
   fi
   if [[ "$deploy_media_requested" == "1" ]]; then
-    activate_release media "$media_service" "$media_upload_root"
+    activate_release media-api "$media_service" "$media_upload_root"
     promote_pending_evidence
   fi
   if [[ "$deploy_media_worker_requested" == "1" ]]; then
-    activate_image_release mediaWorker "$media_worker_service" "$media_worker_image"
+    activate_image_release media-worker "$media_worker_service" "$media_worker_image"
     promote_pending_evidence
   fi
   if [[ "$deploy_api_requested" == "1" ]]; then
@@ -403,20 +409,28 @@ deploy_and_reopen() {
   cutover_phase activating-cache
   cache_closed=0
   activate_release cache "$cache_service" "$cache_upload_root"
-  promote_pending_evidence
   cutover_phase activating-worker
   worker_closed=0
-  activate_release worker "$worker_service" "$worker_upload_root"
+  activate_release run-worker "$worker_service" "$worker_upload_root"
   cutover_phase activating-media
   media_closed=0
-  activate_release media "$media_service" "$media_upload_root"
+  activate_release media-api "$media_service" "$media_upload_root"
   cutover_phase activating-media-worker
   media_worker_closed=0
-  activate_image_release mediaWorker "$media_worker_service" "$media_worker_image"
+  activate_image_release media-worker "$media_worker_service" "$media_worker_image"
   cutover_phase activating-api
   api_closed=0
   activate_release api "$api_service" "$api_upload_root"
   maintenance_read verify
+  cutover_phase activating-router
+  activate_release git-router "$router_service" "$router_upload_root"
+  assert_router_topology
+  cutover_phase activating-web
+  restore_candidate_configuration web
+  deploy_release web "$web_service" web
+  local web_deployment_id
+  web_deployment_id="$(pending_deployment_id web)"
+  wait_for_service_health "$web_service" "$web_deployment_id" 1
   mark_maintenance_end
   # Every database writer forms one cutover. Publish their evidence only after all writers are healthy
   # so the durable ledger cannot claim a deployment that the failure trap subsequently closes.
@@ -441,8 +455,11 @@ leave_failure_state() {
         echo "Ledger is uncertain; writers remain closed." >&2
       fi
     elif [[ "$cutover_committed" == "1" ]]; then
-      quiesce_writers || echo "Failed to re-close metadata writers after the committed cutover." >&2
-      echo "Migration committed; writers remain closed. Rerun this workflow to finish the forward-only deployment." >&2
+      if quiesce_writers; then
+        echo "Cutover requires forward recovery; writers are closed. Rerun this workflow to finish the pinned deployment." >&2
+      else
+        echo "Failed to re-close metadata writers after the cutover. Writer closure is unverified; investigate the failed shutdown before recovery." >&2
+      fi
     fi
   fi
   discard_pending_evidence
@@ -451,6 +468,7 @@ leave_failure_state() {
 trap 'leave_failure_state $?' EXIT
 
 source .github/scripts/railway-backend-control.sh
+source .github/scripts/release-maintenance-gates.sh
 source .github/scripts/release-cutover.sh
 
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
@@ -466,25 +484,17 @@ fi
 journal cutover-guard
 selected_components=()
 [[ "$deploy_api_requested" == "0" ]] || selected_components+=(api)
-[[ "$deploy_worker_requested" == "0" ]] || selected_components+=(worker)
+[[ "$deploy_worker_requested" == "0" ]] || selected_components+=(run-worker)
 [[ "$deploy_cache_requested" == "0" ]] || selected_components+=(cache)
-[[ "$deploy_router_requested" == "0" ]] || selected_components+=(router)
-[[ "$deploy_media_requested" == "0" ]] || selected_components+=(media)
-[[ "$deploy_media_worker_requested" == "0" ]] || selected_components+=(mediaWorker)
+[[ "$deploy_router_requested" == "0" ]] || selected_components+=(git-router)
+[[ "$deploy_media_requested" == "0" ]] || selected_components+=(media-api)
+[[ "$deploy_media_worker_requested" == "0" ]] || selected_components+=(media-worker)
 validate_prepared_release "${selected_components[@]}"
 validate_maintenance_artifact
 
 validate_production_target
 ensure_production_router_instance
 configure_production_router
-if [[ "$deploy_router_requested" == "1" ]]; then
-  activate_release router "$router_service" "$router_upload_root"
-  assert_router_topology
-  promote_pending_evidence
-elif ! assert_router_topology || ! carried_service_is_healthy router "$router_service"; then
-  echo "Production router must match the reviewed topology and durable deployment before deploying another backend service." >&2
-  exit 1
-fi
 
 plan_json="$(maintenance_read plan)"
 set +e
@@ -527,6 +537,7 @@ case "$plan_status" in
       media_closed=1
       media_worker_closed=1
       cutover_committed=1
+      enter_public_gates
       deploy_and_reopen
       cutover_phase complete
       trap - EXIT
@@ -544,8 +555,15 @@ case "$plan_status" in
         exit 1
       fi
     done
+    if [[ "$deploy_router_requested" == "1" ]]; then
+      activate_release git-router "$router_service" "$router_upload_root"
+      assert_router_topology
+      promote_pending_evidence
+    elif ! assert_router_topology || ! carried_service_is_healthy git-router "$router_service"; then
+      echo "Production git-router must match the reviewed topology and durable deployment before deploying another backend service." >&2
+      exit 1
+    fi
     maintenance_read verify
-    run_api_maintenance cleanup-git-segments-v1
     deploy_selected_releases
     trap - EXIT
     discard_pending_evidence
@@ -557,16 +575,21 @@ case "$plan_status" in
     ;;
 esac
 
+if ! assert_router_topology || ! carried_service_is_healthy git-router "$router_service"; then
+  echo "Maintenance requires the verified existing Git router until public gates are active." >&2
+  exit 1
+fi
+
 if ! carried_service_is_healthy api "$api_service" \
-  || ! carried_service_is_healthy worker "$worker_service" \
+  || ! carried_service_is_healthy run-worker "$worker_service" \
   || ! carried_service_is_healthy cache "$cache_service"; then
   echo "Maintenance cutover requires healthy metadata-writer deployments before closing writers." >&2
   exit 1
 fi
 
 if service_has_deployment_history "$media_service"; then
-  carried_service_is_healthy media "$media_service" || {
-    echo "Maintenance cutover requires a healthy media gateway before closing writers." >&2
+  carried_service_is_healthy media-api "$media_service" || {
+    echo "Maintenance cutover requires a healthy media-api gateway before closing writers." >&2
     exit 1
   }
 else
@@ -574,8 +597,8 @@ else
   media_closed=1
 fi
 if service_has_deployment_history "$media_worker_service"; then
-  carried_service_is_healthy mediaWorker "$media_worker_service" || {
-    echo "Maintenance cutover requires a healthy media worker before closing writers." >&2
+  carried_service_is_healthy media-worker "$media_worker_service" || {
+    echo "Maintenance cutover requires a healthy media-api run-worker before closing writers." >&2
     exit 1
   }
 else

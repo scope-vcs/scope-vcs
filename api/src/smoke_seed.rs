@@ -62,33 +62,51 @@ impl Snapshot {
     }
 }
 
-pub async fn run() -> anyhow::Result<()> {
-    let target = validate(&Snapshot::from_env())?;
+pub async fn run(grant_only: bool) -> anyhow::Result<()> {
+    run_with_snapshot(Snapshot::from_env(), grant_only, async {
+        MetadataStore::connect(database_url_from_env()?).await
+    })
+    .await
+}
+
+async fn run_with_snapshot(
+    snapshot: Snapshot,
+    grant_only: bool,
+    connect: impl std::future::Future<Output = anyhow::Result<MetadataStore>>,
+) -> anyhow::Result<()> {
+    let target = validate(&snapshot)?;
     let mut exchange_token_file = create_exchange_token_file(&target.exchange_token_path)?;
     let seed_user = seed_user_account(target.seed_user.clone());
-    let encryption_key = encryption_key_from_env()?;
-    let s3 = tokio::task::spawn_blocking(s3_from_env).await??;
-    let object_store = EncryptedObjectStore::new(Arc::new(s3), encryption_key);
-    let local_root = data_dir(&git_repo_root()).join("git-segments");
-    let git_segment_store = git_segment_store_from_env(local_root, encryption_key)?;
-    let fixture = catalog(&object_store, &git_segment_store, target.seed_user)
-        .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
-    let metadata = MetadataStore::connect(database_url_from_env()?).await?;
-    metadata
-        .admin()
-        .replace_catalog_for_seed(fixture)
-        .await
-        .map_err(|error| anyhow::anyhow!("replacing staging smoke catalog: {error}"))?;
-    seed_request_discussion_gallery(&metadata)
-        .await
-        .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
+    let metadata = connect.await?;
+    // Imported releases keep the existing catalog while obtaining a fresh smoke login.
+    if !grant_only {
+        let encryption_key = encryption_key_from_env()?;
+        let s3 = tokio::task::spawn_blocking(s3_from_env).await??;
+        let object_store = EncryptedObjectStore::new(Arc::new(s3), encryption_key);
+        let local_root = data_dir(&git_repo_root()).join("git-segments");
+        let git_segment_store = git_segment_store_from_env(local_root, encryption_key)?;
+        let fixture = catalog(&object_store, &git_segment_store, target.seed_user)
+            .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
+        metadata
+            .admin()
+            .replace_catalog_for_seed(fixture)
+            .await
+            .map_err(|error| anyhow::anyhow!("replacing staging smoke catalog: {error}"))?;
+        seed_request_discussion_gallery(&metadata)
+            .await
+            .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
+    }
     let now_unix = unix_now().map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
     let grant = CliAuthService::new(metadata.auth())
         .create_staging_smoke_exchange_grant(&seed_user, now_unix)
         .await
         .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
     write_exchange_token(&mut exchange_token_file, &grant.exchange_token)?;
-    println!(r#"{{"seeded":"dev/public-demo"}}"#);
+    if grant_only {
+        println!(r#"{{"exchangeGrantCreated":true}}"#);
+    } else {
+        println!(r#"{{"seeded":"dev/public-demo"}}"#);
+    }
     Ok(())
 }
 
@@ -243,6 +261,111 @@ mod tests {
             seed_user_email: Some("smoke@example.test".into()),
             seed_user_handle: Some("dev".into()),
             exchange_token_path: Some("/tmp/scope-smoke/exchange-token".into()),
+        }
+    }
+
+    #[tokio::test]
+    async fn grant_only_preserves_existing_catalog_and_issues_redeemable_login() {
+        use scope_domain::{account::UserAccount, policy::Visibility, repository::Repository};
+        use scope_postgres::db::{CatalogFixture, TestDatabaseTarget};
+
+        let target = TestDatabaseTarget::required().unwrap();
+        let metadata = MetadataStore::connect_fresh_for_tests(&target).unwrap();
+        let owner = UserAccount {
+            id: "user_keep_catalog".into(),
+            handle: "keep-owner".into(),
+            email: "keep@example.test".into(),
+            email_verified: true,
+        };
+        let repository = Repository::new(
+            &owner,
+            "keep-repo",
+            Visibility::Private,
+            "repoi_keep_catalog",
+        )
+        .unwrap();
+        let mut fixture = CatalogFixture::default();
+        fixture.users.insert(owner.id.clone(), owner.clone());
+        let smoke_user = seed_user_account(DevSeedUser {
+            email: "smoke@example.test".into(),
+            handle: "dev".into(),
+        });
+        fixture.users.insert(smoke_user.id.clone(), smoke_user);
+        fixture
+            .repositories
+            .insert(repository.record.id.clone(), repository.clone());
+        metadata.admin().seed_catalog_for_tests(fixture).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let path = temp.path().join("exchange-token");
+        let mut snapshot = valid_snapshot();
+        snapshot.exchange_token_path = Some(path.to_str().unwrap().into());
+        run_with_snapshot(snapshot, true, std::future::ready(Ok(metadata.clone())))
+            .await
+            .unwrap();
+
+        let retained = metadata
+            .repositories()
+            .repository("keep-owner", "keep-repo")
+            .await
+            .unwrap()
+            .expect("grant-only must retain the existing repository");
+        assert_eq!(
+            serde_json::to_value(retained).unwrap(),
+            serde_json::to_value(repository).unwrap()
+        );
+        assert_eq!(
+            metadata
+                .repositories()
+                .repository_count_for_tests()
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            metadata.auth().user_for_tests(&owner.id).await.unwrap(),
+            Some(owner)
+        );
+        let token = std::fs::read_to_string(path).unwrap();
+        let session = CliAuthService::new(metadata.auth())
+            .exchange_grant(token.trim(), unix_now().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            session.identity.email.as_deref(),
+            Some("smoke@example.test")
+        );
+    }
+
+    #[tokio::test]
+    async fn grant_only_rejects_unreviewed_targets_before_side_effects() {
+        for mutate in [
+            |snapshot: &mut Snapshot| snapshot.opt_in = None,
+            |snapshot: &mut Snapshot| snapshot.actual_project_id = Some("wrong".into()),
+            |snapshot: &mut Snapshot| snapshot.actual_environment_id = Some("wrong".into()),
+            |snapshot: &mut Snapshot| snapshot.actual_environment_name = Some("wrong".into()),
+            |snapshot: &mut Snapshot| {
+                snapshot.expected_environment_id = snapshot.production_environment_id.clone()
+            },
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("exchange-token");
+            let mut snapshot = valid_snapshot();
+            snapshot.exchange_token_path = Some(path.to_str().unwrap().into());
+            mutate(&mut snapshot);
+            let result = run_with_snapshot(snapshot, true, async {
+                panic!("rejected target must not connect to the database")
+            })
+            .await;
+            assert!(result.is_err());
+            assert!(
+                !path.exists(),
+                "rejected target must not create a token file"
+            );
         }
     }
 

@@ -11,13 +11,13 @@ if [[ -z "${RAILWAY_API_TOKEN:-}" || -n "${RAILWAY_TOKEN:-}" ]]; then
 fi
 
 project_id="$(jq -er '.railway.projectId' "$manifest_path")"
-production_environment_id="$(jq -er '.railway.environmentId' "$manifest_path")"
-staging_environment_id="$(jq -er '.railway.staging.environmentId' "$manifest_path")"
-worker_service="$(jq -er '.services.worker.id' "$manifest_path")"
+production_environment_id="$(jq -er '.environments.production.environmentId' "$manifest_path")"
+staging_environment_id="$(jq -er '.environments.staging.environmentId' "$manifest_path")"
+worker_service="$(jq -er '.services["run-worker"].id' "$manifest_path")"
 api_service="$(jq -er '.services.api.id' "$manifest_path")"
 cache_service="$(jq -er '.services.cache.id' "$manifest_path")"
-media_service="$(jq -er '.services.media.id | strings | select(length > 0)' "$manifest_path")"
-media_worker_service="$(jq -er '.services.mediaWorker.id | strings | select(length > 0)' "$manifest_path")"
+media_service="$(jq -er '.services["media-api"].id | strings | select(length > 0)' "$manifest_path")"
+media_worker_service="$(jq -er '.services["media-worker"].id | strings | select(length > 0)' "$manifest_path")"
 
 if [[ "$staging_environment_id" == "$production_environment_id" ]]; then
   echo "Staging environment matches production." >&2
@@ -56,8 +56,8 @@ stop_service() {
     ' <<< "$deployments"
   )" || return $?
   if [[ -n "$deployment_id" ]]; then
-    local attempt remaining
-    for attempt in 1 2 3; do
+    local _attempt remaining
+    for _attempt in 1 2 3; do
       if remove_deployment "$deployment_id"; then return 0; fi
       deployments="$(node .github/scripts/railway-read.mjs deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json)" || return $?
       remaining="$(jq -er --arg id "$deployment_id" 'map(select(.id == $id and .status != "REMOVED")) | length' <<< "$deployments")" || return $?

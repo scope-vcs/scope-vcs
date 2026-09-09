@@ -182,7 +182,7 @@ test("records an ordered Railway evidence stream", async () => {
   const evidencePath = join(directory, "evidence.ndjson");
   writeFileSync(evidencePath, [
     JSON.stringify({ component: "cache", sourceSha: SOURCE_SHA, provider: "railway", evidenceId: "cache-1" }),
-    JSON.stringify({ component: "worker", sourceSha: SOURCE_SHA, provider: "railway", evidenceId: "worker-1" }),
+    JSON.stringify({ component: "run-worker", sourceSha: SOURCE_SHA, provider: "railway", evidenceId: "worker-1" }),
     "",
   ].join("\n"));
   const requests = [];
@@ -198,10 +198,54 @@ test("records an ordered Railway evidence stream", async () => {
     assert.deepEqual(
       requests.filter(({ url }) => new URL(url).pathname.endsWith("/deployments"))
         .map(({ body }) => body.payload.component),
-      ["cache", "worker"],
+      ["cache", "run-worker"],
     );
   } finally {
     rmSync(directory, { recursive: true });
+    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previousToken;
+    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = previousRepository;
+  }
+});
+
+test("aggregate success pins component evidence and keeps downtime warnings separate", async () => {
+  const { recordSuccessfulRelease, latestSuccessfulRelease } = await import("./production-deployment-progress.mjs");
+  const previousToken = process.env.GITHUB_TOKEN;
+  const previousRepository = process.env.GITHUB_REPOSITORY;
+  process.env.GITHUB_TOKEN = "test-token";
+  process.env.GITHUB_REPOSITORY = "scope-vcs/scope-vcs";
+  let aggregate;
+  let aggregateStatus;
+  const fetchImpl = async (url, options = {}) => {
+    const parsed = new URL(url);
+    if (options.method === "POST") {
+      const body = JSON.parse(options.body);
+      if (parsed.pathname.endsWith("/deployments")) {
+        aggregate = { ...body, sha: body.ref, id: 99 };
+        return response({ id: 99 });
+      }
+      aggregateStatus = { ...body, created_at: "2026-09-09T15:30:00Z" };
+      return response({id: 100});
+    }
+    if (parsed.pathname.endsWith("/deployments")) {
+      const component = parsed.searchParams.get("environment").split("/")[1];
+      if (component === "release") return response(aggregate ? [aggregate] : []);
+      return response([{ id: component, sha: SOURCE_SHA,
+        payload: { component, sourceSha: SOURCE_SHA, provider: "railway", evidenceId: `${component}-immutable-id` } }]);
+    }
+    return response([parsed.pathname.includes("/99/") ? aggregateStatus : {state: "success"}]);
+  };
+  try {
+    await recordSuccessfulRelease({ sourceSha: SOURCE_SHA, components: {api: true, web: true}, warning: "Downtime exceeded 30 minutes" }, fetchImpl);
+    assert.equal(aggregateStatus.state, "success");
+    const receipt = await latestSuccessfulRelease(fetchImpl);
+    assert.equal(receipt.sourceSha, SOURCE_SHA);
+    assert.equal(receipt.warning, "Downtime exceeded 30 minutes");
+    assert.equal(receipt.components.web.evidenceId, "web-immutable-id");
+    assert.equal(receipt.completedAt, "2026-09-09T15:30:00Z");
+    await assert.rejects(recordSuccessfulRelease({ sourceSha: PREVIOUS_SHA, components: ["web"] }, fetchImpl), /missing successful web evidence/);
+  } finally {
     if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
     else process.env.GITHUB_TOKEN = previousToken;
     if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY;

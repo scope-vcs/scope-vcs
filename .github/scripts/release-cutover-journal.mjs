@@ -2,19 +2,19 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { validatePreparedRelease } from "./railway-artifact.mjs";
 import { validateRecoveryPreparation } from "./recovery-preparation-trust.mjs";
 
-const environment = "production/cutover";
+const environment = "production/maintenance";
 const terminal = new Set(["complete", "restored"]);
 function validateCutoverArtifacts(prepared) {
-  validatePreparedRelease(prepared, { sourceSha: prepared.sourceSha, components: ["api", "worker", "cache", "router", "media", "mediaWorker"] });
+  validatePreparedRelease(prepared, { sourceSha: prepared.sourceSha, components: ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"] });
   if (!/^[a-f0-9]{64}$/.test(prepared.maintenanceSha256 ?? "") || !/^[0-9]+$/.test(prepared.preparationRunId ?? "")) {
     throw new Error("Cutover preparation must pin the maintenance binary digest and its artifact run ID");
   }
 }
 
 const phases = new Set([
-  "prepared", "closing", "closed", "pre-migration", "applying", "committed",
+  "prepared", "closing", "closed", "gated", "pre-migration", "applying", "committed",
   "verifying", "backfills", "activating-cache", "activating-worker", "activating-media",
-  "activating-media-worker", "activating-api",
+  "activating-media-worker", "activating-api", "activating-router", "activating-web",
   "reclosing", "restoring", "restored", "complete", "recovery-required",
 ]);
 
@@ -41,16 +41,24 @@ export async function readCutover(id, request) {
   return { ...payload, id: String(id), phase: events[0]?.phase ?? "prepared", events };
 }
 
-export async function guardCutovers(request, recoveryId = "") {
+export async function findOpenCutover(request) {
+  const open = [];
   for (let page = 1; ; page += 1) {
     const deployments = await request(`/deployments?environment=${encodeURIComponent(environment)}&per_page=100&page=${page}`);
     for (const deployment of deployments) {
       const journal = await readCutover(deployment.id, request);
-      if (!terminal.has(journal.phase) && journal.id !== String(recoveryId)) {
-        throw new Error(`Unresolved cutover ${journal.id} from ${journal.prepared.sourceSha}; recover that release before deploying`);
-      }
+      if (!terminal.has(journal.phase)) open.push(journal);
     }
-    if (deployments.length < 100) return;
+    if (deployments.length < 100) break;
+  }
+  if (open.length > 1) throw new Error(`Multiple unresolved cutovers: ${open.map(({ id }) => id).join(", ")}`);
+  return open[0] ?? null;
+}
+
+export async function guardCutovers(request, recoveryId = "") {
+  const journal = await findOpenCutover(request);
+  if (journal && journal.id !== String(recoveryId)) {
+    throw new Error(`Unresolved cutover ${journal.id} from ${journal.prepared.sourceSha}; recover that release before deploying`);
   }
 }
 
@@ -65,7 +73,7 @@ export async function recordCutoverPhase(id, phase, request) {
   });
 }
 
-export async function beginCutover({ prepared, baseline, previous }, request) {
+export async function beginCutover({ prepared, baseline, previous, maintenanceGates = {} }, request) {
   validateCutoverArtifacts(prepared);
   if (!Array.isArray(baseline?.pending)) throw new Error("Invalid baseline migration plan");
   await guardCutovers(request);
@@ -74,7 +82,7 @@ export async function beginCutover({ prepared, baseline, previous }, request) {
     body: JSON.stringify({ ref: prepared.sourceSha, auto_merge: false, required_contexts: [],
       environment, production_environment: true, transient_environment: false,
       description: `Cutover ${prepared.sourceSha.slice(0, 12)}`,
-      payload: { kind: "scope-release-cutover", prepared, baseline, previous } }),
+      payload: { kind: "scope-release-cutover", prepared, baseline, previous, maintenanceGates } }),
   });
   await recordCutoverPhase(deployment.id, "prepared", request);
   return String(deployment.id);
@@ -83,9 +91,10 @@ export async function beginCutover({ prepared, baseline, previous }, request) {
 export async function cutoverCommand(command, argument, request, { repository = process.env.GITHUB_REPOSITORY } = {}) {
   const id = argument("--id");
   const json = (path) => JSON.parse(readFileSync(path, "utf8"));
+  if (command === "cutover-find-open") return findOpenCutover(request);
   if (command === "cutover-guard") return guardCutovers(request, id);
   if (command === "cutover-begin") {
-    return beginCutover({ prepared: json(argument("--manifest")), baseline: json(argument("--baseline")), previous: json(argument("--previous")) }, request);
+    return beginCutover({ prepared: json(argument("--manifest")), baseline: json(argument("--baseline")), previous: json(argument("--previous")), maintenanceGates: argument("--maintenance-gates") ? json(argument("--maintenance-gates")) : {} }, request);
   }
   if (command === "cutover-phase") return recordCutoverPhase(id, argument("--phase"), request);
   if (["cutover-restore", "cutover-read", "cutover-validate-recovery"].includes(command)) {

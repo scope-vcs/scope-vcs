@@ -96,7 +96,9 @@ mod tests {
                 .await
                 .is_err()
         );
-        crate::migrations::apply_in_maintenance(&db).await.unwrap();
+        crate::migrations::apply_in_maintenance(&db, Default::default())
+            .await
+            .unwrap();
         db.execute_unprepared(
             r#"
             INSERT INTO scope_orphan_object_jobs (

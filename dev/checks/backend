@@ -12,5 +12,7 @@ cargo fmt --all --check
 cargo test "${selection[@]}" --locked
 if [[ "$variant" == with-api ]]; then
   cargo test -p api --features local-dev --locked dev::
+  env -u SCOPE_OBJECT_ENCRYPTION_KEY -u SCOPE_BUCKET_ENDPOINT \
+    cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests
 fi
 cargo clippy "${selection[@]}" --all-targets --locked -- -D warnings

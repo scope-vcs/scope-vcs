@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-action="${1:?usage: deploy-staging-railway.sh <prepare|finish> <upload-roots...>}"
-shift
 manifest_path="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 maintenance_binary="${SCOPE_MAINTENANCE_BINARY:-./target/release/scope-maintenance}"
-seed_binary="${SCOPE_SMOKE_SEED_BINARY:-./target/release/scope-smoke-seed}"
 evidence_path="${SCOPE_STAGING_EVIDENCE_PATH:-staging-deployments.json}"
 # The candidate checkout owns deployment identity even when the workflow runs from main.
 SCOPE_DEPLOYMENT_SOURCE_SHA="$(git rev-parse --verify HEAD)"
@@ -18,26 +15,18 @@ fi
 
 manifest_json="$(jq -c . "$manifest_path")"
 project_id="$(jq -er '.railway.projectId' "$manifest_path")"
-production_environment_id="$(jq -er '.railway.environmentId' "$manifest_path")"
-staging_environment_id="$(jq -er '.railway.staging.environmentId' "$manifest_path")"
-staging_environment_name="$(jq -er '.railway.staging.environmentName' "$manifest_path")"
-staging_api_replicas="$(jq -er '.railway.staging.apiReplicas' "$manifest_path")"
-staging_cache_url="https://$(jq -er '.railway.staging.cacheDomain' "$manifest_path")"
-staging_router_url="https://$(jq -er '.railway.staging.routerDomain' "$manifest_path")"
+production_environment_id="$(jq -er '.environments.production.environmentId' "$manifest_path")"
+staging_environment_id="$(jq -er '.environments.staging.environmentId' "$manifest_path")"
+staging_api_replicas="$(jq -er '.environments.staging.apiReplicas' "$manifest_path")"
+staging_cache_url="https://$(jq -er '.environments.staging.cacheDomain' "$manifest_path")"
+staging_router_url="https://$(jq -er '.environments.staging.routerDomain' "$manifest_path")"
 database_service="$(jq -er '.railway.databaseServiceId' "$manifest_path")"
 cache_service="$(jq -er '.services.cache.id' "$manifest_path")"
-worker_service="$(jq -er '.services.worker.id' "$manifest_path")"
+worker_service="$(jq -er '.services["run-worker"].id' "$manifest_path")"
 api_service="$(jq -er '.services.api.id' "$manifest_path")"
-router_service="$(jq -er '.railway.staging.routerServiceId' "$manifest_path")"
-media_service="$(jq -er '.services.media.id' "$manifest_path")"
-media_worker_service="$(jq -er '.services.mediaWorker.id' "$manifest_path")"
-web_service="$(jq -er '.services.web.id' "$manifest_path")"
-media_worker_image="${SCOPE_MEDIA_WORKER_IMAGE:-}"
-if [[ ! "$media_worker_image" =~ ^ghcr\.io/scope-vcs/scope-media-worker@sha256:[0-9a-f]{64}$ ]]; then
-  echo "SCOPE_MEDIA_WORKER_IMAGE must pin the staging worker image by digest." >&2
-  exit 2
-fi
-
+router_service="$(jq -er '.environments.staging.routerServiceId' "$manifest_path")"
+media_service="$(jq -er '.services["media-api"].id' "$manifest_path")"
+media_worker_service="$(jq -er '.services["media-worker"].id' "$manifest_path")"
 if [[ "$staging_environment_id" == "$production_environment_id" ]]; then
   echo "Staging environment matches production." >&2
   exit 1
@@ -127,88 +116,70 @@ assert_staging_topology() {
     node .github/scripts/verify-staging-target.mjs >/dev/null
 }
 
-record_deployment() {
-  local service="$1"
-  railway_read deployment list "${railway_scope[@]}" --service "$service" --limit 1 --json |
-    jq -ec --arg service "$service" '
-      first | select(.status == "SUCCESS") |
-      {service: $service, deploymentId: .id, status: .status}
-    '
-}
+# Application artifacts are imported from the release owner. Never build or reset data here.
+: "${SCOPE_PREPARED_RELEASE_PATH:?Prepared release manifest is required}"
+node --input-type=module - "$SCOPE_PREPARED_RELEASE_PATH" "$manifest_path" "$maintenance_binary" <<'NODE'
+import { readFileSync } from 'node:fs';
+import { validatePreparedRelease, validateMaintenanceArtifact } from './.github/scripts/railway-artifact.mjs';
+const [path, manifestPath, binary] = process.argv.slice(2);
+const prepared = JSON.parse(readFileSync(path));
+const manifest = JSON.parse(readFileSync(manifestPath));
+validatePreparedRelease(prepared, { sourceSha: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, services: manifest.services });
+if (prepared.components.api) validateMaintenanceArtifact(prepared, readFileSync(binary));
+NODE
 
-case "$action" in
-  prepare)
-    if [[ "$#" -ne 5 || ! -x "$maintenance_binary" || ! -x "$seed_binary" ]]; then
-      echo "usage: deploy-staging-railway.sh prepare <cache-root> <worker-root> <api-root> <router-root> <media-root>" >&2
-      exit 2
-    fi
-    : "${SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH:?SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH is required}"
-    assert_writer_state 0
-    # The remote shell expands the Railway-provided database URL.
-    # shellcheck disable=SC2016
-    railway run "${railway_scope[@]}" --service "$database_service" --no-local -- \
-      sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" exec "$@"' \
-      scope-maintenance "$maintenance_binary" apply
-
-    database_variables="$(railway_read variable list "${railway_scope[@]}" --service "$database_service" --json)"
-    SCOPE_STAGING_DATABASE_PUBLIC_URL="$(
-      jq -er '.DATABASE_PUBLIC_URL | strings | select(length > 0)' <<< "$database_variables"
-    )"
-    export SCOPE_STAGING_DATABASE_PUBLIC_URL
-    export SCOPE_ALLOW_STAGING_SMOKE_SEED=1
-    export SCOPE_SMOKE_SEED_PROJECT_ID="$project_id"
-    export SCOPE_SMOKE_SEED_ENVIRONMENT_ID="$staging_environment_id"
-    export SCOPE_SMOKE_SEED_ENVIRONMENT_NAME="$staging_environment_name"
-    export SCOPE_PRODUCTION_ENVIRONMENT_ID="$production_environment_id"
-    export SCOPE_SMOKE_SEED_USER_EMAIL="smoke@example.test"
-    export SCOPE_SMOKE_SEED_USER_HANDLE="dev"
-    # `railway run` executes this runner-local binary with Railway variables, so the
-    # exchange file remains on the same runner that later invokes the candidate CLI.
-    # Reset the catalog while every metadata writer is still fenced.
+if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
+  assert_writer_state 0
+  database_variables="$(railway_read variable list "${railway_scope[@]}" --service "$database_service" --json)"
+  export SCOPE_STAGING_DATABASE_PUBLIC_URL
+  SCOPE_STAGING_DATABASE_PUBLIC_URL="$(jq -er '.DATABASE_PUBLIC_URL' <<< "$database_variables")"
+  snapshot_backfill_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/scope-staging-backfill.XXXXXX")"
+  export SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR="$snapshot_backfill_dir"
+  run_maintenance() {
+    # Railway supplies these variables to the runner-local command.
     # shellcheck disable=SC2016
     railway run "${railway_scope[@]}" --service "$api_service" --no-local -- \
-      sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH="$SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH" exec "$@"' \
-      scope-smoke-seed "$seed_binary"
-    snapshot_backfill_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/scope-repository-snapshot-backfill.XXXXXX")"
-    for backfill_command in backfill-landing-files backfill-workflow-catalogs; do
-      SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR="$snapshot_backfill_dir" \
-        railway run "${railway_scope[@]}" --service "$api_service" --no-local -- \
-          sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_DATA_DIR="$SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR" exec "$@"' \
-          scope-maintenance "$maintenance_binary" "$backfill_command"
-    done
-    rm -rf -- "$snapshot_backfill_dir"
-    unset SCOPE_STAGING_DATABASE_PUBLIC_URL
+      sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_DATA_DIR="$SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR" exec "$@"' \
+      scope-maintenance "$maintenance_binary" "$1"
+  }
+  run_maintenance plan >/dev/null
+  run_maintenance validate-workflow-catalogs
+  # Apply the candidate schema without running physical cleanup commands here.
+  run_maintenance apply
+  run_maintenance backfill-landing-files
+  run_maintenance backfill-workflow-catalogs
+  rm -rf -- "$snapshot_backfill_dir"
+  unset SCOPE_STAGING_DATABASE_PUBLIC_URL SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR
+fi
 
-    SCOPE_DEPLOYMENT_COMPONENT=cache bash .github/scripts/deploy-railway.sh "$cache_service" "$1"
-    SCOPE_DEPLOYMENT_COMPONENT=worker bash .github/scripts/deploy-railway.sh "$worker_service" "$2"
-    SCOPE_DEPLOYMENT_COMPONENT=media bash .github/scripts/deploy-railway.sh "$media_service" "$5"
-    SCOPE_DEPLOYMENT_COMPONENT=mediaWorker \
-      SCOPE_DEPLOYMENT_EVIDENCE_PATH=.staging-media-worker.ndjson \
-      node .github/scripts/deploy-railway-image.mjs "$media_worker_service" "$media_worker_image"
-    SCOPE_DEPLOYMENT_COMPONENT=api bash .github/scripts/deploy-railway.sh "$api_service" "$3"
-    SCOPE_DEPLOYMENT_COMPONENT=router bash .github/scripts/deploy-railway.sh "$router_service" "$4"
-    ;;
-  finish)
-    if [[ "$#" -ne 1 ]]; then
-      echo "usage: deploy-staging-railway.sh finish <web-root>" >&2
-      exit 2
-    fi
-    assert_staging_topology
-    SCOPE_DEPLOYMENT_COMPONENT=web bash .github/scripts/deploy-railway.sh "$web_service" "$1"
-    evidence_lines="$(mktemp)"
-    trap 'rm -f "$evidence_lines"' EXIT
-    for service in "$cache_service" "$worker_service" "$media_service" "$media_worker_service" "$api_service" "$router_service" "$web_service"; do
-      record_deployment "$service" >> "$evidence_lines"
-    done
-    jq -s \
-      --arg commit "$SCOPE_DEPLOYMENT_SOURCE_SHA" \
-      --arg environmentId "$staging_environment_id" \
-      --arg workerImage "$media_worker_image" \
-      '{commit: $commit, environmentId: $environmentId, workerImage: $workerImage, deployments: .}' \
-      "$evidence_lines" > "$evidence_path"
-    ;;
-  *)
-    echo "usage: deploy-staging-railway.sh <prepare|finish> <upload-roots...>" >&2
-    exit 2
-    ;;
-esac
+evidence_lines="$(mktemp)"
+trap 'rm -f "$evidence_lines"' EXIT
+export SCOPE_DEPLOYMENT_EVIDENCE_PATH="$evidence_lines"
+# The router's readiness requires API replica discovery. Staging starts with
+# writers stopped, so restore the API before activating its router.
+for component in cache run-worker media-api media-worker api git-router web; do
+  jq -e --arg component "$component" '.components[$component]' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null || continue
+  service="$(jq -er --arg component "$component" '.services[$component].id' "$manifest_path")"
+  export SCOPE_DEPLOYMENT_COMPONENT="$component"
+  case "$component" in
+    media-worker)
+      image="$(jq -er '.components["media-worker"].image' "$SCOPE_PREPARED_RELEASE_PATH")"
+      node .github/scripts/deploy-railway-image.mjs "$service" "$image"
+      ;;
+    *)
+      case "$component" in
+        cache) root=cache-service ;;
+        git-router) root=repo-router ;;
+        run-worker) root=worker ;;
+        media-api) root=media ;;
+        *) root="$component" ;;
+      esac
+      bash .github/scripts/deploy-railway.sh "$service" "$root"
+      ;;
+  esac
+done
+assert_staging_topology
+jq -s --slurpfile manifest "$manifest_path" --arg commit "$SCOPE_DEPLOYMENT_SOURCE_SHA" --arg environmentId "$staging_environment_id" \
+  '{commit: $commit, environmentId: $environmentId, candidateDeployments: 1,
+    deployments: map({service: $manifest[0].services[.component].id, deploymentId: .evidenceId, status: "SUCCESS"})}' \
+  "$evidence_lines" > "$evidence_path"

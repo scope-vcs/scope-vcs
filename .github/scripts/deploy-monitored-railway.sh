@@ -14,6 +14,8 @@ jq --slurpfile manifest .github/deployment-services.json '
     select(.deploymentId != null) | {key: $component.key, value: .deploymentId}) | from_entries
 ' "$output/services.json" > "$SCOPE_RELEASE_DEPLOYMENTS_FILE"
 rm "$output/services.json"
+SCOPE_RELEASE_OBSERVATION_SECONDS="$(jq -er '.releasePolicy.postReleaseObservationSeconds | select(type == "number" and . > 0)' .github/deployment-services.json)"
+export SCOPE_RELEASE_OBSERVATION_SECONDS
 node .github/scripts/production-availability-config.mjs "$stage" "$output"
 if [[ "${SCOPE_RECOVER_CLOSED_CUTOVER:-0}" == 1 ]]; then
   node .github/scripts/production-deployment-progress.mjs cutover-read \

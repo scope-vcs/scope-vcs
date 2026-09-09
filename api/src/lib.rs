@@ -1,4 +1,5 @@
 pub mod app;
+pub mod maintenance_http;
 pub mod state;
 
 pub(crate) mod auth;

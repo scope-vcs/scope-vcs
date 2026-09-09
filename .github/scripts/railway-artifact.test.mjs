@@ -52,7 +52,7 @@ test('default Railway transport retries a failed source read without repeating e
 
 test('release rejects mutable tags, missing components, wrong revision and wrong service before activation', () => {
   assert.throws(() => validatePreparedRelease(release(), { sourceSha: 'c'.repeat(40) }), /revision/);
-  assert.throws(() => validatePreparedRelease(release(), { components: ['worker'] }), /missing worker/);
+  assert.throws(() => validatePreparedRelease(release(), { components: ['run-worker'] }), /missing run-worker/);
   assert.throws(() => validatePreparedRelease(release(), { services: { api: { id: 'wrong' } } }), /wrong service/);
   const mutable = release(); mutable.components.api.image = 'ghcr.io/owner/repo/railway-private-api:latest';
   assert.throws(() => validatePreparedRelease(mutable), /immutable/);
@@ -140,7 +140,7 @@ test('maintenance binary is bound to the original prepared release', () => {
 
 
 test('checked-in Railway string durations become GraphQL integers', () => {
-  for (const [component, directory] of [['api', 'api'], ['worker', 'worker'], ['cache', 'cache-service'], ['router', 'repo-router'], ['media', 'media-service'], ['web', 'web']]) {
+  for (const [component, directory] of [['api', 'api'], ['run-worker', 'worker'], ['cache', 'cache-service'], ['git-router', 'repo-router'], ['media-api', 'media-service'], ['web', 'web']]) {
     const actualConfig = JSON.parse(readFileSync(new URL(`../../${directory}/railway.json`, import.meta.url), 'utf8'));
     const input = artifactDeploymentInput(component, release().components.api, actualConfig);
     assert.equal(input.overlapSeconds, 30);
@@ -162,16 +162,16 @@ test('trusted staging registry configuration touches only fixed environment cred
   });
   assert.deepEqual(result, { configured: true, serviceCount: 7 });
   assert.equal(calls.length, 7);
-  assert.deepEqual(calls.map(({ variables }) => variables.serviceId), [manifest.services.cache.id, manifest.services.worker.id, manifest.railway.staging.routerServiceId, manifest.services.media.id, manifest.services.mediaWorker.id, manifest.services.api.id, manifest.services.web.id]);
+  assert.deepEqual(calls.map(({ variables }) => variables.serviceId), [manifest.services.cache.id, manifest.services['run-worker'].id, manifest.environments.staging.routerServiceId, manifest.services['media-api'].id, manifest.services['media-worker'].id, manifest.services.api.id, manifest.services.web.id]);
   for (const { query, variables } of calls) {
-    assert.equal(variables.environmentId, manifest.railway.staging.environmentId);
+    assert.equal(variables.environmentId, manifest.environments.staging.environmentId);
     assert.deepEqual(variables.input, { registryCredentials: credentials });
     assert.ok(query.includes('serviceInstanceUpdate'));
     assert.ok(!query.includes('Deploy'));
   }
   assert.deepEqual(configureStagingRegistry(manifest, {}, () => assert.fail('empty credentials should not call Railway')), { configured: false });
   assert.throws(() => configureStagingRegistry(manifest, { username: 'partial' }), /Both/);
-  assert.throws(() => configureStagingRegistry({ ...manifest, railway: { ...manifest.railway, staging: { ...manifest.railway.staging, environmentId: manifest.railway.environmentId } } }, credentials), /distinct/);
+  assert.throws(() => configureStagingRegistry({ ...manifest, environments: { ...manifest.environments, staging: { ...manifest.environments.staging, environmentId: manifest.environments.production.environmentId } } }, credentials), /distinct/);
   assert.throws(() => configureStagingRegistry({ ...manifest, services: { ...manifest.services, api: {} } }, credentials), /api service/);
 });
 
@@ -180,6 +180,16 @@ test('release package naming has one validated manifest owner', () => {
   const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url), 'utf8'));
   assert.equal(manifest.railway.releaseImagePrefix, 'railway-private');
   assert.equal(releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', 'api'), 'ghcr.io/scope-vcs/scope-vcs/railway-private-api');
+  for (const [component, imageSuffix, binary] of [
+    ['run-worker', 'worker', 'scope-worker'],
+    ['git-router', 'router', 'scope-repo-router'],
+    ['media-api', 'media', 'scope-media-service'],
+    ['cli-downloads', 'cli', 'scope-cli-service'],
+  ]) {
+    assert.equal(releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', component), `ghcr.io/scope-vcs/scope-vcs/railway-private-${imageSuffix}`);
+    assert.equal(artifactDeploymentInput(component, release().components.api, config).startCommand, `/app/bin/${binary}`);
+  }
+  assert.throws(() => releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', 'worker'), /Unknown release component/);
   assert.equal(releaseImageRepository({ railway: { releaseImagePrefix: 'another-release-set' } }, 'owner/repo', 'web'), 'ghcr.io/owner/repo/another-release-set-web');
   for (const prefix of [undefined, '', '../escape', 'registry/package', 'MixedCase']) {
     assert.throws(() => releaseImageRepository({ railway: { releaseImagePrefix: prefix } }, 'owner/repo', 'api'), /releaseImagePrefix/);

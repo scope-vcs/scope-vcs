@@ -3,7 +3,9 @@ use super::*;
 #[tokio::test]
 async fn git_segment_schema_uses_segment_identity() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
 
     let columns = db
         .query_all(Statement::from_string(
