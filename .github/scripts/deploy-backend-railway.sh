@@ -512,14 +512,6 @@ set -e
 case "$plan_status" in
   0) ;;
   1)
-    if [[ "$deploy_router_requested" == "1" ]]; then
-      activate_release git-router "$router_service" "$router_upload_root"
-      assert_router_topology
-      promote_pending_evidence
-    elif ! assert_router_topology || ! carried_service_is_healthy git-router "$router_service"; then
-      echo "Production git-router must match the reviewed topology and durable deployment before deploying another backend service." >&2
-      exit 1
-    fi
     api_running="$(running_replicas "$api_service")"
     worker_running="$(running_replicas "$worker_service")"
     cache_running="$(running_replicas "$cache_service")"
@@ -571,6 +563,14 @@ case "$plan_status" in
         exit 1
       fi
     done
+    if [[ "$deploy_router_requested" == "1" ]]; then
+      activate_release git-router "$router_service" "$router_upload_root"
+      assert_router_topology
+      promote_pending_evidence
+    elif ! assert_router_topology || ! carried_service_is_healthy git-router "$router_service"; then
+      echo "Production git-router must match the reviewed topology and durable deployment before deploying another backend service." >&2
+      exit 1
+    fi
     maintenance_read verify
     deploy_selected_releases
     trap - EXIT

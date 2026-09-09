@@ -389,6 +389,13 @@ if [[ "$1" == "up" ]]; then
   while [[ "$#" -gt 0 ]]; do
     if [[ "$1" == "--service" ]]; then service="$2"; shift 2; else shift; fi
   done
+  # Router readiness resolves the API private address; stopped API replicas
+  # provide no DNS target for a newly starting router.
+  if [[ "$service" == "scope-repo-router" ]] \
+    && [[ "$("$0" service list | jq -r '.[] | select(.id == "scope-api") | .replicas.running')" == "0" ]]; then
+    echo "Git router readiness failed: API private DNS has no running target." >&2
+    exit 1
+  fi
   [[ "${FAKE_FAIL_UP_SERVICE:-}" == "$service" ]] && exit 1
   if [[ "${FAKE_SKIP_UP_SERVICE:-}" == "$service" ]]; then
     touch "$FAKE_RAILWAY_STATE/skipped-${service}"

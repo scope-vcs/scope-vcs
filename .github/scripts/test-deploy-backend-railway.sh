@@ -692,6 +692,16 @@ assert_in_order "$test_dir/bootstrap-trace" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
 
+run_cutover bootstrap-router-selected 0 1 "" 0 0 1 1 "" 0 "" "" 1 "" 0 \
+  us-east4-eqdc4a us-east4-eqdc4a 1 1 1 0 0 "" 0 1
+[[ "$(cat "$test_dir/bootstrap-router-selected-result")" == "0" ]]
+[[ "$(grep -F -c "up $test_dir/git-router " "$test_dir/bootstrap-router-selected-trace")" == "1" ]]
+assert_in_order "$test_dir/bootstrap-router-selected-trace" \
+  "$test_dir/maintenance verify" \
+  "up $test_dir/api" \
+  "up $test_dir/git-router" \
+  "up $test_dir/web"
+
 run_cutover partial-reopen 0 0 scope-api
 [[ "$(cat "$test_dir/partial-reopen-result")" != "0" ]]
 assert_evidence_components partial-reopen ""
