@@ -1,0 +1,282 @@
+.marketing-page .request-step::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 2px;
+  background: var(--landing-green);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.marketing-page .request-step:nth-child(1)::after {
+  animation: landing-submission-progress var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .request-step:nth-child(2)::after {
+  animation: landing-reviewing-progress var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .request-step:nth-child(3)::after {
+  animation: landing-merging-progress var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .submission-scene,
+.marketing-page .state-submitted {
+  animation: landing-submission-scene var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .review-scene,
+.marketing-page .state-review {
+  animation: landing-review-scene var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .merged-scene,
+.marketing-page .state-merged {
+  animation: landing-merged-scene var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .submitted-file {
+  animation: landing-submit-file-glow var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .merged-file {
+  animation: landing-merge-file-glow var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .added-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--landing-green) 22%,transparent),transparent);
+  transform: translateX(-100%);
+  animation: landing-review-line-scan var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .maintainer-review {
+  animation: landing-review-comment var(--landing-request-cycle) ease-in-out infinite;
+}
+
+.marketing-page .review-decision {
+  animation: landing-review-decision var(--landing-request-cycle) ease-in-out infinite;
+}
+
+@keyframes landing-submission-scene {
+  0%,
+  17% {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  21%,
+  96% {
+    opacity: 0;
+    transform: translateY(-8px);
+    visibility: hidden;
+  }
+
+  97% {
+    opacity: 0;
+    transform: translateY(8px);
+    visibility: visible;
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+  }
+}
+
+@keyframes landing-review-scene {
+  0%,
+  20% {
+    opacity: 0;
+    transform: translateY(10px);
+    visibility: hidden;
+  }
+
+  25%,
+  70% {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  74%,
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+    visibility: hidden;
+  }
+}
+
+@keyframes landing-merged-scene {
+  0%,
+  73% {
+    opacity: 0;
+    transform: translateY(10px);
+    visibility: hidden;
+  }
+
+  78%,
+  94% {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  98%,
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+    visibility: hidden;
+  }
+}
+
+@keyframes landing-submission-progress {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+
+  18%,
+  94% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+
+  98%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+@keyframes landing-reviewing-progress {
+  0%,
+  23% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+
+  70%,
+  94% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+
+  98%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+@keyframes landing-merging-progress {
+  0%,
+  74% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+
+  86%,
+  94% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+
+  98%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+@keyframes landing-submit-file-glow {
+  0%,
+  17%,
+  100% {
+    background: transparent;
+  }
+
+  6%,
+  12% {
+    background: var(--landing-green-soft);
+  }
+}
+
+@keyframes landing-merge-file-glow {
+  0%,
+  75%,
+  93%,
+  100% {
+    background: transparent;
+  }
+
+  80%,
+  86% {
+    background: var(--landing-green-soft);
+  }
+}
+
+@keyframes landing-review-line-scan {
+  0%,
+  29% {
+    transform: translateX(-100%);
+  }
+
+  43%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes landing-review-comment {
+  0%,
+  42% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  48%,
+  72% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  76%,
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+@keyframes landing-review-decision {
+  0%,
+  58% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  63%,
+  72% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  76%,
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+/* These passive illustrations retain their timeline by product choice. */
+@media (prefers-reduced-motion: reduce) {
+  .marketing-page .contribution-flow *,
+  .marketing-page .contribution-flow *::after {
+    animation-duration: var(--landing-request-cycle) !important;
+    animation-iteration-count: infinite !important;
+  }
+}
