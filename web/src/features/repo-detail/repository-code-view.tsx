@@ -7,8 +7,9 @@ import { PanelState } from '@/components/empty-state'
 import { FileWorkbench } from '@/components/file-workbench'
 import { PendingSurface } from '@/components/pending-surface'
 import { isRepositoryHtmlPath } from '@/components/repository-html'
-import { RepositoryHtmlRenderer } from '@/components/repository-html-renderer'
+import { RepositoryHtmlRenderer, type RepositoryHtmlMode } from '@/components/repository-html-renderer'
 import { isRepositoryMarkdownPath } from '@/components/repository-markdown'
+import { RepositoryHtmlModeToggle } from '@/components/repository-html-mode-toggle'
 import { RepositoryMarkdownRenderer } from '@/components/repository-markdown-renderer'
 import { Button } from '@/components/ui/button'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
@@ -211,12 +212,27 @@ function SourcePane({
     ? workspaceTabDomIds(CODE_TAB_SET_ID, selectedPath)
     : null
   const contentRef = useRef<HTMLDivElement>(null)
-  const meta = useMemo(
-    () => file && selectedPath && !loading && !error
-      ? <FileMeta file={file} />
-      : undefined,
-    [error, file, loading, selectedPath],
-  )
+  const fileIdentity = selectedPath && file ? `${file.path}:${file.oid}` : selectedPath
+  const [display, setDisplay] = useState<{ identity: string | null; mode: RepositoryHtmlMode }>({
+    identity: fileIdentity,
+    mode: 'preview',
+  })
+  if (display.identity !== fileIdentity) {
+    setDisplay({ identity: fileIdentity, mode: 'preview' })
+  }
+  const htmlMode = display.identity === fileIdentity ? display.mode : 'preview'
+  const meta = file && selectedPath && !loading && !error ? (
+    <>
+      {file.content.kind === 'text' && isRepositoryHtmlPath(file.path) && (
+        <RepositoryHtmlModeToggle
+          mode={htmlMode}
+          onSelect={(mode) => setDisplay({ identity: fileIdentity, mode })}
+          path={file.path}
+        />
+      )}
+      <FileMeta file={file} />
+    </>
+  ) : undefined
 
   useLayoutEffect(() => {
     if (contentRef.current) {
@@ -248,6 +264,7 @@ function SourcePane({
         tabIndex={selectedPath ? 0 : undefined}
       >
         <SourceContent
+          htmlMode={htmlMode}
           emptyMessage={emptyMessage}
           error={error}
           file={file}
@@ -310,6 +327,7 @@ function RepositoryTabStrip({
 }
 
 function SourceContent({
+  htmlMode,
   emptyMessage,
   error,
   file,
@@ -325,6 +343,7 @@ function SourceContent({
   params: RepoParams
   retry: () => void
   selectedPath: string | null
+  htmlMode: RepositoryHtmlMode
 }) {
   if (loading) {
     return (
@@ -374,7 +393,7 @@ function SourceContent({
 
   return (
     <div className="scope-content-enter min-h-full" key={file.oid}>
-      <SourceFileContent file={file} params={params} />
+      <SourceFileContent file={file} htmlMode={htmlMode} params={params} />
     </div>
   )
 }
@@ -411,9 +430,11 @@ function FileMeta({ file }: { file: RepoFileContent }) {
 
 function SourceFileContent({
   file,
+  htmlMode,
   params,
 }: {
   file: RepoFileContent
+  htmlMode: RepositoryHtmlMode
   params: RepoParams
 }) {
   if (file.content.kind !== 'text') {
@@ -444,7 +465,7 @@ function SourceFileContent({
         identity={`${file.path}\0${file.oid}`}
         key={`${file.path}:${file.oid}`}
         path={file.path}
-        quietDetails={repositoryLandingPath([file]) !== null}
+        mode={htmlMode}
         source={file.content.text}
       />
     )
