@@ -221,7 +221,9 @@ async fn retries_wait_for_provider_cleanup() {
 async fn canceled_jobs_are_not_admitted() {
     let store = fixture(2).await;
     let runs = store.runs();
-    runs.request_run_cancellation("run-000", 11).await.unwrap();
+    runs.request_run_cancellation("user_cache_owner", "cache-owner/cache-repo", "run-000", 11)
+        .await
+        .unwrap();
     let DispatchAdmission::Admitted(claim) = runs
         .admit_next_job(1, "healthy", &"b".repeat(64), "runtime", 12, 20)
         .await

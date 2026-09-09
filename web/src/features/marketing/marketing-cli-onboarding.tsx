@@ -1,41 +1,16 @@
 import type { CliInstallCommands, CliPlatform } from '@/api/types'
 import { CopyableCodeBlock } from '@/components/copyable-code-block'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { CheckCircle2 } from 'lucide-react'
-import {
-  AnimatePresence,
-  domAnimation,
-  LazyMotion,
-  m,
-  useReducedMotion,
-} from 'motion/react'
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useRef, useState, type ReactElement } from 'react'
 
 const platformOptions = [
   { copyName: 'macOS and Linux', label: 'macOS / Linux', value: 'posix' },
   { copyName: 'Windows', label: 'Windows', value: 'windows' },
-] as const satisfies ReadonlyArray<{
-  copyName: string
-  label: string
-  value: CliPlatform
-}>
+] as const
 
 const nextSteps = [
-  {
-    command: 'scope login',
-    copyLabel: 'Copy login command',
-    description: 'Sign in from your terminal. This opens your browser.',
-  },
-  {
-    command: 'scope init',
-    copyLabel: 'Copy init command',
-    description: 'Run from an existing Git repository with at least one commit.',
-  },
-  {
-    command: 'scope push --main',
-    copyLabel: 'Copy push command',
-    description: 'Review and push the repository’s first version.',
-  },
+  { command: 'scope login', description: 'Sign in from your terminal.' },
+  { command: 'scope init', description: 'Run inside an existing Git repository.' },
+  { command: 'scope push --main', description: 'Review and push your first version.' },
 ] as const
 
 export function MarketingCliOnboarding({
@@ -46,154 +21,52 @@ export function MarketingCliOnboarding({
   initialPlatform: CliPlatform
 }): ReactElement {
   const [platform, setPlatform] = useState<CliPlatform>(initialPlatform)
-  const [showNextSteps, setShowNextSteps] = useState(false)
-  const prefersReducedMotion = useReducedMotion()
-  const nextStepsHeadingRef = useRef<HTMLHeadingElement>(null)
-  const shouldFocusNextStepsRef = useRef(false)
-
-  const installCommand = commands[platform]
-  const platformOption = platformOptions.find(
-    (option) => option.value === platform,
-  ) ?? platformOptions[0]
-
-  useEffect(() => {
-    if (showNextSteps && shouldFocusNextStepsRef.current) {
-      shouldFocusNextStepsRef.current = false
-      nextStepsHeadingRef.current?.focus()
-    }
-  }, [showNextSteps])
-
-  function revealNextSteps(moveFocus = false) {
-    shouldFocusNextStepsRef.current = moveFocus
-    setShowNextSteps(true)
-  }
+  const nextStepsRef = useRef<HTMLDetailsElement>(null)
+  const option = platformOptions.find((item) => item.value === platform) ?? platformOptions[0]
 
   return (
-    <section
-      aria-labelledby="install-scope"
-      className="marketing-cli-onboarding min-w-0"
-    >
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-sm font-semibold" id="install-scope">
-            install scope
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Install now. Sign in when you connect a repository.
-          </p>
-        </div>
-        <ToggleGroup
-          aria-label="Operating system"
-          className="grid w-full grid-cols-2 sm:w-auto"
-          onValueChange={(value) => {
-            if (value) {
-              setPlatform(value as CliPlatform)
-            }
-          }}
-          type="single"
-          value={platform}
-        >
-          {platformOptions.map((option) => (
-            <ToggleGroupItem
-              className="px-3 text-xs"
-              key={option.value}
-              value={option.value}
-            >
-              {option.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-
+    <div className="min-w-0">
+      <fieldset className="platforms mb-[18px] flex min-w-0 gap-6 border-b border-landing-line">
+        <legend className="sr-only">Operating system</legend>
+        {platformOptions.map((item) => (
+          <button
+            aria-pressed={item.value === platform}
+            className="-mb-px min-h-[35px] border-b-2 border-transparent bg-transparent pb-3 text-[13px] text-landing-muted hover:text-landing-ink aria-pressed:border-landing-green aria-pressed:text-landing-ink pointer-coarse:min-h-11 max-[521px]:min-h-11"
+            key={item.value}
+            onClick={() => setPlatform(item.value)}
+            type="button"
+          >
+            {item.label}
+          </button>
+        ))}
+      </fieldset>
       <CopyableCodeBlock
-        buttonLabel="copy install command"
-        className="shadow-none"
-        copyLabel={`Copy ${platformOption.copyName} install command`}
+        className="terminal flex items-start gap-3 rounded-[5px] border border-landing-line bg-landing-panel px-3.5 py-[17px] text-landing-ink shadow-none before:font-mono before:text-xs before:leading-[1.8] before:text-landing-green before:content-['›'] max-[521px]:gap-2 max-[521px]:px-2.5 max-[521px]:py-3.5 [&_pre]:m-0 [&_pre]:min-w-0 [&_pre]:flex-1 [&_pre]:p-0 [&_pre]:pr-12 [&_pre]:text-xs [&_pre]:leading-[1.8] max-[521px]:[&_pre]:text-[11px] [&_button]:h-9 [&_button]:w-10 [&_button]:rounded-[3px] [&_button]:border [&_button]:border-landing-line [&_button]:bg-landing-paper [&_button]:text-landing-muted [&_button:hover]:border-landing-green [&_button:hover]:text-landing-green"
+        copyLabel={`Copy ${option.copyName} install command`}
         key={platform}
-        onCopy={revealNextSteps}
-        value={installCommand}
+        onCopy={() => {
+          const details = nextStepsRef.current
+          if (details && !details.open) {
+            details.open = true
+            details.querySelector('summary')?.focus()
+          }
+        }}
+        value={commands[platform]}
       />
-
-      <a
-        className="mt-4 inline-flex text-sm text-muted-foreground underline decoration-border-strong underline-offset-4 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-        href="https://scopevcs.com/adamblumoff/scope-vcs"
-      >
-        explore a public repository ↗
-      </a>
-
-      <LazyMotion features={domAnimation}>
-        <AnimatePresence initial={false}>
-          {!showNextSteps && (
-            <m.div
-              className="mt-3 overflow-hidden"
-              exit={{ height: 0, marginTop: 0, opacity: 0 }}
-              key="manual-reveal"
-              transition={{
-                duration: prefersReducedMotion ? 0 : 0.2,
-                ease: 'easeOut',
-              }}
-            >
-              <button
-                className="text-xs text-muted-foreground underline decoration-border-strong underline-offset-4 transition-colors hover:text-foreground"
-                onClick={() => revealNextSteps(true)}
-                type="button"
-              >
-                already installed? next steps
-              </button>
-            </m.div>
-          )}
-
-          {showNextSteps && (
-            <m.div
-              animate={{ height: 'auto', opacity: 1 }}
-              aria-live="polite"
-              className="overflow-hidden"
-              initial={{ height: 0, opacity: 0 }}
-              key="next-steps"
-              transition={{
-                duration: prefersReducedMotion ? 0 : 0.24,
-                ease: 'easeOut',
-              }}
-            >
-              <div className="mt-5 border-t border-border pt-5">
-                <div className="mb-4 flex items-center gap-2 font-mono text-[11px] font-semibold text-[var(--success-strong)]">
-                  <CheckCircle2 className="size-3.5" />
-                  ready for the next step
-                </div>
-                <h3
-                  className="text-sm font-semibold outline-none"
-                  ref={nextStepsHeadingRef}
-                  tabIndex={-1}
-                >
-                  connect a repository
-                </h3>
-                <div className="mt-4 space-y-4">
-                  {nextSteps.map((step, index) => (
-                    <div
-                      className="grid grid-cols-[22px_minmax(0,1fr)] gap-2.5"
-                      key={step.command}
-                    >
-                      <span className="mt-0.5 grid size-[22px] place-items-center rounded-full border border-border font-mono text-[9px] text-muted-foreground">
-                        {index + 1}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="mb-2 text-xs leading-5 text-muted-foreground">
-                          {step.description}
-                        </p>
-                        <CopyableCodeBlock
-                          className="shadow-none"
-                          copyLabel={step.copyLabel}
-                          value={step.command}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+      <details className="group mt-6" ref={nextStepsRef}>
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-2 py-2 text-[13px] text-landing-muted before:w-3 before:font-mono before:text-base before:leading-[normal] before:content-['+'] hover:text-landing-ink group-open:before:content-['−'] [&::-webkit-details-marker]:hidden">Already installed?</summary>
+        <ol className="mt-3.5 grid gap-[15px]">
+          {nextSteps.map((step, index) => (
+            <li className="grid grid-cols-[24px_minmax(0,1fr)] gap-2" key={step.command}>
+              <span className="pt-[3px] font-mono text-xs leading-[normal] text-landing-faint" aria-hidden>{index + 1}</span>
+              <div>
+                <p className="mb-1 text-[13px] text-landing-muted">{step.description}</p>
+                <code className="font-mono text-[13px] leading-[normal]">{step.command}</code>
               </div>
-            </m.div>
-          )}
-        </AnimatePresence>
-      </LazyMotion>
-    </section>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </div>
   )
 }

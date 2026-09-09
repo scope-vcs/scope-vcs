@@ -417,7 +417,13 @@ async fn seed_canceled_run(
     )
     .await?;
     clock += 1;
-    runs.request_run_cancellation(&run_id, clock).await?;
+    runs.request_run_cancellation(
+        super::DEV_SEED_USER_ID,
+        revision.workflow().repository_id(),
+        &run_id,
+        clock,
+    )
+    .await?;
     clock += 1;
     runs.complete_attempt(&attempt, &token, AttemptConclusion::Canceled, false, clock)
         .await?;
@@ -454,7 +460,13 @@ async fn seed_retried_lint_run(
     )
     .await?;
     clock += 1;
-    runs.retry_run(&run_id, clock).await?;
+    runs.retry_run(
+        super::DEV_SEED_USER_ID,
+        revision.workflow().repository_id(),
+        &run_id,
+        clock,
+    )
+    .await?;
     run_job(
         runs,
         &run_id,

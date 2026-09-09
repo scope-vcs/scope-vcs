@@ -2,6 +2,164 @@ use super::run_resources::{
     WORKFLOW, state_with_pushed_workflow_checkout, state_with_pushed_workflow_source,
 };
 use super::*;
+use scope_object_store::{ObjectStore, ObjectStoreError};
+
+struct RevokeMembershipOnUpload {
+    inner: Arc<dyn ObjectStore>,
+    metadata: scope_postgres::db::MetadataStore,
+    member_id: String,
+    uploaded_key: String,
+    revoked: std::sync::atomic::AtomicBool,
+}
+
+impl ObjectStore for RevokeMembershipOnUpload {
+    fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
+        self.inner.put(key, bytes)?;
+        if key == self.uploaded_key {
+            let runtime = tokio::runtime::Handle::current();
+            std::thread::scope(|scope| {
+                scope
+                    .spawn(|| {
+                        runtime.block_on(async {
+                            self.metadata
+                                .repositories()
+                                .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+                                    repo.members
+                                        .retain(|member| member.user_id != self.member_id);
+                                })
+                                .await
+                                .unwrap();
+                        })
+                    })
+                    .join()
+                    .unwrap();
+            });
+            self.revoked
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    fn get(&self, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
+        self.inner.get(key)
+    }
+
+    fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
+        self.inner.delete(key)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn uploaded_manual_run_revocation_queues_cleanup_and_preserves_shared_source() {
+    for shared_source in [false, true] {
+        let (mut state, checkout) =
+            state_with_pushed_workflow_checkout("uploaded-manual-revocation", WORKFLOW).await;
+        let clerk_member_id = "user_uploaded_member";
+        let member_id =
+            scope_postgres::db::scope_user_id_for_auth_identity("clerk", clerk_member_id);
+        state
+            .metadata
+            .auth()
+            .insert_user_for_tests(test_user(
+                &member_id,
+                "uploaded-member",
+                "member@example.com",
+            ))
+            .await
+            .unwrap();
+        state
+            .metadata
+            .repositories()
+            .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+                repo.members.push(test_repository_member(
+                    TEST_REPO_ID,
+                    &member_id,
+                    Default::default(),
+                ));
+            })
+            .await
+            .unwrap();
+        let git_oid = git_head_oid(&checkout);
+        let bundle_path = checkout.join("source.bundle");
+        run_git(
+            Some(&checkout),
+            &["bundle", "create", bundle_path.to_str().unwrap(), "HEAD"],
+            "create uploaded authorization bundle",
+        )
+        .unwrap();
+        let bundle = fs::read(bundle_path).unwrap();
+        let mut object =
+            scope_object_store::content_object_for_bytes(ContentObjectKind::GitBundle, &bundle);
+        object.git_oid = git_oid.clone();
+        let key = scope_object_store::object_key(&object);
+        let upload_request = |request_id: &str, auth: String| {
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "{}?workflow=test&git_oid={git_oid}&request_id={request_id}",
+                    scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME),
+                ))
+                .header(AUTHORIZATION, auth)
+                .header(CONTENT_TYPE, "application/octet-stream")
+                .body(Body::from(bundle.clone()))
+                .unwrap()
+        };
+        if shared_source {
+            let response = router(state.clone())
+                .oneshot(upload_request(
+                    "66666666666666666666666666666666",
+                    bearer_header(),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+        let store = Arc::new(RevokeMembershipOnUpload {
+            inner: state.object_store.clone(),
+            metadata: state.metadata.clone(),
+            member_id,
+            uploaded_key: key.clone(),
+            revoked: std::sync::atomic::AtomicBool::new(false),
+        });
+        state.object_store = store.clone();
+        let response = router(state.clone())
+            .oneshot(upload_request(
+                "77777777777777777777777777777777",
+                bearer_header_for(clerk_member_id, "member@example.com"),
+            ))
+            .await
+            .unwrap();
+        assert!(
+            store.revoked.load(std::sync::atomic::Ordering::SeqCst),
+            "request passed initial authorization and reached object upload"
+        );
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(
+            state
+                .metadata
+                .runs()
+                .run("run_77777777777777777777777777777777")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            cleanup_status(&state)
+                .await
+                .unwrap()
+                .source_blob_deletes
+                .contains(&object)
+        );
+        drain_pending_source_blob_deletions_report(&state)
+            .await
+            .unwrap();
+        if shared_source {
+            assert_eq!(state.object_store.get(&key).unwrap(), bundle);
+        } else {
+            assert!(state.object_store.get(&key).is_err());
+        }
+    }
+}
 
 fn resolve_request(git_oid: &str, request_id: &str, workflow: &str, auth: &str) -> Request<Body> {
     Request::builder()
