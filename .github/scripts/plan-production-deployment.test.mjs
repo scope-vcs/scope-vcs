@@ -651,6 +651,16 @@ test("staging dispatch has a unique identity beyond the candidate SHA", () => {
 });
 
 
+test("release-proof watcher covers preparation, proof, and cleanup budgets", () => {
+  const proof = productionWorkflow.slice(productionWorkflow.indexOf("  release-staging-proof:"), productionWorkflow.indexOf("  backend-deploy:"));
+  const parentBudget = Number(proof.match(/timeout-minutes: (\d+)/)[1]);
+  const childBudget = ["prepare", "prove", "cleanup"].reduce((total, name) => {
+    const job = stagingWorkflow.split(`\n  ${name}:\n`)[1].split(/\n  [\w-]+:\n/)[0];
+    return total + Number(job.match(/timeout-minutes: (\d+)/)[1]);
+  }, 0);
+  assert(parentBudget > childBudget, "watcher must allow the child workflow and dispatch overhead to finish");
+});
+
 test("recovery validates provenance before selecting its source revision", () => {
   const selection = productionWorkflow.slice(productionWorkflow.indexOf("      - name: Select immutable release revision"), productionWorkflow.indexOf("      - name: Read successful production revisions"));
   assert(selection.indexOf("cutover-validate-recovery") < selection.indexOf('echo "sha=$RECOVER_SHA"'));

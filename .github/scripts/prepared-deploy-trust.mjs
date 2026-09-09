@@ -24,17 +24,24 @@ export async function validatePreparedDeployment(
     "utf8",
   ));
   validatePreparedRelease(prepared, {
-    components,
     services: manifest.services,
     sourceSha: prepared.sourceSha,
   });
+  const selected = Object.keys(prepared.components);
+  if (selected.length === 0 || selected.some((component) => !components.includes(component))) {
+    throw new Error("Prepared deployment requires a nonempty set of application components");
+  }
+  const backend = selected.some((component) => component !== "web");
+  // Backend activation needs the API maintenance tool and the complete backend image set.
+  if (backend) validatePreparedRelease(prepared, { components: components.filter((component) => component !== "web") });
 
   const responses = new Map();
   const cachedRequest = (path) => {
     if (!responses.has(path)) responses.set(path, Promise.resolve(request(path)));
     return responses.get(path);
   };
-  const proof = await validateRecoveryPreparation(prepared, cachedRequest, repository, manifest);
+  const proof = await validateRecoveryPreparation(prepared, cachedRequest, repository, manifest, selected);
+  const selection = { backend, ...Object.fromEntries(components.map((component) => [component, selected.includes(component)])) };
 
   const requiredJobs = new Set([validationJobName, "Prove prepared release in release-proof"]);
   for (let page = 1; ; page += 1) {
@@ -48,7 +55,7 @@ export async function validatePreparedDeployment(
           && job.status === "completed"
           && job.conclusion === "success") requiredJobs.delete(job.name);
     }
-    if (requiredJobs.size === 0) return proof;
+    if (requiredJobs.size === 0) return { ...proof, selection };
     if (result.jobs.length < 100) break;
   }
   throw new Error("Source run did not pass the production validation gate and release-proof rehearsal");
@@ -81,6 +88,8 @@ async function main() {
   );
   if (!process.env.GITHUB_OUTPUT) throw new Error("GITHUB_OUTPUT is required");
   appendFileSync(process.env.GITHUB_OUTPUT, `source_sha=${proof.sourceSha}\n`);
+  appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(proof.selection)
+    .map(([component, selected]) => `${component}=${selected}\n`).join(""));
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

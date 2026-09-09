@@ -29,6 +29,14 @@ jobs:
       deployments: ${{ steps.progress.outputs.deployments }}
       revisions: ${{ steps.progress.outputs.revisions }}
       source_sha: ${{ steps.source.outputs.source_sha }}
+      backend: ${{ steps.source.outputs.backend }}
+      api: ${{ steps.source.outputs.api }}
+      worker: ${{ steps.source.outputs.worker }}
+      cache: ${{ steps.source.outputs.cache }}
+      router: ${{ steps.source.outputs.router }}
+      media: ${{ steps.source.outputs.media }}
+      mediaWorker: ${{ steps.source.outputs.mediaWorker }}
+      web: ${{ steps.source.outputs.web }}
     steps:
       - name: Require trusted main dispatch
         run: test "$GITHUB_REF" = refs/heads/main
@@ -92,6 +100,7 @@ jobs:
   backend-deploy:
     name: Backend deploy
     needs: prepare
+    if: needs.prepare.outputs.backend == 'true'
     permissions:
       actions: read
       contents: read
@@ -99,12 +108,12 @@ jobs:
     uses: ./.github/workflows/scope-api-deploy.yml
     with:
       source_sha: ${{ needs.prepare.outputs.source_sha }}
-      deploy_cache: true
-      deploy_worker: true
-      deploy_media_worker: true
-      deploy_router: true
-      deploy_media: true
-      deploy_api: true
+      deploy_cache: ${{ needs.prepare.outputs.cache == 'true' }}
+      deploy_worker: ${{ needs.prepare.outputs.worker == 'true' }}
+      deploy_media_worker: ${{ needs.prepare.outputs.mediaWorker == 'true' }}
+      deploy_router: ${{ needs.prepare.outputs.router == 'true' }}
+      deploy_media: ${{ needs.prepare.outputs.media == 'true' }}
+      deploy_api: ${{ needs.prepare.outputs.api == 'true' }}
       successful_deployments: ${{ needs.prepare.outputs.deployments }}
       maintenance_budget_seconds: ${{ fromJSON(format('{0}', inputs.maintenance_budget_seconds || 0)) }}
     secrets: inherit
@@ -112,6 +121,10 @@ jobs:
   web-deploy:
     name: Web deploy
     needs: [prepare, backend-deploy]
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.web == 'true' &&
+      ((needs.prepare.outputs.backend == 'true' && needs.backend-deploy.result == 'success') ||
+      (needs.prepare.outputs.backend != 'true' && needs.backend-deploy.result == 'skipped'))
     permissions:
       contents: read
       deployments: write
@@ -119,18 +132,4 @@ jobs:
     with:
       source_sha: ${{ needs.prepare.outputs.source_sha }}
       verified_successful_sha: ${{ fromJSON(needs.prepare.outputs.revisions || '{}').web || '' }}
-    secrets: inherit
-
-  cli-deploy:
-    name: CLI deploy
-    needs: [prepare, backend-deploy]
-    permissions:
-      actions: read
-      contents: read
-      deployments: write
-    uses: ./.github/workflows/scope-cli-deploy.yml
-    with:
-      source_sha: ${{ needs.prepare.outputs.source_sha }}
-      artifact_run_id: ${{ inputs.source_run_id }}
-      verified_successful_sha: ${{ fromJSON(needs.prepare.outputs.revisions || '{}').cli || '' }}
     secrets: inherit

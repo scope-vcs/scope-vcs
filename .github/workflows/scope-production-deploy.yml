@@ -289,7 +289,7 @@ jobs:
       !cancelled() && inputs.recover_cutover_id == '' &&
       needs.release-preparation.result == 'success'
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 60
+    timeout-minutes: 180
     permissions:
       actions: write
       contents: read

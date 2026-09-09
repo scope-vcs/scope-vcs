@@ -171,7 +171,9 @@ Imported releases build the smoke tools without rebuilding application images.
 Complete manifests initialize fixtures; partial manifests issue a fresh test login
 without resetting the existing catalog or stopping unchanged backend services. Web-only
 releases use the same gate; a CLI release included with application changes waits
-for it too. CLI-only releases keep their build and distribution checks.
+for it too. CLI-only releases keep their build and distribution checks. The
+prepared-release replay workflow deploys only application components present in
+its validated manifest; CLI distribution remains a separate release lane.
 
 Railway `staging` is reserved for experiments and is outside this chain. The
 proof workflow calls its default target `release-proof`; its GitHub credential
