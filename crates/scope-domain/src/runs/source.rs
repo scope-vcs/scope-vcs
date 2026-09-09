@@ -58,17 +58,7 @@ impl RunSource {
             ));
         }
         validate_git_oid("accepted run source head", &head.head_oid)?;
-        validate_source_blob(&head.manifest, "run source manifest")?;
-        if !matches!(head.manifest.content_ref, ContentRef::GitManifestSha256(_)) {
-            return Err(DomainError::invalid_input(
-                "accepted run source must use a Git manifest",
-            ));
-        }
-        if head.manifest.git_oid != head.head_oid {
-            return Err(DomainError::invalid_input(
-                "accepted run source manifest head does not match the accepted head",
-            ));
-        }
+        validate_sha256_hash("accepted run source frontier", head.frontier.digest())?;
         if pack_spans.is_empty() {
             return Err(DomainError::invalid_input(
                 "accepted run source must pin at least one Git pack span",
@@ -100,7 +90,7 @@ impl RunSource {
     pub fn retained_objects(&self) -> Vec<&SourceBlob> {
         match self {
             Self::EphemeralGitBundle { object } => vec![object],
-            Self::AcceptedGitHead { head, .. } => vec![&head.manifest],
+            Self::AcceptedGitHead { .. } => Vec::new(),
         }
     }
 
@@ -116,7 +106,7 @@ impl RunSource {
     pub fn source_identity(&self) -> &str {
         match self {
             Self::EphemeralGitBundle { object } => &object.sha256,
-            Self::AcceptedGitHead { head, .. } => &head.manifest.sha256,
+            Self::AcceptedGitHead { head, .. } => head.frontier.digest(),
         }
     }
 
@@ -173,16 +163,10 @@ fn validate_git_oid(label: &str, git_oid: &str) -> Result<(), DomainError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{content::DEFAULT_GIT_FILE_MODE, repository::git::GitSegmentRef};
 
     #[test]
     fn accepted_git_head_pins_the_exact_pack_layout() {
         let head_oid = "a".repeat(40);
-        let manifest = source_blob(
-            ContentRef::git_manifest_sha256("b".repeat(64)),
-            'b',
-            &head_oid,
-        );
         let pack = GitPackSpan {
             first_sequence: 1,
             last_sequence: 1,
@@ -193,38 +177,27 @@ mod tests {
         };
         let source = RunSource::accepted_git_head(
             "owner/repo",
-            GitHead {
-                head_oid: head_oid.clone(),
-                push_sequence: 1,
-                change_version: 7,
-                manifest: manifest.clone(),
-            },
+            GitHead::new(head_oid.clone(), 1, 7),
             vec![pack.clone()],
             ProjectionViewKey::Private,
         )
         .unwrap();
 
         assert_eq!(source.git_oid(), head_oid);
-        assert_eq!(source.source_identity(), manifest.sha256);
-        assert_eq!(source.retained_objects(), vec![&manifest]);
+        assert_eq!(
+            source.source_identity(),
+            "189efc3e1b3dd4adb49c858cdb3be61d3a0ebafe1d39fa3e9b8a1a9c7461e6e9"
+        );
+        assert!(source.retained_objects().is_empty());
         assert_eq!(source.retained_git_segments(), vec![&pack.segment]);
     }
 
     #[test]
-    fn accepted_git_head_rejects_a_frontier_that_does_not_match_its_head() {
+    fn accepted_git_head_rejects_spans_that_do_not_reach_its_sequence() {
         let head_oid = "a".repeat(40);
         let source = RunSource::accepted_git_head(
             "owner/repo",
-            GitHead {
-                head_oid: head_oid.clone(),
-                push_sequence: 2,
-                change_version: 7,
-                manifest: source_blob(
-                    ContentRef::git_manifest_sha256("b".repeat(64)),
-                    'b',
-                    &head_oid,
-                ),
-            },
+            GitHead::new(head_oid.clone(), 2, 7),
             vec![GitPackSpan {
                 first_sequence: 1,
                 last_sequence: 1,
@@ -237,16 +210,6 @@ mod tests {
         );
 
         assert!(source.unwrap_err().message.contains("do not reach"));
-    }
-
-    fn source_blob(content_ref: ContentRef, character: char, git_oid: &str) -> SourceBlob {
-        SourceBlob {
-            content_ref,
-            sha256: character.to_string().repeat(64),
-            git_oid: git_oid.to_string(),
-            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            size_bytes: 1,
-        }
     }
 
     fn git_segment(character: char) -> GitSegmentRef {

@@ -20,8 +20,7 @@ use scope_domain::{
 use scope_git::{GitTreePath, StoredGitPush, prepare_git_push};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_git_storage::{GitStorageError, StagedGitSegment};
-use scope_object_store::{ContentObjectKind, content_object_for_bytes, object_key};
-use scope_postgres::db::ContentRefFence;
+use scope_object_store::{ContentObjectKind, content_object_for_bytes};
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
 pub(super) fn pushed_commit_time(staging_repo: &FsPath, head_oid: &str) -> Result<i64, ApiError> {
@@ -336,9 +335,8 @@ pub(crate) fn validate_pushed_commit_range(
     Ok(())
 }
 
-pub(crate) struct FencedGitPush {
+pub(crate) struct StagedGitPush {
     pub(crate) stored: StoredGitPush,
-    pub(crate) fence: ContentRefFence,
     pub(crate) staged_segment: StagedGitSegment,
     pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
 }
@@ -348,7 +346,7 @@ pub(crate) async fn git_push_from_repo(
     repository_id: &str,
     repo: &FsPath,
     previous: Option<&GitHead>,
-) -> Result<FencedGitPush, ApiError> {
+) -> Result<StagedGitPush, ApiError> {
     let _ingest_permit = state.runtime_budgets.try_git_segment_ingest()?;
     let storage_limits = state.runtime_budgets.git_storage_limits();
     let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
@@ -474,7 +472,7 @@ pub(crate) async fn git_push_from_repo(
 
     let pack_bytes = staged_segment.segment.plaintext_bytes;
     let store_started = Instant::now();
-    let prepared = match prepare_git_push(
+    let stored = match prepare_git_push(
         staged_segment.segment.clone(),
         head_oid,
         previous,
@@ -486,25 +484,12 @@ pub(crate) async fn git_push_from_repo(
             return Err(error.into());
         }
     };
-    let content_refs = [prepared.manifest().content_ref.clone()];
-    let fence = match state
-        .metadata
-        .acquire_content_ref_fence(&content_refs)
-        .await
-    {
-        Ok(fence) => fence,
-        Err(error) => {
-            best_effort_delete_staged_git_segment(state, repository_id, &staged_segment).await;
-            return Err(error.into());
-        }
-    };
-    let stored = prepared.store_manifest(state.object_store.as_ref());
     let timings = &staged_segment.timings;
     tracing::info!(
         phase = "complete",
         repository_id,
         segment_id = staged_segment.segment.segment_id,
-        success = stored.is_ok(),
+        success = true,
         duration_us = timings.total.as_micros(),
         bytes = timings.plaintext_bytes,
         blocked_us = timings.fanout_blocked.as_micros(),
@@ -512,9 +497,9 @@ pub(crate) async fn git_push_from_repo(
         buffered_bytes = timings.chunk_bytes.saturating_mul(timings.channel_capacity),
         disk_free_bytes = disk_free_bytes(staged_segment.local_pack_path()),
         ledger_uploading = 0_u64,
-        ledger_ready = u64::from(stored.is_ok()),
+        ledger_ready = 1_u64,
         ledger_published = 0_u64,
-        orphan_count = u64::from(stored.is_err()),
+        orphan_count = 0_u64,
         "Git segment ingest telemetry"
     );
     tracing::info!(
@@ -522,22 +507,14 @@ pub(crate) async fn git_push_from_repo(
         pack_us = pack_elapsed.as_micros(),
         store_us = store_started.elapsed().as_micros(),
         pack_bytes,
-        success = stored.is_ok(),
+        success = true,
         "Git push pack timing"
     );
-    match stored {
-        Ok(stored) => Ok(FencedGitPush {
-            stored,
-            fence,
-            staged_segment,
-            upload_heartbeat,
-        }),
-        Err(error) => {
-            fence.release().await;
-            best_effort_delete_staged_git_segment(state, repository_id, &staged_segment).await;
-            Err(error.into())
-        }
-    }
+    Ok(StagedGitPush {
+        stored,
+        staged_segment,
+        upload_heartbeat,
+    })
 }
 
 #[cfg(unix)]
@@ -564,38 +541,6 @@ fn disk_free_bytes(path: &FsPath) -> u64 {
 #[cfg(not(unix))]
 fn disk_free_bytes(_path: &FsPath) -> u64 {
     0
-}
-
-pub(super) async fn queue_failed_git_objects(
-    state: &AppState,
-    objects: Vec<SourceBlob>,
-) -> Result<(), ApiError> {
-    if objects.is_empty() {
-        return Ok(());
-    }
-    match state
-        .metadata
-        .cleanup()
-        .queue_pending_source_blob_deletions(
-            objects.clone(),
-            crate::persistence::unix_now()?,
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await
-    {
-        Ok(()) => Ok(()),
-        Err(queue_error) => {
-            for object in objects {
-                if let Err(delete_error) = state.object_store.delete(&object_key(&object)) {
-                    return Err(ApiError::infrastructure_unavailable(format!(
-                        "failed to queue or delete incomplete Git object: {}; {}",
-                        queue_error.message, delete_error.message
-                    )));
-                }
-            }
-            Ok(())
-        }
-    }
 }
 
 pub(crate) fn git_snapshot_from_ref(

@@ -1,5 +1,4 @@
 use crate::error::DomainError;
-use std::collections::BTreeMap;
 
 mod access;
 pub use access::{
@@ -27,7 +26,7 @@ pub use discussions::{
 mod lifecycle;
 pub use lifecycle::{
     CloseRequestInput, CloseRequestMutation, RecordRequestRevisionInput,
-    RecordWorkingRequestUploadInput, RequestRevisionMutation, StartRequestInput,
+    RecordWorkingRequestUploadInput, RequestRevisionMutation, StartRequestFacts, StartRequestInput,
     StartRequestMutation, WorkingRequestUploadMutation, close_request, record_request_revision,
     record_working_request_upload, start_request, validate_request_name,
 };
@@ -82,24 +81,19 @@ pub(super) fn advance_request_activity(request: &mut Request) -> Result<u64, Dom
     Ok(request.activity_version)
 }
 
-pub(super) fn open_request_mut<'a>(
-    requests: &'a mut BTreeMap<String, Request>,
+pub(super) fn ensure_request_matches(
+    request: &Request,
     request_id: &str,
-) -> Result<&'a mut Request, DomainError> {
-    let request = requests
-        .get_mut(request_id)
-        .ok_or_else(|| DomainError::not_found("request not found"))?;
-    if request.is_terminal() {
-        return Err(DomainError::conflict("request is closed"));
+) -> Result<(), DomainError> {
+    if request.id == request_id {
+        Ok(())
+    } else {
+        Err(DomainError::not_found("request not found"))
     }
-    Ok(request)
 }
 
-pub(super) fn ensure_event_id_available(
-    events: &BTreeMap<String, RequestEvent>,
-    event_id: &str,
-) -> Result<(), DomainError> {
-    if events.contains_key(event_id) {
+pub(super) fn ensure_event_id_available(event_id_exists: bool) -> Result<(), DomainError> {
+    if event_id_exists {
         Err(DomainError::conflict("request event already exists"))
     } else {
         Ok(())

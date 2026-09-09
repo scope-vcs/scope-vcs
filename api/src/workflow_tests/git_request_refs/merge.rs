@@ -418,7 +418,7 @@ async fn public_merge_rejects_path_made_private_after_request_push() {
 async fn locked_merge_authorization_rejects_non_maintainer_before_content_persistence() {
     let (state, _source) = test_state_with_mergeable_request("locked-non-maintainer-state").await;
     let prepared = prepared_merge(&state, "locked-non-maintainer", &public_user_id()).await;
-    let durable_refs = durable_content_refs(&prepared);
+    let staged_segment = prepared.staged_segment.clone();
     let repo_before = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
@@ -448,7 +448,7 @@ async fn locked_merge_authorization_rejects_non_maintainer_before_content_persis
             .change_version,
         repo_before.record.change_version
     );
-    assert_rollback_queued_and_fence_released(&state, &durable_refs).await;
+    assert_segment_rollback_and_write_lease_released(&state, &staged_segment).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -456,7 +456,7 @@ async fn locked_merge_rejects_stale_request_head_without_persisting_content() {
     let (state, _source) = test_state_with_mergeable_request("stale-request-head-state").await;
     insert_member_user(&state).await;
     let prepared = prepared_merge(&state, "stale-request-head", &member_user_id()).await;
-    let durable_refs = durable_content_refs(&prepared);
+    let staged_segment = prepared.staged_segment.clone();
     let repo_before = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
@@ -493,7 +493,7 @@ async fn locked_merge_rejects_stale_request_head_without_persisting_content() {
             .change_version,
         repo_before.record.change_version
     );
-    assert_rollback_queued_and_fence_released(&state, &durable_refs).await;
+    assert_segment_rollback_and_write_lease_released(&state, &staged_segment).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -502,7 +502,7 @@ async fn locked_merge_rejects_stale_repository_version_without_persisting_conten
         test_state_with_mergeable_request("stale-repository-version-state").await;
     insert_member_user(&state).await;
     let prepared = prepared_merge(&state, "stale-repository-version", &member_user_id()).await;
-    let durable_refs = durable_content_refs(&prepared);
+    let staged_segment = prepared.staged_segment.clone();
     state
         .metadata
         .repositories()
@@ -541,7 +541,7 @@ async fn locked_merge_rejects_stale_repository_version_without_persisting_conten
         stored_request(&state, REQUEST_ID).await.state(),
         RequestState::Open
     );
-    assert_rollback_queued_and_fence_released(&state, &durable_refs).await;
+    assert_segment_rollback_and_write_lease_released(&state, &staged_segment).await;
 }
 
 async fn prepared_merge(
@@ -579,42 +579,27 @@ async fn prepared_merge(
     .unwrap()
 }
 
-fn durable_content_refs(
-    prepared: &PreparedRequestMerge,
-) -> Vec<scope_domain::content_ref::ContentRef> {
-    prepared
-        .durable_objects()
-        .iter()
-        .map(|object| object.content_ref.clone())
-        .collect()
-}
-
-async fn assert_rollback_queued_and_fence_released(
+async fn assert_segment_rollback_and_write_lease_released(
     state: &AppState,
-    durable_refs: &[scope_domain::content_ref::ContentRef],
+    staged_segment: &scope_git_storage::StagedGitSegment,
 ) {
-    assert!(!durable_refs.is_empty());
-    let queued = state
-        .metadata
-        .cleanup()
-        .pending_source_blob_cleanups_for_tests()
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|blob| blob.content_ref)
-        .collect::<std::collections::BTreeSet<_>>();
+    assert!(!staged_segment.local_pack_path().exists());
     assert!(
-        durable_refs
-            .iter()
-            .all(|content_ref| queued.contains(content_ref))
+        state
+            .git_segment_store
+            .restore_to(TEST_REPO_ID, &staged_segment.segment, tokio::io::sink(),)
+            .await
+            .is_err()
     );
-
-    let fence = tokio::time::timeout(
+    let lease = tokio::time::timeout(
         Duration::from_secs(2),
-        state.metadata.acquire_content_ref_fence(durable_refs),
+        state
+            .metadata
+            .repositories()
+            .acquire_git_write_lease(TEST_REPO_ID),
     )
     .await
-    .expect("failed merge must release its content fence")
+    .expect("failed merge must release its Git write lease")
     .unwrap();
-    fence.release().await;
+    lease.release().await;
 }

@@ -49,16 +49,11 @@ fn clone_without_auth_returns_authentication_json() {
 #[test]
 fn clone_json_keeps_git_output_off_stdout() {
     use axum::{Json, Router, routing::get};
-    use std::{fs, net::TcpListener, thread};
     let source = support::TempDir::new("clone-json-source");
     support::create_repo_with_head(source.path());
     let destination = support::TempDir::new("clone-json-destination");
-    let config = support::TempDir::new("clone-json-auth");
     let checkout = destination.path().join("checkout");
     let remote_url = format!("file://{}", source.path().display());
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let api_url = format!("http://{}", listener.local_addr().unwrap());
     let response = serde_json::json!({
         "id": "repo_test", "owner_handle": "adam", "name": "sample", "git_remote_url": remote_url,
         "lifecycle_state": "Ready", "change_version": 1, "open_request_count": 0,
@@ -66,42 +61,21 @@ fn clone_json_keeps_git_output_off_stdout() {
             "can_change_file_visibility": false, "can_apply_changes": false, "can_manage_members": false, "can_delete_repo": false},
         "request_permissions": {"can_start_request": true}
     });
-    let (stop, stopped) = tokio::sync::oneshot::channel();
-    let server = thread::spawn(move || {
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async move {
-                let app = Router::new().route(
-                    "/v1/repos/adam/sample",
-                    get(move || {
-                        let response = response.clone();
-                        async { Json(response) }
-                    }),
-                );
-                axum::serve(tokio::net::TcpListener::from_std(listener).unwrap(), app)
-                    .with_graceful_shutdown(async {
-                        let _ = stopped.await;
-                    })
-                    .await
-                    .unwrap();
-            });
-    });
-    let sessions = config.path().join("scope/sessions");
-    fs::create_dir_all(&sessions).unwrap();
-    fs::write(
-        sessions.join(format!("cli-session-{}", hex::encode(api_url.as_bytes()))),
-        "test-token",
-    )
-    .unwrap();
-    let output = support::scope_command(destination.path())
-        .env("SCOPE_API_URL", &api_url)
-        .env("XDG_CONFIG_HOME", config.path())
+    let app = Router::new().route(
+        "/v1/repos/adam/sample",
+        get(move || {
+            let response = response.clone();
+            async { Json(response) }
+        }),
+    );
+    let server = support::TestServer::new(app);
+    let output = server
+        .command(destination.path())
         .args(["--json", "clone", "adam/sample"])
         .arg(&checkout)
         .output()
         .unwrap();
-    let _ = stop.send(());
-    server.join().unwrap();
+    drop(server);
     assert!(
         output.status.success(),
         "scope clone --json: {}",

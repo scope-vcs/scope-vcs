@@ -81,9 +81,9 @@ case "${1:-}" in
     fi
     touch "$FAKE_RAILWAY_STATE/plan-read"
     if [[ -f "$FAKE_RAILWAY_STATE/exact" ]]; then
-      echo '{"exact":true,"applied":["m0033_git_segment_streaming_v2"],"pending":[]}'
+      echo '{"exact":true,"applied":["m0042_current_schema_baseline","m0043_retire_git_manifests"],"pending":[]}'
     else
-      echo '{"exact":false,"applied":[],"pending":[{"name":"m0033_git_segment_streaming_v2"}]}'
+      echo '{"exact":false,"applied":[],"pending":[{"name":"m0042_current_schema_baseline"},{"name":"m0043_retire_git_manifests"}]}'
     fi
     ;;
   apply)
@@ -119,11 +119,6 @@ case "${1:-}" in
   verify)
     [[ -f "$FAKE_RAILWAY_STATE/exact" ]]
     echo '{"exact":true}'
-    ;;
-  backfill-git-segments-v2)
-    [[ ! -f "$FAKE_RAILWAY_STATE/apply-attempted" ]]
-    touch "$FAKE_RAILWAY_STATE/git-segments-v2-backfilled"
-    echo '{"gitSegmentsBackfilled":1}'
     ;;
   cleanup-git-segments-v1)
     [[ -f "$FAKE_RAILWAY_STATE/exact" ]]
@@ -345,7 +340,6 @@ assert_in_order "$test_dir/success-trace" \
   "graphql stop scope-cache-service old-scope-cache-service" \
   "$test_dir/maintenance fence" \
   "$test_dir/maintenance validate-workflow-catalogs" \
-  "$test_dir/maintenance backfill-git-segments-v2" \
   "$test_dir/maintenance apply" \
   "$test_dir/maintenance verify" \
   "$test_dir/maintenance cleanup-git-segments-v1" \
@@ -505,27 +499,22 @@ fi
 run_cutover rollback rollback
 [[ "$(cat "$test_dir/rollback-result")" != "0" ]]
 assert_in_order "$test_dir/rollback-trace" \
-  "$test_dir/maintenance backfill-git-segments-v2" \
   "$test_dir/maintenance apply" \
   "$test_dir/maintenance plan"
 if grep -E 'graphql restart|up ' "$test_dir/rollback-trace"; then
-  echo "unchanged schema ledger cannot restore old binaries after object-storage backfill" >&2
-  exit 1
-fi
-
-# Gates retire old deployment identities even if the schema transaction rolls back.
-cp "$test_dir/maintenance" "$test_dir/maintenance-with-object-backfill"
-sed -i 's/m0033_git_segment_streaming_v2/m0040_repository_metadata/g' "$test_dir/maintenance"
-run_cutover transactional-rollback rollback
-[[ "$(cat "$test_dir/transactional-rollback-result")" != "0" ]]
-assert_in_order "$test_dir/transactional-rollback-trace" \
-  "$test_dir/maintenance apply" \
-  "$test_dir/maintenance plan"
-if grep -F "graphql restart " "$test_dir/transactional-rollback-trace"; then
   echo "removed predecessors must not be restarted after gate replacement" >&2
   exit 1
 fi
-mv "$test_dir/maintenance-with-object-backfill" "$test_dir/maintenance"
+
+run_cutover rollback 0 0 "" 0 1
+[[ "$(cat "$test_dir/rollback-result")" == "0" ]]
+assert_in_order "$test_dir/rollback-trace" \
+  "$test_dir/maintenance plan" \
+  "$test_dir/maintenance apply" \
+  "$test_dir/maintenance verify" \
+  "up $test_dir/cache" \
+  "up $test_dir/run-worker" \
+  "up $test_dir/api"
 
 run_cutover unknown committed-error 0 "" 1
 [[ "$(cat "$test_dir/unknown-result")" != "0" ]]

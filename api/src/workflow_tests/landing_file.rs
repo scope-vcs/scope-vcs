@@ -1,6 +1,5 @@
 use super::*;
 use scope_domain::landing_file::{RepositoryLandingFile, RepositoryLandingFileMutation};
-use scope_object_store::ObjectStore;
 
 #[tokio::test]
 async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() {
@@ -58,11 +57,6 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
-    let head = repo.git_head.as_ref().unwrap();
-    state
-        .test_object_store
-        .delete(&scope_object_store::object_key(&head.manifest))
-        .unwrap();
     for span in &repo.git_pack_spans {
         state
             .git_segment_store
@@ -80,16 +74,14 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
         fs::remove_dir_all(cache_path).unwrap();
     }
 
-    let response = router(state)
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/v1/repos/owner/repo/files/content?path=README.html")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = api_request(
+        router(state),
+        "GET",
+        "/v1/repos/owner/repo/files/content?path=README.html",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -113,16 +105,14 @@ async fn missing_landing_snapshot_does_not_fall_back_to_git() {
     repo.live_files.insert(path, readme);
     replace_test_repo(&state, repo).await;
 
-    let response = router(state)
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/v1/repos/owner/repo/files/content?path=README.html")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = api_request(
+        router(state),
+        "GET",
+        "/v1/repos/owner/repo/files/content?path=README.html",
+        None,
+        None,
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }

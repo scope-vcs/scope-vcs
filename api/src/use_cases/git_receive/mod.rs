@@ -451,9 +451,10 @@ async fn best_effort_sync_cache(
     {
         Ok(Some(repo)) => {
             let is_still_current = repo.incarnation == *committed_incarnation
-                && repo.git_head.as_ref().is_some_and(|head| {
-                    head.manifest.content_ref == committed_git_head.manifest.content_ref
-                });
+                && repo
+                    .git_head
+                    .as_ref()
+                    .is_some_and(|head| head.frontier() == committed_git_head.frontier());
             let sync_result = if is_still_current {
                 let engine = state.repository_engine.clone();
                 let incarnation = committed_incarnation.clone();

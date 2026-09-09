@@ -19,12 +19,11 @@ use axum::{
 };
 use scope_api_contract::{
     AppendAttemptLogRequest, AttemptCacheKeyMaterial, AttemptConclusionRequest,
-    AttemptHeartbeatRequest, AttemptHeartbeatResponse, AttemptRecoveryStatusResponse, AttemptState,
-    AttemptStatusResponse, AttemptStepStatusResponse, CacheColdReason, CacheFinalState,
-    CachePreparation, ClaimRuntimeResponse, CompleteAttemptRequest, CompleteAttemptStepRequest,
-    ReportAttemptCacheFinalizationsRequest, ReportAttemptCachePreparationsRequest, RunChangeKind,
-    RunJobResponse, StepConclusionRequest, StepState, WorkflowCache, WorkflowCacheKeyInputs,
-    WorkflowContainer, WorkflowJob, WorkflowStep,
+    AttemptHeartbeatRequest, AttemptHeartbeatResponse, AttemptRecoveryStatusResponse,
+    AttemptStatusResponse, AttemptStepStatusResponse, CachePreparation, ClaimRuntimeResponse,
+    CompleteAttemptRequest, CompleteAttemptStepRequest, ReportAttemptCacheFinalizationsRequest,
+    ReportAttemptCachePreparationsRequest, RunChangeKind, RunJobResponse, StepConclusionRequest,
+    WorkflowCache, WorkflowCacheKeyInputs, WorkflowContainer, WorkflowJob, WorkflowStep,
 };
 use scope_domain::{
     runs::cache::identity::{CacheIdentity, CacheNamespace, CachePlatform},
@@ -174,7 +173,7 @@ pub(crate) async fn report_cache_finalizations(
                 .map(
                     |cache| scope_postgres::db::AttemptCacheFinalizationCommand {
                         identity_digest: cache.identity_digest,
-                        final_state: domain_cache_final_state(cache.final_state),
+                        final_state: cache.final_state.into(),
                         finalize_ms: cache.finalize_ms,
                     },
                 )
@@ -359,7 +358,7 @@ async fn publish_claim_status_change(state: &AppState, claim: &scope_postgres::d
 
 fn attempt_status(claim: &scope_postgres::db::DispatchClaim) -> AttemptStatusResponse {
     AttemptStatusResponse {
-        state: attempt_state(claim.attempt.state),
+        state: claim.attempt.state.into(),
         cancellation_requested: claim.run.cancellation_requested,
         lease_expires_at_unix: claim.attempt.lease_expires_at_unix,
     }
@@ -467,7 +466,7 @@ fn issue_cache_grant(
 fn attempt_step_status(step: &RunAttemptStep) -> AttemptStepStatusResponse {
     AttemptStepStatusResponse {
         step_index: step.step_index,
-        state: step_state(step.state),
+        state: step.state.into(),
         started_at_unix: step.started_at_unix,
         completed_at_unix: step.completed_at_unix,
         exit_code: step.exit_code,
@@ -484,70 +483,18 @@ fn workflow_cache_inputs(
     }
 }
 
-fn attempt_state(state: scope_domain::runs::attempt::AttemptState) -> AttemptState {
-    match state {
-        scope_domain::runs::attempt::AttemptState::Dispatching => AttemptState::Dispatching,
-        scope_domain::runs::attempt::AttemptState::Running => AttemptState::Running,
-        scope_domain::runs::attempt::AttemptState::Succeeded => AttemptState::Succeeded,
-        scope_domain::runs::attempt::AttemptState::Failed => AttemptState::Failed,
-        scope_domain::runs::attempt::AttemptState::Canceled => AttemptState::Canceled,
-        scope_domain::runs::attempt::AttemptState::Lost => AttemptState::Lost,
-    }
-}
-
-fn step_state(state: scope_domain::runs::step::StepState) -> StepState {
-    match state {
-        scope_domain::runs::step::StepState::Pending => StepState::Pending,
-        scope_domain::runs::step::StepState::Running => StepState::Running,
-        scope_domain::runs::step::StepState::Succeeded => StepState::Succeeded,
-        scope_domain::runs::step::StepState::Failed => StepState::Failed,
-        scope_domain::runs::step::StepState::Canceled => StepState::Canceled,
-        scope_domain::runs::step::StepState::Lost => StepState::Lost,
-        scope_domain::runs::step::StepState::Skipped => StepState::Skipped,
-    }
-}
-
 fn domain_cache_preparation(
     preparation: CachePreparation,
 ) -> scope_domain::runs::cache::observation::CachePreparation {
     match preparation {
         CachePreparation::Exact => scope_domain::runs::cache::observation::CachePreparation::Exact,
-        CachePreparation::Compatible => scope_domain::runs::cache::observation::CachePreparation::Compatible,
-        CachePreparation::Cold { reason } => scope_domain::runs::cache::observation::CachePreparation::Cold {
-            reason: match reason {
-                CacheColdReason::MetadataMissing => {
-                    scope_domain::runs::cache::observation::CacheColdReason::MetadataMissing
-                }
-                CacheColdReason::MetadataInvalid => {
-                    scope_domain::runs::cache::observation::CacheColdReason::MetadataInvalid
-                }
-                CacheColdReason::MetadataNotReady => {
-                    scope_domain::runs::cache::observation::CacheColdReason::MetadataNotReady
-                }
-                CacheColdReason::VolumeMissing => {
-                    scope_domain::runs::cache::observation::CacheColdReason::VolumeMissing
-                }
-                CacheColdReason::VolumeInvalid => {
-                    scope_domain::runs::cache::observation::CacheColdReason::VolumeInvalid
-                }
-                CacheColdReason::BackingDirectoryMissing => {
-                    scope_domain::runs::cache::observation::CacheColdReason::BackingDirectoryMissing
-                }
-            },
-        },
-    }
-}
-
-fn domain_cache_final_state(
-    state: CacheFinalState,
-) -> scope_domain::runs::cache::observation::CacheFinalState {
-    match state {
-        CacheFinalState::Pending => {
-            scope_domain::runs::cache::observation::CacheFinalState::Pending
+        CachePreparation::Compatible => {
+            scope_domain::runs::cache::observation::CachePreparation::Compatible
         }
-        CacheFinalState::Ready => scope_domain::runs::cache::observation::CacheFinalState::Ready,
-        CacheFinalState::Evicted => {
-            scope_domain::runs::cache::observation::CacheFinalState::Evicted
+        CachePreparation::Cold { reason } => {
+            scope_domain::runs::cache::observation::CachePreparation::Cold {
+                reason: reason.into(),
+            }
         }
     }
 }

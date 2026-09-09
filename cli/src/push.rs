@@ -1,3 +1,4 @@
+use crate::api::ApiSession;
 use crate::{
     agent_context::ensure_repo_rules_ready_for_push,
     api::{
@@ -58,13 +59,8 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     let target = load_scope_remote(&git_repo, &api_url, &remote)?;
     let client = http_client()?;
     let session = session_from_cache_or_browser(&client, &api_url)?;
-    let push_context = get_repo_config(
-        &client,
-        &api_url,
-        &session.token,
-        &target.owner,
-        &target.repo,
-    )?;
+    let api = ApiSession::new(&client, &api_url, &session.token);
+    let push_context = get_repo_config(api, &target.owner, &target.repo)?;
     ensure_scope_remote_can_receive_push(
         &target,
         push_context.lifecycle_state,
@@ -133,9 +129,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     }
     let base_config_hash = load_worktree_scope_repo_config_base_hash(&git_repo.root)?;
     let intent = create_push_intent(
-        &client,
-        &api_url,
-        &session.token,
+        api,
         CreatePushIntentParams {
             owner: &target.owner,
             repo: &target.repo,
@@ -188,24 +182,9 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     receipt["config_synced"] = json!(true);
     if wait {
         eprintln!("Push applied at {reviewed_head_oid}; waiting for workflows.");
-        let wait_result = get_push_trigger_evaluation(
-            &client,
-            &api_url,
-            &session.token,
-            &target.owner,
-            &target.repo,
-            &reviewed_head_oid,
-        )
-        .and_then(|evaluation| {
-            wait_for_push_runs(
-                &client,
-                &api_url,
-                &session.token,
-                &target,
-                &remote,
-                evaluation,
-            )
-        });
+        let wait_result =
+            get_push_trigger_evaluation(api, &target.owner, &target.repo, &reviewed_head_oid)
+                .and_then(|evaluation| wait_for_push_runs(api, &target, &remote, evaluation));
         receipt["workflows"] = wait_result.map_err(|error| applied_push_error(&receipt,
             format!("Push applied, but workflow waiting failed: {error:#}"),
             "Inspect scope run list and scope run show for this commit. Do not repeat the push to retry waiting."))?;
@@ -221,9 +200,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
 }
 
 fn wait_for_push_runs(
-    client: &reqwest::blocking::Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: &ScopeRemote,
     remote: &str,
     mut evaluation: PushTriggerEvaluationResponse,
@@ -232,14 +209,8 @@ fn wait_for_push_runs(
     while evaluation.state == PushTriggerEvaluationState::Pending {
         ensure_evaluation_poll_remaining(polls)?;
         thread::sleep(Duration::from_secs(1));
-        evaluation = get_push_trigger_evaluation(
-            client,
-            api_url,
-            session_token,
-            &target.owner,
-            &target.repo,
-            &evaluation.head_oid,
-        )?;
+        evaluation =
+            get_push_trigger_evaluation(api, &target.owner, &target.repo, &evaluation.head_oid)?;
         polls += 1;
     }
     match evaluation.state {

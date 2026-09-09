@@ -18,7 +18,8 @@ caller's working directory.
 
 Callers install Rust, Node and pnpm dependencies, configure databases and secrets,
 and start/stop integration stacks. The contract check needs Rust and web
-dependencies. CLI integration requires `SCOPE_CLI_E2E=1` and `SCOPE_API_URL`.
+dependencies. CLI integration requires `SCOPE_API_URL`. The integration entrypoint
+explicitly runs the contribution test; ordinary CLI test runs report it as ignored.
 GitHub retains native distribution build matrices; these scripts do not select
 platforms or provision credentials. Repository policy always checks the full
 checkout, including source outside `web/`.

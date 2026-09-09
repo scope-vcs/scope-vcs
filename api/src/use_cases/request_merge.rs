@@ -17,10 +17,8 @@ use crate::{
     repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs,
 };
 use scope_domain::{
-    content::SourceBlob,
     landing_file::RepositoryLandingFileMutation,
     projection::{ProjectionViewKey, project_graph},
     repo_actions::reviewed_update_domain_error,
@@ -37,7 +35,6 @@ use scope_domain::{
     runs::catalog::RepositoryWorkflowCatalog,
 };
 use scope_git_storage::StagedGitSegment;
-use scope_postgres::db::ContentRefFence;
 use scope_postgres::db::RepositoryGitWriteLease;
 
 pub(crate) struct MergeRequestCommand {
@@ -61,22 +58,15 @@ struct PersistedRequestMerge {
 
 pub(crate) struct PreparedRequestMerge {
     pub(crate) repository_id: String,
-    pub(crate) expected_manifest_ref: scope_domain::content_ref::ContentRef,
+    pub(crate) expected_git_frontier: scope_domain::repository::git::GitFrontier,
     pub(crate) expected_repo_change_version: u64,
     pub(crate) prepared_request_head_oid: String,
     pub(crate) origin: RequestMergeOrigin,
     pub(crate) landing_file_mutation: RepositoryLandingFileMutation,
     pub(crate) workflow_catalog: RepositoryWorkflowCatalog,
     pub(crate) update: ReceivePackUpdate,
-    pub(crate) fence: ContentRefFence,
     pub(crate) staged_segment: StagedGitSegment,
     pub(crate) write_lease: RepositoryGitWriteLease,
-}
-
-impl PreparedRequestMerge {
-    pub(crate) fn durable_objects(&self) -> &[SourceBlob] {
-        &self.update.durable_objects
-    }
 }
 
 pub(crate) async fn merge_request(
@@ -173,8 +163,6 @@ async fn persist_prepared_merge(
     now_unix: u64,
     prepared: PreparedRequestMerge,
 ) -> Result<PersistedRequestMerge, ApiError> {
-    let durable_objects = prepared.durable_objects().to_vec();
-    let fence = prepared.fence;
     let staged_segment = prepared.staged_segment;
     let write_lease = prepared.write_lease;
     let repository_id = scope_domain::repository::repo_id(&command.owner, &command.repo_name);
@@ -184,7 +172,7 @@ async fn persist_prepared_merge(
         .merge_request_content(
             &command.owner,
             &command.repo_name,
-            &prepared.expected_manifest_ref,
+            &prepared.expected_git_frontier,
             prepared.expected_repo_change_version,
             &prepared.prepared_request_head_oid,
             prepared.update.into_reviewed_update(),
@@ -205,7 +193,6 @@ async fn persist_prepared_merge(
         .await;
     match mutation {
         Ok(mutation) => {
-            fence.release().await;
             if let Err(error) = state.git_segment_store.delete_local(&staged_segment).await {
                 tracing::warn!(
                     repository_id,
@@ -227,8 +214,6 @@ async fn persist_prepared_merge(
                 &staged_segment,
             )
             .await;
-            best_effort_cleanup_rollback_source_blobs(state, &durable_objects).await;
-            fence.release().await;
             write_lease.release().await;
             Err(error.into())
         }
@@ -318,7 +303,6 @@ pub(crate) async fn prepare_request_merge(
         )?;
         let PreparedReceivePackUpdate {
             update,
-            fence,
             staged_segment,
             write_lease,
             upload_heartbeat: _upload_heartbeat,
@@ -345,12 +329,7 @@ pub(crate) async fn prepare_request_merge(
                 &proposed_repo.visibility_change_sets,
                 ProjectionViewKey::Public,
             );
-            verify_projection_materialization(
-                state,
-                &public_projection,
-                &staging_repo,
-                &update.git_head.manifest,
-            )
+            verify_projection_materialization(state, &public_projection, &staging_repo)
         })();
         if let Err(error) = preflight {
             crate::git::import::best_effort_delete_staged_git_segment(
@@ -359,21 +338,18 @@ pub(crate) async fn prepare_request_merge(
                 &staged_segment,
             )
             .await;
-            best_effort_cleanup_rollback_source_blobs(state, &update.durable_objects).await;
-            fence.release().await;
             write_lease.release().await;
             return Err(error);
         }
         Ok(PreparedRequestMerge {
             repository_id: repo.record.id.clone(),
-            expected_manifest_ref: current.manifest.content_ref.clone(),
+            expected_git_frontier: current.frontier(),
             expected_repo_change_version: repo.record.change_version,
             prepared_request_head_oid: request.head_oid.clone(),
             origin,
             landing_file_mutation: update.landing_file_mutation.clone(),
             workflow_catalog: update.workflow_catalog.clone(),
             update,
-            fence,
             staged_segment,
             write_lease,
         })
@@ -390,8 +366,6 @@ pub(crate) async fn prepare_request_merge(
                 &value.staged_segment,
             )
             .await;
-            best_effort_cleanup_rollback_source_blobs(state, &value.update.durable_objects).await;
-            value.fence.release().await;
             value.write_lease.release().await;
             Err(error)
         }
@@ -405,8 +379,6 @@ async fn cleanup_prepared_merge(state: &AppState, prepared: PreparedRequestMerge
         &prepared.staged_segment,
     )
     .await;
-    best_effort_cleanup_rollback_source_blobs(state, prepared.durable_objects()).await;
-    prepared.fence.release().await;
     prepared.write_lease.release().await;
 }
 

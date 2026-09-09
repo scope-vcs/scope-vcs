@@ -66,10 +66,8 @@ async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinn
     let source = RunSource::accepted_git_head(
         "owner/repo",
         GitHead {
-            head_oid: pushed.stored.head.head_oid.clone(),
-            push_sequence: pushed.stored.head.push_sequence,
             change_version: 1,
-            manifest: pushed.stored.head.manifest.clone(),
+            ..pushed.stored.head.clone()
         },
         vec![pushed.stored.pack_span.clone()],
         ProjectionViewKey::Private,
@@ -221,10 +219,8 @@ async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirect
     let source = RunSource::accepted_git_head(
         "owner/repo",
         GitHead {
-            head_oid: pushed.stored.head.head_oid.clone(),
-            push_sequence: pushed.stored.head.push_sequence,
             change_version: 1,
-            manifest: pushed.stored.head.manifest.clone(),
+            ..pushed.stored.head.clone()
         },
         vec![pushed.stored.pack_span.clone()],
         ProjectionViewKey::Private,

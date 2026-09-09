@@ -1,3 +1,4 @@
+use crate::api::ApiSession;
 use crate::{
     api::{RepoSummaryResponse, RequestSummaryResponse, get_repo, list_requests},
     git_repo::{
@@ -9,7 +10,6 @@ use crate::{
     request::remote::{REQUEST_REMOTE_KEY, RequestRemoteTarget},
 };
 use anyhow::{Context, bail};
-use reqwest::blocking::Client;
 use scope_api_contract::RequestAudience;
 
 const REQUEST_ID_KEY: &str = "scopeRequestId";
@@ -24,33 +24,22 @@ pub(super) struct RequestContext {
 
 pub(super) fn load_context(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     remote: Option<&str>,
 ) -> anyhow::Result<RequestContext> {
     let target = crate::context::resolve_repository(git_repo, remote)?;
-    let repo = get_repo(client, api_url, session_token, &target.owner, &target.repo)?;
+    let repo = get_repo(api, &target.owner, &target.repo)?;
     Ok(RequestContext { target, repo })
 }
 
 pub(super) fn load_context_and_request_id(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     remote: Option<String>,
     request_id: Option<String>,
 ) -> anyhow::Result<(RequestContext, String)> {
-    let context = load_context(git_repo, client, api_url, session_token, remote.as_deref())?;
-    let request_id = request_id_for_context(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        &context,
-        request_id,
-    )?;
+    let context = load_context(git_repo, api, remote.as_deref())?;
+    let request_id = request_id_for_context(git_repo, api, &context, request_id)?;
     Ok((context, request_id))
 }
 
@@ -94,21 +83,11 @@ pub(super) fn push_request_head(
 
 pub(super) fn request_id_for_context(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     context: &RequestContext,
     request_id: Option<String>,
 ) -> anyhow::Result<String> {
-    maybe_request_id_for_context(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        context,
-        request_id,
-    )?
-    .ok_or_else(|| {
+    maybe_request_id_for_context(git_repo, api, context, request_id)?.ok_or_else(|| {
         crate::error::CliError::usage(
             "select a visible request with --request <name-or-id>, or check out its branch",
         )
@@ -118,9 +97,7 @@ pub(super) fn request_id_for_context(
 
 pub(super) fn maybe_request_id_for_context(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     context: &RequestContext,
     request_id: Option<String>,
 ) -> anyhow::Result<Option<String>> {
@@ -156,9 +133,7 @@ pub(super) fn maybe_request_id_for_context(
     let mut cursor = None;
     loop {
         let page = list_requests(
-            client,
-            api_url,
-            session_token,
+            api,
             &context.target.owner,
             &context.target.repo,
             cursor.as_deref(),

@@ -76,10 +76,11 @@ impl RequestStore {
         let target = user_by_exact_handle(&tx, &command.target_handle)
             .await?
             .ok_or_else(|| PostgresError::not_found("user not found"))?;
-        let mut invitees = request_invitee_map(&tx, &request.id).await?;
+        let invitees = request_invitee_map(&tx, &request.id).await?;
         let invitee = add_invitee(
             &request,
-            &mut invitees,
+            invitees.contains_key(&target.id),
+            invitees.len(),
             AddRequestInviteeInput {
                 actor_user_id: command.actor_user_id,
                 target_user_id: target.id.clone(),
@@ -117,10 +118,10 @@ impl RequestStore {
         let target = user_by_exact_handle(&tx, &command.target_handle)
             .await?
             .ok_or_else(|| PostgresError::not_found("user not found"))?;
-        let mut invitees = request_invitee_map(&tx, &request.id).await?;
+        let invitees = request_invitee_map(&tx, &request.id).await?;
         let invitee = remove_invitee(
             &request,
-            &mut invitees,
+            invitees.get(&target.id).cloned(),
             RemoveRequestInviteeInput {
                 actor_user_id: command.actor_user_id,
                 target_user_id: target.id.clone(),
@@ -148,10 +149,10 @@ impl RequestStore {
         let decision =
             request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
         ensure_exact_visibility(decision.exact_visible)?;
-        let mut invitees = request_invitee_map(&tx, &request.id).await?;
+        let invitees = request_invitee_map(&tx, &request.id).await?;
         let invitee = leave_request(
             &request,
-            &mut invitees,
+            invitees.get(&command.actor_user_id).cloned(),
             LeaveRequestInput {
                 actor_user_id: command.actor_user_id,
                 actor_can_leave_request: decision.permissions.can_leave_request,

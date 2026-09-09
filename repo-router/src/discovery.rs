@@ -404,11 +404,18 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         let calls = Arc::new(AtomicUsize::new(0));
         let resolver_calls = Arc::clone(&calls);
+        let refresh_started = Arc::new(Notify::new());
+        let resolver_started = Arc::clone(&refresh_started);
+        let release_refresh = Arc::new(tokio::sync::Semaphore::new(0));
+        let resolver_release = Arc::clone(&release_refresh);
         let resolver = Arc::new(move |_authority: Arc<str>| {
             let call = resolver_calls.fetch_add(1, Ordering::SeqCst);
+            let started = Arc::clone(&resolver_started);
+            let release = Arc::clone(&resolver_release);
             Box::pin(async move {
                 if call > 0 {
-                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    started.notify_one();
+                    release.acquire().await.unwrap().forget();
                 }
                 Ok(vec![
                     if call == 0 {
@@ -424,25 +431,25 @@ mod tests {
         let discovery = BackendDiscovery::with_resolver(&config(), resolver);
         discovery.backends().await.unwrap();
         age_snapshot(&discovery, Duration::from_secs(11)).await;
-        let start = Instant::now();
         let mut readers = tokio::task::JoinSet::new();
         for _ in 0..20 {
             let discovery = discovery.clone();
             readers.spawn(async move { discovery.backends().await.unwrap() });
         }
-        while let Some(result) = readers.join_next().await {
-            let result = result.unwrap();
-            assert_eq!(result.freshness, DiscoveryFreshness::Stale);
-            assert_eq!(
-                result.backends[0].address,
-                "127.0.0.1:8080".parse().unwrap()
-            );
-        }
-        assert!(start.elapsed() < Duration::from_millis(100));
-        eprintln!(
-            "20 cached readers: {:?}; resolver delay: 250ms",
-            start.elapsed()
-        );
+        tokio::time::timeout(Duration::from_secs(5), async {
+            refresh_started.notified().await;
+            while let Some(result) = readers.join_next().await {
+                let result = result.unwrap();
+                assert_eq!(result.freshness, DiscoveryFreshness::Stale);
+                assert_eq!(
+                    result.backends[0].address,
+                    "127.0.0.1:8080".parse().unwrap()
+                );
+            }
+        })
+        .await
+        .expect("cached readers finish while the refresh is still blocked");
+        release_refresh.add_permits(1);
         wait_for_refresh(&discovery).await;
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         assert_eq!(

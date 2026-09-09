@@ -220,17 +220,14 @@ fn clerk_token_policy_cases() {
 #[tokio::test]
 async fn missing_clerk_identity_still_bootstraps_from_session_read() {
     let state = test_state_with_jwks();
-    let response = router(state.clone())
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/v1/session")
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = api_request(
+        router(state.clone()),
+        "GET",
+        "/v1/session",
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_json(response).await;
     assert_eq!(body["identity"]["user_id"], test_owner_id());
@@ -350,10 +347,10 @@ async fn concurrent_unknown_key_requests_share_one_refresh() {
 #[tokio::test]
 async fn sequential_unknown_keys_wait_for_the_successful_refresh_cooldown() {
     let server = MockJwksServer::start(test_jwks()).await;
-    let cooldown = Duration::from_millis(500);
+    let cooldown = Duration::from_secs(60 * 60);
     let verifier = verifier_with_unknown_key_cooldown(
         &server,
-        Duration::from_secs(60),
+        cooldown * 2,
         Duration::from_secs(60),
         cooldown,
     );
@@ -362,7 +359,7 @@ async fn sequential_unknown_keys_wait_for_the_successful_refresh_cooldown() {
         .await
         .unwrap();
 
-    tokio::time::sleep(cooldown + Duration::from_millis(50)).await;
+    verifier.set_cached_jwks_age_for_tests(cooldown + Duration::from_secs(1));
     let first_miss = verifier
         .verify(&token_signed_with("arbitrary-key-one"))
         .await
@@ -383,7 +380,7 @@ async fn sequential_unknown_keys_wait_for_the_successful_refresh_cooldown() {
     assert_eq!(cooldown_miss.kind, crate::error::ErrorKind::Unauthorized);
     assert_eq!(server.request_count(), 2);
 
-    tokio::time::sleep(cooldown + Duration::from_millis(50)).await;
+    verifier.set_cached_jwks_age_for_tests(cooldown + Duration::from_secs(1));
     verifier
         .verify(&token_signed_with("rotated-key"))
         .await

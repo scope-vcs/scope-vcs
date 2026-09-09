@@ -77,13 +77,6 @@ where
     C: ConnectionTrait,
 {
     entities::object_reference::Entity::delete_many()
-        .filter(entities::object_reference::Column::RefKind.eq("git_manifest"))
-        .filter(entities::object_reference::Column::RefId.eq(repo_id.to_string()))
-        .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
-
-    entities::object_reference::Entity::delete_many()
         .filter(entities::object_reference::Column::RefKind.is_in([
             "file_change",
             "visibility_change",
@@ -140,16 +133,16 @@ mod tests {
         let target = TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         let shared = SourceBlob {
-            content_ref: ContentRef::git_manifest_sha256("shared-manifest"),
-            sha256: "shared-manifest".to_string(),
+            content_ref: ContentRef::blob_sha256("shared-blob"),
+            sha256: "shared-blob".to_string(),
             git_oid: "1111111111111111111111111111111111111111".to_string(),
             git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
             size_bytes: 42,
         };
-        insert_object_reference(store.db.as_ref(), "git_manifest", "owner-a/repo", &shared)
+        insert_object_reference(store.db.as_ref(), "file_change", "owner-a/repo:1", &shared)
             .await
             .unwrap();
-        insert_object_reference(store.db.as_ref(), "git_manifest", "owner-b/repo", &shared)
+        insert_object_reference(store.db.as_ref(), "file_change", "owner-b/repo:1", &shared)
             .await
             .unwrap();
 
@@ -162,8 +155,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].ref_kind, "git_manifest");
-        assert_eq!(rows[0].ref_id, "owner-b/repo");
+        assert_eq!(rows[0].ref_kind, "file_change");
+        assert_eq!(rows[0].ref_id, "owner-b/repo:1");
         assert_eq!(
             decode_content_ref(&rows[0].object_key).unwrap(),
             shared.content_ref

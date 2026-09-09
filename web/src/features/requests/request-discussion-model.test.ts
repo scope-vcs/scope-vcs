@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { discussion } from './request-discussion-test-fixtures'
 import {
   appendDiscussionPage,
   applyDiscussionChanges,
@@ -13,7 +14,6 @@ import {
   reconcileDiscussionMutation,
 } from './request-discussion-model'
 import type {
-  RequestDiscussion,
   RequestDiscussionView,
 } from './request-discussion-types'
 
@@ -463,24 +463,3 @@ test('mark read is monotonic in the client projection', () => {
   assert.equal(read.byId.get('one')?.unread_count, 0)
   assert.equal(markDiscussionRead(read, 'one'), read)
 })
-
-function discussion(id: string, lastActivity: number): RequestDiscussion {
-  return {
-    anchor: null,
-    author: { handle: 'maya', id: 'user-maya' },
-    body_markdown: `Discussion ${id}`,
-    client_discussion_id: id,
-    created_at_unix: lastActivity,
-    id,
-    last_activity_position: lastActivity,
-    latest_replies: [],
-    opened_position: lastActivity,
-    read_through_position: lastActivity,
-    reply_count: 0,
-    request_id: 'request-1',
-    resolved_at_unix: null,
-    resolved_by: null,
-    status: 'Open',
-    unread_count: 0,
-  }
-}

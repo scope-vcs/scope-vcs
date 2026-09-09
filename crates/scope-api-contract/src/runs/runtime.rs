@@ -1,39 +1,50 @@
+use crate::wire::wire_enum;
+use scope_domain::runs::{
+    attempt::AttemptState as DomainAttemptState,
+    cache::observation::{
+        CacheColdReason as DomainCacheColdReason, CacheFinalState as DomainCacheFinalState,
+    },
+    step::StepState as DomainStepState,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AttemptState {
-    Dispatching,
-    Running,
-    Succeeded,
-    Failed,
-    Canceled,
-    Lost,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    AttemptState => DomainAttemptState {
+        Dispatching,
+        Running,
+        Succeeded,
+        Failed,
+        Canceled,
+        Lost,
+    }
+);
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum StepState {
-    Pending,
-    Running,
-    Succeeded,
-    Failed,
-    Canceled,
-    Lost,
-    Skipped,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    StepState => DomainStepState {
+        Pending,
+        Running,
+        Succeeded,
+        Failed,
+        Canceled,
+        Lost,
+        Skipped,
+    }
+);
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum CacheColdReason {
-    MetadataMissing,
-    MetadataInvalid,
-    MetadataNotReady,
-    VolumeMissing,
-    VolumeInvalid,
-    BackingDirectoryMissing,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    CacheColdReason => DomainCacheColdReason {
+        MetadataMissing,
+        MetadataInvalid,
+        MetadataNotReady,
+        VolumeMissing,
+        VolumeInvalid,
+        BackingDirectoryMissing,
+    }
+);
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -43,13 +54,14 @@ pub enum CachePreparation {
     Cold { reason: CacheColdReason },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum CacheFinalState {
-    Pending,
-    Ready,
-    Evicted,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    CacheFinalState => DomainCacheFinalState {
+        Pending,
+        Ready,
+        Evicted,
+    }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

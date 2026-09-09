@@ -1,35 +1,19 @@
 use super::text::terminal_text;
 use super::*;
+use crate::api::ApiSession;
 pub(super) fn load_exact_request(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTargetArgs,
 ) -> anyhow::Result<(
     local::RequestContext,
     String,
     crate::api::RequestDetailResponse,
 )> {
-    let context = load_context(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        target.remote.as_deref(),
-    )?;
-    let request_id = request_id_for_context(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        &context,
-        target.request,
-    )?;
+    let context = load_context(git_repo, api, target.remote.as_deref())?;
+    let request_id = request_id_for_context(git_repo, api, &context, target.request)?;
     let detail = get_request(
-        client,
-        api_url,
-        session_token,
+        api,
         &context.target.owner,
         &context.target.repo,
         &request_id,
@@ -47,23 +31,15 @@ fn api_target<'a>(context: &'a local::RequestContext, request_id: &'a str) -> Re
 
 pub(super) fn submit_request_command(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTargetArgs,
     yes: bool,
     machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, before) =
-        load_exact_request(git_repo, client, api_url, session_token, target)?;
+    let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
     let prompt = "Submit this request to its maintainers";
     require_confirmation(prompt, yes, !machine_output)?;
-    let response = api_submit_request(
-        client,
-        api_url,
-        session_token,
-        api_target(&context, &request_id),
-    )?;
+    let response = api_submit_request(api, api_target(&context, &request_id))?;
     let human_lines = request_mutation_receipt_lines("Submitted", Some(&before.request), &response);
     Ok(RequestCommandOutcome::new(
         "request.submit",
@@ -77,19 +53,14 @@ pub(super) fn submit_request_command(
 
 pub(super) fn edit_request(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: args::RequestEditArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let supplied_description = args.description_file.map(text::read_markdown).transpose()?;
-    let (context, request_id, before) =
-        load_exact_request(git_repo, client, api_url, session_token, args.target)?;
+    let (context, request_id, before) = load_exact_request(git_repo, api, args.target)?;
     let has_attachments = !args.attachments.paths.is_empty();
     let uploaded = attachments::upload(
-        client,
-        api_url,
-        session_token,
+        api,
         api_target(&context, &request_id),
         scope_api_contract::attachments::RequestAttachmentTargetInput {
             kind: scope_api_contract::attachments::RequestAttachmentTargetKind::Description,
@@ -116,9 +87,7 @@ pub(super) fn edit_request(
         supplied_description
     };
     let response = edit_request_identity(
-        client,
-        api_url,
-        session_token,
+        api,
         api_target(&context, &request_id),
         args.title,
         description,
@@ -129,9 +98,7 @@ pub(super) fn edit_request(
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
     let attachments = if args.attachments.wait {
         attachments::wait_for_processing(
-            client,
-            api_url,
-            session_token,
+            api,
             api_target(&context, &request_id),
             uploaded.attachments,
             serde_json::json!({
@@ -191,34 +158,19 @@ fn exact_handle(handle: String) -> anyhow::Result<String> {
 
 pub(super) fn invite_request(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTargetArgs,
     handle: String,
     invite: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, _) =
-        load_exact_request(git_repo, client, api_url, session_token, target)?;
+    let (context, request_id, _) = load_exact_request(git_repo, api, target)?;
     let handle = exact_handle(handle)?;
     let (command, response, human_line) = if invite {
-        let response = add_request_invitee(
-            client,
-            api_url,
-            session_token,
-            api_target(&context, &request_id),
-            handle,
-        )?;
+        let response = add_request_invitee(api, api_target(&context, &request_id), handle)?;
         let human_line = invitee_added_receipt(&response);
         ("request.invite", response, human_line)
     } else {
-        let response = remove_request_invitee(
-            client,
-            api_url,
-            session_token,
-            api_target(&context, &request_id),
-            handle,
-        )?;
+        let response = remove_request_invitee(api, api_target(&context, &request_id), handle)?;
         let human_line = invitee_removed_receipt(&response);
         ("request.uninvite", response, human_line)
     };
@@ -234,19 +186,11 @@ pub(super) fn invite_request(
 
 pub(super) fn leave_invited_request(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTargetArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, _) =
-        load_exact_request(git_repo, client, api_url, session_token, target)?;
-    let response = leave_request(
-        client,
-        api_url,
-        session_token,
-        api_target(&context, &request_id),
-    )?;
+    let (context, request_id, _) = load_exact_request(git_repo, api, target)?;
+    let response = leave_request(api, api_target(&context, &request_id))?;
     let human_line = leave_receipt(&request_id, &response);
     Ok(RequestCommandOutcome::new(
         "request.leave",
@@ -261,26 +205,18 @@ pub(super) fn leave_invited_request(
 
 pub(super) fn merge_request_command(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTargetArgs,
     yes: bool,
     machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, before) =
-        load_exact_request(git_repo, client, api_url, session_token, target)?;
+    let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
     require_confirmation(
         &merge_confirmation(&before.request.name, before.request.state),
         yes,
         !machine_output,
     )?;
-    let response = merge_request(
-        client,
-        api_url,
-        session_token,
-        api_target(&context, &request_id),
-    )?;
+    let response = merge_request(api, api_target(&context, &request_id))?;
     let human_lines = request_mutation_receipt_lines("Merged", Some(&before.request), &response);
     Ok(RequestCommandOutcome::new(
         "request.merge",
@@ -294,23 +230,13 @@ pub(super) fn merge_request_command(
 
 pub(super) fn rate_request_command(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTargetArgs,
     score: u8,
     reason: String,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, _) =
-        load_exact_request(git_repo, client, api_url, session_token, target)?;
-    let response = rate_request(
-        client,
-        api_url,
-        session_token,
-        api_target(&context, &request_id),
-        score,
-        reason,
-    )?;
+    let (context, request_id, _) = load_exact_request(git_repo, api, target)?;
+    let response = rate_request(api, api_target(&context, &request_id), score, reason)?;
     let human_line = format!(
         "Rated @{} {}/5 — {}",
         terminal_text(&response.subject.handle),
@@ -343,9 +269,7 @@ fn events_through_version(
 }
 
 fn full_request_activity(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     after_position: u64,
     version: u64,
@@ -354,9 +278,7 @@ fn full_request_activity(
     let mut after = after_position;
     while after < version {
         let page = get_request_activity(
-            client,
-            api_url,
-            session_token,
+            api,
             RequestActivityParams {
                 target,
                 after: Some(after),
@@ -383,17 +305,12 @@ fn full_request_activity(
 
 pub(super) fn show_one_request(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTargetArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, detail) =
-        load_exact_request(git_repo, client, api_url, session_token, target)?;
+    let (context, request_id, detail) = load_exact_request(git_repo, api, target)?;
     let activity = full_request_activity(
-        client,
-        api_url,
-        session_token,
+        api,
         api_target(&context, &request_id),
         0,
         detail.request.activity_version,
@@ -413,19 +330,11 @@ pub(super) fn show_one_request(
 
 pub(super) fn list_request_status(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: args::RequestListArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let context = load_context(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        args.remote.as_deref(),
-    )?;
-    let mut requests = load_request_list(client, api_url, session_token, &context)?;
+    let context = load_context(git_repo, api, args.remote.as_deref())?;
+    let mut requests = load_request_list(api, &context)?;
     requests.retain(|request| {
         args.state.is_none_or(|state| request.state == state.into())
             && args
@@ -451,18 +360,14 @@ pub(super) fn list_request_status(
 }
 
 pub(super) fn load_request_list(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     context: &local::RequestContext,
 ) -> anyhow::Result<Vec<crate::api::RequestListItemResponse>> {
     let mut requests = Vec::new();
     let mut cursor = None;
     loop {
         let page = list_requests(
-            client,
-            api_url,
-            session_token,
+            api,
             &context.target.owner,
             &context.target.repo,
             cursor.as_deref(),

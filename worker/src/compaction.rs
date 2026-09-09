@@ -1,4 +1,4 @@
-use crate::git_repo::{CompactedPackFailure, CompactionPackMetrics, build_compacted_pack};
+use crate::git_repo::{CompactionPackMetrics, build_compacted_pack};
 use scope_domain::repository::git::GitPackSpan;
 use scope_git::GitStorageLimits;
 use scope_git_process::ProcessError;
@@ -146,9 +146,9 @@ pub(crate) async fn compact_one_git_repository(
             result = &mut build => {
                 break match result {
                     Ok(result) => result,
-                    Err(error) => Err(CompactedPackFailure::from(anyhow::anyhow!(
+                    Err(error) => Err(anyhow::anyhow!(
                         "Git compaction task failed: {error}"
-                    ))),
+                    )),
                 };
             }
             _ = renewal.tick() => {
@@ -189,7 +189,6 @@ pub(crate) async fn compact_one_git_repository(
         Err(failure) => {
             let failure_now_unix = super::unix_now()?;
             let attempt_remote_cleanup = !failure
-                .error
                 .downcast_ref::<ProcessError>()
                 .is_some_and(ProcessError::is_timeout);
             if let Err(cleanup_error) = abandon_upload(
@@ -208,20 +207,20 @@ pub(crate) async fn compact_one_git_repository(
                     "failed to discard unsuccessful Git compaction upload"
                 );
             }
-            if is_bounded_refusal(&failure.error) {
+            if is_bounded_refusal(&failure) {
                 metadata
                     .jobs()
                     .complete_git_compaction_claim(&claim, failure_now_unix)
                     .await
                     .map_err(|error| anyhow::anyhow!(error.message))?;
-                return Ok(CompactionOutcome::Refused(failure.error.to_string()));
+                return Ok(CompactionOutcome::Refused(failure.to_string()));
             }
             metadata
                 .jobs()
-                .fail_git_compaction_claim(&claim, &failure.error.to_string(), failure_now_unix)
+                .fail_git_compaction_claim(&claim, &failure.to_string(), failure_now_unix)
                 .await
                 .map_err(|error| anyhow::anyhow!(error.message))?;
-            return Err(failure.error);
+            return Err(failure);
         }
     };
     let final_renewal = metadata
@@ -566,7 +565,7 @@ async fn build_compacted_span(
     storage_limits: GitStorageLimits,
     timeout: Duration,
     data_dir: std::path::PathBuf,
-) -> Result<BuiltCompaction, CompactedPackFailure> {
+) -> anyhow::Result<BuiltCompaction> {
     let pack = build_compacted_pack(
         segment_store,
         candidate,
@@ -592,9 +591,7 @@ async fn build_compacted_span(
         head_oid: last.head_oid.clone(),
         segment: pack.staged.segment.clone(),
     };
-    replacement.geometric_tier = replacement
-        .expected_geometric_tier()
-        .map_err(|error| CompactedPackFailure::from(anyhow::Error::new(error)))?;
+    replacement.geometric_tier = replacement.expected_geometric_tier()?;
     Ok(BuiltCompaction {
         replacement,
         metrics: CompactionMetrics {

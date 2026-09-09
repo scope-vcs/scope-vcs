@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict'
+import { setTimeout as delay } from 'node:timers/promises'
 import { serverFunctionName } from './server-functions-smoke.mjs'
+
+const backgroundServerFunctions = new Set([
+  'listRequestAttachments_createServerFn_handler',
+  'loadAnalyticsIdentity_createServerFn_handler',
+  'loadAttachmentLimits_createServerFn_handler',
+])
 
 export async function assertRequestCrossLinksStayInDocument(page) {
   const requestViews = page.getByRole('navigation', { name: 'Request views' })
@@ -43,12 +50,12 @@ export async function assertRequestCrossLinksStayInDocument(page) {
 }
 
 export async function waitForClientHydration(page, locator) {
-  const element = await locator.elementHandle()
-  assert(element)
-  await page.waitForFunction(
-    (target) => Object.keys(target).some((key) => key.startsWith('__reactProps$')),
-    element,
-  )
+  const deadline = Date.now() + 30_000
+  // Hydration can replace the server-rendered node, so resolve the locator anew.
+  while (!await locator.evaluate((element) => Object.keys(element).some((key) => key.startsWith('__reactProps$')))) {
+    assert(Date.now() < deadline, 'element did not hydrate within 30 seconds')
+    await delay(50)
+  }
 }
 
 async function assertRequestDocumentAndShell(page, shell) {
@@ -62,10 +69,12 @@ async function assertRequestDocumentAndShell(page, shell) {
 export async function assertFileSelectionSkipsRevisionReload(page, fileName, path) {
   await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
   const fileNavigator = page.getByLabel('Commit file navigator')
+  await waitForClientHydration(page, fileNavigator)
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
-      serverFunctions.push(serverFunctionName(request))
+      const name = serverFunctionName(request)
+      if (!backgroundServerFunctions.has(name)) serverFunctions.push(name)
     }
   }
   page.on('request', recordServerFunction)
@@ -104,7 +113,8 @@ export async function assertUpdateSelectionReloadsSelectedPayload(page) {
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
-      serverFunctions.push(serverFunctionName(request))
+      const name = serverFunctionName(request)
+      if (!backgroundServerFunctions.has(name)) serverFunctions.push(name)
     }
   }
   page.on('request', recordServerFunction)

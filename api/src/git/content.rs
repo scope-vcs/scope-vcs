@@ -9,18 +9,8 @@ use scope_git::git_blob_reference as segment_git_blob_reference;
 use scope_object_store::source_blob_bytes;
 use std::{path::Path, time::Instant};
 
-pub(crate) fn git_blob_reference(
-    snapshot: &SourceBlob,
-    oid: String,
-    mode: String,
-    size_bytes: usize,
-) -> Result<SourceBlob, ApiError> {
-    Ok(segment_git_blob_reference(
-        snapshot,
-        oid,
-        mode,
-        size_bytes as u64,
-    )?)
+pub(crate) fn git_blob_reference(oid: String, mode: String, size_bytes: usize) -> SourceBlob {
+    segment_git_blob_reference(oid, mode, size_bytes as u64)
 }
 
 pub(crate) async fn source_content_bytes<C: GitContext>(
@@ -42,11 +32,6 @@ pub(crate) async fn source_content_bytes<C: GitContext>(
     let (repository_id, head, pack_spans) = git_source.ok_or_else(|| {
         ApiError::internal_message("Git blob content requires a current pack layout")
     })?;
-    if !matches!(head.manifest.content_ref, ContentRef::GitManifestSha256(_)) {
-        return Err(ApiError::internal_message(
-            "Git blob content locator must be a Git manifest",
-        ));
-    }
     let repo = context
         .repository_engine()
         .materialize_repository(context, &repository_id, head, pack_spans)

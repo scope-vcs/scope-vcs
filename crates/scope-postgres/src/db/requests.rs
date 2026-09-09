@@ -17,15 +17,16 @@ use super::{
     },
 };
 use sea_orm::TransactionTrait;
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 use {
     crate::error::PostgresError,
     scope_domain::requests::{
         CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
-        RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request, RequestEvent,
-        RequestRevisionMutation, RequestTimelineMutation, StartRequestInput, StartRequestMutation,
-        WorkingRequestUploadMutation, close_request, edit_request_identity,
-        record_request_revision, record_working_request_upload, start_request,
+        RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request, RequestActorRole,
+        RequestEvent, RequestRevisionMutation, RequestState, RequestTimelineMutation,
+        StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
+        close_request, edit_request_identity, record_request_revision,
+        record_working_request_upload, start_request,
     },
 };
 
@@ -111,19 +112,22 @@ impl RequestStore {
             input,
         )?;
 
-        let mut requests = requests_by_repo_author(&tx, &input.repo_id, &input.author_user_id)
-            .await?
-            .into_iter()
-            .map(|request| (request.id.clone(), request))
-            .collect::<BTreeMap<_, _>>();
-        if let Some(request) = request_by_id(&tx, &input.id).await? {
-            requests.insert(request.id.clone(), request);
-        }
-        if let Some(request) = request_by_name(&tx, &input.repo_id, &input.name).await? {
-            requests.insert(request.id.clone(), request);
-        }
-
-        let mutation = start_request(&mut requests, input)?;
+        let author_requests =
+            requests_by_repo_author(&tx, &input.repo_id, &input.author_user_id).await?;
+        let facts = StartRequestFacts {
+            request_id_exists: request_by_id(&tx, &input.id).await?.is_some(),
+            request_name_exists: request_by_name(&tx, &input.repo_id, &input.name)
+                .await?
+                .is_some(),
+            public_working_request_count: author_requests
+                .iter()
+                .filter(|request| {
+                    request.author_role == RequestActorRole::Public
+                        && request.state() == RequestState::Draft
+                })
+                .count(),
+        };
+        let mutation = start_request(facts, input)?;
         insert_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -145,8 +149,7 @@ impl RequestStore {
         input.actor_can_edit = request_policy_for_user(&tx, &repo, &request, &input.actor_user_id)
             .await?
             .branch_mutable;
-        let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-        let mutation = record_working_request_upload(&mut requests, input)?;
+        let mutation = record_working_request_upload(request, input)?;
         save_request_row(&tx, &mutation.request).await?;
         if !mutation.orphan_objects.is_empty() {
             queue_pending_source_blob_deletion_rows(
@@ -176,12 +179,8 @@ impl RequestStore {
         input.actor_can_edit = request_policy_for_user(&tx, &repo, &request, &input.actor_user_id)
             .await?
             .branch_mutable;
-        let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-        let mut events = BTreeMap::new();
-        if let Some(event) = request_event_by_id(&tx, &input.event_id).await? {
-            events.insert(event.id.clone(), event);
-        }
-        let mutation = record_request_revision(&mut requests, &mut events, input)?;
+        let event_id_exists = request_event_by_id(&tx, &input.event_id).await?.is_some();
+        let mutation = record_request_revision(request, event_id_exists, input)?;
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
@@ -220,12 +219,8 @@ impl RequestStore {
                 .await?
                 .permissions
                 .can_edit_identity;
-        let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-        let mut events = BTreeMap::new();
-        if let Some(event) = request_event_by_id(&tx, &input.event_id).await? {
-            events.insert(event.id.clone(), event);
-        }
-        let mutation = edit_request_identity(&mut requests, &mut events, input)?;
+        let event_id_exists = request_event_by_id(&tx, &input.event_id).await?.is_some();
+        let mutation = edit_request_identity(request, event_id_exists, input)?;
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         if let Some((request_id, actor_user_id, markdown, now_unix)) = attachment_binding {
@@ -256,18 +251,9 @@ impl RequestStore {
         ensure_user_exists(&tx, &input.actor_user_id).await?;
         input.actor_is_author = request.author_user_id == input.actor_user_id;
         input.actor_is_maintainer = repo.access.is_maintainer();
-        let mut requests = BTreeMap::from([(request.id.clone(), request.clone())]);
-        let mut events = request_events_by_request_id(&tx, &request.id)
-            .await?
-            .into_iter()
-            .map(|event| (event.id.clone(), event))
-            .collect::<BTreeMap<_, _>>();
-        let mut revisions = revisions_for_request_ids(&tx, std::slice::from_ref(&request.id))
-            .await?
-            .into_iter()
-            .map(|revision| (revision.id.clone(), revision))
-            .collect::<BTreeMap<_, _>>();
-        let mutation = close_request(&mut requests, &mut events, &mut revisions, input)?;
+        let events = request_events_by_request_id(&tx, &request.id).await?;
+        let revisions = revisions_for_request_ids(&tx, std::slice::from_ref(&request.id)).await?;
+        let mutation = close_request(request, events, revisions, input)?;
         match &mutation {
             CloseRequestMutation::DeletedDraft {
                 request,

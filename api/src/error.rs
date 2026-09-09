@@ -258,7 +258,6 @@ impl From<scope_git::GitStorageError> for ApiError {
                 Self::infrastructure_unavailable(format!("{error}; retry after compaction"))
             }
             scope_git::GitStorageError::ObjectStore(error) => error.into(),
-            error => Self::internal(error),
         }
     }
 }

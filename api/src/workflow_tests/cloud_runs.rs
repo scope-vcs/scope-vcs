@@ -39,10 +39,17 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
         "create cloud run bundle",
     )
     .unwrap();
-    let resolved = app.clone().oneshot(Request::builder().method("POST").uri(format!(
-        "{}?workflow=test&git_oid={git_oid}&request_id=11111111111111111111111111111111",
-        scope_api_contract::routes::repo_run_resolve(TEST_REPO_OWNER, TEST_REPO_NAME)
-    )).header(AUTHORIZATION, bearer_header()).body(Body::empty()).unwrap()).await.unwrap();
+    let resolved = api_request(
+        app.clone(),
+        "POST",
+        &format!(
+            "{}?workflow=test&git_oid={git_oid}&request_id=11111111111111111111111111111111",
+            scope_api_contract::routes::repo_run_resolve(TEST_REPO_OWNER, TEST_REPO_NAME)
+        ),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(resolved.status(), StatusCode::OK);
     assert_eq!(response_json(resolved).await["status"], "upload-required");
     assert!(
@@ -134,17 +141,14 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     assert_eq!(replayed.status(), StatusCode::UNAUTHORIZED);
 
     let attempt_auth = format!("Bearer {}", claim.attempt_token);
-    let source_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri(scope_api_contract::routes::attempt_source(attempt_id))
-                .header(AUTHORIZATION, &attempt_auth)
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let source_response = api_request(
+        app.clone(),
+        "GET",
+        &scope_api_contract::routes::attempt_source(attempt_id),
+        Some(&attempt_auth),
+        None,
+    )
+    .await;
     assert_eq!(source_response.status(), StatusCode::OK);
     assert_eq!(
         source_response.headers()["x-scope-source-identity"],
@@ -162,21 +166,14 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
         fs::read(&bundle_path).unwrap()
     );
 
-    let heartbeat = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(scope_api_contract::routes::attempt_heartbeat(attempt_id))
-                .header(AUTHORIZATION, &attempt_auth)
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&AttemptHeartbeatRequest { cache_keys: vec![] }).unwrap(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let heartbeat = api_request(
+        app.clone(),
+        "POST",
+        &scope_api_contract::routes::attempt_heartbeat(attempt_id),
+        Some(&attempt_auth),
+        Some(&serde_json::to_string(&AttemptHeartbeatRequest { cache_keys: vec![] }).unwrap()),
+    )
+    .await;
     assert_eq!(heartbeat.status(), StatusCode::OK);
     let heartbeat: AttemptHeartbeatResponse =
         serde_json::from_value(response_json(heartbeat).await).unwrap();
@@ -185,66 +182,47 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
         heartbeat.status.lease_expires_at_unix
     );
 
-    let started = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(scope_api_contract::routes::attempt_step_start(
-                    attempt_id, 0,
-                ))
-                .header(AUTHORIZATION, &attempt_auth)
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from("{}"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let started = api_request(
+        app.clone(),
+        "POST",
+        &scope_api_contract::routes::attempt_step_start(attempt_id, 0),
+        Some(&attempt_auth),
+        Some("{}"),
+    )
+    .await;
     assert_eq!(started.status(), StatusCode::OK);
 
-    let completed_step = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(scope_api_contract::routes::attempt_step_complete(
-                    attempt_id, 0,
-                ))
-                .header(AUTHORIZATION, &attempt_auth)
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&CompleteAttemptStepRequest {
-                        conclusion: StepConclusionRequest::Succeeded,
-                        logs_truncated: false,
-                    })
-                    .unwrap(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let completed_step = api_request(
+        app.clone(),
+        "POST",
+        &scope_api_contract::routes::attempt_step_complete(attempt_id, 0),
+        Some(&attempt_auth),
+        Some(
+            &serde_json::to_string(&CompleteAttemptStepRequest {
+                conclusion: StepConclusionRequest::Succeeded,
+                logs_truncated: false,
+            })
+            .unwrap(),
+        ),
+    )
+    .await;
     assert_eq!(completed_step.status(), StatusCode::OK);
     assert_eq!(response_json(completed_step).await["state"], "running");
 
-    let completed_attempt = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(scope_api_contract::routes::attempt_complete(attempt_id))
-                .header(AUTHORIZATION, &attempt_auth)
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&scope_api_contract::CompleteAttemptRequest {
-                        conclusion: scope_api_contract::AttemptConclusionRequest::Succeeded,
-                        logs_truncated: false,
-                    })
-                    .unwrap(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let completed_attempt = api_request(
+        app.clone(),
+        "POST",
+        &scope_api_contract::routes::attempt_complete(attempt_id),
+        Some(&attempt_auth),
+        Some(
+            &serde_json::to_string(&scope_api_contract::CompleteAttemptRequest {
+                conclusion: scope_api_contract::AttemptConclusionRequest::Succeeded,
+                logs_truncated: false,
+            })
+            .unwrap(),
+        ),
+    )
+    .await;
     assert_eq!(completed_attempt.status(), StatusCode::OK);
     assert_eq!(response_json(completed_attempt).await["state"], "succeeded");
     assert!(
@@ -260,40 +238,25 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
             .unwrap()
     );
 
-    let retried = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(scope_api_contract::routes::repo_run_retry(
-                    TEST_REPO_OWNER,
-                    TEST_REPO_NAME,
-                    &run_id,
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let retried = api_request(
+        app.clone(),
+        "POST",
+        &scope_api_contract::routes::repo_run_retry(TEST_REPO_OWNER, TEST_REPO_NAME, &run_id),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(retried.status(), StatusCode::OK);
     assert_eq!(response_json(retried).await["state"], "queued");
 
-    let canceled = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(scope_api_contract::routes::repo_run_cancel(
-                    TEST_REPO_OWNER,
-                    TEST_REPO_NAME,
-                    &run_id,
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let canceled = api_request(
+        app,
+        "POST",
+        &scope_api_contract::routes::repo_run_cancel(TEST_REPO_OWNER, TEST_REPO_NAME, &run_id),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(canceled.status(), StatusCode::OK);
     assert_eq!(response_json(canceled).await["state"], "canceled");
 }

@@ -86,18 +86,14 @@ fn push_intent_request_json(head_oid: &str) -> String {
 
 async fn request_push_intent(state: AppState, authorization: &str, head_oid: &str) -> Response {
     cache_test_jwks(&state);
-    router(state)
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/v1/repos/owner/repo/push-intents")
-                .header(AUTHORIZATION, authorization)
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(push_intent_request_json(head_oid)))
-                .unwrap(),
-        )
-        .await
-        .unwrap()
+    api_request(
+        router(state),
+        "POST",
+        "/v1/repos/owner/repo/push-intents",
+        Some(authorization),
+        Some(&push_intent_request_json(head_oid)),
+    )
+    .await
 }
 
 fn permissioned_git_service(repo: &str, service: &str) -> String {
@@ -105,14 +101,7 @@ fn permissioned_git_service(repo: &str, service: &str) -> String {
 }
 
 async fn git_get(app: &axum::Router, uri: String, authorization: Option<&str>) -> Response {
-    let mut request = Request::builder().method("GET").uri(uri);
-    if let Some(authorization) = authorization {
-        request = request.header(AUTHORIZATION, authorization);
-    }
-    app.clone()
-        .oneshot(request.body(Body::empty()).unwrap())
-        .await
-        .unwrap()
+    api_request(app.clone(), "GET", &uri, authorization, None).await
 }
 
 async fn assert_challenges(app: &axum::Router, service: &str, repos: &[&str]) {

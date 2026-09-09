@@ -10,14 +10,16 @@ default = []
 test-support = []
 
 [dependencies]
+aws-credential-types.workspace = true
+aws-sigv4.workspace = true
+aws-smithy-http.workspace = true
 base64.workspace = true
 chacha20poly1305.workspace = true
 getrandom.workspace = true
 hex.workspace = true
-hmac.workspace = true
+http.workspace = true
 reqwest = { workspace = true, features = ["blocking", "rustls-tls"] }
 scope_domain.workspace = true
 sha1.workspace = true
 sha2.workspace = true
-time.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }

@@ -439,11 +439,6 @@ fn validate_git_push_transition(
             "Git push pack span does not match the logical head",
         ));
     }
-    if !next.manifest.git_oid.is_empty() && next.manifest.git_oid != next.head_oid {
-        return Err(ReviewedUpdateError::Conflict(
-            "Git snapshot manifest does not match the logical head",
-        ));
-    }
     let expected_sequence = previous
         .map_or(Some(1), |head| head.push_sequence.checked_add(1))
         .ok_or(ReviewedUpdateError::Conflict("Git push sequence overflow"))?;

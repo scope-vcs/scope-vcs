@@ -75,14 +75,7 @@ fn add_mixed_commit(state: &AppState, repo: &mut Repository) {
 }
 
 async fn get(state: AppState, uri: &str, authorization: Option<&str>) -> Response {
-    let mut request = Request::builder().method("GET").uri(uri);
-    if let Some(authorization) = authorization {
-        request = request.header(AUTHORIZATION, authorization);
-    }
-    router(state)
-        .oneshot(request.body(Body::empty()).unwrap())
-        .await
-        .unwrap()
+    api_request(router(state), "GET", uri, authorization, None).await
 }
 
 #[tokio::test]

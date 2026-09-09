@@ -142,12 +142,9 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
       sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_DATA_DIR="$SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR" exec "$@"' \
       scope-maintenance "$maintenance_binary" "$1"
   }
-  plan="$(run_maintenance plan)"
+  run_maintenance plan >/dev/null
   run_maintenance validate-workflow-catalogs
-  if jq -e '.pending[] | select(.name == "m0033_git_segment_streaming_v2")' <<< "$plan" >/dev/null; then
-    run_maintenance backfill-git-segments-v2
-  fi
-  # Preserve the old catalog and objects throughout the trial. Physical cleanup is separate.
+  # Apply the candidate schema without running physical cleanup commands here.
   run_maintenance apply
   run_maintenance backfill-landing-files
   run_maintenance backfill-workflow-catalogs

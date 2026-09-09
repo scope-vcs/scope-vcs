@@ -49,6 +49,8 @@ macro_rules! wire_enum {
     };
 }
 
+pub(crate) use wire_enum;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct SessionIdentity {

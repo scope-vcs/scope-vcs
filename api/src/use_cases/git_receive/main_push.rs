@@ -82,8 +82,7 @@ pub(super) async fn prepare_main_push(
         )
         .await?
     };
-    let durable_objects = prepared.durable_objects.clone();
-    prepared.base_git_manifest_ref = Some(match push_intent.base_for_head(&prepared.head_oid) {
+    prepared.base_git_frontier = Some(match push_intent.base_for_head(&prepared.head_oid) {
         Ok(base) => base,
         Err(error) => {
             let repository_id = scope_domain::repository::repo_id(owner, repo_name);
@@ -93,12 +92,6 @@ pub(super) async fn prepare_main_push(
                 &prepared.staged_segment,
             )
             .await;
-            crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
-                state,
-                &durable_objects,
-            )
-            .await;
-            prepared.fence.release().await;
             prepared.write_lease.release().await;
             return Err(error);
         }
@@ -118,25 +111,15 @@ pub(crate) async fn persist_main_push(
 ) -> Result<PersistedGitPush, ApiError> {
     let PreparedReceivePackUpdate {
         update,
-        fence,
         staged_segment,
         write_lease,
         upload_heartbeat: _upload_heartbeat,
     } = prepared;
     let repository_id = scope_domain::repository::repo_id(owner, repo_name);
-    let durable_objects = update.durable_objects.clone();
     let now_unix = match crate::persistence::unix_now() {
         Ok(now) => now,
         Err(error) => {
-            cleanup_failed_persist(
-                state,
-                &repository_id,
-                &staged_segment,
-                &durable_objects,
-                fence,
-                write_lease,
-            )
-            .await;
+            cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
             return Err(error);
         }
     };
@@ -149,10 +132,8 @@ pub(crate) async fn persist_main_push(
         .as_ref()
         .is_some_and(|previous| previous == &update.config);
     if content_only_candidate
-        && let Some(expected_manifest_ref) = update
-            .base_git_manifest_ref
-            .as_ref()
-            .and_then(Option::as_ref)
+        && let Some(expected_git_frontier) =
+            update.base_git_frontier.as_ref().and_then(Option::as_ref)
         && let Some(git_head) = match state
             .metadata
             .repositories()
@@ -162,7 +143,7 @@ pub(crate) async fn persist_main_push(
                     owner: owner.to_string(),
                     name: repo_name.to_string(),
                     author_id: author_id.clone(),
-                    expected_manifest_ref: expected_manifest_ref.clone(),
+                    expected_git_frontier: expected_git_frontier.clone(),
                     update: update.clone().into_reviewed_update(),
                     workflow_catalog: workflow_catalog.clone(),
                     push_trigger_input: push_trigger_input.clone(),
@@ -175,21 +156,12 @@ pub(crate) async fn persist_main_push(
         {
             Ok(result) => result,
             Err(error) => {
-                cleanup_failed_persist(
-                    state,
-                    &repository_id,
-                    &staged_segment,
-                    &durable_objects,
-                    fence,
-                    write_lease,
-                )
-                .await;
+                cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
                 return Err(error.into());
             }
         }
     {
         tracing::info!("committed focused content-only push transaction");
-        fence.release().await;
         return Ok(PersistedGitPush {
             incarnation: incarnation.clone(),
             head: git_head,
@@ -259,15 +231,7 @@ pub(crate) async fn persist_main_push(
     let git_head = match git_head {
         Ok(git_head) => git_head,
         Err(error) => {
-            cleanup_failed_persist(
-                state,
-                &repository_id,
-                &staged_segment,
-                &durable_objects,
-                fence,
-                write_lease,
-            )
-            .await;
+            cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
             return Err(error.into());
         }
     };
@@ -275,7 +239,6 @@ pub(crate) async fn persist_main_push(
         database_commit_ms = transaction_started.elapsed().as_millis(),
         "committed reviewed push transaction"
     );
-    fence.release().await;
     Ok(PersistedGitPush {
         incarnation: incarnation.clone(),
         head: git_head,
@@ -288,18 +251,10 @@ async fn cleanup_failed_persist(
     state: &AppState,
     repository_id: &str,
     staged_segment: &StagedGitSegment,
-    durable_objects: &[scope_domain::content::SourceBlob],
-    fence: scope_postgres::db::ContentRefFence,
     write_lease: RepositoryGitWriteLease,
 ) {
     crate::git::import::best_effort_delete_staged_git_segment(state, repository_id, staged_segment)
         .await;
-    crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
-        state,
-        durable_objects,
-    )
-    .await;
-    fence.release().await;
     write_lease.release().await;
 }
 
@@ -325,14 +280,11 @@ fn ensure_receive_pack_base_matches(
     repo: &Repository,
     update: &ReceivePackUpdate,
 ) -> Result<(), DomainError> {
-    let Some(expected_base_ref) = update.base_git_manifest_ref.as_ref() else {
+    let Some(expected_base_ref) = update.base_git_frontier.as_ref() else {
         return Ok(());
     };
-    let actual_base_ref = repo
-        .git_head
-        .as_ref()
-        .map(|head| &head.manifest.content_ref);
-    if actual_base_ref == expected_base_ref.as_ref() {
+    let actual_base_ref = repo.git_head.as_ref().map(GitHead::frontier);
+    if actual_base_ref.as_ref() == expected_base_ref.as_ref() {
         Ok(())
     } else {
         Err(DomainError::conflict(

@@ -2,13 +2,9 @@ mod support;
 use axum::{Json, Router, extract::Query, response::IntoResponse, routing::get};
 use std::{
     collections::HashMap,
-    fs,
-    net::TcpListener,
     sync::{Arc, Mutex},
-    thread,
 };
 use support::*;
-use tokio::sync::oneshot;
 
 fn run(state: &str) -> serde_json::Value {
     serde_json::json!({"id":"run-1","repository_id":"owner/repo","workflow_name":"checks","git_oid":"1234567890","state":state,"cancellation_requested":false,"logs_truncated":false,"created_at_unix":1,"updated_at_unix":1,"completed_at_unix":null})
@@ -20,51 +16,16 @@ fn event(name: &str, payload: serde_json::Value) -> String {
     format!("event: {name}\ndata: {payload}\n\n")
 }
 
-struct Server {
-    url: String,
-    stop: Option<oneshot::Sender<()>>,
-    thread: Option<thread::JoinHandle<()>>,
-    config: TempDir,
-}
+struct Server(TestServer);
 impl Server {
     fn new(router: Router) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let config = TempDir::new("run-remote-config");
-        let sessions = config.path().join("scope/sessions");
-        fs::create_dir_all(&sessions).unwrap();
-        fs::write(
-            sessions.join(format!("cli-session-{}", hex::encode(url.as_bytes()))),
-            "test-token",
-        )
-        .unwrap();
-        let (stop, stopped) = oneshot::channel();
-        let thread = thread::spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(async move {
-            let router = router.route("/v1/session", get(|| async {Json(serde_json::json!({"identity":null,"user":{"id":"user-test","handle":"owner","email":"owner@example.test","email_verified":true}}))}));
-            axum::serve(tokio::net::TcpListener::from_std(listener).unwrap(), router).with_graceful_shutdown(async {let _ = stopped.await;}).await.unwrap();
-        })
-        });
-        Self {
-            url,
-            stop: Some(stop),
-            thread: Some(thread),
-            config,
-        }
+        let router = router.route("/v1/session", get(|| async {Json(serde_json::json!({"identity":null,"user":{"id":"user-test","handle":"owner","email":"owner@example.test","email_verified":true}}))}));
+        Self(TestServer::new(router))
     }
     fn command(&self, dir: &TempDir) -> std::process::Command {
-        let mut cmd = scope_command(dir.path());
-        cmd.env("SCOPE_API_URL", &self.url)
-            .env("XDG_CONFIG_HOME", self.config.path())
-            .args(["--json", "--repo", "owner/repo"]);
-        cmd
-    }
-}
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.stop.take().unwrap().send(());
-        self.thread.take().unwrap().join().unwrap();
+        let mut command = self.0.command(dir.path());
+        command.args(["--json", "--repo", "owner/repo"]);
+        command
     }
 }
 

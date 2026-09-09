@@ -2,11 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RepoContent } from '@/api/types'
 import {
-  readRepoContentCache,
+  repoContentResource,
   repoContentCacheKey,
-  repoContentCacheStats,
-  resetRepoContentCache,
-  writeRepoContentCache,
 } from './repo-content-cache'
 
 const content: RepoContent = {
@@ -32,12 +29,12 @@ test('keys repository content by version and audience', () => {
 })
 
 test('bounds repository content entries', () => {
-  resetRepoContentCache()
+  repoContentResource.clear()
   for (let index = 0; index < 10; index += 1) {
-    writeRepoContentCache(`repo-${index}`, content)
+    repoContentResource.write(`repo-${index}`, content)
   }
 
-  assert.equal(repoContentCacheStats().entries, 8)
-  assert.equal(readRepoContentCache('repo-0'), null)
-  assert.equal(readRepoContentCache('repo-9'), content)
+  assert.equal(repoContentResource.stats().entries, 8)
+  assert.equal(repoContentResource.read('repo-0'), null)
+  assert.equal(repoContentResource.read('repo-9'), content)
 })

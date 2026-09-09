@@ -43,9 +43,7 @@ pub(super) fn print(
                 let mut after = 0;
                 loop {
                     let page = api::run_step_logs(
-                        &connection.client,
-                        &connection.api_url,
-                        &connection.token,
+                        connection.api(),
                         &connection.target.owner,
                         &connection.target.repo,
                         run_id,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { reply as replyFixture } from './request-discussion-test-fixtures'
 import {
   acknowledgeReply,
   beforePositionForNextReplyPage,
@@ -293,18 +294,7 @@ function referencedReply(
   }
 }
 
-function reply(
-  id: string,
-  position: number,
-  body = `Reply ${id}`,
-): RequestDiscussionReplyView {
-  return {
-    author: { handle: 'maya', id: 'user-maya' },
-    body_markdown: body,
-    created_at_unix: position,
-    discussion_id: 'one',
-    id,
-    position,
-    reply_to: null,
-  }
+
+function reply(id: string, position: number, body = `Reply ${id}`) {
+  return replyFixture(id, position, { body_markdown: body })
 }

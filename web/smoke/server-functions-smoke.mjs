@@ -17,7 +17,7 @@ const sourceFunctions = {
   'src/routes/$owner.$repo.requests.$requestId.changes.tsx': ['loadChangesPage', 'loadRevisionDiff', 'loadDiscussions'],
 }
 
-const productionFunctions = new Map(Object.entries(sourceFunctions).flatMap(([filename, names]) => (
+export const productionFunctions = new Map(Object.entries(sourceFunctions).flatMap(([filename, names]) => (
   names.map((name) => {
     const handler = `${name}_createServerFn_handler`
     return [createHash('sha256').update(`${filename}--${handler}`).digest('hex'), handler]

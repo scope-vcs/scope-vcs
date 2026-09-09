@@ -1,93 +1,58 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { collectionFromPage } from './request-discussion-model'
 import {
-  readRequestDiscussionCache,
+  openRequestDiscussion,
   readRequestDiscussionScroll,
   requestDiscussionCacheKey,
+  requestDiscussionResource,
   resetRequestDiscussionCache,
-  writeRequestDiscussionCache,
   writeRequestDiscussionScroll,
 } from './request-discussion-cache'
-import type { RequestDiscussion } from './request-discussion-types'
+import { mergeDiscussion } from './request-discussion-model'
+import { discussion } from './request-discussion-test-fixtures'
 
-test('keys timeline views by viewer, repository, and request', () => {
-  const base = {
-    repoId: 'scope/demo',
-    requestId: 'request-1',
-    viewerId: 'user-maya',
+const page = { discussions: [discussion('one', 1)], next_cursor: 'older', snapshot_version: 1 }
+const loadChanges = async () => ({ discussions: [], through_position: 1, has_more: false })
+
+test('keys timeline views by viewer, repository access scope, and request', () => {
+  const base = { repoId: 'scope/demo/member', requestId: 'request-1', viewerId: 'maya' }
+  const key = requestDiscussionCacheKey(base)
+  assert.equal(key, requestDiscussionCacheKey({ ...base }))
+  for (const change of [{ requestId: 'request-2' }, { viewerId: 'ravi' }, { repoId: 'scope/demo/public' }]) {
+    assert.notEqual(key, requestDiscussionCacheKey({ ...base, ...change }))
   }
-  assert.equal(
-    requestDiscussionCacheKey(base),
-    requestDiscussionCacheKey({ ...base }),
-  )
-  assert.notEqual(
-    requestDiscussionCacheKey(base),
-    requestDiscussionCacheKey({ ...base, requestId: 'request-2' }),
-  )
-  assert.notEqual(
-    requestDiscussionCacheKey(base),
-    requestDiscussionCacheKey({ ...base, viewerId: 'user-ravi' }),
-  )
 })
 
-test('bounds cached views and preserves scroll with the entry', () => {
+test('reopening reuses the subscribed collection, expansion, scroll and pending pagination', () => {
   resetRequestDiscussionCache()
-  for (let index = 0; index < 10; index += 1) {
-    const key = `request-${index}`
-    writeRequestDiscussionCache(
-      key,
-      collectionFromPage({
-        discussions: [discussion(key)],
-        next_cursor: null,
-        snapshot_version: 1,
-      }),
-    )
-    writeRequestDiscussionScroll(key, index * 10)
-  }
-  assert.equal(readRequestDiscussionCache('request-0'), null)
-  assert.equal(readRequestDiscussionScroll('request-9'), 90)
+  const session = openRequestDiscussion('request', page, loadChanges)
+  let notifications = 0
+  const unsubscribe = requestDiscussionResource.subscribe('request', () => notifications++)
+  session.updateCollection((current) => mergeDiscussion(current, { ...discussion('one', 1), expanded: true }), false)
+  session.setLoadingMore(true)
+  writeRequestDiscussionScroll('request', 240)
+  unsubscribe()
+
+  const reopened = openRequestDiscussion('request', { ...page }, loadChanges)
+  assert.equal(reopened.collection.byId.get('one')?.expanded, true)
+  assert.equal(reopened.dataGeneration, 0)
+  assert.equal(reopened.loadingMore, true)
+  assert.equal(readRequestDiscussionScroll('request'), 240)
+  assert.equal(reopened.sync, session.sync)
+  assert.equal(notifications, 3)
 })
 
-test('preserves per-discussion expansion metadata with cached view state', () => {
+test('bounds retained views and ignores late writes after eviction or reset', () => {
   resetRequestDiscussionCache()
-  const key = 'expanded'
-  const collection = collectionFromPage({
-    discussions: [discussion('discussion-1')],
-    next_cursor: null,
-    snapshot_version: 1,
-  })
-  const expanded = collection.byId.get('discussion-1')
-  assert.ok(expanded)
-  writeRequestDiscussionCache(key, {
-    ...collection,
-    byId: new Map([
-      ['discussion-1', { ...expanded, expanded: true }],
-    ]),
-  })
-  assert.equal(
-    readRequestDiscussionCache(key)?.byId.get('discussion-1')?.expanded,
-    true,
-  )
+  const original = openRequestDiscussion('request', page, loadChanges)
+  for (let index = 0; index < 8; index++) openRequestDiscussion(`other-${index}`, page, loadChanges)
+  assert.equal(requestDiscussionResource.peek('request'), null)
+  original.setError('late error')
+  assert.equal(requestDiscussionResource.peek('request'), null)
+  const replacement = openRequestDiscussion('request', page, loadChanges)
+  original.setLoadingMore(true)
+  assert.equal(requestDiscussionResource.peek('request')?.loadingMore, false)
+  resetRequestDiscussionCache()
+  replacement.setError('late error')
+  assert.equal(requestDiscussionResource.peek('request'), null)
 })
-
-function discussion(id: string): RequestDiscussion {
-  return {
-    anchor: null,
-    author: { handle: 'maya', id: 'user-maya' },
-    body_markdown: id,
-    client_discussion_id: id,
-    created_at_unix: 1,
-    id,
-    last_activity_position: 1,
-    latest_replies: [],
-    opened_position: 1,
-    read_through_position: 1,
-    reply_count: 0,
-    request_id: id,
-    resolved_at_unix: null,
-    resolved_by: null,
-    status: 'Open',
-    unread_count: 0,
-  }
-}

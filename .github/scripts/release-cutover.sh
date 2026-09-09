@@ -94,12 +94,6 @@ recover_cutover() {
 apply_cutover() {
   cutover_phase pre-migration
   maintenance validate-workflow-catalogs
-  if plan_includes_migration "$plan_json" m0033_git_segment_streaming_v2; then
-    # This backfill changes object storage outside the schema transaction. Once it
-    # starts, an unchanged migration ledger alone cannot authorize old binaries.
-    cutover_committed=1
-    run_api_maintenance backfill-git-segments-v2
-  fi
   local external_effects_started="$cutover_committed"
   # Persist applying before invoking the transaction. SIGKILL must never erase its uncertainty.
   cutover_phase applying

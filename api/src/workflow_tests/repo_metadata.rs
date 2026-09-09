@@ -7,20 +7,14 @@ async fn request(
     authorization: Option<String>,
     body: Option<serde_json::Value>,
 ) -> Response {
-    let mut request = Request::builder().method(method).uri(uri);
-    if let Some(authorization) = authorization {
-        request = request.header(AUTHORIZATION, authorization);
-    }
-    let body = if let Some(body) = body {
-        request = request.header(CONTENT_TYPE, "application/json");
-        Body::from(body.to_string())
-    } else {
-        Body::empty()
-    };
-    router(state)
-        .oneshot(request.body(body).unwrap())
-        .await
-        .unwrap()
+    api_request(
+        router(state),
+        method,
+        uri,
+        authorization.as_deref(),
+        body.map(|body| body.to_string()).as_deref(),
+    )
+    .await
 }
 
 #[tokio::test]

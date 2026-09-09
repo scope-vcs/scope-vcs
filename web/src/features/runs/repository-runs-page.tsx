@@ -7,9 +7,8 @@ import type {
 import { PageContent, WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { RunHistoryList } from './run-history-list'
-import { mergeRunHistory, reloadRunHistoryPages } from './run-history-model'
 import { useRunLiveRefresh } from './run-live-refresh'
 import { RunsFilterBar } from './runs-filter-bar'
 import {
@@ -20,7 +19,7 @@ import {
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { restoreRunHistory, retainRunHistory, runHistoryCacheKey, type RetainedRunHistory } from './run-history-cache'
+import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, runHistoryCacheKey, runHistoryResource } from './run-history-cache'
 
 const HISTORY_CHANGES = ['Created', 'StatusChanged'] as const
 
@@ -56,128 +55,30 @@ function RepositoryRunsPageContent({
   params,
   workflow,
 }: RepositoryRunsPageProps & { cacheKey: string | null }) {
-  const retainedRef = useRef<RetainedRunHistory | null>(null)
-  if (retainedRef.current === null) retainedRef.current = restoreRunHistory(cacheKey, initialResources?.history ?? null)
-  const retained = retainedRef.current
-  const [history, setHistory] = useState(retained.history)
-  const [refreshError, setRefreshError] = useState<string | null>(null)
-  const [loadingMore, setLoadingMore] = useState(false)
+  const [key] = useState(() => cacheKey ?? crypto.randomUUID())
+  useState(() => initializeRunHistory(key, initialResources?.history ?? null))
+  const snapshot = useSyncExternalStore(
+    useCallback((listener) => runHistoryResource.subscribe(key, listener), [key]),
+    useCallback(() => runHistoryResource.getSnapshot(key), [key]),
+    runHistoryResource.getServerSnapshot,
+  )
+  const history = snapshot.value ? snapshot.value.history : initialResources?.history ?? null
+  const refreshError = snapshot.error === null ? null : snapshot.error instanceof Error ? snapshot.error.message : 'Run operation failed.'
+  const loadingMore = snapshot.pending && snapshot.version === 'more'
   const [statusFilter, setStatusFilter] = useState<RunStatusFilter>('any')
-  const historyRef = useRef(history)
-  const loadedPageCountRef = useRef(retained.pageCount)
-  const loadingMoreRef = useRef(false)
-  const loadMoreInFlightRef = useRef<Promise<void> | null>(null)
-  const refreshAfterLoadMoreRef = useRef(false)
-  const mountedRef = useRef(false)
-  const refreshInFlightRef = useRef<Promise<void> | null>(null)
   const { owner, repo } = params
-  const input = useMemo(
-    () => ({ owner, repo, workflow }),
-    [owner, repo, workflow],
-  )
-  const canRefresh = history !== null
-  const filteredRuns = useMemo(
-    () => history
-      ? history.runs.filter((run) => runMatchesStatusFilter(run, statusFilter))
-      : [],
-    [history, statusFilter],
-  )
-
-  const refresh = useCallback((signal?: AbortSignal): Promise<void> | undefined => {
-    if (refreshInFlightRef.current) return refreshInFlightRef.current
-    if (loadMoreInFlightRef.current) {
-      refreshAfterLoadMoreRef.current = true
-      return
-    }
-    if (!historyRef.current) return
-    const request = reloadRunHistoryPages(
-      loadedPageCountRef.current,
-      (after) => loadHistory({ ...input, after }, signal),
-    )
-      .then((next) => {
-        if (!mountedRef.current) return
-        if (!next) {
-          setHistory(null)
-          setRefreshError(null)
-          return
-        }
-        setHistory(next)
-        setRefreshError(null)
-      })
-      .catch((error: unknown) => {
-        if (mountedRef.current) setRefreshError(errorMessage(error))
-        throw error
-      })
-      .finally(() => {
-        if (refreshInFlightRef.current === request) {
-          refreshInFlightRef.current = null
-        }
-      })
-    refreshInFlightRef.current = request
-    return request
-  }, [input, loadHistory])
-
+  const input = useMemo(() => ({ owner, repo, workflow }), [owner, repo, workflow])
   const refreshRuns = useRunLiveRefresh({
     acceptedChanges: HISTORY_CHANGES,
-    mutable: canRefresh,
-    refresh: async (_reasons, signal) => {
-      await refresh(signal)
-    },
+    mutable: history !== null,
+    refresh: useCallback(async () => {
+      await refreshRunHistory({ key, input, loadHistory })
+    }, [key, input, loadHistory]),
   })
-
-  const loadMore = useCallback(() => {
-    if (!history?.next_cursor || loadingMoreRef.current || refreshInFlightRef.current) return
-    loadingMoreRef.current = true
-    setLoadingMore(true)
-    const request = loadHistory({
-        ...input,
-        after: history.next_cursor,
-      })
-      .then((next) => {
-        if (!mountedRef.current) return
-        if (!next) {
-          setHistory(null)
-          setRefreshError(null)
-          return
-        }
-        setHistory((current) => current
-          ? {
-              next_cursor: next.next_cursor,
-              runs: mergeRunHistory(current.runs, next.runs),
-            }
-          : next)
-        loadedPageCountRef.current += 1
-        setRefreshError(null)
-      })
-      .catch((error: unknown) => {
-        if (mountedRef.current) setRefreshError(errorMessage(error))
-      })
-      .finally(() => {
-        loadingMoreRef.current = false
-        if (loadMoreInFlightRef.current === request) {
-          loadMoreInFlightRef.current = null
-        }
-        if (mountedRef.current) setLoadingMore(false)
-        if (refreshAfterLoadMoreRef.current) {
-          refreshAfterLoadMoreRef.current = false
-          refreshRuns()
-        }
-      })
-    loadMoreInFlightRef.current = request
-    return request
-  }, [history?.next_cursor, input, loadHistory, refreshRuns])
-
-  useEffect(() => {
-    historyRef.current = history
-    retainRunHistory(cacheKey, { history, snapshot: retained.snapshot, pageCount: loadedPageCountRef.current })
-  }, [cacheKey, history, retained.snapshot])
-
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
+  const loadMore = () => loadMoreRunHistory({ key, input, loadHistory })
+  const filteredRuns = useMemo(() => history
+    ? history.runs.filter((run) => runMatchesStatusFilter(run, statusFilter)) : [],
+  [history, statusFilter])
 
   if (!initialResources || !history) {
     return (
@@ -247,8 +148,4 @@ function RepositoryRunsPageContent({
       </div>
     </WorkbenchPane>
   )
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Run operation failed.'
 }

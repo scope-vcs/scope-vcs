@@ -13,13 +13,10 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
-    net::TcpListener,
     process::Command,
     sync::{Arc, Mutex},
-    thread,
 };
 use support::*;
-use tokio::sync::oneshot;
 
 const OID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -129,7 +126,6 @@ fn attachment_only_edit_resumes_parts_and_preserves_machine_output() {
     );
     assert_eq!(state.edits[0]["expected_description_markdown"], "");
     drop(state);
-    server.finish();
 }
 
 #[test]
@@ -193,7 +189,6 @@ fn attachment_only_discussion_retry_reuses_the_client_mutation_id() {
     assert_eq!(state.prepare_targets[0]["kind"], "Discussion");
     assert!(state.prepare_targets[0]["discussion_id"].is_null());
     drop(state);
-    server.finish();
 }
 
 #[test]
@@ -249,7 +244,6 @@ fn wait_failure_keeps_the_saved_post_and_upload_receipts_for_retry() {
         "the saved post retry must reuse its attachment"
     );
     drop(state);
-    server.finish();
 }
 
 #[test]
@@ -295,7 +289,6 @@ fn expired_media_grant_is_renewed_and_receipts_are_reconciled() {
     );
     assert_eq!(state.part_attempts, vec![1, 2, 2]);
     drop(state);
-    server.finish();
 }
 
 #[test]
@@ -341,7 +334,6 @@ fn lost_edit_response_reuses_finished_upload_without_duplicate_reference() {
     assert_eq!(state.edits[1]["expected_description_markdown"], reference);
     assert_eq!(state.current_description.matches(reference).count(), 1);
     drop(state);
-    server.finish();
 }
 
 #[test]
@@ -380,7 +372,6 @@ fn changed_file_content_starts_a_new_upload_operation() {
         state.prepare_operation_ids[1]
     );
     drop(state);
-    server.finish();
 }
 
 #[test]
@@ -409,7 +400,6 @@ fn wait_polls_processing_attachment_to_a_terminal_state() {
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["result"]["attachments"][0]["state"], "Ready");
     assert_eq!(server.state.lock().unwrap().get_attachment_calls, 1);
-    server.finish();
 }
 
 #[test]
@@ -449,7 +439,6 @@ fn attachment_only_reply_and_reopen_use_the_reply_target() {
             "[walkthrough.mp4](/request-attachments/att_one)"
         );
         drop(state);
-        server.finish();
     }
 }
 
@@ -483,7 +472,6 @@ fn request_edit_appends_attachment_to_supplied_description_file() {
         server.state.lock().unwrap().edits[0]["description_markdown"],
         "Details from a file\n\n[walkthrough.mp4](/request-attachments/att_one)"
     );
-    server.finish();
 }
 
 #[derive(Default)]
@@ -511,11 +499,8 @@ struct FixtureState {
 }
 
 struct MediaFixture {
-    api_url: String,
-    config: TempDir,
+    server: TestServer,
     state: Arc<Mutex<FixtureState>>,
-    stop: oneshot::Sender<()>,
-    thread: thread::JoinHandle<()>,
 }
 
 impl MediaFixture {
@@ -524,106 +509,61 @@ impl MediaFixture {
     }
 
     fn start_with_failures(fail_second_part_once: bool, fail_discussion_once: bool) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let api_url = format!("http://{}", listener.local_addr().unwrap());
         let state = Arc::new(Mutex::new(FixtureState {
-            api_url: api_url.clone(),
             fail_second_part_once,
             fail_discussion_once,
             ..FixtureState::default()
         }));
-        let config = TempDir::new("attachment-resume-config");
-        install_session(config.path(), &api_url);
-        let app_state = state.clone();
-        let (stop, stopped) = oneshot::channel();
-        let thread = thread::spawn(move || {
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(async move {
-                    let app = Router::new()
-                        .route("/v1/session", get(session))
-                        .route("/v1/repos/owner/repo", get(repository))
-                        .route(
-                            "/v1/repos/owner/repo/requests/req_one",
-                            get(request_detail).patch(edit_request),
-                        )
-                        .route(
-                            "/v1/repos/owner/repo/requests/req_one/attachments/limits",
-                            get(attachment_limits),
-                        )
-                        .route(
-                            "/v1/repos/owner/repo/requests/req_one/attachments/prepare",
-                            post(prepare_attachment),
-                        )
-                        .route(
-                            "/v1/repos/owner/repo/requests/req_one/attachments/att_one/finish",
-                            post(finish_attachment),
-                        )
-                        .route(
-                            "/v1/repos/owner/repo/requests/req_one/attachments/att_one",
-                            get(get_attachment),
-                        )
-                    .route(
-                        "/v1/repos/owner/repo/requests/req_one/timeline",
-                        post(create_discussion),
-                    )
-                    .route(
-                        "/v1/repos/owner/repo/requests/req_one/threads/dsc_one/replies",
-                        post(create_reply),
-                    )
-                    .route(
-                        "/v1/repos/owner/repo/requests/req_one/threads/dsc_one/reopen-and-reply",
-                        post(reopen_and_reply),
-                    )
-                        .route(
-                            "/media/v1/uploads/upload_one/parts/{part_number}",
-                            put(upload_part),
-                        )
-                        .layer(DefaultBodyLimit::max(9 * 1024 * 1024))
-                        .with_state(app_state);
-                    axum::serve(tokio::net::TcpListener::from_std(listener).unwrap(), app)
-                        .with_graceful_shutdown(async {
-                            let _ = stopped.await;
-                        })
-                        .await
-                        .unwrap();
-                });
+        let server = TestServer::with_url(|api_url| {
+            state.lock().unwrap().api_url = api_url.to_string();
+            Router::new()
+                .route("/v1/session", get(session))
+                .route("/v1/repos/owner/repo", get(repository))
+                .route(
+                    "/v1/repos/owner/repo/requests/req_one",
+                    get(request_detail).patch(edit_request),
+                )
+                .route(
+                    "/v1/repos/owner/repo/requests/req_one/attachments/limits",
+                    get(attachment_limits),
+                )
+                .route(
+                    "/v1/repos/owner/repo/requests/req_one/attachments/prepare",
+                    post(prepare_attachment),
+                )
+                .route(
+                    "/v1/repos/owner/repo/requests/req_one/attachments/att_one/finish",
+                    post(finish_attachment),
+                )
+                .route(
+                    "/v1/repos/owner/repo/requests/req_one/attachments/att_one",
+                    get(get_attachment),
+                )
+                .route(
+                    "/v1/repos/owner/repo/requests/req_one/timeline",
+                    post(create_discussion),
+                )
+                .route(
+                    "/v1/repos/owner/repo/requests/req_one/threads/dsc_one/replies",
+                    post(create_reply),
+                )
+                .route(
+                    "/v1/repos/owner/repo/requests/req_one/threads/dsc_one/reopen-and-reply",
+                    post(reopen_and_reply),
+                )
+                .route(
+                    "/media/v1/uploads/upload_one/parts/{part_number}",
+                    put(upload_part),
+                )
+                .layer(DefaultBodyLimit::max(9 * 1024 * 1024))
+                .with_state(state.clone())
         });
-        Self {
-            api_url,
-            config,
-            state,
-            stop,
-            thread,
-        }
+        Self { server, state }
     }
 
     fn command(&self, cwd: &std::path::Path) -> Command {
-        let mut command = scope_command(cwd);
-        command
-            .env("SCOPE_API_URL", &self.api_url)
-            .env("XDG_CONFIG_HOME", self.config.path());
-        command
+        self.server.command(cwd)
     }
-
-    fn finish(self) {
-        let _ = self.stop.send(());
-        self.thread.join().unwrap();
-    }
-}
-
-fn install_session(config: &std::path::Path, api_url: &str) {
-    let key = api_url
-        .bytes()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    fs::create_dir_all(config.join("scope/sessions")).unwrap();
-    fs::write(
-        config.join(format!("scope/sessions/cli-session-{key}")),
-        "test-token",
-    )
-    .unwrap();
 }
 
 async fn session() -> Json<Value> {

@@ -39,7 +39,7 @@ use scope_domain::{
     repository::{RepoLifecycleState, RepoRecord, Repository},
 };
 use scope_object_store::{
-    ContentObjectKind, MemoryObjectStore, put_content_object, put_source_blob, source_blob_bytes,
+    ContentObjectKind, MemoryObjectStore, put_source_blob, source_blob_bytes,
 };
 use std::{
     collections::BTreeMap,
@@ -66,6 +66,7 @@ mod git_receive;
 mod git_receive_config;
 mod git_request_refs;
 mod history;
+mod http;
 mod landing_file;
 mod manual_runs;
 mod push_intent_completion;
@@ -80,6 +81,8 @@ mod requests;
 mod run_inspection;
 mod run_resources;
 mod runtime_budgets;
+
+use http::api_request;
 
 const TEST_CLERK_ISSUER: &str = "https://clerk.test";
 const TEST_CLERK_AUDIENCE: &str = "scope-api";
@@ -444,9 +447,7 @@ async fn create_test_push_intent(state: &AppState, user_id: &str, head_oid: &str
             head_oid,
             config.clone(),
             repo_config_fingerprint(&config).unwrap(),
-            repo.git_head
-                .as_ref()
-                .map(|head| head.manifest.content_ref.clone()),
+            repo.git_head.as_ref().map(|head| head.frontier()),
         )
         .unwrap()
         .token
@@ -610,15 +611,6 @@ async fn persist_and_promote_test_update(
                 )
                 .await?;
             update.git_pack_span.segment = staged_segment.segment.clone();
-            let content_refs = update
-                .durable_objects
-                .iter()
-                .map(|object| object.content_ref.clone())
-                .collect::<Vec<_>>();
-            let fence = state
-                .metadata
-                .acquire_content_ref_fence(&content_refs)
-                .await?;
             let write_lease = state
                 .metadata
                 .repositories()
@@ -630,7 +622,6 @@ async fn persist_and_promote_test_update(
             );
             PreparedReceivePackUpdate {
                 update,
-                fence,
                 staged_segment,
                 write_lease,
                 upload_heartbeat,
@@ -846,27 +837,19 @@ fn populate_test_live_files(repo: &mut Repository) {
 
 fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> ReceivePackUpdate {
     let config = repo_config(Visibility::Public);
-    let mut manifest = put_content_object(
-        state.object_store.as_ref(),
-        ContentObjectKind::GitManifest,
-        b"test staged Git manifest".to_vec(),
-    )
-    .unwrap();
     let head_oid = "1111111111111111111111111111111111111111";
-    manifest.git_oid = head_oid.to_string();
     ReceivePackUpdate {
         occurred_at_unix: None,
         branch: format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
         head_oid: head_oid.to_string(),
-        base_git_manifest_ref: None,
+        base_git_frontier: None,
         author_id: test_owner_id(),
         message: "owner push".to_string(),
-        git_head: scope_domain::repository::git::GitHead {
-            head_oid: "1111111111111111111111111111111111111111".to_string(),
-            push_sequence: 1,
-            change_version: 1,
-            manifest,
-        },
+        git_head: scope_domain::repository::git::GitHead::new(
+            "1111111111111111111111111111111111111111".to_string(),
+            1,
+            1,
+        ),
         git_pack_span: scope_domain::repository::git::GitPackSpan {
             first_sequence: 1,
             last_sequence: 1,
@@ -875,7 +858,6 @@ fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> 
             head_oid: "1111111111111111111111111111111111111111".to_string(),
             segment: test_git_segment_ref("test staged Git segment"),
         },
-        durable_objects: Vec::new(),
         workflow_catalog: scope_domain::runs::catalog::RepositoryWorkflowCatalog::captured(
             TEST_REPO_ID,
             head_oid,

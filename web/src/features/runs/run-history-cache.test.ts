@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RepoRunHistoryPage } from '@/api/types'
-import { restoreRunHistory, retainRunHistory, resetRunHistoryCache, runHistoryCacheKey } from './run-history-cache'
+import { restoreRunHistory, runHistoryResource, resetRunHistoryCache, runHistoryCacheKey } from './run-history-cache'
 import { reloadRunHistoryPages } from './run-history-model'
 
 function page(ids: string[], next_cursor: string | null = null): RepoRunHistoryPage {
@@ -11,7 +11,7 @@ function page(ids: string[], next_cursor: string | null = null): RepoRunHistoryP
 test('navigation restores older runs, exhausted cursor and refresh depth', async () => {
   resetRunHistoryCache()
   const key = runHistoryCacheKey('viewer/repo/access')
-  retainRunHistory(key, { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
+  runHistoryResource.write(key, { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
   const restored = restoreRunHistory(key, page(['first'], 'older-page'))
   assert.deepEqual(restored.history?.runs.map(({ id }) => id), ['first', 'older'])
   assert.equal(restored.history?.next_cursor, null)
@@ -26,7 +26,7 @@ test('navigation restores older runs, exhausted cursor and refresh depth', async
 
 test('authoritative first page updates retained rows before background reconciliation', () => {
   resetRunHistoryCache()
-  retainRunHistory('runs', { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
+  runHistoryResource.write('runs', { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
   const initial = page(['new', 'first'], 'next')
   initial.runs[1]!.state = 'succeeded'
   const restored = restoreRunHistory('runs', initial)
@@ -38,7 +38,7 @@ test('authoritative first page updates retained rows before background reconcili
 test('run retention isolates repository access and workflow filters', () => {
   resetRunHistoryCache()
   const key = runHistoryCacheKey('viewer/repo/access')
-  retainRunHistory(key, { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
+  runHistoryResource.write(key, { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
   for (const other of [runHistoryCacheKey('other-viewer/repo/access'), runHistoryCacheKey('viewer/other-repo/access'), runHistoryCacheKey('viewer/repo/access', 'checks'), null]) {
     assert.equal(restoreRunHistory(other, page(['first'])).history?.runs.length, 1)
   }
@@ -46,10 +46,10 @@ test('run retention isolates repository access and workflow filters', () => {
 
 test('run pagination retention is bounded', () => {
   resetRunHistoryCache()
-  for (let index = 0; index < 13; index++) retainRunHistory(String(index), { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
+  for (let index = 0; index < 13; index++) runHistoryResource.write(String(index), { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
   assert.equal(restoreRunHistory('0', page(['first'])).pageCount, 1)
   assert.equal(restoreRunHistory('12', page(['first'])).pageCount, 2)
-  retainRunHistory('large', { history: page(['x'.repeat(3 * 1024 * 1024)]), snapshot: page(['first']), pageCount: 2 })
+  runHistoryResource.write('large', { history: page(['x'.repeat(3 * 1024 * 1024)]), snapshot: page(['first']), pageCount: 2 })
   assert.equal(restoreRunHistory('large', page(['first'])).pageCount, 1)
 })
 
@@ -59,6 +59,6 @@ test('an unchanged route snapshot does not roll back newer live run state', () =
   const snapshot = page(['first'])
   const refreshed = page(['first'])
   refreshed.runs[0]!.state = 'succeeded'
-  retainRunHistory('live', { history: refreshed, snapshot, pageCount: 1 })
+  runHistoryResource.write('live', { history: refreshed, snapshot, pageCount: 1 })
   assert.equal(restoreRunHistory('live', page(['first'])).history?.runs[0]?.state, 'succeeded')
 })

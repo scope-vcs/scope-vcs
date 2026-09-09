@@ -114,7 +114,7 @@ export function RequestDiscussionWorkbench({
                 canResolve={canResolve(discussion)}
                 composerOpen={activeComposer === discussion.id}
                 discussion={discussion}
-                key={discussion.id}
+                key={`${store.cacheKey}\0${discussion.id}`}
                 onExpandedChange={store.setExpanded}
                 onMarkRead={store.markRead}
                 onCloseComposer={() => setActiveComposer(null)}

@@ -43,6 +43,8 @@ pub struct RuntimeClient {
     cache_access: Arc<Mutex<Option<CacheAccess>>>,
     cache_keys: Arc<Mutex<Vec<AttemptCacheKeyMaterial>>>,
     heartbeat_lock: Arc<Mutex<()>>,
+    #[cfg(test)]
+    heartbeat_started: Option<mpsc::Sender<()>>,
 }
 
 #[derive(Clone)]
@@ -65,6 +67,8 @@ impl RuntimeClient {
             cache_access: Arc::new(Mutex::new(None)),
             cache_keys: Arc::new(Mutex::new(Vec::new())),
             heartbeat_lock: Arc::new(Mutex::new(())),
+            #[cfg(test)]
+            heartbeat_started: None,
         })
     }
 
@@ -81,6 +85,7 @@ impl RuntimeClient {
             }))),
             cache_keys: Arc::new(Mutex::new(Vec::new())),
             heartbeat_lock: Arc::new(Mutex::new(())),
+            heartbeat_started: None,
         }
     }
 

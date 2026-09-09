@@ -166,14 +166,6 @@ process.exit(plan.pending.length > 0 ? 0 : 1);
 '
 }
 
-plan_includes_migration() {
-  PLAN_JSON="$1" MIGRATION_NAME="$2" node -e '
-const plan = JSON.parse(process.env.PLAN_JSON || "{}");
-if (!Array.isArray(plan.pending)) process.exit(2);
-process.exit(plan.pending.some((item) => item.name === process.env.MIGRATION_NAME) ? 0 : 1);
-'
-}
-
 plan_is_exact() {
   PLAN_JSON="$1" node -e '
 const plan = JSON.parse(process.env.PLAN_JSON || "{}");

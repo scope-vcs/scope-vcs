@@ -22,11 +22,6 @@ pub(crate) struct CompactedPack {
     pub(crate) metrics: CompactionPackMetrics,
 }
 
-#[derive(Debug)]
-pub(crate) struct CompactedPackFailure {
-    pub(crate) error: anyhow::Error,
-}
-
 pub(crate) struct CompactionPackMetrics {
     pub(crate) source_span_count: usize,
     pub(crate) source_pack_bytes: usize,
@@ -50,26 +45,7 @@ pub(crate) async fn build_compacted_pack(
     storage_limits: GitStorageLimits,
     timeout: Duration,
     data_dir: PathBuf,
-) -> Result<CompactedPack, CompactedPackFailure> {
-    build_compacted_pack_inner(
-        segment_store,
-        candidate,
-        reservation,
-        storage_limits,
-        timeout,
-        data_dir,
-    )
-    .await
-}
-
-async fn build_compacted_pack_inner(
-    segment_store: Arc<GitSegmentStore>,
-    candidate: &GitCompactionCandidate,
-    reservation: GitSegmentReservation,
-    storage_limits: GitStorageLimits,
-    timeout: Duration,
-    data_dir: PathBuf,
-) -> Result<CompactedPack, CompactedPackFailure> {
+) -> anyhow::Result<CompactedPack> {
     let total_started = Instant::now();
     let repo = TemporaryGitRepo::new(&data_dir)?;
     let init_started = Instant::now();
@@ -79,8 +55,7 @@ async fn build_compacted_pack_inner(
         None,
         timeout,
         storage_limits.max_object_bytes(),
-    )
-    .map_err(CompactedPackFailure::from)?;
+    )?;
     let init_ms = elapsed_ms(init_started);
     let mut download = Duration::ZERO;
     let mut index = Duration::ZERO;
@@ -97,10 +72,10 @@ async fn build_compacted_pack_inner(
         if span.segment.plaintext_bytes
             > u64::try_from(storage_limits.max_object_bytes()).unwrap_or(u64::MAX)
         {
-            return Err(CompactedPackFailure::from(anyhow::anyhow!(
+            return Err(anyhow::anyhow!(
                 "Git segment {} exceeds the configured object byte limit",
                 span.segment.segment_id
-            )));
+            ));
         }
         let index_started = Instant::now();
         let restore = index_git_segment(
@@ -110,8 +85,7 @@ async fn build_compacted_pack_inner(
             &repo.path,
             timeout,
         )
-        .await
-        .map_err(CompactedPackFailure::from)?;
+        .await?;
         match restore.source {
             GitSegmentRestoreSource::Local => local_restore_count += 1,
             GitSegmentRestoreSource::Remote => remote_restore_count += 1,
@@ -128,30 +102,22 @@ async fn build_compacted_pack_inner(
     let compacted_head = candidate
         .spans
         .last()
-        .ok_or_else(|| {
-            CompactedPackFailure::from(anyhow::anyhow!(
-                "Git compaction candidate has no pack spans"
-            ))
-        })?
+        .ok_or_else(|| anyhow::anyhow!("Git compaction candidate has no pack spans"))?
         .head_oid
         .as_str();
     let compacted_base = candidate
         .spans
         .first()
-        .ok_or_else(|| {
-            CompactedPackFailure::from(anyhow::anyhow!(
-                "Git compaction candidate has no pack spans"
-            ))
-        })?
+        .ok_or_else(|| anyhow::anyhow!("Git compaction candidate has no pack spans"))?
         .base_oid
         .as_deref();
     match (compacted_base, candidate.predecessor.as_ref()) {
         (None, None) => {}
         (Some(base_oid), Some(predecessor)) if predecessor.head_oid == base_oid => {}
         _ => {
-            return Err(CompactedPackFailure::from(anyhow::anyhow!(
+            return Err(anyhow::anyhow!(
                 "Git compaction candidate has an invalid predecessor boundary"
-            )));
+            ));
         }
     }
     let update_ref_started = Instant::now();
@@ -165,8 +131,7 @@ async fn build_compacted_pack_inner(
         None,
         timeout,
         storage_limits.max_object_bytes(),
-    )
-    .map_err(CompactedPackFailure::from)?;
+    )?;
     let update_ref_ms = elapsed_ms(update_ref_started);
     let revisions = match compacted_base {
         Some(base_oid) => format!("{compacted_head}\n^{base_oid}\n"),
@@ -185,8 +150,7 @@ async fn build_compacted_pack_inner(
         Some(revisions.as_bytes().to_vec()),
         timeout,
         storage_limits.max_object_bytes(),
-    )
-    .map_err(CompactedPackFailure::from)?;
+    )?;
     let connectivity_check_ms = elapsed_ms(connectivity_started);
     let pack_started = Instant::now();
     let staged = ingest_compacted_pack(
@@ -219,12 +183,6 @@ async fn build_compacted_pack_inner(
         },
         staged,
     })
-}
-
-impl From<anyhow::Error> for CompactedPackFailure {
-    fn from(error: anyhow::Error) -> Self {
-        Self { error }
-    }
 }
 
 async fn index_git_segment(
@@ -320,7 +278,7 @@ async fn ingest_compacted_pack(
     revisions: Vec<u8>,
     timeout: Duration,
     max_bytes: usize,
-) -> Result<StagedGitSegment, CompactedPackFailure> {
+) -> anyhow::Result<StagedGitSegment> {
     let repository_id = repository_id.to_string();
     let repo = repo.to_path_buf();
     let runtime = tokio::runtime::Handle::current();
@@ -347,34 +305,30 @@ async fn ingest_compacted_pack(
         )
     })
     .await
-    .map_err(|error| {
-        CompactedPackFailure::from(anyhow::anyhow!("Git compaction task failed: {error}"))
-    })?;
+    .map_err(|error| anyhow::anyhow!("Git compaction task failed: {error}"))?;
     let output = match output {
         Ok(output) => output,
         Err(StreamingProcessError::Process(error)) => {
-            return Err(CompactedPackFailure::from(anyhow::Error::new(error)));
+            return Err(anyhow::Error::new(error));
         }
         Err(StreamingProcessError::Consumer(
             scope_git_storage::GitStorageError::PlaintextLimitExceeded { .. },
         )) => {
-            return Err(CompactedPackFailure::from(anyhow::Error::new(
-                ProcessError::StdoutLimitExceeded {
-                    action: "git pack-objects --revs --stdout".to_string(),
-                    max_stdout_bytes: max_bytes,
-                    diagnostic: String::new(),
-                },
-            )));
+            return Err(anyhow::Error::new(ProcessError::StdoutLimitExceeded {
+                action: "git pack-objects --revs --stdout".to_string(),
+                max_stdout_bytes: max_bytes,
+                diagnostic: String::new(),
+            }));
         }
         Err(StreamingProcessError::Consumer(error)) => {
-            return Err(CompactedPackFailure::from(anyhow::Error::new(error)));
+            return Err(anyhow::Error::new(error));
         }
     };
     if !output.status.success() {
-        return Err(CompactedPackFailure::from(anyhow::anyhow!(
+        return Err(anyhow::anyhow!(
             "git pack-objects --revs --stdout failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        ));
     }
     Ok(output.value)
 }

@@ -1,19 +1,35 @@
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { serverFunctionName } from './server-functions-smoke.mjs'
+import ts from 'typescript'
+import { productionFunctions, serverFunctionName } from './server-functions-smoke.mjs'
 
 const request = (path) => ({ url: () => `https://scope.example${path}` })
+const serverBundle = new URL('../.output/server/_ssr/ssr.mjs', import.meta.url)
 
-test('server function interception recognizes production IDs from the built manifest', () => {
-  assert.equal(serverFunctionName(request('/_serverFn/1a244e708e6aee5e00cbc325738360030b4eda0f97faea6b1885eadfcbe133d1?payload=test')),
-    'loadChangesPage_createServerFn_handler')
-  assert.equal(serverFunctionName(request('/_serverFn/02b6cf9544857f2eab3a686af0c993ec5e022be826c7062faa513d1139d206a4')),
-    'loadRequestQueuePage_createServerFn_handler')
-})
+test('server function interception recognizes production IDs from the built manifest', {
+  skip: !existsSync(serverBundle) && process.env.SCOPE_REQUIRE_BUILT_MANIFEST !== '1'
+    ? 'No local build; pnpm build runs this check against its emitted manifest'
+    : false,
+}, () => {
+  const source = ts.createSourceFile('ssr.mjs', readFileSync(serverBundle, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const manifest = new Map()
+  ts.forEachChild(source, function visit(node) {
+    if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.name) && ts.isObjectLiteralExpression(node.initializer)) {
+      const name = node.initializer.properties.find((property) =>
+        ts.isPropertyAssignment(property) && property.name.text === 'functionName')
+      if (name && ts.isStringLiteral(name.initializer)) {
+        manifest.set(node.name.text, name.initializer.text)
+      }
+    }
+    ts.forEachChild(node, visit)
+  })
 
-test('attachment metadata requests use the production request-page ID', () => {
-  assert.equal(serverFunctionName(request('/_serverFn/5bbd567bcd27c0c8b8cddec5cf03ca8ce15a58fcde87e8af3a0e0509bde421b7')),
-    'listRequestAttachments_createServerFn_handler')
+  assert.ok(manifest.size > 0, 'No server function manifest entries found in the built server')
+  for (const [id, handler] of productionFunctions) {
+    assert.equal(manifest.get(id), handler, `Smoke interception for ${handler} disagrees with the built manifest`)
+    assert.equal(serverFunctionName(request(`/_serverFn/${id}?payload=test`)), handler)
+  }
 })
 
 test('server function interception also decodes the development compiler format', () => {

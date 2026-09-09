@@ -1,3 +1,4 @@
+use crate::api::ApiSession;
 mod journal;
 use super::text::terminal_text;
 use crate::api::{
@@ -45,9 +46,7 @@ struct AttachmentFile {
 }
 
 pub(super) fn upload(
-    client: &reqwest::blocking::Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     attachment_target: RequestAttachmentTargetInput,
     paths: Vec<PathBuf>,
@@ -60,7 +59,7 @@ pub(super) fn upload(
         });
     }
 
-    let limits = get_request_attachment_limits(client, api_url, session_token, target)?;
+    let limits = get_request_attachment_limits(api, target)?;
     if paths.len() > limits.max_attachments_per_content {
         bail!(
             "at most {} attachments may be added to one request description or message",
@@ -72,7 +71,7 @@ pub(super) fn upload(
     let mut files = Vec::with_capacity(paths.len());
     let mut seen = BTreeSet::new();
     for path in paths {
-        let file = inspect_file(path, api_url, target, &target_json)?;
+        let file = inspect_file(path, api.base_url, target, &target_json)?;
         let max_bytes = match file.kind {
             RequestAttachmentKind::Photo => limits.max_photo_bytes,
             RequestAttachmentKind::Video => limits.max_video_bytes,
@@ -119,13 +118,7 @@ pub(super) fn upload(
             size_bytes: file.size_bytes,
             sha256: file.sha256.clone(),
         };
-        let prepared = match prepare_request_attachment(
-            client,
-            api_url,
-            session_token,
-            target,
-            &prepare_request,
-        ) {
+        let prepared = match prepare_request_attachment(api, target, &prepare_request) {
             Ok(prepared) => prepared,
             Err(error)
                 if crate::error::response(&error).code
@@ -133,26 +126,12 @@ pub(super) fn upload(
             {
                 prepare_request.operation_id =
                     rotate_upload_operation(&file.receipt_key, &prepare_request.operation_id)?;
-                prepare_request_attachment(
-                    client,
-                    api_url,
-                    session_token,
-                    target,
-                    &prepare_request,
-                )?
+                prepare_request_attachment(api, target, &prepare_request)?
             }
             Err(error) => return Err(error),
         };
         let attachment = if prepared.attachment.state == RequestAttachmentState::Prepared {
-            transfer_and_finish(
-                client,
-                api_url,
-                session_token,
-                target,
-                file,
-                &prepare_request,
-                prepared,
-            )?
+            transfer_and_finish(api, target, file, &prepare_request, prepared)?
         } else {
             eprintln!(
                 "Reusing {} · {}",
@@ -172,9 +151,7 @@ pub(super) fn upload(
 }
 
 fn transfer_and_finish(
-    client: &reqwest::blocking::Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     file: &AttachmentFile,
     prepare_request: &PrepareRequestAttachmentRequest,
@@ -225,9 +202,7 @@ fn transfer_and_finish(
             } else {
                 if unix_now()?.saturating_add(15) >= transfer.expires_at_unix {
                     prepared = refresh_preparation(
-                        client,
-                        api_url,
-                        session_token,
+                        api,
                         target,
                         prepare_request,
                         &attachment_id,
@@ -236,7 +211,7 @@ fn transfer_and_finish(
                     continue 'transfer;
                 }
                 match upload_request_attachment_part(
-                    client,
+                    api.client,
                     &transfer.media_base_url,
                     &transfer.grant,
                     &transfer.upload_id,
@@ -254,9 +229,7 @@ fn transfer_and_finish(
                     }
                     Err(error) if is_expired_transfer_grant(&error) => {
                         prepared = refresh_preparation(
-                            client,
-                            api_url,
-                            session_token,
+                            api,
                             target,
                             prepare_request,
                             &attachment_id,
@@ -285,9 +258,7 @@ fn transfer_and_finish(
             );
         }
         return finish_request_attachment(
-            client,
-            api_url,
-            session_token,
+            api,
             target,
             &attachment_id,
             &FinishRequestAttachmentRequest {
@@ -299,9 +270,7 @@ fn transfer_and_finish(
 }
 
 fn refresh_preparation(
-    client: &reqwest::blocking::Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     request: &PrepareRequestAttachmentRequest,
     attachment_id: &str,
@@ -311,7 +280,7 @@ fn refresh_preparation(
     if *refreshes > 32 {
         bail!("attachment transfer grant expired too many times; retry the command");
     }
-    let refreshed = prepare_request_attachment(client, api_url, session_token, target, request)?;
+    let refreshed = prepare_request_attachment(api, target, request)?;
     if refreshed.attachment.id != attachment_id {
         bail!("attachment API changed the attachment for an existing operation ID");
     }
@@ -469,17 +438,13 @@ fn markdown_reference(attachment: &RequestAttachmentResponse) -> String {
 }
 
 pub(super) fn wait_for_processing(
-    client: &reqwest::blocking::Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     attachments: Vec<RequestAttachmentResponse>,
     recovery: serde_json::Value,
 ) -> anyhow::Result<Vec<RequestAttachmentResponse>> {
     wait_for_processing_with_policy(
-        client,
-        api_url,
-        session_token,
+        api,
         target,
         attachments,
         recovery,
@@ -488,11 +453,8 @@ pub(super) fn wait_for_processing(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn wait_for_processing_with_policy(
-    client: &reqwest::blocking::Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     mut attachments: Vec<RequestAttachmentResponse>,
     mut recovery: serde_json::Value,
@@ -509,13 +471,7 @@ fn wait_for_processing_with_policy(
         for index in 0..attachments.len() {
             if is_processing(&attachments[index]) {
                 let attachment_id = attachments[index].id.clone();
-                let loaded = match get_request_attachment(
-                    client,
-                    api_url,
-                    session_token,
-                    target,
-                    &attachment_id,
-                ) {
+                let loaded = match get_request_attachment(api, target, &attachment_id) {
                     Ok(loaded) => loaded,
                     Err(error) => {
                         let mut response = crate::error::response(&error);
@@ -600,7 +556,7 @@ mod tests {
     use super::{
         fingerprint, markdown_reference, media_type_for_path, wait_for_processing_with_policy,
     };
-    use crate::api::RequestTarget;
+    use crate::api::{ApiSession, RequestTarget};
     use scope_api_contract::attachments::RequestAttachmentResponse;
     use scope_api_contract::attachments::{RequestAttachmentKind, RequestAttachmentState};
     use serde_json::json;
@@ -663,9 +619,11 @@ mod tests {
         }))
         .unwrap();
         let error = wait_for_processing_with_policy(
-            &reqwest::blocking::Client::new(),
-            "http://127.0.0.1:9",
-            "token",
+            ApiSession::new(
+                &reqwest::blocking::Client::new(),
+                "http://127.0.0.1:9",
+                "token",
+            ),
             RequestTarget {
                 owner: "owner",
                 repo: "repo",

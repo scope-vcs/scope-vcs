@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build && node scripts/build-review-diff-worker.mjs && pnpm check:diff-worker-bundle",
+    "build": "vite build && node scripts/build-review-diff-worker.mjs && pnpm check:diff-worker-bundle && SCOPE_REQUIRE_BUILT_MANIFEST=1 node --test smoke/server-functions.spec.mjs",
     "check": "pnpm typecheck && ../dev/checks/contract && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent",
     "check:api-contract": "node scripts/check-api-contract.mjs",
     "check:diff-worker-bundle": "node scripts/check-review-diff-worker-bundle.mjs",

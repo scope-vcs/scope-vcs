@@ -8,7 +8,7 @@ const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000'
 const repo = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
 const requestRepo = process.env.SCOPE_SMOKE_REQUEST_REPO ?? 'dev/update-demo'
 
-test('sign-in keeps Scope navigation when authentication is disabled', async (t) => {
+test('sign-in keeps Scope navigation when authentication is disabled', async () => {
   const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   const errors = []
@@ -16,10 +16,7 @@ test('sign-in keeps Scope navigation when authentication is disabled', async (t)
   try {
     await page.goto(`${baseUrl}/sign-in`)
     const disabled = page.getByText('sign-in is disabled in this preview.', { exact: false })
-    if (!await disabled.isVisible().catch(() => false)) {
-      await page.waitForTimeout(1500)
-      if (!await disabled.count()) return t.skip('requires forced signed-out preview')
-    }
+    await disabled.waitFor()
     await page.getByRole('link', { name: 'back to scope' }).click()
     await page.waitForURL(new URL('/', baseUrl).href)
     assert.deepEqual(errors, [])

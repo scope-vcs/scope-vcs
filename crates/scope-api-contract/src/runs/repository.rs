@@ -1,3 +1,14 @@
+use crate::wire::wire_enum;
+use scope_domain::runs::{
+    attempt::AttemptState as DomainAttemptState,
+    cache::observation::{
+        CacheColdReason as DomainCacheColdReason, CacheFinalState as DomainCacheFinalState,
+    },
+    job::RunJobState as DomainRunJobState,
+    run::RunState as DomainRunState,
+    source::RunTrigger as DomainRunTrigger,
+    step::StepState as DomainStepState,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -14,19 +25,19 @@ pub enum ResolveManualRunResponse {
     UploadRequired,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-pub enum RunState {
-    Queued,
-    Dispatching,
-    Running,
-    Succeeded,
-    Failed,
-    Canceled,
-    Lost,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RunState => DomainRunState {
+        Queued,
+        Dispatching,
+        Running,
+        Succeeded,
+        Failed,
+        Canceled,
+        Lost,
+    }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -43,28 +54,28 @@ pub struct RunResponse {
     pub completed_at_unix: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-pub enum RepositoryRunState {
-    Queued,
-    Dispatching,
-    Running,
-    Succeeded,
-    Failed,
-    Canceled,
-    Lost,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RepositoryRunState => DomainRunState {
+        Queued,
+        Dispatching,
+        Running,
+        Succeeded,
+        Failed,
+        Canceled,
+        Lost,
+    }
+);
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-pub enum RepositoryRunTrigger {
-    Manual,
-    PushMain,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RepositoryRunTrigger => DomainRunTrigger {
+        Manual,
+        PushMain,
+    }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -82,48 +93,48 @@ pub struct RepositoryRunSummaryResponse {
     pub can_retry: bool,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-pub enum RepositoryRunJobState {
-    Blocked,
-    Queued,
-    Dispatching,
-    Running,
-    Succeeded,
-    Failed,
-    Skipped,
-    Canceled,
-    Lost,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RepositoryRunJobState => DomainRunJobState {
+        Blocked,
+        Queued,
+        Dispatching,
+        Running,
+        Succeeded,
+        Failed,
+        Skipped,
+        Canceled,
+        Lost,
+    }
+);
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-pub enum RepositoryRunAttemptState {
-    Dispatching,
-    Running,
-    Succeeded,
-    Failed,
-    Canceled,
-    Lost,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RepositoryRunAttemptState => DomainAttemptState {
+        Dispatching,
+        Running,
+        Succeeded,
+        Failed,
+        Canceled,
+        Lost,
+    }
+);
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-pub enum RepositoryRunStepState {
-    Pending,
-    Running,
-    Succeeded,
-    Failed,
-    Canceled,
-    Lost,
-    Skipped,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RepositoryRunStepState => DomainStepState {
+        Pending,
+        Running,
+        Succeeded,
+        Failed,
+        Canceled,
+        Lost,
+        Skipped,
+    }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -138,18 +149,18 @@ pub enum RepositoryRunTerminalReason {
     RuntimeSetupFailed { exit_code: i32, message: String },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-pub enum RepositoryRunCacheColdReason {
-    MetadataMissing,
-    MetadataInvalid,
-    MetadataNotReady,
-    VolumeMissing,
-    VolumeInvalid,
-    BackingDirectoryMissing,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RepositoryRunCacheColdReason => DomainCacheColdReason {
+        MetadataMissing,
+        MetadataInvalid,
+        MetadataNotReady,
+        VolumeMissing,
+        VolumeInvalid,
+        BackingDirectoryMissing,
+    }
+);
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -163,15 +174,15 @@ pub enum RepositoryRunCachePreparation {
     },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-pub enum RepositoryRunCacheFinalState {
-    Pending,
-    Ready,
-    Evicted,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RepositoryRunCacheFinalState => DomainCacheFinalState {
+        Pending,
+        Ready,
+        Evicted,
+    }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]

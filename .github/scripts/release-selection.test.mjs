@@ -179,4 +179,17 @@ test("recovery overrides new main and rejects a different replay run", async () 
   assert.equal(result.recover_cutover_id, "77");
   assert.deepEqual(result.prepared, state.prepared);
   await assert.rejects(selectRelease({ sourceSha: mainSha, sourceRunId: "999", repository }, request), /original preparation/);
+
+  for (const [mutate, expected] of [
+    [() => { state.run.head_branch = "candidate"; }, /on main/],
+    [() => { state.comparison.status = "diverged"; }, /main history/],
+    [() => { state.jobs[1].conclusion = "failure"; }, /preparation job/],
+  ]) {
+    const original = structuredClone({ run: state.run, comparison: state.comparison, jobs: state.jobs });
+    mutate();
+    await assert.rejects(selectRelease({ sourceSha: mainSha, repository }, request), expected);
+    Object.assign(state.run, original.run);
+    Object.assign(state.comparison, original.comparison);
+    state.jobs.splice(0, state.jobs.length, ...original.jobs);
+  }
 });

@@ -5,7 +5,6 @@ use super::{
         RepositoryHistoryDelta, insert_repository_history, insert_repository_live_files,
         save_repository_history_delta,
     },
-    object_references::{insert_object_reference, replace_object_reference},
     outbox::enqueue_projection_read_model_rebuild,
 };
 use sea_orm::{
@@ -179,7 +178,6 @@ where
             .insert(conn)
             .await
             .map_err(PostgresError::internal)?;
-        insert_object_reference(conn, "git_manifest", &repo_id, &head.manifest).await?;
     }
     for span in &repo.git_pack_spans {
         entities::git_pack_span::Model::from_domain(&repo_id, span)?
@@ -241,13 +239,6 @@ where
                 .await
                 .map_err(PostgresError::internal)?;
         }
-        replace_object_reference(
-            conn,
-            "git_manifest",
-            repo_id,
-            after.git_head.as_ref().map(|head| &head.manifest),
-        )
-        .await?;
     }
     let spans_are_append_only = after.git_pack_spans.len() >= before.git_pack_spans.len()
         && after.git_pack_spans[..before.git_pack_spans.len()] == before.git_pack_spans[..];

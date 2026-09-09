@@ -15,11 +15,8 @@ const MAINTAINER: &str = "maya-maintainer";
 const REPOSITORY: &str = "dev/update-demo";
 
 #[test]
+#[ignore = "requires a seeded local stack; run dev/checks/integration cli"]
 fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
-    if env::var_os("SCOPE_CLI_E2E").is_none() {
-        return;
-    }
-
     let api_url = env::var("SCOPE_API_URL").expect("SCOPE_API_URL is required for CLI E2E");
     let repository = env::var("SCOPE_CLI_E2E_REPO").unwrap_or_else(|_| REPOSITORY.to_owned());
     let suffix = SystemTime::now()

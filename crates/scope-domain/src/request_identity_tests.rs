@@ -2,18 +2,15 @@ use super::{
     requests::*,
     requests_tests::{open_request, working_request},
 };
-use std::collections::BTreeMap;
 
 #[test]
 fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_inputs() {
     let request = working_request();
     let original_description = request.description_markdown.clone();
-    let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-    let mut events = BTreeMap::new();
 
     let title_only = edit_request_identity(
-        &mut requests,
-        &mut events,
+        request,
+        false,
         EditRequestIdentityInput {
             request_id: "request_1".to_string(),
             actor_user_id: "author".to_string(),
@@ -34,8 +31,8 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
     assert_eq!(title_only.event.kind, RequestEventKind::IdentityEdited);
 
     let description_only = edit_request_identity(
-        &mut requests,
-        &mut events,
+        title_only.request,
+        false,
         EditRequestIdentityInput {
             request_id: "request_1".to_string(),
             actor_user_id: "author".to_string(),
@@ -55,8 +52,8 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
     );
 
     let empty = edit_request_identity(
-        &mut requests,
-        &mut events,
+        description_only.request.clone(),
+        false,
         EditRequestIdentityInput {
             request_id: "request_1".to_string(),
             actor_user_id: "author".to_string(),
@@ -72,8 +69,8 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
     assert_eq!(empty.kind, crate::error::DomainErrorKind::InvalidInput);
 
     let unchanged = edit_request_identity(
-        &mut requests,
-        &mut events,
+        description_only.request,
+        false,
         EditRequestIdentityInput {
             request_id: "request_1".to_string(),
             actor_user_id: "author".to_string(),
@@ -92,10 +89,9 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
 #[test]
 fn open_request_identity_edits_preserve_submission() {
     let request = open_request();
-    let mut requests = BTreeMap::from([(request.id.clone(), request)]);
     let mutation = edit_request_identity(
-        &mut requests,
-        &mut BTreeMap::new(),
+        request.clone(),
+        false,
         EditRequestIdentityInput {
             request_id: "request_1".to_string(),
             actor_user_id: "author".to_string(),
@@ -117,10 +113,9 @@ fn open_request_identity_edits_preserve_submission() {
 fn description_edit_rejects_a_stale_expected_value_without_mutation() {
     let request = working_request();
     let original = request.clone();
-    let mut requests = BTreeMap::from([(request.id.clone(), request)]);
     let error = edit_request_identity(
-        &mut requests,
-        &mut BTreeMap::new(),
+        request.clone(),
+        false,
         EditRequestIdentityInput {
             request_id: original.id.clone(),
             actor_user_id: original.author_user_id.clone(),
@@ -135,5 +130,25 @@ fn description_edit_rejects_a_stale_expected_value_without_mutation() {
     .unwrap_err();
 
     assert_eq!(error.kind, crate::error::DomainErrorKind::Conflict);
-    assert_eq!(requests[&original.id], original);
+    assert_eq!(request, original);
+}
+
+#[test]
+fn identity_event_collision_precedes_edit_authorization() {
+    let error = edit_request_identity(
+        working_request(),
+        true,
+        EditRequestIdentityInput {
+            request_id: "request_1".to_string(),
+            actor_user_id: "outsider".to_string(),
+            actor_can_edit_identity: false,
+            event_id: "existing_event".to_string(),
+            title: Some("Changed".to_string()),
+            description_markdown: None,
+            expected_description_markdown: None,
+            now_unix: 20,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(error.message, "request event already exists");
 }

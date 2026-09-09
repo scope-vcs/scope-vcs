@@ -13,7 +13,7 @@ pub(crate) const TEST_IMAGE: &str =
 
 #[derive(Default)]
 struct Requests {
-    methods: Mutex<Vec<String>>,
+    entries: Mutex<Vec<(String, Value)>>,
     changed: Notify,
     active_starts: AtomicUsize,
     peak_starts: AtomicUsize,
@@ -34,6 +34,12 @@ pub(crate) struct FakeEcs {
 
 impl FakeEcs {
     pub(crate) async fn new() -> Self {
+        Self::with_registry_credentials(None).await
+    }
+
+    pub(crate) async fn with_registry_credentials(
+        registry_credentials_secret_arn: Option<&str>,
+    ) -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let requests = Arc::new(Requests::default());
@@ -66,7 +72,7 @@ impl FakeEcs {
             ecs_execution_role_arn: "arn:aws:iam::123456789012:role/test".into(),
             ecs_log_group: "/scope/test".into(),
             ecs_secret_name_key: [7; 32],
-            registry_credentials_secret_arn: None,
+            registry_credentials_secret_arn: registry_credentials_secret_arn.map(str::to_string),
             runtime_version: "test".into(),
             max_concurrency: 4,
         };
@@ -88,16 +94,41 @@ impl FakeEcs {
 
     pub(crate) fn count(&self, method: &str) -> usize {
         self.requests
-            .methods
+            .entries
             .lock()
             .unwrap()
             .iter()
-            .filter(|m| *m == method)
+            .filter(|(recorded_method, _)| recorded_method == method)
             .count()
     }
 
     pub(crate) fn peak_starts(&self) -> usize {
         self.requests.peak_starts.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn created_secrets(&self) -> Vec<String> {
+        self.requests
+            .entries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(method, _)| method == "CreateSecret")
+            .map(|(_, body)| body["SecretString"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    pub(crate) fn request_body(&self, method: &str) -> Value {
+        let matching = self
+            .requests
+            .entries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(recorded_method, _)| recorded_method == method)
+            .map(|(_, body)| body.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(matching.len(), 1, "expected exactly one {method} request");
+        matching.into_iter().next().unwrap()
     }
 
     pub(crate) async fn wait_for(&self, method: &str, count: usize) {
@@ -138,7 +169,12 @@ async fn handle(
         .rsplit('.')
         .next()
         .unwrap();
-    state.requests.methods.lock().unwrap().push(method.into());
+    state
+        .requests
+        .entries
+        .lock()
+        .unwrap()
+        .push((method.into(), body.clone()));
     state.requests.changed.notify_waiters();
     Json(match method {
         // Empty discovery invokes the actual five-minute ambiguity reconciliation.

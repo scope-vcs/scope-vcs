@@ -1,3 +1,4 @@
+use crate::api::ApiSession;
 use crate::{
     api::{
         CreateRequestDiscussionParams, CreateRequestDiscussionReplyParams, RequestActivityParams,
@@ -15,7 +16,6 @@ use crate::{
     },
 };
 use anyhow::{Context, bail};
-use reqwest::blocking::Client;
 use scope_api_contract::{ErrorCode, ErrorResponse, RequestAudience, RequestDiscussionAnchorInput};
 use scope_domain::{policy::ScopePath, repo_control::is_public_request_protected_path};
 use std::{
@@ -97,143 +97,67 @@ pub fn prepare_request_command(args: RequestArgs) -> anyhow::Result<PreparedRequ
 
 pub fn run_request_command(
     command: PreparedRequestCommand,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let PreparedRequestCommand { args, git_repo } = command;
     let git_repo = git_repo.as_ref();
     match args.command {
-        RequestCommand::Start(args) => start_request_branch(
-            git_repo.expect("prepared local command"),
-            client,
-            api_url,
-            session_token,
-            args,
-        ),
+        RequestCommand::Start(args) => {
+            start_request_branch(git_repo.expect("prepared local command"), api, args)
+        }
         RequestCommand::Push(args) => push_request_branch(
             git_repo.expect("prepared local command"),
-            client,
-            api_url,
-            session_token,
+            api,
             args.target.remote,
             args.target.request,
             machine_output,
         ),
-        RequestCommand::Submit(args) => submit_request_command(
-            git_repo,
-            client,
-            api_url,
-            session_token,
-            args.target,
-            args.yes,
-            machine_output,
-        ),
-        RequestCommand::Close(args) => close_request_branch(
-            git_repo,
-            client,
-            api_url,
-            session_token,
-            args.target,
-            args.yes,
-            machine_output,
-        ),
-        RequestCommand::Edit(args) => edit_request(git_repo, client, api_url, session_token, args),
-        RequestCommand::Invite(args) => invite_request(
-            git_repo,
-            client,
-            api_url,
-            session_token,
-            args.target,
-            args.handle,
-            true,
-        ),
-        RequestCommand::Uninvite(args) => invite_request(
-            git_repo,
-            client,
-            api_url,
-            session_token,
-            args.target,
-            args.handle,
-            false,
-        ),
-        RequestCommand::Leave(args) => {
-            leave_invited_request(git_repo, client, api_url, session_token, args.target)
+        RequestCommand::Submit(args) => {
+            submit_request_command(git_repo, api, args.target, args.yes, machine_output)
         }
-        RequestCommand::Merge(args) => merge_request_command(
-            git_repo,
-            client,
-            api_url,
-            session_token,
-            args.target,
-            args.yes,
-            machine_output,
-        ),
-        RequestCommand::Rate(args) => rate_request_command(
-            git_repo,
-            client,
-            api_url,
-            session_token,
-            args.target,
-            args.score,
-            args.reason,
-        ),
-        RequestCommand::Discussion(args) => {
-            run_request_discussion_command(git_repo, client, api_url, session_token, args)
+        RequestCommand::Close(args) => {
+            close_request_branch(git_repo, api, args.target, args.yes, machine_output)
         }
-        RequestCommand::Show(args) => {
-            show_one_request(git_repo, client, api_url, session_token, args.target)
+        RequestCommand::Edit(args) => edit_request(git_repo, api, args),
+        RequestCommand::Invite(args) => {
+            invite_request(git_repo, api, args.target, args.handle, true)
         }
-        RequestCommand::List(args) => {
-            list_request_status(git_repo, client, api_url, session_token, args)
+        RequestCommand::Uninvite(args) => {
+            invite_request(git_repo, api, args.target, args.handle, false)
         }
-        RequestCommand::Checkout(args) => inspect::checkout_request(
-            git_repo.expect("prepared local command"),
-            client,
-            api_url,
-            session_token,
-            args,
-        ),
-        RequestCommand::Diff(args) => {
-            inspect::diff_request(git_repo, client, api_url, session_token, args)
+        RequestCommand::Leave(args) => leave_invited_request(git_repo, api, args.target),
+        RequestCommand::Merge(args) => {
+            merge_request_command(git_repo, api, args.target, args.yes, machine_output)
         }
-        RequestCommand::Checks(args) => {
-            inspect::request_checks(git_repo, client, api_url, session_token, args.target)
+        RequestCommand::Rate(args) => {
+            rate_request_command(git_repo, api, args.target, args.score, args.reason)
         }
-        RequestCommand::Status(args) => show_request_status(
-            git_repo,
-            client,
-            api_url,
-            session_token,
-            args.target.remote,
-            args.target.request,
-        ),
+        RequestCommand::Discussion(args) => run_request_discussion_command(git_repo, api, args),
+        RequestCommand::Show(args) => show_one_request(git_repo, api, args.target),
+        RequestCommand::List(args) => list_request_status(git_repo, api, args),
+        RequestCommand::Checkout(args) => {
+            inspect::checkout_request(git_repo.expect("prepared local command"), api, args)
+        }
+        RequestCommand::Diff(args) => inspect::diff_request(git_repo, api, args),
+        RequestCommand::Checks(args) => inspect::request_checks(git_repo, api, args.target),
+        RequestCommand::Status(args) => {
+            show_request_status(git_repo, api, args.target.remote, args.target.request)
+        }
     }
 }
 
 fn show_request_status(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     remote: Option<String>,
     request_id: Option<String>,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let context = load_context(git_repo, client, api_url, session_token, remote.as_deref())?;
+    let context = load_context(git_repo, api, remote.as_deref())?;
     let mut human_lines = repo_access_lines(&context.repo);
-    if let Some(request_id) = maybe_request_id_for_context(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        &context,
-        request_id,
-    )? {
+    if let Some(request_id) = maybe_request_id_for_context(git_repo, api, &context, request_id)? {
         let detail = get_request(
-            client,
-            api_url,
-            session_token,
+            api,
             &context.target.owner,
             &context.target.repo,
             &request_id,
@@ -250,7 +174,7 @@ fn show_request_status(
         ));
     }
 
-    let requests = load_request_list(client, api_url, session_token, &context)?;
+    let requests = load_request_list(api, &context)?;
     human_lines.extend(request_list_lines(&requests)?);
     Ok(RequestCommandOutcome::new(
         "request.status",
@@ -264,49 +188,31 @@ fn show_request_status(
 
 fn run_request_discussion_command(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: RequestDiscussionArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     match args.command {
-        RequestDiscussionCommand::Start(args) => {
-            start_request_discussion(git_repo, client, api_url, session_token, args)
-        }
-        RequestDiscussionCommand::Reply(args) => {
-            reply_to_request_discussion(git_repo, client, api_url, session_token, args)
-        }
+        RequestDiscussionCommand::Start(args) => start_request_discussion(git_repo, api, args),
+        RequestDiscussionCommand::Reply(args) => reply_to_request_discussion(git_repo, api, args),
         RequestDiscussionCommand::Resolve(args) => {
-            resolve_one_request_discussion(git_repo, client, api_url, session_token, args)
+            resolve_one_request_discussion(git_repo, api, args)
         }
-        RequestDiscussionCommand::Reopen(args) => {
-            reopen_request_discussion(git_repo, client, api_url, session_token, args)
-        }
+        RequestDiscussionCommand::Reopen(args) => reopen_request_discussion(git_repo, api, args),
     }
 }
 
 fn start_request_discussion(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: RequestDiscussionStartArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let attachment_args = args.content.attachments;
     let body = discussion_body(args.content.body, args.content.body_file)?;
     let has_attachments = !attachment_args.paths.is_empty();
-    let (context, request_id) = load_context_and_request_id(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        args.target.remote,
-        args.target.request,
-    )?;
+    let (context, request_id) =
+        load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
     let uploaded = attachments::upload(
-        client,
-        api_url,
-        session_token,
+        api,
         RequestTarget {
             owner: &context.target.owner,
             repo: &context.target.repo,
@@ -330,7 +236,7 @@ fn start_request_discussion(
     let pending_mutation = has_attachments
         .then(|| {
             attachments::begin_mutation(
-                api_url,
+                api.base_url,
                 &[
                     "discussion.start",
                     &context.target.owner,
@@ -348,9 +254,7 @@ fn start_request_discussion(
         None => new_client_discussion_id()?,
     };
     let response = create_request_discussion(
-        client,
-        api_url,
-        session_token,
+        api,
         CreateRequestDiscussionParams {
             target: RequestTarget {
                 owner: &context.target.owner,
@@ -366,9 +270,7 @@ fn start_request_discussion(
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
     let uploaded_attachments = if attachment_args.wait {
         attachments::wait_for_processing(
-            client,
-            api_url,
-            session_token,
+            api,
             RequestTarget {
                 owner: &context.target.owner,
                 repo: &context.target.repo,
@@ -413,26 +315,16 @@ fn start_request_discussion(
 
 fn reply_to_request_discussion(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: RequestDiscussionReplyArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let attachment_args = args.content.attachments;
     let body = discussion_body(args.content.body, args.content.body_file)?;
     let has_attachments = !attachment_args.paths.is_empty();
-    let (context, request_id) = load_context_and_request_id(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        args.target.remote,
-        args.target.request,
-    )?;
+    let (context, request_id) =
+        load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
     let uploaded = attachments::upload(
-        client,
-        api_url,
-        session_token,
+        api,
         RequestTarget {
             owner: &context.target.owner,
             repo: &context.target.repo,
@@ -448,7 +340,7 @@ fn reply_to_request_discussion(
     let pending_mutation = has_attachments
         .then(|| {
             attachments::begin_mutation(
-                api_url,
+                api.base_url,
                 &[
                     "discussion.reply",
                     &context.target.owner,
@@ -466,9 +358,7 @@ fn reply_to_request_discussion(
         None => new_client_reply_id()?,
     };
     let response = create_request_discussion_reply(
-        client,
-        api_url,
-        session_token,
+        api,
         CreateRequestDiscussionReplyParams {
             target: RequestTarget {
                 owner: &context.target.owner,
@@ -484,9 +374,7 @@ fn reply_to_request_discussion(
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
     let uploaded_attachments = if attachment_args.wait {
         attachments::wait_for_processing(
-            client,
-            api_url,
-            session_token,
+            api,
             RequestTarget {
                 owner: &context.target.owner,
                 repo: &context.target.repo,
@@ -534,23 +422,13 @@ fn reply_to_request_discussion(
 
 fn resolve_one_request_discussion(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: RequestDiscussionResolveArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id) = load_context_and_request_id(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        args.target.remote,
-        args.target.request,
-    )?;
+    let (context, request_id) =
+        load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
     let response = resolve_request_discussion(
-        client,
-        api_url,
-        session_token,
+        api,
         RequestTarget {
             owner: &context.target.owner,
             repo: &context.target.repo,
@@ -572,26 +450,16 @@ fn resolve_one_request_discussion(
 
 fn reopen_request_discussion(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: RequestDiscussionReopenArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let attachment_args = args.content.attachments;
     let body = discussion_body(args.content.body, args.content.body_file)?;
     let has_attachments = !attachment_args.paths.is_empty();
-    let (context, request_id) = load_context_and_request_id(
-        git_repo,
-        client,
-        api_url,
-        session_token,
-        args.target.remote,
-        args.target.request,
-    )?;
+    let (context, request_id) =
+        load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
     let uploaded = attachments::upload(
-        client,
-        api_url,
-        session_token,
+        api,
         RequestTarget {
             owner: &context.target.owner,
             repo: &context.target.repo,
@@ -607,7 +475,7 @@ fn reopen_request_discussion(
     let pending_mutation = has_attachments
         .then(|| {
             attachments::begin_mutation(
-                api_url,
+                api.base_url,
                 &[
                     "discussion.reopen",
                     &context.target.owner,
@@ -625,9 +493,7 @@ fn reopen_request_discussion(
         None => new_client_reply_id()?,
     };
     let response = reopen_and_reply_to_request_discussion(
-        client,
-        api_url,
-        session_token,
+        api,
         CreateRequestDiscussionReplyParams {
             target: RequestTarget {
                 owner: &context.target.owner,
@@ -643,9 +509,7 @@ fn reopen_request_discussion(
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
     let uploaded_attachments = if attachment_args.wait {
         attachments::wait_for_processing(
-            client,
-            api_url,
-            session_token,
+            api,
             RequestTarget {
                 owner: &context.target.owner,
                 repo: &context.target.repo,
@@ -714,15 +578,12 @@ fn new_client_mutation_id(kind: &str, sequence: &AtomicU64) -> anyhow::Result<St
 
 fn close_request_branch(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTargetArgs,
     yes: bool,
     machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, before) =
-        load_exact_request(git_repo, client, api_url, session_token, target)?;
+    let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
     let prompt = if before.request.submitted_at_unix.is_none() {
         format!("Permanently delete draft request {}", before.request.name)
     } else {
@@ -730,9 +591,7 @@ fn close_request_branch(
     };
     require_confirmation(&prompt, yes, !machine_output)?;
     let response = api_close_request(
-        client,
-        api_url,
-        session_token,
+        api,
         &context.target.owner,
         &context.target.repo,
         &request_id,
@@ -772,28 +631,17 @@ fn start_audience(
 /// Read the request associated with the current branch without changing local state.
 pub fn inspect_current_request(
     git_repo: &GitRepo,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     remote: Option<&str>,
 ) -> anyhow::Result<Option<crate::api::RequestSummaryResponse>> {
-    let context = load_context(Some(git_repo), client, api_url, session_token, remote)?;
-    let Some(request_id) = maybe_request_id_for_context(
-        Some(git_repo),
-        client,
-        api_url,
-        session_token,
-        &context,
-        None,
-    )?
+    let context = load_context(Some(git_repo), api, remote)?;
+    let Some(request_id) = maybe_request_id_for_context(Some(git_repo), api, &context, None)?
     else {
         return Ok(None);
     };
     Ok(Some(
         get_request(
-            client,
-            api_url,
-            session_token,
+            api,
             &context.target.owner,
             &context.target.repo,
             &request_id,

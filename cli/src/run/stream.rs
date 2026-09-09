@@ -1,4 +1,5 @@
 use super::{Connection, api, is_terminal_state, output, run_client, short_oid, state_label};
+use crate::api::ApiSession;
 use crate::api::RunStreamEvent;
 use scope_api_contract::{RunResponse, RunState};
 use std::{
@@ -43,12 +44,11 @@ pub(super) fn completion(
         // A quiet SSE connection can remain healthy through server keep-alives.
         // Only the overall watch deadline should time it out.
         let client = run_client(remaining)?;
+        let api = ApiSession::new(&client, &connection.api_url, &connection.token);
         let mut terminal = None;
         let previous_cursor = cursor;
         let result = api::stream_run_events(
-            &client,
-            &connection.api_url,
-            &connection.token,
+            api,
             &connection.target.owner,
             &connection.target.repo,
             run_id,
@@ -87,9 +87,7 @@ pub(super) fn completion(
                 );
                 let summary = run_client(Duration::from_secs(3)).and_then(|client| {
                     api::run_detail(
-                        &client,
-                        &connection.api_url,
-                        &connection.token,
+                        ApiSession::new(&client, &connection.api_url, &connection.token),
                         &connection.target.owner,
                         &connection.target.repo,
                         run_id,

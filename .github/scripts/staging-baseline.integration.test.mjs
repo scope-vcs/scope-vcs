@@ -128,7 +128,7 @@ else console.log('true');
   assert.equal(sql("SELECT count(*) FROM information_schema.tables WHERE table_name='candidate_only'"), '0');
   assert.equal(sql("SELECT count(*) FROM information_schema.columns WHERE table_name='scope_repositories' AND column_name='candidate'"), '0');
   const metadataPath = join(env.SCOPE_STAGING_BASELINE_DIR, 'baseline.json');
-  writeFileSync(join(root, 'production.json'), JSON.stringify({ ...plan, pending: [{ name: 'm0033_git_segment_streaming_v2' }] }));
+  writeFileSync(join(root, 'production.json'), JSON.stringify({ ...plan, pending: [{ name: 'm0043_retire_git_manifests' }] }));
   result = run();
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(readFileSync(metadataPath)).metadataRestoreSafe, false);

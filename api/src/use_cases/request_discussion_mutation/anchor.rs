@@ -3,6 +3,7 @@ use crate::{
     error::ApiError,
     git::{import::run_git_output, request_refs::with_request_revision_store_repo},
     state::AppState,
+    use_cases::request_revision_inspection::{commit_belongs_to_revision, request_changes},
 };
 use scope_domain::{
     policy::{Policy, ScopePath},
@@ -178,28 +179,8 @@ fn commit_paths(
         .next()
         .map(str::to_string)
         .ok_or_else(|| ApiError::conflict("request revision commit must have a parent"))?;
-    let output = run_git_output(
-        Some(raw_repo),
-        &[
-            "--literal-pathspecs",
-            "diff",
-            "--raw",
-            "-z",
-            "--no-renames",
-            "--abbrev=64",
-            &parent,
-            commit_oid,
-            "--",
-        ],
-        "reading request changes",
-    )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading request changes: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let mut fields = output.stdout.split(|byte| *byte == 0);
+    let changes = request_changes(raw_repo, &parent, commit_oid, None)?;
+    let mut fields = changes.split(|byte| *byte == 0);
     let mut visible = BTreeSet::new();
     let mut has_hidden = false;
     while let Some(header) = fields.next() {
@@ -232,57 +213,6 @@ fn commit_paths(
         }
     }
     Ok((visible, has_hidden))
-}
-
-fn commit_belongs_to_revision(
-    raw_repo: &FsPath,
-    revision: &RequestRevision,
-    commit_oid: &str,
-) -> Result<bool, ApiError> {
-    if !git_commit_exists(raw_repo, commit_oid)? {
-        return Ok(false);
-    }
-    if !git_is_ancestor(raw_repo, commit_oid, &revision.new_head_oid)? {
-        return Ok(false);
-    }
-    Ok(!git_is_ancestor(
-        raw_repo,
-        commit_oid,
-        &revision.old_head_oid,
-    )?)
-}
-
-fn git_commit_exists(raw_repo: &FsPath, commit_oid: &str) -> Result<bool, ApiError> {
-    let commit_object = format!("{commit_oid}^{{commit}}");
-    let output = run_git_output(
-        Some(raw_repo),
-        &["cat-file", "-e", &commit_object],
-        "validating request revision commit",
-    )?;
-    match output.status.code() {
-        Some(0) => Ok(true),
-        Some(1 | 128) => Ok(false),
-        _ => Err(ApiError::infrastructure_unavailable(format!(
-            "validating request revision commit: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))),
-    }
-}
-
-fn git_is_ancestor(raw_repo: &FsPath, ancestor: &str, descendant: &str) -> Result<bool, ApiError> {
-    let output = run_git_output(
-        Some(raw_repo),
-        &["merge-base", "--is-ancestor", ancestor, descendant],
-        "validating request revision commit",
-    )?;
-    match output.status.code() {
-        Some(0) => Ok(true),
-        Some(1) => Ok(false),
-        _ => Err(ApiError::infrastructure_unavailable(format!(
-            "validating request revision commit: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))),
-    }
 }
 
 fn normalized_scope_path(path: &str) -> Result<ScopePath, ApiError> {

@@ -4,6 +4,6 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 case "${1:-}" in
   web) cd web; pnpm test:smoke ;;
-  cli) cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --nocapture ;;
+  cli) cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture ;;
   *) echo "usage: integration web|cli (against an already running stack)" >&2; exit 2 ;;
 esac

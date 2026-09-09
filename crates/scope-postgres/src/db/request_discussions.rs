@@ -397,12 +397,8 @@ impl RequestStore {
             });
         }
 
-        let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-        let mut discussions = BTreeMap::new();
-        if let Some(existing) = discussion_by_id(&tx, &input.id).await? {
-            discussions.insert(existing.id.clone(), existing);
-        }
-        let mutation = create_request_discussion(&mut requests, &mut discussions, input)?;
+        let discussion_id_exists = discussion_by_id(&tx, &input.id).await?.is_some();
+        let mutation = create_request_discussion(request, discussion_id_exists, input)?;
         save_request_row(&tx, &mutation.request).await?;
         insert_discussion(&tx, &mutation.discussion).await?;
         save_read_state(&tx, &mutation.read_state).await?;
@@ -479,19 +475,18 @@ impl RequestStore {
             });
         }
 
-        let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-        let mut discussions = BTreeMap::from([(discussion.id.clone(), discussion)]);
-        let mut replies = BTreeMap::new();
-        if let Some(quoted_id) = input.reply_to_reply_id.as_deref()
-            && let Some(reply) = reply_by_id(&tx, quoted_id).await?
-        {
-            replies.insert(reply.id.clone(), reply);
-        }
-        if let Some(existing) = reply_by_id(&tx, &input.id).await? {
-            replies.insert(existing.id.clone(), existing);
-        }
-        let mutation =
-            create_request_discussion_reply(&mut requests, &mut discussions, &mut replies, input)?;
+        let quoted_reply = match input.reply_to_reply_id.as_deref() {
+            Some(quoted_id) => reply_by_id(&tx, quoted_id).await?,
+            None => None,
+        };
+        let reply_id_exists = reply_by_id(&tx, &input.id).await?.is_some();
+        let mutation = create_request_discussion_reply(
+            request,
+            discussion,
+            quoted_reply.as_ref(),
+            reply_id_exists,
+            input,
+        )?;
         save_request_row(&tx, &mutation.request).await?;
         save_discussion(&tx, &mutation.discussion).await?;
         insert_reply(&tx, &mutation.reply).await?;
@@ -537,12 +532,10 @@ impl RequestStore {
             .filter(|discussion| discussion.request_id == request_id)
             .ok_or_else(|| PostgresError::not_found("request discussion not found"))?;
         let actor_is_maintainer = repo.access.is_maintainer();
-        let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-        let mut discussions = BTreeMap::from([(discussion.id.clone(), discussion)]);
         let mutation = match transition {
             DiscussionTransition::Resolve => resolve_request_discussion(
-                &mut requests,
-                &mut discussions,
+                request,
+                discussion,
                 ResolveRequestDiscussionInput {
                     request_id,
                     discussion_id,
@@ -554,8 +547,8 @@ impl RequestStore {
                 },
             )?,
             DiscussionTransition::Reopen => reopen_request_discussion(
-                &mut requests,
-                &mut discussions,
+                request,
+                discussion,
                 ReopenRequestDiscussionInput {
                     request_id,
                     discussion_id,
@@ -643,18 +636,14 @@ impl RequestStore {
                 activity_event: None,
             });
         }
-        let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-        let mut discussions = BTreeMap::from([(discussion.id.clone(), discussion)]);
-        let mut replies = BTreeMap::new();
-        if let Some(quoted_id) = input.reply_to_reply_id.as_deref()
-            && let Some(reply) = reply_by_id(&tx, quoted_id).await?
-        {
-            replies.insert(reply.id.clone(), reply);
-        }
+        let quoted_reply = match input.reply_to_reply_id.as_deref() {
+            Some(quoted_id) => reply_by_id(&tx, quoted_id).await?,
+            None => None,
+        };
         let mutation = reopen_and_reply_to_request_discussion(
-            &mut requests,
-            &mut discussions,
-            &mut replies,
+            request,
+            discussion,
+            quoted_reply.as_ref(),
             input,
         )?;
         save_request_row(&tx, &mutation.request).await?;
@@ -698,12 +687,8 @@ impl RequestStore {
         {
             return Err(PostgresError::not_found("request not found"));
         }
-        let discussions = BTreeMap::from([(discussion.id.clone(), discussion)]);
-        let mut read_states = BTreeMap::new();
-        if let Some(state) = read_state(&tx, &input.discussion_id, &input.user_id).await? {
-            read_states.insert((input.discussion_id.clone(), input.user_id.clone()), state);
-        }
-        let state = mark_request_discussion_read(&discussions, &mut read_states, input)?;
+        let existing_state = read_state(&tx, &input.discussion_id, &input.user_id).await?;
+        let state = mark_request_discussion_read(&discussion, existing_state, input)?;
         save_read_state(&tx, &state).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(state)
@@ -720,14 +705,10 @@ async fn monotonic_read_state<C>(
 where
     C: sea_orm::ConnectionTrait,
 {
-    let mut states = BTreeMap::new();
-    if let Some(state) = read_state(conn, &discussion.id, user_id).await? {
-        states.insert((discussion.id.clone(), user_id.to_string()), state);
-    }
-    let discussions = BTreeMap::from([(discussion.id.clone(), discussion.clone())]);
+    let existing_state = read_state(conn, &discussion.id, user_id).await?;
     let state = mark_request_discussion_read(
-        &discussions,
-        &mut states,
+        discussion,
+        existing_state,
         MarkRequestDiscussionReadInput {
             discussion_id: discussion.id.clone(),
             user_id: user_id.to_string(),

@@ -1,4 +1,8 @@
 use super::{RequestMediaChunk, RequestMediaManifest};
+use crate::db::entities::{decode_enum, i32_to_u32 as to_u32, i64_to_u64 as to_u64};
+pub(super) use crate::db::entities::{
+    encode_enum as enum_string, u32_to_i32 as as_i32, u64_to_i64 as as_i64,
+};
 use crate::error::PostgresError;
 use scope_domain::requests::attachments::{
     RequestAttachment, RequestAttachmentBinding, RequestAttachmentBindingTarget,
@@ -6,42 +10,76 @@ use scope_domain::requests::attachments::{
     RequestAttachmentImageMetadata, RequestAttachmentKind, RequestAttachmentState,
     RequestAttachmentStoredObject, RequestAttachmentTarget, RequestAttachmentVideoMetadata,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement};
-use serde::{Serialize, de::DeserializeOwned};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, QueryResult, Statement};
 
-pub(super) fn enum_string<T: Serialize>(value: T) -> Result<String, PostgresError> {
-    match serde_json::to_value(value).map_err(PostgresError::internal)? {
-        serde_json::Value::String(value) => Ok(value),
-        _ => Err(PostgresError::internal_message(
-            "request media enum did not serialize to a string",
-        )),
-    }
+#[derive(FromQueryResult)]
+struct AttachmentRow {
+    id: String,
+    repository_id: String,
+    request_id: String,
+    uploader_user_id: String,
+    upload_id: String,
+    operation_id: String,
+    target_json: serde_json::Value,
+    filename: String,
+    declared_media_type: String,
+    detected_media_type: Option<String>,
+    kind: String,
+    size_bytes: i64,
+    sha256: String,
+    state: String,
+    original_manifest_id: Option<String>,
+    original_validated_at_unix: Option<i64>,
+    failure_json: Option<serde_json::Value>,
+    image_width: Option<i32>,
+    image_height: Option<i32>,
+    video_width: Option<i32>,
+    video_height: Option<i32>,
+    video_duration_millis: Option<i64>,
+    created_at_unix: i64,
+    updated_at_unix: i64,
+    upload_expires_at_unix: i64,
 }
 
-fn decode_enum<T: DeserializeOwned>(value: String) -> Result<T, PostgresError> {
-    serde_json::from_value(serde_json::Value::String(value)).map_err(PostgresError::internal)
+#[derive(FromQueryResult)]
+struct DerivativeRow {
+    id: String,
+    kind: String,
+    media_type: String,
+    manifest_id: String,
+    size_bytes: i64,
+    sha256: String,
+    width: Option<i32>,
+    height: Option<i32>,
+    duration_millis: Option<i64>,
 }
 
-fn to_u64(value: i64, field: &str) -> Result<u64, PostgresError> {
-    u64::try_from(value)
-        .map_err(|_| PostgresError::internal_message(format!("{field} cannot be negative")))
+#[derive(FromQueryResult)]
+struct ManifestRow {
+    id: String,
+    attachment_id: String,
+    derivative_id: Option<String>,
+    media_type: String,
+    size_bytes: i64,
+    sha256: String,
 }
 
-fn to_u32(value: i32, field: &str) -> Result<u32, PostgresError> {
-    u32::try_from(value)
-        .map_err(|_| PostgresError::internal_message(format!("{field} cannot be negative")))
+#[derive(FromQueryResult)]
+struct ManifestChunkRow {
+    chunk_index: i32,
+    object_key: String,
+    plaintext_offset: i64,
+    plaintext_size_bytes: i64,
+    sha256: String,
 }
 
-pub(super) fn as_i64(value: u64, field: &str) -> Result<i64, PostgresError> {
-    i64::try_from(value).map_err(|_| {
-        PostgresError::internal_message(format!("{field} exceeds PostgreSQL bigint range"))
-    })
-}
-
-pub(super) fn as_i32(value: u32, field: &str) -> Result<i32, PostgresError> {
-    i32::try_from(value).map_err(|_| {
-        PostgresError::internal_message(format!("{field} exceeds PostgreSQL integer range"))
-    })
+#[derive(FromQueryResult)]
+struct BindingRow {
+    attachment_id: String,
+    request_id: String,
+    target_kind: String,
+    discussion_id: Option<String>,
+    reply_id: Option<String>,
 }
 
 pub(super) async fn attachment_by_id<C>(
@@ -72,13 +110,9 @@ pub(super) async fn attachment_from_row<C>(
 where
     C: ConnectionTrait,
 {
-    let attachment_id = row
-        .try_get::<String>("", "id")
-        .map_err(PostgresError::internal)?;
-    let original_manifest_id = row
-        .try_get::<Option<String>>("", "original_manifest_id")
-        .map_err(PostgresError::internal)?;
-    let original = match original_manifest_id {
+    let row = AttachmentRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+    let attachment_id = row.id;
+    let original = match row.original_manifest_id {
         Some(manifest_id) => {
             let manifest = manifest_by_id(conn, &manifest_id).await?.ok_or_else(|| {
                 PostgresError::internal_message("request media original manifest is missing")
@@ -91,79 +125,35 @@ where
         }
         None => None,
     };
-    let image_width = row
-        .try_get::<Option<i32>>("", "image_width")
+    let target = serde_json::from_value::<RequestAttachmentTarget>(row.target_json)
         .map_err(PostgresError::internal)?;
-    let image_height = row
-        .try_get::<Option<i32>>("", "image_height")
-        .map_err(PostgresError::internal)?;
-    let video_width = row
-        .try_get::<Option<i32>>("", "video_width")
-        .map_err(PostgresError::internal)?;
-    let video_height = row
-        .try_get::<Option<i32>>("", "video_height")
-        .map_err(PostgresError::internal)?;
-    let duration = row
-        .try_get::<Option<i64>>("", "video_duration_millis")
-        .map_err(PostgresError::internal)?;
-    let target = serde_json::from_value::<RequestAttachmentTarget>(
-        row.try_get::<serde_json::Value>("", "target_json")
-            .map_err(PostgresError::internal)?,
-    )
-    .map_err(PostgresError::internal)?;
     let failure = row
-        .try_get::<Option<serde_json::Value>>("", "failure_json")
-        .map_err(PostgresError::internal)?
+        .failure_json
         .map(serde_json::from_value::<RequestAttachmentFailure>)
         .transpose()
         .map_err(PostgresError::internal)?;
     Ok(RequestAttachment {
         id: attachment_id.clone(),
-        repository_id: row
-            .try_get("", "repository_id")
-            .map_err(PostgresError::internal)?,
-        request_id: row
-            .try_get("", "request_id")
-            .map_err(PostgresError::internal)?,
-        uploader_user_id: row
-            .try_get("", "uploader_user_id")
-            .map_err(PostgresError::internal)?,
-        upload_id: row
-            .try_get("", "upload_id")
-            .map_err(PostgresError::internal)?,
-        operation_id: row
-            .try_get("", "operation_id")
-            .map_err(PostgresError::internal)?,
+        repository_id: row.repository_id,
+        request_id: row.request_id,
+        uploader_user_id: row.uploader_user_id,
+        upload_id: row.upload_id,
+        operation_id: row.operation_id,
         target,
-        filename: row
-            .try_get("", "filename")
-            .map_err(PostgresError::internal)?,
-        declared_media_type: row
-            .try_get("", "declared_media_type")
-            .map_err(PostgresError::internal)?,
-        detected_media_type: row
-            .try_get("", "detected_media_type")
-            .map_err(PostgresError::internal)?,
-        kind: decode_enum::<RequestAttachmentKind>(
-            row.try_get("", "kind").map_err(PostgresError::internal)?,
-        )?,
-        size_bytes: to_u64(
-            row.try_get("", "size_bytes")
-                .map_err(PostgresError::internal)?,
-            "attachment size",
-        )?,
-        sha256: row.try_get("", "sha256").map_err(PostgresError::internal)?,
-        state: decode_enum::<RequestAttachmentState>(
-            row.try_get("", "state").map_err(PostgresError::internal)?,
-        )?,
+        filename: row.filename,
+        declared_media_type: row.declared_media_type,
+        detected_media_type: row.detected_media_type,
+        kind: decode_enum::<RequestAttachmentKind>(row.kind)?,
+        size_bytes: to_u64(row.size_bytes, "attachment size")?,
+        sha256: row.sha256,
+        state: decode_enum::<RequestAttachmentState>(row.state)?,
         original,
         original_validated_at_unix: row
-            .try_get::<Option<i64>>("", "original_validated_at_unix")
-            .map_err(PostgresError::internal)?
+            .original_validated_at_unix
             .map(|value| to_u64(value, "original validation time"))
             .transpose()?,
         failure,
-        image: match (image_width, image_height) {
+        image: match (row.image_width, row.image_height) {
             (Some(width), Some(height)) => Some(RequestAttachmentImageMetadata {
                 width: to_u32(width, "image width")?,
                 height: to_u32(height, "image height")?,
@@ -175,7 +165,7 @@ where
                 ));
             }
         },
-        video: match (video_width, video_height, duration) {
+        video: match (row.video_width, row.video_height, row.video_duration_millis) {
             (Some(width), Some(height), Some(duration_millis)) => {
                 Some(RequestAttachmentVideoMetadata {
                     width: to_u32(width, "video width")?,
@@ -191,21 +181,9 @@ where
             }
         },
         derivatives: derivatives_for_attachment(conn, &attachment_id).await?,
-        created_at_unix: to_u64(
-            row.try_get("", "created_at_unix")
-                .map_err(PostgresError::internal)?,
-            "attachment creation time",
-        )?,
-        updated_at_unix: to_u64(
-            row.try_get("", "updated_at_unix")
-                .map_err(PostgresError::internal)?,
-            "attachment update time",
-        )?,
-        upload_expires_at_unix: to_u64(
-            row.try_get("", "upload_expires_at_unix")
-                .map_err(PostgresError::internal)?,
-            "upload expiry",
-        )?,
+        created_at_unix: to_u64(row.created_at_unix, "attachment creation time")?,
+        updated_at_unix: to_u64(row.updated_at_unix, "attachment update time")?,
+        upload_expires_at_unix: to_u64(row.upload_expires_at_unix, "upload expiry")?,
     })
 }
 
@@ -225,39 +203,27 @@ where
     .map_err(PostgresError::internal)?
     .into_iter()
     .map(|row| {
+        let row = DerivativeRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
         let width = row
-            .try_get::<Option<i32>>("", "width")
-            .map_err(PostgresError::internal)?
+            .width
             .map(|value| to_u32(value, "derivative width"))
             .transpose()?;
         let height = row
-            .try_get::<Option<i32>>("", "height")
-            .map_err(PostgresError::internal)?
+            .height
             .map(|value| to_u32(value, "derivative height"))
             .transpose()?;
         let duration_millis = row
-            .try_get::<Option<i64>>("", "duration_millis")
-            .map_err(PostgresError::internal)?
+            .duration_millis
             .map(|value| to_u64(value, "derivative duration"))
             .transpose()?;
         Ok(RequestAttachmentDerivative {
-            id: row.try_get("", "id").map_err(PostgresError::internal)?,
-            kind: decode_enum::<RequestAttachmentDerivativeKind>(
-                row.try_get("", "kind").map_err(PostgresError::internal)?,
-            )?,
-            media_type: row
-                .try_get("", "media_type")
-                .map_err(PostgresError::internal)?,
+            id: row.id,
+            kind: decode_enum::<RequestAttachmentDerivativeKind>(row.kind)?,
+            media_type: row.media_type,
             object: RequestAttachmentStoredObject {
-                object_key: row
-                    .try_get("", "manifest_id")
-                    .map_err(PostgresError::internal)?,
-                size_bytes: to_u64(
-                    row.try_get("", "size_bytes")
-                        .map_err(PostgresError::internal)?,
-                    "derivative size",
-                )?,
-                sha256: row.try_get("", "sha256").map_err(PostgresError::internal)?,
+                object_key: row.manifest_id,
+                size_bytes: to_u64(row.size_bytes, "derivative size")?,
+                sha256: row.sha256,
             },
             width,
             height,
@@ -285,6 +251,7 @@ where
     else {
         return Ok(None);
     };
+    let row = ManifestRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
     let chunks = conn
         .query_all(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -295,51 +262,32 @@ where
         .map_err(PostgresError::internal)?
         .into_iter()
         .map(|chunk| {
+            let chunk = ManifestChunkRow::from_query_result(&chunk, "").map_err(PostgresError::internal)?;
             Ok(RequestMediaChunk {
                 index: to_u32(
-                    chunk
-                        .try_get::<i32>("", "chunk_index")
-                        .map_err(PostgresError::internal)?,
+                    chunk.chunk_index,
                     "manifest chunk index",
                 )?,
-                object_key: chunk
-                    .try_get("", "object_key")
-                    .map_err(PostgresError::internal)?,
+                object_key: chunk.object_key,
                 plaintext_offset: to_u64(
-                    chunk
-                        .try_get("", "plaintext_offset")
-                        .map_err(PostgresError::internal)?,
+                    chunk.plaintext_offset,
                     "manifest chunk offset",
                 )?,
                 plaintext_size_bytes: to_u64(
-                    chunk
-                        .try_get("", "plaintext_size_bytes")
-                        .map_err(PostgresError::internal)?,
+                    chunk.plaintext_size_bytes,
                     "manifest chunk size",
                 )?,
-                sha256: chunk
-                    .try_get("", "sha256")
-                    .map_err(PostgresError::internal)?,
+                sha256: chunk.sha256,
             })
         })
         .collect::<Result<Vec<_>, PostgresError>>()?;
     Ok(Some(RequestMediaManifest {
-        id: row.try_get("", "id").map_err(PostgresError::internal)?,
-        attachment_id: row
-            .try_get("", "attachment_id")
-            .map_err(PostgresError::internal)?,
-        derivative_id: row
-            .try_get("", "derivative_id")
-            .map_err(PostgresError::internal)?,
-        media_type: row
-            .try_get("", "media_type")
-            .map_err(PostgresError::internal)?,
-        size_bytes: to_u64(
-            row.try_get("", "size_bytes")
-                .map_err(PostgresError::internal)?,
-            "manifest size",
-        )?,
-        sha256: row.try_get("", "sha256").map_err(PostgresError::internal)?,
+        id: row.id,
+        attachment_id: row.attachment_id,
+        derivative_id: row.derivative_id,
+        media_type: row.media_type,
+        size_bytes: to_u64(row.size_bytes, "manifest size")?,
+        sha256: row.sha256,
         chunks,
     }))
 }
@@ -360,16 +308,8 @@ where
     .map_err(PostgresError::internal)?
     .into_iter()
     .map(|row| {
-        let target_kind = row
-            .try_get::<String>("", "target_kind")
-            .map_err(PostgresError::internal)?;
-        let discussion_id = row
-            .try_get::<Option<String>>("", "discussion_id")
-            .map_err(PostgresError::internal)?;
-        let reply_id = row
-            .try_get::<Option<String>>("", "reply_id")
-            .map_err(PostgresError::internal)?;
-        let target = match (target_kind.as_str(), discussion_id, reply_id) {
+        let row = BindingRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+        let target = match (row.target_kind.as_str(), row.discussion_id, row.reply_id) {
             ("Description", None, None) => RequestAttachmentBindingTarget::Description,
             ("Discussion", Some(discussion_id), None) => {
                 RequestAttachmentBindingTarget::Discussion { discussion_id }
@@ -387,12 +327,8 @@ where
             }
         };
         Ok(RequestAttachmentBinding {
-            attachment_id: row
-                .try_get("", "attachment_id")
-                .map_err(PostgresError::internal)?,
-            request_id: row
-                .try_get("", "request_id")
-                .map_err(PostgresError::internal)?,
+            attachment_id: row.attachment_id,
+            request_id: row.request_id,
             target,
         })
     })

@@ -6,13 +6,15 @@ import {
   canReuseRunLogs,
   completedRunLogVersion,
   EMPTY_LOG_STATE,
-  readRunLogCache,
+  runLogsResource,
   resetRunLogCache,
   runLogCacheKey,
   stepKey,
   writeRunLogCache,
   type StepLogState,
 } from './run-log-cache'
+
+const readRunLogCache = (key: string) => runLogsResource.read(key) ?? {}
 
 const selection = { jobKey: 'test', attemptId: 'attempt-1', stepIndex: 0 }
 const key = runLogCacheKey('viewer-1:repo-1:member', 'run-1')

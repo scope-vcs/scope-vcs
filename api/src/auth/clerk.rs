@@ -306,6 +306,15 @@ impl ClerkVerifier {
     }
 
     #[cfg(test)]
+    pub(crate) fn set_cached_jwks_age_for_tests(&self, age: Duration) {
+        self.cache_state()
+            .current
+            .as_mut()
+            .expect("JWKS must be cached before setting its age")
+            .fetched_at = Instant::now() - age;
+    }
+
+    #[cfg(test)]
     pub(crate) fn cache_jwks_for_tests(&self, keys: JwkSet) {
         let mut state = self.cache_state();
         state.generation = state.generation.saturating_add(1);

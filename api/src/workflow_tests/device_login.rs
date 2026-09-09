@@ -1,7 +1,7 @@
 use super::*;
 
 async fn start_login(app: &axum::Router) -> serde_json::Value {
-    let response = send_device_request(app, start_device_login_request()).await;
+    let response = api_request(app.clone(), "POST", "/v1/cli/device-login", None, None).await;
     assert_eq!(response.status(), StatusCode::OK);
     response_json(response).await
 }
@@ -12,13 +12,12 @@ async fn device_post(
     action: &str,
     auth: Option<String>,
 ) -> Response {
-    send_device_request(
-        app,
-        device_request(
-            "POST",
-            &format!("/v1/cli/device-login/{code}/{action}"),
-            auth,
-        ),
+    api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/device-login/{code}/{action}"),
+        auth.as_deref(),
+        None,
     )
     .await
 }
@@ -58,9 +57,12 @@ async fn cli_device_login_exchanges_browser_auth_for_cli_token() {
     let consumed = device_post(&app, device_code, "poll", None).await;
     assert_eq!(consumed.status(), StatusCode::CONFLICT);
 
-    let session = send_device_request(
-        &app,
-        device_request("GET", "/v1/session", Some(format!("Bearer {cli_token}"))),
+    let session = api_request(
+        app.clone(),
+        "GET",
+        "/v1/session",
+        Some(&format!("Bearer {cli_token}")),
+        None,
     )
     .await;
     assert_eq!(session.status(), StatusCode::OK);
@@ -92,26 +94,10 @@ async fn cli_device_login_start_is_rate_limited() {
     let app = router(test_state_with_jwks());
 
     for _ in 0..scope_domain::account::cli_auth::MAX_DEVICE_LOGIN_STARTS_PER_WINDOW {
-        let response = send_device_request(&app, start_device_login_request()).await;
+        let response = api_request(app.clone(), "POST", "/v1/cli/device-login", None, None).await;
         assert_eq!(response.status(), StatusCode::OK);
     }
 
-    let response = send_device_request(&app, start_device_login_request()).await;
+    let response = api_request(app.clone(), "POST", "/v1/cli/device-login", None, None).await;
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-}
-
-fn start_device_login_request() -> Request<Body> {
-    device_request("POST", "/v1/cli/device-login", None)
-}
-
-fn device_request(method: &str, uri: &str, bearer: Option<String>) -> Request<Body> {
-    let mut request = Request::builder().method(method).uri(uri);
-    if let Some(bearer) = bearer {
-        request = request.header(AUTHORIZATION, bearer);
-    }
-    request.body(Body::empty()).unwrap()
-}
-
-async fn send_device_request(app: &axum::Router, request: Request<Body>) -> Response {
-    app.clone().oneshot(request).await.unwrap()
 }

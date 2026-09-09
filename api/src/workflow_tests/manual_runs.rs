@@ -233,7 +233,7 @@ async fn known_manual_source_is_pinned_once_and_replay_survives_catalog_changes(
     )
     .await
     .unwrap();
-    update.base_git_manifest_ref = Some(Some(head.manifest.content_ref.clone()));
+    update.base_git_frontier = Some(Some(head.frontier()));
     state
         .metadata
         .repositories()

@@ -1,6 +1,7 @@
 use super::*;
+use crate::api::ApiSession;
 use anyhow::Context;
-use reqwest::blocking::{Client, RequestBuilder};
+use reqwest::blocking::RequestBuilder;
 use serde::de::DeserializeOwned;
 
 #[derive(Clone, Copy)]
@@ -40,19 +41,15 @@ pub struct RequestActivityParams<'a> {
 }
 
 pub fn list_requests(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     cursor: Option<&str>,
 ) -> anyhow::Result<RequestListResponse> {
-    let mut request = client
-        .get(format!(
-            "{api_url}{}",
-            scope_api_contract::routes::repo_requests(owner, repo)
-        ))
-        .bearer_auth(session_token);
+    let mut request = api.request(
+        reqwest::Method::GET,
+        scope_api_contract::routes::repo_requests(owner, repo),
+    );
     if let Some(cursor) = cursor {
         request = request.query(&[("cursor", cursor)]);
     }
@@ -60,9 +57,7 @@ pub fn list_requests(
 }
 
 pub fn get_request(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     request_id: &str,
@@ -73,28 +68,22 @@ pub fn get_request(
         request_id,
     };
     execute_request(
-        client
-            .get(request_url(api_url, target))
-            .bearer_auth(session_token),
+        api.request(reqwest::Method::GET, request_path(target)),
         target,
         "load request",
     )
 }
 
 pub fn request_revisions(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     revision: Option<&str>,
     commit: Option<&str>,
 ) -> anyhow::Result<RequestRevisionListResponse> {
-    let mut request = client
-        .get(format!(
-            "{api_url}{}",
-            routes::repo_request_revisions(target.owner, target.repo, target.request_id)
-        ))
-        .bearer_auth(session_token);
+    let mut request = api.request(
+        reqwest::Method::GET,
+        routes::repo_request_revisions(target.owner, target.repo, target.request_id),
+    );
     if let Some(revision) = revision {
         request = request.query(&[("revision", revision)]);
     }
@@ -112,34 +101,28 @@ pub struct RequestFileDiffParams<'a> {
 }
 
 pub fn request_file_diff(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     params: RequestFileDiffParams<'_>,
 ) -> anyhow::Result<ReviewFileDiffResponse> {
     execute_request(
-        client
-            .get(format!(
-                "{api_url}{}",
-                routes::repo_request_revision_commit_file_diff(
-                    params.target.owner,
-                    params.target.repo,
-                    params.target.request_id,
-                    params.revision,
-                    params.commit
-                )
-            ))
-            .query(&[("path", params.path)])
-            .bearer_auth(session_token),
+        api.request(
+            reqwest::Method::GET,
+            routes::repo_request_revision_commit_file_diff(
+                params.target.owner,
+                params.target.repo,
+                params.target.request_id,
+                params.revision,
+                params.commit,
+            ),
+        )
+        .query(&[("path", params.path)]),
         params.target,
         "inspect request file diff",
     )
 }
 
 pub fn close_request(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     request_id: &str,
@@ -150,34 +133,28 @@ pub fn close_request(
         request_id,
     };
     execute_request(
-        client
-            .delete(request_url(api_url, target))
-            .bearer_auth(session_token),
+        api.request(reqwest::Method::DELETE, request_path(target)),
         target,
         "close request",
     )
 }
 
 pub fn start_request(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     params: StartRequestParams<'_>,
 ) -> anyhow::Result<RequestMutationResponse> {
     let owner = params.owner;
     let repo = params.repo;
     execute_repo_request(
-        client
-            .post(format!(
-                "{api_url}{}",
-                scope_api_contract::routes::repo_requests(owner, repo)
-            ))
-            .bearer_auth(session_token)
-            .json(&StartRequestRequest {
-                name: params.name,
-                title: params.title,
-                audience: params.audience,
-            }),
+        api.request(
+            reqwest::Method::POST,
+            scope_api_contract::routes::repo_requests(owner, repo),
+        )
+        .json(&StartRequestRequest {
+            name: params.name,
+            title: params.title,
+            audience: params.audience,
+        }),
         owner,
         repo,
         "start request",
@@ -185,15 +162,11 @@ pub fn start_request(
 }
 
 pub fn submit_request(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestMutationResponse> {
     execute_request(
-        client
-            .post(request_action_url(api_url, target, "submit"))
-            .bearer_auth(session_token)
+        api.request(reqwest::Method::POST, request_action_path(target, "submit"))
             .json(&SubmitRequestRequest {}),
         target,
         "submit request",
@@ -201,51 +174,42 @@ pub fn submit_request(
 }
 
 pub fn merge_request(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestMutationResponse> {
     execute_request(
-        client
-            .post(request_action_url(api_url, target, "merge"))
-            .bearer_auth(session_token),
+        api.request(reqwest::Method::POST, request_action_path(target, "merge")),
         target,
         "merge request",
     )
 }
 
 pub fn rate_request(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     score: u8,
     reason: String,
 ) -> anyhow::Result<RequestRatingResponse> {
     execute_request(
-        client
-            .post(request_action_url(api_url, target, "ratings"))
-            .bearer_auth(session_token)
-            .json(&CreateRequestRatingRequest { score, reason }),
+        api.request(
+            reqwest::Method::POST,
+            request_action_path(target, "ratings"),
+        )
+        .json(&CreateRequestRatingRequest { score, reason }),
         target,
         "rate request participant",
     )
 }
 
 pub fn edit_request_identity(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     title: Option<String>,
     description_markdown: Option<String>,
     expected_description_markdown: Option<String>,
 ) -> anyhow::Result<RequestMutationResponse> {
     execute_request(
-        client
-            .patch(request_url(api_url, target))
-            .bearer_auth(session_token)
+        api.request(reqwest::Method::PATCH, request_path(target))
             .json(&EditRequestIdentityRequest {
                 title,
                 description_markdown,
@@ -257,70 +221,63 @@ pub fn edit_request_identity(
 }
 
 pub fn add_request_invitee(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     handle: String,
 ) -> anyhow::Result<RequestInviteeMutationResponse> {
     execute_request(
-        client
-            .put(request_action_url(api_url, target, "invitees"))
-            .bearer_auth(session_token)
-            .json(&AddRequestInviteeRequest { handle }),
+        api.request(
+            reqwest::Method::PUT,
+            request_action_path(target, "invitees"),
+        )
+        .json(&AddRequestInviteeRequest { handle }),
         target,
         "invite request collaborator",
     )
 }
 
 pub fn remove_request_invitee(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     handle: String,
 ) -> anyhow::Result<RequestInviteeMutationResponse> {
     execute_request(
-        client
-            .delete(request_action_url(api_url, target, "invitees"))
-            .bearer_auth(session_token)
-            .json(&RemoveRequestInviteeRequest { handle }),
+        api.request(
+            reqwest::Method::DELETE,
+            request_action_path(target, "invitees"),
+        )
+        .json(&RemoveRequestInviteeRequest { handle }),
         target,
         "remove request invitee",
     )
 }
 
 pub fn leave_request(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
 ) -> anyhow::Result<LeaveRequestResponse> {
     execute_request(
-        client
-            .delete(format!(
-                "{api_url}{}",
-                scope_api_contract::routes::repo_request_invitees_me(
-                    target.owner,
-                    target.repo,
-                    target.request_id,
-                )
-            ))
-            .bearer_auth(session_token),
+        api.request(
+            reqwest::Method::DELETE,
+            scope_api_contract::routes::repo_request_invitees_me(
+                target.owner,
+                target.repo,
+                target.request_id,
+            ),
+        ),
         target,
         "leave request",
     )
 }
 
 pub fn get_request_activity(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     params: RequestActivityParams<'_>,
 ) -> anyhow::Result<RequestActivityPageResponse> {
-    let mut request = client
-        .get(request_action_url(api_url, params.target, "activity"))
-        .bearer_auth(session_token);
+    let mut request = api.request(
+        reqwest::Method::GET,
+        request_action_path(params.target, "activity"),
+    );
     if let Some(after) = params.after {
         request = request.query(&[("after", after)]);
     }
@@ -334,131 +291,97 @@ pub fn get_request_activity(
 }
 
 pub fn create_request_discussion(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     params: CreateRequestDiscussionParams<'_>,
 ) -> anyhow::Result<RequestDiscussionMutationResponse> {
     let target = params.target;
     execute_request(
-        client
-            .post(request_action_url(api_url, target, "timeline"))
-            .bearer_auth(session_token)
-            .json(&CreateRequestDiscussionRequest {
-                body_markdown: params.body_markdown,
-                client_discussion_id: params.client_discussion_id,
-                anchor: params.anchor,
-            }),
+        api.request(
+            reqwest::Method::POST,
+            request_action_path(target, "timeline"),
+        )
+        .json(&CreateRequestDiscussionRequest {
+            body_markdown: params.body_markdown,
+            client_discussion_id: params.client_discussion_id,
+            anchor: params.anchor,
+        }),
         target,
         "create request discussion",
     )
 }
 
 pub fn create_request_discussion_reply(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     params: CreateRequestDiscussionReplyParams<'_>,
 ) -> anyhow::Result<RequestDiscussionReplyMutationResponse> {
     execute_request(
-        client
-            .post(request_discussion_action_url(
-                api_url,
-                params.target,
-                params.discussion_id,
-                "replies",
-            ))
-            .bearer_auth(session_token)
-            .json(&CreateRequestDiscussionReplyRequest {
-                body_markdown: params.body_markdown,
-                client_reply_id: params.client_reply_id,
-                reply_to_reply_id: None,
-            }),
+        api.request(
+            reqwest::Method::POST,
+            request_discussion_action_path(params.target, params.discussion_id, "replies"),
+        )
+        .json(&CreateRequestDiscussionReplyRequest {
+            body_markdown: params.body_markdown,
+            client_reply_id: params.client_reply_id,
+            reply_to_reply_id: None,
+        }),
         params.target,
         "reply to request discussion",
     )
 }
 
 pub fn resolve_request_discussion(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     discussion_id: &str,
 ) -> anyhow::Result<RequestDiscussionMutationResponse> {
     execute_request(
-        client
-            .post(request_discussion_action_url(
-                api_url,
-                target,
-                discussion_id,
-                "resolve",
-            ))
-            .bearer_auth(session_token),
+        api.request(
+            reqwest::Method::POST,
+            request_discussion_action_path(target, discussion_id, "resolve"),
+        ),
         target,
         "resolve request discussion",
     )
 }
 
 pub fn reopen_and_reply_to_request_discussion(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     params: CreateRequestDiscussionReplyParams<'_>,
 ) -> anyhow::Result<RequestDiscussionReplyMutationResponse> {
     execute_request(
-        client
-            .post(request_discussion_action_url(
-                api_url,
-                params.target,
-                params.discussion_id,
-                "reopen-and-reply",
-            ))
-            .bearer_auth(session_token)
-            .json(&ReopenAndReplyRequest {
-                body_markdown: params.body_markdown,
-                client_reply_id: params.client_reply_id,
-                reply_to_reply_id: None,
-            }),
+        api.request(
+            reqwest::Method::POST,
+            request_discussion_action_path(params.target, params.discussion_id, "reopen-and-reply"),
+        )
+        .json(&ReopenAndReplyRequest {
+            body_markdown: params.body_markdown,
+            client_reply_id: params.client_reply_id,
+            reply_to_reply_id: None,
+        }),
         params.target,
         "reopen request discussion",
     )
 }
 
-fn request_url(api_url: &str, target: RequestTarget<'_>) -> String {
-    format!(
-        "{api_url}{}",
-        scope_api_contract::routes::repo_request(target.owner, target.repo, target.request_id)
-    )
+fn request_path(target: RequestTarget<'_>) -> String {
+    routes::repo_request(target.owner, target.repo, target.request_id)
 }
 
-fn request_action_url(api_url: &str, target: RequestTarget<'_>, action: &str) -> String {
-    format!(
-        "{api_url}{}",
-        scope_api_contract::routes::repo_request_action(
-            target.owner,
-            target.repo,
-            target.request_id,
-            action,
-        )
-    )
+fn request_action_path(target: RequestTarget<'_>, action: &str) -> String {
+    routes::repo_request_action(target.owner, target.repo, target.request_id, action)
 }
 
-fn request_discussion_action_url(
-    api_url: &str,
+fn request_discussion_action_path(
     target: RequestTarget<'_>,
     discussion_id: &str,
     action: &str,
 ) -> String {
-    format!(
-        "{api_url}{}",
-        scope_api_contract::routes::repo_request_discussion_action(
-            target.owner,
-            target.repo,
-            target.request_id,
-            discussion_id,
-            action,
-        )
+    routes::repo_request_discussion_action(
+        target.owner,
+        target.repo,
+        target.request_id,
+        discussion_id,
+        action,
     )
 }
 
@@ -489,7 +412,7 @@ pub(super) fn execute_request<R: DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reqwest::StatusCode;
+    use reqwest::{StatusCode, blocking::Client};
     use std::{
         io::{Read, Write},
         net::TcpListener,
@@ -501,9 +424,7 @@ mod tests {
         let (api_url, server) = serve_once(StatusCode::OK, r#"{"requests":[],"next_cursor":null}"#);
 
         let response = list_requests(
-            &Client::new(),
-            &api_url,
-            "token",
+            ApiSession::new(&Client::new(), &api_url, "token"),
             "owner",
             "repo",
             Some("next page/+"),
@@ -530,7 +451,7 @@ mod tests {
             r#"{"code":"conflict","message":"request cannot be submitted\u001b[31m","retryable":false}"#,
         );
 
-        let error = submit_request(&Client::new(), &api_url, "token", target())
+        let error = submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
             .unwrap_err()
             .to_string();
 
@@ -548,9 +469,7 @@ mod tests {
         );
 
         let error = get_request(
-            &Client::new(),
-            &api_url,
-            "token",
+            ApiSession::new(&Client::new(), &api_url, "token"),
             "owner",
             "repo",
             "req_one",
@@ -572,7 +491,7 @@ mod tests {
             r#"{"code":"cli_upgrade_required","message":"installed Scope CLI protocol 0; this API supports protocol 1","instruction":"Upgrade with `curl -fsSL https://scope-cli-production.up.railway.app/install.sh | sh`, then retry.","fields":{"installed_protocol":0,"supported_protocol":1},"retryable":false}"#,
         );
 
-        let error = submit_request(&Client::new(), &api_url, "token", target())
+        let error = submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
             .unwrap_err()
             .to_string();
 
@@ -588,7 +507,7 @@ mod tests {
             r#"{"code":"conflict","message":"fixture stop","retryable":false}"#,
         );
 
-        submit_request(&Client::new(), &api_url, "token", target()).unwrap_err();
+        submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target()).unwrap_err();
 
         let request = server.join().unwrap();
         assert!(request.contains("\r\n\r\n{}"), "{request}");
@@ -602,9 +521,7 @@ mod tests {
         );
 
         let error = get_request(
-            &Client::new(),
-            &api_url,
-            "token",
+            ApiSession::new(&Client::new(), &api_url, "token"),
             "owner",
             "repo",
             "req_one",
@@ -620,7 +537,7 @@ mod tests {
     fn malformed_error_bodies_use_a_scoped_status_fallback() {
         let (api_url, server) = serve_once(StatusCode::SERVICE_UNAVAILABLE, "upstream exploded");
 
-        let error = merge_request(&Client::new(), &api_url, "token", target())
+        let error = merge_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
             .unwrap_err()
             .to_string();
 
@@ -638,9 +555,7 @@ mod tests {
             r#"{"code":"conflict","message":"fixture stop","retryable":false}"#,
         );
         add_request_invitee(
-            &Client::new(),
-            &api_url,
-            "token",
+            ApiSession::new(&Client::new(), &api_url, "token"),
             target(),
             "Exact-Handle".to_string(),
         )
@@ -658,9 +573,7 @@ mod tests {
         let (api_url, activity_server) =
             serve_once(StatusCode::OK, r#"{"events":[],"through_position":7}"#);
         let page = get_request_activity(
-            &Client::new(),
-            &api_url,
-            "token",
+            ApiSession::new(&Client::new(), &api_url, "token"),
             RequestActivityParams {
                 target: target(),
                 after: Some(4),
@@ -688,9 +601,7 @@ mod tests {
 
         let (api_url, start_server) = serve_once(StatusCode::CONFLICT, stopped);
         create_request_discussion(
-            &Client::new(),
-            &api_url,
-            "token",
+            ApiSession::new(&Client::new(), &api_url, "token"),
             CreateRequestDiscussionParams {
                 target: target(),
                 body_markdown: "Question\\n".to_string(),
@@ -716,9 +627,7 @@ mod tests {
 
         let (api_url, reply_server) = serve_once(StatusCode::CONFLICT, stopped);
         create_request_discussion_reply(
-            &Client::new(),
-            &api_url,
-            "token",
+            ApiSession::new(&Client::new(), &api_url, "token"),
             CreateRequestDiscussionReplyParams {
                 target: target(),
                 discussion_id: "dsc /one",
@@ -738,8 +647,12 @@ mod tests {
         assert!(request.contains(r#""reply_to_reply_id":null"#));
 
         let (api_url, resolve_server) = serve_once(StatusCode::CONFLICT, stopped);
-        resolve_request_discussion(&Client::new(), &api_url, "token", target(), "dsc_one")
-            .unwrap_err();
+        resolve_request_discussion(
+            ApiSession::new(&Client::new(), &api_url, "token"),
+            target(),
+            "dsc_one",
+        )
+        .unwrap_err();
         let request = resolve_server.join().unwrap();
         assert!(request.starts_with(
             "POST /v1/repos/owner/repo/requests/req_one/threads/dsc_one/resolve HTTP/1.1"
@@ -747,9 +660,7 @@ mod tests {
 
         let (api_url, reopen_server) = serve_once(StatusCode::CONFLICT, stopped);
         reopen_and_reply_to_request_discussion(
-            &Client::new(),
-            &api_url,
-            "token",
+            ApiSession::new(&Client::new(), &api_url, "token"),
             CreateRequestDiscussionReplyParams {
                 target: target(),
                 discussion_id: "dsc_one",
@@ -781,6 +692,12 @@ mod tests {
             let mut request = [0; 8192];
             let read = stream.read(&mut request).unwrap();
             let request = String::from_utf8(request[..read].to_vec()).unwrap();
+            assert!(
+                request
+                    .lines()
+                    .any(|line| line.eq_ignore_ascii_case("authorization: Bearer token")),
+                "authenticated endpoint omitted its session token: {request}"
+            );
             write!(
                 stream,
                 "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",

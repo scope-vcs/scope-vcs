@@ -49,7 +49,7 @@ pub async fn enqueue_push_main_trigger_evaluation<C>(
 where
     C: ConnectionTrait,
 {
-    if head.head_oid != input.head_oid || head.manifest.git_oid != input.head_oid {
+    if head.head_oid != input.head_oid {
         return Err(PostgresError::invalid_input(
             "push trigger input does not match the accepted Git head",
         ));
@@ -386,13 +386,7 @@ impl RunStore {
 mod tests {
     use super::*;
     use crate::db::MetadataStore;
-    use scope_domain::{
-        account::UserAccount,
-        content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-        content_ref::ContentRef,
-        policy::Visibility,
-        runs::trigger::PushWorkflowFile,
-    };
+    use scope_domain::{account::UserAccount, policy::Visibility, runs::trigger::PushWorkflowFile};
 
     #[tokio::test]
     async fn evaluation_uses_each_pinned_head_and_enqueues_once() {
@@ -508,15 +502,15 @@ jobs:
         assert_eq!(later.state, PushTriggerEvaluationState::Succeeded);
         assert!(later.checks.is_empty());
         assert_eq!(
-            object_reference_count(&store, "push_trigger_source", &format!("{repo_id}:1")).await,
+            segment_reference_count(&store, "push_trigger_source", &format!("{repo_id}:1")).await,
             0
         );
         assert_eq!(
-            object_reference_count(&store, "push_trigger_source", &format!("{repo_id}:3")).await,
+            segment_reference_count(&store, "push_trigger_source", &format!("{repo_id}:3")).await,
             0
         );
         assert_eq!(
-            object_reference_count(&store, "run_source", &run.id).await,
+            segment_reference_count(&store, "run_source", &run.id).await,
             1
         );
 
@@ -703,21 +697,14 @@ jobs:
         );
         assert!(evaluation.checks.is_empty());
         assert_eq!(
-            object_reference_count(&store, "push_trigger_source", &format!("{repo_id}:2")).await,
+            segment_reference_count(&store, "push_trigger_source", &format!("{repo_id}:2")).await,
             0
         );
         let protected = entities::source_blob_cleanup_job::Entity::find()
             .all(store.db.as_ref())
             .await
             .unwrap();
-        assert!(!protected.is_empty());
-        assert!(protected.iter().all(|job| {
-            job.next_run_at_unix
-                >= i64::try_from(
-                    now() + crate::db::cleanup_queue::queue::SOURCE_BLOB_DELETE_GRACE_SECONDS,
-                )
-                .unwrap()
-        }));
+        assert!(protected.is_empty());
         let cleanup = store
             .cleanup()
             .source_blob_cleanup_batch(
@@ -726,7 +713,7 @@ jobs:
             )
             .await
             .unwrap();
-        assert_eq!(cleanup.pending.len(), 1);
+        assert!(cleanup.pending.is_empty());
     }
 
     #[tokio::test]
@@ -779,7 +766,7 @@ jobs:
             .unwrap();
         assert_eq!(evaluation.state, PushTriggerEvaluationState::Failed);
         assert_eq!(
-            object_reference_count(&store, "push_trigger_source", &format!("{repo_id}:5")).await,
+            segment_reference_count(&store, "push_trigger_source", &format!("{repo_id}:5")).await,
             0
         );
         let cleanup = store
@@ -790,7 +777,7 @@ jobs:
             )
             .await
             .unwrap();
-        assert_eq!(cleanup.pending.len(), 1);
+        assert!(cleanup.pending.is_empty());
     }
 
     #[tokio::test]
@@ -890,30 +877,15 @@ jobs:
         repo.record.id
     }
 
-    async fn object_reference_count(store: &MetadataStore, ref_kind: &str, ref_id: &str) -> usize {
-        entities::object_reference::Entity::find()
-            .filter(entities::object_reference::Column::RefKind.eq(ref_kind.to_string()))
-            .filter(entities::object_reference::Column::RefId.eq(ref_id.to_string()))
-            .all(store.db.as_ref())
-            .await
-            .unwrap()
-            .len()
+    async fn segment_reference_count(store: &MetadataStore, ref_kind: &str, ref_id: &str) -> usize {
+        store.db.query_all(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT segment_id FROM scope_git_segment_references WHERE ref_kind = $1 AND ref_id = $2",
+            [ref_kind.into(), ref_id.into()])).await.unwrap().len()
     }
 
     fn trigger_head(head_oid: &str, change_version: u64) -> GitHead {
-        let digest = format!("{change_version:x}").repeat(64);
-        GitHead {
-            head_oid: head_oid.to_string(),
-            push_sequence: change_version,
-            change_version,
-            manifest: SourceBlob {
-                content_ref: ContentRef::git_manifest_sha256(digest.clone()),
-                sha256: digest,
-                git_oid: head_oid.to_string(),
-                git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-                size_bytes: 1,
-            },
-        }
+        GitHead::new(head_oid.to_string(), change_version, change_version)
     }
 
     fn trigger_pack_spans(head_oid: &str, push_sequence: u64) -> Vec<GitPackSpan> {

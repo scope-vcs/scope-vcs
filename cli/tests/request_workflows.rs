@@ -9,13 +9,10 @@ use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     fs,
-    net::TcpListener,
     process::{Command, Stdio},
     sync::{Arc, Mutex},
-    thread,
 };
 use support::*;
-use tokio::sync::oneshot;
 
 #[test]
 fn request_reads_work_outside_a_checkout_with_explicit_repository() {
@@ -58,7 +55,6 @@ fn request_reads_work_outside_a_checkout_with_explicit_repository() {
         .output()
         .unwrap();
     assert_eq!(success(output)["result"]["request"]["id"], "req_one");
-    server.finish();
 }
 
 #[test]
@@ -108,7 +104,6 @@ fn request_diff_uses_server_revision_and_path_with_no_local_private_data() {
                 && uri.contains("path=space+name.txt")),
         "{seen:?}"
     );
-    server.finish();
 }
 
 #[test]
@@ -150,7 +145,6 @@ fn request_diff_rejects_a_commit_absent_from_visible_revision_inspection() {
             .iter()
             .any(|uri| uri.contains("file-diff"))
     );
-    server.finish();
 }
 
 #[test]
@@ -176,7 +170,6 @@ fn request_diff_defaults_to_visible_text_changes() {
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("-old\n+server-visible"), "{stdout}");
-    server.finish();
 }
 
 #[test]
@@ -203,7 +196,6 @@ fn contributor_request_checks_use_request_permissions_without_maintainer_endpoin
     assert_eq!(result["result"]["workflow_runs_available"], false);
     assert_eq!(result["result"]["runs"], json!([]));
     assert!(server.seen.lock().unwrap().is_empty());
-    server.finish();
 }
 
 #[test]
@@ -237,7 +229,6 @@ fn maintainer_request_checks_filter_exact_head_across_run_history_pages() {
             .iter()
             .any(|uri| uri.contains("after=next-page"))
     );
-    server.finish();
 }
 
 #[test]
@@ -300,7 +291,6 @@ fn request_edit_reads_description_stdin_outside_checkout() {
         server.edited.lock().unwrap()["description_markdown"],
         "first\n\nsecond\\n\n"
     );
-    server.finish();
 }
 
 #[cfg(unix)]
@@ -319,8 +309,8 @@ fn request_start_metadata_failure_can_retry_push_without_creating_another_reques
     detail["mergeability"]["current_main_oid"] = head.clone().into();
     detail["mergeability"]["request_head_oid"] = head.clone().into();
     let server = FixtureServer::with_request(detail);
-    let public = format!("{}/git/public/owner/repo", server.api_url);
-    let permissioned = format!("{}/git/permissioned/owner/repo", server.api_url);
+    let public = format!("{}/git/public/owner/repo", server.server.api_url);
+    let permissioned = format!("{}/git/permissioned/owner/repo", server.server.api_url);
     let file_url = reqwest::Url::from_directory_path(bare.path())
         .unwrap()
         .to_string();
@@ -420,7 +410,6 @@ exec "$SCOPE_TEST_REAL_GIT" "${args[@]}"
             .count(),
         1
     );
-    server.finish();
 }
 
 fn git_stdout(cwd: &std::path::Path, args: &[&str]) -> String {
@@ -450,12 +439,9 @@ fn success(output: std::process::Output) -> Value {
 }
 
 struct FixtureServer {
-    api_url: String,
-    config: TempDir,
+    server: TestServer,
     seen: Arc<Mutex<Vec<String>>>,
     edited: Arc<Mutex<Value>>,
-    stop: oneshot::Sender<()>,
-    thread: thread::JoinHandle<()>,
 }
 
 impl FixtureServer {
@@ -468,35 +454,16 @@ impl FixtureServer {
     }
 
     fn with_repository(detail: Value, repo: Value) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let api_url = format!("http://{}", listener.local_addr().unwrap());
-        let config = TempDir::new("request-session");
-        let key = api_url
-            .bytes()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        fs::create_dir_all(config.path().join("scope/sessions")).unwrap();
-        fs::write(
-            config
-                .path()
-                .join(format!("scope/sessions/cli-session-{key}")),
-            "test-token",
-        )
-        .unwrap();
         let seen = Arc::new(Mutex::new(Vec::new()));
         let inspected = seen.clone();
         let edited = Arc::new(Mutex::new(Value::Null));
         let captured = edited.clone();
-        let (stop, stopped) = oneshot::channel();
-        let thread = thread::spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(async move {
-                let revisions_seen = inspected.clone();
-                let started = inspected.clone();
-                let run_seen = inspected.clone();
-                let start_detail = detail.clone();
-                let show_detail = detail.clone();
-                let app = Router::new()
+        let revisions_seen = inspected.clone();
+        let started = inspected.clone();
+        let run_seen = inspected.clone();
+        let start_detail = detail.clone();
+        let show_detail = detail.clone();
+        let app = Router::new()
                     .route("/v1/session", get(|| async { Json(json!({"identity": null, "user": {"id":"usr_test","handle":"owner","email":"test@example.test","email_verified":true}})) }))
                     .route("/v1/repos/owner/repo", get(move || { let repo=repo.clone(); async move { Json(repo) } }))
                     .route("/v1/repos/owner/repo/runs", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let seen=run_seen.clone(); async move { seen.lock().unwrap().push(uri.to_string()); if query.contains_key("after") { Json(json!({"runs":[run_summary("run_current", OID)], "next_cursor":null})) } else { Json(json!({"runs":[run_summary("run_stale", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")], "next_cursor":"next-page"})) } } }))
@@ -504,28 +471,14 @@ impl FixtureServer {
                     .route("/v1/repos/owner/repo/requests/req_one", get(move || { let detail=show_detail.clone(); async move { Json(json!({"request":detail})) } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { *captured.lock().unwrap()=body; Json(json!({"request":request()})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one/changes", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=revisions_seen.clone(); async move { inspected.lock().unwrap().push(uri.to_string()); Json(json!({"review_revision_id":query.get("revision").map(String::as_str).unwrap_or("rev_old"), "revisions":[{"id":"rev_old","position":1,"actor":{"id":"usr_test","handle":"owner"},"old_head_oid":null,"new_head_oid":OID,"commits":[{"oid":OID,"parent_oids":[],"author":"owner","authored_at_unix":1,"message":"Old revision","change_count":1,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"visibility":"Public"}],"files_truncated":false}],"inspection":"Complete","created_at_unix":1}],"has_earlier_revisions":false})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one/changes/rev_old/commits/{commit}/file-diff", get(move |OriginalUri(uri): OriginalUri| { let inspected=inspected.clone(); async move { inspected.lock().unwrap().push(uri.to_string()); Json(json!({"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_content":{"kind":"text","text":"old\n"},"new_content":{"kind":"text","text":"server-visible\n"}})) } }));
-                axum::serve(tokio::net::TcpListener::from_std(listener).unwrap(), app).with_graceful_shutdown(async {let _=stopped.await;}).await.unwrap();
-            });
-        });
         Self {
-            api_url,
-            config,
+            server: TestServer::new(app),
             seen,
             edited,
-            stop,
-            thread,
         }
     }
     fn command(&self, cwd: &std::path::Path) -> Command {
-        let mut command = scope_command(cwd);
-        command
-            .env("SCOPE_API_URL", &self.api_url)
-            .env("XDG_CONFIG_HOME", self.config.path());
-        command
-    }
-    fn finish(self) {
-        let _ = self.stop.send(());
-        self.thread.join().unwrap();
+        self.server.command(cwd)
     }
 }
 

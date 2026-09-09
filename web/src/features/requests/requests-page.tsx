@@ -17,12 +17,12 @@ import {
   Search,
   UserRound,
 } from 'lucide-react'
-import { type FormEvent, useEffect, useReducer } from 'react'
+import { type FormEvent, useCallback, useId, useMemo, useSyncExternalStore } from 'react'
 import {
-  requestQueueViewReducer,
   requestCountLabel,
   REQUEST_QUEUE_SECTION_ORDER,
   type RequestQueuePages,
+  type RequestQueueViewAction,
 } from './request-list-model'
 import {
   requestAudienceLabel,
@@ -35,7 +35,7 @@ import { AbsoluteTimestamp } from '@/components/timestamp'
 
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { restoreRequestQueue, retainRequestQueue } from './request-queue-cache'
+import { dispatchRequestQueue, openRequestQueue, requestQueueResource } from './request-queue-cache'
 
 const SECTION_DETAILS = {
   your_work: {
@@ -75,17 +75,14 @@ function RequestsPageContent({
   params,
 }: RequestsPageProps & { cacheKey: string | null }) {
   const { isSignedIn } = useAuth()
-  const [state, dispatch] = useReducer(
-    requestQueueViewReducer,
-    initialPages,
-    (pages) => restoreRequestQueue(cacheKey, pages),
-  )
-  if (state.snapshot !== initialPages) {
-    dispatch({ type: 'loader_snapshot_received', pages: initialPages })
-  }
-  useEffect(() => retainRequestQueue(cacheKey, state), [cacheKey, state])
+  const transientKey = useId()
+  const key = cacheKey ?? transientKey
+  const initial = useMemo(() => openRequestQueue(key, initialPages), [initialPages, key])
+  const subscribe = useCallback((listener: () => void) => requestQueueResource.subscribe(key, listener), [key])
+  const read = useCallback(() => requestQueueResource.peek(key) ?? initial, [initial, key])
+  const state = useSyncExternalStore(subscribe, read, () => initial)
+  const dispatch = (action: RequestQueueViewAction) => dispatchRequestQueue(key, action, initial.owner)
   const {
-    generation,
     loadingSection,
     pages,
     searchDraft,
@@ -96,10 +93,11 @@ function RequestsPageContent({
   } = state
 
   async function loadMore(section: RequestQueueSection) {
-    const cursor = pages[section].next_cursor
-    if (!cursor || loadingSection || searching) return
+    const current = read()
+    const cursor = current.pages[section].next_cursor
+    if (!cursor || current.loadingSection || current.searching) return
 
-    const operationGeneration = generation
+    const operationGeneration = current.generation
     dispatch({
       type: 'load_started',
       generation: operationGeneration,
@@ -109,7 +107,7 @@ function RequestsPageContent({
       const page = await loadPage(
         section,
         cursor,
-        section === 'your_work' ? null : searchQuery || null,
+        section === 'your_work' ? null : current.searchQuery || null,
       )
       dispatch({
         type: 'load_succeeded',
@@ -131,11 +129,12 @@ function RequestsPageContent({
   }
 
   async function searchQueue(query: string) {
-    if (searching || loadingSection) return
+    const current = read()
+    if (current.searching || current.loadingSection) return
     const normalizedQuery = query.trim()
-    if (normalizedQuery === searchQuery) return
+    if (normalizedQuery === current.searchQuery) return
 
-    const operationGeneration = generation
+    const operationGeneration = current.generation
     dispatch({ type: 'search_started', generation: operationGeneration })
     try {
       const [open, closed] = await Promise.all([

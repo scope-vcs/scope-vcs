@@ -64,11 +64,6 @@ async fn published_receive_pack_push_applies_from_seeded_git_repo() {
     .parse()
     .unwrap();
     assert_eq!(update.occurred_at_unix, Some(expected_commit_time));
-    assert_eq!(update.durable_objects.len(), 1);
-    assert!(update.durable_objects.iter().all(|object| !matches!(
-        object.content_ref,
-        scope_domain::content_ref::ContentRef::GitBundleSha256(_)
-    )));
     persist_test_update(&state, update).await.unwrap();
     let persisted = state
         .metadata
@@ -96,11 +91,7 @@ async fn published_receive_pack_push_applies_from_seeded_git_repo() {
 async fn consecutive_content_only_pushes_advance_the_live_projection() {
     let state = test_state_with_repo();
     let mut repo = repo_with_readme(&state);
-    let mut base_manifest = source_blob(&state, "base Git manifest");
-    base_manifest.content_ref =
-        scope_domain::content_ref::ContentRef::git_manifest_sha256(base_manifest.sha256.clone());
     let base_head_oid = "0000000000000000000000000000000000000001".to_string();
-    base_manifest.git_oid = base_head_oid.clone();
     let base_segment = scope_domain::repository::git::GitPackSpan {
         first_sequence: 1,
         last_sequence: 1,
@@ -109,12 +100,12 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         head_oid: base_head_oid.clone(),
         segment: ready_test_git_segment(&state, "base Git segment").await,
     };
-    repo.git_head = Some(scope_domain::repository::git::GitHead {
-        head_oid: base_head_oid.clone(),
-        push_sequence: 1,
-        change_version: repo.record.change_version,
-        manifest: base_manifest.clone(),
-    });
+    repo.git_head = Some(scope_domain::repository::git::GitHead::new(
+        base_head_oid.clone(),
+        1,
+        repo.record.change_version,
+    ));
+    let mut previous_frontier = repo.git_head.as_ref().unwrap().frontier();
     repo.git_pack_spans.push(base_segment);
     replace_test_repo(&state, repo).await;
 
@@ -136,25 +127,15 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
     assert_eq!(initial_rebuild.completed, 1);
 
     let mut previous_head_oid = base_head_oid;
-    let mut previous_manifest_ref = base_manifest.content_ref.clone();
     for (index, expected_content) in ["second version", "third version"].into_iter().enumerate() {
         let sequence = u64::try_from(index + 2).unwrap();
         let head_oid = format!("{sequence:040x}");
-        let mut manifest = source_blob(&state, &format!("Git manifest {sequence}"));
-        manifest.content_ref =
-            scope_domain::content_ref::ContentRef::git_manifest_sha256(manifest.sha256.clone());
-        manifest.git_oid = head_oid.clone();
-        let next_manifest_ref = manifest.content_ref.clone();
         let mut update = receive_pack_update(&state, vec![("/README.md", Some(expected_content))]);
         update.previous_config = Some(update.config.clone());
-        update.base_git_manifest_ref = Some(Some(previous_manifest_ref));
+        update.base_git_frontier = Some(Some(previous_frontier));
         update.head_oid = head_oid.clone();
-        update.git_head = scope_domain::repository::git::GitHead {
-            head_oid: head_oid.clone(),
-            push_sequence: sequence,
-            change_version: sequence,
-            manifest: manifest.clone(),
-        };
+        update.git_head =
+            scope_domain::repository::git::GitHead::new(head_oid.clone(), sequence, sequence);
         update.git_pack_span = scope_domain::repository::git::GitPackSpan {
             first_sequence: sequence,
             last_sequence: sequence,
@@ -171,6 +152,7 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         )
         .unwrap();
 
+        let next_frontier = update.git_head.frontier();
         let persisted = persist_test_update(&state, update).await.unwrap();
         assert_eq!(persisted.change_version, sequence);
         let stored = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
@@ -216,7 +198,7 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         );
 
         previous_head_oid = head_oid;
-        previous_manifest_ref = next_manifest_ref;
+        previous_frontier = next_frontier;
     }
 
     let jobs = state
@@ -383,23 +365,25 @@ async fn published_receive_pack_staging_restores_accepted_git_head_from_bucket_s
 }
 
 #[tokio::test]
-async fn applying_push_does_not_delete_previous_snapshot_inline() {
+async fn applying_push_retains_previous_git_segment() {
     let state = test_state_with_repo();
-    let old_snapshot = source_blob(&state, "old live git snapshot");
-    let old_key = scope_object_store::object_key(&old_snapshot);
+    let old_head_oid = "0000000000000000000000000000000000000001".to_string();
+    let old_segment = ready_test_git_segment(&state, "old live Git pack").await;
     let mut update = receive_pack_update(&state, vec![("/README.md", Some("updated"))]);
-    update.git_head.push_sequence = 2;
+    update.git_head = scope_domain::repository::git::GitHead::new(
+        update.git_head.head_oid.clone(),
+        2,
+        update.git_head.change_version,
+    );
     update.git_pack_span.first_sequence = 2;
     update.git_pack_span.last_sequence = 2;
-    update.git_pack_span.base_oid = Some(old_snapshot.git_oid.clone());
-    let new_key = scope_object_store::object_key(&update.git_head.manifest);
+    update.git_pack_span.base_oid = Some(old_head_oid.clone());
     let mut repo = repo_with_readme(&state);
-    repo.git_head = Some(scope_domain::repository::git::GitHead {
-        head_oid: old_snapshot.git_oid.clone(),
-        push_sequence: 1,
-        change_version: 1,
-        manifest: old_snapshot,
-    });
+    repo.git_head = Some(scope_domain::repository::git::GitHead::new(
+        old_head_oid.clone(),
+        1,
+        1,
+    ));
     repo.git_pack_spans
         .push(scope_domain::repository::git::GitPackSpan {
             first_sequence: 1,
@@ -407,7 +391,7 @@ async fn applying_push_does_not_delete_previous_snapshot_inline() {
             geometric_tier: 0,
             base_oid: None,
             head_oid: repo.git_head.as_ref().unwrap().head_oid.clone(),
-            segment: ready_test_git_segment(&state, "old live Git pack").await,
+            segment: old_segment.clone(),
         });
     replace_test_repo(&state, repo).await;
 
@@ -416,9 +400,18 @@ async fn applying_push_does_not_delete_previous_snapshot_inline() {
         .unwrap();
 
     assert!(!persisted.head_oid.is_empty());
-    let store = &state.test_object_store;
-    assert!(store.contains_key(&old_key));
-    assert!(store.contains_key(&new_key));
+    let stored = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert_eq!(stored.git_pack_spans.len(), 2);
+    assert_eq!(stored.git_pack_spans[0].segment, old_segment);
+    for span in &stored.git_pack_spans {
+        state
+            .git_segment_store
+            .restore_to(TEST_REPO_ID, &span.segment, tokio::io::sink())
+            .await
+            .unwrap();
+    }
 }
 
 #[test]

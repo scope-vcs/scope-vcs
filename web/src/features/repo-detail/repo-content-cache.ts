@@ -7,14 +7,6 @@ export const repoContentResource = createCachedResource<RepoContent>({
   weightOf: approximateContentBytes,
 })
 
-export function readRepoContentCache(key: string) {
-  return repoContentResource.read(key) ?? null
-}
-
-export function writeRepoContentCache(key: string, content: RepoContent) {
-  repoContentResource.write(key, content)
-}
-
 export function repoContentCacheKey({
   audience,
   changeVersion,
@@ -25,14 +17,6 @@ export function repoContentCacheKey({
   repoId: string
 }) {
   return [repoId, changeVersion, audience].join('\0')
-}
-
-export function resetRepoContentCache() {
-  repoContentResource.clear()
-}
-
-export function repoContentCacheStats() {
-  return repoContentResource.stats()
 }
 
 function approximateContentBytes(content: RepoContent) {

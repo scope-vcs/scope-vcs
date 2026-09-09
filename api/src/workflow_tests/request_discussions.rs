@@ -791,27 +791,6 @@ async fn timeline_cursor_is_stable_during_concurrent_thread_creation_and_changes
     assert!(!paged_ids.contains(&concurrent_root_id.as_str()));
 }
 
-async fn api_request(
-    app: axum::Router,
-    method: &str,
-    uri: &str,
-    bearer: Option<&str>,
-    body: Option<&str>,
-) -> Response {
-    let mut request = Request::builder().method(method).uri(uri);
-    if let Some(bearer) = bearer {
-        request = request.header(AUTHORIZATION, bearer);
-    }
-    let body = match body {
-        Some(json) => {
-            request = request.header(CONTENT_TYPE, "application/json");
-            Body::from(json.to_string())
-        }
-        None => Body::empty(),
-    };
-    app.oneshot(request.body(body).unwrap()).await.unwrap()
-}
-
 #[tokio::test]
 async fn discussion_changes_report_complete_pages_without_skipping_the_extra_row() {
     let state = test_state_with_readme().await;

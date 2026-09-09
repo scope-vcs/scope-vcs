@@ -401,6 +401,22 @@ test("production success follows the complete monitored transition", () => {
 
 
 
+test("release selection uses the trusted control revision before exposing a source revision", () => {
+  const requireMain = productionWorkflow.indexOf('- name: Require main for releases');
+  const selection = productionWorkflow.indexOf('run: node .github/scripts/release-selection.mjs');
+  const retain = productionWorkflow.indexOf('- name: Retain selected immutable release');
+  assert(requireMain >= 0 && selection > requireMain && retain > selection);
+  assert.match(productionWorkflow.slice(requireMain, selection), /test "\$GITHUB_REF" = refs\/heads\/main/);
+  assert.match(backendDeployWorkflow, /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
+  assert.match(productionWorkflow.split("\njobs:")[0], /deployments: read/);
+  assert.doesNotMatch(productionWorkflow.split("\njobs:")[0], /: write/);
+  const checks = readFileSync(new URL("../workflows/scope-checks-image.yml", import.meta.url), "utf8");
+  const candidate = checks.slice(checks.indexOf("  validate:"), checks.indexOf("  build:"));
+  assert.match(candidate, /if: github\.event_name == 'pull_request'/);
+  assert.doesNotMatch(candidate, /: write/);
+  assert.match(checks.slice(checks.indexOf("  build:")), /if: github\.event_name != 'pull_request'/);
+});
+
 test("migration changes promote every application participant but leave checks images independent", () => {
   for (const apiChanges of [null, undefined, ["crates/scope-postgres/src/migrations/999_next.rs"]]) {
     const selected = includeMigrationParticipants(deploymentSelection({ api: true }), apiChanges);

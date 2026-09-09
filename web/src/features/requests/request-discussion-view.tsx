@@ -1,5 +1,6 @@
 import type { AccountSession, RequestDetail, RepoLiveState, RepoParams } from '@/api/types'
 import { useCallback, useMemo } from 'react'
+import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import type {
   CreateDiscussionInput,
   CreateReplyInput,
@@ -106,7 +107,7 @@ export function RequestDiscussionView({
         canOpenDiscussion: request.permissions.can_open_discussion,
         canReply: request.permissions.can_reply_to_discussion,
       }}
-      repoId={live.repo.id}
+      repoId={repoResourceScope(live.repo, actor.id)}
       request={request}
       threadActions={threadActions}
     />
