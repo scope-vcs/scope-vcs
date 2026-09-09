@@ -1,0 +1,40 @@
+name: Audit Railway experiments
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-railway-experiments
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: Checkout main audit policy
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: .github
+      - name: Read Railway environment identities
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/scripts/railway-graphql.sh
+          project_id="$(jq -er '.railway.projectId' .github/deployment-services.json)"
+          # shellcheck disable=SC2016 # GraphQL variables must remain literal.
+          query='query($id:String!){project(id:$id){id environments(first:100){pageInfo{hasNextPage} edges{node{id name createdAt}}}}}'
+          railway_graphql read "$query" "$(jq -cn --arg id "$project_id" '{id:$id}')" > "$RUNNER_TEMP/railway-environments.json"
+      - name: Audit experiment owners and expiry
+        run: node .github/scripts/audit-railway-experiments.mjs "$RUNNER_TEMP/railway-environments.json"
