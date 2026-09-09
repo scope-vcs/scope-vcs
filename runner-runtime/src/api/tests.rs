@@ -222,6 +222,7 @@ fn source_test_client(
         cache_access: Arc::new(Mutex::new(None)),
         cache_keys: Arc::new(Mutex::new(Vec::new())),
         heartbeat_lock: Arc::new(Mutex::new(())),
+        heartbeat_started: None,
     };
     (client, requests, server)
 }
@@ -248,28 +249,32 @@ fn source_response(
 
 #[test]
 fn heartbeats_cannot_replace_a_new_keyed_grant_with_an_older_empty_grant() {
+    const SYNC_TIMEOUT: Duration = Duration::from_secs(5);
+    const BLOCKED_OBSERVATION: Duration = Duration::from_secs(1);
+
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
+    let (heartbeat_started_sender, heartbeat_started_receiver) = mpsc::channel();
     let (first_request_sender, first_request_receiver) = mpsc::channel();
     let (release_first_sender, release_first_receiver) = mpsc::channel();
     let (second_request_sender, second_request_receiver) = mpsc::channel();
     let server = thread::spawn(move || {
         let (mut first, _) = listener.accept().unwrap();
         first_request_sender.send(read_request(&mut first)).unwrap();
-        release_first_receiver.recv().unwrap();
-        write_heartbeat_response(&mut first, "empty-grant");
+        let first_response = thread::spawn(move || {
+            release_first_receiver.recv().unwrap();
+            write_heartbeat_response(&mut first, "empty-grant");
+        });
 
         let (mut second, _) = listener.accept().unwrap();
         second_request_sender
             .send(read_request(&mut second))
             .unwrap();
         write_heartbeat_response(&mut second, "keyed-grant");
+        first_response.join().unwrap();
     });
     let client = RuntimeClient {
-        client: Client::builder()
-            .timeout(Duration::from_secs(1))
-            .build()
-            .unwrap(),
+        client: Client::builder().timeout(SYNC_TIMEOUT).build().unwrap(),
         api_url: format!("http://{address}"),
         attempt_id: "test".to_string(),
         attempt_token: Arc::new(Mutex::new(Some("token".to_string()))),
@@ -279,13 +284,15 @@ fn heartbeats_cannot_replace_a_new_keyed_grant_with_an_older_empty_grant() {
         }))),
         cache_keys: Arc::new(Mutex::new(Vec::new())),
         heartbeat_lock: Arc::new(Mutex::new(())),
+        heartbeat_started: Some(heartbeat_started_sender),
     };
 
     let first_client = client.clone();
     let first_heartbeat = thread::spawn(move || first_client.heartbeat().unwrap());
-    let first_request = first_request_receiver
-        .recv_timeout(Duration::from_secs(1))
+    heartbeat_started_receiver
+        .recv_timeout(SYNC_TIMEOUT)
         .unwrap();
+    let first_request = first_request_receiver.recv_timeout(SYNC_TIMEOUT).unwrap();
     let material = AttemptCacheKeyMaterial {
         cache_name: "cargo".to_string(),
         compatibility_inputs_digest: "a".repeat(64),
@@ -294,15 +301,20 @@ fn heartbeats_cannot_replace_a_new_keyed_grant_with_an_older_empty_grant() {
     let second_client = client.clone();
     let authorization =
         thread::spawn(move || second_client.authorize_cache_keys(vec![material]).unwrap());
-    while client.cache_keys.lock().unwrap().is_empty() {
-        thread::yield_now();
-    }
+    heartbeat_started_receiver
+        .recv_timeout(SYNC_TIMEOUT)
+        .unwrap();
+    assert!(
+        matches!(
+            second_request_receiver.recv_timeout(BLOCKED_OBSERVATION),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ),
+        "a second heartbeat reached the server while the first remained in flight"
+    );
     release_first_sender.send(()).unwrap();
     first_heartbeat.join().unwrap();
     authorization.join().unwrap();
-    let second_request = second_request_receiver
-        .recv_timeout(Duration::from_secs(1))
-        .unwrap();
+    let second_request = second_request_receiver.recv_timeout(SYNC_TIMEOUT).unwrap();
     server.join().unwrap();
 
     assert_eq!(
@@ -354,6 +366,7 @@ fn test_client(
         cache_access: Arc::new(Mutex::new(None)),
         cache_keys: Arc::new(Mutex::new(Vec::new())),
         heartbeat_lock: Arc::new(Mutex::new(())),
+        heartbeat_started: None,
     };
     (client, requests, server)
 }

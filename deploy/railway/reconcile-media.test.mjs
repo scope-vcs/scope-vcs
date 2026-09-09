@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { sign, verify } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -313,9 +314,15 @@ test("staging keys form one signing pair and one shared encryption key", async (
     { api: "api", gateway: "gateway", worker: "worker" },
     async (serviceId, name, value) => values.push({ serviceId, name, value }),
   );
-  assert.equal(values.length, 4);
-  assert.match(values[0].value, /BEGIN PRIVATE KEY/);
-  assert.match(values[1].value, /BEGIN PUBLIC KEY/);
+  assert.deepEqual(values.map(({ serviceId, name }) => ({ serviceId, name })), [
+    { serviceId: "api", name: "SCOPE_MEDIA_GRANT_PRIVATE_KEY" },
+    { serviceId: "gateway", name: "SCOPE_MEDIA_GRANT_PUBLIC_KEY" },
+    { serviceId: "gateway", name: "SCOPE_MEDIA_ENCRYPTION_KEY" },
+    { serviceId: "worker", name: "SCOPE_MEDIA_ENCRYPTION_KEY" },
+  ]);
+  const grant = Buffer.from("staging media grant");
+  const signature = sign(null, grant, values[0].value);
+  assert.equal(verify(null, grant, values[1].value, signature), true);
   assert.equal(values[2].value, values[3].value);
   assert.equal(Buffer.from(values[2].value, "base64").length, 32);
 });

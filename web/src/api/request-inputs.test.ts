@@ -116,23 +116,149 @@ test('attachment inputs enforce generated transfer and media target shapes', () 
   }))
 })
 
-test('request and file server functions bind input validators that reject malformed identifiers', () => {
-  const routes = [
-    '$owner.$repo.requests.$requestId.tsx',
-    '$owner.$repo.requests.$requestId.index.tsx',
-    '$owner.$repo.requests.$requestId.changes.tsx',
-    '$owner.$repo._code.index.tsx',
-  ]
-  for (const route of routes) {
+test('request and file server functions bind their exact input validators', () => {
+  const repo = { owner: 'scope', repo: 'vcs' }
+  const revision = { ...request, commit_oid: 'commit', revision_id: 'revision' }
+  const createDiscussion = {
+    ...request,
+    anchor: null,
+    body_markdown: 'discussion',
+    client_discussion_id: 'client-discussion',
+  }
+  const createReply = {
+    ...discussion,
+    body_markdown: 'reply',
+    client_reply_id: 'client-reply',
+    reply_to_reply_id: null,
+  }
+  const prepareAttachment = {
+    ...request,
+    declared_media_type: 'image/png',
+    filename: 'screen.png',
+    operation_id: 'operation',
+    sha256: 'a'.repeat(64),
+    size_bytes: 42,
+    target: { discussion_id: null, kind: 'Discussion' },
+  }
+  const parserContracts = {
+    parseRepoParams: { validInput: repo, invalidInputs: [{ ...repo, repo: 42 }] },
+    parseRequestParams: { validInput: request, invalidInputs: [{ ...request, request_id: 42 }] },
+    parseRepoFileInput: { validInput: { ...repo, path: '/file' }, invalidInputs: [{ ...repo, path: 42 }] },
+    parseLoadRequestRevisionsInput: { validInput: revision, invalidInputs: [{ ...revision, revision_id: 42 }] },
+    parseLoadRequestRevisionDiffInput: {
+      validInput: { ...revision, path: '/file' },
+      invalidInputs: [{ ...revision, path: '/file', commit_oid: 42 }],
+    },
+    parseLoadDiscussionsInput: {
+      validInput: { ...revision, discussion_id: 'discussion', limit: 25 },
+      invalidInputs: [{ ...revision, discussion_id: 42 }],
+    },
+    parseLoadRepliesInput: {
+      validInput: { ...discussion, before: 1, reply: 'reply' },
+      invalidInputs: [{ ...discussion, reply: 42 }],
+    },
+    parseLoadDiscussionChangesInput: {
+      validInput: { ...request, after: 0 },
+      invalidInputs: [{ ...request, after: '0' }],
+    },
+    parseCreateDiscussionInput: {
+      validInput: createDiscussion,
+      invalidInputs: [{ ...createDiscussion, client_discussion_id: 42 }],
+    },
+    parseCreateReplyInput: {
+      validInput: createReply,
+      invalidInputs: [{ ...createReply, discussion_id: 42 }],
+    },
+    parseDiscussionActionInput: {
+      validInput: discussion,
+      invalidInputs: [{ ...discussion, discussion_id: 42 }],
+    },
+    parseMarkDiscussionReadInput: {
+      validInput: { ...discussion, through_position: 1 },
+      invalidInputs: [{ ...discussion, through_position: '1' }],
+    },
+    parseUpdateDescriptionInput: {
+      validInput: { ...request, description_markdown: 'new', expected_description_markdown: 'old' },
+      invalidInputs: [{ ...request, description_markdown: 'new', expected_description_markdown: 42 }],
+    },
+    parseRequestActionInput: {
+      validInput: { ...request, action: 'close' },
+      invalidInputs: [{ ...request, action: 'delete' }],
+    },
+    parseRateRequestInput: {
+      validInput: { ...request, reason: 'good', score: 5 },
+      invalidInputs: [{ ...request, reason: 'good', score: '5' }],
+    },
+    parsePrepareAttachmentInput: {
+      validInput: prepareAttachment,
+      invalidInputs: [{ ...prepareAttachment, operation_id: 42 }],
+    },
+    parseFinishAttachmentInput: {
+      validInput: {
+        ...request,
+        attachment_id: 'attachment',
+        parts: [{ part_number: 1, sha256: 'b'.repeat(64), size_bytes: 42 }],
+        upload_id: 'upload',
+      },
+      invalidInputs: [{ ...request, attachment_id: 42, parts: [], upload_id: 'upload' }],
+    },
+    parseRetryAttachmentInput: {
+      validInput: { ...request, attachment_id: 'attachment', operation_id: 'operation' },
+      invalidInputs: [{ ...request, attachment_id: 42, operation_id: 'operation' }],
+    },
+    parseGrantAttachmentInput: {
+      validInput: { ...request, attachment_id: 'attachment', target: { kind: 'original' } },
+      invalidInputs: [{ ...request, attachment_id: 42, target: { kind: 'original' } }],
+    },
+  } as const
+  type ParserName = keyof typeof parserContracts
+  const uses = <Name extends ParserName>(parser: Name) => ({ parser, ...parserContracts[parser] })
+  const routes = {
+    '$owner.$repo.requests.$requestId.tsx': {
+      loadRequestPage: uses('parseRequestParams'),
+      loadActivity: uses('parseRequestParams'),
+      updateDescription: uses('parseUpdateDescriptionInput'),
+      runRequestAction: uses('parseRequestActionInput'),
+      rateRequest: uses('parseRateRequestInput'),
+      listRequestAttachments: uses('parseRequestParams'),
+      loadAttachmentLimits: uses('parseRequestParams'),
+      prepareAttachment: uses('parsePrepareAttachmentInput'),
+      finishAttachment: uses('parseFinishAttachmentInput'),
+      retryAttachment: uses('parseRetryAttachmentInput'),
+      grantAttachmentMedia: uses('parseGrantAttachmentInput'),
+    },
+    '$owner.$repo.requests.$requestId.index.tsx': {
+      loadDiscussionPage: uses('parseLoadDiscussionsInput'),
+      loadDiscussions: uses('parseLoadDiscussionsInput'),
+      loadReplies: uses('parseLoadRepliesInput'),
+      loadDiscussionChanges: uses('parseLoadDiscussionChangesInput'),
+      createDiscussion: uses('parseCreateDiscussionInput'),
+      createReply: uses('parseCreateReplyInput'),
+      resolveDiscussion: uses('parseDiscussionActionInput'),
+      reopenAndReply: uses('parseCreateReplyInput'),
+      markDiscussionRead: uses('parseMarkDiscussionReadInput'),
+    },
+    '$owner.$repo.requests.$requestId.changes.tsx': {
+      loadChangesPage: uses('parseLoadRequestRevisionsInput'),
+      loadRevisionDiff: uses('parseLoadRequestRevisionDiffInput'),
+      loadDiscussions: uses('parseLoadDiscussionsInput'),
+    },
+    '$owner.$repo._code.index.tsx': {
+      loadRepoContent: uses('parseRepoParams'),
+      loadRepoFile: uses('parseRepoFileInput'),
+    },
+  }
+  const parserModules: Record<string, Record<string, (input: unknown) => unknown>> = {
+    '@/api/request-inputs': parsers,
+    '@/api/repos': { parseRepoParams },
+    '@/api/repo-params': { parseRepoParams },
+  }
+
+  for (const [route, expectedFunctions] of Object.entries(routes)) {
     const source = readFileSync(resolve('src/routes', route), 'utf8')
     const file = ts.createSourceFile(route, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
     const serverFactories = new Set<string>()
-    const validators = new Map<string, (input: unknown) => unknown>()
-    const parserModules: Record<string, Record<string, (input: unknown) => unknown>> = {
-      '@/api/request-inputs': parsers,
-      '@/api/repos': { parseRepoParams },
-      '@/api/repo-params': { parseRepoParams },
-    }
+    const validators = new Map<string, { name: string, parse: (input: unknown) => unknown }>()
     for (const statement of file.statements) {
       if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
       const bindings = statement.importClause?.namedBindings
@@ -142,14 +268,13 @@ test('request and file server functions bind input validators that reject malfor
         const imported = binding.propertyName?.text ?? binding.name.text
         if (module === '@tanstack/react-start' && imported === 'createServerFn') serverFactories.add(binding.name.text)
         const parser = parserModules[module]?.[imported]
-        if (parser) validators.set(binding.name.text, parser)
+        if (parser) validators.set(binding.name.text, { name: imported, parse: parser })
       }
     }
 
-    let serverFunctions = 0
+    const serverFunctions = new Map<string, { location: string, validator: ts.Expression }>()
     const inspect = (node: ts.Node) => {
       if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && serverFactories.has(node.expression.text)) {
-        serverFunctions += 1
         const location = `${route}:${file.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
         const boundValidators: ts.Expression[] = []
         let chain: ts.Node = node
@@ -162,17 +287,34 @@ test('request and file server functions bind input validators that reject malfor
           }
           chain = call
         }
+        assert.ok(ts.isVariableDeclaration(chain.parent), `${location}: server function must be assigned to a variable`)
+        assert.ok(ts.isIdentifier(chain.parent.name), `${location}: server function needs an identifier name`)
         assert.equal(boundValidators.length, 1, `${location}: server function needs one input validator`)
-        const binding = boundValidators[0]
-        const parser = ts.isIdentifier(binding) ? validators.get(binding.text) : undefined
-        assert.ok(parser, `${location}: validator must reference an API input parser`)
-        for (const input of [null, [], {}, { owner: 'scope', repo: 42 }]) {
-          assert.throws(() => parser(input), `${location}: validator accepted ${JSON.stringify(input)}`)
-        }
+        assert.ok(!serverFunctions.has(chain.parent.name.text), `${location}: duplicate server function name`)
+        serverFunctions.set(chain.parent.name.text, { location, validator: boundValidators[0] })
       }
       ts.forEachChild(node, inspect)
     }
     inspect(file)
-    assert.ok(serverFunctions > 0, `${route}: no server functions found`)
+    assert.deepEqual(
+      [...serverFunctions.keys()].sort(),
+      Object.keys(expectedFunctions).sort(),
+      `${route}: server function contract is stale`,
+    )
+    for (const [functionName, contract] of Object.entries(expectedFunctions)) {
+      const serverFunction = serverFunctions.get(functionName)
+      assert.ok(serverFunction)
+      const binding = serverFunction.validator
+      const parser = ts.isIdentifier(binding) ? validators.get(binding.text) : undefined
+      assert.ok(parser, `${serverFunction.location}: validator must reference an API input parser`)
+      assert.equal(parser.name, contract.parser, `${serverFunction.location}: ${functionName} uses the wrong parser`)
+      assert.doesNotThrow(() => parser.parse(contract.validInput), `${serverFunction.location}: valid input was rejected`)
+      for (const input of contract.invalidInputs) {
+        assert.throws(
+          () => parser.parse(input),
+          `${serverFunction.location}: validator accepted ${JSON.stringify(input)}`,
+        )
+      }
+    }
   }
 })

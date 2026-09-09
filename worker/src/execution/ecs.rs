@@ -1,8 +1,6 @@
 use super::super::settings::CloudExecutionSettings;
 use anyhow::{Context as _, bail};
 use aws_config::BehaviorVersion;
-#[cfg(test)]
-use aws_sdk_ecs::types::{Compatibility, TaskDefinition};
 use aws_sdk_ecs::{
     Client as EcsSdkClient,
     config::Region,
@@ -472,124 +470,6 @@ fn runner_container(
         )
         .log_configuration(log_configuration)
         .build())
-}
-
-#[cfg(test)]
-fn verify_task_definition_contract(
-    definition: &TaskDefinition,
-    image: &str,
-    bootstrap_secret_arn: &str,
-    settings: &CloudExecutionSettings,
-) -> anyhow::Result<()> {
-    if definition.network_mode() != Some(&NetworkMode::Awsvpc)
-        || definition.requires_compatibilities() != [Compatibility::Fargate]
-        || definition.cpu() != Some(TASK_CPU)
-        || definition.memory() != Some(TASK_MEMORY)
-        || definition.execution_role_arn() != Some(settings.ecs_execution_role_arn.as_str())
-        || definition.task_role_arn().is_some()
-        || definition.runtime_platform() != Some(&runtime_platform())
-        || definition.ephemeral_storage().is_some()
-        || !definition.volumes().is_empty()
-        || !definition.placement_constraints().is_empty()
-        || !definition.inference_accelerators().is_empty()
-        || definition.pid_mode().is_some()
-        || definition.ipc_mode().is_some()
-        || definition.proxy_configuration().is_some()
-        || definition.enable_fault_injection() == Some(true)
-        || definition.container_definitions().len() != 1
-    {
-        bail!("stored definition differs from the expected Fargate task");
-    }
-    verify_container_contract(
-        &definition.container_definitions()[0],
-        image,
-        &settings.aws_region,
-        &settings.ecs_log_group,
-        bootstrap_secret_arn,
-        settings.registry_credentials_secret_arn.as_deref(),
-    )?;
-    Ok(())
-}
-
-#[cfg(test)]
-fn verify_container_contract(
-    container: &ContainerDefinition,
-    image: &str,
-    region: &str,
-    log_group: &str,
-    bootstrap_secret_arn: &str,
-    registry_credentials_secret_arn: Option<&str>,
-) -> anyhow::Result<()> {
-    let expected_log_options = HashMap::from([
-        ("awslogs-group".to_string(), log_group.to_string()),
-        ("awslogs-region".to_string(), region.to_string()),
-        ("awslogs-stream-prefix".to_string(), "runner".to_string()),
-    ]);
-    let logs = container
-        .log_configuration()
-        .context("stored definition is missing the log configuration")?;
-    let expected_repository_credentials = registry_credentials_secret_arn
-        .map(|arn| {
-            RepositoryCredentials::builder()
-                .credentials_parameter(arn)
-                .build()
-                .context("build expected ECS repository credentials")
-        })
-        .transpose()?;
-    if container.name() != Some(CONTAINER_NAME)
-        || container.image() != Some(image)
-        || container.essential() != Some(true)
-        || container.entry_point() != [RUNTIME_ENTRYPOINT]
-        || container.cpu() != 0
-        || container.memory().is_some()
-        || container.memory_reservation().is_some()
-        || container.repository_credentials() != expected_repository_credentials.as_ref()
-        || !container.links().is_empty()
-        || !container.port_mappings().is_empty()
-        || container.restart_policy().is_some()
-        || !container.command().is_empty()
-        || !container.environment().is_empty()
-        || !container.environment_files().is_empty()
-        || !container.mount_points().is_empty()
-        || !container.volumes_from().is_empty()
-        || container.linux_parameters().is_some()
-        || container.secrets()
-            != [Secret::builder()
-                .name(BOOTSTRAP_SECRET_ENV)
-                .value_from(bootstrap_secret_arn)
-                .build()
-                .context("build expected ECS bootstrap secret reference")?]
-        || !container.depends_on().is_empty()
-        || container.start_timeout().is_some()
-        || container.stop_timeout().is_some()
-        || container.hostname().is_some()
-        || container.user().is_some()
-        || container.working_directory().is_some()
-        || container.disable_networking() == Some(true)
-        || container.privileged() == Some(true)
-        || container.readonly_root_filesystem() == Some(true)
-        || !container.dns_servers().is_empty()
-        || !container.dns_search_domains().is_empty()
-        || !container.extra_hosts().is_empty()
-        || !container.docker_security_options().is_empty()
-        || container.interactive() == Some(true)
-        || container.pseudo_terminal() == Some(true)
-        || container
-            .docker_labels()
-            .is_some_and(|labels| !labels.is_empty())
-        || !container.ulimits().is_empty()
-        || logs.log_driver() != &LogDriver::Awslogs
-        || logs.options() != Some(&expected_log_options)
-        || !logs.secret_options().is_empty()
-        || container.health_check().is_some()
-        || !container.system_controls().is_empty()
-        || !container.resource_requirements().is_empty()
-        || container.firelens_configuration().is_some()
-        || !container.credential_specs().is_empty()
-    {
-        bail!("stored container differs from the expected runner contract");
-    }
-    Ok(())
 }
 
 fn scope_tag(key: &str, value: &str) -> Tag {

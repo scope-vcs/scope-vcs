@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
@@ -608,10 +610,44 @@ test("staging dispatch has a unique identity beyond the candidate SHA", () => {
 });
 
 
-test("recovery validates provenance before selecting its source revision", () => {
+test("recovery validates provenance before selecting its source revision", (t) => {
   const selection = productionWorkflow.slice(productionWorkflow.indexOf("      - name: Select immutable release revision"), productionWorkflow.indexOf("      - name: Read successful production revisions"));
-  assert(selection.indexOf("cutover-validate-recovery") < selection.indexOf('echo "sha=$RECOVER_SHA"'));
+  const validate = selection.indexOf("cutover-validate-recovery");
+  const emit = selection.indexOf('echo "sha=$RECOVER_SHA"');
+  assert(validate >= 0 && emit > validate);
   assert.match(selection, /test "\$GITHUB_REF" = refs\/heads\/main/);
+
+  const directory = mkdtempSync(join(tmpdir(), "scope-recovery-selection-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const calls = join(directory, "validation-arguments");
+  const output = join(directory, "github-output");
+  writeFileSync(join(directory, "node"), '#!/bin/sh\nprintf "%s\\n" "$@" > "$VALIDATION_ARGUMENTS"\nexit "$VALIDATION_EXIT"\n', { mode: 0o755 });
+  const script = selection.split('        run: |\n')[1].replace(/^          /gm, '');
+  const sourceSha = "a".repeat(40);
+  for (const validationExit of [1, 0]) {
+    const result = spawnSync("bash", ["-euo", "pipefail", "-c", script], {
+      cwd: directory,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH}`,
+        RECOVER_ID: "42",
+        RECOVER_SHA: sourceSha,
+        GITHUB_REF: "refs/heads/main",
+        GITHUB_OUTPUT: output,
+        VALIDATION_ARGUMENTS: calls,
+        VALIDATION_EXIT: String(validationExit),
+      },
+    });
+    assert.equal(result.status, validationExit, result.stderr);
+    assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
+      ".github/scripts/production-deployment-progress.mjs", "cutover-validate-recovery",
+      "--id", "42", "--source-sha", sourceSha,
+    ]);
+    if (validationExit === 0) assert.equal(readFileSync(output, "utf8"), `sha=${sourceSha}\n`);
+    else assert.equal(existsSync(output), false, "failed validation must not select a recovery revision");
+  }
+
   assert.match(backendDeployWorkflow, /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
   assert.match(productionWorkflow.split("\njobs:")[0], /deployments: read/);
   assert.doesNotMatch(productionWorkflow.split("\njobs:")[0], /: write/);

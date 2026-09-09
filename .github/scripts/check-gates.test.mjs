@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -58,6 +58,15 @@ test('local and both CI callers use the shared inventory', () => {
   assert.ok(read('dev/check').includes('dev/checks/policy'));
   assert.ok(read('web/package.json').includes('dev/checks/contract'));
   assert.ok(github.includes('dev/checks/contract'));
+});
+
+test('every deployment and policy script test is run by a shared gate', () => {
+  const invoked = ['ops', 'policy', 'cli'].flatMap((gate) => commands(gate));
+  for (const name of readdirSync(resolve(root, '.github/scripts'))) {
+    if (!name.endsWith('.test.mjs')) continue;
+    const path = `.github/scripts/${name}`;
+    assert.ok(invoked.some((command) => command.startsWith('node --test ') && command.split(' ').includes(path)), `${path} has no test gate`);
+  }
 });
 
 test('gate inputs select checks through change scopes', () => {

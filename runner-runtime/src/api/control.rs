@@ -32,6 +32,10 @@ impl RuntimeClient {
     }
 
     pub fn heartbeat(&self) -> anyhow::Result<AttemptStatusResponse> {
+        #[cfg(test)]
+        if let Some(started) = &self.heartbeat_started {
+            let _ = started.send(());
+        }
         let _heartbeat = self
             .heartbeat_lock
             .lock()

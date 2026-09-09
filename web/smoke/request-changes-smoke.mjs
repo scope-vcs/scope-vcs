@@ -2,6 +2,12 @@ import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
+const backgroundServerFunctions = new Set([
+  'listRequestAttachments_createServerFn_handler',
+  'loadAnalyticsIdentity_createServerFn_handler',
+  'loadAttachmentLimits_createServerFn_handler',
+])
+
 export async function assertRequestCrossLinksStayInDocument(page) {
   const requestViews = page.getByRole('navigation', { name: 'Request views' })
   const heading = await page
@@ -67,10 +73,7 @@ export async function assertFileSelectionSkipsRevisionReload(page, fileName, pat
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
       const name = serverFunctionName(request)
-      // Attachment and analytics reads can finish hydration independently.
-      if (name === 'loadChangesPage_createServerFn_handler' || name === 'loadRevisionDiff_createServerFn_handler') {
-        serverFunctions.push(name)
-      }
+      if (!backgroundServerFunctions.has(name)) serverFunctions.push(name)
     }
   }
   page.on('request', recordServerFunction)
@@ -110,10 +113,7 @@ export async function assertUpdateSelectionReloadsSelectedPayload(page) {
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
       const name = serverFunctionName(request)
-      // Attachment and analytics reads can finish hydration independently.
-      if (name === 'loadChangesPage_createServerFn_handler' || name === 'loadRevisionDiff_createServerFn_handler') {
-        serverFunctions.push(name)
-      }
+      if (!backgroundServerFunctions.has(name)) serverFunctions.push(name)
     }
   }
   page.on('request', recordServerFunction)

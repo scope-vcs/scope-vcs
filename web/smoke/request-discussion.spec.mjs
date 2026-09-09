@@ -24,12 +24,24 @@ if (!owner || !repo || extra) {
 test('discussion and reply chronology preserves quote targets', async () => {
   await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
-    const jitterThread = page.locator('#discussion-discussion_demo_jitter')
     const resolvedThread = page.locator('#discussion-discussion_demo_resolved_docs')
     await resolvedThread.getByRole('button', { name: 'Show 1 reply' }).waitFor()
     await resolvedThread.getByText('The helper accepts milliseconds', { exact: false }).waitFor()
-    await assertBefore(retryThread, jitterThread)
-    await assertBefore(jitterThread, resolvedThread)
+    await waitForClientHydration(page, retryThread.getByRole('button', { name: 'Hide 3 replies' }))
+    assert.deepEqual(
+      await page.locator('.request-discussion-thread').evaluateAll((elements) =>
+        elements.map(({ id }) => id),
+      ),
+      [
+        'discussion-discussion_demo_retry_cap',
+        'discussion-discussion_demo_jitter',
+        'discussion-discussion_demo_resolved_docs',
+        'discussion-discussion_demo_revision_jitter',
+        'discussion-discussion_demo_revision_tests',
+        'discussion-discussion_demo_revision_final',
+      ],
+    )
+    assert.equal(await page.getByRole('textbox').count(), 0)
 
     const maintainerReply = retryThread.locator('#reply-discussion_reply_demo_retry_cap_maintainer')
     const contributorReply = retryThread.locator('#reply-discussion_reply_demo_retry_cap_quote')
@@ -37,7 +49,6 @@ test('discussion and reply chronology preserves quote targets', async () => {
     await nestedReply.waitFor()
     await assertBefore(maintainerReply, contributorReply)
     await assertBefore(contributorReply, nestedReply)
-    await waitForClientHydration(page, retryThread.getByRole('button', { name: 'Hide 3 replies' }))
     for (const [reply, target] of [[contributorReply, maintainerReply], [nestedReply, contributorReply]]) {
       const quote = reply.locator('a[href^="#discussion="]')
       await quote.click()

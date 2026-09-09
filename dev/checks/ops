@@ -26,6 +26,7 @@ node --test .github/scripts/staging-railway-token.test.mjs
 node --test .github/scripts/release-availability.test.mjs
 node --test .github/scripts/release-cutover-journal.test.mjs
 node --test .github/scripts/recovery-preparation-trust.test.mjs
+node --test .github/scripts/prepared-deploy-trust.test.mjs
 node --test .github/scripts/rehearse-release.test.mjs
 node --test .github/scripts/extract-railway-release.test.mjs
 node --test .github/scripts/extract-railway-maintenance.test.mjs
