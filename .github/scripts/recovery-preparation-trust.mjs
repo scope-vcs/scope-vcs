@@ -11,11 +11,12 @@ const shaPattern = /^[0-9a-f]{40}$/;
 // The production workflow and authorized operators own journal writes and these GHCR
 // packages. This gate rejects PR/candidate preparation; it is not a signature over a
 // journal written by an actor who already has those production publishing privileges.
-export async function validateRecoveryPreparation(prepared, request, repository, manifest = deploymentManifest) {
+export async function validateRecoveryPreparation(prepared, request, repository, manifest = deploymentManifest,
+  requiredComponents = ["api", "worker", "cache", "router", "media", "mediaWorker"]) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? "")) {
     throw new Error("Recovery requires the trusted GITHUB_REPOSITORY");
   }
-  validatePreparedRelease(prepared, { components: ["api", "worker", "cache", "router", "media", "mediaWorker"] });
+  validatePreparedRelease(prepared, { components: requiredComponents });
   const { sourceSha, preparationRunId } = prepared;
   if (!/^[1-9][0-9]*$/.test(preparationRunId ?? "")) {
     throw new Error("Recovery requires its original preparation run ID");
@@ -40,7 +41,7 @@ export async function validateRecoveryPreparation(prepared, request, repository,
       || run.path !== workflowPath
       || run.head_branch !== "main"
       || run.head_sha !== sourceSha
-      || !["push", "workflow_dispatch"].includes(run.event)) {
+      || !["schedule", "workflow_dispatch"].includes(run.event)) {
     throw new Error("Recovery preparation must come from this repository's production workflow on main at the exact source SHA");
   }
 

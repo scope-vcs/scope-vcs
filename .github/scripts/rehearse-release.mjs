@@ -86,6 +86,16 @@ async function main() {
         '--', process.execPath, '.github/scripts/rehearse-release.mjs', 'transition', String(rotation), directory], env).done;
     }
     await writeFile(resolve(output, 'summary.json'), JSON.stringify({ sourceSha, ordinaryTransitions: 3, passed: true }));
+    const active = JSON.parse(await readFile(resolve(output, 'ordinary-3/active-deployments.json'), 'utf8'));
+    await writeFile(process.env.SCOPE_STAGING_EVIDENCE_PATH ?? 'staging-deployments.json', JSON.stringify({
+      commit: sourceSha,
+      environmentId: railway.staging.environmentId,
+      deployments: components.map((component) => ({
+        service: component === 'router' ? railway.staging.routerServiceId : services[component].id,
+        deploymentId: active[component],
+        status: 'SUCCESS',
+      })),
+    }, null, 2));
     return;
   }
 

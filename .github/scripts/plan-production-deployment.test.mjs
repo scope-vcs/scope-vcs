@@ -104,13 +104,13 @@ function productionConditionContext(overrides = {}) {
     cancelled: overrides.cancelled ?? false,
     inputs: {
       recover_cutover_id: overrides.recoveryId ?? "",
-      skip_staging_rehearsal: overrides.skipStagingRehearsal ?? false,
     },
     github: {
-      event_name: overrides.eventName ?? "push",
+      event_name: overrides.eventName ?? "schedule",
       ref: overrides.ref ?? "refs/heads/main",
     },
     needs: {
+      "media-worker-image": { result: overrides.mediaWorkerImageResult ?? (backendSelected ? "success" : "skipped") },
       "release-preparation": { result: overrides.preparationResult ?? "success" },
       "release-staging-proof": { result: overrides.stagingResult ?? "success" },
       "backend-deploy": { result: overrides.backendResult ?? "skipped" },
@@ -380,6 +380,25 @@ test("frontend production deployment eligibility covers optional backend and fai
   }
 });
 
+test("CLI publication waits for a selected application's release proof", () => {
+  const condition = productionJobCondition("cli-deploy");
+  for (const proofResult of ["failure", "cancelled", "skipped"]) {
+    assert.equal(evaluateProductionCondition(condition, productionConditionContext({
+      backendSelected: false, webSelected: true, stagingResult: proofResult,
+    })), false, `web and CLI cannot publish after ${proofResult} proof`);
+    assert.equal(evaluateProductionCondition(condition, productionConditionContext({
+      backendSelected: true, backendResult: "success", stagingResult: proofResult,
+    })), false, `backend and CLI cannot publish after ${proofResult} proof`);
+  }
+  assert.equal(evaluateProductionCondition(condition, productionConditionContext({
+    backendSelected: false, webSelected: false, stagingResult: "skipped",
+  })), true, "CLI-only publication has no application rehearsal");
+  assert.equal(evaluateProductionCondition(condition, productionConditionContext({
+    backendSelected: false, webSelected: true, stagingResult: "success",
+  })), true, "web and CLI publish after successful proof");
+  assert.match(productionWorkflow, /cli-deploy:\n    name: CLI deploy\n    needs: \[plan, production-validation-gate, release-staging-proof, backend-deploy\]/);
+});
+
 test("the final production gate verifies selected and carried-forward services", () => {
   const condition = productionJobCondition("production-health-gate");
   assert.match(condition, /^!cancelled\(\) && github\.event_name/);
@@ -539,6 +558,23 @@ test("prepared web and backend jobs cannot build after activation begins", () =>
   assert.doesNotMatch(cliDeployWorkflow, /cargo build/);
 });
 
+test("web-only releases prepare artifacts when the backend image job is skipped", () => {
+  const condition = productionJobCondition("release-preparation");
+  const fixtures = [
+    ["web-only", { backendSelected: false, cliSelected: false }, true],
+    ["backend and web", { backendSelected: true }, true],
+    ["backend-only", { backendSelected: true, webSelected: false }, true],
+    ["no application selected", { backendSelected: false, webSelected: false }, false],
+    ["failed image build", { backendSelected: true, mediaWorkerImageResult: "failure", validationResult: "skipped" }, false],
+    ["failed validation", { backendSelected: false, validationResult: "failure" }, false],
+    ["cancelled", { backendSelected: false, cancelled: true }, false],
+    ["pull request", { backendSelected: false, eventName: "pull_request" }, false],
+  ];
+  for (const [name, overrides, expected] of fixtures) {
+    assert.equal(evaluateProductionCondition(condition, productionConditionContext(overrides)), expected, name);
+  }
+});
+
 test("application activation requires completed preparation and staging proof", () => {
   for (const job of ["backend-deploy", "web-deploy"]) {
     const condition = productionJobCondition(job);
@@ -554,23 +590,30 @@ test("application activation requires completed preparation and staging proof", 
   })), true, "pinned recovery must not delay reopening for another staging run");
 });
 
-test("only an explicit manual rollout can omit staging while retaining preparation and validation", () => {
-  const manual = {
-    eventName: "workflow_dispatch", skipStagingRehearsal: true,
-    backendSelected: true, backendResult: "success", stagingResult: "skipped",
-  };
-  assert.equal(evaluateProductionCondition(productionJobCondition("release-staging-proof"), productionConditionContext(manual)), false);
+test("automatic code events and failed release proof cannot activate production", () => {
   for (const job of ["backend-deploy", "web-deploy"]) {
-    const condition = productionJobCondition(job);
-    assert.equal(evaluateProductionCondition(condition, productionConditionContext(manual)), true);
-    for (const overrides of [
-      { eventName: "push" }, { skipStagingRehearsal: false },
-      { preparationResult: "failure" }, { validationResult: "failure" },
-      { cancelled: true }, { ref: "refs/heads/feature" },
-    ]) {
-      assert.equal(evaluateProductionCondition(condition, productionConditionContext({ ...manual, ...overrides })), false);
+    for (const eventName of ["push", "pull_request", "schedule", "workflow_dispatch"]) {
+      const context = { eventName, backendSelected: true, backendResult: "success" };
+      assert.equal(evaluateProductionCondition(productionJobCondition(job), productionConditionContext(context)),
+        ["schedule", "workflow_dispatch"].includes(eventName));
+      assert.equal(evaluateProductionCondition(productionJobCondition(job), productionConditionContext({
+        ...context, stagingResult: "skipped",
+      })), false);
     }
   }
+});
+
+test("daily releases use Chicago time and leave push events out of the workflow", () => {
+  const triggers = productionWorkflow.split("\nconcurrency:")[0];
+  assert.match(triggers, /schedule:\n    - cron: "0 9 \* \* \*"\n      timezone: America\/Chicago/);
+  assert.match(triggers, /  workflow_dispatch:/);
+  assert.match(triggers, /  pull_request:/);
+  assert.doesNotMatch(triggers, /  push:|skip_staging_rehearsal/);
+  assert.match(triggers, /default: changed/);
+  assert.doesNotMatch(productionWorkflow, /\n  staging-proof:/);
+  assert.match(productionWorkflow, /-f target_environment=release-proof/);
+  assert.equal(manifest.source.nativeAutodeploy, false);
+  assert.equal(manifest.railway.staging.environmentName, "release-proof");
 });
 
 test("Node workflows cache pnpm and browser downloads by the web lockfile", () => {
@@ -602,11 +645,21 @@ test("production success follows the complete monitored transition", () => {
 test("staging dispatch has a unique identity beyond the candidate SHA", () => {
   const proof = productionWorkflow.slice(productionWorkflow.indexOf("  release-staging-proof:"), productionWorkflow.indexOf("  backend-deploy:"));
   assert.match(proof, /proof_id="\$\(cat \/proc\/sys\/kernel\/random\/uuid\)"/);
-  assert.match(proof, /title="Scope staging \$SOURCE_SHA \/ \$proof_id"/);
+  assert.match(proof, /title="Scope release-proof \$SOURCE_SHA \/ \$proof_id"/);
   assert.match(proof, /-f proof_request_id="\$proof_id"/);
   assert.match(stagingWorkflow, /run-name:.*inputs\.proof_request_id/);
 });
 
+
+test("release-proof watcher covers preparation, proof, and cleanup budgets", () => {
+  const proof = productionWorkflow.slice(productionWorkflow.indexOf("  release-staging-proof:"), productionWorkflow.indexOf("  backend-deploy:"));
+  const parentBudget = Number(proof.match(/timeout-minutes: (\d+)/)[1]);
+  const childBudget = ["prepare", "prove", "cleanup"].reduce((total, name) => {
+    const job = stagingWorkflow.split(`\n  ${name}:\n`)[1].split(/\n  [\w-]+:\n/)[0];
+    return total + Number(job.match(/timeout-minutes: (\d+)/)[1]);
+  }, 0);
+  assert(parentBudget > childBudget, "watcher must allow the child workflow and dispatch overhead to finish");
+});
 
 test("recovery validates provenance before selecting its source revision", () => {
   const selection = productionWorkflow.slice(productionWorkflow.indexOf("      - name: Select immutable release revision"), productionWorkflow.indexOf("      - name: Read successful production revisions"));

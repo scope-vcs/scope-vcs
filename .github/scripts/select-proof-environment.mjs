@@ -6,15 +6,17 @@ import { pathToFileURL } from 'node:url'
 // Resolve only repository-reviewed targets before issuing any Railway credentials.
 // The deployment helpers consume the selected target through their existing manifest.
 export function selectProofEnvironment(manifest, name) {
-  assert(name === 'staging' || Object.hasOwn(manifest.railway.proofEnvironments ?? {}, name),
+  assert(name === 'release-proof' || Object.hasOwn(manifest.railway.proofEnvironments ?? {}, name),
     'Unknown proof environment')
-  const selected = name === 'staging'
+  const selected = name === 'release-proof'
     ? manifest.railway.staging
     : manifest.railway.proofEnvironments[name]
   assert(selected.environmentId && selected.environmentId !== manifest.railway.environmentId,
     'Proof environment must differ from production')
-  // The default staging slot may point at a named Railway rehearsal environment.
-  if (name === 'staging') return manifest
+  if (name === 'release-proof') {
+    assert(selected.environmentName === name, 'Release proof must target release-proof')
+    return manifest
+  }
   assert(selected.environmentName === name, 'Proof environment name does not match')
   assert(selected.environmentId !== manifest.railway.staging.environmentId,
     'Separate proof environment must differ from shared staging')

@@ -2,15 +2,11 @@ name: Scope CI and Production Deploy
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: "0 9 * * *"
+      timezone: America/Chicago
   workflow_dispatch:
     inputs:
-      skip_staging_rehearsal:
-        description: Deploy directly after validation and artifact preparation; omit the staging rehearsal
-        type: boolean
-        default: false
       maintenance_budget_seconds:
         description: Approved staging-derived outage budget; 0 prevents a new maintenance cutover
         type: number
@@ -26,8 +22,9 @@ on:
       scope:
         description: Component to validate and deploy
         type: choice
-        default: all
+        default: changed
         options:
+          - changed
           - all
           - checksImage
           - cache
@@ -43,9 +40,7 @@ concurrency:
   group: >-
     ${{ github.event_name == 'pull_request' &&
     format('scope-ci-pr-{0}', github.event.pull_request.number) ||
-    (github.ref == 'refs/heads/main' &&
-    'scope-production-deploy' ||
-    format('scope-candidate-{0}', github.ref_name)) }}
+    'scope-production-deploy' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -72,6 +67,10 @@ jobs:
       cli: ${{ steps.plan.outputs.cli }}
       cli_distribution: ${{ steps.plan.outputs.cli_distribution }}
     steps:
+      - name: Require main for releases
+        if: github.event_name != 'pull_request'
+        run: test "$GITHUB_REF" = refs/heads/main
+
       - name: Checkout exact revision
         uses: actions/checkout@v7
         with:
@@ -100,7 +99,7 @@ jobs:
 
       - name: Read successful production revisions
         id: progress
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.event_name != 'push' && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/scripts/production-deployment-progress.mjs read
@@ -145,60 +144,7 @@ jobs:
     uses: ./.github/workflows/scope-checks-image.yml
     with:
       publish: ${{ github.event_name != 'pull_request' }}
-      source_sha: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && inputs.scope == 'checksImage' && github.sha || '' }}
     secrets: inherit
-
-  staging-proof:
-    name: Railway staging proof
-    needs: checks-image
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.ref != 'refs/heads/main' &&
-      inputs.scope == 'checksImage' &&
-      needs.checks-image.result == 'success'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Dispatch trusted staging proof
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          run_title="Scope staging $SOURCE_SHA"
-          seen_run_ids="$(
-            gh run list \
-              --workflow scope-railway-staging.yml \
-              --event workflow_dispatch \
-              --limit 20 \
-              --json databaseId,displayTitle \
-              | jq -c --arg title "$run_title" \
-                '[.[] | select(.displayTitle == $title) | .databaseId]'
-          )"
-          gh workflow run scope-railway-staging.yml --ref main -f source_sha="$SOURCE_SHA"
-          for _ in {1..60}; do
-            run_id="$(
-              gh run list \
-                --workflow scope-railway-staging.yml \
-                --event workflow_dispatch \
-                --limit 20 \
-                --json databaseId,displayTitle \
-                | jq -r --arg title "$run_title" --argjson seen "$seen_run_ids" \
-                  '.[] | select(.displayTitle == $title) | select(.databaseId as $id | $seen | index($id) | not) | .databaseId' \
-                | head -n 1 \
-                || true
-            )"
-            if [[ -n "$run_id" ]]; then
-              gh run watch "$run_id" --exit-status
-              exit
-            fi
-            sleep 5
-          done
-          echo "Timed out locating the trusted staging proof for $SOURCE_SHA." >&2
-          exit 1
 
   backend-validation:
     name: Backend validation
@@ -233,7 +179,7 @@ jobs:
       packages: write
     uses: ./.github/workflows/scope-media-worker-image.yml
     with:
-      publish: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+      publish: ${{ github.event_name != 'pull_request' && github.event_name != 'push' && github.ref == 'refs/heads/main' }}
       source_sha: ${{ needs.plan.outputs.release_sha }}
     secrets: inherit
 
@@ -253,7 +199,7 @@ jobs:
     uses: ./.github/workflows/scope-cli-build.yml
     with:
       validate_targets: >-
-        ${{ (github.event_name != 'pull_request' && github.ref == 'refs/heads/main') ||
+        ${{ (github.event_name != 'pull_request' && github.event_name != 'push' && github.ref == 'refs/heads/main') ||
         (needs.plan.outputs.cli_distribution == 'true' &&
         (github.event_name == 'workflow_dispatch' ||
         (github.event_name == 'pull_request' &&
@@ -283,7 +229,7 @@ jobs:
       - cli-validation
       - integration-validation
     if: >-
-      !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      !cancelled() && github.event_name != 'pull_request' && github.event_name != 'push' && github.ref == 'refs/heads/main' &&
       needs.plan.result == 'success' &&
       (inputs.recover_cutover_id != '' || (
       (needs.plan.outputs.checks_image != 'true' || needs.checks-image.result == 'success') &&
@@ -308,8 +254,8 @@ jobs:
     needs: [plan, production-validation-gate, media-worker-image]
     if: >-
       !cancelled() &&
-      (needs.media-worker-image.result == 'success' || inputs.recover_cutover_id != '') &&
-      github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      (needs.media-worker-image.result == 'success' || needs.media-worker-image.result == 'skipped' || inputs.recover_cutover_id != '') &&
+      github.event_name != 'pull_request' && github.event_name != 'push' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
       (needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
@@ -337,14 +283,13 @@ jobs:
     secrets: inherit
 
   release-staging-proof:
-    name: Prove prepared release in staging
+    name: Prove prepared release in release-proof
     needs: [plan, release-preparation]
     if: >-
       !cancelled() && inputs.recover_cutover_id == '' &&
-      !(github.event_name == 'workflow_dispatch' && inputs.skip_staging_rehearsal == true) &&
       needs.release-preparation.result == 'success'
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 60
+    timeout-minutes: 180
     permissions:
       actions: write
       contents: read
@@ -356,11 +301,11 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.release_sha }}
         run: |
           proof_id="$(cat /proc/sys/kernel/random/uuid)"
-          title="Scope staging $SOURCE_SHA / $proof_id"
+          title="Scope release-proof $SOURCE_SHA / $proof_id"
           seen="$(gh run list --workflow scope-railway-staging.yml --event workflow_dispatch \
             --limit 100 --json databaseId | jq -c '[.[].databaseId]')"
           gh workflow run scope-railway-staging.yml --ref main \
-            -f source_sha="$SOURCE_SHA" -f prepared_run_id="$GITHUB_RUN_ID" -f proof_request_id="$proof_id"
+            -f target_environment=release-proof -f source_sha="$SOURCE_SHA" -f prepared_run_id="$GITHUB_RUN_ID" -f proof_request_id="$proof_id"
           for _ in {1..60}; do
             id="$(gh run list --workflow scope-railway-staging.yml --event workflow_dispatch \
               --limit 100 --json databaseId,displayTitle | jq -r --arg title "$title" --argjson seen "$seen" \
@@ -378,11 +323,10 @@ jobs:
     name: Backend deploy
     needs: [plan, production-validation-gate, release-preparation, release-staging-proof]
     if: >-
-      !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      !cancelled() && github.event_name != 'pull_request' && github.event_name != 'push' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
       needs.release-preparation.result == 'success' &&
-      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success' ||
-      (github.event_name == 'workflow_dispatch' && inputs.skip_staging_rehearsal == true)) &&
+      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success') &&
       (needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.media_worker == 'true' ||
@@ -411,11 +355,10 @@ jobs:
     name: Web deploy
     needs: [plan, production-validation-gate, release-preparation, release-staging-proof, backend-deploy]
     if: >-
-      !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      !cancelled() && github.event_name != 'pull_request' && github.event_name != 'push' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
       needs.release-preparation.result == 'success' &&
-      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success' ||
-      (github.event_name == 'workflow_dispatch' && inputs.skip_staging_rehearsal == true)) &&
+      (inputs.recover_cutover_id != '' || needs.release-staging-proof.result == 'success') &&
       needs.plan.outputs.web == 'true' &&
       (((needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
@@ -442,12 +385,14 @@ jobs:
 
   cli-deploy:
     name: CLI deploy
-    needs: [plan, production-validation-gate, backend-deploy]
+    needs: [plan, production-validation-gate, release-staging-proof, backend-deploy]
     if: >-
       inputs.recover_cutover_id == '' &&
-      !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      !cancelled() && github.event_name != 'pull_request' && github.event_name != 'push' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
       needs.plan.outputs.cli == 'true' &&
+      (needs.release-staging-proof.result == 'success' ||
+      (needs.backend-deploy.result == 'skipped' && needs.plan.outputs.web != 'true')) &&
       (((needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.media_worker == 'true' ||
@@ -475,7 +420,7 @@ jobs:
     name: Production Railway health gate
     needs: [plan, production-validation-gate, backend-deploy, web-deploy, cli-deploy]
     if: >-
-      !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      !cancelled() && github.event_name != 'pull_request' && github.event_name != 'push' && github.ref == 'refs/heads/main' &&
       needs.production-validation-gate.result == 'success' &&
       (((needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||

@@ -155,20 +155,8 @@ case "$action" in
       jq -er '.DATABASE_PUBLIC_URL | strings | select(length > 0)' <<< "$database_variables"
     )"
     export SCOPE_STAGING_DATABASE_PUBLIC_URL
-    export SCOPE_ALLOW_STAGING_SMOKE_SEED=1
-    export SCOPE_SMOKE_SEED_PROJECT_ID="$project_id"
-    export SCOPE_SMOKE_SEED_ENVIRONMENT_ID="$staging_environment_id"
-    export SCOPE_SMOKE_SEED_ENVIRONMENT_NAME="$staging_environment_name"
-    export SCOPE_PRODUCTION_ENVIRONMENT_ID="$production_environment_id"
-    export SCOPE_SMOKE_SEED_USER_EMAIL="smoke@example.test"
-    export SCOPE_SMOKE_SEED_USER_HANDLE="dev"
-    # `railway run` executes this runner-local binary with Railway variables, so the
-    # exchange file remains on the same runner that later invokes the candidate CLI.
     # Reset the catalog while every metadata writer is still fenced.
-    # shellcheck disable=SC2016
-    railway run "${railway_scope[@]}" --service "$api_service" --no-local -- \
-      sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH="$SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH" exec "$@"' \
-      scope-smoke-seed "$seed_binary"
+    bash .github/scripts/staging-smoke-seed.sh seed
     snapshot_backfill_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/scope-repository-snapshot-backfill.XXXXXX")"
     for backfill_command in backfill-landing-files backfill-workflow-catalogs; do
       SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR="$snapshot_backfill_dir" \

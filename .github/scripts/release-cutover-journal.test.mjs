@@ -97,7 +97,7 @@ test("recovery retains the original closure timestamp after more than one status
   assert.equal(journal.events.at(-1).at, "2026-09-06T00:00:00Z");
 });
 
-function recoveryRequest(store, event = "push") {
+function recoveryRequest(store, event = "schedule") {
   return async (path, options) => {
     if (path === "/actions/runs/123") return {
       id: 123, path: ".github/workflows/scope-production-deploy.yml", event,

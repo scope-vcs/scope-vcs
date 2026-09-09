@@ -16,7 +16,7 @@ function fixture() {
     }])),
   };
   const run = {
-    id: 123, path: ".github/workflows/scope-production-deploy.yml", event: "push",
+    id: 123, path: ".github/workflows/scope-production-deploy.yml", event: "schedule",
     head_branch: "main", head_sha: sourceSha, status: "completed", conclusion: "failure",
     repository: { id: 1, full_name: repository }, head_repository: { id: 1, full_name: repository },
   };
@@ -60,6 +60,7 @@ test("accepts trusted manual production preparation", async () => {
 });
 
 for (const [name, mutate] of [
+  ["push run", state => { state.run.event = "push"; }],
   ["pull request run", state => { state.run.event = "pull_request"; }],
   ["pull request target run", state => { state.run.event = "pull_request_target"; }],
   ["candidate branch", state => { state.run.head_branch = "candidate"; }],

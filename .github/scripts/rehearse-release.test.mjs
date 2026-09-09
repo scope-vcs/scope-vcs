@@ -35,17 +35,50 @@ const step = (jobName, name) => job(jobName).split(`      - name: ${name}\n`)[1]
 const script = (jobName, name) => step(jobName, name).split('        run: |\n')[1]
   .split('\n').map((line) => line.replace(/^          /, '')).join('\n');
 
-test('both staging entry points prepare commands and fixtures before running smoke', () => {
+test('both staging entry points prepare commands while only complete releases reset fixtures', () => {
   assert.doesNotMatch(job('prepare').split('    steps:')[0], /inputs\.prepared_run_id/);
   assert.match(job('prove').split('    steps:')[0], /needs\.prepare\.result == 'success'/);
   for (const name of [
-    'Close staging writers', 'Download prepared candidate artifacts', 'Extract candidate commands',
-    'Migrate, seed, and deploy staging services', 'Deploy staging web and record evidence',
+    'Download prepared candidate artifacts', 'Extract candidate commands',
+    'Initialize smoke credentials directory',
   ]) {
     assert.doesNotMatch(step('prove', name), /\n        if:/, `${name} must run for imported images too`);
   }
-  assert.doesNotMatch(step('cleanup', 'Keep staging writers fenced after unsuccessful proof'), /inputs\.prepared_run_id/);
+  for (const name of ['Close staging writers', 'Migrate, seed, and deploy staging services', 'Deploy staging web and record evidence']) {
+    assert.match(step('prove', name), /if: steps\.release\.outputs\.initialize_fixtures == 'true'/);
+  }
+  assert.match(step('prove', 'Issue smoke login for partial release'), /if: steps\.release\.outputs\.initialize_fixtures != 'true'/);
+  assert.match(step('cleanup', 'Keep staging writers fenced after unsuccessful proof'), /needs\.prove\.outputs\.writers_fenced == 'true'/);
+  assert.match(job('prove'), /writers_fenced: \$\{\{ steps\.fence\.outcome == 'success' \}\}/);
+  assert(job('prove').indexOf('Export release paths') < job('prove').indexOf('Close staging writers'));
 });
+
+for (const [name, components, initialize] of [
+  ['full', ['api', 'worker', 'cache', 'router', 'media', 'mediaWorker', 'web'], 'true'],
+  ['web-only', ['web'], 'false'],
+  ['backend-only', ['api', 'worker', 'cache', 'router', 'media', 'mediaWorker'], 'false'],
+]) {
+  test(`${name} manifest selects fixture initialization before fencing writers`, (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'scope-release-paths-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    mkdirSync(join(root, 'artifacts'));
+    const image = `ghcr.io/scope-vcs/scope-media-worker@sha256:${'a'.repeat(64)}`;
+    writeFileSync(join(root, 'artifacts/prepared-release.json'), JSON.stringify({
+      components: Object.fromEntries(components.map((component) => [component, { image }])),
+    }));
+    const env = { ...process.env, GITHUB_WORKSPACE: root,
+      GITHUB_OUTPUT: join(root, 'outputs'), GITHUB_ENV: join(root, 'env') };
+    execFileSync('bash', ['-euo', 'pipefail', '-c', script('prove', 'Export release paths')], { cwd: root, env });
+    assert.equal(readFileSync(env.GITHUB_OUTPUT, 'utf8').trim(), `initialize_fixtures=${initialize}`);
+    const exported = Object.fromEntries(readFileSync(env.GITHUB_ENV, 'utf8').trim().split('\n').map((line) => {
+      const separator = line.indexOf('=');
+      return [line.slice(0, separator), line.slice(separator + 1)];
+    }));
+    assert.equal(exported.SCOPE_PREPARED_RELEASE_PATH, join(root, 'artifacts/prepared-release.json'));
+    assert.equal(exported.SCOPE_DEPLOYMENT_MANIFEST, join(root, '.github/deployment-services.json'));
+    assert.equal(exported.SCOPE_MEDIA_WORKER_IMAGE, components.includes('mediaWorker') ? image : '');
+  });
+}
 
 for (const imported of [false, true]) {
   test(`${imported ? 'imported' : 'new'} images provide executable commands, private credentials, and a deployment receipt`, (t) => {
@@ -91,8 +124,10 @@ else
   printf '{"deployments":[{"status":"SUCCESS"}]}' > "$SCOPE_STAGING_EVIDENCE_PATH"
 fi
 `);
+    run(script('prove', 'Initialize smoke credentials directory'), candidate);
+    Object.assign(env, Object.fromEntries(readFileSync(env.GITHUB_ENV, 'utf8').trim().split('\n').map((line) => line.split('='))));
     run(script('prove', 'Migrate, seed, and deploy staging services'), candidate);
-    const smokeDir = readFileSync(env.GITHUB_ENV, 'utf8').trim().split('=')[1];
+    const smokeDir = env.SCOPE_GIT_SMOKE_DIR;
     assert.equal(statSync(smokeDir).mode & 0o777, 0o700);
     assert.equal(statSync(join(smokeDir, 'exchange-token')).mode & 0o777, 0o600);
     assert.equal(readFileSync(join(smokeDir, 'exchange-token'), 'utf8'), 'fixture-exchange');
