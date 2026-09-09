@@ -32,6 +32,6 @@ node --test .github/scripts/staging-smoke-seed.test.mjs
 node --test .github/scripts/extract-railway-release.test.mjs
 node --test .github/scripts/extract-railway-maintenance.test.mjs
 node --test .github/scripts/railway-maintenance-gate.test.mjs
-node --test .github/scripts/staging-baseline.test.mjs
+node --test .github/scripts/staging-baseline.test.mjs .github/scripts/staging-baseline-crypto.test.mjs
 node --test .github/scripts/staging-baseline.integration.test.mjs
 node --test deploy/railway/rekey-deployment-receipts.test.mjs

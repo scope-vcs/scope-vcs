@@ -101,9 +101,21 @@ succeeds only for an exact ledger.
 
 ## Staging baseline
 
-Staging records a private database snapshot keyed to the production applied ledger
+Staging records an encrypted database snapshot keyed to the production applied ledger
 before testing a migration candidate. The Actions artifact is retained for seven
-days. If a failed candidate leaves staging ahead, the next attempt restores a
+days and is safe to retain in this public repository: it contains only
+`database.dump.enc`, its ciphertext checksum, and nonsecret `baseline.json` metadata.
+AES-256-GCM authenticates both the dump and the environment, ledger, and restore
+policy metadata before restoration can modify the database. Plaintext temporary
+files stay in a private directory and are removed when the baseline step exits.
+
+The GitHub `staging` environment owns `SCOPE_STAGING_BASELINE_KEY`, a random
+32-byte key encoded as exactly 64 hexadecimal characters. Only the baseline step
+receives it. Keep that key available for the full snapshot retention period;
+rotating it requires capturing a new baseline before an older snapshot is needed.
+Plaintext archives and snapshots encrypted under another key are rejected.
+Matching ledgers with no pending migrations require neither the key nor an archive
+upload. If a failed candidate leaves staging ahead, the next attempt restores a
 matching retained baseline while writers are fenced. Unknown baselines and snapshots
 that cross known external storage transformations fail explicitly. Required
 backfills run in staging as well as production; physical object cleanup does not
