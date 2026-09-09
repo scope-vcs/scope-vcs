@@ -12,6 +12,7 @@ import { isRepositoryMarkdownPath } from '@/components/repository-markdown'
 import { RepositoryHtmlModeToggle } from '@/components/repository-html-mode-toggle'
 import { RepositoryMarkdownRenderer } from '@/components/repository-markdown-renderer'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
 import { VisibilityBadge } from '@/components/visibility-badge'
 import { WorkspaceTabStrip } from '@/components/workspace-tab-strip'
@@ -42,7 +43,6 @@ import {
   SourceCodeSkeleton,
 } from './repository-code-skeletons'
 import { RepositoryFileNavigator } from './repository-file-navigator'
-import { repositoryLandingPath } from './repo-code-route-data'
 
 const CODE_TAB_SET_ID = 'repository-code-files'
 
@@ -399,30 +399,37 @@ function SourceContent({
 }
 
 function FileMeta({ file }: { file: RepoFileContent }) {
+  const [open, setOpen] = useState(false)
+
   return (
     <>
-      {repositoryLandingPath([file]) ? (
-        <details className="relative">
-          <summary
+      <TooltipProvider>
+        <Tooltip onOpenChange={setOpen} open={open}>
+          <TooltipTrigger
             aria-label="File details"
-            className="flex cursor-pointer list-none items-center rounded p-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') event.currentTarget.parentElement?.removeAttribute('open')
+            className="flex cursor-pointer items-center rounded p-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            onClick={(event) => {
+              event.preventDefault()
+              setOpen(!open)
             }}
           >
             <Info aria-hidden="true" className="size-3.5" />
-          </summary>
-          <div className="absolute right-0 top-full z-50 mt-2 w-[min(280px,calc(100vw-3rem))] rounded border border-border bg-popover p-3 text-xs text-popover-foreground shadow-[var(--shadow-pop)]">
+          </TooltipTrigger>
+          <TooltipContent
+            align="end"
+            className="w-[min(280px,calc(100vw-3rem))] border border-border bg-popover p-3 text-popover-foreground shadow-[var(--shadow-pop)]"
+            side="bottom"
+          >
             <p>{formatBytes(file.size_bytes)}</p>
-            <p className="mt-1 break-all">Blob: {file.oid}</p>
+            <p className="mt-1 break-all font-mono">Blob: {file.oid}</p>
             {isRepositoryHtmlPath(file.path) && (
-              <p className="mt-2 font-sans text-muted-foreground">
+              <p className="mt-2 text-muted-foreground">
                 Sandboxed document. Repository HTML runs in an isolated preview.
               </p>
             )}
-          </div>
-        </details>
-      ) : <span>{formatBytes(file.size_bytes)} · {file.oid.slice(0, 12)}</span>}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <VisibilityBadge compact visibility={file.visibility} />
     </>
   )
