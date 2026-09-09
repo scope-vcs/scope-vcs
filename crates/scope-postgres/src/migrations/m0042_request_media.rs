@@ -16,7 +16,7 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-                SET LOCAL lock_timeout = '5s';
+
 
                 CREATE TABLE scope_request_media_attachments (
                     id TEXT PRIMARY KEY,

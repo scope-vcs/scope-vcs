@@ -15,7 +15,7 @@ impl MigrationTrait for Migration {
         manager
             .get_connection()
             .execute_unprepared(
-                "SET LOCAL lock_timeout = '5s';
+                "
              ALTER TABLE scope_repositories
              ADD COLUMN description text,
              ADD COLUMN website_url text;",

@@ -22,7 +22,7 @@ const REPLICAS = [
   workflowReplica(".github/workflows/scope-cli-build.yml", 3),
   workflowReplica(".github/workflows/scope-integration-ci.yml"),
   workflowReplica(".github/workflows/scope-web-ci.yml"),
-  workflowReplica(".github/workflows/scope-railway-staging.yml"),
+  workflowReplica(".github/workflows/deploy-staging.yml"),
   {
     path: ".scope/images/checks/Dockerfile",
     label: "Rust base image",

@@ -6,7 +6,6 @@ node --test .github/scripts/check-daily-release.test.mjs
 node --test .github/scripts/production-deployment-progress.test.mjs
 node --test .github/scripts/plan-production-deployment.test.mjs
 node --test .github/scripts/verify-staging-target.test.mjs
-node --test .github/scripts/select-proof-environment.test.mjs
 node --test .github/scripts/stop-staging-writers.test.mjs
 node --test deploy/railway/reconcile-media.test.mjs
 node --check .github/scripts/deploy-railway-image.mjs
@@ -27,8 +26,12 @@ node --test .github/scripts/staging-railway-token.test.mjs
 node --test .github/scripts/release-availability.test.mjs
 node --test .github/scripts/release-cutover-journal.test.mjs
 node --test .github/scripts/recovery-preparation-trust.test.mjs
-node --test .github/scripts/prepared-deploy-trust.test.mjs
+node --test .github/scripts/release-selection.test.mjs
 node --test .github/scripts/rehearse-release.test.mjs
 node --test .github/scripts/staging-smoke-seed.test.mjs
 node --test .github/scripts/extract-railway-release.test.mjs
 node --test .github/scripts/extract-railway-maintenance.test.mjs
+node --test .github/scripts/railway-maintenance-gate.test.mjs
+node --test .github/scripts/staging-baseline.test.mjs
+node --test .github/scripts/staging-baseline.integration.test.mjs
+node --test deploy/railway/rekey-deployment-receipts.test.mjs

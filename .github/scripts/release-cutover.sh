@@ -37,17 +37,23 @@ if (prepared.maintenanceSha256 !== digest) throw new Error("Maintenance binary d
 
 begin_cutover() {
   local temporary
-  if plan_requires_maintenance "$plan_json" && [[ ! "${SCOPE_MAINTENANCE_OUTAGE_BUDGET_MS:-}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "A positive SCOPE_MAINTENANCE_OUTAGE_BUDGET_MS must be approved from staging measurements before writer closure." >&2
+  if plan_requires_maintenance "$plan_json" && ! node --input-type=module -e '
+import { readFileSync } from "node:fs";
+const manifest = JSON.parse(readFileSync(process.env.SCOPE_DEPLOYMENT_MANIFEST || ".github/deployment-services.json", "utf8"));
+if (manifest.releasePolicy?.maintenanceEnabled !== true) process.exit(1);
+'; then
+    echo "Automatic maintenance is disabled in the release policy; writers remain open." >&2
     return 1
   fi
-  validate_prepared_release api worker cache router media mediaWorker
+  validate_prepared_release api run-worker cache git-router media-api media-worker web
   validate_maintenance_artifact
+  prepare_maintenance_gates
   temporary="$(mktemp -d)"
   printf '%s\n' "$plan_json" > "$temporary/baseline.json"
   printf '%s\n' "$successful_deployments" > "$temporary/previous.json"
   cutover_id="$(journal cutover-begin --manifest "$prepared_release_path" \
-    --baseline "$temporary/baseline.json" --previous "$temporary/previous.json")"
+    --baseline "$temporary/baseline.json" --previous "$temporary/previous.json" \
+    --maintenance-gates "$gates_directory/snapshots.json")"
   rm -rf -- "$temporary"
   echo "Durable release cutover: $cutover_id"
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
@@ -63,8 +69,9 @@ recover_cutover() {
     echo "Recovery artifacts do not match the durable cutover manifest." >&2
     return 1
   fi
-  validate_prepared_release api worker cache router media mediaWorker
+  validate_prepared_release api run-worker cache git-router media-api media-worker web
   validate_maintenance_artifact
+  recover_maintenance_gates "$record"
   successful_deployments="$(jq -c .previous <<< "$record")"
   plan_json="$(jq -c .baseline <<< "$record")"
   # A runner may disappear between any provider mutation and its response. Stop every current
@@ -88,14 +95,18 @@ apply_cutover() {
   cutover_phase pre-migration
   maintenance validate-workflow-catalogs
   if plan_includes_migration "$plan_json" m0033_git_segment_streaming_v2; then
+    # This backfill changes object storage outside the schema transaction. Once it
+    # starts, an unchanged migration ledger alone cannot authorize old binaries.
+    cutover_committed=1
     run_api_maintenance backfill-git-segments-v2
   fi
+  local external_effects_started="$cutover_committed"
   # Persist applying before invoking the transaction. SIGKILL must never erase its uncertainty.
   cutover_phase applying
   cutover_committed=1
   if ! maintenance apply; then
     recovery_plan="$(maintenance_read plan || true)"
-    if [[ -n "$recovery_plan" ]] && plans_have_same_ledger "$plan_json" "$recovery_plan"; then
+    if [[ "$external_effects_started" == "0" && -n "$recovery_plan" ]] && plans_have_same_ledger "$plan_json" "$recovery_plan"; then
       cutover_committed=0
     fi
     return 1

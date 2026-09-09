@@ -10,25 +10,23 @@ const sourceSha = process.env.SCOPE_DEPLOYMENT_SOURCE_SHA;
 const config = {
   ...manifest.releaseAvailability.production,
   mode: stage === "backend" ? "maintenance" : "ordinary",
-  intervalMs: 1000,
+  intervalMs: 5000,
   requestTimeoutMs: 5000,
   release: {
     attemptId: `${process.env.GITHUB_RUN_ID}:${process.env.GITHUB_RUN_ATTEMPT}`,
     sourceSha,
     stage,
+    observationStartFile: resolve(directory, "observation-start"),
     deploymentsFile: resolve(directory, "deployments.json"),
   },
 };
 if (stage === "backend") {
-  const budget = Number(process.env.SCOPE_MAINTENANCE_OUTAGE_BUDGET_MS ?? 0);
-  if (!Number.isSafeInteger(budget) || budget < 0) throw new Error("Invalid maintenance outage budget");
+  const warningSeconds = manifest.releasePolicy.maintenanceWarningSeconds;
+  if (!Number.isSafeInteger(warningSeconds) || warningSeconds <= 0) throw new Error("Invalid maintenance warning threshold");
   config.maintenance = {
     startFile: resolve(directory, "maintenance-start"),
     endFile: resolve(directory, "maintenance-end"),
-    // A zero policy budget blocks a new cutover in the migration owner. Ordinary
-    // activations still monitor without a window; recovery always attempts repair.
-    maxDurationMs: Math.max(1, budget),
-    maxFailedRequests: Math.max(1, Math.ceil(budget / 1000) * 6),
+    warningAfterMs: warningSeconds * 1000,
   };
 }
 parseAvailabilityConfig(config);

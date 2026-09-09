@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
         manager
             .get_connection()
             .execute_unprepared(
-                "SET LOCAL lock_timeout = '5s';
+                "
              ALTER TABLE scope_logical_commits ADD COLUMN occurred_at_unix BIGINT;
              ALTER TABLE scope_visibility_change_sets ADD COLUMN occurred_at_unix BIGINT;
              DELETE FROM scope_repository_history_views;",

@@ -4,7 +4,9 @@ use super::*;
 async fn fresh_database_reaches_exact_latest_schema() {
     let (_target, db, _lease) = isolated_database().await;
 
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
 
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
     assert_eq!(applied_versions(db.as_ref()).await, LATEST_MIGRATIONS);

@@ -1,0 +1,45 @@
+name: Deployment tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact prepared release revision
+        type: string
+        required: true
+      prepared_run_id:
+        description: Release run containing the prepared artifacts and baseline plan
+        type: string
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+  deployments: read
+  packages: read
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Require artifacts from a validated release on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          PREPARED_RUN_ID: ${{ inputs.prepared_run_id }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ && "$PREPARED_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PREPARED_RUN_ID" \
+            --jq '.path == ".github/workflows/release.yml" and .head_branch == "main" and (.event == "schedule" or .event == "workflow_dispatch")' | grep -qx true
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$PREPARED_RUN_ID/jobs?filter=all&per_page=100" \
+            --jq '.jobs[] | select((.name | endswith("Production validation gate")) and .conclusion == "success") | .id' | grep -q .
+
+  transitions:
+    needs: validate
+    uses: ./.github/workflows/deploy-staging.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      prepared_run_id: ${{ inputs.prepared_run_id }}
+      run_transition_tests: true
+    secrets: inherit

@@ -5,17 +5,17 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 export const COMPONENTS = [
-  "checksImage",
+  "checks-image",
   "cache",
-  "worker",
-  "mediaWorker",
-  "router",
-  "media",
+  "run-worker",
+  "media-worker",
+  "git-router",
+  "media-api",
   "api",
   "web",
-  "cli",
+  "cli-downloads",
 ];
-const SELECTIONS = [...COMPONENTS, "cliDistribution"];
+const SELECTIONS = [...COMPONENTS, "cli-distribution"];
 
 function matchesScope(path, scope) {
   return scope.files.includes(path) || scope.prefixes.some((prefix) => path.startsWith(prefix));
@@ -32,7 +32,7 @@ export function classifyChanges(manifest, paths, requestedScope = "changed") {
       throw new Error(`Unknown deployment scope: ${requestedScope}`);
     }
     selection[requestedScope] = true;
-    if (requestedScope === "cli") selection.cliDistribution = true;
+    if (requestedScope === "cli-downloads") selection["cli-distribution"] = true;
     return selection;
   }
 
@@ -48,18 +48,28 @@ export function classifyChanges(manifest, paths, requestedScope = "changed") {
   return selection;
 }
 
+// Every database writer and coupled application artifact must share a revision
+// when the deployed API's migration inventory changes. Distribution-only releases
+// remain independent, and an unchanged migration baseline preserves narrow scopes.
+export function includeMigrationParticipants(selection, apiChanges) {
+  const backend = ["cache", "run-worker", "media-worker", "git-router", "media-api", "api"];
+  if (!backend.some((component) => selection[component])) return selection;
+  if (Array.isArray(apiChanges) && !apiChanges.some((path) => path.startsWith("crates/scope-postgres/src/migrations/"))) return selection;
+  return { ...selection, ...Object.fromEntries(SELECTIONS.filter((component) => component !== "checks-image").map((component) => [component, true])) };
+}
+
 export function planFromDeploymentProgress(manifest, pathsByComponent, requestedScope = "changed") {
-  if (requestedScope !== "changed") return classifyChanges(manifest, [], requestedScope);
+  if (requestedScope !== "changed") return includeMigrationParticipants(classifyChanges(manifest, [], requestedScope), pathsByComponent.api);
 
   const selection = Object.fromEntries(COMPONENTS.map((component) => {
     const paths = pathsByComponent[component];
     if (!Array.isArray(paths)) return [component, true];
     return [component, classifyChanges(manifest, paths)[component]];
   }));
-  const cliPaths = pathsByComponent.cli;
-  selection.cliDistribution = !Array.isArray(cliPaths)
-    || classifyChanges(manifest, cliPaths).cliDistribution;
-  return selection;
+  const cliPaths = pathsByComponent["cli-downloads"];
+  selection["cli-distribution"] = !Array.isArray(cliPaths)
+    || classifyChanges(manifest, cliPaths)["cli-distribution"];
+  return includeMigrationParticipants(selection, pathsByComponent.api);
 }
 
 function changedPaths(base, head, useMergeBase = true) {
@@ -101,7 +111,7 @@ function main() {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const head = argument("--head", "HEAD");
   const deployedRevisionsJson = argument("--deployed-revisions");
-  const usesDeploymentProgress = requestedScope === "changed" && deployedRevisionsJson.length > 0;
+  const usesDeploymentProgress = deployedRevisionsJson.length > 0;
   const paths = requestedScope === "changed" && !usesDeploymentProgress
     ? changedPaths(argument("--base"), head)
     : [];
@@ -109,16 +119,20 @@ function main() {
     ? pathsSinceSuccessfulDeployments(JSON.parse(deployedRevisionsJson), head)
     : null;
   const selection = pathsByComponent
-    ? planFromDeploymentProgress(manifest, pathsByComponent)
+    ? planFromDeploymentProgress(manifest, pathsByComponent, requestedScope)
     : classifyChanges(manifest, paths, requestedScope);
   const outputPath = process.env.GITHUB_OUTPUT;
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
 
   for (const [component, selected] of Object.entries(selection)) {
     const outputName = {
-      checksImage: "checks_image",
-      cliDistribution: "cli_distribution",
-      mediaWorker: "media_worker",
+      "checks-image": "checks_image",
+      "run-worker": "worker",
+      "git-router": "router",
+      "media-api": "media",
+      "cli-downloads": "cli",
+      "cli-distribution": "cli_distribution",
+      "media-worker": "media_worker",
     }[component] ?? component;
     const line = `${outputName}=${selected}\n`;
     if (outputPath) appendFileSync(outputPath, line);

@@ -11,13 +11,14 @@ async fn ordinary_startup_refuses_pending_maintenance_migration() {
         .await
         .unwrap();
 
-    let error = migrations::apply_online(db.as_ref()).await.unwrap_err();
+    let error = migrations::assert_exact_state(db.as_ref())
+        .await
+        .unwrap_err();
 
     assert!(error.to_string().contains("m0012_request_revisions"));
     assert!(relation_exists(db.as_ref(), "scope_request_change_blocks").await);
     let plan = migrations::plan(db.as_ref()).await.unwrap();
     assert_eq!(plan.pending[0].name, "m0012_request_revisions");
-    assert_eq!(plan.pending[0].impact, MigrationImpact::MaintenanceRequired);
 
     let worker_error = match connect_postgres_worker_store(target.schema_database_url()).await {
         Ok(_) => panic!("worker must refuse a pending maintenance migration"),
@@ -31,7 +32,7 @@ async fn ordinary_startup_refuses_pending_maintenance_migration() {
 }
 
 #[tokio::test]
-async fn migration_inventory_classifies_data_rewrite_and_contract_cutover_together() {
+async fn migration_inventory_orders_data_rewrite_and_contract_cutover_together() {
     let (_target, db, _lease) = isolated_database().await;
     migrations::Migrator::up(db.as_ref(), Some(10))
         .await
@@ -40,9 +41,7 @@ async fn migration_inventory_classifies_data_rewrite_and_contract_cutover_togeth
     let plan = migrations::plan(db.as_ref()).await.unwrap();
 
     assert_eq!(plan.pending[0].name, "m0011_compact_request_started_events");
-    assert_eq!(plan.pending[0].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[1].name, "m0012_request_revisions");
-    assert_eq!(plan.pending[1].impact, MigrationImpact::MaintenanceRequired);
 }
 
 #[tokio::test]
@@ -56,82 +55,27 @@ async fn truthful_log_truncation_cutover_requires_maintenance() {
 
     assert_eq!(plan.pending.len(), LATEST_MIGRATIONS.len() - 17);
     assert_eq!(plan.pending[0].name, "m0018_truthful_run_log_truncation");
-    assert_eq!(plan.pending[0].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[1].name, "m0019_run_attempt_cache_observations");
-    assert_eq!(plan.pending[1].impact, MigrationImpact::Online);
     assert_eq!(plan.pending[2].name, "m0020_cloud_execution");
-    assert_eq!(plan.pending[2].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[3].name, "m0021_cache_service_cutover");
-    assert_eq!(plan.pending[3].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[4].name, "m0022_git_pack_spans");
-    assert_eq!(plan.pending[4].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[5].name, "m0023_logical_run_sources");
-    assert_eq!(plan.pending[5].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[6].name, "m0024_git_compaction_scheduler");
-    assert_eq!(plan.pending[6].impact, MigrationImpact::Online);
     assert_eq!(plan.pending[7].name, "m0025_visibility_change_sets");
-    assert_eq!(plan.pending[7].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[8].name, "m0026_repository_landing_files");
-    assert_eq!(plan.pending[8].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[9].name, "m0027_run_creation_sequence");
-    assert_eq!(plan.pending[9].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[10].name, "m0028_repository_workflow_catalogs");
-    assert_eq!(
-        plan.pending[10].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[11].name, "m0029_exact_compatible_caches");
-    assert_eq!(
-        plan.pending[11].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[12].name, "m0030_cache_preparation_timings");
-    assert_eq!(
-        plan.pending[12].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[13].name, "m0031_provider_neutral_run_attempts");
-    assert_eq!(
-        plan.pending[13].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[14].name, "m0032_flat_discussion_replies");
-    assert_eq!(
-        plan.pending[14].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[15].name, "m0033_git_segment_streaming_v2");
-    assert_eq!(
-        plan.pending[15].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[16].name, "m0034_repository_incarnations");
     assert_eq!(plan.pending[17].name, "m0035_retired_git_storage_cutover");
-    assert_eq!(
-        plan.pending[17].impact,
-        MigrationImpact::MaintenanceRequired
-    );
-    assert_eq!(
-        plan.pending[16].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[18].name, "m0036_request_queue_indexes");
-    assert_eq!(
-        plan.pending[18].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[19].name, "m0037_repository_history_views");
-    assert_eq!(plan.pending[19].impact, MigrationImpact::Online);
     assert_eq!(plan.pending[20].name, "m0038_history_entry_positions");
     assert_eq!(plan.pending[21].name, "m0039_history_action_feed");
-    assert_eq!(
-        plan.pending[21].impact,
-        MigrationImpact::MaintenanceRequired
-    );
-    assert_eq!(
-        plan.pending[20].impact,
-        MigrationImpact::MaintenanceRequired
-    );
 }
 
 #[tokio::test]
@@ -145,71 +89,28 @@ async fn cache_service_cutover_requires_maintenance() {
 
     assert_eq!(plan.pending.len(), LATEST_MIGRATIONS.len() - 20);
     assert_eq!(plan.pending[0].name, "m0021_cache_service_cutover");
-    assert_eq!(plan.pending[0].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[1].name, "m0022_git_pack_spans");
-    assert_eq!(plan.pending[1].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[2].name, "m0023_logical_run_sources");
-    assert_eq!(plan.pending[2].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[3].name, "m0024_git_compaction_scheduler");
-    assert_eq!(plan.pending[3].impact, MigrationImpact::Online);
     assert_eq!(plan.pending[4].name, "m0025_visibility_change_sets");
-    assert_eq!(plan.pending[4].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[5].name, "m0026_repository_landing_files");
-    assert_eq!(plan.pending[5].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[6].name, "m0027_run_creation_sequence");
-    assert_eq!(plan.pending[6].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[7].name, "m0028_repository_workflow_catalogs");
-    assert_eq!(plan.pending[7].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[8].name, "m0029_exact_compatible_caches");
-    assert_eq!(plan.pending[8].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[9].name, "m0030_cache_preparation_timings");
-    assert_eq!(plan.pending[9].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[10].name, "m0031_provider_neutral_run_attempts");
-    assert_eq!(
-        plan.pending[10].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[11].name, "m0032_flat_discussion_replies");
-    assert_eq!(
-        plan.pending[11].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[12].name, "m0033_git_segment_streaming_v2");
-    assert_eq!(
-        plan.pending[12].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[13].name, "m0034_repository_incarnations");
     assert_eq!(plan.pending[14].name, "m0035_retired_git_storage_cutover");
-    assert_eq!(
-        plan.pending[14].impact,
-        MigrationImpact::MaintenanceRequired
-    );
-    assert_eq!(
-        plan.pending[13].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[15].name, "m0036_request_queue_indexes");
-    assert_eq!(
-        plan.pending[15].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[16].name, "m0037_repository_history_views");
-    assert_eq!(plan.pending[16].impact, MigrationImpact::Online);
     assert_eq!(plan.pending[17].name, "m0038_history_entry_positions");
     assert_eq!(plan.pending[18].name, "m0039_history_action_feed");
-    assert_eq!(
-        plan.pending[18].impact,
-        MigrationImpact::MaintenanceRequired
-    );
-    assert_eq!(
-        plan.pending[17].impact,
-        MigrationImpact::MaintenanceRequired
-    );
 }
 
 #[tokio::test]
-async fn compaction_scheduler_is_an_online_additive_migration() {
+async fn compaction_scheduler_requires_maintenance_before_startup() {
     let (_target, db, _lease) = isolated_database().await;
     migrations::Migrator::up(db.as_ref(), Some(23))
         .await
@@ -218,56 +119,28 @@ async fn compaction_scheduler_is_an_online_additive_migration() {
     let plan = migrations::plan(db.as_ref()).await.unwrap();
     assert_eq!(plan.pending.len(), LATEST_MIGRATIONS.len() - 23);
     assert_eq!(plan.pending[0].name, "m0024_git_compaction_scheduler");
-    assert_eq!(plan.pending[0].impact, MigrationImpact::Online);
     assert_eq!(plan.pending[1].name, "m0025_visibility_change_sets");
-    assert_eq!(plan.pending[1].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[2].name, "m0026_repository_landing_files");
-    assert_eq!(plan.pending[2].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[3].name, "m0027_run_creation_sequence");
-    assert_eq!(plan.pending[3].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[4].name, "m0028_repository_workflow_catalogs");
-    assert_eq!(plan.pending[4].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[5].name, "m0029_exact_compatible_caches");
-    assert_eq!(plan.pending[5].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[6].name, "m0030_cache_preparation_timings");
-    assert_eq!(plan.pending[6].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[7].name, "m0031_provider_neutral_run_attempts");
-    assert_eq!(plan.pending[7].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[8].name, "m0032_flat_discussion_replies");
-    assert_eq!(plan.pending[8].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[9].name, "m0033_git_segment_streaming_v2");
-    assert_eq!(plan.pending[9].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[10].name, "m0034_repository_incarnations");
     assert_eq!(plan.pending[11].name, "m0035_retired_git_storage_cutover");
-    assert_eq!(
-        plan.pending[11].impact,
-        MigrationImpact::MaintenanceRequired
-    );
-    assert_eq!(
-        plan.pending[10].impact,
-        MigrationImpact::MaintenanceRequired
-    );
 
-    let error = migrations::apply_online(db.as_ref()).await.unwrap_err();
+    let error = migrations::assert_exact_state(db.as_ref())
+        .await
+        .unwrap_err();
     assert!(error.to_string().contains("m0025_visibility_change_sets"));
-    assert!(relation_exists(db.as_ref(), "scope_git_compaction_jobs").await);
+    assert!(!relation_exists(db.as_ref(), "scope_git_compaction_jobs").await);
+    assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), plan);
     assert_eq!(plan.pending[12].name, "m0036_request_queue_indexes");
-    assert_eq!(
-        plan.pending[12].impact,
-        MigrationImpact::MaintenanceRequired
-    );
     assert_eq!(plan.pending[13].name, "m0037_repository_history_views");
-    assert_eq!(plan.pending[13].impact, MigrationImpact::Online);
     assert_eq!(plan.pending[14].name, "m0038_history_entry_positions");
     assert_eq!(plan.pending[15].name, "m0039_history_action_feed");
-    assert_eq!(
-        plan.pending[15].impact,
-        MigrationImpact::MaintenanceRequired
-    );
-    assert_eq!(
-        plan.pending[14].impact,
-        MigrationImpact::MaintenanceRequired
-    );
 }
 
 #[tokio::test]
@@ -278,13 +151,9 @@ async fn request_queue_indexes_require_maintenance_before_startup() {
         .unwrap();
     let plan = migrations::plan(db.as_ref()).await.unwrap();
     assert_eq!(plan.pending[0].name, "m0036_request_queue_indexes");
-    assert_eq!(plan.pending[0].impact, MigrationImpact::MaintenanceRequired);
     assert_eq!(plan.pending[1].name, "m0037_repository_history_views");
-    assert_eq!(plan.pending[1].impact, MigrationImpact::Online);
     assert_eq!(plan.pending[2].name, "m0038_history_entry_positions");
     assert_eq!(plan.pending[3].name, "m0039_history_action_feed");
-    assert_eq!(plan.pending[3].impact, MigrationImpact::MaintenanceRequired);
-    assert_eq!(plan.pending[2].impact, MigrationImpact::MaintenanceRequired);
 
     let error = match connect_postgres_store(target.schema_database_url()).await {
         Ok(_) => panic!("API startup must refuse the queue index build"),
@@ -308,14 +177,14 @@ async fn request_queue_indexes_require_maintenance_before_startup() {
     let writer = connect_writer_database(&target.schema_database_url())
         .await
         .unwrap();
-    let error = apply_maintenance_migrations(target.schema_database_url())
+    let error = apply_maintenance_migrations(target.schema_database_url(), Default::default())
         .await
         .unwrap_err();
     assert!(error.to_string().contains("metadata writer"));
     assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), plan);
     writer.close().await.unwrap();
 
-    apply_maintenance_migrations(target.schema_database_url())
+    apply_maintenance_migrations(target.schema_database_url(), Default::default())
         .await
         .unwrap();
     assert!(migrations::plan(db.as_ref()).await.unwrap().exact);
@@ -414,7 +283,7 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
         .await
         .unwrap_err();
     assert!(fence_error.to_string().contains("writer still holds"));
-    let migration_error = apply_maintenance_migrations(database_url.clone())
+    let migration_error = apply_maintenance_migrations(database_url.clone(), Default::default())
         .await
         .unwrap_err();
     assert!(migration_error.to_string().contains("writer still holds"));
@@ -430,7 +299,9 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     verify_writer_fence_available(database_url.clone())
         .await
         .unwrap();
-    apply_maintenance_migrations(database_url).await.unwrap();
+    apply_maintenance_migrations(database_url, Default::default())
+        .await
+        .unwrap();
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
     assert!(!relation_exists(db.as_ref(), "scope_request_change_blocks").await);
     assert!(relation_exists(db.as_ref(), "scope_request_revisions").await);
@@ -449,4 +320,102 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     .await
     .unwrap();
     assert!(worker_store.admin().readiness_check().await.is_err());
+}
+
+#[tokio::test]
+async fn runtime_startup_does_not_apply_even_additive_migrations() {
+    let (target, db, _lease) = isolated_database().await;
+    migrations::Migrator::up(db.as_ref(), Some(39))
+        .await
+        .unwrap();
+    let before = migrations::plan(db.as_ref()).await.unwrap();
+    assert_eq!(before.pending[0].name, "m0040_repository_metadata");
+
+    assert!(
+        connect_postgres_store(target.schema_database_url())
+            .await
+            .is_err()
+    );
+    assert!(
+        connect_postgres_worker_store(target.schema_database_url())
+            .await
+            .is_err()
+    );
+    assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), before);
+
+    apply_maintenance_migrations(target.schema_database_url(), Default::default())
+        .await
+        .unwrap();
+    let store = connect_postgres_store(target.schema_database_url())
+        .await
+        .unwrap();
+    store.admin().readiness_check().await.unwrap();
+}
+
+#[tokio::test]
+async fn migration_statement_timeout_rolls_back_schema_and_ledger() {
+    let (_target, db, _lease) = isolated_database().await;
+    migrations::Migrator::up(db.as_ref(), Some(39))
+        .await
+        .unwrap();
+    let before = migrations::plan(db.as_ref()).await.unwrap();
+    db.execute_unprepared(
+        "CREATE FUNCTION delay_migration_ledger() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN PERFORM pg_sleep(2); RETURN NEW; END $$;
+         CREATE TRIGGER delay_migration_ledger BEFORE INSERT ON seaql_migrations
+         FOR EACH ROW EXECUTE FUNCTION delay_migration_ledger();",
+    )
+    .await
+    .unwrap();
+
+    let error = migrations::apply_in_maintenance(
+        db.as_ref(),
+        migrations::MigrationLimits {
+            lock_timeout_seconds: 1,
+            statement_timeout_seconds: 1,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("statement timeout"), "{error}");
+    assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), before);
+    assert!(
+        db.execute_unprepared("SELECT description FROM scope_repositories")
+            .await
+            .is_err()
+    );
+
+    db.execute_unprepared("DROP TRIGGER delay_migration_ledger ON seaql_migrations")
+        .await
+        .unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
+    migrations::assert_exact_state(db.as_ref()).await.unwrap();
+}
+
+#[tokio::test]
+async fn migration_lock_timeout_preserves_unapplied_inventory() {
+    use sea_orm::TransactionTrait;
+    let (_target, db, _lease) = isolated_database().await;
+    let blocker = db.begin().await.unwrap();
+    blocker.execute_unprepared(
+        "SELECT pg_advisory_xact_lock(hashtextextended('scope:metadata-migrations:' || current_schema(), 0))"
+    ).await.unwrap();
+    let error = migrations::apply_in_maintenance(
+        db.as_ref(),
+        migrations::MigrationLimits {
+            lock_timeout_seconds: 1,
+            statement_timeout_seconds: 10,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("lock timeout"), "{error}");
+    assert!(!relation_exists(db.as_ref(), "seaql_migrations").await);
+    blocker.rollback().await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
+    migrations::assert_exact_state(db.as_ref()).await.unwrap();
 }

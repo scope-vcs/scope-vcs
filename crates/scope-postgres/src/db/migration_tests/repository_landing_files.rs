@@ -28,7 +28,9 @@ async fn insert_repository(db: &DatabaseConnection) {
 #[tokio::test]
 async fn repository_landing_file_schema_enforces_identity_bounds_and_cascade() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     insert_repository(db.as_ref()).await;
     db.execute_unprepared(
         "
@@ -97,7 +99,9 @@ async fn repository_landing_file_schema_enforces_identity_bounds_and_cascade() {
 #[tokio::test]
 async fn repository_landing_file_mutations_create_replace_preserve_and_delete() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref()).await.unwrap();
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
     insert_repository(db.as_ref()).await;
 
     let first_bytes = b"<h1>first</h1>".to_vec();

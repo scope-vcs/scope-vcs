@@ -3,7 +3,7 @@ import test from 'node:test';
 import { isDailyReleaseDue } from './check-daily-release.mjs';
 
 const run = { id: 12, head_sha: 'a'.repeat(40), head_branch: 'main', event: 'schedule', status: 'completed', conclusion: 'success' };
-const health = { name: 'Production Railway health gate', run_id: 12, head_sha: run.head_sha, status: 'completed', conclusion: 'success', completed_at: '2026-09-09T14:20:00Z' };
+const health = { name: 'Verify and record release', run_id: 12, head_sha: run.head_sha, status: 'completed', conclusion: 'success', completed_at: '2026-09-09T14:20:00Z' };
 const now = new Date('2026-09-09T14:38:00Z');
 const requestFor = (runs, jobs) => async (path) => path.includes('/workflows/') ? { workflow_runs: runs } : { jobs };
 
@@ -63,4 +63,10 @@ test('pagination finds successful health evidence after no-op polls', async () =
 test('unreadable release history fails closed', async () => {
   await assert.rejects(isDailyReleaseDue({ event: 'schedule', now, request: async () => ({}) }), /Cannot read/);
   await assert.rejects(isDailyReleaseDue({ event: 'schedule', now, request: async () => { throw new Error('API unavailable'); } }), /API unavailable/);
+});
+
+
+test('an unresolved cutover overrides both the clock and an earlier successful release', async () => {
+  assert.equal(await isDailyReleaseDue({ event: 'schedule', now: new Date('2026-09-09T06:00:00Z'),
+    openCutover: { id: 12 }, request: () => assert.fail('recovery must not consult daily history') }), true);
 });

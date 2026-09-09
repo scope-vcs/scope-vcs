@@ -18,9 +18,9 @@ fi
 manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_id="$(jq -er '.railway.projectId' "$manifest")"
-environment_id="$(jq -er '.railway.staging.environmentId' "$manifest")"
-environment_name="$(jq -er '.railway.staging.environmentName' "$manifest")"
-production_id="$(jq -er '.railway.environmentId' "$manifest")"
+environment_id="$(jq -er '.environments.staging.environmentId' "$manifest")"
+environment_name="$(jq -er '.environments.staging.environmentName' "$manifest")"
+production_id="$(jq -er '.environments.production.environmentId' "$manifest")"
 api_service="$(jq -er '.services.api.id' "$manifest")"
 database_service="$(jq -er '.railway.databaseServiceId' "$manifest")"
 scope=(--project "$project_id" --environment "$environment_id")

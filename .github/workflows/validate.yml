@@ -1,0 +1,161 @@
+name: Validate selected components
+
+on:
+  workflow_call:
+    inputs:
+      checks_image:
+        type: string
+        default: "false"
+      cache:
+        type: string
+        default: "false"
+      worker:
+        type: string
+        default: "false"
+      media_worker:
+        type: string
+        default: "false"
+      router:
+        type: string
+        default: "false"
+      media:
+        type: string
+        default: "false"
+      api:
+        type: string
+        default: "false"
+      web:
+        type: string
+        default: "false"
+      cli:
+        type: string
+        default: "false"
+      cli_distribution:
+        type: string
+        default: "false"
+      release_sha:
+        type: string
+        required: true
+      reuse_artifacts:
+        type: boolean
+        default: false
+      release:
+        type: boolean
+        default: false
+    outputs:
+      media_worker_image:
+        value: ${{ jobs.media-worker-image.outputs.image_ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  checks-image:
+    name: Checks image
+    if: ${{ !inputs.reuse_artifacts && inputs.checks_image == 'true' }}
+    permissions:
+      contents: read
+      deployments: write
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/scope-checks-image.yml
+    with:
+      publish: ${{ inputs.release }}
+    secrets: inherit
+
+  backend-validation:
+    name: Backend validation
+    if: >-
+      !inputs.reuse_artifacts &&
+      (inputs.cache == 'true' ||
+      inputs.worker == 'true' ||
+      inputs.media_worker == 'true' ||
+      inputs.router == 'true' ||
+      inputs.media == 'true' ||
+      inputs.api == 'true')
+    uses: ./.github/workflows/scope-api-ci.yml
+    with:
+      build_release_artifact: ${{ inputs.release }}
+      build_router_release: ${{ inputs.release }}
+    secrets: inherit
+
+  media-worker-image:
+    name: Media worker image
+    if: >-
+      !inputs.reuse_artifacts && (
+      inputs.cache == 'true' ||
+      inputs.worker == 'true' ||
+      inputs.media_worker == 'true' ||
+      inputs.router == 'true' ||
+      inputs.media == 'true' ||
+      inputs.api == 'true')
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/scope-media-worker-image.yml
+    with:
+      publish: ${{ inputs.release }}
+      source_sha: ${{ inputs.release_sha }}
+    secrets: inherit
+
+  web-validation:
+    name: Web validation
+    if: ${{ !inputs.reuse_artifacts && inputs.web == 'true' }}
+    uses: ./.github/workflows/scope-web-ci.yml
+    with:
+      build_release_artifact: ${{ inputs.release }}
+    secrets: inherit
+
+  cli-validation:
+    name: CLI validation
+    if: ${{ !inputs.reuse_artifacts && inputs.cli == 'true' }}
+    uses: ./.github/workflows/scope-cli-build.yml
+    with:
+      validate_targets: >-
+        ${{ (inputs.release) ||
+        (inputs.cli_distribution == 'true' &&
+        (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.actor != 'dependabot[bot]'))) }}
+      validate_service_release: ${{ inputs.release }}
+    secrets: inherit
+
+  integration-validation:
+    name: Integration validation
+    if: ${{ !inputs.reuse_artifacts && (inputs.web == 'true' || inputs.cli == 'true') }}
+    uses: ./.github/workflows/scope-integration-ci.yml
+    with:
+      run_web: ${{ inputs.web == 'true' }}
+      run_cli: ${{ inputs.cli == 'true' }}
+    secrets: inherit
+
+  production-validation-gate:
+    name: Production validation gate
+    needs:
+      - checks-image
+      - backend-validation
+      - media-worker-image
+      - web-validation
+      - cli-validation
+      - integration-validation
+    if: >-
+      !cancelled() &&
+      (inputs.reuse_artifacts || (
+      (inputs.checks_image != 'true' || needs.checks-image.result == 'success') &&
+      ((inputs.cache != 'true' &&
+      inputs.worker != 'true' &&
+      inputs.media_worker != 'true' &&
+      inputs.router != 'true' &&
+      inputs.media != 'true' &&
+      inputs.api != 'true') ||
+      (needs.backend-validation.result == 'success' &&
+      needs.media-worker-image.result == 'success')) &&
+      (inputs.web != 'true' || needs.web-validation.result == 'success') &&
+      (inputs.cli != 'true' || needs.cli-validation.result == 'success') &&
+      ((inputs.web != 'true' && inputs.cli != 'true') ||
+      needs.integration-validation.result == 'success')))
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - run: echo 'All selected production validations passed.'
+

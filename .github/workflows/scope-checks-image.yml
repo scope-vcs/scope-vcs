@@ -1,4 +1,4 @@
-name: Scope Checks Image
+name: Publish checks image
 
 on:
   workflow_call:
@@ -271,7 +271,7 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: >-
           node .github/scripts/production-deployment-progress.mjs record
-          --component checksImage
+          --component checks-image
           --source-sha "$SOURCE_SHA"
           --provider ecr
           --evidence-id "$IMAGE_DIGEST"

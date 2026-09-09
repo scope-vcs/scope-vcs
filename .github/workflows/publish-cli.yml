@@ -1,4 +1,4 @@
-name: Scope CLI Deploy
+name: Publish CLI
 
 on:
   workflow_call:
@@ -23,7 +23,7 @@ env:
 
 jobs:
   deploy:
-    name: Deploy scope-cli
+    name: Deploy CLI downloads
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout
@@ -104,16 +104,16 @@ jobs:
         env:
           RAILWAY_DEPLOY_MESSAGE: ${{ github.event.head_commit.message || github.workflow }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          SCOPE_DEPLOYMENT_COMPONENT: cli
+          SCOPE_DEPLOYMENT_COMPONENT: cli-downloads
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
           SCOPE_VERIFIED_SUCCESSFUL_SHA: ${{ inputs.verified_successful_sha }}
         run: |
           manifest=.github/deployment-services.json
           RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"
-          SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.railway.environmentId' "$manifest")"
+          SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.environments.production.environmentId' "$manifest")"
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
-          service_id="$(jq -r '.services.cli.id' "$manifest")"
+          service_id="$(jq -r '.services["cli-downloads"].id' "$manifest")"
           bash .github/scripts/deploy-railway.sh "$service_id" .railway-upload
 
       - name: Record successful Railway deployment

@@ -3,7 +3,7 @@ import { releaseImageRepository, validatePreparedRelease } from "./railway-artif
 
 const deploymentManifest = JSON.parse(readFileSync(new URL("../deployment-services.json", import.meta.url), "utf8"));
 
-const workflowPath = ".github/workflows/scope-production-deploy.yml";
+const workflowPath = ".github/workflows/release.yml";
 const preparationJobName = "Prepare Railway artifacts / prepare";
 const preparationStepName = "Prepare immutable release images";
 const shaPattern = /^[0-9a-f]{40}$/;
@@ -12,7 +12,7 @@ const shaPattern = /^[0-9a-f]{40}$/;
 // packages. This gate rejects PR/candidate preparation; it is not a signature over a
 // journal written by an actor who already has those production publishing privileges.
 export async function validateRecoveryPreparation(prepared, request, repository, manifest = deploymentManifest,
-  requiredComponents = ["api", "worker", "cache", "router", "media", "mediaWorker"]) {
+  requiredComponents = ["api", "run-worker", "cache", "git-router", "media-api", "media-worker"]) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? "")) {
     throw new Error("Recovery requires the trusted GITHUB_REPOSITORY");
   }
@@ -23,7 +23,7 @@ export async function validateRecoveryPreparation(prepared, request, repository,
   }
   const owner = repository.toLowerCase();
   for (const [component, artifact] of Object.entries(prepared.components)) {
-    const expectedRepository = component === "mediaWorker"
+    const expectedRepository = component === "media-worker"
       ? "ghcr.io/scope-vcs/scope-media-worker"
       : releaseImageRepository(manifest, repository, component);
     if (artifact.image.split("@")[0] !== expectedRepository) {

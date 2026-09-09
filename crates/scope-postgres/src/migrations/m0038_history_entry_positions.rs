@@ -18,7 +18,7 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-                SET LOCAL lock_timeout = '5s';
+
                 ALTER TABLE scope_repository_history_entries
                     DROP CONSTRAINT scope_repository_history_entries_pkey,
                     DROP CONSTRAINT scope_repository_history_entries_repo_id_audience_position_key,

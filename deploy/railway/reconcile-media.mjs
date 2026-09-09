@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 
 export const RESOURCE_NAMES = Object.freeze({
   bucket: "scope-request-media",
-  gateway: "scope-media",
+  gateway: "scope-media-api",
   worker: "scope-media-worker",
 });
 
@@ -57,16 +57,14 @@ export function desiredMediaState(manifest, environmentName, workerImageDigest =
   const railway = manifest?.railway;
   const resources = manifest?.mediaResources;
   if (!railway || !resources) throw new Error("Deployment manifest has no media resource contract");
-  const environmentId = environmentName === "production"
-    ? railway.environmentId
-    : environmentName === railway.staging?.environmentName
-      ? railway.staging.environmentId
-      : "";
+  const environmentId = ["production", "staging"].includes(environmentName)
+    ? manifest.environments?.[environmentName]?.environmentId
+    : "";
   requiredString(environmentId, `Railway ${environmentName} environment ID`);
   const bucketName = requiredString(resources.bucket?.name, "media bucket name");
   const allowedOrigin = environmentName === "production"
     ? requiredString(resources.production?.webOrigin, "production web origin")
-    : `https://${requiredString(railway.staging?.webDomain, "staging web domain")}`;
+    : `https://${requiredString(manifest.environments.staging?.webDomain, "staging web domain")}`;
   const image = workerImageDigest || resources.workerImageDigest || "";
   if (environmentName === "production" && !image) {
     throw new Error("Production media reconciliation requires --worker-image pinned by sha256 digest");
@@ -90,11 +88,11 @@ export function desiredMediaState(manifest, environmentName, workerImageDigest =
         id: manifest.services?.api?.id ?? null,
         name: requiredString(manifest.services?.api?.name, "API service name"),
         variables: {
-          SCOPE_MEDIA_PUBLIC_URL: "https://${{scope-media.RAILWAY_PUBLIC_DOMAIN}}",
+          SCOPE_MEDIA_PUBLIC_URL: "https://${{scope-media-api.RAILWAY_PUBLIC_DOMAIN}}",
         },
       },
       gateway: {
-        id: manifest.services?.media?.id ?? null,
+        id: manifest.services?.["media-api"]?.id ?? null,
         name: RESOURCE_NAMES.gateway,
         variables: {
           ...serviceVariables(bucketName),
@@ -111,7 +109,7 @@ export function desiredMediaState(manifest, environmentName, workerImageDigest =
         publicDomain: true,
       },
       worker: {
-        id: manifest.services?.mediaWorker?.id ?? null,
+        id: manifest.services?.["media-worker"]?.id ?? null,
         name: RESOURCE_NAMES.worker,
         variables: serviceVariables(bucketName),
         config: {
@@ -488,8 +486,8 @@ function updateManifest(path, manifest, desired, current) {
   const domain = gateway?.domains?.find(({ type }) => type === "service")?.domain;
   if (!bucket || !gateway || !worker || !domain) throw new Error("Cannot record incomplete media resources");
   manifest.mediaResources.bucket.id = bucket.id;
-  manifest.services.media.id = gateway.id;
-  manifest.services.mediaWorker.id = worker.id;
+  manifest.services["media-api"].id = gateway.id;
+  manifest.services["media-worker"].id = worker.id;
   const key = desired.environmentName === "production" ? "production" : "staging";
   manifest.mediaResources[key].gatewayDomain = domain;
   writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);

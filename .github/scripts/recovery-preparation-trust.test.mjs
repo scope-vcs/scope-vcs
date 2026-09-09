@@ -8,15 +8,15 @@ const mainSha = "d".repeat(40);
 function fixture() {
   const prepared = {
     schemaVersion: 1, sourceSha, preparationRunId: "123", maintenanceSha256: "c".repeat(64),
-    components: Object.fromEntries(["api", "worker", "cache", "router", "media", "mediaWorker"].map(component => [component, {
+    components: Object.fromEntries(["api", "run-worker", "cache", "git-router", "media-api", "media-worker"].map(component => [component, {
       sourceSha, serviceId: component,
-      image: component === "mediaWorker"
+      image: component === "media-worker"
         ? `ghcr.io/scope-vcs/scope-media-worker@sha256:${"b".repeat(64)}`
-        : `ghcr.io/${repository}/railway-private-${component}@sha256:${"b".repeat(64)}`,
+        : `ghcr.io/${repository}/railway-private-${({"run-worker":"worker","git-router":"router","media-api":"media"})[component] ?? component}@sha256:${"b".repeat(64)}`,
     }])),
   };
   const run = {
-    id: 123, path: ".github/workflows/scope-production-deploy.yml", event: "schedule",
+    id: 123, path: ".github/workflows/release.yml", event: "schedule",
     head_branch: "main", head_sha: sourceSha, status: "completed", conclusion: "failure",
     repository: { id: 1, full_name: repository }, head_repository: { id: 1, full_name: repository },
   };
@@ -96,7 +96,7 @@ for (const image of [
   `ghcr.io/scope-vcs/scope-vcs/railway-api@sha256:${"b".repeat(64)}`,
   `ghcr.io/attacker/repo/railway-private-api@sha256:${"b".repeat(64)}`,
   `ghcr.io/scope-vcs/scope-vcs-evil/railway-private-api@sha256:${"b".repeat(64)}`,
-  `ghcr.io/scope-vcs/scope-vcs/railway-private-worker@sha256:${"b".repeat(64)}`,
+  `ghcr.io/scope-vcs/scope-vcs/railway-private-run-worker@sha256:${"b".repeat(64)}`,
   `registry.example/scope-vcs/scope-vcs/railway-private-api@sha256:${"b".repeat(64)}`,
 ]) {
   test(`rejects foreign or substituted package ${image.split("@")[0]}`, async () => {
