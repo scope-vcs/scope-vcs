@@ -69,6 +69,7 @@ async function assertRequestDocumentAndShell(page, shell) {
 export async function assertFileSelectionSkipsRevisionReload(page, fileName, path) {
   await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
   const fileNavigator = page.getByLabel('Commit file navigator')
+  await waitForClientHydration(page, fileNavigator)
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
