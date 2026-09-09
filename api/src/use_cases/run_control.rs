@@ -1,13 +1,15 @@
 use super::{
-    content_cleanup::best_effort_cleanup_rollback_source_blobs,
-    run_inspection::{InspectedRun, require_run_access},
+    content_cleanup::best_effort_cleanup_rollback_source_blobs, run_inspection::InspectedRun,
 };
 use crate::{
     error::ApiError, git::run_source::inspect_manual_run_bundle, persistence::unix_now,
     state::AppState,
 };
 use scope_api_contract::RunChangeKind;
-use scope_domain::runs::{manual::ManualRunRequest, run::Run, source::RunSource};
+use scope_domain::{
+    repository::repo_id,
+    runs::{manual::ManualRunRequest, run::Run},
+};
 use scope_object_store::{ContentObjectKind, content_object_for_bytes, object_key};
 
 pub(crate) struct ManualRunCommand {
@@ -53,11 +55,7 @@ pub(crate) async fn create_manual_run(
     let mut stored = content_object_for_bytes(ContentObjectKind::GitBundle, &bundle);
     stored.git_oid = git_oid;
     let source_cleanup = stored.clone();
-    let run = command.request.create_run(
-        &revision,
-        RunSource::ephemeral_git_bundle(stored)?,
-        unix_now()?,
-    )?;
+    let now_unix = unix_now()?;
     let fence = state
         .metadata
         .acquire_content_ref_fence(std::slice::from_ref(&source_cleanup.content_ref))
@@ -65,7 +63,12 @@ pub(crate) async fn create_manual_run(
     state
         .object_store
         .put(&object_key(&source_cleanup), bundle)?;
-    let enqueued = match state.metadata.runs().enqueue_run(run, revision).await {
+    let enqueued = match state
+        .metadata
+        .runs()
+        .enqueue_uploaded_manual_run(&command.request, stored, revision, now_unix)
+        .await
+    {
         Ok(enqueued) => enqueued,
         Err(error) => {
             best_effort_cleanup_rollback_source_blobs(state, &[source_cleanup]).await;
@@ -112,11 +115,10 @@ pub(crate) async fn cancel_run(
     repo_name: &str,
     run_id: &str,
 ) -> Result<InspectedRun, ApiError> {
-    require_run_access(state, user_id, owner, repo_name, run_id).await?;
     let run = state
         .metadata
         .runs()
-        .request_run_cancellation(run_id, unix_now()?)
+        .request_run_cancellation(user_id, &repo_id(owner, repo_name), run_id, unix_now()?)
         .await?;
     finish_run_control(state, run).await
 }
@@ -128,8 +130,11 @@ pub(crate) async fn retry_run(
     repo_name: &str,
     run_id: &str,
 ) -> Result<InspectedRun, ApiError> {
-    require_run_access(state, user_id, owner, repo_name, run_id).await?;
-    let run = state.metadata.runs().retry_run(run_id, unix_now()?).await?;
+    let run = state
+        .metadata
+        .runs()
+        .retry_run(user_id, &repo_id(owner, repo_name), run_id, unix_now()?)
+        .await?;
     finish_run_control(state, run).await
 }
 

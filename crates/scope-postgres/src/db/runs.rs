@@ -20,6 +20,9 @@ use sea_orm::{
     QuerySelect, TransactionTrait, TryInsertResult, sea_query::OnConflict,
 };
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DispatchClaim {
     pub run: Run,
@@ -42,6 +45,12 @@ pub struct DispatchOffer {
 }
 
 impl RunStore {
+    #[cfg(any(
+        test,
+        feature = "test-support",
+        feature = "local-dev",
+        feature = "smoke-seed"
+    ))]
     pub async fn enqueue_run(
         &self,
         run: Run,
@@ -191,12 +200,16 @@ impl RunStore {
 
     pub async fn request_run_cancellation(
         &self,
+        actor_user_id: &str,
+        repository_id: &str,
         run_id: &str,
         now_unix: u64,
     ) -> Result<Run, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        authorize_run_control(&tx, actor_user_id, repository_id).await?;
         let mut jobs = locked_jobs(&tx, run_id).await?;
         let mut run = locked_run(&tx, run_id).await?;
+        require_run_repository(&run, repository_id)?;
         request_run_cancellation(&mut run, &mut jobs, now_unix).map_err(PostgresError::from)?;
         save_jobs(&tx, &jobs).await?;
         save_run(&tx, &run).await?;
@@ -204,10 +217,18 @@ impl RunStore {
         Ok(run)
     }
 
-    pub async fn retry_run(&self, run_id: &str, now_unix: u64) -> Result<Run, PostgresError> {
+    pub async fn retry_run(
+        &self,
+        actor_user_id: &str,
+        repository_id: &str,
+        run_id: &str,
+        now_unix: u64,
+    ) -> Result<Run, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        authorize_run_control(&tx, actor_user_id, repository_id).await?;
         let mut jobs = locked_jobs(&tx, run_id).await?;
         let mut run = locked_run(&tx, run_id).await?;
+        require_run_repository(&run, repository_id)?;
         let revision = workflow_revision_for_run(&tx, &run).await?;
         retry_run(&mut run, &mut jobs, &revision, now_unix).map_err(PostgresError::from)?;
         save_jobs(&tx, &jobs).await?;
@@ -224,6 +245,29 @@ impl RunStore {
             .map(entities::run::Model::try_into_domain)
             .transpose()
     }
+}
+
+async fn authorize_run_control(
+    tx: &DatabaseTransaction,
+    actor_user_id: &str,
+    repository_id: &str,
+) -> Result<(), PostgresError> {
+    // Membership and lifecycle writers take this same guard. Acquire it before
+    // job/run locks, and read access only after any preceding revocation commits.
+    super::acquire_aggregate_lock(tx, "repository", repository_id).await?;
+    let access =
+        super::repository_access::repository_access(tx, repository_id, Some(actor_user_id))
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+    access.ensure_member()?;
+    Ok(())
+}
+
+fn require_run_repository(run: &Run, repository_id: &str) -> Result<(), PostgresError> {
+    if !run.belongs_to_repository(repository_id) {
+        return Err(PostgresError::not_found("run not found"));
+    }
+    Ok(())
 }
 
 pub struct EnqueueRunResult {
