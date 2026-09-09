@@ -126,7 +126,6 @@ jobs:
           cargo build --manifest-path cli/Cargo.toml --locked --bin scope
           ./dev/run-ci-local-stack cli env \
             SCOPE_API_URL=http://localhost:8080 \
-            SCOPE_CLI_E2E=1 \
             ./dev/checks/integration cli
 
   web-checks:

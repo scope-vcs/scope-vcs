@@ -21,13 +21,6 @@ use scope_domain::{
 };
 use scope_postgres::db::{CatalogFixture, TestDatabaseTarget};
 
-#[test]
-fn bootstrap_tokens_use_the_runtime_auth_prefix() {
-    let token = random_token("scope_bootstrap_").unwrap();
-    assert!(token.starts_with("scope_bootstrap_"));
-    assert_eq!(token.len(), "scope_bootstrap_".len() + 64);
-}
-
 #[tokio::test]
 async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_restart() {
     let metadata = queued_runs(3).await;
@@ -43,6 +36,22 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
     dispatch.spawn(async move { coordinator.dispatch_available(now).await });
     // Actual coordinator admissions commit before concurrent HTTP RunTask calls.
     provider.wait_for("RunTask", 3).await;
+    let mut bootstrap_hashes = provider
+        .created_secrets()
+        .into_iter()
+        .map(|token| {
+            let secret = token
+                .strip_prefix("scope_bootstrap_")
+                .expect("dispatched credentials must use the runtime bootstrap prefix");
+            assert_eq!(hex::decode(secret).unwrap().len(), 32);
+            hex::encode(Sha256::digest(token.as_bytes()))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(
+        bootstrap_hashes.len(),
+        3,
+        "each attempt gets its own credential"
+    );
     assert_eq!(
         metadata
             .runs()
@@ -68,6 +77,10 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
             .expire_attempt(attempt, expired_at)
             .await
             .unwrap();
+        assert!(
+            bootstrap_hashes.remove(&expired_claim.attempt.token_hash),
+            "the dispatched credential hash must match an admitted attempt"
+        );
         assert_eq!(
             expired_claim.job.state,
             scope_domain::runs::job::RunJobState::Queued

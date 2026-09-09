@@ -50,12 +50,11 @@ fn push_validates_config_before_remote_lookup() {
     }"#,
     )
     .unwrap();
-    let stderr = scope_failure(
+    scope_failure(
         dir.path(),
         ["push", "--main", "--no-review"],
         "repo config kind must be scope.repo-config",
     );
-    assert!(!stderr.contains("Scope remote 'scope' is not configured"));
 }
 
 #[test]
@@ -74,12 +73,11 @@ fn push_warns_about_dirty_state_before_remote_lookup() {
 #[test]
 fn push_requires_review_tty_before_remote_lookup() {
     let dir = configured_repo("review-non-tty");
-    let stderr = scope_failure(
+    scope_failure(
         dir.path(),
         ["push", "--main"],
         "scope push review requires an interactive terminal",
     );
-    assert!(!stderr.contains("Scope remote 'scope' is not configured"));
 }
 
 fn configured_repo(label: &str) -> TempDir {

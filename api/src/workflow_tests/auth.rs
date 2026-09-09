@@ -347,10 +347,10 @@ async fn concurrent_unknown_key_requests_share_one_refresh() {
 #[tokio::test]
 async fn sequential_unknown_keys_wait_for_the_successful_refresh_cooldown() {
     let server = MockJwksServer::start(test_jwks()).await;
-    let cooldown = Duration::from_millis(500);
+    let cooldown = Duration::from_secs(60 * 60);
     let verifier = verifier_with_unknown_key_cooldown(
         &server,
-        Duration::from_secs(60),
+        cooldown * 2,
         Duration::from_secs(60),
         cooldown,
     );
@@ -359,7 +359,7 @@ async fn sequential_unknown_keys_wait_for_the_successful_refresh_cooldown() {
         .await
         .unwrap();
 
-    tokio::time::sleep(cooldown + Duration::from_millis(50)).await;
+    verifier.set_cached_jwks_age_for_tests(cooldown + Duration::from_secs(1));
     let first_miss = verifier
         .verify(&token_signed_with("arbitrary-key-one"))
         .await
@@ -380,7 +380,7 @@ async fn sequential_unknown_keys_wait_for_the_successful_refresh_cooldown() {
     assert_eq!(cooldown_miss.kind, crate::error::ErrorKind::Unauthorized);
     assert_eq!(server.request_count(), 2);
 
-    tokio::time::sleep(cooldown + Duration::from_millis(50)).await;
+    verifier.set_cached_jwks_age_for_tests(cooldown + Duration::from_secs(1));
     verifier
         .verify(&token_signed_with("rotated-key"))
         .await

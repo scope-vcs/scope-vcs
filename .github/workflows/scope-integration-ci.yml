@@ -191,7 +191,6 @@ jobs:
         if: inputs.run_cli && !cancelled() && steps.projections.outcome == 'success'
         env:
           SCOPE_API_URL: http://localhost:8080
-          SCOPE_CLI_E2E: "1"
         run: ./dev/checks/integration cli
 
       - name: Print local stack logs

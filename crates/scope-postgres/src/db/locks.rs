@@ -118,7 +118,27 @@ mod tests {
         let store =
             MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap())
                 .unwrap();
+        // Existing keys ensure contention reaches SELECT FOR UPDATE instead of
+        // blocking on insertion of an uncommitted unique key.
+        let seeded = store.db.begin().await.unwrap();
+        for id in ["owner/one", "owner/two"] {
+            acquire_aggregate_lock(&seeded, "repository", id)
+                .await
+                .unwrap();
+        }
+        seeded.commit().await.unwrap();
+
         let held = store.db.begin().await.unwrap();
+        let holder_pid: i32 = held
+            .query_one(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "SELECT pg_backend_pid() AS pid".to_string(),
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "pid")
+            .unwrap();
         acquire_aggregate_lock(&held, "repository", "owner/one")
             .await
             .unwrap();
@@ -144,7 +164,34 @@ mod tests {
             .await
             .expect("different aggregate key should not block")
             .unwrap();
-        assert!(!same.is_finished());
+        tokio::time::timeout(Duration::from_secs(60), async {
+            loop {
+                let waiting: bool = store
+                    .db
+                    .query_one(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        "SELECT EXISTS (
+                        SELECT 1 FROM pg_stat_activity waiter
+                        WHERE waiter.application_name = 'scope-test-lock:repository'
+                          AND $1 = ANY(pg_blocking_pids(waiter.pid))
+                          AND waiter.query LIKE 'SELECT %scope_metadata_locks%FOR UPDATE%'
+                    ) AS waiting",
+                        [holder_pid.into()],
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .try_get("", "waiting")
+                    .unwrap();
+                if waiting {
+                    break;
+                }
+                assert!(!same.is_finished(), "same-key writer bypassed the row lock");
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("same-key writer must block on SELECT FOR UPDATE");
         held.commit().await.unwrap();
         tokio::time::timeout(Duration::from_secs(2), same)
             .await

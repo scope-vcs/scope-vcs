@@ -14,6 +14,7 @@ pub(crate) const TEST_IMAGE: &str =
 #[derive(Default)]
 struct Requests {
     methods: Mutex<Vec<String>>,
+    created_secrets: Mutex<Vec<String>>,
     changed: Notify,
     active_starts: AtomicUsize,
     peak_starts: AtomicUsize,
@@ -100,6 +101,10 @@ impl FakeEcs {
         self.requests.peak_starts.load(Ordering::SeqCst)
     }
 
+    pub(crate) fn created_secrets(&self) -> Vec<String> {
+        self.requests.created_secrets.lock().unwrap().clone()
+    }
+
     pub(crate) async fn wait_for(&self, method: &str, count: usize) {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
@@ -144,6 +149,12 @@ async fn handle(
         // Empty discovery invokes the actual five-minute ambiguity reconciliation.
         "ListTasks" => json!({"taskArns": []}),
         "CreateSecret" => {
+            state
+                .requests
+                .created_secrets
+                .lock()
+                .unwrap()
+                .push(body["SecretString"].as_str().unwrap().to_owned());
             json!({"ARN": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test"})
         }
         "RegisterTaskDefinition" => {

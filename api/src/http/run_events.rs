@@ -253,6 +253,7 @@ fn stream_error_data(error: ApiError) -> ErrorResponse {
 mod tests {
     use super::*;
     use scope_api_contract::RunChangeKind;
+    use std::{future::Future, task::Poll};
 
     #[test]
     fn stream_errors_redact_database_diagnostics() {
@@ -282,6 +283,12 @@ mod tests {
                 },
             })
             .unwrap();
+        let mut waiting = Box::pin(wait_for_run_change(&mut receiver, "target-run"));
+        std::future::poll_fn(|context| {
+            assert!(waiting.as_mut().poll(context).is_pending());
+            Poll::Ready(())
+        })
+        .await;
         sender
             .send(RepoChangeEvent {
                 repo_id: "owner/repo".to_string(),
@@ -294,14 +301,17 @@ mod tests {
             })
             .unwrap();
 
-        tokio::time::timeout(
-            Duration::from_millis(100),
-            wait_for_run_change(&mut receiver, "target-run"),
-        )
-        .await
-        .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .unwrap();
 
         let (sender, mut receiver) = tokio::sync::broadcast::channel(1);
+        let mut waiting = Box::pin(wait_for_run_change(&mut receiver, "target-run"));
+        std::future::poll_fn(|context| {
+            assert!(waiting.as_mut().poll(context).is_pending());
+            Poll::Ready(())
+        })
+        .await;
         sender
             .send(RepoChangeEvent {
                 repo_id: "owner/repo".to_string(),
@@ -312,11 +322,8 @@ mod tests {
                 },
             })
             .unwrap();
-        tokio::time::timeout(
-            Duration::from_millis(100),
-            wait_for_run_change(&mut receiver, "target-run"),
-        )
-        .await
-        .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .unwrap();
     }
 }
