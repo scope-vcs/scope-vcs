@@ -20,6 +20,8 @@ Once you approach around 1000 LOC in a single file, do an audit of the file and 
 
 In general, I trust you with refactors as they don't effect the behavior of the application. However, on behavior making changes I want to be very involved and make sure we go slow and methodically. 
 
+Pushes and merges to main are fine because they do not deploy changes; releases happen separately.
+
 Autoreview timeout should be set to 15 minutes, please do other work in parallel while waiting.
 
 <!-- scope:rules:start -->

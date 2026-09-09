@@ -36,22 +36,22 @@ export async function validatePreparedDeployment(
   };
   const proof = await validateRecoveryPreparation(prepared, cachedRequest, repository, manifest);
 
+  const requiredJobs = new Set([validationJobName, "Prove prepared release in release-proof"]);
   for (let page = 1; ; page += 1) {
     const result = await cachedRequest(
       `/actions/runs/${sourceRunId}/jobs?filter=all&per_page=100&page=${page}`,
     );
     if (!Array.isArray(result.jobs)) throw new Error("Cannot read source validation jobs");
-    const validated = result.jobs.some((job) => (
-      job.name === validationJobName
-      && String(job.run_id) === sourceRunId
-      && job.head_sha === proof.sourceSha
-      && job.status === "completed"
-      && job.conclusion === "success"
-    ));
-    if (validated) return proof;
+    for (const job of result.jobs) {
+      if (String(job.run_id) === sourceRunId
+          && job.head_sha === proof.sourceSha
+          && job.status === "completed"
+          && job.conclusion === "success") requiredJobs.delete(job.name);
+    }
+    if (requiredJobs.size === 0) return proof;
     if (result.jobs.length < 100) break;
   }
-  throw new Error("Source run did not pass the production validation gate");
+  throw new Error("Source run did not pass the production validation gate and release-proof rehearsal");
 }
 
 async function githubRequest(path) {

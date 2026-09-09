@@ -63,6 +63,10 @@ function fixture() {
       steps: [{ name: "Prepare immutable release images", conclusion: "success" }],
     },
   ];
+  jobs.push({
+    id: 3, run_id: Number(sourceRunId), head_sha: sourceSha,
+    name: "Prove prepared release in release-proof", status: "completed", conclusion: "success",
+  });
   const request = async (path) => {
     if (path === `/actions/runs/${sourceRunId}`) return structuredClone(run);
     if (path === "/branches/main") return { name: "main", commit: { sha: mainSha } };
@@ -84,6 +88,7 @@ test("prepared deploy accepts only its validated main source and exact artifact"
 
   for (const [message, mutate, expected] of [
     ["unvalidated source", (state) => { state.jobs[0].conclusion = "failure"; }, /validation gate/],
+    ["unproven release", (state) => { state.jobs[2].conclusion = "skipped"; }, /release-proof/],
     ["non-main source", (state) => { state.run.head_branch = "candidate"; }, /on main/],
     ["non-ancestor source", (state) => { state.comparison.status = "diverged"; }, /main history/],
     ["artifact from another run", (state) => { state.prepared.preparationRunId = "123"; }, /source run ID/],

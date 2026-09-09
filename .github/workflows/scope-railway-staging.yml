@@ -1,5 +1,5 @@
 name: Scope Railway staging proof
-run-name: Scope ${{ inputs.target_environment || 'staging' }} ${{ inputs.source_sha }}${{ inputs.proof_request_id && format(' / {0}', inputs.proof_request_id) || '' }}
+run-name: Scope ${{ inputs.target_environment || 'release-proof' }} ${{ inputs.source_sha }}${{ inputs.proof_request_id && format(' / {0}', inputs.proof_request_id) || '' }}
 
 on:
   workflow_dispatch:
@@ -12,9 +12,9 @@ on:
         description: Reviewed Railway environment for this proof
         type: choice
         options:
-          - staging
+          - release-proof
           - media-proof
-        default: staging
+        default: release-proof
       run_media_capacity:
         description: Run the large-video and concurrent-photo staging capacity proof
         type: boolean
@@ -35,7 +35,7 @@ permissions:
   deployments: read
 
 concurrency:
-  group: scope-railway-${{ inputs.target_environment || 'staging' }}
+  group: scope-railway-${{ inputs.target_environment || 'release-proof' }}
   cancel-in-progress: false
 
 jobs:
@@ -51,10 +51,10 @@ jobs:
     if: inputs.prepared_run_id == '' && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha)
 
   prepare:
-    name: Build candidate before closing staging
+    name: Build smoke tools and candidate artifacts
     permissions:
       contents: read
-    if: inputs.prepared_run_id == '' && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha)
+    if: github.ref == 'refs/heads/main' || inputs.source_sha == github.sha
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 45
     steps:
@@ -84,7 +84,8 @@ jobs:
             . -> target
             cli -> target
 
-      - name: Build deployment and smoke binaries
+      - name: Build deployment binaries
+        if: inputs.prepared_run_id == ''
         env:
           SCOPE_BUILD_SHA: ${{ inputs.source_sha }}
         run: |
@@ -98,19 +99,27 @@ jobs:
           install -m 0755 target/release/scope-repo-router artifacts/backend/scope-repo-router
           install -m 0755 target/release/scope-media-service artifacts/backend/scope-media-service
           cp LICENSE NOTICE legal/third-party-rust.txt artifacts/backend/
+          tar -czf artifacts/backend-release.tar.gz -C artifacts/backend .
+
+      - name: Build smoke tools
+        env:
+          SCOPE_BUILD_SHA: ${{ inputs.source_sha }}
+        run: |
+          mkdir -p artifacts/commands
           cargo build --release --locked -p api --bin scope-smoke-seed --features smoke-seed
           cargo build --release --locked --manifest-path cli/Cargo.toml --bin scope
           install -m 0755 target/release/scope-smoke-seed artifacts/commands/scope-smoke-seed
           install -m 0755 cli/target/release/scope artifacts/commands/scope
-          tar -czf artifacts/backend-release.tar.gz -C artifacts/backend .
           tar -czf artifacts/staging-commands.tar.gz -C artifacts/commands .
 
       - name: Enable pnpm
+        if: inputs.prepared_run_id == ''
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           version: 11.1.0
 
       - name: Install Node
+        if: inputs.prepared_run_id == ''
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
@@ -118,6 +127,7 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Build web artifact
+        if: inputs.prepared_run_id == ''
         env:
           VITE_SCOPE_WEB_FORCE_SIGNED_OUT: '1'
           VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
@@ -129,6 +139,7 @@ jobs:
           tar -czf ../artifacts/web-release.tar.gz .output
 
       - name: Upload backend binaries
+        if: inputs.prepared_run_id == ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: backend-release-${{ inputs.source_sha }}
@@ -136,6 +147,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload web build
+        if: inputs.prepared_run_id == ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: web-release-${{ inputs.source_sha }}
@@ -173,6 +185,7 @@ jobs:
     needs: [prepare, prepare-images, media-worker-image]
     if: >-
       !cancelled() && (github.ref == 'refs/heads/main' || inputs.source_sha == github.sha) &&
+      needs.prepare.result == 'success' &&
       ((inputs.prepared_run_id == '' && needs.prepare-images.result == 'success') || inputs.prepared_run_id != '')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 90
@@ -180,7 +193,7 @@ jobs:
     environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'release-proof' }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Validate requested revision
         shell: bash
@@ -203,7 +216,7 @@ jobs:
         id: target
         shell: bash
         env:
-          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'staging' }}
+          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'release-proof' }}
         run: |
           node .github/scripts/select-proof-environment.mjs "$PROOF_ENVIRONMENT"
           {
@@ -267,6 +280,13 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Download smoke tools for imported release
+        if: inputs.prepared_run_id != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: staging-commands-${{ inputs.source_sha }}
+          path: artifacts
+
       - name: Download exact production images
         if: inputs.prepared_run_id != ''
         uses: actions/download-artifact@v8
@@ -280,15 +300,25 @@ jobs:
         run: |
           echo "SCOPE_PREPARED_RELEASE_PATH=$GITHUB_WORKSPACE/artifacts/prepared-release.json" >> "$GITHUB_ENV"
           echo "SCOPE_DEPLOYMENT_MANIFEST=$GITHUB_WORKSPACE/.github/deployment-services.json" >> "$GITHUB_ENV"
-          echo "SCOPE_MEDIA_WORKER_IMAGE=$(jq -er '.components.mediaWorker.image' artifacts/prepared-release.json)" >> "$GITHUB_ENV"
+          echo "SCOPE_MEDIA_WORKER_IMAGE=$(jq -r '.components.mediaWorker.image // empty' artifacts/prepared-release.json)" >> "$GITHUB_ENV"
 
-      - name: Extract candidate commands
-        if: inputs.prepared_run_id == ''
+      - name: Extract smoke tools
         run: |
           mkdir -p candidate/target/release candidate/cli/target/release
-          tar -xzf artifacts/backend-release.tar.gz -C candidate/target/release
           tar -xzf artifacts/staging-commands.tar.gz -C candidate/target/release
           install -m 0755 candidate/target/release/scope candidate/cli/target/release/scope
+
+      - name: Extract candidate backend binaries
+        if: inputs.prepared_run_id == ''
+        run: tar -xzf artifacts/backend-release.tar.gz -C candidate/target/release
+
+      - name: Initialize smoke credentials directory
+        shell: bash
+        run: |
+          smoke_dir="$(mktemp -d "${RUNNER_TEMP}/scope-staging-git-smoke.XXXXXX")"
+          chmod 0700 "$smoke_dir"
+          echo "SCOPE_GIT_SMOKE_DIR=$smoke_dir" >> "$GITHUB_ENV"
+          echo "SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH=$smoke_dir/exchange-token" >> "$GITHUB_ENV"
 
       - name: Migrate, seed, and deploy staging services
         if: inputs.prepared_run_id == ''
@@ -299,10 +329,6 @@ jobs:
           SCOPE_MAINTENANCE_BINARY: ./target/release/scope-maintenance
           SCOPE_SMOKE_SEED_BINARY: ./target/release/scope-smoke-seed
         run: |
-          smoke_dir="$(mktemp -d "${RUNNER_TEMP}/scope-staging-git-smoke.XXXXXX")"
-          chmod 0700 "$smoke_dir"
-          echo "SCOPE_GIT_SMOKE_DIR=$smoke_dir" >> "$GITHUB_ENV"
-          export SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH="$smoke_dir/exchange-token"
           bash .github/scripts/deploy-staging-railway.sh prepare \
             cache-service worker api repo-router media
 
@@ -328,12 +354,19 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium
 
+      - name: Issue smoke login for imported release
+        if: inputs.prepared_run_id != ''
+        working-directory: candidate
+        env:
+          SCOPE_SMOKE_SEED_BINARY: ./target/release/scope-smoke-seed
+        run: bash .github/scripts/staging-smoke-seed.sh grant
+
       - name: Rehearse three ordinary release transitions
         working-directory: candidate
         env:
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
           SCOPE_REHEARSAL_EVIDENCE_DIR: ${{ github.workspace }}/release-rehearsal
-          SCOPE_REHEARSAL_IMPORTED: ${{ inputs.prepared_run_id != '' && '1' || '0' }}
+          SCOPE_STAGING_EVIDENCE_PATH: ${{ github.workspace }}/staging-deployments.json
         run: node .github/scripts/rehearse-release.mjs
 
       - name: Run browser smoke against staging
@@ -445,7 +478,7 @@ jobs:
     environment: staging
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'staging' }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-${{ inputs.target_environment || 'release-proof' }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout trusted cleanup
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -458,7 +491,7 @@ jobs:
         id: target
         shell: bash
         env:
-          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'staging' }}
+          PROOF_ENVIRONMENT: ${{ inputs.target_environment || 'release-proof' }}
         run: |
           node .github/scripts/select-proof-environment.mjs "$PROOF_ENVIRONMENT"
           {

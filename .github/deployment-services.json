@@ -150,6 +150,8 @@
         ".github/scripts/select-proof-environment.mjs",
         ".github/scripts/select-proof-environment.test.mjs",
         ".github/scripts/staging-git-smoke.sh",
+        ".github/scripts/staging-smoke-seed.sh",
+        ".github/scripts/staging-smoke-seed.test.mjs",
         ".github/scripts/verify-staging-target.test.mjs",
         ".github/scripts/deploy-staging-railway.sh",
         ".github/scripts/test-staging-git-smoke.sh",

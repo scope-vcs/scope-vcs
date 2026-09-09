@@ -27,7 +27,7 @@ global.fetch = async (url, options = {}) => {
   const sourceSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   const apiResponse = result => new Response(JSON.stringify(result), { status: 200 });
   if (path === "/actions/runs/123") return apiResponse({
-    id:123, path:".github/workflows/scope-production-deploy.yml", event:"push",
+    id:123, path:".github/workflows/scope-production-deploy.yml", event:"schedule",
     head_branch:"main", head_sha:sourceSha, conclusion:"cancelled",
     repository:{id:1,full_name:"test/repo"}, head_repository:{id:1,full_name:"test/repo"},
   });

@@ -40,7 +40,7 @@ export async function validateRecoveryPreparation(prepared, request, repository,
       || run.path !== workflowPath
       || run.head_branch !== "main"
       || run.head_sha !== sourceSha
-      || !["push", "workflow_dispatch"].includes(run.event)) {
+      || !["schedule", "workflow_dispatch"].includes(run.event)) {
     throw new Error("Recovery preparation must come from this repository's production workflow on main at the exact source SHA");
   }
 

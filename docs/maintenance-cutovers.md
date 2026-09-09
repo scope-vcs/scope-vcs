@@ -143,3 +143,38 @@ configured under `railway.staging` in the deployment manifest. Keep runner and
 load experiments in separate environments so they cannot replace services during
 the availability measurement. The GitHub environment remains `staging` for its
 secrets and deployment protection rules.
+
+
+## Daily releases
+
+`scope-production-deploy.yml` runs daily at 9:00 AM America/Chicago, including
+local daylight-saving changes. GitHub may start scheduled jobs late. Pushes to
+`main` do not start this workflow. Pull requests run validation without deploying.
+
+Both scheduled and manual releases pin the main head at trigger time. Later
+commits wait for the next release. Runs serialize through the production
+concurrency group. The default `changed` scope compares each component with its
+last successful production revision, so unchanged components do not rebuild or
+deploy. Select `all` manually when a full redeployment is needed.
+
+To release the latest main head manually:
+
+```sh
+gh workflow run scope-production-deploy.yml --ref main
+```
+
+Prepared application artifacts pass through Railway `release-proof` before production.
+There is no normal-release bypass. Interrupted cutover recovery reuses its pinned
+artifacts without repeating the rehearsal so production can reopen. The prepared
+release workflow requires a successful release-proof job from the source run.
+Imported releases build the smoke tools and issue a fresh test login without
+resetting the existing catalog or rebuilding the application images. Web-only
+releases use the same gate; a CLI release included with application changes waits
+for it too. CLI-only releases keep their build and distribution checks.
+
+Railway `staging` is reserved for experiments and is outside this chain. The
+proof workflow calls its default target `release-proof`; its GitHub credential
+environment and internal manifest slot still use the name `staging`.
+
+This follows the scheduled/manual entry points, immutable revision, serialized
+publishing, and unchanged-release skipping in [T3's release workflow](https://github.com/pingdotgg/t3code/blob/main/.github/workflows/release.yml).
