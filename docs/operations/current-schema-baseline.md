@@ -58,6 +58,10 @@ intact. After schema verification, it replaces the ledger with the baseline
 marker and applies subsequent migrations in the same transaction. Migration 43
 preserves the existing frontier digest while retiring manifest artifacts.
 
+Push intents now encode `base_git_frontier` directly in version 2 claims.
+Version 1 tokens are rejected; a push prepared before the cutover must obtain
+a fresh intent before retrying.
+
 A failed transaction restores the old ledger, schema and business rows. If the
 commit response is lost, read the ledger with the pinned candidate binary.
 The exact old inventory can retry; the exact new inventory can continue forward
