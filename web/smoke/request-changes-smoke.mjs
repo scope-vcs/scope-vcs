@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { setTimeout as delay } from 'node:timers/promises'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
 export async function assertRequestCrossLinksStayInDocument(page) {
@@ -43,12 +44,12 @@ export async function assertRequestCrossLinksStayInDocument(page) {
 }
 
 export async function waitForClientHydration(page, locator) {
-  const element = await locator.elementHandle()
-  assert(element)
-  await page.waitForFunction(
-    (target) => Object.keys(target).some((key) => key.startsWith('__reactProps$')),
-    element,
-  )
+  const deadline = Date.now() + 30_000
+  // Hydration can replace the server-rendered node, so resolve the locator anew.
+  while (!await locator.evaluate((element) => Object.keys(element).some((key) => key.startsWith('__reactProps$')))) {
+    assert(Date.now() < deadline, 'element did not hydrate within 30 seconds')
+    await delay(50)
+  }
 }
 
 async function assertRequestDocumentAndShell(page, shell) {
@@ -65,7 +66,11 @@ export async function assertFileSelectionSkipsRevisionReload(page, fileName, pat
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
-      serverFunctions.push(serverFunctionName(request))
+      const name = serverFunctionName(request)
+      // Attachment and analytics reads can finish hydration independently.
+      if (name === 'loadChangesPage_createServerFn_handler' || name === 'loadRevisionDiff_createServerFn_handler') {
+        serverFunctions.push(name)
+      }
     }
   }
   page.on('request', recordServerFunction)
@@ -104,7 +109,11 @@ export async function assertUpdateSelectionReloadsSelectedPayload(page) {
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
-      serverFunctions.push(serverFunctionName(request))
+      const name = serverFunctionName(request)
+      // Attachment and analytics reads can finish hydration independently.
+      if (name === 'loadChangesPage_createServerFn_handler' || name === 'loadRevisionDiff_createServerFn_handler') {
+        serverFunctions.push(name)
+      }
     }
   }
   page.on('request', recordServerFunction)

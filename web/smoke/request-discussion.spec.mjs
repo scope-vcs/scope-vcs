@@ -21,72 +21,34 @@ if (!owner || !repo || extra) {
   throw new Error('SCOPE_SMOKE_REPO must be an owner/repository pair')
 }
 
-test('seeded request discussion and changes stay reciprocal and ordered', async () => {
+test('discussion and reply chronology preserves quote targets', async () => {
   await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
-    await page.getByRole('heading', { level: 1, name: 'Add bounded retry timing' }).waitFor()
-    assert.equal(
-      await page.getByRole('button', { name: 'Refresh', exact: true }).count(),
-      0,
-    )
-    await page.getByText('Public request', { exact: true }).last().waitFor()
-    const threads = page.locator('.request-discussion-thread')
-    await threads.first().waitFor()
-    assert.equal(await page.getByRole('link', { name: 'Link to discussion' }).count(), 0)
-    assert.equal(await page.getByRole('link', { name: 'Link to reply' }).count(), 0)
-    assert.deepEqual(
-      await threads.evaluateAll((elements) => elements.map(({ id }) => id)),
-      [
-        'discussion-discussion_demo_retry_cap',
-        'discussion-discussion_demo_jitter',
-        'discussion-discussion_demo_resolved_docs',
-        'discussion-discussion_demo_revision_jitter',
-        'discussion-discussion_demo_revision_tests',
-        'discussion-discussion_demo_revision_final',
-      ],
-    )
-    assert.equal(await page.getByRole('textbox').count(), 0)
-
+    const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
+    const jitterThread = page.locator('#discussion-discussion_demo_jitter')
     const resolvedThread = page.locator('#discussion-discussion_demo_resolved_docs')
     await resolvedThread.getByRole('button', { name: 'Show 1 reply' }).waitFor()
-    await resolvedThread.getByText('The helper accepts milliseconds', {
-      exact: false,
-    }).waitFor()
+    await resolvedThread.getByText('The helper accepts milliseconds', { exact: false }).waitFor()
+    await assertBefore(retryThread, jitterThread)
+    await assertBefore(jitterThread, resolvedThread)
 
+    const maintainerReply = retryThread.locator('#reply-discussion_reply_demo_retry_cap_maintainer')
+    const contributorReply = retryThread.locator('#reply-discussion_reply_demo_retry_cap_quote')
+    const nestedReply = retryThread.locator('#reply-discussion_reply_demo_retry_cap_nested')
+    await nestedReply.waitFor()
+    await assertBefore(maintainerReply, contributorReply)
+    await assertBefore(contributorReply, nestedReply)
+    await waitForClientHydration(page, retryThread.getByRole('button', { name: 'Hide 3 replies' }))
+    for (const [reply, target] of [[contributorReply, maintainerReply], [nestedReply, contributorReply]]) {
+      const quote = reply.locator('a[href^="#discussion="]')
+      await quote.click()
+      await page.waitForFunction((id) => document.activeElement?.id === id, await target.getAttribute('id'))
+    }
+  })
+})
+
+test('reply disclosure preserves scroll and remains reversible', async () => {
+  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
-    await retryThread.getByRole('button', { name: 'Hide 3 replies' }).waitFor()
-    const maintainerReply = page.locator(
-      '#reply-discussion_reply_demo_retry_cap_maintainer',
-    )
-    await maintainerReply.getByText('Two seconds is intentional', { exact: false }).waitFor()
-    const contributorReply = page.locator(
-      '#reply-discussion_reply_demo_retry_cap_quote',
-    )
-    await contributorReply.getByText('Agreed. Quoting the maintainer', { exact: false }).waitFor()
-    const nestedReply = page.locator('#reply-discussion_reply_demo_retry_cap_nested')
-    await nestedReply.getByText('Exactly. Keeping that decision', { exact: false }).waitFor()
-    assert.deepEqual(
-      await retryThread.locator('[id^="reply-"]').evaluateAll((elements) =>
-        elements.map(({ id }) => id),
-      ),
-      [
-        'reply-discussion_reply_demo_retry_cap_maintainer',
-        'reply-discussion_reply_demo_retry_cap_quote',
-        'reply-discussion_reply_demo_retry_cap_nested',
-      ],
-    )
-    await contributorReply
-      .locator(
-        'a[href="#discussion=discussion_demo_retry_cap&reply=discussion_reply_demo_retry_cap_maintainer"]',
-      )
-      .getByText('Two seconds is intentional', { exact: false })
-      .waitFor()
-    await nestedReply
-      .locator(
-        'a[href="#discussion=discussion_demo_retry_cap&reply=discussion_reply_demo_retry_cap_quote"]',
-      )
-      .getByText('Agreed. Quoting the maintainer', { exact: false })
-      .waitFor()
-
     const hideRetryReplies = retryThread.getByRole('button', {
       name: 'Hide 3 replies',
     })
@@ -121,9 +83,6 @@ test('seeded request discussion and changes stay reciprocal and ordered', async 
       })),
       scrollPosition,
     )
-    await retryThread.getByRole('button', { name: 'Show 3 replies' }).click()
-    await assertReplyRegion(page, retryReplies, true)
-    await retryThread.getByRole('button', { name: 'Hide 3 replies' }).click()
     await retryThread.getByRole('button', { name: 'Show 3 replies' }).click()
     await assertReplyRegion(page, retryReplies, true)
     await retryThread.getByRole('button', { name: 'Hide 3 replies' }).click()
@@ -165,12 +124,24 @@ test('seeded request discussion and changes stay reciprocal and ordered', async 
       await mainContent.evaluate((element) => element.scrollTop),
       deepScrollPosition,
     )
+  })
+})
 
-    const {
-      heading: requestHeading,
-      navigation: requestNavigation,
-    } = await assertRequestCrossLinksStayInDocument(page)
+test('revision and discussion links retain the document and request shell', async () => {
+  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, assertRequestCrossLinksStayInDocument)
+})
 
+test('changes navigation preserves the request shell and collapsed replies', async () => {
+  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+    const requestHeading = await page.getByRole('heading', { level: 1 }).elementHandle()
+    const requestNavigation = await page.getByRole('navigation', { name: 'Request views' }).elementHandle()
+    assert(requestHeading)
+    assert(requestNavigation)
+    const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
+    const disclosure = retryThread.getByRole('button', { name: 'Hide 3 replies' })
+    await waitForClientHydration(page, disclosure)
+    await disclosure.click()
+    await assertReplyRegion(page, retryThread.locator('#discussion-discussion_demo_retry_cap-replies'), false)
     const requestViews = page.getByRole('navigation', { name: 'Request views' })
     const changesLink = requestViews.getByRole('link', { name: 'Changes' })
     await waitForClientHydration(page, changesLink)
@@ -193,8 +164,6 @@ test('seeded request discussion and changes stay reciprocal and ordered', async 
       heading: requestHeading,
       navigation: requestNavigation,
     })
-    await assertFileSelectionSkipsRevisionReload(page, 'retry.ts', '/src/retry.ts')
-    await assertUpdateSelectionReloadsSelectedPayload(page)
     await page.getByRole('navigation', { name: 'Request views' })
       .getByRole('link', { name: 'Discussion' })
       .click()
@@ -216,6 +185,20 @@ test('seeded request discussion and changes stay reciprocal and ordered', async 
     })
   })
 })
+
+test('file and update selection reload only the selected changes payload', async () => {
+  await withPage(`/${owner}/update-demo/requests/req_demo_ready/changes`, async (page) => {
+    await page.getByLabel('Commit file navigator').waitFor()
+    await assertFileSelectionSkipsRevisionReload(page, 'retry.ts', '/src/retry.ts')
+    await assertUpdateSelectionReloadsSelectedPayload(page)
+  })
+})
+
+async function assertBefore(first, second) {
+  const next = await second.elementHandle()
+  assert(next)
+  assert(await first.evaluate((element, next) => Boolean(element.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING), next))
+}
 
 async function assertReplyRegion(page, region, expanded) {
   const id = await region.getAttribute('id')

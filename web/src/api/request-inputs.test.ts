@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
+import ts from 'typescript'
+import { parseRepoParams } from './repo-params'
 import * as parsers from './request-inputs'
 
 const request = { owner: 'scope', repo: 'vcs', request_id: 'req_1' }
@@ -114,7 +116,7 @@ test('attachment inputs enforce generated transfer and media target shapes', () 
   }))
 })
 
-test('request and file server functions use named unknown-input parsers', () => {
+test('request and file server functions bind input validators that reject malformed identifiers', () => {
   const routes = [
     '$owner.$repo.requests.$requestId.tsx',
     '$owner.$repo.requests.$requestId.index.tsx',
@@ -123,9 +125,54 @@ test('request and file server functions use named unknown-input parsers', () => 
   ]
   for (const route of routes) {
     const source = readFileSync(resolve('src/routes', route), 'utf8')
-    const validators = [...source.matchAll(/\.validator\(([^\n]*)\)/g)].map((match) => match[1])
-    assert.ok(validators.length > 0, route)
-    for (const validator of validators) assert.match(validator, /^parse[A-Za-z]+$/, `${route}: ${validator}`)
-    assert.equal((source.match(/createServerFn\(/g) ?? []).length, validators.length, route)
+    const file = ts.createSourceFile(route, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const serverFactories = new Set<string>()
+    const validators = new Map<string, (input: unknown) => unknown>()
+    const parserModules: Record<string, Record<string, (input: unknown) => unknown>> = {
+      '@/api/request-inputs': parsers,
+      '@/api/repos': { parseRepoParams },
+      '@/api/repo-params': { parseRepoParams },
+    }
+    for (const statement of file.statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
+      const bindings = statement.importClause?.namedBindings
+      if (!bindings || !ts.isNamedImports(bindings)) continue
+      const module = statement.moduleSpecifier.text
+      for (const binding of bindings.elements) {
+        const imported = binding.propertyName?.text ?? binding.name.text
+        if (module === '@tanstack/react-start' && imported === 'createServerFn') serverFactories.add(binding.name.text)
+        const parser = parserModules[module]?.[imported]
+        if (parser) validators.set(binding.name.text, parser)
+      }
+    }
+
+    let serverFunctions = 0
+    const inspect = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && serverFactories.has(node.expression.text)) {
+        serverFunctions += 1
+        const location = `${route}:${file.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
+        const boundValidators: ts.Expression[] = []
+        let chain: ts.Node = node
+        while (ts.isPropertyAccessExpression(chain.parent) && ts.isCallExpression(chain.parent.parent)) {
+          const method = chain.parent
+          const call = chain.parent.parent
+          if (method.name.text === 'validator') {
+            assert.equal(call.arguments.length, 1, `${location}: validator needs one parser`)
+            boundValidators.push(call.arguments[0])
+          }
+          chain = call
+        }
+        assert.equal(boundValidators.length, 1, `${location}: server function needs one input validator`)
+        const binding = boundValidators[0]
+        const parser = ts.isIdentifier(binding) ? validators.get(binding.text) : undefined
+        assert.ok(parser, `${location}: validator must reference an API input parser`)
+        for (const input of [null, [], {}, { owner: 'scope', repo: 42 }]) {
+          assert.throws(() => parser(input), `${location}: validator accepted ${JSON.stringify(input)}`)
+        }
+      }
+      ts.forEachChild(node, inspect)
+    }
+    inspect(file)
+    assert.ok(serverFunctions > 0, `${route}: no server functions found`)
   }
 })
