@@ -1,7 +1,7 @@
 use super::repo_io::{
-    FencedGitPush, GitTreeFile, describe_refs, git_changed_tree_entries, git_push_from_repo,
+    GitTreeFile, StagedGitPush, describe_refs, git_changed_tree_entries, git_push_from_repo,
     git_refs, git_tree_entries_under, pushed_commit_message, pushed_commit_time,
-    queue_failed_git_objects, run_git_output_bounded, validate_pushed_commit_range,
+    run_git_output_bounded, validate_pushed_commit_range,
 };
 use super::segment_upload::{GitSegmentUploadHeartbeat, best_effort_delete_staged_git_segment};
 use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
@@ -21,7 +21,6 @@ use scope_domain::runs::{
     workflow::identity::WorkflowPath,
 };
 use scope_git_storage::StagedGitSegment;
-use scope_postgres::db::ContentRefFence;
 use scope_postgres::db::RepositoryGitWriteLease;
 use std::{path::Path as FsPath, time::Instant};
 
@@ -34,7 +33,6 @@ enum ReviewedUpdateMode {
 
 pub(crate) struct PreparedReceivePackUpdate {
     pub(crate) update: ReceivePackUpdate,
-    pub(crate) fence: ContentRefFence,
     pub(crate) staged_segment: StagedGitSegment,
     pub(crate) write_lease: RepositoryGitWriteLease,
     pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
@@ -170,59 +168,29 @@ async fn reviewed_update_from_staging_repo_mode(
         ));
     }
     let pack_started = Instant::now();
-    let FencedGitPush {
+    let StagedGitPush {
         stored: mut created_push,
-        fence,
         staged_segment,
         upload_heartbeat,
-    } = match git_push_from_repo(state, &repo.repo_id, staging_repo, repo.git_head.as_ref()).await {
-        Ok(snapshot) => snapshot,
-        Err(error) => {
-            return Err(error);
-        }
-    };
+    } = git_push_from_repo(state, &repo.repo_id, staging_repo, repo.git_head.as_ref()).await?;
     created_push.head.change_version = repo.change_version.saturating_add(1);
     let pack_put_ms = pack_started.elapsed().as_millis();
     let pack_bytes = created_push.pack_span.segment.plaintext_bytes;
-    let durable_objects = vec![created_push.head.manifest.clone()];
-    let landing_file_mutation = match repository_landing_file_mutation(
-        staging_repo,
-        &pushed_entries,
-        &created_push.head.manifest,
-    ) {
-        Ok(mutation) => mutation,
-        Err(error) => {
-            cleanup_prepared_git_push(state, &repo.repo_id, &staged_segment, durable_objects)
-                .await?;
-            return Err(error);
-        }
-    };
-    let changes = match pushed_entries
+    let landing_file_mutation =
+        match repository_landing_file_mutation(staging_repo, &pushed_entries) {
+            Ok(mutation) => mutation,
+            Err(error) => {
+                best_effort_delete_staged_git_segment(state, &repo.repo_id, &staged_segment).await;
+                return Err(error);
+            }
+        };
+    let changes = pushed_entries
         .into_iter()
-        .map(|(path, entry)| {
-            Ok(ReceivePackFileChange {
-                path,
-                content: entry
-                    .map(|entry| {
-                        git_blob_reference(
-                            &created_push.head.manifest,
-                            entry.oid,
-                            entry.mode,
-                            entry.size_bytes,
-                        )
-                    })
-                    .transpose()?,
-            })
+        .map(|(path, entry)| ReceivePackFileChange {
+            path,
+            content: entry.map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
         })
-        .collect::<Result<Vec<_>, ApiError>>()
-    {
-        Ok(changes) => changes,
-        Err(error) => {
-            cleanup_prepared_git_push(state, &repo.repo_id, &staged_segment, durable_objects)
-                .await?;
-            return Err(error);
-        }
-    };
+        .collect::<Vec<_>>();
 
     tracing::info!(
         owner,
@@ -239,12 +207,10 @@ async fn reviewed_update_from_staging_repo_mode(
         &repo.repo_id,
         &head_oid,
         created_push.head.change_version,
-        &created_push.head.manifest,
     ) {
         Ok(catalog) => catalog,
         Err(error) => {
-            cleanup_prepared_git_push(state, &repo.repo_id, &staged_segment, durable_objects)
-                .await?;
+            best_effort_delete_staged_git_segment(state, &repo.repo_id, &staged_segment).await;
             return Err(error);
         }
     };
@@ -253,12 +219,11 @@ async fn reviewed_update_from_staging_repo_mode(
             occurred_at_unix,
             branch,
             head_oid,
-            base_git_manifest_ref: None,
+            base_git_frontier: None,
             author_id: author_id.to_string(),
             message,
             git_head: created_push.head,
             git_pack_span: created_push.pack_span,
-            durable_objects,
             workflow_catalog,
             landing_file_mutation,
             changes,
@@ -266,27 +231,15 @@ async fn reviewed_update_from_staging_repo_mode(
             base_config_hash,
             config,
         },
-        fence,
         staged_segment,
         upload_heartbeat,
         write_lease,
     })
 }
 
-async fn cleanup_prepared_git_push(
-    state: &AppState,
-    repository_id: &str,
-    staged_segment: &StagedGitSegment,
-    durable_objects: Vec<scope_domain::content::SourceBlob>,
-) -> Result<(), ApiError> {
-    best_effort_delete_staged_git_segment(state, repository_id, staged_segment).await;
-    queue_failed_git_objects(state, durable_objects).await
-}
-
 fn repository_landing_file_mutation(
     staging_repo: &FsPath,
     pushed_entries: &[(ScopePath, Option<GitTreeFile>)],
-    git_manifest: &scope_domain::content::SourceBlob,
 ) -> Result<RepositoryLandingFileMutation, ApiError> {
     let Some((_, entry)) = pushed_entries
         .iter()
@@ -301,12 +254,7 @@ fn repository_landing_file_mutation(
         return Ok(RepositoryLandingFileMutation::Delete);
     }
 
-    let source = git_blob_reference(
-        git_manifest,
-        entry.oid.clone(),
-        entry.mode.clone(),
-        entry.size_bytes,
-    )?;
+    let source = git_blob_reference(entry.oid.clone(), entry.mode.clone(), entry.size_bytes);
     let output = run_git_output_bounded(
         Some(staging_repo),
         &["cat-file", "blob", &entry.oid],
@@ -328,7 +276,6 @@ fn capture_repository_workflow_catalog(
     repository_id: &str,
     head_oid: &str,
     change_version: u64,
-    git_manifest: &scope_domain::content::SourceBlob,
 ) -> Result<RepositoryWorkflowCatalog, ApiError> {
     let workflow_entries = git_tree_entries_under(staging_repo, head_oid, ".scope/runs")?;
     if workflow_entries.len() > MAX_REPOSITORY_WORKFLOW_FILES {
@@ -364,12 +311,7 @@ fn capture_repository_workflow_catalog(
             )
             .map_err(ApiError::internal);
         }
-        let source = git_blob_reference(
-            git_manifest,
-            entry.oid.clone(),
-            entry.mode,
-            entry.size_bytes,
-        )?;
+        let source = git_blob_reference(entry.oid.clone(), entry.mode, entry.size_bytes);
         let output = run_git_output_bounded(
             Some(staging_repo),
             &["cat-file", "blob", &entry.oid],
@@ -394,11 +336,7 @@ fn capture_repository_workflow_catalog(
 mod tests {
     use super::*;
     use crate::git::import::{run_git, run_git_output, validate_pushed_file_path};
-    use scope_domain::{
-        content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-        content_ref::ContentRef,
-        policy::ScopePath,
-    };
+    use scope_domain::{content::DEFAULT_GIT_FILE_MODE, policy::ScopePath};
     use std::{
         fs,
         path::PathBuf,
@@ -407,20 +345,15 @@ mod tests {
 
     #[test]
     fn landing_file_mutation_distinguishes_unchanged_delete_and_oversized() {
-        let manifest = git_manifest();
         assert_eq!(
-            repository_landing_file_mutation(FsPath::new("unused"), &[], &manifest).unwrap(),
+            repository_landing_file_mutation(FsPath::new("unused"), &[]).unwrap(),
             RepositoryLandingFileMutation::Unchanged
         );
 
         let path = ScopePath::parse(REPOSITORY_LANDING_FILE_PATH).unwrap();
         assert_eq!(
-            repository_landing_file_mutation(
-                FsPath::new("unused"),
-                &[(path.clone(), None)],
-                &manifest,
-            )
-            .unwrap(),
+            repository_landing_file_mutation(FsPath::new("unused"), &[(path.clone(), None)],)
+                .unwrap(),
             RepositoryLandingFileMutation::Delete
         );
 
@@ -431,12 +364,8 @@ mod tests {
             size_bytes: MAX_REPOSITORY_LANDING_FILE_BYTES + 1,
         };
         assert_eq!(
-            repository_landing_file_mutation(
-                FsPath::new("unused"),
-                &[(path, Some(oversized))],
-                &manifest,
-            )
-            .unwrap(),
+            repository_landing_file_mutation(FsPath::new("unused"), &[(path, Some(oversized))],)
+                .unwrap(),
             RepositoryLandingFileMutation::Delete
         );
     }
@@ -477,7 +406,6 @@ mod tests {
                 ScopePath::parse(REPOSITORY_LANDING_FILE_PATH).unwrap(),
                 Some(entry),
             )],
-            &git_manifest(),
         )
         .unwrap();
         let RepositoryLandingFileMutation::Upsert(file) = mutation else {
@@ -488,16 +416,6 @@ mod tests {
         assert_eq!(file.size_bytes, bytes.len() as u64);
 
         fs::remove_dir_all(repo).unwrap();
-    }
-
-    fn git_manifest() -> SourceBlob {
-        SourceBlob {
-            content_ref: ContentRef::git_manifest_sha256("manifest"),
-            sha256: "manifest".to_string(),
-            git_oid: "head".to_string(),
-            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            size_bytes: 1,
-        }
     }
 
     fn temp_repo_path(label: &str) -> PathBuf {

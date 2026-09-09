@@ -1,12 +1,56 @@
-use crate::content::SourceBlob;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitHead {
     pub head_oid: String,
     pub push_sequence: u64,
     pub change_version: u64,
-    pub manifest: SourceBlob,
+    pub frontier: GitFrontier,
+}
+
+/// Identity of a logical Git frontier, independent of pack layout and non-Git edits.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GitFrontier(String);
+
+impl GitFrontier {
+    pub fn from_digest(digest: String) -> Self {
+        Self(digest)
+    }
+
+    pub fn digest(&self) -> &str {
+        &self.0
+    }
+}
+
+impl GitHead {
+    pub fn new(head_oid: String, push_sequence: u64, change_version: u64) -> Self {
+        // This canonical encoding is also the signed push-intent and runtime
+        // source identity contract. Its bytes need no object-store artifact.
+        #[derive(Serialize)]
+        struct Identity<'a> {
+            version: u8,
+            head_oid: &'a str,
+            push_sequence: u64,
+        }
+        let bytes = serde_json::to_vec(&Identity {
+            version: 2,
+            head_oid: &head_oid,
+            push_sequence,
+        })
+        .expect("Git frontier fields always serialize");
+        Self {
+            head_oid,
+            push_sequence,
+            change_version,
+            frontier: GitFrontier(hex::encode(Sha256::digest(bytes))),
+        }
+    }
+
+    pub fn frontier(&self) -> GitFrontier {
+        self.frontier.clone()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,6 +232,41 @@ pub fn validate_git_pack_span_run(spans: &[GitPackSpan]) -> Result<(), GitPackLa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frontier_preserves_the_signed_identity_and_ignores_non_git_changes() {
+        let head = GitHead::new("a".repeat(40), 1, 7);
+        assert_eq!(
+            head.frontier.digest(),
+            "189efc3e1b3dd4adb49c858cdb3be61d3a0ebafe1d39fa3e9b8a1a9c7461e6e9"
+        );
+        assert_eq!(
+            head.frontier(),
+            GitHead::new("a".repeat(40), 1, 8).frontier()
+        );
+        assert_ne!(
+            head.frontier(),
+            GitHead::new("a".repeat(40), 2, 8).frontier()
+        );
+        assert_ne!(
+            head.frontier(),
+            GitHead::new("b".repeat(40), 1, 7).frontier()
+        );
+    }
+
+    #[test]
+    fn persisted_frontier_is_not_recomputed_when_loading_historic_heads() {
+        let stored = serde_json::json!({
+            "head_oid": "a".repeat(40),
+            "push_sequence": 1,
+            "change_version": 7,
+            "frontier": "b".repeat(64),
+        });
+        let head: GitHead = serde_json::from_value(stored.clone()).unwrap();
+        assert_eq!(head.frontier.digest(), "b".repeat(64));
+        assert_eq!(serde_json::to_value(head).unwrap(), stored);
+    }
+
     fn pack_span(first_sequence: u64, last_sequence: u64, geometric_tier: u32) -> GitPackSpan {
         GitPackSpan {
             first_sequence,

@@ -220,17 +220,14 @@ fn clerk_token_policy_cases() {
 #[tokio::test]
 async fn missing_clerk_identity_still_bootstraps_from_session_read() {
     let state = test_state_with_jwks();
-    let response = router(state.clone())
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/v1/session")
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = api_request(
+        router(state.clone()),
+        "GET",
+        "/v1/session",
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_json(response).await;
     assert_eq!(body["identity"]["user_id"], test_owner_id());

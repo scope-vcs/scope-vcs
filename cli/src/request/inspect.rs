@@ -1,4 +1,5 @@
 use super::*;
+use crate::api::ApiSession;
 use crate::{
     api::{RequestFileDiffParams, request_file_diff, request_revisions},
     git_repo::{
@@ -11,14 +12,11 @@ use text::terminal_text;
 
 pub(super) fn checkout_request(
     git_repo: &GitRepo,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: RequestCheckoutArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     ensure_clean_working_tree(git_repo, "scope request checkout")?;
-    let (context, request_id, detail) =
-        load_exact_request(Some(git_repo), client, api_url, session_token, args.target)?;
+    let (context, request_id, detail) = load_exact_request(Some(git_repo), api, args.target)?;
     if context.target.remote.is_empty() {
         return Err(crate::error::CliError::usage(
             "request checkout requires a configured Scope Git remote",
@@ -50,7 +48,7 @@ pub(super) fn checkout_request(
         &context.target.permissioned_url,
         &context.target.remote,
         &detail.request.name,
-        session_token,
+        api.token,
     )?;
     let fetched = scope_remote_head_oid(git_repo, &context.target.remote, &detail.request.name)?
         .context("request fetch did not produce a remote ref")?;
@@ -124,22 +122,17 @@ fn switch_request_branch(
 
 pub(super) fn diff_request(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: RequestDiffArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, _) =
-        load_exact_request(git_repo, client, api_url, session_token, args.target)?;
+    let (context, request_id, _) = load_exact_request(git_repo, api, args.target)?;
     let target = RequestTarget {
         owner: &context.target.owner,
         repo: &context.target.repo,
         request_id: &request_id,
     };
     let revisions = request_revisions(
-        client,
-        api_url,
-        session_token,
+        api,
         target,
         args.revision.as_deref(),
         args.commit.as_deref(),
@@ -186,9 +179,7 @@ pub(super) fn diff_request(
             if args.path.is_none() {
                 for changed in &commit.files {
                     let diff = request_file_diff(
-                        client,
-                        api_url,
-                        session_token,
+                        api,
                         RequestFileDiffParams {
                             target,
                             revision: &revision.id,
@@ -209,9 +200,7 @@ pub(super) fn diff_request(
         }
         if let (Some(commit), Some(path)) = (args.commit.as_deref(), args.path.as_deref()) {
             let diff = request_file_diff(
-                client,
-                api_url,
-                session_token,
+                api,
                 RequestFileDiffParams {
                     target,
                     revision: &revision.id,
@@ -242,13 +231,10 @@ pub(super) fn diff_request(
 
 pub(super) fn request_checks(
     git_repo: Option<&GitRepo>,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTargetArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, detail) =
-        load_exact_request(git_repo, client, api_url, session_token, target)?;
+    let (context, request_id, detail) = load_exact_request(git_repo, api, target)?;
     let workflow_runs_available = matches!(
         context.repo.access.actor,
         crate::api::RepositoryActor::Owner | crate::api::RepositoryActor::Member
@@ -258,9 +244,7 @@ pub(super) fn request_checks(
         let mut cursor = None;
         loop {
             let page = crate::api::run_history(
-                client,
-                api_url,
-                session_token,
+                api,
                 &context.target.owner,
                 &context.target.repo,
                 None,

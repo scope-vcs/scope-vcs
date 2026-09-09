@@ -46,14 +46,14 @@ fn history_change(
 }
 
 async fn history_get(state: AppState, uri: impl AsRef<str>, private: bool) -> Response {
-    let mut request = Request::builder().method("GET").uri(uri.as_ref());
-    if private {
-        request = request.header(AUTHORIZATION, bearer_header());
-    }
-    router(state)
-        .oneshot(request.body(Body::empty()).unwrap())
-        .await
-        .unwrap()
+    api_request(
+        router(state),
+        "GET",
+        uri.as_ref(),
+        private.then(bearer_header).as_deref(),
+        None,
+    )
+    .await
 }
 
 async fn first_history_source_id(state: AppState, audience: &str) -> String {

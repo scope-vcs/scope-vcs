@@ -10,14 +10,6 @@ export const repoFileResource = createCachedResource<RepoFileContent>({
   weightOf: approximateFileBytes,
 })
 
-export function readRepoFileCache(key: string) {
-  return repoFileResource.read(key) ?? null
-}
-
-export function writeRepoFileCache(key: string, file: RepoFileContent) {
-  repoFileResource.write(key, file)
-}
-
 export function repoFileCacheKey({
   audience,
   changeVersion,
@@ -30,15 +22,6 @@ export function repoFileCacheKey({
   repoId: string
 }) {
   return [repoId, changeVersion, audience, path.replace(/^\/+/, '')].join('\0')
-}
-
-export function resetRepoFileCache() {
-  repoFileResource.clear()
-}
-
-export function repoFileCacheStats() {
-  const stats = repoFileResource.stats()
-  return { entries: stats.entries, totalBytes: stats.totalWeight }
 }
 
 function approximateFileBytes(file: RepoFileContent) {

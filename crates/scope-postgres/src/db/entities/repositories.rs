@@ -288,9 +288,7 @@ pub mod git_head {
         pub head_oid: String,
         pub push_sequence: i64,
         pub change_version: i64,
-        pub manifest_object_key: String,
-        pub manifest_sha256: String,
-        pub manifest_size_bytes: i64,
+        pub frontier_digest: String,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -305,26 +303,18 @@ pub mod git_head {
                 head_oid: head.head_oid.clone(),
                 push_sequence: u64_to_i64(head.push_sequence, "Git push sequence")?,
                 change_version: u64_to_i64(head.change_version, "Git head change version")?,
-                manifest_object_key: serde_json::to_string(&head.manifest.content_ref)
-                    .map_err(PostgresError::internal)?,
-                manifest_sha256: head.manifest.sha256.clone(),
-                manifest_size_bytes: u64_to_i64(head.manifest.size_bytes, "Git manifest size")?,
+                frontier_digest: head.frontier.digest().to_string(),
             })
         }
 
         pub fn try_into_domain(self) -> Result<GitHead, PostgresError> {
             Ok(GitHead {
-                head_oid: self.head_oid.clone(),
+                head_oid: self.head_oid,
                 push_sequence: i64_to_u64(self.push_sequence, "Git push sequence")?,
                 change_version: i64_to_u64(self.change_version, "Git head change version")?,
-                manifest: SourceBlob {
-                    content_ref: serde_json::from_str(&self.manifest_object_key)
-                        .map_err(PostgresError::internal)?,
-                    sha256: self.manifest_sha256,
-                    git_oid: self.head_oid.clone(),
-                    git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-                    size_bytes: i64_to_u64(self.manifest_size_bytes, "Git manifest size")?,
-                },
+                frontier: scope_domain::repository::git::GitFrontier::from_digest(
+                    self.frontier_digest,
+                ),
             })
         }
     }

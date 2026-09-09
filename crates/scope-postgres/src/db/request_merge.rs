@@ -34,7 +34,7 @@ impl RequestStore {
         &self,
         owner: &str,
         name: &str,
-        expected_manifest_ref: &scope_domain::content_ref::ContentRef,
+        expected_git_frontier: &scope_domain::repository::git::GitFrontier,
         expected_repo_change_version: u64,
         expected_request_head_oid: &str,
         update: ReviewedUpdateInput,
@@ -87,7 +87,7 @@ impl RequestStore {
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::conflict("repo has no accepted Git head"))?
             .try_into_domain()?;
-        if &head.manifest.content_ref != expected_manifest_ref {
+        if &head.frontier() != expected_git_frontier {
             return Err(PostgresError::conflict(
                 "repo changed since merge was prepared; retry merge",
             ));
@@ -159,7 +159,7 @@ mod tests {
             .merge_request_content(
                 "owner",
                 "repo",
-                &prepared.expected_manifest_ref,
+                &prepared.expected_git_frontier,
                 prepared.expected_repo_change_version,
                 "head",
                 prepared.update,
@@ -209,7 +209,7 @@ mod tests {
             .merge_request_content(
                 "owner",
                 "repo",
-                &prepared.expected_manifest_ref,
+                &prepared.expected_git_frontier,
                 prepared.expected_repo_change_version,
                 "head",
                 prepared.update,
@@ -238,7 +238,7 @@ mod tests {
     }
 
     struct MergePreparation {
-        expected_manifest_ref: ContentRef,
+        expected_git_frontier: scope_domain::repository::git::GitFrontier,
         expected_repo_change_version: u64,
         update: ReviewedUpdateInput,
         workflow_catalog: RepositoryWorkflowCatalog,
@@ -303,7 +303,7 @@ mod tests {
         )
         .unwrap();
         MergePreparation {
-            expected_manifest_ref: repo.git_head.as_ref().unwrap().manifest.content_ref.clone(),
+            expected_git_frontier: repo.git_head.as_ref().unwrap().frontier(),
             expected_repo_change_version: repo.record.change_version,
             update,
             workflow_catalog,
@@ -339,8 +339,6 @@ mod tests {
         path: &str,
         content: SourceBlob,
     ) -> ReviewedUpdateInput {
-        let mut manifest = source_blob(&format!("manifest-{head_oid}"));
-        manifest.git_oid = head_oid.to_string();
         let segment = scope_domain::repository::git::GitSegmentRef {
             segment_id: format!("segment-{head_oid}"),
             sha256: "c".repeat(64),
@@ -352,12 +350,11 @@ mod tests {
             branch: "refs/heads/main".to_string(),
             author_id: "user_owner".to_string(),
             message: format!("update {head_oid}"),
-            git_head: GitHead {
-                head_oid: head_oid.to_string(),
-                push_sequence: sequence,
-                change_version: repo.record.change_version + 1,
-                manifest,
-            },
+            git_head: GitHead::new(
+                head_oid.to_string(),
+                sequence,
+                repo.record.change_version + 1,
+            ),
             git_pack_span: GitPackSpan {
                 first_sequence: sequence,
                 last_sequence: sequence,

@@ -1,4 +1,7 @@
-import { useRef, useState } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useRepoLayout } from '../repo-detail/repo-layout-context'
+import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { openRequestDiscussionReplies, requestDiscussionRepliesResource } from './request-discussion-replies-resource'
 import type {
   CreateReplyInput,
   LoadRepliesInput,
@@ -7,7 +10,6 @@ import type {
 import {
   acknowledgeReply,
   beforePositionForNextReplyPage,
-  createDiscussionRepliesState,
   hasLoadedAllUnreadContent,
   insertOptimisticReply,
   markReplyFailed,
@@ -52,14 +54,14 @@ export function useRequestDiscussionReplies({
   onPatch: (discussion: RequestDiscussion) => void
   params: { owner: string; repo: string; request_id: string }
 }) {
-  const [replyState, setReplyState] = useState(() =>
-    createDiscussionRepliesState(),
-  )
+  const { repo } = useRepoLayout()
+  const key = `${repoResourceScope(repo, actor.id)}\0${params.request_id}\0${discussion.id}`
+  const session = useMemo(() => openRequestDiscussionReplies(key), [key])
+  const subscribe = useCallback((listener: () => void) => requestDiscussionRepliesResource.subscribe(key, listener), [key])
+  const read = useCallback(() => requestDiscussionRepliesResource.peek(key) ?? session, [key, session])
+  const replyState = useSyncExternalStore(subscribe, read, () => session)
+  const setReplyState = session.update
   const [quoteId, setQuoteId] = useState<string | null>(null)
-  const targetLoadRef = useRef<{
-    promise: Promise<boolean>
-    replyId: string
-  } | null>(null)
 
   const availableReplies = mergeDiscussionReplies(
     replyState.replies,
@@ -108,24 +110,23 @@ export function useRequestDiscussionReplies({
   }
 
   function loadOlderReplies() {
-    if (!hasOlderReplies || loadingReplies) return
+    if (!hasOlderReplies || read().page.loading) return
     return loadReplyPage(
       beforePositionForNextReplyPage(
-        replyState,
+        read(),
         discussion.latest_replies,
       ),
     )
   }
 
   function loadReplyTarget(replyId: string): Promise<boolean> {
-    if (availableReplies.some((reply) => reply.id === replyId)) {
+    if (mergeDiscussionReplies(read().replies, discussion.latest_replies).some((reply) => reply.id === replyId)) {
       return Promise.resolve(true)
     }
-    if (targetLoadRef.current) {
-      if (targetLoadRef.current.replyId === replyId) {
-        return targetLoadRef.current.promise
-      }
-      return targetLoadRef.current.promise.then(() => loadReplyTarget(replyId))
+    const target = read().target
+    if (target) {
+      if (target.replyId === replyId) return target.promise
+      return target.promise.then(() => loadReplyTarget(replyId))
     }
 
     setReplyState((current) =>
@@ -156,11 +157,10 @@ export function useRequestDiscussionReplies({
         return false
       }
     })()
-    targetLoadRef.current = { promise: operation, replyId }
+    setReplyState((current) => ({ ...current, target: { promise: operation, replyId } }))
     void operation.finally(() => {
-      if (targetLoadRef.current?.promise === operation) {
-        targetLoadRef.current = null
-      }
+      setReplyState((current) => current.target?.promise === operation
+        ? { ...current, target: null } : current)
     })
     return operation
   }

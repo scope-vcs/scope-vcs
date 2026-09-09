@@ -14,24 +14,6 @@ const REPO_ID: &str = "workflow-owner/repo";
 const HEAD_OID: &str = "1111111111111111111111111111111111111111";
 const BLOB_OID: &str = "2222222222222222222222222222222222222222";
 
-async fn insert_legacy_repository(db: &DatabaseConnection) {
-    db.execute_unprepared(
-        "
-        INSERT INTO scope_users (id, handle, email, email_verified)
-        VALUES ('workflow-owner', 'workflow-owner', 'workflow@scope.test', TRUE);
-        INSERT INTO scope_repositories (
-            id, owner_handle, name, owner_user_id, publication_state,
-            change_version, repo_config, policy
-        ) VALUES (
-            'workflow-owner/repo', 'workflow-owner', 'repo', 'workflow-owner', 'Ready',
-            7, '{}'::jsonb, '{}'::jsonb
-        );
-        ",
-    )
-    .await
-    .unwrap();
-}
-
 async fn insert_repository(db: &DatabaseConnection) {
     db.execute_unprepared(
         "
@@ -65,10 +47,10 @@ async fn insert_captured_catalog(db: &DatabaseConnection) {
 #[tokio::test]
 async fn maintenance_reads_catalogs_from_the_canonical_pre_migration_schema() {
     let (target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(28))
+    migrations::Migrator::up(db.as_ref(), Some(1))
         .await
         .unwrap();
-    insert_legacy_repository(db.as_ref()).await;
+    insert_repository(db.as_ref()).await;
     let file = RepositoryWorkflowFile::from_content(
         "/.scope/runs/checks.yml",
         DEFAULT_GIT_FILE_MODE,
@@ -87,15 +69,12 @@ async fn maintenance_reads_catalogs_from_the_canonical_pre_migration_schema() {
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].repository_id(), REPO_ID);
     let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert_eq!(plan.pending[0].name, "m0029_exact_compatible_caches");
+    assert_eq!(plan.pending[0].name, "m0043_retire_git_manifests");
 }
 
 #[tokio::test]
-async fn maintenance_has_no_catalogs_to_read_before_the_catalog_migration() {
+async fn maintenance_has_no_catalogs_to_read_before_baseline_initialization() {
     let (target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(27))
-        .await
-        .unwrap();
 
     let catalogs = repository_workflow_catalogs_for_maintenance(target.schema_database_url())
         .await
@@ -378,13 +357,7 @@ async fn repository_workflow_catalog_backfill_rechecks_repository_and_live_blob_
             head_oid: HEAD_OID.to_string(),
             push_sequence: 1,
             change_version: 7,
-            manifest_object_key: serde_json::to_string(&ContentRef::git_manifest_sha256(
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            ))
-            .unwrap(),
-            manifest_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                .to_string(),
-            manifest_size_bytes: 1,
+            frontier_digest: "a".repeat(64),
         }
         .into_active_model(),
     )

@@ -2,18 +2,14 @@ use super::*;
 use scope_domain::repo_config::RepoConfigVisibilityRule;
 
 async fn post(state: AppState, uri: &str, authorization: String, body: String) -> Response {
-    router(state)
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(uri)
-                .header(AUTHORIZATION, authorization)
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap(),
-        )
-        .await
-        .unwrap()
+    api_request(
+        router(state),
+        "POST",
+        uri,
+        Some(&authorization),
+        Some(&body),
+    )
+    .await
 }
 
 async fn owner_post(state: AppState, uri: &str, body: String) -> Response {
@@ -176,16 +172,14 @@ async fn create_push_intent_applies_config_when_reviewed_head_is_current() {
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(stored_config(&state).await, config);
-    let history = router(state)
-        .oneshot(
-            Request::builder()
-                .uri("/v1/repos/owner/repo/history?feed=all&audience=private")
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let history = api_request(
+        router(state),
+        "GET",
+        "/v1/repos/owner/repo/history?feed=all&audience=private",
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(history.status(), StatusCode::OK);
     let history = response_json(history).await;
     let occurred_at = history["entries"][0]["occurred_at_unix"].as_u64().unwrap();
@@ -251,7 +245,6 @@ async fn incremental_git_pack_layout_restores_after_cache_loss() {
     )
     .await
     .unwrap();
-    let snapshot = update.git_head.manifest.clone();
     git_receive_use_case::main_push::persist_main_push(
         &state,
         TEST_REPO_OWNER,
@@ -263,15 +256,13 @@ async fn incremental_git_pack_layout_restores_after_cache_loss() {
     .await
     .unwrap();
 
-    let manifest_bytes =
-        scope_object_store::source_blob_bytes(state.object_store.as_ref(), &snapshot).unwrap();
-    let manifest = scope_git::GitSnapshotManifest::decode(&manifest_bytes).unwrap();
-    assert_eq!(manifest.head_oid, expected_head);
-    assert_eq!(manifest.push_sequence, first_snapshot.push_sequence + 1);
-
     let stored = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
+
+    let head = stored.git_head.as_ref().unwrap();
+    assert_eq!(head.head_oid, expected_head);
+    assert_eq!(head.push_sequence, first_snapshot.push_sequence + 1);
 
     let restored = TempGitRepo(std::env::temp_dir().join(format!(
         "scope-vcs-segment-restore-{}-{}",

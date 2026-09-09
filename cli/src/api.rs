@@ -38,6 +38,34 @@ pub struct AuthenticatedSession {
     pub user: UserResponse,
 }
 
+/// The transport and credentials for one authenticated CLI operation.
+#[derive(Clone, Copy)]
+pub struct ApiSession<'a> {
+    pub(crate) client: &'a Client,
+    pub(crate) base_url: &'a str,
+    pub(crate) token: &'a str,
+}
+
+impl<'a> ApiSession<'a> {
+    pub fn new(client: &'a Client, base_url: &'a str, token: &'a str) -> Self {
+        Self {
+            client,
+            base_url,
+            token,
+        }
+    }
+
+    fn request(
+        self,
+        method: reqwest::Method,
+        path: impl AsRef<str>,
+    ) -> reqwest::blocking::RequestBuilder {
+        self.client
+            .request(method, format!("{}{}", self.base_url, path.as_ref()))
+            .bearer_auth(self.token)
+    }
+}
+
 pub struct CreatePushIntentParams<'a> {
     pub owner: &'a str,
     pub repo: &'a str,
@@ -208,14 +236,9 @@ fn cli_identity_headers() -> HeaderMap {
     headers
 }
 
-pub fn validate_session_token(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
-) -> anyhow::Result<Option<UserResponse>> {
-    let response = client
-        .get(format!("{api_url}{ACCOUNT_SESSION_PATH}"))
-        .bearer_auth(session_token)
+pub fn validate_session_token(api: ApiSession<'_>) -> anyhow::Result<Option<UserResponse>> {
+    let response = api
+        .request(reqwest::Method::GET, ACCOUNT_SESSION_PATH)
         .send()
         .context("validate saved Scope login")?;
     if response.status() == StatusCode::UNAUTHORIZED {
@@ -229,27 +252,9 @@ pub fn validate_session_token(
     Ok(user)
 }
 
-pub fn account_session(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
-) -> anyhow::Result<AccountSessionResponse> {
-    let response = client
-        .get(format!("{api_url}{ACCOUNT_SESSION_PATH}"))
-        .bearer_auth(session_token)
-        .send()
-        .context("load Scope account")?;
-    decode_json_response(response, "load Scope account")
-}
-
-pub fn revoke_cli_session(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
-) -> anyhow::Result<()> {
-    let response = client
-        .delete(format!("{api_url}{CLI_SESSION_PATH}"))
-        .bearer_auth(session_token)
+pub fn revoke_cli_session(api: ApiSession<'_>) -> anyhow::Result<()> {
+    let response = api
+        .request(reqwest::Method::DELETE, CLI_SESSION_PATH)
         .send()
         .context("revoke Scope CLI session")?;
     if response.status() == StatusCode::UNAUTHORIZED {
@@ -260,19 +265,13 @@ pub fn revoke_cli_session(
     Ok(())
 }
 
-pub fn create_repo(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
-    name: String,
-) -> anyhow::Result<CreateRepoResponse> {
+pub fn create_repo(api: ApiSession<'_>, name: String) -> anyhow::Result<CreateRepoResponse> {
     let request = CreateRepoRequest {
         name,
         file_default_visibility: None,
     };
-    let response = client
-        .post(format!("{api_url}{}", scope_api_contract::routes::REPOS))
-        .bearer_auth(session_token)
+    let response = api
+        .request(reqwest::Method::POST, scope_api_contract::routes::REPOS)
         .json(&request)
         .send()
         .context("create Scope repository")?;
@@ -280,36 +279,30 @@ pub fn create_repo(
 }
 
 pub fn get_repo(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepoSummaryResponse> {
-    let response = client
-        .get(format!(
-            "{api_url}{}",
-            scope_api_contract::routes::repo(owner, repo)
-        ))
-        .bearer_auth(session_token)
+    let response = api
+        .request(
+            reqwest::Method::GET,
+            scope_api_contract::routes::repo(owner, repo),
+        )
         .send()
         .with_context(|| format!("load Scope repo {owner}/{repo}"))?;
     decode_json_response(response, &format!("load Scope repo {owner}/{repo}"))
 }
 
 pub fn get_repo_config(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepoConfigContext> {
-    let response = client
-        .get(format!(
-            "{api_url}{}",
-            scope_api_contract::routes::repo_config(owner, repo)
-        ))
-        .bearer_auth(session_token)
+    let response = api
+        .request(
+            reqwest::Method::GET,
+            scope_api_contract::routes::repo_config(owner, repo),
+        )
         .send()
         .with_context(|| format!("get repo config for {owner}/{repo}"))?;
     let response: RepoConfigResponse =
@@ -324,17 +317,14 @@ pub fn get_repo_config(
 }
 
 pub fn create_push_intent(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     params: CreatePushIntentParams<'_>,
 ) -> anyhow::Result<CreatePushIntentResponse> {
-    let response = client
-        .post(format!(
-            "{api_url}{}",
-            scope_api_contract::routes::repo_push_intents(params.owner, params.repo)
-        ))
-        .bearer_auth(session_token)
+    let response = api
+        .request(
+            reqwest::Method::POST,
+            scope_api_contract::routes::repo_push_intents(params.owner, params.repo),
+        )
         .json(&CreatePushIntentRequest {
             head_oid: params.head_oid.to_string(),
             base_config_hash: params.base_config_hash.to_string(),

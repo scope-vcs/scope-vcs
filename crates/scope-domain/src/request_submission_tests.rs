@@ -1,6 +1,5 @@
 use super::requests::*;
 use crate::content::{DEFAULT_GIT_FILE_MODE, SourceBlob};
-use std::collections::BTreeMap;
 
 #[test]
 fn author_submits_a_pushed_draft_exactly_once() {
@@ -25,7 +24,7 @@ fn submission_requires_the_author_and_a_pushed_snapshot() {
     assert!(submit_request(&pushed_draft(RequestActorRole::Member), input).is_err());
 
     let draft = start_request(
-        &mut BTreeMap::new(),
+        StartRequestFacts::default(),
         StartRequestInput {
             id: "request_1".to_string(),
             repo_id: "owner/repo".to_string(),
@@ -87,7 +86,7 @@ fn merge_input() -> MergeRequestInput {
 
 fn pushed_draft(role: RequestActorRole) -> Request {
     let mut request = start_request(
-        &mut BTreeMap::new(),
+        StartRequestFacts::default(),
         StartRequestInput {
             id: "request_1".to_string(),
             repo_id: "owner/repo".to_string(),

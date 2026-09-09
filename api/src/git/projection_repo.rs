@@ -482,7 +482,6 @@ pub(crate) fn verify_projection_materialization(
     state: &AppState,
     projection: &Projection,
     native_source_repo: &FsPath,
-    _git_manifest: &scope_domain::content::SourceBlob,
 ) -> Result<(), ApiError> {
     let cache_root = state.repository_engine.cache_root().to_path_buf();
     let attempt = PROJECTION_CACHE_ATTEMPT.fetch_add(1, Ordering::Relaxed);

@@ -1,13 +1,21 @@
 use super::{ObjectStore, ensure_object_size, object_too_large};
 use crate::ObjectStoreError;
+use aws_credential_types::Credentials;
+use aws_sigv4::{
+    http_request::{
+        PayloadChecksumKind, PercentEncodingMode, SignableBody, SignableRequest, SignatureLocation,
+        SigningSettings, UriPathNormalizationMode, sign,
+    },
+    sign::v4,
+};
+use aws_smithy_http::label::{EncodingStrategy, fmt_string};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use hmac::{Hmac, Mac};
 use reqwest::blocking::Client;
-use sha2::{Digest as _, Sha256};
-use std::{io::Read, time::Duration};
-use time::OffsetDateTime;
+use std::{
+    io::Read,
+    time::{Duration, SystemTime},
+};
 
-type HmacSha256 = Hmac<Sha256>;
 const S3_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const S3_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -46,12 +54,7 @@ impl S3ObjectStoreSettings {
 
 pub struct S3ObjectStore {
     client: Option<Client>,
-    endpoint: String,
-    bucket: String,
-    region: String,
-    access_key_id: String,
-    secret_access_key: String,
-    force_path_style: bool,
+    signer: S3Presigner,
     request_timeout: Duration,
 }
 
@@ -60,8 +63,7 @@ pub struct S3Presigner {
     endpoint: String,
     bucket: String,
     region: String,
-    access_key_id: String,
-    secret_access_key: String,
+    credentials: Credentials,
     force_path_style: bool,
 }
 
@@ -77,8 +79,13 @@ impl S3Presigner {
             endpoint: settings.endpoint.trim_end_matches('/').to_string(),
             bucket: settings.bucket.clone(),
             region: settings.region.clone(),
-            access_key_id: settings.access_key_id.clone(),
-            secret_access_key: settings.secret_access_key.clone(),
+            credentials: Credentials::new(
+                settings.access_key_id.clone(),
+                settings.secret_access_key.clone(),
+                None,
+                None,
+                "scope-object-store",
+            ),
             force_path_style: settings.force_path_style,
         }
     }
@@ -140,117 +147,100 @@ impl S3Presigner {
                 "invalid presigned object request",
             ));
         }
-        let now = OffsetDateTime::now_utc();
-        let amz_date = format!(
-            "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
-            now.year(),
-            u8::from(now.month()),
-            now.day(),
-            now.hour(),
-            now.minute(),
-            now.second()
-        );
-        let date_stamp = &amz_date[..8];
-        let base = if self.force_path_style {
-            format!("{}/{}/{}", self.endpoint, self.bucket, key)
-        } else {
-            let scheme_end = self
-                .endpoint
-                .find("://")
-                .map(|index| index + 3)
-                .unwrap_or(0);
-            let (scheme, host) = self.endpoint.split_at(scheme_end);
-            format!(
-                "{scheme}{}.{}/{}",
-                self.bucket,
-                host.trim_start_matches('/'),
-                key
-            )
-        };
-        let host = S3ObjectStore::request_host(&base)?;
-        let canonical_uri = if self.force_path_style {
-            format!("/{}/{}", self.bucket, key)
-        } else {
-            format!("/{key}")
-        };
-        let mut signed_headers = vec![("host", host.as_str())];
+        let mut request = http::Request::builder()
+            .method(method)
+            .uri(self.request_url(Some(key))?.as_str());
         for (name, value) in request_headers {
-            let normalized_name = name.trim();
-            if normalized_name.is_empty()
-                || normalized_name
-                    .bytes()
-                    .any(|byte| byte.is_ascii_uppercase())
-                || normalized_name == "host"
-                || value.trim() != *value
-                || value.contains(['\r', '\n'])
-            {
-                return Err(ObjectStoreError::internal_message(
-                    "invalid presigned object request header",
-                ));
-            }
-            signed_headers.push((normalized_name, *value));
+            request = request.header(*name, *value);
         }
-        signed_headers.sort_by_key(|(name, _)| *name);
-        if signed_headers.windows(2).any(|pair| pair[0].0 == pair[1].0) {
-            return Err(ObjectStoreError::internal_message(
-                "duplicate presigned object request header",
-            ));
+        self.sign_request(
+            request
+                .body(SignableBody::UnsignedPayload)
+                .map_err(ObjectStoreError::internal)?,
+            Some(Duration::from_secs(u64::from(expires_seconds))),
+            SystemTime::now(),
+        )
+    }
+
+    fn request_url(&self, key: Option<&str>) -> Result<reqwest::Url, ObjectStoreError> {
+        let mut url = reqwest::Url::parse(&self.endpoint).map_err(ObjectStoreError::internal)?;
+        if !self.force_path_style {
+            let host = url
+                .host_str()
+                .ok_or_else(|| ObjectStoreError::internal_message("invalid bucket endpoint"))?;
+            url.set_host(Some(&format!("{}.{}", self.bucket, host)))
+                .map_err(ObjectStoreError::internal)?;
         }
-        let signed_header_names = signed_headers
+        let mut path = url.path().trim_end_matches('/').to_string();
+        if self.force_path_style {
+            path.push('/');
+            path.push_str(&fmt_string(&self.bucket, EncodingStrategy::Default));
+        }
+        if let Some(key) = key {
+            path.push('/');
+            path.push_str(&fmt_string(key, EncodingStrategy::Greedy));
+        }
+        url.set_path(&path);
+        Ok(url)
+    }
+
+    fn sign_request(
+        &self,
+        mut request: http::Request<SignableBody<'_>>,
+        expires_in: Option<Duration>,
+        now: SystemTime,
+    ) -> Result<PresignedRequest, ObjectStoreError> {
+        // S3 signs the encoded object path as sent, without normalization or a second encoding.
+        let mut settings = SigningSettings::default();
+        settings.percent_encoding_mode = PercentEncodingMode::Single;
+        settings.uri_path_normalization_mode = UriPathNormalizationMode::Disabled;
+        settings.expires_in = expires_in;
+        if expires_in.is_some() {
+            settings.signature_location = SignatureLocation::QueryParams;
+        } else {
+            settings.payload_checksum_kind = PayloadChecksumKind::XAmzSha256;
+        }
+        let identity = self.credentials.clone().into();
+        let params = v4::SigningParams::builder()
+            .identity(&identity)
+            .region(&self.region)
+            .name("s3")
+            .time(now)
+            .settings(settings)
+            .build()
+            .map_err(ObjectStoreError::internal)?
+            .into();
+        let headers = request
+            .headers()
             .iter()
-            .map(|(name, _)| *name)
-            .collect::<Vec<_>>()
-            .join(";");
-        let canonical_headers = signed_headers
-            .iter()
-            .map(|(name, value)| format!("{name}:{value}\n"))
-            .collect::<String>();
-        let credential_scope = format!("{date_stamp}/{}/s3/aws4_request", self.region);
-        let mut query = [
-            ("X-Amz-Algorithm", "AWS4-HMAC-SHA256".to_string()),
-            (
-                "X-Amz-Credential",
-                format!("{}/{}", self.access_key_id, credential_scope),
-            ),
-            ("X-Amz-Date", amz_date.clone()),
-            ("X-Amz-Expires", expires_seconds.to_string()),
-            ("X-Amz-SignedHeaders", signed_header_names.clone()),
-        ];
-        query.sort_by_key(|(name, _)| *name);
-        let canonical_query = query
-            .iter()
-            .map(|(name, value)| format!("{}={}", aws_encode(name), aws_encode(value)))
-            .collect::<Vec<_>>()
-            .join("&");
-        let canonical_request = format!(
-            "{method}\n{canonical_uri}\n{canonical_query}\n{canonical_headers}\n{signed_header_names}\nUNSIGNED-PAYLOAD"
-        );
-        let string_to_sign = format!(
-            "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{}",
-            hex::encode(Sha256::digest(canonical_request.as_bytes()))
-        );
-        let signing_key = signing_key(&self.secret_access_key, date_stamp, &self.region)?;
-        let signature = hex::encode(hmac_sha256(&signing_key, string_to_sign.as_bytes())?);
+            .map(|(name, value)| value.to_str().map(|value| (name.as_str(), value)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(ObjectStoreError::internal)?;
+        let signable = SignableRequest::new(
+            request.method().as_str(),
+            request.uri().to_string(),
+            headers.into_iter(),
+            request.body().clone(),
+        )
+        .map_err(ObjectStoreError::internal)?;
+        let (instructions, _) = sign(signable, &params)
+            .map_err(ObjectStoreError::internal)?
+            .into_parts();
+        instructions.apply_to_request_http1x(&mut request);
         Ok(PresignedRequest {
-            url: format!("{base}?{canonical_query}&X-Amz-Signature={signature}"),
-            headers: request_headers
+            url: request.uri().to_string(),
+            headers: request
+                .headers()
                 .iter()
-                .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
-                .collect(),
+                .map(|(name, value)| {
+                    value
+                        .to_str()
+                        .map(|value| (name.to_string(), value.to_string()))
+                })
+                .collect::<Result<_, _>>()
+                .map_err(ObjectStoreError::internal)?,
         })
     }
-}
-
-fn aws_encode(value: &str) -> String {
-    let mut encoded = String::new();
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            encoded.push(char::from(byte));
-        } else {
-            encoded.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    encoded
 }
 
 impl S3ObjectStore {
@@ -264,165 +254,43 @@ impl S3ObjectStore {
                         ObjectStoreError::internal(format!("building object store client: {error}"))
                     })?,
             ),
-            endpoint: settings.endpoint.trim_end_matches("/").to_string(),
-            bucket: settings.bucket,
-            region: settings.region,
-            access_key_id: settings.access_key_id,
-            secret_access_key: settings.secret_access_key,
-            force_path_style: settings.force_path_style,
+            signer: S3Presigner::new(&settings),
             request_timeout: settings.request_timeout,
         })
-    }
-
-    fn bucket_url(&self) -> String {
-        if self.force_path_style {
-            format!("{}/{}", self.endpoint, self.bucket)
-        } else {
-            let scheme_end = self
-                .endpoint
-                .find("://")
-                .map(|index| index + 3)
-                .unwrap_or(0);
-            let (scheme, host) = self.endpoint.split_at(scheme_end);
-            format!("{scheme}{}.{}", self.bucket, host.trim_start_matches('/'))
-        }
-    }
-
-    fn request_url(&self, key: &str) -> String {
-        if self.force_path_style {
-            format!("{}/{}/{}", self.endpoint, self.bucket, key)
-        } else {
-            let scheme_end = self
-                .endpoint
-                .find("://")
-                .map(|index| index + 3)
-                .unwrap_or(0);
-            let (scheme, host) = self.endpoint.split_at(scheme_end);
-            format!("{scheme}{}.{}", self.bucket, host.trim_start_matches('/')) + "/" + key
-        }
-    }
-
-    fn bucket_canonical_uri(&self) -> String {
-        if self.force_path_style {
-            format!("/{}", self.bucket)
-        } else {
-            "/".to_string()
-        }
-    }
-
-    fn canonical_uri(&self, key: &str) -> String {
-        if self.force_path_style {
-            format!("/{}/{}", self.bucket, key)
-        } else {
-            format!("/{key}")
-        }
-    }
-
-    fn signed_headers(
-        &self,
-        method: &str,
-        canonical_uri: &str,
-        host: &str,
-        payload: &[u8],
-    ) -> Result<Vec<(String, String)>, ObjectStoreError> {
-        let now = OffsetDateTime::now_utc();
-        let amz_date = format!(
-            "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
-            now.year(),
-            u8::from(now.month()),
-            now.day(),
-            now.hour(),
-            now.minute(),
-            now.second()
-        );
-        let date_stamp = &amz_date[..8];
-        let payload_hash = hex::encode(Sha256::digest(payload));
-        let canonical_headers =
-            format!("host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n");
-        let signed_headers = "host;x-amz-content-sha256;x-amz-date";
-        let canonical_request = format!(
-            "{method}\n{canonical_uri}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
-        );
-        let credential_scope = format!("{date_stamp}/{}/s3/aws4_request", self.region);
-        let string_to_sign = format!(
-            "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{}",
-            hex::encode(Sha256::digest(canonical_request.as_bytes()))
-        );
-        let signing_key = signing_key(&self.secret_access_key, date_stamp, &self.region)?;
-        let signature = hex::encode(hmac_sha256(&signing_key, string_to_sign.as_bytes())?);
-        let authorization = format!(
-            "AWS4-HMAC-SHA256 Credential={}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}",
-            self.access_key_id
-        );
-
-        Ok(vec![
-            ("authorization".to_string(), authorization),
-            ("host".to_string(), host.to_string()),
-            ("x-amz-content-sha256".to_string(), payload_hash),
-            ("x-amz-date".to_string(), amz_date),
-        ])
-    }
-
-    fn request_host(url: &str) -> Result<String, ObjectStoreError> {
-        let url = reqwest::Url::parse(url).map_err(ObjectStoreError::internal)?;
-        let host = url
-            .host_str()
-            .ok_or_else(|| ObjectStoreError::internal_message("invalid bucket endpoint"))?;
-        Ok(match url.port() {
-            Some(port) => format!("{host}:{port}"),
-            None => host.to_string(),
-        })
-    }
-
-    fn send_bucket(&self, method: &str, payload: Vec<u8>) -> Result<Vec<u8>, ObjectStoreError> {
-        let url = self.bucket_url();
-        let host = Self::request_host(&url)?;
-        let canonical_uri = self.bucket_canonical_uri();
-        let client = self.client.as_ref().ok_or_else(|| {
-            ObjectStoreError::internal_message("object store client is shut down")
-        })?;
-        let mut request = match method {
-            "HEAD" => client.head(&url).timeout(self.request_timeout),
-            _ => {
-                return Err(ObjectStoreError::internal_message(
-                    "unsupported object store method",
-                ));
-            }
-        };
-        for (name, value) in self.signed_headers(method, &canonical_uri, &host, &payload)? {
-            request = request.header(name, value);
-        }
-        send_blocking_request(method, "bucket", request, None)
     }
 
     fn send(
         &self,
         method: &str,
-        key: &str,
+        key: Option<&str>,
         payload: Vec<u8>,
         max_bytes: Option<usize>,
     ) -> Result<Vec<u8>, ObjectStoreError> {
-        let url = self.request_url(key);
-        let host = Self::request_host(&url)?;
-        let canonical_uri = self.canonical_uri(key);
+        let signed = self.signer.sign_request(
+            http::Request::builder()
+                .method(method)
+                .uri(self.signer.request_url(key)?.as_str())
+                .body(SignableBody::Bytes(&payload))
+                .map_err(ObjectStoreError::internal)?,
+            None,
+            SystemTime::now(),
+        )?;
         let client = self.client.as_ref().ok_or_else(|| {
             ObjectStoreError::internal_message("object store client is shut down")
         })?;
-        let headers = self.signed_headers(method, &canonical_uri, &host, &payload)?;
-        let mut request = match method {
-            "GET" => client.get(&url).timeout(self.request_timeout),
-            "PUT" => client.put(&url).timeout(self.request_timeout).body(payload),
-            "DELETE" => client.delete(&url).timeout(self.request_timeout),
-            _ => {
-                return Err(ObjectStoreError::internal_message(
-                    "unsupported object store method",
-                ));
-            }
-        };
-        for (name, value) in headers {
+        let mut request = client
+            .request(
+                method.parse().map_err(ObjectStoreError::internal)?,
+                &signed.url,
+            )
+            .timeout(self.request_timeout);
+        if method == "PUT" {
+            request = request.body(payload);
+        }
+        for (name, value) in signed.headers {
             request = request.header(name, value);
         }
-        send_blocking_request(method, key, request, max_bytes)
+        send_blocking_request(method, key.unwrap_or("bucket"), request, max_bytes)
     }
 }
 
@@ -495,37 +363,24 @@ impl Drop for S3ObjectStore {
 
 impl ObjectStore for S3ObjectStore {
     fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
-        self.send("PUT", key, bytes, None).map(|_| ())
+        self.send("PUT", Some(key), bytes, None).map(|_| ())
     }
 
     fn get(&self, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
-        self.send("GET", key, Vec::new(), None)
+        self.send("GET", Some(key), Vec::new(), None)
     }
 
     fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
-        self.send("GET", key, Vec::new(), Some(max_bytes))
+        self.send("GET", Some(key), Vec::new(), Some(max_bytes))
     }
 
     fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
-        self.send("DELETE", key, Vec::new(), None).map(|_| ())
+        self.send("DELETE", Some(key), Vec::new(), None).map(|_| ())
     }
 
     fn readiness_check(&self) -> Result<(), ObjectStoreError> {
-        self.send_bucket("HEAD", Vec::new()).map(|_| ())
+        self.send("HEAD", None, Vec::new(), None).map(|_| ())
     }
-}
-
-fn signing_key(secret: &str, date: &str, region: &str) -> Result<Vec<u8>, ObjectStoreError> {
-    let date_key = hmac_sha256(format!("AWS4{secret}").as_bytes(), date.as_bytes())?;
-    let region_key = hmac_sha256(&date_key, region.as_bytes())?;
-    let service_key = hmac_sha256(&region_key, b"s3")?;
-    hmac_sha256(&service_key, b"aws4_request")
-}
-
-fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<Vec<u8>, ObjectStoreError> {
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(key).map_err(ObjectStoreError::internal)?;
-    mac.update(data);
-    Ok(mac.finalize().into_bytes().to_vec())
 }
 
 #[cfg(test)]
@@ -590,15 +445,6 @@ mod tests {
         assert_eq!(request.method, "GET");
         assert_eq!(request.path, "/scope-bucket/objects/too-large");
         assert_signed_s3_headers(&request);
-    }
-
-    #[test]
-    fn request_host_excludes_query_strings_from_virtual_host_bucket_urls() {
-        assert_eq!(
-            S3ObjectStore::request_host("https://scope-bucket.storage.example?list-type=2")
-                .unwrap(),
-            "scope-bucket.storage.example"
-        );
     }
 
     #[test]
@@ -687,23 +533,156 @@ mod tests {
         );
     }
 
-    fn test_s3_store(endpoint: &str) -> S3ObjectStore {
-        S3ObjectStore {
-            client: Some(
-                Client::builder()
-                    .connect_timeout(Duration::from_secs(1))
-                    .timeout(Duration::from_secs(1))
-                    .build()
-                    .unwrap(),
-            ),
-            endpoint: endpoint.to_string(),
-            bucket: "scope-bucket".to_string(),
-            region: "us-test-1".to_string(),
-            access_key_id: "test-access".to_string(),
-            secret_access_key: "test-secret".to_string(),
-            force_path_style: true,
-            request_timeout: Duration::from_secs(1),
+    #[test]
+    fn addressing_preserves_endpoint_prefix_port_and_encoded_object_key() {
+        let mut settings = S3ObjectStoreSettings::new(
+            "https://storage.example:9443/base/".into(),
+            "scope-bucket".into(),
+            "us-test-1".into(),
+            "test-access".into(),
+            "test-secret".into(),
+        );
+        for (path_style, expected) in [
+            (false, "https://scope-bucket.storage.example:9443/base"),
+            (true, "https://storage.example:9443/base/scope-bucket"),
+        ] {
+            settings.force_path_style = path_style;
+            let signer = S3Presigner::new(&settings);
+            assert_eq!(signer.request_url(None).unwrap().as_str(), expected);
+            assert_eq!(
+                signer
+                    .request_url(Some("objects/a b+c?#%//tail"))
+                    .unwrap()
+                    .as_str(),
+                format!("{expected}/objects/a%20b%2Bc%3F%23%25//tail"),
+            );
         }
+    }
+
+    #[test]
+    fn signatures_match_fixed_vectors_and_bind_every_upload_constraint() {
+        let mut settings = S3ObjectStoreSettings::new(
+            "https://storage.example:9443/base".into(),
+            "scope-bucket".into(),
+            "us-test-1".into(),
+            "test-access".into(),
+            "test-secret".into(),
+        );
+        settings.force_path_style = true;
+        let signer = S3Presigner::new(&settings);
+        let key = "objects/a b+c?#%";
+        let uri = signer.request_url(Some(key)).unwrap();
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let request = http::Request::builder()
+            .method("PUT")
+            .uri(uri.as_str())
+            .body(SignableBody::Bytes(b"stored payload"))
+            .unwrap();
+        let signed = signer.sign_request(request, None, now).unwrap();
+        let authorization = signed
+            .headers
+            .iter()
+            .find(|(name, _)| name == "authorization")
+            .unwrap();
+        // Fixed vectors calculated independently from the SigV4 canonical request and HMAC steps.
+        assert!(authorization.1.ends_with(
+            "Signature=bfe226c6525f3f73884f949f113f4e110e00d5aa240f9b7744e82b32b8dcbba0"
+        ));
+        let upload = signer
+            .presign_checksum_bound_put(key, 900, &"a".repeat(64), 42)
+            .unwrap();
+        let presign = |headers: &[(String, String)]| {
+            let mut request = http::Request::builder().method("PUT").uri(uri.as_str());
+            for (name, value) in headers {
+                request = request.header(name, value);
+            }
+            signer
+                .sign_request(
+                    request.body(SignableBody::UnsignedPayload).unwrap(),
+                    Some(Duration::from_secs(900)),
+                    now,
+                )
+                .unwrap()
+                .url
+        };
+        let original = presign(&upload.headers);
+        assert!(original.ends_with(
+            "X-Amz-Signature=33a1381bcaa13ea9cbee2997ae08046c25dda313590c2353c4d6d5a87dd45bad"
+        ));
+        for index in 0..upload.headers.len() {
+            let mut changed = upload.headers.clone();
+            changed[index].1.push('0');
+            assert_ne!(
+                presign(&changed),
+                original,
+                "{} must be signed",
+                changed[index].0
+            );
+        }
+    }
+
+    #[test]
+    fn bounded_get_limits_chunked_responses_without_content_length() {
+        let server = TestS3Server::start_wire_responses(vec![
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nlarge\r\n0\r\n\r\n".to_vec(),
+        ]);
+        let error = test_s3_store(&server.endpoint)
+            .get_bounded("object", 4)
+            .unwrap_err();
+        assert_eq!(error.kind, crate::ObjectStoreErrorKind::PayloadTooLarge);
+    }
+
+    #[test]
+    fn request_timeout_covers_stalled_response_body() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            read_request(&mut stream);
+            use std::io::Write as _;
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n")
+                .unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            // Keep the advertised byte pending until the client closes the timed-out request.
+            let _ = stream.read(&mut [0]);
+        });
+        let mut store = test_s3_store(&endpoint);
+        store.request_timeout = Duration::from_millis(50);
+        let started = std::time::Instant::now();
+        let error = store.get("stalled").unwrap_err();
+        assert_eq!(error.kind, crate::ObjectStoreErrorKind::Internal);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn s3_http_errors_preserve_service_unavailable_classification() {
+        for status in ["404 Not Found", "403 Forbidden", "503 Service Unavailable"] {
+            let server = TestS3Server::start_wire_responses(vec![
+                format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    .into_bytes(),
+            ]);
+            let error = test_s3_store(&server.endpoint).get("missing").unwrap_err();
+            assert_eq!(error.kind, crate::ObjectStoreErrorKind::ServiceUnavailable);
+            assert!(error.message.contains(status));
+        }
+    }
+
+    fn test_s3_store(endpoint: &str) -> S3ObjectStore {
+        let mut settings = S3ObjectStoreSettings::new(
+            endpoint.to_string(),
+            "scope-bucket".to_string(),
+            "us-test-1".to_string(),
+            "test-access".to_string(),
+            "test-secret".to_string(),
+        );
+        settings.force_path_style = true;
+        settings.connect_timeout = Duration::from_secs(1);
+        settings.request_timeout = Duration::from_secs(1);
+        S3ObjectStore::new(settings).unwrap()
     }
 
     fn assert_signed_s3_headers(request: &CapturedRequest) {
@@ -734,24 +713,29 @@ mod tests {
 
     impl TestS3Server {
         fn start(responses: Vec<(Vec<u8>, Option<usize>)>) -> Self {
+            Self::start_wire_responses(responses.into_iter().map(|(body, declared_length)| {
+                let content_length = declared_length.unwrap_or(body.len());
+                let mut response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {content_length}\r\nConnection: close\r\n\r\n"
+                ).into_bytes();
+                response.extend(body);
+                response
+            }).collect())
+        }
+
+        fn start_wire_responses(responses: Vec<Vec<u8>>) -> Self {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let addr = listener.local_addr().unwrap();
             let host = format!("127.0.0.1:{}", addr.port());
             let endpoint = format!("http://{host}");
             let (sender, requests) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
-                for (body, declared_length) in responses {
+                for response in responses {
                     let (mut stream, _) = listener.accept().unwrap();
                     let request = read_request(&mut stream);
                     sender.send(request).unwrap();
-                    let content_length = declared_length.unwrap_or(body.len());
-                    let headers = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        content_length
-                    );
                     use std::io::Write as _;
-                    stream.write_all(headers.as_bytes()).unwrap();
-                    stream.write_all(&body).unwrap();
+                    stream.write_all(&response).unwrap();
                 }
             });
             Self {

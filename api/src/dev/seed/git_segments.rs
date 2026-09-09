@@ -2,7 +2,6 @@ use crate::error::ApiError;
 use scope_domain::repository::git::{
     GitHead, GitPackSpan, GitSegmentUpload, GitSegmentUploadState,
 };
-use scope_object_store::ObjectStore;
 use std::{
     io::Write,
     path::Path,
@@ -10,7 +9,6 @@ use std::{
 };
 
 pub(super) fn store_seed_git_pack(
-    object_store: &dyn ObjectStore,
     git_segment_store: &scope_git_storage::GitSegmentStore,
     repository_id: &str,
     repo_path: &Path,
@@ -61,8 +59,7 @@ pub(super) fn store_seed_git_pack(
         head_oid,
         None,
         crate::config::default_git_storage_limits(),
-    )?
-    .store_manifest(object_store)?;
+    )?;
     let upload = GitSegmentUpload {
         segment_id: staged.segment.segment_id.clone(),
         repository_id,

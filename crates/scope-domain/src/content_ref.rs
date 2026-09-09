@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 pub enum ContentRef {
     BlobSha256(String),
     GitBundleSha256(String),
+    /// Retired artifact identity, retained only to drain migration cleanup jobs.
     GitManifestSha256(String),
-    GitBlob { git_oid: String },
+    GitBlob {
+        git_oid: String,
+    },
 }
 
 impl ContentRef {
@@ -19,10 +22,6 @@ impl ContentRef {
 
     pub fn git_bundle_sha256(sha256: impl Into<String>) -> Self {
         Self::GitBundleSha256(sha256.into())
-    }
-
-    pub fn git_manifest_sha256(sha256: impl Into<String>) -> Self {
-        Self::GitManifestSha256(sha256.into())
     }
 
     pub fn git_blob(git_oid: impl Into<String>) -> Self {

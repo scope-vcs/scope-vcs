@@ -1,11 +1,18 @@
 use super::{
     PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request, RequestActorRole,
     RequestAudience, RequestEvent, RequestEventKind, RequestEventPayload, RequestRevision,
-    RequestState, advance_request_activity, ensure_event_id_available, request_identity_audit_fact,
-    validate_body_size, validate_required_id,
+    RequestState, advance_request_activity, ensure_event_id_available, ensure_request_matches,
+    request_identity_audit_fact, validate_body_size, validate_required_id,
 };
 use crate::{content::SourceBlob, error::DomainError};
-use std::collections::BTreeMap;
+
+/// Existing identities and public drafts for the requested repository and author.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StartRequestFacts {
+    pub request_id_exists: bool,
+    pub request_name_exists: bool,
+    pub public_working_request_count: usize,
+}
 
 #[derive(Clone, Debug)]
 pub struct StartRequestInput {
@@ -90,25 +97,18 @@ pub enum CloseRequestMutation {
 }
 
 pub fn start_request(
-    requests: &mut BTreeMap<String, Request>,
+    facts: StartRequestFacts,
     input: StartRequestInput,
 ) -> Result<StartRequestMutation, DomainError> {
     validate_start_request_input(&input)?;
-    if requests.contains_key(&input.id) {
+    if facts.request_id_exists {
         return Err(DomainError::conflict("request already exists"));
     }
-    ensure_request_name_available(requests, &input.repo_id, &input.name)?;
+    if facts.request_name_exists {
+        return Err(DomainError::conflict("request name already exists"));
+    }
     if input.author_role == RequestActorRole::Public
-        && requests
-            .values()
-            .filter(|request| {
-                request.repo_id == input.repo_id
-                    && request.author_user_id == input.author_user_id
-                    && request.author_role == RequestActorRole::Public
-                    && request.state() == RequestState::Draft
-            })
-            .count()
-            >= PUBLIC_WORKING_REQUEST_LIMIT
+        && facts.public_working_request_count >= PUBLIC_WORKING_REQUEST_LIMIT
     {
         return Err(DomainError::conflict(format!(
             "public contributors cannot have more than {PUBLIC_WORKING_REQUEST_LIMIT} Working requests per repository"
@@ -150,20 +150,17 @@ pub fn start_request(
         },
         created_at_unix: input.now_unix,
     };
-    requests.insert(request.id.clone(), request.clone());
     Ok(StartRequestMutation { request, event })
 }
 
 pub fn record_working_request_upload(
-    requests: &mut BTreeMap<String, Request>,
+    mut request: Request,
     input: RecordWorkingRequestUploadInput,
 ) -> Result<WorkingRequestUploadMutation, DomainError> {
     validate_required_id("request id", &input.request_id)?;
     validate_required_id("actor user id", &input.actor_user_id)?;
     validate_required_id("head oid", &input.new_head_oid)?;
-    let request = requests
-        .get_mut(&input.request_id)
-        .ok_or_else(|| DomainError::not_found("request not found"))?;
+    ensure_request_matches(&request, &input.request_id)?;
     if !input.actor_can_edit {
         return Err(DomainError::forbidden(
             "request branch edit access required",
@@ -172,31 +169,29 @@ pub fn record_working_request_upload(
     if request.is_terminal() {
         return Err(DomainError::conflict("request is closed"));
     }
-    validate_expected_head(request, input.expected_old_head_oid.as_deref())?;
+    validate_expected_head(&request, input.expected_old_head_oid.as_deref())?;
     validate_snapshot_head(&input.git_snapshot, &input.new_head_oid)?;
     let old_git_snapshot = request.git_snapshot.replace(input.git_snapshot);
     request.head_oid = input.new_head_oid;
     request.updated_at_unix = input.now_unix;
     request.validate_facts()?;
     Ok(WorkingRequestUploadMutation {
-        request: request.clone(),
+        request,
         orphan_objects: old_git_snapshot.into_iter().collect(),
     })
 }
 
 pub fn record_request_revision(
-    requests: &mut BTreeMap<String, Request>,
-    events: &mut BTreeMap<String, RequestEvent>,
+    mut request: Request,
+    event_id_exists: bool,
     input: RecordRequestRevisionInput,
 ) -> Result<RequestRevisionMutation, DomainError> {
     validate_required_id("request id", &input.request_id)?;
     validate_required_id("actor user id", &input.actor_user_id)?;
     validate_required_id("head oid", &input.new_head_oid)?;
     validate_required_id("event id", &input.event_id)?;
-    ensure_event_id_available(events, &input.event_id)?;
-    let request = requests
-        .get_mut(&input.request_id)
-        .ok_or_else(|| DomainError::not_found("request not found"))?;
+    ensure_event_id_available(event_id_exists)?;
+    ensure_request_matches(&request, &input.request_id)?;
     if !input.actor_can_edit {
         return Err(DomainError::forbidden(
             "request branch edit access required",
@@ -207,15 +202,14 @@ pub fn record_request_revision(
             "closed requests cannot receive new revisions",
         ));
     }
-    validate_expected_head(request, input.expected_old_head_oid.as_deref())?;
+    validate_expected_head(&request, input.expected_old_head_oid.as_deref())?;
     validate_snapshot_head(&input.git_snapshot, &input.new_head_oid)?;
     let old_head_oid = request.head_oid.clone();
     request.head_oid = input.new_head_oid.clone();
     let old_git_snapshot = request.git_snapshot.replace(input.git_snapshot.clone());
     request.updated_at_unix = input.now_unix;
-    let position = advance_request_activity(request)?;
+    let position = advance_request_activity(&mut request)?;
     request.validate_facts()?;
-    let request = request.clone();
     let event = RequestEvent {
         id: input.event_id,
         request_id: request.id.clone(),
@@ -230,7 +224,6 @@ pub fn record_request_revision(
         created_at_unix: input.now_unix,
     };
     let revision = super::revisions::revision(&request, &event, old_head_oid, input.new_head_oid)?;
-    events.insert(event.id.clone(), event.clone());
     Ok(RequestRevisionMutation {
         request,
         event,
@@ -240,17 +233,15 @@ pub fn record_request_revision(
 }
 
 pub fn close_request(
-    requests: &mut BTreeMap<String, Request>,
-    events: &mut BTreeMap<String, RequestEvent>,
-    revisions: &mut BTreeMap<String, RequestRevision>,
+    mut request: Request,
+    events: Vec<RequestEvent>,
+    revisions: Vec<RequestRevision>,
     input: CloseRequestInput,
 ) -> Result<CloseRequestMutation, DomainError> {
     validate_required_id("request id", &input.request_id)?;
     validate_required_id("actor user id", &input.actor_user_id)?;
     validate_required_id("event id", &input.event_id)?;
-    let request = requests
-        .get(&input.request_id)
-        .ok_or_else(|| DomainError::not_found("request not found"))?;
+    ensure_request_matches(&request, &input.request_id)?;
     match request.state() {
         RequestState::Draft
             if !input.actor_is_author || request.author_user_id != input.actor_user_id =>
@@ -270,27 +261,16 @@ pub fn close_request(
         RequestState::Draft | RequestState::Open => {}
     }
     if !request.is_submitted() {
-        let request = requests
-            .remove(&input.request_id)
-            .ok_or_else(|| DomainError::not_found("request not found"))?;
-        let event_ids = events
-            .values()
+        let mut removed_events = events
+            .into_iter()
             .filter(|event| event.request_id == request.id)
-            .map(|event| event.id.clone())
             .collect::<Vec<_>>();
-        let removed_events = event_ids
+        removed_events.sort_by(|left, right| left.id.cmp(&right.id));
+        let mut removed_revisions = revisions
             .into_iter()
-            .filter_map(|event_id| events.remove(&event_id))
-            .collect::<Vec<_>>();
-        let revision_ids = revisions
-            .values()
             .filter(|revision| revision.request_id == request.id)
-            .map(|revision| revision.id.clone())
             .collect::<Vec<_>>();
-        let removed_revisions = revision_ids
-            .into_iter()
-            .filter_map(|revision_id| revisions.remove(&revision_id))
-            .collect::<Vec<_>>();
+        removed_revisions.sort_by(|left, right| left.id.cmp(&right.id));
         let mut orphan_objects = request
             .git_snapshot
             .clone()
@@ -310,16 +290,12 @@ pub fn close_request(
             orphan_objects,
         });
     }
-    ensure_event_id_available(events, &input.event_id)?;
-    let request = requests
-        .get_mut(&input.request_id)
-        .ok_or_else(|| DomainError::not_found("request not found"))?;
+    ensure_event_id_available(events.iter().any(|event| event.id == input.event_id))?;
     request.closed_at_unix = Some(input.now_unix);
     request.closed_by_user_id = Some(input.actor_user_id.clone());
     request.updated_at_unix = input.now_unix;
-    let position = advance_request_activity(request)?;
+    let position = advance_request_activity(&mut request)?;
     request.validate_facts()?;
-    let request = request.clone();
     let event = RequestEvent {
         id: input.event_id,
         request_id: request.id.clone(),
@@ -331,7 +307,6 @@ pub fn close_request(
         },
         created_at_unix: input.now_unix,
     };
-    events.insert(event.id.clone(), event.clone());
     Ok(CloseRequestMutation::Closed { request, event })
 }
 
@@ -373,21 +348,6 @@ fn validate_snapshot_head(snapshot: &SourceBlob, head_oid: &str) -> Result<(), D
         Err(DomainError::conflict(
             "request revision snapshot does not match the new head",
         ))
-    }
-}
-
-fn ensure_request_name_available(
-    requests: &BTreeMap<String, Request>,
-    repo_id: &str,
-    request_name: &str,
-) -> Result<(), DomainError> {
-    if requests
-        .values()
-        .any(|request| request.repo_id == repo_id && request.name == request_name)
-    {
-        Err(DomainError::conflict("request name already exists"))
-    } else {
-        Ok(())
     }
 }
 

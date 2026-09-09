@@ -1,22 +1,15 @@
 use super::*;
+use crate::api::ApiSession;
 
 pub(super) fn start_request_branch(
     git_repo: &GitRepo,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     args: RequestStartArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let context = load_context(
-        Some(git_repo),
-        client,
-        api_url,
-        session_token,
-        args.remote.as_deref(),
-    )?;
+    let context = load_context(Some(git_repo), api, args.remote.as_deref())?;
     local::require_git_remote(&context)?;
     let audience = start_audience(context.repo.access.actor, args.audience)?;
-    let base_oid = refresh_main_projection(git_repo, &context.target, audience, session_token)?;
+    let base_oid = refresh_main_projection(git_repo, &context.target, audience, api.token)?;
     let branch = args.name.trim().to_string();
     scope_domain::requests::validate_request_name(&branch)
         .map_err(|error| anyhow::anyhow!(error.message))?;
@@ -26,9 +19,7 @@ pub(super) fn start_request_branch(
     }
     let remote_main = remote_main_ref(&context.target.remote);
     let response = api_start_request(
-        client,
-        api_url,
-        session_token,
+        api,
         StartRequestParams {
             owner: &context.target.owner,
             repo: &context.target.repo,
@@ -49,9 +40,7 @@ pub(super) fn start_request_branch(
         ],
     ) {
         let cleanup = api_close_request(
-            client,
-            api_url,
-            session_token,
+            api,
             &context.target.owner,
             &context.target.repo,
             &response.request.id,
@@ -79,7 +68,7 @@ pub(super) fn start_request_branch(
     let request_head_oid = head_oid(git_repo).map_err(|error| recover("read_local_head", error))?;
     push_request_head(
         &context.target,
-        session_token,
+        api.token,
         &request_head_oid,
         &response.request.id,
         &response.request.name,
@@ -135,9 +124,7 @@ pub(super) fn start_request_branch(
 
 pub(super) fn push_request_branch(
     git_repo: &GitRepo,
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     remote: Option<String>,
     request_id: Option<String>,
     machine_output: bool,
@@ -145,26 +132,11 @@ pub(super) fn push_request_branch(
     if !machine_output {
         warn_if_dirty_working_tree(git_repo)?;
     }
-    let context = load_context(
-        Some(git_repo),
-        client,
-        api_url,
-        session_token,
-        remote.as_deref(),
-    )?;
+    let context = load_context(Some(git_repo), api, remote.as_deref())?;
     local::require_git_remote(&context)?;
-    let request_id = request_id_for_context(
-        Some(git_repo),
-        client,
-        api_url,
-        session_token,
-        &context,
-        request_id,
-    )?;
+    let request_id = request_id_for_context(Some(git_repo), api, &context, request_id)?;
     let detail = get_request(
-        client,
-        api_url,
-        session_token,
+        api,
         &context.target.owner,
         &context.target.repo,
         &request_id,
@@ -185,12 +157,12 @@ pub(super) fn push_request_branch(
         git_repo,
         &context.target,
         detail.request.audience,
-        session_token,
+        api.token,
     )?;
     ensure_public_request_paths_allowed(git_repo, &detail, &current_main_oid, &request_head_oid)?;
     push_request_head(
         &context.target,
-        session_token,
+        api.token,
         &request_head_oid,
         &detail.request.id,
         &detail.request.name,
@@ -219,9 +191,7 @@ pub(super) fn push_request_branch(
     store_request_metadata(git_repo, &branch, &context, &detail.request)
         .map_err(|error| recover("save_local_metadata", error))?;
     let detail = get_request(
-        client,
-        api_url,
-        session_token,
+        api,
         &context.target.owner,
         &context.target.repo,
         &request_id,

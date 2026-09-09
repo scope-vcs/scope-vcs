@@ -118,3 +118,70 @@ fn unix_nanos() -> u128 {
         .unwrap()
         .as_nanos()
 }
+
+#[allow(dead_code)]
+pub struct TestServer {
+    pub api_url: String,
+    pub config: TempDir,
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+#[allow(dead_code)]
+impl TestServer {
+    pub fn new(router: axum::Router) -> Self {
+        Self::with_url(|_| router)
+    }
+
+    pub fn with_url(router: impl FnOnce(&str) -> axum::Router) -> Self {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let api_url = format!("http://{}", listener.local_addr().unwrap());
+        let config = TempDir::new("server-config");
+        let sessions = config.path().join("scope/sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        fs::write(
+            sessions.join(format!("cli-session-{}", hex::encode(api_url.as_bytes()))),
+            "test-token",
+        )
+        .unwrap();
+        let router = router(&api_url);
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        let thread = std::thread::spawn(move || {
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async move {
+                    axum::serve(tokio::net::TcpListener::from_std(listener).unwrap(), router)
+                        .with_graceful_shutdown(async {
+                            let _ = stopped.await;
+                        })
+                        .await
+                        .unwrap();
+                });
+        });
+        Self {
+            api_url,
+            config,
+            stop: Some(stop),
+            thread: Some(thread),
+        }
+    }
+
+    pub fn command(&self, cwd: &Path) -> Command {
+        let mut command = scope_command(cwd);
+        command
+            .env("SCOPE_API_URL", &self.api_url)
+            .env("XDG_CONFIG_HOME", self.config.path());
+        command
+    }
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        let _ = self.stop.take().unwrap().send(());
+        let result = self.thread.take().unwrap().join();
+        if !std::thread::panicking() {
+            result.unwrap();
+        }
+    }
+}

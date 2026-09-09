@@ -6,7 +6,6 @@ use super::{
     git_segments::{load_git_pack_spans, publish_git_segment},
     history_rows::{insert_commits, save_live_files},
     landing_files::apply_repository_landing_file_mutation,
-    object_references::replace_object_reference,
     outbox::enqueue_projection_read_model_rebuild,
     push_triggers::enqueue_push_main_trigger_evaluation,
     workflow_catalogs::apply_repository_workflow_catalog,
@@ -217,7 +216,6 @@ async fn accept_and_persist_content_update(
         .insert(tx)
         .await
         .map_err(PostgresError::internal)?;
-    replace_object_reference(tx, "git_manifest", &repo_id, Some(&git_head.manifest)).await?;
     entities::git_pack_span::Model::from_domain(&repo_id, &git_pack_span)?
         .into_active_model()
         .insert(tx)

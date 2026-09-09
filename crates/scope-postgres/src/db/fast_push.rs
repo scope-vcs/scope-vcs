@@ -24,7 +24,7 @@ pub struct ApplyContentOnlyPushCommand {
     pub owner: String,
     pub name: String,
     pub author_id: String,
-    pub expected_manifest_ref: scope_domain::content_ref::ContentRef,
+    pub expected_git_frontier: scope_domain::repository::git::GitFrontier,
     pub update: ReviewedUpdateInput,
     pub landing_file_mutation: RepositoryLandingFileMutation,
     pub workflow_catalog: RepositoryWorkflowCatalog,
@@ -43,7 +43,7 @@ impl RepositoryStore {
             owner,
             name,
             author_id,
-            expected_manifest_ref,
+            expected_git_frontier,
             update,
             landing_file_mutation,
             workflow_catalog,
@@ -85,7 +85,7 @@ impl RepositoryStore {
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::conflict("repo has no accepted Git head"))?
             .try_into_domain()?;
-        if head.manifest.content_ref != expected_manifest_ref {
+        if head.frontier() != expected_git_frontier {
             return Err(PostgresError::conflict(
                 "repo changed since push was reviewed; rerun scope push --main",
             ));

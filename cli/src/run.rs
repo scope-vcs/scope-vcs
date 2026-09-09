@@ -1,3 +1,4 @@
+use crate::api::ApiSession;
 use crate::{
     api::{self, api_url, http_client_builder, run_detail},
     git_repo::{GitRepo, ensure_git_repo_ready, head_oid, warn_if_dirty_working_tree},
@@ -97,9 +98,7 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
         RunCommand::Start { .. } => unreachable!(),
         RunCommand::Workflows => {
             let result = api::run_workflows(
-                &connection.client,
-                &connection.api_url,
-                &connection.token,
+                connection.api(),
                 &connection.target.owner,
                 &connection.target.repo,
             )?;
@@ -124,9 +123,7 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
             after,
         } => {
             let result = api::run_history(
-                &connection.client,
-                &connection.api_url,
-                &connection.token,
+                connection.api(),
                 &connection.target.owner,
                 &connection.target.repo,
                 workflow.as_deref(),
@@ -166,9 +163,7 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
         RunCommand::Logs { run_id, job } => logs::print(&connection, &run_id, job.as_deref()),
         RunCommand::Cancel { run_id } => {
             let run = api::cancel_run(
-                &connection.client,
-                &connection.api_url,
-                &connection.token,
+                connection.api(),
                 &connection.target.owner,
                 &connection.target.repo,
                 &run_id,
@@ -189,9 +184,7 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
             timeout,
         } => {
             let run = api::retry_run(
-                &connection.client,
-                &connection.api_url,
-                &connection.token,
+                connection.api(),
                 &connection.target.owner,
                 &connection.target.repo,
                 &run_id,
@@ -214,6 +207,10 @@ struct Connection {
 }
 
 impl Connection {
+    fn api(&self) -> ApiSession<'_> {
+        ApiSession::new(&self.client, &self.api_url, &self.token)
+    }
+
     fn resolve(remote: Option<&str>) -> anyhow::Result<Self> {
         let repo = crate::context::discover_optional()?;
         let target = crate::context::resolve_repository(repo.as_ref(), remote)?;
@@ -236,14 +233,7 @@ impl Connection {
         &self,
         run_id: &str,
     ) -> anyhow::Result<scope_api_contract::RepositoryRunDetailResponse> {
-        run_detail(
-            &self.client,
-            &self.api_url,
-            &self.token,
-            &self.target.owner,
-            &self.target.repo,
-            run_id,
-        )
+        run_detail(self.api(), &self.target.owner, &self.target.repo, run_id)
     }
 
     fn watch(&self, run_id: &str, timeout: u64, after: u64) -> anyhow::Result<()> {
@@ -275,9 +265,7 @@ fn queue_from_checkout(
         request_id: source::random_request_id()?,
     };
     let run = match api::resolve_manual_run(
-        &connection.client,
-        &connection.api_url,
-        &connection.token,
+        connection.api(),
         &connection.target.owner,
         &connection.target.repo,
         &query,
@@ -290,9 +278,7 @@ fn queue_from_checkout(
             eprintln!("Uploading source for {}", short_oid(&query.git_oid));
             let bundle = source::create_bundle(checkout, &query.request_id, &query.git_oid)?;
             api::create_manual_run(
-                &connection.client,
-                &connection.api_url,
-                &connection.token,
+                connection.api(),
                 &connection.target.owner,
                 &connection.target.repo,
                 &query,

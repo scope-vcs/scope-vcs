@@ -10,10 +10,11 @@ import {
   useEffect,
   useReducer,
   useRef,
+  useState,
+  useSyncExternalStore,
 } from 'react'
 import {
   defaultShowGraph,
-  mergeStepLogPage,
   reconcileAttemptOverrides,
   selectAttempt as selectAttemptInJob,
   selectJob,
@@ -27,12 +28,15 @@ import {
   canReuseRunLogs,
   completedRunLogVersion,
   EMPTY_LOG_STATE,
-  readRunLogCache,
   stepKey,
-  withBoundedLogStates,
-  writeRunLogCache,
-  type StepLogState,
+  runLogsResource,
+  refreshRunLogs,
+  refreshRunLogsAfterInFlight,
+  runErrorMessage,
+  type RunLogMode,
 } from './run-log-cache'
+
+import { initializeRunDetail, refreshRunDetail, runDetailResource } from './run-detail-resource'
 
 export type { StepSelection } from './repository-run-detail-model'
 export type { StepLogState } from './run-log-cache'
@@ -42,10 +46,7 @@ const DETAIL_CHANGES = ['StatusChanged', 'LogsAppended'] as const
 type DetailViewState = {
   actionError: string | null
   attemptOverrides: Record<string, string>
-  detail: RepoRunDetail
-  logStates: Record<string, StepLogState>
   manualSelection: boolean
-  metadataError: string | null
   pendingAction: 'cancel' | 'retry' | null
   reconciliationGeneration: number | null
   selectedJobKey: string | null
@@ -55,18 +56,12 @@ type DetailViewState = {
 
 type DetailViewUpdate = (state: DetailViewState) => DetailViewState
 
-function createDetailViewState({ detail, cacheKey }: {
-  detail: RepoRunDetail
-  cacheKey: string | null
-}): DetailViewState {
+function createDetailViewState(detail: RepoRunDetail): DetailViewState {
   const initialView = selectInitialView(detail.jobs)
   return {
     actionError: null,
     attemptOverrides: {},
-    detail,
-    logStates: cacheKey ? readRunLogCache(cacheKey) : {},
     manualSelection: false,
-    metadataError: null,
     pendingAction: null,
     reconciliationGeneration: null,
     selectedJobKey: initialView.selectedJobKey,
@@ -98,235 +93,66 @@ export function useRepositoryRunDetailController({
   ) => Promise<RepoRunStepLogPage>
   params: RunActionInput
 }) {
-  const [view, updateView] = useReducer(
-    updateDetailView,
-    { detail: initialDetail, cacheKey },
-    createDetailViewState,
+  const [key] = useState(() => cacheKey ?? crypto.randomUUID())
+  useState(() => {
+    initializeRunDetail(key, initialDetail)
+    runLogsResource.read(key)
+  })
+  const detailSnapshot = useSyncExternalStore(
+    useCallback((listener) => runDetailResource.subscribe(key, listener), [key]),
+    useCallback(() => runDetailResource.getSnapshot(key), [key]),
+    runDetailResource.getServerSnapshot,
   )
-  const detailRef = useRef(initialDetail)
-  const detailInFlightRef = useRef<Promise<void> | null>(null)
-  const detailGenerationRef = useRef(0)
-  const logInFlightRef = useRef<Map<string, Promise<boolean>> | null>(null)
-  if (logInFlightRef.current === null) {
-    logInFlightRef.current = new Map()
-  }
-  const logStatesRef = useRef(view.logStates)
+  const logsSnapshot = useSyncExternalStore(
+    useCallback((listener) => runLogsResource.subscribe(key, listener), [key]),
+    useCallback(() => runLogsResource.getSnapshot(key), [key]),
+    runLogsResource.getServerSnapshot,
+  )
+  const detail = detailSnapshot.value?.detail ?? initialDetail
+  const [view, updateView] = useReducer(updateDetailView, detail, createDetailViewState)
   const selectionRef = useRef(view.selection)
-  const mountedRef = useRef(false)
+  useEffect(() => { selectionRef.current = view.selection }, [view.selection])
 
   useEffect(() => {
-    logStatesRef.current = view.logStates
-  }, [view.logStates])
+    updateView((current) => {
+      const reconciledAction = current.reconciliationGeneration !== null &&
+        (detailSnapshot.value?.generation ?? 0) >= current.reconciliationGeneration
+      const selectionStillValid = current.selection !== null && selectionExists(current.selection, detail.jobs)
+      const initialView = current.manualSelection ? null : selectInitialView(detail.jobs)
+      const selection = selectionStillValid ? current.selection
+        : current.manualSelection ? null : initialView?.selection ?? null
+      return {
+        ...current,
+        attemptOverrides: reconcileAttemptOverrides(current.attemptOverrides, detail.jobs),
+        pendingAction: reconciledAction ? null : current.pendingAction,
+        reconciliationGeneration: reconciledAction ? null : current.reconciliationGeneration,
+        selectedJobKey: selection ? selection.jobKey
+          : current.manualSelection
+            ? jobExists(current.selectedJobKey, detail.jobs) ? current.selectedJobKey : null
+            : initialView?.selectedJobKey ?? null,
+        selection,
+      }
+    })
+  }, [detail, detailSnapshot.value?.generation])
 
-  useEffect(() => {
-    selectionRef.current = view.selection
-  }, [view.selection])
-
-  const refreshDetail = useCallback(async (
-    forceAfterInFlight = false,
-    signal?: AbortSignal,
-  ) => {
-    if (detailInFlightRef.current) {
-      await detailInFlightRef.current
-      if (!forceAfterInFlight) return
-    }
-    const generation = ++detailGenerationRef.current
-    const request = loadDetail(signal)
-      .then((nextDetail) => {
-        if (!mountedRef.current) return
-        detailRef.current = nextDetail
-        updateView((current) => {
-          const reconciledAction = current.reconciliationGeneration !== null &&
-            generation >= current.reconciliationGeneration
-          const selectionStillValid = current.selection !== null &&
-            selectionExists(current.selection, nextDetail.jobs)
-          const initialView = current.manualSelection
-            ? null
-            : selectInitialView(nextDetail.jobs)
-          const nextSelection = selectionStillValid
-            ? current.selection
-            : current.manualSelection
-              ? null
-              : initialView?.selection ?? null
-          const selectedJobKey = nextSelection
-            ? nextSelection.jobKey
-            : current.manualSelection
-              ? jobExists(current.selectedJobKey, nextDetail.jobs)
-                ? current.selectedJobKey
-                : null
-              : initialView?.selectedJobKey ?? null
-          return {
-            ...current,
-            attemptOverrides: reconcileAttemptOverrides(
-              current.attemptOverrides,
-              nextDetail.jobs,
-            ),
-            detail: nextDetail,
-            metadataError: null,
-            pendingAction: reconciledAction ? null : current.pendingAction,
-            reconciliationGeneration: reconciledAction
-              ? null
-              : current.reconciliationGeneration,
-            selectedJobKey,
-            selection: nextSelection,
-          }
-        })
-      })
-      .catch((error: unknown) => {
-        if (mountedRef.current) {
-          updateView((current) => ({
-            ...current,
-            metadataError: errorMessage(error),
-          }))
-        }
-        throw error
-      })
-      .finally(() => {
-        if (detailInFlightRef.current === request) {
-          detailInFlightRef.current = null
-        }
-      })
-    detailInFlightRef.current = request
-    return request
-  }, [loadDetail])
-
-  const refreshLogs = useCallback((
-    target: StepSelection,
-    signal?: AbortSignal,
-    mode: 'refresh' | 'earlier' | 'latest' | 'retry' = 'refresh',
-  ) => {
-    const key = stepKey(target)
-    const inFlight = logInFlightRef.current
-    if (!inFlight) return
-    const existing = inFlight.get(key)
-    if (existing) return existing
-    const current = logStatesRef.current[key] ?? EMPTY_LOG_STATE
-    if (mode === 'refresh' && current.viewingEarlier) return Promise.resolve(true)
-    const before = mode === 'retry' ? current.failedPage?.before
-      : mode === 'earlier' ? current.logs[0]?.position : undefined
-    const after = mode === 'retry' ? current.failedPage?.after
-      : mode === 'refresh' && current.initialized ? current.nextAfter : undefined
-    const loadingState = {
-      ...current,
-      error: null,
-      loading: true,
-    }
-    logStatesRef.current = withBoundedLogStates(
-      logStatesRef.current,
-      key,
-      loadingState,
-    )
-    updateView((state) => ({
-      ...state,
-      logStates: withBoundedLogStates(
-        state.logStates,
-        key,
-        loadingState,
-      ),
-    }))
-    // A response started while running may still omit the final output, even
-    // if the run finishes before that response arrives.
-    const completedVersion = completedRunLogVersion(detailRef.current)
-    const request = loadLogs(
-      {
-        ...params,
-        after,
-        before,
-        attempt_id: target.attemptId,
-        step_index: target.stepIndex,
-      },
-      signal,
-    )
-      .then((page) => {
-        if (!mountedRef.current) return false
-        const previous = logStatesRef.current[key] ?? current
-        const merged = mergeStepLogPage(previous, page, after)
-        const nextState = {
-          error: null,
-          loading: false,
-          logs: merged.logs,
-          logsTruncated: page.logs_truncated,
-          initialized: true,
-          hasEarlier: merged.hasEarlier,
-          hasMore: page.has_more,
-          viewingEarlier: before !== undefined,
-          failedPage: null,
-          nextAfter: page.next_after,
-          completedVersion,
-        }
-        logStatesRef.current = withBoundedLogStates(
-          logStatesRef.current,
-          key,
-          nextState,
-        )
-        if (cacheKey) writeRunLogCache(cacheKey, target, nextState)
-        updateView((state) => ({
-          ...state,
-          logStates: withBoundedLogStates(
-            state.logStates,
-            key,
-            nextState,
-          ),
-        }))
-        return true
-      })
-      .catch((error: unknown) => {
-        if (!mountedRef.current) return false
-        const errorState = {
-          ...(logStatesRef.current[key] ?? EMPTY_LOG_STATE),
-          error: errorMessage(error),
-          loading: false,
-          failedPage: { after, before },
-        }
-        logStatesRef.current = withBoundedLogStates(
-          logStatesRef.current,
-          key,
-          errorState,
-        )
-        updateView((state) => ({
-          ...state,
-          logStates: withBoundedLogStates(
-            state.logStates,
-            key,
-            errorState,
-          ),
-        }))
-        return false
-      })
-      .finally(() => {
-        if (inFlight.get(key) === request) inFlight.delete(key)
-      })
-    inFlight.set(key, request)
-    return request
-  }, [cacheKey, loadLogs, params])
-
-  const refreshLogsAfterInFlight = useCallback(async (
-    target: StepSelection,
-    signal?: AbortSignal,
-  ) => {
-    const key = stepKey(target)
-    const existing = logInFlightRef.current?.get(key)
-    if (existing) await existing
-    do {
-      if (!await refreshLogs(target, signal)) return false
-    } while (
-      mountedRef.current &&
-      !logStatesRef.current[key]?.viewingEarlier &&
-      logStatesRef.current[key]?.hasMore
-    )
-    return mountedRef.current
-  }, [refreshLogs])
+  const refreshDetail = useCallback((forceAfterInFlight = false) =>
+    refreshRunDetail(key, loadDetail, forceAfterInFlight), [key, loadDetail])
+  const refreshLogs = useCallback((target: StepSelection, mode: RunLogMode = 'refresh') =>
+    refreshRunLogs({ key, target, params, loadLogs, mode, detail: runDetailResource.peek(key)?.detail ?? initialDetail }),
+  [key, params, loadLogs, initialDetail])
+  const refreshLogsAfterInFlight = useCallback((target: StepSelection) =>
+    refreshRunLogsAfterInFlight({ key, target, params, loadLogs, getDetail: () => runDetailResource.peek(key)?.detail ?? initialDetail }),
+  [key, params, loadLogs, initialDetail])
 
   const refreshFromRunEvents = useCallback<RunRefresh>(async (
     reasons,
-    signal,
   ) => {
     const refreshMetadata = reasons.has('Recovery') ||
       reasons.has('StatusChanged')
-    if (refreshMetadata) await refreshDetail(false, signal)
+    if (refreshMetadata) await refreshDetail()
     const selection = selectionRef.current
     if (selection && (refreshMetadata || reasons.has('LogsAppended'))) {
-      if (!await refreshLogsAfterInFlight(selection, signal)) {
+      if (!await refreshLogsAfterInFlight(selection)) {
         throw new Error('Selected run logs could not refresh.')
       }
     }
@@ -334,25 +160,18 @@ export function useRepositoryRunDetailController({
 
   const refreshRun = useRunLiveRefresh({
     acceptedChanges: DETAIL_CHANGES,
-    mutable: runCanChange(view.detail.run.state),
+    mutable: runCanChange(detail.run.state),
     refresh: refreshFromRunEvents,
     runId: params.run_id,
   })
 
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
-
-  const completedVersion = completedRunLogVersion(view.detail)
+  const completedVersion = completedRunLogVersion(detail)
   useEffect(() => {
     const selection = view.selection
     if (!selection) return
-    const cached = logStatesRef.current[stepKey(selection)]
-    if (cached && canReuseRunLogs(cached, detailRef.current)) return
-    if (!runCanChange(view.detail.run.state)) {
+    const cached = runLogsResource.peek(key)?.[stepKey(selection)]
+    if (cached && canReuseRunLogs(cached, detail)) return
+    if (!runCanChange(detail.run.state)) {
       void refreshLogsAfterInFlight(selection)
       return
     }
@@ -361,7 +180,8 @@ export function useRepositoryRunDetailController({
     refreshLogs,
     refreshLogsAfterInFlight,
     completedVersion,
-    view.detail.run.state,
+    detail,
+    key,
     view.selection,
   ])
 
@@ -377,16 +197,15 @@ export function useRepositoryRunDetailController({
     try {
       await action()
     } catch (error) {
-      if (mountedRef.current) {
-        updateView((current) => ({
-          ...current,
-          actionError: errorMessage(error),
-          pendingAction: null,
-        }))
-      }
+      updateView((current) => ({
+        ...current,
+        actionError: runErrorMessage(error),
+        pendingAction: null,
+      }))
       return
     }
-    const reconciliationGeneration = detailGenerationRef.current + 1
+    const snapshot = runDetailResource.getSnapshot(key)
+    const reconciliationGeneration = Number(snapshot.version ?? 0) + 1
     updateView((current) => ({
       ...current,
       reconciliationGeneration,
@@ -397,7 +216,7 @@ export function useRepositoryRunDetailController({
       // The detail loader owns metadata errors. Keep controls disabled until a
       // post-mutation refresh reaches the required generation.
     }
-  }, [refreshDetail])
+  }, [key, refreshDetail])
 
   // Navigation rules live in the model so `selection` and `selectedJobKey`
   // cannot drift apart here.
@@ -418,11 +237,13 @@ export function useRepositoryRunDetailController({
   }
 
   const selectedLogState = view.selection
-    ? view.logStates[stepKey(view.selection)] ?? EMPTY_LOG_STATE
+    ? logsSnapshot.value?.[stepKey(view.selection)] ?? EMPTY_LOG_STATE
     : EMPTY_LOG_STATE
 
   return {
     ...view,
+    detail,
+    metadataError: detailSnapshot.error === null ? null : runErrorMessage(detailSnapshot.error),
     performAction,
     refreshDetail: refreshRun,
     refreshLogs,
@@ -449,8 +270,4 @@ function selectionExists(
 
 function jobExists(jobKey: string | null, jobs: readonly RepoRunJobDetail[]) {
   return jobKey !== null && jobs.some(({ job }) => job.key === jobKey)
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Run operation failed.'
 }

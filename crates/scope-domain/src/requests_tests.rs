@@ -3,11 +3,10 @@ use crate::{
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     repository::access::{RepositoryAccess, RepositoryActor},
 };
-use std::collections::BTreeMap;
 
 #[test]
 fn new_request_is_an_unsubmitted_draft() {
-    let mutation = start_request(&mut BTreeMap::new(), public_start_input()).unwrap();
+    let mutation = start_request(StartRequestFacts::default(), public_start_input()).unwrap();
 
     assert_eq!(mutation.request.state(), RequestState::Draft);
     assert!(!mutation.request.is_submitted());
@@ -48,14 +47,22 @@ fn request_name_rules_and_repository_uniqueness_remain_domain_owned() {
     ] {
         let mut input = public_start_input();
         input.name = invalid.to_string();
-        assert!(start_request(&mut BTreeMap::new(), input).is_err());
+        assert!(start_request(StartRequestFacts::default(), input).is_err());
     }
 
-    let mut requests = BTreeMap::new();
-    start_request(&mut requests, public_start_input()).unwrap();
+    start_request(StartRequestFacts::default(), public_start_input()).unwrap();
     let mut duplicate = public_start_input();
     duplicate.id = "request_2".to_string();
-    assert!(start_request(&mut requests, duplicate).is_err());
+    assert!(
+        start_request(
+            StartRequestFacts {
+                request_name_exists: true,
+                ..Default::default()
+            },
+            duplicate
+        )
+        .is_err()
+    );
     assert_eq!(canonical_request_ref("fix-parser"), "refs/heads/fix-parser");
 }
 
@@ -85,10 +92,9 @@ fn terminal_facts_require_submission_and_are_mutually_exclusive() {
 #[test]
 fn open_request_edits_and_revisions_stay_open() {
     let request = open_request();
-    let mut requests = BTreeMap::from([(request.id.clone(), request)]);
     let revised = record_request_revision(
-        &mut requests,
-        &mut BTreeMap::new(),
+        request,
+        false,
         RecordRequestRevisionInput {
             request_id: "request_1".to_string(),
             actor_user_id: "author".to_string(),
@@ -147,27 +153,28 @@ fn policy_keeps_drafts_private_and_open_requests_visible_and_mutable() {
 #[test]
 fn draft_close_deletes_and_open_close_preserves_exact_actor() {
     let draft = pushed_draft();
-    let mut requests = BTreeMap::from([(draft.id.clone(), draft)]);
-    let mut events = BTreeMap::new();
-    let mut revisions = BTreeMap::new();
-    assert!(matches!(
-        close_request(
-            &mut requests,
-            &mut events,
-            &mut revisions,
-            close_input("author", true, false),
-        )
-        .unwrap(),
-        CloseRequestMutation::DeletedDraft { .. }
-    ));
-    assert!(requests.is_empty());
+    let CloseRequestMutation::DeletedDraft {
+        request,
+        orphan_objects,
+        ..
+    } = close_request(
+        draft,
+        Vec::new(),
+        Vec::new(),
+        close_input("author", true, false),
+    )
+    .unwrap()
+    else {
+        panic!("draft close must delete the request");
+    };
+    assert_eq!(request.id, "request_1");
+    assert_eq!(orphan_objects, vec![source_blob("head")]);
 
     let open = open_request();
-    let mut requests = BTreeMap::from([(open.id.clone(), open)]);
     let mutation = close_request(
-        &mut requests,
-        &mut events,
-        &mut revisions,
+        open,
+        Vec::new(),
+        Vec::new(),
         close_input("maintainer", false, true),
     )
     .unwrap();
@@ -182,11 +189,9 @@ fn draft_close_deletes_and_open_close_preserves_exact_actor() {
 #[test]
 fn discussion_moderation_does_not_change_request_lifecycle() {
     let request = open_request();
-    let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-    let mut discussions = BTreeMap::new();
     let opened = create_request_discussion(
-        &mut requests,
-        &mut discussions,
+        request,
+        false,
         CreateRequestDiscussionInput {
             request_id: "request_1".to_string(),
             id: "discussion_1".to_string(),
@@ -199,12 +204,13 @@ fn discussion_moderation_does_not_change_request_lifecycle() {
         },
     )
     .unwrap();
-    resolve_request_discussion(
-        &mut requests,
-        &mut discussions,
+    let discussion_id = opened.discussion.id.clone();
+    let resolved = resolve_request_discussion(
+        opened.request,
+        opened.discussion,
         ResolveRequestDiscussionInput {
             request_id: "request_1".to_string(),
-            discussion_id: opened.discussion.id,
+            discussion_id,
             actor_user_id: "maintainer".to_string(),
             actor_is_maintainer: true,
             actor_can_transition: true,
@@ -213,57 +219,18 @@ fn discussion_moderation_does_not_change_request_lifecycle() {
         },
     )
     .unwrap();
-    assert_eq!(requests["request_1"].state(), RequestState::Open);
+    assert_eq!(resolved.request.state(), RequestState::Open);
 }
 
 #[test]
 fn completed_private_discussion_transitions_are_rejected_before_mutation() {
     let mut request = open_request();
     request.audience = RequestAudience::Private;
-    let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-    let mut discussions = BTreeMap::new();
-    for id in ["discussion_open", "discussion_resolved"] {
-        create_request_discussion(
-            &mut requests,
-            &mut discussions,
-            CreateRequestDiscussionInput {
-                request_id: "request_1".to_string(),
-                id: id.to_string(),
-                actor_user_id: "author".to_string(),
-                actor_can_participate: true,
-                client_discussion_id: format!("client_{id}"),
-                body_markdown: "Review this invariant".to_string(),
-                anchor: None,
-                now_unix: 21,
-            },
-        )
-        .unwrap();
-    }
-    resolve_request_discussion(
-        &mut requests,
-        &mut discussions,
-        ResolveRequestDiscussionInput {
-            request_id: "request_1".to_string(),
-            discussion_id: "discussion_resolved".to_string(),
-            actor_user_id: "maintainer".to_string(),
-            actor_is_maintainer: true,
-            actor_can_transition: true,
-            event_id: "event_initial_resolve".to_string(),
-            now_unix: 22,
-        },
-    )
-    .unwrap();
-    let request = requests.get_mut("request_1").unwrap();
-    request.closed_at_unix = Some(30);
-    request.closed_by_user_id = Some("maintainer".to_string());
-    request.updated_at_unix = 30;
-    request.validate_facts().unwrap();
-    let expected_requests = requests.clone();
-    let expected_discussions = discussions.clone();
+    let (request, open, resolved) = completed_request_discussions(request);
 
     let resolve_error = resolve_request_discussion(
-        &mut requests,
-        &mut discussions,
+        request.clone(),
+        open,
         ResolveRequestDiscussionInput {
             request_id: "request_1".to_string(),
             discussion_id: "discussion_open".to_string(),
@@ -276,12 +243,10 @@ fn completed_private_discussion_transitions_are_rejected_before_mutation() {
     )
     .unwrap_err();
     assert_eq!(resolve_error.kind, crate::error::DomainErrorKind::Conflict);
-    assert_eq!(requests, expected_requests);
-    assert_eq!(discussions, expected_discussions);
 
     let reopen_error = reopen_request_discussion(
-        &mut requests,
-        &mut discussions,
+        request,
+        resolved,
         ReopenRequestDiscussionInput {
             request_id: "request_1".to_string(),
             discussion_id: "discussion_resolved".to_string(),
@@ -294,55 +259,16 @@ fn completed_private_discussion_transitions_are_rejected_before_mutation() {
     )
     .unwrap_err();
     assert_eq!(reopen_error.kind, crate::error::DomainErrorKind::Conflict);
-    assert_eq!(requests, expected_requests);
-    assert_eq!(discussions, expected_discussions);
 }
 
 #[test]
 fn completed_public_discussion_transitions_remain_allowed() {
     let request = open_request();
-    let mut requests = BTreeMap::from([(request.id.clone(), request)]);
-    let mut discussions = BTreeMap::new();
-    for id in ["discussion_open", "discussion_resolved"] {
-        create_request_discussion(
-            &mut requests,
-            &mut discussions,
-            CreateRequestDiscussionInput {
-                request_id: "request_1".to_string(),
-                id: id.to_string(),
-                actor_user_id: "author".to_string(),
-                actor_can_participate: true,
-                client_discussion_id: format!("client_{id}"),
-                body_markdown: "Review this invariant".to_string(),
-                anchor: None,
-                now_unix: 21,
-            },
-        )
-        .unwrap();
-    }
-    resolve_request_discussion(
-        &mut requests,
-        &mut discussions,
-        ResolveRequestDiscussionInput {
-            request_id: "request_1".to_string(),
-            discussion_id: "discussion_resolved".to_string(),
-            actor_user_id: "maintainer".to_string(),
-            actor_is_maintainer: true,
-            actor_can_transition: true,
-            event_id: "event_initial_resolve".to_string(),
-            now_unix: 22,
-        },
-    )
-    .unwrap();
-    let request = requests.get_mut("request_1").unwrap();
-    request.closed_at_unix = Some(30);
-    request.closed_by_user_id = Some("maintainer".to_string());
-    request.updated_at_unix = 30;
-    request.validate_facts().unwrap();
+    let (request, open_discussion, resolved_discussion) = completed_request_discussions(request);
 
     let resolved = resolve_request_discussion(
-        &mut requests,
-        &mut discussions,
+        request,
+        open_discussion,
         ResolveRequestDiscussionInput {
             request_id: "request_1".to_string(),
             discussion_id: "discussion_open".to_string(),
@@ -361,8 +287,8 @@ fn completed_public_discussion_transitions_remain_allowed() {
     );
 
     let reopened = reopen_request_discussion(
-        &mut requests,
-        &mut discussions,
+        resolved.request,
+        resolved_discussion,
         ReopenRequestDiscussionInput {
             request_id: "request_1".to_string(),
             discussion_id: "discussion_resolved".to_string(),
@@ -376,6 +302,50 @@ fn completed_public_discussion_transitions_remain_allowed() {
     .unwrap();
     assert_eq!(reopened.request.state(), RequestState::Closed);
     assert_eq!(reopened.discussion.status, RequestDiscussionStatus::Open);
+}
+
+fn completed_request_discussions(
+    request: Request,
+) -> (Request, RequestDiscussion, RequestDiscussion) {
+    let create = |request, id: &str| {
+        create_request_discussion(
+            request,
+            false,
+            CreateRequestDiscussionInput {
+                request_id: "request_1".to_string(),
+                id: id.to_string(),
+                actor_user_id: "author".to_string(),
+                actor_can_participate: true,
+                client_discussion_id: format!("client_{id}"),
+                body_markdown: "Review this invariant".to_string(),
+                anchor: None,
+                now_unix: 21,
+            },
+        )
+        .unwrap()
+    };
+    let open = create(request, "discussion_open");
+    let to_resolve = create(open.request, "discussion_resolved");
+    let resolved = resolve_request_discussion(
+        to_resolve.request,
+        to_resolve.discussion,
+        ResolveRequestDiscussionInput {
+            request_id: "request_1".to_string(),
+            discussion_id: "discussion_resolved".to_string(),
+            actor_user_id: "maintainer".to_string(),
+            actor_is_maintainer: true,
+            actor_can_transition: true,
+            event_id: "event_initial_resolve".to_string(),
+            now_unix: 22,
+        },
+    )
+    .unwrap();
+    let mut request = resolved.request;
+    request.closed_at_unix = Some(30);
+    request.closed_by_user_id = Some("maintainer".to_string());
+    request.updated_at_unix = 30;
+    request.validate_facts().unwrap();
+    (request, open.discussion, resolved.discussion)
 }
 
 #[derive(Clone, Copy)]
@@ -414,7 +384,7 @@ fn public_start_input() -> StartRequestInput {
 }
 
 pub(super) fn working_request() -> Request {
-    start_request(&mut BTreeMap::new(), public_start_input())
+    start_request(StartRequestFacts::default(), public_start_input())
         .unwrap()
         .request
 }
@@ -474,4 +444,98 @@ fn source_blob(git_oid: &str) -> SourceBlob {
         git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
         size_bytes: 1,
     }
+}
+
+#[test]
+fn request_creation_checks_id_then_name_then_public_working_limit() {
+    let mut facts = StartRequestFacts {
+        request_id_exists: true,
+        request_name_exists: true,
+        public_working_request_count: PUBLIC_WORKING_REQUEST_LIMIT,
+    };
+    assert_eq!(
+        start_request(facts, public_start_input())
+            .unwrap_err()
+            .message,
+        "request already exists"
+    );
+    facts.request_id_exists = false;
+    assert_eq!(
+        start_request(facts, public_start_input())
+            .unwrap_err()
+            .message,
+        "request name already exists"
+    );
+    facts.request_name_exists = false;
+    assert!(
+        start_request(facts, public_start_input())
+            .unwrap_err()
+            .message
+            .contains("Working requests")
+    );
+    let mut maintainer = public_start_input();
+    maintainer.author_role = RequestActorRole::Member;
+    assert!(start_request(facts, maintainer).is_ok());
+    facts.public_working_request_count -= 1;
+    assert!(start_request(facts, public_start_input()).is_ok());
+}
+
+#[test]
+fn discussion_creation_checks_access_before_id_collision() {
+    let input = CreateRequestDiscussionInput {
+        request_id: "request_1".to_string(),
+        id: "discussion_1".to_string(),
+        actor_user_id: "author".to_string(),
+        actor_can_participate: false,
+        client_discussion_id: "client_1".to_string(),
+        body_markdown: "Review".to_string(),
+        anchor: None,
+        now_unix: 21,
+    };
+    assert_eq!(
+        create_request_discussion(open_request(), true, input.clone())
+            .unwrap_err()
+            .kind,
+        crate::error::DomainErrorKind::Forbidden
+    );
+    assert_eq!(
+        create_request_discussion(
+            open_request(),
+            true,
+            CreateRequestDiscussionInput {
+                actor_can_participate: true,
+                ..input
+            }
+        )
+        .unwrap_err()
+        .message,
+        "request discussion already exists"
+    );
+}
+
+#[test]
+fn discussion_read_receipts_clamp_and_never_move_backwards() {
+    let (_, discussion, _) = completed_request_discussions(open_request());
+    let input = MarkRequestDiscussionReadInput {
+        discussion_id: discussion.id.clone(),
+        user_id: "reader".to_string(),
+        through_position: u64::MAX,
+        now_unix: 40,
+    };
+    let state = mark_request_discussion_read(&discussion, None, input.clone()).unwrap();
+    assert_eq!(
+        state.read_through_position,
+        discussion.last_activity_position
+    );
+    let unchanged = mark_request_discussion_read(
+        &discussion,
+        Some(state.clone()),
+        MarkRequestDiscussionReadInput {
+            through_position: 0,
+            now_unix: 41,
+            ..input
+        },
+    )
+    .unwrap();
+    assert_eq!(unchanged, state);
 }

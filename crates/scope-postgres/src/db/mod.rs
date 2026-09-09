@@ -36,20 +36,14 @@ mod content_push_transactions;
 pub use content_fences::ContentRefFence;
 mod entities;
 mod fast_push;
-#[cfg(test)]
-mod file_visibility_migration_tests;
 mod generated_ids;
 mod git_compaction;
-pub(crate) mod git_segment_v2_backfill;
+mod git_segment_cleanup;
 mod git_segments;
 #[cfg(test)]
 mod migration_harness_tests;
 #[cfg(test)]
 mod migration_tests;
-#[cfg(test)]
-mod request_activity_migration_tests;
-#[cfg(test)]
-mod request_submission_migration_tests;
 pub use cache_service::{
     CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
     CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
@@ -154,10 +148,7 @@ pub use clerk_users::scope_user_id_for_auth_identity;
 pub use fast_push::ApplyContentOnlyPushCommand;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::GitPushContext;
-pub use git_segment_v2_backfill::{
-    GitSegmentV1Cleanup, GitSegmentV2Backfill, GitSegmentV2BackfillRecord, LegacyGitSegment,
-    LegacyGitSegmentObject,
-};
+pub use git_segment_cleanup::{GitSegmentV1Cleanup, LegacyGitSegmentObject};
 pub use git_segments::RepositoryGitWriteLease;
 use history_rows::load_repository_histories;
 use locks::acquire_aggregate_lock;
@@ -394,15 +385,17 @@ pub async fn migration_plan(database_url: String) -> anyhow::Result<MigrationPla
 pub async fn repository_workflow_catalogs_for_maintenance(
     database_url: String,
 ) -> anyhow::Result<Vec<scope_domain::runs::catalog::RepositoryWorkflowCatalog>> {
-    const CATALOG_MIGRATION: &str = "m0028_repository_workflow_catalogs";
-
     let db = Database::connect(database_url).await?;
-    let plan = crate::migrations::plan(&db).await?;
-    if plan
-        .pending
-        .iter()
-        .any(|migration| migration.name == CATALOG_MIGRATION)
-    {
+    crate::migrations::plan(&db).await?;
+    let exists = db
+        .query_one(sea_orm::Statement::from_string(
+            db.get_database_backend(),
+            "SELECT to_regclass(format('%I.scope_repository_workflow_catalogs', current_schema())) IS NOT NULL AS exists",
+        ))
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("PostgreSQL did not report workflow catalog schema state"))?
+        .try_get::<bool>("", "exists")?;
+    if !exists {
         return Ok(Vec::new());
     }
     Ok(workflow_catalogs::load_repository_workflow_catalogs(&db).await?)

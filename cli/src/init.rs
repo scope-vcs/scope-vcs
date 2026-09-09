@@ -1,3 +1,4 @@
+use crate::api::ApiSession;
 use crate::{
     agent_context::sync_repo_rules,
     api::{RepoInitResponse, api_url, create_repo, display_user, http_client},
@@ -44,7 +45,10 @@ pub fn run(name: Option<String>) -> anyhow::Result<()> {
     let client = http_client()?;
     let session = session_from_cache_or_browser(&client, &api_url)?;
     eprintln!("Signed in as {}", display_user(&session.user));
-    let created = create_repo(&client, &api_url, &session.token, repo_name)?;
+    let created = create_repo(
+        ApiSession::new(&client, &api_url, &session.token),
+        repo_name,
+    )?;
 
     let remote_snapshot = match RemoteConfigSnapshot::capture(&git_repo.root, &created.init) {
         Ok(snapshot) => snapshot,

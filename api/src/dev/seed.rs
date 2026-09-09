@@ -33,9 +33,9 @@ use scope_domain::{
     repository::{RepoLifecycleState, Repository},
     requests::{
         EditRequestIdentityInput, RecordRequestRevisionInput, RecordWorkingRequestUploadInput,
-        RequestActorRole, RequestAudience, StartRequestInput, canonical_request_ref,
-        edit_request_identity, record_request_revision, record_working_request_upload,
-        start_request,
+        RequestActorRole, RequestAudience, StartRequestFacts, StartRequestInput,
+        canonical_request_ref, edit_request_identity, record_request_revision,
+        record_working_request_upload, start_request,
     },
 };
 use scope_object_store::{ContentObjectKind, ObjectStore, put_content_object, put_source_blob};
@@ -275,7 +275,6 @@ fn published_demo(
     populate_seed_live_files(&mut repo);
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
     let (head, pack_span, segment_upload) = git_pack_state(
-        object_store,
         git_segment_store,
         &repo.record.id,
         "public-demo-live",
@@ -429,7 +428,14 @@ fn seed_owner_request(
         now_unix,
     } = request;
     let started = start_request(
-        &mut catalog.requests,
+        StartRequestFacts {
+            request_id_exists: catalog.requests.contains_key(id),
+            request_name_exists: catalog
+                .requests
+                .values()
+                .any(|request| request.repo_id == repo_id && request.name == name),
+            public_working_request_count: 0,
+        },
         StartRequestInput {
             id: id.to_string(),
             repo_id: repo_id.to_string(),
@@ -446,8 +452,8 @@ fn seed_owner_request(
     catalog
         .request_events
         .insert(started.event.id.clone(), started.event);
-    record_working_request_upload(
-        &mut catalog.requests,
+    let uploaded = record_working_request_upload(
+        started.request,
         RecordWorkingRequestUploadInput {
             request_id: id.to_string(),
             actor_user_id: owner.id.clone(),
@@ -458,21 +464,24 @@ fn seed_owner_request(
             now_unix: now_unix + 1,
         },
     )?;
+    let mut request = uploaded.request;
     if let Some(description_markdown) = description_markdown {
+        let event_id = format!("event_{id}_identity_edited");
         let mutation = edit_request_identity(
-            &mut catalog.requests,
-            &mut catalog.request_events,
+            request,
+            catalog.request_events.contains_key(&event_id),
             EditRequestIdentityInput {
                 request_id: id.to_string(),
                 actor_user_id: owner.id.clone(),
                 actor_can_edit_identity: true,
-                event_id: format!("event_{id}_identity_edited"),
+                event_id,
                 title: None,
                 description_markdown: Some(description_markdown.to_string()),
                 expected_description_markdown: None,
                 now_unix: now_unix + 2,
             },
         )?;
+        request = mutation.request;
         catalog
             .request_events
             .insert(mutation.event.id.clone(), mutation.event);
@@ -480,9 +489,10 @@ fn seed_owner_request(
     let mut current_head_oid = head_oid.clone();
     let mut lifecycle_at_unix = now_unix + 2;
     for (index, revision) in revisions.into_iter().enumerate() {
+        let event_id = format!("event_{id}_revision_{}", index + 1);
         let mutation = record_request_revision(
-            &mut catalog.requests,
-            &mut catalog.request_events,
+            request,
+            catalog.request_events.contains_key(&event_id),
             RecordRequestRevisionInput {
                 request_id: id.to_string(),
                 actor_user_id: owner.id.clone(),
@@ -490,11 +500,15 @@ fn seed_owner_request(
                 expected_old_head_oid: Some(current_head_oid),
                 new_head_oid: revision.head_oid.clone(),
                 git_snapshot: revision.snapshot,
-                event_id: format!("event_{id}_revision_{}", index + 1),
+                event_id,
                 body: Some(revision.note.to_string()),
                 now_unix: now_unix + 3 + index as u64,
             },
         )?;
+        request = mutation.request;
+        catalog
+            .request_events
+            .insert(mutation.event.id.clone(), mutation.event);
         current_head_oid = revision.head_oid;
         lifecycle_at_unix = now_unix + 4 + index as u64;
         catalog
@@ -502,7 +516,6 @@ fn seed_owner_request(
             .insert(mutation.revision.id.clone(), mutation.revision);
     }
 
-    let request = catalog.requests.get_mut(id).expect("seed request exists");
     if !matches!(outcome, SeedRequestOutcome::Draft) {
         request.submitted_at_unix = Some(lifecycle_at_unix);
     }
@@ -524,6 +537,7 @@ fn seed_owner_request(
         SeedRequestOutcome::Merged | SeedRequestOutcome::Closed => lifecycle_at_unix + 1,
     };
     request.validate_facts()?;
+    catalog.requests.insert(request.id.clone(), request);
     Ok(())
 }
 
@@ -577,7 +591,6 @@ struct SeedGitCommit<'a> {
 }
 
 fn git_pack_state(
-    object_store: &dyn ObjectStore,
     git_segment_store: &scope_git_storage::GitSegmentStore,
     repository_id: &str,
     label: &str,
@@ -585,7 +598,7 @@ fn git_pack_state(
 ) -> Result<(GitHead, GitPackSpan, GitSegmentUpload), ApiError> {
     with_seed_git_repo(label, |repo_path| {
         apply_seed_commits(repo_path, commits)?;
-        store_seed_git_pack(object_store, git_segment_store, repository_id, repo_path)
+        store_seed_git_pack(git_segment_store, repository_id, repo_path)
     })
 }
 
@@ -667,7 +680,7 @@ fn update_demo_git_snapshot(
             &main_oid,
         )?;
         let (main_head, main_pack_span, segment_upload) =
-            store_seed_git_pack(object_store, git_segment_store, repository_id, repo_path)?;
+            store_seed_git_pack(git_segment_store, repository_id, repo_path)?;
         let working_snapshot = store_seed_bundle(
             object_store,
             repo_path,

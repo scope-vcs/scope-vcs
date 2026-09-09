@@ -1,4 +1,5 @@
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, error::ErrorKind};
+use scope_cli::api::ApiSession;
 use scope_cli::{
     api::{api_url, http_client},
     error::CliError,
@@ -280,5 +281,10 @@ fn run_request(args: RequestArgs, json: bool) -> anyhow::Result<()> {
     let api_url = api_url();
     let client = http_client()?;
     let session = session_from_cache_or_browser(&client, &api_url)?;
-    run_request_command(command, &client, &api_url, &session.token, json)?.render(json)
+    run_request_command(
+        command,
+        ApiSession::new(&client, &api_url, &session.token),
+        json,
+    )?
+    .render(json)
 }

@@ -1,4 +1,3 @@
-use super::requests::api_request;
 use super::*;
 use scope_api_contract::attachments::{
     PrepareRequestAttachmentResponse, RequestAttachmentResponse,

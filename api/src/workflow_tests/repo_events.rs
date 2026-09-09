@@ -6,16 +6,14 @@ use std::time::Duration;
 use tokio_stream::StreamExt;
 
 async fn events(state: AppState, auth: Option<String>) -> Response {
-    let mut request = Request::builder()
-        .method("GET")
-        .uri("/v1/repos/owner/repo/events");
-    if let Some(auth) = auth {
-        request = request.header(AUTHORIZATION, auth);
-    }
-    router(state)
-        .oneshot(request.body(Body::empty()).unwrap())
-        .await
-        .unwrap()
+    api_request(
+        router(state),
+        "GET",
+        "/v1/repos/owner/repo/events",
+        auth.as_deref(),
+        None,
+    )
+    .await
 }
 
 async fn next_event(stream: &mut axum::body::BodyDataStream) -> String {
@@ -261,17 +259,14 @@ async fn repo_events_send_one_public_error_when_repo_is_deleted() {
             .contains(r#""kind":"Connected""#)
     );
 
-    let deleted = app
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri("/v1/repos/owner/repo")
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let deleted = api_request(
+        app,
+        "DELETE",
+        "/v1/repos/owner/repo",
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(deleted.status(), StatusCode::OK);
     let error = next_event(&mut stream).await;
     assert!(error.contains("event: error"), "{error}");

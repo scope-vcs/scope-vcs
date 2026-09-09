@@ -1,11 +1,10 @@
 use super::{
     REQUEST_DISCUSSION_BODY_MAX_BYTES, REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES, Request,
-    RequestEvent, RequestEventKind, RequestEventPayload, validate_body_size,
-    validate_required_body, validate_required_id,
+    RequestEvent, RequestEventKind, RequestEventPayload, ensure_request_matches,
+    validate_body_size, validate_required_body, validate_required_id,
 };
 use crate::{error::DomainError, policy::ScopePath};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequestDiscussionStatus {
@@ -163,8 +162,8 @@ struct DiscussionTransitionInput {
 }
 
 pub fn create_request_discussion(
-    requests: &mut BTreeMap<String, Request>,
-    discussions: &mut BTreeMap<String, RequestDiscussion>,
+    mut request: Request,
+    discussion_id_exists: bool,
     input: CreateRequestDiscussionInput,
 ) -> Result<CreateRequestDiscussionMutation, DomainError> {
     validate_common(
@@ -178,11 +177,11 @@ pub fn create_request_discussion(
     if !input.actor_can_participate {
         return Err(DomainError::forbidden("request discussion access required"));
     }
-    if discussions.contains_key(&input.id) {
+    if discussion_id_exists {
         return Err(DomainError::conflict("request discussion already exists"));
     }
-    let request = request_mut(requests, &input.request_id)?;
-    let position = advance_activity(request)?;
+    ensure_request_matches(&request, &input.request_id)?;
+    let position = advance_activity(&mut request)?;
     let discussion = RequestDiscussion {
         id: input.id,
         request_id: request.id.clone(),
@@ -198,19 +197,19 @@ pub fn create_request_discussion(
         resolved_by_user_id: None,
     };
     let read_state = read_state(&discussion, &input.actor_user_id, position, input.now_unix);
-    discussions.insert(discussion.id.clone(), discussion.clone());
     Ok(CreateRequestDiscussionMutation {
         created: true,
-        request: request.clone(),
+        request,
         discussion,
         read_state,
     })
 }
 
 pub fn create_request_discussion_reply(
-    requests: &mut BTreeMap<String, Request>,
-    discussions: &mut BTreeMap<String, RequestDiscussion>,
-    replies: &mut BTreeMap<String, RequestDiscussionReply>,
+    mut request: Request,
+    mut discussion: RequestDiscussion,
+    quoted_reply: Option<&RequestDiscussionReply>,
+    reply_id_exists: bool,
     input: CreateRequestDiscussionReplyInput,
 ) -> Result<CreateRequestDiscussionReplyMutation, DomainError> {
     validate_reply_input(
@@ -224,21 +223,21 @@ pub fn create_request_discussion_reply(
     if !input.actor_can_participate {
         return Err(DomainError::forbidden("request discussion access required"));
     }
-    if replies.contains_key(&input.id) {
+    if reply_id_exists {
         return Err(DomainError::conflict(
             "request discussion reply already exists",
         ));
     }
-    let request = request_mut(requests, &input.request_id)?;
-    let position = next_activity_position(request)?;
+    ensure_request_matches(&request, &input.request_id)?;
+    let position = next_activity_position(&request)?;
     validate_reply_target(
-        discussions,
-        replies,
+        &discussion,
+        quoted_reply,
         &input.discussion_id,
         input.reply_to_reply_id.as_deref(),
         position,
     )?;
-    let discussion = discussion_mut(discussions, &input.request_id, &input.discussion_id)?;
+    ensure_discussion_matches(&discussion, &input.request_id, &input.discussion_id)?;
     if discussion.status == RequestDiscussionStatus::Resolved {
         return Err(DomainError::conflict("request discussion is resolved"));
     }
@@ -254,11 +253,10 @@ pub fn create_request_discussion_reply(
         client_reply_id: input.client_reply_id,
         created_at_unix: input.now_unix,
     };
-    let read_state = read_state(discussion, &input.actor_user_id, position, input.now_unix);
-    replies.insert(reply.id.clone(), reply.clone());
+    let read_state = read_state(&discussion, &input.actor_user_id, position, input.now_unix);
     Ok(CreateRequestDiscussionReplyMutation {
-        request: request.clone(),
-        discussion: discussion.clone(),
+        request,
+        discussion,
         reply,
         read_state,
         activity_event: None,
@@ -266,13 +264,13 @@ pub fn create_request_discussion_reply(
 }
 
 pub fn resolve_request_discussion(
-    requests: &mut BTreeMap<String, Request>,
-    discussions: &mut BTreeMap<String, RequestDiscussion>,
+    request: Request,
+    discussion: RequestDiscussion,
     input: ResolveRequestDiscussionInput,
 ) -> Result<RequestDiscussionMutation, DomainError> {
     transition_discussion(
-        requests,
-        discussions,
+        request,
+        discussion,
         DiscussionTransitionInput {
             request_id: input.request_id,
             discussion_id: input.discussion_id,
@@ -287,13 +285,13 @@ pub fn resolve_request_discussion(
 }
 
 pub fn reopen_request_discussion(
-    requests: &mut BTreeMap<String, Request>,
-    discussions: &mut BTreeMap<String, RequestDiscussion>,
+    request: Request,
+    discussion: RequestDiscussion,
     input: ReopenRequestDiscussionInput,
 ) -> Result<RequestDiscussionMutation, DomainError> {
     transition_discussion(
-        requests,
-        discussions,
+        request,
+        discussion,
         DiscussionTransitionInput {
             request_id: input.request_id,
             discussion_id: input.discussion_id,
@@ -308,9 +306,9 @@ pub fn reopen_request_discussion(
 }
 
 pub fn reopen_and_reply_to_request_discussion(
-    requests: &mut BTreeMap<String, Request>,
-    discussions: &mut BTreeMap<String, RequestDiscussion>,
-    replies: &mut BTreeMap<String, RequestDiscussionReply>,
+    mut request: Request,
+    mut discussion: RequestDiscussion,
+    quoted_reply: Option<&RequestDiscussionReply>,
     input: ReopenAndReplyToRequestDiscussionInput,
 ) -> Result<CreateRequestDiscussionReplyMutation, DomainError> {
     if !input.actor_can_participate {
@@ -325,20 +323,20 @@ pub fn reopen_and_reply_to_request_discussion(
         &input.body_markdown,
     )?;
     validate_required_id("event id", &input.event_id)?;
-    let request = request_mut(requests, &input.request_id)?;
-    ensure_request_discussion_transition_allowed(request, input.actor_can_transition)?;
-    let position = next_activity_position(request)?;
+    ensure_request_matches(&request, &input.request_id)?;
+    ensure_request_discussion_transition_allowed(&request, input.actor_can_transition)?;
+    let position = next_activity_position(&request)?;
     validate_reply_target(
-        discussions,
-        replies,
+        &discussion,
+        quoted_reply,
         &input.discussion_id,
         input.reply_to_reply_id.as_deref(),
         position,
     )?;
     let request_author_user_id = request.author_user_id.clone();
-    let discussion = discussion_mut(discussions, &input.request_id, &input.discussion_id)?;
+    ensure_discussion_matches(&discussion, &input.request_id, &input.discussion_id)?;
     ensure_can_transition(
-        discussion,
+        &discussion,
         &request_author_user_id,
         &input.actor_user_id,
         input.actor_is_maintainer,
@@ -346,9 +344,6 @@ pub fn reopen_and_reply_to_request_discussion(
     if discussion.status != RequestDiscussionStatus::Resolved {
         return Err(DomainError::conflict("request discussion is already open"));
     }
-    let request = requests
-        .get_mut(&input.request_id)
-        .expect("validated request");
     request.activity_version = position;
     discussion.status = RequestDiscussionStatus::Open;
     discussion.resolved_at_unix = None;
@@ -364,7 +359,7 @@ pub fn reopen_and_reply_to_request_discussion(
         client_reply_id: input.client_reply_id,
         created_at_unix: input.now_unix,
     };
-    let read_state = read_state(discussion, &input.actor_user_id, position, input.now_unix);
+    let read_state = read_state(&discussion, &input.actor_user_id, position, input.now_unix);
     let activity_event = RequestEvent {
         id: input.event_id,
         request_id: request.id.clone(),
@@ -376,10 +371,9 @@ pub fn reopen_and_reply_to_request_discussion(
         },
         created_at_unix: input.now_unix,
     };
-    replies.insert(reply.id.clone(), reply.clone());
     Ok(CreateRequestDiscussionReplyMutation {
-        request: request.clone(),
-        discussion: discussion.clone(),
+        request,
+        discussion,
         reply,
         read_state,
         activity_event: Some(activity_event),
@@ -387,22 +381,23 @@ pub fn reopen_and_reply_to_request_discussion(
 }
 
 pub fn mark_request_discussion_read(
-    discussions: &BTreeMap<String, RequestDiscussion>,
-    read_states: &mut BTreeMap<(String, String), RequestDiscussionReadState>,
+    discussion: &RequestDiscussion,
+    existing_state: Option<RequestDiscussionReadState>,
     input: MarkRequestDiscussionReadInput,
 ) -> Result<RequestDiscussionReadState, DomainError> {
     validate_required_id("discussion id", &input.discussion_id)?;
     validate_required_id("user id", &input.user_id)?;
-    let discussion = discussions
-        .get(&input.discussion_id)
-        .ok_or_else(|| DomainError::not_found("request discussion not found"))?;
+    if discussion.id != input.discussion_id {
+        return Err(DomainError::not_found("request discussion not found"));
+    }
     let through = input
         .through_position
         .min(discussion.last_activity_position);
-    let key = (input.discussion_id.clone(), input.user_id.clone());
-    let state = read_states
-        .entry(key)
-        .or_insert_with(|| RequestDiscussionReadState {
+    let mut state = existing_state
+        .filter(|state| {
+            state.discussion_id == input.discussion_id && state.user_id == input.user_id
+        })
+        .unwrap_or(RequestDiscussionReadState {
             discussion_id: input.discussion_id,
             user_id: input.user_id,
             read_through_position: 0,
@@ -412,21 +407,21 @@ pub fn mark_request_discussion_read(
         state.read_through_position = through;
         state.updated_at_unix = input.now_unix;
     }
-    Ok(state.clone())
+    Ok(state)
 }
 
 fn transition_discussion(
-    requests: &mut BTreeMap<String, Request>,
-    discussions: &mut BTreeMap<String, RequestDiscussion>,
+    mut request: Request,
+    mut discussion: RequestDiscussion,
     input: DiscussionTransitionInput,
 ) -> Result<RequestDiscussionMutation, DomainError> {
     validate_required_id("event id", &input.event_id)?;
-    let request = request_mut(requests, &input.request_id)?;
-    ensure_request_discussion_transition_allowed(request, input.actor_can_transition)?;
+    ensure_request_matches(&request, &input.request_id)?;
+    ensure_request_discussion_transition_allowed(&request, input.actor_can_transition)?;
     let request_author_user_id = request.author_user_id.clone();
-    let discussion = discussion_mut(discussions, &input.request_id, &input.discussion_id)?;
+    ensure_discussion_matches(&discussion, &input.request_id, &input.discussion_id)?;
     ensure_can_transition(
-        discussion,
+        &discussion,
         &request_author_user_id,
         &input.actor_user_id,
         input.actor_is_maintainer,
@@ -437,10 +432,7 @@ fn transition_discussion(
             RequestDiscussionStatus::Resolved => "request discussion is already resolved",
         }));
     }
-    let request = requests
-        .get_mut(&input.request_id)
-        .expect("validated request");
-    let position = advance_activity(request)?;
+    let position = advance_activity(&mut request)?;
     discussion.status = input.target;
     discussion.last_activity_position = position;
     let (kind, payload) = match input.target {
@@ -475,8 +467,8 @@ fn transition_discussion(
         created_at_unix: input.now_unix,
     };
     Ok(RequestDiscussionMutation {
-        request: request.clone(),
-        discussion: discussion.clone(),
+        request,
+        discussion,
         event,
     })
 }
@@ -575,18 +567,18 @@ fn validate_reply_input(
 }
 
 fn validate_reply_target(
-    discussions: &BTreeMap<String, RequestDiscussion>,
-    replies: &BTreeMap<String, RequestDiscussionReply>,
+    discussion: &RequestDiscussion,
+    quoted_reply: Option<&RequestDiscussionReply>,
     discussion_id: &str,
     reply_to: Option<&str>,
     new_reply_position: u64,
 ) -> Result<(), DomainError> {
-    if !discussions.contains_key(discussion_id) {
+    if discussion.id != discussion_id {
         return Err(DomainError::not_found("request discussion not found"));
     }
     if let Some(reply_id) = reply_to {
-        let reply = replies
-            .get(reply_id)
+        let reply = quoted_reply
+            .filter(|reply| reply.id == reply_id)
             .ok_or_else(|| DomainError::invalid_input("quoted reply not found"))?;
         if reply.discussion_id != discussion_id {
             return Err(DomainError::invalid_input(
@@ -602,24 +594,16 @@ fn validate_reply_target(
     Ok(())
 }
 
-fn discussion_mut<'a>(
-    discussions: &'a mut BTreeMap<String, RequestDiscussion>,
+fn ensure_discussion_matches(
+    discussion: &RequestDiscussion,
     request_id: &str,
     discussion_id: &str,
-) -> Result<&'a mut RequestDiscussion, DomainError> {
-    discussions
-        .get_mut(discussion_id)
-        .filter(|discussion| discussion.request_id == request_id)
-        .ok_or_else(|| DomainError::not_found("request discussion not found"))
-}
-
-fn request_mut<'a>(
-    requests: &'a mut BTreeMap<String, Request>,
-    request_id: &str,
-) -> Result<&'a mut Request, DomainError> {
-    requests
-        .get_mut(request_id)
-        .ok_or_else(|| DomainError::not_found("request not found"))
+) -> Result<(), DomainError> {
+    if discussion.id == discussion_id && discussion.request_id == request_id {
+        Ok(())
+    } else {
+        Err(DomainError::not_found("request discussion not found"))
+    }
 }
 
 fn advance_activity(request: &mut Request) -> Result<u64, DomainError> {
@@ -689,21 +673,25 @@ mod tests {
             client_reply_id: "client-parent".to_string(),
             created_at_unix: 2,
         };
-        let discussions = BTreeMap::from([(discussion.id.clone(), discussion)]);
-        let replies = BTreeMap::from([(parent.id.clone(), parent)]);
 
         assert_eq!(
-            validate_reply_target(&discussions, &replies, "discussion", None, 3),
+            validate_reply_target(&discussion, Some(&parent), "discussion", None, 3),
             Ok(())
         );
         assert_eq!(
-            validate_reply_target(&discussions, &replies, "discussion", Some("parent"), 2)
+            validate_reply_target(&discussion, None, "discussion", Some("parent"), 3)
+                .unwrap_err()
+                .message,
+            "quoted reply not found"
+        );
+        assert_eq!(
+            validate_reply_target(&discussion, Some(&parent), "discussion", Some("parent"), 2)
                 .unwrap_err()
                 .kind,
             crate::error::DomainErrorKind::InvalidInput
         );
         assert_eq!(
-            validate_reply_target(&discussions, &replies, "discussion", Some("parent"), 3),
+            validate_reply_target(&discussion, Some(&parent), "discussion", Some("parent"), 3),
             Ok(())
         );
 
@@ -721,12 +709,8 @@ mod tests {
             resolved_at_unix: None,
             resolved_by_user_id: None,
         };
-        let discussions = BTreeMap::from([
-            ("discussion".to_string(), discussions["discussion"].clone()),
-            (other.id.clone(), other),
-        ]);
         assert_eq!(
-            validate_reply_target(&discussions, &replies, "other", Some("parent"), 3)
+            validate_reply_target(&other, Some(&parent), "other", Some("parent"), 3)
                 .unwrap_err()
                 .kind,
             crate::error::DomainErrorKind::InvalidInput

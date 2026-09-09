@@ -1,12 +1,11 @@
 use super::{
     REQUEST_DESCRIPTION_MAX_BYTES, REQUEST_TITLE_MAX_BYTES, Request, RequestEvent,
     RequestEventKind, RequestEventPayload, RequestIdentityAuditFact, RequestTimelineMutation,
-    advance_request_activity, ensure_event_id_available, open_request_mut, validate_body_size,
-    validate_required_id,
+    advance_request_activity, ensure_event_id_available, ensure_request_matches,
+    validate_body_size, validate_required_id,
 };
 use crate::error::DomainError;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
 pub struct EditRequestIdentityInput {
@@ -21,14 +20,14 @@ pub struct EditRequestIdentityInput {
 }
 
 pub fn edit_request_identity(
-    requests: &mut BTreeMap<String, Request>,
-    events: &mut BTreeMap<String, RequestEvent>,
+    mut request: Request,
+    event_id_exists: bool,
     input: EditRequestIdentityInput,
 ) -> Result<RequestTimelineMutation, DomainError> {
     validate_required_id("request id", &input.request_id)?;
     validate_required_id("actor user id", &input.actor_user_id)?;
     validate_required_id("event id", &input.event_id)?;
-    ensure_event_id_available(events, &input.event_id)?;
+    ensure_event_id_available(event_id_exists)?;
     if !input.actor_can_edit_identity {
         return Err(DomainError::forbidden("request edit access required"));
     }
@@ -48,7 +47,10 @@ pub fn edit_request_identity(
             REQUEST_DESCRIPTION_MAX_BYTES,
         )?;
     }
-    let request = open_request_mut(requests, &input.request_id)?;
+    ensure_request_matches(&request, &input.request_id)?;
+    if request.is_terminal() {
+        return Err(DomainError::conflict("request is closed"));
+    }
     if input.description_markdown.is_some()
         && input
             .expected_description_markdown
@@ -73,8 +75,7 @@ pub fn edit_request_identity(
     request.title = title;
     request.description_markdown = description_markdown;
     request.updated_at_unix = input.now_unix;
-    let position = advance_request_activity(request)?;
-    let request = request.clone();
+    let position = advance_request_activity(&mut request)?;
     let event = RequestEvent {
         id: input.event_id,
         request_id: request.id.clone(),
@@ -84,7 +85,6 @@ pub fn edit_request_identity(
         payload: RequestEventPayload::IdentityEdited { before, after },
         created_at_unix: input.now_unix,
     };
-    events.insert(event.id.clone(), event.clone());
     Ok(RequestTimelineMutation { request, event })
 }
 

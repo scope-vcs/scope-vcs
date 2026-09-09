@@ -1,3 +1,4 @@
+use crate::api::ApiSession;
 use crate::api::{AuthenticatedSession, validate_session_token};
 use anyhow::Context;
 #[cfg(any(target_os = "macos", windows))]
@@ -28,7 +29,7 @@ pub fn cached_cli_session(
         return Ok(None);
     };
 
-    match validate_session_token(client, api_url, &token)? {
+    match validate_session_token(ApiSession::new(client, api_url, &token))? {
         Some(user) => Ok(Some(AuthenticatedSession { token, user })),
         None => {
             delete_stored_session_token(api_url)?;

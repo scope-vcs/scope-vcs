@@ -5,7 +5,8 @@ use scope_cache_domain::{
     PrepareUpload, PrepareUploadDecision, RepositoryId, UploadLease, UploadLeaseId,
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseTransaction, QueryResult, Statement, TransactionTrait,
+    ConnectionTrait, DatabaseBackend, DatabaseTransaction, FromQueryResult, QueryResult, Statement,
+    TransactionTrait,
 };
 
 mod retention;
@@ -35,8 +36,8 @@ impl CacheStore {
             .query_one(statement(
                 "SELECT o.repository_id, o.checksum_sha256, o.storage_backend, o.object_key,
                         o.size_bytes, o.created_at_unix,
-                        r.last_accessed_at_unix AS reference_accessed_at_unix,
-                        r.expires_at_unix AS reference_expires_at_unix,
+                        r.last_accessed_at_unix,
+                        r.expires_at_unix,
                         r.identity_digest AS reference_identity_digest,
                         r.compatibility_group_digest
                  FROM scope_cache_references r
@@ -65,20 +66,7 @@ impl CacheStore {
         let restored_identity: String = row
             .try_get("", "reference_identity_digest")
             .map_err(PostgresError::internal)?;
-        let current = ReferenceRow {
-            checksum_sha256: object.checksum_sha256.clone(),
-            compatibility_group_digest: row
-                .try_get("", "compatibility_group_digest")
-                .map_err(PostgresError::internal)?,
-            last_accessed_at_unix: from_i64(
-                row.try_get("", "reference_accessed_at_unix")
-                    .map_err(PostgresError::internal)?,
-            )?,
-            expires_at_unix: from_i64(
-                row.try_get("", "reference_expires_at_unix")
-                    .map_err(PostgresError::internal)?,
-            )?,
-        };
+        let current = decode_reference(&row)?;
         let reference = scope_cache_domain::access_reference(
             CachePolicy,
             &domain_reference(repository_id, &restored_identity, &current)?,
@@ -484,6 +472,24 @@ struct ReferenceRow {
     expires_at_unix: u64,
 }
 
+#[derive(FromQueryResult)]
+struct StoredReferenceRow {
+    checksum_sha256: String,
+    compatibility_group_digest: String,
+    last_accessed_at_unix: i64,
+    expires_at_unix: i64,
+}
+
+fn decode_reference(row: &QueryResult) -> Result<ReferenceRow, PostgresError> {
+    let row = StoredReferenceRow::from_query_result(row, "").map_err(PostgresError::internal)?;
+    Ok(ReferenceRow {
+        checksum_sha256: row.checksum_sha256,
+        compatibility_group_digest: row.compatibility_group_digest,
+        last_accessed_at_unix: from_i64(row.last_accessed_at_unix)?,
+        expires_at_unix: from_i64(row.expires_at_unix)?,
+    })
+}
+
 async fn lock_repository(
     tx: &DatabaseTransaction,
     repository_id: &str,
@@ -511,24 +517,7 @@ async fn current_reference(
     ))
     .await
     .map_err(PostgresError::internal)?
-    .map(|row| {
-        Ok(ReferenceRow {
-            checksum_sha256: row
-                .try_get("", "checksum_sha256")
-                .map_err(PostgresError::internal)?,
-            compatibility_group_digest: row
-                .try_get("", "compatibility_group_digest")
-                .map_err(PostgresError::internal)?,
-            last_accessed_at_unix: from_i64(
-                row.try_get("", "last_accessed_at_unix")
-                    .map_err(PostgresError::internal)?,
-            )?,
-            expires_at_unix: from_i64(
-                row.try_get("", "expires_at_unix")
-                    .map_err(PostgresError::internal)?,
-            )?,
-        })
-    })
+    .map(|row| decode_reference(&row))
     .transpose()
 }
 
@@ -610,63 +599,55 @@ fn statement(sql: &str, values: Vec<sea_orm::Value>) -> Statement {
     Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values)
 }
 
+#[derive(FromQueryResult)]
+struct ObjectRow {
+    repository_id: String,
+    checksum_sha256: String,
+    storage_backend: String,
+    object_key: String,
+    size_bytes: i64,
+    created_at_unix: i64,
+}
+
+#[derive(FromQueryResult)]
+struct UploadRow {
+    upload_id: String,
+    repository_id: String,
+    identity_digest: String,
+    compatibility_group_digest: String,
+    checksum_sha256: String,
+    storage_backend: String,
+    object_key: String,
+    size_bytes: i64,
+    state: String,
+    created_at_unix: i64,
+    expires_at_unix: i64,
+}
+
 fn decode_object(row: &QueryResult) -> Result<CacheObjectRecord, PostgresError> {
+    let row = ObjectRow::from_query_result(row, "").map_err(PostgresError::internal)?;
     Ok(CacheObjectRecord {
-        repository_id: row
-            .try_get("", "repository_id")
-            .map_err(PostgresError::internal)?,
-        checksum_sha256: row
-            .try_get("", "checksum_sha256")
-            .map_err(PostgresError::internal)?,
-        storage_backend: row
-            .try_get("", "storage_backend")
-            .map_err(PostgresError::internal)?,
-        object_key: row
-            .try_get("", "object_key")
-            .map_err(PostgresError::internal)?,
-        size_bytes: from_i64(
-            row.try_get("", "size_bytes")
-                .map_err(PostgresError::internal)?,
-        )?,
-        created_at_unix: from_i64(
-            row.try_get("", "created_at_unix")
-                .map_err(PostgresError::internal)?,
-        )?,
+        repository_id: row.repository_id,
+        checksum_sha256: row.checksum_sha256,
+        storage_backend: row.storage_backend,
+        object_key: row.object_key,
+        size_bytes: from_i64(row.size_bytes)?,
+        created_at_unix: from_i64(row.created_at_unix)?,
     })
 }
 
 fn decode_upload(row: &QueryResult) -> Result<CacheUploadRecord, PostgresError> {
+    let row = UploadRow::from_query_result(row, "").map_err(PostgresError::internal)?;
     Ok(CacheUploadRecord {
-        upload_id: row
-            .try_get("", "upload_id")
-            .map_err(PostgresError::internal)?,
-        repository_id: row
-            .try_get("", "repository_id")
-            .map_err(PostgresError::internal)?,
-        identity_digest: row
-            .try_get("", "identity_digest")
-            .map_err(PostgresError::internal)?,
-        compatibility_group_digest: row
-            .try_get("", "compatibility_group_digest")
-            .map_err(PostgresError::internal)?,
-        checksum_sha256: row
-            .try_get("", "checksum_sha256")
-            .map_err(PostgresError::internal)?,
-        storage_backend: row
-            .try_get("", "storage_backend")
-            .map_err(PostgresError::internal)?,
-        object_key: row
-            .try_get("", "object_key")
-            .map_err(PostgresError::internal)?,
-        size_bytes: from_i64(
-            row.try_get("", "size_bytes")
-                .map_err(PostgresError::internal)?,
-        )?,
-        state: match row
-            .try_get::<String>("", "state")
-            .map_err(PostgresError::internal)?
-            .as_str()
-        {
+        upload_id: row.upload_id,
+        repository_id: row.repository_id,
+        identity_digest: row.identity_digest,
+        compatibility_group_digest: row.compatibility_group_digest,
+        checksum_sha256: row.checksum_sha256,
+        storage_backend: row.storage_backend,
+        object_key: row.object_key,
+        size_bytes: from_i64(row.size_bytes)?,
+        state: match row.state.as_str() {
             "active" => CacheUploadState::Active,
             "deleting" => CacheUploadState::Deleting,
             "committed" => CacheUploadState::Committed,
@@ -676,14 +657,8 @@ fn decode_upload(row: &QueryResult) -> Result<CacheUploadRecord, PostgresError> 
                 )));
             }
         },
-        created_at_unix: from_i64(
-            row.try_get("", "created_at_unix")
-                .map_err(PostgresError::internal)?,
-        )?,
-        expires_at_unix: from_i64(
-            row.try_get("", "expires_at_unix")
-                .map_err(PostgresError::internal)?,
-        )?,
+        created_at_unix: from_i64(row.created_at_unix)?,
+        expires_at_unix: from_i64(row.expires_at_unix)?,
     })
 }
 
@@ -700,26 +675,7 @@ fn domain_reference_from_query(
     identity_digest: &str,
     row: &QueryResult,
 ) -> Result<CacheReference, PostgresError> {
-    domain_reference(
-        repository_id,
-        identity_digest,
-        &ReferenceRow {
-            checksum_sha256: row
-                .try_get("", "checksum_sha256")
-                .map_err(PostgresError::internal)?,
-            compatibility_group_digest: row
-                .try_get("", "compatibility_group_digest")
-                .map_err(PostgresError::internal)?,
-            last_accessed_at_unix: from_i64(
-                row.try_get("", "last_accessed_at_unix")
-                    .map_err(PostgresError::internal)?,
-            )?,
-            expires_at_unix: from_i64(
-                row.try_get("", "expires_at_unix")
-                    .map_err(PostgresError::internal)?,
-            )?,
-        },
-    )
+    domain_reference(repository_id, identity_digest, &decode_reference(row)?)
 }
 
 fn domain_object(record: &CacheObjectRecord) -> Result<CacheObject, PostgresError> {

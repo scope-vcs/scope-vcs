@@ -10,12 +10,9 @@ use axum::{
 use scope_api_contract::CreateManualRunQuery;
 use std::{
     fs,
-    net::TcpListener,
     sync::{Arc, Mutex},
-    thread,
 };
 use support::*;
-use tokio::sync::oneshot;
 
 #[test]
 fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
@@ -28,18 +25,12 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
             .output()
             .unwrap();
         let oid = String::from_utf8(oid.stdout).unwrap().trim().to_string();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let api_url = format!("http://{}", listener.local_addr().unwrap());
         let upload = Arc::new(Mutex::new(None));
         let uploaded = upload.clone();
         let known_oid = oid.clone();
         let changing_checkout = checkout.path().to_path_buf();
         let uploaded_oid = oid.clone();
-        let (stop, stopped) = oneshot::channel();
-        let server = thread::spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(async move {
-                let app = Router::new()
+        let app = Router::new()
                     .route("/v1/session", get(|| async { Json(serde_json::json!({"identity":null,"user":{"id":"user-test","handle":"owner","email":"owner@example.test","email_verified":true}})) }))
                     .route("/v1/repos/owner/repo/runs/resolve", post(move |Query(query): Query<CreateManualRunQuery>, headers: HeaderMap, body: Bytes| {
                         let oid = known_oid.clone();
@@ -67,34 +58,24 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
                             Json(run_response(&query))
                         }
                     }));
-                axum::serve(tokio::net::TcpListener::from_std(listener).unwrap(), app)
-                    .with_graceful_shutdown(async { let _ = stopped.await; }).await.unwrap();
-            });
-        });
+        let server = TestServer::new(app);
         run_git(
             checkout.path(),
             [
                 "remote",
                 "add",
                 "scope",
-                &format!("{api_url}/git/permissioned/owner/repo"),
+                &format!("{}/git/permissioned/owner/repo", server.api_url),
             ],
         );
-        let config = TempDir::new("run-source-config");
-        let sessions = config.path().join("scope/sessions");
-        fs::create_dir_all(&sessions).unwrap();
-        let key = hex::encode(api_url.as_bytes());
-        fs::write(sessions.join(format!("cli-session-{key}")), "test-token").unwrap();
+        let config = &server.config;
         let trace = config.path().join("git.trace");
-        let output = scope_command(checkout.path())
-            .env("SCOPE_API_URL", &api_url)
-            .env("XDG_CONFIG_HOME", config.path())
+        let output = server
+            .command(checkout.path())
             .env("GIT_TRACE", &trace)
             .args(["--json", "run", "start", "checks", "--no-watch"])
             .output()
             .unwrap();
-        let _ = stop.send(());
-        server.join().unwrap();
         assert!(
             output.status.success(),
             "stdout: {}\nstderr: {}",

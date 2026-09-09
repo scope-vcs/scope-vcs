@@ -261,7 +261,11 @@ fn apply_update_with_head(
     let mut update = reviewed_update(head_oid, message, changes, previous_config, config);
     if let Some(previous) = repo.git_head.as_ref() {
         let sequence = previous.push_sequence + 1;
-        update.git_head.push_sequence = sequence;
+        update.git_head = scope_domain::repository::git::GitHead::new(
+            head_oid.to_string(),
+            sequence,
+            update.git_head.change_version,
+        );
         update.git_pack_span.first_sequence = sequence;
         update.git_pack_span.last_sequence = sequence;
         update.git_pack_span.base_oid = Some(previous.head_oid.clone());
@@ -276,19 +280,12 @@ fn reviewed_update(
     previous_config: Option<RepoConfig>,
     config: RepoConfig,
 ) -> ReviewedUpdateInput {
-    let mut manifest = blob("manifest v2");
-    manifest.git_oid = head_oid.to_string();
     ReviewedUpdateInput {
         occurred_at_unix: None,
         branch: "main".to_string(),
         author_id: "owner".to_string(),
         message: message.to_string(),
-        git_head: scope_domain::repository::git::GitHead {
-            head_oid: head_oid.to_string(),
-            push_sequence: 1,
-            change_version: 1,
-            manifest,
-        },
+        git_head: scope_domain::repository::git::GitHead::new(head_oid.to_string(), 1, 1),
         git_pack_span: scope_domain::repository::git::GitPackSpan {
             first_sequence: 1,
             last_sequence: 1,

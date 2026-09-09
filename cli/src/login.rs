@@ -1,3 +1,4 @@
+use crate::api::ApiSession;
 use crate::{
     api::{
         AuthenticatedSession, BrowserLoginExchangeRequest, BrowserLoginStartRequest,
@@ -104,7 +105,7 @@ pub fn logout() -> anyhow::Result<()> {
         );
     };
 
-    let revoked = match revoke_cli_session(&client, &api_url, &token) {
+    let revoked = match revoke_cli_session(ApiSession::new(&client, &api_url, &token)) {
         Ok(()) => true,
         Err(error) => {
             eprintln!("Could not revoke the server session: {error}");
@@ -133,15 +134,6 @@ pub fn session_from_cache_or_browser(
     api_url: &str,
 ) -> anyhow::Result<AuthenticatedSession> {
     session_from_cache_or_login(client, api_url, local_browser_login)
-}
-
-pub fn session_from_cache_or_device(
-    client: &Client,
-    api_url: &str,
-) -> anyhow::Result<AuthenticatedSession> {
-    session_from_cache_or_login(client, api_url, |client, api_url| {
-        device_login(client, api_url, false)
-    })
 }
 
 fn session_from_cache_or_login(
@@ -199,7 +191,7 @@ fn local_browser_login(client: &Client, api_url: &str) -> anyhow::Result<Authent
         .context("exchange browser login")?;
     let exchanged: CliSessionTokenResponse =
         decode_json_response(response, "exchange browser login")?;
-    let user = validate_session_token(client, api_url, &exchanged.session_token)?
+    let user = validate_session_token(ApiSession::new(client, api_url, &exchanged.session_token))?
         .context("completed login did not create a valid CLI session")?;
     Ok(AuthenticatedSession {
         token: exchanged.session_token,
@@ -221,7 +213,7 @@ fn exchange_login(
         .context("exchange Scope login token")?;
     let exchanged: CliSessionTokenResponse =
         decode_json_response(response, "exchange Scope login token")?;
-    let user = validate_session_token(client, api_url, &exchanged.session_token)?
+    let user = validate_session_token(ApiSession::new(client, api_url, &exchanged.session_token))?
         .context("exchange token did not create a valid CLI session")?;
     Ok(AuthenticatedSession {
         token: exchanged.session_token,
@@ -265,7 +257,7 @@ fn device_login(
             let token = poll
                 .session_token
                 .context("completed login missing token")?;
-            let user = validate_session_token(client, api_url, &token)?
+            let user = validate_session_token(ApiSession::new(client, api_url, &token))?
                 .context("completed login did not create a valid CLI session")?;
             return Ok(AuthenticatedSession { token, user });
         }

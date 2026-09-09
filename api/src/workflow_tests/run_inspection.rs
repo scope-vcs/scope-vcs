@@ -191,16 +191,14 @@ async fn inspectable_run_with_long_logs(logs_truncated: bool, long: bool) -> Ins
 }
 
 async fn get_run(state: AppState, owner: &str, repo: &str, run_id: &str, auth: String) -> Response {
-    router(state)
-        .oneshot(
-            Request::builder()
-                .uri(scope_api_contract::routes::repo_run(owner, repo, run_id))
-                .header(AUTHORIZATION, auth)
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap()
+    api_request(
+        router(state),
+        "GET",
+        &scope_api_contract::routes::repo_run(owner, repo, run_id),
+        Some(&auth),
+        None,
+    )
+    .await
 }
 
 #[tokio::test]
@@ -384,17 +382,14 @@ async fn long_step_logs_open_at_the_tail_and_page_back_without_gaps() {
     let mut query = String::new();
     let mut sequences = Vec::new();
     loop {
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .uri(format!("{path}{query}"))
-                    .header(AUTHORIZATION, bearer_header())
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = api_request(
+            app.clone(),
+            "GET",
+            &format!("{path}{query}"),
+            Some(&bearer_header()),
+            None,
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         let logs = body["logs"].as_array().unwrap();

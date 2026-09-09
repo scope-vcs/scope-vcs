@@ -93,13 +93,13 @@ function RunDetailView({
           attemptOverrides={attemptOverrides}
           jobs={detail.jobs}
           onLogRetry={() => {
-            if (selection) void refreshLogs(selection, undefined, 'retry')
+            if (selection) void refreshLogs(selection, 'retry')
           }}
           onLogEarlier={() => {
-            if (selection) void refreshLogs(selection, undefined, 'earlier')
+            if (selection) void refreshLogs(selection, 'earlier')
           }}
           onLogLatest={() => {
-            if (selection) void refreshLogs(selection, undefined, 'latest')
+            if (selection) void refreshLogs(selection, 'latest')
           }}
           onSelectAttempt={selectAttempt}
           onSelectJob={toggleJob}

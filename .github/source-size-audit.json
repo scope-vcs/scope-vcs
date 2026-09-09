@@ -32,11 +32,6 @@
       "reason": "Request list, lifecycle, identity, and participant endpoints share request lookup, visibility, and response projection."
     },
     {
-      "path": "api/src/use_cases/request_merge.rs",
-      "owner": "request merge application",
-      "reason": "Merge validation, Git segment staging, content fencing, write leasing, persistence, and cleanup form one atomic merge use case."
-    },
-    {
       "path": "cache-service/src/handlers.rs",
       "owner": "workflow cache HTTP delivery",
       "reason": "Restore and upload handlers share grant authorization, lease timing, signed-transfer behavior, and focused endpoint tests."

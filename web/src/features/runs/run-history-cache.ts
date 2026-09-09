@@ -1,14 +1,14 @@
-import type { RepoRunHistoryPage } from '@/api/types'
-import { createBoundedCache } from '../../lib/bounded-cache'
-import { mergeRunHistory } from './run-history-model'
+import type { RepoRunHistoryPage, RepoRunHistoryInput } from '@/api/types'
+import { createCachedResource } from '../../lib/cached-resource'
+import { mergeRunHistory, reloadRunHistoryPages } from './run-history-model'
 
-export type RetainedRunHistory = {
+type RetainedRunHistory = {
   history: RepoRunHistoryPage | null
   snapshot: RepoRunHistoryPage | null
   pageCount: number
 }
 
-const entries = createBoundedCache<string, RetainedRunHistory>({
+export const runHistoryResource = createCachedResource<RetainedRunHistory>({
   maxEntries: 12,
   maxWeight: 4 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
@@ -20,7 +20,7 @@ export function runHistoryCacheKey(scope: string, workflow?: string) {
 
 export function restoreRunHistory(key: string | null, initial: RepoRunHistoryPage | null): RetainedRunHistory {
   if (!initial) return { history: null, snapshot: null, pageCount: 1 }
-  const cached = key ? entries.get(key) : undefined
+  const cached = key ? runHistoryResource.read(key) : undefined
   if (cached?.history && JSON.stringify(cached.snapshot) === JSON.stringify(initial)) return cached
   if (!cached?.history || cached.pageCount === 1) return { history: initial, snapshot: initial, pageCount: 1 }
   return {
@@ -33,10 +33,58 @@ export function restoreRunHistory(key: string | null, initial: RepoRunHistoryPag
   }
 }
 
-export function retainRunHistory(key: string | null, value: RetainedRunHistory) {
-  if (key) entries.set(key, value)
+export function resetRunHistoryCache() {
+  runHistoryResource.clear()
 }
 
-export function resetRunHistoryCache() {
-  entries.clear()
+export function initializeRunHistory(key: string, initial: RepoRunHistoryPage | null) {
+  const retained = restoreRunHistory(key, initial)
+  if (retained !== runHistoryResource.peek(key)) runHistoryResource.write(key, retained)
+}
+
+type HistoryRequest = {
+  key: string
+  input: RepoRunHistoryInput
+  loadHistory: (input: RepoRunHistoryInput, signal?: AbortSignal) => Promise<RepoRunHistoryPage | null>
+}
+
+export async function refreshRunHistory({ key, input, loadHistory }: HistoryRequest): Promise<void> {
+  const snapshot = runHistoryResource.getSnapshot(key)
+  const current = snapshot.value
+  if (!current?.history) return
+  const load = async (signal: AbortSignal) => {
+    const history = await reloadRunHistoryPages(current.pageCount,
+      (after) => loadHistory({ ...input, after }, AbortSignal.any([signal, AbortSignal.timeout(15_000)])))
+    return { ...current, history }
+  }
+  if (snapshot.pending) {
+    if (snapshot.version === 'refresh') {
+      await runHistoryResource.load(key, 'refresh', load)
+      return
+    }
+    // A live change during pagination must reconcile the newly loaded depth.
+    await runHistoryResource.ensure(key, snapshot.version!, load)
+    return refreshRunHistory({ key, input, loadHistory })
+  }
+  runHistoryResource.invalidate(key)
+  await runHistoryResource.load(key, 'refresh', load)
+}
+
+export async function loadMoreRunHistory({ key, input, loadHistory }: HistoryRequest): Promise<void> {
+  const snapshot = runHistoryResource.getSnapshot(key)
+  const current = snapshot.value
+  if (snapshot.pending || !current?.history?.next_cursor) return
+  const after = current.history.next_cursor
+  runHistoryResource.invalidate(key)
+  await runHistoryResource.ensure(key, 'more', async (signal) => {
+    const next = await loadHistory({ ...input, after }, AbortSignal.any([signal, AbortSignal.timeout(15_000)]))
+    return {
+      ...current,
+      history: next ? {
+        next_cursor: next.next_cursor,
+        runs: mergeRunHistory(current.history!.runs, next.runs),
+      } : null,
+      pageCount: current.pageCount + (next ? 1 : 0),
+    }
+  })
 }

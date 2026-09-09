@@ -255,11 +255,21 @@ mod tests {
         let owner = test_owner();
         let mut repo = Repository::new(&owner, "repo", Visibility::Private, "repoi_test").unwrap();
         let snapshot = source_blob("live-snapshot");
-        repo.git_head = Some(GitHead {
-            head_oid: snapshot.git_oid.clone(),
-            push_sequence: 1,
-            change_version: 1,
-            manifest: snapshot.clone(),
+        repo.git_head = Some(GitHead::new(snapshot.git_oid.clone(), 1, 1));
+        repo.graph.commits.push(crate::projection::LogicalCommit {
+            occurred_at_unix: None,
+            id: "commit-1".into(),
+            origin: crate::projection::LogicalCommitOrigin::CanonicalPush {
+                source_head_oid: snapshot.git_oid.clone(),
+            },
+            author_id: owner.id.clone(),
+            message: "initial".into(),
+            changes: vec![crate::projection::FileChange {
+                path: ScopePath::parse("/README.md").unwrap(),
+                old_content: None,
+                new_content: Some(snapshot.clone()),
+                visibility: Visibility::Private,
+            }],
         });
 
         let mutation = delete_repo(&repo, &owner.id, &owner.handle, &repo.record.name).unwrap();

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { reply as replyFixture } from './request-discussion-test-fixtures'
 import {
   replyFragment,
   replyTargetFromFragment,
@@ -54,13 +55,8 @@ const noBoundary = { date: false, unread: false }
 const otherAuthor = { handle: 'ravi', id: 'user-ravi' }
 
 function reply(createdAtUnix: number): RequestDiscussionReplyView {
-  return {
-    author: { handle: 'maya', id: 'user-maya' },
+  return replyFixture(`reply-${createdAtUnix}`, createdAtUnix, {
     body_markdown: 'Reply',
-    created_at_unix: createdAtUnix,
     discussion_id: 'discussion',
-    id: `reply-${createdAtUnix}`,
-    position: createdAtUnix,
-    reply_to: null,
-  }
+  })
 }

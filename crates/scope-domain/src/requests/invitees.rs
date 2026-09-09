@@ -1,6 +1,5 @@
 use super::{Request, RequestAudience, RequestInvitee, validate_required_id};
 use crate::error::DomainError;
-use std::collections::BTreeMap;
 
 pub const REQUEST_ACTIVE_INVITEE_LIMIT: usize = 30;
 
@@ -28,7 +27,8 @@ pub struct LeaveRequestInput {
 
 pub fn add_request_invitee(
     request: &Request,
-    invitees: &mut BTreeMap<String, RequestInvitee>,
+    target_is_invitee: bool,
+    active_invitee_count: usize,
     input: AddRequestInviteeInput,
 ) -> Result<RequestInvitee, DomainError> {
     validate_invitee_request(request)?;
@@ -47,12 +47,12 @@ pub fn add_request_invitee(
             "repo maintainers do not need request invitations",
         ));
     }
-    if invitees.contains_key(&input.target_user_id) {
+    if target_is_invitee {
         return Err(DomainError::conflict(
             "user is already invited to this request",
         ));
     }
-    if invitees.len() >= REQUEST_ACTIVE_INVITEE_LIMIT {
+    if active_invitee_count >= REQUEST_ACTIVE_INVITEE_LIMIT {
         return Err(DomainError::conflict(format!(
             "request cannot have more than {REQUEST_ACTIVE_INVITEE_LIMIT} active invitees"
         )));
@@ -63,13 +63,12 @@ pub fn add_request_invitee(
         invited_by_user_id: input.actor_user_id,
         created_at_unix: input.now_unix,
     };
-    invitees.insert(invitee.user_id.clone(), invitee.clone());
     Ok(invitee)
 }
 
 pub fn remove_request_invitee(
     request: &Request,
-    invitees: &mut BTreeMap<String, RequestInvitee>,
+    invitee: Option<RequestInvitee>,
     input: RemoveRequestInviteeInput,
 ) -> Result<RequestInvitee, DomainError> {
     validate_invitee_request(request)?;
@@ -80,14 +79,16 @@ pub fn remove_request_invitee(
             "request invite management access required",
         ));
     }
-    invitees
-        .remove(&input.target_user_id)
+    invitee
+        .filter(|invitee| {
+            invitee.request_id == request.id && invitee.user_id == input.target_user_id
+        })
         .ok_or_else(|| DomainError::not_found("request invitee not found"))
 }
 
 pub fn leave_request(
     request: &Request,
-    invitees: &mut BTreeMap<String, RequestInvitee>,
+    invitee: Option<RequestInvitee>,
     input: LeaveRequestInput,
 ) -> Result<RequestInvitee, DomainError> {
     validate_invitee_request(request)?;
@@ -95,8 +96,10 @@ pub fn leave_request(
     if !input.actor_can_leave_request {
         return Err(DomainError::forbidden("request leave access required"));
     }
-    invitees
-        .remove(&input.actor_user_id)
+    invitee
+        .filter(|invitee| {
+            invitee.request_id == request.id && invitee.user_id == input.actor_user_id
+        })
         .ok_or_else(|| DomainError::not_found("request invitee not found"))
 }
 
@@ -110,4 +113,53 @@ fn validate_invitee_request(request: &Request) -> Result<(), DomainError> {
         return Err(DomainError::conflict("request is closed"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::requests_tests::open_request;
+
+    #[test]
+    fn invitee_facts_preserve_duplicate_limit_and_authorization_order() {
+        let request = open_request();
+        let mut input = AddRequestInviteeInput {
+            actor_user_id: request.author_user_id.clone(),
+            target_user_id: "guest".to_string(),
+            actor_can_manage_invitees: false,
+            target_is_maintainer: false,
+            now_unix: 21,
+        };
+        assert_eq!(
+            add_request_invitee(&request, true, REQUEST_ACTIVE_INVITEE_LIMIT, input.clone())
+                .unwrap_err()
+                .kind,
+            crate::error::DomainErrorKind::Forbidden
+        );
+        input.actor_can_manage_invitees = true;
+        assert_eq!(
+            add_request_invitee(&request, true, REQUEST_ACTIVE_INVITEE_LIMIT, input.clone())
+                .unwrap_err()
+                .message,
+            "user is already invited to this request"
+        );
+        assert!(
+            add_request_invitee(&request, false, REQUEST_ACTIVE_INVITEE_LIMIT, input.clone())
+                .is_err()
+        );
+        let invitee =
+            add_request_invitee(&request, false, REQUEST_ACTIVE_INVITEE_LIMIT - 1, input).unwrap();
+        let leave = LeaveRequestInput {
+            actor_user_id: "guest".to_string(),
+            actor_can_leave_request: true,
+        };
+        assert_eq!(
+            leave_request(&request, Some(invitee.clone()), leave.clone()).unwrap(),
+            invitee
+        );
+        assert_eq!(
+            leave_request(&request, None, leave).unwrap_err().kind,
+            crate::error::DomainErrorKind::NotFound
+        );
+    }
 }

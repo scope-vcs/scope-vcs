@@ -1,3 +1,4 @@
+use crate::api::ApiSession;
 use crate::{
     api::{RepositoryActor, api_url, get_repo, get_repo_config, http_client},
     auth::read_stored_session_token,
@@ -21,23 +22,12 @@ pub fn clone_repo(repository: &str, destination: Option<&Path>) -> anyhow::Resul
     let session_token = read_stored_session_token(&api_url)?
         .ok_or_else(|| CliError::authentication("not signed in; run scope login"))?;
     let client = http_client()?;
-    let repo = get_repo(
-        &client,
-        &api_url,
-        &session_token,
-        &target.owner,
-        &target.repo,
-    )?;
+    let api = ApiSession::new(&client, &api_url, &session_token);
+    let repo = get_repo(api, &target.owner, &target.repo)?;
     let repo_config = match repo.access.actor {
         RepositoryActor::Public => default_scope_repo_config(),
         RepositoryActor::Member | RepositoryActor::Owner => {
-            let context = get_repo_config(
-                &client,
-                &api_url,
-                &session_token,
-                &target.owner,
-                &target.repo,
-            )?;
+            let context = get_repo_config(api, &target.owner, &target.repo)?;
             context.config
         }
     };

@@ -2,13 +2,11 @@ use super::{
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     requests::*,
 };
-use std::collections::BTreeMap;
 
 #[test]
 fn revision_records_snapshot_without_manufacturing_a_discussion() {
-    let mut requests = BTreeMap::new();
-    start_request(
-        &mut requests,
+    let started = start_request(
+        StartRequestFacts::default(),
         StartRequestInput {
             id: "request_change".to_string(),
             repo_id: "owner/repo".to_string(),
@@ -23,8 +21,8 @@ fn revision_records_snapshot_without_manufacturing_a_discussion() {
         },
     )
     .unwrap();
-    record_working_request_upload(
-        &mut requests,
+    let uploaded = record_working_request_upload(
+        started.request,
         RecordWorkingRequestUploadInput {
             request_id: "request_change".to_string(),
             actor_user_id: "author".to_string(),
@@ -37,8 +35,8 @@ fn revision_records_snapshot_without_manufacturing_a_discussion() {
     )
     .unwrap();
     let mutation = record_request_revision(
-        &mut requests,
-        &mut BTreeMap::new(),
+        uploaded.request,
+        false,
         RecordRequestRevisionInput {
             request_id: "request_change".to_string(),
             actor_user_id: "author".to_string(),

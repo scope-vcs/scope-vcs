@@ -243,10 +243,7 @@ pub(crate) async fn create_push_intent(
         ));
     }
     let base_head_oid = repo.git_head.as_ref().map(|head| head.head_oid.clone());
-    let base_git_manifest_ref = repo
-        .git_head
-        .as_ref()
-        .map(|head| head.manifest.content_ref.clone());
+    let base_git_frontier = repo.git_head.as_ref().map(|head| head.frontier());
     let config_changed = repo.repo_config != input_config;
     if base_head_oid.as_deref() == Some(head_oid.as_str()) && config_changed {
         let now = unix_now()?;
@@ -254,7 +251,7 @@ pub(crate) async fn create_push_intent(
         let author_id = user.id.clone();
         let config = input_config.clone();
         let expected_config_hash = base_config_hash.clone();
-        let expected_manifest_ref = base_git_manifest_ref.clone();
+        let expected_git_frontier = base_git_frontier.clone();
         let changed = state
             .metadata
             .repositories()
@@ -273,12 +270,7 @@ pub(crate) async fn create_push_intent(
                             "file visibility permission required",
                         ));
                     }
-                    if repo
-                        .git_head
-                        .as_ref()
-                        .map(|head| &head.manifest.content_ref)
-                        != expected_manifest_ref.as_ref()
-                    {
+                    if repo.git_head.as_ref().map(|head| head.frontier()) != expected_git_frontier {
                         return Err(DomainError::conflict(
                             "repo content changed since review; rerun scope push --main",
                         ));
@@ -334,7 +326,7 @@ pub(crate) async fn create_push_intent(
         &head_oid,
         input_config,
         intent_base_config_hash,
-        base_git_manifest_ref,
+        base_git_frontier,
     )?;
 
     Ok(Json(CreatePushIntentResponse {

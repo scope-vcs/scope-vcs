@@ -831,11 +831,9 @@ mod tests {
                         'repoi_compaction_repo'
                     );
                     INSERT INTO scope_git_heads (
-                        repo_id, head_oid, push_sequence, change_version,
-                        manifest_object_key, manifest_sha256, manifest_size_bytes
+                        repo_id, head_oid, push_sequence, change_version, frontier_digest
                     ) VALUES (
-                        'repo_compaction', 'head-4', 4, 4,
-                        '{"GitManifestSha256":"manifest-4"}', 'manifest-4', 10
+                        'repo_compaction', 'head-4', 4, 4, 'manifest-4'
                     );
                 "#,
             )

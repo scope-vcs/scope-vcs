@@ -7,16 +7,13 @@ use axum::{
 };
 use std::{
     fs,
-    net::TcpListener,
     path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    thread::{self, JoinHandle},
 };
 use support::*;
-use tokio::sync::oneshot;
 
 const REMOTE_URL: &str = "https://scope.example/git/adam/sample";
 
@@ -25,10 +22,11 @@ fn init_configures_an_unborn_repository_for_its_first_push() {
     let dir = TempDir::new("unborn");
     run_git(dir.path(), ["-c", "init.defaultBranch=main", "init"]);
     fs::create_dir(dir.path().join(".codex")).unwrap();
-    let config_dir = TempDir::new("unborn-config");
     let server = InitServer::start();
 
-    let output = authenticated_init_command(dir.path(), config_dir.path(), &server.api_url)
+    let output = server
+        .server
+        .command(dir.path())
         .args(["init", "--name", "sample"])
         .output()
         .unwrap();
@@ -70,10 +68,11 @@ fn init_configures_an_unborn_repository_for_its_first_push() {
 fn init_keeps_the_existing_committed_repository_flow() {
     let dir = TempDir::new("committed");
     create_repo_with_head(dir.path());
-    let config_dir = TempDir::new("committed-config");
     let server = InitServer::start();
 
-    let output = authenticated_init_command(dir.path(), config_dir.path(), &server.api_url)
+    let output = server
+        .server
+        .command(dir.path())
         .args(["init", "--name", "sample"])
         .output()
         .unwrap();
@@ -104,10 +103,11 @@ fn init_restores_the_remote_and_retains_created_repo_when_local_setup_fails() {
         "blocks Scope state directory\n",
     )
     .unwrap();
-    let config_dir = TempDir::new("rollback-config");
     let server = InitServer::start();
 
-    let output = authenticated_init_command(dir.path(), config_dir.path(), &server.api_url)
+    let output = server
+        .server
+        .command(dir.path())
         .args(["init", "--name", "sample"])
         .output()
         .unwrap();
@@ -152,9 +152,10 @@ fn init_warns_on_dirty_working_tree_and_continues_to_auth() {
 fn init_json_is_one_complete_result() {
     let dir = TempDir::new("init-json");
     create_repo_with_head(dir.path());
-    let config_dir = TempDir::new("init-json-config");
     let server = InitServer::start();
-    let output = authenticated_init_command(dir.path(), config_dir.path(), &server.api_url)
+    let output = server
+        .server
+        .command(dir.path())
         .args(["--json", "init", "--name", "sample"])
         .output()
         .unwrap();
@@ -191,9 +192,10 @@ fn init_partial_failure_json_identifies_retained_repository() {
     let dir = TempDir::new("init-partial-json");
     create_repo_with_head(dir.path());
     fs::write(dir.path().join(".git/scope"), "block state directory").unwrap();
-    let config_dir = TempDir::new("init-partial-json-config");
     let server = InitServer::start();
-    let output = authenticated_init_command(dir.path(), config_dir.path(), &server.api_url)
+    let output = server
+        .server
+        .command(dir.path())
         .args(["--json", "init", "--name", "sample"])
         .output()
         .unwrap();
@@ -216,28 +218,6 @@ fn init_partial_failure_json_identifies_retained_repository() {
             .len()
             >= 3
     );
-}
-
-fn authenticated_init_command(
-    cwd: &Path,
-    config_dir: &Path,
-    api_url: &str,
-) -> std::process::Command {
-    write_session(config_dir, api_url);
-    let mut command = scope_command(cwd);
-    command.env("SCOPE_API_URL", api_url);
-    command.env("XDG_CONFIG_HOME", config_dir);
-    command
-}
-
-fn write_session(config_dir: &Path, api_url: &str) {
-    let key = api_url
-        .bytes()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let directory = config_dir.join("scope/sessions");
-    fs::create_dir_all(&directory).unwrap();
-    fs::write(directory.join(format!("cli-session-{key}")), "test-token").unwrap();
 }
 
 fn git_stdout<const N: usize>(cwd: &Path, args: [&str; N]) -> String {
@@ -264,56 +244,35 @@ fn assert_success(output: &std::process::Output, action: &str) {
 }
 
 struct InitServer {
-    api_url: String,
+    server: TestServer,
     rolled_back: Arc<AtomicBool>,
-    stop: oneshot::Sender<()>,
-    handle: JoinHandle<()>,
 }
 
 impl InitServer {
     fn start() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let api_url = format!("http://{}", listener.local_addr().unwrap());
-        let (stop, stopped) = oneshot::channel();
         let rolled_back = Arc::new(AtomicBool::new(false));
         let rollback_state = rolled_back.clone();
-        let handle = thread::spawn(move || {
-            let runtime = tokio::runtime::Runtime::new().unwrap();
-            runtime.block_on(async move {
-                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-                let app = Router::new()
-                    .route("/v1/session", get(|| async { Json(session_response()) }))
-                    .route("/v1/repos", post(|| async { Json(create_repo_response()) }))
-                    .route(
-                        "/v1/repos/adam/sample",
-                        delete(move || {
-                            let rollback_state = rollback_state.clone();
-                            async move {
-                                rollback_state.store(true, Ordering::SeqCst);
-                                StatusCode::NO_CONTENT
-                            }
-                        }),
-                    );
-                axum::serve(listener, app)
-                    .with_graceful_shutdown(async {
-                        let _ = stopped.await;
-                    })
-                    .await
-                    .unwrap();
-            });
-        });
+        let app = Router::new()
+            .route("/v1/session", get(|| async { Json(session_response()) }))
+            .route("/v1/repos", post(|| async { Json(create_repo_response()) }))
+            .route(
+                "/v1/repos/adam/sample",
+                delete(move || {
+                    let rollback_state = rollback_state.clone();
+                    async move {
+                        rollback_state.store(true, Ordering::SeqCst);
+                        StatusCode::NO_CONTENT
+                    }
+                }),
+            );
         Self {
-            api_url,
+            server: TestServer::new(app),
             rolled_back,
-            stop,
-            handle,
         }
     }
 
     fn finish(self) -> bool {
-        let _ = self.stop.send(());
-        self.handle.join().unwrap();
+        drop(self.server);
         self.rolled_back.load(Ordering::SeqCst)
     }
 }

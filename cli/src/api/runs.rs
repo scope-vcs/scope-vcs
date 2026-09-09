@@ -1,6 +1,6 @@
 use super::*;
+use crate::api::ApiSession;
 use anyhow::Context;
-use reqwest::blocking::Client;
 use scope_api_contract::{
     CreateManualRunQuery, PushTriggerEvaluationResponse, RepositoryRunDetailResponse,
     ResolveManualRunResponse, RunEventsQuery, RunLogResponse, RunResponse,
@@ -8,41 +8,30 @@ use scope_api_contract::{
 use std::io::BufRead;
 
 pub fn get_push_trigger_evaluation(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     head_oid: &str,
 ) -> anyhow::Result<PushTriggerEvaluationResponse> {
-    parse_json(
-        client
-            .get(format!(
-                "{api_url}{}",
-                routes::repo_push_trigger_evaluation(owner, repo, head_oid)
-            ))
-            .bearer_auth(session_token)
-            .send()
-            .context("load Scope push trigger evaluation")?,
+    decode_json_response(
+        api.request(
+            reqwest::Method::GET,
+            routes::repo_push_trigger_evaluation(owner, repo, head_oid),
+        )
+        .send()
+        .context("load Scope push trigger evaluation")?,
         "load Scope push trigger evaluation",
     )
 }
 
 pub fn resolve_manual_run(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     query: &CreateManualRunQuery,
 ) -> anyhow::Result<ResolveManualRunResponse> {
-    parse_json(
-        client
-            .post(format!(
-                "{api_url}{}",
-                routes::repo_run_resolve(owner, repo)
-            ))
-            .bearer_auth(session_token)
+    decode_json_response(
+        api.request(reqwest::Method::POST, routes::repo_run_resolve(owner, repo))
             .query(query)
             .send()
             .context("resolve Scope run source")?,
@@ -50,20 +39,15 @@ pub fn resolve_manual_run(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn create_manual_run(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     query: &CreateManualRunQuery,
     bundle: Vec<u8>,
 ) -> anyhow::Result<RunResponse> {
-    parse_json(
-        client
-            .post(format!("{api_url}{}", routes::repo_runs(owner, repo)))
-            .bearer_auth(session_token)
+    decode_json_response(
+        api.request(reqwest::Method::POST, routes::repo_runs(owner, repo))
             .query(query)
             .header("content-type", "application/octet-stream")
             .body(bundle)
@@ -79,47 +63,38 @@ pub enum RunStreamEvent {
 }
 
 pub fn run_detail(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     run_id: &str,
 ) -> anyhow::Result<RepositoryRunDetailResponse> {
-    parse_json(
-        client
-            .get(format!(
-                "{api_url}{}",
-                routes::repo_run_detail(owner, repo, run_id)
-            ))
-            .bearer_auth(session_token)
-            .send()
-            .context("load Scope run detail")?,
+    decode_json_response(
+        api.request(
+            reqwest::Method::GET,
+            routes::repo_run_detail(owner, repo, run_id),
+        )
+        .send()
+        .context("load Scope run detail")?,
         "load Scope run detail",
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn stream_run_events(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     run_id: &str,
     after: u64,
     on_event: impl FnMut(RunStreamEvent) -> anyhow::Result<bool>,
 ) -> anyhow::Result<()> {
-    let response = successful(
-        client
-            .get(format!(
-                "{api_url}{}",
-                routes::repo_run_events(owner, repo, run_id)
-            ))
-            .bearer_auth(session_token)
-            .query(&RunEventsQuery { after })
-            .send()
-            .context("watch Scope run")?,
+    let response = successful_response(
+        api.request(
+            reqwest::Method::GET,
+            routes::repo_run_events(owner, repo, run_id),
+        )
+        .query(&RunEventsQuery { after })
+        .send()
+        .context("watch Scope run")?,
         "watch Scope run",
     )?;
     parse_run_event_stream(std::io::BufReader::new(response), on_event)
@@ -176,95 +151,58 @@ fn parse_run_event_stream(
 }
 
 pub fn cancel_run(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     run_id: &str,
 ) -> anyhow::Result<RunResponse> {
     mutate_run(
-        client,
-        api_url,
-        session_token,
+        api,
         routes::repo_run_cancel(owner, repo, run_id),
         "cancel Scope run",
     )
 }
 
 pub fn retry_run(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     run_id: &str,
 ) -> anyhow::Result<RunResponse> {
     mutate_run(
-        client,
-        api_url,
-        session_token,
+        api,
         routes::repo_run_retry(owner, repo, run_id),
         "retry Scope run",
     )
 }
 
-fn mutate_run(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
-    path: String,
-    context: &str,
-) -> anyhow::Result<RunResponse> {
-    parse_json(
-        client
-            .post(format!("{api_url}{path}"))
-            .bearer_auth(session_token)
+fn mutate_run(api: ApiSession<'_>, path: String, context: &str) -> anyhow::Result<RunResponse> {
+    decode_json_response(
+        api.request(reqwest::Method::POST, path)
             .send()
             .with_context(|| context.to_string())?,
         context,
     )
 }
 
-fn parse_json<T: serde::de::DeserializeOwned>(
-    response: reqwest::blocking::Response,
-    context: &str,
-) -> anyhow::Result<T> {
-    decode_json_response(response, context)
-}
-
-fn successful(
-    response: reqwest::blocking::Response,
-    context: &str,
-) -> anyhow::Result<reqwest::blocking::Response> {
-    successful_response(response, context)
-}
-
 pub fn run_workflows(
-    client: &Client,
-    api_url: &str,
-    token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepositoryRunWorkflowListResponse> {
-    parse_json(
-        client
-            .get(format!(
-                "{api_url}{}",
-                routes::repo_run_workflows(owner, repo)
-            ))
-            .bearer_auth(token)
-            .send()
-            .context("list run workflows")?,
+    decode_json_response(
+        api.request(
+            reqwest::Method::GET,
+            routes::repo_run_workflows(owner, repo),
+        )
+        .send()
+        .context("list run workflows")?,
         "list run workflows",
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn run_history(
-    client: &Client,
-    api_url: &str,
-    token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     workflow: Option<&str>,
@@ -278,10 +216,8 @@ pub fn run_history(
     if let Some(after) = after {
         query.push(("after", after.into()));
     }
-    parse_json(
-        client
-            .get(format!("{api_url}{}", routes::repo_runs(owner, repo)))
-            .bearer_auth(token)
+    decode_json_response(
+        api.request(reqwest::Method::GET, routes::repo_runs(owner, repo))
             .query(&query)
             .send()
             .context("list runs")?,
@@ -289,11 +225,8 @@ pub fn run_history(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn run_step_logs(
-    client: &Client,
-    api_url: &str,
-    token: &str,
+    api: ApiSession<'_>,
     owner: &str,
     repo: &str,
     run_id: &str,
@@ -301,16 +234,14 @@ pub fn run_step_logs(
     step: u32,
     after: u64,
 ) -> anyhow::Result<RepositoryRunStepLogPageResponse> {
-    parse_json(
-        client
-            .get(format!(
-                "{api_url}{}",
-                routes::repo_run_step_logs(owner, repo, run_id, attempt, step)
-            ))
-            .bearer_auth(token)
-            .query(&[("after", after)])
-            .send()
-            .context("load run logs")?,
+    decode_json_response(
+        api.request(
+            reqwest::Method::GET,
+            routes::repo_run_step_logs(owner, repo, run_id, attempt, step),
+        )
+        .query(&[("after", after)])
+        .send()
+        .context("load run logs")?,
         "load run logs",
     )
 }

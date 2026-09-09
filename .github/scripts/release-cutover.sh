@@ -87,9 +87,6 @@ recover_cutover() {
 apply_cutover() {
   cutover_phase pre-migration
   maintenance validate-workflow-catalogs
-  if plan_includes_migration "$plan_json" m0033_git_segment_streaming_v2; then
-    run_api_maintenance backfill-git-segments-v2
-  fi
   # Persist applying before invoking the transaction. SIGKILL must never erase its uncertainty.
   cutover_phase applying
   cutover_committed=1

@@ -57,7 +57,7 @@ async fn public_request_reads_remain_available_before_projection_outbox_catches_
     )
     .await
     .unwrap();
-    update.base_git_manifest_ref = Some(Some(before.git_head.unwrap().manifest.content_ref));
+    update.base_git_frontier = Some(Some(before.git_head.unwrap().frontier()));
     let accepted = persist_test_update(&state, update).await.unwrap();
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await

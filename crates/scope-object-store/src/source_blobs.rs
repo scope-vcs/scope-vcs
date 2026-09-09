@@ -13,7 +13,6 @@ use {
 pub enum ContentObjectKind {
     Blob,
     GitBundle,
-    GitManifest,
 }
 
 impl ContentObjectKind {
@@ -21,7 +20,6 @@ impl ContentObjectKind {
         match self {
             Self::Blob => ContentRef::blob_sha256(sha256),
             Self::GitBundle => ContentRef::git_bundle_sha256(sha256),
-            Self::GitManifest => ContentRef::git_manifest_sha256(sha256),
         }
     }
 }

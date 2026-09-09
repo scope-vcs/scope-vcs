@@ -1,4 +1,5 @@
 use super::{RequestTarget, decode_json_response};
+use crate::api::ApiSession;
 use anyhow::{Context, bail};
 use reqwest::{Url, blocking::Client};
 use scope_api_contract::attachments::{
@@ -9,96 +10,80 @@ use scope_api_contract::attachments::{
 use std::time::Duration;
 
 pub fn get_request_attachment_limits(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestAttachmentLimitsResponse> {
-    execute(
-        client
-            .get(format!(
-                "{api_url}{}",
-                scope_api_contract::routes::repo_request_attachment_limits(
-                    target.owner,
-                    target.repo,
-                    target.request_id,
-                )
-            ))
-            .bearer_auth(session_token),
+    super::requests::execute_request(
+        api.request(
+            reqwest::Method::GET,
+            scope_api_contract::routes::repo_request_attachment_limits(
+                target.owner,
+                target.repo,
+                target.request_id,
+            ),
+        ),
         target,
         "load request attachment limits",
     )
 }
 
 pub fn prepare_request_attachment(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     request: &PrepareRequestAttachmentRequest,
 ) -> anyhow::Result<PrepareRequestAttachmentResponse> {
-    execute(
-        client
-            .post(format!(
-                "{api_url}{}",
-                scope_api_contract::routes::repo_request_attachment_prepare(
-                    target.owner,
-                    target.repo,
-                    target.request_id,
-                )
-            ))
-            .bearer_auth(session_token)
-            .json(request),
+    super::requests::execute_request(
+        api.request(
+            reqwest::Method::POST,
+            scope_api_contract::routes::repo_request_attachment_prepare(
+                target.owner,
+                target.repo,
+                target.request_id,
+            ),
+        )
+        .json(request),
         target,
         "prepare request attachment",
     )
 }
 
 pub fn finish_request_attachment(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     attachment_id: &str,
     request: &FinishRequestAttachmentRequest,
 ) -> anyhow::Result<RequestAttachmentResponse> {
-    execute(
-        client
-            .post(format!(
-                "{api_url}{}",
-                scope_api_contract::routes::repo_request_attachment_finish(
-                    target.owner,
-                    target.repo,
-                    target.request_id,
-                    attachment_id,
-                )
-            ))
-            .bearer_auth(session_token)
-            .json(request),
+    super::requests::execute_request(
+        api.request(
+            reqwest::Method::POST,
+            scope_api_contract::routes::repo_request_attachment_finish(
+                target.owner,
+                target.repo,
+                target.request_id,
+                attachment_id,
+            ),
+        )
+        .json(request),
         target,
         "finish request attachment",
     )
 }
 
 pub fn get_request_attachment(
-    client: &Client,
-    api_url: &str,
-    session_token: &str,
+    api: ApiSession<'_>,
     target: RequestTarget<'_>,
     attachment_id: &str,
 ) -> anyhow::Result<RequestAttachmentResponse> {
-    execute(
-        client
-            .get(format!(
-                "{api_url}{}",
-                scope_api_contract::routes::repo_request_attachment(
-                    target.owner,
-                    target.repo,
-                    target.request_id,
-                    attachment_id,
-                )
-            ))
-            .bearer_auth(session_token),
+    super::requests::execute_request(
+        api.request(
+            reqwest::Method::GET,
+            scope_api_contract::routes::repo_request_attachment(
+                target.owner,
+                target.repo,
+                target.request_id,
+                attachment_id,
+            ),
+        ),
         target,
         "load request attachment",
     )
@@ -121,14 +106,6 @@ pub fn upload_request_attachment_part(
         .send()
         .context("upload request attachment part")?;
     decode_json_response(response, "upload request attachment part")
-}
-
-fn execute<R: serde::de::DeserializeOwned>(
-    request: reqwest::blocking::RequestBuilder,
-    target: RequestTarget<'_>,
-    action: &str,
-) -> anyhow::Result<R> {
-    super::requests::execute_request(request, target, action)
 }
 
 fn upload_part_url(media_base_url: &str, upload_id: &str, part_number: u32) -> anyhow::Result<Url> {

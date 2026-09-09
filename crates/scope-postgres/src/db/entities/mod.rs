@@ -68,7 +68,7 @@ pub(super) fn i64_to_u64(value: i64, field: &str) -> Result<u64, PostgresError> 
         .map_err(|_| PostgresError::internal_message(format!("{field} cannot be negative")))
 }
 
-fn u32_to_i32(value: u32, field: &str) -> Result<i32, PostgresError> {
+pub(super) fn u32_to_i32(value: u32, field: &str) -> Result<i32, PostgresError> {
     i32::try_from(value).map_err(|_| {
         PostgresError::internal_message(format!("{field} exceeds PostgreSQL integer range"))
     })

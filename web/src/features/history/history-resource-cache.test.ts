@@ -1,36 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { CommitDetail, ReviewFileDiff } from '@/api/types'
+import type { ReviewFileDiff } from '@/api/types'
 import {
-  historyCommitCacheKey,
+  historyEntryCacheKey,
   historyDiffCacheKey,
   historyEntryDiffCacheKey,
   historyResourceCacheStats,
-  peekHistoryCommitCache,
-  readHistoryCommitCache,
-  readHistoryDiffCache,
+  historyDiffResource,
   readHistoryDiffScroll,
   resetHistoryResourceCache,
-  writeHistoryCommitCache,
-  writeHistoryDiffCache,
   writeHistoryDiffScroll,
 } from './history-resource-cache'
-
-function commit(projectedId: string): CommitDetail {
-  return {
-    audience: 'public',
-    author: null,
-    change_count: 0,
-    files_truncated: false,
-    files: [],
-    logical_commit_id: projectedId,
-    message: projectedId,
-    parent_projected_id: null,
-    projected_id: projectedId,
-    repo_id: 'scope/demo',
-    view_key: 'public',
-  }
-}
 
 function diff(path: string, text = 'content'): ReviewFileDiff {
   return {
@@ -45,22 +25,23 @@ function diff(path: string, text = 'content'): ReviewFileDiff {
 test('keys resources by immutable audience-aware identities', () => {
   const commitBase = {
     audience: 'public' as const,
-    commit: 'c1',
+    entry: 'c1',
     generation: 'generation-1',
     repoId: 'scope/demo',
     viewKey: 'public',
   }
   assert.notEqual(
-    historyCommitCacheKey(commitBase),
-    historyCommitCacheKey({ ...commitBase, audience: 'private' }),
+    historyEntryCacheKey(commitBase),
+    historyEntryCacheKey({ ...commitBase, audience: 'private' }),
   )
   assert.notEqual(
-    historyCommitCacheKey(commitBase),
-    historyCommitCacheKey({ ...commitBase, generation: 'generation-2' }),
+    historyEntryCacheKey(commitBase),
+    historyEntryCacheKey({ ...commitBase, generation: 'generation-2' }),
   )
 
   const diffBase = {
     ...commitBase,
+    commit: commitBase.entry,
     newOid: 'new',
     oldOid: 'old',
     path: '/README.md',
@@ -75,32 +56,26 @@ test('keys resources by immutable audience-aware identities', () => {
   )
 })
 
-test('bounds commit and diff entries with least-recently-used eviction', () => {
+test('bounds diff entries with least-recently-used eviction', () => {
   resetHistoryResourceCache()
-  for (let index = 0; index < 60; index += 1) {
-    writeHistoryCommitCache(`commit-${index}`, commit(`commit-${index}`))
-  }
   for (let index = 0; index < 30; index += 1) {
-    writeHistoryDiffCache(`diff-${index}`, diff(`/${index}.txt`))
+    historyDiffResource.write(`diff-${index}`, diff(`/${index}.txt`))
   }
 
-  assert.equal(historyResourceCacheStats().commits, 48)
   assert.equal(historyResourceCacheStats().diffs, 20)
-  assert.equal(peekHistoryCommitCache('commit-0'), null)
-  assert.equal(readHistoryCommitCache('commit-59')?.projected_id, 'commit-59')
-  assert.equal(readHistoryDiffCache('diff-0'), null)
-  assert.equal(readHistoryDiffCache('diff-29')?.path, '/29.txt')
+  assert.equal(historyDiffResource.read('diff-0'), null)
+  assert.equal(historyDiffResource.read('diff-29')?.path, '/29.txt')
 })
 
 test('keeps diff scroll state with its bounded cache entry', () => {
   resetHistoryResourceCache()
-  writeHistoryDiffCache('readme', diff('/README.md'))
+  historyDiffResource.write('readme', diff('/README.md'))
   writeHistoryDiffScroll('readme', 420)
-  writeHistoryDiffCache('readme', diff('/README.md', 'updated'))
+  historyDiffResource.write('readme', diff('/README.md', 'updated'))
   assert.equal(readHistoryDiffScroll('readme'), 420)
 
   for (let index = 0; index < 20; index += 1) {
-    writeHistoryDiffCache(`diff-${index}`, diff(`/${index}.txt`))
+    historyDiffResource.write(`diff-${index}`, diff(`/${index}.txt`))
   }
   assert.equal(readHistoryDiffScroll('readme'), 0)
 })
@@ -109,7 +84,7 @@ test('evicts large text diffs at the byte budget', () => {
   resetHistoryResourceCache()
   const largeText = 'x'.repeat(3 * 1024 * 1024)
   for (let index = 0; index < 6; index += 1) {
-    writeHistoryDiffCache(`large-${index}`, diff(`/${index}.txt`, largeText))
+    historyDiffResource.write(`large-${index}`, diff(`/${index}.txt`, largeText))
   }
 
   const stats = historyResourceCacheStats()

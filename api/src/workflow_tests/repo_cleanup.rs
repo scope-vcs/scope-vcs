@@ -54,14 +54,7 @@ async fn assert_repo_deleted(state: &AppState) {
 }
 
 async fn request(state: AppState, method: &str, uri: &str, authorization: String) -> Response {
-    let request = Request::builder()
-        .method(method)
-        .uri(uri)
-        .header(AUTHORIZATION, authorization);
-    router(state)
-        .oneshot(request.body(Body::empty()).unwrap())
-        .await
-        .unwrap()
+    api_request(router(state), method, uri, Some(&authorization), None).await
 }
 
 #[tokio::test]

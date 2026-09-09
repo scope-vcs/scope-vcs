@@ -1,45 +1,5 @@
-mod m0001_adopt_v6;
-mod m0002_retire_reset_schema;
-mod m0003_structured_run_attempts;
-mod m0004_runner_protocol_cutover;
-mod m0005_projection_head_oid;
-mod m0006_drop_request_credits;
-mod m0007_drop_review_ceremony;
-mod m0008_one_way_request_submission;
-mod m0009_request_ratings;
-mod m0010_file_visibility_source_of_truth;
-mod m0011_compact_request_started_events;
-mod m0012_request_revisions;
-mod m0013_workflow_jobs;
-mod m0014_run_jobs;
-mod m0015_runner_capacity;
-mod m0016_workflow_runtime_contract;
-mod m0017_run_history_indexes;
-mod m0018_truthful_run_log_truncation;
-mod m0019_run_attempt_cache_observations;
-mod m0020_cloud_execution;
-mod m0021_cache_service_cutover;
-mod m0022_git_pack_spans;
-mod m0023_logical_run_sources;
-mod m0024_git_compaction_scheduler;
-mod m0025_visibility_change_sets;
-mod m0026_repository_landing_files;
-mod m0027_run_creation_sequence;
-mod m0028_repository_workflow_catalogs;
-mod m0029_exact_compatible_caches;
-mod m0030_cache_preparation_timings;
-mod m0031_provider_neutral_run_attempts;
-mod m0032_flat_discussion_replies;
-mod m0033_git_segment_streaming_v2;
-mod m0034_repository_incarnations;
-mod m0035_retired_git_storage_cutover;
-mod m0036_request_queue_indexes;
-mod m0037_repository_history_views;
-mod m0038_history_entry_positions;
-mod m0039_history_action_feed;
-mod m0040_repository_metadata;
-mod m0041_history_occurrence_time;
-mod m0042_request_media;
+mod baseline;
+mod m0043_retire_git_manifests;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -84,105 +44,10 @@ fn spec(migration: impl MigrationTrait + 'static, impact: MigrationImpact) -> Mi
 }
 
 fn inventory() -> Vec<MigrationSpec> {
-    use MigrationImpact::{MaintenanceRequired, Online};
-
+    use MigrationImpact::MaintenanceRequired;
     vec![
-        spec(m0001_adopt_v6::Migration, MaintenanceRequired),
-        spec(m0002_retire_reset_schema::Migration, MaintenanceRequired),
-        spec(
-            m0003_structured_run_attempts::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0004_runner_protocol_cutover::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0005_projection_head_oid::Migration, MaintenanceRequired),
-        spec(m0006_drop_request_credits::Migration, MaintenanceRequired),
-        spec(m0007_drop_review_ceremony::Migration, MaintenanceRequired),
-        spec(
-            m0008_one_way_request_submission::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0009_request_ratings::Migration, Online),
-        spec(
-            m0010_file_visibility_source_of_truth::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0011_compact_request_started_events::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0012_request_revisions::Migration, MaintenanceRequired),
-        spec(m0013_workflow_jobs::Migration, MaintenanceRequired),
-        spec(m0014_run_jobs::Migration, MaintenanceRequired),
-        spec(m0015_runner_capacity::Migration, MaintenanceRequired),
-        spec(
-            m0016_workflow_runtime_contract::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0017_run_history_indexes::Migration, Online),
-        spec(
-            m0018_truthful_run_log_truncation::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0019_run_attempt_cache_observations::Migration, Online),
-        spec(m0020_cloud_execution::Migration, MaintenanceRequired),
-        spec(m0021_cache_service_cutover::Migration, MaintenanceRequired),
-        spec(m0022_git_pack_spans::Migration, MaintenanceRequired),
-        spec(m0023_logical_run_sources::Migration, MaintenanceRequired),
-        spec(m0024_git_compaction_scheduler::Migration, Online),
-        spec(m0025_visibility_change_sets::Migration, MaintenanceRequired),
-        spec(
-            m0026_repository_landing_files::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0027_run_creation_sequence::Migration, MaintenanceRequired),
-        spec(
-            m0028_repository_workflow_catalogs::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0029_exact_compatible_caches::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0030_cache_preparation_timings::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0031_provider_neutral_run_attempts::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0032_flat_discussion_replies::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0033_git_segment_streaming_v2::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0034_repository_incarnations::Migration,
-            MaintenanceRequired,
-        ),
-        spec(
-            m0035_retired_git_storage_cutover::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0036_request_queue_indexes::Migration, MaintenanceRequired),
-        spec(m0037_repository_history_views::Migration, Online),
-        spec(
-            m0038_history_entry_positions::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0039_history_action_feed::Migration, MaintenanceRequired),
-        spec(m0040_repository_metadata::Migration, Online),
-        spec(
-            m0041_history_occurrence_time::Migration,
-            MaintenanceRequired,
-        ),
-        spec(m0042_request_media::Migration, MaintenanceRequired),
+        spec(baseline::Migration, MaintenanceRequired),
+        spec(m0043_retire_git_manifests::Migration, MaintenanceRequired),
     ]
 }
 
@@ -196,6 +61,10 @@ impl MigratorTrait for Migrator {
 pub async fn apply_in_maintenance(db: &DatabaseConnection) -> Result<(), DbErr> {
     let tx = db.begin().await?;
     lock_migration_inventory(&tx).await?;
+    plan(&tx).await?;
+    if baseline::is_original_chain(&applied_migration_names(&tx).await?) {
+        baseline::bridge(&tx).await?;
+    }
     Migrator::up(&tx, None).await?;
     assert_exact_state(&tx).await?;
     tx.commit().await
@@ -234,16 +103,18 @@ where
         .iter()
         .map(|spec| spec.migration.name().to_string())
         .collect::<Vec<_>>();
-    if !expected.starts_with(&actual) {
+    let original_chain = baseline::is_original_chain(&actual);
+    if !original_chain && !expected.starts_with(&actual) {
         return Err(DbErr::Custom(format!(
-            "Scope metadata migration ledger is not a canonical prefix: expected [{}], found [{}]",
+            "Scope metadata migration ledger is not a canonical prefix: expected [{}], found [{}]. The baseline bridge accepts only the exact original chain through m0042_request_media. Older retained databases must first run original-chain revision {}",
             expected.join(", "),
-            actual.join(", ")
+            actual.join(", "),
+            baseline::ORIGINAL_CHAIN_REVISION
         )));
     }
     let pending = specs
         .into_iter()
-        .skip(actual.len())
+        .skip(if original_chain { 0 } else { actual.len() })
         .map(|spec| PendingMigration {
             name: spec.migration.name().to_string(),
             impact: spec.impact,

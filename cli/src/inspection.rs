@@ -1,4 +1,5 @@
 //! Read-only checkout status and setup diagnostics.
+use crate::api::ApiSession;
 use crate::{api, context, execution, git_repo::GitRepo};
 use serde::Serialize;
 use std::{path::PathBuf, process::Command, time::Duration};
@@ -309,7 +310,8 @@ fn inspect_remote(
             return;
         }
     };
-    match api::validate_session_token(&client, &endpoint, &token) {
+    let session = ApiSession::new(&client, &endpoint, &token);
+    match api::validate_session_token(session) {
         Ok(Some(user)) => {
             record(
                 report,
@@ -347,7 +349,7 @@ fn inspect_remote(
     let Some(target) = target else {
         return;
     };
-    let summary = match api::get_repo(&client, &endpoint, &token, &target.owner, &target.repo) {
+    let summary = match api::get_repo(session, &target.owner, &target.repo) {
         Ok(summary) => summary,
         Err(error) => {
             record(
@@ -361,7 +363,7 @@ fn inspect_remote(
         }
     };
     if summary.access.actor != api::RepositoryActor::Public {
-        match api::get_repo_config(&client, &endpoint, &token, &target.owner, &target.repo) {
+        match api::get_repo_config(session, &target.owner, &target.repo) {
             Ok(server) => {
                 if let Some(visibility) = report
                     .local
@@ -393,8 +395,7 @@ fn inspect_remote(
     report.repository = Some(summary);
     if let Some(checkout) = checkout {
         let remote = (!target.remote.is_empty()).then_some(target.remote.as_str());
-        match crate::request::inspect_current_request(checkout, &client, &endpoint, &token, remote)
-        {
+        match crate::request::inspect_current_request(checkout, session, remote) {
             Ok(request) => report.request = request,
             Err(error) => record(report, "request", "unavailable", error.to_string(), None),
         }
@@ -413,16 +414,7 @@ fn inspect_remote(
         );
         return;
     }
-    match api::run_history(
-        &client,
-        &endpoint,
-        &token,
-        &target.owner,
-        &target.repo,
-        None,
-        20,
-        None,
-    ) {
+    match api::run_history(session, &target.owner, &target.repo, None, 20, None) {
         Ok(history) => {
             let head = report
                 .request

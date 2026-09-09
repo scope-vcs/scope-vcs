@@ -1,5 +1,4 @@
 use super::*;
-use scope_object_store::ObjectStore;
 
 pub(super) const WORKFLOW: &str = r#"
 name: Test
@@ -45,19 +44,14 @@ pub(super) async fn state_with_pushed_workflow_checkout(
 }
 
 async fn workflow_list_response(state: AppState) -> Response {
-    router(state)
-        .oneshot(
-            Request::builder()
-                .uri(scope_api_contract::routes::repo_run_workflows(
-                    TEST_REPO_OWNER,
-                    TEST_REPO_NAME,
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap()
+    api_request(
+        router(state),
+        "GET",
+        &scope_api_contract::routes::repo_run_workflows(TEST_REPO_OWNER, TEST_REPO_NAME),
+        Some(&bearer_header()),
+        None,
+    )
+    .await
 }
 
 #[tokio::test]
@@ -74,11 +68,6 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
-        .unwrap();
-    let head = repo.git_head.as_ref().unwrap();
-    state
-        .test_object_store
-        .delete(&scope_object_store::object_key(&head.manifest))
         .unwrap();
     for span in &repo.git_pack_spans {
         state
@@ -98,20 +87,14 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     }
     let app = router(state);
 
-    let workflows = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri(scope_api_contract::routes::repo_run_workflows(
-                    TEST_REPO_OWNER,
-                    TEST_REPO_NAME,
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let workflows = api_request(
+        app.clone(),
+        "GET",
+        &scope_api_contract::routes::repo_run_workflows(TEST_REPO_OWNER, TEST_REPO_NAME),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(workflows.status(), StatusCode::OK);
     let workflows = response_json(workflows).await;
     assert_eq!(workflows["workflows"][0]["key"], "test");
@@ -157,40 +140,34 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
         );
     }
 
-    let first = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri(format!(
-                    "{}?workflow=test&limit=1",
-                    scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let first = api_request(
+        app.clone(),
+        "GET",
+        &format!(
+            "{}?workflow=test&limit=1",
+            scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
+        ),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(first.status(), StatusCode::OK);
     let first = response_json(first).await;
     assert_eq!(first["runs"].as_array().unwrap().len(), 1);
     let first_id = first["runs"][0]["id"].as_str().unwrap();
     assert_eq!(first_id, created_run_ids[1]);
     let cursor = first["next_cursor"].as_str().unwrap();
-    let second = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri(format!(
-                    "{}?workflow=test&limit=1&after={cursor}",
-                    scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let second = api_request(
+        app.clone(),
+        "GET",
+        &format!(
+            "{}?workflow=test&limit=1&after={cursor}",
+            scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
+        ),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(second.status(), StatusCode::OK);
     let second = response_json(second).await;
     assert_eq!(second["runs"].as_array().unwrap().len(), 1);
@@ -198,19 +175,17 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     assert_eq!(second["runs"][0]["id"], created_run_ids[0]);
     assert!(second["next_cursor"].is_null());
 
-    let wrong_filter = app
-        .oneshot(
-            Request::builder()
-                .uri(format!(
-                    "{}?workflow=missing&after={cursor}",
-                    scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let wrong_filter = api_request(
+        app,
+        "GET",
+        &format!(
+            "{}?workflow=missing&after={cursor}",
+            scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
+        ),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(wrong_filter.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -384,8 +359,7 @@ async fn direct_push_replaces_the_complete_workflow_catalog() {
     )
     .await
     .unwrap();
-    update.base_git_manifest_ref =
-        Some(Some(current.git_head.unwrap().manifest.content_ref.clone()));
+    update.base_git_frontier = Some(Some(current.git_head.unwrap().frontier()));
     state
         .metadata
         .repositories()
@@ -435,15 +409,7 @@ async fn workflow_catalog_failure_rolls_back_the_push_transaction() {
     )
     .await
     .unwrap();
-    update.base_git_manifest_ref = Some(Some(
-        before
-            .git_head
-            .as_ref()
-            .unwrap()
-            .manifest
-            .content_ref
-            .clone(),
-    ));
+    update.base_git_frontier = Some(Some(before.git_head.as_ref().unwrap().frontier()));
     update.workflow_catalog = scope_domain::runs::catalog::RepositoryWorkflowCatalog::captured(
         TEST_REPO_ID,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

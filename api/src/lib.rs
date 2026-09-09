@@ -11,9 +11,9 @@ pub(crate) mod demo_seed;
 pub mod dev;
 pub(crate) mod error;
 pub(crate) mod git;
-mod git_segment_v2_backfill;
 pub(crate) mod http;
 mod landing_file_backfill;
+mod retired_git_segments;
 mod retired_git_storage;
 pub use retired_git_storage::scrub_retired_git_storage_for_maintenance;
 pub(crate) mod media_grants;
@@ -41,10 +41,8 @@ pub mod test_support;
 mod workflow_tests;
 
 pub use app::router;
-pub use git_segment_v2_backfill::{
-    backfill_git_segments_v2_for_maintenance, cleanup_git_segments_v1_for_maintenance,
-};
 pub use landing_file_backfill::backfill_repository_landing_files_for_maintenance;
+pub use retired_git_segments::cleanup_git_segments_v1_for_maintenance;
 pub use state::AppState;
 pub use workflow_catalog_backfill::{
     backfill_repository_workflow_catalogs_for_maintenance,
