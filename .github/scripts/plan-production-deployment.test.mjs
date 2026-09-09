@@ -605,7 +605,8 @@ test("automatic code events and failed release proof cannot activate production"
 
 test("daily releases use Chicago time and leave push events out of the workflow", () => {
   const triggers = productionWorkflow.split("\nconcurrency:")[0];
-  assert.match(triggers, /schedule:\n    - cron: "0 9 \* \* \*"\n      timezone: America\/Chicago/);
+  assert.match(triggers, /cron: "8,38 \* \* \* \*"/);
+  assert.match(productionWorkflow, /needs: release-due\n    if: needs\.release-due\.outputs\.due == 'true'/);
   assert.match(triggers, /  workflow_dispatch:/);
   assert.match(triggers, /  pull_request:/);
   assert.doesNotMatch(triggers, /  push:|skip_staging_rehearsal/);
