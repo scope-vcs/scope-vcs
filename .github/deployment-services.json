@@ -128,6 +128,8 @@
         ".github/scripts/production-deployment-progress.test.mjs",
         ".github/scripts/recovery-preparation-trust.mjs",
         ".github/scripts/recovery-preparation-trust.test.mjs",
+        ".github/scripts/check-daily-release.mjs",
+        ".github/scripts/check-daily-release.test.mjs",
         ".github/scripts/prepared-deploy-trust.mjs",
         ".github/scripts/prepared-deploy-trust.test.mjs",
         ".github/workflows/scope-prepared-deploy.yml",

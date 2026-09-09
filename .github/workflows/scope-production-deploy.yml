@@ -3,8 +3,8 @@ name: Scope CI and Production Deploy
 on:
   pull_request:
   schedule:
-    - cron: "0 9 * * *"
-      timezone: America/Chicago
+    # Poll away from minute zero, as in pingdotgg/t3code.
+    - cron: "8,38 * * * *"
   workflow_dispatch:
     inputs:
       maintenance_budget_seconds:
@@ -49,8 +49,28 @@ permissions:
   deployments: read
 
 jobs:
+  release-due:
+    name: Check daily release time
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    outputs:
+      due: ${{ steps.due.outputs.due }}
+    steps:
+      - name: Checkout release scheduling code
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Check whether today's release is due
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/check-daily-release.mjs
+
   plan:
     name: Plan selected components
+    needs: release-due
+    if: needs.release-due.outputs.due == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       release_sha: ${{ steps.release.outputs.sha }}

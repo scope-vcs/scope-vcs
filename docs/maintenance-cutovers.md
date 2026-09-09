@@ -147,9 +147,14 @@ secrets and deployment protection rules.
 
 ## Daily releases
 
-`scope-production-deploy.yml` runs daily at 9:00 AM America/Chicago, including
-local daylight-saving changes. GitHub may start scheduled jobs late. Pushes to
-`main` do not start this workflow. Pull requests run validation without deploying.
+`scope-production-deploy.yml` checks at minutes 8 and 38 of every hour, following
+T3 Code's polling pattern. It releases once per America/Chicago calendar day, on
+the first check after 9 AM. The check uses Chicago time across daylight-saving
+changes and runs after acquiring the production concurrency lock. A successful
+production health gate today suppresses further automatic releases; a missed
+trigger or failed release leaves the next check eligible. GitHub may delay polls.
+Pushes to `main` do not start this workflow. Pull requests run validation without
+deploying, and manual dispatch bypasses the daily timing check.
 
 Both scheduled and manual releases pin the main head at trigger time. Later
 commits wait for the next release. Runs serialize through the production
