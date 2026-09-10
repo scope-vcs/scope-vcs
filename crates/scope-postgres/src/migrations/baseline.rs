@@ -74,7 +74,10 @@ pub(super) async fn assert_baseline_schema<C: ConnectionTrait>(db: &C) -> Result
     let comparison_schema = state.try_get::<String>("", "comparison_schema")?;
     db.execute_unprepared(&format!("CREATE SCHEMA {comparison_schema}"))
         .await?;
-    set_search_path(db, &comparison_schema).await?;
+    // Keep shared dependencies equally visible in both inventories. Otherwise
+    // pg_get_indexdef qualifies public.gin_trgm_ops only in the comparison.
+    let comparison_search_path = format!("{}, {search_path}", quote_identifier(&comparison_schema));
+    set_search_path(db, &comparison_search_path).await?;
     db.execute_unprepared(SCHEMA).await?;
     let expected = schema_inventory(db).await?;
     set_search_path(db, &search_path).await?;

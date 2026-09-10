@@ -80,6 +80,57 @@ async fn original_chain_bridge_preserves_rows_sequences_and_is_idempotent() {
 }
 
 #[tokio::test]
+async fn baseline_bridge_preserves_visible_public_extension_operator_classes() {
+    let (target, db, _lease) = isolated_database().await;
+    original_chain_database(&db).await;
+    let before = representative_business_snapshot(&db).await;
+    let sequence = sequence_state(&db).await;
+    let mut options = sea_orm::ConnectOptions::new(target.schema_database_url());
+    options.max_connections(1);
+    let visible_public = sea_orm::Database::connect(options).await.unwrap();
+    // Deployment uses public, while isolated tests normally hide it. PostgreSQL
+    // omits the public qualifier on gin_trgm_ops only when public is visible.
+    visible_public
+        .execute_unprepared(
+            "SELECT set_config('search_path', current_setting('search_path') || ', public', false)",
+        )
+        .await
+        .unwrap();
+    let search_path = visible_public
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SHOW search_path",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<String>("", "search_path")
+        .unwrap();
+
+    migrations::apply_in_maintenance(&visible_public, Default::default())
+        .await
+        .unwrap();
+
+    migrations::assert_exact_state(&visible_public)
+        .await
+        .unwrap();
+    assert_eq!(representative_business_snapshot(&db).await, before);
+    assert_eq!(sequence_state(&db).await, sequence);
+    let restored_path = visible_public
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SHOW search_path",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<String>("", "search_path")
+        .unwrap();
+    assert_eq!(restored_path, search_path);
+    visible_public.close().await.unwrap();
+}
+
+#[tokio::test]
 async fn baseline_bridge_preserves_historical_not_null_constraint_names() {
     let (_target, db, _lease) = isolated_database().await;
     original_chain_database(&db).await;
