@@ -421,7 +421,7 @@ mod tests {
                 "merged_at_unix":null,"merged_by_user_id":null,
                 "merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,
                 "updated_at_unix":2,"invitees":[],
-                "permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,
+                "permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,"can_wait_after_reply":false,
                     "can_edit_identity":false,"can_pull_branch":false,"can_push_branch":false,
                     "can_submit":false,
                     "can_manage_invitees":false,"can_leave_request":false,
