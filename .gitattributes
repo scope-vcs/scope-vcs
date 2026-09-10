@@ -6,6 +6,8 @@ dev/licensing/** text eol=lf
 legal/** text eol=lf
 legal/upstream/** -text
 legal/upstream/** linguist-vendored=true
+crates/scope-postgres/src/migrations/** text eol=lf
+crates/scope-postgres/src/db/migration_tests/fixtures/** text eol=lf
 legal/dependency-inventory.json linguist-generated=true
 legal/third-party-rust.txt linguist-generated=true
 web/public/*.txt text eol=lf

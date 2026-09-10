@@ -10,6 +10,20 @@ The original-chain source is pinned at
 revision and required storage configuration with every backup that predates the
 baseline. The old chain is not compiled into the current application.
 
+## Migration definitions are immutable
+
+`dev/checks/policy` verifies the SHA-256 digests in
+`crates/scope-postgres/src/migrations/sources.lock.json`. The frozen baseline
+SQL, original ledger, and numbered migration sources must retain their bytes.
+Pull request checks also compare existing lock entries with the target branch,
+so updating a checksum alongside an old migration is rejected.
+
+Change an existing database with a new numbered migration and add its digest
+to the lock. Keep migration SQL self-contained; calling mutable application
+helpers can change historical migration behavior without changing its source.
+Do not edit existing migrations or regenerate their lock entries to make a
+schema check pass.
+
 ## Observed retained states
 
 Read-only inspection on September 8, 2026 found these public-schema ledgers.
@@ -37,6 +51,15 @@ ledger contains exactly the original 42 migrations. Ordinary startup refuses
 that plan. Older, incomplete, unknown and newer original histories are rejected
 with the pinned source revision in the diagnostic. The current binary never
 fills gaps or resets a database to make its ledger fit.
+
+`scope-maintenance preflight` checks the planned baseline transition against
+the actual schema before deployment closes production writers. It uses the
+same schema comparison as the bridge in a transaction that always rolls back
+its comparison metadata. Release preparation, direct backend deployment, and
+staging baseline adoption run this check. `plan` remains a ledger-only operation
+for recovery after a migration has committed. Preflight validates the original
+chain, a baseline awaiting migration 43, and empty-schema initialization; it does not replay data migrations
+or claim to validate every schema object after later migrations.
 
 `scope-maintenance apply` acquires the existing exclusive metadata writer fence
 and migration lock. For the exact original ledger, it locks the ledger table and
@@ -80,7 +103,7 @@ For a backup before migration 42:
 3. Run the original binary's maintenance migration and required backfills, then
    require its `verify` command to report the exact 42-migration inventory.
 4. Check the restored business data and storage references, take a new backup,
-   and run the candidate binary's `plan` and `apply` through the maintenance
+   and run the candidate binary's `preflight` and `apply` through the maintenance
    workflow. Verify the new inventory before activating candidate services.
 
 For a backup already at the original migration 42, start with original-binary
@@ -90,12 +113,51 @@ inventory. Keep the original runner available for as long as older backups must
 remain restorable. A source SHA by itself is insufficient if its binary and
 required storage artifacts cannot be recovered.
 
+An exact original ledger does not prove that the schema is correct. Rerunning
+the original binary skips migrations already recorded as applied, including
+any whose source was subsequently edited. A schema mismatch must be diagnosed
+and repaired explicitly before bridging; never stamp or reset ledger entries.
+
+## September 10, 2026 production constraint repair
+
+Commit `7b831951` changed `m0033_git_segment_streaming_v2` after production had
+applied it. It added `retained` to the allowed upload states and to the states
+requiring complete upload metadata. Production kept the two earlier CHECK
+definitions. Staging had the newer definitions under the same migration ledger.
+The later baseline captured the newer schema.
+
+The release's production inspection and staging baseline comparison used only
+migration names. The upgrade fixture also installed the candidate baseline and
+stamped historical names, so both checks missed the physical difference.
+Production's strict bridge correctly rejected the two constraints, but only
+after maintenance had started.
+
+The approved repair replaced only `scope_git_segment_upload_state` and
+`scope_git_segment_upload_values` on `scope_git_segment_uploads` with the
+baseline's validated CHECK definitions. A transaction checked the exact
+42-migration ledger, required that these were the only schema differences,
+verified complete schema equality afterward, and verified unchanged upload
+rows. The same transaction was rehearsed with rollback before it was committed.
+No migration names or business rows were rewritten.
+
+Backups taken before that repair may retain the older CHECKs. Preserve this
+diagnosis with those backups and compare their actual schema before recovery.
+The original runner cannot repair an already-applied migration by running again.
+This is distinct from the earlier index comparison error, where PostgreSQL
+qualified `public.gin_trgm_ops` differently because of the comparison search path.
+
 ## Local verification
 
 The normal PostgreSQL tests cover fresh initialization, retained-row and
 sequence preservation, exact-ledger planning, unknown-state rejection, schema
 drift, rollback after the old ledger has been deleted, repeated application and
 writer-fence enforcement:
+
+Baseline bridge tests load a frozen schema-only snapshot in
+`crates/scope-postgres/src/db/migration_tests/fixtures/original_chain_schema.sql`
+instead of creating the schema through the candidate migration. Preflight tests
+also reproduce the earlier upload CHECK definitions and require rejection with
+unchanged rows and ledger while application writers remain open.
 
 ```sh
 SCOPE_TEST_DATABASE_URL=postgres://scope:scope@127.0.0.1:5432/scope_test \

@@ -69,6 +69,9 @@ if ! ("$SCOPE_MAINTENANCE_BINARY" plan > "$SCOPE_STAGING_BASELINE_DIR/current-pl
   "$SCOPE_MAINTENANCE_BINARY" plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json"
   node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null
 fi
+# A matching ledger does not prove matching schema. Reject drift before retaining
+# or migrating this staging baseline, including snapshots restored above.
+"$SCOPE_MAINTENANCE_BINARY" preflight >/dev/null
 # Require representative preexisting data; candidate seeding would invalidate the upgrade test.
 [[ "$(psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c 'SELECT count(*) > 0 FROM scope_repositories')" == t ]]
 # No schema change needs no new baseline dump. Reconciliation above still runs.

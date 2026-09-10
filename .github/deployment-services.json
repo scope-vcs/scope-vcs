@@ -95,6 +95,8 @@
         ".github/scripts/check-rust-boundaries.test.mjs",
         ".github/scripts/check-source-size.mjs",
         ".github/scripts/check-source-size.test.mjs",
+        ".github/scripts/check-migration-immutability.mjs",
+        ".github/scripts/check-migration-immutability.test.mjs",
         ".github/source-size-audit.json",
         ".github/scripts/production-deployment-progress.mjs",
         ".github/scripts/production-deployment-progress.test.mjs",

@@ -369,6 +369,14 @@ async fn connect_postgres_worker_store(database_url: String) -> anyhow::Result<M
 
 const WRITER_FENCE_KEY: &str = "scope:metadata-writers";
 
+pub async fn migration_preflight(
+    database_url: String,
+    limits: MigrationLimits,
+) -> anyhow::Result<MigrationPlan> {
+    let db = Database::connect(database_url).await?;
+    Ok(crate::migrations::preflight(&db, limits).await?)
+}
+
 pub async fn migration_plan(database_url: String) -> anyhow::Result<MigrationPlan> {
     let db = Database::connect(database_url).await?;
     Ok(crate::migrations::plan(&db).await?)

@@ -54,21 +54,8 @@ pub async fn apply_in_maintenance(
     db: &DatabaseConnection,
     limits: MigrationLimits,
 ) -> Result<(), DbErr> {
-    if limits.lock_timeout_seconds == 0 || limits.statement_timeout_seconds == 0 {
-        return Err(DbErr::Custom(
-            "migration operation limits must be positive".to_string(),
-        ));
-    }
     let tx = db.begin().await?;
-    tx.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT set_config('lock_timeout', $1, true), set_config('statement_timeout', $2, true)",
-        [
-            format!("{}s", limits.lock_timeout_seconds).into(),
-            format!("{}s", limits.statement_timeout_seconds).into(),
-        ],
-    ))
-    .await?;
+    set_operation_limits(&tx, limits).await?;
     lock_migration_inventory(&tx).await?;
     plan(&tx).await?;
     if baseline::is_original_chain(&applied_migration_names(&tx).await?) {
@@ -77,6 +64,51 @@ pub async fn apply_in_maintenance(
     Migrator::up(&tx, None).await?;
     assert_exact_state(&tx).await?;
     tx.commit().await
+}
+
+/// Inspect baseline bridge eligibility while writers remain online. Comparison
+/// metadata is transactional; neither the migration ledger nor user data changes.
+pub async fn preflight(
+    db: &DatabaseConnection,
+    limits: MigrationLimits,
+) -> Result<MigrationPlan, DbErr> {
+    let tx = db.begin().await?;
+    let result = async {
+        set_operation_limits(&tx, limits).await?;
+        lock_migration_inventory(&tx).await?;
+        let plan = plan(&tx).await?;
+        if plan.applied.is_empty() {
+            baseline::assert_empty_schema(&tx).await?;
+        } else if baseline::is_original_chain(&plan.applied) || plan.applied == [baseline::NAME] {
+            baseline::assert_baseline_schema(&tx).await?;
+        }
+        Ok(plan)
+    }
+    .await;
+    // Explicit rollback also cleans up failed comparisons before returning.
+    tx.rollback().await?;
+    result
+}
+
+async fn set_operation_limits<C: ConnectionTrait>(
+    db: &C,
+    limits: MigrationLimits,
+) -> Result<(), DbErr> {
+    if limits.lock_timeout_seconds == 0 || limits.statement_timeout_seconds == 0 {
+        return Err(DbErr::Custom(
+            "migration operation limits must be positive".to_string(),
+        ));
+    }
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT set_config('lock_timeout', $1, true), set_config('statement_timeout', $2, true)",
+        [
+            format!("{}s", limits.lock_timeout_seconds).into(),
+            format!("{}s", limits.statement_timeout_seconds).into(),
+        ],
+    ))
+    .await?;
+    Ok(())
 }
 
 pub async fn plan<C>(db: &C) -> Result<MigrationPlan, DbErr>

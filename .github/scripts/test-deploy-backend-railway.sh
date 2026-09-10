@@ -67,6 +67,9 @@ printf '%s\n' "$0 $*" >> "$FAKE_RAILWAY_TRACE"
 [[ "${DATABASE_URL:-}" == "postgres://public-database.test/scope" ]]
 
 case "${1:-}" in
+  preflight)
+    [[ "${FAKE_SCHEMA_DRIFT:-0}" != "1" ]]
+    ;;
   plan)
     if [[ "${FAKE_FAIL_FIRST_PLAN:-0}" == "1" && ! -f "$FAKE_RAILWAY_STATE/first-plan-failed" ]]; then
       touch "$FAKE_RAILWAY_STATE/first-plan-failed"
@@ -317,6 +320,12 @@ FAKE_MISSING_PREPARED_COMPONENT=cache run_cutover missing-prepared-cache 0
 [[ "$(cat "$test_dir/missing-prepared-cache-result")" != "0" ]]
 if grep -E 'graphql stop|maintenance apply' "$test_dir/missing-prepared-cache-trace"; then
   echo "missing prepared artifacts must prevent closure" >&2
+  exit 1
+fi
+FAKE_SCHEMA_DRIFT=1 run_cutover schema-drift 0
+[[ "$(cat "$test_dir/schema-drift-result")" != "0" ]]
+if grep -E 'graphql stop|maintenance apply' "$test_dir/schema-drift-trace"; then
+  echo "baseline schema drift must prevent writer closure" >&2
   exit 1
 fi
 FAKE_CHANGE_PLAN=1 run_cutover changed-plan 0
@@ -612,7 +621,7 @@ assert_in_order "$test_dir/router-bootstrap-trace" \
 run_cutover router-instance-refused 0 1 "" 0 0 0 0 "" 0 "" "" 1 "" 0 \
   us-east4-eqdc4a us-east4-eqdc4a 0 0 1 0 0 "" 0 0 0 valid 0
 [[ "$(cat "$test_dir/router-instance-refused-result")" != "0" ]]
-if grep -E "graphql create-instance|domain --|variable set|up |maintenance" \
+if grep -E "graphql (create-instance|configure-scale|stop|restart)|gate (enter|reclose|restore)|domain --|variable set|up |maintenance (apply|drain-writers|backfill-|cleanup-|scrub-)" \
   "$test_dir/router-instance-refused-trace"; then
   echo "an absent git-router instance without a selected git-router must fail before mutation" >&2
   exit 1
@@ -629,7 +638,7 @@ fi
 run_cutover router-domain-invalid 0 1 "" 0 0 0 0 "" 0 "" "" 1 "" 0 \
   us-east4-eqdc4a us-east4-eqdc4a 0 0 1 0 0 "" 0 1 1 invalid
 [[ "$(cat "$test_dir/router-domain-invalid-result")" != "0" ]]
-if grep -E "domain --|variable set|up |maintenance" "$test_dir/router-domain-invalid-trace"; then
+if grep -E "graphql (create-instance|configure-scale|stop|restart)|gate (enter|reclose|restore)|domain --|variable set|up |maintenance (apply|drain-writers|backfill-|cleanup-|scrub-)" "$test_dir/router-domain-invalid-trace"; then
   echo "an invalid git-router domain must fail before mutation" >&2
   exit 1
 fi

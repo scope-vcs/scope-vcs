@@ -18,21 +18,26 @@ impl MigrationName for Migration {
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
-        let state = schema_inventory(db).await?;
-        if state.as_object().is_none_or(|state| {
-            state.values().any(|objects| match objects {
-                Value::Array(objects) => !objects.is_empty(),
-                Value::Object(objects) => !objects.is_empty(),
-                _ => true,
-            })
-        }) {
-            return Err(DbErr::Custom(
-                "the current-schema baseline requires an empty schema; restore retained data with the original-chain maintenance binary before bridging".into(),
-            ));
-        }
+        assert_empty_schema(db).await?;
         db.execute_unprepared(SCHEMA).await?;
         Ok(())
     }
+}
+
+pub(super) async fn assert_empty_schema<C: ConnectionTrait>(db: &C) -> Result<(), DbErr> {
+    let state = schema_inventory(db).await?;
+    if state.as_object().is_none_or(|state| {
+        state.values().any(|objects| match objects {
+            Value::Array(objects) => !objects.is_empty(),
+            Value::Object(objects) => !objects.is_empty(),
+            _ => true,
+        })
+    }) {
+        return Err(DbErr::Custom(
+            "the current-schema baseline requires an empty schema; restore retained data with the original-chain maintenance binary before bridging".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn is_original_chain(actual: &[String]) -> bool {
@@ -84,16 +89,10 @@ pub(super) async fn assert_baseline_schema<C: ConnectionTrait>(db: &C) -> Result
     db.execute_unprepared(&format!("DROP SCHEMA {comparison_schema} CASCADE"))
         .await?;
     if actual != expected {
-        let differences = expected
-            .as_object()
-            .unwrap()
-            .keys()
-            .filter(|key| actual.get(*key) != expected.get(*key))
-            .cloned()
-            .collect::<Vec<_>>();
+        let differences = schema_differences(&actual, &expected);
         return Err(DbErr::Custom(format!(
-            "Scope baseline bridge refused schema drift in {}; restore and verify revision {ORIGINAL_CHAIN_REVISION} before retrying",
-            differences.join(", ")
+            "Scope baseline bridge refused schema drift in {}; investigate and repair the schema differences before retrying; original-chain schema reference: {ORIGINAL_CHAIN_REVISION}",
+            differences.join("; ")
         )));
     }
     Ok(())
@@ -201,4 +200,50 @@ async fn normalized_expressions<C: ConnectionTrait>(db: &C, schema: &str) -> Res
 
 fn quote_identifier(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+fn schema_differences(actual: &Value, expected: &Value) -> Vec<String> {
+    let mut differences = Vec::new();
+    for (category, expected) in expected.as_object().unwrap() {
+        let actual = &actual[category];
+        if actual == expected {
+            continue;
+        }
+        match (actual, expected) {
+            (Value::Array(actual), Value::Array(expected)) => {
+                for (label, entries, other) in [
+                    ("missing or changed", expected, actual),
+                    ("unexpected or changed", actual, expected),
+                ] {
+                    for entry in entries
+                        .iter()
+                        .filter(|entry| !other.contains(entry))
+                        .take(10)
+                    {
+                        differences.push(format!("{category}: {label} {entry}"));
+                    }
+                }
+            }
+            (Value::Object(actual), Value::Object(expected)) => {
+                let names = actual
+                    .keys()
+                    .chain(expected.keys())
+                    .collect::<std::collections::BTreeSet<_>>();
+                for name in names {
+                    if actual.get(name) != expected.get(name) {
+                        differences.push(format!("{category}: changed {name}"));
+                        if category == "expressions" {
+                            differences.push(format!(
+                                "{name}: expected expressions {}, found {}",
+                                expected.get(name).unwrap_or(&Value::Null),
+                                actual.get(name).unwrap_or(&Value::Null),
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => differences.push(format!("{category}: expected {expected}, found {actual}")),
+        }
+    }
+    differences
 }

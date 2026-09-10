@@ -1,5 +1,5 @@
 use scope_postgres::db::{
-    MigrationLimits, apply_maintenance_migrations, migration_plan,
+    MigrationLimits, apply_maintenance_migrations, migration_plan, migration_preflight,
     terminate_metadata_writer_sessions, verify_schema, verify_writer_fence_available,
 };
 
@@ -7,6 +7,7 @@ const USAGE: &str = r#"usage: scope-maintenance <command>
 
 commands:
   serve                       serve maintenance responses without database access
+  preflight                   validate baseline schema and print plan without persisting changes
   plan                        print the pending migration plan as JSON (read-only)
   verify                      require the exact migration ledger (read-only)
   fence                       probe the exclusive writer fence (read-only)
@@ -50,6 +51,14 @@ async fn main() -> anyhow::Result<()> {
                 .init();
             let deleted = api::scrub_retired_git_storage_for_maintenance(database_url).await?;
             println!(r#"{{"retiredGitPathsDeleted":{deleted},"complete":true}}"#);
+        }
+        "preflight" => {
+            println!(
+                "{}",
+                serde_json::to_string(
+                    &migration_preflight(database_url, migration_limits()?).await?
+                )?
+            );
         }
         "plan" => {
             println!(

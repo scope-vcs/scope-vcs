@@ -493,9 +493,9 @@ validate_prepared_release "${selected_components[@]}"
 validate_maintenance_artifact
 
 validate_production_target
+maintenance_read preflight >/dev/null
 ensure_production_router_instance
 configure_production_router
-
 plan_json="$(maintenance_read plan)"
 set +e
 plan_requires_maintenance "$plan_json"

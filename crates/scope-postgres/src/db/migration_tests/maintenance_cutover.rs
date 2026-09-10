@@ -182,3 +182,73 @@ async fn migration_lock_timeout_preserves_unapplied_inventory() {
         .unwrap();
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
 }
+
+#[tokio::test]
+async fn preflight_accepts_baseline_and_completed_cutover_without_reapplying_migrations() {
+    let (_target, db, _lease) = isolated_database().await;
+    migrations::Migrator::up(db.as_ref(), Some(1))
+        .await
+        .unwrap();
+    let before = migrations::plan(db.as_ref()).await.unwrap();
+    assert_eq!(
+        migrations::preflight(&db, Default::default())
+            .await
+            .unwrap(),
+        before
+    );
+    migrations::apply_in_maintenance(&db, Default::default())
+        .await
+        .unwrap();
+    let completed = migrations::plan(db.as_ref()).await.unwrap();
+    assert!(completed.exact);
+    assert_eq!(
+        migrations::preflight(&db, Default::default())
+            .await
+            .unwrap(),
+        completed
+    );
+}
+
+#[tokio::test]
+async fn preflight_requires_empty_schema_for_an_empty_ledger_without_persisting_metadata() {
+    let (_target, db, _lease) = isolated_database().await;
+    let before = migrations::plan(db.as_ref()).await.unwrap();
+    assert!(before.applied.is_empty());
+    assert_eq!(
+        migrations::preflight(&db, Default::default())
+            .await
+            .unwrap(),
+        before
+    );
+    assert!(!relation_exists(&db, "seaql_migrations").await);
+    assert!(!relation_exists(&db, "scope_users").await);
+    assert!(!relation_exists(&db, "pg_temp.scope_baseline_expression_inventory").await);
+
+    db.execute_unprepared(
+        "CREATE TABLE untracked (id integer CHECK (id > 0)); INSERT INTO untracked VALUES (7)",
+    )
+    .await
+    .unwrap();
+    let error = migrations::preflight(&db, Default::default())
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("requires an empty schema"),
+        "{error}"
+    );
+    assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), before);
+    assert!(!relation_exists(&db, "seaql_migrations").await);
+    assert!(!relation_exists(&db, "scope_users").await);
+    assert!(!relation_exists(&db, "pg_temp.scope_baseline_expression_inventory").await);
+    let retained = db
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT id FROM untracked",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i32>("", "id")
+        .unwrap();
+    assert_eq!(retained, 7);
+}

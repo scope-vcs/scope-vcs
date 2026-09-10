@@ -4,7 +4,10 @@ const BASELINE: &str = "m0042_current_schema_baseline";
 const ORIGINAL_LEDGER: &str = include_str!("../../migrations/baseline_ledger.txt");
 
 async fn original_chain_database(db: &DatabaseConnection) {
-    migrations::Migrator::up(db, Some(1)).await.unwrap();
+    migrations::Migrator::install(db).await.unwrap();
+    db.execute_unprepared(include_str!("fixtures/original_chain_schema.sql"))
+        .await
+        .unwrap();
     stamp_original_ledger(db, 42).await;
     db.execute_unprepared(
         "INSERT INTO scope_users (id, handle, email, email_verified)
@@ -278,4 +281,88 @@ async fn baseline_initialization_refuses_an_untracked_nonempty_schema() {
     assert!(error.to_string().contains("empty schema"));
     assert!(relation_exists(&db, "retained_unknown").await);
     assert!(!relation_exists(&db, "seaql_migrations").await);
+}
+
+#[tokio::test]
+async fn preflight_checks_retained_schema_with_writers_online_without_changing_data() {
+    let (target, db, _lease) = isolated_database().await;
+    original_chain_database(&db).await;
+    let writer = crate::db::connect_writer_database(&target.schema_database_url())
+        .await
+        .unwrap();
+    let before = representative_business_snapshot(&db).await;
+    let sequence = sequence_state(&db).await;
+    let plan = migrations::plan(db.as_ref()).await.unwrap();
+    assert_eq!(
+        migrations::preflight(&db, Default::default())
+            .await
+            .unwrap(),
+        plan
+    );
+    assert_eq!(representative_business_snapshot(&db).await, before);
+    assert_eq!(sequence_state(&db).await, sequence);
+    assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), plan);
+    writer.ping().await.unwrap();
+    writer.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn preflight_rejects_retained_upload_constraint_drift_and_rolls_back_metadata() {
+    let (target, db, _lease) = isolated_database().await;
+    original_chain_database(&db).await;
+    db.execute_unprepared(
+        "ALTER TABLE scope_git_segment_uploads
+         DROP CONSTRAINT scope_git_segment_upload_state,
+         DROP CONSTRAINT scope_git_segment_upload_values,
+         ADD CONSTRAINT scope_git_segment_upload_state CHECK
+             (state IN ('uploading', 'ready', 'published', 'deleting', 'deleted')),
+         ADD CONSTRAINT scope_git_segment_upload_values CHECK (
+             length(btrim(segment_id)) > 0 AND length(btrim(object_key)) > 0
+             AND encoding_version > 0 AND created_at_unix >= 0
+             AND updated_at_unix >= created_at_unix
+             AND (sha256 IS NULL OR length(sha256) = 64)
+             AND (plaintext_bytes IS NULL OR plaintext_bytes >= 0)
+             AND (encrypted_bytes IS NULL OR encrypted_bytes >= 0)
+             AND (state NOT IN ('ready', 'published') OR
+                  (sha256 IS NOT NULL AND plaintext_bytes IS NOT NULL AND encrypted_bytes IS NOT NULL)))",
+    )
+    .await
+    .unwrap();
+    let mut options = sea_orm::ConnectOptions::new(target.schema_database_url());
+    options.max_connections(1);
+    let connection = sea_orm::Database::connect(options).await.unwrap();
+    let context = "SELECT current_setting('search_path') AS path,
+        (SELECT count(*)::bigint FROM pg_namespace WHERE nspname LIKE 'scope_baseline_check_%') AS comparisons";
+    let before = connection
+        .query_one(Statement::from_string(DatabaseBackend::Postgres, context))
+        .await
+        .unwrap()
+        .unwrap();
+    let plan = migrations::plan(db.as_ref()).await.unwrap();
+    let snapshot = representative_business_snapshot(&db).await;
+    let error = migrations::preflight(&connection, Default::default())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("scope_git_segment_uploads"), "{error}");
+    assert!(error.contains("scope_git_segment_upload_values"), "{error}");
+    assert!(error.contains("retained"), "{error}");
+    assert!(error.contains("expected expressions"), "{error}");
+    let after = connection
+        .query_one(Statement::from_string(DatabaseBackend::Postgres, context))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        before.try_get::<String>("", "path").unwrap(),
+        after.try_get::<String>("", "path").unwrap()
+    );
+    assert_eq!(
+        before.try_get::<i64>("", "comparisons").unwrap(),
+        after.try_get::<i64>("", "comparisons").unwrap()
+    );
+    assert!(!relation_exists(&connection, "pg_temp.scope_baseline_expression_inventory").await);
+    assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), plan);
+    assert_eq!(representative_business_snapshot(&db).await, snapshot);
+    connection.close().await.unwrap();
 }

@@ -226,7 +226,7 @@ jobs:
         run: bash .github/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
       - name: Install Railway CLI
         run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
-      - name: Read production migration plan without applying changes
+      - name: Validate production baseline schema and migration plan
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
@@ -235,7 +235,7 @@ jobs:
             --environment "$(jq -er '.environments.production.environmentId' "$manifest")" \
             --service "$(jq -er '.railway.databaseServiceId' "$manifest")" --no-local -- \
             sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" exec "$@"' \
-            scope-maintenance target/release/scope-maintenance plan > production-migration-plan.json
+            scope-maintenance target/release/scope-maintenance preflight > production-migration-plan.json
           jq -e . production-migration-plan.json >/dev/null
           if jq -e '.pending | length > 0' production-migration-plan.json >/dev/null; then
             jq -e '.components | has("api") and has("run-worker") and has("cache") and has("git-router") and has("media-api") and has("media-worker") and has("web")' prepared-release.json >/dev/null || {
