@@ -225,7 +225,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
         return RequestQueueClassification {
             section: RequestQueueSection::SetAside,
             state: RequestAttentionState::Settled,
-            reason: reason,
+            reason,
             through_activity_version: request_version,
             snoozed_until_unix: None,
             can_claim: false,
@@ -322,7 +322,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
         return RequestQueueClassification {
             section: RequestQueueSection::Active,
             state: RequestAttentionState::Active,
-            reason: reason,
+            reason,
             through_activity_version: facts
                 .attention
                 .map_or(request_version, |state| state.through_activity_version),
