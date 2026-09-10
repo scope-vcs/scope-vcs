@@ -27,12 +27,12 @@ use scope_domain::{
     repository::Repository,
     repository::access::{RepositoryAccess, RepositoryAccessContext, RepositoryActor},
     requests::{
-        CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
-        REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request, RequestAudience,
-        RequestViewer, StartRequestInput, SubmitRequestInput, canonical_request_ref,
+        CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
+        RequestAudience, RequestViewer, StartRequestInput, canonical_request_ref,
         request_actor_role, request_mergeability, request_policy,
     },
 };
+use scope_postgres::db::{CloseRequestCommand, EditRequestIdentityCommand, SubmitRequestCommand};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -150,11 +150,9 @@ pub(crate) async fn submit_request(
     let mutation = state
         .metadata
         .requests()
-        .submit_request(SubmitRequestInput {
+        .submit_request(SubmitRequestCommand {
             request_id: request.id,
             actor_user_id: user.id.clone(),
-            actor_is_author: false,
-            actor_can_submit: false,
             event_id: random_id("event_request_submitted")?,
             now_unix: unix_now()?,
         })
@@ -271,11 +269,9 @@ pub(crate) async fn close_request(
         .metadata
         .requests()
         .close_request(
-            CloseRequestInput {
+            CloseRequestCommand {
                 request_id: request.id,
                 actor_user_id: user.id.clone(),
-                actor_is_author: false,
-                actor_is_maintainer: false,
                 event_id: random_id("event_request_closed")?,
                 now_unix: unix_now()?,
             },
@@ -409,10 +405,9 @@ pub(crate) async fn edit_request_identity(
     let mutation = state
         .metadata
         .requests()
-        .edit_request_identity(EditRequestIdentityInput {
+        .edit_request_identity(EditRequestIdentityCommand {
             request_id: request.id,
             actor_user_id: user.id.clone(),
-            actor_can_edit_identity: false,
             event_id: random_id("event_request_identity_edited")?,
             title: input.title,
             description_markdown: input.description_markdown,

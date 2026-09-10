@@ -87,6 +87,11 @@ mod request_invitees;
 pub use request_invitees::{
     AddRequestInviteeCommand, LeaveRequestCommand, RemoveRequestInviteeCommand, RequestInviteeRead,
 };
+mod request_lifecycle_commands;
+pub use request_lifecycle_commands::{
+    CloseRequestCommand, EditRequestIdentityCommand, MergeRequestContentCommand,
+    SubmitRequestCommand,
+};
 mod request_queue;
 pub use request_queue::{RequestQueueCursor, RequestQueuePageQuery, RequestQueueRow};
 mod request_ratings;

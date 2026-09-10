@@ -1,7 +1,7 @@
 //! Atomic repository content merge plus request completion.
 
 use super::{
-    GeneratedIdSource, RequestStore, acquire_aggregate_lock,
+    GeneratedIdSource, MergeRequestContentCommand, RequestStore, acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_request_merge},
     entities,
     request_access::ensure_user_exists,
@@ -41,16 +41,16 @@ impl RequestStore {
         landing_file_mutation: RepositoryLandingFileMutation,
         workflow_catalog: RepositoryWorkflowCatalog,
         origin: RequestMergeOrigin,
-        mut input: MergeRequestInput,
+        command: MergeRequestContentCommand,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<MergeRequestContentMutation, PostgresError> {
-        let now_unix = input.now_unix;
+        let now_unix = command.now_unix;
         let repo_id = scope_domain::repository::repo_id(owner, name);
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
-        acquire_aggregate_lock(&tx, "request", &input.request_id).await?;
+        acquire_aggregate_lock(&tx, "request", &command.request_id).await?;
 
-        let request = request_by_id(&tx, &input.request_id)
+        let request = request_by_id(&tx, &command.request_id)
             .await?
             .filter(|request| request.repo_id == repo_id)
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
@@ -59,7 +59,7 @@ impl RequestStore {
                 "request changed since merge was prepared; retry merge",
             ));
         }
-        ensure_user_exists(&tx, &input.actor_user_id).await?;
+        ensure_user_exists(&tx, &command.actor_user_id).await?;
 
         let repo_row = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
@@ -94,15 +94,24 @@ impl RequestStore {
         }
         let is_member = entities::repository_member::Entity::find()
             .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
-            .filter(entities::repository_member::Column::UserId.eq(input.actor_user_id.clone()))
+            .filter(entities::repository_member::Column::UserId.eq(command.actor_user_id.clone()))
             .one(&tx)
             .await
             .map_err(PostgresError::internal)?
             .is_some();
-        input.actor_is_maintainer = repo_row.owner_user_id == input.actor_user_id || is_member;
-        input.merged_head_oid = expected_request_head_oid.to_string();
-        input.merged_main_oid = update.git_head.head_oid.clone();
-        let request_mutation = merge_request(&request, input)?;
+        let actor_is_maintainer = repo_row.owner_user_id == command.actor_user_id || is_member;
+        let request_mutation = merge_request(
+            &request,
+            MergeRequestInput {
+                request_id: command.request_id,
+                actor_user_id: command.actor_user_id,
+                actor_is_maintainer,
+                merged_head_oid: expected_request_head_oid.to_string(),
+                merged_main_oid: update.git_head.head_oid.clone(),
+                merged_event_id: command.merged_event_id,
+                now_unix,
+            },
+        )?;
 
         let git_head = accept_and_persist_request_merge(
             &tx,
@@ -129,7 +138,10 @@ impl RequestStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::requests::tests::{postgres_store, start_public_request};
+    use crate::db::{
+        MergeRequestContentCommand,
+        requests::tests::{postgres_store, start_public_request},
+    };
     use scope_domain::{
         content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
         content_ref::ContentRef,
@@ -139,7 +151,7 @@ mod tests {
             git::{GitHead, GitPackSpan},
             updates::RequestMergeOrigin,
         },
-        requests::{MergeRequestInput, RequestState},
+        requests::RequestState,
         reviewed_updates::content::{
             ReviewedContentChange, ReviewedUpdateInput, apply_reviewed_update_to_repo,
         },
@@ -169,7 +181,7 @@ mod tests {
                     request_id: "req_1".to_string(),
                     request_head_oid: "head".to_string(),
                 },
-                merge_input("user_public"),
+                merge_command("user_public"),
                 &super::super::generated_ids::test_generated_id,
             )
             .await
@@ -219,7 +231,7 @@ mod tests {
                     request_id: "req_1".to_string(),
                     request_head_oid: "head".to_string(),
                 },
-                merge_input("user_owner"),
+                merge_command("user_owner"),
                 &super::super::generated_ids::test_generated_id,
             )
             .await
@@ -382,13 +394,10 @@ mod tests {
         }
     }
 
-    fn merge_input(actor_user_id: &str) -> MergeRequestInput {
-        MergeRequestInput {
+    fn merge_command(actor_user_id: &str) -> MergeRequestContentCommand {
+        MergeRequestContentCommand {
             request_id: "req_1".to_string(),
             actor_user_id: actor_user_id.to_string(),
-            actor_is_maintainer: false,
-            merged_head_oid: String::new(),
-            merged_main_oid: String::new(),
             merged_event_id: format!("event_merged_{actor_user_id}"),
             now_unix: 5,
         }

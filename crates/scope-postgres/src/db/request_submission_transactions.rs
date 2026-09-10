@@ -1,7 +1,7 @@
 //! PostgreSQL transaction for one-way request submission.
 
 use super::{
-    RequestStore,
+    RequestStore, SubmitRequestCommand,
     request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
     request_rows::{insert_request_event_row, request_event_by_id, save_request_row},
 };
@@ -17,18 +17,27 @@ use {
 impl RequestStore {
     pub async fn submit_request(
         &self,
-        mut input: SubmitRequestInput,
+        command: SubmitRequestCommand,
     ) -> Result<RequestLifecycleMutation, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
-            lock_submission_context(&tx, &input.actor_user_id, &input.request_id).await?;
-        input.actor_is_author = input.actor_user_id == request.author_user_id;
-        input.actor_can_submit =
-            request_policy_for_user(&tx, &repo, &request, &input.actor_user_id)
+            lock_submission_context(&tx, &command.actor_user_id, &command.request_id).await?;
+        let actor_can_submit =
+            request_policy_for_user(&tx, &repo, &request, &command.actor_user_id)
                 .await?
                 .permissions
                 .can_submit;
-        let mutation = submit_request(&request, input)?;
+        let mutation = submit_request(
+            &request,
+            SubmitRequestInput {
+                request_id: command.request_id,
+                actor_is_author: command.actor_user_id == request.author_user_id,
+                actor_user_id: command.actor_user_id,
+                actor_can_submit,
+                event_id: command.event_id,
+                now_unix: command.now_unix,
+            },
+        )?;
         persist_lifecycle_mutation(&tx, &mutation).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)

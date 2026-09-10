@@ -553,11 +553,9 @@ async fn prepared_merge(
     state
         .metadata
         .requests()
-        .submit_request(SubmitRequestInput {
+        .submit_request(SubmitRequestCommand {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
-            actor_is_author: false,
-            actor_can_submit: false,
             event_id: format!("event_submit_{label}"),
             now_unix: 5,
         })

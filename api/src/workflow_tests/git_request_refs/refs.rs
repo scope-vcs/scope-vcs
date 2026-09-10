@@ -8,11 +8,9 @@ async fn permissioned_clone_fetches_named_public_requests_without_joining() {
     state
         .metadata
         .requests()
-        .submit_request(SubmitRequestInput {
+        .submit_request(SubmitRequestCommand {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
-            actor_is_author: false,
-            actor_can_submit: false,
             event_id: "event_published_clone_submitted".to_string(),
             now_unix: 4,
         })

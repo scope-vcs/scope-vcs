@@ -28,14 +28,14 @@ use scope_domain::{
         access::{RepositoryAccess, RepositoryActor},
     },
     requests::{
-        MergeRequestInput, Request, RequestAudience, RequestViewer, canonical_request_ref,
-        request_actor_role, request_policy,
+        Request, RequestAudience, RequestViewer, canonical_request_ref, request_actor_role,
+        request_policy,
     },
     reviewed_updates::content::apply_request_merge_to_repo,
     runs::catalog::RepositoryWorkflowCatalog,
 };
 use scope_git_storage::StagedGitSegment;
-use scope_postgres::db::RepositoryGitWriteLease;
+use scope_postgres::db::{MergeRequestContentCommand, RepositoryGitWriteLease};
 
 pub(crate) struct MergeRequestCommand {
     pub(crate) owner: String,
@@ -179,12 +179,9 @@ async fn persist_prepared_merge(
             prepared.landing_file_mutation,
             prepared.workflow_catalog,
             prepared.origin,
-            MergeRequestInput {
+            MergeRequestContentCommand {
                 request_id: command.request_id.clone(),
                 actor_user_id: command.actor_user_id.clone(),
-                actor_is_maintainer: false,
-                merged_head_oid: String::new(),
-                merged_main_oid: String::new(),
                 merged_event_id,
                 now_unix,
             },
