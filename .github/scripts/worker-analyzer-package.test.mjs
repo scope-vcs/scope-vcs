@@ -16,6 +16,7 @@ test("worker release installs only the locked analyzer runtime without lifecycle
   assert.match(dockerfile, /COPY --from=analyzer-dependencies \/usr\/local\/ \/usr\/local\//);
   assert.match(dockerfile, /COPY --from=analyzer-dependencies \/app\/dependency-analyzer\/node_modules/);
   assert.match(dockerfile, /COPY dependency-analyzer\/src \.\/src/);
+  assert.match(dockerfile, /COPY dependency-analyzer\/third-party-dependency-analyzer\.txt \.\//);
   assert.match(dockerfile, /SCOPE_DEPENDENCY_ANALYZER_PATH=\/app\/dependency-analyzer\/analyze\.mjs/);
   assert.match(dockerfile, /CMD \["\/app\/bin\/scope-worker"\]/);
 });

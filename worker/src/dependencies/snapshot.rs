@@ -69,6 +69,7 @@ pub(super) async fn materialize(
                 &span.segment,
                 &bare,
                 remaining_git_time(deadline)?,
+                Some(&cancellation),
             )
             .await?;
         }

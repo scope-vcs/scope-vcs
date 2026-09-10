@@ -16,6 +16,7 @@ COPY --from=analyzer-dependencies /app/dependency-analyzer/node_modules /app/dep
 WORKDIR /app/dependency-analyzer
 COPY dependency-analyzer/analyze.mjs ./
 COPY dependency-analyzer/src ./src
+COPY dependency-analyzer/third-party-dependency-analyzer.txt ./
 
 WORKDIR /app
 COPY bin /app/bin

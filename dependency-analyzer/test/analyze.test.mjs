@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
+import ts from "typescript";
 
 import { ANALYZER_VERSION, analyzeSnapshot } from "../analyze.mjs";
 
@@ -182,4 +183,31 @@ test("CLI emits only the JSON contract and exposes its version", async () => {
   ]);
   assert.ok(result.analyzed_files.every((path) => !path.startsWith("/")));
   assert.ok(result.edges.every(({ source_path, target_path }) => !source_path.startsWith("/") && !target_path.startsWith("/")));
+});
+
+test("inherited paths use a child's explicit baseUrl just as TypeScript does", async (context) => {
+  const root = await mkdtemp(resolve(tmpdir(), "scope-dependency-path-origin-"));
+  context.after(() => rm(root, { recursive: true }));
+  for (const directory of ["config/src", "app/src"]) {
+    await mkdir(resolve(root, directory), { recursive: true });
+  }
+  await writeFile(resolve(root, "config/base.json"), JSON.stringify({
+    compilerOptions: { paths: { "@x/*": ["src/*"] } },
+  }));
+  const configPath = resolve(root, "app/tsconfig.json");
+  await writeFile(configPath, JSON.stringify({
+    extends: "../config/base.json", compilerOptions: { baseUrl: "." },
+  }));
+  for (const directory of ["config/src", "app/src"]) {
+    await writeFile(resolve(root, directory, "value.ts"), "export const value = 1;\n");
+  }
+  const source = resolve(root, "app/main.ts");
+  await writeFile(source, "import { value } from '@x/value'; export { value };\n");
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, dirname(configPath), {}, configPath);
+  const resolved = ts.resolveModuleName("@x/value", source, parsed.options, ts.sys).resolvedModule;
+  assert.equal(resolved.resolvedFileName, resolve(root, "app/src/value.ts"));
+  const result = await analyzeSnapshot(root);
+  assert.deepEqual(result.gaps, []);
+  assert.deepEqual(result.edges, [{ source_path: "app/main.ts", target_path: "app/src/value.ts", kind: "import" }]);
 });
