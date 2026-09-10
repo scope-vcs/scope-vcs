@@ -50,7 +50,7 @@ test('changes retry keeps the document and selected revision', async () => {
       }
     })
     await page.goto(`${baseUrl}/${requestRepo}/requests/req_demo_ready`)
-    const changes = page.locator('#discussion-discussion_demo_revision_jitter').getByRole('link', { name: /Revision/ })
+    const changes = page.locator('#discussion-discussion_demo_revision_jitter').getByRole('link', { name: /View revision/ })
     await waitForClientHydration(page, changes)
     await changes.click()
     const retry = page.getByRole('button', { name: 'retry changes', exact: true })

@@ -11,7 +11,7 @@ export type BadgeTone = BadgeVariant
 
 const REQUEST_STATES = {
   Draft: { label: 'Draft', tone: 'neutral' },
-  Open: { label: 'Open', tone: 'info' },
+  Open: { label: 'Open', tone: 'success' },
   Closed: { label: 'Closed', tone: 'neutral' },
   Merged: { label: 'Merged', tone: 'success' },
 } as const satisfies Record<

@@ -17,7 +17,6 @@ import {
   X,
 } from 'lucide-react'
 import {
-  type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useEffect,
@@ -69,7 +68,6 @@ export type RequestWorkspaceSidebarProps = {
   onClaim?: (item: RequestWorkspaceItem) => void
   onCollapsedChange: (collapsed: boolean) => void
   onRestore?: (item: RequestWorkspaceItem) => void
-  onSearchSubmit?: (value: string) => void
   onSearchValueChange: (value: string) => void
   onSettle?: (item: RequestWorkspaceItem) => void
   onSnooze?: (
@@ -79,19 +77,11 @@ export type RequestWorkspaceSidebarProps = {
   params: RepoParams
   searchBusy?: boolean
   searchError?: string | null
-  searchQuery?: string
   searchValue: string
   selectedRequestId?: string | null
   setAside: RequestWorkspaceSectionState
   snoozeOptions?: RequestWorkspaceSnoozeOption[]
   unclaimed: RequestWorkspaceSectionState
-}
-
-export type RequestWorkspaceShellProps = {
-  children: ReactNode
-  collapsed: boolean
-  detailOpenOnMobile: boolean
-  sidebar: ReactNode
 }
 
 const DEFAULT_SNOOZE_OPTIONS: RequestWorkspaceSnoozeOption[] = [
@@ -117,38 +107,18 @@ function moveSnoozeMenuFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
   buttons[nextIndex]?.focus()
 }
 
-export function RequestWorkspaceShell({
-  children,
-  collapsed,
-  detailOpenOnMobile,
-  sidebar,
-}: RequestWorkspaceShellProps) {
-  return (
-    <div
-      className="request-workspace-shell"
-      data-collapsed={collapsed || undefined}
-      data-detail-open={detailOpenOnMobile || undefined}
-    >
-      {sidebar}
-      <section className="request-workspace-detail">{children}</section>
-    </div>
-  )
-}
-
 export function RequestWorkspaceSidebar({
   active,
   collapsed,
   onClaim,
   onCollapsedChange,
   onRestore,
-  onSearchSubmit,
   onSearchValueChange,
   onSettle,
   onSnooze,
   params,
   searchBusy = false,
   searchError,
-  searchQuery = '',
   searchValue,
   selectedRequestId,
   setAside,
@@ -160,8 +130,28 @@ export function RequestWorkspaceSidebar({
   const [snoozeMenu, setSnoozeMenu] = useState<SnoozeMenuState | null>(null)
   const snoozeMenuRef = useRef<HTMLDivElement>(null)
   const snoozeTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const searchId = useId()
-  const searching = searchQuery.trim().length > 0
+  const searching = searchValue.trim().length > 0
+
+  useEffect(() => {
+    function findRequest(event: KeyboardEvent) {
+      if (
+        event.key !== '/' || event.defaultPrevented || event.isComposing ||
+        event.metaKey || event.ctrlKey || event.altKey
+      ) return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')
+      ) return
+      event.preventDefault()
+      onCollapsedChange(false)
+      requestAnimationFrame(() => searchInputRef.current?.focus())
+    }
+    document.addEventListener('keydown', findRequest)
+    return () => document.removeEventListener('keydown', findRequest)
+  }, [onCollapsedChange])
 
   useEffect(() => {
     if (!snoozeMenu) return
@@ -202,14 +192,9 @@ export function RequestWorkspaceSidebar({
     }
   }, [snoozeMenu])
 
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    onSearchSubmit?.(searchValue)
-  }
-
   function clearSearch() {
     onSearchValueChange('')
-    onSearchSubmit?.('')
+    searchInputRef.current?.focus()
   }
 
   function openSnoozeMenu(
@@ -260,16 +245,23 @@ export function RequestWorkspaceSidebar({
 
       <div className="request-workspace-expanded-view">
         <div className="request-workspace-sidebar-tools">
-          <form className="request-workspace-search" onSubmit={submitSearch} role="search">
+          <search className="request-workspace-search">
             <label className="sr-only" htmlFor={searchId}>Search requests</label>
             <Search aria-hidden="true" className="request-workspace-search-icon" />
             <input
               aria-describedby={searchError ? `${searchId}-error` : undefined}
               autoComplete="off"
-              disabled={searchBusy}
               id={searchId}
-              onChange={(event) => onSearchValueChange(event.target.value)}
+              onChange={(event) => {
+                onSearchValueChange(event.target.value)
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape') return
+                event.preventDefault()
+                clearSearch()
+              }}
               placeholder="Search requests"
+              ref={searchInputRef}
               type="search"
               value={searchValue}
             />
@@ -277,7 +269,6 @@ export function RequestWorkspaceSidebar({
               <button
                 aria-label="Clear request search"
                 className="request-workspace-search-clear"
-                disabled={searchBusy}
                 onClick={clearSearch}
                 type="button"
               >
@@ -287,7 +278,10 @@ export function RequestWorkspaceSidebar({
             {searchBusy ? (
               <LoaderCircle aria-label="Searching requests" className="request-workspace-search-spinner" />
             ) : null}
-          </form>
+            {!searchValue && !searchBusy ? (
+              <kbd aria-hidden="true" className="request-workspace-search-shortcut">/</kbd>
+            ) : null}
+          </search>
           <Button
             aria-label="Collapse requests sidebar"
             onClick={() => {

@@ -23,7 +23,7 @@ export function requestWorkspaceItem(item: RequestQueueItemResponse, section: Re
   }
 }
 
-export function requestAttentionLabel(item: RequestQueueItemResponse) {
+function requestAttentionLabel(item: RequestQueueItemResponse) {
   const { attention, claimer } = item
   let reason = REASONS[attention.reason]
   if (attention.reason === 'claimed_elsewhere' && claimer) reason = `Reviewing: ${claimer.handle}`

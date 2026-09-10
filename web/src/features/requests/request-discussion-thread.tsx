@@ -212,6 +212,9 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
           author={discussion.author}
           createdAtUnix={discussion.created_at_unix}
         >
+          {discussion.anchor ? (
+            <RequestDiscussionAnchor anchor={discussion.anchor} params={params} />
+          ) : null}
           {discussion.unread_count > 0 ? (
             <Badge variant="info">{discussion.unread_count} new</Badge>
           ) : null}
@@ -230,10 +233,6 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
             <Badge variant="danger">Failed to post</Badge>
           ) : null}
         </RequestDiscussionByline>
-
-        {discussion.anchor ? (
-          <RequestDiscussionAnchor anchor={discussion.anchor} params={params} />
-        ) : null}
 
         <RequestDiscussionMarkdown
           className={`mt-2 ${REQUEST_DISCUSSION_CONTENT_CLASS}`}

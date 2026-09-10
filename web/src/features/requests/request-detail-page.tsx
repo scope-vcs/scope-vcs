@@ -15,12 +15,11 @@ import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
   GitCommit,
   History,
   MessageSquare,
   ShieldQuestion,
+  SlidersHorizontal,
   UserRound,
 } from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
@@ -29,7 +28,7 @@ import type {
   RequestActionCommand,
   RequestActionResult,
 } from './request-actions-api'
-import { RequestContextRail } from './request-context-rail'
+import { RequestDetailsProvider } from './request-details'
 import type { RequestActivityPage } from './request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
@@ -49,7 +48,6 @@ import {
   type RequestAttachmentActions,
 } from './request-attachment-context'
 import { useRequestWorkspace } from './request-workspace-context'
-import { requestAttentionLabel } from './request-workspace-model'
 
 export function RequestUnavailablePage({ params }: { params: RepoParams }) {
   return (
@@ -212,27 +210,8 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 <History />
               </Button>
             ) : null}
-            {workspace?.selected ? (
-              <RequestWorkspaceNavigation
-                nextId={workspace.nextId}
-                params={params}
-                previousId={workspace.previousId}
-              />
-            ) : null}
           </div>
         </div>
-        {workspace?.selected ? (
-          <div
-            className={cn(
-              'mt-5 border-l-2 px-3 py-2.5 text-xs',
-              workspace.selected.attention.state === 'active'
-                ? 'border-success bg-success-soft/60 text-success-strong'
-                : 'border-info bg-info-soft/60 text-info-strong',
-            )}
-          >
-            <p className="font-medium">{requestAttentionLabel(workspace.selected)}</p>
-          </div>
-        ) : null}
         {requestActions.error ? (
           <p className="mt-3 text-sm text-danger-strong" role="alert">
             {requestActions.error}
@@ -264,14 +243,15 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               onSave={saveDescription}
             />
             <RequestViewTabs params={{ ...params, requestId: request.id }} />
-            <RequestContextRail
-              actions={requestActions}
-              onRate={rateRequest}
-              params={requestParams}
-              ratings={ratings}
-              request={request}
-            />
-            <div className="min-w-0">{children}</div>
+            <RequestDetailsProvider value={{
+              actions: requestActions,
+              onRate: rateRequest,
+              params: requestParams,
+              ratings,
+              request,
+            }}>
+              <div className="min-w-0">{children}</div>
+            </RequestDetailsProvider>
           </div>
 
           <RequestActivityDrawer
@@ -288,65 +268,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   )
 }
 
-function RequestWorkspaceNavigation({
-  nextId,
-  params,
-  previousId,
-}: {
-  nextId: string | null
-  params: RepoParams
-  previousId: string | null
-}) {
-  return (
-    <nav aria-label="Request navigation" className="flex items-center gap-1">
-      <RequestWorkspaceNavigationLink
-        direction="previous"
-        params={params}
-        requestId={previousId}
-      />
-      <RequestWorkspaceNavigationLink
-        direction="next"
-        params={params}
-        requestId={nextId}
-      />
-    </nav>
-  )
-}
-
-function RequestWorkspaceNavigationLink({
-  direction,
-  params,
-  requestId,
-}: {
-  direction: 'next' | 'previous'
-  params: RepoParams
-  requestId: string | null
-}) {
-  const label = `${direction === 'previous' ? 'Previous' : 'Next'} request`
-  const icon = direction === 'previous' ? <ChevronLeft /> : <ChevronRight />
-  if (!requestId) {
-    return (
-      <Button aria-label={label} disabled size="icon-sm" type="button" variant="ghost">
-        {icon}
-      </Button>
-    )
-  }
-  return (
-    <Button asChild size="icon-sm" variant="ghost">
-      <Link
-        aria-label={label}
-        params={{ ...params, requestId }}
-        preload="intent"
-        search={{}}
-        title={label}
-        to="/$owner/$repo/requests/$requestId"
-      >
-        {icon}
-      </Link>
-    </Button>
-  )
-}
-
 function RequestViewTabs({
   params,
 }: {
@@ -354,7 +275,7 @@ function RequestViewTabs({
 }) {
   const tabClass = 'inline-flex h-11 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors'
   return (
-    <nav aria-label="Request views" className="flex gap-6 px-5 lg:px-7">
+    <nav aria-label="Request views" className="flex gap-5 px-5 lg:gap-6 lg:px-7">
       <Link
         activeOptions={{ exact: true }}
         activeProps={{ className: 'border-brand text-foreground' }}
@@ -381,6 +302,19 @@ function RequestViewTabs({
       >
         <GitCommit className="size-3.5" />
         Changes
+      </Link>
+      <Link
+        activeProps={{ className: 'border-brand text-foreground' }}
+        className={tabClass}
+        inactiveProps={{ className: 'border-transparent text-muted-foreground hover:text-foreground' }}
+        params={params}
+        preload="intent"
+        resetScroll={false}
+        search={{}}
+        to="/$owner/$repo/requests/$requestId/details"
+      >
+        <SlidersHorizontal className="size-3.5" />
+        Details
       </Link>
     </nav>
   )

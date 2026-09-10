@@ -9,7 +9,8 @@ import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
 import { loadMoreRequestQueue, requestQueueResource, searchRequestQueue, type LoadRequestQueuePage } from './request-queue-cache'
-import { RequestWorkspaceShell, RequestWorkspaceSidebar, type RequestWorkspaceItem, type RequestWorkspaceSectionState } from './request-workspace-sidebar'
+import { RequestWorkspaceSidebar, type RequestWorkspaceItem, type RequestWorkspaceSectionState } from './request-workspace-sidebar'
+import { RequestWorkspaceShell } from './request-workspace-shell'
 import { requestSnoozeUntil, requestWorkspaceItem } from './request-workspace-model'
 import { RequestWorkspaceProvider } from './request-workspace-context'
 import { useRequestQueue } from './use-request-queue'
@@ -32,7 +33,15 @@ function RequestWorkspaceContent({ children, identity, params, version }: { chil
     loadRequestQueuePage({ data: { owner: params.owner, repo: params.repo, section, cursor, search }, signal }), [params.owner, params.repo])
   const queue = useRequestQueue(identity, version, load)
   const query = queue.value?.query ?? ''
+  const requestedQuery = draft ?? queue.value?.requestedQuery ?? query
   const pages = queue.value?.pages
+
+  function search(value: string) {
+    setDraft(value)
+    if (identity && value.trim() !== queue.value?.requestedQuery) {
+      void searchRequestQueue(identity, value, load)
+    }
+  }
 
   const section = (key: RequestQueueSection): RequestWorkspaceSectionState => ({
     items: pages?.[key].requests.map((item) => requestWorkspaceItem(item, key, pendingId)) ?? [],
@@ -46,7 +55,7 @@ function RequestWorkspaceContent({ children, identity, params, version }: { chil
     onLoadMore: () => { if (identity) void loadMoreRequestQueue(identity, key, load) },
   })
   const active = section('active')
-  if (query && pages) {
+  if (requestedQuery.trim() && pages) {
     active.items = REQUEST_QUEUE_SECTION_ORDER.flatMap((key) => section(key).items)
     active.hasMore = REQUEST_QUEUE_SECTION_ORDER.some((key) => Boolean(pages[key].next_cursor))
     active.onLoadMore = () => {
@@ -97,13 +106,12 @@ function RequestWorkspaceContent({ children, identity, params, version }: { chil
   }
 
   return (
-    <RequestWorkspaceShell collapsed={collapsed} detailOpenOnMobile={Boolean(selected)} sidebar={(
+    <RequestWorkspaceShell collapsed={collapsed} detailOpenOnMobile={Boolean(selected)} onCollapsedChange={setCollapsed} sidebar={(
       <RequestWorkspaceSidebar
         active={active} unclaimed={section('unclaimed')} setAside={section('set_aside')}
         collapsed={collapsed} onCollapsedChange={setCollapsed} params={params} selectedRequestId={selected}
-        searchValue={draft ?? queue.value?.requestedQuery ?? query} searchQuery={query} searchBusy={queue.refreshing}
-        searchError={actionError} onSearchValueChange={setDraft}
-        onSearchSubmit={(value) => { if (identity) void searchRequestQueue(identity, value, load) }}
+        searchValue={requestedQuery} searchBusy={queue.refreshing}
+        searchError={actionError} onSearchValueChange={search}
         onClaim={(item) => void act(item, 'claim')} onRestore={(item) => void act(item, 'restore')}
         onSettle={(item) => void act(item, 'settle')}
         onSnooze={(item, option) => void act(item, 'snooze', requestSnoozeUntil(option.value))}
@@ -112,8 +120,6 @@ function RequestWorkspaceContent({ children, identity, params, version }: { chil
     )}>
       <RequestWorkspaceProvider value={{
         selected: selectedRow,
-        previousId: rows[selectedIndex - 1]?.request.id ?? null,
-        nextId: rows[selectedIndex + 1]?.request.id ?? null,
         claim: () => { if (selectedRow) void act(requestWorkspaceItem(selectedRow, 'unclaimed', pendingId), 'claim') },
       }}>{children}</RequestWorkspaceProvider>
     </RequestWorkspaceShell>

@@ -65,6 +65,7 @@ export function RequestDetailPagePending() {
             <div className="flex h-11 gap-6 border-b border-border px-5 lg:px-7">
               <BlockSkeleton className="h-7 w-24" />
               <BlockSkeleton className="h-7 w-20" />
+              <BlockSkeleton className="h-7 w-20" />
             </div>
             <DiscussionSkeleton />
           </div>

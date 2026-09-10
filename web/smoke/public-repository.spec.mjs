@@ -680,7 +680,6 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
         await search.elementHandle(),
       )
       await search.fill('missing request title')
-      await search.press('Enter')
       await page.getByText('No matching requests.', { exact: true }).waitFor()
       assert.equal(queueRequests.length, 3)
       const clear = page.getByRole('button', { name: 'Clear request search' })
@@ -700,6 +699,49 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
     },
     { viewport: { height: 844, width: 390 } },
   )
+})
+
+test('requests sidebar resizes, closes, and reopens by dragging or keyboard', async () => {
+  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+    const sidebar = page.getByRole('complementary', { name: 'Requests workspace' })
+    const separator = page.getByRole('separator', { name: 'Requests sidebar width' })
+    await sidebar.getByRole('link', { name: /Add bounded retry timing/ }).waitFor()
+    await page.waitForFunction((element) => Object.keys(element).some((key) => key.startsWith('__reactProps$')), await separator.elementHandle())
+    const width = () => sidebar.evaluate((element) => element.getBoundingClientRect().width)
+    async function dragBy(distance) {
+      const bounds = await separator.boundingBox()
+      assert(bounds)
+      const x = bounds.x + bounds.width / 2
+      const y = Math.max(bounds.y + 24, 110)
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      await page.mouse.move(x + distance, y, { steps: 8 })
+      await page.mouse.up()
+    }
+    const originalWidth = await width()
+    await dragBy(-90)
+    assert.equal(await width(), originalWidth - 90)
+    await sidebar.getByRole('button', { name: 'Collapse requests sidebar' }).click()
+    assert.equal(await separator.getAttribute('aria-valuetext'), 'Collapsed')
+    await sidebar.getByRole('button', { name: 'Expand requests sidebar' }).click()
+    assert.equal(await width(), originalWidth - 90)
+    await dragBy(-180)
+    assert.equal(await separator.getAttribute('aria-valuetext'), 'Collapsed')
+    await dragBy(180)
+    assert((await width()) >= 180)
+    assert.notEqual(await separator.getAttribute('aria-valuetext'), 'Collapsed')
+    await separator.focus()
+    await page.keyboard.press('Home')
+    assert.equal(await width(), 180)
+    await page.keyboard.press('ArrowLeft')
+    assert.equal(await separator.getAttribute('aria-valuetext'), 'Collapsed')
+    await page.keyboard.press('ArrowRight')
+    assert.equal(await width(), 180)
+    await page.keyboard.press('End')
+    assert.equal(await width(), 360)
+    await page.setViewportSize({ width: 390, height: 844 })
+    assert.equal(await separator.isVisible(), false)
+  })
 })
 
 async function withPage(path, assertion, pageOptions = {}, beforeGoto) {
