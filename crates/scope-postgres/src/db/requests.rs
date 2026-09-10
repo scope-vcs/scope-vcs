@@ -185,6 +185,14 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
+        super::request_attention::reactivate_attention_for_activity(
+            &tx,
+            &mutation.request.id,
+            &mutation.revision.actor_user_id,
+            mutation.request.activity_version,
+            mutation.revision.created_at_unix,
+        )
+        .await?;
         if !mutation.orphan_objects.is_empty() {
             queue_pending_source_blob_deletion_rows(
                 &tx,

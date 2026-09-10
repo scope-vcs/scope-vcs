@@ -1,6 +1,7 @@
 use super::*;
 use scope_domain::requests::{
-    Request, RequestActorRole, RequestAudience, RequestDiscussion, RequestDiscussionAnchor,
+    Request, RequestActorRole, RequestAttention, RequestAttentionReason, RequestAttentionState,
+    RequestAudience, RequestClaim, RequestDiscussion, RequestDiscussionAnchor,
     RequestDiscussionReadState, RequestDiscussionReply, RequestDiscussionStatus, RequestEvent,
     RequestEventKind, RequestEventPayload, RequestInvitee, RequestRating, RequestRevision,
 };
@@ -113,6 +114,104 @@ pub mod request {
 
     fn decode_optional_time(value: Option<i64>, field: &str) -> Result<Option<u64>, PostgresError> {
         value.map(|value| i64_to_u64(value, field)).transpose()
+    }
+}
+
+pub mod request_claim {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "scope_request_claims")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub request_id: String,
+        pub claimer_user_id: String,
+        pub claimed_at_unix: i64,
+        pub updated_at_unix: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+
+    impl Model {
+        pub fn from_domain(value: &RequestClaim) -> Result<Self, PostgresError> {
+            Ok(Self {
+                request_id: value.request_id.clone(),
+                claimer_user_id: value.claimer_user_id.clone(),
+                claimed_at_unix: u64_to_i64(value.claimed_at_unix, "request claim time")?,
+                updated_at_unix: u64_to_i64(value.updated_at_unix, "request claim update time")?,
+            })
+        }
+
+        pub fn try_into_domain(self) -> Result<RequestClaim, PostgresError> {
+            Ok(RequestClaim {
+                request_id: self.request_id,
+                claimer_user_id: self.claimer_user_id,
+                claimed_at_unix: i64_to_u64(self.claimed_at_unix, "request claim time")?,
+                updated_at_unix: i64_to_u64(self.updated_at_unix, "request claim update time")?,
+            })
+        }
+    }
+}
+
+pub mod request_attention_state {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "scope_request_attention_states")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub request_id: String,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub user_id: String,
+        pub state: String,
+        pub reason: String,
+        pub through_activity_version: i64,
+        pub snoozed_until_unix: Option<i64>,
+        pub updated_at_unix: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+
+    impl Model {
+        pub fn from_domain(value: &RequestAttention) -> Result<Self, PostgresError> {
+            Ok(Self {
+                request_id: value.request_id.clone(),
+                user_id: value.user_id.clone(),
+                state: encode_enum(value.state)?,
+                reason: encode_enum(value.reason)?,
+                through_activity_version: u64_to_i64(
+                    value.through_activity_version,
+                    "request attention position",
+                )?,
+                snoozed_until_unix: value
+                    .snoozed_until_unix
+                    .map(|value| u64_to_i64(value, "request snooze time"))
+                    .transpose()?,
+                updated_at_unix: u64_to_i64(value.updated_at_unix, "request attention time")?,
+            })
+        }
+
+        pub fn try_into_domain(self) -> Result<RequestAttention, PostgresError> {
+            Ok(RequestAttention {
+                request_id: self.request_id,
+                user_id: self.user_id,
+                state: decode_enum::<RequestAttentionState>(self.state)?,
+                reason: decode_enum::<RequestAttentionReason>(self.reason)?,
+                through_activity_version: i64_to_u64(
+                    self.through_activity_version,
+                    "request attention position",
+                )?,
+                snoozed_until_unix: self
+                    .snoozed_until_unix
+                    .map(|value| i64_to_u64(value, "request snooze time"))
+                    .transpose()?,
+                updated_at_unix: i64_to_u64(self.updated_at_unix, "request attention time")?,
+            })
+        }
     }
 }
 

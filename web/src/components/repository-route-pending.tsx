@@ -24,7 +24,7 @@ export function RepositoryRoutePending() {
 
 function RepositoryBodyPending({ pathname }: { pathname: string }) {
   const routePath = pathname.replace(/\/+$/, '')
-  if (routePath.includes('/requests/')) return <RequestDetailPagePending />
+  if (routePath.includes('/requests/')) return <RequestsPagePending><RequestDetailPagePending /></RequestsPagePending>
   if (routePath.endsWith('/requests')) return <RequestsPagePending />
   if (routePath.endsWith('/history')) return <HistoryPagePending />
   if (/\/runs\/[^/]+$/.test(routePath) && !routePath.includes('/workflows/')) {

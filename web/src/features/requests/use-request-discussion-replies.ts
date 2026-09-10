@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { requestQueueResource } from './request-queue-cache'
 import { openRequestDiscussionReplies, requestDiscussionRepliesResource } from './request-discussion-replies-resource'
 import type {
   CreateReplyInput,
@@ -54,6 +56,7 @@ export function useRequestDiscussionReplies({
   onPatch: (discussion: RequestDiscussion) => void
   params: { owner: string; repo: string; request_id: string }
 }) {
+  const { userId } = useAuth()
   const { repo } = useRepoLayout()
   const key = `${repoResourceScope(repo, actor.id)}\0${params.request_id}\0${discussion.id}`
   const session = useMemo(() => openRequestDiscussionReplies(key), [key])
@@ -167,11 +170,19 @@ export function useRequestDiscussionReplies({
 
   async function postReply(
     body: string,
-    clientReplyId: string = crypto.randomUUID(),
-    replyToReplyId: string | null = quoteId,
-    retryReference?: RequestDiscussionReplyView['reply_to'],
+    options: {
+      clientReplyId?: string
+      replyToReplyId?: string | null
+      retryReference?: RequestDiscussionReplyView['reply_to']
+      waitAfterReply?: boolean
+    } = {},
   ) {
-    const replyTarget = retryReference ?? (
+    const clientReplyId = options.clientReplyId ?? crypto.randomUUID()
+    const replyToReplyId = options.replyToReplyId === undefined
+      ? quoteId
+      : options.replyToReplyId
+    const waitAfterReply = options.waitAfterReply ?? false
+    const replyTarget = options.retryReference ?? (
       replyToReplyId
         ? availableReplies.find((reply) => reply.id === replyToReplyId) ?? null
         : null
@@ -183,6 +194,7 @@ export function useRequestDiscussionReplies({
       discussion,
       replyTarget,
       replyToReplyId,
+      waitAfterReply,
     })
     setReplyState((current) =>
       insertOptimisticReply(
@@ -197,6 +209,7 @@ export function useRequestDiscussionReplies({
       client_reply_id: clientReplyId,
       discussion_id: discussion.id,
       reply_to_reply_id: replyToReplyId,
+      wait_after_reply: waitAfterReply,
     }
     try {
       const result = await (
@@ -210,6 +223,9 @@ export function useRequestDiscussionReplies({
       onPatch(result.discussion)
       onExpandedChange(discussion.id, true)
       setQuoteId(null)
+      if (waitAfterReply) {
+        requestQueueResource.invalidate(repoResourceScope(repo, userId ?? null))
+      }
       return true
     } catch (error) {
       setReplyState((current) =>
@@ -257,6 +273,7 @@ function optimisticReply({
   discussion,
   replyTarget,
   replyToReplyId,
+  waitAfterReply,
 }: {
   actor: { handle: string; id: string }
   body: string
@@ -264,6 +281,7 @@ function optimisticReply({
   discussion: RequestDiscussion
   replyTarget: RequestDiscussionReplyView | RequestDiscussionReplyView['reply_to']
   replyToReplyId: string | null
+  waitAfterReply: boolean
 }): RequestDiscussionReplyView {
   return {
     author: actor,
@@ -272,6 +290,7 @@ function optimisticReply({
     discussion_id: discussion.id,
     id: clientReplyId,
     optimistic_reply_to_reply_id: replyTarget ? undefined : replyToReplyId ?? undefined,
+    optimistic_wait_after_reply: waitAfterReply || undefined,
     pending: 'sending',
     position: Number.MAX_SAFE_INTEGER,
     reply_to: replyTarget

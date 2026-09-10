@@ -1,42 +1,27 @@
-import { PageContent } from '@/components/page-header'
+import type { ReactNode } from 'react'
 import { PendingSurface } from '@/components/pending-surface'
-import {
-  BlockSkeleton,
-  TextSkeleton,
-  type TextSkeletonLength,
-} from '@/components/ui/skeleton'
+import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
+import { RequestWorkspaceShell } from './request-workspace-sidebar'
 
-const REQUEST_WIDTHS = [
-  { meta: 'xlong', title: 'long' },
-  { meta: 'long', title: 'medium' },
-] satisfies Array<{ meta: TextSkeletonLength; title: TextSkeletonLength }>
+const PENDING_ROWS = [{ id: 'first', length: 'long' }, { id: 'second', length: 'medium' }, { id: 'third', length: 'long' }] as const
 
-export function RequestsPagePending() {
+export function RequestsPagePending({ children }: { children?: ReactNode }) {
   return (
     <PendingSurface label="Loading requests">
-      <PageContent className="pb-16">
-        <h1 className="sr-only">Requests</h1>
-        <BlockSkeleton className="h-10 w-full sm:max-w-lg" />
-        <div className="mt-10 grid min-w-0 gap-12">
-          {['open', 'closed'].map((section) => (
-            <section className="min-w-0" key={section}>
-              <div className="flex items-center gap-2">
-                <BlockSkeleton className="size-4" />
-                <span className="text-sm font-semibold">{section}</span>
-                <TextSkeleton length="tiny" size="meta" />
-              </div>
-              <div className="mt-2 min-w-0 divide-y divide-border">
-                {REQUEST_WIDTHS.map(({ meta, title }) => (
-                  <div className="min-w-0 py-3" key={title}>
-                    <TextSkeleton length={title} />
-                    <TextSkeleton className="mt-2" length={meta} size="meta" />
-                  </div>
-                ))}
-              </div>
-            </section>
+      <RequestWorkspaceShell collapsed={false} detailOpenOnMobile={Boolean(children)} sidebar={(
+        <aside className="request-workspace-sidebar">
+          <div className="border-b border-border p-4"><BlockSkeleton className="h-9 w-full" /></div>
+          {PENDING_ROWS.map(({ id, length }) => (
+            <div className="border-b border-border px-5 py-4" key={id}>
+              <TextSkeleton length={length} />
+              <TextSkeleton className="mt-3" length="short" size="meta" />
+            </div>
           ))}
-        </div>
-      </PageContent>
+          {['Unclaimed', 'Set aside'].map((label) => <div className="border-b border-border px-5 py-4 text-xs text-muted-foreground" key={label}>{label}</div>)}
+        </aside>
+      )}>
+        {children}
+      </RequestWorkspaceShell>
     </PendingSurface>
   )
 }

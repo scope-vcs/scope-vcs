@@ -52,7 +52,7 @@ export function RequestDetailPagePending() {
             </div>
           </div>
         </header>
-        <div className="grid min-h-0 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-h-0">
           <div className="min-w-0">
             <div className="px-5 py-5 lg:px-7">
               <TextSkeleton length="short" />
@@ -68,12 +68,7 @@ export function RequestDetailPagePending() {
             </div>
             <DiscussionSkeleton />
           </div>
-          <aside className="border-t border-border px-5 py-5 xl:border-l xl:border-t-0">
-            <TextSkeleton length="short" />
-            <BlockSkeleton className="mt-4 h-12 w-full" />
-            <BlockSkeleton className="mt-4 h-12 w-full" />
-            <BlockSkeleton className="mt-4 h-12 w-full" />
-          </aside>
+
         </div>
       </WorkbenchPane>
     </PendingSurface>

@@ -35,6 +35,7 @@ export type RequestDiscussionView = RequestDiscussion & {
 
 export type RequestDiscussionReplyView = RequestDiscussionReply & {
   optimistic_reply_to_reply_id?: string
+  optimistic_wait_after_reply?: boolean
   pending?: DiscussionPendingState
 }
 

@@ -64,6 +64,9 @@ routes! {
             => "repoRequests",
             repo_requests(owner: &str, repo: &str);
         REPO_REQUEST_QUEUE = "/v1/repos/{owner}/{repo}/requests/queue" => "repoRequestQueue";
+        REPO_REQUEST_ATTENTION = "/v1/repos/{owner}/{repo}/requests/{request_id}/attention"
+            => "repoRequestAttention",
+            repo_request_attention(owner: &str, repo: &str, request_id: &str);
         REPO_REQUEST = "/v1/repos/{owner}/{repo}/requests/{request_id}"
             => "repoRequest",
             repo_request(owner: &str, repo: &str, request_id: &str);

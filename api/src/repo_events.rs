@@ -37,6 +37,7 @@ pub(crate) enum RepoChangeReason {
     RequestRated,
     RequestInviteeAdded,
     RequestInviteeRemoved,
+    RequestAttentionChanged,
     #[cfg(test)]
     VisibilityChanged,
 }
@@ -67,6 +68,7 @@ impl RepoChangeReason {
             Self::RequestRated => "request-rated",
             Self::RequestInviteeAdded => "request-invitee-added",
             Self::RequestInviteeRemoved => "request-invitee-removed",
+            Self::RequestAttentionChanged => "request-attention-changed",
             #[cfg(test)]
             Self::VisibilityChanged => "visibility-changed",
         }

@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { MessageSquarePlus, Reply, RotateCcw } from 'lucide-react'
+import { Clock3, MessageSquarePlus, Reply, RotateCcw } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { RequestAttachmentEditor } from './request-attachment-editor'
 
@@ -57,6 +57,7 @@ export function RequestReplyComposer({
   onSubmit,
   quote,
   reopen,
+  waitAfterReply,
 }: {
   discussionId: string
   onCancel: () => void
@@ -64,6 +65,7 @@ export function RequestReplyComposer({
   onSubmit: (body: string) => Promise<boolean>
   quote: { author: string; body: string } | null
   reopen: boolean
+  waitAfterReply?: (body: string) => Promise<boolean>
 }) {
   return (
     <Composer
@@ -78,6 +80,11 @@ export function RequestReplyComposer({
       }
       quote={quote}
       onCancelQuote={onCancelQuote}
+      secondarySubmit={waitAfterReply ? {
+        icon: <Clock3 className="size-3.5" />,
+        label: 'Reply & wait',
+        onSubmit: waitAfterReply,
+      } : undefined}
       submitIcon={
         reopen ? (
           <RotateCcw className="size-3.5" />
@@ -99,6 +106,7 @@ function Composer({
   onSubmit,
   placeholder,
   quote,
+  secondarySubmit,
   submitIcon,
   submitLabel,
   target,
@@ -110,6 +118,11 @@ function Composer({
   onSubmit: (body: string) => Promise<boolean>
   placeholder: string
   quote?: { author: string; body: string } | null
+  secondarySubmit?: {
+    icon: ReactNode
+    label: string
+    onSubmit: (body: string) => Promise<boolean>
+  }
   submitIcon: ReactNode
   submitLabel: string
   target: 'discussion' | `reply:${string}`
@@ -123,6 +136,7 @@ function Composer({
       onSubmit={onSubmit}
       placeholder={placeholder}
       quote={quote}
+      secondarySubmit={secondarySubmit}
       submitIcon={submitIcon}
       submitLabel={submitLabel}
       target={target}

@@ -2,24 +2,24 @@ import { createApiClient } from '@/api/client'
 import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
 import type {
   RequestDetail,
-  RequestList,
   RequestRating,
   RequestRatings,
   RequestRevisions,
   ReviewFileDiff,
   RequestParams,
 } from './types'
-import { ApiRouteTemplates, buildApiPath } from './types.generated'
+import { type RequestQueuePageResponse, ApiRouteTemplates, buildApiPath } from './types.generated'
 import { apiValidators } from './validators.generated'
 import type { LoadRequestQueueInput } from './request-queue-input'
 
 export async function loadRequestQueueForRequest(
   data: LoadRequestQueueInput,
-): Promise<RequestList> {
+  signal?: AbortSignal,
+): Promise<RequestQueuePageResponse> {
   return createApiClient().get(
     requestQueuePath(data),
-    apiValidators.RequestListResponse,
-    { auth: 'optional' },
+    apiValidators.RequestQueuePageResponse,
+    { auth: 'optional', signal },
   )
 }
 

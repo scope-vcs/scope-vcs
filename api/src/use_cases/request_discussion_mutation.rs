@@ -45,6 +45,7 @@ pub(crate) struct CreateReplyCommand {
     pub(crate) client_reply_id: String,
     pub(crate) body_markdown: String,
     pub(crate) reply_to_reply_id: Option<String>,
+    pub(crate) wait_after_reply: bool,
 }
 
 pub(crate) struct TransitionDiscussionCommand {
@@ -65,6 +66,7 @@ pub(crate) struct ReopenAndReplyCommand {
     pub(crate) client_reply_id: String,
     pub(crate) body_markdown: String,
     pub(crate) reply_to_reply_id: Option<String>,
+    pub(crate) wait_after_reply: bool,
 }
 
 pub(crate) struct MarkDiscussionReadCommand {
@@ -177,6 +179,7 @@ pub(crate) async fn create_reply(
             client_reply_id: command.client_reply_id,
             body_markdown: command.body_markdown,
             reply_to_reply_id: command.reply_to_reply_id,
+            wait_after_reply: command.wait_after_reply,
             now_unix: unix_now()?,
         })
         .await?;
@@ -267,6 +270,7 @@ pub(crate) async fn reopen_and_reply(
             client_reply_id: command.client_reply_id,
             body_markdown: command.body_markdown,
             reply_to_reply_id: command.reply_to_reply_id,
+            wait_after_reply: command.wait_after_reply,
             now_unix: unix_now()?,
         })
         .await?;

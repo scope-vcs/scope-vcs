@@ -421,6 +421,8 @@ impl RequestStore {
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
+        let actor_is_maintainer = repo.access.is_maintainer();
+        let wait_after_reply = command.wait_after_reply;
         let binding_request_id = command.request_id.clone();
         let binding_discussion_id = command.discussion_id.clone();
         let binding_reply_id = command.id.clone();
@@ -459,6 +461,17 @@ impl RequestStore {
                 input.now_unix,
             )
             .await?;
+            if wait_after_reply {
+                super::request_attention::wait_after_own_reply(
+                    &tx,
+                    &request,
+                    &input.actor_user_id,
+                    actor_is_maintainer,
+                    reply.position,
+                    input.now_unix,
+                )
+                .await?;
+            }
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(CreateRequestDiscussionReplyMutation {
                 request,
@@ -485,6 +498,25 @@ impl RequestStore {
         save_discussion(&tx, &mutation.discussion).await?;
         insert_reply(&tx, &mutation.reply).await?;
         save_read_state(&tx, &mutation.read_state).await?;
+        super::request_attention::reactivate_attention_for_activity(
+            &tx,
+            &mutation.request.id,
+            &mutation.reply.author_user_id,
+            mutation.request.activity_version,
+            mutation.reply.created_at_unix,
+        )
+        .await?;
+        if wait_after_reply {
+            super::request_attention::wait_after_own_reply(
+                &tx,
+                &mutation.request,
+                &mutation.reply.author_user_id,
+                actor_is_maintainer,
+                mutation.reply.position,
+                mutation.reply.created_at_unix,
+            )
+            .await?;
+        }
         replace_bindings_for_markdown(
             &tx,
             &binding_request_id,
@@ -580,6 +612,7 @@ impl RequestStore {
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
         let actor_is_maintainer = repo.access.is_maintainer();
+        let wait_after_reply = command.wait_after_reply;
         let binding_request_id = command.request_id.clone();
         let binding_discussion_id = command.discussion_id.clone();
         let binding_reply_id = command.reply_id.clone();
@@ -621,6 +654,17 @@ impl RequestStore {
                 input.now_unix,
             )
             .await?;
+            if wait_after_reply {
+                super::request_attention::wait_after_own_reply(
+                    &tx,
+                    &request,
+                    &input.actor_user_id,
+                    actor_is_maintainer,
+                    reply.position,
+                    input.now_unix,
+                )
+                .await?;
+            }
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(CreateRequestDiscussionReplyMutation {
                 request,
@@ -646,6 +690,25 @@ impl RequestStore {
         save_read_state(&tx, &mutation.read_state).await?;
         if let Some(event) = &mutation.activity_event {
             insert_request_event_row(&tx, event).await?;
+        }
+        super::request_attention::reactivate_attention_for_activity(
+            &tx,
+            &mutation.request.id,
+            &mutation.reply.author_user_id,
+            mutation.request.activity_version,
+            mutation.reply.created_at_unix,
+        )
+        .await?;
+        if wait_after_reply {
+            super::request_attention::wait_after_own_reply(
+                &tx,
+                &mutation.request,
+                &mutation.reply.author_user_id,
+                actor_is_maintainer,
+                mutation.reply.position,
+                mutation.reply.created_at_unix,
+            )
+            .await?;
         }
         replace_bindings_for_markdown(
             &tx,

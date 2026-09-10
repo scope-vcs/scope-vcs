@@ -137,11 +137,15 @@ export function parseCreateDiscussionInput(input: unknown): CreateDiscussionInpu
 
 export function parseCreateReplyInput(input: unknown): CreateReplyInput {
   const data = object(input)
+  if (typeof data.wait_after_reply !== 'boolean') {
+    throw new Error('wait_after_reply must be a boolean.')
+  }
   return {
     ...parseDiscussionActionInput(data),
     body_markdown: text(data.body_markdown, 'body_markdown', 64 * 1024),
     client_reply_id: id(data.client_reply_id, 'client_reply_id'),
     reply_to_reply_id: data.reply_to_reply_id === null ? null : id(data.reply_to_reply_id, 'reply_to_reply_id'),
+    wait_after_reply: data.wait_after_reply,
   }
 }
 

@@ -50,7 +50,12 @@ pub use model::{
     RequestTimelineMutation, validate_request_facts,
 };
 mod queue;
-pub use queue::RequestQueueSection;
+pub use queue::{
+    ApplyRequestAttentionInput, RequestAttention, RequestAttentionAction, RequestAttentionMutation,
+    RequestAttentionReason, RequestAttentionState, RequestClaim, RequestQueueClassification,
+    RequestQueueFacts, RequestQueueSection, apply_request_attention_action,
+    classify_request_queue_item, reactivate_request_attention,
+};
 mod ratings;
 pub use ratings::{
     CreateRequestRatingInput, REQUEST_RATING_REASON_MAX_BYTES, RequestRating, RequestReputation,

@@ -22,6 +22,7 @@ pub struct CreateRequestDiscussionReplyCommand {
     pub client_reply_id: String,
     pub body_markdown: String,
     pub reply_to_reply_id: Option<String>,
+    pub wait_after_reply: bool,
     pub now_unix: u64,
 }
 
@@ -35,6 +36,7 @@ pub struct ReopenAndReplyToRequestDiscussionCommand {
     pub client_reply_id: String,
     pub body_markdown: String,
     pub reply_to_reply_id: Option<String>,
+    pub wait_after_reply: bool,
     pub now_unix: u64,
 }
 

@@ -1,6 +1,6 @@
 import type { RequestParams, RequestRating, RequestRatings, RequestSummary } from '@/api/types'
 import { GitCommitHorizontal } from 'lucide-react'
-import { type ReactNode, useState, useSyncExternalStore } from 'react'
+import { type ReactNode } from 'react'
 import { RequestInvitees } from './request-invitees'
 import { RequestRatingsSection } from './request-ratings-section'
 import type { RateRequestInput } from '@/api/requests'
@@ -25,28 +25,13 @@ export function RequestContextRail({
   ratings: RequestRatings
   request: RequestSummary
 }) {
-  const desktop = useSyncExternalStore(subscribeDesktop, isDesktop, () => false)
-  const [mobileOpen, setMobileOpen] = useState(false)
   return (
-    <aside className="request-context-rail min-w-0 xl:col-start-2 xl:row-start-1 xl:row-span-3 border-y border-border px-5 py-4 xl:border-y-0 xl:border-l xl:pb-6 xl:pt-0">
-      <details open={desktop || mobileOpen}>
-        <summary
-          className="cursor-pointer text-sm font-medium xl:hidden"
-          onClick={(event) => {
-            event.preventDefault()
-            if (!desktop) {
-              const details = event.currentTarget.parentElement as HTMLDetailsElement
-              const nextOpen = !details.open
-              // A native click before hydration can already have changed the DOM.
-              // Synchronize it even when React's stored preference is unchanged.
-              details.open = nextOpen
-              setMobileOpen(nextOpen)
-            }
-          }}
-        >
+    <aside className="request-context-rail min-w-0 border-b border-border px-5 py-3 sm:px-6 lg:px-8">
+      <details>
+        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
           details
         </summary>
-        <div className="grid min-w-0 gap-6 pt-5 xl:pt-0">
+        <div className="grid min-w-0 gap-6 py-5 sm:grid-cols-2">
           <RailSection title="lifecycle">
             <RailValue label="Author" value={requestAuthorRoleLabel(request)} />
             <RailValue label="Audience" value={requestAudienceLabel(request)} />
@@ -110,16 +95,4 @@ function RailValue({ label, value }: { label: string; value: ReactNode }) {
       <span className="min-w-0 break-all text-right font-mono">{value}</span>
     </div>
   )
-}
-
-const DESKTOP_QUERY = '(min-width: 80rem)'
-
-function isDesktop() {
-  return window.matchMedia(DESKTOP_QUERY).matches
-}
-
-function subscribeDesktop(onChange: () => void) {
-  const query = window.matchMedia(DESKTOP_QUERY)
-  query.addEventListener('change', onChange)
-  return () => query.removeEventListener('change', onChange)
 }

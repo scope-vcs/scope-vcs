@@ -1,424 +1,121 @@
-import type { RequestQueueSection } from '@/api/request-queue-input'
-import type {
-  RepoParams,
-  RequestList,
-  RequestListItem,
-} from '@/api/types'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/empty-state'
-import { PageContent } from '@/components/page-header'
+import type { RepoParams } from '@/api/types'
+import type { RequestQueueSection } from '@/api/types.generated'
 import { useAuth } from '@clerk/tanstack-react-start'
-import { Link } from '@tanstack/react-router'
-import {
-  CheckCircle2,
-  ChevronRight,
-  GitPullRequest,
-  Search,
-  UserRound,
-} from 'lucide-react'
-import { type FormEvent, useCallback, useId, useMemo, useSyncExternalStore } from 'react'
-import {
-  requestCountLabel,
-  REQUEST_QUEUE_SECTION_ORDER,
-  type RequestQueuePages,
-  type RequestQueueViewAction,
-} from './request-list-model'
-import {
-  requestAudienceLabel,
-  requestAuthorRoleLabel,
-  requestMergeabilityLabel,
-  requestStatusLabel,
-  requestStatusTone,
-} from './request-labels'
-import { AbsoluteTimestamp } from '@/components/timestamp'
-
+import { useNavigate, useParams } from '@tanstack/react-router'
+import { useCallback, useState, type ReactNode } from 'react'
+import { toast } from 'sonner'
+import { loadRequestQueuePage, updateRequestAttention } from '@/routes/-request-workspace-actions'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { dispatchRequestQueue, openRequestQueue, requestQueueResource } from './request-queue-cache'
+import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
+import { loadMoreRequestQueue, requestQueueResource, searchRequestQueue, type LoadRequestQueuePage } from './request-queue-cache'
+import { RequestWorkspaceShell, RequestWorkspaceSidebar, type RequestWorkspaceItem, type RequestWorkspaceSectionState } from './request-workspace-sidebar'
+import { requestSnoozeUntil, requestWorkspaceItem } from './request-workspace-model'
+import { RequestWorkspaceProvider } from './request-workspace-context'
+import { useRequestQueue } from './use-request-queue'
 
-const SECTION_DETAILS = {
-  your_work: {
-    empty: 'Nothing here involves you yet.',
-    icon: UserRound,
-    title: 'your work',
-  },
-  open: {
-    empty: 'No open requests.',
-    icon: GitPullRequest,
-    title: 'open',
-  },
-  closed: {
-    empty: 'No closed requests.',
-    icon: CheckCircle2,
-    title: 'closed',
-  },
-} as const
-
-export function RequestsPage(props: RequestsPageProps) {
+export function RequestsPage({ children, params }: { children: ReactNode; params: RepoParams }) {
   const { userId, isLoaded } = useAuth()
   const { repo } = useRepoLayout()
-  const cacheKey = isLoaded ? `${repoResourceScope(repo, userId ?? null)}\0${repo.change_version}` : null
-  return <RequestsPageContent initialPages={props.initialPages} loadPage={props.loadPage} params={props.params} key={cacheKey ?? 'pending'} cacheKey={cacheKey} />
+  const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
+  return <RequestWorkspaceContent key={scope ?? 'pending'} identity={scope} params={params} version={String(repo.change_version)}>{children}</RequestWorkspaceContent>
 }
 
-type RequestsPageProps = {
-  initialPages: RequestQueuePages
-  loadPage: (section: RequestQueueSection, cursor: string | null, search: string | null) => Promise<RequestList>
-  params: RepoParams
-}
+function RequestWorkspaceContent({ children, identity, params, version }: { children: ReactNode; identity: string | null; params: RepoParams; version: string }) {
+  const navigate = useNavigate()
+  const selected = useParams({ strict: false, select: (value) => value.requestId })
+  const [collapsed, setCollapsed] = useState(false)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const load = useCallback<LoadRequestQueuePage>((section, cursor, search, signal) =>
+    loadRequestQueuePage({ data: { owner: params.owner, repo: params.repo, section, cursor, search }, signal }), [params.owner, params.repo])
+  const queue = useRequestQueue(identity, version, load)
+  const query = queue.value?.query ?? ''
+  const pages = queue.value?.pages
 
-function RequestsPageContent({
-  cacheKey,
-  initialPages,
-  loadPage,
-  params,
-}: RequestsPageProps & { cacheKey: string | null }) {
-  const { isSignedIn } = useAuth()
-  const transientKey = useId()
-  const key = cacheKey ?? transientKey
-  const initial = useMemo(() => openRequestQueue(key, initialPages), [initialPages, key])
-  const subscribe = useCallback((listener: () => void) => requestQueueResource.subscribe(key, listener), [key])
-  const read = useCallback(() => requestQueueResource.peek(key) ?? initial, [initial, key])
-  const state = useSyncExternalStore(subscribe, read, () => initial)
-  const dispatch = (action: RequestQueueViewAction) => dispatchRequestQueue(key, action, initial.owner)
-  const {
-    loadingSection,
-    pages,
-    searchDraft,
-    searchError,
-    searching,
-    searchQuery,
-    sectionErrors,
-  } = state
-
-  async function loadMore(section: RequestQueueSection) {
-    const current = read()
-    const cursor = current.pages[section].next_cursor
-    if (!cursor || current.loadingSection || current.searching) return
-
-    const operationGeneration = current.generation
-    dispatch({
-      type: 'load_started',
-      generation: operationGeneration,
-      section,
-    })
-    try {
-      const page = await loadPage(
-        section,
-        cursor,
-        section === 'your_work' ? null : current.searchQuery || null,
-      )
-      dispatch({
-        type: 'load_succeeded',
-        generation: operationGeneration,
-        section,
-        page,
-      })
-    } catch (error) {
-      dispatch({
-        type: 'load_failed',
-        generation: operationGeneration,
-        section,
-        error: errorMessage(
-          error,
-          `Could not load more ${SECTION_DETAILS[section].title.toLowerCase()} requests.`,
-        ),
-      })
+  const section = (key: RequestQueueSection): RequestWorkspaceSectionState => ({
+    items: pages?.[key].requests.map((item) => requestWorkspaceItem(item, key, pendingId)) ?? [],
+    hasMore: Boolean(pages?.[key].next_cursor),
+    loading: queue.refreshing,
+    error: queue.error ? 'Could not load requests. Try again.' : null,
+    onRetry: () => {
+      if (identity && draft !== null && draft.trim() !== query) void searchRequestQueue(identity, draft, load)
+      else queue.retry()
+    },
+    onLoadMore: () => { if (identity) void loadMoreRequestQueue(identity, key, load) },
+  })
+  const active = section('active')
+  if (query && pages) {
+    active.items = REQUEST_QUEUE_SECTION_ORDER.flatMap((key) => section(key).items)
+    active.hasMore = REQUEST_QUEUE_SECTION_ORDER.some((key) => Boolean(pages[key].next_cursor))
+    active.onLoadMore = () => {
+      const key = REQUEST_QUEUE_SECTION_ORDER.find((key) => pages[key].next_cursor)
+      if (identity && key) void loadMoreRequestQueue(identity, key, load)
     }
   }
 
-  async function searchQueue(query: string) {
-    const current = read()
-    if (current.searching || current.loadingSection) return
-    const normalizedQuery = query.trim()
-    if (normalizedQuery === current.searchQuery) return
+  const rows = pages ? REQUEST_QUEUE_SECTION_ORDER.flatMap((key) => pages[key].requests) : []
+  const selectedIndex = rows.findIndex((item) => item.request.id === selected)
+  const selectedRow = rows[selectedIndex] ?? null
 
-    const operationGeneration = current.generation
-    dispatch({ type: 'search_started', generation: operationGeneration })
+  async function act(item: RequestWorkspaceItem, action: 'claim' | 'restore' | 'settle' | 'snooze', until?: number) {
+    if (!identity || pendingId || !pages) return
+    const row = REQUEST_QUEUE_SECTION_ORDER.flatMap((key) => pages[key].requests).find((entry) => entry.request.id === item.id)
+    if (!row) return
+    setPendingId(item.id)
+    setActionError(null)
     try {
-      const [open, closed] = await Promise.all([
-        loadPage('open', null, normalizedQuery || null),
-        loadPage('closed', null, normalizedQuery || null),
-      ])
-      dispatch({
-        type: 'search_succeeded',
-        generation: operationGeneration,
-        query: normalizedQuery,
-        open,
-        closed,
-      })
+      const common = { ...params, request_id: item.id, expected_activity_version: row.attention.activity_version }
+      const result = await updateRequestAttention({ data: action === 'snooze' ? { ...common, action, until_unix: until! } : { ...common, action } })
+      requestQueueResource.invalidate(identity)
+      const message = { claim: 'Request claimed', restore: 'Request restored', settle: 'Request settled', snooze: 'Request snoozed' }[action]
+      toast.success(message, action === 'settle' || action === 'snooze' ? {
+        action: { label: 'Undo', onClick: () => {
+          void updateRequestAttention({ data: { ...params, request_id: item.id, action: 'restore', expected_activity_version: result.attention.activity_version } }).then(() => {
+            requestQueueResource.invalidate(identity)
+            void navigate({ to: '/$owner/$repo/requests/$requestId', params: { ...params, requestId: item.id } })
+          }).catch((error: unknown) => toast.error(error instanceof Error ? error.message : 'Could not restore request.'))
+        } },
+      } : undefined)
+      if (action === 'claim') {
+        await navigate({ to: '/$owner/$repo/requests/$requestId', params: { ...params, requestId: item.id } })
+      } else if ((action === 'settle' || action === 'snooze') && selected === item.id) {
+        const remaining = pages.active.requests.filter((entry) => entry.request.id !== item.id)
+        const next = remaining[Math.min(Math.max(0, pages.active.requests.findIndex((entry) => entry.request.id === item.id)), remaining.length - 1)]
+        if (next) await navigate({ to: '/$owner/$repo/requests/$requestId', params: { ...params, requestId: next.request.id } })
+        else await navigate({ to: '/$owner/$repo/requests', params })
+      }
     } catch (error) {
-      dispatch({
-        type: 'search_failed',
-        generation: operationGeneration,
-        error: errorMessage(error, 'Could not search requests.'),
-      })
+      const message = error instanceof Error ? error.message : 'Could not update request attention.'
+      setActionError(message)
+      toast.error(message)
+      requestQueueResource.invalidate(identity)
+    } finally {
+      setPendingId(null)
     }
   }
 
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    void searchQueue(searchDraft)
-  }
-
-  function clearSearch() {
-    dispatch({ type: 'search_draft_changed', value: '' })
-    void searchQueue('')
-  }
-
   return (
-    <PageContent className="pb-16">
-      <h1 className="sr-only">Requests</h1>
-      <QueueSearch
-        busy={Boolean(loadingSection) || searching}
-        error={searchError}
-        onChange={(value) => dispatch({ type: 'search_draft_changed', value })}
-        onClear={clearSearch}
-        onSubmit={submitSearch}
-        query={searchDraft}
-        searching={searching}
-        searchQuery={searchQuery}
+    <RequestWorkspaceShell collapsed={collapsed} detailOpenOnMobile={Boolean(selected)} sidebar={(
+      <RequestWorkspaceSidebar
+        active={active} unclaimed={section('unclaimed')} setAside={section('set_aside')}
+        collapsed={collapsed} onCollapsedChange={setCollapsed} params={params} selectedRequestId={selected}
+        searchValue={draft ?? query} searchQuery={query} searchBusy={queue.refreshing}
+        searchError={actionError} onSearchValueChange={setDraft}
+        onSearchSubmit={(value) => { if (identity) void searchRequestQueue(identity, value, load) }}
+        onClaim={(item) => void act(item, 'claim')} onRestore={(item) => void act(item, 'restore')}
+        onSettle={(item) => void act(item, 'settle')}
+        onSnooze={(item, option) => void act(item, 'snooze', requestSnoozeUntil(option.value))}
+        snoozeOptions={[{ label: 'In an hour', value: 'hour' }, { label: 'Tomorrow', detail: '9:00 AM', value: 'tomorrow' }, { label: 'Next week', detail: 'Monday, 9:00 AM', value: 'next_week' }]}
       />
-      <div aria-busy={searching} className="mt-10 grid gap-12">
-        {REQUEST_QUEUE_SECTION_ORDER.map((section) => section === 'your_work' && !isSignedIn ? null : (
-          <QueueSection
-            busy={Boolean(loadingSection) || searching}
-            error={sectionErrors[section]}
-            key={section}
-            loading={loadingSection === section}
-            onLoadMore={() => void loadMore(section)}
-            page={pages[section]}
-            params={params}
-            searchQuery={section === 'your_work' ? '' : searchQuery}
-            section={section}
-          />
-        ))}
-      </div>
-    </PageContent>
+    )}>
+      <RequestWorkspaceProvider value={{
+        selected: selectedRow,
+        previousId: rows[selectedIndex - 1]?.request.id ?? null,
+        nextId: rows[selectedIndex + 1]?.request.id ?? null,
+        claim: () => { if (selectedRow) void act(requestWorkspaceItem(selectedRow, 'unclaimed', pendingId), 'claim') },
+      }}>{children}</RequestWorkspaceProvider>
+    </RequestWorkspaceShell>
   )
-}
-
-function QueueSearch({
-  busy,
-  error,
-  onChange,
-  onClear,
-  onSubmit,
-  query,
-  searching,
-  searchQuery,
-}: {
-  busy: boolean
-  error: string | null
-  onChange: (value: string) => void
-  onClear: () => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
-  query: string
-  searching: boolean
-  searchQuery: string
-}) {
-  return (
-    <form
-      className="flex flex-wrap items-center gap-2"
-      onSubmit={onSubmit}
-      role="search"
-    >
-      <label className="relative block min-w-0 flex-1 sm:max-w-lg">
-        <span className="sr-only">Search open and closed requests</span>
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <input
-          className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          disabled={busy}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="Search requests"
-          type="search"
-          value={query}
-        />
-      </label>
-      <div className="flex items-center gap-2">
-        <Button disabled={busy} size="sm" type="submit" variant="secondary">
-          {searching ? 'Searching…' : 'Search'}
-        </Button>
-        {searchQuery ? (
-          <Button
-            disabled={busy}
-            onClick={onClear}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            Clear
-          </Button>
-        ) : null}
-      </div>
-      {error ? (
-        <p className="text-sm text-destructive sm:ml-2" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {searching ? <output className="sr-only">Searching requests…</output> : null}
-    </form>
-  )
-}
-
-function QueueSection({
-  busy,
-  error,
-  loading,
-  onLoadMore,
-  page,
-  params,
-  searchQuery,
-  section,
-}: {
-  busy: boolean
-  error?: string
-  loading: boolean
-  onLoadMore: () => void
-  page: RequestList
-  params: RepoParams
-  searchQuery: string
-  section: RequestQueueSection
-}) {
-  const details = SECTION_DETAILS[section]
-  const Icon = details.icon
-  const headingId = `request-queue-${section}`
-  const emptyMessage = searchQuery
-    ? `Nothing matches “${searchQuery}”.`
-    : details.empty
-
-  const Container = section === 'closed' ? 'details' : 'section'
-  const Heading = section === 'closed' ? 'summary' : 'div'
-
-  return (
-    <Container aria-labelledby={headingId} className="group/section" open={section === 'closed' && searchQuery ? true : undefined}>
-      <Heading className="flex items-center gap-2 [&:is(summary)]:cursor-pointer">
-        {section === 'closed' ? (
-          <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground group-open/section:rotate-90" />
-        ) : (
-          <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
-        )}
-        <h2 className="text-sm font-semibold" id={headingId}>
-          {details.title}
-        </h2>
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {requestCountLabel(page.requests.length, Boolean(page.next_cursor))}
-        </span>
-      </Heading>
-
-      {page.requests.length ? (
-        <div className="mt-2 divide-y divide-border">
-          {page.requests.map((request) => (
-            <RequestQueueRow
-              key={request.id}
-              params={params}
-              request={request}
-              section={section}
-            />
-          ))}
-        </div>
-      ) : (
-        <EmptyState className="mt-3" inline title={emptyMessage} />
-      )}
-
-      {page.next_cursor ? (
-        <div className="pt-4">
-          <Button
-            disabled={busy}
-            onClick={onLoadMore}
-            size="sm"
-            type="button"
-            variant="secondary"
-          >
-            {loading ? 'Loading…' : 'Load more'}
-          </Button>
-          {loading ? (
-            <output className="sr-only">
-              Loading more {details.title.toLowerCase()} requests…
-            </output>
-          ) : null}
-        </div>
-      ) : null}
-      {error ? (
-        <p className="mt-2 text-sm text-danger-strong" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </Container>
-  )
-}
-
-function RequestQueueRow({
-  params,
-  request,
-  section,
-}: {
-  params: RepoParams
-  request: RequestListItem
-  section: RequestQueueSection
-}) {
-  return (
-    <Link
-      className="group block min-w-0 rounded-md py-3 outline-none transition-colors [contain-intrinsic-size:auto_64px] [content-visibility:auto] hover:bg-accent/50 focus-visible:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      params={{ ...params, requestId: request.id }}
-      title={request.id}
-      to="/$owner/$repo/requests/$requestId"
-    >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-        <h3 className="break-words text-base font-medium leading-6 group-hover:underline">
-          {request.title}
-        </h3>
-        <Badge className="font-medium text-foreground" variant={section === 'open' ? 'neutral' : requestStatusTone(request)}>
-          {section === 'open' ? requestMergeabilityLabel(request) : requestStatusLabel(request)}
-        </Badge>
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] leading-5 text-muted-foreground">
-        <QueueDate request={request} section={section} />
-        <span aria-hidden="true">·</span>
-        <span>{requestAuthorRoleLabel(request)}</span>
-        <span aria-hidden="true">·</span>
-        <span>{requestAudienceLabel(request)}</span>
-      </div>
-      {request.title !== request.name ? (
-        <div className="mt-1 break-all font-mono text-[13px] text-muted-foreground">
-          {request.name}
-        </div>
-      ) : null}
-    </Link>
-  )
-}
-
-function QueueDate({
-  request,
-  section,
-}: {
-  request: RequestListItem
-  section: RequestQueueSection
-}) {
-  if (section === 'open' && request.submitted_at_unix !== null) {
-    return (
-      <AbsoluteTimestamp
-        className="tabular-nums"
-        compact
-        prefix="Submitted "
-        value={request.submitted_at_unix}
-      />
-    )
-  }
-  return (
-    <AbsoluteTimestamp
-      className="tabular-nums"
-      compact
-      prefix="Updated "
-      value={request.updated_at_unix}
-    />
-  )
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback
 }

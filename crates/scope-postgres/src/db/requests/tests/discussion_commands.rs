@@ -55,6 +55,7 @@ async fn discussion_commands_derive_actor_permissions_from_persisted_private_req
         client_reply_id: "client_reply_policy".into(),
         body_markdown: "Reply".into(),
         reply_to_reply_id: None,
+        wait_after_reply: false,
         now_unix: 5,
     };
     assert_eq!(

@@ -7,6 +7,7 @@ import type {
   CreateRequestDiscussionReplyInput,
   RequestDiscussionReply,
 } from './request-discussion-types'
+import { requestDiscussionReplyBody } from './request-discussion-reply-input'
 
 export type LoadDiscussionsInput = RequestParams & {
   commit_oid?: string
@@ -131,11 +132,7 @@ export async function createRequestDiscussionReplyForRequest(
     apiValidators.RequestDiscussionReplyMutationResponse,
     {
       auth: 'required',
-      body: {
-        body_markdown: data.body_markdown,
-        client_reply_id: data.client_reply_id,
-        reply_to_reply_id: data.reply_to_reply_id,
-      },
+      body: requestDiscussionReplyBody(data),
     },
   )
 }
@@ -164,11 +161,7 @@ export async function reopenAndReplyToRequestDiscussionForRequest(
     apiValidators.RequestDiscussionReplyMutationResponse,
     {
       auth: 'required',
-      body: {
-        body_markdown: data.body_markdown,
-        client_reply_id: data.client_reply_id,
-        reply_to_reply_id: data.reply_to_reply_id,
-      },
+      body: requestDiscussionReplyBody(data),
     },
   )
 }

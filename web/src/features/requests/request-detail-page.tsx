@@ -11,8 +11,18 @@ import { EmptyState } from '@/components/empty-state'
 import { PageContent, WorkbenchPane } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
-import { GitCommit, History, MessageSquare, ShieldQuestion } from 'lucide-react'
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  GitCommit,
+  History,
+  MessageSquare,
+  ShieldQuestion,
+  UserRound,
+} from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
 import { RequestActivityDrawer } from './request-activity-drawer'
 import type {
@@ -38,6 +48,8 @@ import {
   RequestAttachmentProvider,
   type RequestAttachmentActions,
 } from './request-attachment-context'
+import { useRequestWorkspace } from './request-workspace-context'
+import { requestAttentionLabel } from './request-workspace-model'
 
 export function RequestUnavailablePage({ params }: { params: RepoParams }) {
   return (
@@ -99,6 +111,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     version: String(request.activity_version),
   })
   const requestActions = useRequestActions(performAction)
+  const workspace = useRequestWorkspace()
   const [descriptionOverride, setDescriptionOverride] = useState<{
     server: string
     value: string
@@ -131,13 +144,13 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
 
   function requestHeader() {
     return (
-      <header className="px-5 pb-5 pt-7 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <header className="border-b border-border px-5 pb-5 pt-6 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
-            <h1 className="break-words text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[30px]">
+            <h1 className="break-words text-[26px] font-medium leading-[1.18] tracking-[-0.025em] sm:text-[29px]">
               {request.title}
             </h1>
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <Badge variant={requestStatusTone(request)}>
                 {requestStatusLabel(request)}
               </Badge>
@@ -150,16 +163,43 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 {request.name}
               </span>
             </div>
+            {workspace?.selected ? (
+              <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{workspace.selected.author.handle}</span>
+                <span>opened #{workspace.selected.request.id}</span>
+                {workspace.selected.claimer ? (
+                  <><span aria-hidden="true">·</span><span>Reviewing: {workspace.selected.claimer.handle}</span></>
+                ) : null}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <Button
+              asChild
+              className="min-[701px]:hidden"
+              size="icon-sm"
+              variant="secondary"
+            >
+              <Link
+                aria-label="Back to requests"
+                params={params}
+                to="/$owner/$repo/requests"
+              >
+                <ArrowLeft />
+              </Link>
+            </Button>
+            {workspace?.selected?.attention.reason === 'unclaimed' &&
+            workspace.selected.attention.can_claim ? (
+              <Button onClick={workspace.claim} size="sm" type="button" variant="secondary">
+                <UserRound />
+                I’ll take this
+              </Button>
+            ) : null}
             <RequestLifecycleActions
               actions={requestActions}
-              className="fixed inset-x-0 bottom-0 z-30 flex flex-wrap justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] xl:static xl:border-0 xl:bg-transparent xl:p-0"
+              className="fixed inset-x-0 bottom-0 z-30 flex flex-wrap justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
               request={request}
             />
-            <Button asChild size="sm" variant="secondary">
-              <Link params={params} to="/$owner/$repo/requests">Requests</Link>
-            </Button>
             {request.permissions.can_view_activity ? (
               <Button
                 aria-label="View request activity"
@@ -172,8 +212,27 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 <History />
               </Button>
             ) : null}
+            {workspace?.selected ? (
+              <RequestWorkspaceNavigation
+                nextId={workspace.nextId}
+                params={params}
+                previousId={workspace.previousId}
+              />
+            ) : null}
           </div>
         </div>
+        {workspace?.selected ? (
+          <div
+            className={cn(
+              'mt-5 border-l-2 px-3 py-2.5 text-xs',
+              workspace.selected.attention.state === 'active'
+                ? 'border-success bg-success-soft/60 text-success-strong'
+                : 'border-info bg-info-soft/60 text-info-strong',
+            )}
+          >
+            <p className="font-medium">{requestAttentionLabel(workspace.selected)}</p>
+          </div>
+        ) : null}
         {requestActions.error ? (
           <p className="mt-3 text-sm text-danger-strong" role="alert">
             {requestActions.error}
@@ -190,37 +249,101 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       requestId={request.id}
       viewerId={viewerId}
     >
-    <WorkbenchPane>
-      <div className={hasLifecycleActions ? 'pb-20 xl:pb-0' : undefined}>
-        {requestHeader()}
-        <div className="grid min-h-0 pt-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:grid-rows-[auto_auto_1fr]">
-          <RequestDescription
-            canEdit={request.permissions.can_edit_identity}
-            description={description}
-            onSave={saveDescription}
-          />
-          <RequestViewTabs params={{ ...params, requestId: request.id }} />
-          <RequestContextRail
-            actions={requestActions}
-            onRate={rateRequest}
-            params={requestParams}
-            ratings={ratings}
-            request={request}
-          />
-          <div className="min-w-0 xl:col-start-1">{children}</div>
-        </div>
+      <WorkbenchPane className="max-w-none">
+        <div
+          className={cn(
+            'mx-auto w-full max-w-[1180px]',
+            hasLifecycleActions && 'pb-20 min-[701px]:pb-0',
+          )}
+        >
+          {requestHeader()}
+          <div className="min-h-0 pt-4">
+            <RequestDescription
+              canEdit={request.permissions.can_edit_identity}
+              description={description}
+              onSave={saveDescription}
+            />
+            <RequestViewTabs params={{ ...params, requestId: request.id }} />
+            <RequestContextRail
+              actions={requestActions}
+              onRate={rateRequest}
+              params={requestParams}
+              ratings={ratings}
+              request={request}
+            />
+            <div className="min-w-0">{children}</div>
+          </div>
 
-        <RequestActivityDrawer
-          activity={history.activity}
-          error={history.error}
-          load={history.retry}
-          loading={history.loading}
-          onOpenChange={history.onOpenChange}
-          open={history.open}
-        />
-      </div>
-    </WorkbenchPane>
+          <RequestActivityDrawer
+            activity={history.activity}
+            error={history.error}
+            load={history.retry}
+            loading={history.loading}
+            onOpenChange={history.onOpenChange}
+            open={history.open}
+          />
+        </div>
+      </WorkbenchPane>
     </RequestAttachmentProvider>
+  )
+}
+
+function RequestWorkspaceNavigation({
+  nextId,
+  params,
+  previousId,
+}: {
+  nextId: string | null
+  params: RepoParams
+  previousId: string | null
+}) {
+  return (
+    <nav aria-label="Request navigation" className="flex items-center gap-1">
+      <RequestWorkspaceNavigationLink
+        direction="previous"
+        params={params}
+        requestId={previousId}
+      />
+      <RequestWorkspaceNavigationLink
+        direction="next"
+        params={params}
+        requestId={nextId}
+      />
+    </nav>
+  )
+}
+
+function RequestWorkspaceNavigationLink({
+  direction,
+  params,
+  requestId,
+}: {
+  direction: 'next' | 'previous'
+  params: RepoParams
+  requestId: string | null
+}) {
+  const label = `${direction === 'previous' ? 'Previous' : 'Next'} request`
+  const icon = direction === 'previous' ? <ChevronLeft /> : <ChevronRight />
+  if (!requestId) {
+    return (
+      <Button aria-label={label} disabled size="icon-sm" type="button" variant="ghost">
+        {icon}
+      </Button>
+    )
+  }
+  return (
+    <Button asChild size="icon-sm" variant="ghost">
+      <Link
+        aria-label={label}
+        params={{ ...params, requestId }}
+        preload="intent"
+        search={{}}
+        title={label}
+        to="/$owner/$repo/requests/$requestId"
+      >
+        {icon}
+      </Link>
+    </Button>
   )
 }
 

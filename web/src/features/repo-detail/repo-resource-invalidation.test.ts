@@ -1,3 +1,4 @@
+import { requestQueueResource } from '../requests/request-queue-cache'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RepoChangeEvent } from '../../api/types.generated'
@@ -7,6 +8,9 @@ import { invalidateRepoResources } from './repo-resource-invalidation'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
 function seed() {
+  requestQueueResource.clear()
+  const page = { requests: [], next_cursor: null, next_attention_at_unix: null }
+  for (const scope of ['viewer-a', 'viewer-b']) requestQueueResource.write(scope, { query: 'needle', pages: { active: page, unclaimed: page, set_aside: page } })
   repositoryActivityResource.clear()
   requestActivityResource.clear()
   repositoryActivityResource.write('viewer-a', { audience: 'public', entry: null, head_oid: 'head' })
@@ -17,6 +21,9 @@ function seed() {
 test('repository updates invalidate retained activity even when its page is unmounted', () => {
   seed()
   invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'push' } }))
+  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(requestQueueResource.getSnapshot('viewer-b').stale, false)
+  assert.equal(requestQueueResource.peek('viewer-a')?.query, 'needle')
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, true)
   assert.equal(repositoryActivityResource.peek('viewer-a')?.head_oid, 'head')
   assert.equal(repositoryActivityResource.getSnapshot('viewer-b').stale, false)
@@ -28,6 +35,8 @@ test('request changes target one request and leave latest repository activity re
   invalidateRepoResources('viewer-a', event({ RequestTimelineChanged: {
     request_id: 'one', discussion_id: 'discussion', through_position: 2, audience: 'Public',
   } }))
+  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(requestQueueResource.getSnapshot('viewer-b').stale, false)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'two')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, false)

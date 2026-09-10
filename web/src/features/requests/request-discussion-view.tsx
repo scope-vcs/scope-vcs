@@ -86,6 +86,7 @@ export function RequestDiscussionView({
     [createReply, loadReplies, reopenAndReply],
   )
   const isMaintainer = live.repo.access.actor !== 'Public'
+  const canWaitAfterReply = isMaintainer && Boolean(account?.user)
   const canResolve = useCallback(
     (discussion: RequestDiscussion) => !['Closed', 'Merged'].includes(request.state) && (
       isMaintainer ||
@@ -106,6 +107,7 @@ export function RequestDiscussionView({
       permissions={{
         canOpenDiscussion: request.permissions.can_open_discussion,
         canReply: request.permissions.can_reply_to_discussion,
+        canWaitAfterReply,
       }}
       repoId={repoResourceScope(live.repo, actor.id)}
       request={request}

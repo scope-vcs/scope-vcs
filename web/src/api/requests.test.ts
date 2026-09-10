@@ -9,19 +9,19 @@ test('parseLoadRequestQueueInput normalizes pagination and search', () => {
       owner: ' scope ',
       repo: ' vcs ',
       search: '  atomic refs  ',
-      section: 'open',
+      section: 'active',
     }),
     {
       cursor: 'open:page-2',
       owner: 'scope',
       repo: 'vcs',
       search: 'atomic refs',
-      section: 'open',
+      section: 'active',
     },
   )
 })
 
-test('parseLoadRequestQueueInput rejects unknown sections and searchable private work', () => {
+test('parseLoadRequestQueueInput rejects unknown sections', () => {
   assert.throws(
     () =>
       parseLoadRequestQueueInput({
@@ -31,16 +31,7 @@ test('parseLoadRequestQueueInput rejects unknown sections and searchable private
       }),
     /section is invalid/,
   )
-  assert.throws(
-    () =>
-      parseLoadRequestQueueInput({
-        owner: 'scope',
-        repo: 'vcs',
-        search: 'private title',
-        section: 'your_work',
-      }),
-    /cannot be searched/,
-  )
+
 })
 
 test('parseLoadRequestQueueInput removes empty optional values', () => {
@@ -50,14 +41,20 @@ test('parseLoadRequestQueueInput removes empty optional values', () => {
       owner: 'scope',
       repo: 'vcs',
       search: '\n',
-      section: 'closed',
+      section: 'set_aside',
     }),
     {
       cursor: null,
       owner: 'scope',
       repo: 'vcs',
       search: null,
-      section: 'closed',
+      section: 'set_aside',
     },
   )
+})
+
+test('each attention section supports scoped search', () => {
+  for (const section of ['active', 'unclaimed', 'set_aside']) {
+    assert.equal(parseLoadRequestQueueInput({ owner: 'scope', repo: 'vcs', section, search: 'needle' }).search, 'needle')
+  }
 })

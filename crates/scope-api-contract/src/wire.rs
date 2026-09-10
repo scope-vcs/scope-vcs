@@ -11,7 +11,10 @@ use scope_domain::{
     },
     repository::credentials::FirstPushTokenStatus as DomainFirstPushTokenStatus,
     requests::{
-        RequestActorRole as DomainRequestActorRole, RequestAudience as DomainRequestAudience,
+        RequestActorRole as DomainRequestActorRole,
+        RequestAttentionReason as DomainRequestAttentionReason,
+        RequestAttentionState as DomainRequestAttentionState,
+        RequestAudience as DomainRequestAudience,
         RequestDiscussionStatus as DomainRequestDiscussionStatus,
         RequestEventKind as DomainRequestEventKind,
         RequestEventPayload as DomainRequestEventPayload,
@@ -153,7 +156,20 @@ wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
 wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
-    RequestQueueSection => DomainRequestQueueSection { YourWork, Open, Closed }
+    RequestQueueSection => DomainRequestQueueSection { Active, Unclaimed, SetAside }
+);
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestAttentionState => DomainRequestAttentionState { Active, Waiting, Snoozed, Settled }
+);
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestAttentionReason => DomainRequestAttentionReason {
+        Authored, Invited, Claimed, Unclaimed, ClaimedElsewhere, NewActivity, Restored,
+        SnoozeExpired, Waiting, Snoozed, Settled, Open, Closed, Merged
+    }
 );
 wire_enum!(RequestDiscussionStatus => DomainRequestDiscussionStatus { Open, Resolved });
 

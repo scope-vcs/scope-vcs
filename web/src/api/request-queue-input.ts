@@ -5,9 +5,9 @@ import type { RequestQueueSection } from './types.generated'
 export type { RequestQueueSection } from './types.generated'
 
 const REQUEST_QUEUE_SECTIONS = [
-  'your_work',
-  'open',
-  'closed',
+  'active',
+  'unclaimed',
+  'set_aside',
 ] as const satisfies readonly RequestQueueSection[]
 
 export type LoadRequestQueueInput = RepoParams & {
@@ -29,9 +29,6 @@ export function parseLoadRequestQueueInput(
 
   if (!section) {
     throw new Error('Request queue section is invalid.')
-  }
-  if (section === 'your_work' && search) {
-    throw new Error('Your work cannot be searched.')
   }
 
   return {

@@ -41,6 +41,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   actor,
   canReply,
   canResolve,
+  canWaitAfterReply,
   composerOpen,
   discussion,
   onExpandedChange,
@@ -56,6 +57,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   actor: { handle: string; id: string }
   canReply: boolean
   canResolve: boolean
+  canWaitAfterReply: boolean
   composerOpen: boolean
   discussion: RequestDiscussionView
   onExpandedChange: (discussionId: string, expanded: boolean) => void
@@ -354,14 +356,14 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                   openComposer()
                 }}
                 onRetry={(failedReply) =>
-                  void postReply(
-                    failedReply.body_markdown,
-                    failedReply.id,
-                    failedReply.reply_to?.id ??
+                  void postReply(failedReply.body_markdown, {
+                    clientReplyId: failedReply.id,
+                    replyToReplyId: failedReply.reply_to?.id ??
                       failedReply.optimistic_reply_to_reply_id ??
                       null,
-                    failedReply.reply_to,
-                  )
+                    retryReference: failedReply.reply_to,
+                    waitAfterReply: failedReply.optimistic_wait_after_reply,
+                  })
                 }
                 readThroughPosition={discussion.read_through_position}
                 replies={availableReplies}
@@ -407,6 +409,11 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                     : null
                 }
                 reopen={discussion.status === 'Resolved'}
+                waitAfterReply={canWaitAfterReply ? async (body) => {
+                  const posted = await postReply(body, { waitAfterReply: true })
+                  if (posted) onCloseComposer()
+                  return posted
+                } : undefined}
               />
             </div>
           ) : null}

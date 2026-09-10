@@ -232,7 +232,21 @@ export type ProjectionPreviewCommitVisibilityResponse = "FullyPublic" | "Mixed" 
 
 export type ProjectionPreviewSummaryResponse = { visible_files: number, hidden_files: number, visible_commits: number, hidden_commits: number, };
 
-export type RequestQueueSection = "your_work" | "open" | "closed";
+export type RequestQueueSection = "active" | "unclaimed" | "set_aside";
+
+export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled";
+
+export type RequestAttentionReason = "authored" | "invited" | "claimed" | "unclaimed" | "claimed_elsewhere" | "new_activity" | "restored" | "snooze_expired" | "waiting" | "snoozed" | "settled" | "open" | "closed" | "merged";
+
+export type RequestAttentionResponse = { state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null, can_claim: boolean, can_set_aside: boolean, can_restore: boolean, };
+
+export type RequestAttentionActionRequest = { "action": "claim", expected_activity_version: number, } | { "action": "wait", expected_activity_version: number, } | { "action": "settle", expected_activity_version: number, } | { "action": "snooze", expected_activity_version: number, until_unix: number, } | { "action": "restore", expected_activity_version: number, };
+
+export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
+
+export type RequestQueueItemResponse = { request: RequestListItemResponse, author: RequestActorSummaryResponse, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
+
+export type RequestQueuePageResponse = { requests: Array<RequestQueueItemResponse>, next_cursor: string | null, next_attention_at_unix: number | null, };
 
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
@@ -320,9 +334,9 @@ export type EditRequestIdentityRequest = { title: string | null, description_mar
 
 export type CreateRequestDiscussionRequest = { body_markdown: string, client_discussion_id: string, anchor: RequestDiscussionAnchorInput | null, };
 
-export type CreateRequestDiscussionReplyRequest = { body_markdown: string, client_reply_id: string, reply_to_reply_id: string | null, };
+export type CreateRequestDiscussionReplyRequest = { body_markdown: string, client_reply_id: string, reply_to_reply_id: string | null, wait_after_reply: boolean, };
 
-export type ReopenAndReplyRequest = { body_markdown: string, client_reply_id: string, reply_to_reply_id: string | null, };
+export type ReopenAndReplyRequest = { body_markdown: string, client_reply_id: string, reply_to_reply_id: string | null, wait_after_reply: boolean, };
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
@@ -401,6 +415,7 @@ export const ApiRouteTemplates = {
   repoPushIntents: "/v1/repos/{owner}/{repo}/push-intents",
   repoRequests: "/v1/repos/{owner}/{repo}/requests",
   repoRequestQueue: "/v1/repos/{owner}/{repo}/requests/queue",
+  repoRequestAttention: "/v1/repos/{owner}/{repo}/requests/{request_id}/attention",
   repoRequest: "/v1/repos/{owner}/{repo}/requests/{request_id}",
   repoRequestSubmit: "/v1/repos/{owner}/{repo}/requests/{request_id}/submit",
   repoRequestMerge: "/v1/repos/{owner}/{repo}/requests/{request_id}/merge",
