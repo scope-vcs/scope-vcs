@@ -6,13 +6,14 @@ COMMAND="${1:-all}"
 
 usage() {
   cat <<'EOF'
-usage: ./dev/check [all|guardrails|rust|cli|web|ops|smoke]
+usage: ./dev/check [all|guardrails|rust|cli|web|analyzer|ops|smoke]
 
   all         run every non-browser check group (default)
   guardrails  check source size, crate boundaries, and replicated toolchain pins
   rust        format, test, and lint the main Rust workspace
   cli         format, test, lint, and release-build the standalone CLI workspace
   web         test, check, and build the web application
+  analyzer    install the locked analyzer dependencies and run its tests
   ops         test deployment orchestration and benchmark scripts
   smoke       run the browser smoke suite against an already running local stack
 EOF
@@ -41,6 +42,7 @@ guardrails() { ./dev/checks/policy; }
 rust() { ./dev/checks/backend with-api; }
 cli() { ./dev/checks/cli; }
 web() { ./dev/checks/web; }
+analyzer() { ./dev/checks/dependency-analyzer; }
 ops() { ./dev/checks/ops; }
 
 smoke() {
@@ -69,12 +71,14 @@ case "$COMMAND" in
     rust
     cli
     web
+    analyzer
     ops
     ;;
   guardrails) guardrails ;;
   rust) rust ;;
   cli) cli ;;
   web) web ;;
+  analyzer) analyzer ;;
   ops) ops ;;
   smoke) smoke ;;
   help|-h|--help) usage ;;

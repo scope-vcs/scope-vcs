@@ -118,6 +118,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route(routes::REPO_CONFIG, get(http::repos::get_repo_config))
         .route(
+            routes::REPO_DEPENDENCIES,
+            get(http::dependencies::get_repository_dependencies),
+        )
+        .route(
             routes::REPO_METADATA,
             axum::routing::patch(http::repo_metadata::update_repo_metadata),
         )

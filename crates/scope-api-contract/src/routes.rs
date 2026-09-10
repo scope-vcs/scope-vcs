@@ -41,6 +41,9 @@ routes! {
             => "repoConfig",
             repo_config(owner: &str, repo: &str);
         REPO_METADATA = "/v1/repos/{owner}/{repo}/metadata" => "repoMetadata";
+        REPO_DEPENDENCIES = "/v1/repos/{owner}/{repo}/dependencies"
+            => "repoDependencies",
+            repo_dependencies(owner: &str, repo: &str);
         REPO_RUN_WORKFLOWS = "/v1/repos/{owner}/{repo}/run-workflows"
             => "repoRunWorkflows",
             repo_run_workflows(owner: &str, repo: &str);

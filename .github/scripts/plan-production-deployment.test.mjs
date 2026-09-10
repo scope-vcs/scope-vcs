@@ -121,6 +121,16 @@ test("changes select the required deployment lanes", () => {
       { cache: true, "run-worker": true, "git-router": true, api: true },
     ],
     [
+      "dependency analyzer changes rebuild the worker",
+      ["dependency-analyzer/analyze.mjs"],
+      { "run-worker": true },
+    ],
+    [
+      "worker runtime image selects only the worker",
+      ["deploy/railway/worker.Dockerfile"],
+      { "run-worker": true },
+    ],
+    [
       "web runtime image selects the web service",
       ["deploy/railway/web.Dockerfile"],
       { web: true },

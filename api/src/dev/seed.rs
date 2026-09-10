@@ -1,3 +1,6 @@
+#[cfg(any(test, feature = "local-dev"))]
+#[path = "seed/dependency_repositories.rs"]
+mod dependency_repositories;
 #[path = "seed/git_segments.rs"]
 mod git_segments;
 #[path = "seed/request_discussions.rs"]
@@ -217,6 +220,17 @@ pub(crate) fn catalog(
         catalog.repositories.insert(repo.record.id.clone(), repo);
     }
     seed_request_gallery(&mut catalog, &owner, request_gallery)?;
+    #[cfg(any(test, feature = "local-dev"))]
+    {
+        for (repo, segment) in dependency_repositories::seed_dependency_repositories(
+            object_store,
+            git_segment_store,
+            &owner,
+        )? {
+            catalog.git_segment_uploads.push(segment);
+            catalog.repositories.insert(repo.record.id.clone(), repo);
+        }
+    }
 
     Ok(catalog)
 }

@@ -5,6 +5,7 @@ import type { RepoChangeEvent } from '../../api/types.generated'
 import { repositoryActivityResource } from './repository-activity-resource'
 import { requestActivityIdentity, requestActivityResource } from '../requests/request-activity-resource'
 import { invalidateRepoResources } from './repo-resource-invalidation'
+import { repositoryDependencyResource } from './repository-dependency-resource'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
 function seed() {
@@ -13,9 +14,11 @@ function seed() {
   for (const scope of ['viewer-a', 'viewer-b']) requestQueueResource.write(scope, { query: 'needle', requestedQuery: 'needle', pages: { active: page, unclaimed: page, set_aside: page, done: page } })
   repositoryActivityResource.clear()
   requestActivityResource.clear()
+  repositoryDependencyResource.clear()
   repositoryActivityResource.write('viewer-a', { audience: 'public', entry: null, head_oid: 'head' })
   repositoryActivityResource.write('viewer-b', { audience: 'public', entry: null, head_oid: 'other' })
   for (const id of ['one', 'two']) requestActivityResource.write(requestActivityIdentity('viewer-a', id), { events: [], through_position: 1 })
+  repositoryDependencyResource.write('viewer-a', { error: null, report: null, status: 'Pending' })
 }
 
 test('repository updates invalidate retained activity even when its page is unmounted', () => {
@@ -28,6 +31,7 @@ test('repository updates invalidate retained activity even when its page is unmo
   assert.equal(repositoryActivityResource.peek('viewer-a')?.head_oid, 'head')
   assert.equal(repositoryActivityResource.getSnapshot('viewer-b').stale, false)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
+  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
 })
 
 test('request changes target one request and leave latest repository activity reusable', () => {
@@ -40,6 +44,15 @@ test('request changes target one request and leave latest repository activity re
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'two')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, false)
+  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
+})
+
+test('dependency completion invalidates only the retained dependency report', () => {
+  seed()
+  invalidateRepoResources('viewer-a', event('DependenciesChanged'))
+  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, false)
+  assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, false)
 })
 
 test('recovery invalidates cached activity but ordinary connection and run events do not', () => {
@@ -47,6 +60,8 @@ test('recovery invalidates cached activity but ordinary connection and run event
   invalidateRepoResources('viewer-a', event('Connected'))
   invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'LogsAppended' } }))
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, false)
+  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
   invalidateRepoResources('viewer-a', event('Lagged'))
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
 })

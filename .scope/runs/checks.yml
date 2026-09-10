@@ -201,3 +201,22 @@ jobs:
     steps:
       - name: Check operations
         run: ./dev/checks/ops
+
+  dependency-analyzer:
+    caches:
+      - name: dependency-analyzer-npm
+        path: /root/.npm
+        format: v1
+        compatibility:
+          files: []
+          environment: []
+          source: false
+        exact:
+          files:
+            - dependency-analyzer/package.json
+            - dependency-analyzer/package-lock.json
+          environment: []
+          source: false
+    steps:
+      - name: Check dependency analyzer
+        run: ./dev/checks/dependency-analyzer

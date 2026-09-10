@@ -1,0 +1,17 @@
+{
+  "name": "@scope-vcs/dependency-analyzer",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": "^22 || ^24 || >=26"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "dependency-cruiser": "18.2.0",
+    "typescript": "6.0.2"
+  }
+}

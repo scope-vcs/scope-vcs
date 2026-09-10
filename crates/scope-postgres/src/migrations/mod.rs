@@ -1,6 +1,7 @@
 mod baseline;
 mod m0043_retire_git_manifests;
 mod m0044_request_attention;
+mod m0045_dependency_analysis;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -32,6 +33,7 @@ impl MigratorTrait for Migrator {
             Box::new(baseline::Migration),
             Box::new(m0043_retire_git_manifests::Migration),
             Box::new(m0044_request_attention::Migration),
+            Box::new(m0045_dependency_analysis::Migration),
         ]
     }
 }

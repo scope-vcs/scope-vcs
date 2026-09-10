@@ -225,18 +225,21 @@
         ".github/scripts/deploy-backend-railway.sh",
         ".github/scripts/deploy-railway.sh",
         ".github/scripts/test-deploy-backend-railway.sh",
+        ".github/scripts/worker-analyzer-package.test.mjs",
         ".github/workflows/deploy-backend.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
-        "deploy/railway/prebuilt.Dockerfile"
+        "deploy/railway/prebuilt.Dockerfile",
+        "deploy/railway/worker.Dockerfile"
       ],
       "prefixes": [
         "crates/",
         "runner-runtime/",
-        "worker/"
+        "worker/",
+        "dependency-analyzer/"
       ]
     },
     "media-worker": {

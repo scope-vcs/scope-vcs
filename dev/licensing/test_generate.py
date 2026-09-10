@@ -33,6 +33,22 @@ class LicensingChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Archive checksum mismatch"):
             generate.archive(dict(name="package", version="1", url="file:vendor/package.tgz", integrity=integrity))
 
+    def test_npm_lock_packages_preserve_nested_names_and_integrity(self):
+        self.write("dependency-analyzer/package-lock.json", json.dumps({"packages": {
+            "": {"name": "first-party"},
+            "node_modules/@scope/one": {"version": "1.0.0", "resolved": "https://example.invalid/one.tgz", "integrity": "sha512-one"},
+            "node_modules/parent/node_modules/two": {"version": "2.0.0", "resolved": "https://example.invalid/two.tgz", "integrity": "sha512-two"},
+        }}))
+
+        self.assertEqual(generate.npm_packages("dependency-analyzer/package-lock.json", "analyzer"), [
+            dict(ecosystem="analyzer", name="@scope/one", version="1.0.0",
+                url="https://example.invalid/one.tgz", integrity="sha512-one",
+                lockfiles=["dependency-analyzer/package-lock.json"]),
+            dict(ecosystem="analyzer", name="two", version="2.0.0",
+                url="https://example.invalid/two.tgz", integrity="sha512-two",
+                lockfiles=["dependency-analyzer/package-lock.json"]),
+        ])
+
     def test_changed_lockfile_or_generator_input_invalidates_notice_check(self):
         files = {"Cargo.lock": "locked packages\n", "dev/licensing/generate.py": "audited generator\n",
             "legal/third-party-rust.txt": "license texts\n"}

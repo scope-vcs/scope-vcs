@@ -1,6 +1,7 @@
 mod cleanup;
 mod compaction;
 mod control;
+mod dependencies;
 mod execution;
 mod git_repo;
 mod health;
@@ -111,18 +112,22 @@ async fn run() -> anyhow::Result<()> {
 }
 
 async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::Result<()> {
-    if settings.role.runs_compaction() {
+    if settings.role.runs_compaction() || settings.role.runs_dependencies() {
         require_git_runtime()?;
+    }
+    if settings.role.runs_dependencies() {
+        dependencies::require_analyzer_runtime()?;
     }
     let Some(metadata) = connect_worker_or_wait(&settings, &health).await else {
         return Ok(());
     };
-    let object_store = if settings.role.runs_cleanup() {
+    let object_store = if settings.role.runs_cleanup() || settings.role.runs_dependencies() {
         Some(object_store_from_env(&settings.data_dir)?)
     } else {
         None
     };
-    let git_segment_store = if settings.role.runs_compaction() {
+    let git_segment_store = if settings.role.runs_compaction() || settings.role.runs_dependencies()
+    {
         Some(Arc::new(git_segment_store_from_env(&settings)?))
     } else {
         None
@@ -136,6 +141,13 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
                 control::run(metadata.clone(), settings.clone(), health.clone()),
                 compaction::run(
                     metadata.clone(),
+                    git_segment_store.clone(),
+                    settings.clone(),
+                    health.clone(),
+                ),
+                dependencies::run(
+                    metadata.clone(),
+                    object_store.clone(),
                     git_segment_store,
                     settings.clone(),
                     health.clone(),
@@ -157,6 +169,16 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
             cleanup::run(
                 metadata,
                 object_store.expect("cleanup role requires object storage"),
+                settings,
+                health,
+            )
+            .await?;
+        }
+        WorkerRole::Dependencies => {
+            dependencies::run(
+                metadata,
+                object_store.expect("dependency analysis requires object storage"),
+                git_segment_store.expect("dependency analysis requires Git segment storage"),
                 settings,
                 health,
             )
@@ -240,6 +262,7 @@ fn generate_persistence_id(kind: GeneratedIdKind) -> Result<String, String> {
     let random = hex::encode(bytes);
     Ok(match kind {
         GeneratedIdKind::CleanupGeneration => random,
+        GeneratedIdKind::DependencyAnalysisLease => format!("dependency_{random}"),
         GeneratedIdKind::OutboxJob => format!("outbox_{random}"),
         GeneratedIdKind::RepositoryIncarnation => format!("repoi_{random}"),
     })

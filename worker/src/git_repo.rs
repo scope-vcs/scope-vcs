@@ -185,7 +185,7 @@ pub(crate) async fn build_compacted_pack(
     })
 }
 
-async fn index_git_segment(
+pub(crate) async fn index_git_segment(
     segment_store: &GitSegmentStore,
     repository_id: &str,
     segment: &scope_domain::repository::git::GitSegmentRef,

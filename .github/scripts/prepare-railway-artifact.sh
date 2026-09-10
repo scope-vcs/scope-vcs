@@ -21,7 +21,15 @@ install_git=0
 binary=""
 case "$component" in
   api) install_git=1; binary=scope-vcs ;;
-  run-worker) install_git=1; binary=scope-worker ;;
+  run-worker)
+    dockerfile=deploy/railway/worker.Dockerfile
+    binary=scope-worker
+    test -s "$context_root/dependency-analyzer/package.json"
+    test -s "$context_root/dependency-analyzer/package-lock.json"
+    test -s "$context_root/dependency-analyzer/analyze.mjs"
+    test -d "$context_root/dependency-analyzer/src"
+    test ! -e "$context_root/dependency-analyzer/node_modules"
+    ;;
   cache) binary=scope-cache-service ;;
   git-router) binary=scope-repo-router ;;
   media-api) binary=scope-media-service ;;

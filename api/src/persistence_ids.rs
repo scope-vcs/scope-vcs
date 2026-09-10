@@ -6,6 +6,7 @@ pub(crate) fn generate_persistence_id(kind: GeneratedIdKind) -> Result<String, S
     let random = hex::encode(bytes);
     Ok(match kind {
         GeneratedIdKind::CleanupGeneration => random,
+        GeneratedIdKind::DependencyAnalysisLease => format!("dependency_{random}"),
         GeneratedIdKind::OutboxJob => format!("outbox_{random}"),
         GeneratedIdKind::RepositoryIncarnation => format!("repoi_{random}"),
     })

@@ -6,6 +6,7 @@ import {
 } from '@/api/client'
 import { gitRemoteUrl } from './repo-urls'
 import type { RepoContent, RepoLiveState, RepoParams, RepoSummary } from './types'
+import type { RepositoryDependencyCheckResponse } from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import { apiValidators } from './validators.generated'
 export { parseRepoParams } from './repo-params'
@@ -50,6 +51,18 @@ export async function loadRepoFileForRequest(
     `${repoPath(ApiRouteTemplates.repoFileContent, data)}?path=${encodeURIComponent(data.path)}`,
     apiValidators.RepoFileContentResponse,
     { auth: 'optional', signal },
+  )
+}
+
+export async function loadRepoDependenciesForRequest(
+  data: RepoParams,
+  signal?: AbortSignal,
+): Promise<RepositoryDependencyCheckResponse> {
+  const api = createApiClient()
+  return api.get(
+    repoPath(ApiRouteTemplates.repoDependencies, data),
+    apiValidators.RepositoryDependencyCheckResponse,
+    { auth: 'required', maxResponseBytes: 8 * 1024 * 1024, signal },
   )
 }
 

@@ -193,7 +193,10 @@ fn event_for_access(
         return Some(event);
     }
 
-    if matches!(&event.kind, RepoChangeKind::RunChanged { .. }) {
+    if matches!(
+        &event.kind,
+        RepoChangeKind::RunChanged { .. } | RepoChangeKind::DependenciesChanged
+    ) {
         return None;
     }
 

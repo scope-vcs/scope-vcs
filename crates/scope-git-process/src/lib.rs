@@ -8,7 +8,7 @@ pub use lifecycle::{
 };
 pub use runner::{
     ProcessCancellation, ProcessError, ProcessLimits, StreamedOutput, StreamingProcessError, run,
-    run_with_stdin_reader, run_with_stdout,
+    run_cancellable, run_with_stdin_reader, run_with_stdout,
 };
 pub use stdio::{STDERR_DIAGNOSTIC_BYTES, truncated_stderr};
 

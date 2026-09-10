@@ -54,6 +54,15 @@ test('generated validators enforce arrays and JavaScript safe integers', () => {
   }), false)
 })
 
+test('generated RepoChangeEvent validator accepts dependency invalidation events', () => {
+  assert.equal(apiValidators.RepoChangeEvent({
+    incarnation_id: 'incarnation-1',
+    kind: 'DependenciesChanged',
+    repo_id: 'owner/repo',
+    version: 2,
+  }), true)
+})
+
 test('run mutation responses use the exact RunResponse contract', () => {
   const response = {
     cancellation_requested: true,

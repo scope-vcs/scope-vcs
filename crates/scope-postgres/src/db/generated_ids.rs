@@ -3,6 +3,7 @@ use crate::error::PostgresError;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GeneratedIdKind {
     CleanupGeneration,
+    DependencyAnalysisLease,
     OutboxJob,
     RepositoryIncarnation,
 }
@@ -42,6 +43,9 @@ pub(crate) fn test_generated_id(kind: GeneratedIdKind) -> Result<String, String>
     let sequence = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     Ok(match kind {
         GeneratedIdKind::CleanupGeneration => format!("test_cleanup_{sequence:016x}"),
+        GeneratedIdKind::DependencyAnalysisLease => {
+            format!("test_dependency_analysis_{sequence:016x}")
+        }
         GeneratedIdKind::OutboxJob => format!("outbox_test_{sequence:016x}"),
         GeneratedIdKind::RepositoryIncarnation => format!("repoi_test_{sequence:016x}"),
     })

@@ -33,6 +33,7 @@ mod cli_auth;
 mod cli_sessions;
 mod content_fences;
 mod content_push_transactions;
+mod dependency_analysis;
 pub use content_fences::ContentRefFence;
 mod entities;
 mod fast_push;
@@ -47,6 +48,9 @@ mod migration_tests;
 pub use cache_service::{
     CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
     CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
+};
+pub use dependency_analysis::{
+    DependencyAnalysisClaim, DependencyCompletion, DependencySnapshotFile,
 };
 pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
 mod git_push_reads;

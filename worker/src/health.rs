@@ -16,8 +16,8 @@ pub(crate) struct WorkerHealth {
 
 struct WorkerHealthState {
     schema_ready: AtomicBool,
-    last_successful_poll_unix: [AtomicU64; 3],
-    required_roles: [bool; 3],
+    last_successful_poll_unix: [AtomicU64; 4],
+    required_roles: [bool; 4],
     stale_after_secs: u64,
 }
 
@@ -32,6 +32,7 @@ impl WorkerHealth {
                     role.runs_control(),
                     role.runs_compaction(),
                     role.runs_cleanup(),
+                    role.runs_dependencies(),
                 ],
                 stale_after_secs,
             }),
@@ -85,6 +86,7 @@ fn concrete_role_index(role: WorkerRole) -> usize {
         WorkerRole::Control => 0,
         WorkerRole::Compaction => 1,
         WorkerRole::Cleanup => 2,
+        WorkerRole::Dependencies => 3,
         WorkerRole::All => panic!("health updates require one concrete worker role"),
     }
 }
@@ -121,6 +123,8 @@ mod tests {
         assert!(!health.is_ready_at(100));
 
         health.mark_poll_succeeded(WorkerRole::Cleanup, 100);
+        assert!(!health.is_ready_at(100));
+        health.mark_poll_succeeded(WorkerRole::Dependencies, 100);
         assert!(health.is_ready_at(100));
     }
 }
