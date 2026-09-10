@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { invalidateRepoResources } from '../repo-detail/repo-resource-invalidation'
 import {
+  activateRequestAttachmentMediaScope,
+  requestAttachmentMediaGrantResource,
+  resetRequestAttachmentMediaGrants,
+} from './request-attachment-media-resource'
+import {
   activateRequestAttachmentResourceScope,
   requestAttachmentResource,
   requestAttachmentResourceIdentity,
@@ -9,7 +14,10 @@ import {
 } from './request-attachment-resource'
 import type { RequestAttachmentResourceValue } from './request-attachment-resource'
 
-test.beforeEach(resetRequestAttachmentResources)
+test.beforeEach(() => {
+  resetRequestAttachmentResources()
+  resetRequestAttachmentMediaGrants()
+})
 
 test('attachment resources are isolated by viewer/access scope and request', () => {
   assert.notEqual(
@@ -38,25 +46,106 @@ test('invalidation retains valid metadata while a processing refresh runs or fai
   assert.equal(requestAttachmentResource.getSnapshot(identity).error instanceof Error, true)
 })
 
-test('navigation retains other repositories while an access change invalidates that repository', () => {
-  const viewer = 'viewer'
-  const repoOnePublic = JSON.stringify(['repo-one', viewer, { actor: 'Public' }])
-  const repoOnePrivate = JSON.stringify(['repo-one', viewer, { actor: 'Member' }])
-  const repoTwo = JSON.stringify(['repo-two', viewer, { actor: 'Member' }])
-  const repoOneIdentity = requestAttachmentResourceIdentity(repoOnePublic, 'request-one')
-  const repoTwoIdentity = requestAttachmentResourceIdentity(repoTwo, 'request-two')
-  requestAttachmentResource.write(repoOneIdentity, resourceValue('Processing'))
-  requestAttachmentResource.write(repoTwoIdentity, resourceValue('Processing'))
+const scope = (repo = 'repo', viewer = 'viewer', access = 'Public') =>
+  JSON.stringify([repo, viewer, { actor: access }])
+const owners = [
+  {
+    name: 'metadata', resource: requestAttachmentResource, maxOwners: 16,
+    activate: activateRequestAttachmentResourceScope, reset: resetRequestAttachmentResources,
+    identity: requestAttachmentResourceIdentity,
+    seed: (key: string) => requestAttachmentResource.write(key, resourceValue('Processing')),
+  },
+  {
+    name: 'media grants', resource: requestAttachmentMediaGrantResource, maxOwners: 64,
+    activate: activateRequestAttachmentMediaScope, reset: resetRequestAttachmentMediaGrants,
+    identity: (scope: string, id: string) => `${scope}\0${id}\0${JSON.stringify({ kind: 'derivative', derivative_id: 'preview' })}`,
+    seed: (key: string) => requestAttachmentMediaGrantResource.write(key, {
+      media_url: '/media/attachment', grant: 'grant', expires_at_unix: 100,
+    }),
+  },
+]
 
-  activateRequestAttachmentResourceScope(repoOnePublic)
-  activateRequestAttachmentResourceScope(repoTwo)
-  assert.equal(requestAttachmentResource.peek(repoOneIdentity) !== null, true)
-  assert.equal(requestAttachmentResource.peek(repoTwoIdentity) !== null, true)
+for (const owner of owners) {
+  const { resource, maxOwners, activate, reset, seed } = owner
+  const key = (accessScope: string, id = 'request') => owner.identity(accessScope, id)
 
-  activateRequestAttachmentResourceScope(repoOnePrivate)
-  assert.equal(requestAttachmentResource.peek(repoOneIdentity), null)
-  assert.equal(requestAttachmentResource.getSnapshot(repoTwoIdentity).stale, false)
-})
+  test(`${owner.name}: scope reuse retains data and changes remove only the previous scope`, () => {
+    const previous = scope()
+    const next = scope('repo', 'viewer', 'Member')
+    const removed = [key(previous), key(previous, 'other-request')]
+    const retained = [key(next), key(scope('other-repo')), key(scope('repo', 'other-viewer')),
+      key(scope('repo', 'viewer', 'Owner')), `${previous}suffix\0request`]
+    activate(previous)
+    for (const identity of [...removed, ...retained]) seed(identity)
+    const snapshot = resource.getSnapshot(removed[0]!)
+    activate(scope('other-repo'))
+    activate(scope('repo', 'other-viewer'))
+    activate(previous)
+    assert.equal(resource.getSnapshot(removed[0]!), snapshot)
+    activate(next)
+    for (const identity of removed) assert.equal(resource.peek(identity), null)
+    for (const identity of retained) assert.equal(resource.getSnapshot(identity).stale, false)
+  })
+
+  test(`${owner.name}: ${maxOwners}-owner tracking refreshes recency and forgets without cache deletion`, () => {
+    // Populate tracking separately so cache eviction cannot mask its capacity or recency.
+    for (let index = 0; index < maxOwners; index++) activate(scope(`repo-${index}`))
+    seed(key(scope('repo-0')))
+    activate(scope('repo-0', 'viewer', 'Member'))
+    assert.equal(resource.peek(key(scope('repo-0'))), null)
+    activate(scope('repo-1'))
+    for (const repo of ['repo-1', 'repo-2']) seed(key(scope(repo)))
+    activate(scope('overflow'))
+    assert.notEqual(resource.peek(key(scope('repo-2'))), null)
+    activate(scope('repo-1', 'viewer', 'Member'))
+    activate(scope('repo-2', 'viewer', 'Member'))
+    assert.equal(resource.peek(key(scope('repo-1'))), null)
+    assert.notEqual(resource.peek(key(scope('repo-2'))), null)
+  })
+
+  test(`${owner.name}: decoding ignores malformed scopes and preserves the anonymous fallback`, () => {
+    activate(scope())
+    for (let index = 1; index < maxOwners; index++) activate(scope(`repo-${index}`))
+    for (const invalid of ['{', 'null', '123', '{}', '"repo"', '[]', '[null]', '[1,"viewer"]']) {
+      seed(key(invalid))
+      activate(invalid)
+      assert.notEqual(resource.peek(key(invalid)), null)
+    }
+    seed(key(scope()))
+    activate(scope('repo', 'viewer', 'Member'))
+    assert.equal(resource.peek(key(scope())), null)
+    const anonymous = ['["repo"]', '["repo",null]', '["repo",12]', '["repo",{}]', '["repo",[]]', '["repo","anonymous"]']
+    for (const current of anonymous) {
+      activate(current)
+      seed(key(current))
+    }
+    for (const previous of anonymous.slice(0, -1)) assert.equal(resource.peek(key(previous)), null)
+    assert.notEqual(resource.peek(key(anonymous.at(-1)!)), null)
+  })
+
+  test(`${owner.name}: activation and reset leave the other resource's state alone`, () => {
+    const other = owners.find((candidate) => candidate !== owner)!
+    const previous = scope()
+    const next = scope('repo', 'viewer', 'Member')
+    const otherKey = other.identity(previous, 'request')
+    activate(previous)
+    other.activate(previous)
+    seed(key(previous))
+    other.seed(otherKey)
+    activate(next)
+    assert.equal(resource.peek(key(previous)), null)
+    assert.notEqual(other.resource.peek(otherKey), null)
+    seed(key(next))
+    reset()
+    assert.equal(resource.peek(key(next)), null)
+    assert.notEqual(other.resource.peek(otherKey), null)
+    seed(key(previous))
+    activate(next)
+    assert.notEqual(resource.peek(key(previous)), null)
+    other.activate(next)
+    assert.equal(other.resource.peek(otherKey), null)
+  })
+}
 
 function resourceValue(state: 'Processing'): RequestAttachmentResourceValue {
   return {
