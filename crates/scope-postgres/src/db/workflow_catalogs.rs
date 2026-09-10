@@ -1,17 +1,17 @@
 use super::{
     RepositoryStore, acquire_aggregate_lock, begin_metadata_read_snapshot, entities,
-    git_segments::load_git_pack_spans, repository_from_model,
+    git_segments::load_git_pack_spans,
 };
 use crate::error::PostgresError;
 use scope_domain::{
     content::SourceBlob,
+    repository::RepositoryIncarnation,
     repository::git::{GitHead, GitPackSpan},
-    repository::{Repository, RepositoryIncarnation},
     runs::catalog::{RepositoryWorkflowCatalog, RepositoryWorkflowFile},
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, TransactionTrait, sea_query::OnConflict,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait, sea_query::OnConflict,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,9 +26,13 @@ pub struct RepositoryWorkflowCatalogBackfillCandidate {
 }
 
 pub struct CurrentRepositoryWorkflowCatalog {
-    pub repository: Repository,
+    pub repository_id: String,
+    pub git_head: Option<GitHead>,
     pub catalog: Option<RepositoryWorkflowCatalog>,
 }
+
+#[cfg(test)]
+mod tests;
 
 pub(super) async fn apply_repository_workflow_catalog<C>(
     conn: &C,
@@ -115,12 +119,21 @@ impl RepositoryStore {
     ) -> Result<Option<CurrentRepositoryWorkflowCatalog>, PostgresError> {
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let snapshot = match entities::repository::Entity::find_by_id(repo_id)
+            .select_only()
+            .column(entities::repository::Column::Id)
+            .into_tuple::<String>()
             .one(&tx)
             .await
             .map_err(PostgresError::internal)?
         {
-            Some(row) => Some(CurrentRepositoryWorkflowCatalog {
-                repository: repository_from_model(&tx, row).await?,
+            Some(repository_id) => Some(CurrentRepositoryWorkflowCatalog {
+                repository_id,
+                git_head: entities::git_head::Entity::find_by_id(repo_id)
+                    .one(&tx)
+                    .await
+                    .map_err(PostgresError::internal)?
+                    .map(entities::git_head::Model::try_into_domain)
+                    .transpose()?,
                 catalog: repository_workflow_catalog(&tx, repo_id).await?,
             }),
             None => None,
