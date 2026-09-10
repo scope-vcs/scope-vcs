@@ -1,9 +1,8 @@
 use super::*;
 use scope_domain::requests::{
     Request, RequestActorRole, RequestAudience, RequestEventKind, RequestState, StartRequestInput,
-    SubmitRequestInput,
 };
-use scope_postgres::db::AddRequestInviteeCommand;
+use scope_postgres::db::{AddRequestInviteeCommand, SubmitRequestCommand};
 
 const PUBLIC_SUBJECT: &str = "user_public";
 const PUBLIC_EMAIL: &str = "public@example.com";

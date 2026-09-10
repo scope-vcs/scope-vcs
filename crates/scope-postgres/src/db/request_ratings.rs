@@ -94,10 +94,10 @@ where
 mod tests {
     use super::*;
     use crate::db::{
+        CloseRequestCommand, SubmitRequestCommand,
         generated_ids::test_generated_id,
         requests::tests::{postgres_store, start_public_request},
     };
-    use scope_domain::requests::{CloseRequestInput, SubmitRequestInput};
 
     #[tokio::test]
     async fn terminal_participants_persist_at_most_one_immutable_rating_each() {
@@ -105,11 +105,9 @@ mod tests {
         start_public_request(&store).await;
         store
             .requests()
-            .submit_request(SubmitRequestInput {
+            .submit_request(SubmitRequestCommand {
                 request_id: "req_1".to_string(),
                 actor_user_id: "user_public".to_string(),
-                actor_is_author: false,
-                actor_can_submit: false,
                 event_id: "event_submitted".to_string(),
                 now_unix: 4,
             })
@@ -118,11 +116,9 @@ mod tests {
         store
             .requests()
             .close_request(
-                CloseRequestInput {
+                CloseRequestCommand {
                     request_id: "req_1".to_string(),
                     actor_user_id: "user_owner".to_string(),
-                    actor_is_author: false,
-                    actor_is_maintainer: false,
                     event_id: "event_closed".to_string(),
                     now_unix: 5,
                 },

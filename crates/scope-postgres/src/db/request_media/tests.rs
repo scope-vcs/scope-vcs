@@ -1,6 +1,9 @@
 use super::*;
 use crate::{
-    db::{CatalogFixture, MetadataStore, TestDatabaseTarget},
+    db::{
+        CatalogFixture, CloseRequestCommand, EditRequestIdentityCommand, MetadataStore,
+        TestDatabaseTarget,
+    },
     error::PostgresErrorKind,
 };
 use scope_domain::{
@@ -8,8 +11,7 @@ use scope_domain::{
     policy::Visibility,
     repository::{RepoLifecycleState, Repository},
     requests::{
-        CloseRequestInput, EditRequestIdentityInput, RequestActorRole, RequestAudience,
-        StartRequestInput,
+        RequestActorRole, RequestAudience, StartRequestInput,
         attachments::{
             RequestAttachmentDerivative, RequestAttachmentDerivativeKind,
             RequestAttachmentPartReceipt, RequestAttachmentState, RequestAttachmentStoredObject,
@@ -331,10 +333,9 @@ async fn cross_request_binding_rejection_rolls_back_identity_event_and_prior_bin
     fixture
         .store
         .requests()
-        .edit_request_identity(EditRequestIdentityInput {
+        .edit_request_identity(EditRequestIdentityCommand {
             request_id: "binding_request".to_string(),
             actor_user_id: OWNER_ID.to_string(),
-            actor_can_edit_identity: false,
             event_id: "event_bind_original".to_string(),
             title: None,
             description_markdown: Some(original_markdown.clone()),
@@ -347,10 +348,9 @@ async fn cross_request_binding_rejection_rolls_back_identity_event_and_prior_bin
     let error = fixture
         .store
         .requests()
-        .edit_request_identity(EditRequestIdentityInput {
+        .edit_request_identity(EditRequestIdentityCommand {
             request_id: "binding_request".to_string(),
             actor_user_id: OWNER_ID.to_string(),
-            actor_can_edit_identity: false,
             event_id: "event_invalid_cross_request".to_string(),
             title: Some("This must roll back".to_string()),
             description_markdown: Some(attachment_markdown("other_attachment")),
@@ -643,11 +643,9 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
         .store
         .requests()
         .close_request(
-            CloseRequestInput {
+            CloseRequestCommand {
                 request_id: "deleted_request".to_string(),
                 actor_user_id: OWNER_ID.to_string(),
-                actor_is_author: false,
-                actor_is_maintainer: false,
                 event_id: "event_delete_request".to_string(),
                 now_unix: 22,
             },

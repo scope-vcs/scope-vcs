@@ -1,5 +1,6 @@
 use super::{
-    GeneratedIdSource, RequestStore, acquire_aggregate_lock,
+    CloseRequestCommand, EditRequestIdentityCommand, GeneratedIdSource, RequestStore,
+    acquire_aggregate_lock,
     cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
     object_references::delete_object_reference,
     request_access::{
@@ -199,28 +200,41 @@ impl RequestStore {
 
     pub async fn edit_request_identity(
         &self,
-        mut input: EditRequestIdentityInput,
+        command: EditRequestIdentityCommand,
     ) -> Result<RequestTimelineMutation, PostgresError> {
-        let attachment_binding = input.description_markdown.as_ref().map(|markdown| {
+        let attachment_binding = command.description_markdown.as_ref().map(|markdown| {
             (
-                input.request_id.clone(),
-                input.actor_user_id.clone(),
+                command.request_id.clone(),
+                command.actor_user_id.clone(),
                 markdown.clone(),
-                input.now_unix,
+                command.now_unix,
             )
         });
         let db = Arc::clone(&self.db);
         let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
-            lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
-        ensure_user_exists(&tx, &input.actor_user_id).await?;
-        input.actor_can_edit_identity =
-            request_policy_for_user(&tx, &repo, &request, &input.actor_user_id)
+            lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
+        ensure_user_exists(&tx, &command.actor_user_id).await?;
+        let actor_can_edit_identity =
+            request_policy_for_user(&tx, &repo, &request, &command.actor_user_id)
                 .await?
                 .permissions
                 .can_edit_identity;
-        let event_id_exists = request_event_by_id(&tx, &input.event_id).await?.is_some();
-        let mutation = edit_request_identity(request, event_id_exists, input)?;
+        let event_id_exists = request_event_by_id(&tx, &command.event_id).await?.is_some();
+        let mutation = edit_request_identity(
+            request,
+            event_id_exists,
+            EditRequestIdentityInput {
+                request_id: command.request_id,
+                actor_user_id: command.actor_user_id,
+                actor_can_edit_identity,
+                event_id: command.event_id,
+                title: command.title,
+                description_markdown: command.description_markdown,
+                expected_description_markdown: command.expected_description_markdown,
+                now_unix: command.now_unix,
+            },
+        )?;
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         if let Some((request_id, actor_user_id, markdown, now_unix)) = attachment_binding {
@@ -240,19 +254,25 @@ impl RequestStore {
 
     pub async fn close_request(
         &self,
-        mut input: CloseRequestInput,
+        command: CloseRequestCommand,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<CloseRequestMutation, PostgresError> {
         let db = Arc::clone(&self.db);
-        let now_unix = input.now_unix;
+        let now_unix = command.now_unix;
         let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
-            lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
-        ensure_user_exists(&tx, &input.actor_user_id).await?;
-        input.actor_is_author = request.author_user_id == input.actor_user_id;
-        input.actor_is_maintainer = repo.access.is_maintainer();
+            lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
+        ensure_user_exists(&tx, &command.actor_user_id).await?;
         let events = request_events_by_request_id(&tx, &request.id).await?;
         let revisions = revisions_for_request_ids(&tx, std::slice::from_ref(&request.id)).await?;
+        let input = CloseRequestInput {
+            request_id: command.request_id,
+            actor_is_author: request.author_user_id == command.actor_user_id,
+            actor_user_id: command.actor_user_id,
+            actor_is_maintainer: repo.access.is_maintainer(),
+            event_id: command.event_id,
+            now_unix,
+        };
         let mutation = close_request(request, events, revisions, input)?;
         match &mutation {
             CloseRequestMutation::DeletedDraft {

@@ -63,11 +63,9 @@ async fn advertisement_and_exact_fetch_follow_viewer_and_publication_policy() {
     state
         .metadata
         .requests()
-        .submit_request(SubmitRequestInput {
+        .submit_request(SubmitRequestCommand {
             request_id: REQUEST_ID.to_string(),
             actor_user_id: public_user_id(),
-            actor_is_author: false,
-            actor_can_submit: false,
             event_id: "event_advertisement_submitted".to_string(),
             now_unix: 4,
         })

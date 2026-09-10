@@ -617,10 +617,9 @@ async fn request_activity_clamps_latest_and_after_pages_to_fifty_events() {
         state
             .metadata
             .requests()
-            .edit_request_identity(scope_domain::requests::EditRequestIdentityInput {
+            .edit_request_identity(scope_postgres::db::EditRequestIdentityCommand {
                 request_id: request_id.to_string(),
                 actor_user_id: test_owner_id(),
-                actor_can_edit_identity: false,
                 event_id: format!("event_description_{index}"),
                 title: None,
                 description_markdown: Some(format!("description {index}")),

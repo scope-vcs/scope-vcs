@@ -554,11 +554,9 @@ async fn close_draft_request_deletes_request_and_events() {
     let mutation = store
         .requests()
         .close_request(
-            CloseRequestInput {
+            CloseRequestCommand {
                 request_id: "req_1".to_string(),
                 actor_user_id: "user_public".to_string(),
-                actor_is_author: false,
-                actor_is_maintainer: false,
                 event_id: "event_closed".to_string(),
                 now_unix: 6,
             },
@@ -624,11 +622,9 @@ async fn maintainer_cannot_delete_another_authors_draft() {
     let error = store
         .requests()
         .close_request(
-            CloseRequestInput {
+            CloseRequestCommand {
                 request_id: "req_1".to_string(),
                 actor_user_id: "user_owner".to_string(),
-                actor_is_author: false,
-                actor_is_maintainer: false,
                 event_id: "event_closed_by_maintainer".to_string(),
                 now_unix: 4,
             },
@@ -664,11 +660,9 @@ async fn close_open_request_persists_exact_closer() {
     let mutation = store
         .requests()
         .close_request(
-            CloseRequestInput {
+            CloseRequestCommand {
                 request_id: request.id.clone(),
                 actor_user_id: request.author_user_id.clone(),
-                actor_is_author: false,
-                actor_is_maintainer: false,
                 event_id: "event_closed".to_string(),
                 now_unix: 4,
             },
