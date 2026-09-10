@@ -19,6 +19,7 @@ export async function validatePreparedDeployment(
   sourceRunId,
   request,
   repository,
+  { resumeStaging = false } = {},
 ) {
   if (!/^[1-9][0-9]*$/.test(sourceRunId ?? "") || prepared?.preparationRunId !== sourceRunId) {
     throw new Error("Prepared release must match the requested source run ID");
@@ -46,9 +47,15 @@ export async function validatePreparedDeployment(
     return responses.get(path);
   };
   const proof = await validateRecoveryPreparation(prepared, cachedRequest, repository, manifest, selected);
+  if (resumeStaging) {
+    validatePreparedRelease(prepared, { components });
+    const run = await cachedRequest(`/actions/runs/${sourceRunId}`);
+    if (run.status !== 'completed') throw new Error('Staging resume requires a completed source run');
+  }
   const selection = { backend, ...Object.fromEntries(components.map((component) => [component, selected.includes(component)])) };
 
-  const requiredJobs = new Set([validationJobName, "Deploy staging / Deploy and smoke staging"]);
+  let validated = false;
+  let staged = false;
   for (let page = 1; ; page += 1) {
     const result = await cachedRequest(
       `/actions/runs/${sourceRunId}/jobs?filter=all&per_page=100&page=${page}`,
@@ -57,29 +64,38 @@ export async function validatePreparedDeployment(
     for (const job of result.jobs) {
       if (String(job.run_id) === sourceRunId
           && job.head_sha === proof.sourceSha
-          && job.status === "completed"
-          && job.conclusion === "success") requiredJobs.delete(job.name);
+          && job.status === "completed") {
+        if (job.name === validationJobName && job.conclusion === 'success') validated = true;
+        if (job.name === 'Deploy staging / Deploy and smoke staging') {
+          if (resumeStaging) {
+            staged ||= ['success', 'failure', 'cancelled'].includes(job.conclusion)
+              && job.steps?.some(step => step.name === 'Deploy candidate once' && step.conclusion === 'success');
+          } else staged ||= job.conclusion === 'success';
+        }
+      }
     }
-    if (requiredJobs.size === 0) return { ...proof, selection };
+    if (validated && staged) return { ...proof, selection };
     if (result.jobs.length < 100) break;
   }
   throw new Error("Source run did not pass the production validation gate and staging deployment");
 }
 
 
-function selection(prepared, recoveryId = "") {
+function selection(prepared, recoveryId = "", resumeStaging = false) {
   const flags = Object.fromEntries(components.map(component => [component, Boolean(prepared.components[component])]));
   flags.backend = components.some(component => component !== "web" && flags[component]);
   return { sha: prepared.sourceSha, recover_cutover_id: recoveryId,
     recover_components: flags, reuse_components: flags, prepared_run_id: prepared.preparationRunId,
-    prepared };
+    resume_staging: resumeStaging, prepared };
 }
 
-export async function selectRelease({ sourceSha, sourceRunId = "", recoveryId = "", repository,
+export async function selectRelease({ sourceSha, sourceRunId = "", recoveryId = "", resumeStaging = false, repository,
   loadPrepared }, request) {
+  if (resumeStaging && !sourceRunId) throw new Error('Staging resume requires its source run ID');
   const journal = await findOpenCutover(request);
   if (recoveryId && journal?.id !== recoveryId) throw new Error("Requested recovery is not the sole unresolved cutover");
   if (journal) {
+    if (resumeStaging) throw new Error('Recover the unresolved production cutover before resuming staging');
     if (sourceRunId && sourceRunId !== journal.prepared.preparationRunId) {
       throw new Error("An unresolved cutover must recover its original preparation run");
     }
@@ -89,11 +105,11 @@ export async function selectRelease({ sourceSha, sourceRunId = "", recoveryId = 
   if (sourceRunId) {
     if (!/^[1-9][0-9]*$/.test(sourceRunId)) throw new Error("Source run ID must be numeric");
     const prepared = await loadPrepared(sourceRunId);
-    await validatePreparedDeployment(prepared, sourceRunId, request, repository);
-    return selection(prepared);
+    await validatePreparedDeployment(prepared, sourceRunId, request, repository, { resumeStaging });
+    return selection(prepared, '', resumeStaging);
   }
   if (!/^[0-9a-f]{40}$/.test(sourceSha ?? "")) throw new Error("Source SHA must be a full commit SHA");
-  return { sha: sourceSha, recover_cutover_id: "", recover_components: {}, reuse_components: {}, prepared_run_id: "" };
+  return { sha: sourceSha, recover_cutover_id: "", recover_components: {}, reuse_components: {}, prepared_run_id: "", resume_staging: false };
 }
 
 async function downloadPrepared(runId) {
@@ -112,6 +128,7 @@ async function downloadPrepared(runId) {
 async function main() {
   const result = await selectRelease({ sourceSha: process.env.SOURCE_SHA || process.env.GITHUB_SHA,
     sourceRunId: process.env.SOURCE_RUN_ID || "", recoveryId: process.env.RECOVER_CUTOVER_ID || "",
+    resumeStaging: process.env.RESUME_STAGING === 'true',
     repository: process.env.GITHUB_REPOSITORY, loadPrepared: downloadPrepared }, githubRequest);
   const { prepared, ...outputs } = result;
   if (prepared) writeFileSync("selected-release.json", `${JSON.stringify(prepared, null, 2)}\n`);

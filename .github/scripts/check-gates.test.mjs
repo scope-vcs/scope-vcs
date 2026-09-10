@@ -145,12 +145,13 @@ function releaseJobs() {
     .map(([, name, body]) => [name, { if: body.match(/^    if: >-\n((?:      .*\n)+)/m)?.[1].trim() }]));
 }
 
-function releasePath(selected, { reuse = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false } = {}) {
+function releasePath(selected, { reuse = false, resumeStaging = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false } = {}) {
   const jobs = releaseJobs();
   const outputs = Object.fromEntries(['checks_image', 'cache', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
     .map((key) => [key, String(selected.includes(key))]));
-  outputs.prepared_run_id = reuse ? '123' : '';
+  outputs.prepared_run_id = reuse || resumeStaging ? '123' : '';
   outputs.recover_cutover_id = reuse ? '456' : '';
+  outputs.resume_staging = String(resumeStaging);
   const needs = { plan: { result: 'success', outputs }, validation: { result: 'success' } };
   for (const key of ['release-preparation', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
     const expression = jobs[key].if.replace(/needs\.([\w-]+)/g, 'needs["$1"]');
@@ -192,6 +193,21 @@ test('interrupted releases reuse images and finish through the same final receip
   assert.equal(result['backend-deploy'].result, 'success');
   assert.equal(result['web-deploy'].result, 'success');
   assert.equal(result['production-health-gate'].result, 'success');
+});
+
+test('resumed staging reuses prepared images but must pass smoke before any production activation', () => {
+  const selected = ['api', 'worker', 'cache', 'router', 'media', 'media_worker', 'web'];
+  const result = releasePath(selected, { resumeStaging: true });
+  assert.equal(result['production-preflight'].result, 'skipped');
+  for (const job of ['release-preparation', 'staging', 'backend-deploy', 'web-deploy', 'production-health-gate']) {
+    assert.equal(result[job].result, 'success', job);
+  }
+  for (const failure of ['release-preparation', 'staging']) {
+    const blocked = releasePath(selected, { resumeStaging: true, failure });
+    for (const job of ['backend-deploy', 'web-deploy', 'production-health-gate']) {
+      assert.equal(blocked[job].result, 'skipped', `${failure}: ${job}`);
+    }
+  }
 });
 
 

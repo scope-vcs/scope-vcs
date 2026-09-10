@@ -33,6 +33,7 @@ function fixture() {
   };
   const run = {
     id: Number(sourceRunId),
+    status: 'completed',
     event: "workflow_dispatch",
     head_branch: "main",
     head_repository: { id: 1, full_name: repository },
@@ -103,6 +104,40 @@ test("prepared deploy accepts only its validated main source and exact artifact"
       message,
     );
   }
+});
+
+test('staging resume accepts a failed smoke run only after successful validation and complete deployment', async () => {
+  const state = fixture();
+  state.jobs[2].conclusion = 'failure';
+  state.jobs[2].steps = [{ name: 'Deploy candidate once', conclusion: 'success' }];
+  const result = await selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository,
+    loadPrepared: async () => state.prepared }, path => path.startsWith('/deployments?') ? [] : state.request(path));
+  assert.equal(result.sha, sourceSha);
+  assert.equal(result.prepared_run_id, sourceRunId);
+  assert.equal(result.resume_staging, true);
+  assert.deepEqual(result.prepared, state.prepared);
+  await assert.rejects(validatePreparedDeployment(state.prepared, sourceRunId, state.request, repository), /staging/);
+});
+
+test('staging resume rejects incomplete deployment, unvalidated images, and unrelated attempts', async () => {
+  for (const mutate of [
+    state => { state.jobs[2].steps[0].conclusion = 'failure'; },
+    state => { state.jobs[2].steps = []; },
+    state => { state.jobs[2].conclusion = 'skipped'; },
+    state => { state.jobs[2].head_sha = mainSha; },
+    state => { state.jobs[2].run_id = 999; },
+    state => { state.jobs[0].conclusion = 'failure'; },
+    state => { state.run.status = 'in_progress'; },
+    state => { delete state.prepared.components.web; },
+  ]) {
+    const state = fixture();
+    state.jobs[2].conclusion = 'failure';
+    state.jobs[2].steps = [{ name: 'Deploy candidate once', conclusion: 'success' }];
+    mutate(state);
+    await assert.rejects(validatePreparedDeployment(state.prepared, sourceRunId, state.request, repository,
+      { resumeStaging: true }));
+  }
+  await assert.rejects(selectRelease({ sourceSha, resumeStaging: true, repository }, async () => []), /source run ID/);
 });
 
 for (const [name, selected] of [
@@ -179,6 +214,7 @@ test("recovery overrides new main and rejects a different replay run", async () 
   assert.equal(result.recover_cutover_id, "77");
   assert.deepEqual(result.prepared, state.prepared);
   await assert.rejects(selectRelease({ sourceSha: mainSha, sourceRunId: "999", repository }, request), /original preparation/);
+  await assert.rejects(selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository }, request), /production cutover/);
 
   for (const [mutate, expected] of [
     [() => { state.run.head_branch = "candidate"; }, /on main/],

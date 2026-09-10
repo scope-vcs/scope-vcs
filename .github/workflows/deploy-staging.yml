@@ -12,6 +12,9 @@ on:
       production_plan_artifact:
         type: string
         default: ''
+      resume_staging:
+        type: boolean
+        default: false
       run_transition_tests:
         type: boolean
         default: false
@@ -149,6 +152,15 @@ jobs:
           run-id: ${{ inputs.prepared_run_id }}
           github-token: ${{ github.token }}
 
+      - name: Download original staging deployment evidence
+        if: inputs.resume_staging
+        uses: actions/download-artifact@v8
+        with:
+          name: staging-deployments-${{ inputs.source_sha }}
+          path: artifacts/original-staging
+          run-id: ${{ inputs.prepared_run_id }}
+          github-token: ${{ github.token }}
+
       - name: Export release paths
         id: release
         run: |
@@ -223,8 +235,18 @@ jobs:
           echo "SCOPE_GIT_SMOKE_DIR=$smoke_dir" >> "$GITHUB_ENV"
           echo "SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH=$smoke_dir/exchange-token" >> "$GITHUB_ENV"
 
+      - name: Verify staging resume
+        if: inputs.resume_staging
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.prepared_run_id }}
+        run: >-
+          node .github/scripts/staging-resume.mjs artifacts/prepared-release.json
+          artifacts/original-staging/staging-deployments.json
+          candidate/target/release/scope-maintenance
+
       - name: Set up PostgreSQL 18 clients
-        if: steps.release.outputs.has_backend == 'true'
+        if: steps.release.outputs.has_backend == 'true' && !inputs.resume_staging
         run: |
           client_bin="$RUNNER_TEMP/postgres-client-bin"
           mkdir -p "$client_bin"
@@ -244,7 +266,7 @@ jobs:
 
       - name: Reconcile and snapshot staging baseline
         id: baseline
-        if: steps.release.outputs.has_backend == 'true'
+        if: steps.release.outputs.has_backend == 'true' && !inputs.resume_staging
         working-directory: candidate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -274,7 +296,8 @@ jobs:
           GITHUB_SHA: ${{ inputs.source_sha }}
           SCOPE_MAINTENANCE_BINARY: ./target/release/scope-maintenance
           SCOPE_STAGING_EVIDENCE_PATH: ${{ github.workspace }}/staging-deployments.json
-        run: bash .github/scripts/deploy-staging-railway.sh
+          SCOPE_STAGING_RESUME: ${{ inputs.resume_staging && '1' || '0' }}
+        run: bash ../.github/scripts/deploy-staging-railway.sh
 
       - name: Enable pnpm
         run: |
@@ -286,6 +309,12 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium
+
+      - name: Use trusted smoke checks for resumed artifacts
+        if: inputs.resume_staging
+        run: |
+          rm -rf candidate/web/smoke
+          cp -R web/smoke candidate/web/smoke
 
       - name: Issue smoke login without resetting existing data
         working-directory: candidate
@@ -308,6 +337,7 @@ jobs:
         working-directory: candidate/web
         env:
           SCOPE_SMOKE_REPO: dev/public-demo
+          SCOPE_SMOKE_AUTH_ENABLED: '1'
         run: |
           web_domain="$(jq -er '.environments.staging.webDomain' ../../.github/deployment-services.json)"
           SCOPE_WEB_BASE_URL="https://$web_domain" pnpm test:smoke

@@ -7,17 +7,23 @@ import { serverFunctionName } from './server-functions-smoke.mjs'
 const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000'
 const repo = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
 const requestRepo = process.env.SCOPE_SMOKE_REQUEST_REPO ?? 'dev/update-demo'
+const authEnabled = process.env.SCOPE_SMOKE_AUTH_ENABLED === '1'
 
-test('sign-in keeps Scope navigation when authentication is disabled', async () => {
+test(`sign-in keeps Scope navigation when authentication is ${authEnabled ? 'enabled' : 'disabled'}`, async () => {
   const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   try {
     await page.goto(`${baseUrl}/sign-in`)
-    const disabled = page.getByText('sign-in is disabled in this preview.', { exact: false })
-    await disabled.waitFor()
-    await page.getByRole('link', { name: 'back to scope' }).click()
+    if (authEnabled) {
+      await page.getByRole('textbox', { name: 'Email address', exact: true }).waitFor()
+      await page.getByLabel('Password', { exact: true }).waitFor()
+      await page.getByRole('link', { name: 'Scope home', exact: true }).click()
+    } else {
+      await page.getByText('sign-in is disabled in this preview.', { exact: false }).waitFor()
+      await page.getByRole('link', { name: 'back to scope' }).click()
+    }
     await page.waitForURL(new URL('/', baseUrl).href)
     assert.deepEqual(errors, [])
   } finally {

@@ -142,12 +142,18 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
       sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_DATA_DIR="$SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR" exec "$@"' \
       scope-maintenance "$maintenance_binary" "$1"
   }
-  run_maintenance plan >/dev/null
-  run_maintenance validate-workflow-catalogs
-  # Apply the candidate schema without running physical cleanup commands here.
-  run_maintenance apply
-  run_maintenance backfill-landing-files
-  run_maintenance backfill-workflow-catalogs
+  if [[ "${SCOPE_STAGING_RESUME:-0}" == 1 ]]; then
+    # Resume was bound to the original successful deployment and image digests
+    # before reaching this script. Never migrate or restore its retained data.
+    run_maintenance plan | jq -e '.exact == true and .pending == []' >/dev/null
+  else
+    run_maintenance plan >/dev/null
+    run_maintenance validate-workflow-catalogs
+    # Apply the candidate schema without running physical cleanup commands here.
+    run_maintenance apply
+    run_maintenance backfill-landing-files
+    run_maintenance backfill-workflow-catalogs
+  fi
   rm -rf -- "$snapshot_backfill_dir"
   unset SCOPE_STAGING_DATABASE_PUBLIC_URL SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR
 fi

@@ -83,9 +83,14 @@ export function validateMaintenanceArtifact(release, binaryBuffer) {
 }
 
 export function assertActivatedArtifact(release, component, deployment, { deploymentId } = {}) {
+  assertDeploymentArtifact(release, component, deployment, { deploymentId });
+  if (deployment.status !== 'SUCCESS') throw new Error('Artifact deployment has not reached SUCCESS.');
+  return deployment;
+}
+
+export function assertDeploymentArtifact(release, component, deployment, { deploymentId } = {}) {
   validatePreparedRelease(release, { components: [component] });
   if (!deploymentId || deployment?.id !== deploymentId) throw new Error('Artifact verification requires the exact activated deployment ID.');
-  if (deployment.status !== 'SUCCESS') throw new Error('Artifact deployment has not reached SUCCESS.');
   const artifact = release.components[component];
   if (deployment.serviceId && deployment.serviceId !== artifact.serviceId) throw new Error('Artifact deployment belongs to another service.');
   const expectedDigest = artifact.image.split('@')[1];

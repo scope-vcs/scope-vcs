@@ -10,6 +10,10 @@ on:
         description: Reuse a validated and staged release run without rebuilding (optional)
         type: string
         default: ""
+      resume_staging:
+        description: Resume smoke checks for source_run_id after its staging deployment succeeded
+        type: boolean
+        default: false
       scope:
         description: Component to validate and deploy
         type: choice
@@ -64,6 +68,7 @@ jobs:
       release_sha: ${{ steps.release.outputs.sha }}
       recover_cutover_id: ${{ steps.release.outputs.recover_cutover_id }}
       prepared_run_id: ${{ steps.release.outputs.prepared_run_id }}
+      resume_staging: ${{ steps.release.outputs.resume_staging }}
       deployed_revisions: ${{ steps.progress.outputs.revisions }}
       deployed_components: ${{ steps.progress.outputs.deployments }}
       checks_image: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['checks-image'] || false) || steps.plan.outputs.checks_image }}
@@ -90,6 +95,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          RESUME_STAGING: ${{ inputs.resume_staging }}
         run: node .github/scripts/release-selection.mjs
 
       - name: Retain selected immutable release
@@ -248,7 +254,7 @@ jobs:
     name: Deploy staging
     needs: [plan, release-preparation, production-preflight]
     if: >-
-      !cancelled() && needs.plan.outputs.prepared_run_id == '' &&
+      !cancelled() && (needs.plan.outputs.prepared_run_id == '' || needs.plan.outputs.resume_staging == 'true') &&
       needs.release-preparation.result == 'success' &&
       (needs.production-preflight.result == 'success' || needs.production-preflight.result == 'skipped')
     permissions:
@@ -259,7 +265,8 @@ jobs:
     uses: ./.github/workflows/deploy-staging.yml
     with:
       source_sha: ${{ needs.plan.outputs.release_sha }}
-      prepared_run_id: ${{ github.run_id }}
+      prepared_run_id: ${{ needs.plan.outputs.resume_staging == 'true' && needs.plan.outputs.prepared_run_id || github.run_id }}
+      resume_staging: ${{ needs.plan.outputs.resume_staging == 'true' }}
       production_plan_artifact: production-migration-plan-${{ needs.plan.outputs.release_sha }}
     secrets: inherit
 
@@ -270,7 +277,7 @@ jobs:
       !cancelled() && github.ref == 'refs/heads/main' &&
       needs.validation.result == 'success' &&
       needs.release-preparation.result == 'success' &&
-      (needs.plan.outputs.prepared_run_id != '' || needs.staging.result == 'success') &&
+      ((needs.plan.outputs.prepared_run_id != '' && needs.plan.outputs.resume_staging != 'true') || needs.staging.result == 'success') &&
       (needs.plan.outputs.cache == 'true' ||
       needs.plan.outputs.worker == 'true' ||
       needs.plan.outputs.media_worker == 'true' ||
@@ -301,7 +308,7 @@ jobs:
       !cancelled() && github.ref == 'refs/heads/main' &&
       needs.validation.result == 'success' &&
       needs.release-preparation.result == 'success' &&
-      (needs.plan.outputs.prepared_run_id != '' || needs.staging.result == 'success') &&
+      ((needs.plan.outputs.prepared_run_id != '' && needs.plan.outputs.resume_staging != 'true') || needs.staging.result == 'success') &&
       needs.plan.outputs.web == 'true' &&
       needs.backend-deploy.outputs.web_activated != 'true' &&
       (((needs.plan.outputs.cache == 'true' ||

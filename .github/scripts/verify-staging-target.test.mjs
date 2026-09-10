@@ -197,7 +197,8 @@ test('rejects missing or URL-shaped domains', () => {
   }
 })
 
-test('full staging restores API readiness before activating its Git router and records every participant once', (t) => {
+for (const resume of [false, true]) {
+test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness before its Git router and records each participant once`, (t) => {
   const { root, scripts, bin, candidate } = candidateCheckout(t)
   const input = fixture()
   input.manifest.services['git-router'] = { id: 'router', name: 'scope-repo-router' }
@@ -255,7 +256,8 @@ test('full staging restores API readiness before activating its Git router and r
       assert.equal(args[0], artifact.serviceId);
       assert.equal(process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, prepared.sourceSha);
       assert.equal(process.env.SCOPE_RAILWAY_ENVIRONMENT_ID, 'staging');
-      assert.ok(state.maintenance.includes('apply'));
+      if (process.env.SCOPE_STAGING_RESUME === '1') assert.deepEqual(state.maintenance, ['plan']);
+      else assert.ok(state.maintenance.includes('apply'));
       assert.ok(!state.activations.includes(component), 'A participant was activated twice');
       if (component === 'git-router') {
         const api = state.services.find(s => s.id === 'api');
@@ -295,6 +297,7 @@ test('full staging restores API readiness before activating its Git router and r
   const result = spawnSync('bash', [join(scripts, 'deploy-staging-railway.sh')], {
     cwd: root, encoding: 'utf8', timeout: 15_000,
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RAILWAY_TOKEN: 'staging-token', RAILWAY_API_TOKEN: '',
+      SCOPE_STAGING_RESUME: resume ? '1' : '0',
       SCOPE_MAINTENANCE_BINARY: binary, SCOPE_DEPLOYMENT_MANIFEST: join(root, '.github/deployment-services.json'),
       SCOPE_PREPARED_RELEASE_PATH: join(root, 'prepared.json'), SCOPE_STAGING_EVIDENCE_PATH: join(root, 'evidence.json') },
   })
@@ -310,3 +313,4 @@ test('full staging restores API readiness before activating its Git router and r
       deploymentId: 'new-' + components[component].serviceId, status: 'SUCCESS' })),
   })
 })
+}

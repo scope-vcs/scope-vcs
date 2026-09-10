@@ -162,6 +162,8 @@
         ".github/scripts/railway-maintenance-gate.test.mjs",
         ".github/scripts/release-selection.mjs",
         ".github/scripts/release-selection.test.mjs",
+        ".github/scripts/staging-resume.mjs",
+        ".github/scripts/staging-resume.test.mjs",
         ".github/scripts/staging-baseline.mjs",
         ".github/scripts/staging-baseline-crypto.mjs",
         ".github/scripts/staging-baseline-crypto.test.mjs",

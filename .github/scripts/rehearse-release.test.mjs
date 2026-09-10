@@ -22,7 +22,7 @@ test('teardown proof requires every exact predecessor to be removed', () => {
 test('routine staging deploys once and transition tests are opt-in', () => {
   const workflow = readFileSync(new URL('../workflows/deploy-staging.yml', import.meta.url), 'utf8');
   assert.match(workflow, /name: Exercise optional release transitions\n        if: inputs.run_transition_tests/);
-  assert.equal((workflow.match(/run: bash \.github\/scripts\/deploy-staging-railway\.sh/g) ?? []).length, 1);
+  assert.equal((workflow.match(/run: bash \.\.\/\.github\/scripts\/deploy-staging-railway\.sh/g) ?? []).length, 1);
   assert.doesNotMatch(workflow, /staging-smoke-seed\.sh seed|cargo build[^\n]+scope-maintenance|pnpm build/);
   assert.match(workflow, /staging-smoke-seed\.sh grant/);
 });

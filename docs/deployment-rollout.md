@@ -79,3 +79,20 @@ Future experiments follow the [owner and expiry policy](railway-experiments.md).
 The first [GitHub Actions audit](https://github.com/scope-vcs/scope-vcs/actions/runs/34386751194) passed against the live provider on September 9 at 18:04 UTC. It found two protected environments, zero experiments, and no issues. The hourly audit is active.
 
 The previous billing period, August 9 through September 9, recorded $14.4886 of Railway project resource usage. The new period had recorded $0.0700 at the audit snapshot. Raw environment measurements and service cost breakdowns are archived under `provider-transition`. Compare a full subsequent billing interval before claiming savings; neither partial-period usage nor cancelled workflow elapsed time is a savings estimate.
+
+## Resume staging after a smoke failure
+
+When a release completed `Deploy candidate once` but failed a later smoke check,
+run `Release` with its original `source_run_id` and `resume_staging=true`.
+The resume keeps the original application images and maintenance binary. It
+requires successful original validation and image preparation on main, the
+complete staging deployment receipt, matching original and latest Railway image
+digests, and an exact candidate migration ledger with nothing pending.
+
+Cleanup may have removed the staging deployments after the smoke failure. Resume
+reactivates those pinned images with writers closed first, without restoring the
+pre-migration database, applying migrations, or repeating backfills. Browser smoke
+checks come from the current trusted workflow revision so a corrected smoke test
+does not require rebuilding the application images. Production stays blocked
+until the resumed browser, Git, and media smoke checks succeed. An unresolved
+production cutover must recover before a staging resume can run.
