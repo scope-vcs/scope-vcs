@@ -184,6 +184,20 @@ pub(super) async fn connect_isolated_test_database(
 }
 
 impl AdminStore {
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn lock_repository_history_and_invites_for_tests(
+        &self,
+    ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        tx.execute_unprepared(
+            "LOCK TABLE scope_logical_commits, scope_file_changes, scope_live_files,
+                        scope_repository_invites IN ACCESS EXCLUSIVE MODE",
+        )
+        .await
+        .map_err(PostgresError::internal)?;
+        Ok(tx)
+    }
+
     #[cfg(any(feature = "local-dev", feature = "smoke-seed"))]
     pub async fn replace_catalog_for_seed(
         &self,

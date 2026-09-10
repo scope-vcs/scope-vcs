@@ -1,5 +1,7 @@
 use super::*;
 
+mod read_contract;
+
 pub(super) const WORKFLOW: &str = r#"
 name: Test
 on:
@@ -187,6 +189,10 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     )
     .await;
     assert_eq!(wrong_filter.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(wrong_filter).await["message"],
+        "workflow is not defined on current main"
+    );
 }
 
 #[tokio::test]

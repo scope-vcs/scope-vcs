@@ -8,15 +8,15 @@ use crate::{
         },
         run_response::repository_run_summary,
     },
-    repo_access::find_repo,
     state::AppState,
+    use_cases::run_inspection::require_repo_member,
 };
 use axum::{
     Json,
     extract::{Path, Query, State},
     http::HeaderMap,
 };
-use scope_domain::{repository::Repository, runs::workflow::revision::WorkflowRevision};
+use scope_domain::runs::workflow::revision::WorkflowRevision;
 use scope_postgres::db::{RunHistoryCursor, RunHistoryPageQuery};
 use serde::Deserialize;
 
@@ -35,8 +35,9 @@ pub(crate) async fn get_repository_run_workflows(
     headers: HeaderMap,
     Path((owner, repo_name)): Path<(String, String)>,
 ) -> Result<Json<RepositoryRunWorkflowListResponse>, ApiError> {
-    let repo = require_repository_member(&state, &headers, &owner, &repo_name).await?;
-    let workflows = current_workflows(&state, &repo)
+    let user = require_scope_user(&state, &headers).await?;
+    let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
+    let workflows = current_workflows(&state, &repo.record.id)
         .await?
         .into_iter()
         .map(|revision| RepositoryRunWorkflowResponse {
@@ -57,7 +58,8 @@ pub(crate) async fn get_repository_run_history(
     Path((owner, repo_name)): Path<(String, String)>,
     Query(query): Query<RepositoryRunHistoryQuery>,
 ) -> Result<Json<RepositoryRunHistoryPageResponse>, ApiError> {
-    let repo = require_repository_member(&state, &headers, &owner, &repo_name).await?;
+    let user = require_scope_user(&state, &headers).await?;
+    let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
     let workflow = query
         .workflow
         .as_deref()
@@ -65,7 +67,7 @@ pub(crate) async fn get_repository_run_history(
         .filter(|key| !key.is_empty());
     let workflow_path = if let Some(key) = workflow {
         Some(
-            current_workflows(&state, &repo)
+            current_workflows(&state, &repo.record.id)
                 .await?
                 .into_iter()
                 .find(|revision| revision.workflow().path().name() == key)
@@ -111,19 +113,18 @@ pub(crate) async fn get_repository_run_history(
 
 async fn current_workflows(
     state: &AppState,
-    repo: &Repository,
+    repository_id: &str,
 ) -> Result<Vec<WorkflowRevision>, ApiError> {
     let snapshot = state
         .metadata
         .repositories()
-        .current_repository_workflow_catalog(&repo.record.id)
+        .current_repository_workflow_catalog(repository_id)
         .await
         .map_err(ApiError::from)?
         .ok_or_else(|| {
             ApiError::internal_message("repository disappeared while loading current workflows")
         })?;
-    let repo = snapshot.repository;
-    let Some(head) = repo.git_head.as_ref() else {
+    let Some(head) = snapshot.git_head.as_ref() else {
         return if snapshot.catalog.is_none() {
             Ok(Vec::new())
         } else {
@@ -136,23 +137,9 @@ async fn current_workflows(
         ApiError::internal_message("repository workflow catalog is missing for current main")
     })?;
     catalog
-        .verify_source(&repo.record.id, &head.head_oid, head.change_version)
+        .verify_source(&snapshot.repository_id, &head.head_oid, head.change_version)
         .map_err(ApiError::internal)?;
     scope_run_config::parse_repository_workflow_catalog(&catalog).map_err(ApiError::bad_request)
-}
-
-async fn require_repository_member(
-    state: &AppState,
-    headers: &HeaderMap,
-    owner: &str,
-    repo_name: &str,
-) -> Result<Repository, ApiError> {
-    let user = require_scope_user(state, headers).await?;
-    let repo = find_repo(state, owner, repo_name).await?;
-    if !repo.is_maintainer_user_id(&user.id) {
-        return Err(ApiError::forbidden("repo membership required"));
-    }
-    Ok(repo)
 }
 
 fn parse_history_cursor(value: &str, workflow: Option<&str>) -> Result<RunHistoryCursor, ApiError> {
