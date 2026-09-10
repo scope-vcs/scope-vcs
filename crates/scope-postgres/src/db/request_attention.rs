@@ -10,8 +10,8 @@ use scope_domain::requests::{
     classify_request_queue_item, reactivate_request_attention,
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, TransactionTrait,
-    sea_query::OnConflict,
+    ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QuerySelect,
+    QueryTrait, TransactionTrait, sea_query::OnConflict,
 };
 use std::sync::Arc;
 
@@ -83,6 +83,33 @@ impl RequestStore {
             activity_version: request.activity_version,
         })
     }
+}
+
+// Membership removal holds the repository lock used by attention mutations, so
+// a removed maintainer cannot retain or concurrently create a request claim.
+pub(super) async fn remove_member_attention<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    user_id: &str,
+) -> Result<(), PostgresError> {
+    let requests = entities::request::Entity::find()
+        .select_only()
+        .column(entities::request::Column::Id)
+        .filter(entities::request::Column::RepoId.eq(repo_id))
+        .into_query();
+    entities::request_claim::Entity::delete_many()
+        .filter(entities::request_claim::Column::ClaimerUserId.eq(user_id))
+        .filter(entities::request_claim::Column::RequestId.in_subquery(requests.clone()))
+        .exec(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    entities::request_attention_state::Entity::delete_many()
+        .filter(entities::request_attention_state::Column::UserId.eq(user_id))
+        .filter(entities::request_attention_state::Column::RequestId.in_subquery(requests))
+        .exec(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    Ok(())
 }
 
 pub(super) async fn wait_after_own_reply<C: ConnectionTrait>(

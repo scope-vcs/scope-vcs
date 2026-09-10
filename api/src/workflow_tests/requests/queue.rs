@@ -144,7 +144,16 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
         .await,
     )
     .await;
-    assert_eq!(request_ids(&invitee_work), ["req_draft_invited"]);
+    assert_eq!(
+        request_ids(&invitee_work),
+        [
+            "req_open_high",
+            "req_open_tie_a",
+            "req_open_tie_b",
+            "req_open_early",
+            "req_draft_invited"
+        ]
+    );
     let maintainer_work = response_json(
         api_request(
             app.clone(),
@@ -209,7 +218,7 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
     )
     .await;
     assert_eq!(request_ids(&second), ["req_open_tie_b", "req_open_early"]);
-    assert!(second["next_cursor"].is_string());
+    assert!(second["next_cursor"].is_null());
 
     let closed = response_json(
         api_request(

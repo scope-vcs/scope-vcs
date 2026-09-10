@@ -70,7 +70,7 @@ test('changes retry keeps the document and selected revision', async () => {
     const response = page.waitForResponse((response) => response.url().includes('/_serverFn/'))
     await retry.click()
     await response
-    await page.waitForFunction(() => !document.querySelector('button:disabled'))
+    await retry.waitFor({ state: 'detached' })
     assert.equal(new URL(page.url()).pathname, new URL(before).pathname)
     for (const [key, value] of new URL(before).searchParams) {
       assert.equal(new URL(page.url()).searchParams.get(key), value)

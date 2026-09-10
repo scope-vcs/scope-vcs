@@ -101,7 +101,7 @@ function RequestWorkspaceContent({ children, identity, params, version }: { chil
       <RequestWorkspaceSidebar
         active={active} unclaimed={section('unclaimed')} setAside={section('set_aside')}
         collapsed={collapsed} onCollapsedChange={setCollapsed} params={params} selectedRequestId={selected}
-        searchValue={draft ?? query} searchQuery={query} searchBusy={queue.refreshing}
+        searchValue={draft ?? queue.value?.requestedQuery ?? query} searchQuery={query} searchBusy={queue.refreshing}
         searchError={actionError} onSearchValueChange={setDraft}
         onSearchSubmit={(value) => { if (identity) void searchRequestQueue(identity, value, load) }}
         onClaim={(item) => void act(item, 'claim')} onRestore={(item) => void act(item, 'restore')}

@@ -190,7 +190,7 @@ test('public repository exposes only its projected source', async () => {
       .getByRole('navigation', { name: 'Primary' })
       .getByRole('link', { name: 'Requests', exact: true })
       .click()
-    await assertPageHeading(page, 'Requests')
+    await page.getByRole('complementary', { name: 'Requests workspace' }).waitFor()
     const codeReturnRequests = []
     const recordCodeReturnRequest = (request) => {
       if (request.url().includes('/_serverFn/')) {
@@ -627,7 +627,7 @@ test('requests navigation shows a destination skeleton inside the repository she
       await requestsNavigation
     }
 
-    await assertPageHeading(page, 'Requests')
+    await page.getByRole('complementary', { name: 'Requests workspace' }).waitFor()
     await page.locator('#main-content [data-slot="skeleton"]').first().waitFor({
       state: 'detached',
     })
@@ -641,12 +641,11 @@ test('requests navigation shows a destination skeleton inside the repository she
 test('public repository requests route is anonymously readable', async () => {
   await withPage(`${repoPath}/requests`, async (page) => {
     await assertCurrentRepoSection(page, 'Requests')
-    await assertPageHeading(page, 'Requests')
+    await page.getByRole('complementary', { name: 'Requests workspace' }).waitFor()
     assert.equal(await page.getByRole('heading', { level: 2, name: /^your work$/i }).count(), 0)
-    await page.getByRole('heading', { level: 2, name: 'open', exact: true }).waitFor()
-    await page.locator('summary').filter({ hasText: /^closed/ }).click()
-    await page.getByText('No open requests.', { exact: true }).waitFor()
-    await page.getByText('No closed requests.', { exact: true }).waitFor()
+    await page.getByText('You’re caught up.', { exact: true }).waitFor()
+    await page.getByRole('button', { name: /Set aside/ }).click()
+    await page.getByText('Nothing set aside.', { exact: true }).waitFor()
   })
 })
 
@@ -667,7 +666,7 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
         true,
       )
       const search = page.getByRole('searchbox', {
-        name: 'Search open and closed requests',
+        name: 'Search requests',
       })
       const queueRequests = []
       page.on('request', (request) => {
@@ -682,13 +681,9 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
       )
       await search.fill('missing request title')
       await search.press('Enter')
-      // Open and Closed now share the same no-match copy, so scope by section.
-      await page
-        .getByRole('region', { name: 'Open' })
-        .getByText('Nothing matches “missing request title”.', { exact: true })
-        .waitFor()
-      assert.equal(queueRequests.length, 2)
-      const clear = page.getByRole('button', { name: 'Clear' })
+      await page.getByText('No matching requests.', { exact: true }).waitFor()
+      assert.equal(queueRequests.length, 3)
+      const clear = page.getByRole('button', { name: 'Clear request search' })
       await clear.focus()
       assert.equal(
         await clear.evaluate((element) => element === document.activeElement),

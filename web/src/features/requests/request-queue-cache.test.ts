@@ -74,3 +74,20 @@ test('refresh failure leaves valid data available for retry', async () => {
   await open('error', '2')
   assert.equal(requestQueueResource.getSnapshot('error').error, null)
 })
+
+test('live invalidation restarts an in-flight search with the requested query', async () => {
+  requestQueueResource.clear()
+  const previous = await open('search-refresh')
+  const completions: ((value: RequestQueuePageResponse) => void)[] = []
+  const pending = searchRequestQueue('search-refresh', 'needle', () => new Promise((resolve) => { completions.push(resolve) }))
+  await Promise.resolve()
+  assert.equal(requestQueueResource.peek('search-refresh')?.pages, previous.pages)
+  assert.equal(requestQueueResource.peek('search-refresh')?.query, '')
+  requestQueueResource.invalidate('search-refresh')
+  const refreshed = await open('search-refresh', '2')
+  assert.equal(refreshed.query, 'needle')
+  assert.equal(refreshed.pages.active.requests[0].request.id, 'active-needle-first')
+  for (const complete of completions) complete(page(['obsolete']))
+  await pending
+  assert.equal(requestQueueResource.peek('search-refresh'), refreshed)
+})

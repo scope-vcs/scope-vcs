@@ -235,6 +235,7 @@ pub struct RequestQueuePageResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestQueueItemResponse {
+    pub attention_at_unix: u64,
     pub request: RequestListItemResponse,
     pub author: RequestActorSummaryResponse,
     pub attention: RequestAttentionResponse,
@@ -420,6 +421,7 @@ pub struct RequestPermissionsResponse {
     pub can_view_activity: bool,
     pub can_open_discussion: bool,
     pub can_reply_to_discussion: bool,
+    pub can_wait_after_reply: bool,
     pub can_edit_identity: bool,
     pub can_pull_branch: bool,
     pub can_push_branch: bool,

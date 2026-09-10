@@ -660,6 +660,7 @@ async fn request_response_for_viewer(
         can_view_activity,
         can_open_discussion: decision.can_open_discussion,
         can_reply_to_discussion: decision.can_reply_to_discussion,
+        can_wait_after_reply: decision.can_wait_after_reply,
         can_edit_identity: decision.can_edit_identity,
         can_pull_branch: decision.can_pull_branch,
         can_push_branch: decision.can_push_branch,

@@ -222,16 +222,16 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
         RequestState::Draft | RequestState::Open => None,
     };
     if let Some(reason) = terminal_reason {
-        return classification(
-            RequestQueueSection::SetAside,
-            RequestAttentionState::Settled,
-            reason,
-            request_version,
-            None,
-            false,
-            false,
-            false,
-        );
+        return RequestQueueClassification {
+            section: RequestQueueSection::SetAside,
+            state: RequestAttentionState::Settled,
+            reason: reason,
+            through_activity_version: request_version,
+            snoozed_until_unix: None,
+            can_claim: false,
+            can_set_aside: false,
+            can_restore: false,
+        };
     }
 
     if facts.viewer_is_maintainer
@@ -241,16 +241,16 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             RequestAttentionState::Waiting | RequestAttentionState::Settled
         )
     {
-        return classification(
-            RequestQueueSection::SetAside,
-            attention.state,
-            attention.reason,
-            attention.through_activity_version,
-            attention.snoozed_until_unix,
-            false,
-            false,
-            true,
-        );
+        return RequestQueueClassification {
+            section: RequestQueueSection::SetAside,
+            state: attention.state,
+            reason: attention.reason,
+            through_activity_version: attention.through_activity_version,
+            snoozed_until_unix: attention.snoozed_until_unix,
+            can_claim: false,
+            can_set_aside: false,
+            can_restore: true,
+        };
     }
     if facts.viewer_is_maintainer
         && let Some(attention) = facts.attention
@@ -259,32 +259,32 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             .snoozed_until_unix
             .is_some_and(|until| until > facts.now_unix)
     {
-        return classification(
-            RequestQueueSection::SetAside,
-            attention.state,
-            attention.reason,
-            attention.through_activity_version,
-            attention.snoozed_until_unix,
-            false,
-            false,
-            true,
-        );
+        return RequestQueueClassification {
+            section: RequestQueueSection::SetAside,
+            state: attention.state,
+            reason: attention.reason,
+            through_activity_version: attention.through_activity_version,
+            snoozed_until_unix: attention.snoozed_until_unix,
+            can_claim: false,
+            can_set_aside: false,
+            can_restore: true,
+        };
     }
 
     if facts.viewer_is_maintainer
         && let (Some(viewer), Some(claim)) = (facts.viewer_user_id, facts.claim)
         && claim.claimer_user_id != viewer
     {
-        return classification(
-            RequestQueueSection::SetAside,
-            RequestAttentionState::Active,
-            RequestAttentionReason::ClaimedElsewhere,
-            request_version,
-            None,
-            false,
-            false,
-            false,
-        );
+        return RequestQueueClassification {
+            section: RequestQueueSection::SetAside,
+            state: RequestAttentionState::Active,
+            reason: RequestAttentionReason::ClaimedElsewhere,
+            through_activity_version: request_version,
+            snoozed_until_unix: None,
+            can_claim: false,
+            can_set_aside: false,
+            can_restore: false,
+        };
     }
 
     let active_reason = if facts.viewer_is_maintainer {
@@ -319,30 +319,30 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
 
     if let Some(reason) = active_reason {
         let actionable = facts.viewer_is_maintainer && facts.request_state == RequestState::Open;
-        return classification(
-            RequestQueueSection::Active,
-            RequestAttentionState::Active,
-            reason,
-            facts
+        return RequestQueueClassification {
+            section: RequestQueueSection::Active,
+            state: RequestAttentionState::Active,
+            reason: reason,
+            through_activity_version: facts
                 .attention
                 .map_or(request_version, |state| state.through_activity_version),
-            None,
-            actionable && facts.claim.is_none(),
-            actionable,
-            false,
-        );
+            snoozed_until_unix: None,
+            can_claim: actionable && facts.claim.is_none(),
+            can_set_aside: actionable,
+            can_restore: false,
+        };
     }
 
-    classification(
-        RequestQueueSection::Unclaimed,
-        RequestAttentionState::Active,
-        RequestAttentionReason::Unclaimed,
-        request_version,
-        None,
-        facts.viewer_is_maintainer && facts.request_state == RequestState::Open,
-        facts.viewer_is_maintainer && facts.request_state == RequestState::Open,
-        false,
-    )
+    RequestQueueClassification {
+        section: RequestQueueSection::Unclaimed,
+        state: RequestAttentionState::Active,
+        reason: RequestAttentionReason::Unclaimed,
+        through_activity_version: request_version,
+        snoozed_until_unix: None,
+        can_claim: facts.viewer_is_maintainer && facts.request_state == RequestState::Open,
+        can_set_aside: facts.viewer_is_maintainer && facts.request_state == RequestState::Open,
+        can_restore: false,
+    }
 }
 
 pub fn reactivate_request_attention(
@@ -368,28 +368,6 @@ pub fn reactivate_request_attention(
             snoozed_until_unix: None,
             updated_at_unix: now_unix,
         })
-}
-
-fn classification(
-    section: RequestQueueSection,
-    state: RequestAttentionState,
-    reason: RequestAttentionReason,
-    through_activity_version: u64,
-    snoozed_until_unix: Option<u64>,
-    can_claim: bool,
-    can_set_aside: bool,
-    can_restore: bool,
-) -> RequestQueueClassification {
-    RequestQueueClassification {
-        section,
-        state,
-        reason,
-        through_activity_version,
-        snoozed_until_unix,
-        can_claim,
-        can_set_aside,
-        can_restore,
-    }
 }
 
 #[cfg(test)]
@@ -509,6 +487,39 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(error.kind, DomainErrorKind::Conflict);
+    }
+
+    #[test]
+    fn reply_wait_capability_requires_a_maintainer_and_an_open_request() {
+        use crate::repository::access::{RepositoryAccess, RepositoryActor};
+        use crate::requests::{RequestViewer, request_policy};
+        for state in [
+            RequestState::Draft,
+            RequestState::Open,
+            RequestState::Closed,
+            RequestState::Merged,
+        ] {
+            let mut request = open_request();
+            request.submitted_at_unix = (state != RequestState::Draft).then_some(1);
+            request.closed_at_unix = (state == RequestState::Closed).then_some(2);
+            request.merged_at_unix = (state == RequestState::Merged).then_some(2);
+            for actor in [
+                RepositoryActor::Owner,
+                RepositoryActor::Member,
+                RepositoryActor::Public,
+            ] {
+                let mut access = RepositoryAccess::public();
+                access.actor = actor;
+                let permissions =
+                    request_policy(&request, RequestViewer::new(access, Some("author"), false))
+                        .permissions;
+                assert!(permissions.can_reply_to_discussion);
+                assert_eq!(
+                    permissions.can_wait_after_reply,
+                    actor != RepositoryActor::Public && state == RequestState::Open
+                );
+            }
+        }
     }
 
     fn attention(request: &Request, state: RequestAttentionState) -> RequestAttention {

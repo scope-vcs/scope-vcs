@@ -244,7 +244,7 @@ export type RequestAttentionActionRequest = { "action": "claim", expected_activi
 
 export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
 
-export type RequestQueueItemResponse = { request: RequestListItemResponse, author: RequestActorSummaryResponse, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
+export type RequestQueueItemResponse = { attention_at_unix: number, request: RequestListItemResponse, author: RequestActorSummaryResponse, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
 
 export type RequestQueuePageResponse = { requests: Array<RequestQueueItemResponse>, next_cursor: string | null, next_attention_at_unix: number | null, };
 
@@ -276,7 +276,7 @@ export type RequestInviteeMutationResponse = { request: RequestSummaryResponse, 
 
 export type LeaveRequestResponse = { invitee: RequestInviteeResponse, };
 
-export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
+export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
 
 export type RequestMergeabilityStatus = "Ready" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch";
 

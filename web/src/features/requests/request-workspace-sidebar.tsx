@@ -1,5 +1,6 @@
 import type { RepoParams } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { BlockSkeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import {
@@ -426,10 +427,14 @@ function RequestWorkspaceList({
 }: RequestWorkspaceListProps) {
   if (!section.items.length && section.loading) {
     return (
-      <p className="request-workspace-list-status" role="status">
-        <LoaderCircle aria-hidden="true" className="animate-spin" />
-        Loading requests…
-      </p>
+      <div aria-label="Loading requests" className="divide-y divide-border">
+        {[0, 1, 2].map((index) => (
+          <div className="space-y-3 px-5 py-4" key={index}>
+            <BlockSkeleton className="h-4 w-4/5" />
+            <BlockSkeleton className="h-3 w-3/5" />
+          </div>
+        ))}
+      </div>
     )
   }
 

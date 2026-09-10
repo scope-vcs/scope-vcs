@@ -59,6 +59,7 @@ test('discussion and reply chronology preserves quote targets', async () => {
 
 test('reply disclosure preserves scroll and remains reversible', async () => {
   await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+    await page.locator('.request-workspace-sidebar a[href$="/req_demo_ready"]').waitFor()
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
     const hideRetryReplies = retryThread.getByRole('button', {
       name: 'Hide 3 replies',

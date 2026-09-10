@@ -461,17 +461,8 @@ impl RequestStore {
                 input.now_unix,
             )
             .await?;
-            if wait_after_reply {
-                super::request_attention::wait_after_own_reply(
-                    &tx,
-                    &request,
-                    &input.actor_user_id,
-                    actor_is_maintainer,
-                    reply.position,
-                    input.now_unix,
-                )
-                .await?;
-            }
+            // The original transaction already applied reply attention. A retry
+            // must preserve any later wake-up or explicit attention action.
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(CreateRequestDiscussionReplyMutation {
                 request,
@@ -654,17 +645,8 @@ impl RequestStore {
                 input.now_unix,
             )
             .await?;
-            if wait_after_reply {
-                super::request_attention::wait_after_own_reply(
-                    &tx,
-                    &request,
-                    &input.actor_user_id,
-                    actor_is_maintainer,
-                    reply.position,
-                    input.now_unix,
-                )
-                .await?;
-            }
+            // The original transaction already applied reply attention. A retry
+            // must preserve any later wake-up or explicit attention action.
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(CreateRequestDiscussionReplyMutation {
                 request,

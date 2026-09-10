@@ -122,6 +122,7 @@ pub(crate) async fn request_queue(
                 .transpose()?;
             let activity_version = row.request.activity_version;
             Ok(RequestQueueItemResponse {
+                attention_at_unix: row.cursor.updated_at_unix,
                 request: request_list_item_response(row.request, access, current_main_oid.clone())?,
                 author,
                 attention: attention_response(row.attention, activity_version),

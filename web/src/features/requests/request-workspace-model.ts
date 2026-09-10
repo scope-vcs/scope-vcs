@@ -14,7 +14,7 @@ export function requestWorkspaceItem(item: RequestQueueItemResponse, section: Re
   const reason = requestAttentionLabel(item)
   return {
     id: request.id, title: request.title, authorName: author.handle,
-    reason, section, timeLabel: new Date(request.updated_at_unix * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    reason, section, timeLabel: new Date(item.attention_at_unix * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
     actionPending: pendingId === request.id,
     canClaim: section === 'unclaimed' && attention.can_claim,
     canRestore: section === 'set_aside' && attention.can_restore,

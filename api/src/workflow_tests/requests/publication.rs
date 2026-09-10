@@ -84,7 +84,11 @@ async fn public_request_reads_remain_available_before_projection_outbox_catches_
         let body = response_json(response).await;
         let request = if body.get("requests").is_some() {
             assert_eq!(request_ids(&body), ["req_publication_public"]);
-            &body["requests"][0]["request"]
+            if uri.ends_with("/requests") {
+                &body["requests"][0]
+            } else {
+                &body["requests"][0]["request"]
+            }
         } else {
             &body["request"]
         };

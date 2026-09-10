@@ -204,6 +204,7 @@ impl RepositoryStore {
             generated_ids,
         )
         .await?;
+        super::request_attention::remove_member_attention(&tx, &repo_id, member_user_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(removed)
     }

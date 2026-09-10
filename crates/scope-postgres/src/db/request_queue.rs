@@ -59,6 +59,7 @@ struct QueueModel {
     merged_at_unix: Option<i64>,
     updated_at_unix: i64,
     activity_version: i64,
+    attention_at_unix: i64,
     has_git_snapshot: bool,
     viewer_is_invitee: bool,
     attention_state: Option<String>,
@@ -175,7 +176,10 @@ impl QueueModel {
         let updated_at_unix = entities::i64_to_u64(self.updated_at_unix, "request update time")?;
         Ok(RequestQueueRow {
             cursor: RequestQueueCursor {
-                updated_at_unix,
+                updated_at_unix: entities::i64_to_u64(
+                    self.attention_at_unix,
+                    "queue attention time",
+                )?,
                 request_id: self.id.clone(),
             },
             request: RequestListRow {
@@ -337,6 +341,11 @@ WITH facts AS (
     SELECT r.id, r.name, r.title, r.author_user_id, r.author_role, r.audience,
         r.head_oid, r.submitted_at_unix, r.closed_at_unix, r.merged_at_unix,
         r.updated_at_unix, r.activity_version, r.git_snapshot IS NOT NULL AS has_git_snapshot,
+        GREATEST(r.updated_at_unix,
+            CASE WHEN $3 THEN COALESCE(a.updated_at_unix, 0) ELSE 0 END,
+            CASE WHEN $3 AND a.state = 'snoozed' AND a.snoozed_until_unix <= $7
+                THEN a.snoozed_until_unix ELSE 0 END
+        ) AS attention_at_unix,
         EXISTS (
             SELECT 1 FROM scope_request_invitees i
             WHERE i.request_id = r.id AND i.user_id = $2
@@ -386,12 +395,12 @@ WITH facts AS (
 )
 SELECT id, name, title, author_user_id, author_role, audience, head_oid,
     submitted_at_unix, closed_at_unix, merged_at_unix, updated_at_unix,
-    activity_version, has_git_snapshot, viewer_is_invitee, attention_state,
+    activity_version, attention_at_unix, has_git_snapshot, viewer_is_invitee, attention_state,
     attention_reason, through_activity_version, snoozed_until_unix,
     attention_updated_at_unix, claimer_user_id, claimed_at_unix, claim_updated_at_unix
 FROM classified
 WHERE queue_section = $6
-  AND ($8::bigint IS NULL OR updated_at_unix < $8 OR (updated_at_unix = $8 AND id > $9))
-ORDER BY updated_at_unix DESC, id ASC
+  AND ($8::bigint IS NULL OR attention_at_unix < $8 OR (attention_at_unix = $8 AND id > $9))
+ORDER BY attention_at_unix DESC, id ASC
 LIMIT $10
 "#;
