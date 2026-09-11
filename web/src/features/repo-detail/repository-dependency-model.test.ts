@@ -62,7 +62,7 @@ test('does not call an incomplete zero-finding report clear', () => {
   if (presentation.kind !== 'report') return
   assert.equal(presentation.label, 'Dependency check incomplete')
   assert.equal(presentation.meta, 'Check incomplete')
-  assert.deepEqual(presentation.gaps, [
+  assert.deepEqual(presentation.report.gaps, [
     { path: 'src/loader.ts', reason: 'variable import target' },
   ])
 })

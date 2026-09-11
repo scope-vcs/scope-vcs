@@ -11,12 +11,10 @@ export type DependencyCheckPresentation =
     }
   | {
       coverage: string
-      gaps: DependencyReport['gaps']
       kind: 'report'
       label: string
       meta: string
       report: DependencyReport
-      staleReason: string | null
     }
 
 export function dependencyCheckPresentation({
@@ -52,14 +50,12 @@ export function dependencyCheckPresentation({
 
   return {
     coverage: dependencyCoverage(report, staleReason !== null),
-    gaps: report.gaps,
     kind: 'report',
     label: report.findings.length > 0
       ? `${report.public_file_count} public ${report.public_file_count === 1 ? 'file imports' : 'files import'} private files`
       : incomplete ? 'Dependency check incomplete' : 'No public → private imports found',
     meta: staleReason ?? (incomplete ? 'Check incomplete' : 'JS/TS only'),
     report,
-    staleReason,
   }
 }
 

@@ -101,9 +101,6 @@ export async function inventorySnapshot(inputRoot) {
 
         if (SUPPORTED_SOURCE_EXTENSIONS.has(extension)) {
           sources.push(path);
-          if (sources.length > LIMITS.maxSources) {
-            throw new SnapshotError(`source file limit exceeded (${LIMITS.maxSources})`);
-          }
         } else if (UNSUPPORTED_SOURCE_EXTENSIONS.has(extension)) {
           unsupportedFiles.push(path);
           if (unsupportedFiles.length > LIMITS.maxUnsupportedSources) {

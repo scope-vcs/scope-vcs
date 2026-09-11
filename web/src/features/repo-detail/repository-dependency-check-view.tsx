@@ -57,11 +57,11 @@ export function RepositoryDependencyCheckView({
             ))}
           </ul>
         )}
-        {presentation.gaps.length > 0 && (
+        {report.gaps.length > 0 && (
           <div className={report.findings.length > 0 ? 'mt-3' : undefined}>
             <p className="font-medium text-foreground">Coverage gaps</p>
             <ul aria-label="Dependency check coverage gaps" className="mt-1 max-h-48 max-w-4xl overflow-y-auto">
-              {presentation.gaps.map((gap, index) => (
+              {report.gaps.map((gap, index) => (
                 <li className="border-t border-border py-2 text-muted-foreground" key={`${gap.path}\0${index}`}>
                   {gap.path === '.' ? (
                     <span className="mr-2 font-medium text-foreground">Repository</span>

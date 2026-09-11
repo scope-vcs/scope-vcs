@@ -8,7 +8,8 @@ import { promisify } from "node:util";
 import test from "node:test";
 import ts from "typescript";
 
-import { ANALYZER_VERSION, analyzeSnapshot } from "../analyze.mjs";
+import { analyzeSnapshot } from "../src/analyzer.mjs";
+import { ANALYZER_VERSION } from "../src/constants.mjs";
 
 const execute = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));

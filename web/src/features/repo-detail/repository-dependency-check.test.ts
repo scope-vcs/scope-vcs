@@ -7,7 +7,6 @@ import type { DependencyCheckPresentation } from './repository-dependency-model'
 
 const presentation: DependencyCheckPresentation = {
   coverage: 'Checked main at a71c9f2 · 2 JS/TS files analyzed.',
-  gaps: [{ path: '.', reason: 'analyzer output exceeded its limit' }],
   kind: 'report',
   label: '1 public file imports private files',
   meta: 'JS/TS only',
@@ -19,11 +18,10 @@ const presentation: DependencyCheckPresentation = {
       source_path: 'src/app.ts',
       target_path: 'internal/auth.ts',
     }],
-    gaps: [],
+    gaps: [{ path: '.', reason: 'analyzer output exceeded its limit' }],
     public_file_count: 1,
     unsupported_files: [],
   },
-  staleReason: null,
 }
 
 test('starts collapsed with navigable findings and a non-navigable repository gap', () => {

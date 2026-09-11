@@ -52,7 +52,6 @@ export const LIMITS = Object.freeze({
   maxGaps: 10_000,
   maxPathBytes: 4_096,
   maxSourceBytes: 2 * 1024 * 1024,
-  maxSources: 20_000,
   maxTotalSourceBytes: 64 * 1024 * 1024,
   maxUnsupportedSources: 5_000,
 });
