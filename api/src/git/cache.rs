@@ -1,3 +1,4 @@
+use crate::git::import::require_git_success;
 use crate::{
     config::DEFAULT_GIT_BRANCH,
     error::ApiError,
@@ -220,12 +221,10 @@ pub(crate) fn sanitize_repository_git_cache_repo(
         &["for-each-ref", "--format=%(refname)%00%(objectname)"],
         "reading refs before repository Git cache synchronization",
     )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading refs before repository Git cache synchronization: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
+    let output = require_git_success(
+        output,
+        "reading refs before repository Git cache synchronization",
+    )?;
     let refs = String::from_utf8(output.stdout).map_err(ApiError::internal)?;
     let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
     let mut found_main = false;

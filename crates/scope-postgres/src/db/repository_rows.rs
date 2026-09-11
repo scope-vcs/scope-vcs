@@ -12,31 +12,7 @@ use sea_orm::{
     QueryFilter, QueryOrder,
 };
 use std::collections::BTreeMap;
-use {
-    crate::error::PostgresError,
-    scope_domain::repository::Repository,
-    scope_domain::repository::credentials::{FirstPushToken, GitPushToken},
-    scope_domain::repository::git::{GitHead, GitPackSpan},
-};
-
-#[derive(Default)]
-pub struct RepositoryFactRows {
-    pub first_push_token: Option<FirstPushToken>,
-    pub git_push_token: Option<GitPushToken>,
-    pub git_head: Option<GitHead>,
-    pub git_pack_spans: Vec<GitPackSpan>,
-}
-
-impl RepositoryFactRows {
-    pub fn into_facts(self) -> entities::RepositoryFacts {
-        entities::RepositoryFacts {
-            first_push_token: self.first_push_token,
-            git_push_token: self.git_push_token,
-            git_head: self.git_head,
-            git_pack_spans: self.git_pack_spans,
-        }
-    }
-}
+use {crate::error::PostgresError, scope_domain::repository::Repository};
 
 pub async fn insert_repository<C>(
     conn: &C,
@@ -93,30 +69,24 @@ where
     let mut active = row.clone().into_active_model();
     let mut row_changed = false;
     macro_rules! set_if_changed {
-        ($field:ident, $before:expr, $after:expr) => {
-            if $before != $after {
+        ($($field:ident),+ $(,)?) => {$(
+            if before_row.$field != row.$field {
                 active.$field = Set(row.$field.clone());
                 row_changed = true;
             }
-        };
+        )+};
     }
-    set_if_changed!(owner_handle, before_row.owner_handle, row.owner_handle);
-    set_if_changed!(name, before_row.name, row.name);
-    set_if_changed!(description, before_row.description, row.description);
-    set_if_changed!(website_url, before_row.website_url, row.website_url);
-    set_if_changed!(owner_user_id, before_row.owner_user_id, row.owner_user_id);
     set_if_changed!(
+        owner_handle,
+        name,
+        description,
+        website_url,
+        owner_user_id,
         publication_state,
-        before_row.publication_state,
-        row.publication_state
-    );
-    set_if_changed!(
         change_version,
-        before_row.change_version,
-        row.change_version
+        repo_config,
+        policy,
     );
-    set_if_changed!(repo_config, before_row.repo_config, row.repo_config);
-    set_if_changed!(policy, before_row.policy, row.policy);
     if row_changed {
         active.update(conn).await.map_err(PostgresError::internal)?;
     }
@@ -393,13 +363,13 @@ where
 pub async fn load_repository_facts<C>(
     conn: &C,
     repo_ids: &[String],
-) -> Result<BTreeMap<String, RepositoryFactRows>, PostgresError>
+) -> Result<BTreeMap<String, entities::RepositoryFacts>, PostgresError>
 where
     C: ConnectionTrait,
 {
     let mut facts = repo_ids
         .iter()
-        .map(|repo_id| (repo_id.clone(), RepositoryFactRows::default()))
+        .map(|repo_id| (repo_id.clone(), entities::RepositoryFacts::default()))
         .collect::<BTreeMap<_, _>>();
     if repo_ids.is_empty() {
         return Ok(facts);

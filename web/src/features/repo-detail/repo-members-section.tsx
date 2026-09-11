@@ -25,7 +25,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react'
-import { useReducer, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 
 const defaultPermissions: RepoMemberPermissions = {
   can_change_file_visibility: false,
@@ -45,8 +45,6 @@ const permissionLabels = [
   },
 ] as const
 
-type PermissionKey = (typeof permissionLabels)[number]['key']
-
 type InviteMemberFormState = {
   email: string
   error: string | null
@@ -55,43 +53,12 @@ type InviteMemberFormState = {
   permissions: RepoMemberPermissions
 }
 
-type InviteMemberFormAction =
-  | { email: string; type: 'emailChanged' }
-  | { permissions: RepoMemberPermissions; type: 'permissionsChanged' }
-  | { type: 'submitStarted' }
-  | { inviteUrl: string; type: 'submitSucceeded' }
-  | { message: string; type: 'submitFailed' }
-
 const initialInviteMemberFormState: InviteMemberFormState = {
   email: '',
   error: null,
   inviteUrl: null,
   pending: false,
   permissions: defaultPermissions,
-}
-
-function inviteMemberFormReducer(
-  state: InviteMemberFormState,
-  action: InviteMemberFormAction,
-): InviteMemberFormState {
-  switch (action.type) {
-    case 'emailChanged':
-      return { ...state, email: action.email }
-    case 'permissionsChanged':
-      return { ...state, permissions: action.permissions }
-    case 'submitStarted':
-      return { ...state, error: null, inviteUrl: null, pending: true }
-    case 'submitSucceeded':
-      return {
-        ...state,
-        email: '',
-        inviteUrl: action.inviteUrl,
-        pending: false,
-        permissions: defaultPermissions,
-      }
-    case 'submitFailed':
-      return { ...state, error: action.message, pending: false }
-  }
 }
 
 export function MemberAccessSections({
@@ -197,10 +164,7 @@ function InviteMemberForm({
     input: Omit<CreateRepoInviteInput, 'owner' | 'repo'>,
   ) => Promise<CreateRepoInviteResponse>
 }) {
-  const [state, dispatch] = useReducer(
-    inviteMemberFormReducer,
-    initialInviteMemberFormState,
-  )
+  const [state, setState] = useState(initialInviteMemberFormState)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -208,18 +172,17 @@ function InviteMemberForm({
       return
     }
 
-    dispatch({ type: 'submitStarted' })
+    setState(current => ({ ...current, error: null, inviteUrl: null, pending: true }))
     try {
       const response = await createInvite({
         email: state.email,
         permissions: state.permissions,
       })
-      dispatch({ inviteUrl: response.invite_url, type: 'submitSucceeded' })
+      setState({ ...initialInviteMemberFormState, inviteUrl: response.invite_url })
     } catch (error) {
-      dispatch({
-        message: error instanceof Error ? error.message : 'invite failed',
-        type: 'submitFailed',
-      })
+      setState(current => ({
+        ...current, pending: false, error: error instanceof Error ? error.message : 'invite failed',
+      }))
     }
   }
 
@@ -230,7 +193,7 @@ function InviteMemberForm({
           aria-label="Member email"
           disabled={!canInvite || state.pending}
           onChange={(event) =>
-            dispatch({ email: event.target.value, type: 'emailChanged' })
+            setState(current => ({ ...current, email: event.target.value }))
           }
           placeholder="teammate@example.com"
           type="email"
@@ -257,7 +220,7 @@ function InviteMemberForm({
       <PermissionEditor
         disabled={!canInvite || state.pending}
         onChange={(permissions) =>
-          dispatch({ permissions, type: 'permissionsChanged' })
+          setState(current => ({ ...current, permissions }))
         }
         permissions={state.permissions}
       />

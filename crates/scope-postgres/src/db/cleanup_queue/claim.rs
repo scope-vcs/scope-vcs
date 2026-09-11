@@ -15,7 +15,6 @@ use sea_orm::{
     IntoActiveModel, QueryFilter, QuerySelect, Set, Statement, TransactionTrait,
     sea_query::LockType,
 };
-use std::sync::Arc;
 
 const CLEANUP_BATCH_SIZE: u64 = 100;
 const CLEANUP_CLAIM_SECONDS: i64 = 300;
@@ -26,8 +25,7 @@ impl CleanupStore {
         now_unix: u64,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<RepoStorageCleanupBatch, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let loaded = claim_pending_repo_storage_cleanup_rows(&tx, now_unix, generated_ids).await?;
         let pending = loaded
             .iter()
@@ -46,8 +44,7 @@ impl CleanupStore {
         now_unix: u64,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<SourceBlobCleanupBatch, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let loaded = claim_pending_source_blob_cleanup_rows(&tx, now_unix, generated_ids).await?;
         let pending = loaded
             .iter()

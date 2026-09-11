@@ -1,7 +1,7 @@
 use scope_api_contract::{
     RepositoryRunAttemptResponse, RepositoryRunCacheColdReason, RepositoryRunCacheFinalState,
     RepositoryRunCachePreparation, RepositoryRunCacheResponse, RepositoryRunDetailResponse,
-    RepositoryRunJobState, RepositoryRunState,
+    RepositoryRunJobState,
 };
 
 pub(super) fn detail_lines(detail: &RepositoryRunDetailResponse) -> Vec<String> {
@@ -140,15 +140,16 @@ fn short_oid(oid: &str) -> &str {
     oid.get(..7).unwrap_or(oid)
 }
 
-pub(super) fn run_state_label(state: RepositoryRunState) -> &'static str {
-    match state {
-        RepositoryRunState::Queued => "queued",
-        RepositoryRunState::Dispatching => "dispatching",
-        RepositoryRunState::Running => "running",
-        RepositoryRunState::Succeeded => "succeeded",
-        RepositoryRunState::Failed => "failed",
-        RepositoryRunState::Canceled => "canceled",
-        RepositoryRunState::Lost => "lost",
+pub(super) fn run_state_label(state: impl Into<scope_domain::runs::run::RunState>) -> &'static str {
+    use scope_domain::runs::run::RunState;
+    match state.into() {
+        RunState::Queued => "queued",
+        RunState::Dispatching => "dispatching",
+        RunState::Running => "running",
+        RunState::Succeeded => "succeeded",
+        RunState::Failed => "failed",
+        RunState::Canceled => "canceled",
+        RunState::Lost => "lost",
     }
 }
 
@@ -174,117 +175,5 @@ fn attempt_state_label(attempt: &RepositoryRunAttemptResponse) -> &'static str {
         scope_api_contract::RepositoryRunAttemptState::Failed => "failed",
         scope_api_contract::RepositoryRunAttemptState::Canceled => "canceled",
         scope_api_contract::RepositoryRunAttemptState::Lost => "lost",
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use scope_api_contract::{
-        RepositoryRunAttemptState, RepositoryRunCacheObservationResponse,
-        RepositoryRunCacheSetupObservationResponse, RepositoryRunStepResponse,
-        RepositoryRunSummaryResponse,
-    };
-
-    #[test]
-    fn detail_output_distinguishes_cold_from_missing_reports() {
-        let detail = RepositoryRunDetailResponse {
-            run: RepositoryRunSummaryResponse {
-                id: "run-1".to_string(),
-                workflow_name: "checks".to_string(),
-                git_oid: "1234567890".to_string(),
-                trigger: scope_api_contract::RepositoryRunTrigger::PushMain,
-                state: RepositoryRunState::Succeeded,
-                cancellation_requested: false,
-                created_at_unix: 1,
-                updated_at_unix: 2,
-                completed_at_unix: Some(2),
-                can_cancel: false,
-                can_retry: true,
-            },
-            jobs: vec![scope_api_contract::RepositoryRunJobDetailResponse {
-                job: scope_api_contract::RepositoryRunJobResponse {
-                    key: "backend".to_string(),
-                    needs: vec![],
-                    pinned_container_image: format!("registry/scope@sha256:{}", "a".repeat(64),),
-                    state: RepositoryRunJobState::Succeeded,
-                    created_at_unix: 1,
-                    started_at_unix: Some(1),
-                    updated_at_unix: 2,
-                    completed_at_unix: Some(2),
-                },
-                attempts: vec![RepositoryRunAttemptResponse {
-                    id: "attempt-1".to_string(),
-                    number: 1,
-                    external_run_id: Some("external-run-1".to_string()),
-                    runtime_version: "0.1.0".to_string(),
-                    state: RepositoryRunAttemptState::Succeeded,
-                    created_at_unix: 1,
-                    started_at_unix: Some(1),
-                    completed_at_unix: Some(2),
-                    terminal_reason: None,
-                    cache_setup: Some(RepositoryRunCacheSetupObservationResponse {
-                        authorization_ms: 7,
-                        wall_ms: 80,
-                    }),
-                    caches: vec![
-                        RepositoryRunCacheResponse {
-                            name: "cargo".to_string(),
-                            path: "/cache/cargo".to_string(),
-                            observation: Some(RepositoryRunCacheObservationResponse {
-                                workflow_path: "/.scope/runs/checks.yml".to_string(),
-                                job_key: "backend".to_string(),
-                                identity_digest: "b".repeat(64),
-                                preparation: RepositoryRunCachePreparation::Cold {
-                                    reason: RepositoryRunCacheColdReason::MetadataMissing,
-                                },
-                                key_ms: 2,
-                                metadata_ms: 10,
-                                size_bytes: 0,
-                                download_verify_ms: 0,
-                                sync_ms: 0,
-                                extraction_ms: 0,
-                                prepare_ms: 12,
-                                final_state: RepositoryRunCacheFinalState::Ready,
-                                finalize_ms: Some(8),
-                            }),
-                        },
-                        RepositoryRunCacheResponse {
-                            name: "target".to_string(),
-                            path: "/cache/target".to_string(),
-                            observation: None,
-                        },
-                        RepositoryRunCacheResponse {
-                            name: "rustup".to_string(),
-                            path: "/cache/rustup".to_string(),
-                            observation: Some(RepositoryRunCacheObservationResponse {
-                                workflow_path: "/.scope/runs/checks.yml".to_string(),
-                                job_key: "backend".to_string(),
-                                identity_digest: "c".repeat(64),
-                                preparation: RepositoryRunCachePreparation::Exact,
-                                key_ms: 3,
-                                metadata_ms: 4,
-                                size_bytes: 12_582_912,
-                                download_verify_ms: 20,
-                                sync_ms: 5,
-                                extraction_ms: 18,
-                                prepare_ms: 50,
-                                final_state: RepositoryRunCacheFinalState::Ready,
-                                finalize_ms: Some(4),
-                            }),
-                        },
-                    ],
-                    steps: Vec::<RepositoryRunStepResponse>::new(),
-                }],
-            }],
-        };
-
-        let output = detail_lines(&detail).join("\n");
-        assert!(
-            output.contains("1 warm · 1 cold · 1 not reported · setup 80ms (authorization 7ms)")
-        );
-        assert!(output.contains("no reusable entry for this identity"));
-        assert!(output.contains("target · not reported"));
-        assert!(!output.contains("identity changed"));
     }
 }

@@ -2,7 +2,7 @@ use crate::api::ApiSession;
 use crate::{
     api::{
         CreateRequestDiscussionParams, CreateRequestDiscussionReplyParams, RequestActivityParams,
-        RequestTarget, StartRequestParams, add_request_invitee, close_request as api_close_request,
+        StartRequestParams, add_request_invitee, close_request as api_close_request,
         create_request_discussion, create_request_discussion_reply, edit_request_identity,
         get_request, get_request_activity, leave_request, list_requests, merge_request,
         rate_request, remove_request_invitee, reopen_and_reply_to_request_discussion,
@@ -33,7 +33,6 @@ mod inspect;
 mod local;
 mod outcome;
 mod recovery;
-mod remote;
 mod render;
 #[cfg(test)]
 mod tests;
@@ -42,8 +41,8 @@ use actions::*;
 pub use args::RequestArgs;
 use args::{
     RequestAudienceArg, RequestCommand, RequestDiscussionArgs, RequestDiscussionCommand,
-    RequestDiscussionReopenArgs, RequestDiscussionReplyArgs, RequestDiscussionResolveArgs,
-    RequestDiscussionStartArgs, RequestStartArgs, RequestTargetArgs,
+    RequestDiscussionReplyArgs, RequestDiscussionResolveArgs, RequestDiscussionStartArgs,
+    RequestStartArgs, RequestTargetArgs,
 };
 use branches::*;
 use confirm::require_confirmation;
@@ -61,8 +60,7 @@ use render::{
 };
 use text::{discussion_body, short_oid};
 
-static CLIENT_DISCUSSION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-static CLIENT_REPLY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static CLIENT_MUTATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub struct PreparedRequestCommand {
     args: RequestArgs,
@@ -193,11 +191,15 @@ fn run_request_discussion_command(
 ) -> anyhow::Result<RequestCommandOutcome> {
     match args.command {
         RequestDiscussionCommand::Start(args) => start_request_discussion(git_repo, api, args),
-        RequestDiscussionCommand::Reply(args) => reply_to_request_discussion(git_repo, api, args),
+        RequestDiscussionCommand::Reply(args) => {
+            reply_to_request_discussion(git_repo, api, args, false)
+        }
         RequestDiscussionCommand::Resolve(args) => {
             resolve_one_request_discussion(git_repo, api, args)
         }
-        RequestDiscussionCommand::Reopen(args) => reopen_request_discussion(git_repo, api, args),
+        RequestDiscussionCommand::Reopen(args) => {
+            reply_to_request_discussion(git_repo, api, args, true)
+        }
     }
 }
 
@@ -213,11 +215,7 @@ fn start_request_discussion(
         load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
     let uploaded = attachments::upload(
         api,
-        RequestTarget {
-            owner: &context.target.owner,
-            repo: &context.target.repo,
-            request_id: &request_id,
-        },
+        context.api_target(&request_id),
         scope_api_contract::attachments::RequestAttachmentTargetInput {
             kind: scope_api_contract::attachments::RequestAttachmentTargetKind::Discussion,
             discussion_id: None,
@@ -251,16 +249,12 @@ fn start_request_discussion(
         .transpose()?;
     let client_discussion_id = match &pending_mutation {
         Some(mutation) => mutation.client_id.clone(),
-        None => new_client_discussion_id()?,
+        None => new_client_mutation_id("discussion")?,
     };
     let response = create_request_discussion(
         api,
         CreateRequestDiscussionParams {
-            target: RequestTarget {
-                owner: &context.target.owner,
-                repo: &context.target.repo,
-                request_id: &request_id,
-            },
+            target: context.api_target(&request_id),
             body_markdown: body,
             client_discussion_id,
             anchor,
@@ -275,11 +269,7 @@ fn start_request_discussion(
     let uploaded_attachments = if attachment_args.wait {
         attachments::wait_for_processing(
             api,
-            RequestTarget {
-                owner: &context.target.owner,
-                repo: &context.target.repo,
-                request_id: &request_id,
-            },
+            context.api_target(&request_id),
             uploaded.attachments,
             saved.clone(),
         )?
@@ -289,24 +279,15 @@ fn start_request_discussion(
     if let Some(mutation) = &pending_mutation {
         attachments::complete_saved_uploads(Some(mutation), &uploaded.receipt_keys, saved)?;
     }
-    if has_attachments {
-        return Ok(RequestCommandOutcome::new(
-            "request.discussion.start",
-            RequestCommandResult::AttachmentDiscussion(AttachmentDiscussionResult {
-                repo: context.repo,
-                request_id,
-                discussion: response.discussion,
-                attachments: uploaded_attachments,
-            }),
-            human_lines,
-        ));
-    }
+
     Ok(RequestCommandOutcome::new(
         "request.discussion.start",
         RequestCommandResult::Discussion(DiscussionResult {
             repo: context.repo,
             request_id,
             discussion: response.discussion,
+            reply: None,
+            attachments: uploaded_attachments,
         }),
         human_lines,
     ))
@@ -316,7 +297,13 @@ fn reply_to_request_discussion(
     git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
     args: RequestDiscussionReplyArgs,
+    reopen: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
+    let (operation, command) = if reopen {
+        ("discussion.reopen", "request.discussion.reopen")
+    } else {
+        ("discussion.reply", "request.discussion.reply")
+    };
     let attachment_args = args.content.attachments;
     let body = discussion_body(args.content.body, args.content.body_file)?;
     let has_attachments = !attachment_args.paths.is_empty();
@@ -324,11 +311,7 @@ fn reply_to_request_discussion(
         load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
     let uploaded = attachments::upload(
         api,
-        RequestTarget {
-            owner: &context.target.owner,
-            repo: &context.target.repo,
-            request_id: &request_id,
-        },
+        context.api_target(&request_id),
         scope_api_contract::attachments::RequestAttachmentTargetInput {
             kind: scope_api_contract::attachments::RequestAttachmentTargetKind::Reply,
             discussion_id: Some(args.discussion_id.clone()),
@@ -341,7 +324,7 @@ fn reply_to_request_discussion(
             attachments::begin_mutation(
                 api.base_url,
                 &[
-                    "discussion.reply",
+                    operation,
                     &context.target.owner,
                     &context.target.repo,
                     &request_id,
@@ -354,36 +337,34 @@ fn reply_to_request_discussion(
         .transpose()?;
     let client_reply_id = match &pending_mutation {
         Some(mutation) => mutation.client_id.clone(),
-        None => new_client_reply_id()?,
+        None => new_client_mutation_id("reply")?,
     };
-    let response = create_request_discussion_reply(
-        api,
-        CreateRequestDiscussionReplyParams {
-            target: RequestTarget {
-                owner: &context.target.owner,
-                repo: &context.target.repo,
-                request_id: &request_id,
-            },
-            discussion_id: &args.discussion_id,
-            body_markdown: body,
-            client_reply_id,
-        },
-    )?;
-    let mut human_lines = vec![discussion_replied_receipt(&response)];
+    let params = CreateRequestDiscussionReplyParams {
+        target: context.api_target(&request_id),
+        discussion_id: &args.discussion_id,
+        body_markdown: body,
+        client_reply_id,
+    };
+    let response = if reopen {
+        reopen_and_reply_to_request_discussion(api, params)?
+    } else {
+        create_request_discussion_reply(api, params)?
+    };
+    let mut human_lines = vec![if reopen {
+        discussion_reopened_receipt(&response)
+    } else {
+        discussion_replied_receipt(&response)
+    }];
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
     let saved = serde_json::json!({
-        "operation": "request.discussion.reply", "saved": true,
+        "operation": command, "saved": true,
         "request_id": &request_id, "discussion": &response.discussion,
         "reply": &response.reply,
     });
     let uploaded_attachments = if attachment_args.wait {
         attachments::wait_for_processing(
             api,
-            RequestTarget {
-                owner: &context.target.owner,
-                repo: &context.target.repo,
-                request_id: &request_id,
-            },
+            context.api_target(&request_id),
             uploaded.attachments,
             saved.clone(),
         )?
@@ -393,26 +374,15 @@ fn reply_to_request_discussion(
     if let Some(mutation) = &pending_mutation {
         attachments::complete_saved_uploads(Some(mutation), &uploaded.receipt_keys, saved)?;
     }
-    if has_attachments {
-        return Ok(RequestCommandOutcome::new(
-            "request.discussion.reply",
-            RequestCommandResult::AttachmentDiscussionReply(AttachmentDiscussionReplyResult {
-                repo: context.repo,
-                request_id,
-                discussion: response.discussion,
-                reply: response.reply,
-                attachments: uploaded_attachments,
-            }),
-            human_lines,
-        ));
-    }
+
     Ok(RequestCommandOutcome::new(
-        "request.discussion.reply",
-        RequestCommandResult::DiscussionReply(DiscussionReplyResult {
+        command,
+        RequestCommandResult::Discussion(DiscussionResult {
             repo: context.repo,
             request_id,
             discussion: response.discussion,
-            reply: response.reply,
+            reply: Some(response.reply),
+            attachments: uploaded_attachments,
         }),
         human_lines,
     ))
@@ -425,15 +395,8 @@ fn resolve_one_request_discussion(
 ) -> anyhow::Result<RequestCommandOutcome> {
     let (context, request_id) =
         load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
-    let response = resolve_request_discussion(
-        api,
-        RequestTarget {
-            owner: &context.target.owner,
-            repo: &context.target.repo,
-            request_id: &request_id,
-        },
-        &args.discussion_id,
-    )?;
+    let response =
+        resolve_request_discussion(api, context.api_target(&request_id), &args.discussion_id)?;
     let human_lines = vec![discussion_resolved_receipt(&response)];
     Ok(RequestCommandOutcome::new(
         "request.discussion.resolve",
@@ -441,126 +404,14 @@ fn resolve_one_request_discussion(
             repo: context.repo,
             request_id,
             discussion: response.discussion,
+            reply: None,
+            attachments: Vec::new(),
         }),
         human_lines,
     ))
 }
 
-fn reopen_request_discussion(
-    git_repo: Option<&GitRepo>,
-    api: ApiSession<'_>,
-    args: RequestDiscussionReopenArgs,
-) -> anyhow::Result<RequestCommandOutcome> {
-    let attachment_args = args.content.attachments;
-    let body = discussion_body(args.content.body, args.content.body_file)?;
-    let has_attachments = !attachment_args.paths.is_empty();
-    let (context, request_id) =
-        load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
-    let uploaded = attachments::upload(
-        api,
-        RequestTarget {
-            owner: &context.target.owner,
-            repo: &context.target.repo,
-            request_id: &request_id,
-        },
-        scope_api_contract::attachments::RequestAttachmentTargetInput {
-            kind: scope_api_contract::attachments::RequestAttachmentTargetKind::Reply,
-            discussion_id: Some(args.discussion_id.clone()),
-        },
-        attachment_args.paths,
-    )?;
-    let body = text::append_attachment_references(body, uploaded.references);
-    let pending_mutation = has_attachments
-        .then(|| {
-            attachments::begin_mutation(
-                api.base_url,
-                &[
-                    "discussion.reopen",
-                    &context.target.owner,
-                    &context.target.repo,
-                    &request_id,
-                    &args.discussion_id,
-                    &body,
-                ],
-                "cli_reply",
-            )
-        })
-        .transpose()?;
-    let client_reply_id = match &pending_mutation {
-        Some(mutation) => mutation.client_id.clone(),
-        None => new_client_reply_id()?,
-    };
-    let response = reopen_and_reply_to_request_discussion(
-        api,
-        CreateRequestDiscussionReplyParams {
-            target: RequestTarget {
-                owner: &context.target.owner,
-                repo: &context.target.repo,
-                request_id: &request_id,
-            },
-            discussion_id: &args.discussion_id,
-            body_markdown: body,
-            client_reply_id,
-        },
-    )?;
-    let mut human_lines = vec![discussion_reopened_receipt(&response)];
-    human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
-    let saved = serde_json::json!({
-        "operation": "request.discussion.reopen", "saved": true,
-        "request_id": &request_id, "discussion": &response.discussion,
-        "reply": &response.reply,
-    });
-    let uploaded_attachments = if attachment_args.wait {
-        attachments::wait_for_processing(
-            api,
-            RequestTarget {
-                owner: &context.target.owner,
-                repo: &context.target.repo,
-                request_id: &request_id,
-            },
-            uploaded.attachments,
-            saved.clone(),
-        )?
-    } else {
-        uploaded.attachments
-    };
-    if let Some(mutation) = &pending_mutation {
-        attachments::complete_saved_uploads(Some(mutation), &uploaded.receipt_keys, saved)?;
-    }
-    if has_attachments {
-        return Ok(RequestCommandOutcome::new(
-            "request.discussion.reopen",
-            RequestCommandResult::AttachmentDiscussionReply(AttachmentDiscussionReplyResult {
-                repo: context.repo,
-                request_id,
-                discussion: response.discussion,
-                reply: response.reply,
-                attachments: uploaded_attachments,
-            }),
-            human_lines,
-        ));
-    }
-    Ok(RequestCommandOutcome::new(
-        "request.discussion.reopen",
-        RequestCommandResult::DiscussionReply(DiscussionReplyResult {
-            repo: context.repo,
-            request_id,
-            discussion: response.discussion,
-            reply: response.reply,
-        }),
-        human_lines,
-    ))
-}
-
-fn new_client_discussion_id() -> anyhow::Result<String> {
-    new_client_mutation_id("discussion", &CLIENT_DISCUSSION_SEQUENCE)
-}
-
-fn new_client_reply_id() -> anyhow::Result<String> {
-    new_client_mutation_id("reply", &CLIENT_REPLY_SEQUENCE)
-}
-
-fn new_client_mutation_id(kind: &str, sequence: &AtomicU64) -> anyhow::Result<String> {
+fn new_client_mutation_id(kind: &str) -> anyhow::Result<String> {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("system clock is before Unix epoch")?
@@ -569,7 +420,7 @@ fn new_client_mutation_id(kind: &str, sequence: &AtomicU64) -> anyhow::Result<St
         "client_{kind}_{}_{}_{}",
         std::process::id(),
         nanos,
-        sequence.fetch_add(1, Ordering::Relaxed)
+        CLIENT_MUTATION_SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ))
 }
 

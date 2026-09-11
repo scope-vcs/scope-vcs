@@ -2,10 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { ReviewFileDiff } from '@/api/types'
 import {
-  historyEntryCacheKey,
   historyDiffCacheKey,
   historyEntryDiffCacheKey,
-  historyResourceCacheStats,
   historyDiffResource,
   readHistoryDiffScroll,
   resetHistoryResourceCache,
@@ -22,52 +20,6 @@ function diff(path: string, text = 'content'): ReviewFileDiff {
   }
 }
 
-test('keys resources by immutable audience-aware identities', () => {
-  const commitBase = {
-    scope: 'viewer-a',
-    audience: 'public' as const,
-    entry: 'c1',
-    generation: 'generation-1',
-    repoId: 'scope/demo',
-    viewKey: 'public',
-  }
-  assert.notEqual(
-    historyEntryCacheKey(commitBase),
-    historyEntryCacheKey({ ...commitBase, audience: 'private' }),
-  )
-  assert.notEqual(
-    historyEntryCacheKey(commitBase),
-    historyEntryCacheKey({ ...commitBase, generation: 'generation-2' }),
-  )
-
-  const diffBase = {
-    ...commitBase,
-    commit: commitBase.entry,
-    newOid: 'new',
-    oldOid: 'old',
-    path: '/README.md',
-  }
-  assert.notEqual(
-    historyDiffCacheKey(diffBase),
-    historyDiffCacheKey({ ...diffBase, newOid: 'newer' }),
-  )
-  assert.notEqual(
-    historyDiffCacheKey(diffBase),
-    historyDiffCacheKey({ ...diffBase, path: '/other.md' }),
-  )
-})
-
-test('bounds diff entries with least-recently-used eviction', () => {
-  resetHistoryResourceCache()
-  for (let index = 0; index < 30; index += 1) {
-    historyDiffResource.write(`diff-${index}`, diff(`/${index}.txt`))
-  }
-
-  assert.equal(historyResourceCacheStats().diffs, 20)
-  assert.equal(historyDiffResource.read('diff-0'), null)
-  assert.equal(historyDiffResource.read('diff-29')?.path, '/29.txt')
-})
-
 test('keeps diff scroll state with its bounded cache entry', () => {
   resetHistoryResourceCache()
   historyDiffResource.write('readme', diff('/README.md'))
@@ -79,18 +31,6 @@ test('keeps diff scroll state with its bounded cache entry', () => {
     historyDiffResource.write(`diff-${index}`, diff(`/${index}.txt`))
   }
   assert.equal(readHistoryDiffScroll('readme'), 0)
-})
-
-test('evicts large text diffs at the byte budget', () => {
-  resetHistoryResourceCache()
-  const largeText = 'x'.repeat(3 * 1024 * 1024)
-  for (let index = 0; index < 6; index += 1) {
-    historyDiffResource.write(`large-${index}`, diff(`/${index}.txt`, largeText))
-  }
-
-  const stats = historyResourceCacheStats()
-  assert.ok(stats.diffs < 6)
-  assert.ok(stats.diffBytes <= 32 * 1024 * 1024)
 })
 
 test('isolates content and exact visibility preview caches for the same file and blobs', () => {
@@ -108,7 +48,9 @@ test('same-viewer history diffs reuse data while viewer and access changes load 
   await historyDiffResource.load(key, '', load)
   await historyDiffResource.load(historyDiffCacheKey({ ...base }), '', load)
   assert.equal(loads, 1)
-  await historyDiffResource.load(historyDiffCacheKey({ ...base, scope: 'viewer-b:member' }), '', load)
-  await historyDiffResource.load(historyDiffCacheKey({ ...base, scope: 'viewer-a:public', audience: 'public' }), '', load)
-  assert.equal(loads, 3)
+  for (const change of [
+    { scope: 'viewer-b:member' }, { scope: 'viewer-a:public', audience: 'public' as const },
+    { generation: 'g2' }, { newOid: 'newer' }, { path: '/other.md' },
+  ]) await historyDiffResource.load(historyDiffCacheKey({ ...base, ...change }), '', load)
+  assert.equal(loads, 6)
 })

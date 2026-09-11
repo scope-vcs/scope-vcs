@@ -6,7 +6,6 @@ node --test .github/scripts/audit-railway-experiments.test.mjs
 node --test .github/scripts/check-daily-release.test.mjs
 node --test .github/scripts/production-deployment-progress.test.mjs
 node --test .github/scripts/plan-production-deployment.test.mjs
-node --test .github/scripts/deployment-components.test.mjs
 node --test .github/scripts/railway-deployment-history.test.mjs
 node --test .github/scripts/verify-staging-target.test.mjs
 node --test .github/scripts/stop-staging-writers.test.mjs

@@ -22,19 +22,9 @@
       "reason": "Agent-file discovery, trusted-rule synchronization, push validation, and adapter fixtures define one CLI behavior."
     },
     {
-      "path": "cli/src/api/requests.rs",
-      "owner": "CLI request API client",
-      "reason": "Typed request and discussion calls share URL construction, authenticated execution, decoding, and client tests."
-    },
-    {
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
       "owner": "request attachment aggregate",
       "reason": "Upload, processing, binding, access, and cleanup transitions share source, derivative, lease, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."
-    },
-    {
-      "path": "crates/scope-domain/src/requests/discussions.rs",
-      "owner": "request discussion aggregate",
-      "reason": "Discussion creation, replies, transitions, read state, validation, and transition tests enforce one aggregate."
     },
     {
       "path": "crates/scope-git/src/projection_identity.rs",
@@ -80,11 +70,6 @@
       "path": "crates/scope-postgres/src/db/request_media/upload.rs",
       "owner": "request media upload persistence",
       "reason": "Prepare, part reservation, acknowledgement, and finalization share current authorization, idempotency, repository quota locks, and the durable upload inventory."
-    },
-    {
-      "path": "crates/scope-run-config/src/lib.rs",
-      "owner": "workflow configuration compiler",
-      "reason": "YAML decoding, validation, domain compilation, repository catalog parsing, and grammar fixtures define one compiler."
     },
     {
       "path": "media-worker/src/codec.rs",

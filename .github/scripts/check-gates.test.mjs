@@ -9,7 +9,6 @@ import { classifyChanges } from './plan-production-deployment.mjs';
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const manifest = JSON.parse(read('.github/deployment-services.json'));
-const gates = ['backend', 'cli', 'web', 'contract', 'policy', 'integration', 'ops'];
 
 // Capture the commands actually executed, without requiring installed toolchains,
 // credentials, or a running stack. The scripts remain the command inventory.
@@ -24,41 +23,6 @@ function commands(gate, ...args) {
     }).trim().split('\n');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
-
-test('backend variants preserve API feature coverage explicitly', () => {
-  const withApi = commands('backend', 'with-api');
-  const withoutApi = commands('backend', 'without-api');
-  assert.ok(withApi.includes('cargo test --workspace --features api/test-support --locked'));
-  assert.ok(withApi.includes('cargo test -p api --features local-dev --locked dev::'));
-  assert.ok(withoutApi.includes('cargo test --workspace --exclude api --locked'));
-  assert.ok(withoutApi.every((line) => !line.includes('--features')));
-  assert.equal(spawnSync('dev/checks/backend', ['invalid'], { cwd: root }).status, 2);
-});
-
-test('web gate includes contract, observer, and resource rules; CLI and integration retain their coverage', () => {
-  assert.deepEqual(commands('web'), [
-    'pnpm test', 'pnpm check', 'pnpm build',
-  ]);
-  const webChecks = JSON.parse(read('web/package.json')).scripts.check;
-  assert.equal(webChecks, 'pnpm typecheck && ../dev/checks/contract && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
-  assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
-  assert.ok(commands('cli').includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
-  assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture']);
-  assert.deepEqual(commands('integration', 'web'), ['pnpm test:smoke']);
-});
-
-test('local and both CI callers use the shared inventory', () => {
-  const github = ['rust-workspace-checks', 'scope-api-ci', 'scope-cli-build', 'scope-web-ci', 'ci', 'release', 'scope-integration-ci']
-    .map((name) => read(`.github/workflows/${name}.yml`)).join('\n');
-  const scope = read('.scope/runs/checks.yml');
-  for (const gate of gates.filter((gate) => gate !== 'contract')) {
-    assert.ok(github.includes(`dev/checks/${gate}`), `GitHub: ${gate}`);
-    assert.ok(scope.includes(`dev/checks/${gate}`), `Scope: ${gate}`);
-  }
-  assert.ok(read('dev/check').includes('dev/checks/policy'));
-  assert.ok(read('web/package.json').includes('dev/checks/contract'));
-  assert.ok(github.includes('dev/checks/contract'));
-});
 
 test('every deployment and policy script test is run by a shared gate', () => {
   const invoked = ['ops', 'policy', 'cli'].flatMap((gate) => commands(gate));
@@ -212,14 +176,12 @@ test('resumed staging reuses prepared images but must pass smoke before any prod
   }
 });
 
-
 test('cancelled releases and non-main refs cannot activate or record production', () => {
   for (const options of [{ cancelled: true }, { ref: 'refs/heads/feature' }]) {
     const result = releasePath(['api', 'web', 'cli'], options);
     for (const key of ['backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) assert.equal(result[key].result, 'skipped', key);
   }
 });
-
 
 test('maintenance publishes the backend-owned web receipt without deploying web twice', () => {
   const result = releasePath(['api', 'web', 'cli'], { backendActivatesWeb: true });

@@ -6,10 +6,7 @@ use scope_domain::{
     projection::{ProjectedChange, ProjectedCommit, ProjectionViewKey},
 };
 use scope_git::GitTreePath;
-use std::{
-    collections::BTreeMap,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::BTreeMap;
 
 #[derive(Clone)]
 struct ProjectionTreeFile {
@@ -43,56 +40,9 @@ fn write_projection_tree(
 }
 
 #[test]
-fn generated_projection_matches_canonical_head_identity() {
-    let root = std::env::temp_dir().join(format!(
-        "scope-generated-projection-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
-    let projection = Projection {
-        repo_id: "repo".to_string(),
-        view_key: ProjectionViewKey::Public,
-        commits: vec![ProjectedCommit {
-            projected_id: "generated-base".to_string(),
-            logical_commit_id: "logical-base".to_string(),
-            visibility_change_set_id: None,
-            parent_projected_id: None,
-            author: Some("owner".to_string()),
-            message: "base".to_string(),
-            changes: vec![projected_change("/README.md", "base\n")],
-            materialization: ProjectionMaterialization::Generate,
-        }],
-    };
-
-    let repo = projection_bare_repo_with_loader(&root, None, &projection, None, None, |blob| {
-        Ok(blob.sha256.as_bytes().to_vec())
-    })
-    .unwrap();
-
-    assert_eq!(
-        git_object_field(&repo, "refs/heads/main", "%H").unwrap(),
-        scope_git::projection_head_oid(&projection)
-            .unwrap()
-            .expect("non-empty projection has a head")
-    );
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
-    let root = std::env::temp_dir().join(format!(
-        "scope-quoted-projection-path-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().to_path_buf();
     let projection = Projection {
         repo_id: "repo".to_string(),
         view_key: ProjectionViewKey::Public,
@@ -126,20 +76,12 @@ fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
     .unwrap();
 
     assert_eq!(paths, b"\"quoted.txt\0");
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn projection_identity_and_materializer_reject_the_same_reserved_path() {
-    let root = std::env::temp_dir().join(format!(
-        "scope-invalid-projection-path-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().to_path_buf();
     let projection = Projection {
         repo_id: "repo".to_string(),
         view_key: ProjectionViewKey::Public,
@@ -170,19 +112,12 @@ fn projection_identity_and_materializer_reject_the_same_reserved_path() {
         "Scope hit an internal error."
     );
     assert!(identity_error.contains("reserved .git component"));
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
-    let root = std::env::temp_dir().join(format!(
-        "scope-native-projection-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().to_path_buf();
     let source = root.join("source.git");
     let cache = root.join("cache");
     fs::create_dir_all(&cache).unwrap();
@@ -384,8 +319,6 @@ fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         .unwrap_err();
     assert!(error.operator_diagnostic().contains("tree does not match"));
     assert_eq!(error.public_message(), "Scope hit an internal error.");
-
-    let _ = fs::remove_dir_all(root);
 }
 
 fn projected_change(path: &str, content: &str) -> ProjectedChange {

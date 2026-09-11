@@ -81,21 +81,15 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     let created = response_json(created).await;
     let run_id = created["id"].as_str().unwrap().to_string();
 
-    let offer = state
-        .metadata
-        .runs()
-        .next_dispatchable_job()
-        .await
-        .unwrap()
-        .unwrap();
+    let run = state.metadata.runs().run(&run_id).await.unwrap().unwrap();
     let attempt_id = "attempt_cloud_protocol";
     let bootstrap_token = format!("scope_bootstrap_{}", "test-token");
     state
         .metadata
         .runs()
         .dispatch_job(
-            &offer.run.id,
-            offer.job.key.as_str(),
+            &run_id,
+            "checks",
             attempt_id,
             &machine_token_hash(&bootstrap_token),
             "test-runtime",
@@ -152,11 +146,11 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     assert_eq!(source_response.status(), StatusCode::OK);
     assert_eq!(
         source_response.headers()["x-scope-source-identity"],
-        offer.run.source.source_identity()
+        run.source.source_identity()
     );
     assert_eq!(
         source_response.headers()["x-scope-source-sha256"],
-        offer.run.source.source_identity()
+        run.source.source_identity()
     );
     assert_eq!(
         to_bytes(source_response.into_body(), 4 * 1024 * 1024)

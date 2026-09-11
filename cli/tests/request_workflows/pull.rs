@@ -5,7 +5,7 @@ use std::os::unix::fs::PermissionsExt;
 fn pull_fast_forwards_a_checked_out_request_alias_and_preserves_divergence() {
     let dir = TempDir::new("request-pull-alias");
     create_repo_with_head(dir.path());
-    let head = git_stdout(dir.path(), &["rev-parse", "HEAD"]);
+    let head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
     let bare = TempDir::new("request-pull-bare");
     run_git(bare.path(), ["init", "--bare"]);
     run_git(
@@ -75,7 +75,7 @@ exec "$SCOPE_TEST_REAL_GIT" "$@"
             .unwrap(),
     );
     assert_eq!(
-        git_stdout(dir.path(), &["rev-parse", "--abbrev-ref", "@{upstream}"]),
+        git_stdout(dir.path(), ["rev-parse", "--abbrev-ref", "@{upstream}"]),
         "scope/fix-one"
     );
 
@@ -94,26 +94,26 @@ exec "$SCOPE_TEST_REAL_GIT" "$@"
     run_git(writer.path(), ["add", "."]);
     commit_all(writer.path(), "advance remote request");
     run_git(writer.path(), ["push", "origin", "fix-one"]);
-    let advanced = git_stdout(writer.path(), &["rev-parse", "HEAD"]);
+    let advanced = git_stdout(writer.path(), ["rev-parse", "HEAD"]);
     let pulled = success(command().args(["--json", "pull"]).output().unwrap());
     assert_eq!(pulled["result"]["branch_moved"], true);
-    assert_eq!(git_stdout(dir.path(), &["rev-parse", "HEAD"]), advanced);
+    assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), advanced);
     assert_eq!(
-        git_stdout(dir.path(), &["branch", "--show-current"]),
+        git_stdout(dir.path(), ["branch", "--show-current"]),
         "local-alias"
     );
 
     fs::write(dir.path().join("local.txt"), "local commit").unwrap();
     run_git(dir.path(), ["add", "."]);
     commit_all(dir.path(), "local divergence");
-    let local_head = git_stdout(dir.path(), &["rev-parse", "HEAD"]);
+    let local_head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
     fs::write(writer.path().join("remote.txt"), "second remote update").unwrap();
     run_git(writer.path(), ["add", "."]);
     commit_all(writer.path(), "remote divergence");
     run_git(writer.path(), ["push", "origin", "fix-one"]);
     let output = command().args(["--json", "pull"]).output().unwrap();
     assert!(!output.status.success(), "{output:?}");
-    assert_eq!(git_stdout(dir.path(), &["rev-parse", "HEAD"]), local_head);
+    assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), local_head);
     assert_eq!(
         fs::read_to_string(dir.path().join("local.txt")).unwrap(),
         "local commit"
@@ -130,5 +130,5 @@ exec "$SCOPE_TEST_REAL_GIT" "$@"
             .unwrap(),
     );
     assert_eq!(untracked["result"]["branch_moved"], false);
-    assert_eq!(git_stdout(dir.path(), &["rev-parse", "HEAD"]), local_head);
+    assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), local_head);
 }

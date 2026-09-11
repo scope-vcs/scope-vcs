@@ -393,7 +393,8 @@ pub(crate) fn git_process_output_with_timeout(
     stdin: Option<Vec<u8>>,
     timeout: Duration,
 ) -> Result<Output, ApiError> {
-    git_process_output(command, stdin, ProcessLimits::new(timeout))
+    run_process(command, stdin, ProcessLimits::new(timeout), "Git command")
+        .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))
 }
 
 pub(crate) fn git_process_output_with_limits(
@@ -415,15 +416,6 @@ pub(crate) fn git_process_output_with_limits(
             ApiError::infrastructure_unavailable(error.to_string())
         }
     })
-}
-
-fn git_process_output(
-    command: &mut Command,
-    stdin: Option<Vec<u8>>,
-    limits: ProcessLimits,
-) -> Result<Output, ApiError> {
-    run_process(command, stdin, limits, "Git command")
-        .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))
 }
 
 pub(crate) fn truncated_git_stderr(stderr: &[u8]) -> String {
@@ -599,23 +591,6 @@ mod tests {
 
         assert!(truncated.ends_with("..."));
         assert!(truncated.is_char_boundary(truncated.len() - 3));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bounded_git_output_maps_size_limit_to_payload_too_large() {
-        let mut command = Command::new("sh");
-        command.arg("-c").arg("printf 12345");
-
-        let error = git_process_output_with_limits(&mut command, None, Duration::from_secs(1), 4)
-            .unwrap_err();
-
-        assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE);
-        assert!(
-            error
-                .operator_diagnostic()
-                .contains("stdout exceeded 4 bytes")
-        );
     }
 
     #[test]

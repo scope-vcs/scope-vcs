@@ -1,24 +1,16 @@
 use super::*;
-use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
-use scope_domain::{
-    account::UserAccount,
-    policy::Visibility,
-    repository::{RepoLifecycleState, Repository},
-};
-
-#[test]
-fn object_keys_are_repository_scoped_and_content_addressed() {
-    assert_eq!(
-        cache_object_key("repo-1", &"a".repeat(64)),
-        format!("repos/repo-1/objects/sha256/{}", "a".repeat(64))
-    );
-}
+use crate::db::test_support::fixtures::{repository, store_with_repositories, user};
+use scope_domain::policy::Visibility;
 
 #[tokio::test]
 async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
-    let target = TestDatabaseTarget::required().unwrap();
-    let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-    let repository_id = seed_repository(&store);
+    let repo = repository(
+        &user("user_cache_owner", "cache-owner"),
+        "cache-repo",
+        Visibility::Private,
+    );
+    let repository_id = repo.record.id.clone();
+    let store = store_with_repositories([repo]);
     let caches = store.caches();
     let now = 1_700_000_000_u64;
     let identity = "1".repeat(64);
@@ -240,24 +232,4 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
             .unwrap()
             .is_empty()
     );
-}
-
-fn seed_repository(store: &MetadataStore) -> String {
-    let owner = UserAccount {
-        id: "user_cache_owner".to_string(),
-        handle: "cache-owner".to_string(),
-        email: "cache-owner@example.com".to_string(),
-        email_verified: true,
-    };
-    let mut repository = Repository::new(&owner, "cache-repo", Visibility::Private, "repoi_test")
-        .expect("test repository is valid");
-    repository.record.lifecycle_state = RepoLifecycleState::Ready;
-    let repository_id = repository.record.id.clone();
-    let mut catalog = CatalogFixture::default();
-    catalog.users.insert(owner.id.clone(), owner);
-    catalog
-        .repositories
-        .insert(repository_id.clone(), repository);
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
-    repository_id
 }

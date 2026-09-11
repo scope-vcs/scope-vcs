@@ -1,3 +1,4 @@
+use crate::git::import::require_git_success;
 use crate::{error::ApiError, git::GitContext, git::import::run_git_output};
 use scope_domain::{
     content::SourceBlob,
@@ -84,12 +85,7 @@ pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
         "Git content read completed"
     );
     let output = output?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading Git blob content: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
+    let output = require_git_success(output, "reading Git blob content")?;
     if output.stdout.len() as u64 != blob.size_bytes {
         return Err(ApiError::internal_message(format!(
             "Git blob {} size did not match persisted metadata",

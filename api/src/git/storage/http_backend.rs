@@ -1,3 +1,4 @@
+use crate::git::import::require_git_success;
 use crate::{
     error::ApiError, git::upload::git_command_output_with_timeout, runtime_budgets::RuntimeBudgets,
 };
@@ -24,26 +25,9 @@ pub(crate) fn git_http_backend(
     content_type: Option<String>,
     remote_user: &str,
 ) -> Result<CgiResponse, ApiError> {
-    let staging_parent = staging_repo
-        .parent()
-        .ok_or_else(|| ApiError::internal_message("staging repo is missing a parent"))?;
-    let repo_name = staging_repo
-        .file_name()
-        .and_then(|value| value.to_str())
-        .ok_or_else(|| ApiError::internal_message("staging repo has invalid path"))?;
-    let mut command = Command::new("git");
-    command
-        .arg("http-backend")
-        .env("GIT_PROJECT_ROOT", staging_parent)
-        .env("GIT_HTTP_EXPORT_ALL", "1")
-        .env("REQUEST_METHOD", method)
-        .env("PATH_INFO", format!("/{repo_name}/{path_suffix}"))
-        .env("QUERY_STRING", query_string)
-        .env("REMOTE_USER", remote_user)
-        .env("CONTENT_LENGTH", body.len().to_string())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let mut command =
+        http_backend_command(staging_repo, method, path_suffix, query_string, remote_user)?;
+    command.env("CONTENT_LENGTH", body.len().to_string());
     if let Some(content_type) = content_type {
         command.env("CONTENT_TYPE", content_type);
     }
@@ -72,26 +56,9 @@ pub(crate) async fn git_http_backend_streaming(
             "git receive-pack body is too large",
         ));
     }
-    let staging_parent = staging_repo
-        .parent()
-        .ok_or_else(|| ApiError::internal_message("staging repo is missing a parent"))?;
-    let repo_name = staging_repo
-        .file_name()
-        .and_then(|value| value.to_str())
-        .ok_or_else(|| ApiError::internal_message("staging repo has invalid path"))?;
-    let mut command = tokio::process::Command::new("git");
-    command
-        .arg("http-backend")
-        .env("GIT_PROJECT_ROOT", staging_parent)
-        .env("GIT_HTTP_EXPORT_ALL", "1")
-        .env("REQUEST_METHOD", "POST")
-        .env("PATH_INFO", format!("/{repo_name}/{path_suffix}"))
-        .env("QUERY_STRING", "")
-        .env("REMOTE_USER", remote_user)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
+    let command = http_backend_command(staging_repo, "POST", path_suffix, "", remote_user)?;
+    let mut command = tokio::process::Command::from(command);
+    command.kill_on_drop(true);
     scope_git_process::configure_process_group(command.as_std_mut());
     if let Some(content_length) = content_length {
         command.env("CONTENT_LENGTH", content_length.to_string());
@@ -102,22 +69,12 @@ pub(crate) async fn git_http_backend_streaming(
 
     let mut child = command.spawn().map_err(ApiError::internal)?;
     let mut process_group = GitProcessGroupGuard::new(child.id());
-    let Some(mut stdin) = child.stdin.take() else {
+    let (Some(mut stdin), Some(stdout), Some(stderr)) =
+        (child.stdin.take(), child.stdout.take(), child.stderr.take())
+    else {
         terminate_and_reap_git_child(&mut child, &mut process_group).await;
         return Err(ApiError::internal_message(
-            "opening git http-backend stdin failed",
-        ));
-    };
-    let Some(stdout) = child.stdout.take() else {
-        terminate_and_reap_git_child(&mut child, &mut process_group).await;
-        return Err(ApiError::internal_message(
-            "opening git http-backend stdout failed",
-        ));
-    };
-    let Some(stderr) = child.stderr.take() else {
-        terminate_and_reap_git_child(&mut child, &mut process_group).await;
-        return Err(ApiError::internal_message(
-            "opening git http-backend stderr failed",
+            "opening git http-backend pipes failed",
         ));
     };
     let mut stdout_task = tokio::spawn(read_git_pipe(stdout));
@@ -148,9 +105,22 @@ pub(crate) async fn git_http_backend_streaming(
         stdin.shutdown().await.map_err(ApiError::internal)?;
         Ok::<usize, ApiError>(written)
     };
-    let request_bytes = match tokio::time::timeout_at(process_deadline, writer).await {
-        Ok(Ok(written)) => written,
-        Ok(Err(error)) => {
+    let received = async {
+        let request_bytes = tokio::time::timeout_at(process_deadline, writer)
+            .await
+            .map_err(|_| ApiError::infrastructure_unavailable("git request upload timed out"))??;
+        let output = tokio::time::timeout_at(
+            process_deadline,
+            collect_git_http_backend_output(&mut child, &mut stdout_task, &mut stderr_task),
+        )
+        .await
+        .map_err(|_| ApiError::infrastructure_unavailable("git http-backend timed out"))??;
+        Ok::<_, ApiError>((request_bytes, output))
+    }
+    .await;
+    let (request_bytes, output) = match received {
+        Ok(received) => received,
+        Err(error) => {
             stop_git_http_backend(
                 &mut child,
                 &mut process_group,
@@ -159,63 +129,45 @@ pub(crate) async fn git_http_backend_streaming(
             )
             .await;
             return Err(error);
-        }
-        Err(_) => {
-            stop_git_http_backend(
-                &mut child,
-                &mut process_group,
-                &mut stdout_task,
-                &mut stderr_task,
-            )
-            .await;
-            return Err(ApiError::infrastructure_unavailable(
-                "git request upload timed out",
-            ));
-        }
-    };
-    let output = match tokio::time::timeout_at(
-        process_deadline,
-        collect_git_http_backend_output(&mut child, &mut stdout_task, &mut stderr_task),
-    )
-    .await
-    {
-        Ok(Ok(output)) => output,
-        Ok(Err(error)) => {
-            stop_git_http_backend(
-                &mut child,
-                &mut process_group,
-                &mut stdout_task,
-                &mut stderr_task,
-            )
-            .await;
-            return Err(error);
-        }
-        Err(_) => {
-            stop_git_http_backend(
-                &mut child,
-                &mut process_group,
-                &mut stdout_task,
-                &mut stderr_task,
-            )
-            .await;
-            return Err(ApiError::infrastructure_unavailable(
-                "git http-backend timed out",
-            ));
         }
     };
     process_group.disarm();
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "git http-backend failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
+    let output = require_git_success(output, "git http-backend failed")?;
     tracing::info!(
         request_bytes,
         receive_ms = receive_started.elapsed().as_millis(),
         "streamed Git receive-pack body"
     );
     CgiResponse::parse(output.stdout)
+}
+
+fn http_backend_command(
+    staging_repo: &FsPath,
+    method: &str,
+    path_suffix: &str,
+    query_string: &str,
+    remote_user: &str,
+) -> Result<Command, ApiError> {
+    let staging_parent = staging_repo
+        .parent()
+        .ok_or_else(|| ApiError::internal_message("staging repo is missing a parent"))?;
+    let repo_name = staging_repo
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| ApiError::internal_message("staging repo has invalid path"))?;
+    let mut command = Command::new("git");
+    command
+        .arg("http-backend")
+        .env("GIT_PROJECT_ROOT", staging_parent)
+        .env("GIT_HTTP_EXPORT_ALL", "1")
+        .env("REQUEST_METHOD", method)
+        .env("PATH_INFO", format!("/{repo_name}/{path_suffix}"))
+        .env("QUERY_STRING", query_string)
+        .env("REMOTE_USER", remote_user)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    Ok(command)
 }
 
 async fn read_git_pipe(mut pipe: impl tokio::io::AsyncRead + Unpin) -> std::io::Result<Vec<u8>> {

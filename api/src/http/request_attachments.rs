@@ -1,9 +1,8 @@
+use crate::persistence_ids::generate_prefixed_id;
+use crate::use_cases::request_access::visible_request;
 use crate::{
-    auth::scope::require_scope_user,
-    error::ApiError,
-    http::requests::{random_id, repo_metadata_and_access, visible_request},
-    persistence::unix_now,
-    state::AppState,
+    auth::scope::require_scope_user, error::ApiError, http::requests::repo_metadata_and_access,
+    persistence::unix_now, state::AppState,
 };
 use axum::{
     Json,
@@ -98,8 +97,8 @@ pub(crate) async fn prepare(
         .media()
         .prepare_request_attachment(
             PrepareRequestAttachmentCommand {
-                attachment_id: random_id("attachment")?,
-                upload_id: random_id("upload")?,
+                attachment_id: generate_prefixed_id("attachment_")?,
+                upload_id: generate_prefixed_id("upload_")?,
                 operation_id: input.operation_id,
                 request_id,
                 actor_user_id: user.id,

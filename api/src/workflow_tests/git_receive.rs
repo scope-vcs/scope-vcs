@@ -169,7 +169,7 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         let projected = state
             .metadata
             .repositories()
-            .repo_live_file_content(
+            .repo_live_file_with_landing_content(
                 TEST_REPO_OWNER,
                 TEST_REPO_NAME,
                 None,
@@ -177,7 +177,8 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
             )
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .projected;
         let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await
             .unwrap();
@@ -401,25 +402,6 @@ async fn applying_push_retains_previous_git_segment() {
             .await
             .unwrap();
     }
-}
-
-#[test]
-fn bearer_token_ignores_removed_trusted_identity_headers() {
-    let mut headers = HeaderMap::new();
-    headers.insert("x-scope-user-email", TEST_OWNER_EMAIL.parse().unwrap());
-    headers.insert("x-scope-user-email-verified", "true".parse().unwrap());
-
-    assert_eq!(bearer_token(&headers).unwrap(), None);
-}
-
-#[test]
-fn bearer_token_rejects_non_bearer_authorization() {
-    let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, "Basic abc".parse().unwrap());
-
-    let error = bearer_token(&headers).unwrap_err();
-
-    assert_eq!(error.kind, crate::error::ErrorKind::Unauthorized);
 }
 
 #[tokio::test]

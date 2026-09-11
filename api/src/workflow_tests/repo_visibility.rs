@@ -10,12 +10,7 @@ async fn mutate_repo(state: &AppState, configure: impl FnOnce(&mut Repository)) 
         .unwrap();
 }
 
-fn commit(
-    id: &str,
-    _parent: Option<&str>,
-    message: &str,
-    changes: Vec<FileChange>,
-) -> LogicalCommit {
+fn commit(id: &str, message: &str, changes: Vec<FileChange>) -> LogicalCommit {
     LogicalCommit {
         occurred_at_unix: None,
         id: id.into(),
@@ -55,7 +50,6 @@ fn set_private(repo: &mut Repository, public_path: Option<&str>) {
 fn add_mixed_commit(state: &AppState, repo: &mut Repository) {
     repo.graph.commits.push(commit(
         "rv1",
-        None,
         "initial",
         vec![
             change(
@@ -86,7 +80,6 @@ async fn public_files_use_the_projected_blob() {
         repo.graph.commits.extend([
             commit(
                 "rv1",
-                None,
                 "public version",
                 vec![change(
                     Visibility::Public,
@@ -97,7 +90,6 @@ async fn public_files_use_the_projected_blob() {
             ),
             commit(
                 "rv2",
-                Some("rv1"),
                 "private draft",
                 vec![change(
                     Visibility::Private,
@@ -143,7 +135,6 @@ async fn file_content_falls_back_to_the_domain_while_projection_rebuilds() {
     mutate_repo(&state, |repo| {
         repo.graph.commits.push(commit(
             "rv1",
-            None,
             "public version",
             vec![change(
                 Visibility::Public,
@@ -194,7 +185,6 @@ async fn file_content_hides_unpublished_repo_during_projection_rebuild() {
         repo.record.lifecycle_state = RepoLifecycleState::AwaitingFirstPush;
         repo.graph.commits.push(commit(
             "rv1",
-            None,
             "private version",
             vec![change(
                 Visibility::Private,
@@ -234,7 +224,6 @@ async fn published_repo_projection_preview_serves_public_file_subset() {
         add_mixed_commit(&state, repo);
         repo.graph.commits.push(commit(
             "rv2",
-            Some("rv1"),
             "private notes",
             vec![change(
                 Visibility::Private,
@@ -281,7 +270,6 @@ async fn canonical_rules_alone_do_not_publish_a_repository() {
         set_private(repo, Some("/.scope/RULES.md"));
         repo.graph.commits.push(commit(
             "rv1",
-            None,
             "initial",
             vec![
                 change(

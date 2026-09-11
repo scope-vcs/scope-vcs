@@ -189,8 +189,4 @@ impl Repository {
             user_id,
         )
     }
-
-    pub fn is_maintainer_user_id(&self, user_id: &str) -> bool {
-        self.access_for_user_id(user_id).is_maintainer()
-    }
 }

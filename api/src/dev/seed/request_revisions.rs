@@ -1,6 +1,5 @@
 use super::{
-    SeedGitCommit, apply_seed_commits, canonical_request_ref, seed_git, seed_git_head,
-    store_seed_bundle,
+    SeedGitCommit, canonical_request_ref, seed_git, seed_request_branch, store_seed_bundle,
 };
 use crate::error::ApiError;
 use scope_domain::content::SourceBlob;
@@ -128,18 +127,5 @@ fn seed_revision(
         &["reset", "--hard", previous_head_oid],
         "restoring seeded request revision",
     )?;
-    apply_seed_commits(repo_path, &[commit])?;
-    let head_oid = seed_git_head(repo_path)?;
-    let request_ref = canonical_request_ref(REQUEST_NAME);
-    seed_git(
-        Some(repo_path),
-        &["update-ref", &request_ref, &head_oid],
-        "advancing seeded request ref",
-    )?;
-    seed_git(
-        Some(repo_path),
-        &["reset", "--hard", main_oid],
-        "restoring seeded main branch",
-    )?;
-    Ok(head_oid)
+    seed_request_branch(repo_path, REQUEST_NAME, commit, main_oid)
 }

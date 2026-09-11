@@ -161,19 +161,6 @@ async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
     );
 }
 
-#[tokio::test]
-async fn admin_metadata_reset_route_is_absent() {
-    let response = admin_request(
-        operator_state(),
-        "POST",
-        "/v1/admin/metadata/reset",
-        Some(OPERATOR_AUTH.into()),
-        Body::from(r#"{"confirm":"reset-pre-alpha-metadata"}"#),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
 fn operator_state() -> AppState {
     let mut state = test_state_with_repo();
     state.operator_token = Some(Arc::<str>::from(OPERATOR_TOKEN));

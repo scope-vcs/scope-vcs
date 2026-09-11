@@ -1,8 +1,9 @@
 use super::run_source::operation::{RunSourceOperation, spawn_blocking};
+use crate::git::import::require_git_success;
 use crate::{
     config::DEFAULT_GIT_BRANCH,
     error::ApiError,
-    git::{GitContext, import::run_git, upload::truncated_git_stderr},
+    git::{GitContext, import::run_git},
 };
 use scope_domain::repository::git::{GitHead, GitPackSpan, validate_git_pack_layout};
 use scope_git_process::{ProcessLimits, run_with_stdin_reader};
@@ -246,14 +247,7 @@ fn index_restored_git_pack(
         success,
         "Git restore operation completed"
     );
-    let output = output?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "restoring Git pack: {}",
-            truncated_git_stderr(&output.stderr).trim()
-        )));
-    }
-    Ok(())
+    require_git_success(output?, "restoring Git pack").map(|_| ())
 }
 
 pub(crate) async fn run_timed_git_restore_phase_async(

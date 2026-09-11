@@ -65,7 +65,10 @@ test('public code with unchanged version refreshes retained tree and file on rep
   await repoFileResource.load(fileKey, '', async () => ({ ...oldFile, oid: 'new', content: { kind: 'text', text: 'new' } }))
   assert.equal(loads, 2)
   assert.equal(repoFileResource.peek(fileKey)?.oid, 'new')
-  assert.equal(repoContentResource.peek(repoContentCacheKey({ ...identity, scope: 'viewer-b' })), null)
+  for (const alternate of [{ ...identity, scope: 'viewer-b' }, { ...identity, audience: 'private' as const }, { ...identity, changeVersion: 1 }]) {
+    assert.equal(repoContentResource.peek(repoContentCacheKey(alternate)), null)
+    assert.equal(repoFileResource.peek(repoFileCacheKey({ ...alternate, path: 'README.md' })), null)
+  }
   invalidateRepoResources('viewer-a')
   assert.equal(repoFileResource.getSnapshot(fileKey).stale, true)
 })

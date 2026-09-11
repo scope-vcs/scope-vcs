@@ -6,8 +6,6 @@ use super::{
     repository_from_model,
 };
 use crate::error::PostgresError;
-#[cfg(any(test, feature = "test-support"))]
-use sea_orm::PaginatorTrait;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
     QuerySelect, TransactionTrait, TryInsertResult,
@@ -142,27 +140,6 @@ impl JobStore {
             .await
             .map_err(PostgresError::internal)?;
         Ok(outbox_job_counts(rows))
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub async fn projection_read_model_count_for_tests(
-        &self,
-        repo_id: &str,
-    ) -> Result<usize, PostgresError> {
-        let repo_id = repo_id.to_string();
-        let db = Arc::clone(&self.db);
-        entities::projection_read_model::Entity::find()
-            .filter(entities::projection_read_model::Column::RepoId.eq(repo_id))
-            .count(db.as_ref())
-            .await
-            .map_err(PostgresError::internal)
-            .and_then(|count| {
-                usize::try_from(count).map_err(|_| {
-                    PostgresError::internal_message(
-                        "projection read-model count exceeds usize range",
-                    )
-                })
-            })
     }
 }
 

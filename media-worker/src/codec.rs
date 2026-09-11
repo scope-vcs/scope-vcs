@@ -235,6 +235,30 @@ impl CodecPipeline {
         }
     }
 
+    /// Keep decoder isolation and input thread limits identical for each transcode.
+    fn transcode_input(&self, source: &Path, strict: bool) -> Vec<OsString> {
+        let mut args = os_args(["-hide_banner", "-loglevel", "error"]);
+        if strict {
+            args.push("-xerror".into());
+        }
+        args.extend(os_args([
+            "-nostdin",
+            "-y",
+            "-protocol_whitelist",
+            "file,pipe",
+        ]));
+        args.extend([
+            "-filter_threads".into(),
+            self.limits.process_threads.to_string().into(),
+            // Input and output thread limits are separate FFmpeg options.
+            "-threads".into(),
+            self.limits.process_threads.to_string().into(),
+            "-i".into(),
+            path_arg(source),
+        ]);
+        args
+    }
+
     async fn process_image(
         &self,
         source: &Path,
@@ -303,22 +327,8 @@ impl CodecPipeline {
         let filter = format!(
             "scale=w='min({IMAGE_MAX_EDGE},iw)':h='min({IMAGE_MAX_EDGE},ih)':force_original_aspect_ratio=decrease,setsar=1"
         );
-        let mut args = vec![
-            "-hide_banner".into(),
-            "-loglevel".into(),
-            "error".into(),
-            "-xerror".into(),
-            "-nostdin".into(),
-            "-y".into(),
-            "-protocol_whitelist".into(),
-            "file,pipe".into(),
-            "-filter_threads".into(),
-            self.limits.process_threads.to_string().into(),
-            // Input and output thread limits are separate FFmpeg options.
-            "-threads".into(),
-            self.limits.process_threads.to_string().into(),
-            "-i".into(),
-            path_arg(probe_path),
+        let mut args = self.transcode_input(probe_path, true);
+        args.extend([
             "-map".into(),
             "0:v:0".into(),
             "-vf".into(),
@@ -332,7 +342,7 @@ impl CodecPipeline {
             "-1".into(),
             "-threads".into(),
             self.limits.process_threads.to_string().into(),
-        ];
+        ]);
         if animated_gif {
             args.extend(os_args([
                 "-c:v",
@@ -432,21 +442,8 @@ impl CodecPipeline {
         } else {
             format!("{scale},format=yuv420p,setsar=1")
         };
-        let args = vec![
-            "-hide_banner".into(),
-            "-loglevel".into(),
-            "error".into(),
-            "-nostdin".into(),
-            "-y".into(),
-            "-protocol_whitelist".into(),
-            "file,pipe".into(),
-            "-filter_threads".into(),
-            self.limits.process_threads.to_string().into(),
-            // Input and output thread limits are separate FFmpeg options.
-            "-threads".into(),
-            self.limits.process_threads.to_string().into(),
-            "-i".into(),
-            path_arg(source),
+        let mut args = self.transcode_input(source, false);
+        args.extend([
             "-map".into(),
             "0:v:0".into(),
             "-map".into(),
@@ -488,7 +485,7 @@ impl CodecPipeline {
             "-threads".into(),
             self.limits.process_threads.to_string().into(),
             path_arg(&playback),
-        ];
+        ]);
         self.run_codec(&self.programs.ffmpeg, &args, work_dir)
             .await
             .map_err(|error| {
@@ -533,21 +530,8 @@ impl CodecPipeline {
             .map_err(|error| error.after_validation(validated_source.clone()))?;
 
         let poster = work_dir.join("video-poster.webp");
-        let poster_args = vec![
-            "-hide_banner".into(),
-            "-loglevel".into(),
-            "error".into(),
-            "-nostdin".into(),
-            "-y".into(),
-            "-protocol_whitelist".into(),
-            "file,pipe".into(),
-            "-filter_threads".into(),
-            self.limits.process_threads.to_string().into(),
-            // Input and output thread limits are separate FFmpeg options.
-            "-threads".into(),
-            self.limits.process_threads.to_string().into(),
-            "-i".into(),
-            path_arg(&playback_derivative.path),
+        let mut poster_args = self.transcode_input(&playback_derivative.path, false);
+        poster_args.extend([
             "-map".into(),
             "0:v:0".into(),
             "-frames:v".into(),
@@ -566,7 +550,7 @@ impl CodecPipeline {
             "-threads".into(),
             self.limits.process_threads.to_string().into(),
             path_arg(&poster),
-        ];
+        ]);
         self.run_codec(&self.programs.ffmpeg, &poster_args, work_dir)
             .await
             .map_err(|error| {

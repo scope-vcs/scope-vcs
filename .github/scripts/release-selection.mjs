@@ -53,7 +53,6 @@ export async function validatePreparedDeployment(
     const run = await cachedRequest(`/actions/runs/${sourceRunId}`);
     if (run.status !== 'completed') throw new Error('Staging resume requires a completed source run');
   }
-  const selection = { backend, ...Object.fromEntries(components.map((component) => [component, selected.includes(component)])) };
 
   let validated = false;
   let staged = false;
@@ -75,7 +74,7 @@ export async function validatePreparedDeployment(
         }
       }
     }
-    if (validated && staged) return { ...proof, selection };
+    if (validated && staged) return proof;
     if (result.jobs.length < 100) break;
   }
   throw new Error("Source run did not pass the production validation gate and staging deployment");
@@ -86,7 +85,7 @@ function selection(prepared, recoveryId = "", resumeStaging = false) {
   const flags = Object.fromEntries(components.map(component => [component, Boolean(prepared.components[component])]));
   flags.backend = backendSelected(flags);
   return { sha: prepared.sourceSha, recover_cutover_id: recoveryId,
-    recover_components: flags, reuse_components: flags, prepared_run_id: prepared.preparationRunId,
+    recover_components: flags, prepared_run_id: prepared.preparationRunId,
     resume_staging: resumeStaging, prepared };
 }
 
@@ -110,7 +109,7 @@ export async function selectRelease({ sourceSha, sourceRunId = "", recoveryId = 
     return selection(prepared, '', resumeStaging);
   }
   if (!/^[0-9a-f]{40}$/.test(sourceSha ?? "")) throw new Error("Source SHA must be a full commit SHA");
-  return { sha: sourceSha, recover_cutover_id: "", recover_components: {}, reuse_components: {}, prepared_run_id: "", resume_staging: false };
+  return { sha: sourceSha, recover_cutover_id: "", recover_components: {}, prepared_run_id: "", resume_staging: false };
 }
 
 async function downloadPrepared(runId) {

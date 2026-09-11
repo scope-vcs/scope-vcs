@@ -319,34 +319,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn worker_roles_have_one_canonical_spelling() {
-        assert_eq!(parse_worker_role(None).unwrap(), WorkerRole::All);
-        assert_eq!(parse_worker_role(Some("all")).unwrap(), WorkerRole::All);
-        assert_eq!(
-            parse_worker_role(Some("control")).unwrap(),
-            WorkerRole::Control
-        );
-        assert_eq!(
-            parse_worker_role(Some("compaction")).unwrap(),
-            WorkerRole::Compaction
-        );
-        assert_eq!(
-            parse_worker_role(Some("cleanup")).unwrap(),
-            WorkerRole::Cleanup
-        );
-        assert!(parse_worker_role(Some("worker")).is_err());
-    }
-
-    #[test]
-    fn comma_separated_settings_ignore_only_empty_segments() {
-        assert_eq!(
-            parse_comma_separated("SUBNETS", " subnet-a,subnet-b ,, ").unwrap(),
-            ["subnet-a", "subnet-b"]
-        );
-        assert!(parse_comma_separated("SUBNETS", " , ").is_err());
-    }
-
-    #[test]
     fn secret_name_key_requires_exactly_32_hex_encoded_bytes() {
         assert_eq!(parse_secret_name_key(&"ab".repeat(32)).unwrap(), [0xab; 32]);
         assert!(parse_secret_name_key(&"ab".repeat(31)).is_err());

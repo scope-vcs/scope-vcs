@@ -1,4 +1,4 @@
-use super::{Connection, api, is_terminal_state, output, run_client, short_oid, state_label};
+use super::{Connection, api, is_terminal_state, output, run_client, short_oid};
 use crate::api::ApiSession;
 use crate::api::RunStreamEvent;
 use scope_api_contract::{RunResponse, RunState};
@@ -82,7 +82,7 @@ pub(super) fn completion(
                 print_job_lines(line_buffers.finish());
                 println!(
                     "Run {} · {}",
-                    state_label(run.state),
+                    output::run_state_label(run.state),
                     short_oid(&run.git_oid)
                 );
                 let summary = run_client(Duration::from_secs(3)).and_then(|client| {
@@ -108,7 +108,7 @@ pub(super) fn completion(
                 Err(
                     crate::error::CliError::new(scope_api_contract::ErrorResponse::new(
                         scope_api_contract::ErrorCode::Conflict,
-                        format!("run {} {}", run.id, state_label(run.state)),
+                        format!("run {} {}", run.id, output::run_state_label(run.state)),
                     ))
                     .into(),
                 )
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn run_labels_and_oids_are_stable() {
-        assert_eq!(state_label(RunState::Canceled), "canceled");
+        assert_eq!(output::run_state_label(RunState::Canceled), "canceled");
         assert_eq!(short_oid("1234567890"), "1234567");
         assert_eq!(short_oid("short"), "short");
     }

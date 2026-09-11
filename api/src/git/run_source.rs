@@ -1,3 +1,4 @@
+use crate::git::import::require_git_success;
 pub(super) mod operation;
 
 use crate::{
@@ -180,12 +181,7 @@ async fn materialize_owned_git_head_bundle(
     .map_err(|error| {
         ApiError::internal_message(format!("run source Git bundle task failed: {error}"))
     })??;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "materializing run source bundle: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
+    let output = require_git_success(output, "materializing run source bundle")?;
     Ok(output.stdout)
 }
 
@@ -258,12 +254,7 @@ fn git_blob(bare: &Path, git_oid: &str, path: &str) -> Result<Option<Vec<u8>>, A
         GIT_INSPECTION_TIMEOUT,
         path.len() + 128,
     )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading Git workflow metadata: {}",
-            truncated_git_stderr(&output.stderr).trim()
-        )));
-    }
+    let output = require_git_success(output, "reading Git workflow metadata")?;
     if output.stdout.is_empty() {
         return Ok(None);
     }

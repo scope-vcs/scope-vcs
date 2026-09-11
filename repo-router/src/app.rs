@@ -74,17 +74,12 @@ pub(crate) fn test_router_with_read_replicas(
     backends: Vec<std::net::SocketAddr>,
     read_replicas: usize,
 ) -> Router {
-    router_with_state(RouterState {
-        discovery: BackendDiscovery::fixed(backends),
-        http: reqwest::Client::new(),
-        selector: BackendSelector::new(read_replicas),
-        replay: crate::replay::ReplayBuffer::new(
-            4,
-            64 * 1024 * 1024,
-            std::time::Duration::from_secs(15),
-        )
-        .unwrap(),
-    })
+    test_router_with_state(
+        BackendDiscovery::fixed(backends),
+        reqwest::Client::new(),
+        read_replicas,
+        64 * 1024 * 1024,
+    )
 }
 
 #[cfg(test)]

@@ -23,19 +23,19 @@ use super::{
     request_rows::save_request_row,
 };
 use sea_orm::TransactionTrait;
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use {
     crate::error::PostgresError,
     scope_domain::account::UserAccount,
     scope_domain::requests::{
         CreateRequestDiscussionInput, CreateRequestDiscussionMutation,
         CreateRequestDiscussionReplyInput, CreateRequestDiscussionReplyMutation,
-        MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput,
-        ReopenRequestDiscussionInput, RequestDiscussion, RequestDiscussionReadState,
-        RequestRevision, ResolveRequestDiscussionInput, create_request_discussion,
-        create_request_discussion_reply, ensure_request_discussion_transition_allowed,
-        mark_request_discussion_read, reopen_and_reply_to_request_discussion,
-        reopen_request_discussion, resolve_request_discussion,
+        MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput, RequestDiscussion,
+        RequestDiscussionReadState, RequestDiscussionTransitionInput, RequestRevision,
+        create_request_discussion, create_request_discussion_reply,
+        ensure_request_discussion_transition_allowed, mark_request_discussion_read,
+        reopen_and_reply_to_request_discussion, reopen_request_discussion,
+        resolve_request_discussion,
     },
 };
 
@@ -339,8 +339,7 @@ impl RequestStore {
         &self,
         command: CreateRequestDiscussionCommand,
     ) -> Result<CreateRequestDiscussionMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -419,8 +418,7 @@ impl RequestStore {
         &self,
         command: CreateRequestDiscussionReplyCommand,
     ) -> Result<CreateRequestDiscussionReplyMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -520,8 +518,7 @@ impl RequestStore {
             now_unix,
             transition,
         } = command;
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) = lock_request_repository(&tx, &request_id, &actor_user_id).await?;
         ensure_user_exists(&tx, &actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &actor_user_id).await?;
@@ -537,7 +534,7 @@ impl RequestStore {
             DiscussionTransition::Resolve => resolve_request_discussion(
                 request,
                 discussion,
-                ResolveRequestDiscussionInput {
+                RequestDiscussionTransitionInput {
                     request_id,
                     discussion_id,
                     actor_user_id,
@@ -550,7 +547,7 @@ impl RequestStore {
             DiscussionTransition::Reopen => reopen_request_discussion(
                 request,
                 discussion,
-                ReopenRequestDiscussionInput {
+                RequestDiscussionTransitionInput {
                     request_id,
                     discussion_id,
                     actor_user_id,
@@ -580,8 +577,7 @@ impl RequestStore {
         &self,
         command: ReopenAndReplyToRequestDiscussionCommand,
     ) -> Result<CreateRequestDiscussionReplyMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -674,8 +670,7 @@ impl RequestStore {
         &self,
         input: MarkRequestDiscussionReadInput,
     ) -> Result<RequestDiscussionReadState, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         ensure_user_exists(&tx, &input.user_id).await?;
         let discussion = discussion_by_id(&tx, &input.discussion_id)
             .await?

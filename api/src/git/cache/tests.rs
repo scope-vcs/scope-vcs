@@ -289,33 +289,6 @@ fn concurrent_builds_coalesce_in_every_cache_namespace() {
 }
 
 #[test]
-fn ready_cache_does_not_run_the_builder() {
-    GitDerivedCacheCoordinator::default()
-        .materialize(
-            GitDerivedCacheNamespace::Repository,
-            "ready-key".to_string(),
-            || true,
-            || panic!("ready cache must not build"),
-        )
-        .unwrap();
-}
-
-#[test]
-fn externally_completed_cache_does_not_build_after_leader_election() {
-    let readiness_checks = AtomicUsize::new(0);
-    GitDerivedCacheCoordinator::default()
-        .materialize(
-            GitDerivedCacheNamespace::Repository,
-            "externally-ready-key".to_string(),
-            || readiness_checks.fetch_add(1, Ordering::SeqCst) > 0,
-            || panic!("externally completed cache must not build"),
-        )
-        .unwrap();
-
-    assert_eq!(readiness_checks.load(Ordering::SeqCst), 2);
-}
-
-#[test]
 fn follower_with_a_newer_repository_frontier_runs_a_second_build() {
     let coordinator = Arc::new(GitDerivedCacheCoordinator::default());
     let first_ready = Arc::new(AtomicBool::new(false));

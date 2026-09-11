@@ -64,6 +64,6 @@ export function useCachedResource<T extends object>({
   }
 }
 
-export function resourceErrorMessage(error: unknown, fallback: string) {
+function resourceErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim() ? error.message : fallback
 }

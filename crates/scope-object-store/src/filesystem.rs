@@ -243,17 +243,19 @@ mod tests {
     }
 
     #[test]
-    fn local_encrypted_reads_include_only_the_envelope_allowance() {
+    fn encrypted_reads_include_only_the_envelope_allowance() {
         let fixture = Fixture::new();
-        let raw = Arc::new(FileObjectStore::new(FileObjectStoreSettings::new(
-            fixture.0.root.clone(),
-        )));
-        let encrypted = EncryptedObjectStore::new(raw, [7; 32]);
-        encrypted.put("encrypted", b"four".to_vec()).unwrap();
-        assert_eq!(encrypted.get_bounded("encrypted", 4).unwrap(), b"four");
-        assert_eq!(
-            encrypted.get_bounded("encrypted", 3).unwrap_err().kind,
-            ObjectStoreErrorKind::PayloadTooLarge
-        );
+        let file: Arc<dyn ObjectStore> = Arc::new(FileObjectStore::new(
+            FileObjectStoreSettings::new(fixture.0.root.clone()),
+        ));
+        for raw in [file, Arc::new(MemoryObjectStore::new())] {
+            let encrypted = EncryptedObjectStore::new(raw, [7; 32]);
+            encrypted.put("encrypted", b"four".to_vec()).unwrap();
+            assert_eq!(encrypted.get_bounded("encrypted", 4).unwrap(), b"four");
+            assert_eq!(
+                encrypted.get_bounded("encrypted", 3).unwrap_err().kind,
+                ObjectStoreErrorKind::PayloadTooLarge
+            );
+        }
     }
 }

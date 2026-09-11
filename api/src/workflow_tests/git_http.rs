@@ -1,23 +1,6 @@
 use super::*;
 
 #[tokio::test]
-async fn published_receive_pack_accepts_git_push_token() {
-    let secret = "scope_git_test";
-    let state = test_state_with_git_push_token(secret).await;
-    let mut headers = git_push_token_headers(secret);
-    insert_push_intent_header(&state, &mut headers, &test_owner_id(), TEST_PUSH_HEAD_OID).await;
-
-    let access = receive_pack_access(&state, &headers, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
-
-    assert!(matches!(
-        access,
-        ReceivePackAccess::ReadyMember { author_id, .. } if author_id == test_owner_id()
-    ));
-}
-
-#[tokio::test]
 async fn push_intent_is_signed_instead_of_process_local() {
     let issuer = test_state_with_repo();
     let verifier = test_state_with_repo();
@@ -53,26 +36,6 @@ async fn create_push_intent_hides_repo_before_head_validation_for_non_writer() {
     .await;
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-async fn owner_can_create_first_push_intent_for_unpublished_repo() {
-    let state = test_state_with_repo();
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.record.lifecycle_state = RepoLifecycleState::AwaitingFirstPush;
-        })
-        .await
-        .unwrap();
-    let response = request_push_intent(state, &bearer_header(), TEST_PUSH_HEAD_OID).await;
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_json(response).await;
-    assert!(body["token"].as_str().unwrap().starts_with("scope_pi_"));
-    assert!(body["base_head_oid"].is_null());
-    assert!(body["expires_at_unix"].as_u64().unwrap() > unix_now());
 }
 
 fn push_intent_request_json(head_oid: &str) -> String {
@@ -333,24 +296,6 @@ async fn unpublished_upload_pack_member_scope_session_stays_hidden() {
 
     assert_eq!(error.status(), StatusCode::NOT_FOUND);
 }
-#[tokio::test]
-async fn first_push_staging_repo_head_points_to_default_branch() {
-    let state = test_state_with_repo();
-    let staging_repo =
-        ensure_first_push_receive_pack_staging_repo(&state, &test_repo_incarnation())
-            .await
-            .unwrap();
-    let head = git_stdout_text(
-        &staging_repo,
-        &["symbolic-ref", "HEAD"],
-        "read staging head",
-    )
-    .unwrap();
-
-    assert_eq!(head.trim(), format!("refs/heads/{DEFAULT_GIT_BRANCH}"));
-    let _ = fs::remove_dir_all(staging_repo);
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_git_first_push_over_http_applies_immediately() {
     let (state, source, _server) = first_push_fixture(

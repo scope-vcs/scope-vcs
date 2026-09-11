@@ -10,10 +10,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
     TransactionTrait, sea_query::Expr,
 };
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 impl AuthStore {
     pub async fn users_by_ids(
@@ -28,8 +25,7 @@ impl AuthStore {
         command: StartDeviceLoginCommand,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-auth", "start").await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         enforce_device_login_start_limits(&tx, now_unix).await?;
@@ -58,8 +54,7 @@ impl AuthStore {
     ) -> Result<(), PostgresError> {
         let user_code_hash = user_code_hash.to_string();
         let user_id = user.id.clone();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-device-user-code", &user_code_hash).await?;
 
         let Some(login) = entities::cli_device_login::Entity::find()
@@ -109,8 +104,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<DeviceLoginPoll, PostgresError> {
         let device_code_hash = device_code_hash.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-device-code", &device_code_hash).await?;
 
         let Some(login) = entities::cli_device_login::Entity::find_by_id(device_code_hash)
@@ -161,8 +155,7 @@ impl AuthStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<UserAccount, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let Some(session) = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::TokenHash.eq(token_hash))
             .one(&tx)
@@ -196,8 +189,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let token_hash = token_hash.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-session-token", &token_hash).await?;
         let Some(session) = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::TokenHash.eq(token_hash))

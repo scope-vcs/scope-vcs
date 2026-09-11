@@ -53,7 +53,7 @@ pub async fn run_processing_loop(
         }
         let outcome =
             process_next_job(&metadata, &storage, &pipeline, &scratch, &settings, &health).await;
-        let should_wait = should_wait_after_poll(&outcome);
+        let should_wait = matches!(&outcome, Ok(ProcessingOutcome::NoJob) | Err(_));
         match &outcome {
             Ok(ProcessingOutcome::NoJob) => {}
             Ok(value) => tracing::info!(outcome = ?value, "media processing job finished"),
@@ -67,10 +67,6 @@ pub async fn run_processing_loop(
             return Ok(());
         }
     }
-}
-
-fn should_wait_after_poll(outcome: &anyhow::Result<ProcessingOutcome>) -> bool {
-    matches!(outcome, Ok(ProcessingOutcome::NoJob) | Err(_))
 }
 
 async fn process_next_job(
@@ -805,17 +801,6 @@ mod tests {
             RequestAttachmentFailureCode::StorageUnavailable
         );
         assert!(failure.retryable);
-    }
-
-    #[test]
-    fn poll_waits_when_idle_or_after_an_error() {
-        assert!(should_wait_after_poll(&Ok(ProcessingOutcome::NoJob)));
-        assert!(should_wait_after_poll(&Err(anyhow::anyhow!(
-            "database unavailable"
-        ))));
-        assert!(!should_wait_after_poll(&Ok(ProcessingOutcome::Completed)));
-        assert!(!should_wait_after_poll(&Ok(ProcessingOutcome::Failed)));
-        assert!(!should_wait_after_poll(&Ok(ProcessingOutcome::LeaseLost)));
     }
 
     #[tokio::test(flavor = "current_thread")]

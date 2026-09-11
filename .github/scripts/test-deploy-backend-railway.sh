@@ -320,6 +320,15 @@ if (JSON.stringify(actual) !== JSON.stringify(expected)) {
 '
 }
 
+assert_no_trace() {
+  local name="$1" message="$2"
+  shift 2
+  if grep "$@" "$test_dir/$name-trace"; then
+    echo "$name: $message" >&2
+    exit 1
+  fi
+}
+
 assert_in_order() {
   local trace="$1"
   shift
@@ -342,58 +351,44 @@ jq '.releasePolicy.maintenanceEnabled = false' "$test_dir/services.json" > "$tes
 mv "$test_dir/disabled.json" "$test_dir/services.json"
 run_cutover disabled-maintenance
 [[ "$(cat "$test_dir/disabled-maintenance-result")" != "0" ]]
-if grep -E 'graphql stop|maintenance apply' "$test_dir/disabled-maintenance-trace"; then
-  echo "disabled maintenance policy must prevent closure" >&2
-  exit 1
-fi
+assert_no_trace "disabled-maintenance" "disabled maintenance policy must prevent closure" \
+  -E 'graphql stop|maintenance apply'
 jq '.releasePolicy.maintenanceEnabled = true' "$test_dir/services.json" > "$test_dir/enabled.json"
 mv "$test_dir/enabled.json" "$test_dir/services.json"
 
 FAKE_MISSING_PREPARED_COMPONENT=cache run_cutover missing-prepared-cache
 [[ "$(cat "$test_dir/missing-prepared-cache-result")" != "0" ]]
-if grep -E 'graphql stop|maintenance apply' "$test_dir/missing-prepared-cache-trace"; then
-  echo "missing prepared artifacts must prevent closure" >&2
-  exit 1
-fi
+assert_no_trace "missing-prepared-cache" "missing prepared artifacts must prevent closure" \
+  -E 'graphql stop|maintenance apply'
 FAKE_SCHEMA_DRIFT=1 run_cutover schema-drift
 [[ "$(cat "$test_dir/schema-drift-result")" != "0" ]]
-if grep -E 'graphql stop|maintenance apply' "$test_dir/schema-drift-trace"; then
-  echo "baseline schema drift must prevent writer closure" >&2
-  exit 1
-fi
+assert_no_trace "schema-drift" "baseline schema drift must prevent writer closure" \
+  -E 'graphql stop|maintenance apply'
 FAKE_CHANGE_PLAN=1 run_cutover changed-plan
 [[ "$(cat "$test_dir/changed-plan-result")" != "0" ]]
-if grep -E 'graphql stop|maintenance apply' "$test_dir/changed-plan-trace"; then
-  echo "changed preclosure plan must prevent closure" >&2
-  exit 1
-fi
+assert_no_trace "changed-plan" "changed preclosure plan must prevent closure" \
+  -E 'graphql stop|maintenance apply'
 
 for service in scope-media scope-media-worker; do
   run_cutover "history-failure-$service" history_failure_service="$service"
   [[ "$(cat "$test_dir/history-failure-$service-result")" != 0 ]]
-  if grep -E 'graphql (stop|restart)|gate (enter|reclose)|up |maintenance apply' "$test_dir/history-failure-$service-trace"; then
-    echo 'Failed deployment inventory must not authorize closure or activation.' >&2
-    exit 1
-  fi
+  assert_no_trace "history-failure-$service" 'Failed deployment inventory must not authorize closure or activation.' \
+    -E 'graphql (stop|restart)|gate (enter|reclose)|up |maintenance apply'
 done
 run_cutover history-failure-bootstrap initial_exact=1 initial_closed=1 no_history=1 history_failure_service=scope-api
 [[ "$(cat "$test_dir/history-failure-bootstrap-result")" != 0 ]]
 run_cutover history-failure-stopped-media initial_exact=1 stopped_media_service=scope-media history_failure_service=scope-media
 [[ "$(cat "$test_dir/history-failure-stopped-media-result")" != 0 ]]
 for name in history-failure-bootstrap history-failure-stopped-media; do
-  if grep -E 'graphql (stop|restart)|gate (enter|reclose)|up |maintenance apply' "$test_dir/$name-trace"; then
-    echo 'Failed deployment inventory must not authorize bootstrap.' >&2
-    exit 1
-  fi
+  assert_no_trace "$name" 'Failed deployment inventory must not authorize bootstrap.' \
+    -E 'graphql (stop|restart)|gate (enter|reclose)|up |maintenance apply'
 done
 
 run_cutover success
 [[ "$(cat "$test_dir/success-result")" == "0" ]]
 assert_evidence_components success cache,run-worker,media-api,media-worker,api,git-router,web
-if grep -F -- '--path-as-root' "$test_dir/success-trace"; then
-  echo "maintenance activation must not upload a build context" >&2
-  exit 1
-fi
+assert_no_trace "success" "maintenance activation must not upload a build context" \
+  -F -- '--path-as-root'
 assert_in_order "$test_dir/success-trace" \
   "$test_dir/maintenance plan" \
   "graphql stop scope-api old-scope-api" \
@@ -448,46 +443,38 @@ assert_in_order "$test_dir/invalid-workflow-catalog-trace" \
   "graphql stop scope-cache-service old-scope-cache-service" \
   "$test_dir/maintenance fence" \
   "$test_dir/maintenance validate-workflow-catalogs"
-if grep -F "graphql restart " "$test_dir/invalid-workflow-catalog-trace"; then
-  echo "gate replacement requires pinned forward recovery even before schema apply" >&2
-  exit 1
-fi
-if grep -F "$test_dir/maintenance apply" "$test_dir/invalid-workflow-catalog-trace"; then
-  echo "invalid workflow catalogs must fail before migration" >&2
-  exit 1
-fi
+assert_no_trace "invalid-workflow-catalog" "gate replacement requires pinned forward recovery even before schema apply" \
+  -F "graphql restart "
+assert_no_trace "invalid-workflow-catalog" "invalid workflow catalogs must fail before migration" \
+  -F "$test_dir/maintenance apply"
 
 run_cutover degraded degraded_service=scope-worker
 [[ "$(cat "$test_dir/degraded-result")" != "0" ]]
-if grep -E "graphql (stop|restart) " "$test_dir/degraded-trace" \
-  || grep -F "$test_dir/maintenance apply" "$test_dir/degraded-trace"; then
-  echo "maintenance must not start from a degraded service" >&2
-  exit 1
-fi
+assert_no_trace "degraded" "maintenance must not start from a degraded service" \
+  -E "graphql (stop|restart) "
+assert_no_trace "degraded" "maintenance must not start from a degraded service" \
+  -F "$test_dir/maintenance apply"
 
 run_cutover degraded-cache degraded_service=scope-cache-service
 [[ "$(cat "$test_dir/degraded-cache-result")" != "0" ]]
-if grep -E "graphql (stop|restart) " "$test_dir/degraded-cache-trace" \
-  || grep -F "$test_dir/maintenance apply" "$test_dir/degraded-cache-trace"; then
-  echo "maintenance must not start with a degraded cache writer" >&2
-  exit 1
-fi
+assert_no_trace "degraded-cache" "maintenance must not start with a degraded cache writer" \
+  -E "graphql (stop|restart) "
+assert_no_trace "degraded-cache" "maintenance must not start with a degraded cache writer" \
+  -F "$test_dir/maintenance apply"
 
 run_cutover wrong-api-region reported_api_region=us-west2
 [[ "$(cat "$test_dir/wrong-api-region-result")" != "0" ]]
-if grep -E "graphql (stop|restart) " "$test_dir/wrong-api-region-trace" \
-  || grep -F "$test_dir/maintenance apply" "$test_dir/wrong-api-region-trace"; then
-  echo "region drift must fail before maintenance starts" >&2
-  exit 1
-fi
+assert_no_trace "wrong-api-region" "region drift must fail before maintenance starts" \
+  -E "graphql (stop|restart) "
+assert_no_trace "wrong-api-region" "region drift must fail before maintenance starts" \
+  -F "$test_dir/maintenance apply"
 
 run_cutover wrong-stored-api-region stored_api_region=us-west2
 [[ "$(cat "$test_dir/wrong-stored-api-region-result")" != "0" ]]
-if grep -E "graphql (stop|restart) " "$test_dir/wrong-stored-api-region-trace" \
-  || grep -F "$test_dir/maintenance apply" "$test_dir/wrong-stored-api-region-trace"; then
-  echo "stored region drift must fail before maintenance starts" >&2
-  exit 1
-fi
+assert_no_trace "wrong-stored-api-region" "stored region drift must fail before maintenance starts" \
+  -E "graphql (stop|restart) "
+assert_no_trace "wrong-stored-api-region" "stored region drift must fail before maintenance starts" \
+  -F "$test_dir/maintenance apply"
 
 run_cutover degraded-during-shutdown degrade_worker_after_api_stop=1
 [[ "$(cat "$test_dir/degraded-during-shutdown-result")" != "0" ]]
@@ -515,12 +502,12 @@ assert_evidence_components crashed-cache ""
 assert_in_order "$test_dir/crashed-cache-trace" \
   "$test_dir/maintenance apply" \
   "up $test_dir/cache"
-if grep -F "up $test_dir/run-worker" "$test_dir/crashed-cache-trace" \
-  || grep -F "up $test_dir/api" "$test_dir/crashed-cache-trace" \
-  || grep -F "graphql restart " "$test_dir/crashed-cache-trace"; then
-  echo "failed cache deployment must leave all metadata writers closed" >&2
-  exit 1
-fi
+assert_no_trace "crashed-cache" "failed cache deployment must leave all metadata writers closed" \
+  -F "up $test_dir/run-worker"
+assert_no_trace "crashed-cache" "failed cache deployment must leave all metadata writers closed" \
+  -F "up $test_dir/api"
+assert_no_trace "crashed-cache" "failed cache deployment must leave all metadata writers closed" \
+  -F "graphql restart "
 
 mkdir "$test_dir/cache-evidence-promotion-evidence.jsonl"
 run_cutover cache-evidence-promotion 2> "$test_dir/cache-evidence-promotion-stderr"
@@ -558,10 +545,8 @@ run_cutover rollback fail_apply=rollback
 assert_in_order "$test_dir/rollback-trace" \
   "$test_dir/maintenance apply" \
   "$test_dir/maintenance plan"
-if grep -E 'graphql restart|up ' "$test_dir/rollback-trace"; then
-  echo "removed predecessors must not be restarted after gate replacement" >&2
-  exit 1
-fi
+assert_no_trace "rollback" "removed predecessors must not be restarted after gate replacement" \
+  -E 'graphql restart|up '
 
 run_cutover rollback recover_closed_cutover=1
 [[ "$(cat "$test_dir/rollback-result")" == "0" ]]
@@ -575,14 +560,10 @@ assert_in_order "$test_dir/rollback-trace" \
 
 run_cutover unknown fail_apply=committed-error fail_recovery_plan=1
 [[ "$(cat "$test_dir/unknown-result")" != "0" ]]
-if grep -F "graphql restart " "$test_dir/unknown-trace"; then
-  echo "unknown migration state must not restore old deployments" >&2
-  exit 1
-fi
-if grep -F "up $test_dir/api" "$test_dir/unknown-trace"; then
-  echo "unknown migration state must not deploy new binaries" >&2
-  exit 1
-fi
+assert_no_trace "unknown" "unknown migration state must not restore old deployments" \
+  -F "graphql restart "
+assert_no_trace "unknown" "unknown migration state must not deploy new binaries" \
+  -F "up $test_dir/api"
 
 run_cutover rolling initial_exact=1
 [[ "$(cat "$test_dir/rolling-result")" == "0" ]]
@@ -592,20 +573,16 @@ assert_in_order "$test_dir/rolling-trace" \
   "up $test_dir/cache" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
-if grep -E "graphql (stop|restart) |maintenance (backfill-|cleanup-)" "$test_dir/rolling-trace"; then
-  echo "exact-schema deployment must stay on the rolling path without repeating migration data work" >&2
-  exit 1
-fi
+assert_no_trace "rolling" "exact-schema deployment must stay on the rolling path without repeating migration data work" \
+  -E "graphql (stop|restart) |maintenance (backfill-|cleanup-)"
 
 run_cutover rolling-cache initial_exact=1 deploy_worker=0 deploy_api=0
 [[ "$(cat "$test_dir/rolling-cache-result")" == "0" ]]
 assert_in_order "$test_dir/rolling-cache-trace" \
   "$test_dir/maintenance verify" \
   "up $test_dir/cache"
-if grep -E "up $test_dir/(run-worker|api)" "$test_dir/rolling-cache-trace"; then
-  echo "cache-only deployment must not deploy run-worker or API" >&2
-  exit 1
-fi
+assert_no_trace "rolling-cache" "cache-only deployment must not deploy run-worker or API" \
+  -E "up $test_dir/(run-worker|api)"
 
 run_cutover rolling-worker initial_exact=1 deploy_cache=0 deploy_api=0
 [[ "$(cat "$test_dir/rolling-worker-result")" == "0" ]]
@@ -613,10 +590,8 @@ assert_evidence_components rolling-worker run-worker
 assert_in_order "$test_dir/rolling-worker-trace" \
   "$test_dir/maintenance verify" \
   "up $test_dir/run-worker"
-if grep -E "up $test_dir/(cache|api)" "$test_dir/rolling-worker-trace"; then
-  echo "worker-only deployment must not deploy cache or API" >&2
-  exit 1
-fi
+assert_no_trace "rolling-worker" "worker-only deployment must not deploy cache or API" \
+  -E "up $test_dir/(cache|api)"
 
 run_cutover carried-worker-drift \
   initial_exact=1 \
@@ -626,10 +601,8 @@ run_cutover carried-worker-drift \
   skip_up_service=scope-worker
 [[ "$(cat "$test_dir/carried-worker-drift-result")" != "0" ]]
 assert_evidence_components carried-worker-drift ""
-if grep -F "graphql restart scope-worker" "$test_dir/carried-worker-drift-trace"; then
-  echo "a skipped deploy with drifted active identity must not restart the carried deployment" >&2
-  exit 1
-fi
+assert_no_trace "carried-worker-drift" "a skipped deploy with drifted active identity must not restart the carried deployment" \
+  -F "graphql restart scope-worker"
 
 run_cutover rolling-worker-unhealthy initial_exact=1 deploy_cache=0 deploy_api=0 unhealthy_after_up_service=scope-worker
 [[ "$(cat "$test_dir/rolling-worker-unhealthy-result")" != "0" ]]
@@ -640,10 +613,8 @@ run_cutover rolling-api initial_exact=1 deploy_cache=0 deploy_worker=0
 assert_in_order "$test_dir/rolling-api-trace" \
   "$test_dir/maintenance verify" \
   "up $test_dir/api"
-if grep -E "up $test_dir/(cache|run-worker)" "$test_dir/rolling-api-trace"; then
-  echo "API-only deployment must not deploy cache or run-worker" >&2
-  exit 1
-fi
+assert_no_trace "rolling-api" "API-only deployment must not deploy cache or run-worker" \
+  -E "up $test_dir/(cache|run-worker)"
 
 run_cutover rolling-api-unhealthy initial_exact=1 deploy_cache=0 deploy_worker=0 unhealthy_after_up_service=scope-api
 [[ "$(cat "$test_dir/rolling-api-unhealthy-result")" != "0" ]]
@@ -675,18 +646,13 @@ run_cutover router-instance-refused \
   router_configured=0 \
   router_instance_exists=0
 [[ "$(cat "$test_dir/router-instance-refused-result")" != "0" ]]
-if grep -E "graphql (create-instance|configure-scale|stop|restart)|gate (enter|reclose|restore)|domain --|variable set|up |maintenance (apply|drain-writers|backfill-|cleanup-|scrub-)" \
-  "$test_dir/router-instance-refused-trace"; then
-  echo "an absent git-router instance without a selected git-router must fail before mutation" >&2
-  exit 1
-fi
+assert_no_trace "router-instance-refused" "an absent git-router instance without a selected git-router must fail before mutation" \
+  -E "graphql (create-instance|configure-scale|stop|restart)|gate (enter|reclose|restore)|domain --|variable set|up |maintenance (apply|drain-writers|backfill-|cleanup-|scrub-)"
 
 run_cutover router-drift-refused initial_exact=1 deploy_cache=0 deploy_worker=0 router_configured=0
 [[ "$(cat "$test_dir/router-drift-refused-result")" != "0" ]]
-if grep -E "variable set|up |maintenance apply" "$test_dir/router-drift-refused-trace"; then
-  echo "git-router drift without a selected git-router must fail before mutation" >&2
-  exit 1
-fi
+assert_no_trace "router-drift-refused" "git-router drift without a selected git-router must fail before mutation" \
+  -E "variable set|up |maintenance apply"
 
 run_cutover router-domain-invalid \
   initial_exact=1 \
@@ -695,10 +661,8 @@ run_cutover router-domain-invalid \
   deploy_router=1 \
   router_domain_state=invalid
 [[ "$(cat "$test_dir/router-domain-invalid-result")" != "0" ]]
-if grep -E "graphql (create-instance|configure-scale|stop|restart)|gate (enter|reclose|restore)|domain --|variable set|up |maintenance (apply|drain-writers|backfill-|cleanup-|scrub-)" "$test_dir/router-domain-invalid-trace"; then
-  echo "an invalid git-router domain must fail before mutation" >&2
-  exit 1
-fi
+assert_no_trace "router-domain-invalid" "an invalid git-router domain must fail before mutation" \
+  -E "graphql (create-instance|configure-scale|stop|restart)|gate (enter|reclose|restore)|domain --|variable set|up |maintenance (apply|drain-writers|backfill-|cleanup-|scrub-)"
 
 run_cutover maintenance-forces-all deploy_cache=0 deploy_worker=0
 [[ "$(cat "$test_dir/maintenance-forces-all-result")" == "0" ]]
@@ -726,17 +690,13 @@ assert_in_order "$test_dir/interrupted-trace" \
   "up $test_dir/cache" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
-if grep -F "$test_dir/maintenance apply" "$test_dir/interrupted-trace"; then
-  echo "post-commit recovery must not reapply migrations" >&2
-  exit 1
-fi
+assert_no_trace "interrupted" "post-commit recovery must not reapply migrations" \
+  -F "$test_dir/maintenance apply"
 
 run_cutover intentionally-closed initial_exact=1 initial_closed=1
 [[ "$(cat "$test_dir/intentionally-closed-result")" != "0" ]]
-if grep -F "up $test_dir/api" "$test_dir/intentionally-closed-trace"; then
-  echo "an ordinary deployment must not reopen intentionally closed writers" >&2
-  exit 1
-fi
+assert_no_trace "intentionally-closed" "an ordinary deployment must not reopen intentionally closed writers" \
+  -F "up $test_dir/api"
 
 run_cutover bootstrap initial_exact=1 initial_closed=1 no_history=1
 [[ "$(cat "$test_dir/bootstrap-result")" == "0" ]]
@@ -776,14 +736,10 @@ assert_in_order "$test_dir/denied-api-trace" \
   "graphql stop scope-api old-scope-api" \
   "graphql stop scope-worker old-scope-worker" \
   "graphql stop scope-cache-service old-scope-cache-service"
-if grep -E 'graphql stop .* gate-' "$test_dir/denied-api-trace"; then
-  echo "failure cleanup must preserve serving gate deployments" >&2
-  exit 1
-fi
-if grep -F "$test_dir/maintenance apply" "$test_dir/denied-api-trace"; then
-  echo "a denied API shutdown must fail before migration without attempting rollback mutations" >&2
-  exit 1
-fi
+assert_no_trace "denied-api" "failure cleanup must preserve serving gate deployments" \
+  -E 'graphql stop .* gate-'
+assert_no_trace "denied-api" "a denied API shutdown must fail before migration without attempting rollback mutations" \
+  -F "$test_dir/maintenance apply"
 
 run_cutover denied-worker deny_deployment_action_service=scope-worker
 [[ "$(cat "$test_dir/denied-worker-result")" != "0" ]]
@@ -791,10 +747,8 @@ assert_in_order "$test_dir/denied-worker-trace" \
   "graphql stop scope-api old-scope-api" \
   "graphql stop scope-worker old-scope-worker" \
   "graphql stop scope-cache-service old-scope-cache-service"
-if grep -F "graphql restart scope-worker" "$test_dir/denied-worker-trace"; then
-  echo "a run-worker shutdown denial must not restore a run-worker that was never closed" >&2
-  exit 1
-fi
+assert_no_trace "denied-worker" "a run-worker shutdown denial must not restore a run-worker that was never closed" \
+  -F "graphql restart scope-worker"
 
 run_cutover denied-cache deny_deployment_action_service=scope-cache-service
 [[ "$(cat "$test_dir/denied-cache-result")" != "0" ]]
@@ -802,20 +756,16 @@ assert_in_order "$test_dir/denied-cache-trace" \
   "graphql stop scope-api old-scope-api" \
   "graphql stop scope-worker old-scope-worker" \
   "graphql stop scope-cache-service old-scope-cache-service"
-if grep -F "graphql restart scope-cache-service" "$test_dir/denied-cache-trace"; then
-  echo "a cache shutdown denial must not restore a cache deployment that was never closed" >&2
-  exit 1
-fi
+assert_no_trace "denied-cache" "a cache shutdown denial must not restore a cache deployment that was never closed" \
+  -F "graphql restart scope-cache-service"
 
 FAKE_KILL_CUTOVER_PHASE=apply run_cutover killed-after-commit
 [[ "$(cat "$test_dir/killed-after-commit-result")" != "0" ]]
 [[ "$(jq -r '.statuses["1"][0].description' "$test_dir/killed-after-commit-state/journal.json")" == "cutover:applying" ]]
 run_cutover killed-after-commit
 [[ "$(cat "$test_dir/killed-after-commit-result")" != "0" ]]
-if grep -E 'graphql (stop|restart)|up |maintenance' "$test_dir/killed-after-commit-trace"; then
-  echo "ordinary deployment must stop at the durable unresolved-cutover guard" >&2
-  exit 1
-fi
+assert_no_trace "killed-after-commit" "ordinary deployment must stop at the durable unresolved-cutover guard" \
+  -E 'graphql (stop|restart)|up |maintenance'
 run_cutover killed-after-commit recover_closed_cutover=1
 [[ "$(cat "$test_dir/killed-after-commit-result")" == "0" ]]
 assert_in_order "$test_dir/killed-after-commit-trace" \
@@ -827,10 +777,8 @@ assert_in_order "$test_dir/killed-after-commit-trace" \
   "up $test_dir/cache" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
-if grep -F "$test_dir/maintenance apply" "$test_dir/killed-after-commit-trace"; then
-  echo "recovery after committed transaction must not reapply migrations" >&2
-  exit 1
-fi
+assert_no_trace "killed-after-commit" "recovery after committed transaction must not reapply migrations" \
+  -F "$test_dir/maintenance apply"
 
 direct_state="$test_dir/direct-state"
 direct_trace="$test_dir/direct-trace"

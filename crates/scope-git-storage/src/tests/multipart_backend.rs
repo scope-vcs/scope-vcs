@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct TestMultipartStore {
     state: Mutex<TestState>,
+    pub(super) minimum_part_bytes: usize,
     pub(super) fail_begin: AtomicBool,
     pub(super) begin_failed: Notify,
     pub(super) fail_part: AtomicBool,
@@ -20,6 +21,7 @@ impl Default for TestMultipartStore {
     fn default() -> Self {
         Self {
             state: Mutex::new(TestState::default()),
+            minimum_part_bytes: 1,
             fail_begin: AtomicBool::new(false),
             begin_failed: Notify::new(),
             fail_part: AtomicBool::new(false),
@@ -93,6 +95,10 @@ impl TestMultipartStore {
 
 #[async_trait]
 impl MultipartStore for TestMultipartStore {
+    fn minimum_part_bytes(&self) -> usize {
+        self.minimum_part_bytes
+    }
+
     async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {
         if self.fail_begin.load(Ordering::SeqCst) {
             self.begin_failed.notify_one();
@@ -204,61 +210,11 @@ impl MultipartStore for TestMultipartStore {
             .get(key)
             .cloned()
             .ok_or_else(|| MultipartError::new("missing object"))?;
-        let (mut writer, reader) = tokio::io::duplex(bytes.len().max(1));
-        tokio::spawn(async move {
-            writer.write_all(&bytes).await.unwrap();
-        });
-        Ok(Box::pin(reader))
+        Ok(Box::pin(std::io::Cursor::new(bytes)))
     }
 
     async fn delete(&self, key: &str) -> Result<(), MultipartError> {
         self.state.lock().unwrap().objects.remove(key);
         Ok(())
-    }
-}
-
-pub(super) struct MinimumS3PartStore;
-
-#[async_trait]
-impl MultipartStore for MinimumS3PartStore {
-    fn minimum_part_bytes(&self) -> usize {
-        5 * 1024 * 1024
-    }
-
-    async fn begin(&self, _key: &str) -> Result<MultipartUpload, MultipartError> {
-        unreachable!()
-    }
-
-    async fn upload_part(
-        &self,
-        _upload: &MultipartUpload,
-        _part_number: i32,
-        _bytes: Bytes,
-    ) -> Result<UploadedPart, MultipartError> {
-        unreachable!()
-    }
-
-    async fn complete(
-        &self,
-        _upload: MultipartUpload,
-        _parts: Vec<UploadedPart>,
-    ) -> Result<(), MultipartError> {
-        unreachable!()
-    }
-
-    async fn abort(&self, _upload: MultipartUpload) -> Result<(), MultipartError> {
-        unreachable!()
-    }
-
-    async fn abort_incomplete(&self, _key: &str) -> Result<(), MultipartError> {
-        unreachable!()
-    }
-
-    async fn read(&self, _key: &str) -> Result<RemoteReader, MultipartError> {
-        unreachable!()
-    }
-
-    async fn delete(&self, _key: &str) -> Result<(), MultipartError> {
-        unreachable!()
     }
 }

@@ -7,17 +7,15 @@ export const repoContentResource = createCachedResource<RepoContent>({
   weightOf: approximateContentBytes,
 })
 
-export function repoContentCacheKey({
-  scope,
-  audience,
-  changeVersion,
-  repoId,
-}: {
+export type RepoContentIdentity = {
   scope: string
   audience: 'private' | 'public'
   changeVersion: number
   repoId: string
-}) {
+}
+
+export function repoContentCacheKey(identity: RepoContentIdentity) {
+  const { scope, repoId, changeVersion, audience } = identity
   return [scope, repoId, changeVersion, audience].join('\0')
 }
 

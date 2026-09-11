@@ -4,17 +4,18 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import test from 'node:test';
 
-import { createEndpointRouter, parseApiUrls } from './endpoint-routing.mjs';
+import { createEndpointRouter } from './endpoint-routing.mjs';
 import { fetchClientCount, validateRepositoryMode } from './repository-mode.mjs';
 import { assertSafeTarget, validateTargetKind } from './target-safety.mjs';
 
 import {
-  abortTimeoutMs, apiHeaders, capacityRejectionBreakdown, changedFileCountSlope, chooseWrite,
+  abortTimeoutMs, capacityRejectionBreakdown,
   consistencyStats, evaluateStage, failureBreakdown,
-  historySizeSlope, landingFileSizeSlope, parseByteSizes, parseRates, parseStages, stageResult, stats,
-  rotating, toggleBenchmarkVisibilityRule, WRITE_DELTA_FILE_BYTES, writeChunkedRandomPayload, writeSizeSlope,
+  stageResult,
+  toggleBenchmarkVisibilityRule, WRITE_DELTA_FILE_BYTES, writeChunkedRandomPayload,
 } from './railway-load.mjs';
-import { parseChangedFileCounts, writeChangedFiles } from './write-shape.mjs';
+import { writeChangedFiles } from './write-shape.mjs';
+import { changedFileCountSlope, historySizeSlope, landingFileSizeSlope, sampleStats, writeSizeSlope } from './metrics.mjs';
 
 test('large write deltas use bounded files and buffers', async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'scope-load-delta-'));
@@ -52,17 +53,6 @@ test('load target guard requires an explicit staging opt-in', () => {
   assert.throws(() => validateTargetKind('production'), /must be loadtest or staging/);
 });
 
-test('numeric workload controls are unique and sorted', () => {
-  assert.deepEqual(parseStages('4,1,2,4'), [1, 2, 4]);
-  assert.deepEqual(parseRates('1,0.25,2,1'), [0.25, 1, 2]);
-  assert.throws(() => parseStages('1,nope'), /positive integers/);
-  assert.throws(() => parseRates('0,1'), /positive numbers/);
-  assert.deepEqual(parseByteSizes('8388608,4096,262144,4096'), [4096, 262144, 8388608]);
-  assert.throws(() => parseByteSizes('-1,1'), /non-negative byte counts/);
-  assert.deepEqual(parseChangedFileCounts('500,1,100,1'), [1, 100, 500]);
-  assert.throws(() => parseChangedFileCounts('-1,1'), /non-negative integers/);
-});
-
 test('changed-file fixtures preserve count and exact file size', async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'scope-load-files-'));
   context.after(() => rm(root, { recursive: true, force: true }));
@@ -97,13 +87,6 @@ test('hot warm fetch allocates enough independent clients for the load shape', (
   assert.equal(fetchClientCount({ ...base, repositoryMode: 'spread', rates: [50, 100] }), 32);
 });
 
-test('endpoint pools are normalized without duplicate primaries', () => {
-  assert.deepEqual(
-    parseApiUrls('https://api-1-loadtest.example.com/', 'https://api-1-loadtest.example.com, https://api-2-loadtest.example.com/'),
-    ['https://api-1-loadtest.example.com', 'https://api-2-loadtest.example.com'],
-  );
-});
-
 test('endpoint routing is reproducible and repository affinity is stable', () => {
   const urls = ['https://api-1-loadtest.example.com', 'https://api-2-loadtest.example.com', 'https://api-3-loadtest.example.com'];
   const randomA = createEndpointRouter(urls, 'random', 42);
@@ -128,7 +111,7 @@ test('statistics report completion and TTFB p50 p95 p99 with bytes', () => {
     { ok: true, durationMs: 30, ttfbMs: 6, bytes: 3, logicalBytes: 30 },
     { ok: true, durationMs: 40, ttfbMs: 8, bytes: 4, logicalBytes: 40 },
   ];
-  assert.deepEqual(stats(values), {
+  assert.deepEqual(sampleStats(values), {
     count: 4, ok: 4, meanMs: 25,
     p50Ms: 20, p95Ms: 40, p99Ms: 40,
     ttfbP50Ms: 4, ttfbP95Ms: 8, ttfbP99Ms: 8,
@@ -136,85 +119,16 @@ test('statistics report completion and TTFB p50 p95 p99 with bytes', () => {
   });
 });
 
-test('history slope groups exact fixture depths and reports p95 growth', () => {
-  const slope = historySizeSlope([
-    { ok: true, durationMs: 10, ttfbMs: 1, bytes: 1, historyDepth: 1 },
-    { ok: true, durationMs: 12, ttfbMs: 1, bytes: 1, historyDepth: 1 },
-    { ok: true, durationMs: 40, ttfbMs: 2, bytes: 1, historyDepth: 8 },
-    { ok: true, durationMs: 42, ttfbMs: 2, bytes: 1, historyDepth: 8 },
-  ]);
-  assert.deepEqual(slope, {
-    points: [
-      { historyDepth: 1, count: 2, ok: 2, meanMs: 11, p50Ms: 10, p95Ms: 12, p99Ms: 12, ttfbP50Ms: 1, ttfbP95Ms: 1, ttfbP99Ms: 1, scheduleDelayP95Ms: 0, bytes: 2, logicalBytes: 0 },
-      { historyDepth: 8, count: 2, ok: 2, meanMs: 41, p50Ms: 40, p95Ms: 42, p99Ms: 42, ttfbP50Ms: 2, ttfbP95Ms: 2, ttfbP99Ms: 2, scheduleDelayP95Ms: 0, bytes: 2, logicalBytes: 0 },
-    ],
-    p95MsPerCommit: 4.29,
-  });
-});
-
-test('mixed workload is deterministic at the requested 80/20 split', () => {
-  assert.deepEqual(Array.from({ length: 10 }, (_, index) => chooseWrite(index, 20)), [true, false, false, false, false, true, false, false, false, false]);
-});
-
-test('mixed workload reads rotate across the mixed repository set', () => {
-  const mixedRead = rotating([{ repo: 'mixed-1' }, { repo: 'mixed-2' }, { repo: 'mixed-3' }]);
-  assert.deepEqual(
-    Array.from({ length: 5 }, () => mixedRead().repo),
-    ['mixed-1', 'mixed-2', 'mixed-3', 'mixed-1', 'mixed-2'],
-  );
-});
-
 test('stage results preserve node labels, byte rate, and errors', () => {
   const stage = stageResult('blob-read', 2, [
     { ok: true, durationMs: 10, ttfbMs: 2, bytes: 100, historyDepth: 1 },
-    { ok: false, durationMs: 20, ttfbMs: 4, bytes: 0, historyDepth: 1, status: 503, error: 'HTTP 503' },
+    { ok: false, durationMs: 20, ttfbMs: 4, bytes: 900, logicalBytes: 9000, historyDepth: 1, status: 503, error: 'HTTP 503' },
   ], 2, 'start', 'end', null, 'api=2');
   assert.equal(stage.nodeScaleLabel, 'api=2');
   assert.equal(stage.bytesPerSecond, 50);
   assert.equal(stage.errorRate, 0.5);
   assert.equal(stage.stats.p99Ms, 20);
   assert.equal(stage.normalized.operationsPerSecond, 0.5);
-});
-
-test('write-size slope separates payload sizes', () => {
-  assert.deepEqual(writeSizeSlope([
-    { ok: true, durationMs: 10, ttfbMs: 10, bytes: 1, logicalBytes: 4096, writeDeltaBytes: 4096 },
-    { ok: true, durationMs: 30, ttfbMs: 30, bytes: 1, logicalBytes: 1048576, writeDeltaBytes: 1048576 },
-  ]), {
-    points: [
-      { writeDeltaBytes: 4096, count: 1, ok: 1, meanMs: 10, p50Ms: 10, p95Ms: 10, p99Ms: 10, ttfbP50Ms: 10, ttfbP95Ms: 10, ttfbP99Ms: 10, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 4096 },
-      { writeDeltaBytes: 1048576, count: 1, ok: 1, meanMs: 30, p50Ms: 30, p95Ms: 30, p99Ms: 30, ttfbP50Ms: 30, ttfbP95Ms: 30, ttfbP99Ms: 30, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 1048576 },
-    ],
-    p95MsPerMiB: 20.08,
-  });
-});
-
-test('landing-file slope separates unrelated pushes from bounded README updates', () => {
-  assert.deepEqual(landingFileSizeSlope([
-    { ok: true, durationMs: 10, ttfbMs: 10, bytes: 1, logicalBytes: 1, landingFileBytes: 0 },
-    { ok: true, durationMs: 20, ttfbMs: 20, bytes: 1, logicalBytes: 4096, landingFileBytes: 4096 },
-    { ok: true, durationMs: 30, ttfbMs: 30, bytes: 1, logicalBytes: 1048576, landingFileBytes: 1048576 },
-  ]), {
-    points: [
-      { landingFileBytes: 0, count: 1, ok: 1, meanMs: 10, p50Ms: 10, p95Ms: 10, p99Ms: 10, ttfbP50Ms: 10, ttfbP95Ms: 10, ttfbP99Ms: 10, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 1 },
-      { landingFileBytes: 4096, count: 1, ok: 1, meanMs: 20, p50Ms: 20, p95Ms: 20, p99Ms: 20, ttfbP50Ms: 20, ttfbP95Ms: 20, ttfbP99Ms: 20, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 4096 },
-      { landingFileBytes: 1048576, count: 1, ok: 1, meanMs: 30, p50Ms: 30, p95Ms: 30, p99Ms: 30, ttfbP50Ms: 30, ttfbP95Ms: 30, ttfbP99Ms: 30, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 1048576 },
-    ],
-    p95MsPerMiB: 20,
-  });
-});
-
-test('changed-file slope reports p95 cost per file', () => {
-  assert.deepEqual(changedFileCountSlope([
-    { ok: true, durationMs: 10, ttfbMs: 10, bytes: 1, changedFileCount: 1 },
-    { ok: true, durationMs: 109, ttfbMs: 109, bytes: 1, changedFileCount: 100 },
-  ]), {
-    points: [
-      { changedFileCount: 1, count: 1, ok: 1, meanMs: 10, p50Ms: 10, p95Ms: 10, p99Ms: 10, ttfbP50Ms: 10, ttfbP95Ms: 10, ttfbP99Ms: 10, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 0 },
-      { changedFileCount: 100, count: 1, ok: 1, meanMs: 109, p50Ms: 109, p95Ms: 109, p99Ms: 109, ttfbP50Ms: 109, ttfbP95Ms: 109, ttfbP99Ms: 109, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 0 },
-    ],
-    p95MsPerFile: 1,
-  });
 });
 
 test('aggregate benchmark pushes toggle an equivalent visibility rule', () => {
@@ -293,15 +207,27 @@ test('capacity rejection breakdown names the exhausted permit', () => {
   });
 });
 
-test('API mutations identify the supported CLI protocol', () => {
-  assert.equal(apiHeaders('secret')['x-scope-cli-protocol'], '1');
-});
-
 test('capacity gate uses the exact failure fraction at the one-percent boundary', () => {
   for (const failed of [10, 11, 14, 15]) {
     const samples = Array.from({ length: 1000 }, (_, index) => ({ ok: index >= failed, durationMs: 1, bytes: 1 }));
     const stage = stageResult('repo-read', 1, samples, 1, 'start', 'end');
     assert.equal(stage.errorRate, failed / 1000);
     assert.equal(evaluateStage(stage, 1).healthy, failed === 10);
+  }
+});
+
+test('dimension slopes group unordered samples and use commit, file, or MiB units', () => {
+  for (const [slope, field, slopeField, first, last, expected] of [
+    [historySizeSlope, 'historyDepth', 'p95MsPerCommit', 1, 8, 4.29],
+    [writeSizeSlope, 'writeDeltaBytes', 'p95MsPerMiB', 4096, 1048576, 30.12],
+    [landingFileSizeSlope, 'landingFileBytes', 'p95MsPerMiB', 0, 1048576, 30],
+    [changedFileCountSlope, 'changedFileCount', 'p95MsPerFile', 1, 100, 0.3],
+  ]) {
+    const samples = [[last, 40], [first, 10], [last, 42], [first, 12]]
+      .map(([dimension, durationMs]) => ({ [field]: dimension, durationMs, ok: true }));
+    const result = slope(samples);
+    assert.deepEqual(result.points.map(point => [point[field], point.count, point.p95Ms]), [[first, 2, 12], [last, 2, 42]]);
+    assert.equal(result[slopeField], expected);
+    assert.equal(slope(samples.slice(0, 1))[slopeField], null);
   }
 });

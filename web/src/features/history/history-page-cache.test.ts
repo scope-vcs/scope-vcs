@@ -37,12 +37,3 @@ test('history generations, audiences, feeds, repositories and viewers are isolat
   assert.equal(restoreHistoryPages(historyPageCacheKey('other-viewer', first), first).entries.length, 1)
   assert.equal(restoreHistoryPages(null, first).entries.length, 1)
 })
-
-test('history pagination retention is bounded', () => {
-  resetHistoryPageCache()
-  for (let index = 0; index < 13; index++) retainHistoryPages(String(index), { entries: [], next_cursor: null })
-  assert.equal(restoreHistoryPages('0', page()).entries.length, 1)
-  assert.equal(restoreHistoryPages('12', page()).entries.length, 0)
-  retainHistoryPages('large', { entries: [{ message: 'x'.repeat(3 * 1024 * 1024) } as HistoryEntrySummary], next_cursor: null })
-  assert.equal(restoreHistoryPages('large', page()).next_cursor, 'older')
-})

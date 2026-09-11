@@ -6,7 +6,7 @@ use super::{
     repository_rows::save_repository_delta, workflow_catalogs::apply_repository_workflow_catalog,
 };
 use sea_orm::{EntityTrait, TransactionTrait};
-use std::{fmt, sync::Arc, time::Instant};
+use std::{fmt, time::Instant};
 use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
@@ -63,16 +63,6 @@ impl<R> RepositoryMutation<R> {
         }
     }
 
-    pub fn with_source_blob_deletions(result: R, orphan_objects: Vec<SourceBlob>) -> Self {
-        Self {
-            result,
-            orphan_objects,
-            push_trigger_input: None,
-            landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
-            workflow_catalog: None,
-        }
-    }
-
     pub fn with_push_trigger_input(
         result: R,
         push_trigger_input: scope_domain::runs::trigger::PushTriggerInput,
@@ -103,11 +93,8 @@ impl RepositoryStore {
         F: FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError> + Send + 'static,
     {
         let repo_id = repo_id(owner, name);
-        let owner = owner.to_string();
-        let name = name.to_string();
-        let db = Arc::clone(&self.db);
         let transaction_started = Instant::now();
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let lock_started = Instant::now();
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let lock_wait = lock_started.elapsed();

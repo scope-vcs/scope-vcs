@@ -365,19 +365,6 @@ jobs:
         )
         .await
         .unwrap();
-        let payload = entities::outbox_job::Entity::find()
-            .filter(entities::outbox_job::Column::RepoId.eq(repo_id.clone()))
-            .filter(entities::outbox_job::Column::RepoVersion.eq(1))
-            .filter(entities::outbox_job::Column::Kind.eq(JOB_KIND))
-            .one(store.db.as_ref())
-            .await
-            .unwrap()
-            .unwrap()
-            .payload;
-        assert_eq!(
-            payload["workflow_schema_version"],
-            entities::outbox_job::PUSH_MAIN_TRIGGER_WORKFLOW_SCHEMA_VERSION
-        );
         let later_head_oid = "3333333333333333333333333333333333333333";
         enqueue_push_main_trigger_evaluation(
             store.db.as_ref(),

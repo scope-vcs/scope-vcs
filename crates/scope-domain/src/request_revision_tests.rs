@@ -1,6 +1,6 @@
 use super::{
-    content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     requests::*,
+    requests_tests::{public_start_input, source_blob},
 };
 
 #[test]
@@ -9,15 +9,11 @@ fn revision_records_snapshot_without_manufacturing_a_discussion() {
         StartRequestFacts::default(),
         StartRequestInput {
             id: "request_change".to_string(),
-            repo_id: "owner/repo".to_string(),
             name: "change".to_string(),
-            author_user_id: "author".to_string(),
             title: Some("Change".to_string()),
             author_role: RequestActorRole::Owner,
             audience: RequestAudience::Private,
-            base_main_oid: "base".to_string(),
-            event_id: "event_started".to_string(),
-            now_unix: 10,
+            ..public_start_input()
         },
     )
     .unwrap();
@@ -88,15 +84,5 @@ fn revision(id: &str, position: u64) -> RequestRevision {
         new_head_oid: "new".to_string(),
         git_snapshot: source_blob(id),
         created_at_unix: position,
-    }
-}
-
-fn source_blob(git_oid: &str) -> SourceBlob {
-    SourceBlob {
-        content_ref: crate::content_ref::ContentRef::blob_sha256(git_oid),
-        sha256: format!("sha256-{git_oid}"),
-        git_oid: git_oid.to_string(),
-        git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-        size_bytes: 1,
     }
 }

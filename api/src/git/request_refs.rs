@@ -1,3 +1,4 @@
+use crate::git::import::refs_for_prefixes;
 use crate::{
     config::{DEFAULT_GIT_BRANCH, EMPTY_GIT_OID},
     error::ApiError,
@@ -239,31 +240,6 @@ pub(crate) fn attach_visible_request_refs(
         }
     }
     Ok(())
-}
-
-fn refs_for_prefixes(
-    repo: &FsPath,
-    prefixes: &[&str],
-    action: &str,
-) -> Result<Vec<(String, String)>, ApiError> {
-    let mut args = vec!["for-each-ref", "--format=%(refname)%00%(objectname)"];
-    args.extend(prefixes.iter().copied());
-    let output = run_git_output(Some(repo), &args, action)?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "{action}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let text = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
-    text.lines()
-        .map(|line| {
-            let (refname, oid) = line
-                .split_once('\0')
-                .ok_or_else(|| ApiError::internal_message("invalid git ref listing"))?;
-            Ok((refname.to_string(), oid.to_string()))
-        })
-        .collect()
 }
 
 fn refs_by_name(refs: &[(String, String)]) -> BTreeMap<String, String> {

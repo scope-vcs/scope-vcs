@@ -1,5 +1,5 @@
 use super::{
-    ensure_public_request_paths_allowed, new_client_discussion_id, new_client_reply_id,
+    ensure_public_request_paths_allowed, new_client_mutation_id,
     text::{discussion_body_with_stdin, terminal_text},
 };
 use crate::{error::CliError, git_repo::GitRepo, test_support::TestDir};
@@ -11,23 +11,14 @@ fn terminal_text_replaces_control_characters() {
 }
 
 #[test]
-fn client_discussion_ids_are_opaque_and_unique() {
-    let first = new_client_discussion_id().unwrap();
-    let second = new_client_discussion_id().unwrap();
-
-    assert!(first.starts_with("client_discussion_"));
-    assert!(second.starts_with("client_discussion_"));
-    assert_ne!(first, second);
-}
-
-#[test]
-fn client_reply_ids_are_opaque_and_unique() {
-    let first = new_client_reply_id().unwrap();
-    let second = new_client_reply_id().unwrap();
-
-    assert!(first.starts_with("client_reply_"));
-    assert!(second.starts_with("client_reply_"));
-    assert_ne!(first, second);
+fn client_mutation_ids_are_opaque_and_unique() {
+    for kind in ["discussion", "reply"] {
+        let first = new_client_mutation_id(kind).unwrap();
+        let second = new_client_mutation_id(kind).unwrap();
+        assert!(first.starts_with(&format!("client_{kind}_")));
+        assert!(second.starts_with(&format!("client_{kind}_")));
+        assert_ne!(first, second);
+    }
 }
 
 #[test]

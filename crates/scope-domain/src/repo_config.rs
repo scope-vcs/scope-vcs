@@ -25,8 +25,6 @@ pub enum RepoConfigError {
     InvalidSegment,
     #[error("repo config cannot configure reserved Scope control path {0}")]
     ReservedControlPath(String),
-    #[error("repo config rewrite action {0} is unsupported")]
-    UnsupportedRewriteAction(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,11 +100,6 @@ impl RepoConfig {
             validate_config_pattern(&rewrite.path)?;
             if is_repo_control_pattern(&rewrite.path) {
                 return Err(RepoConfigError::ReservedControlPath(rewrite.path.clone()));
-            }
-            if rewrite.action != HistoryRewriteAction::RedactPublicHistory {
-                return Err(RepoConfigError::UnsupportedRewriteAction(
-                    rewrite.action.as_str().to_string(),
-                ));
             }
         }
         Ok(())
@@ -203,14 +196,6 @@ impl HistoryRewriteRequest {
 #[serde(rename_all = "kebab-case")]
 pub enum HistoryRewriteAction {
     RedactPublicHistory,
-}
-
-impl HistoryRewriteAction {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::RedactPublicHistory => "redact-public-history",
-        }
-    }
 }
 
 pub fn validate_config_path(path: &str) -> Result<ScopePath, RepoConfigError> {

@@ -1,27 +1,20 @@
 use super::*;
-use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
+use crate::db::{
+    MetadataStore,
+    test_support::fixtures::{repository, store_with_repositories, user},
+};
 use scope_domain::{
-    account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
     history::history_view,
     policy::{ScopePath, Visibility},
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
-    repository::RepoLifecycleState,
 };
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn fixture(commits: usize) -> (MetadataStore, Repository) {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
-    let owner = UserAccount {
-        id: "history_owner".into(),
-        handle: "owner".into(),
-        email: "history@example.com".into(),
-        email_verified: true,
-    };
-    let mut repo = Repository::new(&owner, "history", Visibility::Public, "repoi_history").unwrap();
-    repo.record.lifecycle_state = RepoLifecycleState::Ready;
+    let owner = user("history_owner", "owner");
+    let mut repo = repository(&owner, "history", Visibility::Public);
     for index in 0..commits {
         let oid = format!("{:040x}", index + 1);
         repo.graph.commits.push(LogicalCommit {
@@ -50,12 +43,7 @@ fn fixture(commits: usize) -> (MetadataStore, Repository) {
             }],
         });
     }
-    let mut catalog = CatalogFixture::default();
-    catalog.users.insert(owner.id.clone(), owner);
-    catalog
-        .repositories
-        .insert(repo.record.id.clone(), repo.clone());
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
+    let store = store_with_repositories([repo.clone()]);
     (store, repo)
 }
 
@@ -68,7 +56,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         .execute_unprepared("DELETE FROM scope_repository_history_views")
         .await
         .unwrap();
-    let baseline = Instant::now();
     let hydrated = store
         .repositories()
         .repository("owner", "history")
@@ -80,8 +67,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         &hydrated.visibility_change_sets,
         ProjectionViewKey::Private,
     );
-    let baseline_elapsed = baseline.elapsed();
-    let cold = Instant::now();
     let first = store
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
@@ -95,7 +80,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         })
         .await
         .unwrap();
-    let cold_elapsed = cold.elapsed();
     assert!(first.next_boundary.is_some());
     assert_eq!(first.view.entries, expected_private.entries[..50]);
     assert_eq!(
@@ -105,7 +89,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
 
     let held = store.db.begin().await.unwrap();
     held.execute_unprepared("LOCK TABLE scope_logical_commits, scope_file_changes, scope_live_files IN ACCESS EXCLUSIVE MODE").await.unwrap();
-    let warm = Instant::now();
     let next = tokio::time::timeout(
         Duration::from_secs(2),
         store
@@ -123,7 +106,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
     .await
     .expect("warm pages must not hydrate source history")
     .unwrap();
-    let warm_elapsed = warm.elapsed();
     assert_eq!(next.view.entries, expected_private.entries[50..100]);
     let public_access = tokio::time::timeout(
         Duration::from_secs(2),
@@ -174,9 +156,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         .unwrap();
     assert_eq!(detail.view.entries, vec![public.view.entries[10].clone()]);
     held.rollback().await.unwrap();
-    eprintln!(
-        "1000 commits/32 paths: baseline hydrate+private projection={baseline_elapsed:?}, cold build both audiences={cold_elapsed:?}, warm 50-entry page={warm_elapsed:?}"
-    );
 }
 
 #[tokio::test]

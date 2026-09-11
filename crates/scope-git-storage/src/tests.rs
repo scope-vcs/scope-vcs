@@ -20,7 +20,7 @@ const REPOSITORY_ID: &str = "repository-123";
 mod ingest_control;
 mod multipart_backend;
 mod multipart_performance;
-use multipart_backend::{MinimumS3PartStore, TestMultipartStore};
+use multipart_backend::TestMultipartStore;
 
 #[tokio::test]
 async fn ingest_writes_both_destinations_and_restore_verifies_the_stream() {
@@ -520,11 +520,12 @@ async fn restore_rejects_truncation_and_bytes_after_final_frame() {
 
 #[test]
 fn s3_rejects_parts_smaller_than_five_mib() {
-    let backend: Arc<dyn MultipartStore> = Arc::new(MinimumS3PartStore);
+    let mut backend = TestMultipartStore::default();
+    backend.minimum_part_bytes = 5 * 1024 * 1024;
     let mut config = GitSegmentStoreConfig::new("/tmp/scope-git-storage-config-test");
     config.multipart_part_bytes = 5 * 1024 * 1024 - 1;
 
-    let error = GitSegmentStore::new(backend, test_key(), config)
+    let error = GitSegmentStore::new(Arc::new(backend), test_key(), config)
         .err()
         .expect("undersized S3 part must fail");
     assert!(matches!(error, GitStorageError::InvalidConfiguration(_)));

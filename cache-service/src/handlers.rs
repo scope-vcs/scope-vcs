@@ -707,14 +707,13 @@ mod tests {
             )
             .await
             .unwrap();
-        let offer = store.runs().next_dispatchable_job().await.unwrap().unwrap();
         let attempt_id = "attempt-cache-service".to_string();
         let attempt_token_hash = "e".repeat(64);
         store
             .runs()
             .dispatch_job(
-                &offer.run.id,
-                offer.job.key.as_str(),
+                "cache-service-run",
+                "checks",
                 &attempt_id,
                 &attempt_token_hash,
                 "test-runtime",

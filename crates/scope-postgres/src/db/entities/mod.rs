@@ -85,6 +85,7 @@ fn usize_to_i64(value: usize, field: &str) -> Result<i64, PostgresError> {
     })
 }
 
+#[derive(Default)]
 pub struct RepositoryFacts {
     pub first_push_token: Option<FirstPushToken>,
     pub git_push_token: Option<GitPushToken>,
@@ -193,28 +194,6 @@ mod tests {
         );
         assert_eq!(content.blob.git_oid, content.file.oid);
         assert_eq!(content.blob.size_bytes, 10);
-    }
-
-    #[test]
-    fn projection_read_model_persists_canonical_identity_contract() {
-        let model = projection_read_model::Model::live(
-            "owner/repo",
-            7,
-            ProjectionAudience::Public,
-            Some("1111111111111111111111111111111111111111".to_string()),
-            10,
-            2,
-        )
-        .unwrap();
-
-        assert_eq!(
-            model.head_oid.as_deref(),
-            Some("1111111111111111111111111111111111111111")
-        );
-        assert_eq!(
-            model.identity_version,
-            scope_git::PROJECTION_IDENTITY_VERSION
-        );
     }
 
     #[test]

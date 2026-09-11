@@ -1,27 +1,14 @@
 use super::*;
-use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
-use scope_domain::{account::UserAccount, policy::Visibility, projection::LogicalCommitOrigin};
+use crate::db::test_support::fixtures::{repository, store_with_repositories, user};
+use scope_domain::{policy::Visibility, projection::LogicalCommitOrigin};
 use sea_orm::{DatabaseBackend, Statement};
 
 #[tokio::test]
 async fn histories_load_more_parents_than_postgres_bind_limit() {
-    let target = TestDatabaseTarget::required().unwrap();
-    let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-    let owner = UserAccount {
-        id: "history-owner".into(),
-        handle: "history-owner".into(),
-        email: "history-owner@example.com".into(),
-        email_verified: true,
-    };
-    let mut catalog = CatalogFixture::default();
-    let repo_id = catalog
-        .create_repository(&owner, "large-history", Visibility::Private)
-        .unwrap()
-        .record
-        .id
-        .clone();
-    catalog.users.insert(owner.id.clone(), owner.clone());
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
+    let owner = user("history-owner", "history-owner");
+    let repo = repository(&owner, "large-history", Visibility::Private);
+    let repo_id = repo.record.id.clone();
+    let store = store_with_repositories([repo]);
     let origin = serde_json::to_value(LogicalCommitOrigin::CanonicalPush {
         source_head_oid: "a".repeat(40),
     })

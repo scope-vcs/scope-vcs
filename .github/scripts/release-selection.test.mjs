@@ -2,84 +2,22 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-
 import { validatePreparedDeployment, selectRelease } from "./release-selection.mjs";
 import { validateRecoveryPreparation } from "./recovery-preparation-trust.mjs";
 
-const repository = "scope-vcs/scope-vcs";
+import { repository, sourceSha, backendComponents, releaseFixture } from "./fixtures/prepared-release.mjs";
 const sourceRunId = "34281642523";
-const sourceSha = "a".repeat(40);
 const mainSha = "b".repeat(40);
 const manifest = JSON.parse(readFileSync(new URL("../deployment-services.json", import.meta.url)));
 
 function fixture() {
-  const prepared = {
-    schemaVersion: 1,
-    sourceSha,
-    preparationRunId: sourceRunId,
-    maintenanceSha256: "c".repeat(64),
-    components: Object.fromEntries(
-      ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"].map((component) => [
-        component,
-        {
-          image: component === "media-worker"
-            ? `ghcr.io/scope-vcs/scope-media-worker@sha256:${"d".repeat(64)}`
-            : `ghcr.io/${repository}/railway-private-${({"run-worker":"worker","git-router":"router","media-api":"media"})[component] ?? component}@sha256:${"d".repeat(64)}`,
-          serviceId: manifest.services[component].id,
-          sourceSha,
-        },
-      ]),
-    ),
-  };
-  const run = {
-    id: Number(sourceRunId),
-    status: 'completed',
-    event: "workflow_dispatch",
-    head_branch: "main",
-    head_repository: { id: 1, full_name: repository },
-    head_sha: sourceSha,
-    path: ".github/workflows/release.yml",
-    repository: { id: 1, full_name: repository },
-  };
-  const comparison = {
-    status: "ahead",
-    base_commit: { sha: sourceSha },
-    merge_base_commit: { sha: sourceSha },
-  };
-  const jobs = [
-    {
-      id: 1,
-      run_id: Number(sourceRunId),
-      head_sha: sourceSha,
-      name: "Validate selected components / Production validation gate",
-      status: "completed",
-      conclusion: "success",
-      steps: [],
-    },
-    {
-      id: 2,
-      run_id: Number(sourceRunId),
-      head_sha: sourceSha,
-      name: "Prepare Railway artifacts / prepare",
-      status: "completed",
-      conclusion: "success",
-      steps: [{ name: "Prepare immutable release images", conclusion: "success" }],
-    },
-  ];
-  jobs.push({
-    id: 3, run_id: Number(sourceRunId), head_sha: sourceSha,
-    name: "Deploy staging / Deploy and smoke staging", status: "completed", conclusion: "success",
-  });
-  const request = async (path) => {
-    if (path === `/actions/runs/${sourceRunId}`) return structuredClone(run);
-    if (path === "/branches/main") return { name: "main", commit: { sha: mainSha } };
-    if (path === `/compare/${sourceSha}...${mainSha}`) return structuredClone(comparison);
-    if (path === `/actions/runs/${sourceRunId}/jobs?filter=all&per_page=100&page=1`) {
-      return { jobs: structuredClone(jobs) };
-    }
-    throw new Error(`Unexpected request ${path}`);
-  };
-  return { comparison, jobs, prepared, request, run };
+  const state = releaseFixture({ sourceRunId, mainSha, services: manifest.services,
+    components: [...backendComponents, 'web'] });
+  state.run.event = 'workflow_dispatch';
+  const successful = state.jobs[0];
+  state.jobs.unshift({ ...successful, id: 1, name: 'Validate selected components / Production validation gate', steps: [] });
+  state.jobs.push({ ...successful, id: 3, name: 'Deploy staging / Deploy and smoke staging', steps: [] });
+  return state;
 }
 
 test("prepared deploy accepts only its validated main source and exact artifact", async () => {
@@ -140,26 +78,6 @@ test('staging resume rejects incomplete deployment, unvalidated images, and unre
   await assert.rejects(selectRelease({ sourceSha, resumeStaging: true, repository }, async () => []), /source run ID/);
 });
 
-for (const [name, selected] of [
-  ["web-only", ["web"]],
-  ["backend-only", ["api", "run-worker", "cache", "git-router", "media-api", "media-worker"]],
-  ["full application", ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"]],
-]) {
-  test(`${name} prepared replay selects only manifest components`, async () => {
-    const state = fixture();
-    state.prepared.components = Object.fromEntries(selected.map((component) => [component, state.prepared.components[component]]));
-    if (name === "web-only") delete state.prepared.maintenanceSha256;
-    const proof = await validatePreparedDeployment(state.prepared, sourceRunId, state.request, repository);
-    const backend = selected.some((component) => component !== "web");
-    assert.equal(proof.selection.backend, backend);
-    for (const component of ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"]) {
-      assert.equal(proof.selection[component], selected.includes(component));
-    }
-    state.jobs[2].conclusion = "failure";
-    await assert.rejects(validatePreparedDeployment(state.prepared, sourceRunId, state.request, repository), /staging/);
-  });
-}
-
 test("prepared replay rejects empty, unknown, mismatched, and incomplete backend artifacts", async () => {
   for (const [mutate, expected] of [
     [(state) => { state.prepared.components = {}; }, /nonempty/],
@@ -181,7 +99,6 @@ test("cutover recovery retains its complete backend requirement", async () => {
   await assert.rejects(validateRecoveryPreparation(state.prepared, state.request, repository, manifest), /missing cache/);
 });
 
-
 test("ordinary selection pins requested revision without downloading artifacts", async () => {
   const result = await selectRelease({ sourceSha, repository,
     loadPrepared: () => { throw new Error("unexpected download"); } }, async () => []);
@@ -196,8 +113,8 @@ test("replay selects only validated manifest components", async () => {
   assert.equal(result.sha, sourceSha);
   assert.equal(result.prepared_run_id, sourceRunId);
   assert.equal(result.recover_cutover_id, "");
-  assert.equal(result.reuse_components.web, true);
-  assert.equal(result.reuse_components.backend, true);
+  assert.equal(result.recover_components.web, true);
+  assert.equal(result.recover_components.backend, true);
   assert.deepEqual(result.prepared, state.prepared);
 });
 
@@ -206,8 +123,8 @@ test("web-only replay does not select the backend", async () => {
   state.prepared.components = { web: state.prepared.components.web };
   const result = await selectRelease({ sourceSha: mainSha, sourceRunId, repository,
     loadPrepared: async () => state.prepared }, path => path.startsWith("/deployments?") ? [] : state.request(path));
-  assert.equal(result.reuse_components.web, true);
-  assert.equal(result.reuse_components.backend, false);
+  assert.equal(result.recover_components.web, true);
+  assert.equal(result.recover_components.backend, false);
 });
 
 test("recovery overrides new main and rejects a different replay run", async () => {

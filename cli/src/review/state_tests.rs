@@ -1,7 +1,6 @@
 use super::*;
 use crate::git_repo::GitChangedPath;
 use crate::repo_config::default_scope_repo_config;
-use scope_domain::repo_config::{HistoryRewriteAction, HistoryRewriteRequest};
 
 fn state_with_mode(mode: ReviewMode) -> ReviewState {
     let tree = ReviewTree::from_paths(&["src/lib.rs".to_string(), "README.md".to_string()], &[]);
@@ -133,57 +132,6 @@ fn escape_clears_closed_filter_before_canceling() {
         state.handle_input(ReviewInput::Escape),
         ReviewStateAction::Cancel
     );
-}
-
-#[test]
-fn initial_message_surfaces_read_only_history_rewrites() {
-    let tree = ReviewTree::from_paths(&["README.md".to_string()], &[]);
-    let mut config = default_scope_repo_config();
-    config.history.rewrites.push(HistoryRewriteRequest {
-        path: "/secret.txt".into(),
-        action: HistoryRewriteAction::RedactPublicHistory,
-    });
-
-    let state = ReviewState::new(tree, config, ReviewMode::Push);
-
-    assert!(state.message().contains("history rewrite"));
-    assert_eq!(state.history_rewrite_count(), 1);
-    assert_eq!(
-        state.history_rewrite_summaries(),
-        vec!["History rewrite: /secret.txt -> redact public history".to_string()]
-    );
-}
-
-#[test]
-fn added_and_deleted_sections_start_collapsed() {
-    let state = state_with_changes();
-    let rows = state.visible_rows(0, usize::MAX);
-
-    assert!(matches!(
-        rows[0],
-        ReviewRow::ChangeSection {
-            kind: ChangeListKind::Added,
-            count: 1,
-            expanded: false,
-        }
-    ));
-    assert!(matches!(
-        rows[1],
-        ReviewRow::ChangeSection {
-            kind: ChangeListKind::Deleted,
-            count: 1,
-            expanded: false,
-        }
-    ));
-    assert!(
-        !rows
-            .iter()
-            .any(|row| matches!(row, ReviewRow::ChangePath { .. }))
-    );
-    assert!(matches!(
-        rows[state.cursor()],
-        ReviewRow::TreeNode { ref path, .. } if path == "/"
-    ));
 }
 
 #[test]

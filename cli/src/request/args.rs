@@ -173,7 +173,7 @@ pub(super) enum RequestDiscussionCommand {
     #[command(about = "Resolve a discussion")]
     Resolve(RequestDiscussionResolveArgs),
     #[command(about = "Reopen a discussion with a reply")]
-    Reopen(RequestDiscussionReopenArgs),
+    Reopen(RequestDiscussionReplyArgs),
 }
 
 #[derive(Args)]
@@ -248,16 +248,6 @@ pub(super) struct RequestDiscussionResolveArgs {
     pub(super) discussion_id: String,
     #[command(flatten)]
     pub(super) target: RequestTargetArgs,
-}
-
-#[derive(Parser)]
-pub(super) struct RequestDiscussionReopenArgs {
-    #[arg(value_name = "DISCUSSION", help = "Discussion ID")]
-    pub(super) discussion_id: String,
-    #[command(flatten)]
-    pub(super) target: RequestTargetArgs,
-    #[command(flatten)]
-    pub(super) content: RequestDiscussionBodyArgs,
 }
 
 #[derive(Parser)]

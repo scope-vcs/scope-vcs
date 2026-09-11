@@ -6,20 +6,31 @@ use crate::{
         push_head_to_ref_with_bearer, run_git_in_repo, scope_remote_head_oid,
         set_branch_config_value,
     },
+    git_transport::ScopeRemote,
     push::DEFAULT_SCOPE_BRANCH,
-    request::remote::{REQUEST_REMOTE_KEY, RequestRemoteTarget},
 };
 use anyhow::{Context, bail};
 use scope_api_contract::RequestAudience;
 
+const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
 const REQUEST_ID_KEY: &str = "scopeRequestId";
 const REQUEST_OWNER_KEY: &str = "scopeRequestOwner";
 const REQUEST_REPO_KEY: &str = "scopeRequestRepo";
 const REQUEST_AUDIENCE_KEY: &str = "scopeRequestAudience";
 
 pub(super) struct RequestContext {
-    pub(super) target: RequestRemoteTarget,
+    pub(super) target: ScopeRemote,
     pub(super) repo: RepoSummaryResponse,
+}
+
+impl RequestContext {
+    pub(super) fn api_target<'a>(&'a self, request_id: &'a str) -> crate::api::RequestTarget<'a> {
+        crate::api::RequestTarget {
+            owner: &self.target.owner,
+            repo: &self.target.repo,
+            request_id,
+        }
+    }
 }
 
 pub(super) fn load_context(
@@ -45,7 +56,7 @@ pub(super) fn load_context_and_request_id(
 
 pub(super) fn refresh_main_projection(
     git_repo: &GitRepo,
-    target: &RequestRemoteTarget,
+    target: &ScopeRemote,
     audience: RequestAudience,
     session_token: &str,
 ) -> anyhow::Result<String> {
@@ -65,7 +76,7 @@ pub(super) fn refresh_main_projection(
 }
 
 pub(super) fn push_request_head(
-    target: &RequestRemoteTarget,
+    target: &ScopeRemote,
     session_token: &str,
     request_head_oid: &str,
     request_id: &str,
@@ -232,7 +243,7 @@ pub(super) fn store_request_metadata_fields(
 pub(super) fn track_request_branch_ref(
     git_repo: &GitRepo,
     branch: &str,
-    target: &RequestRemoteTarget,
+    target: &ScopeRemote,
     request_name: &str,
     request_head_oid: &str,
 ) -> anyhow::Result<()> {

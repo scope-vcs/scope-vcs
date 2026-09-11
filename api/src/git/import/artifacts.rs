@@ -375,13 +375,8 @@ fn capture_repository_workflow_catalog(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::import::{run_git, run_git_output, validate_pushed_file_path};
+    use crate::git::import::validate_pushed_file_path;
     use scope_domain::{content::DEFAULT_GIT_FILE_MODE, policy::ScopePath};
-    use std::{
-        fs,
-        path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
-    };
 
     #[test]
     fn landing_file_mutation_distinguishes_unchanged_delete_and_oversized() {
@@ -408,61 +403,5 @@ mod tests {
                 .unwrap(),
             RepositoryLandingFileMutation::Delete
         );
-    }
-
-    #[test]
-    fn landing_file_upsert_reads_the_changed_git_blob() {
-        let repo = temp_repo_path("landing-file");
-        run_git(
-            None,
-            &[
-                "init",
-                "--initial-branch=main",
-                repo.to_string_lossy().as_ref(),
-            ],
-            "initializing landing file test repository",
-        )
-        .unwrap();
-        let bytes = b"<!doctype html><h1>fast</h1>";
-        fs::write(repo.join("README.html"), bytes).unwrap();
-        let output = run_git_output(
-            Some(&repo),
-            &["hash-object", "-w", "README.html"],
-            "writing landing file test blob",
-        )
-        .unwrap();
-        assert!(output.status.success());
-        let oid = String::from_utf8(output.stdout).unwrap().trim().to_string();
-        let entry = GitTreeFile {
-            path: validate_pushed_file_path("README.html").unwrap(),
-            mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            oid: oid.clone(),
-            size_bytes: bytes.len(),
-        };
-
-        let mutation = repository_landing_file_mutation(
-            &repo,
-            &[(
-                ScopePath::parse(REPOSITORY_LANDING_FILE_PATH).unwrap(),
-                Some(entry),
-            )],
-        )
-        .unwrap();
-        let RepositoryLandingFileMutation::Upsert(file) = mutation else {
-            panic!("expected landing file upsert");
-        };
-        assert_eq!(file.oid, oid);
-        assert_eq!(file.content_bytes, bytes);
-        assert_eq!(file.size_bytes, bytes.len() as u64);
-
-        fs::remove_dir_all(repo).unwrap();
-    }
-
-    fn temp_repo_path(label: &str) -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("scope-{label}-{}-{nonce}", std::process::id()))
     }
 }

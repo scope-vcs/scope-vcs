@@ -195,10 +195,6 @@ impl Policy {
             .unwrap_or(self.default_visibility)
     }
 
-    pub fn set_default_visibility(&mut self, visibility: Visibility) {
-        self.default_visibility = visibility;
-    }
-
     pub fn remove_rule(&mut self, path: &ScopePath) {
         self.rules.retain(|rule| &rule.path != path);
     }

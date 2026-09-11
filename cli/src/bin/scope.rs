@@ -286,5 +286,5 @@ fn run_request(args: RequestArgs, json: bool) -> anyhow::Result<()> {
         ApiSession::new(&client, &api_url, &session.token),
         json,
     )?
-    .render(json)
+    .render()
 }

@@ -1,3 +1,4 @@
+use crate::use_cases::request_access::visible_request;
 use crate::{
     error::ApiError,
     git::{
@@ -8,7 +9,7 @@ use crate::{
         file_diffs::{
             MAX_RENDERED_TEXT_BYTES, binary_content_response, review_content_response_for_bytes,
         },
-        requests::{repo_and_access, visible_request},
+        requests::repo_and_access,
         responses::{
             RequestFileDiffRequest, ReviewFileContentResponse, ReviewFileDiffResponse,
             request_actor_summary_response,

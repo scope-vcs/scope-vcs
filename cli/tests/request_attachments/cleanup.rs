@@ -11,18 +11,7 @@ fn title_only_edit_does_not_read_or_rewrite_the_attachment_journal() {
         .join("scope/request-attachments.json");
     fs::write(&journal, "corrupt journal").unwrap();
     let output = server
-        .command(cwd.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "edit",
-            "--request",
-            "req_one",
-            "--title",
-            "Renamed",
-        ])
+        .request_command(cwd.path(), ["edit", "--title", "Renamed"])
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
@@ -49,18 +38,8 @@ fn cleanup_failures_preserve_saved_results_and_retry_identities() {
             .join("scope/request-attachments.json");
         let lock = journal.with_extension("lock");
         server.state.lock().unwrap().block_cleanup = Some(lock.clone());
-        args.extend([
-            "--request",
-            "req_one",
-            "--attach",
-            attachment.to_str().unwrap(),
-        ]);
-        let output = server
-            .command(cwd.path())
-            .args(["--json", "--repo", "owner/repo", "request"])
-            .args(&args)
-            .output()
-            .unwrap();
+        args.extend(["--attach", attachment.to_str().unwrap()]);
+        let output = server.request_command(cwd.path(), &args).output().unwrap();
         assert!(!output.status.success(), "{operation}: {output:?}");
         let stderr = String::from_utf8(output.stderr).unwrap();
         let error: Value = serde_json::from_str(stderr.lines().last().unwrap()).unwrap();
@@ -85,12 +64,7 @@ fn cleanup_failures_preserve_saved_results_and_retry_identities() {
             assert_eq!(pending["pending_mutations"].as_array().unwrap().len(), 1);
         }
         fs::remove_dir(&lock).unwrap();
-        let retry = server
-            .command(cwd.path())
-            .args(["--json", "--repo", "owner/repo", "request"])
-            .args(&args)
-            .output()
-            .unwrap();
+        let retry = server.request_command(cwd.path(), &args).output().unwrap();
         assert!(retry.status.success(), "{operation}: {retry:?}");
         let state = server.state.lock().unwrap();
         assert_eq!(

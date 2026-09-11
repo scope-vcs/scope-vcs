@@ -1,14 +1,13 @@
 use super::*;
 use crate::{
-    db::{CatalogFixture, MetadataStore, TestDatabaseTarget, locks::wait_for_transaction_waiter},
+    db::{
+        MetadataStore,
+        locks::wait_for_transaction_waiter,
+        test_support::fixtures::{repository, source_blob, store_with_repositories, user},
+    },
     error::PostgresErrorKind,
 };
-use scope_domain::{
-    account::UserAccount,
-    content_ref::ContentRef,
-    policy::Visibility,
-    repository::{RepoLifecycleState, Repository, collaboration::RepositoryMember},
-};
+use scope_domain::{policy::Visibility, repository::collaboration::RepositoryMember};
 use sea_orm::{ConnectionTrait, DatabaseBackend, PaginatorTrait, Statement};
 
 fn fixture() -> (
@@ -17,37 +16,15 @@ fn fixture() -> (
     WorkflowRevision,
     SourceBlob,
 ) {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
-    let owner = UserAccount {
-        id: "owner".into(),
-        handle: "owner".into(),
-        email: "owner@example.com".into(),
-        email_verified: true,
-    };
-    let member = UserAccount {
-        id: "member".into(),
-        handle: "member".into(),
-        email: "member@example.com".into(),
-        email_verified: true,
-    };
-    let mut repository =
-        Repository::new(&owner, "repo", Visibility::Private, "repoi_test").unwrap();
-    repository.record.lifecycle_state = RepoLifecycleState::Ready;
+    let mut repository = repository(&user("owner", "owner"), "repo", Visibility::Private);
     repository.members.push(RepositoryMember {
         repo_id: "owner/repo".into(),
-        user_id: member.id.clone(),
+        user_id: "member".into(),
         permissions: Default::default(),
         created_at_unix: 1,
         updated_at_unix: 1,
     });
-    let mut catalog = CatalogFixture::default();
-    catalog.users.insert(owner.id.clone(), owner);
-    catalog.users.insert(member.id.clone(), member);
-    catalog
-        .repositories
-        .insert(repository.record.id.clone(), repository);
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
+    let store = store_with_repositories([repository]);
     let request = ManualRunRequest::new(
         "owner/repo".into(),
         "member".into(),
@@ -60,13 +37,7 @@ fn fixture() -> (
         "/.scope/runs/checks.yml",
         format!("name: Checks\non:\n  manual: true\ncontainer: {{ image: rust@sha256:{} }}\ntimeout: 10m\njobs:\n  checks:\n    steps:\n      - {{ name: Test, run: cargo test }}\n", "b".repeat(64)).as_bytes(),
     ).unwrap().into_revision("owner/repo").unwrap();
-    let object = SourceBlob {
-        content_ref: ContentRef::git_bundle_sha256("c".repeat(64)),
-        sha256: "c".repeat(64),
-        git_oid: "a".repeat(40),
-        git_file_mode: "100644".into(),
-        size_bytes: 42,
-    };
+    let object = source_blob(&"a".repeat(40), &"c".repeat(64), 42);
     (store, request, revision, object)
 }
 

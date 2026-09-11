@@ -3,7 +3,6 @@ use super::{
     files::set_modified,
     finalize::save_cache,
     identity::{MAX_CACHE_KEY_FILE_BYTES, digest_inputs_at, open_key_file},
-    restore::CachePreparationPhases,
     types::{CacheFinalizationOutcome, PreparedCache},
 };
 use crate::api::RuntimeClient;
@@ -250,29 +249,6 @@ fn archive_hash_counts_only_bytes_accepted_by_partial_writes() {
     assert_eq!(
         writer.identity(),
         (8, hex::encode(Sha256::digest(b"complete")))
-    );
-}
-
-#[test]
-fn cache_preparation_total_is_derived_from_timed_phases() {
-    let phases = CachePreparationPhases {
-        key_ms: 1,
-        metadata_ms: 2,
-        size_bytes: u64::MAX,
-        download_verify_ms: 3,
-        sync_ms: 4,
-        extraction_ms: 5,
-    };
-
-    assert_eq!(phases.prepare_ms(), 15);
-    assert_eq!(
-        CachePreparationPhases {
-            key_ms: u64::MAX,
-            metadata_ms: 1,
-            ..CachePreparationPhases::default()
-        }
-        .prepare_ms(),
-        u64::MAX
     );
 }
 

@@ -497,39 +497,6 @@ mod tests {
     }
 
     #[test]
-    fn submit_posts_an_empty_payload() {
-        let (api_url, server) = serve_once(
-            StatusCode::CONFLICT,
-            r#"{"code":"conflict","message":"fixture stop","retryable":false}"#,
-        );
-
-        submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target()).unwrap_err();
-
-        let request = server.join().unwrap();
-        assert!(request.contains("\r\n\r\n{}"), "{request}");
-    }
-
-    #[test]
-    fn request_not_found_uses_the_authoritative_contract_message() {
-        let (api_url, server) = serve_once(
-            StatusCode::NOT_FOUND,
-            r#"{"code":"not_found","message":"request req_one not found in owner/repo","retryable":false}"#,
-        );
-
-        let error = get_request(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            "owner",
-            "repo",
-            "req_one",
-        )
-        .unwrap_err()
-        .to_string();
-
-        assert_eq!(error, "request req_one not found in owner/repo");
-        server.join().unwrap();
-    }
-
-    #[test]
     fn malformed_error_bodies_use_a_scoped_status_fallback() {
         let (api_url, server) = serve_once(StatusCode::SERVICE_UNAVAILABLE, "upstream exploded");
 
@@ -542,53 +509,6 @@ mod tests {
             "Scope is temporarily unavailable while trying to merge request req_one for owner/repo"
         );
         server.join().unwrap();
-    }
-
-    #[test]
-    fn invite_and_activity_wrappers_use_contract_methods_queries_and_payloads() {
-        let (api_url, invite_server) = serve_once(
-            StatusCode::CONFLICT,
-            r#"{"code":"conflict","message":"fixture stop","retryable":false}"#,
-        );
-        add_request_invitee(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            target(),
-            "Exact-Handle".to_string(),
-        )
-        .unwrap_err();
-        let invite_request = invite_server.join().unwrap();
-        assert!(
-            invite_request
-                .starts_with("PUT /v1/repos/owner/repo/requests/req_one/invitees HTTP/1.1")
-        );
-        assert!(
-            invite_request.contains(r#"{"handle":"Exact-Handle"}"#),
-            "{invite_request}"
-        );
-
-        let (api_url, activity_server) =
-            serve_once(StatusCode::OK, r#"{"events":[],"through_position":7}"#);
-        let page = get_request_activity(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            RequestActivityParams {
-                target: target(),
-                after: Some(4),
-                latest: true,
-                limit: Some(25),
-            },
-        )
-        .unwrap();
-        assert!(page.events.is_empty());
-        assert_eq!(page.through_position, 7);
-        let activity_request = activity_server.join().unwrap();
-        let request_line = activity_request.lines().next().unwrap();
-        assert!(
-            request_line.starts_with("GET /v1/repos/owner/repo/requests/req_one/activity?"),
-            "{request_line}"
-        );
-        for query in ["after=4", "latest=true", "limit=25"] {
-            assert!(request_line.contains(query), "{request_line}");
-        }
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use crate::use_cases::request_access::request_policy_for_viewer;
 use crate::{
     auth::scope::optional_scope_user,
     error::ApiError,
@@ -15,7 +16,6 @@ use scope_domain::{
     account::UserAccount,
     repository::access::{RepositoryAccessContext, RepositoryActor},
     repository::{RepositoryIncarnation, repo_id},
-    requests::{RequestViewer, request_policy},
 };
 use std::{convert::Infallible, time::Duration};
 use tokio_stream::{Stream, StreamExt, once, wrappers::BroadcastStream};
@@ -187,21 +187,9 @@ async fn stream_event_for_user(
             return Ok(None);
         };
         let user_id = user.map(|user| user.id.as_str());
-        let is_invitee = match user_id {
-            Some(user_id) => {
-                state
-                    .metadata
-                    .requests()
-                    .request_is_invitee(request_id, user_id)
-                    .await?
-            }
-            None => false,
-        };
-        if !request_policy(
-            &request,
-            RequestViewer::new(repo.access, user_id, is_invitee),
-        )
-        .activity_stream_visible
+        if !request_policy_for_viewer(state, &request, repo.access, user_id)
+            .await?
+            .activity_stream_visible
         {
             return Ok(None);
         }

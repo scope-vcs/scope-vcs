@@ -6,69 +6,70 @@ use super::{
 use std::{net::TcpListener, sync::mpsc};
 
 #[test]
-fn source_download_retries_a_temporary_response_then_installs_verified_bytes() {
+fn source_download_retries_transient_failures_and_installs_only_verified_bytes() {
     let body = b"verified source bundle";
     let digest = hex::encode(Sha256::digest(body));
-    let (client, requests, server) = source_test_client(vec![
+    for first_response in [
         source_response("503 Service Unavailable", b"", "source-a", &digest, None),
-        source_response("200 OK", body, "source-a", &digest, None),
-    ]);
-    let directory = tempfile::tempdir().unwrap();
-    let destination = directory.path().join("source.bundle");
-
-    client.download_source("source-a", &destination).unwrap();
-
-    assert_eq!(fs::read(&destination).unwrap(), body);
-    assert_eq!(requests.try_iter().count(), 2);
-    assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
-    server.join().unwrap();
-}
-
-#[test]
-fn source_download_does_not_retry_a_validation_failure() {
-    let body = b"corrupt source bundle";
-    let wrong_digest = hex::encode(Sha256::digest(b"different bytes"));
-    let (client, requests, server) = source_test_client(vec![source_response(
-        "200 OK",
-        body,
-        "source-a",
-        &wrong_digest,
-        None,
-    )]);
-    let directory = tempfile::tempdir().unwrap();
-    let destination = directory.path().join("source.bundle");
-
-    let error = client
-        .download_source("source-a", &destination)
-        .unwrap_err();
-
-    assert_eq!(
-        error.to_string(),
-        "downloaded source bytes do not match response digest"
-    );
-    assert!(!destination.exists());
-    assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
-    assert_eq!(requests.try_iter().count(), 1);
-    server.join().unwrap();
-}
-
-#[test]
-fn source_download_retries_a_partial_body_without_leaving_partial_files() {
-    let body = b"complete source bundle";
-    let digest = hex::encode(Sha256::digest(body));
-    let (client, requests, server) = source_test_client(vec![
         source_response("200 OK", b"partial", "source-a", &digest, Some(100)),
-        source_response("200 OK", body, "source-a", &digest, None),
-    ]);
-    let directory = tempfile::tempdir().unwrap();
-    let destination = directory.path().join("source.bundle");
+    ] {
+        let (client, requests, server) = raw_test_client(vec![
+            first_response,
+            source_response("200 OK", body, "source-a", &digest, None),
+        ]);
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("source.bundle");
+        client.download_source("source-a", &destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), body);
+        assert_eq!(requests.try_iter().count(), 2);
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+        server.join().unwrap();
+    }
+}
 
-    client.download_source("source-a", &destination).unwrap();
-
-    assert_eq!(fs::read(&destination).unwrap(), body);
-    assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
-    assert_eq!(requests.try_iter().count(), 2);
-    server.join().unwrap();
+#[test]
+fn source_download_rejects_invalid_sources_and_local_failures_without_retry_or_partial_files() {
+    let body = b"verified source bundle";
+    let digest = hex::encode(Sha256::digest(body));
+    let wrong_digest = hex::encode(Sha256::digest(b"different bytes"));
+    for (digest, advertised_length, path, expected_error) in [
+        (
+            wrong_digest.as_str(),
+            None,
+            "source.bundle",
+            "downloaded source bytes do not match response digest".to_string(),
+        ),
+        (
+            digest.as_str(),
+            None,
+            "missing/source.bundle",
+            "create source bundle".to_string(),
+        ),
+        (
+            digest.as_str(),
+            Some(MAX_SOURCE_BYTES + 1),
+            "source.bundle",
+            format!("run source exceeds {MAX_SOURCE_BYTES} bytes"),
+        ),
+    ] {
+        let (client, requests, server) = raw_test_client(vec![source_response(
+            "200 OK",
+            body,
+            "source-a",
+            digest,
+            advertised_length,
+        )]);
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join(path);
+        let error = client
+            .download_source("source-a", &destination)
+            .unwrap_err();
+        assert!(error.to_string().contains(&expected_error), "{error:#}");
+        assert!(!destination.exists());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert_eq!(requests.try_iter().count(), 1);
+        server.join().unwrap();
+    }
 }
 
 #[test]
@@ -83,51 +84,6 @@ fn source_download_retry_statuses_are_narrow() {
             StatusCode::from_u16(status).unwrap()
         ));
     }
-}
-
-#[test]
-fn source_download_does_not_retry_local_file_failures() {
-    let body = b"verified source bundle";
-    let digest = hex::encode(Sha256::digest(body));
-    let (client, requests, server) = source_test_client(vec![source_response(
-        "200 OK", body, "source-a", &digest, None,
-    )]);
-    let directory = tempfile::tempdir().unwrap();
-    let destination = directory.path().join("missing").join("source.bundle");
-
-    let error = client
-        .download_source("source-a", &destination)
-        .unwrap_err();
-
-    assert!(error.to_string().contains("create source bundle"));
-    assert_eq!(requests.try_iter().count(), 1);
-    server.join().unwrap();
-}
-
-#[test]
-fn source_download_rejects_oversized_content_without_creating_a_file() {
-    let digest = hex::encode(Sha256::digest(b""));
-    let (client, requests, server) = source_test_client(vec![source_response(
-        "200 OK",
-        b"",
-        "source-a",
-        &digest,
-        Some(MAX_SOURCE_BYTES + 1),
-    )]);
-    let directory = tempfile::tempdir().unwrap();
-    let destination = directory.path().join("source.bundle");
-
-    let error = client
-        .download_source("source-a", &destination)
-        .unwrap_err();
-
-    assert_eq!(
-        error.to_string(),
-        format!("run source exceeds {MAX_SOURCE_BYTES} bytes")
-    );
-    assert!(!destination.exists());
-    assert_eq!(requests.try_iter().count(), 1);
-    server.join().unwrap();
 }
 
 #[test]
@@ -197,17 +153,20 @@ fn completion_requests_report_the_accumulated_truncation() {
     server.join().unwrap();
 }
 
-fn source_test_client(
+fn raw_test_client(
     responses: Vec<Vec<u8>>,
-) -> (RuntimeClient, mpsc::Receiver<()>, thread::JoinHandle<()>) {
+) -> (
+    RuntimeClient,
+    mpsc::Receiver<String>,
+    thread::JoinHandle<()>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let (request_sender, requests) = mpsc::channel();
     let server = thread::spawn(move || {
         for response in responses {
             let (mut stream, _) = listener.accept().unwrap();
-            read_request(&mut stream);
-            request_sender.send(()).unwrap();
+            request_sender.send(read_request(&mut stream)).unwrap();
             stream.write_all(&response).unwrap();
         }
     });
@@ -338,37 +297,12 @@ fn test_client(
     mpsc::Receiver<String>,
     thread::JoinHandle<()>,
 ) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let responses = responses.to_vec();
-    let (request_sender, requests) = mpsc::channel();
-    let server = thread::spawn(move || {
-        for (status, body) in responses {
-            let (mut stream, _) = listener.accept().unwrap();
-            let request = read_request(&mut stream);
-            request_sender.send(request).unwrap();
-            write!(
-                    stream,
-                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )
-                .unwrap();
-        }
-    });
-    let client = RuntimeClient {
-        client: Client::builder()
-            .timeout(Duration::from_secs(1))
-            .build()
-            .unwrap(),
-        api_url: format!("http://{address}"),
-        attempt_id: "test".to_string(),
-        attempt_token: Arc::new(Mutex::new(Some("token".to_string()))),
-        cache_access: Arc::new(Mutex::new(None)),
-        cache_keys: Arc::new(Mutex::new(Vec::new())),
-        heartbeat_lock: Arc::new(Mutex::new(())),
-        heartbeat_started: None,
-    };
-    (client, requests, server)
+    raw_test_client(responses.iter().map(|(status, body)| {
+        format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        ).into_bytes()
+    }).collect())
 }
 
 fn read_request(stream: &mut std::net::TcpStream) -> String {

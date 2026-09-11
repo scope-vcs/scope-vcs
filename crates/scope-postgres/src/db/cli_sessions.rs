@@ -72,23 +72,18 @@ pub(super) async fn record_cli_session_use<C: ConnectionTrait>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
-    use scope_domain::account::UserAccount;
+    use crate::db::test_support::fixtures::{store_with_repositories, user};
     use sea_orm::EntityTrait;
 
     #[tokio::test]
     async fn successful_session_authentication_records_throttled_monotonic_activity() {
-        let target = TestDatabaseTarget::required().unwrap();
-        let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        let user = UserAccount {
-            id: "user_session_activity".into(),
-            handle: "session-activity".into(),
-            email: "session-activity@example.com".into(),
-            email_verified: true,
-        };
-        let mut catalog = CatalogFixture::default();
-        catalog.users.insert(user.id.clone(), user.clone());
-        store.admin().seed_catalog_for_tests(catalog).unwrap();
+        let store = store_with_repositories([]);
+        let user = user("user_session_activity", "session-activity");
+        store
+            .auth()
+            .insert_user_for_tests(user.clone())
+            .await
+            .unwrap();
         insert_cli_session_in_tx(
             store.db.as_ref(),
             &user.id,

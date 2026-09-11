@@ -61,59 +61,35 @@ async fn input_errors_and_limits_remain_primary_when_destinations_also_fail() {
 
 #[tokio::test]
 async fn ingest_accepts_the_plaintext_limit_and_cleans_up_on_the_next_byte() {
-    let fixture = Fixture::new(8, 64, 1);
-    let exact = fixture
-        .store
-        .ingest(REPOSITORY_ID, &b"four"[..], 4)
-        .await
-        .unwrap();
-    assert_eq!(exact.segment.plaintext_bytes, 4);
-    fixture.store.delete_local(&exact).await.unwrap();
-    fixture
-        .store
-        .delete_remote(&exact.object_key)
-        .await
-        .unwrap();
+    for input in [&b"four"[..], &b""[..]] {
+        let fixture = Fixture::new(8, 64, 1);
+        let limit = input.len() as u64;
+        let exact = fixture
+            .store
+            .ingest(REPOSITORY_ID, input, limit)
+            .await
+            .unwrap();
+        assert_eq!(exact.segment.plaintext_bytes, limit);
+        fixture.store.delete_local(&exact).await.unwrap();
+        fixture
+            .store
+            .delete_remote(&exact.object_key)
+            .await
+            .unwrap();
 
-    let error = fixture
-        .store
-        .ingest(REPOSITORY_ID, &b"five!"[..], 4)
-        .await
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        GitStorageError::PlaintextLimitExceeded { max_bytes: 4 }
-    ));
-    assert!(fixture.backend.objects().is_empty());
-    assert!(all_files(&fixture.local_root).await.is_empty());
-}
-
-#[tokio::test]
-async fn zero_plaintext_limit_accepts_only_an_empty_stream() {
-    let fixture = Fixture::new(8, 64, 1);
-    let exact = fixture
-        .store
-        .ingest(REPOSITORY_ID, &b""[..], 0)
-        .await
-        .unwrap();
-    assert_eq!(exact.segment.plaintext_bytes, 0);
-    fixture.store.delete_local(&exact).await.unwrap();
-    fixture
-        .store
-        .delete_remote(&exact.object_key)
-        .await
-        .unwrap();
-
-    let error = fixture
-        .store
-        .ingest(REPOSITORY_ID, &b"x"[..], 0)
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        GitStorageError::PlaintextLimitExceeded { max_bytes: 0 }
-    ));
+        let mut oversized = input.to_vec();
+        oversized.push(b'!');
+        let error = fixture
+            .store
+            .ingest(REPOSITORY_ID, oversized.as_slice(), limit)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, GitStorageError::PlaintextLimitExceeded { max_bytes } if max_bytes == limit)
+        );
+        assert!(fixture.backend.objects().is_empty());
+        assert!(all_files(&fixture.local_root).await.is_empty());
+    }
 }
 
 #[tokio::test]

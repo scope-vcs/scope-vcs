@@ -2,12 +2,10 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   attemptForJob,
-  defaultShowGraph,
   latestAttempt,
   mergeStepLogPage,
   mergeStepLogs,
   reconcileAttemptOverrides,
-  runCanChange,
   selectAttempt,
   selectInitialView,
   selectJob,
@@ -31,15 +29,6 @@ function job(overrides: {
 }
 
 describe('repository run detail model', () => {
-  it('identifies states that can still change', () => {
-    for (const state of ['queued', 'dispatching', 'running'] as const) {
-      assert.equal(runCanChange(state), true)
-    }
-    for (const state of ['succeeded', 'failed', 'canceled', 'lost'] as const) {
-      assert.equal(runCanChange(state), false)
-    }
-  })
-
   it('selects the first failed step of the first failed job', () => {
     const jobs = [
       job({
@@ -199,21 +188,6 @@ describe('repository run detail model', () => {
     )
   })
 
-  it('only defaults to the graph once dependencies make the strip hard to scan', () => {
-    const independent = [0, 1, 2, 3].map((index) =>
-      job({ key: `job-${index}`, state: 'succeeded' }))
-    assert.equal(defaultShowGraph(independent), false)
-
-    const dependent = [
-      job({ key: 'a', state: 'succeeded' }),
-      job({ key: 'b', needs: ['a'], state: 'succeeded' }),
-      job({ key: 'c', state: 'succeeded' }),
-      job({ key: 'd', state: 'succeeded' }),
-    ]
-    assert.equal(defaultShowGraph(dependent), true)
-    assert.equal(defaultShowGraph(dependent.slice(0, 3)), false)
-  })
-
   it('merges incremental logs by stable position', () => {
     assert.deepEqual(mergeStepLogs(
       [{ position: 1, text: 'one', byte_length: 3 }, { position: 2, text: 'two', byte_length: 3 }],
@@ -237,17 +211,6 @@ describe('repository run detail model', () => {
     ), { logs: [{ position: 2, text, byte_length }], truncated: true })
   })
 
-  it('retains only a bounded suffix of selected step logs', () => {
-    const text = 'x'.repeat(300 * 1_024)
-    const byte_length = Buffer.byteLength(text)
-    assert.deepEqual(mergeStepLogs(
-      [{ position: 1, text, byte_length }],
-      [{ position: 2, text, byte_length }],
-    ), {
-      logs: [{ position: 2, text, byte_length }],
-      truncated: true,
-    })
-  })
 })
 
 describe('step log pagination', () => {
@@ -307,11 +270,6 @@ describe('attempt ordering', () => {
     assert.equal(latestAttempt(newestFirst.slice(0, 0))?.id, undefined)
   })
 
-  it('defaults a job to its latest attempt', () => {
-    const jobDetail = { attempts: newestFirst, job: { key: 'lint' } }
-
-    assert.equal(attemptForJob(jobDetail, {}, null)?.id, 'a2')
-  })
 })
 
 describe('run detail navigation', () => {

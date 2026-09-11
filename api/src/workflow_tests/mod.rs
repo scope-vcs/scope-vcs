@@ -305,7 +305,7 @@ fn assert_text_content(value: &serde_json::Value, expected: &str) {
     assert_eq!(value["text"], expected);
 }
 
-struct TempGitRepo(PathBuf);
+pub(crate) struct TempGitRepo(PathBuf);
 
 impl Deref for TempGitRepo {
     type Target = FsPath;
@@ -327,7 +327,7 @@ impl Drop for TempGitRepo {
     }
 }
 
-fn temp_git_repo(label: &str) -> TempGitRepo {
+pub(crate) fn temp_git_repo(label: &str) -> TempGitRepo {
     let repo = unique_test_path(label);
     let _ = fs::remove_dir_all(&repo);
     fs::create_dir_all(&repo).unwrap();
@@ -368,7 +368,7 @@ fn clone_test_repo(source: &FsPath, label: &str, bare: bool) -> TempGitRepo {
     TempGitRepo(repo)
 }
 
-fn commit_all(repo: &FsPath, message: &str) {
+pub(crate) fn commit_all(repo: &FsPath, message: &str) {
     run_git(
         Some(repo),
         &[

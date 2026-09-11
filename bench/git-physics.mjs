@@ -180,7 +180,7 @@ async function createFixture(config, caseRoot, repo, spec) {
   await checked(config, 'git', ['-C', repo, 'add', '--all']);
   await checked(config, 'git', ['-C', repo, 'commit', '--quiet', '-m', 'Base payload']);
   if (spec.commits > 1) await addHistory(config, caseRoot, repo, spec.commits - 1);
-  const countObjects = parseCountObjects(await checkedOutput(config, 'git', ['-C', repo, 'count-objects', '-v']));
+  const countObjects = parseCountObjects(await checked(config, 'git', ['-C', repo, 'count-objects', '-v'], { captureStdout: true }));
   return {
     repo,
     repoBytes: await directoryBytes(repo),
@@ -192,7 +192,7 @@ async function createFixture(config, caseRoot, repo, spec) {
 
 async function addHistory(config, caseRoot, repo, count) {
   const streamPath = join(caseRoot, 'history.fast-import');
-  const base = await checkedOutput(config, 'git', ['-C', repo, 'rev-parse', 'HEAD']);
+  const base = await checked(config, 'git', ['-C', repo, 'rev-parse', 'HEAD'], { captureStdout: true });
   await writeLinearHistoryStream(streamPath, base, count);
   await checked(config, 'git', ['-C', repo, 'fast-import', '--quiet'], { stdinPath: streamPath });
   await rm(streamPath, { force: true });
@@ -265,11 +265,6 @@ async function measured(config, workdir, program, args, options = {}) {
 
 async function checked(config, program, args, options = {}) {
   const result = await execute(program, args, { ...options, timeoutMs: config.timeoutMs });
-  if (result.code !== 0 || result.error || result.timedOut) throw new Error(`${program} ${args.join(' ')} failed: ${result.error || result.signal || result.stderr.slice(-1000)}`);
-}
-
-async function checkedOutput(config, program, args) {
-  const result = await execute(program, args, { timeoutMs: config.timeoutMs, captureStdout: true });
   if (result.code !== 0 || result.error || result.timedOut) throw new Error(`${program} ${args.join(' ')} failed: ${result.error || result.signal || result.stderr.slice(-1000)}`);
   return result.stdout;
 }
@@ -366,7 +361,7 @@ async function hostFacts(outputRoot) {
     filesystemBlockSize: disk.bsize,
     filesystemTotalBytes: disk.blocks * disk.bsize,
     filesystemFreeBytesAtStart: disk.bavail * disk.bsize,
-    gitVersion: (await checkedOutput({ timeoutMs: 10_000 }, 'git', ['--version'])).trim(),
+    gitVersion: (await checked({ timeoutMs: 10_000 }, 'git', ['--version'], { captureStdout: true })).trim(),
     outputFilesystemPath: resolve(outputRoot),
   };
 }

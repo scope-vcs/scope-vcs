@@ -130,7 +130,7 @@ pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePr
 pub use run_details::{RunAttemptDetail, RunDetail};
 pub use run_dispatch::CloudTaskStop;
 pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
-pub use run_log_reads::{RecentRunLogs, StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
+pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
 pub use run_log_writes::AppendRunLogResult;
 pub use runs::{DispatchClaim, EnqueueRunResult};
 #[cfg(any(
@@ -610,7 +610,7 @@ where
             let history = histories_by_repo.remove(&repo_id).ok_or_else(|| {
                 PostgresError::internal_message(format!("repository history missing for {repo_id}"))
             })?;
-            repo.try_into_domain(facts.into_facts(), members, invitations, history)
+            repo.try_into_domain(facts, members, invitations, history)
         })
         .collect()
 }

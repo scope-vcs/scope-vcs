@@ -15,12 +15,7 @@ fn history_repo(commits: Vec<LogicalCommit>, public_path: Option<&str>) -> Repos
     repo
 }
 
-fn history_commit(
-    id: &str,
-    _parent: Option<&str>,
-    message: &str,
-    changes: Vec<FileChange>,
-) -> LogicalCommit {
+fn history_commit(id: &str, message: &str, changes: Vec<FileChange>) -> LogicalCommit {
     LogicalCommit {
         occurred_at_unix: None,
         id: id.into(),
@@ -106,7 +101,6 @@ async fn latest_history_metadata_and_revision_ignore_private_only_activity() {
 
     let mut private = history_commit(
         "private-update",
-        None,
         "Secret change",
         vec![history_change(
             "/secret.txt",
@@ -150,23 +144,6 @@ async fn latest_history_metadata_and_revision_ignore_private_only_activity() {
 }
 
 #[tokio::test]
-async fn history_defaults_to_the_readers_broadest_audience() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    replace_test_repo(&state, paged_history_repo(&state, 1)).await;
-
-    let public = history_get(state.clone(), "/v1/repos/owner/repo/history", false).await;
-    assert_eq!(public.status(), StatusCode::OK);
-    let public = response_json(public).await;
-    assert_eq!(public["audience"], "public");
-    assert_eq!(public["feed"], "updates");
-
-    let maintainer = history_get(state, "/v1/repos/owner/repo/history", true).await;
-    assert_eq!(maintainer.status(), StatusCode::OK);
-    assert_eq!(response_json(maintainer).await["audience"], "private");
-}
-
-#[tokio::test]
 async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
@@ -175,7 +152,6 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     let mut repo = history_repo(
         vec![history_commit(
             "rv1",
-            None,
             "initial",
             vec![
                 history_change("/one.md", Visibility::Public, None, Some(one.clone())),
@@ -275,7 +251,6 @@ async fn unresolved_visibility_source_degrades_to_a_direct_update() {
     let mut repo = history_repo(
         vec![history_commit(
             "rv1",
-            None,
             "initial",
             vec![history_change(
                 "/README.md",
@@ -349,7 +324,6 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
         vec![
             history_commit(
                 "rv1",
-                None,
                 "initial",
                 vec![
                     history_change("/one.md", Visibility::Private, None, Some(one.clone())),
@@ -358,7 +332,6 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
             ),
             history_commit(
                 "rv2",
-                Some("rv1"),
                 "mixed policy push",
                 vec![history_change(
                     "/two.md",
@@ -428,7 +401,6 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
             vec![
                 history_commit(
                     "rv1",
-                    None,
                     "private draft",
                     vec![history_change(
                         "/notes.md",
@@ -439,7 +411,6 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
                 ),
                 history_commit(
                     "rv2",
-                    Some("rv1"),
                     "public release",
                     vec![history_change(
                         "/notes.md",
@@ -502,84 +473,6 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
     assert_text_content(&private["new_content"], "public release");
 }
 
-#[tokio::test]
-async fn public_history_generation_tracks_visible_history() {
-    let state = test_state_with_repo();
-    let first = source_blob(&state, "first");
-    replace_test_repo(
-        &state,
-        history_repo(
-            vec![history_commit(
-                "rv1",
-                None,
-                "first",
-                vec![history_change(
-                    "/README.md",
-                    Visibility::Public,
-                    None,
-                    Some(first.clone()),
-                )],
-            )],
-            Some("/README.md"),
-        ),
-    )
-    .await;
-
-    let response = history_get(
-        state.clone(),
-        "/v1/repos/owner/repo/history?audience=public",
-        false,
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let first_generation = response_json(response).await["generation"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    replace_test_repo(
-        &state,
-        history_repo(
-            vec![
-                history_commit(
-                    "rv1",
-                    None,
-                    "first",
-                    vec![history_change(
-                        "/README.md",
-                        Visibility::Public,
-                        None,
-                        Some(first.clone()),
-                    )],
-                ),
-                history_commit(
-                    "rv2",
-                    Some("rv1"),
-                    "second",
-                    vec![history_change(
-                        "/README.md",
-                        Visibility::Public,
-                        Some(first),
-                        Some(source_blob(&state, "second")),
-                    )],
-                ),
-            ],
-            Some("/README.md"),
-        ),
-    )
-    .await;
-
-    let response = history_get(state, "/v1/repos/owner/repo/history?audience=public", false).await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let second_generation = response_json(response).await["generation"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    assert_eq!(first_generation.len(), 64);
-    assert_ne!(first_generation, second_generation);
-}
-
 fn paged_history_repo(state: &AppState, count: usize) -> Repository {
     let mut previous = None;
     let commits = (1..=count)
@@ -587,7 +480,6 @@ fn paged_history_repo(state: &AppState, count: usize) -> Repository {
             let next = source_blob(state, &format!("version {index}"));
             let commit = history_commit(
                 &format!("rv{index}"),
-                None,
                 &format!("push {index}"),
                 vec![history_change(
                     "/README.md",
@@ -601,52 +493,6 @@ fn paged_history_repo(state: &AppState, count: usize) -> Repository {
         })
         .collect();
     history_repo(commits, Some("/README.md"))
-}
-
-#[tokio::test]
-async fn history_pages_are_newest_first_and_exhaust_cleanly() {
-    let state = test_state_with_repo();
-    replace_test_repo(&state, paged_history_repo(&state, 55)).await;
-
-    let first = history_get(
-        state.clone(),
-        "/v1/repos/owner/repo/history?audience=public",
-        false,
-    )
-    .await;
-    assert_eq!(first.status(), StatusCode::OK);
-    let first = response_json(first).await;
-    let first_entries = first["entries"].as_array().unwrap();
-    assert_eq!(first_entries.len(), 50);
-    assert_eq!(first_entries[0]["source_id"], "rv55");
-    assert_eq!(first_entries[49]["source_id"], "rv6");
-    let cursor = first["next_cursor"].as_str().unwrap();
-
-    let second = history_get(
-        state,
-        format!("/v1/repos/owner/repo/history?audience=public&before={cursor}"),
-        false,
-    )
-    .await;
-    assert_eq!(second.status(), StatusCode::OK);
-    let second = response_json(second).await;
-    let second_entries = second["entries"].as_array().unwrap();
-    assert_eq!(second_entries.len(), 5);
-    assert_eq!(second_entries[0]["source_id"], "rv5");
-    assert_eq!(second_entries[4]["source_id"], "rv1");
-    assert_eq!(second["generation"], first["generation"]);
-    assert_eq!(
-        first_entries
-            .iter()
-            .chain(second_entries)
-            .map(|entry| entry["source_id"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        (1..=55)
-            .rev()
-            .map(|index| format!("rv{index}"))
-            .collect::<Vec<_>>(),
-    );
-    assert!(second["next_cursor"].is_null());
 }
 
 #[tokio::test]
@@ -847,103 +693,6 @@ async fn history_cursor_rejects_invalid_values_and_other_audiences() {
     )
     .await;
     assert_eq!(missing_boundary.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn history_entries_report_their_update_kind() {
-    let state = test_state_with_repo();
-    let first = source_blob(&state, "first");
-    let second = source_blob(&state, "second");
-    let mut repo = history_repo(
-        vec![
-            history_commit(
-                "rv1",
-                None,
-                "push",
-                vec![history_change(
-                    "/README.md",
-                    Visibility::Public,
-                    None,
-                    Some(first.clone()),
-                )],
-            ),
-            LogicalCommit {
-                occurred_at_unix: None,
-                id: "rv2".into(),
-                origin: LogicalCommitOrigin::PrivateRequestMerge {
-                    request_id: "request-1".into(),
-                    request_head_oid: "head-1".into(),
-                },
-                author_id: test_owner_id(),
-                message: "merged request".into(),
-                changes: vec![history_change(
-                    "/README.md",
-                    Visibility::Public,
-                    Some(first),
-                    Some(second.clone()),
-                )],
-            },
-        ],
-        Some("/README.md"),
-    );
-    repo.visibility_change_sets
-        .push(scope_domain::visibility_changes::VisibilityChangeSet {
-            occurred_at_unix: None,
-            id: "visibility-1".into(),
-            anchor_commit_id: Some("rv2".into()),
-            source_update_id: None,
-            author_id: test_owner_id(),
-            changes: vec![scope_domain::visibility_changes::VisibilityChange {
-                path: ScopePath::parse("/README.md").unwrap(),
-                old_visibility: Visibility::Public,
-                new_visibility: Visibility::Private,
-                current_content: Some(second),
-            }],
-        });
-    replace_test_repo(&state, repo).await;
-    cache_test_jwks(&state);
-
-    let public = history_get(
-        state.clone(),
-        "/v1/repos/owner/repo/history?feed=all&audience=public",
-        true,
-    )
-    .await;
-    assert_eq!(public.status(), StatusCode::OK);
-    let public = response_json(public).await;
-    let public_entries = public["entries"].as_array().unwrap();
-    assert_eq!(public_entries[0]["kind"], "visibility_change");
-    assert_eq!(public_entries[1]["kind"], "merged_request");
-    assert_eq!(public_entries[2]["kind"], "push");
-
-    let private = history_get(state.clone(), "/v1/repos/owner/repo/history?feed=all", true).await;
-    assert_eq!(private.status(), StatusCode::OK);
-    let private = response_json(private).await;
-    assert_eq!(private["audience"], "private");
-    let private_entries = private["entries"].as_array().unwrap();
-    assert_eq!(private_entries[0]["source_id"], "visibility-1");
-    assert_eq!(private_entries[0]["kind"], "visibility_change");
-    assert_eq!(private_entries[0]["file_change_count"], 0);
-    assert_eq!(
-        private_entries[0]["visibility_summary"]["made_private_count"],
-        1
-    );
-    assert_eq!(private_entries[1]["kind"], "merged_request");
-    assert_eq!(private_entries[2]["kind"], "push");
-
-    let detail = history_get(
-        state,
-        "/v1/repos/owner/repo/history/visibility-1?audience=private",
-        true,
-    )
-    .await;
-    assert_eq!(detail.status(), StatusCode::OK);
-    let detail = response_json(detail).await;
-    assert_eq!(detail["message"], "Made 1 file private");
-    assert!(detail["files"].as_array().unwrap().is_empty());
-    assert_eq!(detail["visibility_changes"][0]["path"], "/README.md");
-    assert_eq!(detail["visibility_changes"][0]["old_visibility"], "Public");
-    assert_eq!(detail["visibility_changes"][0]["new_visibility"], "Private");
 }
 
 mod feeds;

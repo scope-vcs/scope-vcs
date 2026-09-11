@@ -11,7 +11,6 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
     TransactionTrait, sea_query::OnConflict,
 };
-use std::sync::Arc;
 
 #[cfg(not(feature = "test-support"))]
 pub(crate) const SOURCE_BLOB_DELETE_GRACE_SECONDS: u64 = 600;
@@ -38,8 +37,7 @@ impl CleanupStore {
             return Ok(());
         }
 
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         queue_pending_source_blob_deletion_rows_at(&tx, blobs, now_unix, generated_ids).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(())

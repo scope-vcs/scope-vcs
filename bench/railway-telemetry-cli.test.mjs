@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { execute } from './subprocess.mjs';
 
-test('default telemetry services match the deployment manifest and an explicit override remains exact', async (t) => {
+test('telemetry CLI uses the deployment services, explicit overrides, and exact requested time window', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'scope-telemetry-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const manifest = JSON.parse(await readFile(new URL('../.github/deployment-services.json', import.meta.url), 'utf8'));
@@ -16,6 +16,9 @@ test('default telemetry services match the deployment manifest and an explicit o
 const args = process.argv.slice(2);
 const name = args[args.indexOf('--service') + 1];
 if (!${JSON.stringify([...names, 'override-worker'])}.includes(name)) process.exit(2);
+for (const [flag, expected] of [['--since', '2026-08-22T20:00:00Z'], ['--until', '2026-08-22T20:05:00Z']]) {
+  if (args[args.indexOf(flag) + 1] !== expected) process.exit(3);
+}
 if (args[0] === 'metrics') console.log(JSON.stringify({ measurements: {} }));
 `);
   await chmod(executable, 0o700);
@@ -25,7 +28,8 @@ if (args[0] === 'metrics') console.log(JSON.stringify({ measurements: {} }));
     const result = await execute(process.execPath, [fileURLToPath(new URL('./railway-telemetry.mjs', import.meta.url))], {
       cwd: root, captureStdout: true, timeoutMs: 10000,
       env: { PATH: `${root}:${process.env.PATH}`, SCOPE_RAILWAY_ENVIRONMENT: 'test',
-        SCOPE_RAILWAY_SERVICES: override, SCOPE_RAILWAY_TELEMETRY_DIR: output },
+        SCOPE_RAILWAY_SERVICES: override, SCOPE_RAILWAY_TELEMETRY_DIR: output,
+        SCOPE_RAILWAY_SINCE: '2026-08-22T20:00:00Z', SCOPE_RAILWAY_UNTIL: '2026-08-22T20:05:00Z' },
     });
     assert.equal(result.code, 0, result.stderr);
     const files = await readdir(output);

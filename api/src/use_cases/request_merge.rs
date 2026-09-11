@@ -1,3 +1,5 @@
+use super::request_access::request_policy_for_viewer;
+use crate::persistence_ids::generate_prefixed_id;
 use crate::{
     auth::scope::principal_for_user_id,
     config::DEFAULT_GIT_BRANCH,
@@ -27,10 +29,7 @@ use scope_domain::{
         Repository,
         access::{RepositoryAccess, RepositoryActor},
     },
-    requests::{
-        Request, RequestAudience, RequestViewer, canonical_request_ref, request_actor_role,
-        request_policy,
-    },
+    requests::{Request, RequestAudience, canonical_request_ref, request_actor_role},
     reviewed_updates::content::apply_request_merge_to_repo,
     runs::catalog::RepositoryWorkflowCatalog,
 };
@@ -83,15 +82,8 @@ pub(crate) async fn merge_request(
         .request_by_id(&command.request_id)
         .await?
         .ok_or_else(|| ApiError::not_found("request not found"))?;
-    let is_invitee = state
-        .metadata
-        .requests()
-        .request_is_invitee(&request.id, &command.actor_user_id)
-        .await?;
-    let policy = request_policy(
-        &request,
-        RequestViewer::new(access, Some(&command.actor_user_id), is_invitee),
-    );
+    let policy =
+        request_policy_for_viewer(state, &request, access, Some(&command.actor_user_id)).await?;
     if request.repo_id != repo.record.id || !policy.exact_visible {
         return Err(ApiError::not_found("request not found"));
     }
@@ -116,7 +108,7 @@ pub(crate) async fn merge_request(
         &request,
     )
     .await?;
-    let merged_event_id = match random_id("event_request_merged") {
+    let merged_event_id = match generate_prefixed_id("event_request_merged_") {
         Ok(event_id) => event_id,
         Err(error) => {
             cleanup_prepared_merge(state, prepared).await;
@@ -403,14 +395,6 @@ pub(crate) async fn persist_prepared_merge_for_tests(
     )
     .await
     .map(|mutation| mutation.request)
-}
-
-fn random_id(prefix: &str) -> Result<String, ApiError> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| {
-        ApiError::internal_message(format!("failed to create {prefix} id: {error}"))
-    })?;
-    Ok(format!("{prefix}_{}", hex::encode(bytes)))
 }
 
 fn merge_main_oid(

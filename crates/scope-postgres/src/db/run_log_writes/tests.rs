@@ -1,13 +1,11 @@
 use super::*;
 use crate::db::{
-    CatalogFixture, MetadataStore, TestDatabaseTarget, locks::wait_for_transaction_waiter,
+    MetadataStore,
+    locks::wait_for_transaction_waiter,
+    test_support::fixtures::{repository, source_blob, store_with_repositories, user},
 };
 use scope_domain::{
-    account::UserAccount,
-    content::SourceBlob,
-    content_ref::ContentRef,
     policy::Visibility,
-    repository::{RepoLifecycleState, Repository},
     runs::{
         run::Run,
         source::{RunSource, RunTrigger},
@@ -15,31 +13,16 @@ use scope_domain::{
 };
 
 async fn fixture() -> MetadataStore {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
-    let owner = UserAccount {
-        id: "owner".into(),
-        handle: "owner".into(),
-        email: "owner@scope.test".into(),
-        email_verified: true,
-    };
-    let mut repo = Repository::new(&owner, "repo", Visibility::Private, "repoi_logs").unwrap();
-    repo.record.lifecycle_state = RepoLifecycleState::Ready;
-    let mut catalog = CatalogFixture::default();
-    catalog.users.insert(owner.id.clone(), owner);
-    catalog.repositories.insert(repo.record.id.clone(), repo);
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
+    let store = store_with_repositories([repository(
+        &user("owner", "owner"),
+        "repo",
+        Visibility::Private,
+    )]);
     let revision = scope_run_config::parse_workflow("/.scope/runs/checks.yml", format!(
         "name: Checks\non:\n  manual: true\ncontainer: {{ image: rust@sha256:{} }}\ntimeout: 10m\njobs:\n  a:\n    steps:\n      - {{ name: A, run: echo a }}\n  b:\n    steps:\n      - {{ name: B, run: echo b }}\n", "a".repeat(64)).as_bytes())
         .unwrap().into_revision("owner/repo").unwrap();
-    let source = RunSource::ephemeral_git_bundle(SourceBlob {
-        content_ref: ContentRef::git_bundle_sha256("c".repeat(64)),
-        sha256: "c".repeat(64),
-        git_oid: "d".repeat(40),
-        git_file_mode: "100644".into(),
-        size_bytes: 42,
-    })
-    .unwrap();
+    let source =
+        RunSource::ephemeral_git_bundle(source_blob(&"d".repeat(40), &"c".repeat(64), 42)).unwrap();
     let run = Run::new(
         "run",
         "run",

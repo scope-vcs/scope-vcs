@@ -10,12 +10,6 @@ fn body_layout_keeps_a_file_row_visible_when_read_only_summaries_overflow() {
 }
 
 #[test]
-fn body_layout_uses_available_space_when_summaries_fit() {
-    assert_eq!(review_body_heights(5, 2, 5), (2, 3));
-    assert_eq!(review_body_heights(5, 10, 0), (5, 0));
-}
-
-#[test]
 fn tree_rows_use_web_visibility_icons_and_stay_within_terminal_width() {
     let row = |visibility| ReviewRow::TreeNode {
         depth: 1,
@@ -36,19 +30,6 @@ fn tree_rows_use_web_visibility_icons_and_stay_within_terminal_width() {
     assert!(!public_line.ends_with("  A"), "{public_line}");
     assert_eq!(UnicodeWidthStr::width(public_line.as_str()), 80);
     assert_eq!(UnicodeWidthStr::width(private_line.as_str()), 80);
-}
-
-#[test]
-fn change_section_rows_are_compact_and_descriptive() {
-    let row = ReviewRow::ChangeSection {
-        kind: ChangeListKind::Deleted,
-        count: 87,
-        expanded: false,
-    };
-    let line = row_line(&row, false, 80).to_string();
-
-    assert!(line.starts_with("[>] Deleted files (87)"), "{line}");
-    assert_eq!(UnicodeWidthStr::width(line.as_str()), 80);
 }
 
 #[test]

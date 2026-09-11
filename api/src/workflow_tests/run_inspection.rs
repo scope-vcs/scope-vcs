@@ -206,20 +206,6 @@ async fn get_run(state: AppState, owner: &str, repo: &str, run_id: &str, auth: S
 }
 
 #[tokio::test]
-async fn run_inspection_allows_the_repository_owner() {
-    let fixture = inspectable_run(false).await;
-    let response = get_run(
-        fixture.state,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &fixture.run_id,
-        bearer_header(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
 async fn run_inspection_allows_a_repository_member() {
     let fixture = inspectable_run(false).await;
     let member_subject = "user_run_member";

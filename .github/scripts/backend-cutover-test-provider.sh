@@ -222,166 +222,63 @@ if [[ "$1 $2" == "deployment list" ]]; then
 fi
 
 if [[ "$1 $2" == "service list" ]]; then
-  api_region="${FAKE_API_REGION:-us-east4-eqdc4a}"
-  api_deployment='"old-scope-api"'
-  worker_deployment='"old-scope-worker"'
-  cache_deployment='"old-scope-cache-service"'
-  router_deployment='"old-scope-repo-router"'
-  media_deployment='"old-scope-media"'
-  media_worker_deployment='"old-scope-media-worker"'
-  api_status=SUCCESS
-  worker_status=SUCCESS
-  cache_status=SUCCESS
-  router_status=SUCCESS
-  media_status=SUCCESS
-  media_worker_status=SUCCESS
-  api_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
-  worker_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
-  cache_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
-  router_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
-  media_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
-  media_worker_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
-  api_stopped=false
-  worker_stopped=false
-  cache_stopped=false
-  router_stopped=false
-  media_stopped=false
-  media_worker_stopped=false
-  api_regions="[{\"name\":\"${api_region}\",\"configured\":1}]"
-  worker_regions='[{"name":"us-east4-eqdc4a","configured":1}]'
-  router_regions='[{"name":"us-east4-eqdc4a","configured":1}]'
-  media_regions='[{"name":"us-east4-eqdc4a","configured":1}]'
-  media_worker_regions='[{"name":"us-east4-eqdc4a","configured":1}]'
-  if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-api" && ! -f "$FAKE_RAILWAY_STATE/up-scope-api" ]]; then
-    api_deployment=null
-    api_replicas=null
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-worker" && ! -f "$FAKE_RAILWAY_STATE/up-scope-worker" ]]; then
-    worker_deployment=null
-    worker_replicas=null
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-cache-service" && ! -f "$FAKE_RAILWAY_STATE/up-scope-cache-service" ]]; then
-    cache_deployment=null
-    cache_replicas=null
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-repo-router" && ! -f "$FAKE_RAILWAY_STATE/up-scope-repo-router" ]]; then
-    router_deployment=null
-    router_replicas=null
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-media" && ! -f "$FAKE_RAILWAY_STATE/up-scope-media" ]]; then
-    media_deployment=null
-    media_replicas=null
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/no-history-scope-media-worker" && ! -f "$FAKE_RAILWAY_STATE/up-scope-media-worker" ]]; then
-    media_worker_deployment=null
-    media_worker_replicas=null
-  fi
-  [[ -f "$FAKE_RAILWAY_STATE/up-scope-api" ]] && api_deployment='"new-scope-api"'
-  [[ -f "$FAKE_RAILWAY_STATE/up-scope-worker" ]] && worker_deployment='"new-scope-worker"'
-  [[ -f "$FAKE_RAILWAY_STATE/up-scope-cache-service" ]] && cache_deployment='"new-scope-cache-service"'
-  [[ -f "$FAKE_RAILWAY_STATE/up-scope-repo-router" ]] && router_deployment='"new-scope-repo-router"'
-  [[ -f "$FAKE_RAILWAY_STATE/up-scope-media" ]] && media_deployment='"new-scope-media"'
-  [[ -f "$FAKE_RAILWAY_STATE/up-scope-media-worker" ]] && media_worker_deployment='"new-scope-media-worker"'
-  if [[ -f "$FAKE_RAILWAY_STATE/stopped-scope-api" ]]; then
-    api_stopped=true
-    api_replicas='{"configured":1,"running":0,"crashed":0,"exited":1,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/stopped-scope-worker" ]]; then
-    worker_stopped=true
-    worker_replicas='{"configured":1,"running":0,"crashed":0,"exited":1,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/stopped-scope-cache-service" ]]; then
-    cache_stopped=true
-    cache_replicas='{"configured":1,"running":0,"crashed":0,"exited":1,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/stopped-scope-media" ]]; then
-    media_stopped=true
-    media_replicas='{"configured":1,"running":0,"crashed":0,"exited":1,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/stopped-scope-media-worker" ]]; then
-    media_worker_stopped=true
-    media_worker_replicas='{"configured":1,"running":0,"crashed":0,"exited":1,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/up-scope-api" && "$api_stopped" == "false" && ! -f "$FAKE_RAILWAY_STATE/crashed-scope-api" ]]; then
-    api_replicas="{\"configured\":${FAKE_NEW_REPLICAS:-1},\"running\":${FAKE_NEW_REPLICAS:-1},\"crashed\":0,\"exited\":0,\"total\":${FAKE_NEW_REPLICAS:-1}}"
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/up-scope-worker" && "$worker_stopped" == "false" && ! -f "$FAKE_RAILWAY_STATE/crashed-scope-worker" ]]; then
-    worker_replicas="{\"configured\":${FAKE_NEW_REPLICAS:-1},\"running\":${FAKE_NEW_REPLICAS:-1},\"crashed\":0,\"exited\":0,\"total\":${FAKE_NEW_REPLICAS:-1}}"
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/up-scope-cache-service" && "$cache_stopped" == "false" && ! -f "$FAKE_RAILWAY_STATE/crashed-scope-cache-service" ]]; then
-    cache_replicas="{\"configured\":${FAKE_NEW_REPLICAS:-1},\"running\":${FAKE_NEW_REPLICAS:-1},\"crashed\":0,\"exited\":0,\"total\":${FAKE_NEW_REPLICAS:-1}}"
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/up-scope-repo-router" && ! -f "$FAKE_RAILWAY_STATE/crashed-scope-repo-router" ]]; then
-    router_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/up-scope-media" && "$media_stopped" == "false" && ! -f "$FAKE_RAILWAY_STATE/crashed-scope-media" ]]; then
-    media_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/up-scope-media-worker" && "$media_worker_stopped" == "false" && ! -f "$FAKE_RAILWAY_STATE/crashed-scope-media-worker" ]]; then
-    media_worker_replicas='{"configured":1,"running":1,"crashed":0,"exited":0,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/crashed-scope-api" && "$api_stopped" == "false" ]]; then
-    api_status=CRASHED
-    api_replicas='{"configured":1,"running":0,"crashed":1,"exited":0,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/crashed-scope-worker" && "$worker_stopped" == "false" ]]; then
-    worker_status=CRASHED
-    worker_replicas='{"configured":1,"running":0,"crashed":1,"exited":0,"total":1}'
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/crashed-scope-cache-service" && "$cache_stopped" == "false" ]]; then
-    cache_status=CRASHED
-    cache_replicas='{"configured":1,"running":0,"crashed":1,"exited":0,"total":1}'
-  fi
-  if [[ "${FAKE_DEGRADED_SERVICE:-}" == "scope-api" && "$api_stopped" == "false" ]]; then
-    api_replicas='{"configured":2,"running":1,"crashed":1,"exited":0,"total":2}'
-    api_regions="[{\"name\":\"${api_region}\",\"configured\":2}]"
-  fi
-  if [[ "${FAKE_DEGRADED_SERVICE:-}" == "scope-worker" && "$worker_stopped" == "false" ]]; then
-    worker_replicas='{"configured":2,"running":1,"crashed":1,"exited":0,"total":2}'
-    worker_regions='[{"name":"us-east4-eqdc4a","configured":2}]'
-  fi
-  if [[ "${FAKE_DEGRADED_SERVICE:-}" == "scope-cache-service" && "$cache_stopped" == "false" ]]; then
-    cache_replicas='{"configured":2,"running":1,"crashed":1,"exited":0,"total":2}'
-  fi
-  if [[ "${FAKE_UNHEALTHY_AFTER_UP_SERVICE:-}" == "scope-api" \
-    && -f "$FAKE_RAILWAY_STATE/up-scope-api" ]]; then
-    api_replicas='{"configured":2,"running":1,"crashed":1,"exited":0,"total":2}'
-    api_regions='[{"name":"us-east4-eqdc4a","configured":2}]'
-  fi
-  if [[ "${FAKE_UNHEALTHY_AFTER_UP_SERVICE:-}" == "scope-worker" \
-    && -f "$FAKE_RAILWAY_STATE/up-scope-worker" ]]; then
-    worker_replicas='{"configured":2,"running":1,"crashed":1,"exited":0,"total":2}'
-    worker_regions='[{"name":"us-east4-eqdc4a","configured":2}]'
-  fi
-  if [[ "${FAKE_DEGRADE_WORKER_AFTER_API_STOP:-0}" == "1" \
-    && -f "$FAKE_RAILWAY_STATE/stopped-scope-api" && "$worker_stopped" == "false" ]]; then
-    worker_status=CRASHED
-    worker_replicas='{"configured":1,"running":0,"crashed":1,"exited":0,"total":1}'
-  fi
-  router_json=""
-  if [[ "${FAKE_ROUTER_INSTANCE_EXISTS:-1}" == "1" \
-    || -f "$FAKE_RAILWAY_STATE/router-instance-created" ]]; then
-    router_json=",{\"id\":\"scope-repo-router\",\"name\":\"scope-git-router\",\"status\":\"${router_status}\",\"deploymentId\":${router_deployment},\"deploymentStopped\":${router_stopped},\"replicas\":${router_replicas},\"regions\":${router_regions}}"
-  fi
-  web_id=old-scope-web
-  [[ ! -f "$FAKE_RAILWAY_STATE/up-scope-web" ]] || web_id=new-scope-web
-  web_stopped=false
-  web_running=1
-  if [[ -f "$FAKE_RAILWAY_STATE/stopped-scope-web" ]]; then web_stopped=true; web_running=0; fi
-  web_json="$(jq -cn --arg id "$web_id" --argjson stopped "$web_stopped" --argjson running "$web_running" \
-    '{id:"scope-web",name:"scope-web",status:"SUCCESS",deploymentId:$id,deploymentStopped:$stopped,replicas:{configured:1,running:$running,crashed:0,exited:(1-$running),total:1}}')"
-  router_json+=",$web_json"
-  printf '[{"id":"scope-api","name":"scope-api","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-worker","name":"scope-run-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-cache-service","name":"scope-cache","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s},{"id":"scope-media","name":"scope-media-api","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s},{"id":"scope-media-worker","name":"scope-media-worker","status":"%s","deploymentId":%s,"deploymentStopped":%s,"replicas":%s,"regions":%s}%s]\n' "$api_status" "$api_deployment" "$api_stopped" "$api_replicas" "$api_regions" "$worker_status" "$worker_deployment" "$worker_stopped" "$worker_replicas" "$worker_regions" "$cache_status" "$cache_deployment" "$cache_stopped" "$cache_replicas" "$media_status" "$media_deployment" "$media_stopped" "$media_replicas" "$media_regions" "$media_worker_status" "$media_worker_deployment" "$media_worker_stopped" "$media_worker_replicas" "$media_worker_regions" "$router_json" | node -e '
-const fs = require("node:fs");
-const states = JSON.parse(fs.readFileSync(0,"utf8"));
-for (const state of states) {
-  if (!fs.existsSync(`${process.env.FAKE_RAILWAY_STATE}/gate-${state.id}`)) continue;
-  state.deploymentId = `gate-${state.id}`;
-  state.status = "SUCCESS";
-  state.deploymentStopped = false;
-  state.replicas = {configured:1,running:1,crashed:0,exited:0,total:1};
+  node -e '
+const { existsSync } = require("node:fs");
+const env = process.env;
+const marked = (kind, id) => existsSync(`${env.FAKE_RAILWAY_STATE}/${kind}-${id}`);
+const region = "us-east4-eqdc4a";
+const names = {
+  "scope-api": "scope-api", "scope-worker": "scope-run-worker", "scope-cache-service": "scope-cache",
+  "scope-media": "scope-media-api", "scope-media-worker": "scope-media-worker",
+  "scope-repo-router": "scope-git-router", "scope-web": "scope-web",
+};
+const replicas = (configured = 1, running = configured, crashed = 0) => ({
+  configured, running, crashed, exited: configured - running - crashed, total: configured,
+});
+function serviceState(id, name) {
+  const coreWriter = ["scope-api", "scope-worker", "scope-cache-service"].includes(id);
+  const up = marked("up", id);
+  const stopped = id !== "scope-repo-router" && marked("stopped", id);
+  const state = {
+    id, name, status: "SUCCESS", deploymentId: `${up ? "new" : "old"}-${id}`,
+    deploymentStopped: stopped, replicas: replicas(),
+  };
+  if (!["scope-cache-service", "scope-web"].includes(id)) {
+    state.regions = [{ name: id === "scope-api" ? env.FAKE_API_REGION || region : region, configured: 1 }];
+  }
+  if (id !== "scope-web" && marked("no-history", id) && !up) {
+    state.deploymentId = null;
+    state.replicas = null;
+  }
+  if (stopped) state.replicas = replicas(1, 0);
+  if (up && !stopped && !marked("crashed", id)) {
+    state.replicas = replicas(coreWriter ? Number(env.FAKE_NEW_REPLICAS || 1) : 1);
+  }
+  if (coreWriter && !stopped && marked("crashed", id)) {
+    state.status = "CRASHED";
+    state.replicas = replicas(1, 0, 1);
+  }
+  if (coreWriter && !stopped && env.FAKE_DEGRADED_SERVICE === id) {
+    state.replicas = replicas(2, 1, 1);
+    if (state.regions) state.regions[0].configured = 2;
+  }
+  if (["scope-api", "scope-worker"].includes(id) && up && env.FAKE_UNHEALTHY_AFTER_UP_SERVICE === id) {
+    state.replicas = replicas(2, 1, 1);
+    state.regions = [{ name: region, configured: 2 }];
+  }
+  if (id === "scope-worker" && !stopped && env.FAKE_DEGRADE_WORKER_AFTER_API_STOP === "1" && marked("stopped", "scope-api")) {
+    state.status = "CRASHED";
+    state.replicas = replicas(1, 0, 1);
+  }
+  if (marked("gate", id)) Object.assign(state, {
+    deploymentId: `gate-${id}`, status: "SUCCESS", deploymentStopped: false, replicas: replicas(),
+  });
+  return state;
 }
-console.log(JSON.stringify(states));
+const routerExists = env.FAKE_ROUTER_INSTANCE_EXISTS !== "0" || existsSync(`${env.FAKE_RAILWAY_STATE}/router-instance-created`);
+console.log(JSON.stringify(Object.entries(names)
+  .filter(([id]) => id !== "scope-repo-router" || routerExists)
+  .map(([id, name]) => serviceState(id, name))));
 '
   exit 0
 fi

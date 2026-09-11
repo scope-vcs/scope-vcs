@@ -48,20 +48,13 @@ pub struct ContainerSpec {
 impl ContainerSpec {
     pub fn new(image: impl Into<String>) -> Result<Self, WorkflowError> {
         let image = image.into();
-        let Some((repository, digest)) = image.rsplit_once("@sha256:") else {
-            return Err(WorkflowError::InvalidContainerImage);
-        };
-        if repository.is_empty()
-            || image.len() > MAX_CONTAINER_IMAGE_BYTES
-            || repository.contains('@')
-            || image.chars().any(char::is_whitespace)
-            || digest.len() != 64
-            || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-        {
+        if image.len() > MAX_CONTAINER_IMAGE_BYTES {
             return Err(WorkflowError::InvalidContainerImage);
         }
+        let pinned = crate::runs::image::PinnedContainerImage::parse(image)
+            .map_err(|_| WorkflowError::InvalidContainerImage)?;
         Ok(Self {
-            image: format!("{repository}@sha256:{}", digest.to_ascii_lowercase()),
+            image: pinned.as_str().to_string(),
         })
     }
 

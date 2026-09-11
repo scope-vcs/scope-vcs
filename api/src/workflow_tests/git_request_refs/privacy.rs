@@ -299,7 +299,6 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
     repo.graph.commits = match history {
         PrivacyHistory::Mixed => vec![history_commit(
             "rv1",
-            None,
             vec![
                 history_change(state, Visibility::Public, "/README.md", None, Some("hello")),
                 history_change(
@@ -321,7 +320,6 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
             vec![
                 history_commit(
                     "rv1",
-                    None,
                     vec![history_change(
                         state,
                         Visibility::Private,
@@ -332,7 +330,6 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
                 ),
                 history_commit(
                     "rv2",
-                    Some("rv1"),
                     vec![history_change(
                         state,
                         Visibility::Public,
@@ -346,7 +343,6 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
         PrivacyHistory::Deleted => vec![
             history_commit(
                 "rv1",
-                None,
                 vec![
                     history_change(state, Visibility::Public, "/README.md", None, Some("hello")),
                     history_change(
@@ -360,7 +356,6 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
             ),
             history_commit(
                 "rv2",
-                Some("rv1"),
                 vec![history_change(
                     state,
                     Visibility::Private,
@@ -388,7 +383,7 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
     repo
 }
 
-fn history_commit(id: &str, _parent: Option<&str>, changes: Vec<FileChange>) -> LogicalCommit {
+fn history_commit(id: &str, changes: Vec<FileChange>) -> LogicalCommit {
     LogicalCommit {
         occurred_at_unix: None,
         id: id.into(),

@@ -16,7 +16,6 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
     QueryOrder, TransactionTrait, sea_query::Expr,
 };
-use std::sync::Arc;
 
 impl AuthStore {
     pub async fn start_cli_browser_login(
@@ -24,7 +23,6 @@ impl AuthStore {
         command: StartBrowserLoginCommand,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let db = Arc::clone(&self.db);
         let row = entities::cli_browser_login::Model {
             request_id: command.request_id,
             request_secret_hash: command.request_secret_hash,
@@ -36,7 +34,7 @@ impl AuthStore {
             completed_at_unix: None,
             consumed_at_unix: None,
         };
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-auth", "start").await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         enforce_browser_login_start_limits(&tx, now_unix).await?;
@@ -55,10 +53,9 @@ impl AuthStore {
         user: &UserAccount,
         now_unix: u64,
     ) -> Result<BrowserLoginCompletion, PostgresError> {
-        let db = Arc::clone(&self.db);
         let request_id = request_id.to_string();
         let user_id = user.id.clone();
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-browser-request", &request_id).await?;
         let Some(login) = entities::cli_browser_login::Entity::find_by_id(request_id.clone())
             .one(&tx)
@@ -113,9 +110,8 @@ impl AuthStore {
         session: NewCliSession,
         now_unix: u64,
     ) -> Result<SessionIdentity, PostgresError> {
-        let db = Arc::clone(&self.db);
         let request_id = request_id.to_string();
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-browser-request", &request_id).await?;
         let Some(login) = entities::cli_browser_login::Entity::find_by_id(request_id.clone())
             .one(&tx)
@@ -162,7 +158,6 @@ impl AuthStore {
         user: &UserAccount,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let db = Arc::clone(&self.db);
         let row = entities::cli_exchange_grant::Model {
             grant_hash: command.grant_hash,
             user_id: user.id.clone(),
@@ -170,7 +165,7 @@ impl AuthStore {
             expires_at_unix: u64_to_i64(command.expires_at_unix)?,
             consumed_at_unix: None,
         };
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-exchange-grant", &row.grant_hash).await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         row.into_active_model()
@@ -187,8 +182,7 @@ impl AuthStore {
         session: NewCliSession,
         now_unix: u64,
     ) -> Result<SessionIdentity, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-exchange-grant", grant_hash).await?;
         let Some(grant) = entities::cli_exchange_grant::Entity::find_by_id(grant_hash)
             .one(&tx)
@@ -231,8 +225,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<Vec<CliSessionSummary>, PostgresError> {
         let user_id = user.id.clone();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let sessions = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::UserId.eq(user_id))
             .filter(entities::cli_session::Column::RevokedAtUnix.is_null())
@@ -256,8 +249,7 @@ impl AuthStore {
     ) -> Result<(), PostgresError> {
         let user_id = user.id.clone();
         let session_id = session_id.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-session", &session_id).await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         let result = entities::cli_session::Entity::update_many()

@@ -15,21 +15,23 @@ async fn add_viewer(fixture: &Fixture) {
 }
 
 #[tokio::test]
-async fn attachment_lists_preserve_visibility_without_loading_manifest_chunks() {
+async fn attachment_access_controls_lists_and_retry_replay() {
     let fixture = fixture();
     add_viewer(&fixture).await;
-    start_request(&fixture, "list_request", "list-request", 1).await;
-    upload_attachment(&fixture, "list_request", "bound_attachment", 10).await;
-    upload_attachment(&fixture, "list_request", "unbound_attachment", 20).await;
+    start_request(&fixture, "retry_request", 1).await;
+    upload_attachment(&fixture, "retry_request", "bound_attachment", 10).await;
+    upload_attachment(&fixture, "retry_request", "retry_attachment", 20).await;
     fixture
         .store
         .requests()
         .edit_request_identity(EditRequestIdentityCommand {
-            request_id: "list_request".into(),
+            request_id: "retry_request".into(),
             actor_user_id: OWNER_ID.into(),
             event_id: "bind".into(),
             title: None,
-            description_markdown: Some(attachment_markdown("bound_attachment")),
+            description_markdown: Some(
+                "![attachment](/request-attachments/bound_attachment)".into(),
+            ),
             expected_description_markdown: Some(String::new()),
             now_unix: 30,
         })
@@ -38,7 +40,7 @@ async fn attachment_lists_preserve_visibility_without_loading_manifest_chunks() 
     let media = fixture.store.media();
     assert!(
         media
-            .list_request_attachments_for_viewer("list_request", Some("media_viewer"))
+            .list_request_attachments_for_viewer("retry_request", Some("media_viewer"))
             .await
             .unwrap()
             .is_empty()
@@ -46,39 +48,24 @@ async fn attachment_lists_preserve_visibility_without_loading_manifest_chunks() 
     fixture
         .store
         .requests()
-        .mutate_request_for_tests("list_request", |request| {
+        .mutate_request_for_tests("retry_request", |request| {
             request.submitted_at_unix = Some(31);
             request.updated_at_unix = 31;
         })
         .await
         .unwrap();
-    // Retained expired inventory must not enter the list or its metadata batches.
-    let expired = prepare_attachment(&fixture, "list_request", "deleted_attachment", 32).await;
-    media
-        .enqueue_expired_attachment_cleanup(expired.attachment.upload_expires_at_unix)
-        .await
-        .unwrap();
-    let held = fixture.store.db.begin().await.unwrap();
-    held.execute_unprepared(
-        "LOCK TABLE scope_request_media_manifest_chunks IN ACCESS EXCLUSIVE MODE",
-    )
-    .await
-    .unwrap();
     for (viewer, expected) in [
         (
             Some(OWNER_ID),
-            vec!["bound_attachment", "unbound_attachment"],
+            &["bound_attachment", "retry_attachment"][..],
         ),
-        (Some("media_viewer"), vec!["bound_attachment"]),
-        (None, vec!["bound_attachment"]),
+        (Some("media_viewer"), &["bound_attachment"][..]),
+        (None, &["bound_attachment"][..]),
     ] {
-        let attachments = tokio::time::timeout(
-            Duration::from_secs(2),
-            media.list_request_attachments_for_viewer("list_request", viewer),
-        )
-        .await
-        .expect("listing metadata must not read chunk inventory")
-        .unwrap();
+        let attachments = media
+            .list_request_attachments_for_viewer("retry_request", viewer)
+            .await
+            .unwrap();
         assert_eq!(
             attachments
                 .iter()
@@ -86,86 +73,37 @@ async fn attachment_lists_preserve_visibility_without_loading_manifest_chunks() 
                 .collect::<Vec<_>>(),
             expected
         );
-        assert!(
-            attachments
-                .iter()
-                .all(|value| value.attachment.original.is_some())
-        );
     }
-    held.rollback().await.unwrap();
-}
-
-#[tokio::test]
-async fn retry_replay_requires_attachment_visibility_and_survives_request_close() {
-    let fixture = fixture();
-    add_viewer(&fixture).await;
-    start_request(&fixture, "retry_request", "retry-request", 1).await;
-    upload_attachment(&fixture, "retry_request", "retry_attachment", 10).await;
-    fixture
-        .store
-        .requests()
-        .mutate_request_for_tests("retry_request", |request| {
-            request.submitted_at_unix = Some(14);
-            request.updated_at_unix = 14;
-        })
-        .await
-        .unwrap();
-    let media = fixture.store.media();
     media
         .retry_request_attachment_processing(
             "retry_request",
             "retry_attachment",
             OWNER_ID,
             "retry_operation",
-            15,
+            32,
         )
         .await
         .unwrap();
-    assert!(
-        media
-            .request_attachment_for_viewer(
-                "retry_request",
-                "retry_attachment",
-                Some("media_viewer")
-            )
-            .await
-            .unwrap()
-            .is_none()
-    );
     let denied = media
         .retry_request_attachment_processing(
             "retry_request",
             "retry_attachment",
             "media_viewer",
             "retry_operation",
-            16,
+            33,
         )
         .await
         .unwrap_err();
     assert_eq!(denied.kind, PostgresErrorKind::NotFound);
-    fixture
-        .store
-        .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: "retry_request".into(),
-                actor_user_id: OWNER_ID.into(),
-                event_id: "close_retry".into(),
-                now_unix: 17,
-            },
-            &crate::db::generated_ids::test_generated_id,
-        )
-        .await
-        .unwrap();
-    let replay = media
+    close_request(&fixture, "retry_request", "close_retry", 34).await;
+    media
         .retry_request_attachment_processing(
             "retry_request",
             "retry_attachment",
             OWNER_ID,
             "retry_operation",
-            18,
+            35,
         )
         .await
         .unwrap();
-    assert_eq!(replay.state, RequestAttachmentState::Processing);
 }

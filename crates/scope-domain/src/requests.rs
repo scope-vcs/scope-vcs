@@ -18,13 +18,12 @@ mod discussions;
 pub use discussions::{
     CreateRequestDiscussionInput, CreateRequestDiscussionMutation,
     CreateRequestDiscussionReplyInput, CreateRequestDiscussionReplyMutation,
-    MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput,
-    ReopenRequestDiscussionInput, RequestDiscussion, RequestDiscussionAnchor,
-    RequestDiscussionMutation, RequestDiscussionReadState, RequestDiscussionReply,
-    RequestDiscussionStatus, ResolveRequestDiscussionInput, create_request_discussion,
-    create_request_discussion_reply, ensure_request_discussion_transition_allowed,
-    mark_request_discussion_read, reopen_and_reply_to_request_discussion,
-    reopen_request_discussion, resolve_request_discussion,
+    MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput, RequestDiscussion,
+    RequestDiscussionAnchor, RequestDiscussionMutation, RequestDiscussionReadState,
+    RequestDiscussionReply, RequestDiscussionStatus, RequestDiscussionTransitionInput,
+    create_request_discussion, create_request_discussion_reply,
+    ensure_request_discussion_transition_allowed, mark_request_discussion_read,
+    reopen_and_reply_to_request_discussion, reopen_request_discussion, resolve_request_discussion,
 };
 mod lifecycle;
 pub use lifecycle::{

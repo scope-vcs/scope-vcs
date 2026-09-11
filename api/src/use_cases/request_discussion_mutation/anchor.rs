@@ -37,7 +37,7 @@ pub(super) async fn validate(
             .repositories()
             .repository_policy(&context.repo)
             .await?;
-        let access = context.access;
+        let access = context.repo.access;
         let commit_oid = commit_oid.to_string();
         let visible_paths = with_request_revision_store_repo(
             state,
@@ -75,7 +75,7 @@ pub(super) async fn visible_commits(
     let Some(commit_oid) = anchor.commit_oid.as_deref() else {
         return BTreeSet::new();
     };
-    if context.access.can_read_private_files {
+    if context.repo.access.can_read_private_files {
         return BTreeSet::from([(anchor.revision_id.clone(), commit_oid.to_string())]);
     }
     let result = async {
@@ -90,7 +90,7 @@ pub(super) async fn visible_commits(
             .repositories()
             .repository_policy(&context.repo)
             .await?;
-        let access = context.access;
+        let access = context.repo.access;
         let commit_oid = commit_oid.to_string();
         let visible = with_request_revision_store_repo(
             state,

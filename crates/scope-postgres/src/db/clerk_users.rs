@@ -9,6 +9,7 @@ use sea_orm::{
     TransactionTrait,
 };
 use sha2::{Digest, Sha256};
+#[cfg(test)]
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,9 +23,7 @@ impl AuthStore {
         &self,
         identity: &ExternalIdentity,
     ) -> Result<Option<UserAccount>, PostgresError> {
-        let identity = identity.clone();
-        let db = Arc::clone(&self.db);
-        resolve_existing_clerk_user_in_tx(db.as_ref(), &identity).await
+        resolve_existing_clerk_user_in_tx(self.db.as_ref(), identity).await
     }
 
     pub async fn resolve_clerk_user(
@@ -32,14 +31,12 @@ impl AuthStore {
         identity: &ExternalIdentity,
         now_unix: u64,
     ) -> Result<ClerkUserResolution, PostgresError> {
-        let identity = identity.clone();
-        let verified_email = verified_identity_email(&identity)?;
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let verified_email = verified_identity_email(identity)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let identity_key = format!("{}:{}", identity.provider, identity.subject);
         acquire_aggregate_lock(&tx, "auth-identity", &identity_key).await?;
         acquire_aggregate_lock(&tx, "auth-email", &verified_email).await?;
-        let resolution = resolve_clerk_user_in_tx(&tx, &identity, &verified_email).await?;
+        let resolution = resolve_clerk_user_in_tx(&tx, identity, &verified_email).await?;
         let _ = now_unix;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(resolution)

@@ -309,17 +309,7 @@ where
     if invitees.is_empty() {
         return Ok(Vec::new());
     }
-    let users = entities::user::Entity::find()
-        .filter(entities::user::Column::Id.is_in(invitees.keys().cloned()))
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(|row| row.try_into_domain())
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .map(|user| (user.id.clone(), user))
-        .collect::<BTreeMap<_, _>>();
+    let users = super::auth::load_users_by_ids(conn, invitees.keys().cloned()).await?;
     let mut reads = invitees
         .into_values()
         .map(|invitee| {
@@ -376,7 +366,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    mod batch_reads;
     use super::*;
     use crate::db::{MetadataStore, TestDatabaseTarget};
     use crate::error::PostgresErrorKind;

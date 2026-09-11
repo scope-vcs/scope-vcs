@@ -5,8 +5,6 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { RAILWAY_COMPONENTS, RAILWAY_CONFIG_PATHS } from "./deployment-components.mjs";
 
-export { RAILWAY_COMPONENTS, RAILWAY_CONFIG_PATHS } from "./deployment-components.mjs";
-
 const SOURCE_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const REQUIRED_DEPLOY_SETTINGS = [
   "healthcheckPath",

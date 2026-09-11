@@ -1,13 +1,14 @@
-use scope_domain::repo_config as domain;
+use crate::wire::wire_enum;
+use scope_domain::repo_config::{
+    self as domain, ConfigVisibility as DomainConfigVisibility,
+    HistoryRewriteAction as DomainHistoryRewriteAction,
+};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[serde(rename_all = "lowercase")]
-pub enum ConfigVisibility {
-    Public,
-    Private,
-}
+wire_enum!(
+    #[serde(rename_all = "lowercase")]
+    ConfigVisibility => DomainConfigVisibility { Public, Private }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -51,49 +52,13 @@ pub struct HistoryRewriteRequest {
     pub action: HistoryRewriteAction,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[serde(rename_all = "kebab-case")]
-pub enum HistoryRewriteAction {
-    RedactPublicHistory,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    HistoryRewriteAction => DomainHistoryRewriteAction { RedactPublicHistory }
+);
 
 fn default_private_visibility() -> ConfigVisibility {
     ConfigVisibility::Private
-}
-
-impl From<domain::ConfigVisibility> for ConfigVisibility {
-    fn from(value: domain::ConfigVisibility) -> Self {
-        match value {
-            domain::ConfigVisibility::Public => Self::Public,
-            domain::ConfigVisibility::Private => Self::Private,
-        }
-    }
-}
-
-impl From<ConfigVisibility> for domain::ConfigVisibility {
-    fn from(value: ConfigVisibility) -> Self {
-        match value {
-            ConfigVisibility::Public => Self::Public,
-            ConfigVisibility::Private => Self::Private,
-        }
-    }
-}
-
-impl From<domain::HistoryRewriteAction> for HistoryRewriteAction {
-    fn from(value: domain::HistoryRewriteAction) -> Self {
-        match value {
-            domain::HistoryRewriteAction::RedactPublicHistory => Self::RedactPublicHistory,
-        }
-    }
-}
-
-impl From<HistoryRewriteAction> for domain::HistoryRewriteAction {
-    fn from(value: HistoryRewriteAction) -> Self {
-        match value {
-            HistoryRewriteAction::RedactPublicHistory => Self::RedactPublicHistory,
-        }
-    }
 }
 
 impl From<domain::RepoConfig> for RepoConfig {

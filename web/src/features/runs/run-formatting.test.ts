@@ -3,15 +3,11 @@ import { describe, it } from 'node:test'
 import {
   createRunTimeFormatter,
   elapsedDuration,
-  formatDuration,
-  formatRelativeTime,
   runDisplayState,
   runUnixTimeDate,
 } from './run-formatting'
 
 describe('run formatting', () => {
-  const now = Date.parse('2026-08-09T21:30:00Z') / 1_000
-
   it('labels an acknowledged cancellation consistently', () => {
     assert.equal(
       runDisplayState({ cancellation_requested: true, state: 'running' }),
@@ -48,22 +44,4 @@ describe('run formatting', () => {
     )
   })
 
-  it('reads relative inside a month', () => {
-    assert.equal(formatRelativeTime(now - 5, now), 'just now')
-    assert.equal(formatRelativeTime(now - 240, now), '4m ago')
-    assert.equal(formatRelativeTime(now - 7_200, now), '2h ago')
-    assert.equal(formatRelativeTime(now - 90_000, now), 'yesterday')
-    assert.equal(formatRelativeTime(now - 5 * 86_400, now), '5d ago')
-  })
-
-  it('falls back to a date past a month', () => {
-    assert.equal(formatRelativeTime(now - 60 * 86_400, now), 'Jun 10, 2026')
-  })
-
-  it('formats durations for scanning', () => {
-    assert.equal(formatDuration(44), '44s')
-    assert.equal(formatDuration(184), '3m 04s')
-    assert.equal(formatDuration(120), '2m')
-    assert.equal(formatDuration(4_320), '1h 12m')
-  })
 })

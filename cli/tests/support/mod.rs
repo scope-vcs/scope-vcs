@@ -89,7 +89,7 @@ pub fn commit_all(cwd: &Path, message: &str) {
 }
 
 #[allow(dead_code)]
-pub fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) {
+pub fn run_git(cwd: &Path, args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>) -> Output {
     let output = Command::new("git")
         .current_dir(cwd)
         .args(args)
@@ -98,6 +98,28 @@ pub fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) {
     assert!(
         output.status.success(),
         "git failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+#[allow(dead_code)]
+pub fn git_stdout(
+    cwd: &Path,
+    args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+) -> String {
+    String::from_utf8(run_git(cwd, args).stdout)
+        .unwrap()
+        .trim()
+        .to_string()
+}
+
+#[allow(dead_code)]
+pub fn assert_success(output: &Output, action: &str) {
+    assert!(
+        output.status.success(),
+        "{action} failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );

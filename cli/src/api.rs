@@ -24,11 +24,7 @@ pub use runs::*;
 const DEFAULT_API_URL: &str = "https://scope-api-production-0251.up.railway.app";
 pub const ACCOUNT_SESSION_PATH: &str = scope_api_contract::routes::ACCOUNT_SESSION;
 pub const CLI_BROWSER_LOGIN_PATH: &str = scope_api_contract::routes::CLI_BROWSER_LOGIN;
-pub const CLI_BROWSER_LOGIN_EXCHANGE_PATH_TEMPLATE: &str =
-    scope_api_contract::routes::CLI_BROWSER_LOGIN_EXCHANGE;
 pub const CLI_DEVICE_LOGIN_PATH: &str = scope_api_contract::routes::CLI_DEVICE_LOGIN;
-pub const CLI_DEVICE_LOGIN_POLL_PATH_TEMPLATE: &str =
-    scope_api_contract::routes::CLI_DEVICE_LOGIN_POLL;
 pub const CLI_EXCHANGE_GRANTS_EXCHANGE_PATH: &str =
     scope_api_contract::routes::CLI_EXCHANGE_GRANTS_EXCHANGE;
 pub const CLI_SESSION_PATH: &str = scope_api_contract::routes::CLI_SESSION;

@@ -15,9 +15,10 @@ import {
   historyDiffResource,
 } from '@/features/history/history-resource-cache'
 import { HistoryWorkbench } from '@/features/history/history-workbench'
-import type {
-  CommitDetailState,
-  CommitFileDiffState,
+import {
+  resourceToDiffState,
+  type CommitDetailState,
+  type CommitFileDiffState,
 } from '@/features/history/history-state'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
@@ -477,18 +478,6 @@ function commitDetail(
     repo_id: repoId,
     view_key: `request:${requestId}:${revisionId}`,
   }
-}
-
-function resourceToDiffState(
-  resource: ReturnType<typeof useCachedResource<ReviewFileDiff>>,
-): CommitFileDiffState {
-  if (resource.status === 'loaded') {
-    return { diff: resource.value, error: null, status: 'loaded' }
-  }
-  if (resource.status === 'failed') {
-    return { diff: null, error: resource.error, status: 'failed' }
-  }
-  return { diff: null, error: null, status: resource.status }
 }
 
 function shortOid(oid: string) {

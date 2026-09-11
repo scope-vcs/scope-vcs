@@ -1,3 +1,4 @@
+use crate::git::import::require_git_success;
 use std::{collections::BTreeMap, path::Path, time::Instant};
 
 use scope_domain::{
@@ -32,12 +33,7 @@ pub(crate) fn inspect_native_public_commit(
         "reading public request commit metadata",
         deadline,
     )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading public request commit metadata: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
+    let output = require_git_success(output, "reading public request commit metadata")?;
     // Split only the metadata separators: display text can contain NULs and
     // non-UTF-8 bytes, while the retained Git identity must remain strict.
     let fields = output

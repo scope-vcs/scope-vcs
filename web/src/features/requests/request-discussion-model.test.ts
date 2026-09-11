@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { discussion } from './request-discussion-test-fixtures'
+import { discussion, discussionPage } from './request-discussion-test-fixtures'
 import {
   appendDiscussionPage,
   applyDiscussionChanges,
@@ -19,16 +19,8 @@ import type {
 
 test('includes an explicitly focused discussion beyond the first page', () => {
   const result = includeFocusedDiscussion(
-    {
-      discussions: [discussion('newest', 10)],
-      next_cursor: 'older',
-      snapshot_version: 10,
-    },
-    {
-      discussions: [discussion('focused', 2)],
-      next_cursor: null,
-      snapshot_version: 10,
-    },
+    discussionPage([discussion('newest', 10)], 10, 'older'),
+    discussionPage([discussion('focused', 2)], 10),
   )
   assert.deepEqual(result?.discussions.map(({ id }) => id), ['newest', 'focused'])
   assert.equal(result?.next_cursor, 'older')
@@ -49,35 +41,19 @@ test('open discussion replies expand by default and explicit thread state wins',
 })
 
 test('appends cursor pages without duplicating discussions', () => {
-  const first = collectionFromPage({
-    discussions: [discussion('one', 5), discussion('two', 4)],
-    next_cursor: 'next',
-    snapshot_version: 5,
-  })
-  const result = appendDiscussionPage(first, {
-    discussions: [discussion('two', 4), discussion('three', 3)],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const first = collectionFromPage(discussionPage([discussion('one', 5), discussion('two', 4)], 5, 'next'))
+  const result = appendDiscussionPage(first, discussionPage([discussion('two', 4), discussion('three', 3)], 5))
   assert.deepEqual(result.order, ['three', 'two', 'one'])
   assert.equal(result.nextCursor, null)
 })
 
 test('pagination cannot replace a newer discussion projection', () => {
-  const base = collectionFromPage({
-    discussions: [discussion('one', 12)],
-    next_cursor: 'older',
-    snapshot_version: 12,
-  })
+  const base = collectionFromPage(discussionPage([discussion('one', 12)], 12, 'older'))
   const current = mergeDiscussion(base, {
     ...discussion('one', 12),
     expanded: true,
   })
-  const paged = appendDiscussionPage(current, {
-    discussions: [discussion('one', 7), discussion('older', 6)],
-    next_cursor: null,
-    snapshot_version: 7,
-  })
+  const paged = appendDiscussionPage(current, discussionPage([discussion('one', 7), discussion('older', 6)], 7))
 
   assert.equal(paged.byId.get('one')?.last_activity_position, 12)
   assert.equal(paged.byId.get('one')?.expanded, true)
@@ -87,18 +63,10 @@ test('pagination cannot replace a newer discussion projection', () => {
 })
 
 test('stale refresh merges safe rows without changing order or cursor', () => {
-  const current = collectionFromPage({
-    discussions: [discussion('one', 11), discussion('two', 10)],
-    next_cursor: 'current-cursor',
-    snapshot_version: 11,
-  })
+  const current = collectionFromPage(discussionPage([discussion('one', 11), discussion('two', 10)], 11, 'current-cursor'))
   const refreshed = mergeRefreshedDiscussionPage(
     { ...current, order: ['one', 'two'] },
-    {
-      discussions: [discussion('one', 9), discussion('older', 8)],
-      next_cursor: 'stale-cursor',
-      snapshot_version: 9,
-    },
+    discussionPage([discussion('one', 9), discussion('older', 8)], 9, 'stale-cursor'),
     false,
   )
 
@@ -109,18 +77,10 @@ test('stale refresh merges safe rows without changing order or cursor', () => {
 })
 
 test('non-authoritative refresh does not advance past unseen changes', () => {
-  const current = collectionFromPage({
-    discussions: [discussion('one', 10)],
-    next_cursor: null,
-    snapshot_version: 10,
-  })
+  const current = collectionFromPage(discussionPage([discussion('one', 10)], 10))
   const refreshed = mergeRefreshedDiscussionPage(
     current,
-    {
-      discussions: [discussion('new-root', 12)],
-      next_cursor: null,
-      snapshot_version: 12,
-    },
+    discussionPage([discussion('new-root', 12)], 12),
     false,
   )
 
@@ -129,11 +89,7 @@ test('non-authoritative refresh does not advance past unseen changes', () => {
 })
 
 test('authoritative refresh restores page order and preserves active UI rows', () => {
-  const initial = collectionFromPage({
-    discussions: [discussion('one', 5), discussion('two', 4)],
-    next_cursor: 'old-cursor',
-    snapshot_version: 5,
-  })
+  const initial = collectionFromPage(discussionPage([discussion('one', 5), discussion('two', 4)], 5, 'old-cursor'))
   const expanded = mergeDiscussion(initial, {
     ...discussion('one', 5),
     expanded: true,
@@ -144,11 +100,7 @@ test('authoritative refresh restores page order and preserves active UI rows', (
   })
   const refreshed = mergeRefreshedDiscussionPage(
     { ...pending, order: ['one', 'two', 'client-1'] },
-    {
-      discussions: [discussion('one', 6), discussion('two', 4)],
-      next_cursor: 'fresh-cursor',
-      snapshot_version: 6,
-    },
+    discussionPage([discussion('one', 6), discussion('two', 4)], 6, 'fresh-cursor'),
     true,
   )
 
@@ -160,11 +112,7 @@ test('authoritative refresh restores page order and preserves active UI rows', (
 })
 
 test('authoritative refresh replaces an accepted optimistic discussion', () => {
-  const initial = collectionFromPage({
-    discussions: [],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const initial = collectionFromPage(discussionPage([], 5))
   const pending = insertOptimisticDiscussion(initial, {
     ...discussion('client-1', Number.MAX_SAFE_INTEGER),
     pending: 'failed',
@@ -176,11 +124,7 @@ test('authoritative refresh replaces an accepted optimistic discussion', () => {
 
   const refreshed = mergeRefreshedDiscussionPage(
     pending,
-    {
-      discussions: [accepted],
-      next_cursor: null,
-      snapshot_version: 6,
-    },
+    discussionPage([accepted], 6),
     true,
   )
 
@@ -190,22 +134,14 @@ test('authoritative refresh replaces an accepted optimistic discussion', () => {
 })
 
 test('authoritative refresh drops expanded rows outside the refreshed page', () => {
-  const initial = collectionFromPage({
-    discussions: [discussion('visible', 6), discussion('older', 5)],
-    next_cursor: null,
-    snapshot_version: 6,
-  })
+  const initial = collectionFromPage(discussionPage([discussion('visible', 6), discussion('older', 5)], 6))
   const expanded = mergeDiscussion(initial, {
     ...discussion('older', 5),
     expanded: true,
   })
   const refreshed = mergeRefreshedDiscussionPage(
     expanded,
-    {
-      discussions: [discussion('visible', 7)],
-      next_cursor: 'older-page',
-      snapshot_version: 7,
-    },
+    discussionPage([discussion('visible', 7)], 7, 'older-page'),
     true,
   )
 
@@ -215,11 +151,7 @@ test('authoritative refresh drops expanded rows outside the refreshed page', () 
 })
 
 test('changes never move an entity or the collection snapshot backward', () => {
-  const base = collectionFromPage({
-    discussions: [discussion('one', 12)],
-    next_cursor: null,
-    snapshot_version: 12,
-  })
+  const base = collectionFromPage(discussionPage([discussion('one', 12)], 12))
   const current = mergeDiscussion(base, {
     ...discussion('one', 12),
     expanded: true,
@@ -232,11 +164,7 @@ test('changes never move an entity or the collection snapshot backward', () => {
 })
 
 test('realtime patches a discussion without moving it under the cursor', () => {
-  const collection = collectionFromPage({
-    discussions: [discussion('one', 5), discussion('two', 4)],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([discussion('one', 5), discussion('two', 4)], 5))
   const patched = applyDiscussionChanges(
     collection,
     [discussion('two', 9)],
@@ -246,11 +174,7 @@ test('realtime patches a discussion without moving it under the cursor', () => {
 })
 
 test('realtime appends a new root without reordering visible roots', () => {
-  const collection = collectionFromPage({
-    discussions: [discussion('one', 5), discussion('two', 4)],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([discussion('one', 5), discussion('two', 4)], 5))
   const patched = applyDiscussionChanges(
     collection,
     [discussion('three', 8)],
@@ -261,11 +185,7 @@ test('realtime appends a new root without reordering visible roots', () => {
 })
 
 test('realtime inserts an unseen older root by its opened position', () => {
-  const collection = collectionFromPage({
-    discussions: [discussion('one', 5), discussion('two', 4)],
-    next_cursor: 'older',
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([discussion('one', 5), discussion('two', 4)], 5, 'older'))
   const older = {
     ...discussion('older', 9),
     opened_position: 3,
@@ -279,11 +199,7 @@ test('realtime inserts an unseen older root by its opened position', () => {
 })
 
 test('timeline keeps newly discovered resolved roots', () => {
-  const collection = collectionFromPage({
-    discussions: [discussion('one', 5)],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([discussion('one', 5)], 5))
   const resolved = {
     ...discussion('resolved', 8),
     resolved_at_unix: 8,
@@ -299,11 +215,7 @@ test('timeline keeps newly discovered resolved roots', () => {
 })
 
 test('timeline keeps roots in place when they become resolved', () => {
-  const collection = collectionFromPage({
-    discussions: [discussion('one', 5), discussion('two', 4)],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([discussion('one', 5), discussion('two', 4)], 5))
   const resolved = {
     ...discussion('one', 8),
     resolved_at_unix: 8,
@@ -320,11 +232,7 @@ test('timeline keeps roots in place when they become resolved', () => {
 })
 
 test('optimistic roots are replaced in their visible position', () => {
-  const collection = collectionFromPage({
-    discussions: [discussion('one', 5)],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([discussion('one', 5)], 5))
   const optimistic = {
     ...discussion('client-1', 6),
     pending: 'sending',
@@ -334,11 +242,7 @@ test('optimistic roots are replaced in their visible position', () => {
 })
 
 test('optimistic acknowledgement is ordered around concurrent roots', () => {
-  const collection = collectionFromPage({
-    discussions: [discussion('one', 5)],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([discussion('one', 5)], 5))
   const optimistic = {
     ...discussion('client-1', Number.MAX_SAFE_INTEGER),
     pending: 'sending' as const,
@@ -359,11 +263,7 @@ test('optimistic acknowledgement is ordered around concurrent roots', () => {
 })
 
 test('same-id optimistic acknowledgement clears pending state', () => {
-  const collection = collectionFromPage({
-    discussions: [],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([], 5))
   const pending = insertOptimisticDiscussion(collection, {
     ...discussion('client-1', Number.MAX_SAFE_INTEGER),
     pending: 'sending',
@@ -378,11 +278,7 @@ test('same-id optimistic acknowledgement clears pending state', () => {
 })
 
 test('catch-up can acknowledge a same-id optimistic discussion', () => {
-  const collection = collectionFromPage({
-    discussions: [],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([], 5))
   const pending = insertOptimisticDiscussion(collection, {
     ...discussion('client-1', Number.MAX_SAFE_INTEGER),
     pending: 'sending',
@@ -399,11 +295,7 @@ test('catch-up can acknowledge a same-id optimistic discussion', () => {
 })
 
 test('catch-up replaces an optimistic discussion by its client id', () => {
-  const collection = collectionFromPage({
-    discussions: [],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([], 5))
   const pending = insertOptimisticDiscussion(collection, {
     ...discussion('client-1', Number.MAX_SAFE_INTEGER),
     pending: 'sending',
@@ -421,11 +313,7 @@ test('catch-up replaces an optimistic discussion by its client id', () => {
 })
 
 test('client id collisions from another author preserve the optimistic row', () => {
-  const collection = collectionFromPage({
-    discussions: [],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([], 5))
   const pending = insertOptimisticDiscussion(collection, {
     ...discussion('client-1', Number.MAX_SAFE_INTEGER),
     pending: 'sending',
@@ -443,22 +331,14 @@ test('client id collisions from another author preserve the optimistic row', () 
 })
 
 test('mutation responses do not advance the authoritative catch-up cursor', () => {
-  const collection = collectionFromPage({
-    discussions: [discussion('one', 5)],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([discussion('one', 5)], 5))
   const patched = mergeDiscussion(collection, discussion('one', 9))
   assert.equal(patched.snapshotVersion, 5)
   assert.equal(patched.byId.get('one')?.last_activity_position, 9)
 })
 
 test('mark read is monotonic in the client projection', () => {
-  const collection = collectionFromPage({
-    discussions: [{ ...discussion('one', 5), unread_count: 3 }],
-    next_cursor: null,
-    snapshot_version: 5,
-  })
+  const collection = collectionFromPage(discussionPage([{ ...discussion('one', 5), unread_count: 3 }], 5))
   const read = markDiscussionRead(collection, 'one')
   assert.equal(read.byId.get('one')?.unread_count, 0)
   assert.equal(markDiscussionRead(read, 'one'), read)

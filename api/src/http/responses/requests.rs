@@ -88,3 +88,16 @@ pub(crate) fn request_event_response(
         created_at_unix: event.created_at_unix,
     }
 }
+
+pub(crate) fn request_invitee_response(
+    read: scope_postgres::db::RequestInviteeRead,
+) -> RequestInviteeResponse {
+    RequestInviteeResponse {
+        user: RequestActorSummaryResponse {
+            id: read.user.id,
+            handle: read.user.handle,
+        },
+        invited_by_user_id: read.invitee.invited_by_user_id,
+        created_at_unix: read.invitee.created_at_unix,
+    }
+}

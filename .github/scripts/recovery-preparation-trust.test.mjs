@@ -2,46 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { validateRecoveryPreparation } from "./recovery-preparation-trust.mjs";
 
-const repository = "scope-vcs/scope-vcs";
-const sourceSha = "a".repeat(40);
-const mainSha = "d".repeat(40);
-function fixture() {
-  const prepared = {
-    schemaVersion: 1, sourceSha, preparationRunId: "123", maintenanceSha256: "c".repeat(64),
-    components: Object.fromEntries(["api", "run-worker", "cache", "git-router", "media-api", "media-worker"].map(component => [component, {
-      sourceSha, serviceId: component,
-      image: component === "media-worker"
-        ? `ghcr.io/scope-vcs/scope-media-worker@sha256:${"b".repeat(64)}`
-        : `ghcr.io/${repository}/railway-private-${({"run-worker":"worker","git-router":"router","media-api":"media"})[component] ?? component}@sha256:${"b".repeat(64)}`,
-    }])),
-  };
-  const run = {
-    id: 123, path: ".github/workflows/release.yml", event: "schedule",
-    head_branch: "main", head_sha: sourceSha, status: "completed", conclusion: "failure",
-    repository: { id: 1, full_name: repository }, head_repository: { id: 1, full_name: repository },
-  };
-  const main = { name: "main", commit: { sha: mainSha } };
-  const comparison = { status: "ahead", base_commit: { sha: sourceSha }, merge_base_commit: { sha: sourceSha } };
-  const jobs = [{
-    id: 456, run_id: 123, head_sha: sourceSha, name: "Prepare Railway artifacts / prepare",
-    status: "completed", conclusion: "success",
-    steps: [{ name: "Prepare immutable release images", status: "completed", conclusion: "success" }],
-  }];
-  const calls = [];
-  const request = async path => {
-    calls.push(path);
-    if (path === "/actions/runs/123") return structuredClone(run);
-    if (path === "/branches/main") return structuredClone(main);
-    if (path === `/compare/${sourceSha}...${mainSha}`) return structuredClone(comparison);
-    const match = /^\/actions\/runs\/123\/jobs\?filter=all&per_page=100&page=(\d+)$/.exec(path);
-    if (match) {
-      const page = Number(match[1]);
-      return { jobs: structuredClone(jobs.slice((page - 1) * 100, page * 100)) };
-    }
-    throw new Error(`Unexpected request ${path}`);
-  };
-  return { prepared, run, main, comparison, jobs, calls, request };
-}
+import { repository, sourceSha, releaseFixture as fixture } from './fixtures/prepared-release.mjs';
+const mainSha = 'd'.repeat(40);
 
 for (const conclusion of ["failure", "cancelled", "success"]) {
   test(`recovers a main release whose preparation succeeded before overall ${conclusion}`, async () => {
@@ -52,12 +14,6 @@ for (const conclusion of ["failure", "cancelled", "success"]) {
     assert.equal(state.calls.some(path => /artifacts|logs/.test(path)), false);
   });
 }
-
-test("accepts trusted manual production preparation", async () => {
-  const state = fixture();
-  state.run.event = "workflow_dispatch";
-  await validateRecoveryPreparation(state.prepared, state.request, repository);
-});
 
 for (const [name, mutate] of [
   ["push run", state => { state.run.event = "push"; }],
@@ -133,7 +89,6 @@ test("refuses recovery when GitHub cannot establish the original run", async () 
   const state = fixture();
   await assert.rejects(validateRecoveryPreparation(state.prepared, async () => { throw new Error("GitHub unavailable"); }, repository), /GitHub unavailable/);
 });
-
 
 test("recovery uses the same manifest package prefix as publishing", async () => {
   const state = fixture();

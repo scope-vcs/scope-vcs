@@ -282,7 +282,6 @@
         "deploy/railway/rekey-deployment-receipts.mjs",
         "deploy/railway/rekey-deployment-receipts.test.mjs",
         ".github/scripts/deployment-components.mjs",
-        ".github/scripts/deployment-components.test.mjs",
         ".github/scripts/railway-deployment-history.test.mjs"
       ],
       "prefixes": [

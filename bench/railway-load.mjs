@@ -13,7 +13,6 @@ import {
   changedFileCountSlope, historySizeSlope, landingFileSizeSlope, normalizedRates, percentile, round,
   sampleStats, writeSizeSlope,
 } from './metrics.mjs';
-export { changedFileCountSlope, historySizeSlope, landingFileSizeSlope, writeSizeSlope } from './metrics.mjs';
 import { fetchClientCount, needsFetchClients, validateRepositoryMode } from './repository-mode.mjs';
 import { assertSafeTarget, validateTargetKind } from './target-safety.mjs';
 import { parseChangedFileCounts, writeChangedFiles } from './write-shape.mjs';
@@ -187,13 +186,13 @@ function publicConfig(config) {
   return safe;
 }
 
-export function parseStages(value) {
+function parseStages(value) {
   const stages = [...new Set(value.split(',').map((entry) => Number.parseInt(entry.trim(), 10)))];
   if (!stages.length || stages.some((stage) => !Number.isInteger(stage) || stage < 1)) throw new Error('value must be a comma-separated list of positive integers');
   return stages.sort((left, right) => left - right);
 }
 
-export function parseRates(value) {
+function parseRates(value) {
   const rates = [...new Set(value.split(',').map((entry) => Number(entry.trim())))];
   if (!rates.length || rates.some((rate) => !Number.isFinite(rate) || rate <= 0)) throw new Error('value must be a comma-separated list of positive numbers');
   return rates.sort((left, right) => left - right);
@@ -330,7 +329,7 @@ function operationFor(name, context) {
   throw new Error(`unsupported workload: ${name}`);
 }
 
-export function rotating(items) {
+function rotating(items) {
   let index = 0;
   return () => items[index++ % items.length];
 }
@@ -378,7 +377,7 @@ async function withResource(pool, operation) {
   try { return await operation(resource); } finally { pool.release(resource); }
 }
 
-export function chooseWrite(index, percent) { return (index * percent) % 100 < percent; }
+function chooseWrite(index, percent) { return (index * percent) % 100 < percent; }
 
 async function timedConcurrencyStage(name, concurrency, seconds, operation, context) {
   const samples = [];
@@ -418,8 +417,8 @@ async function timedRateStage(name, targetRate, seconds, operation, context) {
 }
 
 export function stageResult(name, concurrency, samples, elapsedSeconds, startedAt, completedAt, targetRate = null, nodeScaleLabel = 'unspecified') {
-  const result = stats(samples);
-  const rates = normalizedRates(samples, elapsedSeconds);
+  const result = sampleStats(samples);
+  const rates = normalizedRates(result, elapsedSeconds);
   return {
     name, concurrency, targetRate, nodeScaleLabel, startedAt, completedAt,
     elapsedSeconds: round(elapsedSeconds),
@@ -496,7 +495,7 @@ export async function seedRepository(config, cleanup, runRoot, label, bytes, his
     for (const args of [['init'], ['symbolic-ref', 'HEAD', 'refs/heads/main'], ['config', 'user.email', 'loadtest@scope.local'], ['config', 'user.name', 'Scope Load Test']]) await checkedGit(config, args, fixture.dir);
     await mkdir(join(fixture.dir, '.scope'), { recursive: true });
     await writeFile(join(fixture.dir, '.scope', 'RULES.md'), '');
-    await writePayload(fixture.dir, bytes);
+    await writeChunkedRandomPayload(join(fixture.dir, 'fixture'), bytes, RANDOM_WRITE_BUFFER_BYTES);
     await writeFile(join(fixture.dir, 'load-update.txt'), 'seed\n');
     if (fixture.landingFileBytes > 0) await writeLandingFile(fixture.dir, fixture.landingFileBytes, 0);
     await checkedGit(config, ['add', '--all'], fixture.dir);
@@ -552,18 +551,6 @@ export async function createFetchClients(config, cleanup, runRoot, fixtures) {
     references.set(repositoryKey(fixture), reference || dir);
   }
   return clients;
-}
-
-async function writePayload(directory, bytes) {
-  const payloadDir = join(directory, 'fixture');
-  await mkdir(payloadDir, { recursive: true });
-  let remaining = bytes;
-  let index = 0;
-  while (remaining > 0) {
-    const size = Math.min(remaining, 256 * 1024);
-    await writeFile(join(payloadDir, `${String(index++).padStart(4, '0')}.bin`), randomBytes(size));
-    remaining -= size;
-  }
 }
 
 export async function writeChunkedRandomPayload(
@@ -844,7 +831,7 @@ async function apiJson(config, path, options = {}) {
   return body ? JSON.parse(body) : null;
 }
 
-export function apiHeaders(token) {
+function apiHeaders(token) {
   return { accept: 'application/json', authorization: `Bearer ${token}`, 'x-scope-cli-protocol': '1' };
 }
 
@@ -883,8 +870,6 @@ function sample(ok, started, status, bytes, error, ttfbMs = null) {
   const durationMs = performance.now() - started;
   return { ok, durationMs, completionMs: durationMs, ttfbMs: ttfbMs ?? durationMs, status, bytes, error };
 }
-
-export function stats(values) { return sampleStats(values); }
 
 export function toggleBenchmarkVisibilityRule(repoConfig) {
   const config = structuredClone(repoConfig);
@@ -942,7 +927,7 @@ function list(name, fallback) {
   if (unknown.length) throw new Error(`${name} has unsupported workloads: ${unknown.join(', ')}`);
   return [...new Set(values)];
 }
-export function parseByteSizes(value) {
+function parseByteSizes(value) {
   const entries = value.split(',').map((entry) => entry.trim());
   const sizes = [...new Set(entries.map((entry) => /^\d+$/.test(entry) ? Number(entry) : Number.NaN))];
   if (!sizes.length || sizes.some((size) => !Number.isSafeInteger(size) || size < 0)) throw new Error('SCOPE_LOAD_WRITE_DELTA_BYTES must be a comma-separated list of non-negative byte counts');

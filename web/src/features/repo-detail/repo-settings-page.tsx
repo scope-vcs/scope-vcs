@@ -17,7 +17,7 @@ import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { storeHomeFlash } from '@/lib/home-flash'
 import { useNavigate, useRouter } from '@tanstack/react-router'
-import { useReducer, useState } from 'react'
+import { useState } from 'react'
 import { DeleteRepositoryDialog } from './delete-repository-dialog'
 import {
   MemberAccessSections,
@@ -26,10 +26,6 @@ import {
 import { SettingsSections } from './repo-settings-sections'
 import { RepositoryMetadataForm } from './repository-metadata-form'
 import { useRepoLayout } from './repo-layout-context'
-import {
-  initialRepoSettingsPageState,
-  repoSettingsPageReducer,
-} from './repo-settings-state'
 
 export function RepoSettingsPage({
   createInvite,
@@ -55,12 +51,9 @@ export function RepoSettingsPage({
   const navigate = useNavigate()
   const router = useRouter()
   const { repo } = useRepoLayout()
-  const [state, dispatch] = useReducer(
-    repoSettingsPageReducer,
-    initialRepoSettingsPageState,
-  )
+  const [deleteTarget, setDeleteTarget] = useState<RepoSummary | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
-  const { deleteError, deleteTarget } = state
 
   async function mutateAndRefresh<T>(mutation: Promise<T>) {
     setRefreshError(null)
@@ -70,7 +63,8 @@ export function RepoSettingsPage({
   }
 
   async function deleteRepository(target: RepoSummary) {
-    dispatch({ repo: target, type: 'deleteStarted' })
+    setDeleteTarget(target)
+    setDeleteError(null)
     try {
       await deleteRepo({
         owner: target.owner_handle,
@@ -80,31 +74,9 @@ export function RepoSettingsPage({
       await navigate({ to: '/' })
       void router.invalidate().catch(() => undefined)
     } catch (error) {
-      dispatch({
-        message:
-          error instanceof Error ? error.message : 'repository deletion failed',
-        type: 'deleteFailed',
-      })
+      setDeleteError(error instanceof Error ? error.message : 'repository deletion failed')
       throw error
     }
-  }
-
-  async function createMemberInvite(input: CreateRepoInviteInput) {
-    return mutateAndRefresh(createInvite(input))
-  }
-
-  async function updateRepositoryMember(input: UpdateRepoMemberInput) {
-    return mutateAndRefresh(updateMember(input))
-  }
-
-  async function removeRepositoryMember(memberUserId: string) {
-    return mutateAndRefresh(
-      deleteMember({ ...params, member_user_id: memberUserId }),
-    )
-  }
-
-  async function removeRepositoryInvite(inviteId: string) {
-    return mutateAndRefresh(deleteInvite({ ...params, invite_id: inviteId }))
   }
 
   return (
@@ -136,7 +108,7 @@ export function RepoSettingsPage({
         {repo.access.actor === 'Owner' && (
           <SettingsSections
             onDeleteRepository={() =>
-              dispatch({ repo, type: 'deleteTargetChanged' })
+              setDeleteTarget(repo)
             }
           />
         )}
@@ -148,12 +120,12 @@ export function RepoSettingsPage({
         {collaboration && (
           <RepositoryMembersSection
             collaboration={collaboration}
-            createInvite={createMemberInvite}
-            deleteInvite={removeRepositoryInvite}
-            deleteMember={removeRepositoryMember}
+            createInvite={input => mutateAndRefresh(createInvite(input))}
+            deleteInvite={invite_id => mutateAndRefresh(deleteInvite({ ...params, invite_id }))}
+            deleteMember={member_user_id => mutateAndRefresh(deleteMember({ ...params, member_user_id }))}
             params={params}
             repo={repo}
-            updateMember={updateRepositoryMember}
+            updateMember={input => mutateAndRefresh(updateMember(input))}
           />
         )}
       </PageContent>
@@ -162,7 +134,7 @@ export function RepoSettingsPage({
         <DeleteRepositoryDialog
           error={deleteError}
           onCancel={() =>
-            dispatch({ repo: null, type: 'deleteTargetChanged' })
+            setDeleteTarget(null)
           }
           onConfirm={deleteRepository}
           repo={deleteTarget}

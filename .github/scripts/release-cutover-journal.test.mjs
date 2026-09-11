@@ -5,14 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beginCutover, findOpenCutover, guardCutovers, readCutover, recordCutoverPhase, cutoverCommand } from "./release-cutover-journal.mjs";
 
-const sourceSha = "a".repeat(40);
-const prepared = { schemaVersion: 1, sourceSha, maintenanceSha256: "c".repeat(64), preparationRunId: "123", components: Object.fromEntries(
-  ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"].map(component => [component, {
-    serviceId: component, sourceSha, image: component === "media-worker"
-      ? `ghcr.io/scope-vcs/scope-media-worker@sha256:${"b".repeat(64)}`
-      : `ghcr.io/scope-vcs/scope-vcs/railway-private-${({"run-worker":"worker","git-router":"router","media-api":"media"})[component] ?? component}@sha256:${"b".repeat(64)}`,
-  }]),
-) };
+import { sourceSha, backendComponents, preparedRelease } from './fixtures/prepared-release.mjs';
+const prepared = preparedRelease({ components: [...backendComponents, 'web'] });
 const baseline = { exact: false, pending: [{ name: "m0033", impact: "maintenance-required" }] };
 
 function storage() {

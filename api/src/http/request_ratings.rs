@@ -1,4 +1,6 @@
-use super::requests::{random_id, repo_metadata_and_access, visible_request};
+use super::requests::repo_metadata_and_access;
+use crate::persistence_ids::generate_prefixed_id;
+use crate::use_cases::request_access::visible_request;
 use crate::{
     auth::scope::require_scope_user, error::ApiError, persistence::unix_now,
     product_analytics::ProductEvent, repo_events::RepoChangeReason, state::AppState,
@@ -50,7 +52,7 @@ pub(crate) async fn create_request_rating(
         .metadata
         .requests()
         .create_request_rating(CreateRequestRatingInput {
-            id: random_id("request_rating")?,
+            id: generate_prefixed_id("request_rating_")?,
             request_id: request.id.clone(),
             actor_user_id: user.id.clone(),
             score: payload.score,

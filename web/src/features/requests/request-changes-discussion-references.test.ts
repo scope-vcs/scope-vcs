@@ -3,7 +3,8 @@ import test from 'node:test'
 import type { RequestRevisions } from '@/api/types'
 import type { LoadDiscussionsInput } from './request-discussion-api'
 import { appendDiscussionReferencePage, loadDiscussionReferencePage, selectedDiscussionReferenceQuery } from './request-changes-discussion-references'
-import type { RequestDiscussion, RequestDiscussionPage } from './request-discussion-types'
+import type { RequestDiscussionPage } from './request-discussion-types'
+import { discussion as discussionFixture } from './request-discussion-test-fixtures'
 
 test('endless unique cursors return just the first page and preserve its cursor', async () => {
   let calls = 0
@@ -77,29 +78,8 @@ function discussionPage(
   snapshotVersion: number,
 ): RequestDiscussionPage {
   return {
-    discussions: ids.map(discussion),
+    discussions: ids.map((id, position) => discussionFixture(id, position, { body_markdown: id })),
     next_cursor: nextCursor,
     snapshot_version: snapshotVersion,
-  }
-}
-
-function discussion(id: string, index: number): RequestDiscussion {
-  return {
-    anchor: null,
-    author: { handle: 'scope', id: 'user-1' },
-    body_markdown: id,
-    client_discussion_id: id,
-    created_at_unix: index,
-    id,
-    last_activity_position: index,
-    latest_replies: [],
-    opened_position: index,
-    read_through_position: index,
-    reply_count: 0,
-    request_id: 'request-1',
-    resolved_at_unix: null,
-    resolved_by: null,
-    status: 'Open',
-    unread_count: 0,
   }
 }

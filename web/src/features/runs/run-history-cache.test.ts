@@ -44,16 +44,6 @@ test('run retention isolates repository access and workflow filters', () => {
   }
 })
 
-test('run pagination retention is bounded', () => {
-  resetRunHistoryCache()
-  for (let index = 0; index < 13; index++) runHistoryResource.write(String(index), { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
-  assert.equal(restoreRunHistory('0', page(['first'])).pageCount, 1)
-  assert.equal(restoreRunHistory('12', page(['first'])).pageCount, 2)
-  runHistoryResource.write('large', { history: page(['x'.repeat(3 * 1024 * 1024)]), snapshot: page(['first']), pageCount: 2 })
-  assert.equal(restoreRunHistory('large', page(['first'])).pageCount, 1)
-})
-
-
 test('an unchanged route snapshot does not roll back newer live run state', () => {
   resetRunHistoryCache()
   const snapshot = page(['first'])

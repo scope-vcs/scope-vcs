@@ -1,12 +1,13 @@
+use crate::use_cases::request_access::{request_policy_for_viewer, visible_request};
 use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
     http::{requests::*, responses::*},
     state::AppState,
     use_cases::request_discussion_mutation::{
-        self, CreateDiscussionCommand, CreateReplyCommand, DiscussionAnchorInput,
-        DiscussionMutationResult, DiscussionTransition, MarkDiscussionReadCommand,
-        ReopenAndReplyCommand, ReplyMutationResult, TransitionDiscussionCommand,
+        self, CreateDiscussionCommand, DiscussionAnchorInput, DiscussionMutationResult,
+        DiscussionTransition, MarkDiscussionReadCommand, ReplyCommand, ReplyMutationResult,
+        TransitionDiscussionCommand,
     },
     use_cases::request_revision_inspection::visible_revision_commits,
 };
@@ -24,7 +25,7 @@ use scope_api_contract::{
     RequestDiscussionReplyReferenceResponse, RequestDiscussionReplyResponse,
     RequestDiscussionSummaryResponse,
 };
-use scope_domain::requests::{REQUEST_ACTIVITY_PAGE_MAX_EVENTS, RequestViewer, request_policy};
+use scope_domain::requests::REQUEST_ACTIVITY_PAGE_MAX_EVENTS;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -138,7 +139,6 @@ pub(crate) async fn list_discussions(
         state: &state,
         request: &request,
         repo: &repo,
-        access,
     };
     let discussions = discussion_summaries(&projection, discussions, &batch.users).await?;
     Ok(Json(RequestDiscussionPageResponse {
@@ -248,9 +248,10 @@ pub(crate) async fn create_reply(
     Json(input): Json<CreateRequestDiscussionReplyRequest>,
 ) -> Result<Json<RequestDiscussionReplyMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let result = request_discussion_mutation::create_reply(
+    let result = request_discussion_mutation::reply(
         &state,
-        CreateReplyCommand {
+        ReplyCommand {
+            reopen_discussion: false,
             owner,
             repo_name,
             request_id,
@@ -306,9 +307,10 @@ pub(crate) async fn reopen_and_reply(
     Json(input): Json<ReopenAndReplyRequest>,
 ) -> Result<Json<RequestDiscussionReplyMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let result = request_discussion_mutation::reopen_and_reply(
+    let result = request_discussion_mutation::reply(
         &state,
-        ReopenAndReplyCommand {
+        ReplyCommand {
+            reopen_discussion: true,
             owner,
             repo_name,
             request_id,
@@ -343,7 +345,7 @@ pub(crate) async fn mark_read(
     )
     .await?;
     Ok(Json(RequestDiscussionReadResponse {
-        read_through_position: result.read_through_position,
+        read_through_position: result,
     }))
 }
 
@@ -385,7 +387,6 @@ pub(crate) async fn changed_discussions(
         state: &state,
         request: &request,
         repo: &repo,
-        access,
     };
     let discussions = discussion_summaries(&projection, batch.discussions, &batch.users).await?;
     Ok(Json(RequestDiscussionChangesResponse {
@@ -411,21 +412,9 @@ pub(crate) async fn activity(
         &request_id,
     )
     .await?;
-    let is_invitee = match viewer_user_id.as_deref() {
-        Some(user_id) => {
-            state
-                .metadata
-                .requests()
-                .request_is_invitee(&request.id, user_id)
-                .await?
-        }
-        None => false,
-    };
-    if !request_policy(
-        &request,
-        RequestViewer::new(access, viewer_user_id.as_deref(), is_invitee),
-    )
-    .activity_stream_visible
+    if !request_policy_for_viewer(&state, &request, access, viewer_user_id.as_deref())
+        .await?
+        .activity_stream_visible
     {
         return Err(ApiError::not_found("request not found"));
     }
@@ -570,7 +559,6 @@ struct DiscussionProjection<'a> {
     state: &'a AppState,
     request: &'a scope_domain::requests::Request,
     repo: &'a scope_domain::repository::access::RepositoryAccessContext,
-    access: scope_domain::repository::access::RepositoryAccess,
 }
 
 async fn discussion_summaries(
@@ -608,7 +596,7 @@ async fn discussion_anchor_visibility<'a>(
                 .insert(commit_oid.clone());
         }
     }
-    if projection.access.can_read_private_files {
+    if projection.repo.access.can_read_private_files {
         return commits_by_revision
             .into_iter()
             .flat_map(|(revision_id, commit_oids)| {
@@ -638,7 +626,7 @@ async fn discussion_anchor_visibility<'a>(
         projection.state,
         &projection.repo.incarnation(),
         &policy,
-        projection.access,
+        projection.repo.access,
         projection.request,
         &commits_by_revision,
     )

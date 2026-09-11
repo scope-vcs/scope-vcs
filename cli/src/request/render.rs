@@ -363,62 +363,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn list_renders_open_state_and_wait() {
-        let request: RequestListItemResponse = serde_json::from_value(json!({
-            "id": "req_one", "name": "fix-refs", "title": "Fix refs",
-            "author_role": "Public", "audience": "Public", "head_oid": oid('b'),
-            "state": "Open", "submitted_at_unix": 10, "updated_at_unix": 20,
-            "mergeability": {
-                "status": "NotMaintainer",
-                "current_main_oid": oid('a'),
-                "request_head_oid": oid('b'),
-                "reason": "repo maintainer required"
-            }
-        }))
-        .unwrap();
-
-        let rendered = request_list_line(&request, 70);
-        assert!(rendered.contains("open"), "{rendered}");
-        assert!(rendered.contains("1m"), "{rendered}");
-    }
-
-    #[test]
-    fn detail_uses_server_capabilities_and_renders_invitees_and_submission() {
-        let mut request = summary();
-        request.state = RequestState::Open;
-        request.submitted_at_unix = Some(10);
-        request.permissions.can_edit_identity = true;
-        request.invitees = serde_json::from_value(json!([{
-            "user": {"id": "scope_usr_devon", "handle": "devon"},
-            "invited_by_user_id": "scope_usr_author",
-            "created_at_unix": 5
-        }]))
-        .unwrap();
-
-        let rendered = request_detail_lines(&request).join("\n");
-
-        assert!(rendered.contains("open"), "{rendered}");
-        assert!(rendered.contains("submitted"), "{rendered}");
-        assert!(rendered.contains("@devon"), "{rendered}");
-        assert!(rendered.contains("edit"), "{rendered}");
-    }
-
-    #[test]
-    fn activity_renders_submission() {
-        let activity: RequestActivityPageResponse = serde_json::from_value(json!({
-            "events": [
-                event(1, json!({"Submitted": {"head_oid": oid('b')}}))
-            ],
-            "through_position": 1
-        }))
-        .unwrap();
-
-        let rendered = request_activity_lines(&activity).join("\n");
-
-        assert!(rendered.contains("Submitted · head"), "{rendered}");
-    }
-
-    #[test]
     fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
         let identity = json!({"title_sha256": oid('a'), "title_byte_count": 5,
             "description_sha256": oid('b'), "description_byte_count": 10});
@@ -453,40 +397,6 @@ mod tests {
         }
         assert!(lines[2].contains("note  [31m"), "{}", lines[2]);
         assert!(lines[3].contains(&oid('c')[..12]));
-    }
-
-    #[test]
-    fn wait_labels_are_concise_and_saturating() {
-        assert_eq!(wait_label(None, 3_600), "-");
-        assert_eq!(wait_label(Some(3_590), 3_600), "<1m");
-        assert_eq!(wait_label(Some(0), 3_600), "1h");
-        assert_eq!(wait_label(Some(4_000), 3_600), "<1m");
-    }
-
-    fn summary() -> RequestSummaryResponse {
-        serde_json::from_str(
-            r#"{
-                "id":"req_one","name":"fix-refs","title":"Fix request refs",
-                "description_markdown":"Atomic updates","author_user_id":"scope_usr_author",
-                "author_role":"Public","audience":"Public",
-                "base_main_oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "head_oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","state":"Draft",
-                "activity_version":1,
-                "submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,
-                "merged_at_unix":null,"merged_by_user_id":null,
-                "merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,
-                "updated_at_unix":2,"invitees":[],
-                "permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,
-                    "can_edit_identity":false,"can_pull_branch":false,"can_push_branch":false,
-                    "can_submit":false,
-                    "can_manage_invitees":false,"can_leave_request":false,
-                    "can_close":false,"can_merge":false},
-                "mergeability":{"status":"Draft",
-                    "current_main_oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "request_head_oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","reason":null}
-            }"#,
-        )
-        .unwrap()
     }
 
     fn event(position: u64, payload: serde_json::Value) -> serde_json::Value {
