@@ -45,14 +45,6 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
         captured.landing_file.unwrap().content_bytes,
         readme.as_bytes()
     );
-    state
-        .metadata
-        .repositories()
-        .delete_repository_landing_file_for_tests(TEST_REPO_ID)
-        .await
-        .unwrap();
-    assert_eq!(state.backfill_repository_landing_files().await.unwrap(), 1);
-    assert_eq!(state.backfill_repository_landing_files().await.unwrap(), 0);
 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await

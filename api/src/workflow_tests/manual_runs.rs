@@ -150,6 +150,12 @@ async fn uploaded_manual_run_revocation_queues_cleanup_and_preserves_shared_sour
                 .source_blob_deletes
                 .contains(&object)
         );
+        state
+            .metadata
+            .cleanup()
+            .expire_source_blob_cleanup_grace_for_tests()
+            .await
+            .unwrap();
         drain_pending_source_blob_deletions_report(&state)
             .await
             .unwrap();

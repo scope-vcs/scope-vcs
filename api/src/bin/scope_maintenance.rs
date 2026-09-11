@@ -14,8 +14,6 @@ commands:
   drain-writers               terminate sessions holding the shared writer fence
   validate-workflow-catalogs  validate pre-migration workflow inputs
   apply                       apply all pending migrations behind the writer fence
-  cleanup-git-segments-v1     delete retired Git segment objects after the v2 migration
-  backfill-landing-files      idempotently rebuild repository landing-file metadata
   backfill-workflow-catalogs  idempotently rebuild repository workflow catalogs
   scrub-retired-git-storage   delete retired local Git paths with writers stopped
   help                        show this help
@@ -70,16 +68,6 @@ async fn main() -> anyhow::Result<()> {
             apply_maintenance_migrations(database_url.clone(), migration_limits()?).await?;
             verify_schema(database_url).await?;
             println!(r#"{{"exact":true,"migration":"applied"}}"#);
-        }
-        "cleanup-git-segments-v1" => {
-            let deleted = api::cleanup_git_segments_v1_for_maintenance(database_url).await?;
-            println!(r#"{{"legacyGitSegmentObjectsDeleted":{deleted}}}"#);
-        }
-        "backfill-landing-files" => {
-            verify_schema(database_url.clone()).await?;
-            let stored =
-                api::backfill_repository_landing_files_for_maintenance(database_url).await?;
-            println!(r#"{{"landingFilesBackfilled":{stored}}}"#);
         }
         "backfill-workflow-catalogs" => {
             verify_schema(database_url.clone()).await?;

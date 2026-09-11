@@ -6,7 +6,6 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
     QueryOrder,
 };
-use std::sync::Arc;
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -345,10 +344,10 @@ impl RepositoryStore {
         repo: &Repository,
         principal: &Principal,
     ) -> Result<Vec<ProjectionViewFile>, PostgresError> {
-        let db = Arc::clone(&self.db);
         let repo = repo.clone();
         let principal = principal.clone();
-        if let Some(files) = load_live_projection_files(db.as_ref(), &repo, &principal).await? {
+        if let Some(files) = load_live_projection_files(self.db.as_ref(), &repo, &principal).await?
+        {
             return Ok(files);
         }
         Ok(domain_projected_files(&repo, &principal))

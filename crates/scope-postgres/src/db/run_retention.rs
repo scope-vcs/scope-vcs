@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{
     GeneratedIdSource, RunStore, cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
     entities, git_segments::release_git_segment_references,
@@ -18,7 +19,7 @@ impl RunStore {
         limit: u64,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<usize, PostgresError> {
-        let cutoff = entities::u64_to_i64(completed_before_unix, "run retention cutoff")?;
+        let cutoff = integer_columns::u64_to_i64(completed_before_unix, "run retention cutoff")?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let models = entities::run::Entity::find()
             .filter(entities::run::Column::State.is_in([

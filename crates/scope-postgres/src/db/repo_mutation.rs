@@ -6,7 +6,7 @@ use super::{
     repository_rows::save_repository_delta, workflow_catalogs::apply_repository_workflow_catalog,
 };
 use sea_orm::{EntityTrait, TransactionTrait};
-use std::{fmt, sync::Arc, time::Instant};
+use std::{fmt, time::Instant};
 use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
@@ -105,29 +105,20 @@ impl RepositoryStore {
         let repo_id = repo_id(owner, name);
         let owner = owner.to_string();
         let name = name.to_string();
-        let db = Arc::clone(&self.db);
         let transaction_started = Instant::now();
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let lock_started = Instant::now();
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let lock_wait = lock_started.elapsed();
         let serialized_started = Instant::now();
-        let repository_row_started = Instant::now();
         let repo = entities::repository::Entity::find_by_id(&repo_id)
             .one(&tx)
             .await
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
-        let repository_row_us = repository_row_started.elapsed().as_micros();
-        let hydrate_started = Instant::now();
         let mut repo = repository_from_model(&tx, repo).await?;
-        let hydrate_us = hydrate_started.elapsed().as_micros();
-        let clone_started = Instant::now();
         let before = repo.clone();
-        let clone_us = clone_started.elapsed().as_micros();
-        let domain_apply_started = Instant::now();
         let mutation = op(&mut repo)?;
-        let domain_apply_us = domain_apply_started.elapsed().as_micros();
         let changed_file_count = repo
             .graph
             .commits
@@ -138,7 +129,6 @@ impl RepositoryStore {
         let visibility_change_set_count = repo.visibility_change_sets.len();
         let policy_rule_count = repo.policy.rules().len();
         let config_rule_count = repo.repo_config.visibility.rules.len();
-        let catalog_verify_started = Instant::now();
         if let Some(catalog) = &mutation.workflow_catalog {
             let head = repo.git_head.as_ref().ok_or_else(|| {
                 PostgresError::internal_message(
@@ -149,24 +139,16 @@ impl RepositoryStore {
                 .verify_source(&repo.record.id, &head.head_oid, head.change_version)
                 .map_err(PostgresError::internal)?;
         }
-        let catalog_verify_us = catalog_verify_started.elapsed().as_micros();
-        let save_delta_started = Instant::now();
         save_repository_delta(&tx, &before, &repo, now_unix, generated_ids).await?;
-        let save_delta_us = save_delta_started.elapsed().as_micros();
-        let landing_file_started = Instant::now();
         apply_repository_landing_file_mutation(
             &tx,
             &repo.record.id,
             mutation.landing_file_mutation,
         )
         .await?;
-        let landing_file_us = landing_file_started.elapsed().as_micros();
-        let workflow_catalog_started = Instant::now();
         if let Some(catalog) = &mutation.workflow_catalog {
             apply_repository_workflow_catalog(&tx, catalog).await?;
         }
-        let workflow_catalog_us = workflow_catalog_started.elapsed().as_micros();
-        let push_trigger_started = Instant::now();
         if let Some(input) = mutation.push_trigger_input {
             let head = repo.git_head.as_ref().ok_or_else(|| {
                 PostgresError::internal_message(
@@ -184,8 +166,6 @@ impl RepositoryStore {
             )
             .await?;
         }
-        let push_trigger_us = push_trigger_started.elapsed().as_micros();
-        let orphan_queue_started = Instant::now();
         if !mutation.orphan_objects.is_empty() {
             queue_pending_source_blob_deletion_rows(
                 &tx,
@@ -195,7 +175,6 @@ impl RepositoryStore {
             )
             .await?;
         }
-        let orphan_queue_us = orphan_queue_started.elapsed().as_micros();
         let commit_started = Instant::now();
         tx.commit().await.map_err(PostgresError::internal)?;
         tracing::info!(
@@ -208,16 +187,6 @@ impl RepositoryStore {
             policy_rule_count,
             config_rule_count,
             lock_wait_us = lock_wait.as_micros(),
-            repository_row_us,
-            hydrate_us,
-            clone_us,
-            domain_apply_us,
-            catalog_verify_us,
-            save_delta_us,
-            landing_file_us,
-            workflow_catalog_us,
-            push_trigger_us,
-            orphan_queue_us,
             body_us = commit_started
                 .duration_since(serialized_started)
                 .as_micros(),

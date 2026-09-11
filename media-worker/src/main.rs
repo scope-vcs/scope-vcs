@@ -91,7 +91,7 @@ async fn connect_metadata(
     health_task: &mut tokio::task::JoinHandle<anyhow::Result<()>>,
 ) -> anyhow::Result<Option<MetadataStore>> {
     loop {
-        let connection = MetadataStore::connect_worker(settings.database_url.clone());
+        let connection = MetadataStore::connect(settings.database_url.clone());
         tokio::pin!(connection);
         let attempt = tokio::select! {
             result = &mut connection => result,

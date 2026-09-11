@@ -34,6 +34,12 @@ async fn queued_blob(state: &AppState, bytes: &[u8]) -> String {
         )
         .await
         .unwrap();
+    state
+        .metadata
+        .cleanup()
+        .expire_source_blob_cleanup_grace_for_tests()
+        .await
+        .unwrap();
     key
 }
 
@@ -137,6 +143,12 @@ async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
             unix_now(),
             &crate::persistence_ids::generate_persistence_id,
         )
+        .await
+        .unwrap();
+    state
+        .metadata
+        .cleanup()
+        .expire_source_blob_cleanup_grace_for_tests()
         .await
         .unwrap();
     let response = drain(state.clone()).await;

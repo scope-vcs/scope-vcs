@@ -149,8 +149,7 @@ impl RepositoryStore {
         let owner = owner.to_string();
         let name = name.to_string();
         let user_id = user_id.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let repo = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)

@@ -89,8 +89,7 @@ impl RepositoryStore {
         let repo_id = repo_id(&command.owner, &command.name);
         let owner_name = command.owner.clone();
         let name = command.name.clone();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let row = entities::repository::Entity::find_by_id(repo_id)
             .one(&tx)
@@ -183,8 +182,7 @@ impl RepositoryStore {
         let repo_id = repo_id(owner, name);
         let owner = owner.to_string();
         let name = name.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let row = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
@@ -237,8 +235,7 @@ impl RepositoryStore {
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<(scope_domain::repository::Repository, RepositoryMember), PostgresError> {
         let token_hash = token_hash.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository-invite-token", &token_hash).await?;
         let invite = entities::repository_invite::Entity::find()
             .filter(entities::repository_invite::Column::TokenHash.eq(token_hash.clone()))

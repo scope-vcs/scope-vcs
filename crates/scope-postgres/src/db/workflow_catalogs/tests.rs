@@ -1,6 +1,12 @@
 use super::*;
 use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
-use scope_domain::{account::UserAccount, policy::Visibility, repository::Repository};
+use scope_domain::{
+    account::UserAccount,
+    content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
+    content_ref::ContentRef,
+    policy::Visibility,
+    repository::Repository,
+};
 use sea_orm::{DatabaseBackend, Statement};
 use std::time::Duration;
 
@@ -215,4 +221,152 @@ async fn current_catalog_reads_head_and_files_from_one_snapshot_during_a_push() 
         .unwrap();
     assert_eq!(current.git_head.unwrap().change_version, 8);
     assert_eq!(current.catalog, Some(next_catalog));
+}
+
+#[tokio::test]
+async fn catalog_replaces_complete_snapshots_and_detects_corruption() {
+    let store = fixture();
+    let db = store.db.as_ref();
+
+    let first_file = RepositoryWorkflowFile::from_content(
+        "/.scope/runs/checks.yml",
+        DEFAULT_GIT_FILE_MODE,
+        b"name: checks\n".to_vec(),
+    )
+    .unwrap();
+    let first =
+        RepositoryWorkflowCatalog::captured(REPO_ID, HEAD_OID, 7, vec![first_file]).unwrap();
+    apply_repository_workflow_catalog(db, &first).await.unwrap();
+    assert_eq!(
+        repository_workflow_catalog(db, REPO_ID).await.unwrap(),
+        Some(first)
+    );
+
+    let empty = RepositoryWorkflowCatalog::captured(REPO_ID, HEAD_OID, 8, Vec::new()).unwrap();
+    apply_repository_workflow_catalog(db, &empty).await.unwrap();
+    assert_eq!(
+        repository_workflow_catalog(db, REPO_ID).await.unwrap(),
+        Some(empty)
+    );
+    let file_count = db
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT count(*) AS count FROM scope_repository_workflow_files".to_string(),
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "count")
+        .unwrap();
+    assert_eq!(file_count, 0);
+
+    let rejected =
+        RepositoryWorkflowCatalog::rejected(REPO_ID, HEAD_OID, 9, "too many files").unwrap();
+    apply_repository_workflow_catalog(db, &rejected)
+        .await
+        .unwrap();
+    assert_eq!(
+        repository_workflow_catalog(db, REPO_ID).await.unwrap(),
+        Some(rejected)
+    );
+
+    apply_repository_workflow_catalog(db, &captured_catalog())
+        .await
+        .unwrap();
+    db.execute_unprepared(&format!(
+        "UPDATE scope_repository_workflow_files
+         SET content_bytes = repeat('x', size_bytes::integer)::bytea
+         WHERE repo_id = '{REPO_ID}'"
+    ))
+    .await
+    .unwrap();
+    assert!(repository_workflow_catalog(db, REPO_ID).await.is_err());
+}
+
+#[tokio::test]
+async fn backfill_rechecks_repository_and_live_blob_identity() {
+    let store = fixture();
+    let db = store.db.as_ref();
+    let file = RepositoryWorkflowFile::from_content(
+        "/.scope/runs/checks.yml",
+        DEFAULT_GIT_FILE_MODE,
+        b"name: checks\n".to_vec(),
+    )
+    .unwrap();
+    let blob = SourceBlob {
+        content_ref: ContentRef::git_blob(file.oid()),
+        sha256: String::new(),
+        git_oid: file.oid().to_string(),
+        git_file_mode: file.git_file_mode().to_string(),
+        size_bytes: file.size_bytes(),
+    };
+    insert_head(&store).await;
+    entities::live_file::Entity::insert(
+        entities::live_file::Model {
+            repo_id: REPO_ID.to_string(),
+            path: "/.scope/runs/checks.yml".to_string(),
+            content: serde_json::to_value(&blob).unwrap(),
+        }
+        .into_active_model(),
+    )
+    .exec(db)
+    .await
+    .unwrap();
+
+    let repositories = store.repositories();
+    let candidates = repositories
+        .repository_workflow_catalog_backfill_candidates()
+        .await
+        .unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].repo_id, REPO_ID);
+    assert_eq!(candidates[0].source_change_version, 7);
+    assert_eq!(
+        candidates[0].workflow_blobs,
+        vec![("/.scope/runs/checks.yml".to_string(), blob)]
+    );
+
+    let catalog = RepositoryWorkflowCatalog::captured(REPO_ID, HEAD_OID, 7, vec![file]).unwrap();
+    assert!(
+        repositories
+            .store_backfilled_repository_workflow_catalog(&catalog)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repositories
+            .store_backfilled_repository_workflow_catalog(&catalog)
+            .await
+            .unwrap()
+    );
+    repositories
+        .delete_repository_workflow_catalog_for_tests(REPO_ID)
+        .await
+        .unwrap();
+    db.execute_unprepared(&format!(
+        "UPDATE scope_repositories SET change_version = 8 WHERE id = '{REPO_ID}'"
+    ))
+    .await
+    .unwrap();
+    assert!(
+        repositories
+            .store_backfilled_repository_workflow_catalog(&catalog)
+            .await
+            .unwrap()
+    );
+    repositories
+        .delete_repository_workflow_catalog_for_tests(REPO_ID)
+        .await
+        .unwrap();
+    db.execute_unprepared(&format!(
+        "UPDATE scope_git_heads SET change_version = 8 WHERE repo_id = '{REPO_ID}'"
+    ))
+    .await
+    .unwrap();
+    assert!(
+        repositories
+            .store_backfilled_repository_workflow_catalog(&catalog)
+            .await
+            .is_err()
+    );
 }

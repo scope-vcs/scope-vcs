@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{
     RunStore, entities,
     git_segments::insert_git_segment_references,
@@ -174,7 +175,7 @@ impl RunStore {
         now_unix: u64,
         limit: u64,
     ) -> Result<Vec<String>, PostgresError> {
-        let now_unix = entities::u64_to_i64(now_unix, "attempt recovery time")?;
+        let now_unix = integer_columns::u64_to_i64(now_unix, "attempt recovery time")?;
         let maximum_age_cutoff = now_unix
             .saturating_sub(scope_domain::runs::attempt::MAX_RUN_ATTEMPT_AGE_SECONDS as i64);
         Ok(entities::run_attempt::Entity::find()

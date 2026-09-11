@@ -64,11 +64,7 @@ async fn reconcile_clerk_scope_user(
     state: &AppState,
     identity: &ClerkIdentity,
 ) -> Result<UserAccount, ApiError> {
-    let resolution = state
-        .metadata
-        .auth()
-        .resolve_clerk_user(identity, unix_now()?)
-        .await?;
+    let resolution = state.metadata.auth().resolve_clerk_user(identity).await?;
     if resolution.created {
         state
             .product_analytics

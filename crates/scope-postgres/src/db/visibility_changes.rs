@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{
     GeneratedIdSource, RepositoryStore, acquire_aggregate_lock, entities,
     repo_effects::save_repo_mutation, repository_from_model,
@@ -9,7 +10,6 @@ use scope_domain::{
     repository::{Repository, repo_id},
 };
 use sea_orm::{EntityTrait, TransactionTrait};
-use std::sync::Arc;
 
 pub struct UpdateRepoFileVisibilityCommand {
     pub owner: String,
@@ -35,8 +35,7 @@ impl RepositoryStore {
             now_unix,
         } = command;
         let repo_id = repo_id(&owner, &name);
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let repo = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
@@ -45,7 +44,7 @@ impl RepositoryStore {
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
         let mut repo = repository_from_model(&tx, repo).await?;
         let before = repo.clone();
-        let occurred_at_unix = entities::u64_to_i64(now_unix, "visibility change time")?;
+        let occurred_at_unix = integer_columns::u64_to_i64(now_unix, "visibility change time")?;
         let mutation = set_visibility(
             &mut repo,
             &user_id,

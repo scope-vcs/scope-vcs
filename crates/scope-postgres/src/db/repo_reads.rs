@@ -12,7 +12,7 @@ use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
     QuerySelect, prelude::Json,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -75,8 +75,7 @@ impl RepositoryStore {
     ) -> Result<Option<OwnerProfileRead>, PostgresError> {
         let handle = handle.to_string();
         let viewer_user_id = viewer_user_id.map(str::to_string);
-        let db = Arc::clone(&self.db);
-        let tx = begin_metadata_read_snapshot(db.as_ref()).await?;
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let profile = owner_profile_tx(&tx, &handle, viewer_user_id.as_deref()).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(profile)
@@ -91,8 +90,7 @@ impl RepositoryStore {
         let owner = owner.to_string();
         let name = name.to_string();
         let viewer_user_id = viewer_user_id.map(str::to_string);
-        let db = Arc::clone(&self.db);
-        let tx = begin_metadata_read_snapshot(db.as_ref()).await?;
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let summary = repo_summary_tx(&tx, &owner, &name, viewer_user_id.as_deref()).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(summary)
@@ -107,8 +105,7 @@ impl RepositoryStore {
         let owner = owner.to_string();
         let name = name.to_string();
         let viewer_user_id = viewer_user_id.map(str::to_string);
-        let db = Arc::clone(&self.db);
-        let tx = begin_metadata_read_snapshot(db.as_ref()).await?;
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let files = repo_live_files_tx(&tx, &owner, &name, viewer_user_id.as_deref()).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(files)
@@ -138,8 +135,7 @@ impl RepositoryStore {
         let name = name.to_string();
         let viewer_user_id = viewer_user_id.map(str::to_string);
         let path = path.clone();
-        let db = Arc::clone(&self.db);
-        let tx = begin_metadata_read_snapshot(db.as_ref()).await?;
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let content = repo_live_file_with_landing_content_tx(
             &tx,
             &owner,

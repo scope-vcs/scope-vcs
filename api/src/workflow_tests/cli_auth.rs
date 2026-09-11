@@ -271,7 +271,7 @@ async fn state_with_clerk_snapshot() -> AppState {
     let _ = state
         .metadata
         .auth()
-        .resolve_clerk_user(&test_clerk_identity(), unix_now())
+        .resolve_clerk_user(&test_clerk_identity())
         .await
         .unwrap();
     state

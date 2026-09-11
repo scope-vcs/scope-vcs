@@ -298,7 +298,6 @@ pub(crate) async fn compact_one_git_repository(
             &candidate.spans,
             built.replacement,
             persist_now_unix,
-            &crate::generate_persistence_id,
         )
         .await;
     let persist_ms = elapsed_ms(persist_started);

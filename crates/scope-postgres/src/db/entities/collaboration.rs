@@ -103,14 +103,14 @@ pub mod repository_invite {
                     "repository invite expiry time",
                 )?,
                 accepted_by_user_id: invite.accepted_by_user_id.clone(),
-                accepted_at_unix: invite
-                    .accepted_at_unix
-                    .map(|value| u64_to_i64(value, "repository invite acceptance time"))
-                    .transpose()?,
-                revoked_at_unix: invite
-                    .revoked_at_unix
-                    .map(|value| u64_to_i64(value, "repository invite revocation time"))
-                    .transpose()?,
+                accepted_at_unix: optional_u64_to_i64(
+                    invite.accepted_at_unix,
+                    "repository invite acceptance time",
+                )?,
+                revoked_at_unix: optional_u64_to_i64(
+                    invite.revoked_at_unix,
+                    "repository invite revocation time",
+                )?,
             })
         }
 
@@ -131,14 +131,14 @@ pub mod repository_invite {
                 updated_at_unix: i64_to_u64(self.updated_at_unix, "repository invite update time")?,
                 expires_at_unix: i64_to_u64(self.expires_at_unix, "repository invite expiry time")?,
                 accepted_by_user_id: self.accepted_by_user_id,
-                accepted_at_unix: self
-                    .accepted_at_unix
-                    .map(|value| i64_to_u64(value, "repository invite acceptance time"))
-                    .transpose()?,
-                revoked_at_unix: self
-                    .revoked_at_unix
-                    .map(|value| i64_to_u64(value, "repository invite revocation time"))
-                    .transpose()?,
+                accepted_at_unix: optional_i64_to_u64(
+                    self.accepted_at_unix,
+                    "repository invite acceptance time",
+                )?,
+                revoked_at_unix: optional_i64_to_u64(
+                    self.revoked_at_unix,
+                    "repository invite revocation time",
+                )?,
             })
         }
     }

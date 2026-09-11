@@ -1,4 +1,8 @@
 use crate::{
+    db::integer_columns::{
+        i32_to_u32, i64_to_u64, optional_i32_to_u32, optional_i64_to_u64, optional_u32_to_i32,
+        optional_u64_to_i64, u32_to_i32, u64_to_i64, usize_to_i64,
+    },
     db::projection_encoding::{LIVE_PROJECTION_SOURCE, ProjectionAudience},
     db::{decode_json, encode_json},
     error::PostgresError,
@@ -55,34 +59,6 @@ pub(super) fn decode_enum<T: serde::de::DeserializeOwned>(
     value: String,
 ) -> Result<T, PostgresError> {
     serde_json::from_value(serde_json::Value::String(value)).map_err(PostgresError::internal)
-}
-
-pub(super) fn u64_to_i64(value: u64, field: &str) -> Result<i64, PostgresError> {
-    i64::try_from(value).map_err(|_| {
-        PostgresError::internal_message(format!("{field} exceeds PostgreSQL bigint range"))
-    })
-}
-
-pub(super) fn i64_to_u64(value: i64, field: &str) -> Result<u64, PostgresError> {
-    u64::try_from(value)
-        .map_err(|_| PostgresError::internal_message(format!("{field} cannot be negative")))
-}
-
-pub(super) fn u32_to_i32(value: u32, field: &str) -> Result<i32, PostgresError> {
-    i32::try_from(value).map_err(|_| {
-        PostgresError::internal_message(format!("{field} exceeds PostgreSQL integer range"))
-    })
-}
-
-pub(super) fn i32_to_u32(value: i32, field: &str) -> Result<u32, PostgresError> {
-    u32::try_from(value)
-        .map_err(|_| PostgresError::internal_message(format!("{field} cannot be negative")))
-}
-
-fn usize_to_i64(value: usize, field: &str) -> Result<i64, PostgresError> {
-    i64::try_from(value).map_err(|_| {
-        PostgresError::internal_message(format!("{field} exceeds PostgreSQL bigint range"))
-    })
 }
 
 pub struct RepositoryFacts {

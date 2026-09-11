@@ -151,7 +151,6 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
     run_maintenance validate-workflow-catalogs
     # Apply the candidate schema without running physical cleanup commands here.
     run_maintenance apply
-    run_maintenance backfill-landing-files
     run_maintenance backfill-workflow-catalogs
   fi
   rm -rf -- "$snapshot_backfill_dir"

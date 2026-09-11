@@ -44,7 +44,7 @@ pub struct AppState {
 
 impl AppState {
     pub async fn from_settings(settings: Settings) -> anyhow::Result<Self> {
-        let metadata = MetadataStore::connect_worker(settings.database_url).await?;
+        let metadata = MetadataStore::connect(settings.database_url).await?;
         let raw_store: Arc<dyn ObjectStore> = match settings.object_store {
             MediaObjectStoreSettings::Filesystem(settings) => {
                 Arc::new(FileObjectStore::new(settings))

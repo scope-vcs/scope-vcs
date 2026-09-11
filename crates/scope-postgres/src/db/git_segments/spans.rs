@@ -1,8 +1,8 @@
-use super::{
-    super::entities,
-    ledger::{require_one_transition, size, timestamp},
+use super::{super::entities, ledger::require_one_transition};
+use crate::{
+    db::integer_columns::{u32_to_i32, u64_to_i64},
+    error::PostgresError,
 };
-use crate::error::PostgresError;
 use scope_domain::repository::git::{GitPackSpan, GitSegmentRef};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder, Statement,
@@ -74,15 +74,9 @@ where
                 segment.segment_id.clone().into(),
                 repo_id.into(),
                 segment.sha256.clone().into(),
-                size(segment.plaintext_bytes, "Git segment plaintext size")?.into(),
-                i32::try_from(segment.encoding_version)
-                    .map_err(|_| {
-                        PostgresError::internal_message(
-                            "Git segment encoding version exceeds database integer",
-                        )
-                    })?
-                    .into(),
-                timestamp(now_unix, "Git segment publication time")?.into(),
+                u64_to_i64(segment.plaintext_bytes, "Git segment plaintext size")?.into(),
+                u32_to_i32(segment.encoding_version, "Git segment encoding version")?.into(),
+                u64_to_i64(now_unix, "Git segment publication time")?.into(),
             ],
         ))
         .await

@@ -1,7 +1,8 @@
 use super::{
-    auth::{i64_to_u64, load_user_by_id, u64_to_i64},
+    auth::load_user_by_id,
     cli_auth_results::{CliSessionSummary, NewCliSession},
     entities,
+    integer_columns::{i64_to_u64, optional_i64_to_u64, u64_to_i64},
 };
 use crate::error::PostgresError;
 use scope_domain::account::SessionIdentity;
@@ -20,9 +21,9 @@ where
         token_hash: session.token_hash,
         user_id: user_id.to_string(),
         label: session.label,
-        created_at_unix: u64_to_i64(session.created_at_unix)?,
+        created_at_unix: u64_to_i64(session.created_at_unix, "CLI session creation time")?,
         last_used_at_unix: None,
-        expires_at_unix: u64_to_i64(session.expires_at_unix)?,
+        expires_at_unix: u64_to_i64(session.expires_at_unix, "CLI session expiry")?,
         revoked_at_unix: None,
     }
     .into_active_model()
@@ -39,8 +40,11 @@ pub fn cli_session_summary_from_model(
     Ok(CliSessionSummary {
         id: session.id,
         label: session.label,
-        created_at_unix: i64_to_u64(session.created_at_unix)?,
-        last_used_at_unix: session.last_used_at_unix.map(i64_to_u64).transpose()?,
-        expires_at_unix: i64_to_u64(session.expires_at_unix)?,
+        created_at_unix: i64_to_u64(session.created_at_unix, "CLI session creation time")?,
+        last_used_at_unix: optional_i64_to_u64(
+            session.last_used_at_unix,
+            "CLI session last use time",
+        )?,
+        expires_at_unix: i64_to_u64(session.expires_at_unix, "CLI session expiry")?,
     })
 }

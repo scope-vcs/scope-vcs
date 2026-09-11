@@ -1,4 +1,5 @@
 use super::entities;
+use super::integer_columns;
 use super::object_references::{delete_object_reference, replace_object_reference};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult,
@@ -75,17 +76,20 @@ impl RequestListModel {
             state,
             submitted_at_unix: self
                 .submitted_at_unix
-                .map(|value| entities::i64_to_u64(value, "request submission time"))
+                .map(|value| integer_columns::i64_to_u64(value, "request submission time"))
                 .transpose()?,
             closed_at_unix: self
                 .closed_at_unix
-                .map(|value| entities::i64_to_u64(value, "request close time"))
+                .map(|value| integer_columns::i64_to_u64(value, "request close time"))
                 .transpose()?,
             merged_at_unix: self
                 .merged_at_unix
-                .map(|value| entities::i64_to_u64(value, "request merge time"))
+                .map(|value| integer_columns::i64_to_u64(value, "request merge time"))
                 .transpose()?,
-            updated_at_unix: entities::i64_to_u64(self.updated_at_unix, "request update time")?,
+            updated_at_unix: integer_columns::i64_to_u64(
+                self.updated_at_unix,
+                "request update time",
+            )?,
             has_git_snapshot: self.has_git_snapshot,
         })
     }

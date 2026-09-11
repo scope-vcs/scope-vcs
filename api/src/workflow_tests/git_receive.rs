@@ -452,6 +452,12 @@ async fn pending_object_cleanup_uses_transactional_reference_rows() {
             .await
             .unwrap();
     }
+    state
+        .metadata
+        .cleanup()
+        .expire_source_blob_cleanup_grace_for_tests()
+        .await
+        .unwrap();
 
     drain_pending_orphan_objects(&state).await.unwrap();
 

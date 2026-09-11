@@ -15,7 +15,7 @@ use super::{
     AuthStore, CleanupStore, MetadataStore, RepositoryStore, RequestStore,
     cleanup_queue::queue::{
         load_pending_repo_storage_deletions, load_pending_source_blob_deletions,
-        queue_pending_repo_storage_cleanup_row_at,
+        queue_pending_repo_storage_cleanup_row,
     },
     repository_from_model,
     repository_rows::save_repository_delta,
@@ -220,13 +220,29 @@ impl CleanupStore {
         cleanup: RepoStorageCleanup,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        queue_pending_repo_storage_cleanup_row_at(
+        queue_pending_repo_storage_cleanup_row(
             self.db.as_ref(),
             cleanup,
             now_unix,
             &super::generated_ids::test_generated_id,
         )
         .await
+    }
+
+    /// Makes every queued source blob cleanup due now, so a test can drain
+    /// work that production would hold for `SOURCE_BLOB_DELETE_GRACE_SECONDS`.
+    pub async fn expire_source_blob_cleanup_grace_for_tests(&self) -> Result<(), PostgresError> {
+        use sea_orm::{ColumnTrait, QueryFilter};
+        entities::source_blob_cleanup_job::Entity::update_many()
+            .filter(entities::source_blob_cleanup_job::Column::CompletedAtUnix.is_null())
+            .col_expr(
+                entities::source_blob_cleanup_job::Column::NextRunAtUnix,
+                sea_orm::sea_query::Expr::value(0_i64),
+            )
+            .exec(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(())
     }
 
     pub async fn pending_repo_storage_cleanups_for_tests(

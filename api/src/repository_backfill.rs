@@ -63,13 +63,6 @@ impl RepositoryBackfillContext {
     pub(crate) fn metadata(&self) -> &MetadataStore {
         &self.metadata
     }
-
-    pub(crate) fn delete_repository_cache(
-        &self,
-        incarnation: &scope_domain::repository::RepositoryIncarnation,
-    ) -> Result<bool, crate::error::ApiError> {
-        self.repository_engine.delete_repository_cache(incarnation)
-    }
 }
 
 impl GitContext for RepositoryBackfillContext {

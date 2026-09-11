@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{RepositoryStore, begin_metadata_read_snapshot, entities};
 use crate::error::PostgresError;
 use scope_domain::repository::{
@@ -111,7 +112,10 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
         description: row.description,
         website_url: row.website_url,
         lifecycle_state: entities::decode_enum(row.publication_state)?,
-        change_version: entities::i64_to_u64(row.change_version, "repository change version")?,
+        change_version: integer_columns::i64_to_u64(
+            row.change_version,
+            "repository change version",
+        )?,
     };
     let access = match viewer_user_id {
         None => RepositoryAccess::public(),

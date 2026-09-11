@@ -9,7 +9,6 @@ use sea_orm::{
     TransactionTrait,
 };
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClerkUserResolution {
@@ -22,38 +21,36 @@ impl AuthStore {
         &self,
         identity: &ExternalIdentity,
     ) -> Result<Option<UserAccount>, PostgresError> {
-        let identity = identity.clone();
-        let db = Arc::clone(&self.db);
-        resolve_existing_clerk_user_in_tx(db.as_ref(), &identity).await
+        let verified_email = verified_identity_email(identity)?;
+        existing_identity_user(self.db.as_ref(), identity, &verified_email).await
     }
 
     pub async fn resolve_clerk_user(
         &self,
         identity: &ExternalIdentity,
-        now_unix: u64,
     ) -> Result<ClerkUserResolution, PostgresError> {
-        let identity = identity.clone();
-        let verified_email = verified_identity_email(&identity)?;
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let verified_email = verified_identity_email(identity)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let identity_key = format!("{}:{}", identity.provider, identity.subject);
         acquire_aggregate_lock(&tx, "auth-identity", &identity_key).await?;
         acquire_aggregate_lock(&tx, "auth-email", &verified_email).await?;
-        let resolution = resolve_clerk_user_in_tx(&tx, &identity, &verified_email).await?;
-        let _ = now_unix;
+        let resolution = resolve_clerk_user_in_tx(&tx, identity, &verified_email).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(resolution)
     }
 }
 
-async fn resolve_existing_clerk_user_in_tx<C>(
+/// Loads the Scope user already linked to this external identity, refuses
+/// the identity when its verified email belongs to a different user, and
+/// refreshes the in-memory snapshot from the identity. Nothing is persisted.
+async fn existing_identity_user<C>(
     conn: &C,
     identity: &ExternalIdentity,
+    verified_email: &str,
 ) -> Result<Option<UserAccount>, PostgresError>
 where
     C: sea_orm::ConnectionTrait,
 {
-    let verified_email = verified_identity_email(identity)?;
     let Some(auth_identity) = entities::auth_identity::Entity::find()
         .filter(entities::auth_identity::Column::Provider.eq(identity.provider.as_str()))
         .filter(entities::auth_identity::Column::Subject.eq(identity.subject.clone()))
@@ -65,7 +62,7 @@ where
     };
 
     let mut user = load_user_by_id(conn, &auth_identity.user_id).await?;
-    if let Some(email_owner) = load_user_by_email(conn, &verified_email).await?
+    if let Some(email_owner) = load_user_by_email(conn, verified_email).await?
         && email_owner.id != user.id
     {
         return Err(PostgresError::conflict(
@@ -85,22 +82,7 @@ async fn resolve_clerk_user_in_tx<C>(
 where
     C: sea_orm::ConnectionTrait,
 {
-    if let Some(auth_identity) = entities::auth_identity::Entity::find()
-        .filter(entities::auth_identity::Column::Provider.eq(identity.provider.as_str()))
-        .filter(entities::auth_identity::Column::Subject.eq(identity.subject.clone()))
-        .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
-    {
-        let mut user = load_user_by_id(conn, &auth_identity.user_id).await?;
-        if let Some(email_owner) = load_user_by_email(conn, verified_email).await?
-            && email_owner.id != user.id
-        {
-            return Err(PostgresError::conflict(
-                "verified email belongs to another Scope user",
-            ));
-        }
-        update_user_snapshot(&mut user, identity);
+    if let Some(user) = existing_identity_user(conn, identity, verified_email).await? {
         update_user(conn, &user).await?;
         return Ok(ClerkUserResolution {
             user,
@@ -322,7 +304,7 @@ mod tests {
     use super::*;
     use crate::db::{MetadataStore, TestDatabaseTarget};
     use sea_orm::{DatabaseBackend, MockDatabase};
-    use std::collections::HashSet;
+    use std::{collections::HashSet, sync::Arc};
     use tokio::{sync::Barrier, task::JoinSet};
 
     async fn resolve_concurrently(
@@ -336,10 +318,7 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             tasks.spawn(async move {
                 barrier.wait().await;
-                store
-                    .auth()
-                    .resolve_clerk_user(&identity, 1_700_000_000)
-                    .await
+                store.auth().resolve_clerk_user(&identity).await
             });
         }
 
