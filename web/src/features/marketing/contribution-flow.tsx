@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 function ContributionTree({ merged = false }: { merged?: boolean }): ReactElement {
   const files = merged ? ['sdk/api.ts', 'docs/', 'internal/', 'README.md'] : ['sdk/api.ts', 'docs/', 'README.md']
   return (
-    <ul className="scene-tree m-0 list-none p-0">
+    <ul className="m-0 list-none p-0">
       {files.map((name) => {
         const changed = name === 'sdk/api.ts'
         const privateFile = name === 'internal/'
@@ -16,7 +16,7 @@ function ContributionTree({ merged = false }: { merged?: boolean }): ReactElemen
             <Icon className="icon size-[15px] text-landing-muted" />
             {name}
             {(changed || privateFile) && (
-              <span className={`file-state ml-auto flex items-center gap-1.5 text-landing-meta ${privateFile ? 'private-state text-landing-muted' : 'text-landing-green'}`}>
+              <span className={cn('ml-auto flex items-center gap-1.5 text-landing-meta', privateFile ? 'text-landing-muted' : 'text-landing-green')}>
                 {merged && <StateIcon className="icon size-3" />}
                 {privateFile ? 'Private' : merged ? 'Updated' : '+1'}
               </span>
@@ -40,29 +40,29 @@ export function ContributionFlow(): ReactElement {
         ))}
       </div>
       <div aria-hidden className="request-sheet relative border-y border-landing-line bg-landing-paper [--landing-request-inset:18px] max-[521px]:[--landing-request-inset:12px]">
-        <div className="request-heading flex min-h-[52px] items-center gap-3 border-b border-landing-line py-3 px-[var(--landing-request-inset)] max-[521px]:min-h-[56px] max-[521px]:gap-2">
+        <div className="flex min-h-[52px] items-center gap-3 border-b border-landing-line py-3 px-[var(--landing-request-inset)] max-[521px]:min-h-[56px] max-[521px]:gap-2">
           <GitBranch className="icon size-[18px] text-landing-green max-[521px]:hidden" />
           <h3 className="m-0 min-w-0 font-sans text-landing-title leading-[1.35] font-medium tracking-normal max-[521px]:max-w-[195px] max-[361px]:max-w-[175px]">Handle empty responses</h3>
-          <div className="request-state-stack relative ml-auto h-5 w-[9ch] shrink-0 text-right font-mono text-landing-meta leading-5 whitespace-nowrap text-landing-muted *:absolute *:inset-0">
+          <div className="relative ml-auto h-5 w-[9ch] shrink-0 text-right font-mono text-landing-meta leading-5 whitespace-nowrap text-landing-muted *:absolute *:inset-0">
             <span className="state-submitted">Open</span>
             <span className="state-review text-landing-green">In review</span>
             <span className="state-merged text-landing-green">Merged</span>
           </div>
         </div>
-        <div className="request-scenes relative h-[240px] max-[521px]:h-[260px] overflow-hidden *:pointer-events-none *:absolute *:inset-0 *:pt-4 *:px-[var(--landing-request-inset)] *:pb-4 *:will-change-[opacity,transform] max-[521px]:*:pt-4">
-          <div className="request-scene submission-scene">
-            <div className="scene-context mb-[15px] flex items-center gap-2 text-landing-title leading-5 font-medium">
+        <div className="relative h-[240px] max-[521px]:h-[260px] overflow-hidden *:pointer-events-none *:absolute *:inset-0 *:pt-4 *:px-[var(--landing-request-inset)] *:pb-4 *:will-change-[opacity,transform] max-[521px]:*:pt-4">
+          <div className="submission-scene">
+            <div className="mb-[15px] flex items-center gap-2 text-landing-title leading-5 font-medium">
               <Globe className="icon size-[15px] text-landing-muted" />
               Public clone
             </div>
             <ContributionTree />
-            <div className="scene-receipt absolute inset-x-[var(--landing-request-inset)] bottom-[21px] flex items-center gap-2 text-landing-meta text-landing-muted">
+            <div className="absolute inset-x-[var(--landing-request-inset)] bottom-[21px] flex items-center gap-2 text-landing-meta text-landing-muted">
               <Check className="icon size-3.5 text-landing-green" />
               Submitted to your review queue
             </div>
           </div>
-          <div className="request-scene review-scene">
-            <div className="review-file-header mb-[13px] flex items-center justify-between gap-4 font-mono text-landing-body [line-height:normal]">
+          <div className="review-scene">
+            <div className="mb-[13px] flex items-center justify-between gap-4 font-mono text-landing-body [line-height:normal]">
               <span className="flex items-center gap-2">
                 <File className="icon size-3.5 text-landing-muted" />
                 sdk/api.ts
@@ -77,10 +77,10 @@ export function ContributionFlow(): ReactElement {
               <span>  return res.json();</span>
             </div>
             <div className="maintainer-review mt-4 grid grid-cols-[26px_minmax(0,1fr)] gap-2.5 max-[521px]:mt-4">
-              <span className="reviewer-mark grid size-[26px] place-items-center rounded-full border border-landing-line bg-landing-panel font-mono text-[11px] text-landing-muted [line-height:normal]">M</span>
+              <span className="grid size-[26px] place-items-center rounded-full border border-landing-line bg-landing-panel font-mono text-[11px] text-landing-muted [line-height:normal]">M</span>
               <div>
-                <div className="reviewer-name text-landing-meta leading-[1.4] font-medium">Maintainer</div>
-                <p className="review-comment-text mt-1 text-landing-body leading-normal text-landing-muted">
+                <div className="text-landing-meta leading-[1.4] font-medium">Maintainer</div>
+                <p className="mt-1 text-landing-body leading-normal text-landing-muted">
                   Empty responses return null. Looks good.
                 </p>
               </div>
@@ -90,14 +90,14 @@ export function ContributionFlow(): ReactElement {
               Ready to merge
             </div>
           </div>
-          <div className="request-scene merged-scene">
-            <div className="scene-context mb-[15px] flex items-center gap-2 text-landing-title leading-5 font-medium">
+          <div className="merged-scene">
+            <div className="mb-[15px] flex items-center gap-2 text-landing-title leading-5 font-medium">
               <GitBranch className="icon size-[15px] text-landing-muted" />
               Your repository
-              <span className="scene-branch ml-auto font-mono text-landing-meta font-normal text-landing-muted [line-height:normal]">main</span>
+              <span className="ml-auto font-mono text-landing-meta font-normal text-landing-muted [line-height:normal]">main</span>
             </div>
             <ContributionTree merged />
-            <div className="scene-receipt absolute inset-x-[var(--landing-request-inset)] bottom-[21px] flex items-center gap-2 text-landing-meta text-landing-muted">
+            <div className="absolute inset-x-[var(--landing-request-inset)] bottom-[21px] flex items-center gap-2 text-landing-meta text-landing-muted">
               <Check className="icon size-3.5 text-landing-green" />
               Merged by the maintainer
             </div>

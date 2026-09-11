@@ -16,8 +16,8 @@ const sourceUrl = 'https://scopevcs.com/adamblumoff/scope-vcs'
 const shell = 'mx-auto w-[calc(100%-64px)] max-w-[1120px] max-[521px]:w-[calc(100%-40px)]'
 const sectionLayout = 'grid grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)] items-start gap-12 max-[1151px]:gap-8 max-[901px]:grid-cols-1'
 const sectionHeading = 'text-[30px] leading-[1.15] font-medium tracking-[-.035em] max-[521px]:text-[27px]'
-const sectionCopy = 'section-copy mt-4 max-w-[380px] text-[15px] leading-[1.7] text-landing-muted max-[901px]:max-w-[540px]'
-const logo = 'logo block h-auto brightness-0 dark:invert'
+const sectionCopy = 'mt-4 max-w-[380px] text-[15px] leading-[1.7] text-landing-muted max-[901px]:max-w-[540px]'
+const logo = 'block h-auto brightness-0 dark:invert'
 const headlineLine = 'block max-[901px]:inline'
 
 export function MarketingLandingPage({
@@ -37,7 +37,7 @@ export function MarketingLandingPage({
           </Link>
           <span className="border-l border-landing-line pl-[17px] font-mono text-xs leading-[normal] text-landing-muted max-[521px]:pl-3 max-[521px]:text-[10px] max-[361px]:hidden">pre-alpha</span>
         </div>
-        <nav className="top-actions flex items-center gap-7 max-[521px]:gap-3 [&_button]:size-[38px] [&_button]:rounded-full [&_button]:bg-transparent [&_button:hover]:bg-landing-panel" aria-label="Account and appearance">
+        <nav className="flex items-center gap-7 max-[521px]:gap-3 [&_button]:size-[38px] [&_button]:rounded-full [&_button]:bg-transparent [&_button:hover]:bg-landing-panel" aria-label="Account and appearance">
           <Link
             className="text-[14px] hover:text-landing-green max-[521px]:text-[13px]"
             params={{ _splat: '' }}
@@ -50,18 +50,18 @@ export function MarketingLandingPage({
         </nav>
       </header>
       <main className={cn(shell, 'outline-none [--landing-section-space:104px] max-[901px]:[--landing-section-space:80px]')} id="main-content" tabIndex={-1}>
-        <section className={cn('hero pt-16 max-[901px]:gap-9 max-[901px]:pt-10 max-[521px]:pt-8', sectionLayout)} aria-labelledby="hero-title">
+        <section className={cn('pt-16 max-[901px]:gap-9 max-[901px]:pt-10 max-[521px]:pt-8', sectionLayout)} aria-labelledby="hero-title">
           <div className="min-w-0 max-[901px]:max-w-[640px]">
             <h1 id="hero-title" className="enter text-[clamp(42px,4vw,56px)] leading-[1.06] font-[500] tracking-[-.05em] max-[901px]:text-[48px] max-[521px]:text-[clamp(34px,8.7vw,42px)]">
               <span className="block">One repository.</span>{' '}
               <span className={cn(headlineLine, 'text-landing-muted')}>You choose</span>{' '}
               <span className={cn(headlineLine, 'text-landing-muted')}>what’s <span className="accent relative inline-block text-landing-green after:absolute after:right-0 after:-bottom-[5px] after:left-px after:h-0.5 after:origin-left after:bg-landing-green after:content-['']">public.</span></span>
             </h1>
-            <p className="intro enter mt-5 max-w-[390px] text-base leading-[1.65] text-landing-muted [animation-delay:90ms] max-[901px]:max-w-[540px] max-[521px]:text-[15px]">
+            <p className="enter mt-5 max-w-[390px] text-base leading-[1.65] text-landing-muted [animation-delay:90ms] max-[901px]:max-w-[540px] max-[521px]:text-[15px]">
               Keep public and private code in one Git repository. Contributors clone
               only the files you share.
             </p>
-            <div className="hero-actions enter mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 [animation-delay:180ms] max-[521px]:gap-x-4">
+            <div className="enter mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 [animation-delay:180ms] max-[521px]:gap-x-4">
               <a href="#install" className="group inline-flex min-h-11 items-center justify-center gap-3 rounded-[5px] bg-landing-ink px-4 py-2.5 text-[13px] font-medium text-landing-bg transition-[transform,box-shadow] duration-180 hover:-translate-y-0.5 hover:shadow-[0_4px_0_var(--landing-line)] max-[521px]:gap-3.5 max-[521px]:px-3.5">
                 Install Scope<ArrowDown className="icon transition-transform duration-200 group-hover:translate-y-0.5" aria-hidden />
               </a>
