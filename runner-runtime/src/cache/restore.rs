@@ -287,11 +287,6 @@ fn wire_cache_preparation(preparation: CachePreparation) -> WireCachePreparation
                 CacheColdReason::MetadataMissing => WireCacheColdReason::MetadataMissing,
                 CacheColdReason::MetadataInvalid => WireCacheColdReason::MetadataInvalid,
                 CacheColdReason::MetadataNotReady => WireCacheColdReason::MetadataNotReady,
-                CacheColdReason::VolumeMissing => WireCacheColdReason::VolumeMissing,
-                CacheColdReason::VolumeInvalid => WireCacheColdReason::VolumeInvalid,
-                CacheColdReason::BackingDirectoryMissing => {
-                    WireCacheColdReason::BackingDirectoryMissing
-                }
             },
         },
     }

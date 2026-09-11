@@ -26,7 +26,7 @@ export type FileChangeKind = "Added" | "Modified" | "Deleted";
 
 export type ConfigVisibility = "public" | "private";
 
-export type RepoConfig = { $schema?: string | null, kind: string, version: number, visibility: RepoConfigVisibility, history: RepoConfigHistory, };
+export type RepoConfig = { kind: string, version: number, visibility: RepoConfigVisibility, history: RepoConfigHistory, };
 
 export type RepoConfigVisibility = { default: ConfigVisibility, rules: Array<RepoConfigVisibilityRule>, };
 
@@ -352,7 +352,7 @@ export type RepositoryRunStepState = "pending" | "running" | "succeeded" | "fail
 
 export type RepositoryRunTerminalReason = { "kind": "step-failed", step_index: number, exit_code: number, } | { "kind": "timed-out", step_index: number | null, } | { "kind": "canceled", step_index: number | null, } | { "kind": "execution-lost", step_index: number | null, } | { "kind": "dispatch-attempts-exhausted" } | { "kind": "runtime-setup-failed", exit_code: number, message: string, };
 
-export type RepositoryRunCacheColdReason = "metadata-missing" | "metadata-invalid" | "metadata-not-ready" | "volume-missing" | "volume-invalid" | "backing-directory-missing";
+export type RepositoryRunCacheColdReason = "metadata-missing" | "metadata-invalid" | "metadata-not-ready";
 
 export type RepositoryRunCachePreparation = { "kind": "exact" } | { "kind": "compatible" } | { "kind": "cold", reason: RepositoryRunCacheColdReason, };
 

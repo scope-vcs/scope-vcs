@@ -156,9 +156,6 @@ wire_enum!(
         MetadataMissing,
         MetadataInvalid,
         MetadataNotReady,
-        VolumeMissing,
-        VolumeInvalid,
-        BackingDirectoryMissing,
     }
 );
 

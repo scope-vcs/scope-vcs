@@ -114,9 +114,6 @@ fn cold_reason_label(reason: RepositoryRunCacheColdReason) -> &'static str {
         RepositoryRunCacheColdReason::MetadataMissing => "no reusable entry for this identity",
         RepositoryRunCacheColdReason::MetadataInvalid => "cache metadata invalid",
         RepositoryRunCacheColdReason::MetadataNotReady => "cached volume not ready",
-        RepositoryRunCacheColdReason::VolumeMissing => "cached volume missing",
-        RepositoryRunCacheColdReason::VolumeInvalid => "cached volume invalid",
-        RepositoryRunCacheColdReason::BackingDirectoryMissing => "cache backing directory missing",
     }
 }
 

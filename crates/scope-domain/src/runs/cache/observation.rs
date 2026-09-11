@@ -14,9 +14,6 @@ pub enum CacheColdReason {
     MetadataMissing,
     MetadataInvalid,
     MetadataNotReady,
-    VolumeMissing,
-    VolumeInvalid,
-    BackingDirectoryMissing,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
