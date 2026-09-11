@@ -1,9 +1,9 @@
-import type { RepoRunStep } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Check, Copy, TerminalSquare, WrapText } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { StepLogState } from './repository-run-detail-controller'
+import type { RepositoryRunStepResponse } from '@/api/types.generated'
 
 const FOLLOW_THRESHOLD_PX = 32
 const COPY_CONFIRMATION_MS = 1_500
@@ -27,7 +27,7 @@ export function RunLogView({
   onRetry: () => void
   onEarlier: () => void
   onLatest: () => void
-  step: RepoRunStep
+  step: RepositoryRunStepResponse
 }) {
   const [wrap, setWrap] = useState(true)
   const [following, setFollowing] = useState(true)

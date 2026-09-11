@@ -1,4 +1,3 @@
-import type { RepoFile } from '@/api/types'
 import { FileSystemTree } from '@/components/file-system-tree'
 import { VisibilityBadge } from '@/components/visibility-badge'
 import { displayRouteFilePath } from '@/lib/route-file'
@@ -6,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { Search, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { matchingRepositoryFiles } from './repository-file-navigation'
+import type { RepoFileResponse } from '@/api/types.generated'
 
 export function RepositoryFileNavigator({
   files,
@@ -13,7 +13,7 @@ export function RepositoryFileNavigator({
   onSelectFile,
   selectedPath,
 }: {
-  files: RepoFile[]
+  files: RepoFileResponse[]
   onOpenNavigation: () => void
   onSelectFile: (path: string, pinned: boolean) => void
   selectedPath: string | null

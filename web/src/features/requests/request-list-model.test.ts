@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RequestList, RequestListItem } from '@/api/types'
 import {
   appendQueuePage,
   appendRequestPage,
@@ -10,6 +9,10 @@ import {
   type RequestQueuePages,
   type RequestQueueViewAction,
 } from './request-list-model'
+import type {
+  RequestListResponse,
+  RequestListItemResponse,
+} from '@/api/types.generated'
 
 test('appendRequestPage preserves order and ignores repeated request ids', () => {
   const first = request('req_1')
@@ -31,11 +34,11 @@ test('requestCountLabel marks partial counts until the final page', () => {
 test('appendQueuePage advances a page without duplicating rows', () => {
   const first = request('req_1')
   const second = request('req_2')
-  const current: RequestList = {
+  const current: RequestListResponse = {
     requests: [first],
     next_cursor: 'open:page-2',
   }
-  const incoming: RequestList = {
+  const incoming: RequestListResponse = {
     requests: [first, second],
     next_cursor: 'open:page-3',
   }
@@ -226,10 +229,10 @@ test('a newly delivered identical snapshot preserves pagination state', () => {
 })
 
 function request(id: string) {
-  return { id } as RequestListItem
+  return { id } as RequestListItemResponse
 }
 
-function page(ids: string[], nextCursor: string | null): RequestList {
+function page(ids: string[], nextCursor: string | null): RequestListResponse {
   return {
     requests: ids.map(request),
     next_cursor: nextCursor,

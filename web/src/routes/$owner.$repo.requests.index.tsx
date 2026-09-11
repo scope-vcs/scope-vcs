@@ -1,4 +1,4 @@
-import { loadRequestQueueForRequest } from '@/api/repos'
+import { loadRequestQueueForRequest } from '@/api/requests'
 import {
   parseLoadRequestQueueInput,
   type RequestQueueSection,

@@ -1,8 +1,5 @@
-import type {
-  RepoContent,
-  RepoFileContent,
-  RepoParams,
-} from '@/api/types'
+import type { RepoContent, RepoParams } from '@/api/types'
+import type { RepoFileContentResponse } from '@/api/types.generated'
 import { PanelState } from '@/components/empty-state'
 import { FileWorkbench } from '@/components/file-workbench'
 import { PendingSurface } from '@/components/pending-surface'
@@ -65,7 +62,7 @@ export function RepositoryCodeView({
   contentRetry: () => void
   onSelectFilePath: (path: string) => void
   params: RepoParams
-  selectedFile: RepoFileContent | null
+  selectedFile: RepoFileContentResponse | null
   selectedFileError: string | null
   selectedFileIdentity: string | null
   selectedFileLoading: boolean
@@ -197,7 +194,7 @@ function SourcePane({
   availablePaths: string[]
   emptyMessage: string
   error: string | null
-  file: RepoFileContent | null
+  file: RepoFileContentResponse | null
   loading: boolean
   onActivateTab: (path: string) => void
   onEmptyTabFocus: () => void
@@ -338,7 +335,7 @@ function SourceContent({
 }: {
   emptyMessage: string
   error: string | null
-  file: RepoFileContent | null
+  file: RepoFileContentResponse | null
   loading: boolean
   params: RepoParams
   retry: () => void
@@ -398,7 +395,7 @@ function SourceContent({
   )
 }
 
-function FileMeta({ file }: { file: RepoFileContent }) {
+function FileMeta({ file }: { file: RepoFileContentResponse }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -440,7 +437,7 @@ function SourceFileContent({
   htmlMode,
   params,
 }: {
-  file: RepoFileContent
+  file: RepoFileContentResponse
   htmlMode: RepositoryHtmlMode
   params: RepoParams
 }) {

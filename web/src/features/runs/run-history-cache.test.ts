@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RepoRunHistoryPage } from '@/api/types'
 import { restoreRunHistory, runHistoryResource, resetRunHistoryCache, runHistoryCacheKey } from './run-history-cache'
 import { reloadRunHistoryPages } from './run-history-model'
+import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 
-function page(ids: string[], next_cursor: string | null = null): RepoRunHistoryPage {
-  return { runs: ids.map((id) => ({ id, state: 'queued' })) as RepoRunHistoryPage['runs'], next_cursor }
+function page(ids: string[], next_cursor: string | null = null): RepositoryRunHistoryPageResponse {
+  return { runs: ids.map((id) => ({ id, state: 'queued' })) as RepositoryRunHistoryPageResponse['runs'], next_cursor }
 }
 
 test('navigation restores older runs, exhausted cursor and refresh depth', async () => {

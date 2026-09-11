@@ -1,4 +1,3 @@
-import type { CommitFile } from '@/api/types'
 import { EmptyState, PanelState } from '@/components/empty-state'
 import { FileSystemTree } from '@/components/file-system-tree'
 import { FileWorkbench } from '@/components/file-workbench'
@@ -6,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { useRef, useState } from 'react'
 import { ReviewFileDiffDrawer } from '../review/review-file-diff-drawer'
 import type { CommitFileDiffState } from './history-state'
+import type { CommitFileResponse } from '@/api/types.generated'
 
 export type ChangedFilesProps = {
   diffIdentity: string | null
@@ -14,7 +14,7 @@ export type ChangedFilesProps = {
   onCloseDiff: () => void
   onDiffScroll: (scrollTop: number) => void
   onRetryDiff?: () => void
-  onSelectFile: (file: CommitFile) => void
+  onSelectFile: (file: CommitFileResponse) => void
   selectedFilePath: string | null
 }
 
@@ -36,7 +36,7 @@ export function ChangedFilesWorkbench({
   onSelectFile, selectedFilePath, files, navigation, navigationLabel,
   selectedVisibilityId, emptyFilesMessage, emptyPreviewMessage,
 }: Omit<ChangedFilesProps, 'onCloseDiff'> & {
-  files: CommitFile[]
+  files: CommitFileResponse[]
   navigation: ReturnType<typeof useChangedFileNavigation>
   navigationLabel: string
   selectedVisibilityId?: string | null

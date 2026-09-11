@@ -1,11 +1,3 @@
-export {
-  arrayOf,
-  HttpError,
-  InvalidApiResponseError,
-  loadJson,
-  noContent,
-  stripTrailingSlash,
-} from './http'
 import { loadJson, stripTrailingSlash } from './http'
 import type { ApiValidator } from './validators.generated'
 
@@ -54,7 +46,7 @@ export function createApiClient() {
       }
     }
 
-    return loadJson(`${connectionForMethod(method)}${path}`, validator, {
+    return loadJson(`${getApiConnection()}${path}`, validator, {
       body:
         options.body === undefined ? undefined : JSON.stringify(options.body),
       headers,
@@ -96,15 +88,7 @@ export function clerkApiTokenTemplate() {
   return runtimeEnv(clerkApiTokenTemplateEnv) ?? defaultClerkApiTokenTemplate
 }
 
-function connectionForMethod(method: string) {
-  return method === 'GET' ? getApiConnection() : getApiMutationConnection()
-}
-
 export function getApiConnection(action = 'loading repositories') {
-  return configuredApiConnection(internalApiUrlEnv, action)
-}
-
-export function getApiMutationConnection(action = 'changing repository state') {
   return configuredApiConnection(internalApiUrlEnv, action)
 }
 

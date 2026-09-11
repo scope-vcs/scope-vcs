@@ -1,6 +1,7 @@
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import type { Visibility, VisibilityState } from '@/api/types'
+import type { VisibilityState } from '@/api/types'
+import type { Visibility } from '@/api/types.generated'
 import { Blend, Globe2, Lock, type LucideIcon } from 'lucide-react'
 
 const visibilityPresentation = {

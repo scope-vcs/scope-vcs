@@ -1,4 +1,5 @@
-import type { CliInstallCommands, RepoSummary } from '@/api/types'
+import type { CliInstallCommands } from '@/api/types'
+import type { RepoSummaryResponse } from '@/api/types.generated'
 import { LifecycleBadge } from '@/components/lifecycle-badge'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
 import { CopyableCodeBlock } from '@/components/copyable-code-block'
@@ -13,7 +14,7 @@ export function RepoList({
 }: {
   cliInstallCommands: CliInstallCommands
   isOwner: boolean
-  repositories: RepoSummary[]
+  repositories: RepoSummaryResponse[]
 }) {
   if (repositories.length === 0) {
     return (
@@ -53,7 +54,7 @@ export function RepoList({
   )
 }
 
-function RepoListRow({ isOwner, repo }: { isOwner: boolean; repo: RepoSummary }) {
+function RepoListRow({ isOwner, repo }: { isOwner: boolean; repo: RepoSummaryResponse }) {
   const showLifecycle = repo.lifecycle_state !== 'Ready'
 
   return (

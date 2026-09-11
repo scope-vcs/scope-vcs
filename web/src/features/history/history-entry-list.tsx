@@ -1,9 +1,9 @@
-import type { HistoryEntrySummary } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { historyEntryLabels } from '@/features/history/history-row-labels'
 import { cn } from '@/lib/utils'
 import { History, LoaderCircle } from 'lucide-react'
+import type { HistoryEntrySummaryResponse } from '@/api/types.generated'
 
 export function HistoryEntryList({
   entries,
@@ -14,11 +14,11 @@ export function HistoryEntryList({
   selectedEntryId,
   showLoadOlder,
 }: {
-  entries: HistoryEntrySummary[]
+  entries: HistoryEntrySummaryResponse[]
   loadOlderError: string | null
   loadingOlder: boolean
   onLoadOlder: () => void
-  onSelectEntry: (entry: HistoryEntrySummary) => void
+  onSelectEntry: (entry: HistoryEntrySummaryResponse) => void
   selectedEntryId: string | null
   showLoadOlder: boolean
 }) {

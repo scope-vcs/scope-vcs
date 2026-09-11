@@ -1,8 +1,8 @@
+import { parseRepoInviteTokenInput } from '@/api/repo-inputs'
 import {
   acceptRepoInviteForRequest,
   loadRepoInviteForRequest,
-  parseRepoInviteTokenInput,
-} from '@/api/repos'
+} from '@/api/repo-settings'
 import { PageHeader } from '@/components/page-header'
 import { ApplicationPendingShell } from '@/components/pending-surface'
 import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'

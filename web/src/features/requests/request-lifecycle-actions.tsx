@@ -1,4 +1,3 @@
-import type { RequestSummary } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { shortOid } from '@/lib/short-oid'
 import { cn } from '@/lib/utils'
@@ -7,6 +6,7 @@ import { useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
 import { canMergeRequest, hasRequestLifecycleActions } from './request-lifecycle-model'
 import type { RequestActionController } from './use-request-actions'
+import type { RequestSummaryResponse } from '@/api/types.generated'
 
 type Dialog = 'close' | 'merge' | 'submit' | null
 
@@ -17,7 +17,7 @@ export function RequestLifecycleActions({
 }: {
   actions: RequestActionController
   className?: string
-  request: RequestSummary
+  request: RequestSummaryResponse
 }) {
   const [dialog, setDialog] = useState<Dialog>(null)
   const busy = actions.pending !== null

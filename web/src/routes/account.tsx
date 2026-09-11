@@ -4,7 +4,6 @@ import {
   revokeCliSessionForRequest,
 } from '@/api/cli-login'
 import { parseRevokeCliSessionInput } from '@/api/cli-login-input'
-import type { CliExchangeGrant } from '@/api/types'
 import { ApplicationTopbar } from '@/components/application-topbar'
 import { AppShell } from '@/components/app-shell'
 import { CopyableCodeBlock } from '@/components/copyable-code-block'
@@ -22,6 +21,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { KeyRound, LoaderCircle, Monitor, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import type { CliExchangeGrantResponse } from '@/api/types.generated'
 
 const requireAccountAuth = createServerFn({ method: 'GET' }).handler(async () => {
   const { auth } = await import('@clerk/tanstack-react-start/server')
@@ -53,7 +53,7 @@ export const Route = createFileRoute('/account')({
 function AccountRoute() {
   const { sessions } = Route.useLoaderData()
   const router = useRouter()
-  const [grant, setGrant] = useState<CliExchangeGrant | null>(null)
+  const [grant, setGrant] = useState<CliExchangeGrantResponse | null>(null)
   const [pending, setPending] = useState<'grant' | string | null>(null)
   const [error, setError] = useState<string | null>(null)
 

@@ -1,9 +1,8 @@
+import type { RunActionInput, RunStepLogsInput } from '@/api/types'
 import type {
-  RepoRunDetail,
-  RepoRunStepLogPage,
-  RunActionInput,
-  RunStepLogsInput,
-} from '@/api/types'
+  RepositoryRunDetailResponse,
+  RepositoryRunStepLogPageResponse,
+} from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { RouteErrorContent } from '@/components/route-error-page'
@@ -17,12 +16,12 @@ import { runLogCacheKey } from './run-log-cache'
 
 type RunDetailPageProps = {
   cancelRun: () => Promise<void>
-  initialDetail: RepoRunDetail
-  loadDetail: (signal?: AbortSignal) => Promise<RepoRunDetail>
+  initialDetail: RepositoryRunDetailResponse
+  loadDetail: (signal?: AbortSignal) => Promise<RepositoryRunDetailResponse>
   loadLogs: (
     input: RunStepLogsInput,
     signal?: AbortSignal,
-  ) => Promise<RepoRunStepLogPage>
+  ) => Promise<RepositoryRunStepLogPageResponse>
   params: RunActionInput
   retryRun: () => Promise<void>
 }

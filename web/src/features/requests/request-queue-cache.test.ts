@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RequestListItem } from '@/api/types'
-import type { RequestQueuePages, RequestQueueViewAction } from './request-list-model'
+import type {
+  RequestQueuePages,
+  RequestQueueViewAction,
+} from './request-list-model'
 import { dispatchRequestQueue, openRequestQueue, requestQueueResource, resetRequestQueueCache } from './request-queue-cache'
+import type { RequestListItemResponse } from '@/api/types.generated'
 
 function pages(): RequestQueuePages {
   return {
-    open: { requests: [{ id: 'first' } as RequestListItem], next_cursor: 'older' },
+    open: { requests: [{ id: 'first' } as RequestListItemResponse], next_cursor: 'older' },
     closed: { requests: [], next_cursor: null },
     your_work: { requests: [], next_cursor: null },
   }
@@ -16,7 +19,7 @@ function paginate(key: string) {
   openRequestQueue(key, pages())
   dispatch(key, {
     type: 'load_succeeded', generation: 0, section: 'open',
-    page: { requests: [{ id: 'older' } as RequestListItem], next_cursor: null },
+    page: { requests: [{ id: 'older' } as RequestListItemResponse], next_cursor: null },
   })
 }
 
@@ -36,7 +39,7 @@ test('search operations remain owned by the resource while a page is closed', ()
   assert.equal(openRequestQueue('search', pages()).searching, true)
   dispatch('search', {
     type: 'search_succeeded', generation: 0, query: 'needle',
-    open: { requests: [{ id: 'matching' } as RequestListItem], next_cursor: null },
+    open: { requests: [{ id: 'matching' } as RequestListItemResponse], next_cursor: null },
     closed: { requests: [], next_cursor: null },
   })
   const reopened = openRequestQueue('search', pages())
@@ -83,7 +86,7 @@ test('late queue responses cannot update a replacement resource with the same ge
   openRequestQueue('request', pages())
   dispatchRequestQueue('request', {
     type: 'load_succeeded', generation: 0, section: 'open',
-    page: { requests: [{ id: 'late' } as RequestListItem], next_cursor: null },
+    page: { requests: [{ id: 'late' } as RequestListItemResponse], next_cursor: null },
   }, original.owner)
   assert.deepEqual(requestQueueResource.peek('request')?.pages.open.requests.map(({ id }) => id), ['first'])
 })

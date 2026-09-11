@@ -1,9 +1,8 @@
+import type { RepoContent, RepoParams } from '@/api/types'
 import type {
-  RepoContent,
-  RepoFileContent,
-  RepoParams,
-  RepoSummary,
-} from '@/api/types'
+  RepoFileContentResponse,
+  RepoSummaryResponse,
+} from '@/api/types.generated'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
@@ -34,8 +33,8 @@ export function RepoDetailPage({
   contentRetry: () => void
   onSelectFilePath: (path: string) => void
   params: RepoParams
-  repo: RepoSummary
-  selectedFile: RepoFileContent | null
+  repo: RepoSummaryResponse
+  selectedFile: RepoFileContentResponse | null
   selectedFileError: string | null
   selectedFileIdentity: string | null
   selectedFileLoading: boolean

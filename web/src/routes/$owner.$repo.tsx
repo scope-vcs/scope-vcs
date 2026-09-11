@@ -1,8 +1,6 @@
 import { isNotFoundError } from '@/api/http'
-import {
-  loadRepoLiveStateForRequest,
-  parseRepoParams,
-} from '@/api/repos'
+import { loadRepoLiveStateForRequest } from '@/api/repo-detail'
+import { parseRepoParams } from '@/api/repo-params'
 import { RepoShell } from '@/components/repo-shell'
 import { RepositoryRoutePending } from '@/components/repository-route-pending'
 import { RepositoryHtmlPreviewProvider } from '@/components/repository-html-preview-store'

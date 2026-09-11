@@ -1,8 +1,8 @@
-import type { HistoryEntryDetail } from '@/api/types'
+import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 
 export function historyFileSelection(
   search: { path?: string; visibility_change?: string },
-  detail: Pick<HistoryEntryDetail, 'files' | 'visibility_changes'> | null,
+  detail: Pick<HistoryEntryDetailResponse, 'files' | 'visibility_changes'> | null,
   dismissed: boolean,
 ) {
   if (dismissed) return { path: null, file: null, visibilityId: null }

@@ -1,4 +1,8 @@
-import type { RequestParams, RequestRating, RequestRatings } from '@/api/types'
+import type { RequestParams } from '@/api/types'
+import type {
+  RequestRatingResponse,
+  RequestRatingsResponse,
+} from '@/api/types.generated'
 import type { RateRequestInput } from '@/api/requests'
 import { Button } from '@/components/ui/button'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
@@ -41,8 +45,8 @@ export function RequestRatingsSection({
   onRate,
   params,
 }: {
-  initial: RequestRatings
-  onRate: (input: RateRequestInput) => Promise<RequestRating>
+  initial: RequestRatingsResponse
+  onRate: (input: RateRequestInput) => Promise<RequestRatingResponse>
   params: RequestParams
 }) {
   const [{ error, reason, score, submitting }, dispatch] = useReducer(

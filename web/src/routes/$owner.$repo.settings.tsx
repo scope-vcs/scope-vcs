@@ -1,18 +1,20 @@
 import {
+  parseCreateRepoInviteInput,
+  parseDeleteRepoInviteInput,
+  parseDeleteRepoMemberInput,
+  parseUpdateRepoMemberInput,
+  parseUpdateRepoMetadataInput,
+} from '@/api/repo-inputs'
+import { parseRepoParams } from '@/api/repo-params'
+import {
   createRepoInviteForRequest,
   deleteRepoInviteForRequest,
   deleteRepoMemberForRequest,
   deleteRepoForRequest,
   loadRepoCollaborationForRequest,
-  parseCreateRepoInviteInput,
-  parseDeleteRepoInviteInput,
-  parseDeleteRepoMemberInput,
-  parseRepoParams,
-  parseUpdateRepoMemberInput,
   updateRepoMemberForRequest,
   updateRepoMetadataForRequest,
-  parseUpdateRepoMetadataInput,
-} from '@/api/repos'
+} from '@/api/repo-settings'
 import { loadOptionalResource } from '@/api/http'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'

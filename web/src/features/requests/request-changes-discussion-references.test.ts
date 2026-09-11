@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RequestRevisions } from '@/api/types'
 import type { LoadDiscussionsInput } from './request-discussion-api'
 import {
   appendDiscussionReferencePage,
@@ -13,6 +12,7 @@ import {
 } from './request-changes-discussion-references'
 import { discussion } from './request-discussion-test-fixtures'
 import type { RequestDiscussionPage } from './request-discussion-types'
+import type { RequestRevisionListResponse } from '@/api/types.generated'
 
 test('endless unique cursors return just the first page and preserve its cursor', async () => {
   let calls = 0
@@ -59,7 +59,7 @@ test('many revisions and commits produce only the selected reference query', () 
       id: `revision-${i}`, position: i, inspection: 'Complete',
       commits: Array.from({ length: 100 }, (_, j) => ({ oid: `commit-${i}-${j}` })),
     })),
-  } as RequestRevisions
+  } as RequestRevisionListResponse
   const selected = selectedDiscussionReferenceQuery({ ...requestInput(), revision_id: 'revision-3', commit_oid: 'commit-3-7' }, revisions)
   assert.equal(selected?.input.revision_id, 'revision-3')
   assert.equal(selected?.input.commit_oid, 'commit-3-7')

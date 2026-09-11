@@ -8,7 +8,7 @@ import { createApiClient } from '@/api/client'
 import { loadOptionalResource } from '@/api/http'
 import { ApiRouteTemplates, buildApiPath } from '@/api/types.generated'
 import { apiValidators } from '@/api/validators.generated'
-import { loadRequestForRequest } from '@/api/repos'
+import { loadRequestForRequest } from '@/api/requests'
 import {
   loadRequestRatingsForRequest,
   rateRequestForRequest,

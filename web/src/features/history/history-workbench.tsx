@@ -1,4 +1,5 @@
-import type { CommitFile, CommitSummary } from '@/api/types'
+import type { CommitSummary } from '@/api/types'
+import type { CommitFileResponse } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
 import { CommitDetailPanel } from '@/features/history/history-commit-detail'
 import { CommitList } from '@/features/history/history-commit-list'
@@ -38,7 +39,7 @@ export function HistoryWorkbench({
   onCloseDiff: () => void
   onRetryDiff?: () => void
   onSelectCommit: (commit: CommitSummary) => void
-  onSelectFile: (file: CommitFile) => void
+  onSelectFile: (file: CommitFileResponse) => void
   selectedCommitId: string | null
   selectedFilePath: string | null
 }) {

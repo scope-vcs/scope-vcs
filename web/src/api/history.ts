@@ -2,13 +2,15 @@ import { createApiClient } from '@/api/client'
 import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
 import { parseHistoryAudience, parseHistoryFeed } from './history-inputs'
 import type {
-  HistoryEntryDetail,
   HistoryEntryDetailInput,
   HistoryEntryFileDiffInput,
-  HistoryPage,
   HistoryPageInput,
   ReviewFileDiff,
 } from './types'
+import type {
+  HistoryEntryDetailResponse,
+  HistoryPageResponse,
+} from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import { apiValidators } from './validators.generated'
 export {
@@ -20,7 +22,7 @@ export {
 export async function loadHistoryPageForRequest(
   data: HistoryPageInput,
   signal?: AbortSignal,
-): Promise<HistoryPage> {
+): Promise<HistoryPageResponse> {
   const query = new URLSearchParams()
   if (data.audience) query.set('audience', parseHistoryAudience(data.audience))
   if (data.before) query.set('before', data.before)
@@ -38,7 +40,7 @@ export async function loadHistoryPageForRequest(
 
 export async function loadHistoryEntryForRequest(
   data: HistoryEntryDetailInput,
-): Promise<HistoryEntryDetail> {
+): Promise<HistoryEntryDetailResponse> {
   const query = new URLSearchParams()
   if (data.audience) query.set('audience', parseHistoryAudience(data.audience))
 

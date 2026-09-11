@@ -1,10 +1,11 @@
-import type { RepoRunHistoryPage, RepoRunHistoryInput } from '@/api/types'
+import type { RepoRunHistoryInput } from '@/api/types'
+import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import { mergeRunHistory, reloadRunHistoryPages } from './run-history-model'
 
 type RetainedRunHistory = {
-  history: RepoRunHistoryPage | null
-  snapshot: RepoRunHistoryPage | null
+  history: RepositoryRunHistoryPageResponse | null
+  snapshot: RepositoryRunHistoryPageResponse | null
   pageCount: number
 }
 
@@ -18,7 +19,7 @@ export function runHistoryCacheKey(scope: string, workflow?: string) {
   return JSON.stringify([scope, workflow ?? null])
 }
 
-export function restoreRunHistory(key: string | null, initial: RepoRunHistoryPage | null): RetainedRunHistory {
+export function restoreRunHistory(key: string | null, initial: RepositoryRunHistoryPageResponse | null): RetainedRunHistory {
   if (!initial) return { history: null, snapshot: null, pageCount: 1 }
   const cached = key ? runHistoryResource.read(key) : undefined
   if (cached?.history && JSON.stringify(cached.snapshot) === JSON.stringify(initial)) return cached
@@ -37,7 +38,7 @@ export function resetRunHistoryCache() {
   runHistoryResource.clear()
 }
 
-export function initializeRunHistory(key: string, initial: RepoRunHistoryPage | null) {
+export function initializeRunHistory(key: string, initial: RepositoryRunHistoryPageResponse | null) {
   const retained = restoreRunHistory(key, initial)
   if (retained !== runHistoryResource.peek(key)) runHistoryResource.write(key, retained)
 }
@@ -45,7 +46,7 @@ export function initializeRunHistory(key: string, initial: RepoRunHistoryPage | 
 type HistoryRequest = {
   key: string
   input: RepoRunHistoryInput
-  loadHistory: (input: RepoRunHistoryInput, signal?: AbortSignal) => Promise<RepoRunHistoryPage | null>
+  loadHistory: (input: RepoRunHistoryInput, signal?: AbortSignal) => Promise<RepositoryRunHistoryPageResponse | null>
 }
 
 export async function refreshRunHistory({ key, input, loadHistory }: HistoryRequest): Promise<void> {

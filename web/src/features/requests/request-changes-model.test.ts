@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RequestRevisions } from '@/api/types'
 import { discussion } from './request-discussion-test-fixtures'
 import {
   discussionsForRequestCommit,
@@ -10,8 +9,9 @@ import {
   requestChangeSelection,
   requestRevisionPin,
 } from './request-changes-model'
+import type { RequestRevisionListResponse } from '@/api/types.generated'
 
-const revisions: RequestRevisions['revisions'] = [
+const revisions: RequestRevisionListResponse['revisions'] = [
   revision('revision-1', 1, ['commit-a', 'commit-b']),
   revision('revision-2', 4, ['commit-c']),
 ]
@@ -141,7 +141,7 @@ function revision(
   id: string,
   position: number,
   commits: string[],
-  inspection: RequestRevisions['revisions'][number]['inspection'] = 'Complete',
+  inspection: RequestRevisionListResponse['revisions'][number]['inspection'] = 'Complete',
 ) {
   return {
     actor: { handle: 'adam', id: 'user-1' },

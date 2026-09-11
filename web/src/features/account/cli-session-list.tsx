@@ -1,9 +1,9 @@
-import type { CliSession } from '@/api/types'
 import { DestructiveActionDialog } from '@/components/destructive-action-dialog'
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
 import { LoaderCircle, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import type { CliSessionResponse } from '@/api/types.generated'
 
 export function CliSessionList({
   pending,
@@ -12,9 +12,9 @@ export function CliSessionList({
 }: {
   pending: string | null
   revokeSession: (sessionId: string) => void
-  sessions: CliSession[]
+  sessions: CliSessionResponse[]
 }) {
-  const [confirmSession, setConfirmSession] = useState<CliSession | null>(null)
+  const [confirmSession, setConfirmSession] = useState<CliSessionResponse | null>(null)
 
   if (sessions.length === 0) {
     return <p className="text-sm leading-5 text-muted-foreground">No active CLI sessions.</p>

@@ -1,4 +1,9 @@
-import type { RequestParams, RequestRating, RequestRatings, RequestSummary } from '@/api/types'
+import type { RequestParams } from '@/api/types'
+import type {
+  RequestRatingResponse,
+  RequestRatingsResponse,
+  RequestSummaryResponse,
+} from '@/api/types.generated'
 import { GitCommitHorizontal } from 'lucide-react'
 import { type ReactNode, useState, useSyncExternalStore } from 'react'
 import { RequestInvitees } from './request-invitees'
@@ -20,10 +25,10 @@ export function RequestContextRail({
   request,
 }: {
   actions: RequestActionController
-  onRate: (input: RateRequestInput) => Promise<RequestRating>
+  onRate: (input: RateRequestInput) => Promise<RequestRatingResponse>
   params: RequestParams
-  ratings: RequestRatings
-  request: RequestSummary
+  ratings: RequestRatingsResponse
+  request: RequestSummaryResponse
 }) {
   const desktop = useSyncExternalStore(subscribeDesktop, isDesktop, () => false)
   const [mobileOpen, setMobileOpen] = useState(false)

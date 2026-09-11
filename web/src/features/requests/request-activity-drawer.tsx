@@ -1,4 +1,3 @@
-import type { RequestEvent } from '@/api/types'
 import { PendingSurface } from '@/components/pending-surface'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,8 +16,9 @@ import type {
   RequestActivityPage,
   RequestActorSummary,
 } from './request-discussion-types'
+import type { RequestEventResponse } from '@/api/types.generated'
 
-type ActivityEvent = RequestEvent & { actor: RequestActorSummary }
+type ActivityEvent = RequestEventResponse & { actor: RequestActorSummary }
 
 const PENDING_ACTIVITY: { id: string; length: LineSkeletonLength }[] = [
   { id: 'first', length: 'medium' },

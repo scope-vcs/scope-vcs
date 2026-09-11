@@ -1,5 +1,5 @@
-import type { RepoLifecycleState } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
+import type { RepoLifecycleState } from '@/api/types.generated'
 
 type BadgeVariant = 'success' | 'warning' | 'info'
 

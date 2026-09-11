@@ -1,10 +1,10 @@
-import type { RequestSummary } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { LoaderCircle, UserMinus, UserPlus } from 'lucide-react'
 import type { FormEvent } from 'react'
 import { useId, useState } from 'react'
 import type { RequestActionController } from './use-request-actions'
+import type { RequestSummaryResponse } from '@/api/types.generated'
 
 // Mirrors REQUEST_ACTIVE_INVITEE_LIMIT in crates/scope-domain/src/requests/invitees.rs.
 const REQUEST_INVITEE_LIMIT = 30
@@ -14,7 +14,7 @@ export function RequestInvitees({
   request,
 }: {
   actions: RequestActionController
-  request: RequestSummary
+  request: RequestSummaryResponse
 }) {
   const inputId = useId()
   const [handle, setHandle] = useState('')

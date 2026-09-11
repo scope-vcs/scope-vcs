@@ -1,9 +1,9 @@
 import type { RequestQueueSection } from '@/api/request-queue-input'
+import type { RepoParams } from '@/api/types'
 import type {
-  RepoParams,
-  RequestList,
-  RequestListItem,
-} from '@/api/types'
+  RequestListResponse,
+  RequestListItemResponse,
+} from '@/api/types.generated'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
@@ -65,7 +65,7 @@ export function RequestsPage(props: RequestsPageProps) {
 
 type RequestsPageProps = {
   initialPages: RequestQueuePages
-  loadPage: (section: RequestQueueSection, cursor: string | null, search: string | null) => Promise<RequestList>
+  loadPage: (section: RequestQueueSection, cursor: string | null, search: string | null) => Promise<RequestListResponse>
   params: RepoParams
 }
 
@@ -280,7 +280,7 @@ function QueueSection({
   error?: string
   loading: boolean
   onLoadMore: () => void
-  page: RequestList
+  page: RequestListResponse
   params: RepoParams
   searchQuery: string
   section: RequestQueueSection
@@ -359,7 +359,7 @@ function RequestQueueRow({
   section,
 }: {
   params: RepoParams
-  request: RequestListItem
+  request: RequestListItemResponse
   section: RequestQueueSection
 }) {
   return (
@@ -397,7 +397,7 @@ function QueueDate({
   request,
   section,
 }: {
-  request: RequestListItem
+  request: RequestListItemResponse
   section: RequestQueueSection
 }) {
   if (section === 'open' && request.submitted_at_unix !== null) {

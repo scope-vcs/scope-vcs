@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RequestEvent } from '@/api/types'
 import { requestEventBody } from './request-labels'
+import type { RequestEventResponse } from '@/api/types.generated'
 
 test('activity describes submission', () => {
   assert.equal(
@@ -12,6 +12,6 @@ test('activity describes submission', () => {
   )
 })
 
-function event(kind: RequestEvent['kind'], payload: RequestEvent['payload']) {
-  return { kind, payload } as RequestEvent
+function event(kind: RequestEventResponse['kind'], payload: RequestEventResponse['payload']) {
+  return { kind, payload } as RequestEventResponse
 }

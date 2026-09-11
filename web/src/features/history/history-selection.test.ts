@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { HistoryEntryDetail } from '@/api/types'
 import { historyFileSelection } from './history-selection'
+import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 
 const files = [{ path: '/first.ts' }, { path: '/second.ts' }]
 
 function detailWith(entries: { path: string }[]) {
-  return { files: entries as HistoryEntryDetail['files'], visibility_changes: [] }
+  return { files: entries as HistoryEntryDetailResponse['files'], visibility_changes: [] }
 }
 
 test('history selects the first available file only when the URL has no path', () => {
@@ -24,9 +24,9 @@ test('closing a diff dismisses only the current location and explicit selection 
 })
 
 test('selects exact visibility effects independently of content and same-path transitions', () => {
-  const content: HistoryEntryDetail['files'][number] = { path: '/same.ts', kind: 'Modified', old_mode: '100644', new_mode: '100644', old_oid: 'a', new_oid: 'b', visibility: 'Public' }
+  const content: HistoryEntryDetailResponse['files'][number] = { path: '/same.ts', kind: 'Modified', old_mode: '100644', new_mode: '100644', old_oid: 'a', new_oid: 'b', visibility: 'Public' }
   const preview = { ...content, old_oid: null, new_oid: 'c' }
-  const detail: Pick<HistoryEntryDetail, 'files' | 'visibility_changes'> = {
+  const detail: Pick<HistoryEntryDetailResponse, 'files' | 'visibility_changes'> = {
     files: [content],
     visibility_changes: [
       { id: 'first', path: '/same.ts', old_visibility: 'Private', new_visibility: 'Public', file: preview },

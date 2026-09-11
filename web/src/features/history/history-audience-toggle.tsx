@@ -1,6 +1,6 @@
-import type { ProjectionPreviewAudience } from '@/api/types'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Globe2, LockKeyhole } from 'lucide-react'
+import type { ProjectionPreviewAudience } from '@/api/types.generated'
 
 export function AudienceToggle({
   audience,

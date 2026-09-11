@@ -1,4 +1,5 @@
-import type { RequestParams, RequestSummary } from '@/api/types'
+import type { RequestParams } from '@/api/types'
+import type { RequestSummaryResponse } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
 import { mainScrollContainer } from '@/components/main-content'
 import { Button } from '@/components/ui/button'
@@ -18,7 +19,9 @@ import type {
   RequestDiscussion,
   RequestDiscussionPage,
 } from './request-discussion-types'
-import type { RequestDiscussionThreadActions } from './use-request-discussion-replies'
+import type {
+  RequestDiscussionThreadActions,
+} from './use-request-discussion-replies'
 
 export function RequestDiscussionWorkbench({
   actions,
@@ -43,7 +46,7 @@ export function RequestDiscussionWorkbench({
     canReply: boolean
   }
   repoId: string
-  request: RequestSummary
+  request: RequestSummaryResponse
   threadActions: RequestDiscussionThreadActions
 }) {
   const store = useRequestDiscussionStore({

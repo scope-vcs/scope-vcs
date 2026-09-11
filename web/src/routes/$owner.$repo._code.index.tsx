@@ -3,9 +3,13 @@ import { HttpError, isNotFoundError } from '@/api/http'
 import {
   loadRepoContentForRequest,
   loadRepoFileForRequest,
-  parseRepoParams,
-} from '@/api/repos'
-import type { RepoContent, RepoFileContent, RepoLiveState, RepoSummary } from '@/api/types'
+} from '@/api/repo-detail'
+import { parseRepoParams } from '@/api/repo-params'
+import type { RepoContent, RepoLiveState } from '@/api/types'
+import type {
+  RepoFileContentResponse,
+  RepoSummaryResponse,
+} from '@/api/types.generated'
 import { RepoContentError } from '@/components/repo-content-error'
 import {
   repoContentResource,
@@ -171,7 +175,7 @@ function parseRepoCodeSearch(search: Record<string, unknown>): RepoCodeSearch {
 async function loadAddressedFile(
   data: ReturnType<typeof parseRepoFileInput>,
   signal: AbortSignal,
-): Promise<RepoFileContent> {
+): Promise<RepoFileContentResponse> {
   const file = await loadRepoFileWhenReady({
     load: () => loadRepoFile({ data, signal }),
     signal,
@@ -180,7 +184,7 @@ async function loadAddressedFile(
   return file
 }
 
-function repoCodeCacheKeys(repo: RepoSummary, path: string | null) {
+function repoCodeCacheKeys(repo: RepoSummaryResponse, path: string | null) {
   const scope = {
     audience: repo.access.can_read_private_files ? 'private' as const : 'public' as const,
     changeVersion: repo.change_version,

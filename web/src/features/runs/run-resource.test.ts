@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { beforeEach, test } from 'node:test'
-import type { RepoRunDetail, RepoRunHistoryPage, RepoRunStepLogPage, RunStepLogsInput } from '@/api/types'
+import type { RunStepLogsInput } from '@/api/types'
+import type {
+  RepositoryRunDetailResponse,
+  RepositoryRunHistoryPageResponse,
+  RepositoryRunStepLogPageResponse,
+} from '@/api/types.generated'
 import { initializeRunDetail, refreshRunDetail, runDetailResource } from './run-detail-resource'
 import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, resetRunHistoryCache, runHistoryResource } from './run-history-cache'
 import { EMPTY_LOG_STATE, refreshRunLogs, refreshRunLogsAfterInFlight, resetRunLogCache, runLogsResource, stepKey, writeRunLogCache } from './run-log-cache'
@@ -8,35 +13,35 @@ import { EMPTY_LOG_STATE, refreshRunLogs, refreshRunLogsAfterInFlight, resetRunL
 const key = 'viewer/repo/access/run'
 const params = { owner: 'owner', repo: 'repo', run_id: 'run' }
 const target = { jobKey: 'test', attemptId: 'attempt', stepIndex: 0 }
-const detail: RepoRunDetail = {
+const detail: RepositoryRunDetailResponse = {
   run: {
     id: 'run', workflow_name: 'tests', git_oid: 'abc', trigger: 'manual',
     state: 'running', cancellation_requested: false, created_at_unix: 1,
     updated_at_unix: 2, completed_at_unix: null, can_cancel: true, can_retry: false,
   }, jobs: [],
 }
-const completed: RepoRunDetail = { ...detail, run: { ...detail.run, state: 'succeeded', updated_at_unix: 3, completed_at_unix: 3 } }
+const completed: RepositoryRunDetailResponse = { ...detail, run: { ...detail.run, state: 'succeeded', updated_at_unix: 3, completed_at_unix: 3 } }
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (error: Error) => void
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-function logs(positions: number[], hasMore = false): RepoRunStepLogPage {
+function logs(positions: number[], hasMore = false): RepositoryRunStepLogPageResponse {
   return {
     logs: positions.map((position) => ({ position, sequence: position, text: `${position}`, byte_length: 1, created_at_unix: 2 })),
     has_earlier: false, has_more: hasMore, logs_truncated: false, next_after: positions.at(-1) ?? 0,
   }
 }
-function history(ids: string[], next_cursor: string | null = null): RepoRunHistoryPage {
-  return { runs: ids.map((id) => ({ id, state: 'queued' })) as RepoRunHistoryPage['runs'], next_cursor }
+function history(ids: string[], next_cursor: string | null = null): RepositoryRunHistoryPageResponse {
+  return { runs: ids.map((id) => ({ id, state: 'queued' })) as RepositoryRunHistoryPageResponse['runs'], next_cursor }
 }
 
 beforeEach(() => { resetRunLogCache(); resetRunHistoryCache(); runDetailResource.clear() })
 
 test('detail request survives navigation, deduplicates reopen and preserves newer metadata', async () => {
   initializeRunDetail(key, detail)
-  const pending = deferred<RepoRunDetail>()
+  const pending = deferred<RepositoryRunDetailResponse>()
   let calls = 0
   const load = () => { calls++; return pending.promise }
   const unsubscribe = runDetailResource.subscribe(key, () => {})
@@ -55,8 +60,8 @@ test('post-action refresh cannot settle from pre-action metadata, including a fa
   for (const fail of [false, true]) {
     runDetailResource.clear()
     initializeRunDetail(key, detail)
-    const before = deferred<RepoRunDetail>()
-    const after = deferred<RepoRunDetail>()
+    const before = deferred<RepositoryRunDetailResponse>()
+    const after = deferred<RepositoryRunDetailResponse>()
     let calls = 0
     const load = () => ++calls === 1 ? before.promise : after.promise
     const first = refreshRunDetail(key, load).catch(() => {})
@@ -74,7 +79,7 @@ test('post-action refresh cannot settle from pre-action metadata, including a fa
 })
 
 test('live log request survives navigation and reconciles final output after its response', async () => {
-  const pending = deferred<RepoRunStepLogPage>()
+  const pending = deferred<RepositoryRunStepLogPageResponse>()
   const inputs: RunStepLogsInput[] = []
   let currentDetail = detail
   const loadLogs = (input: RunStepLogsInput) => {
@@ -116,7 +121,7 @@ test('failed earlier log page retries its cursor and keeps earlier/latest modes 
 })
 
 test('log reset prevents late responses from restoring discarded viewer data', async () => {
-  const pending = deferred<RepoRunStepLogPage>()
+  const pending = deferred<RepositoryRunStepLogPageResponse>()
   const request = refreshRunLogs({ key, target, detail, params, loadLogs: () => pending.promise })
   resetRunLogCache()
   pending.resolve(logs([1]))
@@ -127,7 +132,7 @@ test('log reset prevents late responses from restoring discarded viewer data', a
 test('pagination survives navigation; queued refresh reloads full depth without losing earlier rows', async () => {
   const first = history(['first'], 'older')
   initializeRunHistory(key, first)
-  const older = deferred<RepoRunHistoryPage>()
+  const older = deferred<RepositoryRunHistoryPageResponse>()
   const inputs: Array<string | undefined> = []
   const loadHistory = async ({ after }: { after?: string }) => {
     inputs.push(after)

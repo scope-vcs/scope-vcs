@@ -1,8 +1,8 @@
+import type { RepoInviteTokenInput } from '@/api/types'
 import type {
-  AcceptRepoInviteResponse,
-  RepoInviteLookup,
-  RepoInviteTokenInput,
-} from '@/api/types'
+  AcceptRepositoryInviteResponse,
+  RepositoryInviteLookupResponse,
+} from '@/api/types.generated'
 import { ApplicationTopbar } from '@/components/application-topbar'
 import { AppShell } from '@/components/app-shell'
 import { PageContent, PageHeader } from '@/components/page-header'
@@ -21,8 +21,8 @@ export function InvitePage({
 }: {
   acceptInvite: (
     input: RepoInviteTokenInput,
-  ) => Promise<AcceptRepoInviteResponse>
-  invite: RepoInviteLookup
+  ) => Promise<AcceptRepositoryInviteResponse>
+  invite: RepositoryInviteLookupResponse
   token: string
 }) {
   const { isLoaded, isSignedIn } = useAuth()

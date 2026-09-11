@@ -1,4 +1,3 @@
-import type { RepoSummary } from '@/api/types'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -13,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { AlertTriangle, LoaderCircle, Trash2 } from 'lucide-react'
 import type { FormEvent } from 'react'
 import { useId, useState } from 'react'
+import type { RepoSummaryResponse } from '@/api/types.generated'
 
 export function DeleteRepositoryDialog({
   onCancel,
@@ -20,8 +20,8 @@ export function DeleteRepositoryDialog({
   repo,
 }: {
   onCancel: () => void
-  onConfirm: (repo: RepoSummary) => Promise<void>
-  repo: RepoSummary
+  onConfirm: (repo: RepoSummaryResponse) => Promise<void>
+  repo: RepoSummaryResponse
 }) {
   const inputId = useId()
   const [confirmed, setConfirmed] = useState(false)

@@ -1,4 +1,8 @@
-import type { AccountSession, RequestDetail, RepoLiveState, RepoParams } from '@/api/types'
+import type { RepoLiveState, RepoParams } from '@/api/types'
+import type {
+  AccountSessionResponse,
+  RequestDetailResponse,
+} from '@/api/types.generated'
 import { useCallback, useMemo } from 'react'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import type {
@@ -21,10 +25,10 @@ import type {
 import { RequestDiscussionWorkbench } from './request-discussion-workbench'
 
 type RequestDiscussionViewProps = {
-  account: AccountSession | null
+  account: AccountSessionResponse | null
   createDiscussion: (input: CreateDiscussionInput) => Promise<RequestDiscussionMutation>
   createReply: (input: CreateReplyInput) => Promise<RequestDiscussionReplyMutation>
-  detail: RequestDetail
+  detail: RequestDetailResponse
   focusedDiscussionId?: string
   initialPage: RequestDiscussionPage
   live: RepoLiveState

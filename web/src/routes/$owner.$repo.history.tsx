@@ -1,11 +1,11 @@
 import { parseHistoryFeed, parseVisibilityChange } from '@/api/history-inputs'
-import type { ProjectionPreviewAudience } from '@/api/types'
 import { HistoryPagePending } from '@/features/history/history-page-pending'
 import { HistoryPage, type HistorySearch } from '@/features/history/history-page'
 import { parseRouteFilePathSearch } from '@/lib/route-file'
 import { loadHistoryEntry, loadHistoryPage } from '@/routes/-repo-history-actions'
 import { RouteErrorContent } from '@/components/route-error-page'
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import type { ProjectionPreviewAudience } from '@/api/types.generated'
 
 export const Route = createFileRoute('/$owner/$repo/history')({
   validateSearch: parseHistorySearch,

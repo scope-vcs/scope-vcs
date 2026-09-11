@@ -1,13 +1,13 @@
-import type { RepoFile } from '@/api/types'
 import { ChevronDown } from 'lucide-react'
 import { useRef } from 'react'
 import { repositoryResources } from './repository-file-navigation'
+import type { RepoFileResponse } from '@/api/types.generated'
 
 export function RepositoryResourcesMenu({
   files,
   onSelectFilePath,
 }: {
-  files: RepoFile[]
+  files: RepoFileResponse[]
   onSelectFilePath: (path: string) => void
 }) {
   const resources = repositoryResources(files)

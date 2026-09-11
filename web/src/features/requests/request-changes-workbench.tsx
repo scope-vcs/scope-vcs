@@ -1,11 +1,9 @@
+import type { CommitDetail, CommitSummary, ReviewFileDiff } from '@/api/types'
 import type {
-  CommitDetail,
-  CommitFile,
-  CommitSummary,
+  CommitFileResponse,
   ProjectionPreviewAudience,
-  RequestRevisions,
-  ReviewFileDiff,
-} from '@/api/types'
+  RequestRevisionListResponse,
+} from '@/api/types.generated'
 import type { LoadRequestRevisionCommitInput } from '@/api/requests'
 import { PendingSurface } from '@/components/pending-surface'
 import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
@@ -89,7 +87,7 @@ export function RequestChangesWorkbench({
   onSearchChange: (search: RequestChangesSearch) => void
   params: { owner: string; repo: string; request_id: string }
   repoId: string
-  revisions: RequestRevisions
+  revisions: RequestRevisionListResponse
   search: RequestChangesSearch
 }) {
   const model = useRequestChangesModel({
@@ -169,7 +167,7 @@ function useRequestDiscussionReferences({
   initialReferences: RequestChangesDiscussionReferences
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
   params: { owner: string; repo: string; request_id: string }
-  revision: RequestRevisions['revisions'][number] | null
+  revision: RequestRevisionListResponse['revisions'][number] | null
 }): DiscussionReferenceState {
   const query = revision && commitOid
     ? discussionReferenceQuery(params, revision, commitOid)
@@ -231,7 +229,7 @@ function useRequestChangesModel({
   onSearchChange: (search: RequestChangesSearch) => void
   params: { owner: string; repo: string; request_id: string }
   repoId: string
-  revisions: RequestRevisions
+  revisions: RequestRevisionListResponse
   search: RequestChangesSearch
 }) {
   const orderedRevisions = revisions.revisions
@@ -344,7 +342,7 @@ function useRequestChangesModel({
       const selected = requestCommitForListId(orderedRevisions, commit.projected_id)
       replaceSelection(selected?.revision ?? null, selected?.commitOid ?? null, null)
     },
-    selectFile: (file: CommitFile) =>
+    selectFile: (file: CommitFileResponse) =>
       replaceSelection(selectedRevision, selectedCommitOid, file.path),
     selectedCommitId,
     selectedCommitOid,
@@ -362,12 +360,12 @@ function RequestCommitContext({
   params,
   revision,
 }: {
-  commit: RequestRevisions['revisions'][number]['commits'][number] | null
+  commit: RequestRevisionListResponse['revisions'][number]['commits'][number] | null
   discussionReferences: DiscussionReferenceState
   discussions: RequestDiscussion[]
   hasEarlierRevisions: boolean
   params: { owner: string; repo: string; request_id: string }
-  revision: RequestRevisions['revisions'][number]
+  revision: RequestRevisionListResponse['revisions'][number]
 }) {
   return (
     <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
@@ -477,7 +475,7 @@ function RequestCommitContext({
 
 function commitDetail(
   revisionId: string,
-  commit: RequestRevisions['revisions'][number]['commits'][number],
+  commit: RequestRevisionListResponse['revisions'][number]['commits'][number],
   audience: ProjectionPreviewAudience,
   repoId: string,
   requestId: string,

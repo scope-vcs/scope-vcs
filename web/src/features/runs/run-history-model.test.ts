@@ -1,7 +1,7 @@
-import type { RepoRunHistoryPage } from '@/api/types'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { reloadRunHistoryPages } from './run-history-model'
+import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 
 test('reload preserves an exhausted cursor after older runs are loaded', async () => {
   const refreshed = page('first-page-cursor', ['new'])
@@ -46,7 +46,7 @@ test('reload rejects repeated cursors across loaded pages', async () => {
 function page(
   nextCursor: string | null,
   ids: string[],
-): RepoRunHistoryPage {
+): RepositoryRunHistoryPageResponse {
   return {
     next_cursor: nextCursor,
     runs: ids.map((id, index) => ({

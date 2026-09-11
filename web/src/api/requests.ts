@@ -1,22 +1,21 @@
 import { createApiClient } from '@/api/client'
 import { requestRoute } from './paths'
 import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
+import type { ReviewFileDiff, RequestParams } from './types'
 import type {
-  RequestDetail,
-  RequestList,
-  RequestRating,
-  RequestRatings,
-  RequestRevisions,
-  ReviewFileDiff,
-  RequestParams,
-} from './types'
+  RequestDetailResponse,
+  RequestListResponse,
+  RequestRatingResponse,
+  RequestRatingsResponse,
+  RequestRevisionListResponse,
+} from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import { apiValidators } from './validators.generated'
 import type { LoadRequestQueueInput } from './request-queue-input'
 
 export async function loadRequestQueueForRequest(
   data: LoadRequestQueueInput,
-): Promise<RequestList> {
+): Promise<RequestListResponse> {
   return createApiClient().get(
     requestQueuePath(data),
     apiValidators.RequestListResponse,
@@ -26,7 +25,7 @@ export async function loadRequestQueueForRequest(
 
 export async function loadRequestForRequest(
   data: RequestParams,
-): Promise<RequestDetail> {
+): Promise<RequestDetailResponse> {
   return createApiClient().get(
     requestPath(data),
     apiValidators.RequestDetailResponse,
@@ -41,7 +40,7 @@ export type RateRequestInput = RequestParams & {
 
 export async function loadRequestRatingsForRequest(
   data: RequestParams,
-): Promise<RequestRatings> {
+): Promise<RequestRatingsResponse> {
   return createApiClient().get(
     requestRoute(ApiRouteTemplates.repoRequestRatings, data),
     apiValidators.RequestRatingsResponse,
@@ -51,7 +50,7 @@ export async function loadRequestRatingsForRequest(
 
 export async function rateRequestForRequest(
   data: RateRequestInput,
-): Promise<RequestRating> {
+): Promise<RequestRatingResponse> {
   return createApiClient().post(
     requestRoute(ApiRouteTemplates.repoRequestRatings, data),
     apiValidators.RequestRatingResponse,
@@ -64,7 +63,7 @@ export async function rateRequestForRequest(
 
 export async function loadRequestRevisionsForRequest(
   data: RequestParams & { commit_oid?: string; revision_id?: string },
-): Promise<RequestRevisions> {
+): Promise<RequestRevisionListResponse> {
   const search = new URLSearchParams()
   if (data.revision_id) search.set('revision', data.revision_id)
   if (data.commit_oid) search.set('commit', data.commit_oid)

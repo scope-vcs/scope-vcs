@@ -1,4 +1,3 @@
-import type { RepoRunJobDetail } from '@/api/types'
 import { cn } from '@/lib/utils'
 import { useMemo } from 'react'
 import {
@@ -9,14 +8,15 @@ import {
 import { runJobPanelId } from './run-job-ids'
 import { RunStatusIcon } from './run-status-icon'
 import { RunTimestamp } from './run-timestamp'
+import type { RepositoryRunJobDetailResponse } from '@/api/types.generated'
 
 export function RunJobGraph({
   jobs,
   onSelectJob,
   selectedJobKey,
 }: {
-  jobs: readonly RepoRunJobDetail[]
-  onSelectJob: (job: RepoRunJobDetail) => void
+  jobs: readonly RepositoryRunJobDetailResponse[]
+  onSelectJob: (job: RepositoryRunJobDetailResponse) => void
   selectedJobKey: string | null
 }) {
   const layout = useMemo(() => buildRunJobGraph(jobs), [jobs])
@@ -30,7 +30,7 @@ export function RunJobGraph({
     )
   }
 
-  function handleSelect(jobDetail: RepoRunJobDetail) {
+  function handleSelect(jobDetail: RepositoryRunJobDetailResponse) {
     onSelectJob(jobDetail)
     requestAnimationFrame(() => {
       document.getElementById(runJobPanelId(jobDetail.job.key))

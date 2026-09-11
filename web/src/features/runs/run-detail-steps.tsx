@@ -1,12 +1,19 @@
-import type { RepoRunAttempt, RepoRunJobDetail, RepoRunStep } from '@/api/types'
 import { cn } from '@/lib/utils'
-import type { StepLogState, StepSelection } from './repository-run-detail-controller'
+import type {
+  StepLogState,
+  StepSelection,
+} from './repository-run-detail-controller'
 import { RunAttemptEnvironment } from './run-attempt-environment'
 import { RunDuration } from './run-duration'
 import { RunLogView } from './run-log-view'
 import { RunStatusIcon } from './run-status-icon'
 import { RUN_STEP_ROW_CLASS } from './run-step-layout'
 import { runStatus } from './run-status'
+import type {
+  RepositoryRunAttemptResponse,
+  RepositoryRunJobDetailResponse,
+  RepositoryRunStepResponse,
+} from '@/api/types.generated'
 
 /** The steps of a single job attempt: an attempt switcher only when more than
  * one attempt exists, then the attempt's environment facts and step list. */
@@ -21,8 +28,8 @@ export function RunDetailSteps({
   selectedLogState,
   selection,
 }: {
-  attempt: RepoRunAttempt | null
-  jobDetail: RepoRunJobDetail
+  attempt: RepositoryRunAttemptResponse | null
+  jobDetail: RepositoryRunJobDetailResponse
   onLogRetry: () => void
   onLogEarlier: () => void
   onLogLatest: () => void
@@ -97,7 +104,7 @@ export function RunDetailSteps({
   )
 }
 
-function attemptTerminalNotice(attempt: RepoRunAttempt) {
+function attemptTerminalNotice(attempt: RepositoryRunAttemptResponse) {
   const reason = attempt.terminal_reason
   if (!reason) return null
   const status = runStatus(attempt.state, reason)
@@ -113,7 +120,7 @@ function AttemptSwitcher({
   onSelect,
   selectedAttemptId,
 }: {
-  attempts: readonly RepoRunAttempt[]
+  attempts: readonly RepositoryRunAttemptResponse[]
   onSelect: (attemptId: string) => void
   selectedAttemptId: string | null
 }) {
@@ -163,7 +170,7 @@ function StepRow({
   onSelect: () => void
   selected: boolean
   selectedLogState: StepLogState
-  step: RepoRunStep
+  step: RepositoryRunStepResponse
 }) {
   const panelId = `run-step-${attemptId}-${step.index}`
   return (

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { RepoRunCache } from '@/api/types'
 import {
   cacheExplanation,
   cachePreparationDetail,
@@ -10,8 +9,9 @@ import {
   pinnedImageLabel,
   summarizeAttemptCaches,
 } from './run-attempt-environment-model'
+import type { RepositoryRunCacheResponse } from '@/api/types.generated'
 
-const caches: RepoRunCache[] = [
+const caches: RepositoryRunCacheResponse[] = [
   {
     name: 'cargo',
     path: '/scope/cache/cargo',

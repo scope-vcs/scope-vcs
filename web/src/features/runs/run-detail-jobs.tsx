@@ -1,8 +1,10 @@
-import type { RepoRunJobDetail } from '@/api/types'
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { StepLogState, StepSelection } from './repository-run-detail-controller'
+import type {
+  StepLogState,
+  StepSelection,
+} from './repository-run-detail-controller'
 import { attemptForJob } from './repository-run-detail-model'
 import { RunDetailSteps } from './run-detail-steps'
 import { RunDuration } from './run-duration'
@@ -11,6 +13,7 @@ import { runJobPanelId } from './run-job-ids'
 import { RunJobGraph } from './run-job-graph'
 import { orderJobsByDependency } from './run-job-graph-model'
 import { RunStatusIcon } from './run-status-icon'
+import type { RepositoryRunJobDetailResponse } from '@/api/types.generated'
 
 /** The Jobs section: a job strip (or dependency graph, behind a toggle) and
  * the steps of whichever job is selected. */
@@ -30,12 +33,12 @@ export function RunDetailJobs({
   showGraph,
 }: {
   attemptOverrides: Readonly<Record<string, string>>
-  jobs: readonly RepoRunJobDetail[]
+  jobs: readonly RepositoryRunJobDetailResponse[]
   onLogRetry: () => void
   onLogEarlier: () => void
   onLogLatest: () => void
   onSelectAttempt: (jobKey: string, attemptId: string) => void
-  onSelectJob: (job: RepoRunJobDetail) => void
+  onSelectJob: (job: RepositoryRunJobDetailResponse) => void
   onSelectStep: (jobKey: string, attemptId: string, stepIndex: number) => void
   onToggleGraph: () => void
   selectedJobKey: string | null
@@ -108,8 +111,8 @@ function RunJobStrip({
   onSelectJob,
   selectedJobKey,
 }: {
-  jobs: readonly RepoRunJobDetail[]
-  onSelectJob: (job: RepoRunJobDetail) => void
+  jobs: readonly RepositoryRunJobDetailResponse[]
+  onSelectJob: (job: RepositoryRunJobDetailResponse) => void
   selectedJobKey: string | null
 }) {
   if (jobs.length === 0) {
@@ -149,7 +152,7 @@ function RunJobStrip({
   )
 }
 
-function jobSummary(jobs: readonly RepoRunJobDetail[]) {
+function jobSummary(jobs: readonly RepositoryRunJobDetailResponse[]) {
   const counts = new Map<string, number>()
   for (const { job } of jobs) {
     counts.set(job.state, (counts.get(job.state) ?? 0) + 1)

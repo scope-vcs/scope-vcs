@@ -1,6 +1,6 @@
-import type { RepoSummary } from '../../api/types'
+import type { RepoSummaryResponse } from '../../api/types.generated'
 
-export function repoResourceScope(repo: RepoSummary, viewerId: string | null) {
+export function repoResourceScope(repo: RepoSummaryResponse, viewerId: string | null) {
   return JSON.stringify([repo.id, viewerId, repo.access])
 }
 

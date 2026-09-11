@@ -1,5 +1,7 @@
-import type { RepoRunTrigger } from '@/api/types'
-import type { RepositoryRunState } from '@/api/types.generated'
+import type {
+  RepositoryRunState,
+  RepositoryRunTrigger,
+} from '@/api/types.generated'
 import { runCanChange } from './repository-run-detail-model'
 
 export function createRunTimeFormatter(timeZone?: string) {
@@ -73,6 +75,6 @@ export function formatRelativeTime(value: number, nowUnix: number) {
 }
 
 /** How a run started, in the words a reader would use. */
-export function runTriggerLabel(trigger: RepoRunTrigger) {
+export function runTriggerLabel(trigger: RepositoryRunTrigger) {
   return trigger === 'push-main' ? 'push' : 'manual'
 }

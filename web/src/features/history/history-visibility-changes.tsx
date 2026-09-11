@@ -1,8 +1,8 @@
-import type { HistoryEntryDetail } from '@/api/types'
 import { VisibilityBadge } from '@/components/visibility-badge'
 import { ArrowRight } from 'lucide-react'
+import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 
-export type HistoryVisibilityChange = HistoryEntryDetail['visibility_changes'][number]
+export type HistoryVisibilityChange = HistoryEntryDetailResponse['visibility_changes'][number]
 
 export function VisibilityChanges({
   changes,
@@ -10,7 +10,7 @@ export function VisibilityChanges({
   onSelect,
   selectedId,
 }: {
-  changes: HistoryEntryDetail['visibility_changes']
+  changes: HistoryEntryDetailResponse['visibility_changes']
   expanded: boolean
   onSelect: (change: HistoryVisibilityChange) => void
   selectedId: string | null

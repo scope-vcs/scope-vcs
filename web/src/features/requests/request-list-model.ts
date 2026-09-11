@@ -1,7 +1,10 @@
-import type { RequestList, RequestListItem } from '@/api/types'
 import type { RequestQueueSection } from '@/api/request-queue-input'
+import type {
+  RequestListResponse,
+  RequestListItemResponse,
+} from '@/api/types.generated'
 
-export type RequestQueuePages = Record<RequestQueueSection, RequestList>
+export type RequestQueuePages = Record<RequestQueueSection, RequestListResponse>
 
 export const REQUEST_QUEUE_SECTION_ORDER = [
   'open',
@@ -36,7 +39,7 @@ export type RequestQueueViewAction =
       type: 'load_succeeded'
       generation: number
       section: RequestQueueSection
-      page: RequestList
+      page: RequestListResponse
     }
   | {
       type: 'load_failed'
@@ -50,14 +53,14 @@ export type RequestQueueViewAction =
       type: 'search_succeeded'
       generation: number
       query: string
-      open: RequestList
-      closed: RequestList
+      open: RequestListResponse
+      closed: RequestListResponse
     }
   | { type: 'search_failed'; generation: number; error: string }
 
 export function appendRequestPage(
-  current: RequestListItem[],
-  incoming: RequestListItem[],
+  current: RequestListItemResponse[],
+  incoming: RequestListItemResponse[],
 ) {
   const knownIds = new Set(current.map((request) => request.id))
   const additions = incoming.filter((request) => {
@@ -71,9 +74,9 @@ export function appendRequestPage(
 }
 
 export function appendQueuePage(
-  current: RequestList,
-  incoming: RequestList,
-): RequestList {
+  current: RequestListResponse,
+  incoming: RequestListResponse,
+): RequestListResponse {
   return {
     requests: appendRequestPage(current.requests, incoming.requests),
     next_cursor: incoming.next_cursor,

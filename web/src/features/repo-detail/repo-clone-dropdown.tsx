@@ -1,4 +1,3 @@
-import type { RepoSummary } from '@/api/types'
 import { CopyableCodeBlock } from '@/components/copyable-code-block'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -8,13 +7,14 @@ import {
   permissionedCloneCommand,
   publicCloneCommand,
 } from './clone-command'
+import type { RepoSummaryResponse } from '@/api/types.generated'
 
 export function RepoCloneDropdown({
   cloneRemoteUrl,
   repo,
 }: {
   cloneRemoteUrl: string
-  repo: RepoSummary
+  repo: RepoSummaryResponse
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)

@@ -1,17 +1,19 @@
 import type {
   CreateRepoInviteInput,
-  CreateRepoInviteResponse,
   DeleteRepoInviteInput,
   DeleteRepoMemberInput,
-  DeleteRepoResponse,
-  RepoCollaboration,
-  RepoInvite,
-  RepoMember,
   RepoParams,
-  RepoSummary,
   UpdateRepoMemberInput,
   UpdateRepoMetadataInput,
 } from '@/api/types'
+import type {
+  CreateRepositoryInviteResponse,
+  DeleteRepoResponse,
+  RepositoryCollaborationResponse,
+  RepositoryInviteResponse,
+  RepositoryMemberResponse,
+  RepoSummaryResponse,
+} from '@/api/types.generated'
 import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { storeHomeFlash } from '@/lib/home-flash'
@@ -42,14 +44,14 @@ export function RepoSettingsPage({
 }: {
   createInvite: (
     input: CreateRepoInviteInput,
-  ) => Promise<CreateRepoInviteResponse>
-  deleteInvite: (input: DeleteRepoInviteInput) => Promise<RepoInvite>
-  deleteMember: (input: DeleteRepoMemberInput) => Promise<RepoMember>
+  ) => Promise<CreateRepositoryInviteResponse>
+  deleteInvite: (input: DeleteRepoInviteInput) => Promise<RepositoryInviteResponse>
+  deleteMember: (input: DeleteRepoMemberInput) => Promise<RepositoryMemberResponse>
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
-  initialCollaboration: RepoCollaboration | null
+  initialCollaboration: RepositoryCollaborationResponse | null
   params: RepoParams
-  updateMember: (input: UpdateRepoMemberInput) => Promise<RepoMember>
-  updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummary>
+  updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
+  updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
 }) {
   const navigate = useNavigate()
   const router = useRouter()
@@ -67,7 +69,7 @@ export function RepoSettingsPage({
     return result
   }
 
-  async function deleteRepository(target: RepoSummary) {
+  async function deleteRepository(target: RepoSummaryResponse) {
     dispatch({ repo: target, type: 'deleteStarted' })
     try {
       await deleteRepo({

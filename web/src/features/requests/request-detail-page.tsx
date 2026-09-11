@@ -1,11 +1,10 @@
+import type { RepoLiveState, RepoParams } from '@/api/types'
 import type {
-  RequestDetail,
-  RepoLiveState,
-  RepoParams,
-  RequestMutation,
-  RequestRating,
-  RequestRatings,
-} from '@/api/types'
+  RequestDetailResponse,
+  RequestMutationResponse,
+  RequestRatingResponse,
+  RequestRatingsResponse,
+} from '@/api/types.generated'
 import type { RateRequestInput } from '@/api/requests'
 import { EmptyState } from '@/components/empty-state'
 import { PageContent, WorkbenchPane } from '@/components/page-header'
@@ -62,14 +61,14 @@ export function RequestUnavailablePage({ params }: { params: RepoParams }) {
 type RequestDetailPageProps = {
   attachmentActions: RequestAttachmentActions
   children: ReactNode
-  detail: RequestDetail
+  detail: RequestDetailResponse
   live: RepoLiveState
   loadActivity: (signal: AbortSignal) => Promise<RequestActivityPage>
   params: RepoParams
   performAction: (command: RequestActionCommand) => Promise<RequestActionResult>
-  ratings: RequestRatings
-  rateRequest: (input: RateRequestInput) => Promise<RequestRating>
-  updateDescription: (input: UpdateDescriptionInput) => Promise<RequestMutation>
+  ratings: RequestRatingsResponse
+  rateRequest: (input: RateRequestInput) => Promise<RequestRatingResponse>
+  updateDescription: (input: UpdateDescriptionInput) => Promise<RequestMutationResponse>
   viewerId: string
 }
 

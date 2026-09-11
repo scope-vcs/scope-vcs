@@ -1,9 +1,8 @@
+import type { RepoParams, RepoRunHistoryInput } from '@/api/types'
 import type {
-  RepoParams,
-  RepoRunHistoryInput,
-  RepoRunHistoryPage,
-  RepoRunWorkflowList,
-} from '@/api/types'
+  RepositoryRunHistoryPageResponse,
+  RepositoryRunWorkflowListResponse,
+} from '@/api/types.generated'
 import { PageContent, WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
@@ -24,8 +23,8 @@ import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, runHistory
 const HISTORY_CHANGES = ['Created', 'StatusChanged'] as const
 
 type RunPageResources = {
-  history: RepoRunHistoryPage
-  workflows: RepoRunWorkflowList
+  history: RepositoryRunHistoryPageResponse
+  workflows: RepositoryRunWorkflowListResponse
   workflowsError: string | null
 }
 
@@ -34,7 +33,7 @@ type RepositoryRunsPageProps = {
   loadHistory: (
     input: RepoRunHistoryInput,
     signal?: AbortSignal,
-  ) => Promise<RepoRunHistoryPage | null>
+  ) => Promise<RepositoryRunHistoryPageResponse | null>
   params: RepoParams
   workflow?: string
 }

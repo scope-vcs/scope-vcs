@@ -1,4 +1,5 @@
-import type { RepoContent, RepoSummary } from '@/api/types'
+import type { RepoContent } from '@/api/types'
+import type { RepoSummaryResponse } from '@/api/types.generated'
 import { Globe2, LockKeyhole, ExternalLink } from 'lucide-react'
 import { RepositoryResourcesMenu } from './repository-resources-menu'
 
@@ -11,7 +12,7 @@ export function RepositoryContext({
   content: RepoContent | null
   contentLoading: boolean
   onSelectFilePath: (path: string) => void
-  repo: RepoSummary
+  repo: RepoSummaryResponse
 }) {
   const includesPrivate = content?.files.some((file) => file.visibility === 'Private') ?? false
   const viewLabel = includesPrivate

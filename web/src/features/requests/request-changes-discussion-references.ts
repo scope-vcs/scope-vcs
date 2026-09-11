@@ -1,4 +1,5 @@
-import type { RequestParams, RequestRevisions } from '@/api/types'
+import type { RequestParams } from '@/api/types'
+import type { RequestRevisionListResponse } from '@/api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import type { LoadDiscussionsInput } from './request-discussion-api'
 import { requestChangeSelection, requestRevisionCommitId } from './request-changes-model'
@@ -13,7 +14,7 @@ type LoadReferencePage = (
   options: { signal: AbortSignal; maxResponseBytes: number },
 ) => Promise<RequestDiscussionPage>
 
-type RequestRevision = RequestRevisions['revisions'][number]
+type RequestRevision = RequestRevisionListResponse['revisions'][number]
 
 export const requestDiscussionReferenceResource = createCachedResource<RequestDiscussionPage>({
   maxEntries: 16,
@@ -43,7 +44,7 @@ export function discussionReferenceQuery(
 
 export function selectedDiscussionReferenceQuery(
   params: RequestParams & { commit_oid?: string; revision_id?: string },
-  revisions: RequestRevisions,
+  revisions: RequestRevisionListResponse,
 ) {
   const { revision, commit } = requestChangeSelection(
     revisions.revisions,

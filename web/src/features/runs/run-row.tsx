@@ -1,4 +1,5 @@
-import type { RepoParams, RepoRunHistoryPage } from '@/api/types'
+import type { RepoParams } from '@/api/types'
+import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { runDisplayState, runTriggerLabel } from './run-formatting'
@@ -18,7 +19,7 @@ export function RunRow({
   run,
 }: {
   params: RepoParams
-  run: RepoRunHistoryPage['runs'][number]
+  run: RepositoryRunHistoryPageResponse['runs'][number]
 }) {
   const state = runDisplayState(run)
   const isRunning = runStatus(state).tone === 'running'

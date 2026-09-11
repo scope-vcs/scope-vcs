@@ -1,4 +1,5 @@
-import type { RepoRunDetail, RunActionInput } from '@/api/types'
+import type { RunActionInput } from '@/api/types'
+import type { RepositoryRunDetailResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { Link } from '@tanstack/react-router'
 import { LoaderCircle, RotateCcw, Square } from 'lucide-react'
@@ -17,7 +18,7 @@ export function RunDetailHeader({
   params,
   pendingAction,
 }: {
-  detail: RepoRunDetail
+  detail: RepositoryRunDetailResponse
   metadataError: string | null
   onCancel: () => void
   onRefresh: () => void

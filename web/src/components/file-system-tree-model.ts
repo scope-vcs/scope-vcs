@@ -1,4 +1,5 @@
-import type { Visibility, VisibilityState } from '@/api/types'
+import type { VisibilityState } from '@/api/types'
+import type { Visibility } from '@/api/types.generated'
 
 export type FileSystemTreeFileBase = {
   path: string

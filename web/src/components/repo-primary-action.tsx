@@ -1,8 +1,8 @@
-import type { RepoSummary } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Link } from '@tanstack/react-router'
 import { ArrowRight } from 'lucide-react'
 import type { ComponentProps } from 'react'
+import type { RepoSummaryResponse } from '@/api/types.generated'
 
 type RepoActionRoute =
   | '/$owner/$repo'
@@ -26,7 +26,7 @@ type RepoPrimaryActionOptions = {
 }
 
 function repoPrimaryAction(
-  repo: RepoSummary,
+  repo: RepoSummaryResponse,
   {
     includeOpen = true,
     requireOwner = false,
@@ -48,7 +48,7 @@ function repoPrimaryAction(
 }
 
 function repoAttentionAction(
-  repo: RepoSummary,
+  repo: RepoSummaryResponse,
 ): RepoAttentionAction | null {
   if (repo.lifecycle_state === 'AwaitingFirstPush') {
     if (repo.access.actor !== 'Owner') {
@@ -73,7 +73,7 @@ export function RepoPrimaryActionButton({
   variant = 'secondary',
 }: {
   includeOpen?: boolean
-  repo: RepoSummary
+  repo: RepoSummaryResponse
   requireOwner?: boolean
   variant?: ComponentProps<typeof Button>['variant']
 }) {

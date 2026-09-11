@@ -1,4 +1,4 @@
-import type { RepoRunState } from '@/api/types'
+import type { RepositoryRunState } from '@/api/types.generated'
 
 type StepLike = {
   index: number
@@ -34,7 +34,7 @@ type InitialRunView = {
 const MAX_CACHED_STEP_LOG_BYTES = 512 * 1_024
 const GRAPH_DEFAULT_JOB_COUNT = 3
 
-export function runCanChange(state: RepoRunState): boolean {
+export function runCanChange(state: RepositoryRunState): boolean {
   switch (state) {
     case 'queued':
     case 'dispatching':

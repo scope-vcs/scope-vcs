@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { RepoRunCache } from '@/api/types'
 import { RunAttemptEnvironment } from './run-attempt-environment'
+import type { RepositoryRunCacheResponse } from '@/api/types.generated'
 
 const image = `registry/scope@sha256:${'c'.repeat(64)}`
-const caches: RepoRunCache[] = [
+const caches: RepositoryRunCacheResponse[] = [
   {
     name: 'cargo',
     path: '/scope/cache/cargo',

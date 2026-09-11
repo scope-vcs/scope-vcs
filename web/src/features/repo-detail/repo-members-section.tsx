@@ -1,14 +1,16 @@
 import type {
   CreateRepoInviteInput,
-  CreateRepoInviteResponse,
-  RepoCollaboration,
-  RepoInvite,
-  RepoMember,
-  RepoMemberPermissions,
   RepoParams,
-  RepoSummary,
   UpdateRepoMemberInput,
 } from '@/api/types'
+import type {
+  CreateRepositoryInviteResponse,
+  RepositoryCollaborationResponse,
+  RepositoryInviteResponse,
+  RepositoryMemberResponse,
+  RepositoryMemberPermissions,
+  RepoSummaryResponse,
+} from '@/api/types.generated'
 import { CopyableCodeBlock } from '@/components/copyable-code-block'
 import { DestructiveActionDialog } from '@/components/destructive-action-dialog'
 import { SectionRow, SectionRows } from '@/components/section-rows'
@@ -26,7 +28,7 @@ import {
 } from 'lucide-react'
 import { useReducer, useState, type FormEvent } from 'react'
 
-const defaultPermissions: RepoMemberPermissions = {
+const defaultPermissions: RepositoryMemberPermissions = {
   can_apply_changes: false,
   can_change_file_visibility: false,
   can_push: false,
@@ -47,12 +49,12 @@ type InviteMemberFormState = {
   error: string | null
   inviteUrl: string | null
   pending: boolean
-  permissions: RepoMemberPermissions
+  permissions: RepositoryMemberPermissions
 }
 
 type InviteMemberFormAction =
   | { email: string; type: 'emailChanged' }
-  | { permissions: RepoMemberPermissions; type: 'permissionsChanged' }
+  | { permissions: RepositoryMemberPermissions; type: 'permissionsChanged' }
   | { type: 'submitStarted' }
   | { inviteUrl: string; type: 'submitSucceeded' }
   | { message: string; type: 'submitFailed' }
@@ -92,7 +94,7 @@ function inviteMemberFormReducer(
 export function MemberAccessSections({
   repo,
 }: {
-  repo: RepoSummary
+  repo: RepoSummaryResponse
 }) {
   return (
     <SectionRows>
@@ -119,15 +121,15 @@ export function RepositoryMembersSection({
   repo,
   updateMember,
 }: {
-  collaboration: RepoCollaboration
+  collaboration: RepositoryCollaborationResponse
   createInvite: (
     input: CreateRepoInviteInput,
-  ) => Promise<CreateRepoInviteResponse>
-  deleteInvite: (inviteId: string) => Promise<RepoInvite>
-  deleteMember: (memberUserId: string) => Promise<RepoMember>
+  ) => Promise<CreateRepositoryInviteResponse>
+  deleteInvite: (inviteId: string) => Promise<RepositoryInviteResponse>
+  deleteMember: (memberUserId: string) => Promise<RepositoryMemberResponse>
   params: RepoParams
-  repo: RepoSummary
-  updateMember: (input: UpdateRepoMemberInput) => Promise<RepoMember>
+  repo: RepoSummaryResponse
+  updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
 }) {
   const canInvite = repo.lifecycle_state === 'Ready'
   const pendingInvites = collaboration.invites.filter(
@@ -190,7 +192,7 @@ function InviteMemberForm({
   canInvite: boolean
   createInvite: (
     input: Omit<CreateRepoInviteInput, 'owner' | 'repo'>,
-  ) => Promise<CreateRepoInviteResponse>
+  ) => Promise<CreateRepositoryInviteResponse>
 }) {
   const [state, dispatch] = useReducer(
     inviteMemberFormReducer,
@@ -279,13 +281,13 @@ function MemberList({
   params,
   updateMember,
 }: {
-  deleteMember: (memberUserId: string) => Promise<RepoMember>
-  members: RepoMember[]
+  deleteMember: (memberUserId: string) => Promise<RepositoryMemberResponse>
+  members: RepositoryMemberResponse[]
   params: RepoParams
-  updateMember: (input: UpdateRepoMemberInput) => Promise<RepoMember>
+  updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
 }) {
   const [error, setError] = useState<string | null>(null)
-  const [confirmMember, setConfirmMember] = useState<RepoMember | null>(null)
+  const [confirmMember, setConfirmMember] = useState<RepositoryMemberResponse | null>(null)
   const [pendingKey, setPendingKey] = useState<string | null>(null)
 
   if (members.length === 0) {
@@ -297,8 +299,8 @@ function MemberList({
   }
 
   async function update(
-    member: RepoMember,
-    permissions: RepoMemberPermissions,
+    member: RepositoryMemberResponse,
+    permissions: RepositoryMemberPermissions,
   ) {
     setError(null)
     setPendingKey(member.user_id)
@@ -315,7 +317,7 @@ function MemberList({
     }
   }
 
-  async function remove(member: RepoMember) {
+  async function remove(member: RepositoryMemberResponse) {
     setError(null)
     setPendingKey(member.user_id)
     try {
@@ -392,14 +394,14 @@ function InviteList({
   deleteInvite,
   invites,
 }: {
-  deleteInvite: (inviteId: string) => Promise<RepoInvite>
-  invites: RepoInvite[]
+  deleteInvite: (inviteId: string) => Promise<RepositoryInviteResponse>
+  invites: RepositoryInviteResponse[]
 }) {
   const [error, setError] = useState<string | null>(null)
-  const [confirmInvite, setConfirmInvite] = useState<RepoInvite | null>(null)
+  const [confirmInvite, setConfirmInvite] = useState<RepositoryInviteResponse | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
 
-  async function revoke(invite: RepoInvite) {
+  async function revoke(invite: RepositoryInviteResponse) {
     setError(null)
     setPendingId(invite.id)
     try {
@@ -476,8 +478,8 @@ function PermissionEditor({
   permissions,
 }: {
   disabled?: boolean
-  onChange: (permissions: RepoMemberPermissions) => void
-  permissions: RepoMemberPermissions
+  onChange: (permissions: RepositoryMemberPermissions) => void
+  permissions: RepositoryMemberPermissions
 }) {
   return (
     <div className="space-y-2">
@@ -511,7 +513,7 @@ function PermissionEditor({
 function PermissionSummary({
   permissions,
 }: {
-  permissions: RepoMemberPermissions
+  permissions: RepositoryMemberPermissions
 }) {
   return (
     <div className="space-y-2">
@@ -555,7 +557,7 @@ function AlwaysOnPrivateRead() {
   )
 }
 
-function permissionSummaryText(permissions: RepoMemberPermissions) {
+function permissionSummaryText(permissions: RepositoryMemberPermissions) {
   const enabled = permissionLabels.reduce<string[]>((labels, permission) => {
     if (permissions[permission.key]) {
       labels.push(permission.label.toLowerCase())

@@ -1,10 +1,9 @@
+import type { RunActionInput, RunStepLogsInput } from '@/api/types'
 import type {
-  RepoRunDetail,
-  RepoRunJobDetail,
-  RepoRunStepLogPage,
-  RunActionInput,
-  RunStepLogsInput,
-} from '@/api/types'
+  RepositoryRunDetailResponse,
+  RepositoryRunJobDetailResponse,
+  RepositoryRunStepLogPageResponse,
+} from '@/api/types.generated'
 import {
   useCallback,
   useEffect,
@@ -56,7 +55,7 @@ type DetailViewState = {
 
 type DetailViewUpdate = (state: DetailViewState) => DetailViewState
 
-function createDetailViewState(detail: RepoRunDetail): DetailViewState {
+function createDetailViewState(detail: RepositoryRunDetailResponse): DetailViewState {
   const initialView = selectInitialView(detail.jobs)
   return {
     actionError: null,
@@ -85,12 +84,12 @@ export function useRepositoryRunDetailController({
   params,
 }: {
   cacheKey: string | null
-  initialDetail: RepoRunDetail
-  loadDetail: (signal?: AbortSignal) => Promise<RepoRunDetail>
+  initialDetail: RepositoryRunDetailResponse
+  loadDetail: (signal?: AbortSignal) => Promise<RepositoryRunDetailResponse>
   loadLogs: (
     input: RunStepLogsInput,
     signal?: AbortSignal,
-  ) => Promise<RepoRunStepLogPage>
+  ) => Promise<RepositoryRunStepLogPageResponse>
   params: RunActionInput
 }) {
   const [key] = useState(() => cacheKey ?? crypto.randomUUID())
@@ -220,7 +219,7 @@ export function useRepositoryRunDetailController({
 
   // Navigation rules live in the model so `selection` and `selectedJobKey`
   // cannot drift apart here.
-  function toggleJob(jobDetail: RepoRunJobDetail) {
+  function toggleJob(jobDetail: RepositoryRunJobDetailResponse) {
     updateView((current) => selectJob(current, jobDetail.job.key))
   }
 
@@ -257,7 +256,7 @@ export function useRepositoryRunDetailController({
 
 function selectionExists(
   selection: StepSelection,
-  jobs: readonly RepoRunJobDetail[],
+  jobs: readonly RepositoryRunJobDetailResponse[],
 ) {
   return jobs.some(({ job, attempts }) =>
     job.key === selection.jobKey &&
@@ -268,6 +267,6 @@ function selectionExists(
   )
 }
 
-function jobExists(jobKey: string | null, jobs: readonly RepoRunJobDetail[]) {
+function jobExists(jobKey: string | null, jobs: readonly RepositoryRunJobDetailResponse[]) {
   return jobKey !== null && jobs.some(({ job }) => job.key === jobKey)
 }
