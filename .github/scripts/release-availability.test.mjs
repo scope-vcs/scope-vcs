@@ -161,7 +161,7 @@ test("rejects application errors returned with HTTP 200", async () => {
   assert.equal(htmlResult.error.kind, "application");
 });
 
-test("wrapper waits for a clean baseline, runs activation, and retains the tail summary", async (t) => {
+test("wrapper runs activation under monitoring and retains the tail summary", async (t) => {
   let failRepository = false;
   const web = await listen((request, response) => {
     if (request.url === "/") return html(response, homepage());
@@ -221,7 +221,6 @@ test("wrapper waits for a clean baseline, runs activation, and retains the tail 
   ], {
     env: {
       ...process.env,
-      SCOPE_RELEASE_BASELINE_SECONDS: "0",
       SCOPE_RELEASE_OBSERVATION_SECONDS: "0",
       SCOPE_RELEASE_READY_TIMEOUT_SECONDS: "5",
     },
@@ -256,7 +255,6 @@ test("wrapper waits for a clean baseline, runs activation, and retains the tail 
     maintenance: {
       endFile: maintenanceEnd,
       warningAfterMs: 10_000,
-
       startFile: maintenanceStart,
     },
     mode: "maintenance",
@@ -274,10 +272,8 @@ test("wrapper waits for a clean baseline, runs activation, and retains the tail 
   ], {
     env: {
       ...process.env,
-      SCOPE_RELEASE_BASELINE_SECONDS: "60",
       SCOPE_RELEASE_OBSERVATION_SECONDS: "0",
       SCOPE_RELEASE_READY_TIMEOUT_SECONDS: "5",
-      SCOPE_RELEASE_SKIP_BASELINE: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

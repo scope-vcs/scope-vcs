@@ -90,7 +90,7 @@ if (typeof deploymentId !== "string" || !deploymentId) {
   throw new Error("Railway did not return an exact media worker deployment ID");
 }
 
-const deadline = Date.now() + Number(process.env.SCOPE_IMAGE_DEPLOY_TIMEOUT_MS || 900_000);
+const deadline = Date.now() + 900_000;
 let deployment;
 while (Date.now() < deadline) {
   deployment = deployments(serviceId).find((candidate) => candidate.id === deploymentId);

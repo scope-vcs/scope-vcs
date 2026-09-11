@@ -6,14 +6,6 @@ on:
       publish:
         type: boolean
         default: false
-      source_sha:
-        type: string
-        default: ""
-    outputs:
-      published_digest:
-        value: ${{ jobs.build.outputs.published_digest }}
-      published_image:
-        value: ${{ jobs.build.outputs.published_image }}
 
 permissions:
   contents: read
@@ -60,54 +52,29 @@ jobs:
       deployments: write
       id-token: write
       packages: write
-    outputs:
-      published_digest: ${{ steps.published.outputs.digest }}
-      published_image: ${{ steps.published.outputs.image }}
     steps:
-      - name: Resolve image source
+      - name: Decide whether to publish
         id: source
         shell: bash
         env:
-          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_SHA: ${{ github.sha }}
           GIT_REF: ${{ github.ref }}
           REQUESTED_PUBLISH: ${{ inputs.publish }}
         run: |
-          source_sha="$EVENT_SHA"
           publish=false
-          publish_main=false
-
-          if [[ -n "$REQUESTED_SOURCE_SHA" ]]; then
-            if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
-              echo "source_sha is allowed only for a trusted manual run" >&2
-              exit 1
-            fi
-            if [[ ! "$REQUESTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "source_sha must be a full lowercase 40-character commit SHA" >&2
-              exit 1
-            fi
-            source_sha="$REQUESTED_SOURCE_SHA"
+          if [[ "$REQUESTED_PUBLISH" == "true" && "$EVENT_NAME" != "pull_request" && "$GIT_REF" == "refs/heads/main" ]]; then
             publish=true
-          elif [[ "$REQUESTED_PUBLISH" == "true" && "$EVENT_NAME" != "pull_request" && "$GIT_REF" == "refs/heads/main" ]]; then
-            publish=true
-            publish_main=true
           fi
-
-          {
-            echo "sha=$source_sha"
-            echo "publish=$publish"
-            echo "publish_main=$publish_main"
-          } >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
       - name: Checkout exact revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ steps.source.outputs.sha }}
+          ref: ${{ github.sha }}
 
       - name: Verify checked out revision
         env:
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHA: ${{ github.sha }}
         run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
 
       - name: Configure AWS credentials
@@ -128,18 +95,17 @@ jobs:
         shell: bash
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
-          PUBLISH_MAIN: ${{ steps.source.outputs.publish_main }}
           PUBLISH: ${{ steps.source.outputs.publish }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           RUN_ID: ${{ github.run_id }}
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           ghcr_tag="sha-${SOURCE_SHA}"
           unique_suffix="${SOURCE_SHA}-${RUN_ID}-${RUN_ATTEMPT}"
           {
             echo "tags<<EOF"
             echo "${GHCR_IMAGE_NAME}:${ghcr_tag}"
-            if [[ "$PUBLISH_MAIN" == "true" ]]; then
+            if [[ "$PUBLISH" == "true" ]]; then
               echo "${GHCR_IMAGE_NAME}:main"
             fi
             echo "EOF"
@@ -220,7 +186,7 @@ jobs:
           RAW_TAG: ${{ steps.tags.outputs.raw_tag }}
           SOCI_IMAGE: ${{ steps.tags.outputs.soci_image }}
           SOCI_TAG: ${{ steps.tags.outputs.soci_tag }}
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           raw_digest="$(aws ecr describe-images \
             --repository-name "$ECR_REPOSITORY" \
@@ -235,7 +201,6 @@ jobs:
           [[ "$GHCR_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "$raw_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "$soci_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          soci_repository="${SOCI_IMAGE%:*}"
           {
             echo "Published one image as three startup variants:"
             echo
@@ -246,7 +211,6 @@ jobs:
             echo "Source commit: \`${SOURCE_SHA}\`"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "digest=${soci_digest}" >> "$GITHUB_OUTPUT"
-          echo "image=${soci_repository}@${soci_digest}" >> "$GITHUB_OUTPUT"
           printf '%s\n' \
             "source_sha=$SOURCE_SHA" \
             "ghcr_image=$GHCR_IMAGE@$GHCR_DIGEST" \
@@ -258,17 +222,17 @@ jobs:
         if: steps.source.outputs.publish == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: checks-image-${{ steps.source.outputs.sha }}
+          name: checks-image-${{ github.sha }}
           path: checks-image.txt
           if-no-files-found: error
 
       - name: Record successful production revision
-        if: steps.source.outputs.publish_main == 'true'
+        if: steps.source.outputs.publish == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           IMAGE_DIGEST: ${{ steps.published.outputs.digest }}
           LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHA: ${{ github.sha }}
         run: >-
           node .github/scripts/production-deployment-progress.mjs record
           --component checks-image

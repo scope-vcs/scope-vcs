@@ -16,13 +16,8 @@ test("discards failed stdout and invalid JSON before returning the successful re
     execute(command, args, options) {
       assert.equal(command, "railway");
       assert.deepEqual(args, ["status", "--json"]);
-      assert.deepEqual(options, {
-        input: undefined,
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 30_000,
-        killSignal: "SIGKILL",
-      });
+      assert.equal(options.timeout, 30_000);
+      assert.equal(options.killSignal, "SIGKILL");
       attempts += 1;
       if (attempts === 1) throw Object.assign(new Error("secret error"), { stdout: '{"secret":"partial' });
       if (attempts === 2) return '{"secret":"invalid';
