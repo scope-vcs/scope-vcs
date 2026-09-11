@@ -23,14 +23,13 @@ function fixture() {
         environmentName: 'staging',
         routerDomain: 'router-staging.example.test',
         routerReplicas: 1,
-        routerServiceId: 'router',
-        routerServiceName: 'scope-repo-router',
         webDomain: 'web-staging.example.test',
       },
     },
     services: {
       api: { id: 'api', name: 'scope-api' },
       cache: { id: 'cache', name: 'scope-cache-service' },
+      'git-router': { id: 'router', name: 'scope-repo-router' },
       'media-api': { id: 'media', name: 'scope-media' },
       'media-worker': { id: 'media-worker', name: 'scope-media-worker' },
       web: { id: 'web', name: 'scope-web' },
@@ -201,7 +200,6 @@ for (const resume of [false, true]) {
 test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness before its Git router and records each participant once`, (t) => {
   const { root, scripts, bin, candidate } = candidateCheckout(t)
   const input = fixture()
-  input.manifest.services['git-router'] = { id: 'router', name: 'scope-repo-router' }
   for (const service of input.services.filter(({ id }) => id !== 'database')) {
     service.status = 'STOPPED'
     service.replicas = { configured: service.id === 'api' ? 3 : 1, running: 0, crashed: 0 }

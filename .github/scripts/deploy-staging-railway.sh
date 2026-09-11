@@ -24,7 +24,7 @@ database_service="$(jq -er '.railway.databaseServiceId' "$manifest_path")"
 cache_service="$(jq -er '.services.cache.id' "$manifest_path")"
 worker_service="$(jq -er '.services["run-worker"].id' "$manifest_path")"
 api_service="$(jq -er '.services.api.id' "$manifest_path")"
-router_service="$(jq -er '.environments.staging.routerServiceId' "$manifest_path")"
+router_service="$(jq -er '.services["git-router"].id' "$manifest_path")"
 media_service="$(jq -er '.services["media-api"].id' "$manifest_path")"
 media_worker_service="$(jq -er '.services["media-worker"].id' "$manifest_path")"
 if [[ "$staging_environment_id" == "$production_environment_id" ]]; then

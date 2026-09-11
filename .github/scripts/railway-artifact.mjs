@@ -146,7 +146,7 @@ export function configureStagingRegistry(manifest, credentials, railway = runRai
     throw new Error('Registry configuration requires a distinct, explicit staging environment.');
   }
   const serviceIds = ['cache', 'run-worker', 'git-router', 'media-api', 'media-worker', 'api', 'web'].map((component) => {
-    const id = component === 'git-router' ? manifest.environments.staging.routerServiceId : manifest.services?.[component]?.id;
+    const id = manifest.services?.[component]?.id;
     if (!uuid.test(id ?? '')) throw new Error(`Staging registry configuration is missing ${component} service ID.`);
     return id;
   });

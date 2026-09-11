@@ -227,3 +227,70 @@ test('maintenance publishes the backend-owned web receipt without deploying web 
   const failed = releasePath(['api', 'web'], { backendActivatesWeb: true, failure: 'backend-deploy' });
   assert.equal(failed['production-health-gate'].result, 'skipped');
 });
+
+test('prepared web and backend jobs cannot build after activation begins', () => {
+  const preparation = read('.github/workflows/prepare-release.yml');
+  const backendDeploy = read('.github/workflows/deploy-backend.yml');
+  for (const workflow of [backendDeploy, read('.github/workflows/deploy-web.yml')]) {
+    assert.match(workflow, /name: prepared-release-\$\{\{ inputs\.source_sha \}\}/);
+    assert.match(workflow, /SCOPE_PREPARED_RELEASE_PATH: prepared-release\.json/);
+    assert.doesNotMatch(workflow, /cargo build|docker build|railway up|pnpm build/);
+  }
+  assert.match(preparation, /prepare-railway-artifact\.sh/);
+  assert.match(read('.github/workflows/scope-api-ci.yml'), /name: backend-release-\$\{\{ github\.sha \}\}/);
+  assert.match(backendDeploy, /extract-railway-maintenance\.sh prepared-release\.json/);
+  assert.doesNotMatch(backendDeploy, /backend-release-\$\{\{ inputs\.source_sha \}\}/);
+  assert.match(preparation, /selected-release-\$\{\{ inputs\.source_sha \}\}/);
+  assert.match(preparation.split('\njobs:')[0], /actions: read/);
+  const cliDeploy = read('.github/workflows/publish-cli.yml');
+  assert.match(cliDeploy, /cp cli\/railway\.json \.railway-upload\/railway\.json/);
+  assert.doesNotMatch(cliDeploy, /cargo build/);
+});
+
+test('Node workflows cache pnpm and browser downloads by the web lockfile', () => {
+  const integrationCi = read('.github/workflows/scope-integration-ci.yml');
+  for (const workflow of [integrationCi, read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
+    assert.match(workflow, /uses: pnpm\/action-setup@[0-9a-f]{40} # v5/);
+    assert.match(workflow, /cache: pnpm/);
+    assert.match(workflow, /cache-dependency-path: web\/pnpm-lock\.yaml/);
+  }
+  assert.match(integrationCi, /path: ~\/\.cache\/ms-playwright/);
+  assert.match(integrationCi, /key: playwright-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('web\/pnpm-lock\.yaml'\) \}\}/);
+});
+
+test('production success follows the complete monitored transition', () => {
+  for (const workflow of [read('.github/workflows/deploy-backend.yml'), read('.github/workflows/deploy-web.yml')]) {
+    const recordStep = workflow.slice(workflow.indexOf('      - name: Record successful Railway'));
+    assert.match(recordStep, /if: steps\.transition\.outcome == 'success'/);
+    assert.match(workflow, /name: Deploy to Railway\n\s+id: transition/);
+  }
+});
+
+test('release selection uses the trusted control revision before exposing a source revision', () => {
+  const release = read('.github/workflows/release.yml');
+  const requireMain = release.indexOf('- name: Require main for releases');
+  const selection = release.indexOf('run: node .github/scripts/release-selection.mjs');
+  const retain = release.indexOf('- name: Retain selected immutable release');
+  assert(requireMain >= 0 && selection > requireMain && retain > selection);
+  assert.match(release.slice(requireMain, selection), /test "\$GITHUB_REF" = refs\/heads\/main/);
+  assert.match(read('.github/workflows/deploy-backend.yml'), /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
+  assert.match(release.split('\njobs:')[0], /deployments: read/);
+  assert.doesNotMatch(release.split('\njobs:')[0], /: write/);
+  const checks = read('.github/workflows/scope-checks-image.yml');
+  const candidate = checks.slice(checks.indexOf('  validate:'), checks.indexOf('  build:'));
+  assert.match(candidate, /if: github\.event_name == 'pull_request'/);
+  assert.doesNotMatch(candidate, /: write/);
+  assert.match(checks.slice(checks.indexOf('  build:')), /if: github\.event_name != 'pull_request'/);
+});
+
+test('CI is pull-request-only and Release is scheduled/manual with a shared check owner', () => {
+  const ci = read('.github/workflows/ci.yml');
+  const release = read('.github/workflows/release.yml');
+  assert.match(ci, /  pull_request:/);
+  assert.doesNotMatch(ci.split('\nconcurrency:')[0], /schedule:|workflow_dispatch:|push:/);
+  const triggers = release.split('\nconcurrency:')[0];
+  assert.match(triggers, /cron: "8,38 \* \* \* \*"/);
+  assert.match(triggers, /workflow_dispatch:/);
+  assert.doesNotMatch(triggers, /pull_request:|push:/);
+  for (const caller of [ci, release]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);
+});

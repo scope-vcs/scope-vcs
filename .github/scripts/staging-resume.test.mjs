@@ -16,7 +16,7 @@ function fixture() {
   const environmentId = manifest.environments.staging.environmentId;
   const evidence = { commit: sourceSha, environmentId, candidateDeployments: 1, deployments:
     Object.keys(prepared.components).map(component => ({
-      service: component === 'git-router' ? manifest.environments.staging.routerServiceId : manifest.services[component].id,
+      service: manifest.services[component].id,
       deploymentId: `deployment-${component}`, status: 'SUCCESS',
     })),
   };

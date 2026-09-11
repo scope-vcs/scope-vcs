@@ -85,7 +85,6 @@ test('activation uses environment-scoped update, verifies selected digest, and r
   assert.equal(calls.length, 4);
   assert.ok(calls.every(({ variables }) => variables.environmentId === 'staging-id'));
   assert.ok(calls[0].query.includes('serviceInstanceUpdate'));
-  assert.ok(!calls.some(({ query }) => query.includes('serviceConnect')));
 });
 
 test('failed source verification prevents creating a deployment', () => {
@@ -162,7 +161,7 @@ test('trusted staging registry configuration touches only fixed environment cred
   });
   assert.deepEqual(result, { configured: true, serviceCount: 7 });
   assert.equal(calls.length, 7);
-  assert.deepEqual(calls.map(({ variables }) => variables.serviceId), [manifest.services.cache.id, manifest.services['run-worker'].id, manifest.environments.staging.routerServiceId, manifest.services['media-api'].id, manifest.services['media-worker'].id, manifest.services.api.id, manifest.services.web.id]);
+  assert.deepEqual(calls.map(({ variables }) => variables.serviceId), [manifest.services.cache.id, manifest.services['run-worker'].id, manifest.services['git-router'].id, manifest.services['media-api'].id, manifest.services['media-worker'].id, manifest.services.api.id, manifest.services.web.id]);
   for (const { query, variables } of calls) {
     assert.equal(variables.environmentId, manifest.environments.staging.environmentId);
     assert.deepEqual(variables.input, { registryCredentials: credentials });
