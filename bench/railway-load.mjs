@@ -2,33 +2,27 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, mkdtemp, open, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
 import { writeLinearHistoryStream } from './git-history.mjs';
-import { ROUTING_MODES, createEndpointRouter, parseApiUrls } from './endpoint-routing.mjs';
+import { directoryBytes, message } from './host.mjs';
+import { configuration, publicConfig } from './load-config.mjs';
+import { persistReport } from './load-report.mjs';
 import {
   changedFileCountSlope, historySizeSlope, landingFileSizeSlope, normalizedRates, percentile, round,
   sampleStats, writeSizeSlope,
 } from './metrics.mjs';
-export { changedFileCountSlope, historySizeSlope, landingFileSizeSlope, writeSizeSlope } from './metrics.mjs';
-import { fetchClientCount, needsFetchClients, validateRepositoryMode } from './repository-mode.mjs';
-import { assertSafeTarget, validateTargetKind } from './target-safety.mjs';
-import { parseChangedFileCounts, writeChangedFiles } from './write-shape.mjs';
+import { fetchClientCount, needsFetchClients } from './repository-mode.mjs';
+import { assertSafeTarget } from './target-safety.mjs';
+import {
+  writeChangedFiles, writeChunkedRandomPayload, writeLandingFile, writeSeedPayload,
+} from './write-shape.mjs';
 
 // Black-box benchmark: no production-only hooks and never a production target.
-const DEFAULT_STAGES = [1, 2, 4, 8];
-const DEFAULT_WORKLOADS = [
-  'warm-fetch', 'incremental-fetch', 'full-clone', 'code-read', 'repo-read',
-  'projection-read', 'tree-read', 'blob-read', 'history-read', 'cold-churn', 'mixed', 'consistency',
-];
-const SUPPORTED_WORKLOADS = new Set(DEFAULT_WORKLOADS);
-SUPPORTED_WORKLOADS.add('push-persistence');
 const activeCommands = new Set();
-export const WRITE_DELTA_FILE_BYTES = 16 * 1024 * 1024;
-const RANDOM_WRITE_BUFFER_BYTES = 256 * 1024;
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main();
 
@@ -44,7 +38,7 @@ async function main() {
   const report = {
     version: 6, generatedAt: new Date().toISOString(), apiUrls: config.apiUrls,
     config: publicConfig(config),
-    workloads: [], faultHook: null,
+    workloads: [],
     cleanup: { attemptedRepositories: 0, attemptedClients: 0, failed: [] },
   };
   let interrupted = false;
@@ -105,13 +99,12 @@ async function main() {
       ? await createFetchClients(config, runRoot, mixedFixtures)
       : [];
     clients.push(...fetchClients);
-    if (config.faultHookUrl) report.faultHook = await invokeFaultHook(config);
     const context = { config, runRoot, readFixtures, churnFixtures, mixedFixtures, fetchClients, interrupted: () => interrupted };
     for (const name of config.workloads) {
       if (interrupted) break;
       console.log(`\n${name}`);
       report.workloads.push(await runStaircase(name, context));
-      await persist(report, runRoot);
+      await persistReport(report, runRoot);
     }
   } finally {
     console.log('\ncleaning up benchmark fixtures...');
@@ -124,90 +117,11 @@ async function main() {
       await rm(fixture.dir, { recursive: true, force: true });
     }));
     report.completedAt = new Date().toISOString();
-    await persist(report, runRoot);
+    await persistReport(report, runRoot);
   }
-  const paths = await persist(report, runRoot);
+  const paths = await persistReport(report, runRoot);
   console.log(`results: ${paths.json}\nsummary: ${paths.markdown}`);
   if (interrupted || report.workloads.some((workload) => workload.status === 'failed')) process.exitCode = 1;
-}
-
-function configuration() {
-  const api = required('SCOPE_BENCH_API_URL').replace(/\/$/, '');
-  const apiUrls = parseApiUrls(api, process.env.SCOPE_BENCH_API_URLS);
-  const routingMode = nonEmpty('SCOPE_LOAD_ROUTING_MODE', 'single');
-  if (!ROUTING_MODES.has(routingMode)) throw new Error(`SCOPE_LOAD_ROUTING_MODE must be one of ${[...ROUTING_MODES].join(', ')}`);
-  const routingSeed = positiveInteger('SCOPE_LOAD_ROUTING_SEED', 1);
-  const token = required('SCOPE_BENCH_AUTH_TOKEN');
-  const stages = parseStages(process.env.SCOPE_LOAD_STAGES || DEFAULT_STAGES.join(','));
-  const writeDeltaBytes = parseByteSizes(process.env.SCOPE_LOAD_WRITE_DELTA_BYTES || String(64 * 1024));
-  const landingFileBytes = parseByteSizes(process.env.SCOPE_LOAD_LANDING_FILE_BYTES || '0');
-  const changedFileCounts = parseChangedFileCounts(process.env.SCOPE_LOAD_CHANGED_FILE_COUNTS || '0');
-  const workloads = list('SCOPE_LOAD_WORKLOADS', DEFAULT_WORKLOADS);
-  const repositoryMode = nonEmpty('SCOPE_LOAD_REPOSITORY_MODE', 'spread');
-  const targetKind = nonEmpty('SCOPE_BENCH_TARGET_KIND', 'loadtest');
-  validateTargetKind(targetKind);
-  const historyDepths = parseStages(process.env.SCOPE_LOAD_HISTORY_DEPTHS || '1,16,64');
-  validateRepositoryMode(repositoryMode, workloads, historyDepths, process.env.SCOPE_LOAD_READ_REPLICA_COUNT);
-  return {
-    apiUrls, gitUrl: process.env.SCOPE_BENCH_GIT_URL?.trim().replace(/\/$/, '') || null,
-    token, stages, routingMode, routingSeed, targetKind,
-    endpointRouter: createEndpointRouter(apiUrls, routingMode, routingSeed),
-    rates: process.env.SCOPE_LOAD_RATES ? parseRates(process.env.SCOPE_LOAD_RATES) : null,
-    workloads, repositoryMode,
-    stageSeconds: positiveNumber('SCOPE_LOAD_STAGE_SECONDS', 120),
-    warmupSeconds: nonNegativeNumber('SCOPE_LOAD_WARMUP_SECONDS', 0),
-    warmupConcurrency: positiveInteger('SCOPE_LOAD_WARMUP_CONCURRENCY', 4),
-    confirmSeconds: nonNegativeNumber('SCOPE_LOAD_CONFIRM_SECONDS', 300),
-    timeoutMs: positiveNumber('SCOPE_LOAD_TIMEOUT_MS', 90_000),
-    cleanupTimeoutMs: positiveNumber('SCOPE_LOAD_CLEANUP_TIMEOUT_MS', 10_000),
-    maxInFlight: positiveInteger('SCOPE_LOAD_MAX_IN_FLIGHT', 128),
-    churnRepos: positiveInteger('SCOPE_LOAD_CHURN_REPOS', 16),
-    mixedRepos: Math.max(writeDeltaBytes.length, landingFileBytes.length, changedFileCounts.length, positiveInteger('SCOPE_LOAD_MIXED_REPOS', Math.max(8, ...stages))),
-    readBytes: positiveInteger('SCOPE_LOAD_READ_BYTES', 384 * 1024),
-    writeDeltaBytes,
-    landingFileBytes,
-    changedFileCounts,
-    changedFileBytes: positiveInteger('SCOPE_LOAD_CHANGED_FILE_BYTES', 4096),
-    pushPath: enumValue('SCOPE_LOAD_PUSH_PATH', 'focused', new Set(['focused', 'aggregate'])),
-    pushBaselineP95Ms: process.env.SCOPE_LOAD_PUSH_BASELINE_P95_MS
-      ? positiveNumber('SCOPE_LOAD_PUSH_BASELINE_P95_MS', 1)
-      : null,
-    historyDepths,
-    mixedWritePercent: boundedNumber('SCOPE_LOAD_MIXED_WRITE_PERCENT', 20, 0, 100),
-    apiPermitLimits: {
-      receivePack: positiveInteger('SCOPE_BENCH_RECEIVE_PACK_CONCURRENCY', 4),
-      uploadPack: positiveInteger('SCOPE_BENCH_UPLOAD_PACK_CONCURRENCY', 8),
-      gitMaterialization: positiveInteger('SCOPE_BENCH_GIT_MATERIALIZATION_CONCURRENCY', 2),
-      objectStore: positiveInteger('SCOPE_BENCH_OBJECT_STORE_CONCURRENCY', 16),
-    },
-    nodeScaleLabel: nonEmpty('SCOPE_LOAD_NODE_SCALE_LABEL', 'unspecified'),
-    readReplicaCount: positiveInteger('SCOPE_LOAD_READ_REPLICA_COUNT', 1),
-    protocolLabel: nonEmpty('SCOPE_LOAD_PROTOCOL_LABEL', 'current'),
-    runLabel: nonEmpty('SCOPE_BENCH_RUN_LABEL', 'unlabeled'),
-    topologyLabel: nonEmpty('SCOPE_LOAD_TOPOLOGY_LABEL', routingMode),
-    repeatIndex: positiveInteger('SCOPE_LOAD_REPEAT_INDEX', 1),
-    faultHookUrl: process.env.SCOPE_LOAD_FAULT_HOOK_URL?.trim() || null,
-    consistencyTimeoutMs: positiveNumber('SCOPE_LOAD_CONSISTENCY_TIMEOUT_MS', 30_000),
-    consistencyPollMs: positiveNumber('SCOPE_LOAD_CONSISTENCY_POLL_MS', 50),
-    outputRoot: resolve(process.env.SCOPE_BENCH_OUTPUT_DIR || '.tmp/bench/railway-load'),
-  };
-}
-
-function publicConfig(config) {
-  const { token: _token, endpointRouter: _endpointRouter, ...safe } = config;
-  return safe;
-}
-
-export function parseStages(value) {
-  const stages = [...new Set(value.split(',').map((entry) => Number.parseInt(entry.trim(), 10)))];
-  if (!stages.length || stages.some((stage) => !Number.isInteger(stage) || stage < 1)) throw new Error('value must be a comma-separated list of positive integers');
-  return stages.sort((left, right) => left - right);
-}
-
-export function parseRates(value) {
-  const rates = [...new Set(value.split(',').map((entry) => Number(entry.trim())))];
-  if (!rates.length || rates.some((rate) => !Number.isFinite(rate) || rate <= 0)) throw new Error('value must be a comma-separated list of positive numbers');
-  return rates.sort((left, right) => left - right);
 }
 
 async function runStaircase(name, context) {
@@ -430,7 +344,7 @@ async function timedRateStage(name, targetRate, seconds, operation, context) {
 }
 
 export function stageResult(name, concurrency, samples, elapsedSeconds, startedAt, completedAt, targetRate = null, nodeScaleLabel = 'unspecified') {
-  const result = stats(samples);
+  const result = sampleStats(samples);
   const rates = normalizedRates(samples, elapsedSeconds);
   return {
     name, concurrency, targetRate, nodeScaleLabel, startedAt, completedAt,
@@ -508,7 +422,7 @@ async function seedRepository(config, runRoot, label, bytes, historyDepth, write
     for (const args of [['init'], ['symbolic-ref', 'HEAD', 'refs/heads/main'], ['config', 'user.email', 'loadtest@scope.local'], ['config', 'user.name', 'Scope Load Test']]) await checkedGit(config, args, fixture.dir);
     await mkdir(join(fixture.dir, '.scope'), { recursive: true });
     await writeFile(join(fixture.dir, '.scope', 'RULES.md'), '');
-    await writePayload(fixture.dir, bytes);
+    await writeSeedPayload(fixture.dir, bytes);
     await writeFile(join(fixture.dir, 'load-update.txt'), 'seed\n');
     if (fixture.landingFileBytes > 0) await writeLandingFile(fixture.dir, fixture.landingFileBytes, 0);
     await checkedGit(config, ['add', '--all'], fixture.dir);
@@ -567,64 +481,6 @@ async function createFetchClients(config, runRoot, fixtures) {
     references.set(repositoryKey(fixture), reference || dir);
   }
   return clients;
-}
-
-async function writePayload(directory, bytes) {
-  const payloadDir = join(directory, 'fixture');
-  await mkdir(payloadDir, { recursive: true });
-  let remaining = bytes;
-  let index = 0;
-  while (remaining > 0) {
-    const size = Math.min(remaining, 256 * 1024);
-    await writeFile(join(payloadDir, `${String(index++).padStart(4, '0')}.bin`), randomBytes(size));
-    remaining -= size;
-  }
-}
-
-export async function writeChunkedRandomPayload(
-  directory,
-  bytes,
-  maxFileBytes = WRITE_DELTA_FILE_BYTES,
-  bufferBytes = RANDOM_WRITE_BUFFER_BYTES,
-) {
-  if (![bytes, maxFileBytes, bufferBytes].every(Number.isSafeInteger)
-    || bytes < 0 || maxFileBytes < 1 || bufferBytes < 1) {
-    throw new Error('chunked payload sizes must be non-negative safe integers with positive chunk limits');
-  }
-  await mkdir(directory, { recursive: true });
-  const paths = [];
-  let remaining = bytes;
-  let fileIndex = 0;
-  while (remaining > 0) {
-    const path = join(directory, `${String(fileIndex++).padStart(4, '0')}.bin`);
-    const fileBytes = Math.min(remaining, maxFileBytes);
-    const file = await open(path, 'w');
-    try {
-      let unwritten = fileBytes;
-      while (unwritten > 0) {
-        const chunkBytes = Math.min(unwritten, bufferBytes);
-        const chunk = randomBytes(chunkBytes);
-        let offset = 0;
-        while (offset < chunk.length) {
-          const { bytesWritten } = await file.write(chunk, offset);
-          offset += bytesWritten;
-        }
-        unwritten -= chunkBytes;
-      }
-    } finally {
-      await file.close();
-    }
-    paths.push(path);
-    remaining -= fileBytes;
-  }
-  return paths;
-}
-
-async function writeLandingFile(directory, bytes, update) {
-  const marker = Buffer.from(`<p>Scope load-test README update ${update}</p>\n`);
-  const content = Buffer.alloc(bytes, 'x');
-  marker.copy(content, 0, 0, Math.min(marker.length, content.length));
-  await writeFile(join(directory, 'README.html'), content);
 }
 
 async function updateAndPush(config, fixture, iteration, scheduledAt = performance.now(), routeKey = null) {
@@ -731,18 +587,6 @@ async function clone(config, runRoot, fixture, scheduledAt = performance.now(), 
       byteSource: 'cloned-git-directory',
     };
   } finally { await rm(parent, { recursive: true, force: true }); }
-}
-
-async function directoryBytes(path) {
-  let total = 0;
-  const pending = [path];
-  while (pending.length) {
-    const current = pending.pop();
-    const info = await stat(current);
-    if (info.isDirectory()) for (const entry of await readdir(current)) pending.push(join(current, entry));
-    else total += info.size;
-  }
-  return total;
 }
 
 async function writeThenVerify(config, fixture, iteration, scheduledAt = performance.now(), routeKey = null) {
@@ -886,7 +730,7 @@ async function apiJson(config, path, options = {}) {
   return body ? JSON.parse(body) : null;
 }
 
-export function apiHeaders(token) {
+function apiHeaders(token) {
   return { accept: 'application/json', authorization: `Bearer ${token}`, 'x-scope-cli-protocol': '1' };
 }
 
@@ -911,22 +755,10 @@ async function ready(config) {
   }
 }
 
-async function invokeFaultHook(config) {
-  const started = performance.now();
-  try {
-    const response = await fetch(config.faultHookUrl, { method: 'POST', signal: AbortSignal.timeout(config.timeoutMs) });
-    return { url: config.faultHookUrl, ok: response.ok, status: response.status, durationMs: round(performance.now() - started) };
-  } catch (error) {
-    return { url: config.faultHookUrl, ok: false, error: message(error), durationMs: round(performance.now() - started) };
-  }
-}
-
 function sample(ok, started, status, bytes, error, ttfbMs = null) {
   const durationMs = performance.now() - started;
   return { ok, durationMs, completionMs: durationMs, ttfbMs: ttfbMs ?? durationMs, status, bytes, error };
 }
-
-export function stats(values) { return sampleStats(values); }
 
 export function toggleBenchmarkVisibilityRule(repoConfig) {
   const config = structuredClone(repoConfig);
@@ -952,49 +784,4 @@ export function consistencyStats(samples) {
   };
 }
 
-async function persist(report, output) {
-  const json = join(output, 'results.json');
-  const markdownPath = join(output, 'summary.md');
-  await writeFile(json, `${JSON.stringify(report, null, 2)}\n`);
-  await writeFile(markdownPath, markdown(report));
-  return { json, markdown: markdownPath };
-}
-
-function markdown(report) {
-  const rows = report.workloads.map((workload) => {
-    const stage = workload.confirmations.at(-1) || workload.stages.at(-1);
-    return `| ${workload.name} | ${workload.status} | ${workload.lastHealthyThroughputPerSecond ?? '—'} | ${stage?.normalized.logicalMiBPerSecond ?? '—'} | ${stage?.stats.p95Ms ?? '—'} | ${stage?.stats.ttfbP95Ms ?? '—'} | ${stage?.stats.p99Ms ?? '—'} | ${stage?.normalized.observedMiBPerSecond ?? '—'} |`;
-  }).join('\n');
-  const permits = report.config.apiPermitLimits;
-  const rejectionRows = report.workloads.flatMap((workload) => workload.stages.flatMap((stage) =>
-    Object.entries(stage.capacityRejections || {}).map(([operation, count]) =>
-      `| ${workload.name} | ${stage.concurrency ?? stage.targetRate} | ${operation} | ${count} |`,
-    ))).join('\n') || '| none | n/a | none | 0 |';
-  return `# Scope Railway Git storage load test\n\nGenerated: ${report.generatedAt}\n\nTargets: ${report.apiUrls.join(', ')}\n\nTopology: ${report.config.topologyLabel} (${report.config.routingMode}), repeat ${report.config.repeatIndex}\n\nRepository mode: ${report.config.repositoryMode}\n\nRead replica count: ${report.config.readReplicaCount}\n\nNode scale label: ${report.config.nodeScaleLabel}\n\nProtocol label: ${report.config.protocolLabel}\n\nAPI permit labels per process: receive-pack ${permits.receivePack}, upload-pack ${permits.uploadPack}, Git materialization ${permits.gitMaterialization}, object store ${permits.objectStore}.\n\n| Workload | Status | Operations/s | Logical MiB/s | Completion p95 ms | TTFB p95 ms | Completion p99 ms | Observed MiB/s |\n|---|---|---:|---:|---:|---:|---:|---:|\n${rows}\n\n## Capacity rejections\n\n| Workload | Concurrency or rate | Operation | Count |\n|---|---:|---|---:|\n${rejectionRows}\n\nLogical MiB/s uses fixture payload sizes for writes and clones, and response or received-object bytes for reads. Observed MiB/s uses response bytes or local Git object deltas. Neither is a wire-level counter. TTFB for JSON reads is time to response headers. Quiet Git commands commonly emit no output, so their completion time is reported as TTFB. Compare topology repeats only when repository fixture sizes, stage controls, and Railway deployment shape are identical.\n`;
-}
-
-function required(name) { const value = process.env[name]?.trim(); if (!value) throw new Error(`${name} is required`); return value; }
-function list(name, fallback) {
-  const values = (process.env[name] || fallback.join(',')).split(',').map((value) => value.trim()).filter(Boolean);
-  const unknown = values.filter((value) => !SUPPORTED_WORKLOADS.has(value));
-  if (unknown.length) throw new Error(`${name} has unsupported workloads: ${unknown.join(', ')}`);
-  return [...new Set(values)];
-}
-export function parseByteSizes(value) {
-  const entries = value.split(',').map((entry) => entry.trim());
-  const sizes = [...new Set(entries.map((entry) => /^\d+$/.test(entry) ? Number(entry) : Number.NaN))];
-  if (!sizes.length || sizes.some((size) => !Number.isSafeInteger(size) || size < 0)) throw new Error('SCOPE_LOAD_WRITE_DELTA_BYTES must be a comma-separated list of non-negative byte counts');
-  return sizes.sort((left, right) => left - right);
-}
-function positiveInteger(name, fallback) { const value = Number.parseInt(process.env[name] || String(fallback), 10); if (!Number.isInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`); return value; }
-function positiveNumber(name, fallback) { const value = Number(process.env[name] || String(fallback)); if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be positive`); return value; }
-function nonNegativeNumber(name, fallback) { const value = Number(process.env[name] || String(fallback)); if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be non-negative`); return value; }
-function boundedNumber(name, fallback, minimum, maximum) { const value = Number(process.env[name] || String(fallback)); if (!Number.isFinite(value) || value < minimum || value > maximum) throw new Error(`${name} must be between ${minimum} and ${maximum}`); return value; }
-function nonEmpty(name, fallback) { return process.env[name]?.trim() || fallback; }
-function enumValue(name, fallback, allowed) {
-  const value = nonEmpty(name, fallback);
-  if (!allowed.has(value)) throw new Error(`${name} must be one of ${[...allowed].join(', ')}`);
-  return value;
-}
 function sleep(milliseconds) { return new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds)); }
-function message(error) { return error instanceof Error ? error.message : String(error); }

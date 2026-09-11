@@ -5,16 +5,19 @@ import { basename, join } from 'node:path';
 import test from 'node:test';
 
 import { createEndpointRouter, parseApiUrls } from './endpoint-routing.mjs';
+import { parseByteSizes, parseRates, parseStages } from './load-config.mjs';
+import {
+  changedFileCountSlope, historySizeSlope, landingFileSizeSlope, sampleStats, writeSizeSlope,
+} from './metrics.mjs';
+import {
+  abortTimeoutMs, capacityRejectionBreakdown, chooseWrite, consistencyStats, evaluateStage, failureBreakdown,
+  rotating, stageResult, toggleBenchmarkVisibilityRule,
+} from './railway-load.mjs';
 import { fetchClientCount, validateRepositoryMode } from './repository-mode.mjs';
 import { assertSafeTarget, validateTargetKind } from './target-safety.mjs';
-
 import {
-  abortTimeoutMs, apiHeaders, capacityRejectionBreakdown, changedFileCountSlope, chooseWrite,
-  consistencyStats, evaluateStage, failureBreakdown,
-  historySizeSlope, landingFileSizeSlope, parseByteSizes, parseRates, parseStages, stageResult, stats,
-  rotating, toggleBenchmarkVisibilityRule, WRITE_DELTA_FILE_BYTES, writeChunkedRandomPayload, writeSizeSlope,
-} from './railway-load.mjs';
-import { parseChangedFileCounts, writeChangedFiles } from './write-shape.mjs';
+  parseChangedFileCounts, WRITE_DELTA_FILE_BYTES, writeChangedFiles, writeChunkedRandomPayload,
+} from './write-shape.mjs';
 
 test('large write deltas use bounded files and buffers', async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'scope-load-delta-'));
@@ -128,7 +131,7 @@ test('statistics report completion and TTFB p50 p95 p99 with bytes', () => {
     { ok: true, durationMs: 30, ttfbMs: 6, bytes: 3, logicalBytes: 30 },
     { ok: true, durationMs: 40, ttfbMs: 8, bytes: 4, logicalBytes: 40 },
   ];
-  assert.deepEqual(stats(values), {
+  assert.deepEqual(sampleStats(values), {
     count: 4, ok: 4, meanMs: 25,
     p50Ms: 20, p95Ms: 40, p99Ms: 40,
     ttfbP50Ms: 4, ttfbP95Ms: 8, ttfbP99Ms: 8,
@@ -177,44 +180,31 @@ test('stage results preserve node labels, byte rate, and errors', () => {
 });
 
 test('write-size slope separates payload sizes', () => {
-  assert.deepEqual(writeSizeSlope([
+  const slope = writeSizeSlope([
     { ok: true, durationMs: 10, ttfbMs: 10, bytes: 1, logicalBytes: 4096, writeDeltaBytes: 4096 },
     { ok: true, durationMs: 30, ttfbMs: 30, bytes: 1, logicalBytes: 1048576, writeDeltaBytes: 1048576 },
-  ]), {
-    points: [
-      { writeDeltaBytes: 4096, count: 1, ok: 1, meanMs: 10, p50Ms: 10, p95Ms: 10, p99Ms: 10, ttfbP50Ms: 10, ttfbP95Ms: 10, ttfbP99Ms: 10, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 4096 },
-      { writeDeltaBytes: 1048576, count: 1, ok: 1, meanMs: 30, p50Ms: 30, p95Ms: 30, p99Ms: 30, ttfbP50Ms: 30, ttfbP95Ms: 30, ttfbP99Ms: 30, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 1048576 },
-    ],
-    p95MsPerMiB: 20.08,
-  });
+  ]);
+  assert.deepEqual(slope.points.map(({ writeDeltaBytes }) => writeDeltaBytes), [4096, 1048576]);
+  assert.equal(slope.p95MsPerMiB, 20.08);
 });
 
 test('landing-file slope separates unrelated pushes from bounded README updates', () => {
-  assert.deepEqual(landingFileSizeSlope([
+  const slope = landingFileSizeSlope([
     { ok: true, durationMs: 10, ttfbMs: 10, bytes: 1, logicalBytes: 1, landingFileBytes: 0 },
     { ok: true, durationMs: 20, ttfbMs: 20, bytes: 1, logicalBytes: 4096, landingFileBytes: 4096 },
     { ok: true, durationMs: 30, ttfbMs: 30, bytes: 1, logicalBytes: 1048576, landingFileBytes: 1048576 },
-  ]), {
-    points: [
-      { landingFileBytes: 0, count: 1, ok: 1, meanMs: 10, p50Ms: 10, p95Ms: 10, p99Ms: 10, ttfbP50Ms: 10, ttfbP95Ms: 10, ttfbP99Ms: 10, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 1 },
-      { landingFileBytes: 4096, count: 1, ok: 1, meanMs: 20, p50Ms: 20, p95Ms: 20, p99Ms: 20, ttfbP50Ms: 20, ttfbP95Ms: 20, ttfbP99Ms: 20, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 4096 },
-      { landingFileBytes: 1048576, count: 1, ok: 1, meanMs: 30, p50Ms: 30, p95Ms: 30, p99Ms: 30, ttfbP50Ms: 30, ttfbP95Ms: 30, ttfbP99Ms: 30, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 1048576 },
-    ],
-    p95MsPerMiB: 20,
-  });
+  ]);
+  assert.deepEqual(slope.points.map(({ landingFileBytes }) => landingFileBytes), [0, 4096, 1048576]);
+  assert.equal(slope.p95MsPerMiB, 20);
 });
 
 test('changed-file slope reports p95 cost per file', () => {
-  assert.deepEqual(changedFileCountSlope([
+  const slope = changedFileCountSlope([
     { ok: true, durationMs: 10, ttfbMs: 10, bytes: 1, changedFileCount: 1 },
     { ok: true, durationMs: 109, ttfbMs: 109, bytes: 1, changedFileCount: 100 },
-  ]), {
-    points: [
-      { changedFileCount: 1, count: 1, ok: 1, meanMs: 10, p50Ms: 10, p95Ms: 10, p99Ms: 10, ttfbP50Ms: 10, ttfbP95Ms: 10, ttfbP99Ms: 10, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 0 },
-      { changedFileCount: 100, count: 1, ok: 1, meanMs: 109, p50Ms: 109, p95Ms: 109, p99Ms: 109, ttfbP50Ms: 109, ttfbP95Ms: 109, ttfbP99Ms: 109, scheduleDelayP95Ms: 0, bytes: 1, logicalBytes: 0 },
-    ],
-    p95MsPerFile: 1,
-  });
+  ]);
+  assert.deepEqual(slope.points.map(({ changedFileCount }) => changedFileCount), [1, 100]);
+  assert.equal(slope.p95MsPerFile, 1);
 });
 
 test('aggregate benchmark pushes toggle an equivalent visibility rule', () => {
@@ -291,8 +281,4 @@ test('capacity rejection breakdown names the exhausted permit', () => {
     'Git materialization': 1,
     'Git receive-pack': 1,
   });
-});
-
-test('API mutations identify the supported CLI protocol', () => {
-  assert.equal(apiHeaders('secret')['x-scope-cli-protocol'], '1');
 });

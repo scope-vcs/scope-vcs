@@ -10,7 +10,9 @@ import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
+import { positiveInteger } from './env.mjs';
 import { writeLinearHistoryStream } from './git-history.mjs';
+import { directoryBytes, message } from './host.mjs';
 import { bytesLabel, normalizeProcessMeasurement, round } from './metrics.mjs';
 
 const DEFAULT_CASES = {
@@ -67,10 +69,10 @@ export function configuration(env = process.env) {
     profile,
     cases: parseCases(env.SCOPE_PHYSICS_CASES || DEFAULT_CASES[profile]),
     operations: parseOperations(env.SCOPE_PHYSICS_OPERATIONS || [...OPERATIONS].join(',')),
-    samples: positiveInteger(env.SCOPE_PHYSICS_SAMPLES, profile === 'smoke' ? 2 : 3),
+    samples: positiveInteger('SCOPE_PHYSICS_SAMPLES', profile === 'smoke' ? 2 : 3, env),
     fileBytes: parseBytes(env.SCOPE_PHYSICS_FILE_BYTES || '8MiB'),
     evictBytes: parseBytes(env.SCOPE_PHYSICS_EVICT_BYTES || '0'),
-    timeoutMs: positiveInteger(env.SCOPE_PHYSICS_TIMEOUT_MS, 30 * 60 * 1000),
+    timeoutMs: positiveInteger('SCOPE_PHYSICS_TIMEOUT_MS', 30 * 60 * 1000, env),
     runLabel: env.SCOPE_BENCH_RUN_LABEL?.trim() || 'unlabeled',
     outputRoot: resolve(env.SCOPE_PHYSICS_OUTPUT_DIR || '.tmp/bench/git-physics'),
   };
@@ -368,18 +370,6 @@ export function parseCountObjects(value) {
   };
 }
 
-async function directoryBytes(path) {
-  let total = 0;
-  const pending = [path];
-  while (pending.length) {
-    const current = pending.pop();
-    const info = await stat(current);
-    if (info.isDirectory()) for (const entry of await readdir(current)) pending.push(join(current, entry));
-    else total += info.size;
-  }
-  return total;
-}
-
 async function assertTools(config) {
   await checked(config, '/usr/bin/time', ['--version']);
   await checked(config, 'git', ['--version']);
@@ -426,10 +416,3 @@ function parseOperations(value) {
   return operations;
 }
 
-function positiveInteger(value, fallback) {
-  const parsed = Number.parseInt(value || String(fallback), 10);
-  if (!Number.isInteger(parsed) || parsed < 1) throw new Error('expected a positive integer');
-  return parsed;
-}
-
-function message(error) { return error instanceof Error ? error.message : String(error); }
