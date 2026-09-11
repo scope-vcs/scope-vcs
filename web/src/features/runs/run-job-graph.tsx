@@ -7,7 +7,7 @@ import {
 } from './run-job-graph-model'
 import { runJobPanelId } from './run-job-ids'
 import { RunStatusIcon } from './run-status-icon'
-import { RunTimestamp } from './run-timestamp'
+import { RelativeTimestamp } from '@/components/timestamp'
 import type { RepositoryRunJobDetailResponse } from '@/api/types.generated'
 
 export function RunJobGraph({
@@ -108,7 +108,7 @@ export function RunJobGraph({
               <span className="truncate text-[10px] text-muted-foreground/80">
                 {job.needs.length > 0
                   ? `After ${job.needs.join(', ')}`
-                  : <>Updated <RunTimestamp value={job.updated_at_unix} /></>}
+                  : <>Updated <RelativeTimestamp value={job.updated_at_unix} /></>}
               </span>
             </button>
           )

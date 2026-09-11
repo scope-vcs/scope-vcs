@@ -69,7 +69,7 @@ describe('run attempt environment', () => {
     assert.match(html, /No reusable entry for this identity/)
     assert.match(
       html,
-      /1.0 MiB compressed · key 2ms · metadata 3ms · download \+ verify 4ms · sync 1ms · extract 2ms/,
+      /1.0 MB compressed · key 2ms · metadata 3ms · download \+ verify 4ms · sync 1ms · extract 2ms/,
     )
     assert.match(
       html,

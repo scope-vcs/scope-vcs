@@ -1,3 +1,4 @@
+import { formatBytes } from '../../lib/format-bytes'
 import type {
   RepositoryRunAttemptResponse,
   RepositoryRunCacheResponse,
@@ -130,11 +131,4 @@ function countLabel(count: number, label: string) {
 function formatMilliseconds(milliseconds: number) {
   if (milliseconds < 1_000) return `${milliseconds}ms`
   return `${(milliseconds / 1_000).toFixed(1)}s`
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1_024) return `${bytes} B`
-  if (bytes < 1_024 ** 2) return `${(bytes / 1_024).toFixed(1)} KiB`
-  if (bytes < 1_024 ** 3) return `${(bytes / 1_024 ** 2).toFixed(1)} MiB`
-  return `${(bytes / 1_024 ** 3).toFixed(2)} GiB`
 }

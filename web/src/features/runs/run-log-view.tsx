@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Check, Copy, TerminalSquare, WrapText } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { StepLogState } from './repository-run-detail-controller'
+import type { StepLogs, StepLogState } from './repository-run-detail-controller'
 import type { RepositoryRunStepResponse } from '@/api/types.generated'
 
 const FOLLOW_THRESHOLD_PX = 32
@@ -16,19 +16,14 @@ const COPY_CONFIRMATION_MS = 1_500
  */
 export function RunLogView({
   id,
-  logState,
-  onRetry,
-  onEarlier,
-  onLatest,
+  logs,
   step,
 }: {
   id: string
-  logState: StepLogState
-  onRetry: () => void
-  onEarlier: () => void
-  onLatest: () => void
+  logs: StepLogs
   step: RepositoryRunStepResponse
 }) {
+  const logState = logs.state
   const [wrap, setWrap] = useState(true)
   const [following, setFollowing] = useState(true)
   const [copied, setCopied] = useState(false)
@@ -109,7 +104,7 @@ export function RunLogView({
       {logState.hasEarlier || logState.viewingEarlier ? (
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2 text-xs text-muted-foreground">
           {logState.hasEarlier ? (
-            <Button disabled={logState.loading} onClick={onEarlier} size="sm" variant="ghost">
+            <Button disabled={logState.loading} onClick={logs.earlier} size="sm" variant="ghost">
               Load earlier
             </Button>
           ) : null}
@@ -120,7 +115,7 @@ export function RunLogView({
                 disabled={logState.loading}
                 onClick={() => {
                   setFollowing(true)
-                  onLatest()
+                  logs.latest()
                 }}
                 size="sm"
                 variant="ghost"
@@ -137,7 +132,7 @@ export function RunLogView({
           role="alert"
         >
           <span>{logState.error}</span>
-          <Button onClick={onRetry} size="sm" variant="secondary">
+          <Button onClick={logs.retry} size="sm" variant="secondary">
             Retry logs
           </Button>
         </div>

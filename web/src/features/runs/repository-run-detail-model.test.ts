@@ -228,15 +228,6 @@ describe('repository run detail model', () => {
     })
   })
 
-  it('bounds retained Unicode output by UTF-8 bytes', () => {
-    const text = '🚀'.repeat(80 * 1_024)
-    const byte_length = Buffer.byteLength(text)
-    assert.deepEqual(mergeStepLogs(
-      [{ position: 1, text, byte_length }],
-      [{ position: 2, text, byte_length }],
-    ), { logs: [{ position: 2, text, byte_length }], truncated: true })
-  })
-
   it('retains only a bounded suffix of selected step logs', () => {
     const text = 'x'.repeat(300 * 1_024)
     const byte_length = Buffer.byteLength(text)

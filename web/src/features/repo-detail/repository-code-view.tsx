@@ -19,8 +19,10 @@ import {
   pruneWorkspaceTabs,
   type WorkspaceTabItem,
 } from '@/components/workspace-tab-model'
+import { formatBytes } from '@/lib/format-bytes'
 import {
   displayRouteFilePath,
+  routeFileName,
   selectedRouteFilePath,
 } from '@/lib/route-file'
 import { FileQuestion, Info, TriangleAlert } from 'lucide-react'
@@ -347,7 +349,7 @@ function SourceContent({
       <PendingSurface
         className="min-h-[220px]"
         delay
-        label={selectedPath ? `Loading ${displayPath(selectedPath)}` : 'Loading repository introduction'}
+        label={selectedPath ? `Loading ${displayRouteFilePath(selectedPath)}` : 'Loading repository introduction'}
         delayedLabel="this file is taking longer than usual"
         key={selectedPath ?? 'introduction'}
         onRetry={retry}
@@ -482,24 +484,10 @@ function SourceFileContent({
   )
 }
 
-function displayPath(path: string) {
-  return path.replace(/^\/+/, '') || '/'
-}
-
-function fileName(path: string) {
-  return displayPath(path).split('/').at(-1) ?? displayPath(path)
-}
-
 function workspaceTabItem(path: string): WorkspaceTabItem {
   return {
     id: path,
-    label: fileName(path),
-    title: displayPath(path),
+    label: routeFileName(path),
+    title: displayRouteFilePath(path),
   }
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }

@@ -1,3 +1,4 @@
+import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import type { RunStepLogsInput, RunActionInput } from '@/api/types'
 import type {
   RepositoryRunLogResponse,
@@ -147,7 +148,7 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
     if (inFlight.get(requestKey) !== request) return false
     writeRunLogCache(key, target, {
       ...(runLogsResource.peek(key)?.[step] ?? current),
-      error: runErrorMessage(error), loading: false, failedPage: { after, before },
+      error: resourceErrorMessage(error, 'Run operation failed.'), loading: false, failedPage: { after, before },
     })
     return false
   }).finally(() => {
@@ -168,8 +169,4 @@ export async function refreshRunLogsAfterInFlight(
     const state = runLogsResource.peek(options.key)?.[step]
     if (state?.viewingEarlier || !state?.hasMore) return true
   } while (true)
-}
-
-export function runErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Run operation failed.'
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { restoreRunHistory, runHistoryResource, resetRunHistoryCache, runHistoryCacheKey } from './run-history-cache'
+import { restoreRunHistory, runHistoryResource, runHistoryCacheKey } from './run-history-cache'
 import { reloadRunHistoryPages } from './run-history-model'
 import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 
@@ -9,7 +9,7 @@ function page(ids: string[], next_cursor: string | null = null): RepositoryRunHi
 }
 
 test('navigation restores older runs, exhausted cursor and refresh depth', async () => {
-  resetRunHistoryCache()
+  runHistoryResource.clear()
   const key = runHistoryCacheKey('viewer/repo/access')
   runHistoryResource.write(key, { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
   const restored = restoreRunHistory(key, page(['first'], 'older-page'))
@@ -25,7 +25,7 @@ test('navigation restores older runs, exhausted cursor and refresh depth', async
 })
 
 test('authoritative first page updates retained rows before background reconciliation', () => {
-  resetRunHistoryCache()
+  runHistoryResource.clear()
   runHistoryResource.write('runs', { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
   const initial = page(['new', 'first'], 'next')
   initial.runs[1]!.state = 'succeeded'
@@ -36,7 +36,7 @@ test('authoritative first page updates retained rows before background reconcili
 })
 
 test('run retention isolates repository access and workflow filters', () => {
-  resetRunHistoryCache()
+  runHistoryResource.clear()
   const key = runHistoryCacheKey('viewer/repo/access')
   runHistoryResource.write(key, { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
   for (const other of [runHistoryCacheKey('other-viewer/repo/access'), runHistoryCacheKey('viewer/other-repo/access'), runHistoryCacheKey('viewer/repo/access', 'checks'), null]) {
@@ -45,7 +45,7 @@ test('run retention isolates repository access and workflow filters', () => {
 })
 
 test('run pagination retention is bounded', () => {
-  resetRunHistoryCache()
+  runHistoryResource.clear()
   for (let index = 0; index < 13; index++) runHistoryResource.write(String(index), { history: page(['first', 'older']), snapshot: page(['first'], 'older-page'), pageCount: 2 })
   assert.equal(restoreRunHistory('0', page(['first'])).pageCount, 1)
   assert.equal(restoreRunHistory('12', page(['first'])).pageCount, 2)
@@ -55,7 +55,7 @@ test('run pagination retention is bounded', () => {
 
 
 test('an unchanged route snapshot does not roll back newer live run state', () => {
-  resetRunHistoryCache()
+  runHistoryResource.clear()
   const snapshot = page(['first'])
   const refreshed = page(['first'])
   refreshed.runs[0]!.state = 'succeeded'

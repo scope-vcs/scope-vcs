@@ -7,7 +7,7 @@ import type {
   RepositoryRunStepLogPageResponse,
 } from '@/api/types.generated'
 import { initializeRunDetail, refreshRunDetail, runDetailResource } from './run-detail-resource'
-import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, resetRunHistoryCache, runHistoryResource } from './run-history-cache'
+import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, runHistoryResource } from './run-history-cache'
 import { EMPTY_LOG_STATE, refreshRunLogs, refreshRunLogsAfterInFlight, resetRunLogCache, runLogsResource, stepKey, writeRunLogCache } from './run-log-cache'
 
 const key = 'viewer/repo/access/run'
@@ -37,7 +37,7 @@ function history(ids: string[], next_cursor: string | null = null): RepositoryRu
   return { runs: ids.map((id) => ({ id, state: 'queued' })) as RepositoryRunHistoryPageResponse['runs'], next_cursor }
 }
 
-beforeEach(() => { resetRunLogCache(); resetRunHistoryCache(); runDetailResource.clear() })
+beforeEach(() => { resetRunLogCache(); runHistoryResource.clear(); runDetailResource.clear() })
 
 test('detail request survives navigation, deduplicates reopen and preserves newer metadata', async () => {
   initializeRunDetail(key, detail)

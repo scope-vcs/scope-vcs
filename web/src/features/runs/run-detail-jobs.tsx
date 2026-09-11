@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type {
-  StepLogState,
+  StepLogs,
   StepSelection,
 } from './repository-run-detail-controller'
 import { attemptForJob } from './repository-run-detail-model'
@@ -20,31 +20,25 @@ import type { RepositoryRunJobDetailResponse } from '@/api/types.generated'
 export function RunDetailJobs({
   attemptOverrides,
   jobs,
-  onLogRetry,
-  onLogEarlier,
-  onLogLatest,
   onSelectAttempt,
   onSelectJob,
   onSelectStep,
   onToggleGraph,
   selectedJobKey,
-  selectedLogState,
   selection,
   showGraph,
+  stepLogs,
 }: {
   attemptOverrides: Readonly<Record<string, string>>
   jobs: readonly RepositoryRunJobDetailResponse[]
-  onLogRetry: () => void
-  onLogEarlier: () => void
-  onLogLatest: () => void
   onSelectAttempt: (jobKey: string, attemptId: string) => void
   onSelectJob: (job: RepositoryRunJobDetailResponse) => void
   onSelectStep: (jobKey: string, attemptId: string, stepIndex: number) => void
   onToggleGraph: () => void
   selectedJobKey: string | null
-  selectedLogState: StepLogState
   selection: StepSelection | null
   showGraph: boolean
+  stepLogs: StepLogs
 }) {
   const selectedJob = jobs.find(({ job }) => job.key === selectedJobKey) ?? null
   const orderedJobs = useMemo(() => orderJobsByDependency(jobs), [jobs])
@@ -90,15 +84,12 @@ export function RunDetailJobs({
           <RunDetailSteps
             attempt={attemptForJob(selectedJob, attemptOverrides, selection)}
             jobDetail={selectedJob}
-            onLogRetry={onLogRetry}
-            onLogEarlier={onLogEarlier}
-            onLogLatest={onLogLatest}
             onSelectAttempt={(attemptId) =>
               onSelectAttempt(selectedJob.job.key, attemptId)}
             onSelectStep={(attemptId, stepIndex) =>
               onSelectStep(selectedJob.job.key, attemptId, stepIndex)}
-            selectedLogState={selectedLogState}
             selection={selection}
+            stepLogs={stepLogs}
           />
         </div>
       ) : null}

@@ -57,7 +57,7 @@ export function selectInitialView(
   jobs: readonly JobLike[],
 ): InitialRunView {
   const failedJob = jobs.find(({ job }) => job.state === 'failed')
-  const failedAttempt = failedJob ? lastAttempt(failedJob) : null
+  const failedAttempt = failedJob ? latestAttempt(failedJob.attempts) : null
   const failedStep = failedAttempt?.steps.find((step) => step.state === 'failed')
   if (failedJob && failedAttempt && failedStep) {
     return {
@@ -74,7 +74,7 @@ export function selectInitialView(
   }
 
   for (const jobDetail of jobs) {
-    const attempt = lastAttempt(jobDetail)
+    const attempt = latestAttempt(jobDetail.attempts)
     const runningStep = attempt?.steps.find((step) => step.state === 'running')
     if (attempt && runningStep) {
       return {
@@ -89,7 +89,7 @@ export function selectInitialView(
   }
 
   const lastJob = jobs.at(-1)
-  const lastJobAttempt = lastJob ? lastAttempt(lastJob) : null
+  const lastJobAttempt = lastJob ? latestAttempt(lastJob.attempts) : null
   const lastStep = lastJobAttempt?.steps.at(-1)
   if (lastJob && lastJobAttempt && lastStep) {
     return {
@@ -187,14 +187,6 @@ export function mergeStepLogs<T extends StepLogLike>(
     logs: ordered.slice(firstRetained),
     truncated: firstRetained > 0,
   }
-}
-
-/**
- * The run detail response returns attempts newest first, so "latest" is the
- * highest attempt number rather than a position in the array.
- */
-function lastAttempt(jobDetail: JobLike) {
-  return latestAttempt(jobDetail.attempts)
 }
 
 export function latestAttempt<Attempt extends { number: number }>(

@@ -6,7 +6,7 @@ import { runDisplayState, runTriggerLabel } from './run-formatting'
 import { runStatus } from './run-status'
 import { RunDuration } from './run-duration'
 import { RunStatusIcon } from './run-status-icon'
-import { RunTimestamp } from './run-timestamp'
+import { RelativeTimestamp } from '@/components/timestamp'
 import {
   RUN_ROW_CLASS,
   RUN_ROW_DURATION_CLASS,
@@ -50,7 +50,7 @@ export function RunRow({
         <RunDuration end={run.completed_at_unix} start={run.created_at_unix} />
       </span>
       <span className={`${RUN_ROW_TIMESTAMP_CLASS} text-right text-xs tabular-nums text-muted-foreground`}>
-        <RunTimestamp value={run.updated_at_unix} />
+        <RelativeTimestamp value={run.updated_at_unix} />
       </span>
     </Link>
   )

@@ -3,6 +3,7 @@ import type {
   RepositoryRunHistoryPageResponse,
   RepositoryRunWorkflowListResponse,
 } from '@/api/types.generated'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { PageContent, WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
@@ -62,7 +63,7 @@ function RepositoryRunsPageContent({
     runHistoryResource.getServerSnapshot,
   )
   const history = snapshot.value ? snapshot.value.history : initialResources?.history ?? null
-  const refreshError = snapshot.error === null ? null : snapshot.error instanceof Error ? snapshot.error.message : 'Run operation failed.'
+  const refreshError = snapshot.error === null ? null : resourceErrorMessage(snapshot.error, 'Run operation failed.')
   const loadingMore = snapshot.pending && snapshot.version === 'more'
   const [statusFilter, setStatusFilter] = useState<RunStatusFilter>('any')
   const { owner, repo } = params

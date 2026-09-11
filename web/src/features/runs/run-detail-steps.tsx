@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import type {
-  StepLogState,
+  StepLogs,
   StepSelection,
 } from './repository-run-detail-controller'
 import { RunAttemptEnvironment } from './run-attempt-environment'
@@ -20,23 +20,17 @@ import type {
 export function RunDetailSteps({
   attempt,
   jobDetail,
-  onLogRetry,
-  onLogEarlier,
-  onLogLatest,
   onSelectAttempt,
   onSelectStep,
-  selectedLogState,
   selection,
+  stepLogs,
 }: {
   attempt: RepositoryRunAttemptResponse | null
   jobDetail: RepositoryRunJobDetailResponse
-  onLogRetry: () => void
-  onLogEarlier: () => void
-  onLogLatest: () => void
   onSelectAttempt: (attemptId: string) => void
   onSelectStep: (attemptId: string, stepIndex: number) => void
-  selectedLogState: StepLogState
   selection: StepSelection | null
+  stepLogs: StepLogs
 }) {
   const { attempts, job } = jobDetail
   const terminalNotice = attempt ? attemptTerminalNotice(attempt) : null
@@ -73,15 +67,12 @@ export function RunDetailSteps({
               <StepRow
                 attemptId={attempt.id}
                 key={step.index}
-                onLogRetry={onLogRetry}
-                onLogEarlier={onLogEarlier}
-                onLogLatest={onLogLatest}
                 onSelect={() => onSelectStep(attempt.id, step.index)}
                 selected={selection?.jobKey === job.key &&
                   selection.attemptId === attempt.id &&
                   selection.stepIndex === step.index}
-                selectedLogState={selectedLogState}
                 step={step}
+                stepLogs={stepLogs}
               />
             ))}
           </div>
@@ -155,22 +146,16 @@ function AttemptSwitcher({
 
 function StepRow({
   attemptId,
-  onLogRetry,
-  onLogEarlier,
-  onLogLatest,
   onSelect,
   selected,
-  selectedLogState,
   step,
+  stepLogs,
 }: {
   attemptId: string
-  onLogRetry: () => void
-  onLogEarlier: () => void
-  onLogLatest: () => void
   onSelect: () => void
   selected: boolean
-  selectedLogState: StepLogState
   step: RepositoryRunStepResponse
+  stepLogs: StepLogs
 }) {
   const panelId = `run-step-${attemptId}-${step.index}`
   return (
@@ -199,10 +184,7 @@ function StepRow({
         <RunLogView
           id={panelId}
           key={panelId}
-          logState={selectedLogState}
-          onRetry={onLogRetry}
-          onEarlier={onLogEarlier}
-          onLatest={onLogLatest}
+          logs={stepLogs}
           step={step}
         />
       ) : null}

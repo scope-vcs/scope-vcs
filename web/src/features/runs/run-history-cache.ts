@@ -34,10 +34,6 @@ export function restoreRunHistory(key: string | null, initial: RepositoryRunHist
   }
 }
 
-export function resetRunHistoryCache() {
-  runHistoryResource.clear()
-}
-
 export function initializeRunHistory(key: string, initial: RepositoryRunHistoryPageResponse | null) {
   const retained = restoreRunHistory(key, initial)
   if (retained !== runHistoryResource.peek(key)) runHistoryResource.write(key, retained)

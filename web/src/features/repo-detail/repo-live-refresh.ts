@@ -1,14 +1,18 @@
 import type { RepoLiveState } from '@/api/types'
 import type { RepoChangeEvent } from '@/api/types.generated'
+import {
+  browserScheduler,
+  createRefreshCoordinator,
+  type RefreshScheduler,
+} from '../../lib/refresh-coordinator'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useCallback, useEffect, useRef } from 'react'
 import { runRepoEventStream, streamRepoEvents } from './repo-event-stream'
 import { repoResourceScope } from './repo-resource-scope'
 import { invalidateRepoResources } from './repo-resource-invalidation'
 
-const REFRESH_RETRY_DELAY_MS = 2_000
-
-type RetryScheduler = (retry: () => void) => () => void
+/** A forced refresh ignores versions; a versioned one is dropped once applied. */
+type RepoRefreshRequest = { force: boolean; version: number | null }
 export type RepoChangeListener = (event: RepoChangeEvent) => void
 export type SubscribeToRepoChanges = (
   listener: RepoChangeListener,
@@ -48,7 +52,7 @@ export function useRepoLiveRefresh(
       initialVersion: live.repo.change_version,
       invalidate,
       repoId: live.repo.id,
-      scheduleRetry: browserRetryScheduler,
+      schedule: browserScheduler,
       versioned: usesVersionedRepoChangeEvents(live),
     })
     const notifyListeners = (event: RepoChangeEvent) => {
@@ -97,64 +101,39 @@ export function createRepoRefreshCoordinator({
   initialVersion,
   invalidate,
   repoId,
-  scheduleRetry,
+  schedule,
   versioned,
 }: {
   initialVersion: number
   invalidate: () => Promise<unknown>
   repoId: string
-  scheduleRetry: RetryScheduler
+  schedule: RefreshScheduler
   versioned: boolean
 }): RepoRefreshCoordinator {
-  let stopped = false
   let highestAppliedVersion = initialVersion
-  let forceRefreshPending = false
-  let pendingVersion: number | null = null
-  let refreshInFlight = false
-  let cancelRetry: (() => void) | null = null
-
-  const flushRefresh = async () => {
-    if (stopped || refreshInFlight || (pendingVersion === null && !forceRefreshPending)) return
-
-    const version = pendingVersion
-    const forceRefresh = forceRefreshPending
-    pendingVersion = null
-    forceRefreshPending = false
-    refreshInFlight = true
-    try {
+  const coordinator = createRefreshCoordinator<RepoRefreshRequest>({
+    merge: (pending, next) => ({
+      force: pending.force || next.force,
+      version: next.version === null
+        ? pending.version
+        : Math.max(pending.version ?? next.version, next.version),
+    }),
+    refresh: async (request) => {
       await invalidate()
-      if (version !== null) {
-        highestAppliedVersion = Math.max(highestAppliedVersion, version)
-        if (pendingVersion !== null && pendingVersion <= highestAppliedVersion) {
-          pendingVersion = null
-        }
+      if (request.version !== null) {
+        highestAppliedVersion = Math.max(highestAppliedVersion, request.version)
       }
-    } catch {
-      if (version !== null) pendingVersion = Math.max(pendingVersion ?? version, version)
-      forceRefreshPending ||= forceRefresh
-      if (!stopped && cancelRetry === null) {
-        cancelRetry = scheduleRetry(() => {
-          cancelRetry = null
-          void flushRefresh()
-        })
-      }
-      return
-    } finally {
-      refreshInFlight = false
-    }
-    if (!stopped && (pendingVersion !== null || forceRefreshPending)) void flushRefresh()
-  }
-
-  const requestRefresh = (version: number | null) => {
-    if (version === null) forceRefreshPending = true
-    else pendingVersion = Math.max(pendingVersion ?? version, version)
-    void flushRefresh()
-  }
+    },
+    schedule,
+    shouldRefresh: (request) =>
+      request.force || (request.version !== null && request.version > highestAppliedVersion),
+  })
+  const requestRefresh = (version: number | null) =>
+    coordinator.request({ force: version === null, version })
 
   return {
     onEvent(event) {
       if (
-        stopped ||
         event.repo_id !== repoId ||
         event.kind === 'Connected' ||
         typeof event.kind === 'object' &&
@@ -168,20 +147,9 @@ export function createRepoRefreshCoordinator({
         requestRefresh(event.version)
       }
     },
-    onStreamInterrupted() {
-      if (!stopped) requestRefresh(null)
-    },
-    stop() {
-      stopped = true
-      cancelRetry?.()
-      cancelRetry = null
-    },
+    onStreamInterrupted: () => requestRefresh(null),
+    stop: coordinator.stop,
   }
-}
-
-function browserRetryScheduler(retry: () => void) {
-  const timeout = window.setTimeout(retry, REFRESH_RETRY_DELAY_MS)
-  return () => window.clearTimeout(timeout)
 }
 
 function usesVersionedRepoChangeEvents(live: RepoLiveState) {

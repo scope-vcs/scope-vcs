@@ -20,11 +20,9 @@ const TONE_ICON: Record<RunTone, typeof Check> = {
 }
 
 export function RunStatusIcon({
-  className,
   state,
   terminalReason,
 }: {
-  className?: string
   state: string
   terminalReason?: RepositoryRunTerminalReason | null
 }) {
@@ -37,7 +35,6 @@ export function RunStatusIcon({
         'size-3.5 shrink-0',
         TONE_TEXT_CLASS[status.tone],
         status.animated && 'animate-spin',
-        className,
       )}
     />
   )
