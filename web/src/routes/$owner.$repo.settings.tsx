@@ -66,7 +66,7 @@ function RepoSettingsRoute() {
       deleteInvite={(data) => deleteRepoInvite({ data })}
       deleteRepo={(data) => deleteRepo({ data })}
       deleteMember={(data) => deleteRepoMember({ data })}
-      initialCollaboration={collaboration}
+      collaboration={collaboration}
       params={params}
       updateMember={(data) => updateRepoMember({ data })}
       updateMetadata={(data) => updateRepoMetadata({ data })}

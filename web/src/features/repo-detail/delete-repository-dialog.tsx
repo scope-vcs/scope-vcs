@@ -36,7 +36,7 @@ export function DeleteRepositoryDialog({
       return
     }
 
-    if (!confirmed || !canDelete || busy) {
+    if (!canDelete || busy) {
       return
     }
 

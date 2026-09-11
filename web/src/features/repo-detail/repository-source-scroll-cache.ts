@@ -1,6 +1,6 @@
 import { createBoundedCache } from '../../lib/bounded-cache'
 
-const sourceScrollPositions = createBoundedCache<string, number>({
+export const sourceScrollPositions = createBoundedCache<string, number>({
   maxEntries: 64,
 })
 
@@ -12,8 +12,4 @@ export function readRepositorySourceScroll(key: string | null) {
 export function writeRepositorySourceScroll(key: string | null, scrollTop: number) {
   if (!key) return
   sourceScrollPositions.set(key, scrollTop)
-}
-
-export function resetRepositorySourceScrollCache() {
-  sourceScrollPositions.clear()
 }

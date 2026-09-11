@@ -149,18 +149,11 @@ function RepoIndexRoute() {
 
   return (
     <RepoDetailPage
-      content={content}
-      contentError={contentResource.error}
-      contentLoading={contentResource.status === 'loading'}
-      contentRetry={contentResource.retry}
+      content={contentResource}
+      file={selectedFileResource}
       onSelectFilePath={selectFile}
       params={params}
       repo={repo}
-      selectedFile={selectedFileResource.value}
-      selectedFileError={selectedFileResource.error}
-      selectedFileIdentity={selectedFileIdentity}
-      selectedFileLoading={selectedFileResource.status === 'loading'}
-      selectedFileRetry={selectedFileResource.retry}
       selectedPath={selectedPath}
     />
   )

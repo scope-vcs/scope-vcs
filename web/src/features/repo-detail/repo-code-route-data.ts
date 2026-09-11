@@ -1,3 +1,4 @@
+import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import { displayRouteFilePath } from '../../lib/route-file'
 import type { RepoFileContentResponse } from '@/api/types.generated'
 
@@ -24,7 +25,7 @@ export async function settleRepoCodeResource<T>(load: Promise<T>): Promise<RepoC
   try {
     return { value: await load, error: null }
   } catch (error) {
-    return { value: null, error: error instanceof Error ? error.message : 'Repository content is unavailable.' }
+    return { value: null, error: resourceErrorMessage(error, 'Repository content is unavailable.') }
   }
 }
 
