@@ -14,6 +14,6 @@ test('pagination preserves order and replaces repeated rows with current server 
 })
 
 test('attention expiry uses server-wide next time, including requests outside loaded rows', () => {
-  assert.equal(nextRequestAttentionAt({ active: page([], 400), unclaimed: page([], 300), set_aside: page([], null) }), 300)
-  assert.equal(nextRequestAttentionAt({ active: page([]), unclaimed: page([]), set_aside: page([]) }), null)
+  assert.equal(nextRequestAttentionAt({ active: page([], 400), unclaimed: page([], 300), set_aside: page([], null), done: page([], null) }), 300)
+  assert.equal(nextRequestAttentionAt({ active: page([]), unclaimed: page([]), set_aside: page([]), done: page([]) }), null)
 })

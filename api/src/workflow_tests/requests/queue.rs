@@ -105,7 +105,7 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
         StatusCode::OK
     );
 
-    for section in ["active", "unclaimed", "set_aside"] {
+    for section in ["active", "unclaimed", "set_aside", "done"] {
         let response = api_request(
             app.clone(),
             "GET",
@@ -224,7 +224,7 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
         api_request(
             app.clone(),
             "GET",
-            "/v1/repos/owner/repo/requests/queue?section=set_aside",
+            "/v1/repos/owner/repo/requests/queue?section=done",
             None,
             None,
         )
@@ -232,11 +232,30 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
     )
     .await;
     assert_eq!(request_ids(&closed), ["req_closed_new", "req_closed_old"]);
+    for section in ["set_aside", "unclaimed"] {
+        assert!(
+            request_ids(
+                &response_json(
+                    api_request(
+                        app.clone(),
+                        "GET",
+                        &format!("/v1/repos/owner/repo/requests/queue?section={section}"),
+                        None,
+                        None,
+                    )
+                    .await,
+                )
+                .await
+            )
+            .is_empty(),
+            "{section} holds nothing for readers"
+        );
+    }
     let maintainer_closed = response_json(
         api_request(
             app.clone(),
             "GET",
-            "/v1/repos/owner/repo/requests/queue?section=set_aside",
+            "/v1/repos/owner/repo/requests/queue?section=done",
             Some(&bearer_header()),
             None,
         )
@@ -250,7 +269,7 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
 
     for (section, expected) in [
         ("unclaimed", vec!["req_open_high"]),
-        ("set_aside", vec!["req_closed_private", "req_closed_new"]),
+        ("done", vec!["req_closed_private", "req_closed_new"]),
     ] {
         let searched = response_json(
             api_request(
@@ -345,7 +364,7 @@ async fn closed_fixture(
 }
 
 #[tokio::test]
-async fn set_aside_queue_cursor_keeps_closed_and_merged_timestamp_ties() {
+async fn done_queue_cursor_keeps_closed_and_merged_timestamp_ties() {
     let state = test_state_with_readme().await;
     for (id, time, merged) in [
         ("req_z_new", 40, false),
@@ -374,7 +393,7 @@ async fn set_aside_queue_cursor_keeps_closed_and_merged_timestamp_ties() {
         }
     }
     let app = router(state);
-    let mut uri = "/v1/repos/owner/repo/requests/queue?section=set_aside&limit=2".to_string();
+    let mut uri = "/v1/repos/owner/repo/requests/queue?section=done&limit=2".to_string();
     let mut ids = Vec::new();
     loop {
         let response = api_request(app.clone(), "GET", &uri, None, None).await;
@@ -384,9 +403,7 @@ async fn set_aside_queue_cursor_keeps_closed_and_merged_timestamp_ties() {
         let Some(cursor) = page["next_cursor"].as_str() else {
             break;
         };
-        uri = format!(
-            "/v1/repos/owner/repo/requests/queue?section=set_aside&limit=2&cursor={cursor}"
-        );
+        uri = format!("/v1/repos/owner/repo/requests/queue?section=done&limit=2&cursor={cursor}");
     }
     assert_eq!(
         ids,

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { BlockSkeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
-import { Check, LoaderCircle, RefreshCw, UserRound } from 'lucide-react'
+import { Check, LoaderCircle, RefreshCw, UserRound, UserRoundMinus } from 'lucide-react'
 import type { RequestAttentionCommand } from './request-attention-api'
 import { RequestSnoozeMenu } from './request-snooze-menu'
 import { requestAttentionLabel } from './request-workspace-model'
@@ -118,8 +118,10 @@ function RequestWorkspaceRow({
       icon: RefreshCw,
       visible: section === 'set_aside' && attention.can_restore,
     },
+    { action: 'release', label: 'Release', icon: UserRoundMinus, visible: attention.can_release },
   ] as const
-  const hasActions = actions.some(({ visible }) => visible)
+  const actionCount = actions.filter(({ visible }) => visible).length + Number(canSetAside)
+  const hasActions = actionCount > 0
   return (
     <article
       className={cn(
@@ -159,10 +161,8 @@ function RequestWorkspaceRow({
           </span>
         </span>
         <span
-          className={cn(
-            'mt-[5px] flex items-center gap-1.5 overflow-hidden text-[11px] whitespace-nowrap text-muted-foreground',
-            hasActions && 'pr-[63px]',
-          )}
+          className="mt-[5px] flex items-center gap-1.5 overflow-hidden text-[11px] whitespace-nowrap text-muted-foreground"
+          style={hasActions ? { paddingRight: `${actionCount * 30 + 6}px` } : undefined}
         >
           <span className="max-w-[65%] shrink-0 truncate">{author.handle}</span>
           <span aria-hidden="true">·</span>

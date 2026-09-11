@@ -58,11 +58,15 @@ impl RequestStore {
             action: command.action,
             now_unix: command.now_unix,
         })?;
-        save_attention(&tx, &mutation.attention).await?;
-        if matches!(command.action, RequestAttentionAction::Claim)
-            && let Some(claim) = &mutation.claim
-        {
-            save_claim(&tx, claim).await?;
+        match &mutation.attention {
+            Some(attention) => save_attention(&tx, attention).await?,
+            None => delete_attention(&tx, &request.id, &command.actor_user_id).await?,
+        }
+        if mutation.claim != existing_claim {
+            match &mutation.claim {
+                Some(claim) => save_claim(&tx, claim).await?,
+                None => delete_claim(&tx, &request.id).await?,
+            }
         }
         let is_invitee = request_is_invitee(&tx, &request.id, &command.actor_user_id).await?;
         let classification = classify_request_queue_item(RequestQueueFacts {
@@ -72,7 +76,7 @@ impl RequestStore {
             viewer_user_id: Some(&command.actor_user_id),
             viewer_is_maintainer: repo.access.is_maintainer(),
             viewer_is_invitee: is_invitee,
-            attention: Some(&mutation.attention),
+            attention: mutation.attention.as_ref(),
             claim: mutation.claim.as_ref(),
             now_unix: command.now_unix,
         });
@@ -132,7 +136,12 @@ pub(super) async fn wait_after_own_reply<C: ConnectionTrait>(
         action: RequestAttentionAction::Wait,
         now_unix,
     })?;
-    save_attention(conn, &mutation.attention).await
+    match &mutation.attention {
+        Some(attention) => save_attention(conn, attention).await,
+        None => Err(PostgresError::internal_message(
+            "waiting after a reply must record attention",
+        )),
+    }
 }
 
 pub(super) async fn reactivate_attention_for_activity<C: ConnectionTrait>(
@@ -210,6 +219,29 @@ async fn save_attention<C: ConnectionTrait>(
     .exec(conn)
     .await
     .map_err(PostgresError::internal)?;
+    Ok(())
+}
+
+async fn delete_attention<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+    user_id: &str,
+) -> Result<(), PostgresError> {
+    entities::request_attention_state::Entity::delete_by_id((
+        request_id.to_string(),
+        user_id.to_string(),
+    ))
+    .exec(conn)
+    .await
+    .map_err(PostgresError::internal)?;
+    Ok(())
+}
+
+async fn delete_claim<C: ConnectionTrait>(conn: &C, request_id: &str) -> Result<(), PostgresError> {
+    entities::request_claim::Entity::delete_by_id(request_id.to_string())
+        .exec(conn)
+        .await
+        .map_err(PostgresError::internal)?;
     Ok(())
 }
 

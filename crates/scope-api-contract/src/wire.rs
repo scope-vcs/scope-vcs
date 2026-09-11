@@ -156,7 +156,7 @@ wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
 wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
-    RequestQueueSection => DomainRequestQueueSection { Active, Unclaimed, SetAside }
+    RequestQueueSection => DomainRequestQueueSection { Active, Unclaimed, SetAside, Done }
 );
 wire_enum!(
     #[serde(rename_all = "snake_case")]

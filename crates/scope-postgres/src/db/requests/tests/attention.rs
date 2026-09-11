@@ -7,20 +7,33 @@ use scope_domain::requests::{
 };
 
 #[tokio::test]
-async fn only_other_people_replies_reactivate_settled_attention() {
+async fn other_peoples_discussions_and_replies_reactivate_settled_attention() {
     let store = postgres_store();
     let request = open_public_request(&store).await;
     set_attention(&store, &request, RequestAttentionAction::Settle, 4).await;
 
     let discussion = create_discussion(&store, "attention", 5).await;
+    let woke_from_discussion = queue_row(&store, RequestQueueSection::Active, 5).await;
     assert_eq!(
-        queue_row(&store, RequestQueueSection::SetAside, 5)
+        woke_from_discussion.attention.reason,
+        RequestAttentionReason::NewActivity
+    );
+    assert_eq!(woke_from_discussion.request.updated_at_unix, 5);
+
+    set_attention(
+        &store,
+        &discussion.request,
+        RequestAttentionAction::Settle,
+        6,
+    )
+    .await;
+    assert_eq!(
+        queue_row(&store, RequestQueueSection::SetAside, 6)
             .await
             .attention
             .reason,
         RequestAttentionReason::Settled
     );
-
     store
         .requests()
         .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
@@ -32,17 +45,16 @@ async fn only_other_people_replies_reactivate_settled_attention() {
             body_markdown: "New information".into(),
             reply_to_reply_id: None,
             wait_after_reply: false,
-            now_unix: 6,
+            now_unix: 7,
         })
         .await
         .unwrap();
+    let woke_from_reply = queue_row(&store, RequestQueueSection::Active, 7).await;
     assert_eq!(
-        queue_row(&store, RequestQueueSection::Active, 6)
-            .await
-            .attention
-            .reason,
+        woke_from_reply.attention.reason,
         RequestAttentionReason::NewActivity
     );
+    assert_eq!(woke_from_reply.request.updated_at_unix, 7);
 
     store
         .requests()
@@ -55,11 +67,11 @@ async fn only_other_people_replies_reactivate_settled_attention() {
             body_markdown: "Please confirm".into(),
             reply_to_reply_id: None,
             wait_after_reply: true,
-            now_unix: 7,
+            now_unix: 8,
         })
         .await
         .unwrap();
-    let waiting = queue(&store, RequestQueueSection::SetAside, 7).await;
+    let waiting = queue(&store, RequestQueueSection::SetAside, 8).await;
     assert_eq!(
         waiting.rows[0].attention.state,
         RequestAttentionState::Waiting
@@ -276,6 +288,47 @@ async fn post_wait_reply(
             .await
             .unwrap()
     }
+}
+
+#[tokio::test]
+async fn releasing_a_claim_returns_the_request_to_unclaimed_for_everyone() {
+    use sea_orm::EntityTrait;
+    let store = postgres_store();
+    let request = open_public_request(&store).await;
+    let claimed = set_attention(&store, &request, RequestAttentionAction::Claim, 4).await;
+    assert!(claimed.attention.can_release);
+    assert_eq!(
+        queue_row(&store, RequestQueueSection::Active, 4)
+            .await
+            .attention
+            .reason,
+        RequestAttentionReason::Claimed
+    );
+
+    let released = set_attention(&store, &request, RequestAttentionAction::Release, 5).await;
+    assert_eq!(released.attention.section, RequestQueueSection::Unclaimed);
+    assert!(released.claim.is_none());
+    assert!(!released.attention.can_release);
+    let unclaimed = queue_row(&store, RequestQueueSection::Unclaimed, 5).await;
+    assert_eq!(unclaimed.request.id, request.id);
+    assert!(unclaimed.claim.is_none());
+    assert!(
+        entities::request_attention_state::Entity::find_by_id((
+            request.id.clone(),
+            "user_owner".to_string()
+        ))
+        .one(store.db.as_ref())
+        .await
+        .unwrap()
+        .is_none()
+    );
+
+    let error = store
+        .requests()
+        .apply_request_attention(command(&request, RequestAttentionAction::Release, 6))
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
 }
 
 #[tokio::test]

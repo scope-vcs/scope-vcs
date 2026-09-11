@@ -9,6 +9,7 @@ import { requestQueueResource } from './request-queue-cache'
 
 const MESSAGES = {
   claim: 'Request claimed',
+  release: 'Claim released',
   restore: 'Request restored',
   settle: 'Request settled',
   snooze: 'Request snoozed',

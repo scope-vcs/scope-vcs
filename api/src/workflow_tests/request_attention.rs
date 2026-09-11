@@ -51,6 +51,31 @@ async fn maintainer_attention_actions_preserve_claims_and_reject_stale_versions(
     assert_eq!(snoozed["attention"]["snoozed_until_unix"], snoozed_until);
     let aside = queue_item(&app, "set_aside", "req_attention_actions", Some(&bearer)).await;
     assert_eq!(aside["claimer"]["id"], test_owner_id());
+    assert_eq!(aside["attention"]["can_release"], true);
+
+    // The owner authored this request, so releasing the claim returns it to
+    // their own active work rather than to the shared unclaimed queue.
+    let released = attention.apply("release", version, None).await;
+    assert_eq!(released["attention"]["reason"], "authored");
+    assert_eq!(released["attention"]["can_release"], false);
+    assert!(released["claimer"].is_null());
+    let authored = queue_item(&app, "active", "req_attention_actions", Some(&bearer)).await;
+    assert!(authored["claimer"].is_null());
+    assert_eq!(authored["attention"]["can_claim"], true);
+
+    assert_eq!(
+        attention_request(
+            &app,
+            "req_attention_actions",
+            Some(&bearer),
+            "release",
+            version,
+            None,
+        )
+        .await
+        .status(),
+        StatusCode::CONFLICT
+    );
 }
 
 #[tokio::test]
@@ -97,13 +122,10 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
     let initial = queue_item(&app, "unclaimed", "req_attention_activity", Some(&owner)).await;
     let version = activity_version(&initial);
     attention.apply("settle", version, None).await;
-
-    let discussion_id = post_discussion(&app, base, &author, "attention-root").await;
-    let settled = queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await;
-    assert_eq!(settled["attention"]["reason"], "settled");
-    let settled_through = settled["attention"]["through_activity_version"]
-        .as_u64()
-        .unwrap();
+    assert_eq!(
+        queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await["attention"]["reason"],
+        "settled"
+    );
 
     let edited = api_request(
         app.clone(),
@@ -118,6 +140,19 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
         queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await["attention"]["reason"],
         "settled"
     );
+
+    let discussion_id = post_discussion(&app, base, &author, "attention-root").await;
+    let woke_from_discussion =
+        queue_item(&app, "active", "req_attention_activity", Some(&owner)).await;
+    assert_eq!(woke_from_discussion["attention"]["reason"], "new_activity");
+    attention
+        .apply("settle", activity_version(&woke_from_discussion), None)
+        .await;
+    let settled = queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await;
+    assert_eq!(settled["attention"]["reason"], "settled");
+    let settled_through = settled["attention"]["through_activity_version"]
+        .as_u64()
+        .unwrap();
 
     let ordinary = api_request(
         app.clone(),

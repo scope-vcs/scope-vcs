@@ -644,8 +644,10 @@ test('public repository requests route is anonymously readable', async () => {
     await page.getByRole('complementary', { name: 'Requests workspace' }).waitFor()
     assert.equal(await page.getByRole('heading', { level: 2, name: /^your work$/i }).count(), 0)
     await page.getByText('You’re caught up.', { exact: true }).waitFor()
-    await page.getByRole('button', { name: /Set aside/ }).click()
-    await page.getByText('Nothing set aside.', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: /Set aside/ }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: /Unclaimed/ }).count(), 0)
+    await page.getByRole('button', { name: /Done/ }).click()
+    await page.getByText('No closed or merged requests.', { exact: true }).waitFor()
   })
 })
 

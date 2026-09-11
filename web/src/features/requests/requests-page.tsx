@@ -25,6 +25,7 @@ export function RequestsPage({ children, params }: { children: ReactNode; params
     <RequestWorkspaceContent
       key={scope ?? 'pending'}
       identity={scope}
+      maintainer={repo.access.actor !== 'Public'}
       params={params}
       version={String(repo.change_version)}
     >
@@ -36,11 +37,13 @@ export function RequestsPage({ children, params }: { children: ReactNode; params
 function RequestWorkspaceContent({
   children,
   identity,
+  maintainer,
   params,
   version,
 }: {
   children: ReactNode
   identity: string | null
+  maintainer: boolean
   params: RepoParams
   version: string
 }) {
@@ -81,6 +84,7 @@ function RequestWorkspaceContent({
           collapsed={collapsed}
           error={queue.error ? 'Could not load requests. Try again.' : null}
           loading={queue.refreshing}
+          maintainer={maintainer}
           onAction={(item, command) => void act(item, command)}
           onCollapsedChange={setCollapsed}
           onLoadMore={(section) => {
@@ -105,6 +109,9 @@ function RequestWorkspaceContent({
           selected,
           claim: () => {
             if (selected) void act(selected, { action: 'claim' })
+          },
+          release: () => {
+            if (selected) void act(selected, { action: 'release' })
           },
         }}
       >

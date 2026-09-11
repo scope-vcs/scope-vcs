@@ -8,6 +8,7 @@ impl RequestQueueSection {
             Self::Active => "active",
             Self::Unclaimed => "unclaimed",
             Self::SetAside => "set_aside",
+            Self::Done => "done",
         }
     }
 }
@@ -124,9 +125,8 @@ pub const REQUEST_QUEUE_RULES: &[RequestQueueRule] = &[
 impl RequestQueueRule {
     pub const fn section(self) -> RequestQueueSection {
         match self {
-            Self::Terminal | Self::Waiting | Self::Snoozed | Self::ClaimedElsewhere => {
-                RequestQueueSection::SetAside
-            }
+            Self::Terminal => RequestQueueSection::Done,
+            Self::Waiting | Self::Snoozed | Self::ClaimedElsewhere => RequestQueueSection::SetAside,
             Self::ActiveAttention
             | Self::SnoozeExpired
             | Self::Claimed

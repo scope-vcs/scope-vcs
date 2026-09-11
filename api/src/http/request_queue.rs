@@ -177,6 +177,12 @@ pub(crate) async fn apply_attention(
             scope_domain::requests::RequestAttentionAction::Restore,
             expected_activity_version,
         ),
+        RequestAttentionActionRequest::Release {
+            expected_activity_version,
+        } => (
+            scope_domain::requests::RequestAttentionAction::Release,
+            expected_activity_version,
+        ),
     };
     let result = state
         .metadata
@@ -228,6 +234,7 @@ pub(crate) fn attention_response(
         can_claim: value.can_claim,
         can_set_aside: value.can_set_aside,
         can_restore: value.can_restore,
+        can_release: value.can_release,
     }
 }
 

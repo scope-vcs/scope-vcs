@@ -54,7 +54,7 @@ test('parseLoadRequestQueueInput removes empty optional values', () => {
 })
 
 test('each attention section supports scoped search', () => {
-  for (const section of ['active', 'unclaimed', 'set_aside']) {
+  for (const section of ['active', 'unclaimed', 'set_aside', 'done']) {
     assert.equal(parseLoadRequestQueueInput({ owner: 'scope', repo: 'vcs', section, search: 'needle' }).search, 'needle')
   }
 })

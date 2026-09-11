@@ -8,6 +8,7 @@ const REQUEST_QUEUE_SECTIONS = [
   'active',
   'unclaimed',
   'set_aside',
+  'done',
 ] as const satisfies readonly RequestQueueSection[]
 
 export type LoadRequestQueueInput = RepoParams & {

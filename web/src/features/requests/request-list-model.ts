@@ -1,6 +1,6 @@
 import type { RequestQueueItemResponse, RequestQueuePageResponse, RequestQueueSection } from '../../api/types.generated'
 
-export const REQUEST_QUEUE_SECTION_ORDER = ['active', 'unclaimed', 'set_aside'] as const satisfies readonly RequestQueueSection[]
+export const REQUEST_QUEUE_SECTION_ORDER = ['active', 'unclaimed', 'set_aside', 'done'] as const satisfies readonly RequestQueueSection[]
 export type RequestQueuePages = Record<RequestQueueSection, RequestQueuePageResponse>
 export type RequestQueueViewState = { pages: RequestQueuePages; query: string; requestedQuery: string }
 

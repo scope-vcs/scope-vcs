@@ -10,7 +10,7 @@ const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'r
 function seed() {
   requestQueueResource.clear()
   const page = { requests: [], next_cursor: null, next_attention_at_unix: null }
-  for (const scope of ['viewer-a', 'viewer-b']) requestQueueResource.write(scope, { query: 'needle', requestedQuery: 'needle', pages: { active: page, unclaimed: page, set_aside: page } })
+  for (const scope of ['viewer-a', 'viewer-b']) requestQueueResource.write(scope, { query: 'needle', requestedQuery: 'needle', pages: { active: page, unclaimed: page, set_aside: page, done: page } })
   repositoryActivityResource.clear()
   requestActivityResource.clear()
   repositoryActivityResource.write('viewer-a', { audience: 'public', entry: null, head_oid: 'head' })

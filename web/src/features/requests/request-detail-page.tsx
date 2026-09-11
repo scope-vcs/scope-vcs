@@ -21,6 +21,7 @@ import {
   ShieldQuestion,
   SlidersHorizontal,
   UserRound,
+  UserRoundMinus,
 } from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
 import { RequestActivityDrawer } from './request-activity-drawer'
@@ -191,6 +192,12 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               <Button onClick={workspace.claim} size="sm" type="button" variant="secondary">
                 <UserRound />
                 I’ll take this
+              </Button>
+            ) : null}
+            {workspace?.selected?.attention.can_release ? (
+              <Button onClick={workspace.release} size="sm" type="button" variant="secondary">
+                <UserRoundMinus />
+                Release
               </Button>
             ) : null}
             <RequestLifecycleActions

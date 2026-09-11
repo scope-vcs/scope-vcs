@@ -37,7 +37,7 @@ export async function searchRequestQueue(key: string, query: string, load: LoadR
   // Keep requested and displayed queries together in the resource. A repository
   // invalidation can cancel a fetch, but it must not discard the search intent.
   requestQueueResource.write(key, {
-    pages: snapshot.value?.pages ?? { active: emptyPage, unclaimed: emptyPage, set_aside: emptyPage },
+    pages: snapshot.value?.pages ?? { active: emptyPage, unclaimed: emptyPage, set_aside: emptyPage, done: emptyPage },
     query: snapshot.value?.query ?? '',
     requestedQuery: normalized,
   }, snapshot.version ?? '')

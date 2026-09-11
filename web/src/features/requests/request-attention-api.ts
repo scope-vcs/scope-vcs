@@ -9,7 +9,7 @@ import {
 import { apiValidators } from '@/api/validators.generated'
 
 export type RequestAttentionCommand =
-  { action: 'claim' | 'restore' | 'settle' } | { action: 'snooze'; until_unix: number }
+  { action: 'claim' | 'release' | 'restore' | 'settle' } | { action: 'snooze'; until_unix: number }
 
 export type RequestAttentionInput = RequestParams & RequestAttentionActionRequest
 

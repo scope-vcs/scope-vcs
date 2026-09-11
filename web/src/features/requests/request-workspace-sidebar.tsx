@@ -18,6 +18,7 @@ export function RequestWorkspaceSidebar({
   loading,
   error,
   actionError,
+  maintainer,
   onRetry,
   onLoadMore,
   onAction,
@@ -34,6 +35,7 @@ export function RequestWorkspaceSidebar({
   query: string
   onSearch: (query: string) => void
   actionError: string | null
+  maintainer: boolean
   onLoadMore: (section: RequestQueueSection) => void
   params: RepoParams
 }) {
@@ -43,6 +45,17 @@ export function RequestWorkspaceSidebar({
   const rows = (section: RequestQueueSection) =>
     pages?.[section].requests.map((item) => ({ item, section })) ?? []
   const nextSection = REQUEST_QUEUE_SECTION_ORDER.find((section) => pages?.[section].next_cursor)
+  // Unclaimed and Set aside only ever hold maintainer placements, so readers
+  // see just their work and the finished history.
+  const disclosures = [
+    ...(maintainer
+      ? ([
+          { section: 'unclaimed', label: 'Unclaimed', empty: 'Every request has a maintainer.' },
+          { section: 'set_aside', label: 'Set aside', empty: 'Nothing set aside.' },
+        ] as const)
+      : []),
+    { section: 'done', label: 'Done', empty: 'No closed or merged requests.' },
+  ] as const
   return (
     <aside
       aria-label="Requests workspace"
@@ -106,16 +119,7 @@ export function RequestWorkspaceSidebar({
             }}
           />
           <div className="mt-3 border-t border-border/55 pt-2.5" hidden={searching}>
-            {(
-              [
-                {
-                  section: 'unclaimed',
-                  label: 'Unclaimed',
-                  empty: 'Every request has a maintainer.',
-                },
-                { section: 'set_aside', label: 'Set aside', empty: 'Nothing set aside.' },
-              ] as const
-            ).map(({ section, label, empty }) => (
+            {disclosures.map(({ section, label, empty }) => (
               <RequestWorkspaceDisclosure
                 key={section}
                 label={label}

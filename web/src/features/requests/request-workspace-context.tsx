@@ -4,6 +4,7 @@ import type { RequestQueueItemResponse } from '@/api/types.generated'
 type RequestWorkspaceContextValue = {
   selected: RequestQueueItemResponse | null
   claim: () => void
+  release: () => void
 }
 
 const RequestWorkspaceContext = createContext<RequestWorkspaceContextValue | null>(null)

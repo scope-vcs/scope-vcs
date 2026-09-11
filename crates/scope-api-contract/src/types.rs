@@ -253,6 +253,7 @@ pub struct RequestAttentionResponse {
     pub can_claim: bool,
     pub can_set_aside: bool,
     pub can_restore: bool,
+    pub can_release: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -281,6 +282,9 @@ pub enum RequestAttentionActionRequest {
         until_unix: u64,
     },
     Restore {
+        expected_activity_version: u64,
+    },
+    Release {
         expected_activity_version: u64,
     },
 }

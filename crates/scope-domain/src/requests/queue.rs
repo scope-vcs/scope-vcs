@@ -14,6 +14,7 @@ pub enum RequestQueueSection {
     Active,
     Unclaimed,
     SetAside,
+    Done,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +71,7 @@ pub enum RequestAttentionAction {
     Settle,
     Snooze { until_unix: u64 },
     Restore,
+    Release,
 }
 
 #[derive(Clone, Debug)]
@@ -84,9 +86,11 @@ pub struct ApplyRequestAttentionInput<'a> {
     pub now_unix: u64,
 }
 
+// `attention` is `None` when the action removes the actor's attention record,
+// which returns the request to the shared unclaimed queue.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestAttentionMutation {
-    pub attention: RequestAttention,
+    pub attention: Option<RequestAttention>,
     pub claim: Option<RequestClaim>,
 }
 
@@ -113,6 +117,7 @@ pub struct RequestQueueClassification {
     pub can_claim: bool,
     pub can_set_aside: bool,
     pub can_restore: bool,
+    pub can_release: bool,
 }
 
 pub fn apply_request_attention_action(
@@ -145,6 +150,20 @@ pub fn apply_request_attention_action(
         })
     {
         return Err(DomainError::conflict("request is not set aside"));
+    }
+    if matches!(input.action, RequestAttentionAction::Release) {
+        if !input
+            .existing_claim
+            .is_some_and(|claim| claim.claimer_user_id == input.actor_user_id)
+        {
+            return Err(DomainError::conflict(
+                "request is not claimed by this maintainer",
+            ));
+        }
+        return Ok(RequestAttentionMutation {
+            attention: None,
+            claim: None,
+        });
     }
 
     let (state, reason, snoozed_until_unix) = match input.action {
@@ -190,6 +209,7 @@ pub fn apply_request_attention_action(
             RequestAttentionReason::Restored,
             None,
         ),
+        RequestAttentionAction::Release => unreachable!("release returns early"),
     };
     let claim =
         match input.action {
@@ -204,7 +224,7 @@ pub fn apply_request_attention_action(
             _ => input.existing_claim.cloned(),
         };
     Ok(RequestAttentionMutation {
-        attention: RequestAttention {
+        attention: Some(RequestAttention {
             request_id: input.request.id.clone(),
             user_id: input.actor_user_id.to_string(),
             state,
@@ -212,7 +232,7 @@ pub fn apply_request_attention_action(
             through_activity_version: input.request.activity_version,
             snoozed_until_unix,
             updated_at_unix: input.now_unix,
-        },
+        }),
         claim,
     })
 }
@@ -225,6 +245,11 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
         .find(|rule| rule.predicate().matches(&facts))
         .expect("request queue placement has a fallback rule");
     let actionable = facts.viewer_is_maintainer && facts.request_state == RequestState::Open;
+    let can_release = actionable
+        && facts
+            .viewer_user_id
+            .zip(facts.claim)
+            .is_some_and(|(viewer, claim)| claim.claimer_user_id == viewer);
 
     match rule {
         RequestQueueRule::Terminal => RequestQueueClassification {
@@ -242,6 +267,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             can_claim: false,
             can_set_aside: false,
             can_restore: false,
+            can_release: false,
         },
         RequestQueueRule::Waiting | RequestQueueRule::Snoozed => {
             let attention = facts
@@ -256,6 +282,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
                 can_claim: false,
                 can_set_aside: false,
                 can_restore: true,
+                can_release,
             }
         }
         RequestQueueRule::ClaimedElsewhere => RequestQueueClassification {
@@ -267,6 +294,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             can_claim: false,
             can_set_aside: false,
             can_restore: false,
+            can_release: false,
         },
         RequestQueueRule::ActiveAttention
         | RequestQueueRule::SnoozeExpired
@@ -299,6 +327,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
                 can_claim: actionable && facts.claim.is_none(),
                 can_set_aside: actionable,
                 can_restore: false,
+                can_release,
             }
         }
         RequestQueueRule::Unclaimed => RequestQueueClassification {
@@ -310,6 +339,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             can_claim: actionable,
             can_set_aside: actionable,
             can_restore: false,
+            can_release: false,
         },
     }
 }
@@ -438,6 +468,64 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(error.kind, DomainErrorKind::Conflict);
+    }
+
+    #[test]
+    fn release_requires_the_viewers_own_claim_and_returns_the_request_to_unclaimed() {
+        let request = open_request();
+        let claim = RequestClaim {
+            request_id: request.id.clone(),
+            claimer_user_id: "maintainer".into(),
+            claimed_at_unix: 1,
+            updated_at_unix: 1,
+        };
+        let classified = classify_request_queue_item(RequestQueueFacts {
+            request_state: request.state(),
+            request_activity_version: request.activity_version,
+            request_author_user_id: &request.author_user_id,
+            viewer_user_id: Some("maintainer"),
+            viewer_is_maintainer: true,
+            viewer_is_invitee: false,
+            attention: None,
+            claim: Some(&claim),
+            now_unix: 10,
+        });
+        assert_eq!(classified.reason, RequestAttentionReason::Claimed);
+        assert!(classified.can_release);
+
+        let released = apply_request_attention_action(ApplyRequestAttentionInput {
+            request: &request,
+            actor_user_id: "maintainer",
+            actor_is_maintainer: true,
+            expected_activity_version: request.activity_version,
+            existing_attention: None,
+            existing_claim: Some(&claim),
+            action: RequestAttentionAction::Release,
+            now_unix: 10,
+        })
+        .unwrap();
+        assert_eq!(
+            released,
+            RequestAttentionMutation {
+                attention: None,
+                claim: None
+            }
+        );
+
+        for existing_claim in [None, Some(&claim)] {
+            let error = apply_request_attention_action(ApplyRequestAttentionInput {
+                request: &request,
+                actor_user_id: "other-maintainer",
+                actor_is_maintainer: true,
+                expected_activity_version: request.activity_version,
+                existing_attention: None,
+                existing_claim,
+                action: RequestAttentionAction::Release,
+                now_unix: 10,
+            })
+            .unwrap_err();
+            assert_eq!(error.kind, DomainErrorKind::Conflict);
+        }
     }
 
     #[test]

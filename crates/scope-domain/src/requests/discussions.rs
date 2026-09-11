@@ -181,7 +181,7 @@ pub fn create_request_discussion(
         return Err(DomainError::conflict("request discussion already exists"));
     }
     ensure_request_matches(&request, &input.request_id)?;
-    let position = advance_activity(&mut request)?;
+    let position = advance_activity(&mut request, input.now_unix)?;
     let discussion = RequestDiscussion {
         id: input.id,
         request_id: request.id.clone(),
@@ -242,6 +242,7 @@ pub fn create_request_discussion_reply(
         return Err(DomainError::conflict("request discussion is resolved"));
     }
     request.activity_version = position;
+    request.updated_at_unix = input.now_unix;
     discussion.last_activity_position = position;
     let reply = RequestDiscussionReply {
         id: input.id,
@@ -345,6 +346,7 @@ pub fn reopen_and_reply_to_request_discussion(
         return Err(DomainError::conflict("request discussion is already open"));
     }
     request.activity_version = position;
+    request.updated_at_unix = input.now_unix;
     discussion.status = RequestDiscussionStatus::Open;
     discussion.resolved_at_unix = None;
     discussion.resolved_by_user_id = None;
@@ -432,7 +434,7 @@ fn transition_discussion(
             RequestDiscussionStatus::Resolved => "request discussion is already resolved",
         }));
     }
-    let position = advance_activity(&mut request)?;
+    let position = advance_activity(&mut request, input.now_unix)?;
     discussion.status = input.target;
     discussion.last_activity_position = position;
     let (kind, payload) = match input.target {
@@ -606,8 +608,11 @@ fn ensure_discussion_matches(
     }
 }
 
-fn advance_activity(request: &mut Request) -> Result<u64, DomainError> {
+// Discussion activity is request activity: it advances the version the queue
+// keys on and moves the request's update time so unclaimed rows resort.
+fn advance_activity(request: &mut Request, now_unix: u64) -> Result<u64, DomainError> {
     request.activity_version = next_activity_position(request)?;
+    request.updated_at_unix = now_unix;
     Ok(request.activity_version)
 }
 

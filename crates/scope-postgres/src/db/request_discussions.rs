@@ -396,6 +396,14 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_discussion(&tx, &mutation.discussion).await?;
         save_read_state(&tx, &mutation.read_state).await?;
+        super::request_attention::reactivate_attention_for_activity(
+            &tx,
+            &mutation.request.id,
+            &mutation.discussion.author_user_id,
+            mutation.request.activity_version,
+            mutation.discussion.created_at_unix,
+        )
+        .await?;
         replace_bindings_for_markdown(
             &tx,
             &binding_request_id,
