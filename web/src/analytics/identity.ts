@@ -48,6 +48,6 @@ export function identityTransition(input: {
   return { kind: 'none' }
 }
 
-function identifiedKey(clerkUserId: string) {
+export function identifiedKey(clerkUserId: string) {
   return `identified:${clerkUserId}`
 }

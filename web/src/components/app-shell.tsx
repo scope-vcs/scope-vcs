@@ -1,14 +1,11 @@
-import { cn } from '@/lib/utils'
 import { MAIN_CONTENT_ID } from './main-content'
 import type { ReactNode } from 'react'
 
 export function AppShell({
   children,
-  className,
   header,
 }: {
   children: ReactNode
-  className?: string
   header?: () => ReactNode
 }) {
   return (
@@ -21,10 +18,7 @@ export function AppShell({
       </a>
       {header?.()}
       <main
-        className={cn(
-          'min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-          className,
-        )}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         data-scroll-restoration-id={MAIN_CONTENT_ID}
         id={MAIN_CONTENT_ID}
         tabIndex={-1}

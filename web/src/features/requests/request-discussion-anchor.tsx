@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { GitCommit } from 'lucide-react'
+import { displayRouteFilePath } from '@/lib/route-file'
 import type { RequestDiscussion } from './request-discussion-types'
 import { shortOid } from '@/lib/short-oid'
 
@@ -39,7 +40,7 @@ export function RequestDiscussionAnchor({
       ) : null}
       {anchor.path ? (
         <span className="truncate" dir="rtl">
-          {anchor.path.replace(/^\/+/, '')}
+          {displayRouteFilePath(anchor.path)}
         </span>
       ) : null}
     </Link>

@@ -4,7 +4,7 @@ import type {
   ReviewFileDiff,
 } from '@/api/types'
 import { PanelState } from '@/components/empty-state'
-import { displayPath } from '@/components/file-system-tree-model'
+import { normalizeFilePath } from '@/components/file-system-tree-model'
 import { PendingSurface } from '@/components/pending-surface'
 import { Button } from '@/components/ui/button'
 import { formatBytes } from '@/lib/format-bytes'
@@ -45,7 +45,7 @@ export function ReviewFileDiffDrawer({
   scrollTop?: number
   selectedPath: string | null
 }) {
-  const displayName = displayPath(diff?.path ?? selectedPath ?? '')
+  const displayName = normalizeFilePath(diff?.path ?? selectedPath ?? '')
   const scrollRef = useRef<HTMLDivElement>(null)
   const restoredScrollKeyRef = useRef<string | null>(null)
   const scrollKey = cacheKey ?? selectedPath ?? null

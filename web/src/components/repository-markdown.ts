@@ -1,4 +1,5 @@
 import { slug } from 'github-slugger'
+import { displayRouteFilePath, routeFileName } from '../lib/route-file'
 
 const SCHEME = /^[a-z][a-z\d+.-]*:/i
 const SAFE_SCHEME = /^(?:https?|mailto):/i
@@ -6,8 +7,7 @@ const SAFE_SCHEME = /^(?:https?|mailto):/i
 export const REPOSITORY_MARKDOWN_HEADING_PREFIX = 'markdown-'
 
 export function isRepositoryMarkdownPath(path: string) {
-  const fileName = path.replace(/^\/+/, '').split('/').at(-1) ?? ''
-  return /\.md$/i.test(fileName)
+  return /\.md$/i.test(routeFileName(path))
 }
 
 export function safeMarkdownUrl(url: string) {
@@ -32,7 +32,7 @@ export function resolveRepositoryMarkdownUrl(
     hashIndex === -1 ? '' : markdownFragment(url.slice(hashIndex + 1))
   const parts = relativePath.startsWith('/')
     ? []
-    : context.markdownPath.replace(/^\/+/, '').split('/').slice(0, -1)
+    : displayRouteFilePath(context.markdownPath).split('/').slice(0, -1)
 
   for (const encodedPart of relativePath.split('/')) {
     let part: string

@@ -1,3 +1,4 @@
+import { displayRouteFilePath } from '../../lib/route-file'
 import { createCachedResource } from '../../lib/cached-resource'
 import type { RepoFileContentResponse } from '@/api/types.generated'
 
@@ -21,7 +22,7 @@ export function repoFileCacheKey({
   path: string
   repoId: string
 }) {
-  return [repoId, changeVersion, audience, path.replace(/^\/+/, '')].join('\0')
+  return [repoId, changeVersion, audience, displayRouteFilePath(path)].join('\0')
 }
 
 function approximateFileBytes(file: RepoFileContentResponse) {

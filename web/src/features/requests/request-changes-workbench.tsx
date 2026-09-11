@@ -21,6 +21,7 @@ import { shortOid } from '@/lib/short-oid'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
 import { GitCommit, MessageSquare } from 'lucide-react'
+import { displayRouteFilePath } from '@/lib/route-file'
 import { useCallback, useMemo } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
 import {
@@ -487,7 +488,7 @@ function commitDetail(
     files_truncated: commit.files_truncated,
     files: commit.files.map((file) => ({
       ...file,
-      path: `/${file.path.replace(/^\/+/, '')}`,
+      path: `/${displayRouteFilePath(file.path)}`,
     })),
     logical_commit_id: commit.oid,
     message: commit.message,

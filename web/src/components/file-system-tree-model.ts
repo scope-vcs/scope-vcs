@@ -111,10 +111,6 @@ export function ancestorFolderKeys(path: string) {
   )
 }
 
-export function displayPath(path: string) {
-  return normalizeFilePath(path)
-}
-
 export function normalizeFilePath(path: string) {
   return path
     .replace(/\\/g, '/')
