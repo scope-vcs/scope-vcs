@@ -43,17 +43,19 @@ import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { historyPageCacheKey, restoreHistoryPages, retainHistoryPages } from './history-page-cache'
 import { historyFileSelection } from './history-selection'
 
+export type HistorySearch = {
+  audience?: ProjectionPreviewAudience
+  feed?: 'updates' | 'all'
+  visibility_change?: string
+  entry?: string
+  path?: string
+}
+
 type HistoryPageProps = {
   initialPage: HistoryPageResponse
   initialEntry: HistoryEntryDetail | null
   params: RepoParams
-  search: {
-    audience?: ProjectionPreviewAudience
-    feed?: 'updates' | 'all'
-    visibility_change?: string
-    entry?: string
-    path?: string
-  }
+  search: HistorySearch
 }
 
 export function HistoryPage(props: HistoryPageProps) {
@@ -62,7 +64,7 @@ export function HistoryPage(props: HistoryPageProps) {
   const cacheKey = isLoaded
     ? historyPageCacheKey(repoResourceScope(repo, userId ?? null), props.initialPage)
     : null
-  return <HistoryPageContent initialPage={props.initialPage} initialEntry={props.initialEntry} params={props.params} search={props.search} key={cacheKey ?? 'pending'} cacheKey={cacheKey} />
+  return <HistoryPageContent key={cacheKey ?? 'pending'} {...props} cacheKey={cacheKey} />
 }
 
 function HistoryPageContent(props: HistoryPageProps & { cacheKey: string | null }) {

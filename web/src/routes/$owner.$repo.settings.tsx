@@ -13,7 +13,7 @@ import {
   updateRepoMetadataForRequest,
   parseUpdateRepoMetadataInput,
 } from '@/api/repos'
-import { HttpError } from '@/api/client'
+import { loadOptionalResource } from '@/api/http'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
 import { RepoContentError } from '@/components/repo-content-error'
@@ -22,16 +22,7 @@ import { createServerFn } from '@tanstack/react-start'
 
 const loadRepoSettings = createServerFn({ method: 'GET' })
   .validator(parseRepoParams)
-  .handler(async ({ data }) => {
-    try {
-      return await loadRepoCollaborationForRequest(data)
-    } catch (error) {
-      if (error instanceof HttpError && [403, 404].includes(error.status)) {
-        return null
-      }
-      throw error
-    }
-  })
+  .handler(({ data }) => loadOptionalResource(() => loadRepoCollaborationForRequest(data)))
 
 const deleteRepo = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)

@@ -1,5 +1,5 @@
 import { parseRepoFileInput } from '@/api/request-inputs'
-import { HttpError } from '@/api/client'
+import { HttpError, isNotFoundError } from '@/api/http'
 import {
   loadRepoContentForRequest,
   loadRepoFileForRequest,
@@ -50,9 +50,7 @@ const loadRepoFile = createServerFn({ method: 'GET' })
     try {
       return { file: await loadRepoFileForRequest(data, getRequest().signal), status: 'ready' }
     } catch (error) {
-      if (error instanceof HttpError && error.status === 404) {
-        return { status: 'missing' }
-      }
+      if (isNotFoundError(error)) return { status: 'missing' }
       if (
         error instanceof HttpError &&
         error.status === 503 &&

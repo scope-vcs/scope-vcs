@@ -3,6 +3,7 @@ import {
   loadRepoInviteForRequest,
   parseRepoInviteTokenInput,
 } from '@/api/repos'
+import { PageHeader } from '@/components/page-header'
 import { ApplicationPendingShell } from '@/components/pending-surface'
 import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
 import { InvitePage } from '@/features/invites/invite-page'
@@ -30,9 +31,7 @@ function InvitePending() {
       label="Loading repository invite"
     >
       <div className="py-8 lg:py-10">
-        <h1 className="text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[32px]">
-          Repository invite
-        </h1>
+        <PageHeader title="Repository invite" />
         <TextSkeleton className="mt-3" length="medium" size="title" />
         <TextSkeleton className="mt-2" length="long" size="meta" />
         <div className="mt-6 divide-y divide-border">

@@ -8,14 +8,16 @@ import type { CliExchangeGrant } from '@/api/types'
 import { ApplicationTopbar } from '@/components/application-topbar'
 import { AppShell } from '@/components/app-shell'
 import { CopyableCodeBlock } from '@/components/copyable-code-block'
-import { PageContent, PageHeader } from '@/components/page-header'
+import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { SectionRow, SectionRows } from '@/components/section-rows'
 import { Button } from '@/components/ui/button'
+import { AccountPageHeader } from '@/features/account/account-page-header'
 import { AccountPagePending } from '@/features/account/account-page-pending'
 import { CliSessionList } from '@/features/account/cli-session-list'
 import { UserButton } from '@clerk/tanstack-react-start'
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { AbsoluteTimestamp } from '@/components/timestamp'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { KeyRound, LoaderCircle, Monitor, Plus } from 'lucide-react'
 import { useState } from 'react'
@@ -41,11 +43,6 @@ const revokeCliSession = createServerFn({ method: 'POST' })
   .validator(parseRevokeCliSessionInput)
   .handler(({ data }) => revokeCliSessionForRequest(data))
 
-const UNIX_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-})
-
 export const Route = createFileRoute('/account')({
   beforeLoad: () => requireAccountAuth(),
   loader: () => loadCliSessions(),
@@ -54,9 +51,9 @@ export const Route = createFileRoute('/account')({
 })
 
 function AccountRoute() {
-  const loaded = Route.useLoaderData()
+  const { sessions } = Route.useLoaderData()
+  const router = useRouter()
   const [grant, setGrant] = useState<CliExchangeGrant | null>(null)
-  const [sessions, setSessions] = useState(() => loaded.sessions)
   const [pending, setPending] = useState<'grant' | string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -78,7 +75,7 @@ function AccountRoute() {
     setError(null)
     try {
       await revokeCliSession({ data: { sessionId } })
-      setSessions((current) => current.filter((session) => session.id !== sessionId))
+      await router.invalidate()
       toast.success('CLI session revoked')
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Could not revoke CLI session')
@@ -96,10 +93,7 @@ function AccountRoute() {
       )}
     >
       <PageContent>
-        <PageHeader
-          description="Manage Scope CLI access for this account."
-          title="Account"
-        />
+        <AccountPageHeader />
 
         {error && (
           <PageErrorAlert title="CLI session update failed">
@@ -131,7 +125,7 @@ function AccountRoute() {
                 <div className="space-y-2">
                   <CopyableCodeBlock value={`scope login --exchange ${grant.exchange_token}`} />
                   <p className="text-xs leading-4 text-muted-foreground">
-                    Expires {formatUnixTime(grant.expires_at_unix)}.
+                    <AbsoluteTimestamp prefix="Expires " value={grant.expires_at_unix} />.
                   </p>
                 </div>
               )}
@@ -144,7 +138,6 @@ function AccountRoute() {
             title="CLI sessions"
           >
             <CliSessionList
-              formatTime={formatUnixTime}
               pending={pending}
               revokeSession={(sessionId) => void revokeSession(sessionId)}
               sessions={sessions}
@@ -154,8 +147,4 @@ function AccountRoute() {
       </PageContent>
     </AppShell>
   )
-}
-
-function formatUnixTime(value: number) {
-  return UNIX_TIME_FORMATTER.format(new Date(value * 1000))
 }

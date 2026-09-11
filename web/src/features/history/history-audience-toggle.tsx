@@ -1,7 +1,6 @@
 import type { ProjectionPreviewAudience } from '@/api/types'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Globe2, LockKeyhole } from 'lucide-react'
-import { audienceLabel } from '../review/review-labels'
 
 export function AudienceToggle({
   audience,
@@ -38,4 +37,8 @@ export function AudienceToggle({
       })}
     </ToggleGroup>
   )
+}
+
+function audienceLabel(audience: ProjectionPreviewAudience) {
+  return audience === 'private' ? 'Private' : 'Public'
 }

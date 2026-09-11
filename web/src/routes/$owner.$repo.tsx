@@ -1,4 +1,4 @@
-import { HttpError } from '@/api/client'
+import { isNotFoundError } from '@/api/http'
 import {
   loadRepoLiveStateForRequest,
   parseRepoParams,
@@ -31,9 +31,7 @@ const loadRepoLiveState = createServerFn({ method: 'GET' })
     try {
       return { live: await loadRepoLiveStateForRequest(data) }
     } catch (error) {
-      if (error instanceof HttpError && error.status === 404) {
-        throw notFound()
-      }
+      if (isNotFoundError(error)) throw notFound()
       if (isRetryableRepoLoadError(error)) {
         return { unavailable: 'Repository refresh is temporarily unavailable.' }
       }

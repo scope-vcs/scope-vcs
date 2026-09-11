@@ -1,10 +1,10 @@
 import { parseHistoryFeed, parseVisibilityChange } from '@/api/history-inputs'
 import type { ProjectionPreviewAudience } from '@/api/types'
-import { HistoryError } from '@/features/history/history-error'
 import { HistoryPagePending } from '@/features/history/history-page-pending'
-import { HistoryPage } from '@/features/history/history-page'
-import { parseRouteFileSearch } from '@/lib/route-file'
+import { HistoryPage, type HistorySearch } from '@/features/history/history-page'
+import { parseRouteFilePathSearch } from '@/lib/route-file'
 import { loadHistoryEntry, loadHistoryPage } from '@/routes/-repo-history-actions'
+import { RouteErrorContent } from '@/components/route-error-page'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/$owner/$repo/history')({
@@ -29,7 +29,13 @@ export const Route = createFileRoute('/$owner/$repo/history')({
     }
     return { page, initialEntry }
   },
-  errorComponent: HistoryError,
+  errorComponent: ({ error }) => (
+    <RouteErrorContent
+      error={error}
+      fallbackMessage="Unexpected history error"
+      title="History unavailable"
+    />
+  ),
   pendingComponent: HistoryPagePending,
   component: HistoryRoute,
 })
@@ -40,19 +46,10 @@ function HistoryRoute() {
     <HistoryPage
       initialPage={page}
       initialEntry={initialEntry}
-      key={`${page.repo_id}:${page.audience}:${page.feed}:${page.generation}`}
       params={Route.useParams()}
       search={Route.useSearch()}
     />
   )
-}
-
-export type HistorySearch = {
-  audience?: ProjectionPreviewAudience
-  feed?: 'updates' | 'all'
-  visibility_change?: string
-  entry?: string
-  path?: string
 }
 
 function parseHistorySearch(search: Record<string, unknown>): HistorySearch {
@@ -61,7 +58,7 @@ function parseHistorySearch(search: Record<string, unknown>): HistorySearch {
     feed: parseHistoryFeed(search.feed),
     visibility_change: parseVisibilityChange(search.visibility_change) ?? undefined,
     entry: searchHistoryEntryId(search.entry),
-    path: searchHistoryPath(search.path),
+    path: parseRouteFilePathSearch(search.path),
   }
 }
 
@@ -73,11 +70,6 @@ function searchHistoryAudience(value: unknown): ProjectionPreviewAudience | unde
     return value
   }
   throw new Error(`Unsupported history audience: ${String(value)}`)
-}
-
-function searchHistoryPath(value: unknown) {
-  const path = parseRouteFileSearch(value)
-  return path ? `/${path}` : undefined
 }
 
 function searchHistoryEntryId(value: unknown) {

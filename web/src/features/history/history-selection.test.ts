@@ -1,22 +1,26 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { HistoryEntryDetail } from '@/api/types'
-import { historyFileSelection, historySelectedFilePath } from './history-selection'
+import { historyFileSelection } from './history-selection'
 
 const files = [{ path: '/first.ts' }, { path: '/second.ts' }]
 
+function detailWith(entries: { path: string }[]) {
+  return { files: entries as HistoryEntryDetail['files'], visibility_changes: [] }
+}
+
 test('history selects the first available file only when the URL has no path', () => {
-  assert.equal(historySelectedFilePath(undefined, undefined, false), null)
-  assert.equal(historySelectedFilePath(undefined, [], false), null)
-  assert.equal(historySelectedFilePath(undefined, files, false), '/first.ts')
-  assert.equal(historySelectedFilePath('/second.ts', files, false), '/second.ts')
-  assert.equal(historySelectedFilePath('/missing.ts', files, false), '/missing.ts')
+  assert.equal(historyFileSelection({}, null, false).path, null)
+  assert.equal(historyFileSelection({}, detailWith([]), false).path, null)
+  assert.equal(historyFileSelection({}, detailWith(files), false).path, '/first.ts')
+  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files), false).path, '/second.ts')
+  assert.equal(historyFileSelection({ path: '/missing.ts' }, detailWith(files), false).path, '/missing.ts')
 })
 
 test('closing a diff dismisses only the current location and explicit selection can reopen it', () => {
-  assert.equal(historySelectedFilePath('/second.ts', files, true), null)
-  assert.equal(historySelectedFilePath(undefined, files, true), null)
-  assert.equal(historySelectedFilePath('/second.ts', files, false), '/second.ts')
+  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files), true).path, null)
+  assert.equal(historyFileSelection({}, detailWith(files), true).path, null)
+  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files), false).path, '/second.ts')
 })
 
 test('selects exact visibility effects independently of content and same-path transitions', () => {

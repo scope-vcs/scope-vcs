@@ -6,21 +6,21 @@ export type HistoryVisibilityChange = HistoryEntryDetail['visibility_changes'][n
 
 export function VisibilityChanges({
   changes,
-  expanded = false,
+  expanded,
   onSelect,
   selectedId,
 }: {
   changes: HistoryEntryDetail['visibility_changes']
-  expanded?: boolean
-  onSelect?: (change: HistoryVisibilityChange) => void
-  selectedId?: string | null
+  expanded: boolean
+  onSelect: (change: HistoryVisibilityChange) => void
+  selectedId: string | null
 }) {
   if (changes.length === 0) return null
   const rows = (
     <div className="divide-y divide-border">
       {changes.map((change) => (
         <div className="flex min-h-10 flex-wrap items-center gap-2 px-5 py-2 sm:px-6" key={change.id}>
-          {change.file && onSelect ? (
+          {change.file ? (
             <button
               aria-pressed={selectedId === change.id}
               className="min-w-0 flex-1 break-all text-left font-mono text-xs text-brand underline-offset-4 hover:underline"
