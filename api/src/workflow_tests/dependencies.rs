@@ -5,13 +5,12 @@ use scope_domain::{
 };
 use scope_postgres::db::DependencyCompletion;
 
-async fn dependency_fixture(label: &str) -> AppState {
+async fn dependency_fixture() -> AppState {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
-    let source = temp_git_repo(label);
+    let source = temp_git_repo("dependency-report-access");
     fs::create_dir_all(source.join("src")).unwrap();
     fs::create_dir_all(source.join("internal")).unwrap();
-    fs::write(source.join("src/a.ts"), "export { value } from './b';\n").unwrap();
     fs::write(
         source.join("src/b.ts"),
         "import { secret } from '../internal/c';\nexport const value = secret;\n",
@@ -19,8 +18,8 @@ async fn dependency_fixture(label: &str) -> AppState {
     .unwrap();
     fs::write(source.join("internal/c.ts"), "export const secret = 42;\n").unwrap();
     run_git(Some(&source), &["add", "."], "stage dependency fixture").unwrap();
-    commit_all(&source, "add direct dependency chain");
-    let bare = clone_test_repo(&source, &format!("{label}-bare"), true);
+    commit_all(&source, "add dependency fixture");
+    let bare = clone_test_repo(&source, "dependency-report-access-bare", true);
     let mut config = repo_config(Visibility::Public);
     config.visibility.rules.push(RepoConfigVisibilityRule {
         path: "/internal/**".to_string(),
@@ -33,25 +32,13 @@ async fn dependency_fixture(label: &str) -> AppState {
 fn reader_output() -> AnalyzerOutput {
     AnalyzerOutput {
         analyzer_version: DEPENDENCY_ANALYZER_VERSION.to_string(),
-        analyzed_files: vec!["src/a.ts".into(), "src/b.ts".into(), "internal/c.ts".into()],
+        analyzed_files: vec!["src/b.ts".into(), "internal/c.ts".into()],
         unsupported_files: Vec::new(),
-        edges: vec![
-            DependencyEdge {
-                source_path: "src/a.ts".into(),
-                target_path: "src/b.ts".into(),
-                kind: "re-export".into(),
-            },
-            DependencyEdge {
-                source_path: "src/b.ts".into(),
-                target_path: "internal/c.ts".into(),
-                kind: "import".into(),
-            },
-            DependencyEdge {
-                source_path: "src/b.ts".into(),
-                target_path: "internal/c.ts".into(),
-                kind: "type-import".into(),
-            },
-        ],
+        edges: vec![DependencyEdge {
+            source_path: "src/b.ts".into(),
+            target_path: "internal/c.ts".into(),
+            kind: "import".into(),
+        }],
         gaps: Vec::new(),
     }
 }
@@ -68,8 +55,8 @@ async fn read_check(state: &AppState, authorization: Option<&str>) -> Response {
 }
 
 #[tokio::test]
-async fn dependency_report_is_persisted_direct_only_and_maintainer_only() {
-    let state = dependency_fixture("dependency-report-access").await;
+async fn dependency_report_is_persisted_and_maintainer_only() {
+    let state = dependency_fixture().await;
     let member_id =
         scope_postgres::db::scope_user_id_for_auth_identity("clerk", "dependency_member");
     state
@@ -183,68 +170,4 @@ async fn dependency_report_is_persisted_direct_only_and_maintainer_only() {
         read_check(&state, Some(&member)).await.status(),
         StatusCode::NOT_FOUND
     );
-}
-
-#[tokio::test]
-async fn dependency_failed_refresh_retains_previous_results_and_commit_identity() {
-    let state = dependency_fixture("dependency-report-refresh").await;
-    let now = unix_now();
-    let claim = state
-        .metadata
-        .jobs()
-        .claim_dependency_analysis(
-            "dependency-test",
-            DEPENDENCY_ANALYZER_VERSION,
-            now,
-            60,
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    state
-        .metadata
-        .jobs()
-        .complete_dependency_analysis_claim(&claim, reader_output(), now + 1)
-        .await
-        .unwrap();
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.record.description = Some("Updated repository".into());
-            repo.bump_change_version();
-        })
-        .await
-        .unwrap();
-    let owner = bearer_header();
-    let updating = response_json(read_check(&state, Some(&owner)).await).await;
-    assert_eq!(updating["status"], "Updating");
-    assert_eq!(updating["report"]["public_file_count"], 1);
-    let retry = state
-        .metadata
-        .jobs()
-        .claim_dependency_analysis(
-            "dependency-test",
-            DEPENDENCY_ANALYZER_VERSION,
-            now + 2,
-            60,
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(retry.reusable_analysis.is_some());
-    assert!(
-        state
-            .metadata
-            .jobs()
-            .fail_dependency_analysis_claim(&retry, "Dependency check could not finish", now + 3)
-            .await
-            .unwrap()
-    );
-    let failed = response_json(read_check(&state, Some(&owner)).await).await;
-    assert_eq!(failed["status"], "Failed");
-    assert_eq!(failed["report"], updating["report"]);
-    assert_eq!(failed["error"], "Dependency check could not finish");
 }

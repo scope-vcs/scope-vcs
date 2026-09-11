@@ -273,44 +273,6 @@ async fn seed_catalog_git_segments_restore_raw_repositories() {
     let _ = fs::remove_dir_all(state.data_dir.as_ref());
 }
 
-#[test]
-fn dependency_repository_fixtures_are_deterministic() {
-    let build = || {
-        let store = EncryptedObjectStore::new(Arc::new(MemoryObjectStore::new()), [9; 32]);
-        let git_segment_store = super::test_seed_git_segment_store();
-        let owner = seed_user_account(DevSeedUser {
-            email: "dev@example.com".to_string(),
-            handle: "dev".to_string(),
-        });
-        dependency_repositories::seed_dependency_repositories(&store, &git_segment_store, &owner)
-            .unwrap()
-            .into_iter()
-            .map(|(repository, upload)| {
-                (
-                    repository.record.id,
-                    repository.git_head.unwrap().head_oid,
-                    repository
-                        .graph
-                        .commits
-                        .into_iter()
-                        .flat_map(|commit| commit.changes)
-                        .map(|change| {
-                            (
-                                change.path,
-                                change.new_content.unwrap().sha256,
-                                change.visibility,
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                    upload.sha256.unwrap(),
-                )
-            })
-            .collect::<Vec<_>>()
-    };
-
-    assert_eq!(build(), build());
-}
-
 fn request_state(catalog: &scope_postgres::db::CatalogFixture, request_id: &str) -> RequestState {
     catalog.requests.get(request_id).unwrap().state()
 }

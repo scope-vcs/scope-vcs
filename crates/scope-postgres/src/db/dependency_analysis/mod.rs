@@ -1,6 +1,6 @@
 use super::{
-    GeneratedIdKind, GeneratedIdSource, JobStore, RepositoryStore, acquire_aggregate_lock,
-    decode_json, generated_ids::generate_id, git_segments::load_git_pack_spans,
+    GeneratedIdKind, GeneratedIdSource, JobStore, acquire_aggregate_lock, decode_json,
+    generated_ids::generate_id, git_segments::load_git_pack_spans,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -39,8 +39,6 @@ pub struct DependencyAnalysisClaim {
     pub git_pack_spans: Vec<GitPackSpan>,
     pub analyzer_version: String,
     pub lease_generation: String,
-    pub attempts: u32,
-    pub repo_config: RepoConfig,
     pub files: Vec<DependencySnapshotFile>,
     pub reusable_analysis: Option<StoredDependencyAnalysis>,
 }
@@ -70,48 +68,6 @@ pub(super) async fn enqueue_dependency_analysis_for_repository<C: ConnectionTrai
     .await
 }
 
-impl RepositoryStore {
-    pub async fn enqueue_dependency_analysis(
-        &self,
-        repo_id: &str,
-        analyzer_version: &str,
-        now_unix: u64,
-    ) -> Result<bool, PostgresError> {
-        validate_analyzer_version(analyzer_version)?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "repository", repo_id).await?;
-        let Some(row) = tx
-            .query_one(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT repository.incarnation_id, repository.change_version, head.head_oid
-                 FROM scope_repositories repository
-                 JOIN scope_git_heads head ON head.repo_id = repository.id
-                 WHERE repository.id = $1",
-                [repo_id.into()],
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-        else {
-            tx.commit().await.map_err(PostgresError::internal)?;
-            return Ok(false);
-        };
-        let incarnation =
-            RepositoryIncarnation::new(repo_id, database_value::<String>(&row, "incarnation_id")?)
-                .map_err(PostgresError::internal)?;
-        enqueue_dependency_analysis_target(
-            &tx,
-            &incarnation,
-            database_u64(&row, "change_version", "repository change version")?,
-            &database_value::<String>(&row, "head_oid")?,
-            analyzer_version,
-            now_unix,
-        )
-        .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(true)
-    }
-}
-
 impl JobStore {
     pub async fn claim_dependency_analysis(
         &self,
@@ -126,22 +82,9 @@ impl JobStore {
                 "dependency analysis worker identity is empty",
             ));
         }
-        if lease_seconds == 0 {
-            return Err(PostgresError::internal_message(
-                "dependency analysis lease must be greater than zero",
-            ));
-        }
         validate_analyzer_version(analyzer_version)?;
         let now = dependency_time(now_unix)?;
-        let lease_expires = now
-            .checked_add(i64::try_from(lease_seconds).map_err(|_| {
-                PostgresError::internal_message("dependency analysis lease exceeds database bigint")
-            })?)
-            .ok_or_else(|| {
-                PostgresError::internal_message(
-                    "dependency analysis lease expiry exceeds database bigint",
-                )
-            })?;
+        let lease_expires = lease_expiry(now, lease_seconds)?;
         let lease_generation =
             generate_id(generated_ids, GeneratedIdKind::DependencyAnalysisLease)?;
         let tx = self
@@ -185,7 +128,7 @@ impl JobStore {
         let repository = tx
             .query_one(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "SELECT incarnation_id, change_version, repo_config FROM scope_repositories WHERE id = $1",
+                "SELECT incarnation_id, change_version FROM scope_repositories WHERE id = $1",
                 [repo_id.clone().into()],
             ))
             .await
@@ -253,11 +196,6 @@ impl JobStore {
             git_head: head,
             analyzer_version,
             lease_generation,
-            attempts: database_u32(&job, "attempts", "dependency analysis attempts")?,
-            repo_config: decode_json(database_value::<serde_json::Value>(
-                &repository,
-                "repo_config",
-            )?)?,
             files,
             reusable_analysis,
         };
@@ -271,21 +209,8 @@ impl JobStore {
         now_unix: u64,
         lease_seconds: u64,
     ) -> Result<bool, PostgresError> {
-        if lease_seconds == 0 {
-            return Err(PostgresError::internal_message(
-                "dependency analysis lease must be greater than zero",
-            ));
-        }
         let now = dependency_time(now_unix)?;
-        let expires = now
-            .checked_add(i64::try_from(lease_seconds).map_err(|_| {
-                PostgresError::internal_message("dependency analysis lease exceeds database bigint")
-            })?)
-            .ok_or_else(|| {
-                PostgresError::internal_message(
-                    "dependency analysis lease expiry exceeds database bigint",
-                )
-            })?;
+        let expires = lease_expiry(now, lease_seconds)?;
         let result = self
             .db
             .execute(Statement::from_sql_and_values(
@@ -611,6 +536,20 @@ fn validate_analyzer_version(version: &str) -> Result<(), PostgresError> {
     Ok(())
 }
 
+fn lease_expiry(now: i64, lease_seconds: u64) -> Result<i64, PostgresError> {
+    if lease_seconds == 0 {
+        return Err(PostgresError::internal_message(
+            "dependency analysis lease must be greater than zero",
+        ));
+    }
+    now.checked_add(i64::try_from(lease_seconds).map_err(|_| {
+        PostgresError::internal_message("dependency analysis lease exceeds database bigint")
+    })?)
+    .ok_or_else(|| {
+        PostgresError::internal_message("dependency analysis lease expiry exceeds database bigint")
+    })
+}
+
 fn dependency_time(now_unix: u64) -> Result<i64, PostgresError> {
     i64::try_from(now_unix).map_err(|_| {
         PostgresError::internal_message("dependency analysis time exceeds database bigint")
@@ -620,11 +559,6 @@ fn dependency_time(now_unix: u64) -> Result<i64, PostgresError> {
 fn database_u64(row: &QueryResult, column: &str, label: &str) -> Result<u64, PostgresError> {
     u64::try_from(database_value::<i64>(row, column)?)
         .map_err(|_| PostgresError::internal_message(format!("{label} is negative")))
-}
-
-fn database_u32(row: &QueryResult, column: &str, label: &str) -> Result<u32, PostgresError> {
-    u32::try_from(database_value::<i32>(row, column)?)
-        .map_err(|_| PostgresError::internal_message(format!("{label} is invalid")))
 }
 
 fn database_value<T: TryGetable>(row: &QueryResult, column: &str) -> Result<T, PostgresError> {

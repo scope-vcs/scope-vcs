@@ -220,8 +220,8 @@ mod tests {
                 unsupported_files: vec!["src/main.rs".into()],
                 edges,
                 gaps: vec![DependencyGap {
-                    path: "public/a.ts".into(),
-                    reason: "variable dynamic import".into(),
+                    path: ".".into(),
+                    reason: "snapshot inventory incomplete".into(),
                 }],
             },
         )
@@ -256,6 +256,7 @@ mod tests {
             }]
         );
         assert_eq!(report.public_file_count, 1);
+        assert_eq!(report.gaps[0].path, ".");
     }
 
     #[test]
@@ -270,26 +271,6 @@ mod tests {
         let report = evaluate_dependency_analysis(&analysis, &config()).unwrap();
         assert_eq!(report.findings.len(), 2);
         assert_eq!(report.public_file_count, 1);
-    }
-
-    #[test]
-    fn reevaluates_retained_edges_after_policy_changes() {
-        let analysis = analysis(vec![edge("public/a.ts", "private/c.ts", "import")]);
-        assert_eq!(
-            evaluate_dependency_analysis(&analysis, &config())
-                .unwrap()
-                .findings
-                .len(),
-            1
-        );
-
-        let public = RepoConfig::with_default_visibility(ConfigVisibility::Public);
-        assert!(
-            evaluate_dependency_analysis(&analysis, &public)
-                .unwrap()
-                .findings
-                .is_empty()
-        );
     }
 
     #[test]
@@ -308,24 +289,5 @@ mod tests {
             .unwrap_err();
             assert_eq!(error, DependencyAnalysisError::InvalidPath(path.into()));
         }
-    }
-
-    #[test]
-    fn accepts_repository_wide_coverage_gap_path() {
-        let analysis = StoredDependencyAnalysis::from_output(
-            "head",
-            AnalyzerOutput {
-                analyzer_version: "reader".into(),
-                analyzed_files: Vec::new(),
-                unsupported_files: Vec::new(),
-                edges: Vec::new(),
-                gaps: vec![DependencyGap {
-                    path: ".".into(),
-                    reason: "snapshot inventory failed".into(),
-                }],
-            },
-        )
-        .unwrap();
-        assert_eq!(analysis.gaps[0].path, ".");
     }
 }

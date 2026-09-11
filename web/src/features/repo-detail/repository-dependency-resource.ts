@@ -56,40 +56,18 @@ export function createRepositoryDependencyResource(
     return value
   }
 
-  async function load(
-    identity: string,
-    version: string,
-    loader: (signal: AbortSignal) => Promise<RepositoryDependencyCheckResponse>,
-  ) {
-    if (cache.getSnapshot(identity).error !== null) invalidate(identity)
-    const value = await ensure(identity, version, loader)
-    if (value) return value
-    const snapshot = cache.getSnapshot(identity)
-    throw snapshot.error ?? new Error('Resource is no longer available.')
-  }
-
   function invalidate(identity: string) {
     stopPoll(identity)
     cache.invalidate(identity)
   }
 
   return {
-    ...cache,
+    subscribe: cache.subscribe,
+    getSnapshot: cache.getSnapshot,
+    getServerSnapshot: cache.getServerSnapshot,
+    peek: cache.peek,
     ensure,
-    load,
     invalidate,
-    invalidateAll() {
-      for (const identity of polls.keys()) stopPoll(identity)
-      cache.invalidateAll()
-    },
-    invalidateMatching(matches: (identity: string) => boolean) {
-      for (const identity of polls.keys()) if (matches(identity)) stopPoll(identity)
-      cache.invalidateMatching(matches)
-    },
-    removeMatching(matches: (identity: string) => boolean) {
-      for (const identity of polls.keys()) if (matches(identity)) stopPoll(identity)
-      cache.removeMatching(matches)
-    },
     write(identity: string, value: RepositoryDependencyCheckResponse, version = '') {
       cache.write(identity, value, version)
       updatePoll(identity, value)

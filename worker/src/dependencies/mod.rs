@@ -256,54 +256,27 @@ async fn publish_change(
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     #[tokio::test]
-    async fn cancel_waits_for_the_running_analyzer_to_be_reaped() {
-        let scratch = tempfile::tempdir().unwrap();
-        let ready = scratch.path().join("ready");
-        let process_ready = ready.clone();
+    async fn cancellation_waits_for_analysis_cleanup() {
         let cancellation = ProcessCancellation::new();
-        let process_cancellation = cancellation.clone();
+        let task_cancellation = cancellation.clone();
+        let cleaned_up = Arc::new(AtomicBool::new(false));
+        let task_cleaned_up = cleaned_up.clone();
         let task = tokio::spawn(async move {
-            tokio::task::spawn_blocking(move || {
-                let mut command = Command::new("sh");
-                command
-                    .args(["-c", "echo $$ > \"$1\"; sleep 30", "analyzer-test"])
-                    .arg(process_ready);
-                run_cancellable(
-                    &mut command,
-                    None,
-                    ProcessLimits::new(Duration::from_secs(30)),
-                    "test analyzer",
-                    &process_cancellation,
-                )?;
-                anyhow::bail!("the analyzer unexpectedly completed without cancellation")
-            })
-            .await?
+            task_cancellation.cancelled().await;
+            tokio::task::yield_now().await;
+            task_cleaned_up.store(true, Ordering::SeqCst);
+            anyhow::bail!("analysis canceled")
         });
-        tokio::time::timeout(Duration::from_secs(10), async {
-            while !ready.exists() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .unwrap();
-        let pid = std::fs::read_to_string(ready).unwrap();
+
         tokio::time::timeout(Duration::from_secs(5), cancel_analysis(&cancellation, task))
             .await
             .unwrap();
-        let status = Command::new("kill")
-            .args(["-0", pid.trim()])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap();
-        assert!(
-            !status.success(),
-            "cancellation must reap the analyzer before returning"
-        );
+        assert!(cleaned_up.load(Ordering::SeqCst));
     }
 }

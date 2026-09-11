@@ -8,14 +8,7 @@ import type {
 import {
   createRepositoryDependencyResource,
   repositoryDependencyIdentity,
-  repositoryDependencyResource,
 } from './repository-dependency-resource'
-
-const unsupported: RepositoryDependencyCheckResponse = {
-  error: null,
-  report: null,
-  status: 'Unsupported',
-}
 
 function repo(actor: RepositoryActor): RepoSummaryResponse {
   return {
@@ -43,38 +36,34 @@ function repo(actor: RepositoryActor): RepoSummaryResponse {
   }
 }
 
-test('reuses a retained report until its repository event invalidates it', async () => {
-  repositoryDependencyResource.clear()
-  const identity = repositoryDependencyIdentity(repo('Member'), 'viewer-1')!
-  let loads = 0
-  const load = async () => {
-    loads += 1
-    return unsupported
-  }
-
-  await repositoryDependencyResource.ensure(identity, '4', load)
-  await repositoryDependencyResource.ensure(identity, '4', load)
-  assert.equal(loads, 1)
-
-  repositoryDependencyResource.invalidate(identity)
-  assert.equal(repositoryDependencyResource.peek(identity), unsupported)
-  await repositoryDependencyResource.ensure(identity, '4', load)
-  assert.equal(loads, 2)
-})
-
-test('polls pending and updating checks until a terminal result is retained', async () => {
+function pollScheduler() {
   let scheduled: (() => void) | null = null
   let canceled = 0
-  const resource = createRepositoryDependencyResource((poll) => {
-    scheduled = () => {
+  const delays: number[] = []
+  return {
+    schedule(poll: () => void, delayMs: number) {
+      delays.push(delayMs)
+      scheduled = poll
+      return () => {
+        canceled += 1
+        scheduled = null
+      }
+    },
+    fire() {
+      assert.ok(scheduled, 'expected a scheduled poll')
+      const poll = scheduled
       scheduled = null
       poll()
-    }
-    return () => {
-      canceled += 1
-      scheduled = null
-    }
-  })
+    },
+    get pending() { return scheduled !== null },
+    get canceled() { return canceled },
+    delays,
+  }
+}
+
+test('polls a pending check until a terminal result is retained', async () => {
+  const scheduler = pollScheduler()
+  const resource = createRepositoryDependencyResource(scheduler.schedule)
   const identity = 'repo-viewer-access'
   let status: RepositoryDependencyCheckResponse['status'] = 'Pending'
   let loads = 0
@@ -85,26 +74,23 @@ test('polls pending and updating checks until a terminal result is retained', as
 
   await resource.ensure(identity, '4', load)
   assert.equal(loads, 1)
-  assert.notEqual(scheduled, null)
+  assert.equal(scheduler.pending, true)
 
-  const poll = scheduled as unknown as () => void
-  poll()
+  scheduler.fire()
   assert.equal(resource.getSnapshot(identity).stale, true)
   assert.equal(resource.peek(identity)?.status, 'Pending')
 
   status = 'Ready'
   await resource.ensure(identity, '4', load)
   assert.equal(loads, 2)
-  assert.equal(scheduled, null)
+  assert.equal(scheduler.pending, false)
   assert.equal(resource.peek(identity)?.status, 'Ready')
-  assert.equal(canceled, 0)
+  assert.equal(scheduler.canceled, 0)
 })
 
 test('an event cancels a pending poll while retaining the previous result', async () => {
-  let canceled = 0
-  const resource = createRepositoryDependencyResource(() => () => {
-    canceled += 1
-  })
+  const scheduler = pollScheduler()
+  const resource = createRepositoryDependencyResource(scheduler.schedule)
   const pending: RepositoryDependencyCheckResponse = {
     error: null,
     report: null,
@@ -114,30 +100,21 @@ test('an event cancels a pending poll while retaining the previous result', asyn
   await resource.ensure('repo', '4', async () => pending)
   resource.invalidate('repo')
 
-  assert.equal(canceled, 1)
+  assert.equal(scheduler.canceled, 1)
   assert.equal(resource.getSnapshot('repo').stale, true)
   assert.equal(resource.peek('repo'), pending)
 })
 
 test('retries a failed poll without dropping its retained result', async () => {
-  let scheduled: (() => void) | null = null
-  const resource = createRepositoryDependencyResource((poll) => {
-    scheduled = () => {
-      scheduled = null
-      poll()
-    }
-    return () => {
-      scheduled = null
-    }
-  })
+  const scheduler = pollScheduler()
+  const resource = createRepositoryDependencyResource(scheduler.schedule)
   const updating: RepositoryDependencyCheckResponse = {
     error: null,
     report: null,
     status: 'Updating',
   }
   await resource.ensure('repo', '4', async () => updating)
-  const firstPoll = scheduled as unknown as () => void
-  firstPoll()
+  scheduler.fire()
 
   await resource.ensure('repo', '4', async () => {
     throw new Error('temporary outage')
@@ -145,34 +122,26 @@ test('retries a failed poll without dropping its retained result', async () => {
 
   assert.equal(resource.peek('repo'), updating)
   assert.equal(resource.getSnapshot('repo').error instanceof Error, true)
-  assert.notEqual(scheduled, null)
+  assert.equal(scheduler.pending, true)
 })
 
 test('polls durable job failures less often than active checks', async () => {
-  const delays: number[] = []
-  let scheduled: (() => void) | null = null
-  const resource = createRepositoryDependencyResource((poll, delayMs) => {
-    delays.push(delayMs)
-    scheduled = poll
-    return () => {
-      scheduled = null
-    }
-  })
+  const scheduler = pollScheduler()
+  const resource = createRepositoryDependencyResource(scheduler.schedule)
   await resource.ensure('repo', '4', async () => ({
     error: null,
     report: null,
     status: 'Pending',
   }))
-  const pendingPoll = scheduled as unknown as () => void
-  pendingPoll()
+  scheduler.fire()
   await resource.ensure('repo', '4', async () => ({
     error: 'analyzer failed',
     report: null,
     status: 'Failed',
   }))
 
-  assert.equal(delays.length, 2)
-  assert.equal(delays[1] > delays[0], true)
+  assert.equal(scheduler.delays.length, 2)
+  assert.equal(scheduler.delays[1] > scheduler.delays[0], true)
 })
 
 test('hides public access and isolates changes in viewer or maintainer access', () => {

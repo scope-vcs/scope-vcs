@@ -58,51 +58,52 @@ async fn seeded_store() -> MetadataStore {
     store
 }
 
-async fn schedule_and_claim(
+async fn claim_job(
     store: &MetadataStore,
     worker: &str,
-    now_unix: u64,
+    now: u64,
     lease_seconds: u64,
-) -> DependencyAnalysisClaim {
-    store
-        .jobs()
-        .enqueue_dependency_analysis_backfill(DEPENDENCY_ANALYZER_VERSION, now_unix, 10)
-        .await
-        .unwrap();
+) -> Option<DependencyAnalysisClaim> {
     store
         .jobs()
         .claim_dependency_analysis(
             worker,
             DEPENDENCY_ANALYZER_VERSION,
-            now_unix,
+            now,
             lease_seconds,
             &test_generated_id,
         )
         .await
         .unwrap()
+}
+
+async fn read_report(store: &MetadataStore) -> scope_domain::dependency_analysis::DependencyCheck {
+    store
+        .repositories()
+        .dependency_check("dependency-owner", "repo", "dependency-owner-id")
+        .await
         .unwrap()
+        .unwrap()
+}
+
+async fn schedule_and_claim(
+    store: &MetadataStore,
+    worker: &str,
+    now: u64,
+    lease_seconds: u64,
+) -> DependencyAnalysisClaim {
+    store
+        .jobs()
+        .enqueue_dependency_analysis_backfill(DEPENDENCY_ANALYZER_VERSION, now, 10)
+        .await
+        .unwrap();
+    claim_job(store, worker, now, lease_seconds).await.unwrap()
 }
 
 #[tokio::test]
 async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected() {
     let store = seeded_store().await;
-    store
-        .jobs()
-        .enqueue_dependency_analysis_backfill(DEPENDENCY_ANALYZER_VERSION, NOW, 10)
-        .await
-        .unwrap();
-    let initial = store
-        .jobs()
-        .claim_dependency_analysis(
-            "worker-a",
-            DEPENDENCY_ANALYZER_VERSION,
-            NOW,
-            30,
-            &test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let initial = schedule_and_claim(&store, "worker-a", NOW, 30).await;
     assert!(initial.reusable_analysis.is_none());
     assert_eq!(
         store
@@ -112,12 +113,7 @@ async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected(
             .unwrap(),
         DependencyCompletion::Completed
     );
-    let current = store
-        .repositories()
-        .dependency_check("dependency-owner", "repo", "dependency-owner-id")
-        .await
-        .unwrap()
-        .unwrap();
+    let current = read_report(&store).await;
     assert_eq!(current.status, DependencyCheckStatus::Ready);
     assert_eq!(
         current.report.unwrap().findings,
@@ -135,18 +131,7 @@ async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected(
         })
         .await
         .unwrap();
-    let old_policy = store
-        .jobs()
-        .claim_dependency_analysis(
-            "worker-a",
-            DEPENDENCY_ANALYZER_VERSION,
-            NOW + 2,
-            30,
-            &test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let old_policy = claim_job(&store, "worker-a", NOW + 2, 30).await.unwrap();
     assert!(old_policy.reusable_analysis.is_some());
 
     store
@@ -162,27 +147,11 @@ async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected(
             .unwrap(),
         DependencyCompletion::Stale
     );
-    let updating = store
-        .repositories()
-        .dependency_check("dependency-owner", "repo", "dependency-owner-id")
-        .await
-        .unwrap()
-        .unwrap();
+    let updating = read_report(&store).await;
     assert_eq!(updating.status, DependencyCheckStatus::Updating);
     assert_eq!(updating.report.unwrap().findings.len(), 1);
 
-    let current_policy = store
-        .jobs()
-        .claim_dependency_analysis(
-            "worker-b",
-            DEPENDENCY_ANALYZER_VERSION,
-            NOW + 3,
-            30,
-            &test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let current_policy = claim_job(&store, "worker-b", NOW + 3, 30).await.unwrap();
     assert!(current_policy.reusable_analysis.is_some());
     assert_eq!(
         store
@@ -192,12 +161,7 @@ async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected(
             .unwrap(),
         DependencyCompletion::Completed
     );
-    let refreshed = store
-        .repositories()
-        .dependency_check("dependency-owner", "repo", "dependency-owner-id")
-        .await
-        .unwrap()
-        .unwrap();
+    let refreshed = read_report(&store).await;
     assert_eq!(refreshed.status, DependencyCheckStatus::Ready);
     assert!(refreshed.report.unwrap().findings.is_empty());
 }
@@ -205,23 +169,7 @@ async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected(
 #[tokio::test]
 async fn failed_refresh_retains_the_previous_report() {
     let store = seeded_store().await;
-    store
-        .jobs()
-        .enqueue_dependency_analysis_backfill(DEPENDENCY_ANALYZER_VERSION, NOW, 10)
-        .await
-        .unwrap();
-    let initial = store
-        .jobs()
-        .claim_dependency_analysis(
-            "worker-a",
-            DEPENDENCY_ANALYZER_VERSION,
-            NOW,
-            30,
-            &test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let initial = schedule_and_claim(&store, "worker-a", NOW, 30).await;
     store
         .jobs()
         .complete_dependency_analysis_claim(&initial, output(), NOW + 1)
@@ -232,18 +180,13 @@ async fn failed_refresh_retains_the_previous_report() {
         .mutate_repository_for_tests(REPO_ID, Repository::bump_change_version)
         .await
         .unwrap();
-    let refresh = store
-        .jobs()
-        .claim_dependency_analysis(
-            "worker-b",
-            DEPENDENCY_ANALYZER_VERSION,
-            NOW + 2,
-            30,
-            &test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let updating = read_report(&store).await;
+    assert_eq!(updating.status, DependencyCheckStatus::Updating);
+    assert_eq!(
+        updating.report.as_ref().unwrap().commit_oid,
+        initial.git_head.head_oid
+    );
+    let refresh = claim_job(&store, "worker-b", NOW + 2, 30).await.unwrap();
     assert!(
         store
             .jobs()
@@ -252,15 +195,10 @@ async fn failed_refresh_retains_the_previous_report() {
             .unwrap()
     );
 
-    let failed = store
-        .repositories()
-        .dependency_check("dependency-owner", "repo", "dependency-owner-id")
-        .await
-        .unwrap()
-        .unwrap();
+    let failed = read_report(&store).await;
     assert_eq!(failed.status, DependencyCheckStatus::Failed);
     assert_eq!(failed.error.as_deref(), Some("reader failed"));
-    assert_eq!(failed.report.unwrap().findings.len(), 1);
+    assert_eq!(failed.report, updating.report);
 }
 
 #[tokio::test]
@@ -276,18 +214,7 @@ async fn expired_completion_is_rejected_and_failure_uses_backoff() {
         DependencyCompletion::Stale
     );
 
-    let reclaimed = store
-        .jobs()
-        .claim_dependency_analysis(
-            "worker-b",
-            DEPENDENCY_ANALYZER_VERSION,
-            NOW + 5,
-            30,
-            &test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let reclaimed = claim_job(&store, "worker-b", NOW + 5, 30).await.unwrap();
     assert!(
         store
             .jobs()
@@ -295,34 +222,8 @@ async fn expired_completion_is_rejected_and_failure_uses_backoff() {
             .await
             .unwrap()
     );
-    assert!(
-        store
-            .jobs()
-            .claim_dependency_analysis(
-                "worker-c",
-                DEPENDENCY_ANALYZER_VERSION,
-                NOW + 10,
-                30,
-                &test_generated_id,
-            )
-            .await
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        store
-            .jobs()
-            .claim_dependency_analysis(
-                "worker-c",
-                DEPENDENCY_ANALYZER_VERSION,
-                NOW + 11,
-                30,
-                &test_generated_id,
-            )
-            .await
-            .unwrap()
-            .is_some()
-    );
+    assert!(claim_job(&store, "worker-c", NOW + 10, 30).await.is_none());
+    assert!(claim_job(&store, "worker-c", NOW + 11, 30).await.is_some());
 }
 
 #[tokio::test]
@@ -351,18 +252,7 @@ async fn repository_recreation_fences_the_old_incarnation() {
             .unwrap(),
         DependencyCompletion::Stale
     );
-    let current = store
-        .jobs()
-        .claim_dependency_analysis(
-            "worker-b",
-            DEPENDENCY_ANALYZER_VERSION,
-            NOW + 2,
-            30,
-            &test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let current = claim_job(&store, "worker-b", NOW + 2, 30).await.unwrap();
     assert_eq!(
         current.incarnation.incarnation_id(),
         "repoi_dependency_recreated"
@@ -408,18 +298,7 @@ async fn repeated_backfill_preserves_a_lease_and_repository_updates_enqueue_new_
         })
         .await
         .unwrap();
-    let content_update = store
-        .jobs()
-        .claim_dependency_analysis(
-            "worker-b",
-            DEPENDENCY_ANALYZER_VERSION,
-            NOW + 5,
-            30,
-            &test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let content_update = claim_job(&store, "worker-b", NOW + 5, 30).await.unwrap();
     assert_eq!(content_update.repo_version, 2);
     assert_eq!(content_update.git_head.head_oid, "c".repeat(40));
     assert!(content_update.reusable_analysis.is_none());
@@ -455,18 +334,7 @@ async fn failed_first_page_job_does_not_starve_later_backfill_candidates() {
             .unwrap(),
         1
     );
-    let second = store
-        .jobs()
-        .claim_dependency_analysis(
-            "worker-b",
-            DEPENDENCY_ANALYZER_VERSION,
-            NOW + 2,
-            30,
-            &test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let second = claim_job(&store, "worker-b", NOW + 2, 30).await.unwrap();
     assert_eq!(
         second.incarnation.repository_id(),
         "dependency-owner/second"

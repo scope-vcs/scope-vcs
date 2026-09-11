@@ -18,7 +18,7 @@ function edgesFrom(result, source) {
   return result.edges.filter((edge) => edge.source_path === source);
 }
 
-test("retains six source-level static cases plus literal require and dynamic import", async () => {
+test("retains static import forms and deduplicates relative and aliased targets", async () => {
   const result = await analyzeSnapshot(fixture("static"));
 
   assert.equal(result.analyzer_version, ANALYZER_VERSION);
@@ -38,10 +38,6 @@ test("retains six source-level static cases plus literal require and dynamic imp
     ],
   );
   assert.deepEqual(edgesFrom(result, "src/public/external.ts"), []);
-});
-
-test("deduplicates repeated relative and aliased imports of the same target", async () => {
-  const result = await analyzeSnapshot(fixture("static"));
   assert.deepEqual(edgesFrom(result, "src/public/duplicate.ts"), [
     {
       source_path: "src/public/duplicate.ts",

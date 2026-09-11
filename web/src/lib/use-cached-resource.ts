@@ -24,7 +24,7 @@ export function useCachedResource<T extends object>({
   fallbackError: string
   identity: string | null
   load: (signal: AbortSignal) => Promise<T>
-  resource: CachedResourceStore<T>
+  resource: Pick<CachedResourceStore<T>, 'subscribe' | 'getSnapshot' | 'getServerSnapshot' | 'ensure' | 'invalidate'>
   version?: string
 }): CachedResource<T> {
   const subscribe = useCallback((listener: () => void) => identity

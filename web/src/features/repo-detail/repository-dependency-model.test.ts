@@ -81,40 +81,33 @@ test('shows a quiet, scoped clear result only for a complete report', () => {
   })
 })
 
-test('retains the previous clear result while its replacement is running', () => {
+test('retains findings and clear reports during updates and failures', () => {
   const report = response().report!
-  const presentation = dependencyCheckPresentation({
-    refreshError: null,
-    refreshing: true,
-    response: response({ report: { ...report, findings: [], public_file_count: 0 } }),
-  })
+  const states = [
+    { status: 'Ready', refreshing: true, refreshError: null, meta: 'Updating…' },
+    { status: 'Updating', refreshing: false, refreshError: null, meta: 'Updating…' },
+    { status: 'Ready', refreshing: false, refreshError: 'request failed', meta: 'Update failed' },
+  ] as const
 
-  assert.equal(presentation.kind, 'report')
-  if (presentation.kind !== 'report') return
-  assert.equal(presentation.label, 'No public → private imports found')
-  assert.equal(presentation.meta, 'Updating…')
-  assert.match(presentation.coverage, /^Showing main at a71c9f2/)
-})
+  for (const findings of [report.findings, []]) {
+    for (const { status, refreshing, refreshError, meta } of states) {
+      const retained = { ...report, findings, public_file_count: findings.length ? 1 : 0 }
+      const presentation = dependencyCheckPresentation({
+        refreshError,
+        refreshing,
+        response: response({ report: retained, status }),
+      })
 
-test('keeps an older report visible while updating and after refresh failure', () => {
-  const updating = dependencyCheckPresentation({
-    refreshError: null,
-    refreshing: false,
-    response: response({ status: 'Updating' }),
-  })
-  const failed = dependencyCheckPresentation({
-    refreshError: 'request failed',
-    refreshing: false,
-    response: response(),
-  })
-
-  assert.equal(updating.kind, 'report')
-  assert.equal(failed.kind, 'report')
-  if (updating.kind !== 'report' || failed.kind !== 'report') return
-  assert.equal(updating.meta, 'Updating…')
-  assert.match(updating.coverage, /^Showing main at a71c9f2/)
-  assert.equal(failed.meta, 'Update failed')
-  assert.equal(failed.report.findings.length, 2)
+      assert.equal(presentation.kind, 'report')
+      if (presentation.kind !== 'report') return
+      assert.equal(presentation.report, retained)
+      assert.equal(presentation.label, findings.length
+        ? '1 public file imports private files'
+        : 'No public → private imports found')
+      assert.equal(presentation.meta, meta)
+      assert.match(presentation.coverage, /^Showing main at a71c9f2/)
+    }
+  }
 })
 
 test('renders first-run, failed, and unsupported states without a report', () => {

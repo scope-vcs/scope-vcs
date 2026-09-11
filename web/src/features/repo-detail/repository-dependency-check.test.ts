@@ -7,7 +7,7 @@ import type { DependencyCheckPresentation } from './repository-dependency-model'
 
 const presentation: DependencyCheckPresentation = {
   coverage: 'Checked main at a71c9f2 · 2 JS/TS files analyzed.',
-  gaps: [],
+  gaps: [{ path: '.', reason: 'analyzer output exceeded its limit' }],
   kind: 'report',
   label: '1 public file imports private files',
   meta: 'JS/TS only',
@@ -26,32 +26,15 @@ const presentation: DependencyCheckPresentation = {
   staleReason: null,
 }
 
-test('starts collapsed with both file paths as buttons inside the disclosure', () => {
+test('starts collapsed with navigable findings and a non-navigable repository gap', () => {
   const html = renderToStaticMarkup(createElement(RepositoryDependencyCheckView, {
     onSelectFilePath: () => undefined,
     presentation,
   }))
 
-  assert.match(html, /^<details /)
-  assert.doesNotMatch(html, /^<details[^>]* open/)
-  assert.match(html, /<summary[^>]*>.*1 public file imports private files.*JS\/TS only.*<\/summary>/)
+  assert.match(html, /^<details(?![^>]* open)/)
   assert.match(html, /<button[^>]*type="button"[^>]*>.*Public file.*src\/app\.ts.*<\/button>/)
   assert.match(html, /<button[^>]*type="button"[^>]*>.*Private file.*internal\/auth\.ts.*<\/button>/)
-})
-
-test('renders a repository-wide gap as text instead of a file button', () => {
-  const html = renderToStaticMarkup(createElement(RepositoryDependencyCheckView, {
-    onSelectFilePath: () => undefined,
-    presentation: {
-      ...presentation,
-      gaps: [{ path: '.', reason: 'analyzer output exceeded its limit' }],
-      report: {
-        ...presentation.report,
-        gaps: [{ path: '.', reason: 'analyzer output exceeded its limit' }],
-      },
-    },
-  }))
-
   assert.match(html, /Repository.*analyzer output exceeded its limit/)
-  assert.doesNotMatch(html, />\.<\/button>/)
+  assert.equal((html.match(/<button /g) ?? []).length, 2)
 })

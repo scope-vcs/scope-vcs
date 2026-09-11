@@ -225,7 +225,6 @@
         ".github/scripts/deploy-backend-railway.sh",
         ".github/scripts/deploy-railway.sh",
         ".github/scripts/test-deploy-backend-railway.sh",
-        ".github/scripts/worker-analyzer-package.test.mjs",
         ".github/workflows/deploy-backend.yml",
         ".github/workflows/rust-workspace-checks.yml",
         ".github/workflows/scope-api-ci.yml",
