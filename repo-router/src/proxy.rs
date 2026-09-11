@@ -79,20 +79,11 @@ pub(crate) async fn repository_request(
 
     match kind {
         GitRequestKind::UploadPackRead => {
-            let buffered = match state.replay.collect(request.into_body()).await {
+            let (_permit, body) = match state.replay.collect(request.into_body()).await {
                 Ok(buffered) => buffered,
                 Err(error) => return error.into_response(),
             };
-            let response = forward_upload_pack(
-                &state,
-                &route,
-                &candidate_ranks,
-                upstream_request,
-                buffered.bytes.clone(),
-            )
-            .await;
-            drop(buffered);
-            response
+            forward_upload_pack(&state, &route, &candidate_ranks, upstream_request, body).await
         }
         GitRequestKind::PrimaryOnly => {
             let rank = candidate_ranks[0];

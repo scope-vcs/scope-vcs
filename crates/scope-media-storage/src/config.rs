@@ -101,7 +101,6 @@ impl MediaStorageSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::WriteAttempt;
     use std::collections::BTreeMap;
 
     fn settings(values: &[(&str, String)]) -> Result<MediaStorageSettings, MediaStorageError> {
@@ -126,39 +125,6 @@ mod tests {
                 .is_err()
             );
         }
-    }
-
-    #[tokio::test]
-    async fn separately_configured_service_and_worker_share_encrypted_objects() {
-        let root = tempfile::tempdir().unwrap();
-        let values = [
-            ("SCOPE_MEDIA_OBJECT_STORE", "filesystem".into()),
-            (
-                "SCOPE_MEDIA_OBJECT_STORE_DIR",
-                root.path().display().to_string(),
-            ),
-        ];
-        let service = settings(&values).unwrap().connect(4).await.unwrap();
-        let worker = settings(&values).unwrap().connect(2).await.unwrap();
-        let bytes = b"shared encrypted media".to_vec();
-        let attempt = WriteAttempt::new("attachment-a", "original", "upload-a").unwrap();
-        let part = service.plan_part(&attempt, 1, &bytes).unwrap();
-        service.write_part(&part, bytes.clone()).await.unwrap();
-        let object = worker
-            .seal_parts(
-                "text/plain",
-                bytes.len() as u64,
-                &part.sha256.clone(),
-                vec![part],
-            )
-            .await
-            .unwrap();
-        let mut received = Vec::new();
-        worker
-            .download_to_writer(&object, &mut received)
-            .await
-            .unwrap();
-        assert_eq!(received, bytes);
     }
 
     #[tokio::test]

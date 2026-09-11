@@ -45,6 +45,9 @@ use {
     },
 };
 
+#[cfg(test)]
+pub(super) mod counted_connection;
+
 #[cfg(any(test, feature = "test-support"))]
 mod database_templates;
 

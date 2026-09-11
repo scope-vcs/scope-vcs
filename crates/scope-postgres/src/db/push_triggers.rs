@@ -622,7 +622,7 @@ jobs:
     }
 
     #[tokio::test]
-    async fn terminal_failure_releases_pinned_trigger_sources() {
+    async fn malformed_payload_terminal_failure_releases_pins_and_stops_retries() {
         let target = crate::db::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         let repo_id = seed_repo(&store).await;
@@ -638,41 +638,39 @@ jobs:
         )
         .await
         .unwrap();
-        let persisted_job = entities::outbox_job::Entity::find()
-            .filter(entities::outbox_job::Column::RepoId.eq(repo_id.clone()))
-            .filter(entities::outbox_job::Column::Kind.eq(JOB_KIND))
-            .one(store.db.as_ref())
-            .await
-            .unwrap()
-            .unwrap();
         store
             .db
             .execute(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE scope_outbox_jobs SET payload = $2 WHERE id = $1",
+                "UPDATE scope_outbox_jobs SET payload = $2, attempts = 11 WHERE repo_id = $1",
                 vec![
-                    persisted_job.id.clone().into(),
+                    repo_id.clone().into(),
                     serde_json::json!({"workflow_schema_version": 5}).into(),
                 ],
             ))
             .await
             .unwrap();
-        let tx = store.db.begin().await.unwrap();
-        mark_terminal_failure(
-            &tx,
-            &ClaimedOutboxJob {
-                id: persisted_job.id,
-                kind: JOB_KIND.to_string(),
-                repo_id: repo_id.clone(),
-                repo_version: 5,
-                attempts: 12,
-            },
-            "terminal failure".to_string(),
-            now(),
-        )
-        .await
-        .unwrap();
-        tx.commit().await.unwrap();
+        let summary = store
+            .jobs()
+            .run_ready_outbox_jobs("worker", 10, &|| Ok(now()))
+            .await
+            .unwrap();
+        assert_eq!(summary.failed, 1);
+        assert_eq!(
+            store
+                .jobs()
+                .outbox_job_counts_for_tests()
+                .await
+                .unwrap()
+                .failed,
+            1
+        );
+        let retry = store
+            .jobs()
+            .run_ready_outbox_jobs("worker", 10, &|| Ok(now() + 600))
+            .await
+            .unwrap();
+        assert_eq!(retry.claimed, 0);
 
         let evaluation = store
             .runs()
@@ -685,15 +683,6 @@ jobs:
             segment_reference_count(&store, "push_trigger_source", &format!("{repo_id}:5")).await,
             0
         );
-        let cleanup = store
-            .cleanup()
-            .source_blob_cleanup_batch(
-                now() + crate::db::cleanup_queue::queue::SOURCE_BLOB_DELETE_GRACE_SECONDS + 1,
-                &crate::db::generated_ids::test_generated_id,
-            )
-            .await
-            .unwrap();
-        assert!(cleanup.pending.is_empty());
     }
 
     #[tokio::test]

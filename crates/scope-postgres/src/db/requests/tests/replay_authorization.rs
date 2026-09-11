@@ -1,7 +1,49 @@
 use super::*;
 use crate::error::PostgresErrorKind;
+use scope_domain::requests::RequestDiscussionReadState;
 use sea_orm::{EntityTrait, TransactionTrait};
 use std::time::Duration;
+
+async fn create_discussion_and_reply(
+    store: &MetadataStore,
+    actor: &str,
+    now: u64,
+) -> (
+    CreateRequestDiscussionCommand,
+    CreateRequestDiscussionReplyCommand,
+    RequestDiscussionReadState,
+) {
+    let discussion = CreateRequestDiscussionCommand {
+        request_id: "req_1".into(),
+        id: "discussion".into(),
+        actor_user_id: actor.into(),
+        client_discussion_id: "client_discussion".into(),
+        body_markdown: "Discussion".into(),
+        anchor: None,
+        now_unix: now,
+    };
+    store
+        .requests()
+        .create_request_discussion(discussion.clone())
+        .await
+        .unwrap();
+    let reply = CreateRequestDiscussionReplyCommand {
+        request_id: "req_1".into(),
+        discussion_id: discussion.id.clone(),
+        id: "reply".into(),
+        actor_user_id: actor.into(),
+        client_reply_id: "client_reply".into(),
+        body_markdown: "Reply".into(),
+        reply_to_reply_id: None,
+        now_unix: now + 1,
+    };
+    let saved = store
+        .requests()
+        .create_request_discussion_reply(reply.clone())
+        .await
+        .unwrap();
+    (discussion, reply, saved.read_state)
+}
 
 #[tokio::test]
 async fn discussion_replays_recheck_membership_after_waiting_for_revocation() {
@@ -10,35 +52,9 @@ async fn discussion_replays_recheck_membership_after_waiting_for_revocation() {
     start.author_user_id = "user_owner".into();
     start.audience = RequestAudience::Private;
     store.requests().start_request(start).await.unwrap();
-    let create = CreateRequestDiscussionCommand {
-        request_id: "req_1".into(),
-        id: "replayed_discussion".into(),
-        actor_user_id: "user_public".into(),
-        client_discussion_id: "client_discussion".into(),
-        body_markdown: "Private discussion".into(),
-        anchor: None,
-        now_unix: 3,
-    };
-    let first = store
-        .requests()
-        .create_request_discussion(create.clone())
-        .await
-        .unwrap();
-    let reply = CreateRequestDiscussionReplyCommand {
-        request_id: "req_1".into(),
-        discussion_id: first.discussion.id.clone(),
-        id: "replayed_reply".into(),
-        actor_user_id: "user_public".into(),
-        client_reply_id: "client_reply".into(),
-        body_markdown: "Private reply".into(),
-        reply_to_reply_id: None,
-        now_unix: 4,
-    };
-    let saved = store
-        .requests()
-        .create_request_discussion_reply(reply.clone())
-        .await
-        .unwrap();
+    let (create, reply, saved_read_state) =
+        create_discussion_and_reply(&store, "user_public", 3).await;
+    let discussion_id = create.id.clone();
     let revocation = store.db.begin().await.unwrap();
     super::super::super::acquire_aggregate_lock(&revocation, "repository", "owner/repo")
         .await
@@ -76,13 +92,13 @@ async fn discussion_replays_recheck_membership_after_waiting_for_revocation() {
     assert_eq!(reply.unwrap_err().kind, PostgresErrorKind::NotFound);
     let read_state = super::super::super::request_discussion_rows::read_state(
         store.db.as_ref(),
-        &first.discussion.id,
+        &discussion_id,
         "user_public",
     )
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(read_state, saved.read_state);
+    assert_eq!(read_state, saved_read_state);
 }
 
 #[tokio::test]
@@ -92,35 +108,7 @@ async fn visible_private_discussion_replays_survive_terminal_transition() {
     start.author_user_id = "user_owner".into();
     start.audience = RequestAudience::Private;
     store.requests().start_request(start).await.unwrap();
-    let create = CreateRequestDiscussionCommand {
-        request_id: "req_1".into(),
-        id: "terminal_discussion".into(),
-        actor_user_id: "user_owner".into(),
-        client_discussion_id: "client_discussion".into(),
-        body_markdown: "Private discussion".into(),
-        anchor: None,
-        now_unix: 3,
-    };
-    let first = store
-        .requests()
-        .create_request_discussion(create.clone())
-        .await
-        .unwrap();
-    let reply = CreateRequestDiscussionReplyCommand {
-        request_id: "req_1".into(),
-        discussion_id: first.discussion.id,
-        id: "terminal_reply".into(),
-        actor_user_id: "user_owner".into(),
-        client_reply_id: "client_reply".into(),
-        body_markdown: "Reply".into(),
-        reply_to_reply_id: None,
-        now_unix: 4,
-    };
-    store
-        .requests()
-        .create_request_discussion_reply(reply.clone())
-        .await
-        .unwrap();
+    let (create, reply, _) = create_discussion_and_reply(&store, "user_owner", 3).await;
     store
         .requests()
         .mutate_request_for_tests("req_1", |request| {
@@ -153,67 +141,32 @@ async fn visible_private_discussion_replays_survive_terminal_transition() {
 #[tokio::test]
 async fn discussion_reply_replay_rechecks_draft_invitation_after_waiting() {
     let store = postgres_store();
-    start_public_request(&store).await;
-    use sea_orm::{ActiveModelTrait, IntoActiveModel};
-    crate::db::entities::user::Model::from_domain(&UserAccount {
-        id: "user_invitee".into(),
-        handle: "invitee".into(),
-        email: "invitee@example.com".into(),
-        email_verified: true,
-    })
-    .into_active_model()
-    .insert(store.db.as_ref())
-    .await
-    .unwrap();
+    let mut start = public_start_input();
+    start.author_user_id = "user_owner".into();
+    store.requests().start_request(start).await.unwrap();
     store
         .requests()
         .add_request_invitee(crate::db::AddRequestInviteeCommand {
             request_id: "req_1".into(),
-            actor_user_id: "user_public".into(),
-            target_handle: "invitee".into(),
+            actor_user_id: "user_owner".into(),
+            target_handle: "public".into(),
             now_unix: 4,
         })
         .await
         .unwrap();
-    let discussion = store
-        .requests()
-        .create_request_discussion(CreateRequestDiscussionCommand {
-            request_id: "req_1".into(),
-            id: "invited_discussion".into(),
-            actor_user_id: "user_invitee".into(),
-            client_discussion_id: "invited_client".into(),
-            body_markdown: "Draft invitation".into(),
-            anchor: None,
-            now_unix: 5,
-        })
-        .await
-        .unwrap();
-    let reply = CreateRequestDiscussionReplyCommand {
-        request_id: "req_1".into(),
-        discussion_id: discussion.discussion.id.clone(),
-        id: "invited_reply".into(),
-        actor_user_id: "user_invitee".into(),
-        client_reply_id: "invited_reply_client".into(),
-        body_markdown: "Reply".into(),
-        reply_to_reply_id: None,
-        now_unix: 6,
-    };
-    let saved = store
-        .requests()
-        .create_request_discussion_reply(reply.clone())
-        .await
-        .unwrap();
+    let (_, reply, saved_read_state) = create_discussion_and_reply(&store, "user_public", 5).await;
+    let discussion_id = reply.discussion_id.clone();
     let revocation = store.db.begin().await.unwrap();
     super::super::super::request_access::lock_request_repository(
         &revocation,
         "req_1",
-        "user_public",
+        "user_owner",
     )
     .await
     .unwrap();
     super::super::super::entities::request_invitee::Entity::delete_by_id((
         "req_1".to_string(),
-        "user_invitee".to_string(),
+        "user_public".to_string(),
     ))
     .exec(&revocation)
     .await
@@ -239,11 +192,11 @@ async fn discussion_reply_replay_rechecks_draft_invitation_after_waiting() {
     assert_eq!(error.kind, PostgresErrorKind::NotFound);
     let read_state = super::super::super::request_discussion_rows::read_state(
         store.db.as_ref(),
-        &discussion.discussion.id,
-        "user_invitee",
+        &discussion_id,
+        "user_public",
     )
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(read_state, saved.read_state);
+    assert_eq!(read_state, saved_read_state);
 }

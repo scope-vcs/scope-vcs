@@ -100,7 +100,8 @@ pub(crate) async fn drain_pending_cleanup(
     Ok(CleanupDrainReport {
         repo_storage: drain_pending_repo_storage_deletions_report(state).await?,
         source_blobs: drain_pending_source_blob_deletions_report(state).await?,
-        request_refs: super::request_ref_cleanup::drain_request_ref_cleanup(state).await?,
+        request_refs: super::request_ref_cleanup::drain_request_ref_cleanup(state, unix_now()?)
+            .await?,
     })
 }
 

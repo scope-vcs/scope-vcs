@@ -6,7 +6,6 @@ pub mod jobs;
 pub mod process;
 mod runtime;
 pub mod scratch;
-pub mod storage;
 
 pub fn unix_now() -> anyhow::Result<u64> {
     Ok(std::time::SystemTime::now()

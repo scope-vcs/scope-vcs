@@ -8,20 +8,14 @@ async fn request(
     authorization: Option<String>,
     body: Option<String>,
 ) -> Response {
-    let mut request = Request::builder().method(method).uri(uri.as_ref());
-    if let Some(authorization) = authorization {
-        request = request.header(AUTHORIZATION, authorization);
-    }
-    let body = if let Some(body) = body {
-        request = request.header(CONTENT_TYPE, "application/json");
-        Body::from(body)
-    } else {
-        Body::empty()
-    };
-    router(state)
-        .oneshot(request.body(body).unwrap())
-        .await
-        .unwrap()
+    api_request(
+        router(state),
+        method,
+        uri.as_ref(),
+        authorization.as_deref(),
+        body.as_deref(),
+    )
+    .await
 }
 
 fn pending_invite(

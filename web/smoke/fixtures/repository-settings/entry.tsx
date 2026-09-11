@@ -9,6 +9,7 @@ import { usePendingActions } from '@/lib/use-pending-actions'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { repoCollaborationResource, retainCollaborationResult } from '@/features/repo-detail/repo-collaboration-resource'
 import type { RepoSummary, RepoLiveState, RepoMember, CliSession } from '@/api/types'
+import { WorkspaceFixture } from './workspace'
 import './styles.css'
 
 const initial = {
@@ -67,6 +68,7 @@ function App() {
     <button disabled={pending.has('grant')} onClick={() => void run('grant', () => hold('grant'))}>Create login command</button>
     <CliSessionList sessions={sessions} pending={pending} formatTime={String}
       revokeSession={(id) => void run(id, () => hold(id))} />
+    <WorkspaceFixture />
   </main>
 }
 let loads = 0

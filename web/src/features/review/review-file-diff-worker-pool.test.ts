@@ -71,28 +71,17 @@ test('terminates timed out, canceled and failed tasks and replaces their workers
   assert.equal(workers.length, 5)
 })
 
-
 test('separates bounded worker startup from the render deadline', async (t) => {
-  const workers: Worker[] = []
-  const render = createReviewFileDiffWorkerPool(() => {
-    const worker = new Worker(`
-      const { parentPort } = require('node:worker_threads');
-      setTimeout(() => {
-        parentPort.on('message', (input) => {
-          if (input.newText === 'spin') while (true) {}
-          parentPort.postMessage({ kind: 'empty' });
-        });
-        parentPort.postMessage({ kind: 'ready' });
-      }, 100);
-    `, { eval: true })
-    workers.push(worker)
-    return worker
-  }, 1, 1_000)
-  t.after(() => Promise.all(workers.map((worker) => worker.terminate())))
-  assert.deepEqual(await render(input(), 25), { kind: 'empty' })
+  const worker = new Worker(`setTimeout(() => {
+    ${workerCode}
+    parentPort.postMessage({ kind: 'ready' });
+  }, 100);`, { eval: true })
+  t.after(() => worker.terminate())
+  const render = createReviewFileDiffWorkerPool(() => worker, 1, 1_000)
+  assert.equal((await render(input(), 75)).kind, 'html')
   await assert.rejects(render(input('spin'), 25), (error: unknown) =>
     error instanceof ReviewDiffTransientError && error.failure === 'deadline')
-  assert.equal(workers[0]?.threadId, -1)
+  assert.equal(worker.threadId, -1)
 })
 
 test('terminates a worker that never becomes ready within the startup budget', async () => {

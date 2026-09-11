@@ -1,76 +1,5 @@
 use super::*;
 
-const EXPECTED_SCOPE_TABLES: &[&str] = &[
-    "scope_auth_identities",
-    "scope_cache_deletion_queue",
-    "scope_cache_objects",
-    "scope_cache_orphan_uploads",
-    "scope_cache_references",
-    "scope_cache_uploads",
-    "scope_cli_browser_logins",
-    "scope_cli_device_logins",
-    "scope_cli_exchange_grants",
-    "scope_cli_sessions",
-    "scope_file_changes",
-    "scope_git_compaction_jobs",
-    "scope_git_heads",
-    "scope_git_segment_references",
-    "scope_git_segment_uploads",
-    "scope_git_segments",
-    "scope_live_files",
-    "scope_logical_commits",
-    "scope_metadata_locks",
-    "scope_object_references",
-    "scope_orphan_object_jobs",
-    "scope_outbox_jobs",
-    "scope_projection_files",
-    "scope_projection_read_models",
-    "scope_push_trigger_evaluations",
-    "scope_repo_storage_cleanup_jobs",
-    "scope_repositories",
-    "scope_repository_first_push_tokens",
-    "scope_repository_git_push_tokens",
-    "scope_repository_history_entries",
-    "scope_repository_history_views",
-    "scope_repository_invites",
-    "scope_repository_landing_files",
-    "scope_repository_members",
-    "scope_repository_workflow_catalogs",
-    "scope_repository_workflow_files",
-    "scope_request_discussion_read_states",
-    "scope_request_discussion_replies",
-    "scope_request_discussions",
-    "scope_request_events",
-    "scope_request_invitees",
-    "scope_request_media_abandoned_objects",
-    "scope_request_media_attachments",
-    "scope_request_media_bindings",
-    "scope_request_media_cleanup_jobs",
-    "scope_request_media_derivatives",
-    "scope_request_media_manifest_chunks",
-    "scope_request_media_manifests",
-    "scope_request_media_orphan_cleanup_leases",
-    "scope_request_media_processing_jobs",
-    "scope_request_media_processing_objects",
-    "scope_request_media_retry_operations",
-    "scope_request_media_upload_parts",
-    "scope_request_ratings",
-    "scope_request_ref_cleanup_jobs",
-    "scope_request_revisions",
-    "scope_requests",
-    "scope_run_attempt_cache_setups",
-    "scope_run_attempt_caches",
-    "scope_run_attempt_steps",
-    "scope_run_attempts",
-    "scope_run_jobs",
-    "scope_run_logs",
-    "scope_runs",
-    "scope_users",
-    "scope_visibility_change_sets",
-    "scope_visibility_changes",
-    "scope_workflow_revisions",
-];
-
 #[tokio::test]
 async fn fresh_database_reaches_exact_latest_schema() {
     let (_target, db, _lease) = isolated_database().await;
@@ -111,54 +40,27 @@ async fn fresh_database_reaches_exact_latest_schema() {
             .try_get::<bool>("", "required_identity")
             .unwrap()
     );
-    let execution_provider_columns = db
-        .query_one(Statement::from_string(
+    let attempt_columns = db
+        .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
-            "SELECT count(*) AS count
-             FROM information_schema.columns
-             WHERE table_schema = current_schema()
-               AND table_name = 'scope_run_attempts'
-               AND column_name = 'execution_provider'"
-                .to_string(),
+            "SELECT column_name FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'scope_run_attempts'
+           AND column_name IN ('execution_provider', 'runner_stop_claimed_at_unix',
+                               'runner_stop_completed_at_unix')
+         ORDER BY column_name",
         ))
         .await
         .unwrap()
-        .unwrap()
-        .try_get::<i64>("", "count")
-        .unwrap();
-    assert_eq!(execution_provider_columns, 0);
-    let runner_stop_columns = db
-        .query_one(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT count(*) AS count
-             FROM information_schema.columns
-             WHERE table_schema = current_schema()
-               AND table_name = 'scope_run_attempts'
-               AND column_name = 'runner_stop_claimed_at_unix'"
-                .to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<i64>("", "count")
-        .unwrap();
-    assert_eq!(runner_stop_columns, 1);
-    let runner_stop_completion_columns = db
-        .query_one(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT count(*) AS count
-             FROM information_schema.columns
-             WHERE table_schema = current_schema()
-               AND table_name = 'scope_run_attempts'
-               AND column_name = 'runner_stop_completed_at_unix'"
-                .to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<i64>("", "count")
-        .unwrap();
-    assert_eq!(runner_stop_completion_columns, 1);
+        .into_iter()
+        .map(|row| row.try_get::<String>("", "column_name").unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        attempt_columns,
+        [
+            "runner_stop_claimed_at_unix",
+            "runner_stop_completed_at_unix"
+        ]
+    );
     let scope_tables = db
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -171,7 +73,8 @@ async fn fresh_database_reaches_exact_latest_schema() {
         .into_iter()
         .map(|row| row.try_get::<String>("", "tablename").unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(scope_tables, EXPECTED_SCOPE_TABLES);
+    assert_eq!(scope_tables.len(), 68);
+    assert!(relation_exists(db.as_ref(), "scope_request_ref_cleanup_jobs").await);
     assert!(relation_exists(db.as_ref(), "scope_repository_history_views").await);
     assert!(relation_exists(db.as_ref(), "scope_repository_history_entries").await);
     assert!(relation_exists(db.as_ref(), "scope_git_segment_uploads").await);

@@ -9,7 +9,7 @@ mod visibility;
 pub(crate) use commits::{
     inspect_request_commit, inspect_request_commits_identity_only, request_revision_commit_files,
 };
-pub(crate) use visibility::RequestRevisionCommitVisibility;
+pub(crate) use visibility::visible_revision_commits;
 
 pub(crate) struct RequestCommitSummary {
     pub(crate) oid: String,

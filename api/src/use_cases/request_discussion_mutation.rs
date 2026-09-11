@@ -113,9 +113,7 @@ pub(crate) async fn create_discussion(
     )
     .await?;
     let anchor = match command.anchor {
-        Some(anchor) => Some(
-            anchor::validate(state, &command.owner, &command.repo_name, &context, anchor).await?,
-        ),
+        Some(anchor) => Some(anchor::validate(state, &context, anchor).await?),
         None => None,
     };
     let mutation = state
@@ -144,15 +142,7 @@ pub(crate) async fn create_discussion(
     let discussion_id = mutation.discussion.id.clone();
     let through_position = mutation.discussion.last_activity_position;
     publish_timeline_change(state, &context, discussion_id.clone(), through_position).await;
-    load_discussion_result(
-        state,
-        &command.owner,
-        &command.repo_name,
-        &context,
-        &discussion_id,
-        &command.actor_user_id,
-    )
-    .await
+    load_discussion_result(state, &context, &discussion_id, &command.actor_user_id).await
 }
 
 pub(crate) async fn create_reply(
@@ -183,8 +173,6 @@ pub(crate) async fn create_reply(
         .await?;
     reply_mutation_result(
         state,
-        &command.owner,
-        &command.repo_name,
         &context,
         mutation.discussion.id,
         mutation.reply,
@@ -240,8 +228,6 @@ pub(crate) async fn transition_discussion(
     .await;
     load_discussion_result(
         state,
-        &command.owner,
-        &command.repo_name,
         &context,
         &command.discussion_id,
         &command.actor_user_id,
@@ -278,8 +264,6 @@ pub(crate) async fn reopen_and_reply(
         .await?;
     reply_mutation_result(
         state,
-        &command.owner,
-        &command.repo_name,
         &context,
         mutation.discussion.id,
         mutation.reply,
@@ -354,23 +338,13 @@ async fn mutation_context(
 
 async fn reply_mutation_result(
     state: &AppState,
-    owner: &str,
-    repo_name: &str,
     context: &MutationContext,
     discussion_id: String,
     reply: RequestDiscussionReply,
     actor_user_id: &str,
 ) -> Result<ReplyMutationResult, ApiError> {
     publish_timeline_change(state, context, discussion_id.clone(), reply.position).await;
-    let discussion = load_discussion_result(
-        state,
-        owner,
-        repo_name,
-        context,
-        &discussion_id,
-        actor_user_id,
-    )
-    .await?;
+    let discussion = load_discussion_result(state, context, &discussion_id, actor_user_id).await?;
     let (reply, reply_users) = state
         .metadata
         .requests()
@@ -385,8 +359,6 @@ async fn reply_mutation_result(
 
 async fn load_discussion_result(
     state: &AppState,
-    owner: &str,
-    repo_name: &str,
     context: &MutationContext,
     discussion_id: &str,
     viewer_user_id: &str,
@@ -397,14 +369,8 @@ async fn load_discussion_result(
         .request_discussion(&context.request.id, discussion_id, Some(viewer_user_id))
         .await?
         .ok_or_else(|| ApiError::not_found("request discussion not found"))?;
-    let visible_anchor_commits = anchor::visible_commits(
-        state,
-        owner,
-        repo_name,
-        context,
-        discussion.discussion.anchor.as_ref(),
-    )
-    .await;
+    let visible_anchor_commits =
+        anchor::visible_commits(state, context, discussion.discussion.anchor.as_ref()).await;
     Ok(DiscussionMutationResult {
         discussion,
         users,

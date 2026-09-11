@@ -364,8 +364,8 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
     let files =
         request_revision_commit_files(raw_repo, &repo.policy, owner_access, &revision, &root)
             .unwrap();
-    assert_eq!(files.commit.files.len(), 1);
-    let file = &files.commit.files[0];
+    assert_eq!(files.files.len(), 1);
+    let file = &files.files[0];
     assert_eq!(file.path, "root.txt");
     assert_eq!(file.old_oid, None);
     assert_eq!(file.new_oid.as_deref(), Some(blob.as_str()));

@@ -195,7 +195,7 @@ fn unix_now() -> u64 {
         .as_secs()
 }
 
-fn test_owner_id() -> String {
+pub(crate) fn test_owner_id() -> String {
     scope_postgres::db::scope_user_id_for_auth_identity("clerk", TEST_CLERK_USER_ID)
 }
 
@@ -208,7 +208,7 @@ fn test_user(id: impl Into<String>, handle: &str, email: &str) -> UserAccount {
     }
 }
 
-fn test_state_with_repo() -> AppState {
+pub(crate) fn test_state_with_repo() -> AppState {
     let owner_id = test_owner_id();
     let owner = test_user(&owner_id, TEST_REPO_OWNER, TEST_OWNER_EMAIL);
     let repo = test_repo(&owner_id);

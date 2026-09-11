@@ -259,7 +259,6 @@ pub(crate) async fn get_request_revision_commit_file_diff(
                 &commit_oid,
             )?;
             let file = inspected
-                .commit
                 .files
                 .into_iter()
                 .find(|file| file.path == path_for_inspection)

@@ -41,16 +41,27 @@ test('latest repository activity survives child navigation without another reque
   }
 })
 
-test('repository events received off-page refresh retained activity without blanking it', async () => {
+test('repository events refresh retained activity and public source off-page without blanking either', async () => {
   const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
   let requests = 0
+  let files = 0
+  let trees = 0
   let originalMessage = ''
   let release
   const held = new Promise((resolve) => { release = resolve })
   await installRepositoryStream(page)
   await page.route('**/_serverFn/**', async (route) => {
-    if (serverFunctionName(route.request()) !== 'loadRepositoryLatestActivity_createServerFn_handler') {
+    const name = serverFunctionName(route.request())
+    if (name === 'loadRepoContent_createServerFn_handler') trees += 1
+    if (name === 'loadRepoFile_createServerFn_handler' && ++files > 1) {
+      const response = await route.fetch()
+      const body = await response.text()
+      assert(body.includes('export function greet'))
+      await held
+      return route.fulfill({ response, body: body.replaceAll('export function greet', 'export function refreshedGreet') })
+    }
+    if (name !== 'loadRepositoryLatestActivity_createServerFn_handler') {
       await route.continue()
       return
     }
@@ -67,7 +78,11 @@ test('repository events received off-page refresh retained activity without blan
     await route.fulfill({ response, body: updated })
   })
   try {
-    await page.goto(`${baseUrl}/${repo}`)
+    await page.goto(`${baseUrl}/${repo}?file=src%2Fapp.ts`)
+    const source = page.locator('pre code').filter({ hasText: 'export function greet' })
+    await source.waitFor()
+    assert.equal(files, 1)
+    assert.equal(trees, 1)
     const activity = page.getByLabel('Latest repository change', { exact: true })
     await activity.waitFor()
     const original = await activity.innerText()
@@ -83,14 +98,18 @@ test('repository events received off-page refresh retained activity without blan
     })
     await (await revalidated).finished()
     await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
-    await page.getByRole('link', { name: 'Code', exact: true }).first().click()
-    await page.waitForURL(`${baseUrl}/${repo}`)
+    await page.goBack()
+    await source.waitFor()
+    assert.equal(await page.getByLabel('Loading file content', { exact: true }).count(), 0)
     assert.equal(await activity.isVisible(), true)
     assert.equal(await activity.innerText(), original)
     assert.equal(await page.getByLabel('Loading latest repository change', { exact: true }).count(), 0)
     release()
     await activity.getByRole('link', { name: 'New repository activity', exact: true }).waitFor()
+    await page.locator('pre code').filter({ hasText: 'export function refreshedGreet' }).waitFor()
     assert.equal(requests, 2)
+    assert.equal(files, 2)
+    assert.equal(trees, 2)
   } finally {
     release()
     await browser.close()
@@ -153,52 +172,3 @@ async function installRepositoryStream(page) {
     }
   })
 }
-
-test('public repository events refresh cached source off-page without blanking the current file', async () => {
-  const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage()
-  let files = 0
-  let trees = 0
-  let release
-  const held = new Promise((resolve) => { release = resolve })
-  await installRepositoryStream(page)
-  await page.route('**/_serverFn/**', async (route) => {
-    const name = serverFunctionName(route.request())
-    if (name === 'loadRepoContent_createServerFn_handler') trees += 1
-    if (name !== 'loadRepoFile_createServerFn_handler') return route.continue()
-    files += 1
-    if (files === 1) return route.continue()
-    const response = await route.fetch()
-    const body = await response.text()
-    assert(body.includes('export function greet'))
-    await held
-    await route.fulfill({ response, body: body.replaceAll('export function greet', 'export function refreshedGreet') })
-  })
-  try {
-    await page.goto(`${baseUrl}/${repo}?file=src%2Fapp.ts`)
-    const source = page.locator('pre code').filter({ hasText: 'export function greet' })
-    await source.waitFor()
-    assert.equal(files, 1)
-    assert.equal(trees, 1)
-    await page.getByRole('link', { name: 'Requests', exact: true }).first().click()
-    await page.waitForURL(`**/${repo}/requests`)
-    await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle' && window.__scopeRepositoryStreamCount() > 0)
-    const refreshed = page.waitForResponse((response) => serverFunctionName(response.request()) === 'loadRepoLiveState_createServerFn_handler')
-    await page.evaluate(() => {
-      const repo = globalThis.__TSR_ROUTER__.state.matches.find((match) => match.loaderData?.repo).loaderData.repo
-      window.__scopeEmitRepositoryEvent({ repo_id: repo.id, incarnation_id: 'browser-test', version: 1, kind: { RepositoryChanged: { reason: 'push' } } })
-    })
-    await (await refreshed).finished()
-    await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
-    await page.goBack()
-    await source.waitFor()
-    assert.equal(await page.getByLabel('Loading file content', { exact: true }).count(), 0)
-    release()
-    await page.locator('pre code').filter({ hasText: 'export function refreshedGreet' }).waitFor()
-    assert.equal(files, 2)
-    assert.equal(trees, 2)
-  } finally {
-    release()
-    await browser.close()
-  }
-})

@@ -53,16 +53,11 @@ async fn attachment_lists_preserve_visibility_without_loading_manifest_chunks() 
         .await
         .unwrap();
     // Retained expired inventory must not enter the list or its metadata batches.
-    prepare_attachment(&fixture, "list_request", "deleted_attachment", 32).await;
-    let tx = fixture.store.db.begin().await.unwrap();
-    tx.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "INSERT INTO scope_request_media_cleanup_jobs
-         (attachment_id, repository_id, reason, state, available_at_unix, created_at_unix, updated_at_unix)
-         VALUES ($1, $2, 'IncompleteUploadExpired', 'Queued', 40, 40, 40)",
-        ["deleted_attachment".into(), fixture.repository_id.clone().into()],
-    )).await.unwrap();
-    tx.commit().await.unwrap();
+    let expired = prepare_attachment(&fixture, "list_request", "deleted_attachment", 32).await;
+    media
+        .enqueue_expired_attachment_cleanup(expired.attachment.upload_expires_at_unix)
+        .await
+        .unwrap();
     let held = fixture.store.db.begin().await.unwrap();
     held.execute_unprepared(
         "LOCK TABLE scope_request_media_manifest_chunks IN ACCESS EXCLUSIVE MODE",

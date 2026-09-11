@@ -74,7 +74,7 @@ mod tests {
     use super::*;
     use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
     use scope_domain::account::UserAccount;
-    use sea_orm::{EntityTrait, Set};
+    use sea_orm::EntityTrait;
 
     #[tokio::test]
     async fn successful_session_authentication_records_throttled_monotonic_activity() {
@@ -102,10 +102,9 @@ mod tests {
         )
         .await
         .unwrap();
+        let auth = store.auth();
         for (now, expected) in [(110, 110), (120, 110), (170, 170), (160, 170)] {
-            store
-                .auth()
-                .verify_cli_session_by_hash("activity-token-hash", now)
+            auth.verify_cli_session_by_hash("activity-token-hash", now)
                 .await
                 .unwrap();
             let session = entities::cli_session::Entity::find_by_id("session_activity")
@@ -116,24 +115,15 @@ mod tests {
             assert_eq!(session.last_used_at_unix, Some(expected));
         }
         assert!(
-            store
-                .auth()
-                .verify_cli_session_by_hash("activity-token-hash", 1000)
+            auth.verify_cli_session_by_hash("activity-token-hash", 1000)
                 .await
                 .is_err()
         );
-        let mut session = entities::cli_session::Entity::find_by_id("session_activity")
-            .one(store.db.as_ref())
+        auth.revoke_cli_session_by_hash("activity-token-hash", 180)
             .await
-            .unwrap()
-            .unwrap()
-            .into_active_model();
-        session.revoked_at_unix = Set(Some(180));
-        session.update(store.db.as_ref()).await.unwrap();
+            .unwrap();
         assert!(
-            store
-                .auth()
-                .verify_cli_session_by_hash("activity-token-hash", 190)
+            auth.verify_cli_session_by_hash("activity-token-hash", 190)
                 .await
                 .is_err()
         );

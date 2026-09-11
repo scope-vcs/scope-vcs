@@ -25,11 +25,7 @@ use std::{
     fs,
     io::{Read, Write},
     path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
+    sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
@@ -46,7 +42,7 @@ pub struct RuntimeClient {
     cache_keys: Arc<Mutex<Vec<AttemptCacheKeyMaterial>>>,
     heartbeat_lock: Arc<Mutex<()>>,
     #[cfg(test)]
-    heartbeat_started: Option<mpsc::Sender<()>>,
+    heartbeat_started: Option<std::sync::mpsc::Sender<()>>,
 }
 
 #[derive(Clone)]

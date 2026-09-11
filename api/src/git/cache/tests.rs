@@ -69,38 +69,21 @@ fn idle_repository_is_retained_while_the_cache_fits_its_byte_budget() {
 }
 
 #[test]
-fn exact_repository_removal_waits_for_active_lease() {
-    let root = temp_cache_root("git-cache-lease-safe-delete");
-    let registry = RepositoryGitCache::new(root.clone(), 100).unwrap();
-    let repo = incarnation("owner/recreated");
-    let path = registry.path_for(&repo);
-    fs::create_dir_all(&path).unwrap();
-    let lease = registry.lease(&repo).unwrap();
-
-    assert!(!registry.remove(&repo).unwrap());
-    assert!(path.exists());
-    drop(lease);
-    assert!(registry.remove(&repo).unwrap());
-    assert!(!path.exists());
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn exact_repository_removal_waits_for_lease_from_another_registry() {
-    let root = temp_cache_root("git-cache-cross-registry-lease-safe-delete");
-    let leasing_registry = RepositoryGitCache::new(root.clone(), 100).unwrap();
-    let deleting_registry = RepositoryGitCache::new(root.clone(), 100).unwrap();
+fn exact_repository_removal_waits_for_local_and_cross_registry_leases() {
+    let directory = tempfile::tempdir().unwrap();
+    let leasing_registry = RepositoryGitCache::new(directory.path().to_path_buf(), 100).unwrap();
+    let other_registry = RepositoryGitCache::new(directory.path().to_path_buf(), 100).unwrap();
     let repo = incarnation("owner/shared-root");
     let path = leasing_registry.path_for(&repo);
-    fs::create_dir_all(&path).unwrap();
-    let lease = leasing_registry.lease(&repo).unwrap();
-
-    assert!(!deleting_registry.remove(&repo).unwrap());
-    assert!(path.exists());
-    drop(lease);
-    assert!(deleting_registry.remove(&repo).unwrap());
-    assert!(!path.exists());
-    let _ = fs::remove_dir_all(root);
+    for deleting_registry in [&leasing_registry, &other_registry] {
+        fs::create_dir_all(&path).unwrap();
+        let lease = leasing_registry.lease(&repo).unwrap();
+        assert!(!deleting_registry.remove(&repo).unwrap());
+        assert!(path.exists());
+        drop(lease);
+        assert!(deleting_registry.remove(&repo).unwrap());
+        assert!(!path.exists());
+    }
 }
 
 #[test]

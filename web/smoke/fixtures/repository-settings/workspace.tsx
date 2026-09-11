@@ -1,12 +1,10 @@
 import { useState } from 'react'
-import { createRoot } from 'react-dom/client'
 import { RepositoryHtmlPreviewProvider } from '@/components/repository-html-preview-store'
 import { RepositoryHtmlRenderer } from '@/components/repository-html-renderer'
 import { WorkspaceTabStrip } from '@/components/workspace-tab-strip'
 import { toggleTheme } from '@/lib/use-theme-type'
-import '@/styles.css'
 
-function App() {
+export function WorkspaceFixture() {
   const [mode, setMode] = useState<'preview' | 'source'>('preview')
   const [tabs, setTabs] = useState([{ id: 'one', label: 'One.html' }, { id: 'two', label: 'Two.html' }])
   return <RepositoryHtmlPreviewProvider>
@@ -19,4 +17,3 @@ function App() {
       mode={mode} source="<h1>Test preview</h1>" />
   </RepositoryHtmlPreviewProvider>
 }
-createRoot(document.getElementById('root')!).render(<App />)

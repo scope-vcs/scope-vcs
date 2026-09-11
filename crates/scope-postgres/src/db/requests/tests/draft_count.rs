@@ -37,24 +37,18 @@ async fn draft_admission_counts_only_public_actor_drafts() {
             .await
             .unwrap();
     }
-    assert_eq!(
-        public_draft_count(store.db.as_ref(), "owner/repo", "user_public")
-            .await
-            .unwrap(),
-        2
-    );
-    assert_eq!(
-        public_draft_count(store.db.as_ref(), "owner/repo", "user_owner")
-            .await
-            .unwrap(),
-        0
-    );
-    assert_eq!(
-        public_draft_count(store.db.as_ref(), "other/repo", "user_public")
-            .await
-            .unwrap(),
-        0
-    );
+    for (repo, user, expected) in [
+        ("owner/repo", "user_public", 2),
+        ("owner/repo", "user_owner", 0),
+        ("other/repo", "user_public", 0),
+    ] {
+        assert_eq!(
+            public_draft_count(store.db.as_ref(), repo, user)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
     let mut third = public_start_input();
     third.id = "third_draft".into();
     third.name = "third-draft".into();

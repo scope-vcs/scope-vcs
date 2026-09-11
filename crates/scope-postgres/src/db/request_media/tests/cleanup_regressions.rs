@@ -103,15 +103,6 @@ async fn completed_cleanup_never_reserves_bytes_again_during_reconciliation() {
     let sweep = expired + 1 + 24 * 60 * 60;
     let current =
         prepare_attachment(&fixture, "budget_request", "current_attachment", sweep - 1).await;
-    let before = super::super::budget::media_usage(
-        fixture.store.db.as_ref(),
-        &fixture.repository_id,
-        Some("budget_request"),
-        None,
-    )
-    .await
-    .unwrap();
-    assert_eq!(before.request_source_bytes, 4);
     media
         .enqueue_expired_attachment_cleanup(sweep)
         .await
@@ -133,8 +124,9 @@ async fn completed_cleanup_never_reserves_bytes_again_during_reconciliation() {
         )
         .await
         .unwrap();
-        assert_eq!(usage.request_source_bytes, before.request_source_bytes);
-        assert_eq!(usage.repository_bytes, before.repository_bytes);
+        assert_eq!(usage.request_source_bytes, 4);
+        // The live photo reserves four source bytes and four derivative bytes.
+        assert_eq!(usage.repository_bytes, 8);
         super::super::processing_support::ensure_derivative_budget(
             fixture.store.db.as_ref(),
             &current.attachment,

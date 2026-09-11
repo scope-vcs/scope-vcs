@@ -10,7 +10,7 @@ import { createServer } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 
 const require = createRequire(import.meta.url)
-test('settings preserve drafts, report deletion errors, release invite results, and track concurrent rows', async (t) => {
+test('repository components retain drafts, previews and pending actions across refreshes and interaction', async (t) => {
   const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-components-'))
   t.after(() => rm(cacheDir, { recursive: true, force: true }))
   const server = await createServer({
@@ -27,7 +27,7 @@ test('settings preserve drafts, report deletion errors, release invite results, 
   })
   await server.listen()
   const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const page = await browser.newPage({ hasTouch: true, viewport: { width: 1280, height: 900 } })
   page.setDefaultTimeout(10000)
   try {
     const errors = []
@@ -101,10 +101,24 @@ test('settings preserve drafts, report deletion errors, release invite results, 
     await page.setViewportSize({ width: 390, height: 844 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: process.env.SCOPE_COMPONENT_SCREENSHOT, fullPage: true })
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.locator('iframe').waitFor()
+    const first = await page.locator('iframe').elementHandle()
+    const source = page.locator('pre').filter({ hasText: '<h1>Test preview</h1>' })
+    await page.getByRole('button', { name: 'Toggle source' }).click()
+    await source.waitFor()
+    await page.getByRole('button', { name: 'Toggle source' }).click()
+    await source.waitFor({ state: 'detached' })
+    assert.equal(await first.evaluate(node => node === document.querySelector('iframe')), true)
+    await page.getByRole('button', { name: 'Toggle theme' }).click()
+    await page.frameLocator('iframe').getByRole('heading', { name: 'Test preview' }).waitFor()
+    assert.equal(await first.evaluate(node => node.isConnected), false)
+    assert.equal(await page.locator('iframe').count(), 1)
+    const close = page.getByRole('button', { name: 'Close Two.html' })
+    assert.equal(await close.evaluate(node => getComputedStyle(node).opacity), '1')
+    await close.tap()
+    assert.equal(await page.getByRole('tab', { name: 'Two.html' }).count(), 0)
     assert.deepEqual(errors, [])
-  } catch (error) {
-    if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.failure.png`, fullPage: true })
-    throw error
   } finally {
     await browser.close()
     await server.close()

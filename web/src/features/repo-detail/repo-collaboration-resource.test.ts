@@ -24,4 +24,6 @@ test('settings reuse one scoped snapshot and write results fence older reads wit
   await oldRead
   assert.equal(repoCollaborationResource.peek('owner-scope')?.collaboration?.members[0].permissions.can_push, true)
   assert.equal(repoCollaborationResource.peek('other-viewer'), null)
+  retainCollaborationResult('owner-scope', { type: 'memberRemoved', member: saved })
+  assert.deepEqual(repoCollaborationResource.peek('owner-scope')?.collaboration?.members, [])
 })

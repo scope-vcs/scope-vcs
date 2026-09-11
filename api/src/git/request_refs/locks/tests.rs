@@ -2,25 +2,12 @@ use super::*;
 use std::{
     fs,
     process::{Command, Stdio},
-    time::{SystemTime, UNIX_EPOCH},
 };
-
-fn lock_path(label: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
-        "scope-git-lock-{label}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos(),
-    ));
-    fs::create_dir(&directory).unwrap();
-    directory.join("request.lock")
-}
 
 #[test]
 fn lock_exclusion_depends_on_owner_not_timestamp_and_survives_reopening() {
-    let path = lock_path("ownership");
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("request.lock");
     fs::write(&path, "pid=1\ncreated_at_unix=1\n").unwrap();
     let first = acquire_git_lock(&path, "busy", Duration::ZERO).unwrap();
     fs::write(
@@ -34,7 +21,6 @@ fn lock_exclusion_depends_on_owner_not_timestamp_and_survives_reopening() {
     assert!(acquire_git_lock(&path, "busy", Duration::ZERO).is_err());
     drop(second);
     assert!(path.is_file());
-    fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
 #[test]
@@ -52,7 +38,8 @@ fn child_lock_holder() {
 
 #[test]
 fn process_death_releases_lock_without_recovery_files() {
-    let path = lock_path("crash");
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("request.lock");
     let ready = path.with_extension("ready");
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args([
@@ -78,7 +65,6 @@ fn process_death_releases_lock_without_recovery_files() {
     assert!(acquired, "child did not acquire the lock");
     assert!(excluded, "second process acquired an owned lock");
     drop(acquire_git_lock(&path, "busy", Duration::ZERO).unwrap());
-    fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
 #[tokio::test(flavor = "current_thread")]

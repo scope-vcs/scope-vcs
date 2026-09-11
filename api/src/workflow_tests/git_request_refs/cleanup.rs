@@ -1,21 +1,15 @@
 use super::*;
-use crate::use_cases::request_ref_cleanup::drain_request_ref_cleanup_at;
+use crate::use_cases::request_ref_cleanup::drain_request_ref_cleanup;
 
 async fn close_draft(state: &AppState, id: &str) -> Response {
-    router(state.clone())
-        .oneshot(
-            axum::http::Request::builder()
-                .method("DELETE")
-                .uri(format!("/v1/repos/{TEST_REPO_ID}/requests/{id}"))
-                .header(
-                    AUTHORIZATION,
-                    bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
-                )
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap()
+    api_request(
+        router(state.clone()),
+        "DELETE",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests/{id}"),
+        Some(&bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL)),
+        None,
+    )
+    .await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -50,7 +44,7 @@ async fn draft_deletion_keeps_success_and_durable_cleanup_after_git_failure() {
     );
 
     let now = unix_now();
-    let failed = drain_request_ref_cleanup_at(&state, now).await.unwrap();
+    let failed = drain_request_ref_cleanup(&state, now).await.unwrap();
     assert_eq!(failed.attempted, 1);
     assert_eq!(failed.failed.len(), 1);
     let pending = state
@@ -76,7 +70,7 @@ async fn draft_deletion_keeps_success_and_durable_cleanup_after_git_failure() {
         head
     );
     assert_eq!(
-        drain_request_ref_cleanup_at(&state, now)
+        drain_request_ref_cleanup(&state, now)
             .await
             .unwrap()
             .attempted,
@@ -84,7 +78,7 @@ async fn draft_deletion_keeps_success_and_durable_cleanup_after_git_failure() {
     );
 
     fs::remove_file(lock).unwrap();
-    let retried = drain_request_ref_cleanup_at(&state, pending[0].next_run_at_unix)
+    let retried = drain_request_ref_cleanup(&state, pending[0].next_run_at_unix)
         .await
         .unwrap();
     assert_eq!(retried.completed, 1);
@@ -145,9 +139,7 @@ async fn old_draft_cleanup_preserves_a_same_name_replacement_even_at_the_same_he
             .await
             .unwrap()
     );
-    let report = drain_request_ref_cleanup_at(&state, unix_now())
-        .await
-        .unwrap();
+    let report = drain_request_ref_cleanup(&state, unix_now()).await.unwrap();
     assert_eq!(report.completed, 1);
     assert!(report.failed.is_empty());
     let store_repo =

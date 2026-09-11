@@ -8,7 +8,7 @@ use crate::{
         DiscussionMutationResult, DiscussionTransition, MarkDiscussionReadCommand,
         ReopenAndReplyCommand, ReplyMutationResult, TransitionDiscussionCommand,
     },
-    use_cases::request_revision_inspection::RequestRevisionCommitVisibility,
+    use_cases::request_revision_inspection::visible_revision_commits,
 };
 use axum::{
     Json,
@@ -634,14 +634,14 @@ async fn discussion_anchor_visibility<'a>(
             return BTreeSet::new();
         }
     };
-    RequestRevisionCommitVisibility::new(
+    visible_revision_commits(
         projection.state,
         &projection.repo.incarnation(),
         &policy,
         projection.access,
         projection.request,
+        &commits_by_revision,
     )
-    .visible_commits(&commits_by_revision)
     .await
 }
 

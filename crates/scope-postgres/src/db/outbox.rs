@@ -539,7 +539,6 @@ fn unix_timestamp_i64(now_unix: u64) -> Result<i64, PostgresError> {
 mod tests {
     use super::*;
     use scope_domain::{account::UserAccount, policy::Visibility};
-    use sea_orm::ActiveModelTrait;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
@@ -779,7 +778,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn terminal_retry_marks_malformed_push_job_and_evaluation_failed() {
+    async fn terminal_retry_marks_job_failed() {
         let target = super::super::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         seed_outbox_repo(&store).await;
@@ -793,33 +792,6 @@ mod tests {
         .unwrap()
         .unwrap();
         job.attempts = MAX_JOB_ATTEMPTS - 1;
-        job.kind = super::super::push_triggers::JOB_KIND.to_string();
-        entities::outbox_job::Entity::update_many()
-            .filter(entities::outbox_job::Column::Id.eq(job.id.clone()))
-            .col_expr(
-                entities::outbox_job::Column::Kind,
-                Expr::value(job.kind.clone()),
-            )
-            .col_expr(
-                entities::outbox_job::Column::Payload,
-                Expr::value(serde_json::json!({"workflow_schema_version": 5})),
-            )
-            .exec(store.db.as_ref())
-            .await
-            .unwrap();
-        let evaluation = scope_domain::runs::trigger::PushTriggerEvaluation::pending(
-            &job.repo_id,
-            job.repo_version.try_into().unwrap(),
-            "a".repeat(40),
-            unix_now().unwrap(),
-        )
-        .unwrap();
-        entities::push_trigger_evaluation::Model::from_domain(&evaluation)
-            .unwrap()
-            .into_active_model()
-            .insert(store.db.as_ref())
-            .await
-            .unwrap();
 
         fail_outbox_job(
             store.db.as_ref(),
@@ -838,29 +810,6 @@ mod tests {
         assert_eq!(row.state, JOB_FAILED);
         assert_eq!(row.attempts, MAX_JOB_ATTEMPTS);
         assert!(row.completed_at_unix.is_some());
-        let evaluation =
-            entities::push_trigger_evaluation::Entity::find_by_id((job.repo_id, job.repo_version))
-                .one(store.db.as_ref())
-                .await
-                .unwrap()
-                .unwrap()
-                .try_into_domain()
-                .unwrap();
-        assert_eq!(
-            evaluation.state,
-            scope_domain::runs::trigger::PushTriggerEvaluationState::Failed
-        );
-        assert!(
-            claim_next_ready_job(
-                store.db.as_ref(),
-                "next-worker",
-                60,
-                unix_timestamp_i64(unix_now().unwrap()).unwrap() + 120
-            )
-            .await
-            .unwrap()
-            .is_none()
-        );
     }
 
     async fn seed_outbox_repo(store: &MetadataStore) -> (String, u64) {

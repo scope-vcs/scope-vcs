@@ -24,64 +24,84 @@ const SEED: &str = r#"
             '{"kind":"execution-lost","step_index":null}',0,'runtime','provider-task',21);
 "#;
 
+async fn seed_before_execution_repair(db: &DatabaseConnection) {
+    migrations::Migrator::up(db, Some(2)).await.unwrap();
+    db.execute_unprepared(SEED).await.unwrap();
+}
+
 #[tokio::test]
 async fn dispatch_repair_migrates_terminal_state_and_preserves_provider_cleanup() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(2))
-        .await
-        .unwrap();
-    db.execute_unprepared(SEED).await.unwrap();
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
-    let row = db
-        .query_one(Statement::from_string(
-            DatabaseBackend::Postgres,
-            r#"
+    for independent in [false, true] {
+        let (_target, db, _lease) = isolated_database().await;
+        seed_before_execution_repair(db.as_ref()).await;
+        if independent {
+            db.execute_unprepared(r#"
+        UPDATE scope_workflow_revisions SET definition = jsonb_set(definition, '{jobs}',
+            definition->'jobs' || '[{"id":"independent","needs":[]}]'::jsonb);
+        INSERT INTO scope_run_jobs (run_id,job_key,pinned_container_image,state,last_attempt_number,created_at_unix,updated_at_unix)
+            VALUES ('run','independent','rust@sha256:'||repeat('d',64),'queued',0,10,10);
+    "#).await.unwrap();
+        }
+        migrations::apply_in_maintenance(db.as_ref(), Default::default())
+            .await
+            .unwrap();
+        let row = db
+            .query_one(Statement::from_string(
+                DatabaseBackend::Postgres,
+                r#"
         SELECT run.state, run.completed_at_unix,
             (SELECT jsonb_object_agg(job_key,state) FROM scope_run_jobs) AS jobs,
             attempt.terminal_reason, attempt.external_run_id,
             attempt.runner_stop_claimed_at_unix, attempt.runner_stop_completed_at_unix
         FROM scope_runs run JOIN scope_run_attempts attempt ON attempt.run_id = run.id
     "#,
-        ))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(row.try_get::<String>("", "state").unwrap(), "lost");
-    assert_eq!(row.try_get::<i64>("", "completed_at_unix").unwrap(), 20);
-    assert_eq!(
-        row.try_get::<serde_json::Value>("", "jobs").unwrap(),
-        serde_json::json!({"build":"lost","test":"skipped","report":"skipped"})
-    );
-    assert_eq!(
-        row.try_get::<serde_json::Value>("", "terminal_reason")
-            .unwrap(),
-        serde_json::json!({"kind":"dispatch-attempts-exhausted"})
-    );
-    assert_eq!(
-        row.try_get::<String>("", "external_run_id").unwrap(),
-        "provider-task"
-    );
-    assert_eq!(
-        row.try_get::<i64>("", "runner_stop_claimed_at_unix")
-            .unwrap(),
-        21
-    );
-    assert_eq!(
-        row.try_get::<Option<i64>>("", "runner_stop_completed_at_unix")
-            .unwrap(),
-        None
-    );
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            row.try_get::<String>("", "state").unwrap(),
+            if independent { "queued" } else { "lost" }
+        );
+        assert_eq!(
+            row.try_get::<Option<i64>>("", "completed_at_unix").unwrap(),
+            if independent { None } else { Some(20) }
+        );
+        let mut expected_jobs =
+            serde_json::json!({"build":"lost","test":"skipped","report":"skipped"});
+        if independent {
+            expected_jobs["independent"] = serde_json::json!("queued");
+        }
+        assert_eq!(
+            row.try_get::<serde_json::Value>("", "jobs").unwrap(),
+            expected_jobs
+        );
+        assert_eq!(
+            row.try_get::<serde_json::Value>("", "terminal_reason")
+                .unwrap(),
+            serde_json::json!({"kind":"dispatch-attempts-exhausted"})
+        );
+        assert_eq!(
+            row.try_get::<String>("", "external_run_id").unwrap(),
+            "provider-task"
+        );
+        assert_eq!(
+            row.try_get::<i64>("", "runner_stop_claimed_at_unix")
+                .unwrap(),
+            21
+        );
+        assert_eq!(
+            row.try_get::<Option<i64>>("", "runner_stop_completed_at_unix")
+                .unwrap(),
+            None
+        );
+    }
 }
 
 #[tokio::test]
 async fn active_attempt_index_rejects_dispatching_running_and_mixed_duplicates() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(2))
-        .await
-        .unwrap();
-    db.execute_unprepared(SEED).await.unwrap();
+    seed_before_execution_repair(db.as_ref()).await;
     migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap();
@@ -145,45 +165,9 @@ async fn migration_plan_declares_metadata_restore_safety_for_pending_changes() {
 }
 
 #[tokio::test]
-async fn dispatch_repair_preserves_independent_work() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(2))
-        .await
-        .unwrap();
-    db.execute_unprepared(SEED).await.unwrap();
-    db.execute_unprepared(r#"
-        UPDATE scope_workflow_revisions SET definition = jsonb_set(definition, '{jobs}',
-            definition->'jobs' || '[{"id":"independent","needs":[]}]'::jsonb);
-        INSERT INTO scope_run_jobs (run_id,job_key,pinned_container_image,state,last_attempt_number,created_at_unix,updated_at_unix)
-            VALUES ('run','independent','rust@sha256:'||repeat('d',64),'queued',0,10,10);
-    "#).await.unwrap();
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
-    let row = db
-        .query_one(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT run.state, run.completed_at_unix, job.state AS job_state FROM scope_runs run
-         JOIN scope_run_jobs job ON job.run_id = run.id WHERE job.job_key = 'independent'",
-        ))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(row.try_get::<String>("", "state").unwrap(), "queued");
-    assert_eq!(row.try_get::<String>("", "job_state").unwrap(), "queued");
-    assert_eq!(
-        row.try_get::<Option<i64>>("", "completed_at_unix").unwrap(),
-        None
-    );
-}
-
-#[tokio::test]
 async fn existing_duplicate_active_attempts_stop_migration_before_repair() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(2))
-        .await
-        .unwrap();
-    db.execute_unprepared(SEED).await.unwrap();
+    seed_before_execution_repair(db.as_ref()).await;
     db.execute_unprepared(r#"
         INSERT INTO scope_run_attempts (id,run_id,job_key,number,token_hash,token_expires_at_unix,
             state,lease_expires_at_unix,last_heartbeat_at_unix,created_at_unix,log_bytes,runtime_version)

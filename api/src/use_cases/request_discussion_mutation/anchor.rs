@@ -12,8 +12,6 @@ use std::collections::BTreeSet;
 
 pub(super) async fn validate(
     state: &AppState,
-    _owner: &str,
-    _repo_name: &str,
     context: &MutationContext,
     anchor: DiscussionAnchorInput,
 ) -> Result<RequestDiscussionAnchor, ApiError> {
@@ -68,8 +66,6 @@ pub(super) async fn validate(
 
 pub(super) async fn visible_commits(
     state: &AppState,
-    _owner: &str,
-    _repo_name: &str,
     context: &MutationContext,
     anchor: Option<&RequestDiscussionAnchor>,
 ) -> BTreeSet<(String, String)> {

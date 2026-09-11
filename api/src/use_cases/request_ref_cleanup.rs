@@ -17,12 +17,6 @@ pub(crate) struct RequestRefCleanupFailure {
 
 pub(crate) async fn drain_request_ref_cleanup(
     state: &AppState,
-) -> Result<RequestRefCleanupDrainReport, ApiError> {
-    drain_request_ref_cleanup_at(state, unix_now()?).await
-}
-
-pub(crate) async fn drain_request_ref_cleanup_at(
-    state: &AppState,
     now: u64,
 ) -> Result<RequestRefCleanupDrainReport, ApiError> {
     let store = state.metadata.cleanup();
@@ -65,7 +59,11 @@ impl AppState {
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;
-                match drain_request_ref_cleanup(&state).await {
+                let result = match unix_now() {
+                    Ok(now) => drain_request_ref_cleanup(&state, now).await,
+                    Err(error) => Err(error),
+                };
+                match result {
                     Ok(report) if !report.failed.is_empty() => {
                         tracing::warn!(failed = ?report.failed, "request ref cleanup retained failed work")
                     }

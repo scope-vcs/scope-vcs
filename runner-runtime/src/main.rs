@@ -7,8 +7,9 @@ mod settings;
 mod workflow;
 
 use anyhow::Context as _;
-use api::control::RuntimeHeartbeat;
+use execute::{HEARTBEAT_INTERVAL, Heartbeat};
 use settings::RuntimeSettings;
+use std::sync::Arc;
 
 fn main() -> anyhow::Result<()> {
     let settings = RuntimeSettings::from_env()?;
@@ -16,16 +17,11 @@ fn main() -> anyhow::Result<()> {
     let client = api::RuntimeClient::new(&settings)?;
     let claim = client.claim(&settings.bootstrap_token)?;
     let job_definition = workflow::domain_workflow_job(&claim.job.definition)?;
-    let setup_heartbeat = RuntimeHeartbeat::start(client.clone());
+    let setup_heartbeat = Heartbeat::start(Arc::new(client.clone()), HEARTBEAT_INTERVAL)?;
     let setup_result = setup(&settings, &client, &claim, &job_definition);
-    let setup_heartbeat_result = setup_heartbeat.finish();
-    match setup_heartbeat_result {
-        Ok(true) => {
-            client.complete_canceled(false)?;
-            return Ok(());
-        }
-        Ok(false) => {}
-        Err(error) => return Err(error),
+    if setup_heartbeat.finish()? {
+        client.complete_canceled(false)?;
+        return Ok(());
     }
     let (workspace, caches) = match setup_result {
         Ok(value) => value,
@@ -35,16 +31,13 @@ fn main() -> anyhow::Result<()> {
             return Err(error);
         }
     };
-    let execution =
-        execute::run_steps(client.clone(), &job_definition, &workspace).map_err(|error| {
-            eprintln!("runtime execution transport failed: {error:#}");
-            error
-        })?;
+    let execution = execute::run_steps(client.clone(), &job_definition, &workspace)
+        .context("runtime execution transport failed")?;
     let logs_truncated = match execution {
         execute::ExecutionOutcome::Succeeded { logs_truncated } => logs_truncated,
         execute::ExecutionOutcome::Terminal => return Ok(()),
     };
-    let finalization_heartbeat = RuntimeHeartbeat::start(client.clone());
+    let finalization_heartbeat = Heartbeat::start(Arc::new(client.clone()), HEARTBEAT_INTERVAL)?;
     for finalization in cache::finalize::save_caches(&client, &caches) {
         if let cache::types::CacheFinalizationOutcome::Skipped { reason, message } =
             finalization.outcome

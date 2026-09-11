@@ -23,19 +23,14 @@ pub(crate) fn request_revision_commit_files(
     access: RepositoryAccess,
     revision: &RequestRevision,
     commit_oid: &str,
-) -> Result<InspectedRequestCommitFiles, ApiError> {
+) -> Result<RequestCommitSummary, ApiError> {
     if !commit_belongs_to_revision(raw_repo, revision, commit_oid)? {
         return Err(ApiError::not_found("request revision commit not found"));
     }
     let inspected = inspect_request_commit(raw_repo, policy, access, commit_oid)?;
-    let commit = inspected
+    inspected
         .commit
-        .ok_or_else(|| ApiError::not_found("request revision commit not found"))?;
-    Ok(InspectedRequestCommitFiles { commit })
-}
-
-pub(crate) struct InspectedRequestCommitFiles {
-    pub(crate) commit: RequestCommitSummary,
+        .ok_or_else(|| ApiError::not_found("request revision commit not found"))
 }
 
 pub(super) fn request_commit_is_visible_to(
