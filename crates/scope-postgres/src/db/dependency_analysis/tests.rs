@@ -2,7 +2,9 @@ use super::*;
 use crate::db::{MetadataStore, TestDatabaseTarget, generated_ids::test_generated_id};
 use scope_domain::{
     account::UserAccount,
-    dependency_analysis::{DependencyCheckStatus, DependencyEdge, DependencyFinding},
+    dependency_analysis::{
+        DependencyCheckStatus, DependencyEdge, DependencyEdgeKind, DependencyFinding,
+    },
     policy::Visibility,
     repo_config::{ConfigVisibility, RepoConfigVisibilityRule},
     repository::{RepoLifecycleState, Repository, git::GitHead},
@@ -19,7 +21,7 @@ fn output() -> AnalyzerOutput {
         edges: vec![DependencyEdge {
             source_path: "public.ts".into(),
             target_path: "private.ts".into(),
-            kind: "import".into(),
+            kind: DependencyEdgeKind::Import,
         }],
         gaps: Vec::new(),
     }

@@ -1,7 +1,7 @@
 import { ANALYZER_VERSION, LIMITS } from "./constants.mjs";
 import { groupSourcesByConfig, loadResolutionConfig } from "./config.mjs";
 import { cruiseGroup } from "./cruiser.mjs";
-import { inventorySnapshot, SnapshotError } from "./snapshot.mjs";
+import { internalPackageNames, inventorySnapshot, SnapshotError } from "./snapshot.mjs";
 import { scanSources } from "./source-scan.mjs";
 
 function baseResult() {
@@ -55,6 +55,7 @@ export async function analyzeSnapshot(snapshotPath) {
 
   const edges = [];
   const gaps = [...scan.gaps];
+  const packageNames = await internalPackageNames(inventory.root, inventory.allFiles);
   for (const [configPath, sources] of groups) {
     const config = configPath
       ? loadResolutionConfig(inventory.root, configPath, inventory.allFiles)
@@ -65,6 +66,7 @@ export async function analyzeSnapshot(snapshotPath) {
       const groupResult = await cruiseGroup({
         allFiles: inventory.allFiles,
         configPath: config.gap ? null : configPath,
+        internalPackageNames: packageNames,
         referencesBySource: scan.referencesBySource,
         root: inventory.root,
         sources,

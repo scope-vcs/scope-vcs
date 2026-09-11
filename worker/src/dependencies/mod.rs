@@ -10,13 +10,22 @@ use scope_git_process::{ProcessCancellation, ProcessLimits, run as run_process, 
 use scope_git_storage::GitSegmentStore;
 use scope_object_store::ObjectStore;
 use scope_postgres::db::{DependencyAnalysisClaim, DependencyCompletion, MetadataStore};
-use std::{path::PathBuf, process::Command, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    process::Command,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 const LEASE_SECONDS: u64 = 60;
 const HEARTBEAT: Duration = Duration::from_secs(5);
 const ANALYZER_TIMEOUT: Duration = Duration::from_secs(120);
 const ANALYSIS_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+// Pushes and policy changes enqueue their own analysis. The backfill scan only
+// catches repositories that predate the feature or an analyzer upgrade, so it
+// runs on an interval rather than on every poll.
+const BACKFILL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PollOutcome {
     Idle,
@@ -63,6 +72,7 @@ pub(crate) async fn run(
     settings: WorkerSettings,
     health: WorkerHealth,
 ) -> anyhow::Result<()> {
+    let mut backfill = BackfillSchedule::default();
     loop {
         if !crate::schema_ready_or_wait(&metadata, &health).await {
             return Ok(());
@@ -73,6 +83,7 @@ pub(crate) async fn run(
             segments.clone(),
             &settings,
             &health,
+            &mut backfill,
         )
         .await;
         match result {
@@ -93,18 +104,47 @@ pub(crate) async fn run(
     }
 }
 
+#[derive(Default)]
+struct BackfillSchedule {
+    last_started: Option<Instant>,
+    more_candidates: bool,
+}
+
+impl BackfillSchedule {
+    fn is_due(&self, now: Instant) -> bool {
+        self.more_candidates
+            || self
+                .last_started
+                .is_none_or(|started| now.duration_since(started) >= BACKFILL_INTERVAL)
+    }
+
+    fn record(&mut self, started: Instant, enqueued: u64, batch_size: usize) {
+        self.last_started = Some(started);
+        self.more_candidates = enqueued >= batch_size as u64 && batch_size > 0;
+    }
+}
+
 async fn process_next(
     metadata: &MetadataStore,
     objects: Arc<dyn ObjectStore>,
     segments: Arc<GitSegmentStore>,
     settings: &WorkerSettings,
     health: &WorkerHealth,
+    backfill: &mut BackfillSchedule,
 ) -> anyhow::Result<PollOutcome> {
     let now = crate::unix_now()?;
-    metadata
-        .jobs()
-        .enqueue_dependency_analysis_backfill(DEPENDENCY_ANALYZER_VERSION, now, settings.batch_size)
-        .await?;
+    let started = Instant::now();
+    if backfill.is_due(started) {
+        let enqueued = metadata
+            .jobs()
+            .enqueue_dependency_analysis_backfill(
+                DEPENDENCY_ANALYZER_VERSION,
+                now,
+                settings.batch_size,
+            )
+            .await?;
+        backfill.record(started, enqueued, settings.batch_size);
+    }
     let Some(claim) = metadata
         .jobs()
         .claim_dependency_analysis(
@@ -260,6 +300,20 @@ async fn publish_change(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn backfill_runs_at_startup_on_an_interval_and_while_candidates_remain() {
+        let mut schedule = BackfillSchedule::default();
+        let start = Instant::now();
+        assert!(schedule.is_due(start));
+        schedule.record(start, 0, 10);
+        assert!(!schedule.is_due(start + Duration::from_secs(1)));
+        assert!(schedule.is_due(start + BACKFILL_INTERVAL));
+        schedule.record(start, 10, 10);
+        assert!(schedule.is_due(start + Duration::from_secs(1)));
+        schedule.record(start, 3, 10);
+        assert!(!schedule.is_due(start + Duration::from_secs(1)));
+    }
 
     #[tokio::test]
     async fn cancellation_waits_for_analysis_cleanup() {

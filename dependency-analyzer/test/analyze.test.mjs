@@ -162,6 +162,40 @@ test("reports imports resolving outside the snapshot without retaining an edge",
   ]);
 });
 
+test("unresolved bare imports are external unless the repository claims the name", async (context) => {
+  const root = await mkdtemp(resolve(tmpdir(), "scope-dependency-external-"));
+  context.after(() => rm(root, { recursive: true }));
+  await mkdir(resolve(root, "packages/shared"), { recursive: true });
+  await mkdir(resolve(root, "src/private"), { recursive: true });
+  await writeFile(resolve(root, "package.json"), JSON.stringify({ name: "@acme/app", private: true }));
+  await writeFile(resolve(root, "packages/shared/package.json"), JSON.stringify({ name: "@acme/shared" }));
+  await writeFile(resolve(root, "tsconfig.json"), JSON.stringify({
+    compilerOptions: { baseUrl: ".", paths: { "@alias/*": ["src/*"] } },
+  }));
+  await writeFile(resolve(root, "src/private/secret.ts"), "export const secret = 1;\n");
+  await writeFile(resolve(root, "src/main.ts"), [
+    "import React from 'react';",
+    "import { z } from 'zod/v4';",
+    "import path from 'node:path';",
+    "import { shared } from '@acme/shared';",
+    "import { missing } from '@alias/missing';",
+    "import { mapped } from '#internal/mapped';",
+    "import { secret } from './private/secret';",
+    "export const value = [React, z, path, shared, missing, mapped, secret];",
+    "",
+  ].join("\n"));
+
+  const result = await analyzeSnapshot(root);
+  assert.deepEqual(result.edges, [
+    { source_path: "src/main.ts", target_path: "src/private/secret.ts", kind: "import" },
+  ]);
+  assert.deepEqual(result.gaps.map(({ reason }) => reason).sort(), [
+    "unresolved import: #internal/mapped",
+    "unresolved import: @acme/shared",
+    "unresolved import: @alias/missing",
+  ]);
+});
+
 test("CLI emits only the JSON contract and exposes its version", async () => {
   const analyzer = resolve(here, "..", "analyze.mjs");
   const [{ stdout: version }, { stdout }] = await Promise.all([

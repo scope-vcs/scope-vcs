@@ -1,4 +1,4 @@
-import { opendir, realpath, stat } from "node:fs/promises";
+import { opendir, readFile, realpath, stat } from "node:fs/promises";
 import { extname, join, relative, resolve, sep } from "node:path";
 
 import {
@@ -124,6 +124,23 @@ export async function inventorySnapshot(inputRoot) {
     sources: sources.sort(),
     unsupportedFiles: unsupportedFiles.sort(),
   };
+}
+
+// Package names declared inside the snapshot identify workspace packages whose
+// imports must resolve within the repository rather than from a registry.
+export async function internalPackageNames(root, allFiles) {
+  const names = new Set();
+  for (const path of allFiles) {
+    if (path !== "package.json" && !path.endsWith("/package.json")) continue;
+    let manifest;
+    try {
+      manifest = JSON.parse(await readFile(absoluteSnapshotPath(root, path), "utf8"));
+    } catch {
+      continue;
+    }
+    if (typeof manifest?.name === "string" && manifest.name.length > 0) names.add(manifest.name);
+  }
+  return names;
 }
 
 export function absoluteSnapshotPath(root, path) {

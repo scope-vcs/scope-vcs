@@ -50,6 +50,33 @@ function isExternal(dependency) {
   );
 }
 
+function isBareSpecifier(specifier) {
+  return !specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.startsWith("#");
+}
+
+function packageNameOf(specifier) {
+  const segments = specifier.split("/");
+  return specifier.startsWith("@") ? segments.slice(0, 2).join("/") : segments[0];
+}
+
+function aliasMatcher(paths) {
+  const patterns = Object.keys(paths ?? {}).map((pattern) => new RegExp(
+    `^${pattern.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join(".*")}$`,
+    "u",
+  ));
+  return (specifier) => patterns.some((pattern) => pattern.test(specifier));
+}
+
+// Snapshots never contain installed packages, so a bare specifier that does not
+// resolve is an external dependency unless the repository itself claims the
+// name through a path alias, a workspace package, or a package import map.
+function isUnvendoredExternal(dependency, matchesAlias, internalPackageNames) {
+  const specifier = dependency.module;
+  return isBareSpecifier(specifier)
+    && !matchesAlias(specifier)
+    && !internalPackageNames.has(packageNameOf(specifier));
+}
+
 async function validateInternalTarget(root, targetPath) {
   const absolute = absoluteSnapshotPath(root, targetPath);
   const metadata = await lstat(absolute);
@@ -61,12 +88,14 @@ async function validateInternalTarget(root, targetPath) {
 export async function cruiseGroup({
   allFiles,
   configPath,
+  internalPackageNames,
   referencesBySource,
   root,
   sources,
   transpileOptions,
 }) {
   const sourceSet = new Set(sources);
+  const matchesAlias = aliasMatcher(transpileOptions?.tsConfig?.options?.paths);
   const options = {
     baseDir: root,
     combinedDependencies: true,
@@ -102,6 +131,7 @@ export async function cruiseGroup({
       const kinds = kindsForDependency(references, dependency);
 
       if (dependency.couldNotResolve) {
+        if (isUnvendoredExternal(dependency, matchesAlias, internalPackageNames)) continue;
         for (const kind of kinds) {
           gaps.push({
             path: sourcePath,

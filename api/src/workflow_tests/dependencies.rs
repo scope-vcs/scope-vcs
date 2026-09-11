@@ -1,6 +1,8 @@
 use super::*;
 use scope_domain::{
-    dependency_analysis::{AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION, DependencyEdge},
+    dependency_analysis::{
+        AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION, DependencyEdge, DependencyEdgeKind,
+    },
     repo_config::RepoConfigVisibilityRule,
 };
 use scope_postgres::db::DependencyCompletion;
@@ -37,7 +39,7 @@ fn reader_output() -> AnalyzerOutput {
         edges: vec![DependencyEdge {
             source_path: "src/b.ts".into(),
             target_path: "internal/c.ts".into(),
-            kind: "import".into(),
+            kind: DependencyEdgeKind::Import,
         }],
         gaps: Vec::new(),
     }

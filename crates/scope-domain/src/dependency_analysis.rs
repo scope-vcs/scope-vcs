@@ -17,11 +17,24 @@ pub struct AnalyzerOutput {
     pub gaps: Vec<DependencyGap>,
 }
 
+// The vocabulary the analyzer emits for how one file references another.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DependencyEdgeKind {
+    Import,
+    TypeImport,
+    ReExport,
+    TypeReExport,
+    DynamicImport,
+    Require,
+    SideEffectImport,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct DependencyEdge {
     pub source_path: String,
     pub target_path: String,
-    pub kind: String,
+    pub kind: DependencyEdgeKind,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -82,8 +95,6 @@ pub enum DependencyAnalysisError {
     MissingAnalyzerVersion,
     #[error("dependency path must be normalized and repository-relative: {0}")]
     InvalidPath(String),
-    #[error("dependency edge kind is required")]
-    MissingEdgeKind,
     #[error("dependency coverage gap reason is required")]
     MissingGapReason,
 }
@@ -107,9 +118,6 @@ impl StoredDependencyAnalysis {
         for edge in &edges {
             dependency_scope_path(&edge.source_path)?;
             dependency_scope_path(&edge.target_path)?;
-            if edge.kind.trim().is_empty() {
-                return Err(DependencyAnalysisError::MissingEdgeKind);
-            }
         }
         edges.sort();
         edges.dedup();
@@ -228,11 +236,11 @@ mod tests {
         .unwrap()
     }
 
-    fn edge(source: &str, target: &str, kind: &str) -> DependencyEdge {
+    fn edge(source: &str, target: &str, kind: DependencyEdgeKind) -> DependencyEdge {
         DependencyEdge {
             source_path: source.into(),
             target_path: target.into(),
-            kind: kind.into(),
+            kind,
         }
     }
 
@@ -240,9 +248,9 @@ mod tests {
     fn reports_only_direct_public_to_private_pairs() {
         let report = evaluate_dependency_analysis(
             &analysis(vec![
-                edge("public/a.ts", "public/b.ts", "import"),
-                edge("public/b.ts", "private/c.ts", "import"),
-                edge("private/c.ts", "private/d.ts", "import"),
+                edge("public/a.ts", "public/b.ts", DependencyEdgeKind::Import),
+                edge("public/b.ts", "private/c.ts", DependencyEdgeKind::Import),
+                edge("private/c.ts", "private/d.ts", DependencyEdgeKind::Import),
             ]),
             &config(),
         )
@@ -262,15 +270,40 @@ mod tests {
     #[test]
     fn retains_edge_kinds_but_deduplicates_report_pairs_and_source_count() {
         let analysis = analysis(vec![
-            edge("public/a.ts", "private/c.ts", "import"),
-            edge("public/a.ts", "private/c.ts", "type-import"),
-            edge("public/a.ts", "private/d.ts", "re-export"),
+            edge("public/a.ts", "private/c.ts", DependencyEdgeKind::Import),
+            edge(
+                "public/a.ts",
+                "private/c.ts",
+                DependencyEdgeKind::TypeImport,
+            ),
+            edge("public/a.ts", "private/d.ts", DependencyEdgeKind::ReExport),
         ]);
         assert_eq!(analysis.edges.len(), 3);
 
         let report = evaluate_dependency_analysis(&analysis, &config()).unwrap();
         assert_eq!(report.findings.len(), 2);
         assert_eq!(report.public_file_count, 1);
+    }
+
+    #[test]
+    fn edge_kinds_round_trip_the_analyzer_vocabulary() {
+        for (kind, wire) in [
+            (DependencyEdgeKind::Import, "import"),
+            (DependencyEdgeKind::TypeImport, "type-import"),
+            (DependencyEdgeKind::ReExport, "re-export"),
+            (DependencyEdgeKind::TypeReExport, "type-re-export"),
+            (DependencyEdgeKind::DynamicImport, "dynamic-import"),
+            (DependencyEdgeKind::Require, "require"),
+            (DependencyEdgeKind::SideEffectImport, "side-effect-import"),
+        ] {
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, format!("\"{wire}\""));
+            assert_eq!(
+                serde_json::from_str::<DependencyEdgeKind>(&json).unwrap(),
+                kind
+            );
+        }
+        assert!(serde_json::from_str::<DependencyEdgeKind>("\"weak-import\"").is_err());
     }
 
     #[test]
