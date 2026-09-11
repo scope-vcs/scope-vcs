@@ -1,3 +1,4 @@
+use crate::runs::validation::is_kebab_name;
 use serde::Serialize;
 use std::path::{Component, Path};
 use thiserror::Error;
@@ -165,15 +166,7 @@ impl WorkflowCache {
             return Err(CacheError::InvalidPath);
         }
         let format = format.into();
-        if format.is_empty()
-            || format.len() > MAX_WORKFLOW_CACHE_FORMAT_BYTES
-            || format.starts_with('-')
-            || format.ends_with('-')
-            || format.contains("--")
-            || !format
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        {
+        if !is_kebab_name(&format, MAX_WORKFLOW_CACHE_FORMAT_BYTES) {
             return Err(CacheError::InvalidFormat);
         }
         Ok(Self {
@@ -211,15 +204,7 @@ impl WorkflowCache {
 }
 
 pub(super) fn validate_cache_name(name: &str) -> Result<(), CacheError> {
-    if name.is_empty()
-        || name.len() > MAX_WORKFLOW_CACHE_NAME_BYTES
-        || name.starts_with('-')
-        || name.ends_with('-')
-        || name.contains("--")
-        || !name
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    {
+    if !is_kebab_name(name, MAX_WORKFLOW_CACHE_NAME_BYTES) {
         return Err(CacheError::InvalidName);
     }
     if name.starts_with(RESERVED_CACHE_NAME_PREFIX) {

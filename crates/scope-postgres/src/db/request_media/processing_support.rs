@@ -2,14 +2,13 @@ use super::{
     CompletedRequestAttachmentDerivative, CompletedRequestMediaManifest,
     ValidatedRequestAttachmentSource,
     access::cleanup_tombstone_exists,
-    default_limits,
     persistence::{as_i32, as_i64, attachment_by_id, enum_string},
     upload::lock_media_budget,
 };
 use crate::{db::locks::acquire_shared_repository_lock, error::PostgresError};
 use scope_domain::requests::attachments::{
-    RequestAttachment, RequestAttachmentImageMetadata, RequestAttachmentProcessingLease,
-    RequestAttachmentVideoMetadata,
+    RequestAttachment, RequestAttachmentImageMetadata, RequestAttachmentLimits,
+    RequestAttachmentProcessingLease, RequestAttachmentVideoMetadata,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement};
 use std::collections::BTreeSet;
@@ -622,7 +621,7 @@ where
         .checked_add(attachment.size_bytes)
         .and_then(|value| value.checked_add(actual_derivative_bytes))
         .ok_or_else(|| PostgresError::resource_exhausted("attachment storage budget overflow"))?;
-    if total > default_limits().max_repository_storage_bytes {
+    if total > RequestAttachmentLimits::default().max_repository_storage_bytes {
         return Err(PostgresError::resource_exhausted(
             "repository attachment storage budget exceeded",
         ));

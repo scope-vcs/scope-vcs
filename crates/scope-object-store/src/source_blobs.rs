@@ -32,7 +32,6 @@ pub fn object_key_for_content_ref(content_ref: &ContentRef) -> String {
     match content_ref {
         ContentRef::BlobSha256(sha256) => format!("objects/blobs/{sha256}"),
         ContentRef::GitBundleSha256(sha256) => format!("objects/git-bundles/{sha256}"),
-        ContentRef::GitManifestSha256(sha256) => format!("objects/git-manifests/{sha256}"),
         ContentRef::GitBlob { git_oid } => format!("git-blobs/{git_oid}"),
     }
 }

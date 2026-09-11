@@ -1,4 +1,7 @@
-use super::workflow::{error::WorkflowError, identity::WorkflowPath};
+use super::{
+    validation::is_git_oid,
+    workflow::{error::WorkflowError, identity::WorkflowPath},
+};
 use crate::{
     content::{SourceBlob, is_supported_git_file_mode},
     content_ref::ContentRef,
@@ -63,12 +66,8 @@ impl RepositoryWorkflowFile {
         blob: &SourceBlob,
         content_bytes: Vec<u8>,
     ) -> Result<Self, RepositoryWorkflowCatalogError> {
-        let path = path.into();
-        if !source_blob_identity_matches(blob) {
-            return Err(RepositoryWorkflowCatalogError::SourceBlobMismatch { path });
-        }
         let file = Self::new(
-            path,
+            path.into(),
             blob.git_oid.clone(),
             blob.size_bytes,
             blob.git_file_mode.clone(),
@@ -134,7 +133,7 @@ impl RepositoryWorkflowFile {
 
     pub fn validate_integrity(&self) -> Result<(), RepositoryWorkflowCatalogError> {
         let path = self.path.as_str().to_string();
-        if !is_sha1_hex(&self.oid) {
+        if !is_git_oid(&self.oid) {
             return Err(RepositoryWorkflowCatalogError::InvalidGitObjectId { path });
         }
         if !is_supported_git_file_mode(&self.git_file_mode) {
@@ -195,28 +194,15 @@ impl RepositoryWorkflowCatalog {
         source_change_version: u64,
         mut files: Vec<RepositoryWorkflowFile>,
     ) -> Result<Self, RepositoryWorkflowCatalogError> {
-        let repository_id = repository_id.into();
-        let source_head_oid = source_head_oid.into().to_ascii_lowercase();
-        validate_identity(&repository_id, &source_head_oid, source_change_version)?;
-        if files.len() > MAX_REPOSITORY_WORKFLOW_FILES {
-            return Err(RepositoryWorkflowCatalogError::TooManyFiles);
-        }
         files.sort_by(|left, right| left.path.cmp(&right.path));
-        let mut paths = BTreeSet::new();
-        for file in &files {
-            file.validate_integrity()?;
-            if !paths.insert(file.path.as_str()) {
-                return Err(RepositoryWorkflowCatalogError::DuplicatePath(
-                    file.path.as_str().to_string(),
-                ));
-            }
-        }
-        Ok(Self {
-            repository_id,
-            source_head_oid,
+        let catalog = Self {
+            repository_id: repository_id.into(),
+            source_head_oid: source_head_oid.into().to_ascii_lowercase(),
             source_change_version,
             state: RepositoryWorkflowCatalogState::Captured(files),
-        })
+        };
+        catalog.validate_integrity()?;
+        Ok(catalog)
     }
 
     pub fn rejected(
@@ -225,22 +211,14 @@ impl RepositoryWorkflowCatalog {
         source_change_version: u64,
         configuration_error: impl Into<String>,
     ) -> Result<Self, RepositoryWorkflowCatalogError> {
-        let repository_id = repository_id.into();
-        let source_head_oid = source_head_oid.into().to_ascii_lowercase();
-        validate_identity(&repository_id, &source_head_oid, source_change_version)?;
-        let configuration_error = configuration_error.into();
-        if configuration_error.trim().is_empty() {
-            return Err(RepositoryWorkflowCatalogError::MissingConfigurationError);
-        }
-        if configuration_error.len() > MAX_REPOSITORY_WORKFLOW_CONFIGURATION_ERROR_BYTES {
-            return Err(RepositoryWorkflowCatalogError::ConfigurationErrorTooLarge);
-        }
-        Ok(Self {
-            repository_id,
-            source_head_oid,
+        let catalog = Self {
+            repository_id: repository_id.into(),
+            source_head_oid: source_head_oid.into().to_ascii_lowercase(),
             source_change_version,
-            state: RepositoryWorkflowCatalogState::Rejected(configuration_error),
-        })
+            state: RepositoryWorkflowCatalogState::Rejected(configuration_error.into()),
+        };
+        catalog.validate_integrity()?;
+        Ok(catalog)
     }
 
     pub fn repository_id(&self) -> &str {
@@ -345,17 +323,13 @@ fn validate_identity(
     if repository_id.trim().is_empty() {
         return Err(RepositoryWorkflowCatalogError::MissingRepositoryId);
     }
-    if !is_sha1_hex(source_head_oid) {
+    if !is_git_oid(source_head_oid) {
         return Err(RepositoryWorkflowCatalogError::InvalidSourceHead);
     }
     if source_change_version == 0 {
         return Err(RepositoryWorkflowCatalogError::InvalidSourceChangeVersion);
     }
     Ok(())
-}
-
-fn is_sha1_hex(value: &str) -> bool {
-    value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn git_blob_oid(bytes: &[u8]) -> String {

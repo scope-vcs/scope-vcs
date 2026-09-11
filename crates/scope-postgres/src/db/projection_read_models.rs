@@ -1,7 +1,4 @@
-use super::{
-    RepositoryStore, entities,
-    projection_encoding::{LIVE_PROJECTION_SOURCE, ProjectionAudience},
-};
+use super::{RepositoryStore, entities, projection_encoding::LIVE_PROJECTION_SOURCE};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
     QueryOrder,
@@ -19,7 +16,6 @@ use {
         },
         repo_control::{REPO_CONTROL_PREFIX, REPO_CONTROL_ROOT},
         repository::Repository,
-        repository::access::{RepositoryAccess, RepositoryActor},
     },
 };
 
@@ -49,12 +45,8 @@ where
 {
     delete_live_projection_read_models(conn, &repo.record.id).await?;
 
-    for audience in [ProjectionAudience::Private, ProjectionAudience::Public] {
-        let projection = project_graph(
-            &repo.graph,
-            &repo.visibility_change_sets,
-            projection_view_key(audience),
-        );
+    for audience in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
+        let projection = project_graph(&repo.graph, &repo.visibility_change_sets, audience);
         let head_oid =
             scope_git::projection_head_oid(&projection).map_err(PostgresError::internal)?;
         let files = projected_files_for_audience(repo, audience);
@@ -121,7 +113,7 @@ pub(super) async fn load_live_projection_file_for_audience<C>(
     conn: &C,
     repo_id: &str,
     repo_version: u64,
-    audience: ProjectionAudience,
+    audience: ProjectionViewKey,
     path: &ScopePath,
 ) -> Result<ProjectionFileLookup, PostgresError>
 where
@@ -156,7 +148,7 @@ pub(super) async fn load_live_projection_files_for_audience<C>(
     conn: &C,
     repo_id: &str,
     repo_version: u64,
-    audience: ProjectionAudience,
+    audience: ProjectionViewKey,
 ) -> Result<Option<Vec<ProjectionViewFile>>, PostgresError>
 where
     C: ConnectionTrait,
@@ -220,7 +212,7 @@ pub(super) async fn live_projection_has_non_control_file_for_audience<C>(
     conn: &C,
     repo_id: &str,
     repo_version: u64,
-    audience: ProjectionAudience,
+    audience: ProjectionViewKey,
 ) -> Result<Option<bool>, PostgresError>
 where
     C: ConnectionTrait,
@@ -250,7 +242,7 @@ async fn live_projection_read_model_exists<C>(
     conn: &C,
     repo_id: &str,
     repo_version: i64,
-    audience: ProjectionAudience,
+    audience: ProjectionViewKey,
 ) -> Result<bool, PostgresError>
 where
     C: ConnectionTrait,
@@ -292,37 +284,22 @@ where
 
 fn projected_files_for_audience(
     repo: &Repository,
-    audience: ProjectionAudience,
+    audience: ProjectionViewKey,
 ) -> Vec<ProjectionViewFileContent> {
     let principal = match audience {
         // Current visibility is binary: private readers all see the same file
         // tree. If policy becomes per-user, this audience key must split too.
-        ProjectionAudience::Private => Principal {
+        ProjectionViewKey::Private => Principal {
             id: repo.record.owner_user_id.clone(),
             kind: PrincipalKind::User,
         },
-        ProjectionAudience::Public => Principal::public(),
+        ProjectionViewKey::Public => Principal::public(),
     };
     domain_projected_file_contents(repo, &principal)
 }
 
-fn projection_view_key(audience: ProjectionAudience) -> ProjectionViewKey {
-    match audience {
-        ProjectionAudience::Private => ProjectionViewKey::Private,
-        ProjectionAudience::Public => ProjectionViewKey::Public,
-    }
-}
-
-fn live_projection_audience(repo: &Repository, principal: &Principal) -> ProjectionAudience {
-    live_projection_audience_for_access(repo.access_for_principal(principal))
-}
-
-fn live_projection_audience_for_access(access: RepositoryAccess) -> ProjectionAudience {
-    if access.actor != RepositoryActor::Public && access.can_read_private_files {
-        ProjectionAudience::Private
-    } else {
-        ProjectionAudience::Public
-    }
+fn live_projection_audience(repo: &Repository, principal: &Principal) -> ProjectionViewKey {
+    ProjectionViewKey::from_access(repo.access_for_principal(principal))
 }
 
 impl RepositoryStore {
@@ -361,10 +338,6 @@ pub(super) async fn live_projection_head_oid_for_frontier<C: ConnectionTrait>(
     repo_version: u64,
     view_key: ProjectionViewKey,
 ) -> Result<Option<String>, PostgresError> {
-    let audience = match view_key {
-        ProjectionViewKey::Private => ProjectionAudience::Private,
-        ProjectionViewKey::Public => ProjectionAudience::Public,
-    };
     let expected_version = projection_repo_version(repo_version)?;
     let row = entities::projection_read_model::Entity::find()
         .filter(entities::projection_read_model::Column::RepoId.eq(repo_id.to_string()))
@@ -372,7 +345,7 @@ pub(super) async fn live_projection_head_oid_for_frontier<C: ConnectionTrait>(
         .filter(
             entities::projection_read_model::Column::Source.eq(LIVE_PROJECTION_SOURCE.to_string()),
         )
-        .filter(entities::projection_read_model::Column::Audience.eq(audience.as_str().to_string()))
+        .filter(entities::projection_read_model::Column::Audience.eq(view_key.as_str().to_string()))
         .filter(
             entities::projection_read_model::Column::IdentityVersion
                 .eq(scope_git::PROJECTION_IDENTITY_VERSION),

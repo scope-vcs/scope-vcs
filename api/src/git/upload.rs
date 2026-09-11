@@ -6,7 +6,6 @@ use crate::{
         GitRemoteMode,
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
         git_read_scope_user,
-        import::run_git,
         projection_repo::projection_bare_repo_for_state,
         request_refs::attach_visible_request_refs,
     },
@@ -29,7 +28,7 @@ use scope_domain::{
     projection::{ProjectionViewKey, project_graph},
     repository::access::RepositoryActor,
     repository::{RepoLifecycleState, RepositoryIncarnation},
-    requests::{Request, RequestViewer, canonical_request_ref, request_policy},
+    requests::{Request, RequestViewer, request_policy},
 };
 use scope_git_process::{
     ProcessLimits, STDERR_DIAGNOSTIC_BYTES, StreamingProcessError, run as run_process,
@@ -140,7 +139,6 @@ pub(crate) async fn git_upload_pack_repo_for_request(
         .await?
     };
     let mut requests = Vec::new();
-    let mut hidden_request_refs = Vec::new();
     for request in state
         .metadata
         .requests()
@@ -161,10 +159,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
             &request,
             RequestViewer::new(access, viewer_user_id.as_deref(), is_invitee),
         );
-        if decision.request_ref_readable {
-            if !decision.git_advertised {
-                hidden_request_refs.push(request.name.clone());
-            }
+        if decision.exact_visible {
             requests.push(request);
         }
     }
@@ -198,7 +193,6 @@ pub(crate) async fn git_upload_pack_repo_for_request(
         base_repo,
         public_base_repo,
         &requests,
-        &hidden_request_refs,
     )
     .await
 }
@@ -209,7 +203,6 @@ async fn git_read_view_repo(
     base_repo: GitRepoHandle,
     public_base_repo: Option<GitRepoHandle>,
     requests: &[Request],
-    hidden_request_refs: &[String],
 ) -> Result<GitRepoHandle, ApiError> {
     if requests.is_empty() {
         return Ok(base_repo);
@@ -241,7 +234,6 @@ async fn git_read_view_repo(
         &main_oid,
         public_main_oid.as_deref(),
         requests,
-        hidden_request_refs,
     )
     .cache_key();
     let cache_root = state.repository_engine.cache_root().to_path_buf();
@@ -252,7 +244,6 @@ async fn git_read_view_repo(
     let base_repo_for_build = base_repo;
     let public_base_repo_for_build = public_base_repo;
     let requests_for_build = requests.to_vec();
-    let hidden_request_refs_for_build = hidden_request_refs.to_vec();
     let cache_root_for_build = cache_root.clone();
     let cache_key_for_build = cache_key.clone();
     let repo_path_for_build = repo_path.clone();
@@ -291,25 +282,6 @@ async fn git_read_view_repo(
                         &temp_path,
                         public_base_repo_for_build.as_deref(),
                     )?;
-                    if !hidden_request_refs_for_build.is_empty() {
-                        run_git(
-                            Some(&temp_path),
-                            &["config", "uploadpack.allowTipSHA1InWant", "true"],
-                            "allowing exact request tip fetches",
-                        )?;
-                        for request_name in &hidden_request_refs_for_build {
-                            run_git(
-                                Some(&temp_path),
-                                &[
-                                    "config",
-                                    "--add",
-                                    "transfer.hideRefs",
-                                    &canonical_request_ref(request_name),
-                                ],
-                                "hiding exact-only request ref from advertisement",
-                            )?;
-                        }
-                    }
                     match fs::rename(&temp_path, &repo_path_for_build) {
                         Ok(()) => Ok(()),
                         Err(error) if repo_path_for_build.join("objects").is_dir() => {

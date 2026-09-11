@@ -1,5 +1,5 @@
 use crate::{
-    db::projection_encoding::{LIVE_PROJECTION_SOURCE, ProjectionAudience},
+    db::projection_encoding::LIVE_PROJECTION_SOURCE,
     db::{decode_json, encode_json},
     error::PostgresError,
 };
@@ -37,6 +37,7 @@ use scope_domain::{
 };
 use scope_domain::{
     policy::{Policy, ScopePath, Visibility},
+    projection::ProjectionViewKey,
     projection_views::{ProjectionViewFile, ProjectionViewFileContent},
 };
 use sea_orm::entity::prelude::*;
@@ -162,7 +163,7 @@ mod tests {
         let model = projection_file::Model::live(
             "owner/repo",
             1,
-            ProjectionAudience::Public,
+            ProjectionViewKey::Public,
             ProjectionViewFileContent {
                 file: ProjectionViewFile {
                     path: ScopePath::parse(&path).unwrap(),
@@ -199,7 +200,7 @@ mod tests {
         let model = projection_read_model::Model::live(
             "owner/repo",
             7,
-            ProjectionAudience::Public,
+            ProjectionViewKey::Public,
             Some("1111111111111111111111111111111111111111".to_string()),
             10,
             2,
@@ -237,7 +238,7 @@ mod tests {
         let mut untracked = content.clone();
         untracked.file.tracked = false;
         assert!(
-            projection_file::Model::live("owner/repo", 1, ProjectionAudience::Public, untracked,)
+            projection_file::Model::live("owner/repo", 1, ProjectionViewKey::Public, untracked,)
                 .is_err()
         );
 
@@ -247,7 +248,7 @@ mod tests {
             projection_file::Model::live(
                 "owner/repo",
                 1,
-                ProjectionAudience::Public,
+                ProjectionViewKey::Public,
                 mismatched_oid,
             )
             .is_err()
@@ -259,7 +260,7 @@ mod tests {
             projection_file::Model::live(
                 "owner/repo",
                 1,
-                ProjectionAudience::Public,
+                ProjectionViewKey::Public,
                 unsupported_mode,
             )
             .is_err()

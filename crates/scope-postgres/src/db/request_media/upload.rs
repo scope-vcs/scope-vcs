@@ -1,7 +1,7 @@
 use super::{
     FinishRequestAttachmentUploadCommand, MediaStore, PrepareRequestAttachmentCommand,
     PreparedRequestAttachment, ReserveUploadPartResult, StorePartResult,
-    StoredRequestAttachmentPart, default_limits,
+    StoredRequestAttachmentPart,
     persistence::{as_i32, as_i64, attachment_by_id, enum_string},
 };
 use crate::{
@@ -12,9 +12,9 @@ use crate::{
     error::{PostgresError, PostgresErrorKind},
 };
 use scope_domain::requests::attachments::{
-    PrepareRequestAttachmentInput, RequestAttachment, RequestAttachmentPartReceipt,
-    RequestAttachmentState, RequestAttachmentStoredObject, RequestAttachmentTarget,
-    finish_attachment_upload, validate_prepare_attachment,
+    PrepareRequestAttachmentInput, RequestAttachment, RequestAttachmentLimits,
+    RequestAttachmentPartReceipt, RequestAttachmentState, RequestAttachmentStoredObject,
+    RequestAttachmentTarget, finish_attachment_upload, validate_prepare_attachment,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, TransactionTrait};
 
@@ -22,7 +22,6 @@ impl MediaStore {
     pub async fn prepare_request_attachment(
         &self,
         command: PrepareRequestAttachmentCommand,
-        limits: scope_domain::requests::attachments::RequestAttachmentLimits,
     ) -> Result<PreparedRequestAttachment, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
@@ -86,28 +85,25 @@ impl MediaStore {
             reserved_source_usage(&tx, "request_id", &command.request_id).await?;
         let repository_reserved_bytes =
             reserved_total_usage(&tx, "repository_id", &repo.record.id).await?;
-        let decision = validate_prepare_attachment(
-            PrepareRequestAttachmentInput {
-                attachment_id: command.attachment_id,
-                repository_id: repo.record.id.clone(),
-                request_id: command.request_id,
-                uploader_user_id: command.actor_user_id,
-                upload_id: command.upload_id,
-                operation_id: command.operation_id,
-                target: command.target,
-                filename: command.filename,
-                declared_media_type: command.declared_media_type,
-                size_bytes: command.size_bytes,
-                sha256: command.sha256,
-                actor_can_write_target,
-                request_is_open: !request.is_terminal(),
-                target_attachment_count,
-                request_source_bytes,
-                repository_reserved_bytes,
-                now_unix: command.now_unix,
-            },
-            limits,
-        )?;
+        let decision = validate_prepare_attachment(PrepareRequestAttachmentInput {
+            attachment_id: command.attachment_id,
+            repository_id: repo.record.id.clone(),
+            request_id: command.request_id,
+            uploader_user_id: command.actor_user_id,
+            upload_id: command.upload_id,
+            operation_id: command.operation_id,
+            target: command.target,
+            filename: command.filename,
+            declared_media_type: command.declared_media_type,
+            size_bytes: command.size_bytes,
+            sha256: command.sha256,
+            actor_can_write_target,
+            request_is_open: !request.is_terminal(),
+            target_attachment_count,
+            request_source_bytes,
+            repository_reserved_bytes,
+            now_unix: command.now_unix,
+        })?;
         insert_prepared_attachment(
             &tx,
             &decision.attachment,
@@ -140,11 +136,7 @@ impl MediaStore {
             .await?
             .ok_or_else(|| PostgresError::not_found("request attachment upload not found"))?;
         authorize_active_upload(&attachment, upload_id, uploader_user_id, now_unix)?;
-        scope_domain::requests::attachments::validate_attachment_part(
-            &attachment,
-            &part.receipt,
-            default_limits(),
-        )?;
+        scope_domain::requests::attachments::validate_attachment_part(&attachment, &part.receipt)?;
         if part.object_key.trim().is_empty() {
             return Err(PostgresError::invalid_input("media object key is required"));
         }
@@ -336,7 +328,6 @@ impl MediaStore {
             &receipts,
             original,
             command.now_unix,
-            default_limits(),
         )?;
         if attachment.state == RequestAttachmentState::Prepared {
             insert_original_manifest(
@@ -349,7 +340,7 @@ impl MediaStore {
             .await?;
             let unbound_expires_at_unix = command
                 .now_unix
-                .checked_add(default_limits().unbound_attachment_ttl_seconds)
+                .checked_add(RequestAttachmentLimits::default().unbound_attachment_ttl_seconds)
                 .ok_or_else(|| PostgresError::internal_message("unbound expiry overflow"))?;
             tx.execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,

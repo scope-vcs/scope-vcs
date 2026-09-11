@@ -96,22 +96,19 @@ pub(crate) async fn prepare(
     let prepared = state
         .metadata
         .media()
-        .prepare_request_attachment(
-            PrepareRequestAttachmentCommand {
-                attachment_id: random_id("attachment")?,
-                upload_id: random_id("upload")?,
-                operation_id: input.operation_id,
-                request_id,
-                actor_user_id: user.id,
-                target: input.target.try_into()?,
-                filename: input.filename,
-                declared_media_type: input.declared_media_type,
-                size_bytes: input.size_bytes,
-                sha256: input.sha256,
-                now_unix: now,
-            },
-            limits,
-        )
+        .prepare_request_attachment(PrepareRequestAttachmentCommand {
+            attachment_id: random_id("attachment")?,
+            upload_id: random_id("upload")?,
+            operation_id: input.operation_id,
+            request_id,
+            actor_user_id: user.id,
+            target: input.target.try_into()?,
+            filename: input.filename,
+            declared_media_type: input.declared_media_type,
+            size_bytes: input.size_bytes,
+            sha256: input.sha256,
+            now_unix: now,
+        })
         .await?;
     let expires_at_unix = state
         .media_grants

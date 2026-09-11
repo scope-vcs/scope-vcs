@@ -149,7 +149,7 @@ async fn landing_snapshot_failure_rolls_back_the_repository_transaction() {
     assert_eq!(after.git_pack_spans, before.git_pack_spans);
     assert!(
         !after
-            .live_tree()
+            .live_files
             .contains_key(&ScopePath::parse("/notes.md").unwrap())
     );
     assert_eq!(

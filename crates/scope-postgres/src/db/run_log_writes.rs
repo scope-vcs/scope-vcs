@@ -24,7 +24,7 @@ impl RunStore {
         let (run, job, mut attempt, steps) =
             super::run_attempt_persistence::locked_attempt_context(&tx, &chunk.attempt_id).await?;
         attempt
-            .authenticate_access(&job, token_hash, now_unix)
+            .authenticate(&job, token_hash, now_unix)
             .map_err(PostgresError::from)?;
         if attempt.first_truncated_step_index.is_some() {
             return Err(PostgresError::resource_exhausted(

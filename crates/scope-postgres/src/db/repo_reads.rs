@@ -1,7 +1,6 @@
 use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities,
     landing_files::repository_landing_file,
-    projection_encoding::ProjectionAudience,
     projection_read_models::{
         ProjectionFileLookup, live_projection_has_non_control_file_for_audience,
         load_live_projection_file_for_audience, load_live_projection_files_for_audience,
@@ -18,6 +17,7 @@ use {
     scope_domain::{
         landing_file::{REPOSITORY_LANDING_FILE_PATH, RepositoryLandingFile},
         policy::{Policy, Principal, PrincipalKind, ScopePath},
+        projection::ProjectionViewKey,
         projection_views::{
             ProjectionViewFile, ProjectionViewFileContent, has_visible_projected_non_control_files,
             projected_file_content as domain_projected_file_content,
@@ -225,7 +225,7 @@ where
     };
     let permissions = member_permissions_for_viewer(conn, &row, viewer_user_id).await?;
     let access = access_for_row(&row, viewer_user_id, permissions)?;
-    let audience = live_projection_audience(access);
+    let audience = ProjectionViewKey::from_access(access);
 
     if access.actor == RepositoryActor::Public && !public_surface_visible(conn, &row).await? {
         return Ok(None);
@@ -271,7 +271,7 @@ where
     if !row_is_readable(&row, access)? {
         return Ok(None);
     }
-    let audience = live_projection_audience(access);
+    let audience = ProjectionViewKey::from_access(access);
     let lookup = load_live_projection_file_for_audience(
         conn,
         &row.id,
@@ -520,7 +520,7 @@ pub(super) async fn public_repository_visible<C: ConnectionTrait>(
         conn,
         repo_id,
         change_version,
-        scope_domain::projection::ProjectionViewKey::Public,
+        ProjectionViewKey::Public,
     )
     .await?
     {
@@ -530,7 +530,7 @@ pub(super) async fn public_repository_visible<C: ConnectionTrait>(
         conn,
         repo_id,
         change_version,
-        ProjectionAudience::Public,
+        ProjectionViewKey::Public,
     )
     .await?
     {
@@ -542,14 +542,6 @@ pub(super) async fn public_repository_visible<C: ConnectionTrait>(
         &repo,
         &Principal::public(),
     ))
-}
-
-fn live_projection_audience(access: RepositoryAccess) -> ProjectionAudience {
-    if access.actor != RepositoryActor::Public && access.can_read_private_files {
-        ProjectionAudience::Private
-    } else {
-        ProjectionAudience::Public
-    }
 }
 
 fn principal_for_viewer(viewer_user_id: Option<&str>) -> Principal {

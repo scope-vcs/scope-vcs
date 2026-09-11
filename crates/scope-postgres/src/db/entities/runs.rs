@@ -272,7 +272,6 @@ pub mod run_attempt {
         pub runtime_version: String,
         #[sea_orm(unique)]
         pub token_hash: String,
-        pub token_expires_at_unix: i64,
         pub state: String,
         pub lease_expires_at_unix: i64,
         pub last_heartbeat_at_unix: i64,
@@ -299,10 +298,6 @@ pub mod run_attempt {
                 external_run_id: attempt.external_run_id.clone(),
                 runtime_version: attempt.runtime_version.clone(),
                 token_hash: attempt.token_hash.clone(),
-                token_expires_at_unix: u64_to_i64(
-                    attempt.token_expires_at_unix,
-                    "attempt token expiry time",
-                )?,
                 state: encode_enum(attempt.state)?,
                 lease_expires_at_unix: u64_to_i64(
                     attempt.lease_expires_at_unix,
@@ -343,7 +338,6 @@ pub mod run_attempt {
                 self.external_run_id,
                 self.runtime_version,
                 self.token_hash,
-                i64_to_u64(self.token_expires_at_unix, "attempt token expiry time")?,
                 decode_enum::<AttemptState>(self.state)?,
                 i64_to_u64(self.lease_expires_at_unix, "attempt lease expiry time")?,
                 i64_to_u64(self.last_heartbeat_at_unix, "attempt heartbeat time")?,
@@ -472,20 +466,23 @@ pub mod run_attempt_cache {
                 cache_name: observation.cache_name.clone(),
                 preparation,
                 cold_reason,
-                key_ms: u64_to_i64(observation.timing.key_ms, "cache key duration")?,
-                metadata_ms: u64_to_i64(observation.timing.metadata_ms, "cache metadata duration")?,
-                size_bytes: u64_to_i64(observation.timing.size_bytes, "cache compressed size")?,
+                key_ms: u64_to_i64(observation.timing.key_ms(), "cache key duration")?,
+                metadata_ms: u64_to_i64(
+                    observation.timing.metadata_ms(),
+                    "cache metadata duration",
+                )?,
+                size_bytes: u64_to_i64(observation.timing.size_bytes(), "cache compressed size")?,
                 download_verify_ms: u64_to_i64(
-                    observation.timing.download_verify_ms,
+                    observation.timing.download_verify_ms(),
                     "cache download and verification duration",
                 )?,
-                sync_ms: u64_to_i64(observation.timing.sync_ms, "cache sync duration")?,
+                sync_ms: u64_to_i64(observation.timing.sync_ms(), "cache sync duration")?,
                 extraction_ms: u64_to_i64(
-                    observation.timing.extraction_ms,
+                    observation.timing.extraction_ms(),
                     "cache extraction duration",
                 )?,
                 prepare_ms: u64_to_i64(
-                    observation.timing.prepare_ms,
+                    observation.timing.prepare_ms(),
                     "cache preparation duration",
                 )?,
                 final_state: encode_enum(observation.final_state)?,

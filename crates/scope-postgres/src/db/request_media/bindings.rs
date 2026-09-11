@@ -1,10 +1,7 @@
-use super::{
-    default_limits,
-    persistence::{attachment_by_id, binding_target_parts, bindings_for_attachment},
-};
+use super::persistence::{attachment_by_id, binding_target_parts, bindings_for_attachment};
 use crate::error::PostgresError;
 use scope_domain::requests::attachments::{
-    RequestAttachmentBindingTarget, replace_attachment_bindings,
+    RequestAttachmentBindingTarget, RequestAttachmentLimits, replace_attachment_bindings,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use std::collections::BTreeSet;
@@ -22,7 +19,7 @@ where
 {
     let referenced = scope_domain::requests::attachments::request_attachment_references(markdown)
         .map_err(PostgresError::from)?;
-    let limits = default_limits();
+    let limits = RequestAttachmentLimits::default();
     if referenced.len() > limits.max_attachments_per_content {
         return Err(PostgresError::invalid_input(format!(
             "request content may reference at most {} attachments",
@@ -81,7 +78,6 @@ where
         markdown,
         &attachments,
         &existing_bindings,
-        limits,
     )?;
 
     conn.execute(Statement::from_sql_and_values(

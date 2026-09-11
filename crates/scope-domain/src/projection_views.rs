@@ -242,13 +242,6 @@ pub fn projected_file_content(
     })
 }
 
-pub fn files_for_visibility_update(
-    repo: &Repository,
-    principal: &Principal,
-) -> Result<Vec<ProjectionViewFile>, DomainError> {
-    Ok(projected_files(repo, principal))
-}
-
 pub fn repo_scope_path(path: &str) -> Result<ScopePath, DomainError> {
     repo_relative_scope_path(path).map_err(DomainError::invalid_input)
 }

@@ -1,6 +1,6 @@
 use super::{
     GeneratedIdSource, RepositoryStore, acquire_aggregate_lock, auth::load_user_by_id, entities,
-    repo_effects::save_repo_mutation, repository_from_model,
+    repository_from_model, repository_rows::save_repository_delta,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -114,15 +114,7 @@ impl RepositoryStore {
                 now_unix: command.now_unix,
             },
         )?;
-        save_repo_mutation(
-            &tx,
-            &before,
-            &repo,
-            &mutation_effects_none(),
-            now_unix,
-            generated_ids,
-        )
-        .await?;
+        save_repository_delta(&tx, &before, &repo, now_unix, generated_ids).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)
     }
@@ -195,15 +187,7 @@ impl RepositoryStore {
         let before = repo.clone();
         let removed = remove_repository_member(&mut repo, owner_user_id, member_user_id)
             .map_err(PostgresError::from)?;
-        save_repo_mutation(
-            &tx,
-            &before,
-            &repo,
-            &mutation_effects_none(),
-            now_unix,
-            generated_ids,
-        )
-        .await?;
+        save_repository_delta(&tx, &before, &repo, now_unix, generated_ids).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(removed)
     }
@@ -255,15 +239,7 @@ impl RepositoryStore {
         let mut repo = repository_from_model(&tx, row).await?;
         let before = repo.clone();
         let outcome = accept_repository_invite(&mut repo, &user, &token_hash, now_unix)?;
-        save_repo_mutation(
-            &tx,
-            &before,
-            &repo,
-            &mutation_effects_none(),
-            now_unix,
-            generated_ids,
-        )
-        .await?;
+        save_repository_delta(&tx, &before, &repo, now_unix, generated_ids).await?;
         let result = match outcome {
             AcceptRepositoryInviteOutcome::Accepted(member) => Ok((repo, member)),
             AcceptRepositoryInviteOutcome::Expired => {
@@ -301,15 +277,7 @@ where
     let mut repo = repository_from_model(&tx, row).await?;
     let before = repo.clone();
     let result = op(&mut repo)?;
-    save_repo_mutation(
-        &tx,
-        &before,
-        &repo,
-        &mutation_effects_none(),
-        now_unix,
-        generated_ids,
-    )
-    .await?;
+    save_repository_delta(&tx, &before, &repo, now_unix, generated_ids).await?;
     tx.commit().await.map_err(PostgresError::internal)?;
     Ok(result)
 }
@@ -329,8 +297,4 @@ where
         .map_err(PostgresError::internal)?
         .map(entities::user::Model::try_into_domain)
         .transpose()
-}
-
-fn mutation_effects_none() -> scope_domain::repo_actions::RepoEffects {
-    scope_domain::repo_actions::RepoEffects::default()
 }

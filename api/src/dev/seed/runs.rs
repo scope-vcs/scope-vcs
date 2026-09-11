@@ -972,7 +972,7 @@ mod tests {
             .expect("build attempt is seeded");
         assert_eq!(build_attempt.cache_setup.as_ref().unwrap().wall_ms, 236);
         assert_eq!(build_attempt.caches.len(), 1);
-        assert_eq!(build_attempt.caches[0].timing.sync_ms, 7);
-        assert_eq!(build_attempt.caches[0].timing.prepare_ms, 205);
+        assert_eq!(build_attempt.caches[0].timing.sync_ms(), 7);
+        assert_eq!(build_attempt.caches[0].timing.prepare_ms(), 205);
     }
 }

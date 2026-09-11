@@ -488,7 +488,7 @@ async fn live_file_content(state: &AppState, path: &str) -> Option<String> {
     let repo = find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
-    match repo.live_tree().get(&ScopePath::parse(path).unwrap()) {
+    match repo.live_files.get(&ScopePath::parse(path).unwrap()) {
         Some(blob) => Some(blob_content(state, blob, &repo).await),
         None => None,
     }

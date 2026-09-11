@@ -1,6 +1,6 @@
 use super::{
-    GeneratedIdSource, RepositoryStore, acquire_aggregate_lock, entities,
-    repo_effects::save_repo_mutation, repository_from_model,
+    GeneratedIdSource, RepositoryStore, acquire_aggregate_lock, entities, repository_from_model,
+    repository_rows::save_repository_delta,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -46,22 +46,14 @@ impl RepositoryStore {
         let mut repo = repository_from_model(&tx, repo).await?;
         let before = repo.clone();
         let occurred_at_unix = entities::u64_to_i64(now_unix, "visibility change time")?;
-        let mutation = set_visibility(
+        set_visibility(
             &mut repo,
             &user_id,
             &update_paths,
             visibility,
             Some(occurred_at_unix),
         )?;
-        save_repo_mutation(
-            &tx,
-            &before,
-            &repo,
-            &mutation.effects,
-            now_unix,
-            generated_ids,
-        )
-        .await?;
+        save_repository_delta(&tx, &before, &repo, now_unix, generated_ids).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(repo)
     }

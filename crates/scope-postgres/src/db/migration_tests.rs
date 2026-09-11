@@ -19,6 +19,8 @@ mod repository_workflow_catalogs;
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0042_current_schema_baseline",
     "m0043_retire_git_manifests",
+    "m0044_drop_attempt_token_expiry",
+    "m0045_drop_git_manifest_orphan_jobs",
 ];
 
 pub(super) async fn isolated_database() -> (

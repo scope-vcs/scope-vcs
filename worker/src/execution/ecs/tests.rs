@@ -102,7 +102,8 @@ async fn start_sends_the_complete_task_definition_and_launch_contract() {
                 "tags": [
                     {"key": "Project", "value": "scope-vcs"},
                     {"key": "Component", "value": "cloud-runner"},
-                    {"key": "ImageDigest", "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+                    // The tag carries the canonical (lowercase) digest from the domain rule.
+                    {"key": "ImageDigest", "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
                 ]
             })
         );

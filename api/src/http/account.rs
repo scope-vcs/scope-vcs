@@ -14,7 +14,10 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use scope_api_contract::{AccountSessionResponse, SessionIdentity};
-use scope_domain::{policy::Principal, repository::access::RepositoryActor};
+use scope_domain::{
+    account::SessionIdentity as DomainSessionIdentity, policy::Principal,
+    repository::access::RepositoryActor,
+};
 
 pub(crate) async fn healthz() -> Json<HealthResponse> {
     Json(HealthResponse {
@@ -61,7 +64,9 @@ pub(crate) async fn get_account_session(
 ) -> Result<Json<AccountSessionResponse>, ApiError> {
     let user = optional_scope_user(&state, &headers).await?;
     Ok(Json(AccountSessionResponse {
-        identity: user.as_ref().map(SessionIdentity::from),
+        identity: user
+            .as_ref()
+            .map(|user| SessionIdentity::from(DomainSessionIdentity::from(user))),
         user: user.map(user_response),
     }))
 }
@@ -91,7 +96,9 @@ pub(crate) async fn get_session(
     };
 
     Ok(Json(SessionResponse {
-        identity: user.as_ref().map(SessionIdentity::from),
+        identity: user
+            .as_ref()
+            .map(|user| SessionIdentity::from(DomainSessionIdentity::from(user))),
         repo: SessionRepo {
             id: repo.record.id.clone(),
             lifecycle_state: repo.record.lifecycle_state.into(),

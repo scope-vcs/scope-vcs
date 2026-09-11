@@ -4,12 +4,20 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
-    history::history_view,
     policy::{ScopePath, Visibility},
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
+    projection::{FileChange, LogicalCommit, LogicalCommitOrigin, SourceGraph},
     repository::RepoLifecycleState,
+    visibility_changes::VisibilityChangeSet,
 };
 use std::time::{Duration, Instant};
+
+fn history_view(
+    graph: &SourceGraph,
+    sets: &[VisibilityChangeSet],
+    view_key: ProjectionViewKey,
+) -> HistoryView {
+    history_view_from_projection(project_graph(graph, sets, view_key), graph, sets)
+}
 
 fn fixture(commits: usize) -> (MetadataStore, Repository) {
     let store =

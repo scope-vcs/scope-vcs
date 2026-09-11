@@ -1,8 +1,7 @@
 //! One-way request submission and terminal merge behavior.
 
 use super::{
-    Request, RequestEvent, RequestEventKind, RequestEventPayload, RequestState,
-    validate_required_id,
+    Request, RequestEvent, RequestEventKind, RequestEventPayload, RequestState, validate_required,
 };
 use crate::error::DomainError;
 
@@ -38,7 +37,7 @@ pub fn submit_request(
     input: SubmitRequestInput,
 ) -> Result<RequestLifecycleMutation, DomainError> {
     validate_command(request, &input.request_id, &input.actor_user_id)?;
-    validate_required_id("request event id", &input.event_id)?;
+    validate_required("request event id", &input.event_id)?;
     if !input.actor_is_author || request.author_user_id != input.actor_user_id {
         return Err(DomainError::forbidden(
             "only the request author can submit it",
@@ -81,9 +80,9 @@ pub fn merge_request(
     input: MergeRequestInput,
 ) -> Result<RequestLifecycleMutation, DomainError> {
     validate_command(request, &input.request_id, &input.actor_user_id)?;
-    validate_required_id("merged event id", &input.merged_event_id)?;
-    validate_required_id("merged head oid", &input.merged_head_oid)?;
-    validate_required_id("merged main oid", &input.merged_main_oid)?;
+    validate_required("merged event id", &input.merged_event_id)?;
+    validate_required("merged head oid", &input.merged_head_oid)?;
+    validate_required("merged main oid", &input.merged_main_oid)?;
     if !input.actor_is_maintainer {
         return Err(DomainError::forbidden("repo maintainer required"));
     }
@@ -121,8 +120,8 @@ pub fn merge_request(
 }
 
 fn validate_command(request: &Request, request_id: &str, actor: &str) -> Result<(), DomainError> {
-    validate_required_id("request id", request_id)?;
-    validate_required_id("actor user id", actor)?;
+    validate_required("request id", request_id)?;
+    validate_required("actor user id", actor)?;
     if request.id == request_id {
         Ok(())
     } else {

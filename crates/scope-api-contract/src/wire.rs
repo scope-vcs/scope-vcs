@@ -1,6 +1,5 @@
 use scope_domain::{
     account::SessionIdentity as DomainSessionIdentity,
-    account::UserAccount,
     history::FileChangeKind as DomainFileChangeKind,
     policy::Visibility as DomainVisibility,
     repository::RepoLifecycleState as DomainRepoLifecycleState,
@@ -75,16 +74,6 @@ impl From<SessionIdentity> for DomainSessionIdentity {
             user_id: value.user_id,
             email: value.email,
             email_verified: value.email_verified,
-        }
-    }
-}
-
-impl From<&UserAccount> for SessionIdentity {
-    fn from(user: &UserAccount) -> Self {
-        Self {
-            user_id: user.id.clone(),
-            email: (!user.email.is_empty()).then(|| user.email.clone()),
-            email_verified: user.email_verified,
         }
     }
 }

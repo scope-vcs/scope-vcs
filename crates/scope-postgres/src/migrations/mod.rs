@@ -1,5 +1,7 @@
 mod baseline;
 mod m0043_retire_git_manifests;
+mod m0044_drop_attempt_token_expiry;
+mod m0045_drop_git_manifest_orphan_jobs;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -30,6 +32,8 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(baseline::Migration),
             Box::new(m0043_retire_git_manifests::Migration),
+            Box::new(m0044_drop_attempt_token_expiry::Migration),
+            Box::new(m0045_drop_git_manifest_orphan_jobs::Migration),
         ]
     }
 }

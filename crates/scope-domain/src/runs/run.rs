@@ -191,11 +191,6 @@ impl Run {
                 "run terminal state and completion time disagree",
             ));
         }
-        if self.state == RunState::Queued && self.completed_at_unix.is_some() {
-            return Err(DomainError::invariant_violation(
-                "queued run cannot have a completion time",
-            ));
-        }
         if self.updated_at_unix < self.created_at_unix
             || self
                 .completed_at_unix

@@ -1,4 +1,4 @@
-use super::{Request, RequestAudience, RequestInvitee, validate_required_id};
+use super::{Request, RequestAudience, RequestInvitee, validate_required};
 use crate::error::DomainError;
 
 pub const REQUEST_ACTIVE_INVITEE_LIMIT: usize = 30;
@@ -32,8 +32,8 @@ pub fn add_request_invitee(
     input: AddRequestInviteeInput,
 ) -> Result<RequestInvitee, DomainError> {
     validate_invitee_request(request)?;
-    validate_required_id("actor user id", &input.actor_user_id)?;
-    validate_required_id("invitee user id", &input.target_user_id)?;
+    validate_required("actor user id", &input.actor_user_id)?;
+    validate_required("invitee user id", &input.target_user_id)?;
     if !input.actor_can_manage_invitees {
         return Err(DomainError::forbidden(
             "request invite management access required",
@@ -72,8 +72,8 @@ pub fn remove_request_invitee(
     input: RemoveRequestInviteeInput,
 ) -> Result<RequestInvitee, DomainError> {
     validate_invitee_request(request)?;
-    validate_required_id("actor user id", &input.actor_user_id)?;
-    validate_required_id("invitee user id", &input.target_user_id)?;
+    validate_required("actor user id", &input.actor_user_id)?;
+    validate_required("invitee user id", &input.target_user_id)?;
     if !input.actor_can_manage_invitees {
         return Err(DomainError::forbidden(
             "request invite management access required",
@@ -92,7 +92,7 @@ pub fn leave_request(
     input: LeaveRequestInput,
 ) -> Result<RequestInvitee, DomainError> {
     validate_invitee_request(request)?;
-    validate_required_id("actor user id", &input.actor_user_id)?;
+    validate_required("actor user id", &input.actor_user_id)?;
     if !input.actor_can_leave_request {
         return Err(DomainError::forbidden("request leave access required"));
     }
@@ -118,7 +118,7 @@ fn validate_invitee_request(request: &Request) -> Result<(), DomainError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::requests_tests::open_request;
+    use crate::requests::fixtures::open_request;
 
     #[test]
     fn invitee_facts_preserve_duplicate_limit_and_authorization_order() {

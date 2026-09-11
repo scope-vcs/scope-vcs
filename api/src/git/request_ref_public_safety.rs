@@ -401,7 +401,7 @@ fn ensure_public_request_path(
     {
         return Ok(scope_path);
     }
-    if repo.graph_has_file(&scope_path) {
+    if repo.live_file_exists(&scope_path) {
         return Err(ApiError::conflict(
             "public request cannot change a private path",
         ));

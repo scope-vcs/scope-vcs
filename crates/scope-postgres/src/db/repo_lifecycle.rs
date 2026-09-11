@@ -81,7 +81,7 @@ impl RepositoryStore {
             .ok_or_else(|| PostgresError::internal_message("signed-in user was not persisted"))?
             .try_into_domain()?;
         let incarnation_id = generate_id(generated_ids, GeneratedIdKind::RepositoryIncarnation)?;
-        let mutation = create_repo_command(
+        let repo = create_repo_command(
             &owner,
             &name,
             default_visibility,
@@ -90,7 +90,6 @@ impl RepositoryStore {
             incarnation_id,
         )
         .map_err(PostgresError::from)?;
-        let repo = mutation.result;
         let db = Arc::clone(&self.db);
         let repo_id = repo.record.id.clone();
         self.with_repo_storage_lock(&repo_id, move || async move {
@@ -129,7 +128,6 @@ impl RepositoryStore {
             }
 
             insert_repository(&tx, &repo, now_unix, generated_ids).await?;
-            save_repo_effects(&tx, &mutation.effects, now_unix, generated_ids).await?;
             tx.commit().await.map_err(PostgresError::internal)?;
             Ok(repo)
         })

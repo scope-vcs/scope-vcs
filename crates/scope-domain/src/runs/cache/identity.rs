@@ -41,12 +41,6 @@ impl CacheNamespace {
         Ok(())
     }
 
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::Workflow { .. } => "workflow",
-        }
-    }
-
     fn digest_components(&self) -> Vec<&str> {
         match self {
             Self::Workflow {
@@ -94,15 +88,7 @@ impl CacheIdentity {
         let compatibility_inputs_digest = compatibility_inputs_digest.into();
         let exact_inputs_digest = exact_inputs_digest.into();
         for digest in [&compatibility_inputs_digest, &exact_inputs_digest] {
-            if digest.len() != 64
-                || !digest
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            {
-                return Err(DomainError::invalid_input(
-                    "cache input digest must be 64 lowercase hexadecimal characters",
-                ));
-            }
+            validate_lowercase_sha256("cache input digest", digest)?;
         }
         Ok(Self {
             repository_id,
@@ -162,4 +148,17 @@ impl CacheIdentity {
         }
         hex::encode(digest.finalize())
     }
+}
+
+pub(super) fn validate_lowercase_sha256(label: &str, value: &str) -> Result<(), DomainError> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(DomainError::invalid_input(format!(
+            "{label} must be 64 lowercase hexadecimal characters"
+        )));
+    }
+    Ok(())
 }

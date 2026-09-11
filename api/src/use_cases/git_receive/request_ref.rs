@@ -152,7 +152,7 @@ async fn seed_editable_request_refs_for_repo(
             &request,
             RequestViewer::new(access, Some(actor_user_id), is_invitee),
         );
-        if decision.branch_mutable && decision.git_advertised {
+        if decision.branch_mutable {
             requests.push(request);
         }
     }
