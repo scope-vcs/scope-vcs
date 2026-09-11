@@ -9,8 +9,7 @@ import {
   Clock3,
   Inbox,
   LoaderCircle,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ChevronLeft,
   RefreshCw,
   Search,
   UserRound,
@@ -229,13 +228,14 @@ export function RequestWorkspaceSidebar({
       <div className="request-workspace-collapsed-view">
         <Button
           aria-label="Expand requests sidebar"
+          className="request-workspace-toggle"
           onClick={() => onCollapsedChange(false)}
           size="icon-sm"
           title="Expand requests sidebar"
           type="button"
           variant="ghost"
         >
-          <PanelLeftOpen />
+          <ChevronRight aria-hidden="true" />
         </Button>
         <Inbox aria-hidden="true" className="mt-1 size-4 text-muted-foreground" />
         <span className="font-mono text-[10px] text-success-strong">
@@ -284,6 +284,7 @@ export function RequestWorkspaceSidebar({
           </search>
           <Button
             aria-label="Collapse requests sidebar"
+            className="request-workspace-toggle"
             onClick={() => {
               setSnoozeMenu(null)
               onCollapsedChange(true)
@@ -293,7 +294,7 @@ export function RequestWorkspaceSidebar({
             type="button"
             variant="ghost"
           >
-            <PanelLeftClose />
+            <ChevronLeft aria-hidden="true" />
           </Button>
         </div>
 
@@ -421,9 +422,9 @@ function RequestWorkspaceList({
 }: RequestWorkspaceListProps) {
   if (!section.items.length && section.loading) {
     return (
-      <div aria-label="Loading requests" className="divide-y divide-border">
+      <div aria-label="Loading requests" className="request-workspace-list">
         {[0, 1, 2].map((index) => (
-          <div className="space-y-3 px-5 py-4" key={index}>
+          <div className="request-workspace-row space-y-3 px-3 py-4" key={index}>
             <BlockSkeleton className="h-4 w-4/5" />
             <BlockSkeleton className="h-3 w-3/5" />
           </div>

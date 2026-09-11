@@ -14,14 +14,14 @@ export function RequestsPagePending({ children }: { children?: ReactNode }) {
         <aside className={cn('request-workspace-sidebar', collapsed && 'request-workspace-sidebar--collapsed')}>
           {collapsed ? <BlockSkeleton className="mx-auto mt-4 size-8" /> : (
             <>
-              <div className="border-b border-border p-4"><BlockSkeleton className="h-8 w-full" /></div>
+              <div className="request-workspace-sidebar-tools"><BlockSkeleton className="h-8 w-full" /></div>
               {PENDING_ROWS.map(({ id, length }) => (
-                <div className="border-b border-border px-5 py-4" key={id}>
+                <div className="mx-2 px-3 py-4" key={id}>
                   <TextSkeleton length={length} />
                   <TextSkeleton className="mt-3" length="short" size="meta" />
                 </div>
               ))}
-              {['Unclaimed', 'Set aside'].map((label) => <div className="border-b border-border px-5 py-4 text-xs text-muted-foreground" key={label}>{label}</div>)}
+              {['Unclaimed', 'Set aside'].map((label) => <div className="request-workspace-shelf-toggle mx-2 w-auto" key={label}>{label}</div>)}
             </>
           )}
         </aside>
