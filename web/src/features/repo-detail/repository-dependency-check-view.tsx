@@ -36,31 +36,26 @@ export function RepositoryDependencyCheckView({
       </summary>
       <div className="px-5 pb-4 pl-12 text-xs sm:px-6 sm:pl-14 lg:px-8 lg:pl-16">
         {report.findings.length > 0 && (
-          <>
-            <p className="mb-2 text-muted-foreground">
-              People with public access cannot read the files on the right.
-            </p>
-            <ul aria-label="Public files importing private files" className="max-h-72 max-w-4xl overflow-y-auto border-b border-border">
-              {report.findings.map((finding, index) => (
-                <li
-                  className="grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1fr)] items-center gap-2 border-t border-border py-2.5 sm:gap-4"
-                  key={`${finding.source_path}\0${finding.target_path}\0${index}`}
-                >
-                  <DependencyPath
-                    label="Public file"
-                    onSelectFilePath={onSelectFilePath}
-                    path={finding.source_path}
-                  />
-                  <span aria-label="imports" className="text-center text-muted-foreground">→</span>
-                  <DependencyPath
-                    label="Private file"
-                    onSelectFilePath={onSelectFilePath}
-                    path={finding.target_path}
-                  />
-                </li>
-              ))}
-            </ul>
-          </>
+          <ul aria-label="Public files importing private files" className="max-h-72 max-w-4xl overflow-y-auto border-b border-border">
+            {report.findings.map((finding, index) => (
+              <li
+                className="grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1fr)] items-center gap-2 border-t border-border py-2.5 sm:gap-4"
+                key={`${finding.source_path}\0${finding.target_path}\0${index}`}
+              >
+                <DependencyPath
+                  visibility="public"
+                  onSelectFilePath={onSelectFilePath}
+                  path={finding.source_path}
+                />
+                <span aria-label="imports" className="text-center text-muted-foreground">→</span>
+                <DependencyPath
+                  visibility="private"
+                  onSelectFilePath={onSelectFilePath}
+                  path={finding.target_path}
+                />
+              </li>
+            ))}
+          </ul>
         )}
         {presentation.gaps.length > 0 && (
           <div className={report.findings.length > 0 ? 'mt-3' : undefined}>
@@ -94,11 +89,11 @@ export function RepositoryDependencyCheckView({
 }
 
 function DependencyPath({
-  label,
+  visibility,
   onSelectFilePath,
   path,
 }: {
-  label: string
+  visibility: 'public' | 'private'
   onSelectFilePath: (path: string) => void
   path: string
 }) {
@@ -108,8 +103,8 @@ function DependencyPath({
       onClick={() => onSelectFilePath(path)}
       type="button"
     >
-      <span className="mb-0.5 block font-sans text-[10px] text-muted-foreground">{label}</span>
-      <span className="block break-all">{path}</span>
+      <span className="mb-0.5 block font-sans text-[10px] text-muted-foreground">{visibility === 'public' ? 'Public file' : 'Private file'}</span>
+      <span className={`block break-all ${visibility === 'public' ? 'text-success-strong' : 'text-danger-strong'}`}>{path}</span>
     </button>
   )
 }
