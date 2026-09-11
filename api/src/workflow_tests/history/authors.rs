@@ -56,7 +56,6 @@ async fn public_history_keeps_partial_update_authors_hidden() {
         history_repo(
             vec![history_commit(
                 "mixed-update",
-                None,
                 "Private metadata",
                 vec![
                     history_change(

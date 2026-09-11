@@ -6,7 +6,7 @@ use crate::{
         CLI_EXCHANGE_GRANTS_EXCHANGE_PATH, CliExchangeGrantExchangeRequest,
         CliSessionTokenResponse, DeviceLoginPollResponse, DeviceLoginStartResponse,
         DeviceLoginStatus, api_url, cli_browser_login_exchange_path, cli_device_login_poll_path,
-        decode_json_response, display_user, http_client, revoke_cli_session,
+        display_user, execute_json_request, http_client, revoke_cli_session,
         validate_session_token,
     },
     auth::{
@@ -38,7 +38,7 @@ pub fn login(
         .into());
     }
 
-    let api_url = api_url();
+    let api_url = api_url()?;
     let client = http_client()?;
     let exchange_token = match (exchange, exchange_file) {
         (Some(token), None) => Some(token),
@@ -95,7 +95,7 @@ fn read_private_exchange_token(path: &Path) -> anyhow::Result<String> {
 }
 
 pub fn logout() -> anyhow::Result<()> {
-    let api_url = api_url();
+    let api_url = api_url()?;
     let client = http_client()?;
     let Some(token) = read_stored_session_token(&api_url)? else {
         return crate::execution::emit(
@@ -121,7 +121,7 @@ pub fn logout() -> anyhow::Result<()> {
 }
 
 pub fn whoami() -> anyhow::Result<()> {
-    let api_url = api_url();
+    let api_url = api_url()?;
     let client = http_client()?;
     let Some(session) = cached_cli_session(&client, &api_url)? else {
         return Err(CliError::authentication("not signed in; run scope login").into());
@@ -162,12 +162,12 @@ fn local_browser_login(client: &Client, api_url: &str) -> anyhow::Result<Authent
         .context("read local Scope login callback address")?
         .port();
     let callback_url = format!("http://127.0.0.1:{port}/scope-cli-callback");
-    let response = client
-        .post(format!("{api_url}{CLI_BROWSER_LOGIN_PATH}"))
-        .json(&BrowserLoginStartRequest { callback_url })
-        .send()
-        .context("start browser login")?;
-    let start: BrowserLoginStartResponse = decode_json_response(response, "start browser login")?;
+    let start: BrowserLoginStartResponse = execute_json_request(
+        client
+            .post(format!("{api_url}{CLI_BROWSER_LOGIN_PATH}"))
+            .json(&BrowserLoginStartRequest { callback_url }),
+        "start browser login",
+    )?;
 
     eprintln!("Opening browser to sign in:");
     eprintln!("{}", start.authorization_url);
@@ -178,19 +178,18 @@ fn local_browser_login(client: &Client, api_url: &str) -> anyhow::Result<Authent
 
     let callback_code =
         wait_for_browser_callback(&listener, &start.request_id, start.expires_at_unix)?;
-    let response = client
-        .post(format!(
-            "{api_url}{}",
-            cli_browser_login_exchange_path(&start.request_id)
-        ))
-        .json(&BrowserLoginExchangeRequest {
-            request_secret: start.request_secret,
-            callback_code,
-        })
-        .send()
-        .context("exchange browser login")?;
-    let exchanged: CliSessionTokenResponse =
-        decode_json_response(response, "exchange browser login")?;
+    let exchanged: CliSessionTokenResponse = execute_json_request(
+        client
+            .post(format!(
+                "{api_url}{}",
+                cli_browser_login_exchange_path(&start.request_id)
+            ))
+            .json(&BrowserLoginExchangeRequest {
+                request_secret: start.request_secret,
+                callback_code,
+            }),
+        "exchange browser login",
+    )?;
     let user = validate_session_token(ApiSession::new(client, api_url, &exchanged.session_token))?
         .context("completed login did not create a valid CLI session")?;
     Ok(AuthenticatedSession {
@@ -204,15 +203,14 @@ fn exchange_login(
     api_url: &str,
     exchange_token: &str,
 ) -> anyhow::Result<AuthenticatedSession> {
-    let response = client
-        .post(format!("{api_url}{CLI_EXCHANGE_GRANTS_EXCHANGE_PATH}"))
-        .json(&CliExchangeGrantExchangeRequest {
-            exchange_token: exchange_token.to_string(),
-        })
-        .send()
-        .context("exchange Scope login token")?;
-    let exchanged: CliSessionTokenResponse =
-        decode_json_response(response, "exchange Scope login token")?;
+    let exchanged: CliSessionTokenResponse = execute_json_request(
+        client
+            .post(format!("{api_url}{CLI_EXCHANGE_GRANTS_EXCHANGE_PATH}"))
+            .json(&CliExchangeGrantExchangeRequest {
+                exchange_token: exchange_token.to_string(),
+            }),
+        "exchange Scope login token",
+    )?;
     let user = validate_session_token(ApiSession::new(client, api_url, &exchanged.session_token))?
         .context("exchange token did not create a valid CLI session")?;
     Ok(AuthenticatedSession {
@@ -226,11 +224,10 @@ fn device_login(
     api_url: &str,
     open_browser: bool,
 ) -> anyhow::Result<AuthenticatedSession> {
-    let response = client
-        .post(format!("{api_url}{CLI_DEVICE_LOGIN_PATH}"))
-        .send()
-        .context("start browser login")?;
-    let start: DeviceLoginStartResponse = decode_json_response(response, "start browser login")?;
+    let start: DeviceLoginStartResponse = execute_json_request(
+        client.post(format!("{api_url}{CLI_DEVICE_LOGIN_PATH}")),
+        "start browser login",
+    )?;
 
     eprintln!("Open this URL to sign in:");
     eprintln!("{}", start.verification_url);
@@ -244,14 +241,13 @@ fn device_login(
             bail!("browser login expired");
         }
         thread::sleep(Duration::from_secs(start.poll_interval_secs.max(1)));
-        let response = client
-            .post(format!(
+        let poll: DeviceLoginPollResponse = execute_json_request(
+            client.post(format!(
                 "{api_url}{}",
                 cli_device_login_poll_path(&start.device_code)
-            ))
-            .send()
-            .context("poll browser login")?;
-        let poll: DeviceLoginPollResponse = decode_json_response(response, "poll browser login")?;
+            )),
+            "poll browser login",
+        )?;
 
         if matches!(poll.status, DeviceLoginStatus::Complete) {
             let token = poll

@@ -90,11 +90,6 @@ impl ObjectStore for EncryptedObjectStore {
         self.inner.put(key, bytes)
     }
 
-    fn get(&self, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
-        let envelope = self.inner.get(key)?;
-        self.decrypt_envelope(key, envelope)
-    }
-
     fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
         let envelope = self
             .inner
@@ -126,6 +121,8 @@ mod tests {
         for plaintext in [vec![], b"private source".to_vec(), vec![42; 1024 * 1024]] {
             encrypted.put("source", plaintext.clone()).unwrap();
             let stored = raw.get("source").unwrap();
+            assert_ne!(stored, plaintext);
+            assert!(!String::from_utf8_lossy(&stored).contains("private source"));
             let header = ENCRYPTED_OBJECT_MAGIC.len() + ENCRYPTED_OBJECT_NONCE_BYTES;
             let nonce = Nonce::from_slice(&stored[ENCRYPTED_OBJECT_MAGIC.len()..header]);
             assert_eq!(
@@ -154,43 +151,9 @@ mod tests {
                 encrypted.get("source").unwrap_err().kind,
                 crate::ObjectStoreErrorKind::Integrity
             );
+            encrypted.delete("source").unwrap();
+            assert!(raw.get("source").is_err());
+            assert!(encrypted.get("source").is_err());
         }
-    }
-
-    #[test]
-    fn bounded_decryption_accepts_the_limit_and_rejects_larger_plaintext() {
-        let raw = Arc::new(MemoryObjectStore::new());
-        let encrypted = EncryptedObjectStore::new(raw, [7_u8; 32]);
-        encrypted.put("source", vec![42; 16]).unwrap();
-        assert_eq!(encrypted.get_bounded("source", 16).unwrap(), vec![42; 16]);
-        assert_eq!(
-            encrypted.get_bounded("source", 15).unwrap_err().kind,
-            crate::ObjectStoreErrorKind::PayloadTooLarge
-        );
-    }
-
-    #[test]
-    fn encrypted_store_put_get_delete_round_trips_without_plaintext_storage() {
-        let raw = Arc::new(MemoryObjectStore::new());
-        let encrypted = EncryptedObjectStore::new(raw.clone(), [7_u8; 32]);
-        let key = format!(
-            "tests/encrypted-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        );
-
-        encrypted.put(&key, b"private source".to_vec()).unwrap();
-
-        let stored = raw.get(&key).unwrap();
-        assert_ne!(stored, b"private source");
-        assert!(!String::from_utf8_lossy(&stored).contains("private source"));
-        assert_eq!(encrypted.get(&key).unwrap(), b"private source");
-
-        encrypted.delete(&key).unwrap();
-        assert!(raw.get(&key).is_err());
-        assert!(encrypted.get(&key).is_err());
     }
 }

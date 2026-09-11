@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 pub struct RepositoryMemberPermissions {
     pub can_push: bool,
     pub can_change_file_visibility: bool,
-    pub can_apply_changes: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,16 +43,4 @@ pub struct RepositoryInvite {
 
 pub fn normalize_repository_invite_email(email: &str) -> String {
     email.trim().to_ascii_lowercase()
-}
-
-pub fn repository_member_sort_key(member: &RepositoryMember) -> (&str, &str) {
-    (&member.repo_id, &member.user_id)
-}
-
-pub fn repository_invite_sort_key(invite: &RepositoryInvite) -> (&str, &str, &str) {
-    (
-        &invite.repo_id,
-        &invite.invited_email_normalized,
-        &invite.id,
-    )
 }

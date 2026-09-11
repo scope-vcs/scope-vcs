@@ -170,6 +170,13 @@ jobs:
           cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib git_credential::tests
           cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib login::tests
 
+      - name: Test Windows journal replacement and installer quoting
+        if: matrix.smoke && runner.os == 'Windows'
+        shell: bash
+        run: |
+          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib request::attachments::journal::tests::windows_replacement_sharing_failure_keeps_both_files -- --exact
+          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib installers::tests::powershell_origin_assignment_is_literal_data -- --exact
+
       - name: Build native installer service
         if: matrix.smoke
         shell: bash

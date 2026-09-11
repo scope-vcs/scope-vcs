@@ -55,6 +55,10 @@ if [[ "$*" == *"deployment list"* ]]; then
     printf '%s\\n' '[{"id":"worker-deployment","status":"SUCCESS"}]'
   fi
 elif [[ "$*" == *"service list"* ]]; then
+  if [[ -n "\${SCOPE_TEST_REPLICA_STATE:-}" ]]; then
+    printf '%s\\n' "$SCOPE_TEST_REPLICA_STATE"
+    exit 0
+  fi
   printf '%s\\n' '[{"id":"api","replicas":{"running":0,"crashed":0}},{"id":"cache","replicas":{"running":0,"crashed":0}},{"id":"worker","replicas":{"running":0,"crashed":0}},{"id":"media","replicas":{"running":0,"crashed":0}},{"id":"media-worker","replicas":{"running":0,"crashed":0}}]'
 else
   exit 2
@@ -149,5 +153,22 @@ for (const scenario of ['list-fails', 'remove-false', 'remove-ambiguous']) {
       assert.equal(calls.filter(({ variables }) => variables.id === 'api-deployment').length,
         scenario === 'remove-ambiguous' ? 1 : 3)
     }
+  })
+}
+
+for (const replicas of [undefined, { running: 0 }, { running: null, crashed: 0 }, { running: 0, crashed: '0' }]) {
+  test(`staging shutdown rejects incomplete replica state: ${JSON.stringify(replicas)}`, async () => {
+    const { manifest, removals, root } = await fixture()
+    const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-staging-writers.sh && echo capture-baseline'], {
+      encoding: 'utf8', timeout: 15_000,
+      env: { ...process.env, PATH: `${root}:${process.env.PATH}`,
+        RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
+        SCOPE_DEPLOYMENT_MANIFEST: manifest, SCOPE_TEST_REMOVALS: removals,
+        SCOPE_TEST_REPLICA_STATE: JSON.stringify([{ id: 'api', replicas }]),
+      },
+    })
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stderr, /replica evidence/)
+    assert.doesNotMatch(result.stdout, /capture-baseline/)
   })
 }

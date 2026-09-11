@@ -4,13 +4,6 @@ use super::{
     runs::{unique_conflict, workflow_revision_for_run},
 };
 use crate::error::PostgresError;
-#[cfg(any(
-    test,
-    feature = "test-support",
-    feature = "local-dev",
-    feature = "smoke-seed"
-))]
-use scope_domain::runs::job::RunJobState;
 use scope_domain::runs::job::reconcile_run;
 #[cfg(any(
     test,
@@ -205,64 +198,6 @@ impl RunStore {
             ));
         }
         Ok(())
-    }
-
-    #[cfg(any(
-        test,
-        feature = "test-support",
-        feature = "local-dev",
-        feature = "smoke-seed"
-    ))]
-    pub async fn next_dispatchable_job(
-        &self,
-    ) -> Result<Option<super::runs::DispatchOffer>, PostgresError> {
-        let Some(row) = self
-            .db
-            .query_one(Statement::from_string(
-                DatabaseBackend::Postgres,
-                "SELECT job.run_id, job.job_key
-                 FROM scope_run_jobs job
-                 JOIN scope_runs run ON run.id = job.run_id
-                 WHERE job.state = 'queued'
-                   AND run.state IN ('queued', 'dispatching', 'running')
-                   AND run.cancellation_requested = FALSE
-                   AND NOT EXISTS (
-                     SELECT 1 FROM scope_run_attempts previous
-                     WHERE previous.run_id = job.run_id
-                       AND previous.job_key = job.job_key
-                       AND previous.state IN ('succeeded', 'failed', 'canceled', 'lost')
-                       AND previous.runner_stop_completed_at_unix IS NULL
-                   )
-                 ORDER BY job.created_at_unix, job.run_id, job.job_key
-                 LIMIT 1",
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-        else {
-            return Ok(None);
-        };
-        let run_id = row
-            .try_get::<String>("", "run_id")
-            .map_err(PostgresError::internal)?;
-        let job_key = row
-            .try_get::<String>("", "job_key")
-            .map_err(PostgresError::internal)?;
-        let job = entities::run_job::Entity::find_by_id((run_id.clone(), job_key))
-            .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("run job not found"))?
-            .try_into_domain()?;
-        let run = entities::run::Entity::find_by_id(run_id)
-            .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("run not found"))?
-            .try_into_domain()?;
-        Ok(
-            (job.state == RunJobState::Queued && !run.cancellation_requested)
-                .then_some(super::runs::DispatchOffer { run, job }),
-        )
     }
 
     #[cfg(any(

@@ -1,16 +1,14 @@
 use super::{
     account::UserAccount,
     content::SourceBlob,
-    policy::{ScopePath, Visibility, VisibilityRule},
-    repo_config::repo_config_from_policy,
+    policy::Visibility,
     repository::{
-        CatalogError, RepoLifecycleState, Repository,
+        CatalogError, Repository,
         credentials::{FirstPushToken, GitPushToken},
     },
     reviewed_updates::error::ReviewedUpdateError,
 };
 use crate::error::DomainError;
-use crate::visibility_changes::{VisibilityChange, VisibilityChangeSet, visibility_change_set_id};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,19 +84,6 @@ pub fn ensure_repo_member(repo: &Repository, user_id: &str) -> Result<(), Domain
     }
 }
 
-pub fn ensure_can_change_file_visibility(
-    repo: &Repository,
-    user_id: &str,
-) -> Result<(), DomainError> {
-    if repo.access_for_user_id(user_id).can_change_file_visibility {
-        Ok(())
-    } else {
-        Err(DomainError::forbidden(
-            "file visibility permission required",
-        ))
-    }
-}
-
 pub fn ensure_repo_delete_owner(
     repo: &Repository,
     user_id: &str,
@@ -148,79 +133,6 @@ pub fn create_repo(
     repo.first_push_token = Some(secretless_first_push_token(first_push_token));
     repo.git_push_token = Some(git_push_token);
     Ok(RepoMutation::new(repo))
-}
-
-pub fn set_visibility(
-    repo: &mut Repository,
-    user_id: &str,
-    update_paths: &[ScopePath],
-    visibility: Visibility,
-    occurred_at_unix: Option<i64>,
-) -> Result<RepoMutation<()>, DomainError> {
-    if update_paths.is_empty() {
-        return Err(DomainError::invalid_input(
-            "at least one file path is required",
-        ));
-    }
-    ensure_can_change_file_visibility(repo, user_id)?;
-    if visibility == Visibility::Public {
-        for update_path in update_paths {
-            if !repo.has_file_for_visibility_update(update_path) {
-                return Err(DomainError::invalid_input(format!(
-                    "file {} must be tracked by Git before it can be made public",
-                    update_path.as_str()
-                )));
-            }
-        }
-    }
-
-    let record_visibility_history = repo.record.lifecycle_state == RepoLifecycleState::Ready;
-    let live_tree = if record_visibility_history {
-        repo.live_tree()
-    } else {
-        Default::default()
-    };
-    let after_commit_id = repo.graph.commits.last().map(|commit| commit.id.clone());
-    let mut visibility_changes = Vec::new();
-    for update_path in update_paths {
-        let old_visibility = repo.policy.effective_visibility(update_path);
-        if record_visibility_history && old_visibility != visibility {
-            visibility_changes.push(VisibilityChange {
-                path: update_path.clone(),
-                old_visibility,
-                new_visibility: visibility,
-                current_content: live_tree.get(update_path).cloned(),
-            });
-        }
-        let rule = match visibility {
-            Visibility::Public => VisibilityRule::public(update_path.clone()),
-            Visibility::Private => VisibilityRule::private(update_path.clone()),
-        };
-        repo.policy
-            .add_rule(rule)
-            .map_err(DomainError::invalid_input)?;
-    }
-    if !visibility_changes.is_empty() {
-        let mut set = VisibilityChangeSet::new(
-            visibility_change_set_id(repo.record.change_version.saturating_add(1)),
-            after_commit_id,
-            None,
-            user_id.to_string(),
-            visibility_changes,
-        )
-        .map_err(DomainError::invalid_input)?;
-        set.occurred_at_unix = occurred_at_unix;
-        repo.visibility_change_sets.push(set);
-    }
-    let default_visibility = repo.repo_config.visibility.default_visibility().into();
-    repo.repo_config = repo_config_from_policy(
-        &repo.policy,
-        default_visibility,
-        repo.repo_config.history.clone(),
-    )
-    .map_err(DomainError::invalid_input)?;
-    repo.bump_change_version();
-    Ok(RepoMutation::new(()))
 }
 
 pub fn delete_repo(
@@ -287,107 +199,6 @@ mod tests {
                     RepoEffect::DeleteSourceBlobs(vec![snapshot]),
                 ],
             }
-        );
-    }
-
-    #[test]
-    fn direct_visibility_update_mirrors_repo_config() {
-        let owner = test_owner();
-        let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
-        let path = ScopePath::parse("/README.md").unwrap();
-
-        set_visibility(
-            &mut repo,
-            &owner.id,
-            std::slice::from_ref(&path),
-            Visibility::Private,
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(repo.policy.effective_visibility(&path), Visibility::Private);
-        assert_eq!(
-            repo.repo_config.visibility_for_path(&path),
-            Visibility::Private
-        );
-    }
-
-    #[test]
-    fn direct_visibility_update_omits_scope_managed_policy_rules_from_config() {
-        let owner = test_owner();
-        let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
-        let rules_path = ScopePath::parse("/.scope/RULES.md").unwrap();
-        repo.policy
-            .add_rule(VisibilityRule::public(rules_path))
-            .unwrap();
-        let readme_path = ScopePath::parse("/README.md").unwrap();
-
-        set_visibility(
-            &mut repo,
-            &owner.id,
-            std::slice::from_ref(&readme_path),
-            Visibility::Private,
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(
-            repo.repo_config.visibility_for_path(&readme_path),
-            Visibility::Private
-        );
-        assert!(
-            repo.repo_config
-                .visibility
-                .rules
-                .iter()
-                .all(|rule| !rule.path.starts_with("/.scope"))
-        );
-    }
-
-    #[test]
-    fn direct_bulk_visibility_update_records_one_change_set() {
-        let owner = test_owner();
-        let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
-        repo.record.lifecycle_state = RepoLifecycleState::Ready;
-        let first = ScopePath::parse("/one.md").unwrap();
-        let second = ScopePath::parse("/two.md").unwrap();
-        repo.live_files.insert(first.clone(), source_blob("one"));
-        repo.live_files.insert(second.clone(), source_blob("two"));
-        repo.graph.commits.push(crate::projection::LogicalCommit {
-            occurred_at_unix: None,
-            id: "rv1".into(),
-            origin: crate::projection::LogicalCommitOrigin::CanonicalPush {
-                source_head_oid: "head-1".into(),
-            },
-            author_id: owner.id.clone(),
-            message: "initial".into(),
-            changes: Vec::new(),
-        });
-
-        set_visibility(
-            &mut repo,
-            &owner.id,
-            &[first.clone(), second.clone()],
-            Visibility::Private,
-            Some(1_700_000_000),
-        )
-        .unwrap();
-
-        assert_eq!(repo.visibility_change_sets.len(), 1);
-        let set = &repo.visibility_change_sets[0];
-        assert_eq!(set.occurred_at_unix, Some(1_700_000_000));
-        assert_eq!(set.id, "vchg_2");
-        assert_eq!(set.anchor_commit_id.as_deref(), Some("rv1"));
-        assert_eq!(set.source_update_id, None);
-        assert_eq!(
-            set.changes
-                .iter()
-                .map(|change| (&change.path, change.old_visibility, change.new_visibility))
-                .collect::<Vec<_>>(),
-            vec![
-                (&first, Visibility::Public, Visibility::Private),
-                (&second, Visibility::Public, Visibility::Private),
-            ]
         );
     }
 

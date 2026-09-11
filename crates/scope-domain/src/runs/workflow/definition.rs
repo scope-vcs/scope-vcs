@@ -48,20 +48,13 @@ pub struct ContainerSpec {
 impl ContainerSpec {
     pub fn new(image: impl Into<String>) -> Result<Self, WorkflowError> {
         let image = image.into();
-        let Some((repository, digest)) = image.rsplit_once("@sha256:") else {
-            return Err(WorkflowError::InvalidContainerImage);
-        };
-        if repository.is_empty()
-            || image.len() > MAX_CONTAINER_IMAGE_BYTES
-            || repository.contains('@')
-            || image.chars().any(char::is_whitespace)
-            || digest.len() != 64
-            || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-        {
+        if image.len() > MAX_CONTAINER_IMAGE_BYTES {
             return Err(WorkflowError::InvalidContainerImage);
         }
+        let pinned = crate::runs::image::PinnedContainerImage::parse(image)
+            .map_err(|_| WorkflowError::InvalidContainerImage)?;
         Ok(Self {
-            image: format!("{repository}@sha256:{}", digest.to_ascii_lowercase()),
+            image: pinned.as_str().to_string(),
         })
     }
 
@@ -260,7 +253,7 @@ pub struct CompiledWorkflow {
 struct PersistedCompiledWorkflow {
     name: String,
     triggers: PersistedWorkflowTriggers,
-    jobs: Vec<PersistedWorkflowJob>,
+    jobs: Vec<WorkflowJob>,
 }
 
 #[derive(Deserialize)]
@@ -377,56 +370,7 @@ impl<'de> Deserialize<'de> for CompiledWorkflow {
         let triggers =
             WorkflowTriggers::new(persisted.triggers.manual, persisted.triggers.push_main)
                 .map_err(D::Error::custom)?;
-        let jobs = persisted
-            .jobs
-            .into_iter()
-            .map(|job| {
-                let id = WorkflowJobId::parse(job.id)?;
-                let needs = job
-                    .needs
-                    .into_iter()
-                    .map(WorkflowJobId::parse)
-                    .collect::<Result<Vec<_>, _>>()?;
-                let container = ContainerSpec::new(job.container.image)?;
-                let caches = job
-                    .caches
-                    .into_iter()
-                    .map(|cache| {
-                        WorkflowCache::new(
-                            cache.name,
-                            cache.path,
-                            cache.format,
-                            CacheKeyInputs::new(
-                                cache.compatibility.files,
-                                cache.compatibility.environment,
-                                cache.compatibility.source,
-                            )?,
-                            CacheKeyInputs::new(
-                                cache.exact.files,
-                                cache.exact.environment,
-                                cache.exact.source,
-                            )?,
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let steps = job
-                    .steps
-                    .into_iter()
-                    .map(|step| WorkflowStep::new(step.name, step.run))
-                    .collect::<Result<Vec<_>, _>>()?;
-                WorkflowJob::new(
-                    id,
-                    needs,
-                    container,
-                    job.timeout_seconds,
-                    caches,
-                    job.environment,
-                    steps,
-                )
-            })
-            .collect::<Result<Vec<_>, WorkflowError>>()
-            .map_err(D::Error::custom)?;
-        Self::new(persisted.name, triggers, jobs).map_err(D::Error::custom)
+        Self::new(persisted.name, triggers, persisted.jobs).map_err(D::Error::custom)
     }
 }
 

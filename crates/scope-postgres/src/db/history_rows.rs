@@ -9,7 +9,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect,
+    QueryOrder,
 };
 use std::collections::BTreeMap;
 
@@ -152,12 +152,10 @@ where
         .all(conn)
         .await
         .map_err(PostgresError::internal)?;
-    let commit_ids = commits.iter().map(|row| row.id.clone()).collect::<Vec<_>>();
     let mut changes_by_commit = BTreeMap::<(String, String), Vec<FileChange>>::new();
-    if !commit_ids.is_empty() {
+    if !commits.is_empty() {
         for row in entities::file_change::Entity::find()
             .filter(entities::file_change::Column::RepoId.is_in(repo_ids.to_vec()))
-            .filter(entities::file_change::Column::CommitId.is_in(commit_ids))
             .order_by_asc(entities::file_change::Column::RepoId)
             .order_by_asc(entities::file_change::Column::CommitId)
             .order_by_asc(entities::file_change::Column::Ordinal)
@@ -198,15 +196,10 @@ where
         .all(conn)
         .await
         .map_err(PostgresError::internal)?;
-    let set_ids = set_rows
-        .iter()
-        .map(|row| row.id.clone())
-        .collect::<Vec<_>>();
     let mut changes_by_set = BTreeMap::<(String, String), Vec<VisibilityChange>>::new();
-    if !set_ids.is_empty() {
+    if !set_rows.is_empty() {
         for row in entities::visibility_change::Entity::find()
             .filter(entities::visibility_change::Column::RepoId.is_in(repo_ids.to_vec()))
-            .filter(entities::visibility_change::Column::ChangeSetId.is_in(set_ids))
             .order_by_asc(entities::visibility_change::Column::RepoId)
             .order_by_asc(entities::visibility_change::Column::ChangeSetId)
             .order_by_asc(entities::visibility_change::Column::Ordinal)
@@ -336,22 +329,6 @@ async fn replace_commits<C>(conn: &C, graph: &SourceGraph) -> Result<(), Postgre
 where
     C: ConnectionTrait,
 {
-    let commit_ids = entities::logical_commit::Entity::find()
-        .select_only()
-        .column(entities::logical_commit::Column::Id)
-        .filter(entities::logical_commit::Column::RepoId.eq(graph.repo_id.clone()))
-        .into_tuple::<String>()
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
-    if !commit_ids.is_empty() {
-        entities::file_change::Entity::delete_many()
-            .filter(entities::file_change::Column::RepoId.eq(graph.repo_id.clone()))
-            .filter(entities::file_change::Column::CommitId.is_in(commit_ids))
-            .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
-    }
     entities::logical_commit::Entity::delete_many()
         .filter(entities::logical_commit::Column::RepoId.eq(graph.repo_id.clone()))
         .exec(conn)
@@ -548,3 +525,6 @@ fn decode_enum<T: serde::de::DeserializeOwned>(value: String) -> Result<T, Postg
 fn usize_to_i64(value: usize) -> Result<i64, PostgresError> {
     i64::try_from(value).map_err(|_| PostgresError::internal_message("history ordinal overflow"))
 }
+
+#[cfg(test)]
+mod tests;

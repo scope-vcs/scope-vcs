@@ -2,51 +2,50 @@ use super::*;
 use std::{process::Command, time::Instant};
 
 #[tokio::test]
-async fn ingest_accepts_the_plaintext_limit_and_cleans_up_on_the_next_byte() {
-    let fixture = Fixture::new(8, 64, 1);
-    let exact = fixture
-        .store
-        .ingest(REPOSITORY_ID, &b"four"[..], 4)
-        .await
-        .unwrap();
-    assert_eq!(exact.segment.plaintext_bytes, 4);
-    fixture.store.delete_local(&exact).await.unwrap();
-    fixture
-        .store
-        .delete_remote(&exact.object_key)
-        .await
-        .unwrap();
-
-    let error = fixture
-        .store
-        .ingest(REPOSITORY_ID, &b"five!"[..], 4)
-        .await
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        GitStorageError::PlaintextLimitExceeded { max_bytes: 4 }
-    ));
+async fn destination_failure_before_fanout_preserves_the_backend_error() {
+    let fixture = Fixture::new(4, 8, 1);
+    fixture.backend.fail_begin.store(true, Ordering::SeqCst);
+    let (mut source, reader) = tokio::io::duplex(32);
+    let store = fixture.store.clone();
+    let ingest = tokio::spawn(async move { store.ingest(REPOSITORY_ID, reader, u64::MAX).await });
+    // On this single-thread runtime the backend task returns and closes its
+    // receiver before this wakeup can resume the source producer.
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        fixture.backend.begin_failed.notified(),
+    )
+    .await
+    .unwrap();
+    source.write_all(b"next chunk").await.unwrap();
+    drop(source);
+    let error = ingest.await.unwrap().unwrap_err();
+    assert!(matches!(error, GitStorageError::Multipart(_)));
+    assert!(error.to_string().contains("begin failed"));
     assert!(fixture.backend.objects().is_empty());
     assert!(all_files(&fixture.local_root).await.is_empty());
 }
 
 #[tokio::test]
-async fn zero_plaintext_limit_accepts_only_an_empty_stream() {
-    let fixture = Fixture::new(8, 64, 1);
-    let exact = fixture
+async fn input_errors_and_limits_remain_primary_when_destinations_also_fail() {
+    struct FailedInput;
+    impl Read for FailedInput {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "source disconnected",
+            ))
+        }
+    }
+    let fixture = Fixture::new(4, 8, 1);
+    fixture.backend.fail_begin.store(true, Ordering::SeqCst);
+    let error = fixture
         .store
-        .ingest(REPOSITORY_ID, &b""[..], 0)
+        .ingest_blocking_reader(REPOSITORY_ID, FailedInput, u64::MAX)
         .await
-        .unwrap();
-    assert_eq!(exact.segment.plaintext_bytes, 0);
-    fixture.store.delete_local(&exact).await.unwrap();
-    fixture
-        .store
-        .delete_remote(&exact.object_key)
-        .await
-        .unwrap();
-
+        .unwrap_err();
+    assert!(
+        matches!(error, GitStorageError::Input(ref source) if source.kind() == io::ErrorKind::ConnectionReset)
+    );
     let error = fixture
         .store
         .ingest(REPOSITORY_ID, &b"x"[..], 0)
@@ -56,6 +55,41 @@ async fn zero_plaintext_limit_accepts_only_an_empty_stream() {
         error,
         GitStorageError::PlaintextLimitExceeded { max_bytes: 0 }
     ));
+    assert!(fixture.backend.objects().is_empty());
+    assert!(all_files(&fixture.local_root).await.is_empty());
+}
+
+#[tokio::test]
+async fn ingest_accepts_the_plaintext_limit_and_cleans_up_on_the_next_byte() {
+    for input in [&b"four"[..], &b""[..]] {
+        let fixture = Fixture::new(8, 64, 1);
+        let limit = input.len() as u64;
+        let exact = fixture
+            .store
+            .ingest(REPOSITORY_ID, input, limit)
+            .await
+            .unwrap();
+        assert_eq!(exact.segment.plaintext_bytes, limit);
+        fixture.store.delete_local(&exact).await.unwrap();
+        fixture
+            .store
+            .delete_remote(&exact.object_key)
+            .await
+            .unwrap();
+
+        let mut oversized = input.to_vec();
+        oversized.push(b'!');
+        let error = fixture
+            .store
+            .ingest(REPOSITORY_ID, oversized.as_slice(), limit)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, GitStorageError::PlaintextLimitExceeded { max_bytes } if max_bytes == limit)
+        );
+        assert!(fixture.backend.objects().is_empty());
+        assert!(all_files(&fixture.local_root).await.is_empty());
+    }
 }
 
 #[tokio::test]

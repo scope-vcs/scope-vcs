@@ -116,6 +116,7 @@ function runStep(name, cwd, env) {
 test('imported releases extract smoke tools and initialize private credentials', (t) => {
   const { root, env } = fixture(t);
   mkdirSync(join(root, '.github/scripts'), { recursive: true });
+  writeFileSync(join(root, '.github/deployment-services.json'), readFileSync(new URL('../deployment-services.json', import.meta.url)));
   writeFileSync(join(root, '.github/scripts/extract-railway-release.py'), readFileSync(new URL('./extract-railway-release.py', import.meta.url)));
   mkdirSync(join(root, 'artifacts/commands'), { recursive: true });
   for (const name of ['scope', 'scope-smoke-seed']) {

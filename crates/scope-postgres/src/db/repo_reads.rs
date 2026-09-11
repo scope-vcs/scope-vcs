@@ -12,7 +12,7 @@ use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
     QuerySelect, prelude::Json,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -73,11 +73,8 @@ impl RepositoryStore {
         handle: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<OwnerProfileRead>, PostgresError> {
-        let handle = handle.to_string();
-        let viewer_user_id = viewer_user_id.map(str::to_string);
-        let db = Arc::clone(&self.db);
-        let tx = begin_metadata_read_snapshot(db.as_ref()).await?;
-        let profile = owner_profile_tx(&tx, &handle, viewer_user_id.as_deref()).await?;
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let profile = owner_profile_tx(&tx, handle, viewer_user_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(profile)
     }
@@ -88,12 +85,8 @@ impl RepositoryStore {
         name: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<RepoSummaryRead>, PostgresError> {
-        let owner = owner.to_string();
-        let name = name.to_string();
-        let viewer_user_id = viewer_user_id.map(str::to_string);
-        let db = Arc::clone(&self.db);
-        let tx = begin_metadata_read_snapshot(db.as_ref()).await?;
-        let summary = repo_summary_tx(&tx, &owner, &name, viewer_user_id.as_deref()).await?;
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let summary = repo_summary_tx(&tx, owner, name, viewer_user_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(summary)
     }
@@ -104,27 +97,10 @@ impl RepositoryStore {
         name: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<Vec<ProjectionViewFile>>, PostgresError> {
-        let owner = owner.to_string();
-        let name = name.to_string();
-        let viewer_user_id = viewer_user_id.map(str::to_string);
-        let db = Arc::clone(&self.db);
-        let tx = begin_metadata_read_snapshot(db.as_ref()).await?;
-        let files = repo_live_files_tx(&tx, &owner, &name, viewer_user_id.as_deref()).await?;
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let files = repo_live_files_tx(&tx, owner, name, viewer_user_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(files)
-    }
-
-    pub async fn repo_live_file_content(
-        &self,
-        owner: &str,
-        name: &str,
-        viewer_user_id: Option<&str>,
-        path: &ScopePath,
-    ) -> Result<Option<ProjectionViewFileContent>, PostgresError> {
-        Ok(self
-            .repo_live_file_with_landing_content(owner, name, viewer_user_id, path)
-            .await?
-            .map(|content| content.projected))
     }
 
     pub async fn repo_live_file_with_landing_content(
@@ -134,20 +110,9 @@ impl RepositoryStore {
         viewer_user_id: Option<&str>,
         path: &ScopePath,
     ) -> Result<Option<RepoLiveFileWithLandingContent>, PostgresError> {
-        let owner = owner.to_string();
-        let name = name.to_string();
-        let viewer_user_id = viewer_user_id.map(str::to_string);
-        let path = path.clone();
-        let db = Arc::clone(&self.db);
-        let tx = begin_metadata_read_snapshot(db.as_ref()).await?;
-        let content = repo_live_file_with_landing_content_tx(
-            &tx,
-            &owner,
-            &name,
-            viewer_user_id.as_deref(),
-            &path,
-        )
-        .await?;
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let content =
+            repo_live_file_with_landing_content_tx(&tx, owner, name, viewer_user_id, path).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(content)
     }

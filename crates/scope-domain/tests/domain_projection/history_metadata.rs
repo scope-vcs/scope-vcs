@@ -5,7 +5,6 @@ fn history_times_follow_visible_metadata_without_changing_projected_revisions() 
     use scope_domain::history::history_view;
     let mut source = graph(vec![commit(
         "private",
-        None,
         "Private history",
         added("/secret.md", Visibility::Private, "secret"),
     )]);
@@ -51,5 +50,64 @@ fn history_times_follow_visible_metadata_without_changing_projected_revisions() 
     assert_ne!(
         history_view(&source, &sets, ProjectionViewKey::Private).generation,
         private.generation
+    );
+}
+
+#[test]
+fn native_history_refs_follow_audience_and_round_trip() {
+    use scope_domain::history::{HistoryView, history_view};
+    let native = NativePublicCommit {
+        oid: "native".into(),
+        parent_oids: vec!["base".into()],
+        tree_oid: "tree".into(),
+        changed_paths: vec![path("/README.md")],
+    };
+    let mut logical = commit(
+        "merge",
+        "Merge request",
+        added("/README.md", Visibility::Public, "public"),
+    );
+    logical.origin = LogicalCommitOrigin::PublicRequestMerge {
+        request_id: "request".into(),
+        public_base_oid: "base".into(),
+        public_parent_oids: vec!["base".into()],
+        request_head_oid: "native".into(),
+        commits: vec![native.clone()],
+        preserve_public_commits: true,
+    };
+    let mut source = graph(vec![logical]);
+    let public = history_view(&source, &[], ProjectionViewKey::Public);
+    assert_eq!(public.entries[0].native_commits, vec![native.clone()]);
+    assert_eq!(public.entries[0].message, "Merge request");
+    let persisted: HistoryView =
+        serde_json::from_slice(&serde_json::to_vec(&public).unwrap()).unwrap();
+    assert_eq!(persisted, public);
+    source.commits[0]
+        .changes
+        .push(added("/secret.md", Visibility::Private, "secret"));
+    let mixed = history_view(&source, &[], ProjectionViewKey::Public);
+    assert!(
+        mixed
+            .entries
+            .iter()
+            .all(|entry| entry.native_commits.is_empty())
+    );
+    assert_eq!(
+        history_view(&source, &[], ProjectionViewKey::Private).entries[0].native_commits,
+        vec![native]
+    );
+    if let LogicalCommitOrigin::PublicRequestMerge {
+        preserve_public_commits,
+        ..
+    } = &mut source.commits[0].origin
+    {
+        *preserve_public_commits = false;
+    }
+    source.commits[0].changes.pop();
+    assert!(
+        history_view(&source, &[], ProjectionViewKey::Public)
+            .entries
+            .iter()
+            .all(|entry| entry.native_commits.is_empty())
     );
 }

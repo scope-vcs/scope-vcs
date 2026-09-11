@@ -39,12 +39,7 @@ pub(super) fn start_request_branch(
             &remote_main,
         ],
     ) {
-        let cleanup = api_close_request(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            &response.request.id,
-        );
+        let cleanup = api_close_request(api, context.api_target(&response.request.id));
         return match cleanup {
             Ok(_) => Err(switch_error).context(
                 "create local request branch failed; the empty request was closed and removed, so it is safe to retry",
@@ -135,12 +130,7 @@ pub(super) fn push_request_branch(
     let context = load_context(Some(git_repo), api, remote.as_deref())?;
     local::require_git_remote(&context)?;
     let request_id = request_id_for_context(Some(git_repo), api, &context, request_id)?;
-    let detail = get_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )?;
+    let detail = get_request(api, context.api_target(&request_id))?;
     if !detail.request.permissions.can_push_branch {
         return Err(crate::error::CliError::new(ErrorResponse::new(
             ErrorCode::Forbidden,
@@ -190,13 +180,8 @@ pub(super) fn push_request_branch(
     .map_err(|error| recover("configure_tracking", error))?;
     store_request_metadata(git_repo, &branch, &context, &detail.request)
         .map_err(|error| recover("save_local_metadata", error))?;
-    let detail = get_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )
-    .map_err(|error| recover("refresh_request", error))?;
+    let detail = get_request(api, context.api_target(&request_id))
+        .map_err(|error| recover("refresh_request", error))?;
     let mut human_lines = repo_access_lines(&context.repo);
     human_lines.extend(request_detail_lines_for_response(&detail));
     let result = DetailResult {

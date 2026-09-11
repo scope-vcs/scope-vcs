@@ -12,22 +12,20 @@ use super::{
     request_revision_rows::{insert_revision, revisions_for_request_ids},
     request_rows::{
         delete_request_rows, insert_request_event_row, insert_request_row, latest_request_events,
-        request_by_id, request_by_name, request_event_by_id, request_events_after_position,
-        request_events_by_request_id, request_list_page, requests_by_repo_author,
-        requests_by_repo_id, save_request_row,
+        public_draft_count, request_by_id, request_by_name, request_event_by_id,
+        request_events_after_position, request_events_by_request_id, request_list_page,
+        requests_by_repo_author, requests_by_repo_id, save_request_row,
     },
 };
 use sea_orm::TransactionTrait;
-use std::sync::Arc;
 use {
     crate::error::PostgresError,
     scope_domain::requests::{
         CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
-        RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request, RequestActorRole,
-        RequestEvent, RequestRevisionMutation, RequestState, RequestTimelineMutation,
-        StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
-        close_request, edit_request_identity, record_request_revision,
-        record_working_request_upload, start_request,
+        RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request, RequestEvent,
+        RequestRevisionMutation, RequestTimelineMutation, StartRequestFacts, StartRequestInput,
+        StartRequestMutation, WorkingRequestUploadMutation, close_request, edit_request_identity,
+        record_request_revision, record_working_request_upload, start_request,
     },
 };
 
@@ -40,9 +38,7 @@ impl RequestStore {
     }
 
     pub async fn request_by_id(&self, request_id: &str) -> Result<Option<Request>, PostgresError> {
-        let request_id = request_id.to_string();
-        let db = Arc::clone(&self.db);
-        request_by_id(db.as_ref(), &request_id).await
+        request_by_id(self.db.as_ref(), request_id).await
     }
 
     pub async fn request_by_name(
@@ -50,16 +46,11 @@ impl RequestStore {
         repo_id: &str,
         request_name: &str,
     ) -> Result<Option<Request>, PostgresError> {
-        let repo_id = repo_id.to_string();
-        let request_name = request_name.to_string();
-        let db = Arc::clone(&self.db);
-        request_by_name(db.as_ref(), &repo_id, &request_name).await
+        request_by_name(self.db.as_ref(), repo_id, request_name).await
     }
 
     pub async fn requests_by_repo_id(&self, repo_id: &str) -> Result<Vec<Request>, PostgresError> {
-        let repo_id = repo_id.to_string();
-        let db = Arc::clone(&self.db);
-        requests_by_repo_id(db.as_ref(), &repo_id).await
+        requests_by_repo_id(self.db.as_ref(), repo_id).await
     }
 
     pub async fn requests_by_repo_author(
@@ -67,19 +58,14 @@ impl RequestStore {
         repo_id: &str,
         author_user_id: &str,
     ) -> Result<Vec<Request>, PostgresError> {
-        let repo_id = repo_id.to_string();
-        let author_user_id = author_user_id.to_string();
-        let db = Arc::clone(&self.db);
-        requests_by_repo_author(db.as_ref(), &repo_id, &author_user_id).await
+        requests_by_repo_author(self.db.as_ref(), repo_id, author_user_id).await
     }
 
     pub async fn request_events_by_request_id(
         &self,
         request_id: &str,
     ) -> Result<Vec<RequestEvent>, PostgresError> {
-        let request_id = request_id.to_string();
-        let db = Arc::clone(&self.db);
-        request_events_by_request_id(db.as_ref(), &request_id).await
+        request_events_by_request_id(self.db.as_ref(), request_id).await
     }
 
     pub async fn request_events_after_position(
@@ -103,8 +89,7 @@ impl RequestStore {
         &self,
         input: StartRequestInput,
     ) -> Result<StartRequestMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &input.repo_id).await?;
         acquire_aggregate_lock(&tx, "request", &input.id).await?;
         ensure_user_exists(&tx, &input.author_user_id).await?;
@@ -113,20 +98,17 @@ impl RequestStore {
             input,
         )?;
 
-        let author_requests =
-            requests_by_repo_author(&tx, &input.repo_id, &input.author_user_id).await?;
         let facts = StartRequestFacts {
             request_id_exists: request_by_id(&tx, &input.id).await?.is_some(),
             request_name_exists: request_by_name(&tx, &input.repo_id, &input.name)
                 .await?
                 .is_some(),
-            public_working_request_count: author_requests
-                .iter()
-                .filter(|request| {
-                    request.author_role == RequestActorRole::Public
-                        && request.state() == RequestState::Draft
-                })
-                .count(),
+            public_working_request_count: public_draft_count(
+                &tx,
+                &input.repo_id,
+                &input.author_user_id,
+            )
+            .await?,
         };
         let mutation = start_request(facts, input)?;
         insert_request_row(&tx, &mutation.request).await?;
@@ -140,8 +122,7 @@ impl RequestStore {
         input: RecordWorkingRequestUploadInput,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<WorkingRequestUploadMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;
@@ -170,8 +151,7 @@ impl RequestStore {
         input: RecordRequestRevisionInput,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<RequestRevisionMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;
@@ -210,8 +190,7 @@ impl RequestStore {
                 command.now_unix,
             )
         });
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -257,9 +236,8 @@ impl RequestStore {
         command: CloseRequestCommand,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<CloseRequestMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
         let now_unix = command.now_unix;
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -281,6 +259,14 @@ impl RequestStore {
                 orphan_objects,
                 ..
             } => {
+                super::cleanup_queue::queue_pending_request_ref_cleanup(
+                    &tx,
+                    &repo.incarnation(),
+                    request,
+                    now_unix,
+                    generated_ids,
+                )
+                .await?;
                 tombstone_request_attachments(&tx, &request.id, now_unix).await?;
                 for revision in revisions {
                     delete_object_reference(&tx, "request_revision_snapshot", &revision.id).await?;

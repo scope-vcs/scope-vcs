@@ -541,12 +541,12 @@
     ]
   },
   "web:standardwebhooks@1.0.0": {
-    "reason": "License text recovered from the upstream repository at the published npm gitHead.",
+    "reason": "The checksum-verified published package declares MIT. Preserve the MIT license and Svix copyright notice from libraries/LICENSE, the parent directory of libraries/javascript, at the published npm gitHead. The repository-root LICENSE is Apache-2.0 and is not the library-specific license; it does not support the package MIT declaration.",
     "documents": [
       {
-        "path": "legal/upstream/c71d239df91726fc.txt",
-        "url": "https://raw.githubusercontent.com/standard-webhooks/standard-webhooks/929bf0c1928b188287eaf88d0a9f0a4e87df6499/LICENSE",
-        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        "path": "legal/upstream/standard-webhooks-929bf0c1928b-libraries-LICENSE",
+        "url": "https://raw.githubusercontent.com/standard-webhooks/standard-webhooks/929bf0c1928b188287eaf88d0a9f0a4e87df6499/libraries/LICENSE",
+        "sha256": "5ec8c7b26b64d881a6706617bed25c049f97f2f35de034c756de8546fd6dbe27"
       }
     ]
   },

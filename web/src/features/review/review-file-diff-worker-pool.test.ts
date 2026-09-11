@@ -70,3 +70,24 @@ test('terminates timed out, canceled and failed tasks and replaces their workers
   assert.equal((await render(input(), 1_000)).kind, 'html')
   assert.equal(workers.length, 5)
 })
+
+test('separates bounded worker startup from the render deadline', async (t) => {
+  const worker = new Worker(`setTimeout(() => {
+    ${workerCode}
+    parentPort.postMessage({ kind: 'ready' });
+  }, 100);`, { eval: true })
+  t.after(() => worker.terminate())
+  const render = createReviewFileDiffWorkerPool(() => worker, 1, 1_000)
+  assert.equal((await render(input(), 75)).kind, 'html')
+  await assert.rejects(render(input('spin'), 25), (error: unknown) =>
+    error instanceof ReviewDiffTransientError && error.failure === 'deadline')
+  assert.equal(worker.threadId, -1)
+})
+
+test('terminates a worker that never becomes ready within the startup budget', async () => {
+  const worker = new Worker('while (true) {}', { eval: true })
+  const render = createReviewFileDiffWorkerPool(() => worker, 1, 25)
+  await assert.rejects(render(input(), 1_000), (error: unknown) =>
+    error instanceof ReviewDiffTransientError && error.failure === 'deadline')
+  assert.equal(worker.threadId, -1)
+})

@@ -195,28 +195,13 @@ impl RepositoryWorkflowCatalog {
         source_change_version: u64,
         mut files: Vec<RepositoryWorkflowFile>,
     ) -> Result<Self, RepositoryWorkflowCatalogError> {
-        let repository_id = repository_id.into();
-        let source_head_oid = source_head_oid.into().to_ascii_lowercase();
-        validate_identity(&repository_id, &source_head_oid, source_change_version)?;
-        if files.len() > MAX_REPOSITORY_WORKFLOW_FILES {
-            return Err(RepositoryWorkflowCatalogError::TooManyFiles);
-        }
         files.sort_by(|left, right| left.path.cmp(&right.path));
-        let mut paths = BTreeSet::new();
-        for file in &files {
-            file.validate_integrity()?;
-            if !paths.insert(file.path.as_str()) {
-                return Err(RepositoryWorkflowCatalogError::DuplicatePath(
-                    file.path.as_str().to_string(),
-                ));
-            }
-        }
-        Ok(Self {
+        Self::new(
             repository_id,
             source_head_oid,
             source_change_version,
-            state: RepositoryWorkflowCatalogState::Captured(files),
-        })
+            RepositoryWorkflowCatalogState::Captured(files),
+        )
     }
 
     pub fn rejected(
@@ -225,22 +210,28 @@ impl RepositoryWorkflowCatalog {
         source_change_version: u64,
         configuration_error: impl Into<String>,
     ) -> Result<Self, RepositoryWorkflowCatalogError> {
-        let repository_id = repository_id.into();
-        let source_head_oid = source_head_oid.into().to_ascii_lowercase();
-        validate_identity(&repository_id, &source_head_oid, source_change_version)?;
-        let configuration_error = configuration_error.into();
-        if configuration_error.trim().is_empty() {
-            return Err(RepositoryWorkflowCatalogError::MissingConfigurationError);
-        }
-        if configuration_error.len() > MAX_REPOSITORY_WORKFLOW_CONFIGURATION_ERROR_BYTES {
-            return Err(RepositoryWorkflowCatalogError::ConfigurationErrorTooLarge);
-        }
-        Ok(Self {
+        Self::new(
             repository_id,
             source_head_oid,
             source_change_version,
-            state: RepositoryWorkflowCatalogState::Rejected(configuration_error),
-        })
+            RepositoryWorkflowCatalogState::Rejected(configuration_error.into()),
+        )
+    }
+
+    fn new(
+        repository_id: impl Into<String>,
+        source_head_oid: impl Into<String>,
+        source_change_version: u64,
+        state: RepositoryWorkflowCatalogState,
+    ) -> Result<Self, RepositoryWorkflowCatalogError> {
+        let catalog = Self {
+            repository_id: repository_id.into(),
+            source_head_oid: source_head_oid.into().to_ascii_lowercase(),
+            source_change_version,
+            state,
+        };
+        catalog.validate_integrity()?;
+        Ok(catalog)
     }
 
     pub fn repository_id(&self) -> &str {

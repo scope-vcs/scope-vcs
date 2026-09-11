@@ -7,6 +7,7 @@ import json
 import re
 from pathlib import Path
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -32,6 +33,34 @@ class LicensingChecks(unittest.TestCase):
         integrity = "sha256-" + base64.b64encode(bytes.fromhex(generate.digest(b"original archive"))).decode()
         with self.assertRaisesRegex(ValueError, "Archive checksum mismatch"):
             generate.archive(dict(name="package", version="1", url="file:vendor/package.tgz", integrity=integrity))
+
+    def test_collection_excludes_source_maps_and_preserves_real_notices(self):
+        contents = {
+            "package.json": json.dumps(dict(name="icons", license="MIT")),
+            "LICENSE": "MIT license terms",
+            "COPYRIGHT": "Copyright Example",
+            "dist/esm/icons/copyright.js.map": '{"mappings":"AAAA"}',
+            "dist/esm/icons/copyright.js": "export const Copyright = {};",
+            "LICENSES/Apache-2.0.txt": "Apache license terms",
+            "LICENSES/MIT.txt": "MIT license terms",
+            "LICENSES/copyright.js.map": '{"mappings":"AAAA"}',
+        }
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode="w:gz") as bundle:
+            for name, text in contents.items():
+                raw = text.encode()
+                member = tarfile.TarInfo("package/" + name)
+                member.size = len(raw)
+                bundle.addfile(member, io.BytesIO(raw))
+        archive_path = self.root / "web/vendor/icons.tgz"
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(data.getvalue())
+        integrity = "sha256-" + base64.b64encode(bytes.fromhex(generate.digest(data.getvalue()))).decode()
+        entry = generate.collect(dict(ecosystem="web", name="icons", version="1",
+            url="file:vendor/icons.tgz", integrity=integrity))
+        self.assertEqual([document["path"] for document in entry["documents"]],
+            ["COPYRIGHT", "LICENSE", "LICENSES/Apache-2.0.txt", "LICENSES/MIT.txt"])
+        self.assertEqual(entry["documents"][0]["text"], "Copyright Example")
 
     def test_changed_lockfile_or_generator_input_invalidates_notice_check(self):
         files = {"Cargo.lock": "locked packages\n", "dev/licensing/generate.py": "audited generator\n",
@@ -170,6 +199,29 @@ class LicensingChecks(unittest.TestCase):
         rendered = generate.render_inventory(metadata, packages)
         self.assertEqual(json.loads(rendered), dict(**metadata, packages=packages))
         self.assertEqual(sum('"name":' in line for line in rendered.splitlines()), len(packages))
+
+
+class ReviewedPackageEvidence(unittest.TestCase):
+    def test_standardwebhooks_retains_library_mit_terms_and_attribution(self):
+        supplements = json.loads((generate.ROOT / "legal/web-supplements.json").read_text())
+        evidence = supplements["web:standardwebhooks@1.0.0"]
+        texts = [generate.document_text(document) for document in evidence["documents"]]
+        self.assertEqual(len(texts), 1)
+        self.assertIn("The MIT License", texts[0])
+        self.assertIn("Copyright (c) 2023 Svix", texts[0])
+        self.assertIn("Permission is hereby granted", texts[0])
+        self.assertIn("Apache-2.0", evidence["reason"])
+        self.assertTrue(evidence["documents"][0]["url"].endswith("/libraries/LICENSE"))
+
+    def test_crc_catalog_preserves_nested_archive_coverage_without_duplicate_sources(self):
+        supplements = json.loads((generate.ROOT / "legal/rust-supplements.json").read_text())
+        evidence = supplements["rust:crc-catalog@2.5.0"]
+        self.assertFalse(evidence.get("documents"))
+        entry = dict(license="MIT OR Apache-2.0", license_evidence=evidence["reason"], documents=[
+            dict(path="LICENSES/MIT.txt", text="MIT license terms"),
+            dict(path="LICENSES/Apache-2.0.txt", text="Apache license terms"),
+        ])
+        self.assertFalse(generate.missing_coverage(entry))
 
 
 if __name__ == "__main__":

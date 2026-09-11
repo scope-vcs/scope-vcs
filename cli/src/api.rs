@@ -24,11 +24,7 @@ pub use runs::*;
 const DEFAULT_API_URL: &str = "https://scope-api-production-0251.up.railway.app";
 pub const ACCOUNT_SESSION_PATH: &str = scope_api_contract::routes::ACCOUNT_SESSION;
 pub const CLI_BROWSER_LOGIN_PATH: &str = scope_api_contract::routes::CLI_BROWSER_LOGIN;
-pub const CLI_BROWSER_LOGIN_EXCHANGE_PATH_TEMPLATE: &str =
-    scope_api_contract::routes::CLI_BROWSER_LOGIN_EXCHANGE;
 pub const CLI_DEVICE_LOGIN_PATH: &str = scope_api_contract::routes::CLI_DEVICE_LOGIN;
-pub const CLI_DEVICE_LOGIN_POLL_PATH_TEMPLATE: &str =
-    scope_api_contract::routes::CLI_DEVICE_LOGIN_POLL;
 pub const CLI_EXCHANGE_GRANTS_EXCHANGE_PATH: &str =
     scope_api_contract::routes::CLI_EXCHANGE_GRANTS_EXCHANGE;
 pub const CLI_SESSION_PATH: &str = scope_api_contract::routes::CLI_SESSION;
@@ -82,7 +78,7 @@ pub struct RepoConfigContext {
     pub head_oid: Option<String>,
 }
 
-pub fn api_url() -> String {
+pub fn api_url() -> anyhow::Result<String> {
     crate::context::api_url(
         option_env!("SCOPE_API_URL")
             .or(option_env!("SCOPE_API_PUBLIC_URL"))
@@ -91,11 +87,18 @@ pub fn api_url() -> String {
 }
 
 pub fn http_client() -> anyhow::Result<Client> {
-    crate::context::validate_api_url(&api_url())?;
+    crate::context::validate_api_url(&api_url()?)?;
     http_client_builder()
         .timeout(Duration::from_secs(20))
         .build()
         .context("build HTTP client")
+}
+
+pub(crate) fn execute_json_request<T: DeserializeOwned>(
+    request: reqwest::blocking::RequestBuilder,
+    context: &str,
+) -> anyhow::Result<T> {
+    decode_json_response(request.send().with_context(|| context.to_owned())?, context)
 }
 
 pub(crate) fn decode_json_response<T: DeserializeOwned>(
@@ -247,9 +250,7 @@ pub fn validate_session_token(api: ApiSession<'_>) -> anyhow::Result<Option<User
 
     let session: AccountSessionResponse =
         decode_json_response(response, "validate saved Scope login")?;
-    let AccountSessionResponse { identity, user, .. } = session;
-    drop(identity);
-    Ok(user)
+    Ok(session.user)
 }
 
 pub fn revoke_cli_session(api: ApiSession<'_>) -> anyhow::Result<()> {
@@ -270,12 +271,11 @@ pub fn create_repo(api: ApiSession<'_>, name: String) -> anyhow::Result<CreateRe
         name,
         file_default_visibility: None,
     };
-    let response = api
-        .request(reqwest::Method::POST, scope_api_contract::routes::REPOS)
-        .json(&request)
-        .send()
-        .context("create Scope repository")?;
-    decode_json_response(response, "create Scope repository")
+    execute_json_request(
+        api.request(reqwest::Method::POST, scope_api_contract::routes::REPOS)
+            .json(&request),
+        "create Scope repository",
+    )
 }
 
 pub fn get_repo(
@@ -283,14 +283,13 @@ pub fn get_repo(
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepoSummaryResponse> {
-    let response = api
-        .request(
+    execute_json_request(
+        api.request(
             reqwest::Method::GET,
             scope_api_contract::routes::repo(owner, repo),
-        )
-        .send()
-        .with_context(|| format!("load Scope repo {owner}/{repo}"))?;
-    decode_json_response(response, &format!("load Scope repo {owner}/{repo}"))
+        ),
+        &format!("load Scope repo {owner}/{repo}"),
+    )
 }
 
 pub fn get_repo_config(
@@ -298,15 +297,13 @@ pub fn get_repo_config(
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepoConfigContext> {
-    let response = api
-        .request(
+    let response: RepoConfigResponse = execute_json_request(
+        api.request(
             reqwest::Method::GET,
             scope_api_contract::routes::repo_config(owner, repo),
-        )
-        .send()
-        .with_context(|| format!("get repo config for {owner}/{repo}"))?;
-    let response: RepoConfigResponse =
-        decode_json_response(response, &format!("get repo config for {owner}/{repo}"))?;
+        ),
+        &format!("get repo config for {owner}/{repo}"),
+    )?;
     Ok(RepoConfigContext {
         config: response.config.into(),
         config_hash: response.config_hash,
@@ -320,8 +317,8 @@ pub fn create_push_intent(
     api: ApiSession<'_>,
     params: CreatePushIntentParams<'_>,
 ) -> anyhow::Result<CreatePushIntentResponse> {
-    let response = api
-        .request(
+    execute_json_request(
+        api.request(
             reqwest::Method::POST,
             scope_api_contract::routes::repo_push_intents(params.owner, params.repo),
         )
@@ -329,11 +326,7 @@ pub fn create_push_intent(
             head_oid: params.head_oid.to_string(),
             base_config_hash: params.base_config_hash.to_string(),
             config: params.config.clone().into(),
-        })
-        .send()
-        .with_context(|| format!("create push intent for {}/{}", params.owner, params.repo))?;
-    decode_json_response(
-        response,
+        }),
         &format!("create push intent for {}/{}", params.owner, params.repo),
     )
 }
@@ -349,11 +342,7 @@ pub fn display_user(user: &UserResponse) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-        thread,
-    };
+    use std::{io::Write, net::TcpListener, thread};
 
     #[test]
     fn shared_http_client_sends_cli_compatibility_identity() {
@@ -361,12 +350,11 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut bytes = [0_u8; 8192];
-            let read = stream.read(&mut bytes).unwrap();
+            let request = crate::test_support::read_http_request(&mut stream).unwrap();
             stream
                 .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
                 .unwrap();
-            String::from_utf8(bytes[..read].to_vec()).unwrap()
+            request
         });
 
         let response = http_client()

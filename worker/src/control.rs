@@ -27,12 +27,9 @@ pub(crate) async fn run(
         }
         let summary = match metadata
             .jobs()
-            .run_ready_outbox_jobs(
-                &settings.worker_id,
-                settings.batch_size,
-                &|| super::unix_now().map_err(|error| error.to_string()),
-                &super::generate_persistence_id,
-            )
+            .run_ready_outbox_jobs(&settings.worker_id, settings.batch_size, &|| {
+                super::unix_now().map_err(|error| error.to_string())
+            })
             .await
         {
             Ok(summary) => summary,

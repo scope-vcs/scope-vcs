@@ -20,13 +20,13 @@ pub trait ObjectStore: Send + Sync {
     /// Transfers the payload so encryption and the HTTP body can reuse its allocation.
     fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError>;
 
-    fn get(&self, key: &str) -> Result<Vec<u8>, ObjectStoreError>;
-
-    fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
-        let bytes = self.get(key)?;
-        ensure_object_size("read", key, bytes.len(), max_bytes)?;
-        Ok(bytes)
+    fn get(&self, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
+        self.get_bounded(key, usize::MAX)
     }
+
+    /// Enforces the limit before allocating or reading the entire payload.
+    /// Streaming backends may read one extra byte to detect an oversized object.
+    fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError>;
 
     fn delete(&self, key: &str) -> Result<(), ObjectStoreError>;
 

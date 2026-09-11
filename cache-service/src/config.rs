@@ -32,10 +32,11 @@ impl Settings {
                 "{CACHE_BACKEND} must contain lowercase letters, digits, or single hyphens"
             );
         }
-        let endpoint = required(CACHE_BUCKET_ENDPOINT)?;
-        if !(endpoint.starts_with("https://") || endpoint.starts_with("http://127.0.0.1")) {
-            anyhow::bail!("{CACHE_BUCKET_ENDPOINT} must use HTTPS outside local development");
-        }
+        let endpoint =
+            scope_service_config::ServiceEndpoint::parse(&required(CACHE_BUCKET_ENDPOINT)?)
+                .map_err(|error| anyhow::anyhow!("{CACHE_BUCKET_ENDPOINT}: {error}"))?
+                .as_str()
+                .to_string();
         let mut object_store = S3ObjectStoreSettings::new(
             endpoint,
             required(CACHE_BUCKET_NAME)?,

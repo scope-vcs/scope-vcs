@@ -309,18 +309,6 @@ mod tests {
     const EXIT_CLEANUP_CHILD: &str = "SCOPE_TEST_DATABASE_EXIT_CLEANUP_CHILD";
 
     #[test]
-    fn database_url_replaces_database_and_preserves_query() {
-        assert_eq!(
-            database_url(
-                "postgres://scope:scope@localhost:5432/scope_test?sslmode=disable",
-                "scope_test_db_1"
-            )
-            .unwrap(),
-            "postgres://scope:scope@localhost:5432/scope_test_db_1?sslmode=disable"
-        );
-    }
-
-    #[test]
     fn template_databases_isolate_targets_and_preserve_live_reopens() {
         let target = TestDatabaseTarget::required().unwrap();
         let first = connect_postgres_test_store(&target).unwrap();

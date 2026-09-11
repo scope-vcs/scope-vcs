@@ -202,7 +202,7 @@ test('file and update selection reload only the selected changes payload', async
     await page.getByLabel('Commit file navigator').waitFor()
     await assertFileSelectionSkipsRevisionReload(page, 'retry.ts', '/src/retry.ts')
     await assertUpdateSelectionReloadsSelectedPayload(page)
-  })
+  }, { holdRepoEvents: true })
 })
 
 async function assertBefore(first, second) {
@@ -350,9 +350,11 @@ test('mobile details close survives desktop resize before native toggle delivery
   })
 })
 
-async function withPage(path, assertion) {
+async function withPage(path, assertion, { holdRepoEvents = false } = {}) {
   const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
+  // Count selection-triggered reads independently of periodic SSE reconciliation.
+  if (holdRepoEvents) await page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
   const pageErrors = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 

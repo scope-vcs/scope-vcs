@@ -92,7 +92,7 @@ def collect(package):
             if path == ("Cargo.toml" if package["ecosystem"] == "rust" else "package.json"):
                 raw = bundle.extractfile(member).read().decode("utf-8")
                 metadata = tomllib.loads(raw)["package"] if package["ecosystem"] == "rust" else json.loads(raw)
-            is_document = Path(path).suffix.lower() not in {".rs", ".js", ".ts", ".c", ".h", ".cc", ".cpp", ".json"}
+            is_document = Path(path).suffix.lower() not in {".rs", ".js", ".ts", ".c", ".h", ".cc", ".cpp", ".json", ".map"}
             if is_document and (LICENSE_NAME.match(Path(path).name) or any(part.lower() == "licenses" for part in Path(path).parts[:-1])):
                 raw = bundle.extractfile(member).read()
                 text = raw.decode("utf-8-sig").replace("\r\n", "\n").strip()

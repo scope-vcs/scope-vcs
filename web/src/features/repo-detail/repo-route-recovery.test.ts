@@ -21,8 +21,7 @@ const live: RepoLiveState = {
     request_permissions: { can_start_request: false },
     access: {
       actor: 'Public', can_read_private_files: false, can_push: false,
-      can_change_file_visibility: false, can_apply_changes: false,
-      can_manage_members: false, can_delete_repo: false,
+      can_change_file_visibility: false, can_manage_members: false, can_delete_repo: false,
     },
   },
 }

@@ -1,19 +1,18 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import { mkdir, mkdtemp, open, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
+import { FixtureCleanup } from './fixture-cleanup.mjs';
+import { execute, killCommandTree } from './subprocess.mjs';
 import { writeLinearHistoryStream } from './git-history.mjs';
 import { ROUTING_MODES, createEndpointRouter, parseApiUrls } from './endpoint-routing.mjs';
 import {
   changedFileCountSlope, historySizeSlope, landingFileSizeSlope, normalizedRates, percentile, round,
   sampleStats, writeSizeSlope,
 } from './metrics.mjs';
-export { changedFileCountSlope, historySizeSlope, landingFileSizeSlope, writeSizeSlope } from './metrics.mjs';
 import { fetchClientCount, needsFetchClients, validateRepositoryMode } from './repository-mode.mjs';
 import { assertSafeTarget, validateTargetKind } from './target-safety.mjs';
 import { parseChangedFileCounts, writeChangedFiles } from './write-shape.mjs';
@@ -39,8 +38,7 @@ async function main() {
   await ready(config);
   const runRoot = join(config.outputRoot, new Date().toISOString().replaceAll(':', '-'));
   await mkdir(runRoot, { recursive: true });
-  const fixtures = [];
-  const clients = [];
+  const cleanup = new FixtureCleanup((fixture) => deleteRepository(config, fixture));
   const report = {
     version: 6, generatedAt: new Date().toISOString(), apiUrls: config.apiUrls,
     config: publicConfig(config),
@@ -66,21 +64,18 @@ async function main() {
     const mixedFixtures = [];
     if (config.repositoryMode === 'hot') {
       const depth = config.historyDepths[0];
-      const fixture = await seedRepository(config, runRoot, 'hot', config.readBytes, depth);
-      fixtures.push(fixture);
+      const fixture = await seedRepository(config, cleanup, runRoot, 'hot', config.readBytes, depth);
       readFixtures.push(fixture);
       mixedFixtures.push(fixture);
       console.log(`  hot fixture: ${config.readBytes} bytes, ${depth} commits`);
     } else {
       if (needsReadFixtures) for (const depth of config.historyDepths) {
-        const fixture = await seedRepository(config, runRoot, `history-${depth}`, config.readBytes, depth);
-        fixtures.push(fixture);
+        const fixture = await seedRepository(config, cleanup, runRoot, `history-${depth}`, config.readBytes, depth);
         readFixtures.push(fixture);
         console.log(`  history fixture: ${depth} commits`);
       }
       for (let index = 0; config.workloads.includes('cold-churn') && index < config.churnRepos; index += 1) {
-        const fixture = await seedRepository(config, runRoot, `churn-${index + 1}`, config.readBytes, config.historyDepths[0]);
-        fixtures.push(fixture);
+        const fixture = await seedRepository(config, cleanup, runRoot, `churn-${index + 1}`, config.readBytes, config.historyDepths[0]);
         churnFixtures.push(fixture);
       }
       const needsMixedFixtures = config.workloads.some((name) => [
@@ -89,6 +84,7 @@ async function main() {
       for (let index = 0; needsMixedFixtures && index < config.mixedRepos; index += 1) {
         const fixture = await seedRepository(
           config,
+          cleanup,
           runRoot,
           `mixed-${index + 1}`,
           config.readBytes,
@@ -97,14 +93,12 @@ async function main() {
           config.landingFileBytes[index % config.landingFileBytes.length],
           config.changedFileCounts[index % config.changedFileCounts.length],
         );
-        fixtures.push(fixture);
         mixedFixtures.push(fixture);
       }
     }
     const fetchClients = needsFetchClients(config.workloads)
-      ? await createFetchClients(config, runRoot, mixedFixtures)
+      ? await createFetchClients(config, cleanup, runRoot, mixedFixtures)
       : [];
-    clients.push(...fetchClients);
     if (config.faultHookUrl) report.faultHook = await invokeFaultHook(config);
     const context = { config, runRoot, readFixtures, churnFixtures, mixedFixtures, fetchClients, interrupted: () => interrupted };
     for (const name of config.workloads) {
@@ -115,14 +109,8 @@ async function main() {
     }
   } finally {
     console.log('\ncleaning up benchmark fixtures...');
-    report.cleanup.attemptedRepositories = fixtures.length;
-    report.cleanup.attemptedClients = clients.length;
-    await Promise.all(clients.map((client) => rm(client.parent, { recursive: true, force: true })));
-    await Promise.all(fixtures.map(async (fixture) => {
-      try { await deleteRepository(config, fixture); }
-      catch (error) { report.cleanup.failed.push({ repo: `${fixture.owner}/${fixture.repo}`, error: message(error) }); }
-      await rm(fixture.dir, { recursive: true, force: true });
-    }));
+    report.cleanup = await cleanup.run();
+    if (report.cleanup.failed.length) process.exitCode = 1;
     report.completedAt = new Date().toISOString();
     await persist(report, runRoot);
   }
@@ -198,24 +186,23 @@ function publicConfig(config) {
   return safe;
 }
 
-export function parseStages(value) {
+function parseStages(value) {
   const stages = [...new Set(value.split(',').map((entry) => Number.parseInt(entry.trim(), 10)))];
   if (!stages.length || stages.some((stage) => !Number.isInteger(stage) || stage < 1)) throw new Error('value must be a comma-separated list of positive integers');
   return stages.sort((left, right) => left - right);
 }
 
-export function parseRates(value) {
+function parseRates(value) {
   const rates = [...new Set(value.split(',').map((entry) => Number(entry.trim())))];
   if (!rates.length || rates.some((rate) => !Number.isFinite(rate) || rate <= 0)) throw new Error('value must be a comma-separated list of positive numbers');
   return rates.sort((left, right) => left - right);
 }
 
-async function runStaircase(name, context) {
+export async function runStaircase(name, context, operation = operationFor(name, context)) {
   const stages = [];
   let baselineP95 = null;
   let lastHealthy = null;
   let firstUnhealthy = null;
-  const operation = operationFor(name, context);
   let warmup = null;
   if (context.config.warmupSeconds > 0 && !context.interrupted()) {
     console.log(`  warming at c=${context.config.warmupConcurrency} for ${context.config.warmupSeconds}s (samples discarded)...`);
@@ -266,7 +253,7 @@ async function runStaircase(name, context) {
     protocolLabel: context.config.protocolLabel, topologyLabel: context.config.topologyLabel,
     routingMode: context.config.routingMode, readReplicaCount: context.config.readReplicaCount,
     repeatIndex: context.config.repeatIndex, warmup,
-    baselineP95Ms: baselineP95, stages, confirmations,
+    baselineP95Ms: baselineP95, stages, confirmations, healthyStage: healthy,
     firstUnhealthy: firstUnhealthy ? firstUnhealthy.targetRate ?? firstUnhealthy.concurrency : null,
     lastHealthyConcurrency: healthy?.concurrency ?? null,
     lastHealthyTargetRate: healthy?.targetRate ?? null,
@@ -342,7 +329,7 @@ function operationFor(name, context) {
   throw new Error(`unsupported workload: ${name}`);
 }
 
-export function rotating(items) {
+function rotating(items) {
   let index = 0;
   return () => items[index++ % items.length];
 }
@@ -390,7 +377,7 @@ async function withResource(pool, operation) {
   try { return await operation(resource); } finally { pool.release(resource); }
 }
 
-export function chooseWrite(index, percent) { return (index * percent) % 100 < percent; }
+function chooseWrite(index, percent) { return (index * percent) % 100 < percent; }
 
 async function timedConcurrencyStage(name, concurrency, seconds, operation, context) {
   const samples = [];
@@ -430,8 +417,8 @@ async function timedRateStage(name, targetRate, seconds, operation, context) {
 }
 
 export function stageResult(name, concurrency, samples, elapsedSeconds, startedAt, completedAt, targetRate = null, nodeScaleLabel = 'unspecified') {
-  const result = stats(samples);
-  const rates = normalizedRates(samples, elapsedSeconds);
+  const result = sampleStats(samples);
+  const rates = normalizedRates(result, elapsedSeconds);
   return {
     name, concurrency, targetRate, nodeScaleLabel, startedAt, completedAt,
     elapsedSeconds: round(elapsedSeconds),
@@ -439,7 +426,7 @@ export function stageResult(name, concurrency, samples, elapsedSeconds, startedA
     bytesPerSecond: round(result.bytes / elapsedSeconds),
     logicalBytesPerSecond: rates.logicalMiBPerSecond === null ? null : round(rates.logicalMiBPerSecond * 1024 * 1024),
     normalized: rates,
-    errorRate: round((result.count - result.ok) / Math.max(1, result.count)),
+    errorRate: (result.count - result.ok) / Math.max(1, result.count),
     stats: result,
     historySizeSlope: historySizeSlope(samples),
     writeSizeSlope: writeSizeSlope(samples),
@@ -493,22 +480,22 @@ function printStage(stage) {
   console.log(`  ${target} · ${stage.throughputPerSecond}/s · completion p95 ${stage.stats.p95Ms}ms · TTFB p95 ${stage.stats.ttfbP95Ms}ms · ${(stage.errorRate * 100).toFixed(2)}% errors · ${gate}`);
 }
 
-async function seedRepository(config, runRoot, label, bytes, historyDepth, writeDeltaBytes = 0, landingFileBytes = 0, changedFileCount = 0, attempt = 1) {
+export async function seedRepository(config, cleanup, runRoot, label, bytes, historyDepth, writeDeltaBytes = 0, landingFileBytes = 0, changedFileCount = 0, attempt = 1) {
   const created = await apiJson(config, '/v1/repos', { method: 'POST', body: { name: `loadtest-${label}-${Date.now()}-${randomBytes(3).toString('hex')}`, file_default_visibility: 'Public' } });
+  const fixture = cleanup.repository({ owner: created.repo.owner_handle, repo: created.repo.name });
   const issuedPushToken = created.init.token ?? created.init.push_token;
-  const fixture = {
-    owner: created.repo.owner_handle, repo: created.repo.name,
+  Object.assign(fixture, {
     pushRemotePath: new URL(created.init.git_remote_url).pathname,
     publicRemotePath: `/git/public/${encodeURIComponent(created.repo.owner_handle)}/${encodeURIComponent(created.repo.name)}`,
     branch: created.init.push_branch || 'main', pushToken: issuedPushToken?.secret,
-    dir: await mkdtemp(join(runRoot, `${label}-`)), historyDepth, logicalBytes: bytes,
+    dir: cleanup.directory(await mkdtemp(join(runRoot, `${label}-`)), 'fixture'), historyDepth, logicalBytes: bytes,
     writeDeltaBytes, landingFileBytes, changedFileCount, update: 0,
-  };
+  });
   try {
     for (const args of [['init'], ['symbolic-ref', 'HEAD', 'refs/heads/main'], ['config', 'user.email', 'loadtest@scope.local'], ['config', 'user.name', 'Scope Load Test']]) await checkedGit(config, args, fixture.dir);
     await mkdir(join(fixture.dir, '.scope'), { recursive: true });
     await writeFile(join(fixture.dir, '.scope', 'RULES.md'), '');
-    await writePayload(fixture.dir, bytes);
+    await writeChunkedRandomPayload(join(fixture.dir, 'fixture'), bytes, RANDOM_WRITE_BUFFER_BYTES);
     await writeFile(join(fixture.dir, 'load-update.txt'), 'seed\n');
     if (fixture.landingFileBytes > 0) await writeLandingFile(fixture.dir, fixture.landingFileBytes, 0);
     await checkedGit(config, ['add', '--all'], fixture.dir);
@@ -519,12 +506,10 @@ async function seedRepository(config, runRoot, label, bytes, historyDepth, write
     fixture.pushToken = config.token;
     return fixture;
   } catch (error) {
-    await deleteRepository(config, fixture).catch(() => {});
-    await rm(fixture.dir, { recursive: true, force: true });
     if (attempt < 3 && /(?:HTTP |error: )5\d\d/i.test(message(error))) {
       console.warn(`  retrying ${label} fixture after transient service failure (${attempt}/3)`);
       await sleep(250 * attempt);
-      return seedRepository(config, runRoot, label, bytes, historyDepth, writeDeltaBytes, landingFileBytes, changedFileCount, attempt + 1);
+      return seedRepository(config, cleanup, runRoot, label, bytes, historyDepth, writeDeltaBytes, landingFileBytes, changedFileCount, attempt + 1);
     }
     throw error;
   }
@@ -541,13 +526,13 @@ async function addFixtureHistory(config, repo, count) {
   }
 }
 
-async function createFetchClients(config, runRoot, fixtures) {
+export async function createFetchClients(config, cleanup, runRoot, fixtures) {
   const count = fetchClientCount(config);
   const clients = [];
   const references = new Map();
   for (let index = 0; index < count; index += 1) {
     const fixture = fixtures[index % fixtures.length];
-    const parent = await mkdtemp(join(runRoot, 'fetch-client-'));
+    const parent = cleanup.directory(await mkdtemp(join(runRoot, 'fetch-client-')), 'client');
     const dir = join(parent, 'repo.git');
     const endpoint = endpointFor(config, fixture);
     const reference = references.get(repositoryKey(fixture));
@@ -560,25 +545,12 @@ async function createFetchClients(config, runRoot, fixtures) {
       ],
     );
     if (!initial.ok) {
-      await rm(parent, { recursive: true, force: true });
       throw new Error(initial.error || 'initial fetch client clone failed');
     }
     clients.push({ fixture, dir, parent });
     references.set(repositoryKey(fixture), reference || dir);
   }
   return clients;
-}
-
-async function writePayload(directory, bytes) {
-  const payloadDir = join(directory, 'fixture');
-  await mkdir(payloadDir, { recursive: true });
-  let remaining = bytes;
-  let index = 0;
-  while (remaining > 0) {
-    const size = Math.min(remaining, 256 * 1024);
-    await writeFile(join(payloadDir, `${String(index++).padStart(4, '0')}.bin`), randomBytes(size));
-    remaining -= size;
-  }
 }
 
 export async function writeChunkedRandomPayload(
@@ -831,44 +803,17 @@ async function gitOutput(config, args, cwd) {
   return result.output.trim();
 }
 
-function command(config, [program, ...args], cwd, extraEnv, started = performance.now(), capture = false, stdinPath = null) {
-  return new Promise((resolveSample) => {
-    const child = spawn(program, args, { cwd, detached: process.platform !== 'win32', env: { ...process.env, ...extraEnv, GIT_TERMINAL_PROMPT: '0' }, stdio: [stdinPath ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
-    activeCommands.add(child);
-    const chunks = [];
-    let firstByteMs = null;
-    const collect = (chunk) => { firstByteMs ??= performance.now() - started; chunks.push(chunk); };
-    child.stdout.on('data', collect);
-    child.stderr.on('data', collect);
-    if (stdinPath) createReadStream(stdinPath).pipe(child.stdin);
-    const timer = setTimeout(() => killCommandTree(child), config.timeoutMs);
-    let settled = false;
-    const finish = (value) => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        activeCommands.delete(child);
-        resolveSample(value);
-      }
-    };
-    child.on('error', (error) => finish(sample(false, started, null, 0, error.message, firstByteMs)));
-    child.on('close', (code, signal) => {
-      const output = Buffer.concat(chunks).toString('utf8');
-      const result = sample(code === 0, started, code, Buffer.byteLength(output), code === 0 ? null : output.slice(-1200) || String(signal), firstByteMs);
-      if (capture) result.output = output;
-      finish(result);
-    });
+async function command(config, [program, ...args], cwd, extraEnv, started = performance.now(), capture = false, stdinPath = null) {
+  const execution = await execute(program, args, {
+    cwd, env: extraEnv, started, captureStdout: capture, stdinPath,
+    timeoutMs: config.timeoutMs, activeCommands,
   });
-}
-
-function killCommandTree(child) {
-  if (!child.pid) return;
-  try {
-    if (process.platform === 'win32') child.kill('SIGKILL');
-    else process.kill(-child.pid, 'SIGKILL');
-  } catch (error) {
-    if (error?.code !== 'ESRCH') child.kill('SIGKILL');
-  }
+  const ok = execution.code === 0 && !execution.error && !execution.timedOut;
+  const error = ok ? null : execution.timedOut ? `client timeout (SIGKILL): ${execution.stderr.slice(-1200)}`
+    : execution.error || execution.stderr.slice(-1200) || String(execution.signal);
+  const result = sample(ok, started, execution.code, execution.stdoutBytes + execution.stderrBytes, error, execution.firstByteMs);
+  if (capture) result.output = execution.stdout;
+  return result;
 }
 
 async function apiJson(config, path, options = {}) {
@@ -886,7 +831,7 @@ async function apiJson(config, path, options = {}) {
   return body ? JSON.parse(body) : null;
 }
 
-export function apiHeaders(token) {
+function apiHeaders(token) {
   return { accept: 'application/json', authorization: `Bearer ${token}`, 'x-scope-cli-protocol': '1' };
 }
 
@@ -926,8 +871,6 @@ function sample(ok, started, status, bytes, error, ttfbMs = null) {
   return { ok, durationMs, completionMs: durationMs, ttfbMs: ttfbMs ?? durationMs, status, bytes, error };
 }
 
-export function stats(values) { return sampleStats(values); }
-
 export function toggleBenchmarkVisibilityRule(repoConfig) {
   const config = structuredClone(repoConfig);
   const path = '/load-files/**';
@@ -960,17 +903,21 @@ async function persist(report, output) {
   return { json, markdown: markdownPath };
 }
 
-function markdown(report) {
+export function markdown(report) {
   const rows = report.workloads.map((workload) => {
-    const stage = workload.confirmations.at(-1) || workload.stages.at(-1);
-    return `| ${workload.name} | ${workload.status} | ${workload.lastHealthyThroughputPerSecond ?? '—'} | ${stage?.normalized.logicalMiBPerSecond ?? '—'} | ${stage?.stats.p95Ms ?? '—'} | ${stage?.stats.ttfbP95Ms ?? '—'} | ${stage?.stats.p99Ms ?? '—'} | ${stage?.normalized.observedMiBPerSecond ?? '—'} |`;
+    const stage = workload.healthyStage;
+    return `| ${workload.name} | ${workload.status} | ${stage?.throughputPerSecond ?? '—'} | ${stage?.normalized.logicalMiBPerSecond ?? '—'} | ${stage?.stats.p95Ms ?? '—'} | ${stage?.stats.ttfbP95Ms ?? '—'} | ${stage?.stats.p99Ms ?? '—'} | ${stage?.normalized.observedMiBPerSecond ?? '—'} |`;
   }).join('\n');
+  const unhealthyRows = report.workloads.flatMap((workload) => {
+    const stage = workload.stages.find((entry) => !entry.gate.healthy);
+    return stage ? [`| ${workload.name} | ${stage.targetRate ?? stage.concurrency} | ${stage.gate.reasons.join('; ')} |`] : [];
+  }).join('\n') || '| none | n/a | none |';
   const permits = report.config.apiPermitLimits;
   const rejectionRows = report.workloads.flatMap((workload) => workload.stages.flatMap((stage) =>
     Object.entries(stage.capacityRejections || {}).map(([operation, count]) =>
       `| ${workload.name} | ${stage.concurrency ?? stage.targetRate} | ${operation} | ${count} |`,
     ))).join('\n') || '| none | n/a | none | 0 |';
-  return `# Scope Railway Git storage load test\n\nGenerated: ${report.generatedAt}\n\nTargets: ${report.apiUrls.join(', ')}\n\nTopology: ${report.config.topologyLabel} (${report.config.routingMode}), repeat ${report.config.repeatIndex}\n\nRepository mode: ${report.config.repositoryMode}\n\nRead replica count: ${report.config.readReplicaCount}\n\nNode scale label: ${report.config.nodeScaleLabel}\n\nProtocol label: ${report.config.protocolLabel}\n\nAPI permit labels per process: receive-pack ${permits.receivePack}, upload-pack ${permits.uploadPack}, Git materialization ${permits.gitMaterialization}, object store ${permits.objectStore}.\n\n| Workload | Status | Operations/s | Logical MiB/s | Completion p95 ms | TTFB p95 ms | Completion p99 ms | Observed MiB/s |\n|---|---|---:|---:|---:|---:|---:|---:|\n${rows}\n\n## Capacity rejections\n\n| Workload | Concurrency or rate | Operation | Count |\n|---|---:|---|---:|\n${rejectionRows}\n\nLogical MiB/s uses fixture payload sizes for writes and clones, and response or received-object bytes for reads. Observed MiB/s uses response bytes or local Git object deltas. Neither is a wire-level counter. TTFB for JSON reads is time to response headers. Quiet Git commands commonly emit no output, so their completion time is reported as TTFB. Compare topology repeats only when repository fixture sizes, stage controls, and Railway deployment shape are identical.\n`;
+  return `# Scope Railway Git storage load test\n\nGenerated: ${report.generatedAt}\n\nTargets: ${report.apiUrls.join(', ')}\n\nTopology: ${report.config.topologyLabel} (${report.config.routingMode}), repeat ${report.config.repeatIndex}\n\nRepository mode: ${report.config.repositoryMode}\n\nRead replica count: ${report.config.readReplicaCount}\n\nNode scale label: ${report.config.nodeScaleLabel}\n\nProtocol label: ${report.config.protocolLabel}\n\nAPI permit labels per process: receive-pack ${permits.receivePack}, upload-pack ${permits.uploadPack}, Git materialization ${permits.gitMaterialization}, object store ${permits.objectStore}.\n\n| Workload | Status | Operations/s | Logical MiB/s | Completion p95 ms | TTFB p95 ms | Completion p99 ms | Observed MiB/s |\n|---|---|---:|---:|---:|---:|---:|---:|\n${rows}\n\n## First unhealthy stages\n\n| Workload | Concurrency or rate | Reasons |\n|---|---:|---|\n${unhealthyRows}\n\n## Capacity rejections\n\n| Workload | Concurrency or rate | Operation | Count |\n|---|---:|---|---:|\n${rejectionRows}\n\nLogical MiB/s uses fixture payload sizes for writes and clones, and response or received-object bytes for reads. Observed MiB/s uses response bytes or local Git object deltas. Neither is a wire-level counter. TTFB for JSON reads is time to response headers. Quiet Git commands commonly emit no output, so their completion time is reported as TTFB. Compare topology repeats only when repository fixture sizes, stage controls, and Railway deployment shape are identical.\n`;
 }
 
 function required(name) { const value = process.env[name]?.trim(); if (!value) throw new Error(`${name} is required`); return value; }
@@ -980,7 +927,7 @@ function list(name, fallback) {
   if (unknown.length) throw new Error(`${name} has unsupported workloads: ${unknown.join(', ')}`);
   return [...new Set(values)];
 }
-export function parseByteSizes(value) {
+function parseByteSizes(value) {
   const entries = value.split(',').map((entry) => entry.trim());
   const sizes = [...new Set(entries.map((entry) => /^\d+$/.test(entry) ? Number(entry) : Number.NaN))];
   if (!sizes.length || sizes.some((size) => !Number.isSafeInteger(size) || size < 0)) throw new Error('SCOPE_LOAD_WRITE_DELTA_BYTES must be a comma-separated list of non-negative byte counts');

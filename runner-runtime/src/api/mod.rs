@@ -25,14 +25,12 @@ use std::{
     fs,
     io::{Read, Write},
     path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
+    sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
+
+const CONTROL_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 pub struct RuntimeClient {
@@ -44,7 +42,7 @@ pub struct RuntimeClient {
     cache_keys: Arc<Mutex<Vec<AttemptCacheKeyMaterial>>>,
     heartbeat_lock: Arc<Mutex<()>>,
     #[cfg(test)]
-    heartbeat_started: Option<mpsc::Sender<()>>,
+    heartbeat_started: Option<std::sync::mpsc::Sender<()>>,
 }
 
 #[derive(Clone)]
@@ -97,6 +95,7 @@ impl RuntimeClient {
     ) -> anyhow::Result<T> {
         let response = self
             .auth(self.client.post(self.url(action)))
+            .timeout(CONTROL_REQUEST_TIMEOUT)
             .json(body)
             .send()
             .with_context(|| label.to_string())?;
@@ -111,6 +110,7 @@ impl RuntimeClient {
     ) -> anyhow::Result<()> {
         let response = self
             .auth(self.client.post(self.url(action)))
+            .timeout(CONTROL_REQUEST_TIMEOUT)
             .json(body)
             .send()
             .with_context(|| label.to_string())?;

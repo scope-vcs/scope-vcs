@@ -29,7 +29,6 @@ import {
 import { FileQuestion, Info, TriangleAlert } from 'lucide-react'
 import {
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,

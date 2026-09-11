@@ -33,16 +33,6 @@ impl CatalogFixture {
         self.repositories.get(&repo_id(owner, name))
     }
 
-    pub fn repositories_for_user(&self, user_id: &str) -> Vec<&Repository> {
-        self.repositories
-            .values()
-            .filter(|repo| {
-                repo.record.owner_user_id == user_id
-                    || repo.members.iter().any(|member| member.user_id == user_id)
-            })
-            .collect()
-    }
-
     pub fn create_repository(
         &mut self,
         owner: &UserAccount,

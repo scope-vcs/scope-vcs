@@ -55,7 +55,7 @@ export type RequestQueueViewAction =
     }
   | { type: 'search_failed'; generation: number; error: string }
 
-export function appendRequestPage(
+function appendRequestPage(
   current: RequestListItem[],
   incoming: RequestListItem[],
 ) {

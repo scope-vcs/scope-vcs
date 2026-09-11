@@ -17,7 +17,8 @@ mod types;
 use retention::{active_repository_bytes, expire_repository_references, make_repository_room};
 pub use types::{
     CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
-    CacheUploadRecord, CacheUploadState, PendingCacheDeletion, PendingOrphanCacheUpload,
+    CacheUploadCleanupClaim, CacheUploadRecord, CacheUploadState, PendingCacheDeletion,
+    PendingOrphanCacheUpload,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -368,15 +369,14 @@ impl CacheStore {
             Ok(decision) => decision,
             Err(CacheDomainError::StaleUploadLease) => {
                 tx.execute(statement(
-                    "UPDATE scope_cache_uploads SET state = 'deleting' WHERE upload_id = $1",
-                    vec![upload_id.into()],
+                    "UPDATE scope_cache_uploads SET state = 'deleting',
+                        cleanup_lease_expires_at_unix = $2 WHERE upload_id = $1",
+                    vec![upload_id.into(), to_i64(now_unix)?.into()],
                 ))
                 .await
                 .map_err(PostgresError::internal)?;
                 tx.commit().await.map_err(PostgresError::internal)?;
-                return Ok(CacheCommitResult::Stale {
-                    orphaned_object_key: upload.object_key,
-                });
+                return Ok(CacheCommitResult::Stale);
             }
             Err(error) => return Err(error.into()),
         };

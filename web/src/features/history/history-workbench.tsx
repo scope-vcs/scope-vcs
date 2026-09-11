@@ -1,4 +1,4 @@
-import type { CommitFile, CommitSummary } from '@/api/types'
+import type { CommitDetail, CommitFile, CommitSummary } from '@/api/types'
 import { EmptyState } from '@/components/empty-state'
 import { CommitDetailPanel } from '@/features/history/history-commit-detail'
 import { CommitList } from '@/features/history/history-commit-list'
@@ -7,7 +7,6 @@ import {
   writeHistoryDiffScroll,
 } from '@/features/history/history-resource-cache'
 import type {
-  CommitDetailState,
   CommitFileDiffState,
 } from '@/features/history/history-state'
 import { History } from 'lucide-react'
@@ -15,14 +14,14 @@ import { useState, type ReactNode } from 'react'
 
 export function HistoryWorkbench({
   commitContext,
-  commitState,
+  commit,
+  commitError,
   commits,
   diffIdentity,
   emptyDescription,
   emptyTitle,
   fileDiffState,
   onCloseDiff,
-  onRetryCommit,
   onRetryDiff,
   onSelectCommit,
   onSelectFile,
@@ -30,14 +29,14 @@ export function HistoryWorkbench({
   selectedFilePath,
 }: {
   commitContext?: ReactNode
-  commitState: CommitDetailState
+  commit: CommitDetail | null
+  commitError: string | null
   commits: CommitSummary[]
   diffIdentity: string | null
   emptyDescription: string
   emptyTitle: string
   fileDiffState: CommitFileDiffState
   onCloseDiff: () => void
-  onRetryCommit?: () => void
   onRetryDiff?: () => void
   onSelectCommit: (commit: CommitSummary) => void
   onSelectFile: (file: CommitFile) => void
@@ -67,13 +66,13 @@ export function HistoryWorkbench({
           </details>
           <CommitDetailPanel
             commitContext={commitContext}
-            commitState={commitState}
+            commit={commit}
+            commitError={commitError}
             diffIdentity={diffIdentity}
             diffScrollTop={readHistoryDiffScroll(diffIdentity)}
             fileDiffState={fileDiffState}
             onCloseDiff={onCloseDiff}
             onDiffScroll={(scrollTop) => writeHistoryDiffScroll(diffIdentity, scrollTop)}
-            onRetryCommit={onRetryCommit}
             onRetryDiff={onRetryDiff}
             onSelectFile={onSelectFile}
             selectedFilePath={selectedFilePath}

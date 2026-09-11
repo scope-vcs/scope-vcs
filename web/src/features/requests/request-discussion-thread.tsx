@@ -148,10 +148,6 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   }, [availableReplies, collapsed, discussion.id, loadReplyTarget, onExpandedChange])
 
   useEffect(() => {
-    if (!composerOpen) setQuoteId(null)
-  }, [composerOpen, setQuoteId])
-
-  useEffect(() => {
     if (!collapsed || !replyRegionRef.current?.contains(document.activeElement)) return
     disclosureRef.current?.focus()
   }, [collapsed])
@@ -389,12 +385,11 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
               <RequestReplyComposer
                 discussionId={discussion.id}
                 onCancel={() => {
-                  setQuoteId(null)
                   onCloseComposer()
                 }}
                 onCancelQuote={() => setQuoteId(null)}
-                onSubmit={async (body) => {
-                  const posted = await postReply(body)
+                onSubmit={async (body, submissionId) => {
+                  const posted = await postReply(body, submissionId)
                   if (posted) onCloseComposer()
                   return posted
                 }}

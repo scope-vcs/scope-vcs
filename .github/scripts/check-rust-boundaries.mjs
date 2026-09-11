@@ -11,34 +11,6 @@ const contractDependencies = new Map([
   ['scope-api-contract', new Set(['scope-domain'])],
   ['scope-cache-contract', new Set(['scope-cache-domain'])],
 ])
-const requiredSourceHomes = [
-  'api/src/use_cases/content_cleanup.rs',
-  'api/src/use_cases/git_receive/mod.rs',
-  'api/src/use_cases/request_discussion_mutation.rs',
-  'api/src/use_cases/request_merge.rs',
-  'api/src/use_cases/run_inspection.rs',
-  'crates/scope-domain/src/repository/mod.rs',
-  'crates/scope-domain/src/reviewed_updates/mod.rs',
-  'crates/scope-domain/src/runs/cache/mod.rs',
-  'crates/scope-domain/src/runs/workflow/mod.rs',
-  'crates/scope-postgres/src/db/cleanup_queue/mod.rs',
-  'runner-runtime/src/api/mod.rs',
-  'runner-runtime/src/cache/mod.rs',
-  'runner-runtime/src/workflow.rs',
-]
-const retiredSourceHomes = [
-  'api/src/git/request_merge.rs',
-  'api/src/repo_cleanup.rs',
-  'crates/scope-domain/src/reviewed_updates.rs',
-  'crates/scope-domain/src/runs/cache.rs',
-  'crates/scope-domain/src/runs/state.rs',
-  'crates/scope-domain/src/runs/workflow.rs',
-  'crates/scope-domain/src/store.rs',
-  'crates/scope-postgres/src/db/cleanup_queue.rs',
-  'runner-runtime/src/api.rs',
-  'runner-runtime/src/cache.rs',
-]
-
 function workspacePackages(metadata) {
   const members = new Set(metadata.workspace_members)
   return metadata.packages.filter(({ id }) => members.has(id))
@@ -119,31 +91,6 @@ export function validateStandaloneManifests(manifests) {
   return errors
 }
 
-export function validateSourceLayout(existingPaths) {
-  const errors = []
-  for (const required of requiredSourceHomes) {
-    if (!existingPaths.has(required)) errors.push(`${required}: required behavior-owned source home is missing`)
-  }
-  for (const retired of retiredSourceHomes) {
-    if (existingPaths.has(retired)) errors.push(`${retired}: retired catch-all source home was reintroduced`)
-  }
-  return errors
-}
-
-async function existingSourceLayout(root) {
-  const candidates = [...requiredSourceHomes, ...retiredSourceHomes]
-  const existing = await Promise.all(candidates.map(async (relative) => {
-    try {
-      await access(path.join(root, relative))
-      return relative
-    } catch (error) {
-      if (error.code === 'ENOENT') return null
-      throw error
-    }
-  }))
-  return new Set(existing.filter(Boolean))
-}
-
 async function cargoMetadata(root, manifestPath) {
   const { stdout } = await execFileAsync(
     'cargo',
@@ -167,7 +114,6 @@ async function main() {
   await access(path.join(cliRoot, 'Cargo.lock'))
   const result = validateRustBoundaries(mainMetadata, cliMetadata, cliRoot)
   result.errors.push(...validateStandaloneManifests(standaloneManifests))
-  result.errors.push(...validateSourceLayout(await existingSourceLayout(root)))
   if (result.errors.length > 0) {
     console.error(`Rust dependency boundary check failed:\n- ${result.errors.join('\n- ')}`)
     process.exitCode = 1

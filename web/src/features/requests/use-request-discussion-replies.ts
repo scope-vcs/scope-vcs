@@ -1,4 +1,6 @@
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { readRequestAttachmentDraft, requestAttachmentDraftKey, runRequestContentSubmission, setRequestAttachmentDraftReplyTarget, subscribeRequestAttachmentDraft } from './request-attachment-drafts'
+import { useRequestAttachments } from './request-attachment-context'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { openRequestDiscussionReplies, requestDiscussionRepliesResource } from './request-discussion-replies-resource'
@@ -61,7 +63,12 @@ export function useRequestDiscussionReplies({
   const read = useCallback(() => requestDiscussionRepliesResource.peek(key) ?? session, [key, session])
   const replyState = useSyncExternalStore(subscribe, read, () => session)
   const setReplyState = session.update
-  const [quoteId, setQuoteId] = useState<string | null>(null)
+  const attachments = useRequestAttachments()
+  const draftKey = requestAttachmentDraftKey({ ...attachments, target: `reply:${discussion.id}` })
+  const subscribeDraft = useCallback((listener: () => void) => subscribeRequestAttachmentDraft(draftKey, listener), [draftKey])
+  const readDraft = useCallback(() => readRequestAttachmentDraft(draftKey), [draftKey])
+  const quoteId = useSyncExternalStore(subscribeDraft, readDraft, readDraft).replyToReplyId
+  const setQuoteId = useCallback((id: string | null) => setRequestAttachmentDraftReplyTarget(draftKey, id), [draftKey])
 
   const availableReplies = mergeDiscussionReplies(
     replyState.replies,
@@ -171,54 +178,55 @@ export function useRequestDiscussionReplies({
     replyToReplyId: string | null = quoteId,
     retryReference?: RequestDiscussionReplyView['reply_to'],
   ) {
-    const replyTarget = retryReference ?? (
-      replyToReplyId
-        ? availableReplies.find((reply) => reply.id === replyToReplyId) ?? null
-        : null
-    )
-    const optimistic = optimisticReply({
-      actor,
-      body,
-      clientReplyId,
-      discussion,
-      replyTarget,
-      replyToReplyId,
+    return runRequestContentSubmission(clientReplyId, async () => {
+      const replyTarget = retryReference ?? (
+        replyToReplyId
+          ? availableReplies.find((reply) => reply.id === replyToReplyId) ?? null
+          : null
+      )
+      const optimistic = optimisticReply({
+        actor,
+        body,
+        clientReplyId,
+        discussion,
+        replyTarget,
+        replyToReplyId,
+      })
+      setReplyState((current) =>
+        insertOptimisticReply(
+          current,
+          optimistic,
+          discussion.latest_replies,
+        ),
+      )
+      const input = {
+        ...params,
+        body_markdown: body,
+        client_reply_id: clientReplyId,
+        discussion_id: discussion.id,
+        reply_to_reply_id: replyToReplyId,
+      }
+      try {
+        const result = await (
+          discussion.status === 'Resolved'
+            ? actions.reopenAndReply(input)
+            : actions.createReply(input)
+        )
+        setReplyState((current) =>
+          acknowledgeReply(current, clientReplyId, result.reply),
+        )
+        onPatch(result.discussion)
+        onExpandedChange(discussion.id, true)
+        return true
+      } catch (error) {
+        setReplyState((current) =>
+          updateReplyPage(markReplyFailed(current, clientReplyId), {
+            error: messageFor(error, 'Reply could not be posted.'),
+          }),
+        )
+        return false
+      }
     })
-    setReplyState((current) =>
-      insertOptimisticReply(
-        current,
-        optimistic,
-        discussion.latest_replies,
-      ),
-    )
-    const input = {
-      ...params,
-      body_markdown: body,
-      client_reply_id: clientReplyId,
-      discussion_id: discussion.id,
-      reply_to_reply_id: replyToReplyId,
-    }
-    try {
-      const result = await (
-        discussion.status === 'Resolved'
-          ? actions.reopenAndReply(input)
-          : actions.createReply(input)
-      )
-      setReplyState((current) =>
-        acknowledgeReply(current, clientReplyId, result.reply),
-      )
-      onPatch(result.discussion)
-      onExpandedChange(discussion.id, true)
-      setQuoteId(null)
-      return true
-    } catch (error) {
-      setReplyState((current) =>
-        updateReplyPage(markReplyFailed(current, clientReplyId), {
-          error: messageFor(error, 'Reply could not be posted.'),
-        }),
-      )
-      return false
-    }
   }
 
   const canPostReply =

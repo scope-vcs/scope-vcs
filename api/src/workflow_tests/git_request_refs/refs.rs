@@ -318,8 +318,12 @@ impl scope_object_store::ObjectStore for PutFailsObjectStore {
         ))
     }
 
-    fn get(&self, key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
-        scope_object_store::ObjectStore::get(self.readable.as_ref(), key)
+    fn get_bounded(
+        &self,
+        key: &str,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
+        scope_object_store::ObjectStore::get_bounded(self.readable.as_ref(), key, max_bytes)
     }
 
     fn delete(&self, key: &str) -> Result<(), scope_object_store::ObjectStoreError> {

@@ -327,26 +327,15 @@ mod tests {
                 .is_err()
         );
         assert!(
-            parse_request_queue_cursor_plain(
-                RequestQueueSection::Closed,
-                "v1:open:2:25:11:req_open"
-            )
-            .is_err()
+            parse_request_queue_cursor_plain(RequestQueueSection::Closed, "v1:open:11:req_open")
+                .is_err()
         );
         for (section, cursor) in [
             (
                 RequestQueueSection::YourWork,
                 "v1:work:9223372036854775808:req",
             ),
-            (
-                RequestQueueSection::Open,
-                "v1:open:9223372036854775808:1:1:req",
-            ),
-            (RequestQueueSection::Open, "v1:open:1:2147483648:1:req"),
-            (
-                RequestQueueSection::Open,
-                "v1:open:1:1:9223372036854775808:req",
-            ),
+            (RequestQueueSection::Open, "v1:open:9223372036854775808:req"),
             (
                 RequestQueueSection::Closed,
                 "v1:closed:9223372036854775808:req",
@@ -354,5 +343,16 @@ mod tests {
         ] {
             assert!(parse_request_queue_cursor_plain(section, cursor).is_err());
         }
+        assert_eq!(
+            parse_request_queue_cursor_plain(
+                RequestQueueSection::Open,
+                "v1:open:9223372036854775807:req",
+            )
+            .unwrap(),
+            RequestQueueCursor::Open {
+                submitted_at_unix: i64::MAX as u64,
+                request_id: "req".to_string(),
+            },
+        );
     }
 }

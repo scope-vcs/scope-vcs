@@ -162,14 +162,11 @@ impl GitSegmentStore {
             match read {
                 Ok(0) => {
                     let blocked_at = Instant::now();
-                    let (local_result, remote_result) = tokio::join!(
+                    let _ = tokio::join!(
                         local_tx.send(StreamMessage::End),
                         remote_tx.send(StreamMessage::End),
                     );
                     fanout_blocked += blocked_at.elapsed();
-                    if local_result.is_err() || remote_result.is_err() {
-                        input_error = Some(GitStorageError::IncompleteIngest);
-                    }
                     break;
                 }
                 Ok(read) => {
@@ -192,7 +189,6 @@ impl GitSegmentStore {
                     );
                     fanout_blocked += blocked_at.elapsed();
                     if local_result.is_err() || remote_result.is_err() {
-                        input_error = Some(GitStorageError::IncompleteIngest);
                         break;
                     }
                 }
@@ -206,8 +202,8 @@ impl GitSegmentStore {
         drop(remote_tx);
 
         let (local, remote) = tokio::join!(local_task, remote_task);
-        let local = local.map_err(|error| GitStorageError::Task(error.to_string()))?;
-        let remote = remote.map_err(|error| GitStorageError::Task(error.to_string()))?;
+        let local = local.unwrap_or_else(|error| Err(GitStorageError::Task(error.to_string())));
+        let remote = remote.unwrap_or_else(|error| Err(GitStorageError::Task(error.to_string())));
 
         if let Some(error) = input_error {
             cleanup_ingest(&self.backend, &object_key, local.ok()).await;
@@ -217,7 +213,14 @@ impl GitSegmentStore {
             Ok(outcome) => outcome,
             Err(error) => {
                 cleanup_ingest(&self.backend, &object_key, None).await;
-                return Err(error);
+                // A destination can observe only channel closure after its peer fails.
+                // Report the peer's cause instead of that secondary symptom.
+                return Err(match remote {
+                    Err(remote_error) if matches!(error, GitStorageError::IncompleteIngest) => {
+                        remote_error
+                    }
+                    _ => error,
+                });
             }
         };
         let remote = match remote {

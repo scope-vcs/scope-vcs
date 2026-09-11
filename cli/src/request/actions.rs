@@ -1,6 +1,6 @@
 use super::text::terminal_text;
 use super::*;
-use crate::api::ApiSession;
+use crate::api::{ApiSession, RequestTarget};
 pub(super) fn load_exact_request(
     git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
@@ -12,21 +12,8 @@ pub(super) fn load_exact_request(
 )> {
     let context = load_context(git_repo, api, target.remote.as_deref())?;
     let request_id = request_id_for_context(git_repo, api, &context, target.request)?;
-    let detail = get_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )?;
+    let detail = get_request(api, context.api_target(&request_id))?;
     Ok((context, request_id, detail))
-}
-
-fn api_target<'a>(context: &'a local::RequestContext, request_id: &'a str) -> RequestTarget<'a> {
-    RequestTarget {
-        owner: &context.target.owner,
-        repo: &context.target.repo,
-        request_id,
-    }
 }
 
 pub(super) fn submit_request_command(
@@ -36,16 +23,17 @@ pub(super) fn submit_request_command(
     yes: bool,
     machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
+    let (context, request_id, _) = load_exact_request(git_repo, api, target)?;
     let prompt = "Submit this request to its maintainers";
     require_confirmation(prompt, yes, !machine_output)?;
-    let response = api_submit_request(api, api_target(&context, &request_id))?;
-    let human_lines = request_mutation_receipt_lines("Submitted", Some(&before.request), &response);
+    let response = api_submit_request(api, context.api_target(&request_id))?;
+    let human_lines = request_mutation_receipt_lines("Submitted", &response);
     Ok(RequestCommandOutcome::new(
         "request.submit",
-        RequestCommandResult::Mutation(RepoResponse {
+        RequestCommandResult::Mutation(MutationResult {
             repo: context.repo,
             response,
+            attachments: Vec::new(),
         }),
         human_lines,
     ))
@@ -61,7 +49,7 @@ pub(super) fn edit_request(
     let has_attachments = !args.attachments.paths.is_empty();
     let uploaded = attachments::upload(
         api,
-        api_target(&context, &request_id),
+        context.api_target(&request_id),
         scope_api_contract::attachments::RequestAttachmentTargetInput {
             kind: scope_api_contract::attachments::RequestAttachmentTargetKind::Description,
             discussion_id: None,
@@ -88,46 +76,35 @@ pub(super) fn edit_request(
     };
     let response = edit_request_identity(
         api,
-        api_target(&context, &request_id),
+        context.api_target(&request_id),
         args.title,
         description,
         has_attachments.then(|| before.request.description_markdown.clone()),
     )?;
-    let mut human_lines =
-        request_mutation_receipt_lines("Edited request", Some(&before.request), &response);
+    let mut human_lines = request_mutation_receipt_lines("Edited request", &response);
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
+    let saved = serde_json::json!({
+        "operation": "request.edit", "saved": true,
+        "request_id": &request_id, "request": &response.request,
+    });
     let attachments = if args.attachments.wait {
         attachments::wait_for_processing(
             api,
-            api_target(&context, &request_id),
+            context.api_target(&request_id),
             uploaded.attachments,
-            serde_json::json!({
-                "operation": "request.edit",
-                "saved": true,
-                "request_id": &request_id,
-                "request": &response.request,
-            }),
+            saved.clone(),
         )?
     } else {
         uploaded.attachments
     };
-    attachments::complete_uploads(&uploaded.receipt_keys)?;
-    if has_attachments {
-        return Ok(RequestCommandOutcome::new(
-            "request.edit",
-            RequestCommandResult::AttachmentMutation(AttachmentMutationResult {
-                repo: context.repo,
-                response,
-                attachments,
-            }),
-            human_lines,
-        ));
-    }
+    attachments::complete_saved_uploads(None, &uploaded.receipt_keys, saved)?;
+
     Ok(RequestCommandOutcome::new(
         "request.edit",
-        RequestCommandResult::Mutation(RepoResponse {
+        RequestCommandResult::Mutation(MutationResult {
             repo: context.repo,
             response,
+            attachments,
         }),
         human_lines,
     ))
@@ -166,11 +143,11 @@ pub(super) fn invite_request(
     let (context, request_id, _) = load_exact_request(git_repo, api, target)?;
     let handle = exact_handle(handle)?;
     let (command, response, human_line) = if invite {
-        let response = add_request_invitee(api, api_target(&context, &request_id), handle)?;
+        let response = add_request_invitee(api, context.api_target(&request_id), handle)?;
         let human_line = invitee_added_receipt(&response);
         ("request.invite", response, human_line)
     } else {
-        let response = remove_request_invitee(api, api_target(&context, &request_id), handle)?;
+        let response = remove_request_invitee(api, context.api_target(&request_id), handle)?;
         let human_line = invitee_removed_receipt(&response);
         ("request.uninvite", response, human_line)
     };
@@ -190,7 +167,7 @@ pub(super) fn leave_invited_request(
     target: RequestTargetArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let (context, request_id, _) = load_exact_request(git_repo, api, target)?;
-    let response = leave_request(api, api_target(&context, &request_id))?;
+    let response = leave_request(api, context.api_target(&request_id))?;
     let human_line = leave_receipt(&request_id, &response);
     Ok(RequestCommandOutcome::new(
         "request.leave",
@@ -216,13 +193,14 @@ pub(super) fn merge_request_command(
         yes,
         !machine_output,
     )?;
-    let response = merge_request(api, api_target(&context, &request_id))?;
-    let human_lines = request_mutation_receipt_lines("Merged", Some(&before.request), &response);
+    let response = merge_request(api, context.api_target(&request_id))?;
+    let human_lines = request_mutation_receipt_lines("Merged", &response);
     Ok(RequestCommandOutcome::new(
         "request.merge",
-        RequestCommandResult::Mutation(RepoResponse {
+        RequestCommandResult::Mutation(MutationResult {
             repo: context.repo,
             response,
+            attachments: Vec::new(),
         }),
         human_lines,
     ))
@@ -236,7 +214,7 @@ pub(super) fn rate_request_command(
     reason: String,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let (context, request_id, _) = load_exact_request(git_repo, api, target)?;
-    let response = rate_request(api, api_target(&context, &request_id), score, reason)?;
+    let response = rate_request(api, context.api_target(&request_id), score, reason)?;
     let human_line = format!(
         "Rated @{} {}/5 — {}",
         terminal_text(&response.subject.handle),
@@ -311,7 +289,7 @@ pub(super) fn show_one_request(
     let (context, request_id, detail) = load_exact_request(git_repo, api, target)?;
     let activity = full_request_activity(
         api,
-        api_target(&context, &request_id),
+        context.api_target(&request_id),
         0,
         detail.request.activity_version,
     )?;

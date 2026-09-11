@@ -1,10 +1,11 @@
+use crate::persistence_ids::generate_prefixed_id;
+use crate::use_cases::request_access::{request_policy_for_viewer, visible_request};
 use crate::{
     auth::scope::{optional_scope_user, principal_for_scope_user, require_scope_user},
     error::ApiError,
-    git::request_refs::delete_request_ref_from_store,
     http::responses::*,
     persistence::unix_now,
-    product_analytics::{ProductEvent, RequestCloseOutcome},
+    product_analytics::ProductEvent,
     repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
@@ -17,10 +18,10 @@ use axum::{
 };
 use scope_api_contract::{
     AddRequestInviteeRequest, EditRequestIdentityRequest, LeaveRequestResponse,
-    RemoveRequestInviteeRequest, RequestActorSummaryResponse, RequestCloseResponse,
-    RequestDetailResponse, RequestInviteeMutationResponse, RequestInviteeResponse,
-    RequestListResponse, RequestMergeabilityResponse, RequestMutationResponse,
-    RequestPermissionsResponse, RequestSummaryResponse, StartRequestRequest, SubmitRequestRequest,
+    RemoveRequestInviteeRequest, RequestCloseResponse, RequestDetailResponse,
+    RequestInviteeMutationResponse, RequestListResponse, RequestMergeabilityResponse,
+    RequestMutationResponse, RequestPermissionsResponse, RequestSummaryResponse,
+    StartRequestRequest, SubmitRequestRequest,
 };
 use scope_domain::{
     projection::{ProjectionViewKey, project_graph},
@@ -28,11 +29,11 @@ use scope_domain::{
     repository::access::{RepositoryAccess, RepositoryAccessContext, RepositoryActor},
     requests::{
         CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
-        RequestAudience, RequestViewer, StartRequestInput, canonical_request_ref,
-        request_actor_role, request_mergeability, request_policy,
+        RequestAudience, RequestViewer, StartRequestInput, request_actor_role,
+        request_mergeability, request_policy,
     },
 };
-use scope_postgres::db::{CloseRequestCommand, EditRequestIdentityCommand, SubmitRequestCommand};
+use scope_postgres::db::{EditRequestIdentityCommand, SubmitRequestCommand};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -153,7 +154,7 @@ pub(crate) async fn submit_request(
         .submit_request(SubmitRequestCommand {
             request_id: request.id,
             actor_user_id: user.id.clone(),
-            event_id: random_id("event_request_submitted")?,
+            event_id: generate_prefixed_id("event_request_submitted_")?,
             now_unix: unix_now()?,
         })
         .await?;
@@ -255,60 +256,21 @@ pub(crate) async fn close_request(
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let request =
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
-    let request_audience = request.audience;
-    let actor_role = request_actor_role(access);
     if !request_policy(&request, RequestViewer::new(access, Some(&user.id), false))
         .permissions
         .can_close
     {
         return Err(ApiError::forbidden("request close access required"));
     }
-    let request_ref = canonical_request_ref(&request.name);
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    let mutation = state
-        .metadata
-        .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: request.id,
-                actor_user_id: user.id.clone(),
-                event_id: random_id("event_request_closed")?,
-                now_unix: unix_now()?,
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await?;
+    let mutation =
+        crate::use_cases::request_close::close_request(&state, &repo, &request, &user.id).await?;
     match mutation {
-        CloseRequestMutation::DeletedDraft { .. } => {
-            state
-                .product_analytics
-                .capture(ProductEvent::request_closed(
-                    &user.id,
-                    request_audience,
-                    actor_role,
-                    RequestCloseOutcome::DraftDeleted,
-                ));
-            delete_request_ref_from_store(&state, &repo.incarnation(), &request_ref)?;
-            state
-                .publish_request_summary_refresh(
-                    &repo.incarnation(),
-                    RepoChangeReason::RequestDeleted,
-                )
-                .await;
-            Ok(Json(RequestCloseResponse {
-                deleted: true,
-                request: None,
-            }))
-        }
+        CloseRequestMutation::DeletedDraft { .. } => Ok(Json(RequestCloseResponse {
+            deleted: true,
+            request: None,
+        })),
         CloseRequestMutation::Closed { request, .. } => {
-            state
-                .product_analytics
-                .capture(ProductEvent::request_closed(
-                    &user.id,
-                    request_audience,
-                    actor_role,
-                    RequestCloseOutcome::Closed,
-                ));
             let request = request_response_for_viewer(
                 &state,
                 request,
@@ -317,12 +279,6 @@ pub(crate) async fn close_request(
                 Some(&user.id),
             )
             .await?;
-            state
-                .publish_request_summary_refresh(
-                    &repo.incarnation(),
-                    RepoChangeReason::RequestClosed,
-                )
-                .await;
             Ok(Json(RequestCloseResponse {
                 deleted: false,
                 request: Some(request),
@@ -351,7 +307,7 @@ pub(crate) async fn start_request(
     let base_main_oid = current_main_oid_for_audience(&state, &repo, audience)
         .await?
         .ok_or_else(|| ApiError::conflict("repo has no main branch to base a request on"))?;
-    let request_id = random_id("req")?;
+    let request_id = generate_prefixed_id("req_")?;
     let now_unix = unix_now()?;
     let mutation = state
         .metadata
@@ -365,7 +321,7 @@ pub(crate) async fn start_request(
             author_role: request_actor_role(access),
             audience,
             base_main_oid,
-            event_id: random_id("event_request_started")?,
+            event_id: generate_prefixed_id("event_request_started_")?,
             now_unix,
         })
         .await?;
@@ -408,7 +364,7 @@ pub(crate) async fn edit_request_identity(
         .edit_request_identity(EditRequestIdentityCommand {
             request_id: request.id,
             actor_user_id: user.id.clone(),
-            event_id: random_id("event_request_identity_edited")?,
+            event_id: generate_prefixed_id("event_request_identity_edited_")?,
             title: input.title,
             description_markdown: input.description_markdown,
             expected_description_markdown: input.expected_description_markdown,
@@ -511,14 +467,7 @@ pub(crate) async fn leave_request(
             actor_user_id: user.id.clone(),
         })
         .await?;
-    let invitee = RequestInviteeResponse {
-        user: RequestActorSummaryResponse {
-            id: invitee.user.id,
-            handle: invitee.user.handle,
-        },
-        invited_by_user_id: invitee.invitee.invited_by_user_id,
-        created_at_unix: invitee.invitee.created_at_unix,
-    };
+    let invitee = request_invitee_response(invitee);
     state
         .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestInviteeLeft)
         .await;
@@ -548,14 +497,7 @@ async fn invitee_mutation_response(
         Some(viewer_user_id),
     )
     .await?;
-    let invitee = RequestInviteeResponse {
-        user: RequestActorSummaryResponse {
-            id: invitee.user.id,
-            handle: invitee.user.handle,
-        },
-        invited_by_user_id: invitee.invitee.invited_by_user_id,
-        created_at_unix: invitee.invitee.created_at_unix,
-    };
+    let invitee = request_invitee_response(invitee);
     state
         .publish_request_summary_refresh(&repo.incarnation(), refresh_reason)
         .await;
@@ -579,41 +521,6 @@ pub(crate) async fn repo_and_access(
     Ok((repo, access, user.map(|user| user.id)))
 }
 
-pub(crate) async fn visible_request(
-    state: &AppState,
-    repo_id: &str,
-    access: RepositoryAccess,
-    viewer_user_id: Option<&str>,
-    request_id: &str,
-) -> Result<Request, ApiError> {
-    let request = state
-        .metadata
-        .requests()
-        .request_by_id(request_id)
-        .await?
-        .ok_or_else(|| ApiError::not_found("request not found"))?;
-    let is_invitee = match viewer_user_id {
-        Some(user_id) => {
-            state
-                .metadata
-                .requests()
-                .request_is_invitee(&request.id, user_id)
-                .await?
-        }
-        None => false,
-    };
-    if request.repo_id != repo_id
-        || !request_policy(
-            &request,
-            RequestViewer::new(access, viewer_user_id, is_invitee),
-        )
-        .exact_visible
-    {
-        return Err(ApiError::not_found("request not found"));
-    }
-    Ok(request)
-}
-
 async fn request_response_for_viewer(
     state: &AppState,
     request: Request,
@@ -621,20 +528,7 @@ async fn request_response_for_viewer(
     current_main_oid: Option<String>,
     viewer_user_id: Option<&str>,
 ) -> Result<RequestSummaryResponse, ApiError> {
-    let is_invitee = match viewer_user_id {
-        Some(user_id) => {
-            state
-                .metadata
-                .requests()
-                .request_is_invitee(&request.id, user_id)
-                .await?
-        }
-        None => false,
-    };
-    let policy = request_policy(
-        &request,
-        RequestViewer::new(access, viewer_user_id, is_invitee),
-    );
+    let policy = request_policy_for_viewer(state, &request, access, viewer_user_id).await?;
     let invitees = if request.audience == RequestAudience::Public && policy.exact_visible {
         state
             .metadata
@@ -642,14 +536,7 @@ async fn request_response_for_viewer(
             .request_invitees(&request.id)
             .await?
             .into_iter()
-            .map(|read| RequestInviteeResponse {
-                user: RequestActorSummaryResponse {
-                    id: read.user.id,
-                    handle: read.user.handle,
-                },
-                invited_by_user_id: read.invitee.invited_by_user_id,
-                created_at_unix: read.invitee.created_at_unix,
-            })
+            .map(request_invitee_response)
             .collect()
     } else {
         Vec::new()
@@ -699,14 +586,6 @@ pub(crate) async fn current_main_oid_for_audience(
         .live_projection_head_oid(repo, view_key)
         .await
         .map_err(Into::into)
-}
-
-pub(crate) fn random_id(prefix: &str) -> Result<String, ApiError> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| {
-        ApiError::internal_message(format!("failed to create {prefix} id: {error}"))
-    })?;
-    Ok(format!("{prefix}_{}", hex::encode(bytes)))
 }
 
 pub(crate) async fn repo_metadata_and_access(

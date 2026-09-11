@@ -1,7 +1,8 @@
 use super::entities;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QueryResult, QuerySelect, Statement, sea_query::Expr,
+    FromQueryResult, IntoActiveModel, QueryFilter, QueryOrder, QueryResult, QuerySelect, Statement,
+    sea_query::Expr,
 };
 use std::collections::BTreeMap;
 use {
@@ -15,6 +16,16 @@ use {
 pub struct RequestDiscussionReplyReadModel {
     pub reply: RequestDiscussionReply,
     pub reply_to: Option<RequestDiscussionReplyReferenceReadModel>,
+}
+
+impl RequestDiscussionReplyReadModel {
+    pub(super) fn author_user_ids(&self) -> impl Iterator<Item = String> + '_ {
+        std::iter::once(self.reply.author_user_id.clone()).chain(
+            self.reply_to
+                .as_ref()
+                .map(|target| target.author_user_id.clone()),
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -269,31 +280,9 @@ where
 }
 
 fn reply_read_model(row: &QueryResult) -> Result<RequestDiscussionReplyReadModel, PostgresError> {
-    let reply = entities::request_discussion_reply::Model {
-        id: row.try_get("", "id").map_err(PostgresError::internal)?,
-        discussion_id: row
-            .try_get("", "discussion_id")
-            .map_err(PostgresError::internal)?,
-        position: row
-            .try_get("", "position")
-            .map_err(PostgresError::internal)?,
-        author_user_id: row
-            .try_get("", "author_user_id")
-            .map_err(PostgresError::internal)?,
-        body_markdown: row
-            .try_get("", "body_markdown")
-            .map_err(PostgresError::internal)?,
-        reply_to_reply_id: row
-            .try_get("", "reply_to_reply_id")
-            .map_err(PostgresError::internal)?,
-        client_reply_id: row
-            .try_get("", "client_reply_id")
-            .map_err(PostgresError::internal)?,
-        created_at_unix: row
-            .try_get("", "created_at_unix")
-            .map_err(PostgresError::internal)?,
-    }
-    .try_into_domain()?;
+    let reply = entities::request_discussion_reply::Model::from_query_result(row, "")
+        .map_err(PostgresError::internal)?
+        .try_into_domain()?;
     let reply_to = row
         .try_get::<Option<String>>("", "target_id")
         .map_err(PostgresError::internal)?

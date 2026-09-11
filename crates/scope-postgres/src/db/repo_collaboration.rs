@@ -14,10 +14,26 @@ use scope_domain::{
         RepositoryInvite, RepositoryMember, RepositoryMemberPermissions,
         normalize_repository_invite_email,
     },
-    repository::{Repository, repo_id},
+    repository::{Repository, RepositoryIncarnation, repo_id},
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
+
+pub struct RepositoryCollaborationMutation<T> {
+    pub incarnation: RepositoryIncarnation,
+    pub change_version: u64,
+    pub value: T,
+}
+
+impl<T> RepositoryCollaborationMutation<T> {
+    fn committed(repo: &Repository, value: T) -> Self {
+        Self {
+            incarnation: repo.incarnation(),
+            change_version: repo.record.change_version,
+            value,
+        }
+    }
+}
 
 pub struct CreateRepositoryInviteMutation {
     pub owner: String,
@@ -84,13 +100,12 @@ impl RepositoryStore {
         &self,
         command: CreateRepositoryInviteMutation,
         generated_ids: &dyn GeneratedIdSource,
-    ) -> Result<RepositoryInvite, PostgresError> {
+    ) -> Result<RepositoryCollaborationMutation<RepositoryInvite>, PostgresError> {
         let now_unix = command.now_unix;
         let repo_id = repo_id(&command.owner, &command.name);
         let owner_name = command.owner.clone();
         let name = command.name.clone();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let row = entities::repository::Entity::find_by_id(repo_id)
             .one(&tx)
@@ -124,14 +139,14 @@ impl RepositoryStore {
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(mutation)
+        Ok(RepositoryCollaborationMutation::committed(&repo, mutation))
     }
 
     pub async fn update_repository_member_permissions(
         &self,
         command: UpdateRepositoryMemberPermissionsCommand,
         generated_ids: &dyn GeneratedIdSource,
-    ) -> Result<RepositoryMember, PostgresError> {
+    ) -> Result<RepositoryCollaborationMutation<RepositoryMember>, PostgresError> {
         let UpdateRepositoryMemberPermissionsCommand {
             owner,
             name,
@@ -161,7 +176,7 @@ impl RepositoryStore {
         invite_id: &str,
         now_unix: u64,
         generated_ids: &dyn GeneratedIdSource,
-    ) -> Result<RepositoryInvite, PostgresError> {
+    ) -> Result<RepositoryCollaborationMutation<RepositoryInvite>, PostgresError> {
         let owner_user_id = owner_user_id.to_string();
         let invite_id = invite_id.to_string();
         mutate_repository_collaboration(self, owner, name, now_unix, generated_ids, move |repo| {
@@ -179,12 +194,11 @@ impl RepositoryStore {
         member_user_id: &str,
         now_unix: u64,
         generated_ids: &dyn GeneratedIdSource,
-    ) -> Result<RepositoryMember, PostgresError> {
+    ) -> Result<RepositoryCollaborationMutation<RepositoryMember>, PostgresError> {
         let repo_id = repo_id(owner, name);
         let owner = owner.to_string();
         let name = name.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let row = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
@@ -205,7 +219,7 @@ impl RepositoryStore {
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(removed)
+        Ok(RepositoryCollaborationMutation::committed(&repo, removed))
     }
 
     pub async fn repository_invite_by_token_hash(
@@ -237,8 +251,7 @@ impl RepositoryStore {
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<(scope_domain::repository::Repository, RepositoryMember), PostgresError> {
         let token_hash = token_hash.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository-invite-token", &token_hash).await?;
         let invite = entities::repository_invite::Entity::find()
             .filter(entities::repository_invite::Column::TokenHash.eq(token_hash.clone()))
@@ -282,7 +295,7 @@ async fn mutate_repository_collaboration<T, F>(
     now_unix: u64,
     generated_ids: &dyn GeneratedIdSource,
     op: F,
-) -> Result<T, PostgresError>
+) -> Result<RepositoryCollaborationMutation<T>, PostgresError>
 where
     T: Send + 'static,
     F: FnOnce(&mut Repository) -> Result<T, PostgresError> + Send + 'static,
@@ -290,8 +303,7 @@ where
     let repo_id = repo_id(owner, name);
     let owner = owner.to_string();
     let name = name.to_string();
-    let db = Arc::clone(&store.db);
-    let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+    let tx = store.db.begin().await.map_err(PostgresError::internal)?;
     acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
     let row = entities::repository::Entity::find_by_id(repo_id)
         .one(&tx)
@@ -311,7 +323,7 @@ where
     )
     .await?;
     tx.commit().await.map_err(PostgresError::internal)?;
-    Ok(result)
+    Ok(RepositoryCollaborationMutation::committed(&repo, result))
 }
 
 async fn user_by_normalized_email<C>(

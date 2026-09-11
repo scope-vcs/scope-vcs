@@ -590,7 +590,6 @@ mod authorization_tests {
             can_read_private_files: actor != RepositoryActor::Public,
             can_push,
             can_change_file_visibility: can_change_visibility,
-            can_apply_changes: false,
             can_manage_members: false,
             can_delete_repo: false,
         }

@@ -1,4 +1,4 @@
-use super::requests::*;
+use super::{requests::*, requests_tests::working_request};
 use crate::content::{DEFAULT_GIT_FILE_MODE, SourceBlob};
 
 #[test]
@@ -23,23 +23,7 @@ fn submission_requires_the_author_and_a_pushed_snapshot() {
     input.actor_is_author = false;
     assert!(submit_request(&pushed_draft(RequestActorRole::Member), input).is_err());
 
-    let draft = start_request(
-        StartRequestFacts::default(),
-        StartRequestInput {
-            id: "request_1".to_string(),
-            repo_id: "owner/repo".to_string(),
-            name: "fix-parser".to_string(),
-            author_user_id: "author".to_string(),
-            title: Some("Fix parser".to_string()),
-            author_role: RequestActorRole::Public,
-            audience: RequestAudience::Public,
-            base_main_oid: "base".to_string(),
-            event_id: "event_started".to_string(),
-            now_unix: 10,
-        },
-    )
-    .unwrap()
-    .request;
+    let draft = working_request();
     assert!(submit_request(&draft, submit_input()).is_err());
 }
 
@@ -85,23 +69,8 @@ fn merge_input() -> MergeRequestInput {
 }
 
 fn pushed_draft(role: RequestActorRole) -> Request {
-    let mut request = start_request(
-        StartRequestFacts::default(),
-        StartRequestInput {
-            id: "request_1".to_string(),
-            repo_id: "owner/repo".to_string(),
-            name: "fix-parser".to_string(),
-            author_user_id: "author".to_string(),
-            title: Some("Fix parser".to_string()),
-            author_role: role,
-            audience: RequestAudience::Public,
-            base_main_oid: "base".to_string(),
-            event_id: "event_started".to_string(),
-            now_unix: 10,
-        },
-    )
-    .unwrap()
-    .request;
+    let mut request = working_request();
+    request.author_role = role;
     request.head_oid = "head".to_string();
     request.git_snapshot = Some(SourceBlob {
         content_ref: crate::content_ref::ContentRef::git_bundle_sha256("head"),

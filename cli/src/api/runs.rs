@@ -13,13 +13,11 @@ pub fn get_push_trigger_evaluation(
     repo: &str,
     head_oid: &str,
 ) -> anyhow::Result<PushTriggerEvaluationResponse> {
-    decode_json_response(
+    execute_json_request(
         api.request(
             reqwest::Method::GET,
             routes::repo_push_trigger_evaluation(owner, repo, head_oid),
-        )
-        .send()
-        .context("load Scope push trigger evaluation")?,
+        ),
         "load Scope push trigger evaluation",
     )
 }
@@ -30,11 +28,9 @@ pub fn resolve_manual_run(
     repo: &str,
     query: &CreateManualRunQuery,
 ) -> anyhow::Result<ResolveManualRunResponse> {
-    decode_json_response(
+    execute_json_request(
         api.request(reqwest::Method::POST, routes::repo_run_resolve(owner, repo))
-            .query(query)
-            .send()
-            .context("resolve Scope run source")?,
+            .query(query),
         "resolve Scope run source",
     )
 }
@@ -46,13 +42,11 @@ pub fn create_manual_run(
     query: &CreateManualRunQuery,
     bundle: Vec<u8>,
 ) -> anyhow::Result<RunResponse> {
-    decode_json_response(
+    execute_json_request(
         api.request(reqwest::Method::POST, routes::repo_runs(owner, repo))
             .query(query)
             .header("content-type", "application/octet-stream")
-            .body(bundle)
-            .send()
-            .context("create Scope run")?,
+            .body(bundle),
         "create Scope run",
     )
 }
@@ -68,13 +62,11 @@ pub fn run_detail(
     repo: &str,
     run_id: &str,
 ) -> anyhow::Result<RepositoryRunDetailResponse> {
-    decode_json_response(
+    execute_json_request(
         api.request(
             reqwest::Method::GET,
             routes::repo_run_detail(owner, repo, run_id),
-        )
-        .send()
-        .context("load Scope run detail")?,
+        ),
         "load Scope run detail",
     )
 }
@@ -177,12 +169,7 @@ pub fn retry_run(
 }
 
 fn mutate_run(api: ApiSession<'_>, path: String, context: &str) -> anyhow::Result<RunResponse> {
-    decode_json_response(
-        api.request(reqwest::Method::POST, path)
-            .send()
-            .with_context(|| context.to_string())?,
-        context,
-    )
+    execute_json_request(api.request(reqwest::Method::POST, path), context)
 }
 
 pub fn run_workflows(
@@ -190,13 +177,11 @@ pub fn run_workflows(
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepositoryRunWorkflowListResponse> {
-    decode_json_response(
+    execute_json_request(
         api.request(
             reqwest::Method::GET,
             routes::repo_run_workflows(owner, repo),
-        )
-        .send()
-        .context("list run workflows")?,
+        ),
         "list run workflows",
     )
 }
@@ -216,11 +201,9 @@ pub fn run_history(
     if let Some(after) = after {
         query.push(("after", after.into()));
     }
-    decode_json_response(
+    execute_json_request(
         api.request(reqwest::Method::GET, routes::repo_runs(owner, repo))
-            .query(&query)
-            .send()
-            .context("list runs")?,
+            .query(&query),
         "list runs",
     )
 }
@@ -234,14 +217,12 @@ pub fn run_step_logs(
     step: u32,
     after: u64,
 ) -> anyhow::Result<RepositoryRunStepLogPageResponse> {
-    decode_json_response(
+    execute_json_request(
         api.request(
             reqwest::Method::GET,
             routes::repo_run_step_logs(owner, repo, run_id, attempt, step),
         )
-        .query(&[("after", after)])
-        .send()
-        .context("load run logs")?,
+        .query(&[("after", after)]),
         "load run logs",
     )
 }

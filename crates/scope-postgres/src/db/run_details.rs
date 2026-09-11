@@ -56,13 +56,6 @@ impl RunStore {
             attempts,
         }))
     }
-
-    pub async fn run_attempt_details(
-        &self,
-        run_id: &str,
-    ) -> Result<Vec<RunAttemptDetail>, PostgresError> {
-        run_attempt_details_with(self.db.as_ref(), run_id).await
-    }
 }
 
 async fn run_attempt_details_with<C>(
@@ -85,41 +78,32 @@ where
         .all(conn)
         .await
         .map_err(PostgresError::internal)?;
+    if attempts.is_empty() {
+        return Ok(Vec::new());
+    }
     let attempt_ids = attempts
         .iter()
         .map(|attempt| attempt.id.clone())
         .collect::<Vec<_>>();
-    let step_models = if attempt_ids.is_empty() {
-        Vec::new()
-    } else {
-        entities::run_attempt_step::Entity::find()
-            .filter(entities::run_attempt_step::Column::AttemptId.is_in(attempt_ids.clone()))
-            .order_by_asc(entities::run_attempt_step::Column::AttemptId)
-            .order_by_asc(entities::run_attempt_step::Column::StepIndex)
-            .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
-    };
-    let cache_models = if attempt_ids.is_empty() {
-        Vec::new()
-    } else {
-        entities::run_attempt_cache::Entity::find()
-            .filter(entities::run_attempt_cache::Column::AttemptId.is_in(attempt_ids.clone()))
-            .order_by_asc(entities::run_attempt_cache::Column::AttemptId)
-            .order_by_asc(entities::run_attempt_cache::Column::CacheName)
-            .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
-    };
-    let cache_setup_models = if attempt_ids.is_empty() {
-        Vec::new()
-    } else {
-        entities::run_attempt_cache_setup::Entity::find()
-            .filter(entities::run_attempt_cache_setup::Column::AttemptId.is_in(attempt_ids.clone()))
-            .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
-    };
+    let step_models = entities::run_attempt_step::Entity::find()
+        .filter(entities::run_attempt_step::Column::AttemptId.is_in(attempt_ids.clone()))
+        .order_by_asc(entities::run_attempt_step::Column::AttemptId)
+        .order_by_asc(entities::run_attempt_step::Column::StepIndex)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    let cache_models = entities::run_attempt_cache::Entity::find()
+        .filter(entities::run_attempt_cache::Column::AttemptId.is_in(attempt_ids.clone()))
+        .order_by_asc(entities::run_attempt_cache::Column::AttemptId)
+        .order_by_asc(entities::run_attempt_cache::Column::CacheName)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    let cache_setup_models = entities::run_attempt_cache_setup::Entity::find()
+        .filter(entities::run_attempt_cache_setup::Column::AttemptId.is_in(attempt_ids.clone()))
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?;
     let mut steps_by_attempt = HashMap::<String, Vec<RunAttemptStep>>::new();
     for step in step_models {
         let attempt_id = step.attempt_id.clone();

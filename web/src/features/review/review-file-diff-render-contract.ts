@@ -2,6 +2,7 @@ import type { ReviewDiffOmittedReason } from '../../api/types'
 
 export const REVIEW_FILE_DIFF_RENDER_BUDGET = Object.freeze({
   deadlineMs: 1_500,
+  startupDeadlineMs: 10_000,
   maxConcurrentRenders: 2,
   maxHighlightLanguages: 16,
   maxHunks: 64,

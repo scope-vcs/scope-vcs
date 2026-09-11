@@ -151,7 +151,7 @@ async fn add_writer(state: &AppState) -> String {
             repo.members.push(test_repository_member(
                 TEST_REPO_ID,
                 writer.id.clone(),
-                member_permissions(true, false, false),
+                member_permissions(true, false),
             ));
         })
         .await

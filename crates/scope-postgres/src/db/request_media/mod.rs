@@ -1,5 +1,6 @@
 mod access;
 mod bindings;
+mod budget;
 mod cleanup;
 mod persistence;
 mod processing;
@@ -68,12 +69,6 @@ pub struct FinishRequestAttachmentUploadCommand {
     pub actor_user_id: String,
     pub parts: Vec<RequestAttachmentPartReceipt>,
     pub now_unix: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct AuthorizedRequestAttachment {
-    pub attachment: RequestAttachment,
-    pub repository_id: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

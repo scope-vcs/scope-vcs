@@ -1,3 +1,4 @@
+use crate::use_cases::request_access::visible_request;
 use crate::{
     error::ApiError,
     git::{
@@ -8,14 +9,18 @@ use crate::{
         file_diffs::{
             MAX_RENDERED_TEXT_BYTES, binary_content_response, review_content_response_for_bytes,
         },
-        requests::{repo_and_access, visible_request},
+        requests::repo_and_access,
         responses::{
             RequestFileDiffRequest, ReviewFileContentResponse, ReviewFileDiffResponse,
             request_actor_summary_response,
         },
     },
     state::AppState,
-    use_cases::request_revision_inspection::{commit_belongs_to_revision, request_changes},
+    use_cases::request_revision_inspection::{
+        InspectedRequestFile, RequestCommitSummary, commit_belongs_to_revision,
+        inspect_request_commit, inspect_request_commits_identity_only, normalized_scope_path,
+        request_revision_commit_files,
+    },
 };
 use axum::{
     Json,
@@ -27,21 +32,12 @@ use scope_api_contract::{
     RequestRevisionListResponse, RequestRevisionResponse,
 };
 use scope_domain::{
-    history::FileChangeKind,
-    policy::{Policy, ScopePath},
     repository::Repository,
     repository::access::RepositoryAccess,
-    requests::{Request, RequestRevision, select_request_review_revision},
+    requests::{RequestRevision, select_request_review_revision},
 };
 use serde::Deserialize;
 use std::{path::Path as FsPath, sync::Arc};
-
-mod inspection;
-
-pub(crate) use inspection::RequestRevisionCommitVisibility;
-use inspection::{
-    inspect_request_commit, inspect_request_commits_identity_only, request_revision_commit_files,
-};
 
 const MAX_LISTED_REQUEST_REVISIONS: usize = 50;
 const MAX_LISTED_COMMITS_PER_REVISION: usize = 100;
@@ -165,7 +161,7 @@ pub(crate) async fn list_request_revisions(
             actor: request_actor_summary_response(&revision.actor_user_id, &users)?,
             old_head_oid,
             new_head_oid,
-            commits,
+            commits: commits.into_iter().map(request_commit_response).collect(),
             inspection,
             created_at_unix: revision.created_at_unix,
         });
@@ -264,7 +260,6 @@ pub(crate) async fn get_request_revision_commit_file_diff(
                 &commit_oid,
             )?;
             let file = inspected
-                .commit
                 .files
                 .into_iter()
                 .find(|file| file.path == path_for_inspection)
@@ -285,7 +280,7 @@ pub(crate) async fn get_request_revision_commit_file_diff(
     .await?;
     Ok(Json(ReviewFileDiffResponse {
         path,
-        kind: file.kind,
+        kind: file.kind.into(),
         old_mode: file.old_mode,
         new_mode: file.new_mode,
         old_content,
@@ -336,7 +331,7 @@ fn request_revision_commits(
             continue;
         }
         let commit = inspect_request_commit(raw_repo, &repo.policy, access, &commit_oids[index])?;
-        metadata_incomplete |= commit.inspection == RequestRevisionInspectionState::Incomplete;
+        metadata_incomplete |= !commit.inspection_complete;
         if let Some(mut summary) = commit.commit {
             file_budget_incomplete |= truncate_commit_files(&mut summary, &mut remaining_files);
             visible.push((index, summary));
@@ -354,7 +349,7 @@ fn request_revision_commits(
             &identity_only_oids,
         )?;
         for (index, commit) in identity_only_indexes.into_iter().zip(identity_only) {
-            metadata_incomplete |= commit.inspection == RequestRevisionInspectionState::Incomplete;
+            metadata_incomplete |= !commit.inspection_complete;
             if let Some(summary) = commit.commit {
                 file_budget_incomplete |= summary.files_truncated;
                 visible.push((index, summary));
@@ -374,10 +369,7 @@ fn request_revision_commits(
     })
 }
 
-fn truncate_commit_files(
-    commit: &mut RequestRevisionCommitResponse,
-    remaining_files: &mut usize,
-) -> bool {
+fn truncate_commit_files(commit: &mut RequestCommitSummary, remaining_files: &mut usize) -> bool {
     let listed = commit.files.len().min(*remaining_files);
     commit.files.truncate(listed);
     commit.files_truncated = listed < commit.change_count;
@@ -386,7 +378,7 @@ fn truncate_commit_files(
 }
 
 struct InspectedRequestCommits {
-    visible: Vec<RequestRevisionCommitResponse>,
+    visible: Vec<RequestCommitSummary>,
     inspected: usize,
     files_listed: usize,
     inspection: RequestRevisionInspectionState,
@@ -427,74 +419,33 @@ fn request_revision_commit_oids(
         .collect())
 }
 
-struct VisibleRequestChanges {
-    files: Vec<CommitFileResponse>,
-    hidden: bool,
-}
-
-fn request_changes_from_repo_with_visibility(
-    raw_repo: &FsPath,
-    policy: &Policy,
-    access: RepositoryAccess,
-    old_head_oid: &str,
-    new_head_oid: &str,
-    path: Option<&str>,
-) -> Result<VisibleRequestChanges, ApiError> {
-    let changes = request_changes(raw_repo, old_head_oid, new_head_oid, path)?;
-
-    let mut fields = changes.split(|byte| *byte == 0);
-    let mut files = Vec::new();
-    let mut hidden = false;
-    while let Some(header) = fields.next() {
-        if header.is_empty() {
-            continue;
-        }
-        let header = std::str::from_utf8(header).map_err(ApiError::bad_request)?;
-        let columns = header.split_ascii_whitespace().collect::<Vec<_>>();
-        if columns.len() != 5 || !columns[0].starts_with(':') {
-            return Err(ApiError::internal_message(format!(
-                "invalid request diff header {header}"
-            )));
-        }
-        let status = columns[4].as_bytes();
-        let path = fields
-            .next()
-            .ok_or_else(|| ApiError::internal_message("request diff is missing a path"))?;
-        let path = String::from_utf8(path.to_vec()).map_err(ApiError::bad_request)?;
-        let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
-        if !policy.can_read(&scope_path, access.can_read_private_files) {
-            hidden = true;
-            continue;
-        }
-        let kind = match status[0] {
-            b'A' => FileChangeKind::Added,
-            b'M' | b'T' => FileChangeKind::Modified,
-            b'D' => FileChangeKind::Deleted,
-            _ => {
-                return Err(ApiError::internal_message(format!(
-                    "unsupported request diff status {}",
-                    String::from_utf8_lossy(status)
-                )));
-            }
-        };
-        let old_oid = (kind != FileChangeKind::Added).then(|| columns[2].to_string());
-        let new_oid = (kind != FileChangeKind::Deleted).then(|| columns[3].to_string());
-        files.push(CommitFileResponse {
-            path,
-            kind: kind.into(),
-            old_mode: git_mode(columns[0].trim_start_matches(':')),
-            new_mode: git_mode(columns[1]),
-            old_oid,
-            new_oid,
-            visibility: policy.effective_visibility(&scope_path).into(),
-        });
+fn request_commit_response(commit: RequestCommitSummary) -> RequestRevisionCommitResponse {
+    RequestRevisionCommitResponse {
+        oid: commit.oid,
+        parent_oids: commit.parent_oids,
+        author: commit.author,
+        authored_at_unix: commit.authored_at_unix,
+        message: commit.message,
+        change_count: commit.change_count,
+        files: commit
+            .files
+            .into_iter()
+            .map(request_commit_file_response)
+            .collect(),
+        files_truncated: commit.files_truncated,
     }
-    files.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(VisibleRequestChanges { files, hidden })
 }
 
-fn git_mode(mode: &str) -> Option<String> {
-    (mode != "000000").then(|| mode.to_string())
+fn request_commit_file_response(file: InspectedRequestFile) -> CommitFileResponse {
+    CommitFileResponse {
+        path: file.path,
+        kind: file.kind.into(),
+        old_mode: file.old_mode,
+        new_mode: file.new_mode,
+        old_oid: file.old_oid,
+        new_oid: file.new_oid,
+        visibility: file.visibility.into(),
+    }
 }
 
 fn git_blob_content(repo: &FsPath, oid: &str) -> Result<ReviewFileContentResponse, ApiError> {
@@ -542,15 +493,6 @@ fn canonical_commit_oid(oid: String) -> Result<String, ApiError> {
     GitOid::try_from(oid)
         .map(String::from)
         .map_err(ApiError::bad_request)
-}
-
-fn normalized_scope_path(path: &str) -> Result<ScopePath, ApiError> {
-    let scope_path = ScopePath::parse(format!("/{}", path.trim_start_matches('/')))
-        .map_err(ApiError::bad_request)?;
-    if scope_path == ScopePath::root() {
-        return Err(ApiError::bad_request("file path is required"));
-    }
-    Ok(scope_path)
 }
 
 #[cfg(test)]

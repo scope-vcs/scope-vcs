@@ -6,7 +6,6 @@ import type {
   RequestDiscussionChangesResponse,
   RequestDiscussionMutationResponse,
   RequestDiscussionPageResponse,
-  RequestDiscussionReadResponse,
   RequestDiscussionReplyMutationResponse,
   RequestDiscussionReplyResponse,
   RequestDiscussionStatus,
@@ -20,7 +19,6 @@ export type RequestDiscussionReply = RequestDiscussionReplyResponse
 export type RequestDiscussion = RequestDiscussionSummaryResponse
 export type RequestDiscussionPage = RequestDiscussionPageResponse
 export type RequestDiscussionChanges = RequestDiscussionChangesResponse
-export type RequestDiscussionReadState = RequestDiscussionReadResponse
 export type RequestDiscussionMutation = RequestDiscussionMutationResponse
 export type RequestDiscussionReplyMutation = RequestDiscussionReplyMutationResponse
 export type RequestActivityPage = RequestActivityPageResponse

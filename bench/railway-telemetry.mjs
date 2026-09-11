@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { percentile, round } from './metrics.mjs';
+
+const execFileAsync = promisify(execFile);
 
 const PROCESS_FIELDS = [
   'process_id',
@@ -60,7 +63,8 @@ async function main() {
   const environment = required('SCOPE_RAILWAY_ENVIRONMENT');
   const since = process.env.SCOPE_RAILWAY_SINCE || '1h';
   const until = process.env.SCOPE_RAILWAY_UNTIL?.trim() || null;
-  const services = (process.env.SCOPE_RAILWAY_SERVICES || 'scope-api,scope-worker')
+  const manifest = JSON.parse(await readFile(new URL('../.github/deployment-services.json', import.meta.url), 'utf8'));
+  const services = (process.env.SCOPE_RAILWAY_SERVICES || ['api', 'run-worker'].map((key) => manifest.services[key].name).join(','))
     .split(',')
     .map((service) => service.trim())
     .filter(Boolean);
@@ -89,47 +93,14 @@ async function main() {
     ]);
     const gitLogs = [restoreLogs, contentLogs, materializationLogs].flat();
     const segmentLogs = [segmentIngestLogs, segmentRestoreLogs].flat();
-    const snapshots = logs.flatMap((entry) => {
-      const message = stripAnsi(entry.message || '');
-      if (!message.includes('runtime process snapshot')) return [];
-      return [{ timestamp: entry.timestamp, ...numericFields(message, PROCESS_FIELDS) }];
-    });
-    const compactions = logs.flatMap((entry) => {
-      const message = stripAnsi(entry.message || '');
-      if (!message.includes('Git compaction attempt completed')) return [];
-      return [{ timestamp: entry.timestamp, ...compactionFields(message) }];
-    });
-    const pushPersistence = logs.flatMap((entry) => {
-      const message = stripAnsi(entry.message || '');
-      if (!isPushPersistenceMessage(message)) return [];
-      return [{ timestamp: entry.timestamp, ...pushPersistenceFields(message) }];
-    });
-    const objectStoreOperations = logs.flatMap((entry) => {
-      const message = stripAnsi(entry.message || '');
-      if (!message.includes('object store operation timing')) return [];
-      return [{ timestamp: entry.timestamp, ...objectStoreFields(message) }];
-    });
-    const gitOperations = gitLogs.flatMap((entry) => {
-      const message = stripAnsi(entry.message || '');
-      if (!message.includes('Git restore operation completed')
-        && !message.includes('Git content read completed')
-        && !message.includes('repository Git replica materialization completed')) return [];
-      return [{ timestamp: entry.timestamp, ...gitOperationFields(message) }];
-    });
-    const gitSegmentTelemetry = segmentLogs.flatMap((entry) => {
-      const event = gitSegmentTelemetryFields(stripAnsi(entry.message || ''));
-      return event ? [{ timestamp: entry.timestamp, ...event }] : [];
-    });
-    const errors = logs.flatMap((entry) => {
-      const message = stripAnsi(entry.message || '');
-      return /Resource temporarily unavailable|capacity is exhausted|failed to spawn|panicked/i.test(message)
-        ? [{ timestamp: entry.timestamp, message }]
-        : [];
-    });
-    const capacityRejections = logs.flatMap((entry) => {
-      const rejection = capacityRejectionFields(stripAnsi(entry.message || ''));
-      return rejection ? [{ timestamp: entry.timestamp, ...rejection }] : [];
-    });
+    const snapshots = parseEvents(logs, /runtime process snapshot/, (message) => numericFields(message, PROCESS_FIELDS));
+    const compactions = parseEvents(logs, /Git compaction attempt completed/, compactionFields);
+    const pushPersistence = parseEvents(logs, /Git push persistence timing|repository mutation persistence timing/, pushPersistenceFields);
+    const objectStoreOperations = parseEvents(logs, /object store operation timing/, objectStoreFields);
+    const gitOperations = parseEvents(gitLogs, /Git restore operation completed|Git content read completed|repository Git replica materialization completed/, gitOperationFields);
+    const gitSegmentTelemetry = parseEvents(segmentLogs, /Git segment (ingest|restore) telemetry/, gitSegmentTelemetryFields);
+    const errors = parseEvents(logs, /Resource temporarily unavailable|capacity is exhausted|failed to spawn|panicked/i, (message) => ({ message }));
+    const capacityRejections = parseEvents(logs, /capacity/i, capacityRejectionFields);
     const metrics = JSON.parse(await railway(railwayMetricArgs(service, environment, since, until)));
     report.services[service] = {
       processSummary: summarizeSnapshots(snapshots),
@@ -173,7 +144,7 @@ async function railwayLogs(service, environment, since, until, lines, filter = n
   return parseJsonLines(await railway(args));
 }
 
-export function railwayMetricArgs(service, environment, since, until = null) {
+function railwayMetricArgs(service, environment, since, until = null) {
   const args = [
     'metrics',
     '--service', service,
@@ -188,27 +159,16 @@ export function railwayMetricArgs(service, environment, since, until = null) {
   return args;
 }
 
-function railway(args) {
-  return command('railway', args, {
-    ...process.env,
-    RAILWAY_CALLER: 'skill:use-railway@1.3.6',
-    RAILWAY_AGENT_SESSION: process.env.RAILWAY_AGENT_SESSION || 'railway-scope-stress-collector',
+async function railway(args) {
+  const { stdout } = await execFileAsync('railway', args, {
+    maxBuffer: Infinity,
+    env: {
+      ...process.env,
+      RAILWAY_CALLER: 'skill:use-railway@1.3.6',
+      RAILWAY_AGENT_SESSION: process.env.RAILWAY_AGENT_SESSION || 'railway-scope-stress-collector',
+    },
   });
-}
-
-function command(program, args, env) {
-  return new Promise((resolveCommand, rejectCommand) => {
-    const child = spawn(program, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
-    const stdout = [];
-    const stderr = [];
-    child.stdout.on('data', (chunk) => stdout.push(chunk));
-    child.stderr.on('data', (chunk) => stderr.push(chunk));
-    child.on('error', rejectCommand);
-    child.on('close', (code) => {
-      if (code === 0) resolveCommand(Buffer.concat(stdout).toString('utf8'));
-      else rejectCommand(new Error(Buffer.concat(stderr).toString('utf8') || `${program} exited ${code}`));
-    });
-  });
+  return stdout;
 }
 
 export function stripAnsi(value) {
@@ -285,11 +245,6 @@ export function pushPersistenceFields(message) {
       ...PUSH_PERSISTENCE_TIMINGS.map(([, field]) => field),
     ]),
   };
-}
-
-export function isPushPersistenceMessage(message) {
-  return message.includes('Git push persistence timing')
-    || message.includes('repository mutation persistence timing');
 }
 
 export function objectStoreFields(message) {
@@ -436,19 +391,14 @@ export function summarizeMaterializations(events) {
 }
 
 export function summarizeSnapshots(snapshots) {
-  return Object.fromEntries(PROCESS_FIELDS.flatMap((field) => {
-    const values = snapshots.map((snapshot) => snapshot[field]).filter(Number.isFinite);
-    return values.length > 0
-      ? [[field, { minimum: Math.min(...values), maximum: Math.max(...values), last: values.at(-1) }]]
-      : [];
-  }));
+  return Object.fromEntries(PROCESS_FIELDS
+    .map((field) => [field, gaugeSummary(snapshots, field)])
+    .filter(([, summary]) => summary !== null));
 }
 
 function summarizeMetrics(metrics) {
-  return Object.fromEntries(Object.entries(metrics.measurements || {}).map(([name, points]) => {
-    const values = points.map(({ value }) => value).filter(Number.isFinite);
-    return [name, values.length > 0 ? { minimum: Math.min(...values), maximum: Math.max(...values), last: values.at(-1) } : null];
-  }));
+  return Object.fromEntries(Object.entries(metrics.measurements || {})
+    .map(([name, points]) => [name, gaugeSummary(points, 'value')]));
 }
 
 function timingSummary(events, field) {
@@ -489,6 +439,15 @@ function textField(message, name) {
 function booleanField(message, name) {
   const value = textField(message, name);
   return value === 'true' ? true : value === 'false' ? false : null;
+}
+
+function parseEvents(entries, pattern, parse) {
+  return entries.flatMap((entry) => {
+    const message = stripAnsi(entry.message || '');
+    if (!pattern.test(message)) return [];
+    const fields = parse(message);
+    return fields ? [{ timestamp: entry.timestamp, ...fields }] : [];
+  });
 }
 
 function parseJsonLines(value) {

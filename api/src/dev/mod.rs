@@ -31,7 +31,7 @@ use std::sync::Arc;
 pub use env::is_local_dev_env;
 
 pub fn local_maintenance_database_url() -> anyhow::Result<String> {
-    Ok(env::validate_local_dev_environment()?.database_url)
+    Ok(env::validate_local_dev_environment()?.database.into_url())
 }
 
 pub async fn app_state_from_env() -> anyhow::Result<AppState> {
@@ -43,7 +43,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
         .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
     let git_storage_writer = Arc::new(crate::retired_git_storage::open_writer(&data_dir)?);
     let object_encryption_key = encryption_key_from_env()?;
-    let push_intent_signing_key = push_intent_signing_key(&data_dir, Some(&object_encryption_key))
+    let push_intent_signing_key = push_intent_signing_key(&object_encryption_key)
         .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
 
     let filesystem_root = data_dir.join("objects");
@@ -68,7 +68,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
             error.into_operator_diagnostic()
         )
     })?;
-    let metadata = MetadataStore::connect(settings.database_url.clone()).await?;
+    let metadata = MetadataStore::connect_local_dev(settings.database).await?;
     metadata
         .admin()
         .replace_catalog_for_seed(catalog)

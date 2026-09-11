@@ -95,76 +95,33 @@ fn workflow_cache_names_and_mount_paths_are_validated() {
 
 #[test]
 fn identity_is_partitioned_by_every_semantic_component() {
-    let workflow_cache = cache("cargo");
-    let base = identity(
-        "repo-1",
-        "/.scope/runs/test.yml",
-        "checks",
-        workflow_cache.clone(),
-        'a',
-        'b',
-    );
-    let other_repo = identity(
-        "repo-2",
-        "/.scope/runs/test.yml",
-        "checks",
-        workflow_cache.clone(),
-        'a',
-        'b',
-    );
-    let other_cache = identity(
-        "repo-1",
-        "/.scope/runs/test.yml",
-        "checks",
-        cache("cargo-target"),
-        'a',
-        'b',
-    );
-    let other_workflow = identity(
-        "repo-1",
-        "/.scope/runs/release.yml",
-        "checks",
-        cache("cargo"),
-        'a',
-        'b',
-    );
-    let other_job = identity(
-        "repo-1",
-        "/.scope/runs/test.yml",
-        "release",
-        cache("cargo"),
-        'a',
-        'b',
-    );
-    let other_group = identity(
-        "repo-1",
-        "/.scope/runs/test.yml",
-        "checks",
-        workflow_cache.clone(),
-        'c',
-        'b',
-    );
-    let other_exact = identity(
-        "repo-1",
-        "/.scope/runs/test.yml",
-        "checks",
-        workflow_cache,
-        'a',
-        'c',
-    );
-
-    assert_eq!(base.exact_digest(), base.exact_digest());
+    let path = "/.scope/runs/test.yml";
+    let base = identity("repo-1", path, "checks", cache("cargo"), 'a', 'b');
     assert_eq!(base.exact_digest().len(), 64);
-    assert_ne!(base.exact_digest(), other_repo.exact_digest());
-    assert_ne!(base.exact_digest(), other_cache.exact_digest());
-    assert_ne!(base.exact_digest(), other_workflow.exact_digest());
-    assert_ne!(base.exact_digest(), other_job.exact_digest());
-    assert_ne!(base.exact_digest(), other_group.exact_digest());
-    assert_ne!(base.exact_digest(), other_exact.exact_digest());
-    assert_eq!(
-        base.compatibility_group_digest(),
-        other_exact.compatibility_group_digest()
-    );
+    for (repository, workflow, job, cache_name, group, exact) in [
+        ("repo-2", path, "checks", "cargo", 'a', 'b'),
+        ("repo-1", path, "checks", "cargo-target", 'a', 'b'),
+        (
+            "repo-1",
+            "/.scope/runs/release.yml",
+            "checks",
+            "cargo",
+            'a',
+            'b',
+        ),
+        ("repo-1", path, "release", "cargo", 'a', 'b'),
+        ("repo-1", path, "checks", "cargo", 'c', 'b'),
+        ("repo-1", path, "checks", "cargo", 'a', 'c'),
+    ] {
+        let other = identity(repository, workflow, job, cache(cache_name), group, exact);
+        assert_ne!(base.exact_digest(), other.exact_digest());
+        if exact != 'b' {
+            assert_eq!(
+                base.compatibility_group_digest(),
+                other.compatibility_group_digest()
+            );
+        }
+    }
     assert!(
         CacheIdentity::new(
             " ",

@@ -21,7 +21,11 @@ use scope_git::{GitTreePath, StoredGitPush, prepare_git_push};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_git_storage::{GitStorageError, StagedGitSegment};
 use scope_object_store::{ContentObjectKind, content_object_for_bytes};
-use std::{path::Path as FsPath, process::Command, time::Instant};
+use std::{
+    path::Path as FsPath,
+    process::Command,
+    time::{Duration, Instant},
+};
 
 pub(super) fn pushed_commit_time(staging_repo: &FsPath, head_oid: &str) -> Result<i64, ApiError> {
     git_stdout_text(
@@ -53,22 +57,22 @@ pub(super) fn pushed_commit_message(
 
 pub(crate) fn git_refs(staging_repo: &FsPath) -> Result<Vec<(String, String)>, ApiError> {
     let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
-    let output = run_git_output(
-        Some(staging_repo),
-        &[
-            "for-each-ref",
-            "--format=%(refname)%00%(objectname)",
-            &main_ref,
-            "refs/tags",
-        ],
+    refs_for_prefixes(
+        staging_repo,
+        &[&main_ref, "refs/tags"],
         "reading pushed refs",
-    )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading pushed refs: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
+    )
+}
+
+pub(crate) fn refs_for_prefixes(
+    repo: &FsPath,
+    prefixes: &[&str],
+    action: &str,
+) -> Result<Vec<(String, String)>, ApiError> {
+    let mut args = vec!["for-each-ref", "--format=%(refname)%00%(objectname)"];
+    args.extend(prefixes.iter().copied());
+    let output = run_git_output(Some(repo), &args, action)?;
+    let output = require_git_success(output, action)?;
     let text = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
     text.lines()
         .map(|line| {
@@ -95,7 +99,13 @@ pub(super) fn git_tree_entries(
     staging_repo: &FsPath,
     head_oid: &str,
 ) -> Result<Vec<GitTreeFile>, ApiError> {
-    git_tree_entries_for_path(staging_repo, head_oid, None, true)
+    git_tree_entries_for_path(
+        staging_repo,
+        head_oid,
+        None,
+        true,
+        Instant::now() + RuntimeBudgets::default_git_command_timeout(),
+    )
 }
 
 pub(super) fn git_tree_entries_under(
@@ -103,7 +113,13 @@ pub(super) fn git_tree_entries_under(
     head_oid: &str,
     path: &str,
 ) -> Result<Vec<GitTreeFile>, ApiError> {
-    git_tree_entries_for_path(staging_repo, head_oid, Some(path), false)
+    git_tree_entries_for_path(
+        staging_repo,
+        head_oid,
+        Some(path),
+        false,
+        Instant::now() + RuntimeBudgets::default_git_command_timeout(),
+    )
 }
 
 fn git_tree_entries_for_path(
@@ -111,12 +127,14 @@ fn git_tree_entries_for_path(
     head_oid: &str,
     path: Option<&str>,
     enforce_import_limits: bool,
+    deadline: Instant,
 ) -> Result<Vec<GitTreeFile>, ApiError> {
     let mut args = vec!["ls-tree", "-rz", "-r", "-l", head_oid];
     if let Some(path) = path {
         args.extend(["--", path]);
     }
-    let output = run_git_output(Some(staging_repo), &args, "reading pushed tree")?;
+    let output = run_git_output_until(Some(staging_repo), &args, "reading pushed tree", deadline)?;
+    let output = require_git_success(output, "reading pushed tree")?;
     let mut pending_files = Vec::new();
     for raw in output.stdout.split(|byte| *byte == 0) {
         if raw.is_empty() {
@@ -174,18 +192,19 @@ fn git_tree_entries_for_path(
     Ok(pending_files)
 }
 
-pub(super) fn git_changed_tree_entries(
+pub(crate) fn git_changed_tree_entries(
     staging_repo: &FsPath,
     base_oid: Option<&str>,
     head_oid: &str,
+    deadline: Instant,
 ) -> Result<Vec<(ScopePath, Option<GitTreeFile>)>, ApiError> {
     let Some(base_oid) = base_oid else {
-        return git_tree_entries(staging_repo, head_oid)?
+        return git_tree_entries_for_path(staging_repo, head_oid, None, true, deadline)?
             .into_iter()
             .map(|entry| Ok((entry.path.to_scope_path(), Some(entry))))
             .collect();
     };
-    let output = run_git_output(
+    let output = run_git_output_until(
         Some(staging_repo),
         &[
             "diff-tree",
@@ -198,13 +217,9 @@ pub(super) fn git_changed_tree_entries(
             head_oid,
         ],
         "reading pushed Git delta",
+        deadline,
     )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading pushed Git delta: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
+    let output = require_git_success(output, "reading pushed Git delta")?;
 
     let mut fields = output.stdout.split(|byte| *byte == 0);
     let mut pending = Vec::new();
@@ -258,14 +273,9 @@ pub(super) fn git_changed_tree_entries(
                 "--batch-check=%(objectname) %(objecttype) %(objectsize)",
             ]),
             Some(requested_oids.into_bytes()),
-            RuntimeBudgets::default_git_command_timeout(),
+            remaining_git_time(deadline)?,
         )?;
-        if !output.status.success() {
-            return Err(ApiError::infrastructure_unavailable(format!(
-                "reading pushed blob sizes: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
-        }
+        let output = require_git_success(output, "reading pushed blob sizes")?;
         let size_output = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
         let mut sizes = size_output.lines().map(|line| {
             let values = line.split_whitespace().collect::<Vec<_>>();
@@ -349,10 +359,13 @@ pub(crate) async fn git_push_from_repo(
 ) -> Result<StagedGitPush, ApiError> {
     let _ingest_permit = state.runtime_budgets.try_git_segment_ingest()?;
     let storage_limits = state.runtime_budgets.git_storage_limits();
-    let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
-    let head_oid = git_stdout_text(repo, &["rev-parse", &refname], "reading pushed Git head")?
-        .trim()
-        .to_string();
+    let path = repo.to_path_buf();
+    let (head_oid, ingest_permit) = crate::git::blocking::run(move || {
+        let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
+        let head = git_stdout_text(&path, &["rev-parse", &refname], "reading pushed Git head")?;
+        Ok((head.trim().to_string(), _ingest_permit))
+    })
+    .await?;
     let mut revisions = format!("{head_oid}\n");
     if let Some(previous) = previous {
         revisions.push('^');
@@ -369,6 +382,7 @@ pub(crate) async fn git_push_from_repo(
     let repo = repo.to_path_buf();
     let timeout = state.runtime_budgets.git_command_timeout();
     let output = tokio::task::spawn_blocking(move || {
+        let _ingest_permit = ingest_permit;
         let runtime = tokio::runtime::Handle::current();
         let mut command = Command::new("git");
         command
@@ -493,13 +507,8 @@ pub(crate) async fn git_push_from_repo(
         duration_us = timings.total.as_micros(),
         bytes = timings.plaintext_bytes,
         blocked_us = timings.fanout_blocked.as_micros(),
-        active_ingests = 1_u64,
-        buffered_bytes = timings.chunk_bytes.saturating_mul(timings.channel_capacity),
-        disk_free_bytes = disk_free_bytes(staged_segment.local_pack_path()),
-        ledger_uploading = 0_u64,
-        ledger_ready = 1_u64,
-        ledger_published = 0_u64,
-        orphan_count = 0_u64,
+        configured_buffer_capacity_bytes =
+            timings.chunk_bytes.saturating_mul(timings.channel_capacity),
         "Git segment ingest telemetry"
     );
     tracing::info!(
@@ -517,54 +526,18 @@ pub(crate) async fn git_push_from_repo(
     })
 }
 
-#[cfg(unix)]
-fn disk_free_bytes(path: &FsPath) -> u64 {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-
-    let Some(path) = path.parent() else {
-        return 0;
-    };
-    let Ok(path) = CString::new(path.as_os_str().as_bytes()) else {
-        return 0;
-    };
-    let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
-    // SAFETY: `path` is a live NUL-terminated string and `stats` points to
-    // writable storage initialized by statvfs on success.
-    if unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) } != 0 {
-        return 0;
-    }
-    // SAFETY: statvfs returned success and initialized the structure.
-    let stats = unsafe { stats.assume_init() };
-    stats.f_bavail.saturating_mul(stats.f_frsize)
-}
-
-#[cfg(not(unix))]
-fn disk_free_bytes(_path: &FsPath) -> u64 {
-    0
-}
-
 pub(crate) fn git_snapshot_from_ref(
     repo: &FsPath,
     refname: &str,
 ) -> Result<(SourceBlob, Vec<u8>), ApiError> {
-    git_snapshot_from_refs(repo, &[refname.to_string()])
-}
-
-fn git_snapshot_from_refs(
-    repo: &FsPath,
-    refs: &[String],
-) -> Result<(SourceBlob, Vec<u8>), ApiError> {
-    let [refname] = refs else {
-        return Err(ApiError::internal_message(
-            "Git snapshots must contain exactly one ref",
-        ));
-    };
     let head_oid = git_stdout_text(repo, &["rev-parse", refname], "reading Git snapshot head")?;
     let bundle_path = repo.join(format!("scope-snapshot-{}.bundle", random_bundle_id()?));
     let bundle = bundle_path.to_string_lossy().to_string();
-    let mut args = vec!["bundle", "create", bundle.as_str()];
-    args.extend(refs.iter().map(String::as_str));
-    run_git(Some(repo), &args, "creating Git snapshot bundle")?;
+    run_git(
+        Some(repo),
+        &["bundle", "create", bundle.as_str(), refname],
+        "creating Git snapshot bundle",
+    )?;
     let bytes = std::fs::read(&bundle_path).map_err(ApiError::internal)?;
     let _ = std::fs::remove_file(&bundle_path);
     let mut snapshot = content_object_for_bytes(ContentObjectKind::GitBundle, &bytes);
@@ -604,16 +577,21 @@ pub(crate) fn validate_pushed_file_path(path: &str) -> Result<GitTreePath, ApiEr
     Ok(path)
 }
 
-pub(crate) fn run_git(repo: Option<&FsPath>, args: &[&str], action: &str) -> Result<(), ApiError> {
-    let output = run_git_output(repo, args, action)?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(ApiError::infrastructure_unavailable(format!(
+pub(crate) fn require_git_success(
+    output: std::process::Output,
+    action: &str,
+) -> Result<std::process::Output, ApiError> {
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
             "{action}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )))
+            truncated_git_stderr(&output.stderr).trim()
+        )));
     }
+    Ok(output)
+}
+
+pub(crate) fn run_git(repo: Option<&FsPath>, args: &[&str], action: &str) -> Result<(), ApiError> {
+    require_git_success(run_git_output(repo, args, action)?, action).map(|_| ())
 }
 
 pub(crate) fn git_stdout_text(
@@ -621,13 +599,7 @@ pub(crate) fn git_stdout_text(
     args: &[&str],
     action: &str,
 ) -> Result<String, ApiError> {
-    let output = run_git_output(Some(repo), args, action)?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "{action}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
+    let output = require_git_success(run_git_output(Some(repo), args, action)?, action)?;
     String::from_utf8(output.stdout).map_err(ApiError::bad_request)
 }
 
@@ -636,22 +608,40 @@ pub(crate) fn run_git_output(
     args: &[&str],
     action: &str,
 ) -> Result<std::process::Output, ApiError> {
+    run_git_output_until(
+        repo,
+        args,
+        action,
+        Instant::now() + RuntimeBudgets::default_git_command_timeout(),
+    )
+}
+
+pub(crate) fn remaining_git_time(deadline: Instant) -> Result<Duration, ApiError> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| ApiError::infrastructure_unavailable("Git inspection deadline exceeded"))
+}
+
+pub(crate) fn run_git_output_until(
+    repo: Option<&FsPath>,
+    args: &[&str],
+    action: &str,
+    deadline: Instant,
+) -> Result<std::process::Output, ApiError> {
     let mut command = Command::new("git");
     if let Some(repo) = repo {
         command.arg("-C").arg(repo);
     }
     command.args(args);
-    git_process_output_with_timeout(
-        &mut command,
-        None,
-        RuntimeBudgets::default_git_command_timeout(),
+    git_process_output_with_timeout(&mut command, None, remaining_git_time(deadline)?).map_err(
+        |error| {
+            ApiError::infrastructure_unavailable(format!(
+                "failed {action}: {}",
+                error.operator_diagnostic()
+            ))
+        },
     )
-    .map_err(|error| {
-        ApiError::infrastructure_unavailable(format!(
-            "failed {action}: {}",
-            error.operator_diagnostic()
-        ))
-    })
 }
 
 pub(crate) fn run_git_output_bounded(
@@ -732,6 +722,27 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path.as_str(), ".scope/runs/test.yml");
+
+        let invalid = git_tree_entries_under(&root, "invalid-object", ".scope/runs").unwrap_err();
+        assert_eq!(
+            invalid.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        let subtree =
+            git_stdout_text(&root, &["rev-parse", "HEAD:.scope/runs"], "reading subtree").unwrap();
+        let subtree = subtree.trim();
+        fs::remove_file(
+            root.join(".git/objects")
+                .join(&subtree[..2])
+                .join(&subtree[2..]),
+        )
+        .unwrap();
+        let missing = git_tree_entries_under(&root, &head, ".scope/runs").unwrap_err();
+        assert_eq!(
+            missing.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert!(git_tree_entries(&root, &head).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }

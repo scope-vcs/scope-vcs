@@ -348,76 +348,48 @@ async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts
 async fn completed_private_discussion_transitions_are_read_only_while_public_stays_mutable() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
-    super::requests::create_owner_request(
-        &state,
-        "req_completed_private",
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    )
-    .await;
+    super::requests::create_owner_request(&state, "req_completed_private", &"a".repeat(40)).await;
     super::requests::create_public_request(
         &state,
         "req_completed_public",
         test_owner_id(),
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        &"a".repeat(40),
     )
     .await;
     let app = router(state.clone());
     let bearer = bearer_header();
+    let owner_id = test_owner_id();
+    let requests = state.metadata.requests();
 
-    for request_id in ["req_completed_private", "req_completed_public"] {
+    for (request_id, expected_status) in [
+        ("req_completed_private", StatusCode::FORBIDDEN),
+        ("req_completed_public", StatusCode::OK),
+    ] {
         let base = format!("/v1/repos/owner/repo/requests/{request_id}");
+        let mut discussion_ids = Vec::new();
         for id in ["open", "resolved"] {
             let created = api_request(
-                app.clone(),
-                "POST",
-                &format!("{base}/timeline"),
-                Some(&bearer),
-                Some(&format!(
-                    r#"{{"body_markdown":"Review {id}","client_discussion_id":"{request_id}-{id}"}}"#
-                )),
-            )
-            .await;
+                app.clone(), "POST", &format!("{base}/timeline"), Some(&bearer),
+                Some(&format!(r#"{{"body_markdown":"Review {id}","client_discussion_id":"{request_id}-{id}"}}"#)),
+            ).await;
             assert_eq!(created.status(), StatusCode::OK);
+            discussion_ids.push(
+                response_json(created).await["discussion"]["id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            );
         }
-        let discussions = state
-            .metadata
-            .requests()
-            .request_discussions_page(scope_postgres::db::RequestDiscussionsPageQuery {
-                request_id,
-                viewer_user_id: Some(&test_owner_id()),
-                snapshot_version: i64::MAX as u64,
-                cursor: None,
-                discussion_id: None,
-                anchor_revision_id: None,
-                anchor_commit_oid: None,
-                include_revision_anchor: false,
-                limit: 10,
-            })
-            .await
-            .unwrap()
-            .discussions;
-        let resolved_id = discussions
-            .iter()
-            .find(|model| model.discussion.client_discussion_id.ends_with("-resolved"))
-            .unwrap()
-            .discussion
-            .id
-            .clone();
         let resolved = api_request(
             app.clone(),
             "POST",
-            &format!("{base}/threads/{resolved_id}/resolve"),
+            &format!("{base}/threads/{}/resolve", discussion_ids[1]),
             Some(&bearer),
             None,
         )
         .await;
         assert_eq!(resolved.status(), StatusCode::OK);
-    }
-
-    for request_id in ["req_completed_private", "req_completed_public"] {
-        state
-            .metadata
-            .requests()
+        requests
             .mutate_request_for_tests(request_id, |request| {
                 request.submitted_at_unix = Some(10);
                 request.closed_at_unix = Some(11);
@@ -426,27 +398,19 @@ async fn completed_private_discussion_transitions_are_read_only_while_public_sta
             })
             .await
             .unwrap();
-    }
 
-    let private_request_before = state
-        .metadata
-        .requests()
-        .request_for_tests("req_completed_private")
-        .await
-        .unwrap()
-        .unwrap();
-    let private_events_before = state
-        .metadata
-        .requests()
-        .request_events_by_request_id("req_completed_private")
-        .await
-        .unwrap();
-    let private_discussions_before = state
-        .metadata
-        .requests()
-        .request_discussions_page(scope_postgres::db::RequestDiscussionsPageQuery {
-            request_id: "req_completed_private",
-            viewer_user_id: Some(&test_owner_id()),
+        let request_before = requests
+            .request_for_tests(request_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let events_before = requests
+            .request_events_by_request_id(request_id)
+            .await
+            .unwrap();
+        let query = scope_postgres::db::RequestDiscussionsPageQuery {
+            request_id,
+            viewer_user_id: Some(&owner_id),
             snapshot_version: i64::MAX as u64,
             cursor: None,
             discussion_id: None,
@@ -454,152 +418,56 @@ async fn completed_private_discussion_transitions_are_read_only_while_public_sta
             anchor_commit_oid: None,
             include_revision_anchor: false,
             limit: 10,
-        })
-        .await
-        .unwrap()
-        .discussions;
-    let private_open_id = private_discussions_before
-        .iter()
-        .find(|model| model.discussion.client_discussion_id.ends_with("-open"))
-        .unwrap()
-        .discussion
-        .id
-        .clone();
-    let private_resolved_id = private_discussions_before
-        .iter()
-        .find(|model| model.discussion.client_discussion_id.ends_with("-resolved"))
-        .unwrap()
-        .discussion
-        .id
-        .clone();
-
-    for action in [
-        format!("threads/{private_open_id}/resolve"),
-        format!("threads/{private_resolved_id}/reopen"),
-    ] {
-        let response = api_request(
-            app.clone(),
-            "POST",
-            &format!("/v1/repos/owner/repo/requests/req_completed_private/{action}"),
-            Some(&bearer),
-            None,
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        };
+        let discussions_before = requests
+            .request_discussions_page(query.clone())
+            .await
+            .unwrap();
+        for (discussion_id, action) in discussion_ids.iter().zip(["resolve", "reopen"]) {
+            let response = api_request(
+                app.clone(),
+                "POST",
+                &format!("{base}/threads/{discussion_id}/{action}"),
+                Some(&bearer),
+                None,
+            )
+            .await;
+            assert_eq!(response.status(), expected_status, "{request_id}/{action}");
+        }
+        let request_after = requests
+            .request_for_tests(request_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let events_after = requests
+            .request_events_by_request_id(request_id)
+            .await
+            .unwrap();
+        if expected_status == StatusCode::FORBIDDEN {
+            assert_eq!(request_after, request_before);
+            assert_eq!(events_after, events_before);
+            let discussions_after = requests.request_discussions_page(query).await.unwrap();
+            assert_eq!(
+                discussions_after
+                    .discussions
+                    .into_iter()
+                    .map(|model| model.discussion)
+                    .collect::<Vec<_>>(),
+                discussions_before
+                    .discussions
+                    .into_iter()
+                    .map(|model| model.discussion)
+                    .collect::<Vec<_>>(),
+            );
+        } else {
+            assert_eq!(request_after.activity_version, 6);
+            assert_eq!(
+                request_after.state(),
+                scope_domain::requests::RequestState::Closed
+            );
+            assert_eq!(events_after.len(), 4);
+        }
     }
-    assert_eq!(
-        state
-            .metadata
-            .requests()
-            .request_for_tests("req_completed_private")
-            .await
-            .unwrap()
-            .unwrap(),
-        private_request_before
-    );
-    assert_eq!(
-        state
-            .metadata
-            .requests()
-            .request_events_by_request_id("req_completed_private")
-            .await
-            .unwrap(),
-        private_events_before
-    );
-    assert_eq!(
-        state
-            .metadata
-            .requests()
-            .request_discussions_page(scope_postgres::db::RequestDiscussionsPageQuery {
-                request_id: "req_completed_private",
-                viewer_user_id: Some(&test_owner_id()),
-                snapshot_version: i64::MAX as u64,
-                cursor: None,
-                discussion_id: None,
-                anchor_revision_id: None,
-                anchor_commit_oid: None,
-                include_revision_anchor: false,
-                limit: 10,
-            })
-            .await
-            .unwrap()
-            .discussions
-            .into_iter()
-            .map(|model| model.discussion)
-            .collect::<Vec<_>>(),
-        private_discussions_before
-            .into_iter()
-            .map(|model| model.discussion)
-            .collect::<Vec<_>>()
-    );
-
-    let public_discussions = state
-        .metadata
-        .requests()
-        .request_discussions_page(scope_postgres::db::RequestDiscussionsPageQuery {
-            request_id: "req_completed_public",
-            viewer_user_id: Some(&test_owner_id()),
-            snapshot_version: i64::MAX as u64,
-            cursor: None,
-            discussion_id: None,
-            anchor_revision_id: None,
-            anchor_commit_oid: None,
-            include_revision_anchor: false,
-            limit: 10,
-        })
-        .await
-        .unwrap()
-        .discussions;
-    let public_open_id = public_discussions
-        .iter()
-        .find(|model| model.discussion.client_discussion_id.ends_with("-open"))
-        .unwrap()
-        .discussion
-        .id
-        .clone();
-    let public_resolved_id = public_discussions
-        .iter()
-        .find(|model| model.discussion.client_discussion_id.ends_with("-resolved"))
-        .unwrap()
-        .discussion
-        .id
-        .clone();
-    for action in [
-        format!("threads/{public_open_id}/resolve"),
-        format!("threads/{public_resolved_id}/reopen"),
-    ] {
-        let response = api_request(
-            app.clone(),
-            "POST",
-            &format!("/v1/repos/owner/repo/requests/req_completed_public/{action}"),
-            Some(&bearer),
-            None,
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-    let public_request = state
-        .metadata
-        .requests()
-        .request_for_tests("req_completed_public")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(public_request.activity_version, 6);
-    assert_eq!(
-        public_request.state(),
-        scope_domain::requests::RequestState::Closed
-    );
-    assert_eq!(
-        state
-            .metadata
-            .requests()
-            .request_events_by_request_id("req_completed_public")
-            .await
-            .unwrap()
-            .len(),
-        4
-    );
 }
 
 #[tokio::test]

@@ -208,15 +208,7 @@ fn discussion_moderation_does_not_change_request_lifecycle() {
     let resolved = resolve_request_discussion(
         opened.request,
         opened.discussion,
-        ResolveRequestDiscussionInput {
-            request_id: "request_1".to_string(),
-            discussion_id,
-            actor_user_id: "maintainer".to_string(),
-            actor_is_maintainer: true,
-            actor_can_transition: true,
-            event_id: "event_discussion_resolved".to_string(),
-            now_unix: 22,
-        },
+        transition_input(discussion_id, "event_discussion_resolved", 22),
     )
     .unwrap();
     assert_eq!(resolved.request.state(), RequestState::Open);
@@ -231,15 +223,7 @@ fn completed_private_discussion_transitions_are_rejected_before_mutation() {
     let resolve_error = resolve_request_discussion(
         request.clone(),
         open,
-        ResolveRequestDiscussionInput {
-            request_id: "request_1".to_string(),
-            discussion_id: "discussion_open".to_string(),
-            actor_user_id: "maintainer".to_string(),
-            actor_is_maintainer: true,
-            actor_can_transition: true,
-            event_id: "event_rejected_resolve".to_string(),
-            now_unix: 31,
-        },
+        transition_input("discussion_open", "event_rejected_resolve", 31),
     )
     .unwrap_err();
     assert_eq!(resolve_error.kind, crate::error::DomainErrorKind::Conflict);
@@ -247,15 +231,7 @@ fn completed_private_discussion_transitions_are_rejected_before_mutation() {
     let reopen_error = reopen_request_discussion(
         request,
         resolved,
-        ReopenRequestDiscussionInput {
-            request_id: "request_1".to_string(),
-            discussion_id: "discussion_resolved".to_string(),
-            actor_user_id: "maintainer".to_string(),
-            actor_is_maintainer: true,
-            actor_can_transition: true,
-            event_id: "event_rejected_reopen".to_string(),
-            now_unix: 32,
-        },
+        transition_input("discussion_resolved", "event_rejected_reopen", 32),
     )
     .unwrap_err();
     assert_eq!(reopen_error.kind, crate::error::DomainErrorKind::Conflict);
@@ -269,15 +245,7 @@ fn completed_public_discussion_transitions_remain_allowed() {
     let resolved = resolve_request_discussion(
         request,
         open_discussion,
-        ResolveRequestDiscussionInput {
-            request_id: "request_1".to_string(),
-            discussion_id: "discussion_open".to_string(),
-            actor_user_id: "maintainer".to_string(),
-            actor_is_maintainer: true,
-            actor_can_transition: true,
-            event_id: "event_completed_resolve".to_string(),
-            now_unix: 31,
-        },
+        transition_input("discussion_open", "event_completed_resolve", 31),
     )
     .unwrap();
     assert_eq!(resolved.request.state(), RequestState::Closed);
@@ -289,15 +257,7 @@ fn completed_public_discussion_transitions_remain_allowed() {
     let reopened = reopen_request_discussion(
         resolved.request,
         resolved_discussion,
-        ReopenRequestDiscussionInput {
-            request_id: "request_1".to_string(),
-            discussion_id: "discussion_resolved".to_string(),
-            actor_user_id: "maintainer".to_string(),
-            actor_is_maintainer: true,
-            actor_can_transition: true,
-            event_id: "event_completed_reopen".to_string(),
-            now_unix: 32,
-        },
+        transition_input("discussion_resolved", "event_completed_reopen", 32),
     )
     .unwrap();
     assert_eq!(reopened.request.state(), RequestState::Closed);
@@ -329,15 +289,7 @@ fn completed_request_discussions(
     let resolved = resolve_request_discussion(
         to_resolve.request,
         to_resolve.discussion,
-        ResolveRequestDiscussionInput {
-            request_id: "request_1".to_string(),
-            discussion_id: "discussion_resolved".to_string(),
-            actor_user_id: "maintainer".to_string(),
-            actor_is_maintainer: true,
-            actor_can_transition: true,
-            event_id: "event_initial_resolve".to_string(),
-            now_unix: 22,
-        },
+        transition_input("discussion_resolved", "event_initial_resolve", 22),
     )
     .unwrap();
     let mut request = resolved.request;
@@ -368,7 +320,7 @@ fn policy_for(request: &Request, viewer: ViewerKind) -> RequestPolicyDecision {
     request_policy(request, RequestViewer::new(access, user_id, false))
 }
 
-fn public_start_input() -> StartRequestInput {
+pub(super) fn public_start_input() -> StartRequestInput {
     StartRequestInput {
         id: "request_1".to_string(),
         repo_id: "owner/repo".to_string(),
@@ -430,13 +382,12 @@ fn maintainer_access() -> RepositoryAccess {
         can_read_private_files: true,
         can_push: true,
         can_change_file_visibility: false,
-        can_apply_changes: false,
         can_manage_members: false,
         can_delete_repo: false,
     }
 }
 
-fn source_blob(git_oid: &str) -> SourceBlob {
+pub(super) fn source_blob(git_oid: &str) -> SourceBlob {
     SourceBlob {
         content_ref: crate::content_ref::ContentRef::blob_sha256(git_oid),
         sha256: format!("sha256-{git_oid}"),
@@ -538,4 +489,20 @@ fn discussion_read_receipts_clamp_and_never_move_backwards() {
     )
     .unwrap();
     assert_eq!(unchanged, state);
+}
+
+fn transition_input(
+    discussion_id: impl Into<String>,
+    event_id: &str,
+    now_unix: u64,
+) -> RequestDiscussionTransitionInput {
+    RequestDiscussionTransitionInput {
+        request_id: "request_1".to_string(),
+        discussion_id: discussion_id.into(),
+        actor_user_id: "maintainer".to_string(),
+        actor_is_maintainer: true,
+        actor_can_transition: true,
+        event_id: event_id.to_string(),
+        now_unix,
+    }
 }

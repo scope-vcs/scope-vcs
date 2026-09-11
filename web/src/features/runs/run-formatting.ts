@@ -24,7 +24,7 @@ export function runDisplayState(run: {
 }
 
 /** Elapsed seconds rendered for scanning: `44s`, `3m 04s`, `1h 12m`. */
-export function formatDuration(seconds: number) {
+function formatDuration(seconds: number) {
   const safe = Math.max(0, Math.round(seconds))
   if (safe < 60) return `${safe}s`
   const minutes = Math.floor(safe / 60)

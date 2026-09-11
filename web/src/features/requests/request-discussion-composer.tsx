@@ -10,7 +10,7 @@ import { RequestAttachmentEditor } from './request-attachment-editor'
 export function RequestDiscussionComposer({
   onSubmit,
 }: {
-  onSubmit: (body: string) => Promise<boolean>
+  onSubmit: (body: string, submissionId: string) => Promise<boolean>
 }) {
   const [open, setOpen] = useState(false)
 
@@ -37,8 +37,8 @@ export function RequestDiscussionComposer({
       autoFocus
       label="Start a new discussion"
       onCancel={() => setOpen(false)}
-      onSubmit={async (body) => {
-        const posted = await onSubmit(body)
+      onSubmit={async (body, submissionId) => {
+        const posted = await onSubmit(body, submissionId)
         if (posted) setOpen(false)
         return posted
       }}
@@ -61,7 +61,7 @@ export function RequestReplyComposer({
   discussionId: string
   onCancel: () => void
   onCancelQuote: () => void
-  onSubmit: (body: string) => Promise<boolean>
+  onSubmit: (body: string, submissionId: string) => Promise<boolean>
   quote: { author: string; body: string } | null
   reopen: boolean
 }) {
@@ -107,7 +107,7 @@ function Composer({
   label: string
   onCancel: () => void
   onCancelQuote?: () => void
-  onSubmit: (body: string) => Promise<boolean>
+  onSubmit: (body: string, submissionId: string) => Promise<boolean>
   placeholder: string
   quote?: { author: string; body: string } | null
   submitIcon: ReactNode
@@ -120,7 +120,7 @@ function Composer({
       label={label}
       onCancel={onCancel}
       onCancelQuote={onCancelQuote}
-      onSubmit={onSubmit}
+      onSubmit={(body, _base, submissionId) => onSubmit(body, submissionId)}
       placeholder={placeholder}
       quote={quote}
       submitIcon={submitIcon}

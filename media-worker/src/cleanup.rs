@@ -24,7 +24,7 @@ pub async fn run(
             continue;
         }
         let result = cleanup_next_job(&metadata, &storage, &settings, &health).await;
-        let should_wait = should_wait_after_poll(&result);
+        let should_wait = matches!(&result, Ok(CleanupOutcome::NoJob) | Err(_));
         match &result {
             Ok(CleanupOutcome::NoJob) => {}
             Ok(outcome) => tracing::info!(?outcome, "media cleanup job finished"),
@@ -38,10 +38,6 @@ pub async fn run(
             return Ok(());
         }
     }
-}
-
-fn should_wait_after_poll(result: &anyhow::Result<CleanupOutcome>) -> bool {
-    matches!(result, Ok(CleanupOutcome::NoJob) | Err(_))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -171,20 +167,4 @@ where
 
 fn heartbeat_interval(lease_duration: Duration) -> Duration {
     Duration::from_secs((lease_duration.as_secs() / 3).max(1))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn poll_waits_when_idle_or_after_an_error() {
-        assert!(should_wait_after_poll(&Ok(CleanupOutcome::NoJob)));
-        assert!(should_wait_after_poll(&Err(anyhow::anyhow!(
-            "database unavailable"
-        ))));
-        assert!(!should_wait_after_poll(&Ok(CleanupOutcome::Completed)));
-        assert!(!should_wait_after_poll(&Ok(CleanupOutcome::Failed)));
-        assert!(!should_wait_after_poll(&Ok(CleanupOutcome::LeaseLost)));
-    }
 }

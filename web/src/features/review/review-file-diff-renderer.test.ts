@@ -263,9 +263,9 @@ async function runSourceWorker(input: ReviewFileDiffWorkerInput) {
   )
   const worker = new Worker(pathToFileURL(workerPath))
   try {
-    // These fixtures test output bounds, including cold TypeScript worker startup.
-    // The dedicated runaway-worker test verifies deadline enforcement separately.
-    return await runReviewFileDiffWorker(worker, input, 10_000)
+    // These fixtures test output bounds. Allow cold TypeScript module compilation
+    // alongside the other suites; pool tests verify both deadlines independently.
+    return await runReviewFileDiffWorker(worker, input, 10_000, undefined, 30_000)
   } finally {
     await worker.terminate()
   }

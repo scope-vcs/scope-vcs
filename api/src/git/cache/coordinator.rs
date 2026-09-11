@@ -60,8 +60,6 @@ impl GitDerivedCacheCoordinator {
         BuildFuture: Future<Output = Result<(), ApiError>> + Send + 'static,
     {
         let key = GitDerivedCacheKey { namespace, value };
-        let is_ready = Arc::new(is_ready);
-        let mut build = Some(build);
         loop {
             if is_ready() {
                 return Ok(());
@@ -75,16 +73,12 @@ impl GitDerivedCacheCoordinator {
                 wait_for_cache_build_async(&state).await?;
                 continue;
             }
-            let build = build
-                .take()
-                .expect("a cache request can become leader only once");
             let leader = AsyncBuildLeader {
                 coordinator: self.clone(),
-                key: key.clone(),
-                state: state.clone(),
+                key,
+                state,
                 completed: false,
             };
-            let is_ready = is_ready.clone();
             // The build owns its leadership in a detached task. Dropping the
             // requesting HTTP future therefore cannot release the cache key
             // while spawn_blocking Git work is still mutating that cache.
@@ -116,7 +110,6 @@ impl GitDerivedCacheCoordinator {
         build: impl FnOnce() -> Result<(), ApiError>,
     ) -> Result<(), ApiError> {
         let key = GitDerivedCacheKey { namespace, value };
-        let mut build = Some(build);
         loop {
             if is_ready() {
                 return Ok(());
@@ -130,9 +123,6 @@ impl GitDerivedCacheCoordinator {
                 wait_for_cache_build(&state)?;
                 continue;
             }
-            let build = build
-                .take()
-                .expect("a cache request can become leader only once");
             let built = catch_unwind(AssertUnwindSafe(
                 || {
                     if is_ready() { Ok(()) } else { build() }

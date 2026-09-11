@@ -2,7 +2,6 @@ use crate::{MultipartError, MultipartStore, MultipartUpload, RemoteReader, Uploa
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::{collections::HashMap, sync::Mutex};
-use tokio::io::AsyncWriteExt;
 
 #[derive(Default)]
 pub struct MemoryMultipartStore {
@@ -121,11 +120,7 @@ impl MultipartStore for MemoryMultipartStore {
             .get(key)
             .cloned()
             .ok_or_else(|| MultipartError::new("object does not exist"))?;
-        let (mut writer, reader) = tokio::io::duplex(bytes.len().max(1));
-        tokio::spawn(async move {
-            let _ = writer.write_all(&bytes).await;
-        });
-        Ok(Box::pin(reader))
+        Ok(Box::pin(std::io::Cursor::new(bytes)))
     }
 
     async fn delete(&self, key: &str) -> Result<(), MultipartError> {

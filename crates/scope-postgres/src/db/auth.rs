@@ -1,7 +1,7 @@
 use super::{
     AuthStore, acquire_aggregate_lock,
     cli_auth_results::{DeviceLoginPoll, NewCliSession, StartDeviceLoginCommand},
-    cli_sessions::insert_cli_session_in_tx,
+    cli_sessions::{insert_cli_session_in_tx, record_cli_session_use},
     entities,
 };
 use crate::error::PostgresError;
@@ -10,10 +10,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
     TransactionTrait, sea_query::Expr,
 };
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 impl AuthStore {
     pub async fn users_by_ids(
@@ -28,8 +25,7 @@ impl AuthStore {
         command: StartDeviceLoginCommand,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-auth", "start").await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         enforce_device_login_start_limits(&tx, now_unix).await?;
@@ -58,8 +54,7 @@ impl AuthStore {
     ) -> Result<(), PostgresError> {
         let user_code_hash = user_code_hash.to_string();
         let user_id = user.id.clone();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-device-user-code", &user_code_hash).await?;
 
         let Some(login) = entities::cli_device_login::Entity::find()
@@ -79,10 +74,6 @@ impl AuthStore {
             now_unix,
         )? {
             cli_auth_rules::DeviceLoginCompletionDecision::Expired => {
-                entities::cli_device_login::Entity::delete_by_id(login.device_code_hash)
-                    .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
                 return Err(PostgresError::conflict("CLI login code expired"));
             }
             cli_auth_rules::DeviceLoginCompletionDecision::Complete => {}
@@ -113,8 +104,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<DeviceLoginPoll, PostgresError> {
         let device_code_hash = device_code_hash.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-device-code", &device_code_hash).await?;
 
         let Some(login) = entities::cli_device_login::Entity::find_by_id(device_code_hash)
@@ -133,10 +123,6 @@ impl AuthStore {
             now_unix,
         )? {
             cli_auth_rules::DeviceLoginPollDecision::Expired => {
-                entities::cli_device_login::Entity::delete_by_id(login.device_code_hash)
-                    .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
                 Err(PostgresError::conflict("CLI device login expired"))
             }
             cli_auth_rules::DeviceLoginPollDecision::Pending { expires_at_unix } => {
@@ -169,8 +155,7 @@ impl AuthStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<UserAccount, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let Some(session) = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::TokenHash.eq(token_hash))
             .one(&tx)
@@ -193,6 +178,7 @@ impl AuthStore {
             cli_auth_rules::CliSessionUseDecision::Active { user_id } => user_id,
         };
         let user = load_user_by_id(&tx, &user_id).await?;
+        record_cli_session_use(&tx, &session.id, now_unix).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(user)
     }
@@ -203,8 +189,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let token_hash = token_hash.to_string();
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "cli-session-token", &token_hash).await?;
         let Some(session) = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::TokenHash.eq(token_hash))
@@ -219,10 +204,6 @@ impl AuthStore {
             now_unix,
         ) {
             cli_auth_rules::CliSessionRevokeDecision::Expired => {
-                entities::cli_session::Entity::delete_by_id(session.id)
-                    .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
                 return Err(PostgresError::unauthenticated("CLI token expired"));
             }
             cli_auth_rules::CliSessionRevokeDecision::Revoke => {}

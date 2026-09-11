@@ -511,16 +511,11 @@ case "$plan_status" in
     media_worker_running="$(running_replicas "$media_worker_service")"
     if [[ "$api_running" == "0" && "$worker_running" == "0" && "$cache_running" == "0" \
       && "$media_running" == "0" && "$media_worker_running" == "0" ]]; then
-      api_has_history=0
-      worker_has_history=0
-      cache_has_history=0
-      service_has_deployment_history "$api_service" && api_has_history=1
-      service_has_deployment_history "$worker_service" && worker_has_history=1
-      service_has_deployment_history "$cache_service" && cache_has_history=1
-      media_had_history=0
-      media_worker_had_history=0
-      service_has_deployment_history "$media_service" && media_had_history=1
-      service_has_deployment_history "$media_worker_service" && media_worker_had_history=1
+      api_has_history="$(service_has_deployment_history "$api_service")" || exit $?
+      worker_has_history="$(service_has_deployment_history "$worker_service")" || exit $?
+      cache_has_history="$(service_has_deployment_history "$cache_service")" || exit $?
+      media_had_history="$(service_has_deployment_history "$media_service")" || exit $?
+      media_worker_had_history="$(service_has_deployment_history "$media_worker_service")" || exit $?
       if [[ "$api_has_history" != "$worker_has_history" ]] \
         || [[ "$api_has_history" != "$cache_has_history" ]]; then
         echo "Closed writers have inconsistent deployment history." >&2
@@ -550,9 +545,12 @@ case "$plan_status" in
     fi
     for bootstrap_service in "$media_service" "$media_worker_service"; do
       bootstrap_running="$(running_replicas "$bootstrap_service")"
-      if [[ "$bootstrap_running" == "0" ]] && service_has_deployment_history "$bootstrap_service"; then
-        echo "Media writer $bootstrap_service is unexpectedly stopped; refusing deployment." >&2
-        exit 1
+      if [[ "$bootstrap_running" == "0" ]]; then
+        bootstrap_has_history="$(service_has_deployment_history "$bootstrap_service")" || exit $?
+        if [[ "$bootstrap_has_history" == "1" ]]; then
+          echo "Media writer $bootstrap_service is unexpectedly stopped; refusing deployment." >&2
+          exit 1
+        fi
       fi
     done
     if [[ "$deploy_router_requested" == "1" ]]; then
@@ -587,7 +585,8 @@ if ! carried_service_is_healthy api "$api_service" \
   exit 1
 fi
 
-if service_has_deployment_history "$media_service"; then
+media_had_history="$(service_has_deployment_history "$media_service")" || exit $?
+if [[ "$media_had_history" == "1" ]]; then
   carried_service_is_healthy media-api "$media_service" || {
     echo "Maintenance cutover requires a healthy media-api gateway before closing writers." >&2
     exit 1
@@ -596,7 +595,8 @@ else
   media_had_history=0
   media_closed=1
 fi
-if service_has_deployment_history "$media_worker_service"; then
+media_worker_had_history="$(service_has_deployment_history "$media_worker_service")" || exit $?
+if [[ "$media_worker_had_history" == "1" ]]; then
   carried_service_is_healthy media-worker "$media_worker_service" || {
     echo "Maintenance cutover requires a healthy media-api run-worker before closing writers." >&2
     exit 1

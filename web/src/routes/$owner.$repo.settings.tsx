@@ -18,13 +18,24 @@ import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
 import { RepoContentError } from '@/components/repo-content-error'
 import { createFileRoute } from '@tanstack/react-router'
+import { useAuth } from '@clerk/tanstack-react-start'
+import { useCallback } from 'react'
+import { getRequest } from '@tanstack/react-start/server'
+import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
+import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import { repoCollaborationResource, retainCollaborationResult } from '@/features/repo-detail/repo-collaboration-resource'
+import type { CollaborationResult } from '@/features/repo-detail/repo-collaboration-results'
+import { useCachedResource } from '@/lib/use-cached-resource'
+import { PageContent } from '@/components/page-header'
+import { PageErrorAlert } from '@/components/page-error-alert'
+import { Button } from '@/components/ui/button'
 import { createServerFn } from '@tanstack/react-start'
 
 const loadRepoSettings = createServerFn({ method: 'GET' })
   .validator(parseRepoParams)
   .handler(async ({ data }) => {
     try {
-      return await loadRepoCollaborationForRequest(data)
+      return await loadRepoCollaborationForRequest(data, getRequest().signal)
     } catch (error) {
       if (error instanceof HttpError && [403, 404].includes(error.status)) {
         return null
@@ -58,7 +69,6 @@ const deleteRepoInvite = createServerFn({ method: 'POST' })
   .handler(({ data }) => deleteRepoInviteForRequest(data))
 
 export const Route = createFileRoute('/$owner/$repo/settings')({
-  loader: ({ params }) => loadRepoSettings({ data: params }),
   errorComponent: RepoContentError,
   pendingComponent: RepoSettingsPending,
   component: RepoSettingsRoute,
@@ -66,17 +76,45 @@ export const Route = createFileRoute('/$owner/$repo/settings')({
 
 function RepoSettingsRoute() {
   const params = Route.useParams()
-  const collaboration = Route.useLoaderData()
+  const { repo } = useRepoLayout()
+  const { isLoaded, userId } = useAuth()
+  const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
+  const { owner, repo: repoName } = params
+  const load = useCallback(async (signal: AbortSignal) => ({
+    collaboration: await loadRepoSettings({ data: { owner, repo: repoName }, signal }),
+  }), [owner, repoName])
+  const resource = useCachedResource({
+    identity: scope,
+    resource: repoCollaborationResource,
+    load,
+    fallbackError: 'Repository access settings could not be loaded.',
+  })
+
+  async function retainResult<T>(mutation: Promise<T>, toChange: (value: T) => CollaborationResult) {
+    const result = await mutation
+    if (scope) retainCollaborationResult(scope, toChange(result))
+    return result
+  }
   return (
-    <RepoSettingsPage
-      createInvite={(data) => createRepoInvite({ data })}
-      deleteInvite={(data) => deleteRepoInvite({ data })}
-      deleteRepo={(data) => deleteRepo({ data })}
-      deleteMember={(data) => deleteRepoMember({ data })}
-      initialCollaboration={collaboration}
-      params={params}
-      updateMember={(data) => updateRepoMember({ data })}
-      updateMetadata={(data) => updateRepoMetadata({ data })}
-    />
+    <>
+      {resource.error && (
+        <PageContent>
+          <PageErrorAlert title="Settings refresh failed">{resource.error}</PageErrorAlert>
+          <Button className="mt-3" onClick={resource.retry} size="sm">Try again</Button>
+        </PageContent>
+      )}
+      {resource.value ? (
+        <RepoSettingsPage
+          createInvite={(data) => retainResult(createRepoInvite({ data }), ({ invite }) => ({ type: 'inviteUpdated', invite }))}
+          deleteInvite={(data) => retainResult(deleteRepoInvite({ data }), (invite) => ({ type: 'inviteUpdated', invite }))}
+          deleteRepo={(data) => deleteRepo({ data })}
+          deleteMember={(data) => retainResult(deleteRepoMember({ data }), (member) => ({ type: 'memberRemoved', member }))}
+          collaboration={resource.value.collaboration}
+          params={params}
+          updateMember={(data) => retainResult(updateRepoMember({ data }), (member) => ({ type: 'memberUpdated', member }))}
+          updateMetadata={(data) => updateRepoMetadata({ data })}
+        />
+      ) : !resource.error ? <RepoSettingsPending /> : null}
+    </>
   )
 }

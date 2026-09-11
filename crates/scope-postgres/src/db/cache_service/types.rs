@@ -61,9 +61,7 @@ pub enum CacheCommitResult {
         object: CacheObjectRecord,
         expires_at_unix: u64,
     },
-    Stale {
-        orphaned_object_key: String,
-    },
+    Stale,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,4 +77,12 @@ pub struct PendingCacheDeletion {
 pub struct PendingOrphanCacheUpload {
     pub object_key: String,
     pub attempts: u32,
+}
+
+/// A fenced claim on an expired upload. Only the current generation may delete its object.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CacheUploadCleanupClaim {
+    pub upload_id: String,
+    pub object_key: String,
+    pub(super) generation: i64,
 }

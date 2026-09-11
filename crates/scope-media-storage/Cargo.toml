@@ -6,6 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+base64.workspace = true
+scope_service_config.workspace = true
 bytes.workspace = true
 getrandom.workspace = true
 hex.workspace = true

@@ -1,5 +1,5 @@
 use super::{
-    policy::{Policy, ScopePath, Visibility},
+    policy::{ScopePath, Visibility},
     repo_control::{is_private_control_path, is_repo_control_pattern, is_repo_rules_path},
 };
 use serde::{Deserialize, Serialize};
@@ -25,8 +25,6 @@ pub enum RepoConfigError {
     InvalidSegment,
     #[error("repo config cannot configure reserved Scope control path {0}")]
     ReservedControlPath(String),
-    #[error("repo config rewrite action {0} is unsupported")]
-    UnsupportedRewriteAction(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,11 +100,6 @@ impl RepoConfig {
             validate_config_pattern(&rewrite.path)?;
             if is_repo_control_pattern(&rewrite.path) {
                 return Err(RepoConfigError::ReservedControlPath(rewrite.path.clone()));
-            }
-            if rewrite.action != HistoryRewriteAction::RedactPublicHistory {
-                return Err(RepoConfigError::UnsupportedRewriteAction(
-                    rewrite.action.as_str().to_string(),
-                ));
             }
         }
         Ok(())
@@ -205,14 +198,6 @@ pub enum HistoryRewriteAction {
     RedactPublicHistory,
 }
 
-impl HistoryRewriteAction {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::RedactPublicHistory => "redact-public-history",
-        }
-    }
-}
-
 pub fn validate_config_path(path: &str) -> Result<ScopePath, RepoConfigError> {
     let parsed = ScopePath::parse(path).map_err(|error| match error {
         super::policy::PolicyError::RelativePath => RepoConfigError::RelativePath,
@@ -223,27 +208,6 @@ pub fn validate_config_path(path: &str) -> Result<ScopePath, RepoConfigError> {
         return Err(RepoConfigError::InvalidSegment);
     }
     Ok(parsed)
-}
-
-pub fn repo_config_from_policy(
-    policy: &Policy,
-    default_visibility: Visibility,
-    history: RepoConfigHistory,
-) -> Result<RepoConfig, RepoConfigError> {
-    let mut config =
-        RepoConfig::with_default_visibility(ConfigVisibility::from(default_visibility));
-    config.visibility.rules = policy
-        .rules()
-        .iter()
-        .filter(|rule| !is_repo_control_pattern(rule.path.as_str()))
-        .map(|rule| RepoConfigVisibilityRule {
-            path: rule.path.as_str().to_string(),
-            visibility: ConfigVisibility::from(rule.visibility),
-        })
-        .collect();
-    config.history = history;
-    config.validate()?;
-    Ok(config)
 }
 
 pub fn repo_config_fingerprint(config: &RepoConfig) -> Result<String, serde_json::Error> {

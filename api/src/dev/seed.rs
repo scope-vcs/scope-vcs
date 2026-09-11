@@ -230,7 +230,7 @@ pub(crate) fn seed_user_account(seed_user: DevSeedUser) -> UserAccount {
     }
 }
 
-#[cfg(any(test, feature = "local-dev"))]
+#[cfg(feature = "local-dev")]
 pub(crate) fn actor_account(seed_user: DevSeedUser, handle: &str) -> Option<UserAccount> {
     let owner = seed_user_account(seed_user);
     if owner.handle == handle {
@@ -602,6 +602,17 @@ fn git_pack_state(
     })
 }
 
+struct SeedRequestSpec<'a> {
+    id: &'static str,
+    name: &'static str,
+    title: &'static str,
+    commit: Option<SeedGitCommit<'a>>,
+    description_markdown: Option<&'static str>,
+    outcome: SeedRequestOutcome,
+    audience: RequestAudience,
+    now_unix: u64,
+}
+
 fn update_demo_git_snapshot(
     object_store: &dyn ObjectStore,
     git_segment_store: &scope_git_storage::GitSegmentStore,
@@ -621,181 +632,132 @@ fn update_demo_git_snapshot(
             "creating seeded request ref",
         )?;
 
-        let ready_oid = seed_request_branch(
-            repo_path,
-            "bounded-retry-timing",
-            SeedGitCommit {
-                files: &[("src/retry.ts", UPDATE_DEMO_RETRY_HELPER)],
-                message: "Add bounded retry timing",
-            },
-            &main_oid,
-        )?;
-        let ready_snapshot = store_seed_bundle(
-            object_store,
-            repo_path,
-            "req_demo_ready_0",
-            &[&canonical_request_ref("bounded-retry-timing")],
-            &ready_oid,
-        )?;
-        let ready_revisions = request_revisions::seed_bounded_retry_revisions(
-            object_store,
-            repo_path,
-            &ready_oid,
-            &main_oid,
-        )?;
-        let held_oid = seed_request_branch(
-            repo_path,
-            "remote-troubleshooting",
-            SeedGitCommit {
-                files: &[("docs/troubleshooting.md", UPDATE_DEMO_TROUBLESHOOTING)],
-                message: "Add remote troubleshooting",
-            },
-            &main_oid,
-        )?;
-        let rejected_oid = seed_request_branch(
-            repo_path,
-            "verbose-cli-output",
-            SeedGitCommit {
-                files: &[("experiments/cli-output.txt", UPDATE_DEMO_CLI_EXPERIMENT)],
-                message: "Try verbose CLI output",
-            },
-            &main_oid,
-        )?;
-        let working_oid = seed_request_branch(
-            repo_path,
-            "request-queue-copy",
-            SeedGitCommit {
-                files: &[("docs/request-queue.md", UPDATE_DEMO_QUEUE_DRAFT)],
-                message: "Draft request queue copy",
-            },
-            &main_oid,
-        )?;
-        let neutral_oid = seed_request_branch(
-            repo_path,
-            "cache-observability-note",
-            SeedGitCommit {
-                files: &[("docs/cache-note.md", UPDATE_DEMO_CACHE_NOTE)],
-                message: "Document cache tradeoff",
-            },
-            &main_oid,
-        )?;
-        let (main_head, main_pack_span, segment_upload) =
-            store_seed_git_pack(git_segment_store, repository_id, repo_path)?;
-        let working_snapshot = store_seed_bundle(
-            object_store,
-            repo_path,
-            "req_demo_working",
-            &[&canonical_request_ref("request-queue-copy")],
-            &working_oid,
-        )?;
-        let held_snapshot = store_seed_bundle(
-            object_store,
-            repo_path,
-            "req_demo_held",
-            &[&canonical_request_ref("remote-troubleshooting")],
-            &held_oid,
-        )?;
-        let accepted_snapshot = store_seed_bundle(
-            object_store,
-            repo_path,
-            "req_demo_accepted",
-            &[&accepted_ref],
-            &main_oid,
-        )?;
-        let rejected_snapshot = store_seed_bundle(
-            object_store,
-            repo_path,
-            "req_demo_rejected",
-            &[&canonical_request_ref("verbose-cli-output")],
-            &rejected_oid,
-        )?;
-        let neutral_snapshot = store_seed_bundle(
-            object_store,
-            repo_path,
-            "req_demo_neutral",
-            &[&canonical_request_ref("cache-observability-note")],
-            &neutral_oid,
-        )?;
-        let gallery = vec![
-            SeedRequest {
-                id: "req_demo_working",
-                name: "request-queue-copy",
-                title: "Tighten request queue copy",
-                base_oid: main_oid.clone(),
-                head_oid: working_oid,
-                snapshot: working_snapshot,
-                description_markdown: Some("A private working draft for the request author."),
-                revisions: Vec::new(),
-                outcome: SeedRequestOutcome::Draft,
-                audience: RequestAudience::Public,
-                now_unix: 1_800_000_050,
-            },
-            SeedRequest {
+        let specs = [
+            SeedRequestSpec {
                 id: "req_demo_ready",
                 name: "bounded-retry-timing",
                 title: "Add bounded retry timing",
-                base_oid: main_oid.clone(),
-                head_oid: ready_oid,
-                snapshot: ready_snapshot,
+                commit: Some(SeedGitCommit {
+                    files: &[("src/retry.ts", UPDATE_DEMO_RETRY_HELPER)],
+                    message: "Add bounded retry timing",
+                }),
                 description_markdown: Some(request_discussions::READY_REQUEST_DESCRIPTION),
-                revisions: ready_revisions,
                 outcome: SeedRequestOutcome::Open,
                 audience: RequestAudience::Public,
                 now_unix: 1_800_000_100,
             },
-            SeedRequest {
+            SeedRequestSpec {
                 id: "req_demo_held",
                 name: "remote-troubleshooting",
                 title: "Add remote troubleshooting",
-                base_oid: main_oid.clone(),
-                head_oid: held_oid,
-                snapshot: held_snapshot,
+                commit: Some(SeedGitCommit {
+                    files: &[("docs/troubleshooting.md", UPDATE_DEMO_TROUBLESHOOTING)],
+                    message: "Add remote troubleshooting",
+                }),
                 description_markdown: None,
-                revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Open,
                 audience: RequestAudience::Private,
                 now_unix: 1_800_000_200,
             },
-            SeedRequest {
-                id: "req_demo_accepted",
-                name: "document-release-flow",
-                title: "Document the release flow",
-                base_oid: initial_oid,
-                head_oid: main_oid.clone(),
-                snapshot: accepted_snapshot,
-                description_markdown: None,
-                revisions: Vec::new(),
-                outcome: SeedRequestOutcome::Merged,
-                audience: RequestAudience::Private,
-                now_unix: 1_800_000_300,
-            },
-            SeedRequest {
+            SeedRequestSpec {
                 id: "req_demo_rejected",
                 name: "verbose-cli-output",
                 title: "Try verbose CLI output",
-                base_oid: main_oid.clone(),
-                head_oid: rejected_oid,
-                snapshot: rejected_snapshot,
+                commit: Some(SeedGitCommit {
+                    files: &[("experiments/cli-output.txt", UPDATE_DEMO_CLI_EXPERIMENT)],
+                    message: "Try verbose CLI output",
+                }),
                 description_markdown: None,
-                revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Closed,
                 audience: RequestAudience::Private,
                 now_unix: 1_800_000_400,
             },
-            SeedRequest {
+            SeedRequestSpec {
+                id: "req_demo_working",
+                name: "request-queue-copy",
+                title: "Tighten request queue copy",
+                commit: Some(SeedGitCommit {
+                    files: &[("docs/request-queue.md", UPDATE_DEMO_QUEUE_DRAFT)],
+                    message: "Draft request queue copy",
+                }),
+                description_markdown: Some("A private working draft for the request author."),
+                outcome: SeedRequestOutcome::Draft,
+                audience: RequestAudience::Public,
+                now_unix: 1_800_000_050,
+            },
+            SeedRequestSpec {
                 id: "req_demo_neutral",
                 name: "cache-observability-note",
                 title: "Document the cache tradeoff",
-                base_oid: main_oid,
-                head_oid: neutral_oid,
-                snapshot: neutral_snapshot,
+                commit: Some(SeedGitCommit {
+                    files: &[("docs/cache-note.md", UPDATE_DEMO_CACHE_NOTE)],
+                    message: "Document cache tradeoff",
+                }),
                 description_markdown: Some("A public request kept as closed history."),
-                revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Closed,
                 audience: RequestAudience::Public,
                 now_unix: 1_800_000_500,
             },
+            SeedRequestSpec {
+                id: "req_demo_accepted",
+                name: "document-release-flow",
+                title: "Document the release flow",
+                commit: None,
+                description_markdown: None,
+                outcome: SeedRequestOutcome::Merged,
+                audience: RequestAudience::Private,
+                now_unix: 1_800_000_300,
+            },
         ];
+        let mut gallery = Vec::with_capacity(specs.len());
+        for spec in specs {
+            let (base_oid, head_oid) = match spec.commit {
+                Some(commit) => (
+                    main_oid.clone(),
+                    seed_request_branch(repo_path, spec.name, commit, &main_oid)?,
+                ),
+                None => (initial_oid.clone(), main_oid.clone()),
+            };
+            let ready = spec.id == request_discussions::REQUEST_ID;
+            let label = if ready {
+                format!("{}_0", spec.id)
+            } else {
+                spec.id.to_string()
+            };
+            let snapshot = store_seed_bundle(
+                object_store,
+                repo_path,
+                &label,
+                &[&canonical_request_ref(spec.name)],
+                &head_oid,
+            )?;
+            let revisions = if ready {
+                request_revisions::seed_bounded_retry_revisions(
+                    object_store,
+                    repo_path,
+                    &head_oid,
+                    &main_oid,
+                )?
+            } else {
+                Vec::new()
+            };
+            gallery.push(SeedRequest {
+                id: spec.id,
+                name: spec.name,
+                title: spec.title,
+                base_oid,
+                head_oid,
+                snapshot,
+                description_markdown: spec.description_markdown,
+                revisions,
+                outcome: spec.outcome,
+                audience: spec.audience,
+                now_unix: spec.now_unix,
+            });
+        }
+        gallery.sort_by_key(|request| request.now_unix);
+        let (main_head, main_pack_span, segment_upload) =
+            store_seed_git_pack(git_segment_store, repository_id, repo_path)?;
         Ok((main_head, main_pack_span, gallery, segment_upload))
     })
 }

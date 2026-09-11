@@ -1,7 +1,12 @@
 pub(crate) mod content_cleanup;
 pub(crate) mod git_receive;
+pub(crate) mod native_commit_details;
+pub(crate) mod repository_collaboration;
+pub(crate) mod request_access;
+pub(crate) mod request_close;
 pub(crate) mod request_discussion_mutation;
 pub(crate) mod request_merge;
+pub(crate) mod request_ref_cleanup;
 pub(crate) mod request_revision_inspection;
 pub(crate) mod run_control;
 pub(crate) mod run_inspection;

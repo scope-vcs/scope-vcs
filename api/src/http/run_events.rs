@@ -80,7 +80,7 @@ async fn stream_run_events(
     mut cursor: u64,
     sender: tokio::sync::mpsc::Sender<Result<Event, Infallible>>,
 ) {
-    let mut last_state = None;
+    let mut last_status = None;
     let mut terminal_observed = false;
     let mut authenticated_at = Instant::now();
     loop {
@@ -180,24 +180,21 @@ async fn stream_run_events(
             terminal_observed = true;
             continue;
         }
-        if last_state != Some(run.state) && (!terminal || !has_full_page) {
-            last_state = Some(run.state);
-            let response = match run_response(run, &snapshot.jobs, snapshot.logs_truncated) {
+        if !terminal || !has_full_page {
+            let response = match serde_json::to_string(&run_response(run, snapshot.logs_truncated))
+            {
                 Ok(response) => response,
-                Err(error) => {
-                    send_stream_error(&sender, error).await;
-                    return;
-                }
-            };
-            let event = match Event::default().event("status").json_data(response) {
-                Ok(event) => event,
                 Err(error) => {
                     send_stream_error(&sender, ApiError::internal(error)).await;
                     return;
                 }
             };
-            if sender.send(Ok(event)).await.is_err() {
-                return;
+            if last_status.as_ref() != Some(&response) {
+                let event = Event::default().event("status").data(&response);
+                if sender.send(Ok(event)).await.is_err() {
+                    return;
+                }
+                last_status = Some(response);
             }
         }
         if terminal && !has_full_page {

@@ -629,7 +629,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lease_reclaim_rejects_the_old_workers_completion() {
+    async fn lease_renewal_and_reclaim_fence_the_old_worker() {
         let store =
             MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap())
                 .unwrap();
@@ -637,31 +637,35 @@ mod tests {
         schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 1, 10)
             .await
             .unwrap();
-
-        let first = store
-            .jobs()
+        let jobs = store.jobs();
+        let first = jobs
             .claim_git_compaction("worker-a", 2, 10, 10, &test_generated_id)
             .await
             .unwrap()
             .unwrap();
         assert!(
-            store
-                .jobs()
-                .claim_git_compaction("worker-b", 2, 10, 10, &test_generated_id)
+            jobs.renew_git_compaction_claim(&first, 15, 10)
+                .await
+                .unwrap()
+        );
+        assert!(
+            jobs.claim_git_compaction("worker-b", 2, 21, 10, &test_generated_id)
                 .await
                 .unwrap()
                 .is_none()
         );
-        let reclaimed = store
-            .jobs()
-            .claim_git_compaction("worker-b", 2, 21, 10, &test_generated_id)
+        let reclaimed = jobs
+            .claim_git_compaction("worker-b", 2, 25, 10, &test_generated_id)
             .await
             .unwrap()
             .unwrap();
-
-        store
-            .jobs()
-            .complete_git_compaction_claim(&first, 22)
+        assert!(
+            !jobs
+                .renew_git_compaction_claim(&first, 26, 10)
+                .await
+                .unwrap()
+        );
+        jobs.complete_git_compaction_claim(&first, 26)
             .await
             .unwrap();
         let job = entities::git_compaction_job::Entity::find_by_id("scheduler/repo")
@@ -670,10 +674,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(job.lease_owner.as_deref(), Some("worker-b"));
-
-        store
-            .jobs()
-            .complete_git_compaction_claim(&reclaimed, 22)
+        jobs.complete_git_compaction_claim(&reclaimed, 26)
             .await
             .unwrap();
         assert!(
@@ -682,54 +683,6 @@ mod tests {
                 .await
                 .unwrap()
                 .is_none()
-        );
-    }
-
-    #[tokio::test]
-    async fn lease_renewal_prevents_reclaim_until_the_extended_expiry() {
-        let store =
-            MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap())
-                .unwrap();
-        seed_scheduled_repo(&store).await;
-        schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 1, 10)
-            .await
-            .unwrap();
-
-        let claim = store
-            .jobs()
-            .claim_git_compaction("worker-a", 2, 10, 10, &test_generated_id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(
-            store
-                .jobs()
-                .renew_git_compaction_claim(&claim, 15, 10)
-                .await
-                .unwrap()
-        );
-        assert!(
-            store
-                .jobs()
-                .claim_git_compaction("worker-b", 2, 21, 10, &test_generated_id)
-                .await
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            store
-                .jobs()
-                .claim_git_compaction("worker-b", 2, 25, 10, &test_generated_id)
-                .await
-                .unwrap()
-                .is_some()
-        );
-        assert!(
-            !store
-                .jobs()
-                .renew_git_compaction_claim(&claim, 26, 10)
-                .await
-                .unwrap()
         );
     }
 

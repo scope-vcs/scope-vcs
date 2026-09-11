@@ -33,29 +33,41 @@ pub fn validate_api_url(value: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn api_url(default: &str) -> String {
-    crate::execution::options()
+pub fn api_url(default: &str) -> anyhow::Result<String> {
+    let explicit = crate::execution::options()
         .api_url
         .clone()
         .or_else(|| env::var("SCOPE_API_URL").ok())
-        .or_else(|| env::var("SCOPE_API_PUBLIC_URL").ok())
-        .or_else(|| {
-            env::current_dir()
-                .ok()
-                .and_then(|cwd| scope_api_url_from_git_config(&cwd).ok().flatten())
-        })
-        .unwrap_or_else(|| default.to_string())
-        .trim_end_matches('/')
-        .to_string()
+        .or_else(|| env::var("SCOPE_API_PUBLIC_URL").ok());
+    let endpoint = match explicit {
+        Some(endpoint) => endpoint,
+        None => scope_api_url_from_git_config(
+            &env::current_dir().context("inspect current directory")?,
+        )?
+        .unwrap_or_else(|| default.to_string()),
+    };
+    Ok(endpoint.trim_end_matches('/').to_string())
 }
 
 pub fn discover_optional() -> anyhow::Result<Option<GitRepo>> {
+    discover_at(&env::current_dir().context("inspect current directory")?)
+}
+
+fn discover_at(cwd: &std::path::Path) -> anyhow::Result<Option<GitRepo>> {
     let output = Command::new("git")
+        .current_dir(cwd)
+        .env("LC_ALL", "C")
         .args(["rev-parse", "--show-toplevel"])
         .output()
         .context("inspect Git repository")?;
     if !output.status.success() {
-        return Ok(None);
+        let error = String::from_utf8_lossy(&output.stderr);
+        if error.starts_with("fatal: not a git repository (or any of the parent directories): .git")
+            || error.starts_with("fatal: not a git repository (or any parent up to mount point ")
+        {
+            return Ok(None);
+        }
+        anyhow::bail!("inspect Git repository failed: {}", error.trim());
     }
     let root = String::from_utf8(output.stdout).context("Git repository path is not UTF-8")?;
     // Git terminates its output with a newline; spaces are part of the path.
@@ -74,7 +86,7 @@ pub fn resolve_repository(
 ) -> anyhow::Result<ScopeRemote> {
     resolve(
         repo,
-        &crate::api::api_url(),
+        &crate::api::api_url()?,
         explicit_remote,
         explicit_repository(),
         false,
@@ -244,6 +256,38 @@ mod tests {
             root: dir.path().to_path_buf(),
         };
         (dir, repo)
+    }
+
+    #[test]
+    fn endpoint_discovery_distinguishes_no_checkout_from_broken_config() {
+        let outside = crate::test_support::TestDir::new("endpoint-outside");
+        assert!(
+            scope_api_url_from_git_config(outside.path())
+                .unwrap()
+                .is_none()
+        );
+        let dir = crate::test_support::TestDir::git_repo("endpoint-config", "main");
+        assert!(scope_api_url_from_git_config(dir.path()).unwrap().is_none());
+        dir.run_git(["config", "scope.apiUrl", "https://local.example"]);
+        assert_eq!(
+            scope_api_url_from_git_config(dir.path())
+                .unwrap()
+                .as_deref(),
+            Some("https://local.example")
+        );
+        std::fs::write(dir.path().join(".git/config"), "[broken").unwrap();
+        let error = scope_api_url_from_git_config(dir.path()).unwrap_err();
+        assert!(format!("{error:#}").contains("bad config"), "{error:#}");
+        assert!(discover_at(dir.path()).is_err());
+        let bare = crate::test_support::TestDir::new("endpoint-bare");
+        bare.run_git(["init", "--bare"]);
+        bare.run_git(["config", "scope.apiUrl", "https://bare.example"]);
+        assert_eq!(
+            scope_api_url_from_git_config(bare.path())
+                .unwrap()
+                .as_deref(),
+            Some("https://bare.example")
+        );
     }
 
     #[test]

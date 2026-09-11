@@ -36,6 +36,9 @@ export type RequestAttachmentDraft = {
   attachments: DraftAttachment[]
   baseText: string | null
   initialized: boolean
+  pending: boolean
+  replyToReplyId: string | null
+  submission: { id: string; payload: string } | null
   text: string
 }
 
@@ -49,6 +52,7 @@ const MAX_DRAFTS = 16
 const MAX_RETAINED_FILE_BYTES = 1024 * 1024 * 1024
 const STORAGE_PREFIX = 'scope.request-attachment-draft.'
 const entries = new Map<string, Entry>()
+const submissions = new Map<string, Promise<boolean>>()
 let cancelUploadsForDraft: (key: string) => void = () => {}
 
 export function requestAttachmentDraftKey(scope: RequestAttachmentDraftScope) {
@@ -75,9 +79,10 @@ export function subscribeRequestAttachmentDraft(
 }
 
 export function setRequestAttachmentDraftText(key: string, text: string) {
+  if (entryFor(key).draft.pending) return
   update(key, (draft) => draft.text === text && draft.initialized
     ? draft
-    : { ...draft, initialized: true, text })
+    : { ...draft, initialized: true, submission: null, text })
 }
 
 export function seedRequestAttachmentDraft(key: string, text: string) {
@@ -100,7 +105,7 @@ export function replaceRequestAttachmentDraftReference(
 }
 
 export function addRequestAttachmentDraftFiles(key: string, files: File[]) {
-  if (files.length === 0) return []
+  if (files.length === 0 || entryFor(key).draft.pending) return []
   const entry = entryFor(key)
   const additions: DraftAttachment[] = []
   let attachments = [...entry.draft.attachments]
@@ -146,6 +151,7 @@ export function addRequestAttachmentDraftFiles(key: string, files: File[]) {
   update(key, (draft) => ({
     ...draft,
     attachments,
+    submission: null,
   }))
   evictIdleDrafts()
   return additions
@@ -167,12 +173,14 @@ export function patchRequestAttachmentDraftFile(
 }
 
 export function removeRequestAttachmentDraftFile(key: string, localId: string) {
+  if (entryFor(key).draft.pending) return
   const removed = entryFor(key).draft.attachments.find(
     (attachment) => attachment.localId === localId,
   )
   revokePreviewUrl(removed?.previewUrl)
   update(key, (draft) => ({
     ...draft,
+    submission: null,
     attachments: draft.attachments.filter(
       (attachment) => attachment.localId !== localId,
     ),
@@ -193,6 +201,7 @@ function removeReference(text: string, attachmentId: string) {
 }
 
 export function clearRequestAttachmentDraft(key: string) {
+  cancelUploadsForDraft(key)
   for (const attachment of entryFor(key).draft.attachments) {
     revokePreviewUrl(attachment.previewUrl)
   }
@@ -307,6 +316,7 @@ function evictIdleDrafts() {
   const candidates = [...entries]
     .filter(([, entry]) =>
       entry.listeners.size === 0 &&
+      !entry.draft.pending &&
       !entry.draft.attachments.some(({ status }) => status === 'uploading'),
     )
     .sort((left, right) => left[1].touchedAt - right[1].touchedAt)
@@ -317,7 +327,7 @@ function evictIdleDrafts() {
 }
 
 function emptyDraft(): RequestAttachmentDraft {
-  return { attachments: [], baseText: null, initialized: false, text: '' }
+  return { attachments: [], baseText: null, initialized: false, pending: false, replyToReplyId: null, submission: null, text: '' }
 }
 
 function parseDraftKey(key: string) {
@@ -369,6 +379,8 @@ function persist(key: string, draft: RequestAttachmentDraft) {
       })),
       baseText: draft.baseText,
       initialized: draft.initialized,
+      submission: draft.submission,
+      replyToReplyId: draft.replyToReplyId,
       text: draft.text,
     }))
   } catch {
@@ -383,7 +395,7 @@ function restore(key: string): RequestAttachmentDraft {
     if (!raw) return emptyDraft()
     const value: unknown = JSON.parse(raw)
     if (!value || typeof value !== 'object') return emptyDraft()
-    const record = value as { attachments?: unknown; baseText?: unknown; initialized?: unknown; text?: unknown }
+    const record = value as { attachments?: unknown; baseText?: unknown; initialized?: unknown; submission?: unknown; replyToReplyId?: unknown; text?: unknown }
     const attachments = Array.isArray(record.attachments)
       ? record.attachments.flatMap((item): DraftAttachment[] => {
           if (!item || typeof item !== 'object') return []
@@ -418,6 +430,9 @@ function restore(key: string): RequestAttachmentDraft {
       attachments,
       baseText: typeof record.baseText === 'string' ? record.baseText : null,
       initialized: record.initialized === true,
+      pending: false,
+      replyToReplyId: typeof record.replyToReplyId === 'string' ? record.replyToReplyId : null,
+      submission: restoredSubmission(record.submission),
       text: typeof record.text === 'string' ? record.text : '',
     }
   } catch {
@@ -434,4 +449,52 @@ function createPreviewUrl(file: File) {
 
 function revokePreviewUrl(url: string | null | undefined) {
   if (url && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url)
+}
+
+function restoredSubmission(value: unknown): RequestAttachmentDraft['submission'] {
+  if (!value || typeof value !== 'object' || !('id' in value) || !('payload' in value)) return null
+  return typeof value.id === 'string' && typeof value.payload === 'string'
+    ? { id: value.id, payload: value.payload } : null
+}
+
+export function beginRequestAttachmentSubmission(key: string, payload: string) {
+  const draft = entryFor(key).draft
+  if (draft.pending) return null
+  const submission = draft.submission?.payload === payload
+    ? draft.submission : { id: crypto.randomUUID(), payload }
+  update(key, (current) => ({ ...current, pending: true, submission }))
+  return submission.id
+}
+
+export function finishRequestAttachmentSubmission(id: string, posted: boolean) {
+  for (const [key, entry] of entries) {
+    if (entry.draft.submission?.id !== id) continue
+    if (posted) clearRequestAttachmentDraft(key)
+    else update(key, (draft) => ({ ...draft, pending: false }))
+  }
+}
+
+// Row retries and composer retries share both the operation and the draft lock.
+export function runRequestContentSubmission(id: string, send: () => Promise<boolean>) {
+  const active = submissions.get(id)
+  if (active) return active
+  for (const [key, entry] of entries) {
+    if (entry.draft.submission?.id === id) {
+      update(key, (draft) => ({ ...draft, pending: true }))
+    }
+  }
+  const operation = Promise.resolve().then(send).then((posted) => {
+    finishRequestAttachmentSubmission(id, posted)
+    return posted
+  }, (error: unknown) => {
+    finishRequestAttachmentSubmission(id, false)
+    throw error
+  }).finally(() => submissions.delete(id))
+  submissions.set(id, operation)
+  return operation
+}
+
+export function setRequestAttachmentDraftReplyTarget(key: string, replyToReplyId: string | null) {
+  update(key, (draft) => draft.pending || draft.replyToReplyId === replyToReplyId
+    ? draft : { ...draft, replyToReplyId, submission: null })
 }

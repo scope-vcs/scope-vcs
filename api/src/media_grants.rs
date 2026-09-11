@@ -22,28 +22,10 @@ impl MediaGrantIssuer {
     }
 
     fn new(endpoint: String, private_key_pem: String) -> anyhow::Result<Self> {
-        let endpoint = url::Url::parse(&endpoint)?;
-        let loopback = match endpoint.host() {
-            Some(url::Host::Ipv4(address)) => address.is_loopback(),
-            Some(url::Host::Ipv6(address)) => address.is_loopback(),
-            Some(url::Host::Domain("localhost")) => true,
-            _ => false,
-        };
-        anyhow::ensure!(
-            endpoint.scheme() == "https" || (endpoint.scheme() == "http" && loopback),
-            "SCOPE_MEDIA_PUBLIC_URL must use HTTPS outside loopback development"
-        );
-        anyhow::ensure!(
-            endpoint.host().is_some()
-                && endpoint.username().is_empty()
-                && endpoint.password().is_none()
-                && endpoint.query().is_none()
-                && endpoint.fragment().is_none()
-                && endpoint.path() == "/",
-            "SCOPE_MEDIA_PUBLIC_URL must be an origin without credentials, path, query, or fragment"
-        );
+        let endpoint = scope_service_config::ServiceEndpoint::parse_origin(&endpoint)
+            .map_err(|error| anyhow::anyhow!("SCOPE_MEDIA_PUBLIC_URL: {error}"))?;
         Ok(Self {
-            endpoint: Arc::from(endpoint.as_str().trim_end_matches('/')),
+            endpoint: Arc::from(endpoint.as_str()),
             key: Arc::new(EncodingKey::from_ed_pem(private_key_pem.as_bytes())?),
         })
     }

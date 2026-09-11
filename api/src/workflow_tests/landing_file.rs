@@ -20,15 +20,9 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
     let rebuilt = state
         .metadata
         .jobs()
-        .run_ready_outbox_jobs(
-            "landing-file-test",
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .run_ready_outbox_jobs("landing-file-test", 10, &|| {
+            crate::persistence::unix_now().map_err(crate::error::ApiError::into_operator_diagnostic)
+        })
         .await
         .unwrap();
     assert_eq!(rebuilt.failed, 0);

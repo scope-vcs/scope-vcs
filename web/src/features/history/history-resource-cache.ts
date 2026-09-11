@@ -24,84 +24,39 @@ export const historyDiffResource = createCachedResource<ReviewFileDiff>({
 
 const diffScroll = createBoundedCache<string, number>({ maxEntries: MAX_DIFF_ENTRIES })
 
-export function historyEntryCacheKey({
-  audience,
-  entry,
-  generation,
-  repoId,
-  viewKey,
-}: {
+type HistoryScope = {
+  scope: string
   audience: ProjectionPreviewAudience
-  entry: string
   generation: string
   repoId: string
   viewKey: string
-}) {
-  return [repoId, generation, viewKey, audience, entry].join('\0')
 }
 
-export function historyDiffCacheKey({
-  audience,
-  commit,
-  generation,
-  newOid,
-  oldOid,
-  path,
-  repoId,
-  viewKey,
-}: {
-  audience: ProjectionPreviewAudience
-  commit: string
-  generation: string
-  newOid: string | null
-  oldOid: string | null
+type HistoryFileIdentity = HistoryScope & {
   path: string
-  repoId: string
-  viewKey: string
-}) {
+  oldOid: string | null
+  newOid: string | null
+}
+
+export function historyEntryCacheKey(identity: HistoryScope & { entry: string }) {
+  const { scope, repoId, generation, viewKey, audience, entry } = identity
+  return [scope, repoId, generation, viewKey, audience, entry].join('\0')
+}
+
+export function historyDiffCacheKey(identity: HistoryFileIdentity & { commit: string }) {
   return [
-    repoId,
-    generation,
-    viewKey,
-    audience,
-    commit,
-    path,
-    oldOid ?? '',
-    newOid ?? '',
+    historyEntryCacheKey({ ...identity, entry: identity.commit }),
+    identity.path,
+    identity.oldOid ?? '',
+    identity.newOid ?? '',
   ].join('\0')
 }
 
-export function historyEntryDiffCacheKey({
-  audience,
-  entry,
-  generation,
-  newOid,
-  oldOid,
-  path,
-  repoId,
-  viewKey,
-  visibilityChange = null,
-}: {
-  audience: ProjectionPreviewAudience
+export function historyEntryDiffCacheKey(identity: HistoryFileIdentity & {
   entry: string
-  generation: string
-  newOid: string | null
-  oldOid: string | null
-  path: string
-  repoId: string
   visibilityChange?: string | null
-  viewKey: string
 }) {
-  return [historyDiffCacheKey({
-    audience,
-    commit: entry,
-    generation,
-    newOid,
-    oldOid,
-    path,
-    repoId,
-    viewKey,
-  }), visibilityChange ?? ''].join('\0')
+  return [historyDiffCacheKey({ ...identity, commit: identity.entry }), identity.visibilityChange ?? ''].join('\0')
 }
 
 export function readHistoryDiffScroll(key: string | null) {
@@ -118,17 +73,6 @@ export function resetHistoryResourceCache() {
   historyEntryResource.clear()
   historyDiffResource.clear()
   diffScroll.clear()
-}
-
-export function historyResourceCacheStats() {
-  const diffs = historyDiffResource.stats()
-  const entries = historyEntryResource.stats()
-  return {
-    diffBytes: diffs.totalWeight,
-    diffs: diffs.entries,
-    entryBytes: entries.totalWeight,
-    entries: entries.entries,
-  }
 }
 
 function approximateSerializedBytes(value: unknown) {

@@ -578,8 +578,7 @@ test('requests navigation shows a destination skeleton inside the repository she
       releaseQueueRequests = resolve
     })
     await page.route('**/_serverFn/**', async (route) => {
-      const requestUrl = decodeURIComponent(route.request().url())
-      if (!requestUrl.includes('section')) {
+      if (serverFunctionName(route.request()) !== 'loadRequestQueuePage_createServerFn_handler') {
         await route.continue()
         return
       }

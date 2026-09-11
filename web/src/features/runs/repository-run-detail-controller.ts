@@ -8,7 +8,6 @@ import type {
 import {
   useCallback,
   useEffect,
-  useReducer,
   useRef,
   useState,
   useSyncExternalStore,
@@ -54,8 +53,6 @@ type DetailViewState = {
   showGraph: boolean
 }
 
-type DetailViewUpdate = (state: DetailViewState) => DetailViewState
-
 function createDetailViewState(detail: RepoRunDetail): DetailViewState {
   const initialView = selectInitialView(detail.jobs)
   return {
@@ -68,13 +65,6 @@ function createDetailViewState(detail: RepoRunDetail): DetailViewState {
     selection: initialView.selection,
     showGraph: defaultShowGraph(detail.jobs),
   }
-}
-
-function updateDetailView(
-  state: DetailViewState,
-  update: DetailViewUpdate,
-) {
-  return update(state)
 }
 
 export function useRepositoryRunDetailController({
@@ -109,7 +99,7 @@ export function useRepositoryRunDetailController({
     runLogsResource.getServerSnapshot,
   )
   const detail = detailSnapshot.value?.detail ?? initialDetail
-  const [view, updateView] = useReducer(updateDetailView, detail, createDetailViewState)
+  const [view, updateView] = useState(() => createDetailViewState(detail))
   const selectionRef = useRef(view.selection)
   useEffect(() => { selectionRef.current = view.selection }, [view.selection])
 

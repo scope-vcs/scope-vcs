@@ -1,9 +1,11 @@
+pub(crate) mod blocking;
 pub(crate) mod cache;
 pub(crate) mod content;
 mod context;
 mod credentials;
 pub(crate) mod import;
 pub(crate) mod projection_repo;
+pub(crate) mod public_request_commit;
 pub(crate) mod repository_engine;
 pub(crate) mod request_ref_public_safety;
 pub(crate) mod request_refs;
@@ -43,7 +45,7 @@ use std::{
     time::Instant,
 };
 
-struct TemporaryRepository(Option<PathBuf>);
+struct TemporaryRepository(PathBuf);
 
 enum ReceivePackBody {
     Buffered(Vec<u8>),
@@ -55,7 +57,7 @@ enum ReceivePackBody {
 
 impl TemporaryRepository {
     fn new(path: PathBuf) -> Self {
-        Self(Some(path))
+        Self(path)
     }
 }
 
@@ -63,13 +65,18 @@ impl Deref for TemporaryRepository {
     type Target = FsPath;
 
     fn deref(&self) -> &Self::Target {
-        self.0.as_deref().expect("temporary repository is present")
+        &self.0
     }
 }
 
 impl Drop for TemporaryRepository {
     fn drop(&mut self) {
-        if let Some(path) = self.0.as_ref() {
+        let path = self.0.clone();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn_blocking(move || {
+                let _ = fs::remove_dir_all(path);
+            });
+        } else {
             let _ = fs::remove_dir_all(path);
         }
     }
@@ -144,27 +151,40 @@ pub(crate) async fn git_info_refs(
                 Ok(access) => access,
                 Err(error) => return git_error_response(error),
             };
-            let _permit = match state.runtime_budgets.try_receive_pack() {
+            let permit = match state.runtime_budgets.try_receive_pack() {
                 Ok(permit) => permit,
                 Err(error) => return git_error_response(error),
             };
-            match handle_git_receive_pack(&state, &org, &repo, "GET", Vec::new(), None, access)
-                .await
-            {
-                Ok(response) => response,
-                Err(error) => git_error_response(error),
+            let operation = tokio::spawn(async move {
+                let _permit = permit;
+                handle_git_receive_pack(&state, &org, &repo, "GET", Vec::new(), None, access).await
+            });
+            match operation.await {
+                Ok(Ok(response)) => response,
+                Ok(Err(error)) => git_error_response(error),
+                Err(error) => git_error_response(ApiError::internal_message(format!(
+                    "Git receive advertisement failed: {error}",
+                ))),
             }
         }
         Some(GIT_UPLOAD_PACK) => {
-            let _permit = match state.runtime_budgets.try_upload_pack() {
+            let permit = match state.runtime_budgets.try_upload_pack() {
                 Ok(permit) => permit,
                 Err(error) => return git_advertisement_error(error.into_public_message()),
             };
             match git_upload_pack_repo_for_request(&state, &headers, &org, &repo, mode).await {
-                Ok(repo_path) => git_upload_pack_advertisement(
-                    &repo_path,
-                    state.runtime_budgets.git_command_timeout(),
-                ),
+                Ok(repo_path) => {
+                    let timeout = state.runtime_budgets.git_command_timeout();
+                    match blocking::run(move || {
+                        let _permit = permit;
+                        Ok(git_upload_pack_advertisement(&repo_path, timeout))
+                    })
+                    .await
+                    {
+                        Ok(response) => response,
+                        Err(error) => git_advertisement_error(error.into_public_message()),
+                    }
+                }
                 Err(error) if error.status() == StatusCode::UNAUTHORIZED => {
                     git_error_response(error)
                 }
@@ -214,11 +234,31 @@ pub(crate) async fn git_receive_pack(
             Ok(access) => access,
             Err(error) => return git_error_response(error),
         };
-    let _permit = match state.runtime_budgets.try_receive_pack() {
+    let permit = match state.runtime_budgets.try_receive_pack() {
         Ok(permit) => permit,
         Err(error) => return git_error_response(error),
     };
 
+    tokio::spawn(async move {
+        let _permit = permit;
+        receive_pack_request(state, headers, org, repo, request, access).await
+    })
+    .await
+    .unwrap_or_else(|error| {
+        git_error_response(ApiError::internal_message(format!(
+            "Git receive operation failed: {error}"
+        )))
+    })
+}
+
+async fn receive_pack_request(
+    state: AppState,
+    headers: HeaderMap,
+    org: String,
+    repo: String,
+    request: Request,
+    access: ReceivePackAccess,
+) -> Response {
     let content_type = headers
         .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -253,7 +293,12 @@ pub(crate) async fn git_receive_pack(
                 )));
             }
         };
-        match decode_git_request_body(&headers, buffered, MAX_RECEIVE_PACK_BYTES) {
+        let decode_headers = headers.clone();
+        match blocking::run(move || {
+            decode_git_request_body(&decode_headers, buffered, MAX_RECEIVE_PACK_BYTES)
+        })
+        .await
+        {
             Ok(body) => ReceivePackBody::Buffered(body),
             Err(error) => return git_error_response(error),
         }
@@ -318,7 +363,11 @@ pub(crate) async fn git_upload_pack_rpc(
             return git_upload_pack_error(format!("git upload-pack body is too large: {error}"));
         }
     };
-    let body = match decode_git_request_body(&headers, body, MAX_UPLOAD_PACK_BYTES) {
+    let (body, permit) = match blocking::run(move || {
+        decode_git_request_body(&headers, body, MAX_UPLOAD_PACK_BYTES).map(|body| (body, permit))
+    })
+    .await
+    {
         Ok(body) => body,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
@@ -415,15 +464,19 @@ pub(crate) async fn handle_git_receive_pack(
     let preparation = git_receive::prepare(state, owner, repo_name, access, true).await?;
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository::new(preparation.staging_repo);
-    let cgi = git_http_backend(
-        &staging_repo,
-        method,
-        "info/refs",
-        "service=git-receive-pack",
-        body,
-        content_type,
-        &remote_user,
-    )?;
+    let method = method.to_string();
+    let cgi = blocking::run(move || {
+        git_http_backend(
+            &staging_repo,
+            &method,
+            "info/refs",
+            "service=git-receive-pack",
+            body,
+            content_type,
+            &remote_user,
+        )
+    })
+    .await?;
     Ok(cgi.into_response())
 }
 
@@ -438,18 +491,26 @@ async fn handle_git_receive_pack_body(
 ) -> Result<Response, ApiError> {
     let preparation = git_receive::prepare(state, owner, repo_name, access, false).await?;
     let remote_user = preparation.access.author_id().to_string();
-    let staging_repo = TemporaryRepository::new(preparation.staging_repo.clone());
+    let staging_repo =
+        std::sync::Arc::new(TemporaryRepository::new(preparation.staging_repo.clone()));
     let receive_started_at = Instant::now();
     let cgi = match body {
-        ReceivePackBody::Buffered(body) => git_http_backend(
-            &staging_repo,
-            method,
-            "git-receive-pack",
-            "",
-            body,
-            content_type,
-            &remote_user,
-        )?,
+        ReceivePackBody::Buffered(body) => {
+            let staging_repo = staging_repo.clone();
+            let method = method.to_string();
+            blocking::run(move || {
+                git_http_backend(
+                    &staging_repo,
+                    &method,
+                    "git-receive-pack",
+                    "",
+                    body,
+                    content_type,
+                    &remote_user,
+                )
+            })
+            .await?
+        }
         ReceivePackBody::Streaming {
             body,
             content_length,

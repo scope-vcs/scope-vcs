@@ -1,3 +1,6 @@
+#[cfg(unix)]
+#[path = "request_workflows/pull.rs"]
+mod pull;
 mod support;
 
 use axum::{
@@ -19,12 +22,8 @@ fn request_reads_work_outside_a_checkout_with_explicit_repository() {
     let dir = TempDir::new("request-outside");
     let server = FixtureServer::start();
     let output = server
-        .command(dir.path())
+        .request_command(dir.path())
         .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
             "list",
             "--state",
             "open",
@@ -42,16 +41,8 @@ fn request_reads_work_outside_a_checkout_with_explicit_repository() {
     assert_eq!(value["result"]["requests"].as_array().unwrap().len(), 1);
     assert_eq!(value["result"]["requests"][0]["name"], "fix-one");
     let output = server
-        .command(dir.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "show",
-            "--request",
-            "req_one",
-        ])
+        .request_command(dir.path())
+        .args(["show", "--request", "req_one"])
         .output()
         .unwrap();
     assert_eq!(success(output)["result"]["request"]["id"], "req_one");
@@ -64,12 +55,8 @@ fn request_diff_uses_server_revision_and_path_with_no_local_private_data() {
     fs::write(dir.path().join("private.txt"), "LOCAL PRIVATE SENTINEL").unwrap();
     let server = FixtureServer::start();
     let output = server
-        .command(dir.path())
+        .request_command(dir.path())
         .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
             "diff",
             "--request",
             "req_one",
@@ -111,12 +98,8 @@ fn request_diff_rejects_a_commit_absent_from_visible_revision_inspection() {
     let dir = TempDir::new("request-absent-commit");
     let server = FixtureServer::start();
     let output = server
-        .command(dir.path())
+        .request_command(dir.path())
         .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
             "diff",
             "--request",
             "req_one",
@@ -178,16 +161,8 @@ fn contributor_request_checks_use_request_permissions_without_maintainer_endpoin
     let server = FixtureServer::start();
     // Public contributors must not call the maintainer-only run history endpoint.
     let output = server
-        .command(dir.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "checks",
-            "--request",
-            "req_one",
-        ])
+        .request_command(dir.path())
+        .args(["checks", "--request", "req_one"])
         .output()
         .unwrap();
     let result = success(output);
@@ -205,16 +180,8 @@ fn maintainer_request_checks_filter_exact_head_across_run_history_pages() {
     repo["access"]["actor"] = "Member".into();
     let server = FixtureServer::with_repository(request(), repo);
     let output = server
-        .command(dir.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "checks",
-            "--request",
-            "req_one",
-        ])
+        .request_command(dir.path())
+        .args(["checks", "--request", "req_one"])
         .output()
         .unwrap();
     let result = success(output);
@@ -263,18 +230,8 @@ fn request_edit_reads_description_stdin_outside_checkout() {
     let dir = TempDir::new("request-description");
     let server = FixtureServer::start();
     let mut child = server
-        .command(dir.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "edit",
-            "--request",
-            "req_one",
-            "--description-file",
-            "-",
-        ])
+        .request_command(dir.path())
+        .args(["edit", "--request", "req_one", "--description-file", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -299,7 +256,7 @@ fn request_start_metadata_failure_can_retry_push_without_creating_another_reques
     use std::os::unix::fs::PermissionsExt;
     let dir = TempDir::new("request-start-recovery");
     create_repo_with_head(dir.path());
-    let head = git_stdout(dir.path(), &["rev-parse", "HEAD"]);
+    let head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
     let bare = TempDir::new("request-recovery-bare");
     run_git(bare.path(), ["init", "--bare"]);
     run_git(dir.path(), ["push", bare.path().to_str().unwrap(), "main"]);
@@ -377,10 +334,10 @@ exec "$SCOPE_TEST_REAL_GIT" "${args[@]}"
     assert_eq!(error["recovery"]["failed_step"], "save_local_metadata");
     assert_eq!(error["recovery"]["remote_push_confirmed"], false);
     assert_eq!(
-        git_stdout(dir.path(), &["branch", "--show-current"]),
+        git_stdout(dir.path(), ["branch", "--show-current"]),
         "fix-one"
     );
-    assert_eq!(git_stdout(dir.path(), &["rev-parse", "HEAD"]), head);
+    assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), head);
     fs::remove_file(hook).unwrap();
     fs::remove_file(dir.path().join(".git/config.lock")).unwrap();
     let output = command()
@@ -397,7 +354,7 @@ exec "$SCOPE_TEST_REAL_GIT" "${args[@]}"
         .unwrap();
     assert_eq!(success(output)["command"], "request.push");
     assert_eq!(
-        git_stdout(bare.path(), &["rev-parse", "refs/heads/fix-one"]),
+        git_stdout(bare.path(), ["rev-parse", "refs/heads/fix-one"]),
         head
     );
     assert_eq!(
@@ -410,20 +367,6 @@ exec "$SCOPE_TEST_REAL_GIT" "${args[@]}"
             .count(),
         1
     );
-}
-
-fn git_stdout(cwd: &std::path::Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .current_dir(cwd)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
 const OID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -477,13 +420,18 @@ impl FixtureServer {
             edited,
         }
     }
+    fn request_command(&self, cwd: &std::path::Path) -> Command {
+        let mut command = self.server.command(cwd);
+        command.args(["--json", "--repo", "owner/repo", "request"]);
+        command
+    }
     fn command(&self, cwd: &std::path::Path) -> Command {
         self.server.command(cwd)
     }
 }
 
 fn repository() -> Value {
-    json!({"id":"repo_one","owner_handle":"owner","name":"repo","git_remote_url":"https://scope.example/git/public/owner/repo","lifecycle_state":"Ready","change_version":1,"access":{"actor":"Public","can_read_private_files":false,"can_push":false,"can_change_file_visibility":false,"can_apply_changes":false,"can_manage_members":false,"can_delete_repo":false},"open_request_count":2,"request_permissions":{"can_start_request":true}})
+    json!({"id":"repo_one","owner_handle":"owner","name":"repo","git_remote_url":"https://scope.example/git/public/owner/repo","lifecycle_state":"Ready","change_version":1,"access":{"actor":"Public","can_read_private_files":false,"can_push":false,"can_change_file_visibility":false,"can_manage_members":false,"can_delete_repo":false},"open_request_count":2,"request_permissions":{"can_start_request":true}})
 }
 fn list_item(id: &str, name: &str, state: &str) -> Value {
     json!({"id":id,"name":name,"title":name,"author_role":"Public","audience":"Public","head_oid":OID,"state":state,"submitted_at_unix":1,"updated_at_unix":2,"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})

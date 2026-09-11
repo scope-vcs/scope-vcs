@@ -100,24 +100,52 @@ pub(crate) async fn seed_run_gallery(
     planned.sort_by(|(left, _), (right, _)| right.cmp(left));
 
     for (seconds_ago, seeded) in planned {
-        let created_at_unix = now_unix.saturating_sub(seconds_ago);
-        match seeded {
-            SeededRun::Running => seed_running_run(&runs, &checks, created_at_unix).await?,
-            SeededRun::FailedChain => {
-                seed_failed_chain_run(&runs, &checks, created_at_unix).await?
-            }
+        let (revision, slug, trigger) = match seeded {
+            SeededRun::Running => (&checks, "running-chain".to_string(), RunTrigger::Manual),
+            SeededRun::FailedChain => (&checks, "failed-chain".to_string(), RunTrigger::PushMain),
             SeededRun::SucceededChain => {
-                seed_succeeded_chain_run(&runs, &checks, created_at_unix).await?
+                (&checks, "succeeded-chain".to_string(), RunTrigger::Manual)
             }
-            SeededRun::Canceled => seed_canceled_run(&runs, &checks, created_at_unix).await?,
-            SeededRun::RetriedLint => seed_retried_lint_run(&runs, &lint, created_at_unix).await?,
-            SeededRun::TimedOut => seed_timed_out_run(&runs, &lint, created_at_unix).await?,
-            SeededRun::FillerLint(index) => {
-                seed_filler_lint_run(&runs, &lint, index, created_at_unix).await?
+            SeededRun::Canceled => (&checks, "canceled-chain".to_string(), RunTrigger::PushMain),
+            SeededRun::RetriedLint => (&lint, "retried-lint".to_string(), RunTrigger::Manual),
+            SeededRun::TimedOut => (&lint, "timed-out-lint".to_string(), RunTrigger::PushMain),
+            SeededRun::FillerLint(index) => (
+                &lint,
+                format!("filler-lint-{index}"),
+                if index.is_multiple_of(2) {
+                    RunTrigger::Manual
+                } else {
+                    RunTrigger::PushMain
+                },
+            ),
+            SeededRun::FillerChecks(index) => (
+                &checks,
+                format!("filler-checks-{index}"),
+                if index.is_multiple_of(2) {
+                    RunTrigger::PushMain
+                } else {
+                    RunTrigger::Manual
+                },
+            ),
+        };
+        let clock = now_unix.saturating_sub(seconds_ago);
+        let id = enqueue(&runs, revision, &slug, trigger, clock).await?;
+        let mut run = GalleryRun {
+            runs: &runs,
+            revision,
+            id,
+            clock,
+        };
+        match seeded {
+            SeededRun::Running => run.seed_checks_chain(true).await?,
+            SeededRun::FailedChain => run.seed_failed_chain_run().await?,
+            SeededRun::SucceededChain | SeededRun::FillerChecks(_) => {
+                run.seed_checks_chain(false).await?
             }
-            SeededRun::FillerChecks(index) => {
-                seed_filler_checks_run(&runs, &checks, index, created_at_unix).await?
-            }
+            SeededRun::Canceled => run.seed_canceled_run().await?,
+            SeededRun::RetriedLint => run.seed_retried_lint_run().await?,
+            SeededRun::TimedOut => run.seed_timed_out_run().await?,
+            SeededRun::FillerLint(index) => run.seed_filler_lint_run(index).await?,
         }
     }
     Ok(())
@@ -250,408 +278,233 @@ fn step(name: &str, run: &str) -> Result<WorkflowStep, ApiError> {
 // Named scenarios
 // ---------------------------------------------------------------------------------------------
 
-async fn seed_running_run(
-    runs: &RunStore,
-    revision: &WorkflowRevision,
-    created_at_unix: u64,
-) -> Result<(), ApiError> {
-    let run_id = enqueue(
-        runs,
-        revision,
-        "running-chain",
-        RunTrigger::Manual,
-        created_at_unix,
-    )
-    .await?;
-    let mut clock = created_at_unix;
-    run_job(
-        runs,
-        &run_id,
-        "build",
-        1,
-        &[StepPlan::succeed(lines(&[
-            "Compiling workspace",
-            "Build finished in 12.4s",
-        ]))],
-        &mut clock,
-    )
-    .await?;
-    run_job(
-        runs,
-        &run_id,
-        "test",
-        1,
-        &[StepPlan::succeed(lines(&[
-            "Running 480 tests",
-            "test result: ok. 480 passed; 0 failed",
-        ]))],
-        &mut clock,
-    )
-    .await?;
-    run_job(
-        runs,
-        &run_id,
-        "deploy",
-        1,
-        &[
-            StepPlan::succeed(lines(&[
-                "Packaging release artifact",
-                "Package created: build/release.tar.gz",
-            ])),
-            StepPlan::succeed(lines(&[
-                "Pushing image to registry",
-                "Pushed ghcr.io/scope/app:sha-abc1234",
-            ])),
-            StepPlan::running(rollout_log_chunks()),
-        ],
-        &mut clock,
-    )
-    .await?;
-    Ok(())
+struct GalleryRun<'a> {
+    runs: &'a RunStore,
+    revision: &'a WorkflowRevision,
+    id: String,
+    clock: u64,
 }
 
-async fn seed_failed_chain_run(
-    runs: &RunStore,
-    revision: &WorkflowRevision,
-    created_at_unix: u64,
-) -> Result<(), ApiError> {
-    let run_id = enqueue(
-        runs,
-        revision,
-        "failed-chain",
-        RunTrigger::PushMain,
-        created_at_unix,
-    )
-    .await?;
-    let mut clock = created_at_unix;
-    run_job(
-        runs,
-        &run_id,
-        "build",
-        1,
-        &[StepPlan::fail(
-            101,
-            lines(&[
-                "Compiling workspace",
-                "error[E0433]: failed to resolve: use of undeclared crate `scope_runtime`",
-                "error: could not compile `api` (bin \"api\") due to 1 previous error",
-            ]),
-        )],
-        &mut clock,
-    )
-    .await?;
-    Ok(())
-}
-
-async fn seed_succeeded_chain_run(
-    runs: &RunStore,
-    revision: &WorkflowRevision,
-    created_at_unix: u64,
-) -> Result<(), ApiError> {
-    let run_id = enqueue(
-        runs,
-        revision,
-        "succeeded-chain",
-        RunTrigger::Manual,
-        created_at_unix,
-    )
-    .await?;
-    let mut clock = created_at_unix;
-    seed_checks_chain_success(runs, &run_id, &mut clock).await
-}
-
-async fn seed_canceled_run(
-    runs: &RunStore,
-    revision: &WorkflowRevision,
-    created_at_unix: u64,
-) -> Result<(), ApiError> {
-    let run_id = enqueue(
-        runs,
-        revision,
-        "canceled-chain",
-        RunTrigger::PushMain,
-        created_at_unix,
-    )
-    .await?;
-    let mut clock = created_at_unix;
-    run_job(
-        runs,
-        &run_id,
-        "build",
-        1,
-        &[StepPlan::succeed(lines(&[
-            "Compiling workspace",
-            "Build finished in 9.8s",
-        ]))],
-        &mut clock,
-    )
-    .await?;
-
-    let attempt = attempt_id(&run_id, "test", 1);
-    let token = attempt_token(&run_id, "test", 1);
-    clock += 1;
-    runs.dispatch_job(
-        &run_id,
-        "test",
-        &attempt,
-        &token,
-        RUNTIME_VERSION,
-        clock,
-        clock + DEFAULT_LEASE_SECONDS,
-    )
-    .await?;
-    clock += 1;
-    runs.start_attempt_step(&attempt, &token, 0, clock).await?;
-    clock += 1;
-    append_log(
-        runs,
-        &attempt,
-        &token,
-        0,
-        1,
-        lines(&["Running test suite", "112 of 480 tests complete"])
-            .into_iter()
-            .next()
-            .expect("single log chunk"),
-        clock,
-    )
-    .await?;
-    clock += 1;
-    runs.request_run_cancellation(
-        super::DEV_SEED_USER_ID,
-        revision.workflow().repository_id(),
-        &run_id,
-        clock,
-    )
-    .await?;
-    clock += 1;
-    runs.complete_attempt(&attempt, &token, AttemptConclusion::Canceled, false, clock)
-        .await?;
-    Ok(())
-}
-
-async fn seed_retried_lint_run(
-    runs: &RunStore,
-    revision: &WorkflowRevision,
-    created_at_unix: u64,
-) -> Result<(), ApiError> {
-    let run_id = enqueue(
-        runs,
-        revision,
-        "retried-lint",
-        RunTrigger::Manual,
-        created_at_unix,
-    )
-    .await?;
-    let mut clock = created_at_unix;
-    run_job(
-        runs,
-        &run_id,
-        "lint",
-        1,
-        &[StepPlan::fail(
+impl GalleryRun<'_> {
+    async fn seed_failed_chain_run(&mut self) -> Result<(), ApiError> {
+        self.job(
+            "build",
             1,
-            lines(&[
-                "Linting changed files",
-                "error: unused import `std::fmt::Debug`",
-            ]),
-        )],
-        &mut clock,
-    )
-    .await?;
-    clock += 1;
-    runs.retry_run(
-        super::DEV_SEED_USER_ID,
-        revision.workflow().repository_id(),
-        &run_id,
-        clock,
-    )
-    .await?;
-    run_job(
-        runs,
-        &run_id,
-        "lint",
-        2,
-        &[StepPlan::succeed(lines(&[
-            "Linting changed files",
-            "no lint issues found",
-        ]))],
-        &mut clock,
-    )
-    .await?;
-    Ok(())
-}
-
-async fn seed_timed_out_run(
-    runs: &RunStore,
-    revision: &WorkflowRevision,
-    created_at_unix: u64,
-) -> Result<(), ApiError> {
-    let run_id = enqueue(
-        runs,
-        revision,
-        "timed-out-lint",
-        RunTrigger::PushMain,
-        created_at_unix,
-    )
-    .await?;
-    let mut clock = created_at_unix;
-    let attempt = attempt_id(&run_id, "lint", 1);
-    let token = attempt_token(&run_id, "lint", 1);
-    runs.dispatch_job(
-        &run_id,
-        "lint",
-        &attempt,
-        &token,
-        RUNTIME_VERSION,
-        clock,
-        clock + DEFAULT_LEASE_SECONDS,
-    )
-    .await?;
-    clock += 1;
-    runs.start_attempt_step(&attempt, &token, 0, clock).await?;
-    clock += 1;
-    append_log(
-        runs,
-        &attempt,
-        &token,
-        0,
-        1,
-        vec!["Linting changed files".to_string()],
-        clock,
-    )
-    .await?;
-    clock += 1;
-    runs.complete_attempt(&attempt, &token, AttemptConclusion::TimedOut, false, clock)
-        .await?;
-    Ok(())
-}
-
-async fn seed_filler_lint_run(
-    runs: &RunStore,
-    revision: &WorkflowRevision,
-    index: usize,
-    created_at_unix: u64,
-) -> Result<(), ApiError> {
-    let trigger = if index.is_multiple_of(2) {
-        RunTrigger::Manual
-    } else {
-        RunTrigger::PushMain
-    };
-    let run_id = enqueue(
-        runs,
-        revision,
-        &format!("filler-lint-{index}"),
-        trigger,
-        created_at_unix,
-    )
-    .await?;
-    let mut clock = created_at_unix;
-    let plan = if index.is_multiple_of(3) {
-        StepPlan::fail(
-            1,
-            lines(&["Linting changed files", "error: missing trailing newline"]),
+            &[StepPlan::fail(
+                101,
+                lines(&[
+                    "Compiling workspace",
+                    "error[E0433]: failed to resolve: use of undeclared crate `scope_runtime`",
+                    "error: could not compile `api` (bin \"api\") due to 1 previous error",
+                ]),
+            )],
         )
-    } else {
-        StepPlan::succeed(lines(&["Linting changed files", "no lint issues found"]))
-    };
-    run_job(runs, &run_id, "lint", 1, &[plan], &mut clock).await?;
-    Ok(())
-}
+        .await?;
+        Ok(())
+    }
 
-async fn seed_filler_checks_run(
-    runs: &RunStore,
-    revision: &WorkflowRevision,
-    index: usize,
-    created_at_unix: u64,
-) -> Result<(), ApiError> {
-    let trigger = if index.is_multiple_of(2) {
-        RunTrigger::PushMain
-    } else {
-        RunTrigger::Manual
-    };
-    let run_id = enqueue(
-        runs,
-        revision,
-        &format!("filler-checks-{index}"),
-        trigger,
-        created_at_unix,
-    )
-    .await?;
-    let mut clock = created_at_unix;
-    seed_checks_chain_success(runs, &run_id, &mut clock).await
-}
+    async fn seed_canceled_run(&mut self) -> Result<(), ApiError> {
+        self.job(
+            "build",
+            1,
+            &[StepPlan::succeed(lines(&[
+                "Compiling workspace",
+                "Build finished in 9.8s",
+            ]))],
+        )
+        .await?;
+        self.clock += 1;
+        self.incomplete_job(
+            "test",
+            AttemptConclusion::Canceled,
+            &["Running test suite", "112 of 480 tests complete"],
+        )
+        .await
+    }
 
-async fn seed_checks_chain_success(
-    runs: &RunStore,
-    run_id: &str,
-    clock: &mut u64,
-) -> Result<(), ApiError> {
-    run_job(
-        runs,
-        run_id,
-        "build",
-        1,
-        &[StepPlan::succeed(lines(&[
-            "Compiling workspace",
-            "Build finished in 10.1s",
-        ]))],
-        clock,
-    )
-    .await?;
-    run_job(
-        runs,
-        run_id,
-        "test",
-        1,
-        &[StepPlan::succeed(lines(&[
-            "Running 480 tests",
-            "test result: ok. 480 passed; 0 failed",
-        ]))],
-        clock,
-    )
-    .await?;
-    run_job(
-        runs,
-        run_id,
-        "deploy",
-        1,
-        &[
-            StepPlan::succeed(lines(&["Packaging release artifact", "Package created"])),
-            StepPlan::succeed(lines(&["Pushing image to registry", "Pushed successfully"])),
-            StepPlan::succeed(lines(&["Rolling out release", "Rollout complete"])),
-        ],
-        clock,
-    )
-    .await
+    async fn seed_retried_lint_run(&mut self) -> Result<(), ApiError> {
+        self.job(
+            "lint",
+            1,
+            &[StepPlan::fail(
+                1,
+                lines(&[
+                    "Linting changed files",
+                    "error: unused import `std::fmt::Debug`",
+                ]),
+            )],
+        )
+        .await?;
+        self.clock += 1;
+        self.runs
+            .retry_run(
+                super::DEV_SEED_USER_ID,
+                self.revision.workflow().repository_id(),
+                &self.id,
+                self.clock,
+            )
+            .await?;
+        self.job(
+            "lint",
+            2,
+            &[StepPlan::succeed(lines(&[
+                "Linting changed files",
+                "no lint issues found",
+            ]))],
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn seed_timed_out_run(&mut self) -> Result<(), ApiError> {
+        self.incomplete_job(
+            "lint",
+            AttemptConclusion::TimedOut,
+            &["Linting changed files"],
+        )
+        .await
+    }
+
+    async fn incomplete_job(
+        &mut self,
+        key: &str,
+        conclusion: AttemptConclusion,
+        log: &[&str],
+    ) -> Result<(), ApiError> {
+        let attempt = attempt_id(&self.id, key, 1);
+        let token = attempt_token(&self.id, key, 1);
+        self.runs
+            .dispatch_job(
+                &self.id,
+                key,
+                &attempt,
+                &token,
+                RUNTIME_VERSION,
+                self.clock,
+                self.clock + DEFAULT_LEASE_SECONDS,
+            )
+            .await?;
+        self.clock += 1;
+        self.runs
+            .start_attempt_step(&attempt, &token, 0, self.clock)
+            .await?;
+        self.clock += 1;
+        append_log(
+            self.runs,
+            &attempt,
+            &token,
+            0,
+            1,
+            log.iter().map(|line| line.to_string()).collect(),
+            self.clock,
+        )
+        .await?;
+        if matches!(conclusion, AttemptConclusion::Canceled) {
+            self.clock += 1;
+            self.runs
+                .request_run_cancellation(
+                    super::DEV_SEED_USER_ID,
+                    self.revision.workflow().repository_id(),
+                    &self.id,
+                    self.clock,
+                )
+                .await?;
+        }
+        self.clock += 1;
+        self.runs
+            .complete_attempt(&attempt, &token, conclusion, false, self.clock)
+            .await?;
+        Ok(())
+    }
+
+    async fn seed_filler_lint_run(&mut self, index: usize) -> Result<(), ApiError> {
+        let plan = if index.is_multiple_of(3) {
+            StepPlan::fail(
+                1,
+                lines(&["Linting changed files", "error: missing trailing newline"]),
+            )
+        } else {
+            StepPlan::succeed(lines(&["Linting changed files", "no lint issues found"]))
+        };
+        self.job("lint", 1, &[plan]).await?;
+        Ok(())
+    }
+
+    async fn seed_checks_chain(&mut self, running: bool) -> Result<(), ApiError> {
+        self.job(
+            "build",
+            1,
+            &[StepPlan::succeed(lines(&[
+                "Compiling workspace",
+                if running {
+                    "Build finished in 12.4s"
+                } else {
+                    "Build finished in 10.1s"
+                },
+            ]))],
+        )
+        .await?;
+        self.job(
+            "test",
+            1,
+            &[StepPlan::succeed(lines(&[
+                "Running 480 tests",
+                "test result: ok. 480 passed; 0 failed",
+            ]))],
+        )
+        .await?;
+        self.job(
+            "deploy",
+            1,
+            &[
+                StepPlan::succeed(lines(&[
+                    "Packaging release artifact",
+                    if running {
+                        "Package created: build/release.tar.gz"
+                    } else {
+                        "Package created"
+                    },
+                ])),
+                StepPlan::succeed(lines(&[
+                    "Pushing image to registry",
+                    if running {
+                        "Pushed ghcr.io/scope/app:sha-abc1234"
+                    } else {
+                        "Pushed successfully"
+                    },
+                ])),
+                if running {
+                    StepPlan::running(rollout_log_chunks())
+                } else {
+                    StepPlan::succeed(lines(&["Rolling out release", "Rollout complete"]))
+                },
+            ],
+        )
+        .await
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
 // Choreography helpers
 // ---------------------------------------------------------------------------------------------
 
-enum StepOutcome {
-    Succeed,
-    Fail(i32),
-}
-
 struct StepPlan {
     log_chunks: Vec<Vec<String>>,
-    outcome: Option<StepOutcome>,
+    outcome: Option<StepConclusion>,
 }
 
 impl StepPlan {
     fn succeed(log_chunks: Vec<Vec<String>>) -> Self {
         Self {
             log_chunks,
-            outcome: Some(StepOutcome::Succeed),
+            outcome: Some(StepConclusion::Succeeded),
         }
     }
 
     fn fail(exit_code: i32, log_chunks: Vec<Vec<String>>) -> Self {
         Self {
             log_chunks,
-            outcome: Some(StepOutcome::Fail(exit_code)),
+            outcome: Some(StepConclusion::Failed { exit_code }),
         }
     }
 
@@ -689,139 +542,123 @@ async fn enqueue(
 
 /// Dispatches an attempt for `job_key` and drives it through the given step plan. A plan whose
 /// last step has no outcome leaves the attempt (and therefore the run) running.
-async fn run_job(
-    runs: &RunStore,
-    run_id: &str,
-    job_key: &str,
-    attempt_number: u32,
-    steps: &[StepPlan],
-    clock: &mut u64,
-) -> Result<(), ApiError> {
-    let attempt = attempt_id(run_id, job_key, attempt_number);
-    let token = attempt_token(run_id, job_key, attempt_number);
-    *clock += 1;
-    let claim = runs
-        .dispatch_job(
-            run_id,
-            job_key,
-            &attempt,
-            &token,
-            RUNTIME_VERSION,
-            *clock,
-            *clock + DEFAULT_LEASE_SECONDS,
-        )
-        .await?;
-
-    let (cache_identity_digests, cache_reports): (Vec<_>, Vec<_>) = claim
-        .workflow_revision
-        .definition()
-        .job(&claim.job.key)
-        .ok_or_else(|| {
-            ApiError::internal(std::io::Error::other(
-                "seeded run job definition is missing",
-            ))
-        })?
-        .caches()
-        .iter()
-        .map(|cache| {
-            let identity_digest = fake_digest(&format!("cache:{attempt}:{}", cache.as_str()));
-            (
-                identity_digest.clone(),
-                AttemptCachePreparationCommand {
-                    cache_name: cache.as_str().to_string(),
-                    identity_digest,
-                    preparation: CachePreparation::Exact,
-                    key_ms: 3,
-                    metadata_ms: 8,
-                    size_bytes: 12 * 1024 * 1024,
-                    download_verify_ms: 84,
-                    sync_ms: 7,
-                    extraction_ms: 103,
-                    prepare_ms: 205,
-                },
-            )
-        })
-        .unzip();
-    *clock += 1;
-    runs.report_attempt_cache_preparations(&attempt, &token, 21, 236, cache_reports, *clock)
-        .await?;
-
-    let mut sequence = 1u64;
-    for (index, plan) in steps.iter().enumerate() {
-        let step_index = u32::try_from(index).map_err(ApiError::internal)?;
+impl GalleryRun<'_> {
+    async fn job(
+        &mut self,
+        job_key: &str,
+        attempt_number: u32,
+        steps: &[StepPlan],
+    ) -> Result<(), ApiError> {
+        let runs = self.runs;
+        let run_id = &self.id;
+        let clock = &mut self.clock;
+        let attempt = attempt_id(run_id, job_key, attempt_number);
+        let token = attempt_token(run_id, job_key, attempt_number);
         *clock += 1;
-        runs.start_attempt_step(&attempt, &token, step_index, *clock)
-            .await?;
-        for chunk in &plan.log_chunks {
-            *clock += 1;
-            append_log(
-                runs,
+        let claim = runs
+            .dispatch_job(
+                run_id,
+                job_key,
                 &attempt,
                 &token,
-                step_index,
-                sequence,
-                chunk.clone(),
+                RUNTIME_VERSION,
+                *clock,
+                *clock + DEFAULT_LEASE_SECONDS,
+            )
+            .await?;
+
+        let (cache_identity_digests, cache_reports): (Vec<_>, Vec<_>) = claim
+            .workflow_revision
+            .definition()
+            .job(&claim.job.key)
+            .ok_or_else(|| {
+                ApiError::internal(std::io::Error::other(
+                    "seeded run job definition is missing",
+                ))
+            })?
+            .caches()
+            .iter()
+            .map(|cache| {
+                let identity_digest = fake_digest(&format!("cache:{attempt}:{}", cache.as_str()));
+                (
+                    identity_digest.clone(),
+                    AttemptCachePreparationCommand {
+                        cache_name: cache.as_str().to_string(),
+                        identity_digest,
+                        preparation: CachePreparation::Exact,
+                        key_ms: 3,
+                        metadata_ms: 8,
+                        size_bytes: 12 * 1024 * 1024,
+                        download_verify_ms: 84,
+                        sync_ms: 7,
+                        extraction_ms: 103,
+                        prepare_ms: 205,
+                    },
+                )
+            })
+            .unzip();
+        *clock += 1;
+        runs.report_attempt_cache_preparations(&attempt, &token, 21, 236, cache_reports, *clock)
+            .await?;
+
+        let mut sequence = 1u64;
+        for (index, plan) in steps.iter().enumerate() {
+            let step_index = u32::try_from(index).map_err(ApiError::internal)?;
+            *clock += 1;
+            runs.start_attempt_step(&attempt, &token, step_index, *clock)
+                .await?;
+            for chunk in &plan.log_chunks {
+                *clock += 1;
+                append_log(
+                    runs,
+                    &attempt,
+                    &token,
+                    step_index,
+                    sequence,
+                    chunk.clone(),
+                    *clock,
+                )
+                .await?;
+                sequence += 1;
+            }
+            let Some(conclusion) = plan.outcome else {
+                return Ok(());
+            };
+            *clock += 1;
+            runs.complete_attempt_step(&attempt, &token, step_index, conclusion, false, *clock)
+                .await?;
+            if matches!(conclusion, StepConclusion::Failed { .. }) {
+                return Ok(());
+            }
+        }
+        if !cache_identity_digests.is_empty() {
+            *clock += 1;
+            runs.report_attempt_cache_finalizations(
+                &attempt,
+                &token,
+                cache_identity_digests
+                    .into_iter()
+                    .map(|identity_digest| AttemptCacheFinalizationCommand {
+                        identity_digest,
+                        final_state: CacheFinalState::Ready,
+                        finalize_ms: 41,
+                    })
+                    .collect(),
                 *clock,
             )
             .await?;
-            sequence += 1;
         }
-        match plan.outcome {
-            Some(StepOutcome::Succeed) => {
-                *clock += 1;
-                runs.complete_attempt_step(
-                    &attempt,
-                    &token,
-                    step_index,
-                    StepConclusion::Succeeded,
-                    false,
-                    *clock,
-                )
-                .await?;
-            }
-            Some(StepOutcome::Fail(exit_code)) => {
-                *clock += 1;
-                runs.complete_attempt_step(
-                    &attempt,
-                    &token,
-                    step_index,
-                    StepConclusion::Failed { exit_code },
-                    false,
-                    *clock,
-                )
-                .await?;
-                return Ok(());
-            }
-            None => return Ok(()),
-        }
-    }
-    if !cache_identity_digests.is_empty() {
         *clock += 1;
-        runs.report_attempt_cache_finalizations(
+        runs.complete_attempt(
             &attempt,
             &token,
-            cache_identity_digests
-                .into_iter()
-                .map(|identity_digest| AttemptCacheFinalizationCommand {
-                    identity_digest,
-                    final_state: CacheFinalState::Ready,
-                    finalize_ms: 41,
-                })
-                .collect(),
+            AttemptConclusion::Succeeded,
+            false,
             *clock,
         )
         .await?;
+        Ok(())
     }
-    *clock += 1;
-    runs.complete_attempt(
-        &attempt,
-        &token,
-        AttemptConclusion::Succeeded,
-        false,
-        *clock,
-    )
-    .await?;
-    Ok(())
 }
 
 async fn append_log(

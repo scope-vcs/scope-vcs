@@ -13,7 +13,3 @@ export function writeRepositorySourceScroll(key: string | null, scrollTop: numbe
   if (!key) return
   sourceScrollPositions.set(key, scrollTop)
 }
-
-export function resetRepositorySourceScrollCache() {
-  sourceScrollPositions.clear()
-}

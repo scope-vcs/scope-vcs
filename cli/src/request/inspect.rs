@@ -126,11 +126,7 @@ pub(super) fn diff_request(
     args: RequestDiffArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let (context, request_id, _) = load_exact_request(git_repo, api, args.target)?;
-    let target = RequestTarget {
-        owner: &context.target.owner,
-        repo: &context.target.repo,
-        request_id: &request_id,
-    };
+    let target = context.api_target(&request_id);
     let revisions = request_revisions(
         api,
         target,

@@ -125,18 +125,15 @@ service_is_healthy() {
   local expected_deployment_id="${2:-}"
   local services_json
   local verify_config="${3:-0}"
-  local expected_config
-  case "$service_name" in
-    "$api_service") expected_config=api/railway.json ;;
-    "$worker_service") expected_config=worker/railway.json ;;
-    "$cache_service") expected_config=cache-service/railway.json ;;
-    "$router_service") expected_config=repo-router/railway.json ;;
-    "$media_service") expected_config=media-service/railway.json ;;
-    "$media_worker_service") expected_config="" ;;
-    "$web_service") expected_config=web/railway.json ;;
-    *) echo "Unknown backend service: $service_name" >&2; return 1 ;;
-  esac
-  [[ "$verify_config" == "1" ]] || expected_config=""
+  local expected_config="" component definition
+  if [[ "$verify_config" == "1" ]]; then
+    component="$(jq -er --arg service "$service_name" '
+      [.services | to_entries[] | select(.value.id == $service) | .key]
+      | if length == 1 then .[0] else error("Unknown or ambiguous backend service") end
+    ' "$policy_manifest")" || return $?
+    definition="$(node .github/scripts/deployment-components.mjs describe "$component")" || return $?
+    expected_config="$(jq -r 'if .verifyTransitionConfig then .runtimeConfig else "" end' <<< "$definition")" || return $?
+  fi
   services_json="$(railway status "${railway_scope[@]}" --json)"
   SCOPE_RAILWAY_ENVIRONMENT_ID="$environment" \
     SCOPE_EXPECTED_RAILWAY_CONFIG="$expected_config" \
@@ -379,11 +376,13 @@ if (environmentConfig.services?.[process.env.ROUTER_SERVICE_ID]?.groupId !== pro
 }
 
 service_has_deployment_history() {
+  # Print 0/1 on a successful inventory read; exit status reports errors only.
   local deployments_json
-  deployments_json="$(railway deployment list "${railway_scope[@]}" --service "$1" --limit 1 --json)"
+  deployments_json="$(node .github/scripts/railway-read.mjs deployment list "${railway_scope[@]}" --service "$1" --limit 1 --json)" || return $?
   DEPLOYMENTS_JSON="$deployments_json" node -e '
-const deployments = JSON.parse(process.env.DEPLOYMENTS_JSON || "[]");
-process.exit(Array.isArray(deployments) && deployments.length > 0 ? 0 : 1);
+const deployments = JSON.parse(process.env.DEPLOYMENTS_JSON);
+if (!Array.isArray(deployments)) throw new Error("Railway deployment inventory must be an array.");
+console.log(deployments.length > 0 ? 1 : 0);
 '
 }
 

@@ -46,7 +46,9 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
         .await
         .unwrap();
     let database_url = target.schema_database_url();
-    let writer = connect_writer_database(&database_url).await.unwrap();
+    let writer = connect_writer_database(&database_url, database_url.parse().unwrap())
+        .await
+        .unwrap();
 
     let writer_pid = writer
         .query_one(Statement::from_string(

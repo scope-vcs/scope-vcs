@@ -58,9 +58,8 @@ impl AppState {
             object_encryption_key,
         )?);
         git_segment_store.cleanup_all_local().await?;
-        let push_intent_signing_key =
-            push_intent_signing_key(&data_dir, Some(&object_encryption_key))
-                .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
+        let push_intent_signing_key = push_intent_signing_key(&object_encryption_key)
+            .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
         let metadata = MetadataStore::connect(database_url_from_env()?).await?;
         let repo_events = RepoChangeBus::default();
         let runtime_budgets = Arc::new(RuntimeBudgets::from_env()?);
@@ -107,6 +106,7 @@ impl AppState {
         repository_engine.start_reaper();
         state.start_run_attempt_recovery();
         state.start_run_retention();
+        state.start_request_ref_cleanup();
         state.start_git_segment_recovery();
         best_effort_drain_pending_repo_storage_deletions(&state).await;
         Ok(state)
@@ -133,6 +133,7 @@ impl AppState {
     }
 
     async fn recover_stale_git_segments(&self) -> Result<(), crate::error::ApiError> {
+        let started = std::time::Instant::now();
         let now = crate::persistence::unix_now()?;
         let cutoff = now.saturating_sub(15 * 60);
         let uploads = self
@@ -140,7 +141,10 @@ impl AppState {
             .repositories()
             .load_stale_git_segment_uploads(cutoff, 100)
             .await?;
-        let orphan_count = uploads.len();
+        let candidates = uploads.len();
+        let mut deleted = 0_u64;
+        let mut skipped = 0_u64;
+        let mut failed = 0_u64;
         for upload in uploads {
             let may_delete = match upload.state {
                 GitSegmentUploadState::Uploading | GitSegmentUploadState::Ready => {
@@ -155,6 +159,7 @@ impl AppState {
                 | GitSegmentUploadState::Deleted => false,
             };
             if !may_delete {
+                skipped += 1;
                 continue;
             }
             if let Err(error) = self
@@ -162,6 +167,7 @@ impl AppState {
                 .cleanup_remote_bounded(&upload.object_key)
                 .await
             {
+                failed += 1;
                 tracing::warn!(
                     repository_id = upload.repository_id,
                     segment_id = upload.segment_id,
@@ -170,11 +176,14 @@ impl AppState {
                 );
                 continue;
             }
+            let mut local_cleanup_failed = false;
             if let Err(error) = self
                 .git_segment_store
                 .cleanup_local(&upload.repository_id, &upload.segment_id)
                 .await
             {
+                local_cleanup_failed = true;
+                failed += 1;
                 tracing::warn!(
                     repository_id = upload.repository_id,
                     segment_id = upload.segment_id,
@@ -189,23 +198,18 @@ impl AppState {
                     crate::persistence::unix_now()?,
                 )
                 .await?;
+            if !local_cleanup_failed {
+                deleted += 1;
+            }
         }
         tracing::info!(
-            phase = "recovery",
-            repository_id = "all",
-            segment_id = "all",
-            success = true,
-            duration_us = 0_u64,
-            bytes = 0_u64,
-            blocked_us = 0_u64,
-            active_ingests = 0_u64,
-            buffered_bytes = 0_u64,
-            disk_free_bytes = 0_u64,
-            ledger_uploading = 0_u64,
-            ledger_ready = 0_u64,
-            ledger_published = 0_u64,
-            orphan_count,
-            "Git segment ingest telemetry"
+            success = failed == 0,
+            duration_us = started.elapsed().as_micros(),
+            candidates,
+            deleted,
+            skipped,
+            failed,
+            "stale Git segment recovery sweep completed"
         );
         Ok(())
     }

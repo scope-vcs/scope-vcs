@@ -42,6 +42,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Install Node for deployment metadata
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
@@ -62,22 +67,17 @@ jobs:
           cargo build --release --locked -p api --bin scope-maintenance
           install -m 0755 target/release/scope-maintenance artifacts/bin/scope-maintenance
 
-          cargo build --release --locked -p scope-cache-service
-          install -m 0755 target/release/scope-cache-service artifacts/bin/scope-cache-service
-
-          cargo build --release --locked -p worker
-          install -m 0755 target/release/worker artifacts/bin/scope-worker
-
-          cargo build --release --locked -p api --bin api
-          install -m 0755 target/release/api artifacts/bin/scope-vcs
-
-          cargo build --release --locked -p scope-media-service
-          install -m 0755 target/release/scope-media-service artifacts/bin/scope-media-service
-
-          if [[ "$BUILD_ROUTER" == "1" ]]; then
-            cargo build --release --locked -p scope-repo-router
-            install -m 0755 target/release/scope-repo-router artifacts/bin/scope-repo-router
-          fi
+          component_names="$(node .github/scripts/deployment-components.mjs backend-prebuilt)"
+          mapfile -t components <<< "$component_names"
+          for component in "${components[@]}"; do
+            [[ "$component" != git-router || "$BUILD_ROUTER" == 1 ]] || continue
+            definition="$(node .github/scripts/deployment-components.mjs describe "$component")"
+            runtime_config="$(jq -er '.runtimeConfig' <<< "$definition")"
+            source_binary="$(jq -er '.artifact.sourceBinary' <<< "$definition")"
+            release_binary="$(jq -er '.artifact.binary' <<< "$definition")"
+            cargo build --release --locked --manifest-path "$(dirname "$runtime_config")/Cargo.toml" --bin "$source_binary"
+            install -m 0755 "target/release/$source_binary" "artifacts/bin/$release_binary"
+          done
 
       - name: Pack deployment binaries
         run: |

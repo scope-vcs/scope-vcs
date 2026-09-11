@@ -1,8 +1,8 @@
 use crate::{
     api::{api_url, http_client},
     git_repo::{
-        GitRepo, current_branch, ensure_git_repo_ready, git_remote_fetch_url, head_oid,
-        install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
+        GitRepo, branch_config_value, current_branch, ensure_git_repo_ready, git_remote_fetch_url,
+        head_oid, install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
     },
     git_transport::{ScopeRemote, select_scope_fetch_remote},
     login::session_from_cache_or_browser,
@@ -17,7 +17,7 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     let repo = ensure_git_repo_ready("scope pull")?;
     let branch = current_branch(&repo)?;
     let previous_head = head_oid(&repo)?;
-    let api_url = api_url();
+    let api_url = api_url()?;
     let remote = select_scope_fetch_remote(&repo, &api_url, explicit_remote)?;
     let git_origin = scope_git_origin(&repo, &api_url)?;
     let target = ScopeRemote::parse(&git_origin, &remote, &git_remote_fetch_url(&repo, &remote)?)?;
@@ -36,24 +36,29 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     run_git_in_repo(&repo, &["fetch", "--prune", &remote])?;
     let after = remote_refs(&repo, &remote)?;
     let mut lines = ref_change_lines(&remote, &before, &after);
-    let tracked = format!("refs/remotes/{remote}/{branch}");
+    let upstream = tracked_branch(&repo, &remote, &branch)?;
+    let tracked_name = upstream.as_deref().filter(|name| after.contains_key(*name));
     let mut moved = false;
-    if after.contains_key(&branch) && current_branch_tracks(&repo, &remote, &branch)? {
+    if let Some(tracked_name) = tracked_name {
+        let tracked = format!("refs/remotes/{remote}/{tracked_name}");
         eprintln!(
             "Fast-forward {}/{} local {branch} to {tracked} at {}",
-            target.owner, target.repo, after[&branch]
+            target.owner, target.repo, after[tracked_name]
         );
         run_git_in_repo(&repo, &["merge", "--ff-only", &tracked]).map_err(|error| CliError::partial(
             format!("Fetched Scope refs, but could not fast-forward {branch}: {error:#}"),
             json!({"operation": "pull", "repository": format!("{}/{}", target.owner, target.repo), "fetched": true, "branch": branch, "previous_head": previous_head, "remote_refs": after, "recovery": "Inspect git status and the local branch divergence. Resolve local changes or divergence, then repeat scope pull; no force reset is needed."})
         ))?;
         moved = head_oid(&repo)? != previous_head;
-        lines.push(format!("{branch} is up to date with {remote}/{branch}."));
-    } else if after.contains_key(&branch) {
-        lines.push(format!("Fetched every visible Scope ref; local branch {branch} does not track {remote}/{branch}, so it was not moved."));
+        lines.push(format!(
+            "{branch} is up to date with {remote}/{tracked_name}."
+        ));
+    } else if let Some(upstream) = upstream {
+        lines.push(format!("Fetched every visible Scope ref; upstream {remote}/{upstream} for local branch {branch} is unavailable."));
     } else {
-        lines.push(format!("Fetched every visible Scope ref; local branch {branch} has no {remote}/{branch} counterpart."));
+        lines.push(format!("Fetched every visible Scope ref; local branch {branch} does not track a branch on {remote}, so it was not moved."));
     }
+
     emit(
         "pull",
         &json!({"repository": format!("{}/{}", target.owner, target.repo), "remote": remote, "branch": branch, "previous_head": previous_head, "head": head_oid(&repo)?, "branch_moved": moved, "refs_before": before, "refs_after": after}),
@@ -61,21 +66,12 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     )
 }
 
-fn current_branch_tracks(repo: &GitRepo, remote: &str, branch: &str) -> anyhow::Result<bool> {
-    let output = Command::new("git")
-        .current_dir(&repo.root)
-        .args([
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
-        ])
-        .output()
-        .context("inspect current branch upstream")?;
-    if !output.status.success() {
-        return Ok(false);
+fn tracked_branch(repo: &GitRepo, remote: &str, branch: &str) -> anyhow::Result<Option<String>> {
+    if branch_config_value(repo, branch, "remote")?.as_deref() != Some(remote) {
+        return Ok(None);
     }
-    Ok(String::from_utf8_lossy(&output.stdout).trim() == format!("{remote}/{branch}"))
+    Ok(branch_config_value(repo, branch, "merge")?
+        .and_then(|reference| reference.strip_prefix("refs/heads/").map(str::to_owned)))
 }
 
 fn remote_refs(repo: &GitRepo, remote: &str) -> anyhow::Result<BTreeMap<String, String>> {
@@ -176,7 +172,17 @@ mod tests {
             root: dir.path().to_path_buf(),
         };
 
-        assert!(current_branch_tracks(&repo, "origin", "main").unwrap());
-        assert!(!current_branch_tracks(&repo, "scope", "main").unwrap());
+        assert_eq!(
+            tracked_branch(&repo, "origin", "main").unwrap().as_deref(),
+            Some("main")
+        );
+        assert_eq!(tracked_branch(&repo, "scope", "main").unwrap(), None);
+        dir.run_git(["branch", "-m", "local-alias"]);
+        assert_eq!(
+            tracked_branch(&repo, "origin", "local-alias")
+                .unwrap()
+                .as_deref(),
+            Some("main")
+        );
     }
 }

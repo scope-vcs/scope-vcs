@@ -38,17 +38,10 @@ pub(crate) async fn run(
     }
 }
 
-#[derive(Default)]
-struct OrphanDrainSummary {
-    attempted: usize,
-    deleted: usize,
-    retained: usize,
-}
-
 async fn drain_orphan_objects(
     metadata: &MetadataStore,
     object_store: &dyn ObjectStore,
-) -> anyhow::Result<OrphanDrainSummary> {
+) -> anyhow::Result<scope_content_lifecycle::SourceBlobCleanupReport> {
     let now_unix = super::unix_now()?;
     let report = scope_content_lifecycle::drain_source_blob_cleanup(
         metadata,
@@ -65,10 +58,5 @@ async fn drain_orphan_objects(
             "failed to delete orphan object"
         );
     }
-    let summary = OrphanDrainSummary {
-        attempted: report.attempted,
-        deleted: report.deleted,
-        retained: report.retained,
-    };
-    Ok(summary)
+    Ok(report)
 }

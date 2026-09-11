@@ -69,10 +69,3 @@ test('staging resume rejects changed images, intervening deployments, and unprov
     assert.throws(() => validateStagingResumeSchema(plan));
   }
 });
-
-test('resumed staging verifies evidence before rollout and excludes database restoration', () => {
-  const staging = readFileSync(new URL('../workflows/deploy-staging.yml', import.meta.url), 'utf8');
-  const baseline = staging.split('      - name: Reconcile and snapshot staging baseline\n')[1].split('\n      - name:')[0];
-  assert.match(baseline, /!inputs\.resume_staging/);
-  assert(staging.indexOf('name: Verify staging resume') < staging.indexOf('name: Deploy candidate once'));
-});

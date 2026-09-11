@@ -1,3 +1,4 @@
+import { requestRoute } from '@/api/request-route'
 import { createApiClient } from '@/api/client'
 import type { RequestParams } from '@/api/types'
 import { ApiRouteTemplates, buildApiPath } from '@/api/types.generated'
@@ -209,13 +210,6 @@ function requestDiscussionsPath(data: RequestParams) {
   return requestRoute(ApiRouteTemplates.repoRequestDiscussions, data)
 }
 
-function requestRoute(template: string, data: RequestParams) {
-  return buildApiPath(template, {
-    owner: data.owner,
-    repo: data.repo,
-    request_id: data.request_id,
-  })
-}
 
 function requestDiscussionRoute(
   template: string,

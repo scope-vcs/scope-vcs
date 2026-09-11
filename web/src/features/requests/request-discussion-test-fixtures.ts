@@ -1,4 +1,4 @@
-import type { RequestDiscussion, RequestDiscussionReplyView } from './request-discussion-types'
+import type { RequestDiscussion, RequestDiscussionPage, RequestDiscussionReplyView } from './request-discussion-types'
 
 export function discussion(id: string, lastActivity: number, overrides: Partial<RequestDiscussion> = {}): RequestDiscussion {
   return {
@@ -33,4 +33,12 @@ export function reply(id: string, position: number, overrides: Partial<RequestDi
     reply_to: null,
     ...overrides,
   }
+}
+
+export function discussionPage(
+  discussions: RequestDiscussion[],
+  snapshotVersion: number,
+  nextCursor: string | null = null,
+): RequestDiscussionPage {
+  return { discussions, snapshot_version: snapshotVersion, next_cursor: nextCursor }
 }

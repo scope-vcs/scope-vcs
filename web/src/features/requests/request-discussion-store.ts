@@ -1,3 +1,4 @@
+import { runRequestContentSubmission } from './request-attachment-drafts'
 import type { RequestParams } from '@/api/types'
 import type { RepoChangeEvent } from '@/api/types.generated'
 import { useRepoChangeSubscription } from '@/features/repo-detail/repo-layout-context'
@@ -124,7 +125,7 @@ export function useRequestDiscussionStore({
     async (
       body: string,
       clientDiscussionId: string = crypto.randomUUID(),
-    ) => {
+    ) => runRequestContentSubmission(clientDiscussionId, async () => {
       const optimistic = optimisticDiscussion({
         actor,
         body,
@@ -158,7 +159,7 @@ export function useRequestDiscussionStore({
         setError(messageFor(requestError, 'Discussion could not be posted.'))
         return false
       }
-    },
+    }),
     [actions, actor, params, setError, sync, updateCollection],
   )
 

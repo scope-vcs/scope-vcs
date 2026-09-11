@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { brotliDecompressSync, gunzipSync } from 'node:zlib'
+import { brotliDecompressSync, createBrotliDecompress, createGunzip, gunzipSync } from 'node:zlib'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
 import test from 'node:test'
 import { compressResponse } from './response-compression'
 
@@ -51,18 +54,44 @@ test('leaves known tiny bodies and excluded responses alone', () => {
   }
 })
 
-test('starts an unknown-length stream without waiting for the source to finish', async () => {
-  let close: (() => void) | undefined
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(source))
-      close = () => controller.close()
-    },
+for (const encoding of ['br', 'gzip']) {
+  test(`${encoding} delivers HTML before its source finishes`, { timeout: 5_000 }, async () => {
+    const shell = '<!doctype html><main>Loading repository…</main>'
+    const tail = '<script>/* deferred route data */</script>'
+    let input!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { input = controller },
+    })
+    const result = compressResponse(request(encoding), new Response(body, {
+      headers: { 'content-type': 'text/html' },
+    }))
+    const decoder = encoding === 'br' ? createBrotliDecompress() : createGunzip()
+    let decoded = ''
+    let resolveShell!: () => void
+    const receivedShell = new Promise<void>((resolve) => { resolveShell = resolve })
+    decoder.on('data', (chunk: Buffer) => {
+      decoded += chunk.toString()
+      if (decoded === shell) resolveShell()
+    })
+    const complete = pipeline(
+      Readable.fromWeb(result.body as unknown as NodeReadableStream), decoder,
+    )
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      input.enqueue(new TextEncoder().encode(shell))
+      await Promise.race([
+        receivedShell,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error('HTML shell was buffered until source close')), 2_000)
+        }),
+      ])
+      assert.equal(decoded, shell)
+      input.enqueue(new TextEncoder().encode(tail))
+    } finally {
+      clearTimeout(timeout)
+      input.close()
+      await complete
+    }
+    assert.equal(decoded, shell + tail)
   })
-  const result = compressResponse(request('br'), new Response(body, {
-    headers: { 'content-type': 'text/html' },
-  }))
-  assert.equal(result.headers.get('content-encoding'), 'br')
-  close?.()
-  assert.equal(brotliDecompressSync(Buffer.from(await result.arrayBuffer())).toString(), source)
-})
+}

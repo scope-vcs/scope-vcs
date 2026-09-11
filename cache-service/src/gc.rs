@@ -21,11 +21,15 @@ pub(crate) fn start(state: AppState) {
 }
 
 async fn reconcile(state: &AppState) -> anyhow::Result<()> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    reconcile_at(state, now).await
+}
+
+async fn reconcile_at(state: &AppState, now: u64) -> anyhow::Result<()> {
     let started = std::time::Instant::now();
     let mut batches = 0;
-    let mut clean_uploads = true;
     loop {
-        let more = reconcile_batch(state, &mut clean_uploads).await?;
+        let more = reconcile_batch(state, now).await?;
         batches += 1;
         // Finish each claimed batch before stopping so every deletion gets its acknowledgement.
         if !more || started.elapsed() >= SWEEP_BUDGET {
@@ -40,8 +44,7 @@ async fn reconcile(state: &AppState) -> anyhow::Result<()> {
     }
 }
 
-async fn reconcile_batch(state: &AppState, clean_uploads: &mut bool) -> anyhow::Result<bool> {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+async fn reconcile_batch(state: &AppState, now: u64) -> anyhow::Result<bool> {
     let retry_at = now
         .checked_add(RETRY_SECONDS)
         .ok_or_else(|| anyhow::anyhow!("cache retry timestamp overflow"))?;
@@ -70,28 +73,29 @@ async fn reconcile_batch(state: &AppState, clean_uploads: &mut bool) -> anyhow::
     }
     more |= caches.expire_references(now, BATCH_SIZE).await? == BATCH_SIZE;
     more |= caches.expire_committed_uploads(now, BATCH_SIZE).await? == BATCH_SIZE;
-    let uploads = if *clean_uploads {
-        caches.expire_uploads(now, BATCH_SIZE).await?
-    } else {
-        Vec::new()
-    };
-    let mut more_uploads = uploads.len() as u64 == BATCH_SIZE;
-    for (upload, result) in delete_objects(state.object_store.clone(), uploads, |upload| {
-        upload.object_key.clone()
-    })
-    .await
-    {
-        match result {
-            Ok(()) => caches.complete_upload_cleanup(&upload.upload_id).await?,
-            Err(error) => {
-                caches.retry_upload_cleanup(&upload.upload_id).await?;
-                more_uploads = false;
-                *clean_uploads = false;
-                tracing::warn!(upload_id = %upload.upload_id, object_key = %upload.object_key, %error, "expired cache upload deletion will be retried");
+    let uploads = caches.expire_uploads(now, BATCH_SIZE).await?;
+    more |= uploads.len() as u64 == BATCH_SIZE;
+    stream::iter(uploads.into_iter().map(|claim| {
+        let caches = &caches;
+        let store = state.object_store.clone();
+        async move {
+            let key = claim.object_key.clone();
+            if let Err(error) = caches
+                .cleanup_upload(&claim, || async move {
+                    delete_object(store, key).await.map_err(|error| {
+                        scope_postgres::error::PostgresError::internal_message(error.to_string())
+                    })
+                })
+                .await
+            {
+                tracing::warn!(upload_id = %claim.upload_id, %error,
+                    "expired cache upload deletion will be retried");
             }
         }
-    }
-    more |= more_uploads;
+    }))
+    .buffer_unordered(DELETE_CONCURRENCY)
+    .collect::<Vec<_>>()
+    .await;
     let deletions = caches.claim_deletions(now, retry_at, BATCH_SIZE).await?;
     more |= deletions.len() as u64 == BATCH_SIZE;
     for (deletion, result) in delete_objects(state.object_store.clone(), deletions, |deletion| {

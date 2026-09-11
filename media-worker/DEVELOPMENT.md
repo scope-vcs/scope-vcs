@@ -23,7 +23,9 @@ The service requires `DATABASE_URL`, `SCOPE_MEDIA_BUCKET_NAME`,
 `SCOPE_MEDIA_BUCKET_ENDPOINT`, `SCOPE_MEDIA_BUCKET_ACCESS_KEY_ID`,
 `SCOPE_MEDIA_BUCKET_SECRET_ACCESS_KEY`, `SCOPE_MEDIA_BUCKET_REGION`, and a base64
 32-byte `SCOPE_MEDIA_ENCRYPTION_KEY`. Local development can set
-`SCOPE_MEDIA_OBJECT_STORE=filesystem` and `SCOPE_MEDIA_OBJECT_STORE_DIR`; encryption
-remains mandatory. Mount `/tmp/scope-media-worker` as writable when the root
+`SCOPE_MEDIA_OBJECT_STORE=filesystem`. Both the service and worker default to
+`data/media-objects` relative to their working directory. Set the same absolute
+`SCOPE_MEDIA_OBJECT_STORE_DIR` for both when they run from different directories;
+encryption remains mandatory. Mount `/tmp/scope-media-worker` as writable when the root
 filesystem is read-only. Startup removes abandoned `job-*` entries and refuses
 foreign scratch entries so it never deletes an unowned path.

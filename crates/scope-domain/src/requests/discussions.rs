@@ -98,18 +98,7 @@ pub struct CreateRequestDiscussionReplyMutation {
 }
 
 #[derive(Clone, Debug)]
-pub struct ResolveRequestDiscussionInput {
-    pub request_id: String,
-    pub discussion_id: String,
-    pub actor_user_id: String,
-    pub actor_is_maintainer: bool,
-    pub actor_can_transition: bool,
-    pub event_id: String,
-    pub now_unix: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct ReopenRequestDiscussionInput {
+pub struct RequestDiscussionTransitionInput {
     pub request_id: String,
     pub discussion_id: String,
     pub actor_user_id: String,
@@ -148,17 +137,6 @@ pub struct MarkRequestDiscussionReadInput {
     pub user_id: String,
     pub through_position: u64,
     pub now_unix: u64,
-}
-
-struct DiscussionTransitionInput {
-    request_id: String,
-    discussion_id: String,
-    actor_user_id: String,
-    actor_is_maintainer: bool,
-    actor_can_transition: bool,
-    event_id: String,
-    target: RequestDiscussionStatus,
-    now_unix: u64,
 }
 
 pub fn create_request_discussion(
@@ -266,43 +244,22 @@ pub fn create_request_discussion_reply(
 pub fn resolve_request_discussion(
     request: Request,
     discussion: RequestDiscussion,
-    input: ResolveRequestDiscussionInput,
+    input: RequestDiscussionTransitionInput,
 ) -> Result<RequestDiscussionMutation, DomainError> {
     transition_discussion(
         request,
         discussion,
-        DiscussionTransitionInput {
-            request_id: input.request_id,
-            discussion_id: input.discussion_id,
-            actor_user_id: input.actor_user_id,
-            actor_is_maintainer: input.actor_is_maintainer,
-            actor_can_transition: input.actor_can_transition,
-            event_id: input.event_id,
-            target: RequestDiscussionStatus::Resolved,
-            now_unix: input.now_unix,
-        },
+        input,
+        RequestDiscussionStatus::Resolved,
     )
 }
 
 pub fn reopen_request_discussion(
     request: Request,
     discussion: RequestDiscussion,
-    input: ReopenRequestDiscussionInput,
+    input: RequestDiscussionTransitionInput,
 ) -> Result<RequestDiscussionMutation, DomainError> {
-    transition_discussion(
-        request,
-        discussion,
-        DiscussionTransitionInput {
-            request_id: input.request_id,
-            discussion_id: input.discussion_id,
-            actor_user_id: input.actor_user_id,
-            actor_is_maintainer: input.actor_is_maintainer,
-            actor_can_transition: input.actor_can_transition,
-            event_id: input.event_id,
-            target: RequestDiscussionStatus::Open,
-            now_unix: input.now_unix,
-        },
-    )
+    transition_discussion(request, discussion, input, RequestDiscussionStatus::Open)
 }
 
 pub fn reopen_and_reply_to_request_discussion(
@@ -413,7 +370,8 @@ pub fn mark_request_discussion_read(
 fn transition_discussion(
     mut request: Request,
     mut discussion: RequestDiscussion,
-    input: DiscussionTransitionInput,
+    input: RequestDiscussionTransitionInput,
+    target: RequestDiscussionStatus,
 ) -> Result<RequestDiscussionMutation, DomainError> {
     validate_required_id("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
@@ -426,16 +384,16 @@ fn transition_discussion(
         &input.actor_user_id,
         input.actor_is_maintainer,
     )?;
-    if discussion.status == input.target {
-        return Err(DomainError::conflict(match input.target {
+    if discussion.status == target {
+        return Err(DomainError::conflict(match target {
             RequestDiscussionStatus::Open => "request discussion is already open",
             RequestDiscussionStatus::Resolved => "request discussion is already resolved",
         }));
     }
     let position = advance_activity(&mut request)?;
-    discussion.status = input.target;
+    discussion.status = target;
     discussion.last_activity_position = position;
-    let (kind, payload) = match input.target {
+    let (kind, payload) = match target {
         RequestDiscussionStatus::Open => {
             discussion.resolved_at_unix = None;
             discussion.resolved_by_user_id = None;

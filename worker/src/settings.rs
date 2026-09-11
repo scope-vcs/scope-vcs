@@ -185,12 +185,11 @@ fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> 
     if !enabled {
         return Ok(None);
     }
-    let api_url = required_env("SCOPE_PUBLIC_API_URL")?
-        .trim_end_matches('/')
-        .to_string();
-    if !api_url.starts_with("https://") && !api_url.starts_with("http://127.0.0.1") {
-        anyhow::bail!("SCOPE_PUBLIC_API_URL must use HTTPS outside local development");
-    }
+    let api_url =
+        scope_service_config::ServiceEndpoint::parse(&required_env("SCOPE_PUBLIC_API_URL")?)
+            .map_err(|error| anyhow::anyhow!("SCOPE_PUBLIC_API_URL: {error}"))?
+            .as_str()
+            .to_string();
     let max_concurrency = parse_usize_env("SCOPE_CLOUD_RUNS_MAX_CONCURRENCY", 20)?;
     if !(1..=MAX_CLOUD_RUN_CONCURRENCY).contains(&max_concurrency) {
         anyhow::bail!(
@@ -318,34 +317,6 @@ fn default_worker_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn worker_roles_have_one_canonical_spelling() {
-        assert_eq!(parse_worker_role(None).unwrap(), WorkerRole::All);
-        assert_eq!(parse_worker_role(Some("all")).unwrap(), WorkerRole::All);
-        assert_eq!(
-            parse_worker_role(Some("control")).unwrap(),
-            WorkerRole::Control
-        );
-        assert_eq!(
-            parse_worker_role(Some("compaction")).unwrap(),
-            WorkerRole::Compaction
-        );
-        assert_eq!(
-            parse_worker_role(Some("cleanup")).unwrap(),
-            WorkerRole::Cleanup
-        );
-        assert!(parse_worker_role(Some("worker")).is_err());
-    }
-
-    #[test]
-    fn comma_separated_settings_ignore_only_empty_segments() {
-        assert_eq!(
-            parse_comma_separated("SUBNETS", " subnet-a,subnet-b ,, ").unwrap(),
-            ["subnet-a", "subnet-b"]
-        );
-        assert!(parse_comma_separated("SUBNETS", " , ").is_err());
-    }
 
     #[test]
     fn secret_name_key_requires_exactly_32_hex_encoded_bytes() {

@@ -107,7 +107,7 @@ pub(crate) async fn get_repository_run_history(
     let runs = entries
         .iter()
         .map(|entry| repository_run_summary(&entry.run, &entry.jobs))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
     Ok(Json(RepositoryRunHistoryPageResponse { runs, next_cursor }))
 }
 

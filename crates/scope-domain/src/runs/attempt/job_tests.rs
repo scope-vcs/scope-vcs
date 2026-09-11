@@ -69,16 +69,20 @@ fn run(revision: &WorkflowRevision) -> Run {
     .unwrap()
 }
 
-#[test]
-fn cloud_dispatch_pins_the_workflow_image_and_rotates_the_bootstrap_credential() {
+fn dispatched_attempt() -> (
+    WorkflowRevision,
+    Run,
+    RunJob,
+    RunAttempt,
+    Vec<RunAttemptStep>,
+) {
     let revision = workflow();
-    let mut run = run(&revision);
-    let definition = revision.definition().only_job().unwrap();
+    let run = run(&revision);
     let mut job = create_run_jobs(&run, &revision).unwrap().remove(0);
-    let (mut attempt, steps) = job
+    let (attempt, steps) = job
         .dispatch(
             &run,
-            definition,
+            revision.definition().only_job().unwrap(),
             "attempt-1",
             "b".repeat(64),
             "runtime-1",
@@ -86,6 +90,12 @@ fn cloud_dispatch_pins_the_workflow_image_and_rotates_the_bootstrap_credential()
             911,
         )
         .unwrap();
+    (revision, run, job, attempt, steps)
+}
+
+#[test]
+fn cloud_dispatch_pins_the_workflow_image_and_rotates_the_bootstrap_credential() {
+    let (revision, mut run, mut job, mut attempt, steps) = dispatched_attempt();
     reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 11).unwrap();
 
     assert_eq!(job.state, RunJobState::Dispatching);
@@ -105,21 +115,7 @@ fn cloud_dispatch_pins_the_workflow_image_and_rotates_the_bootstrap_credential()
 
 #[test]
 fn successful_attempt_finishes_only_after_runtime_finalization() {
-    let revision = workflow();
-    let mut run = run(&revision);
-    let definition = revision.definition().only_job().unwrap();
-    let mut job = create_run_jobs(&run, &revision).unwrap().remove(0);
-    let (mut attempt, mut steps) = job
-        .dispatch(
-            &run,
-            definition,
-            "attempt-1",
-            "b".repeat(64),
-            "runtime-1",
-            11,
-            911,
-        )
-        .unwrap();
+    let (revision, mut run, mut job, mut attempt, mut steps) = dispatched_attempt();
     reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 11).unwrap();
     attempt
         .claim_runtime(&job, &"b".repeat(64), "a".repeat(64), 12, 102)
@@ -197,21 +193,7 @@ fn successful_attempt_finishes_only_after_runtime_finalization() {
 
 #[test]
 fn provider_confirmed_abort_terminalizes_a_running_attempt_as_canceled() {
-    let revision = workflow();
-    let mut run = run(&revision);
-    let definition = revision.definition().only_job().unwrap();
-    let mut job = create_run_jobs(&run, &revision).unwrap().remove(0);
-    let (mut attempt, mut steps) = job
-        .dispatch(
-            &run,
-            definition,
-            "attempt-1",
-            "b".repeat(64),
-            "runtime-1",
-            11,
-            911,
-        )
-        .unwrap();
+    let (revision, mut run, mut job, mut attempt, mut steps) = dispatched_attempt();
     attempt
         .claim_runtime(&job, &"b".repeat(64), "a".repeat(64), 12, 102)
         .unwrap();

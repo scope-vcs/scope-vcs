@@ -56,10 +56,6 @@ impl CloudExecutionCoordinator {
                     .map_err(db_error)?
                 {
                     scope_postgres::db::DispatchAdmission::Admitted(claim) => *claim,
-                    scope_postgres::db::DispatchAdmission::Exhausted(claim) => {
-                        self.publish_status_change(&claim).await;
-                        continue;
-                    }
                     scope_postgres::db::DispatchAdmission::Contended => continue,
                     scope_postgres::db::DispatchAdmission::AtCapacity
                     | scope_postgres::db::DispatchAdmission::Empty => break,

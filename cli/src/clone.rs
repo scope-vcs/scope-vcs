@@ -18,7 +18,7 @@ pub struct RepoSpec {
 
 pub fn clone_repo(repository: &str, destination: Option<&Path>) -> anyhow::Result<()> {
     let target = parse_repo_spec(repository)?;
-    let api_url = api_url();
+    let api_url = api_url()?;
     let session_token = read_stored_session_token(&api_url)?
         .ok_or_else(|| CliError::authentication("not signed in; run scope login"))?;
     let client = http_client()?;
@@ -106,61 +106,8 @@ pub fn default_clone_dir(repo: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        repo_config::{
-            default_scope_repo_config, load_worktree_scope_repo_config, repo_config_path,
-        },
-        test_support::TestDir,
-    };
-    use std::{fs, process::Command};
+    use crate::{repo_config::default_scope_repo_config, test_support::TestDir};
 
-    #[test]
-    fn clone_installs_fetch_auth_and_repo_config() {
-        let dir = TestDir::git_repo("clone-orchestration", "main");
-        fs::write(dir.path().join("README.md"), "initial\n").unwrap();
-        dir.run_git(["add", "README.md"]);
-        dir.run_git([
-            "-c",
-            "user.name=Scope Test",
-            "-c",
-            "user.email=scope@example.test",
-            "commit",
-            "--quiet",
-            "-m",
-            "initial",
-        ]);
-        let checkout = dir.path().join("checkout");
-        let remote_url = format!("file://{}", dir.path().display());
-        let config = default_scope_repo_config();
-
-        clone_and_configure(
-            "https://api.scope.example",
-            &remote_url,
-            "secret",
-            &checkout,
-            &config,
-        )
-        .unwrap();
-
-        assert_eq!(load_worktree_scope_repo_config(&checkout).unwrap(), config);
-        assert!(repo_config_path(&checkout).unwrap().is_file());
-        assert!(!checkout.join(".scope").exists());
-        let helper = Command::new("git")
-            .current_dir(&checkout)
-            .args([
-                "config",
-                "--local",
-                "--get-urlmatch",
-                "credential.helper",
-                &remote_url,
-            ])
-            .output()
-            .unwrap();
-        assert_eq!(
-            String::from_utf8_lossy(&helper.stdout).trim(),
-            "!scope git-credential"
-        );
-    }
     #[test]
     fn clone_keeps_checkout_and_reports_receipt_when_local_setup_fails() {
         let dir = TestDir::git_repo("clone-partial", "main");

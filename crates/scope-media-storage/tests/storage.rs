@@ -142,7 +142,7 @@ impl ObjectStore for TrackingStore {
         Ok(())
     }
 
-    fn get(&self, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
+    fn get_bounded(&self, key: &str, _max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
         Err(ObjectStoreError::not_found(format!("{key} not found")))
     }
 

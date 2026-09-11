@@ -10,8 +10,9 @@ import { pathToFileURL } from "node:url";
 
 import { validatePreparedRelease } from "./railway-artifact.mjs";
 import { validateRecoveryPreparation } from "./recovery-preparation-trust.mjs";
+import { APPLICATION_COMPONENTS, BACKEND_COMPONENTS, backendSelected } from "./deployment-components.mjs";
 
-const components = ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"];
+const components = APPLICATION_COMPONENTS;
 const validationJobName = "Validate selected components / Production validation gate";
 
 export async function validatePreparedDeployment(
@@ -37,9 +38,9 @@ export async function validatePreparedDeployment(
   if (selected.length === 0 || selected.some((component) => !components.includes(component))) {
     throw new Error("Prepared deployment requires a nonempty set of application components");
   }
-  const backend = selected.some((component) => component !== "web");
+  const backend = backendSelected(Object.fromEntries(selected.map(component => [component, true])));
   // Backend activation needs the API maintenance tool and the complete backend image set.
-  if (backend) validatePreparedRelease(prepared, { components: components.filter((component) => component !== "web") });
+  if (backend) validatePreparedRelease(prepared, { components: BACKEND_COMPONENTS });
 
   const responses = new Map();
   const cachedRequest = (path) => {
@@ -52,7 +53,6 @@ export async function validatePreparedDeployment(
     const run = await cachedRequest(`/actions/runs/${sourceRunId}`);
     if (run.status !== 'completed') throw new Error('Staging resume requires a completed source run');
   }
-  const selection = { backend, ...Object.fromEntries(components.map((component) => [component, selected.includes(component)])) };
 
   let validated = false;
   let staged = false;
@@ -74,7 +74,7 @@ export async function validatePreparedDeployment(
         }
       }
     }
-    if (validated && staged) return { ...proof, selection };
+    if (validated && staged) return proof;
     if (result.jobs.length < 100) break;
   }
   throw new Error("Source run did not pass the production validation gate and staging deployment");
@@ -83,9 +83,9 @@ export async function validatePreparedDeployment(
 
 function selection(prepared, recoveryId = "", resumeStaging = false) {
   const flags = Object.fromEntries(components.map(component => [component, Boolean(prepared.components[component])]));
-  flags.backend = components.some(component => component !== "web" && flags[component]);
+  flags.backend = backendSelected(flags);
   return { sha: prepared.sourceSha, recover_cutover_id: recoveryId,
-    recover_components: flags, reuse_components: flags, prepared_run_id: prepared.preparationRunId,
+    recover_components: flags, prepared_run_id: prepared.preparationRunId,
     resume_staging: resumeStaging, prepared };
 }
 
@@ -109,7 +109,7 @@ export async function selectRelease({ sourceSha, sourceRunId = "", recoveryId = 
     return selection(prepared, '', resumeStaging);
   }
   if (!/^[0-9a-f]{40}$/.test(sourceSha ?? "")) throw new Error("Source SHA must be a full commit SHA");
-  return { sha: sourceSha, recover_cutover_id: "", recover_components: {}, reuse_components: {}, prepared_run_id: "", resume_staging: false };
+  return { sha: sourceSha, recover_cutover_id: "", recover_components: {}, prepared_run_id: "", resume_staging: false };
 }
 
 async function downloadPrepared(runId) {

@@ -1,6 +1,4 @@
-use super::{
-    content_cleanup::best_effort_cleanup_rollback_source_blobs, run_inspection::InspectedRun,
-};
+use super::content_cleanup::best_effort_cleanup_rollback_source_blobs;
 use crate::{
     error::ApiError, git::run_source::inspect_manual_run_bundle, persistence::unix_now,
     state::AppState,
@@ -11,6 +9,7 @@ use scope_domain::{
     runs::{manual::ManualRunRequest, run::Run},
 };
 use scope_object_store::{ContentObjectKind, content_object_for_bytes, object_key};
+use scope_postgres::db::RunSnapshot;
 
 pub(crate) struct ManualRunCommand {
     pub(crate) request: ManualRunRequest,
@@ -20,7 +19,7 @@ pub(crate) struct ManualRunCommand {
 pub(crate) async fn resolve_manual_run(
     state: &AppState,
     request: &ManualRunRequest,
-) -> Result<Option<InspectedRun>, ApiError> {
+) -> Result<Option<RunSnapshot>, ApiError> {
     match state
         .metadata
         .runs()
@@ -35,7 +34,7 @@ pub(crate) async fn resolve_manual_run(
 pub(crate) async fn create_manual_run(
     state: &AppState,
     command: ManualRunCommand,
-) -> Result<InspectedRun, ApiError> {
+) -> Result<RunSnapshot, ApiError> {
     let inspect_root = state.data_dir.join("run-bundle-inspection");
     let bundle = command.bundle;
     let git_oid = command.request.git_oid().to_string();
@@ -83,7 +82,7 @@ pub(crate) async fn create_manual_run(
 async fn finish_enqueued_run(
     state: &AppState,
     enqueued: scope_postgres::db::EnqueueRunResult,
-) -> Result<InspectedRun, ApiError> {
+) -> Result<RunSnapshot, ApiError> {
     let run = enqueued.run;
     if enqueued.inserted {
         state
@@ -101,7 +100,7 @@ async fn finish_enqueued_run(
             .run_has_truncated_logs(&run.id)
             .await?;
     let jobs = state.metadata.runs().run_jobs(&run.id).await?;
-    Ok(InspectedRun {
+    Ok(RunSnapshot {
         run,
         jobs,
         logs_truncated,
@@ -114,7 +113,7 @@ pub(crate) async fn cancel_run(
     owner: &str,
     repo_name: &str,
     run_id: &str,
-) -> Result<InspectedRun, ApiError> {
+) -> Result<RunSnapshot, ApiError> {
     let run = state
         .metadata
         .runs()
@@ -129,7 +128,7 @@ pub(crate) async fn retry_run(
     owner: &str,
     repo_name: &str,
     run_id: &str,
-) -> Result<InspectedRun, ApiError> {
+) -> Result<RunSnapshot, ApiError> {
     let run = state
         .metadata
         .runs()
@@ -138,7 +137,7 @@ pub(crate) async fn retry_run(
     finish_run_control(state, run).await
 }
 
-async fn finish_run_control(state: &AppState, run: Run) -> Result<InspectedRun, ApiError> {
+async fn finish_run_control(state: &AppState, run: Run) -> Result<RunSnapshot, ApiError> {
     state
         .publish_run_change(
             run.workflow.repository_id(),
@@ -152,7 +151,7 @@ async fn finish_run_control(state: &AppState, run: Run) -> Result<InspectedRun, 
         .run_has_truncated_logs(&run.id)
         .await?;
     let jobs = state.metadata.runs().run_jobs(&run.id).await?;
-    Ok(InspectedRun {
+    Ok(RunSnapshot {
         run,
         jobs,
         logs_truncated,

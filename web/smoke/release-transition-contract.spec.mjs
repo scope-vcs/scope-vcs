@@ -55,7 +55,7 @@ test("release browser CLI parses explicit transition controls", () => {
 test("reconnect evidence is paired after interruption and bounded", () => {
   const starts = [
     { at: "2026-09-06T12:00:00.000Z", sequence: 1 },
-    { at: "2026-09-06T12:00:06.000Z", sequence: 2 },
+    { at: "2026-09-06T12:00:06.000Z", confirmedAt: "2026-09-06T12:00:06.000Z", sequence: 2 },
   ];
   const ends = [{ at: "2026-09-06T12:00:05.000Z", outcome: "failed", sequence: 1 }];
   assert.deepEqual(
@@ -70,7 +70,7 @@ test("reconnect evidence is paired after interruption and bounded", () => {
   );
   assert.equal(
     findReconnect(
-      [starts[0], { at: "2026-09-06T12:00:16.000Z", sequence: 2 }],
+      [starts[0], { at: "2026-09-06T12:00:06.000Z", confirmedAt: "2026-09-06T12:00:16.000Z", sequence: 2 }],
       ends,
       "2026-09-06T12:00:04.000Z",
       10_000,
@@ -122,4 +122,11 @@ test("browser refuses a stale teardown signal before opening", async (t) => {
     }),
     /must open before activation/,
   );
+});
+
+ test("reconnect attempts without received SSE frames do not pass", () => {
+  const ends = [{ at: "2026-09-06T12:00:05.000Z", outcome: "failed", sequence: 1 }];
+  for (const evidence of [{}, {status: 503}, {status: 200}, {confirmedAt: "2026-09-06T12:00:06.000Z", observationFailed: true}]) {
+    assert.equal(findReconnect([{at: "2026-09-06T12:00:06.000Z", sequence: 2, ...evidence}], ends, "2026-09-06T12:00:04.000Z", 10000), null);
+  }
 });

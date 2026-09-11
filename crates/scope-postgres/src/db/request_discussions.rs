@@ -23,19 +23,19 @@ use super::{
     request_rows::save_request_row,
 };
 use sea_orm::TransactionTrait;
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use {
     crate::error::PostgresError,
     scope_domain::account::UserAccount,
     scope_domain::requests::{
         CreateRequestDiscussionInput, CreateRequestDiscussionMutation,
         CreateRequestDiscussionReplyInput, CreateRequestDiscussionReplyMutation,
-        MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput,
-        ReopenRequestDiscussionInput, RequestDiscussion, RequestDiscussionReadState,
-        RequestRevision, ResolveRequestDiscussionInput, create_request_discussion,
-        create_request_discussion_reply, ensure_request_discussion_transition_allowed,
-        mark_request_discussion_read, reopen_and_reply_to_request_discussion,
-        reopen_request_discussion, resolve_request_discussion,
+        MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput, RequestDiscussion,
+        RequestDiscussionReadState, RequestDiscussionTransitionInput, RequestRevision,
+        create_request_discussion, create_request_discussion_reply,
+        ensure_request_discussion_transition_allowed, mark_request_discussion_read,
+        reopen_and_reply_to_request_discussion, reopen_request_discussion,
+        resolve_request_discussion,
     },
 };
 
@@ -155,7 +155,7 @@ impl RequestStore {
             Some(user_id) => read_states_for_user(self.db.as_ref(), &ids, user_id).await?,
             None => BTreeMap::new(),
         };
-        let previews = reply_previews_for_discussions(self.db.as_ref(), &ids).await?;
+        let mut previews = reply_previews_for_discussions(self.db.as_ref(), &ids).await?;
         let unread_counts = match viewer_user_id {
             Some(_) => unread_content_counts(self.db.as_ref(), &discussions, &read_states).await?,
             None => BTreeMap::new(),
@@ -187,19 +187,12 @@ impl RequestStore {
                         })
                 })
                 .transpose()?;
-            let (reply_count, latest_replies) =
-                previews.get(&discussion.id).cloned().unwrap_or_default();
-            user_ids.extend(latest_replies.iter().flat_map(|model| {
-                [
-                    Some(model.reply.author_user_id.clone()),
-                    model
-                        .reply_to
-                        .as_ref()
-                        .map(|target| target.author_user_id.clone()),
-                ]
-                .into_iter()
-                .flatten()
-            }));
+            let (reply_count, latest_replies) = previews.remove(&discussion.id).unwrap_or_default();
+            user_ids.extend(
+                latest_replies
+                    .iter()
+                    .flat_map(RequestDiscussionReplyReadModel::author_user_ids),
+            );
             let read_through_position = read_states
                 .get(&discussion.id)
                 .map(|state| state.read_through_position)
@@ -237,17 +230,9 @@ impl RequestStore {
             replies_for_discussion(self.db.as_ref(), discussion_id, before_position, limit).await?;
         let users = load_users_by_ids(
             self.db.as_ref(),
-            replies.iter().flat_map(|model| {
-                [
-                    Some(model.reply.author_user_id.clone()),
-                    model
-                        .reply_to
-                        .as_ref()
-                        .map(|target| target.author_user_id.clone()),
-                ]
-                .into_iter()
-                .flatten()
-            }),
+            replies
+                .iter()
+                .flat_map(RequestDiscussionReplyReadModel::author_user_ids),
         )
         .await?;
         Ok((replies, users))
@@ -310,19 +295,9 @@ impl RequestStore {
             }
             None => None,
         };
-        let users = load_users_by_ids(
-            self.db.as_ref(),
-            [
-                Some(reply.author_user_id.clone()),
-                reply_to
-                    .as_ref()
-                    .map(|target| target.author_user_id.clone()),
-            ]
-            .into_iter()
-            .flatten(),
-        )
-        .await?;
-        Ok((RequestDiscussionReplyReadModel { reply, reply_to }, users))
+        let model = RequestDiscussionReplyReadModel { reply, reply_to };
+        let users = load_users_by_ids(self.db.as_ref(), model.author_user_ids()).await?;
+        Ok((model, users))
     }
 
     pub async fn request_revision(
@@ -339,17 +314,11 @@ impl RequestStore {
         &self,
         command: CreateRequestDiscussionCommand,
     ) -> Result<CreateRequestDiscussionMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
         let input = CreateRequestDiscussionInput {
             request_id: command.request_id,
             id: command.id,
@@ -369,6 +338,10 @@ impl RequestStore {
         )
         .await?
         {
+            // Replays need current visibility, not permission to create new activity.
+            if !policy.discussion_visible {
+                return Err(PostgresError::not_found("request discussion not found"));
+            }
             let state = match read_state(&tx, &discussion.id, &input.actor_user_id).await? {
                 Some(state) => state,
                 None => {
@@ -398,13 +371,13 @@ impl RequestStore {
         save_read_state(&tx, &mutation.read_state).await?;
         replace_bindings_for_markdown(
             &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
+            &mutation.request.id,
+            &mutation.discussion.author_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Discussion {
-                discussion_id: binding_discussion_id,
+                discussion_id: mutation.discussion.id.clone(),
             },
-            &binding_markdown,
-            binding_now_unix,
+            &mutation.discussion.body_markdown,
+            mutation.discussion.created_at_unix,
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -415,18 +388,11 @@ impl RequestStore {
         &self,
         command: CreateRequestDiscussionReplyCommand,
     ) -> Result<CreateRequestDiscussionReplyMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.discussion_id.clone();
-        let binding_reply_id = command.id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
         let input = CreateRequestDiscussionReplyInput {
             request_id: command.request_id,
             discussion_id: command.discussion_id,
@@ -451,6 +417,9 @@ impl RequestStore {
         )
         .await?
         {
+            if !policy.discussion_visible {
+                return Err(PostgresError::not_found("request discussion not found"));
+            }
             let state = monotonic_read_state(
                 &tx,
                 &discussion,
@@ -481,22 +450,7 @@ impl RequestStore {
             reply_id_exists,
             input,
         )?;
-        save_request_row(&tx, &mutation.request).await?;
-        save_discussion(&tx, &mutation.discussion).await?;
-        insert_reply(&tx, &mutation.reply).await?;
-        save_read_state(&tx, &mutation.read_state).await?;
-        replace_bindings_for_markdown(
-            &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
-            &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Reply {
-                discussion_id: binding_discussion_id,
-                reply_id: binding_reply_id,
-            },
-            &binding_markdown,
-            binding_now_unix,
-        )
-        .await?;
+        save_reply_mutation(&tx, &mutation).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)
     }
@@ -513,8 +467,7 @@ impl RequestStore {
             now_unix,
             transition,
         } = command;
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) = lock_request_repository(&tx, &request_id, &actor_user_id).await?;
         ensure_user_exists(&tx, &actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &actor_user_id).await?;
@@ -525,34 +478,20 @@ impl RequestStore {
             .await?
             .filter(|discussion| discussion.request_id == request_id)
             .ok_or_else(|| PostgresError::not_found("request discussion not found"))?;
-        let actor_is_maintainer = repo.access.is_maintainer();
+        let input = RequestDiscussionTransitionInput {
+            request_id,
+            discussion_id,
+            actor_user_id,
+            actor_is_maintainer: repo.access.is_maintainer(),
+            actor_can_transition: policy.permissions.can_transition_discussion,
+            event_id,
+            now_unix,
+        };
         let mutation = match transition {
-            DiscussionTransition::Resolve => resolve_request_discussion(
-                request,
-                discussion,
-                ResolveRequestDiscussionInput {
-                    request_id,
-                    discussion_id,
-                    actor_user_id,
-                    actor_is_maintainer,
-                    actor_can_transition: policy.permissions.can_transition_discussion,
-                    event_id,
-                    now_unix,
-                },
-            )?,
-            DiscussionTransition::Reopen => reopen_request_discussion(
-                request,
-                discussion,
-                ReopenRequestDiscussionInput {
-                    request_id,
-                    discussion_id,
-                    actor_user_id,
-                    actor_is_maintainer,
-                    actor_can_transition: policy.permissions.can_transition_discussion,
-                    event_id,
-                    now_unix,
-                },
-            )?,
+            DiscussionTransition::Resolve => {
+                resolve_request_discussion(request, discussion, input)?
+            }
+            DiscussionTransition::Reopen => reopen_request_discussion(request, discussion, input)?,
         };
         save_request_row(&tx, &mutation.request).await?;
         save_discussion(&tx, &mutation.discussion).await?;
@@ -573,19 +512,12 @@ impl RequestStore {
         &self,
         command: ReopenAndReplyToRequestDiscussionCommand,
     ) -> Result<CreateRequestDiscussionReplyMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
         let actor_is_maintainer = repo.access.is_maintainer();
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.discussion_id.clone();
-        let binding_reply_id = command.reply_id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
         let input = ReopenAndReplyToRequestDiscussionInput {
             request_id: command.request_id,
             discussion_id: command.discussion_id,
@@ -640,25 +572,7 @@ impl RequestStore {
             quoted_reply.as_ref(),
             input,
         )?;
-        save_request_row(&tx, &mutation.request).await?;
-        save_discussion(&tx, &mutation.discussion).await?;
-        insert_reply(&tx, &mutation.reply).await?;
-        save_read_state(&tx, &mutation.read_state).await?;
-        if let Some(event) = &mutation.activity_event {
-            insert_request_event_row(&tx, event).await?;
-        }
-        replace_bindings_for_markdown(
-            &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
-            &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Reply {
-                discussion_id: binding_discussion_id,
-                reply_id: binding_reply_id,
-            },
-            &binding_markdown,
-            binding_now_unix,
-        )
-        .await?;
+        save_reply_mutation(&tx, &mutation).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)
     }
@@ -667,8 +581,7 @@ impl RequestStore {
         &self,
         input: MarkRequestDiscussionReadInput,
     ) -> Result<RequestDiscussionReadState, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         ensure_user_exists(&tx, &input.user_id).await?;
         let discussion = discussion_by_id(&tx, &input.discussion_id)
             .await?
@@ -712,4 +625,29 @@ where
     )?;
     save_read_state(conn, &state).await?;
     Ok(state)
+}
+
+async fn save_reply_mutation<C: sea_orm::ConnectionTrait>(
+    conn: &C,
+    mutation: &CreateRequestDiscussionReplyMutation,
+) -> Result<(), PostgresError> {
+    save_request_row(conn, &mutation.request).await?;
+    save_discussion(conn, &mutation.discussion).await?;
+    insert_reply(conn, &mutation.reply).await?;
+    save_read_state(conn, &mutation.read_state).await?;
+    if let Some(event) = &mutation.activity_event {
+        insert_request_event_row(conn, event).await?;
+    }
+    replace_bindings_for_markdown(
+        conn,
+        &mutation.request.id,
+        &mutation.reply.author_user_id,
+        &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Reply {
+            discussion_id: mutation.discussion.id.clone(),
+            reply_id: mutation.reply.id.clone(),
+        },
+        &mutation.reply.body_markdown,
+        mutation.reply.created_at_unix,
+    )
+    .await
 }

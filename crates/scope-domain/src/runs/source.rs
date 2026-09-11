@@ -128,17 +128,6 @@ impl RunSource {
             Self::EphemeralGitBundle { .. } => None,
         }
     }
-
-    pub fn is_private_only(&self) -> bool {
-        matches!(
-            self,
-            Self::EphemeralGitBundle { .. }
-                | Self::AcceptedGitHead {
-                    audience: ProjectionViewKey::Private,
-                    ..
-                }
-        )
-    }
 }
 
 fn validate_source_blob(blob: &SourceBlob, label: &str) -> Result<(), DomainError> {

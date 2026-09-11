@@ -6,7 +6,6 @@ use scope_media_worker::{
     health::WorkerHealth,
     jobs,
     scratch::ScratchSpace,
-    storage,
 };
 use scope_postgres::db::MetadataStore;
 use std::{path::Path, time::Duration};
@@ -56,7 +55,10 @@ async fn run_service() -> anyhow::Result<()> {
         .context("checking required media codecs")?;
     tracing::info!(capabilities = %serde_json::to_string(&capabilities)?, "media codecs ready");
 
-    let storage = storage::from_env().context("configuring encrypted media storage")?;
+    let storage = scope_media_storage::MediaStorageSettings::from_env()?
+        .connect(2)
+        .await
+        .context("configuring encrypted media storage")?;
     let health = WorkerHealth::new(settings.poll_interval);
     health.mark_codecs_ready();
     let mut health_task = tokio::spawn(health.clone().serve(settings.health_port));

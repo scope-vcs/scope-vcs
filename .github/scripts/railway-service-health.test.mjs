@@ -5,12 +5,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
-  RAILWAY_CONFIG_PATHS,
-  RAILWAY_COMPONENTS,
   assertEffectiveRailwayDeployConfig,
   assertHealthyRailwayService,
   railwayServicesFromStatus,
-  verifyProductionRailwayServices,
+  railwayServiceIsStopped,
 } from "./railway-service-health.mjs";
 
 const SOURCE_SHA = "a".repeat(40);
@@ -20,6 +18,16 @@ const expectedDeploy = {
   overlapSeconds: "30",
   drainingSeconds: "30",
 };
+
+test("writer closure requires explicit nonnegative integer replica evidence", () => {
+  assert.equal(railwayServiceIsStopped([{ id: "api", replicas: { running: 0, crashed: 0 } }], "api"), true);
+  assert.equal(railwayServiceIsStopped([{ id: "api", replicas: { running: 1, crashed: 0 } }], "api"), false);
+  for (const replicas of [undefined, null, {}, { running: 0 }, { crashed: 0 }, { running: null, crashed: 0 }, { running: "0", crashed: 0 }, { running: 0, crashed: -1 }, { running: 0.5, crashed: 0 }]) {
+    assert.throws(() => railwayServiceIsStopped([{ id: "api", replicas }], "api"), /replica evidence/);
+  }
+  assert.throws(() => railwayServiceIsStopped([], "api"), /exactly one/);
+  assert.throws(() => railwayServiceIsStopped([{ id: "api" }, { id: "api" }], "api"), /exactly one/);
+});
 
 function healthyService(id) {
   return {
@@ -36,14 +44,6 @@ function healthyService(id) {
     },
   };
 }
-
-test("accepts the exact active healthy deployment", () => {
-  const service = healthyService("api");
-  assert.equal(
-    assertHealthyRailwayService([service], "api", "deployment-api"),
-    service,
-  );
-});
 
 test("rejects unavailable Railway service states", () => {
   const cases = [
@@ -181,58 +181,6 @@ test("effective deployment config must contain and match every transition settin
   );
 });
 
-test("production verification binds every live service to durable Railway evidence", () => {
-  const manifest = { services: {} };
-  const deployments = {};
-  const services = [];
-  const serviceConfigs = {};
-  for (const component of RAILWAY_COMPONENTS) {
-    manifest.services[component] = { id: component };
-    deployments[component] = {
-      sourceSha: SOURCE_SHA,
-      provider: "railway",
-      evidenceId: `deployment-${component}`,
-      ...(component === "media-worker" ? { artifactDigest: `sha256:${"b".repeat(64)}` } : {}),
-    };
-    const service = healthyService(component);
-    if (component === "cli-downloads") service.effectiveDeploy = undefined;
-    services.push(service);
-    if (RAILWAY_CONFIG_PATHS[component]) {
-      serviceConfigs[component] = { deploy: expectedDeploy };
-    }
-  }
-
-  assert.deepEqual(
-    verifyProductionRailwayServices({ deployments, manifest, serviceConfigs, services })
-      .map(({ component }) => component),
-    RAILWAY_COMPONENTS,
-  );
-
-  const incompleteConfigs = { ...serviceConfigs };
-  delete incompleteConfigs.cache;
-  assert.throws(
-    () => verifyProductionRailwayServices({
-      deployments,
-      manifest,
-      serviceConfigs: incompleteConfigs,
-      services,
-    }),
-    /cache is missing expected Railway config/,
-  );
-
-  delete deployments.web;
-  assert.throws(
-    () => verifyProductionRailwayServices({
-      deployments,
-      manifest,
-      serviceConfigs,
-      services,
-    }),
-    /web has no exact Railway deployment evidence/,
-  );
-});
-
-
 test("production CLI verifies canonical receipts against the checked-in manifest and Railway status", () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const manifest = JSON.parse(readFileSync(new URL("../deployment-services.json", import.meta.url), "utf8"));
@@ -276,4 +224,9 @@ test("production CLI verifies canonical receipts against the checked-in manifest
   const invalidDigest = run();
   assert.equal(invalidDigest.status, 1);
   assert.match(invalidDigest.stderr, /media-worker has no exact OCI artifact evidence/);
+  deployments["media-worker"].artifactDigest = `sha256:${'b'.repeat(64)}`;
+  delete deployments.web;
+  const missingReceipt = run();
+  assert.equal(missingReceipt.status, 1);
+  assert.match(missingReceipt.stderr, /web has no exact Railway deployment evidence/);
 });

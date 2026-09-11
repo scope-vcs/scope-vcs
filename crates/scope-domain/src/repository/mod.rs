@@ -176,10 +176,6 @@ impl Repository {
         }
         blobs
     }
-
-    pub fn has_file_for_visibility_update(&self, path: &ScopePath) -> bool {
-        self.graph_has_file(path)
-    }
 }
 
 impl RepoRecord {

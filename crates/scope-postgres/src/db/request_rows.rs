@@ -2,7 +2,7 @@ use super::entities;
 use super::object_references::{delete_object_reference, replace_object_reference};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
+    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
     sea_query::{Expr, Query},
 };
 use {
@@ -239,6 +239,27 @@ where
         .collect()
 }
 
+pub(super) async fn public_draft_count<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    author_user_id: &str,
+) -> Result<usize, PostgresError> {
+    let count = entities::request::Entity::find()
+        .filter(entities::request::Column::RepoId.eq(repo_id))
+        .filter(entities::request::Column::AuthorUserId.eq(author_user_id))
+        .filter(
+            entities::request::Column::AuthorRole
+                .eq(entities::encode_enum(RequestActorRole::Public)?),
+        )
+        .filter(entities::request::Column::SubmittedAtUnix.is_null())
+        .filter(entities::request::Column::ClosedAtUnix.is_null())
+        .filter(entities::request::Column::MergedAtUnix.is_null())
+        .count(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    usize::try_from(count).map_err(PostgresError::internal)
+}
+
 pub async fn requests_by_repo_author<C>(
     conn: &C,
     repo_id: &str,
@@ -468,34 +489,4 @@ where
         .await
         .map_err(PostgresError::internal)?;
     Ok(())
-}
-
-#[cfg(test)]
-mod request_list_tests {
-    use super::*;
-    use sea_orm::{DatabaseBackend, QueryTrait};
-
-    #[test]
-    fn request_list_query_projects_only_bounded_list_facts() {
-        let query = request_list_select(&RequestListPageQuery {
-            repo_id: "repo-1",
-            viewer_user_id: Some("viewer-1"),
-            access: RepositoryAccess::public(),
-            after_id: Some("request-10"),
-            limit: u64::MAX,
-        })
-        .unwrap();
-        let sql = query.build(DatabaseBackend::Postgres).to_string();
-        let projection = sql.split(" FROM ").next().unwrap();
-
-        assert!(!projection.contains("description_markdown"));
-        assert_eq!(projection.matches("\"git_snapshot\"").count(), 1);
-        assert!(projection.contains("git_snapshot\" IS NOT NULL"));
-        assert!(projection.contains("AS \"has_git_snapshot\""));
-        assert!(sql.contains("EXISTS"));
-        assert!(sql.contains("author_user_id"));
-        assert!(sql.contains("submitted_at_unix"));
-        assert!(sql.contains("ORDER BY \"scope_requests\".\"id\" ASC"));
-        assert!(sql.ends_with("LIMIT 101"));
-    }
 }

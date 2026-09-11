@@ -3,7 +3,7 @@ import { CopyableCodeBlock } from '@/components/copyable-code-block'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { ChevronDown, Code2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import {
   permissionedCloneCommand,
   publicCloneCommand,
@@ -17,6 +17,8 @@ export function RepoCloneDropdown({
   repo: RepoSummary
 }) {
   const [open, setOpen] = useState(false)
+  const close = useEffectEvent(() => setOpen(false))
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const permissioned = repo.access.actor !== 'Public'
   const cloneCommand = permissioned
@@ -37,13 +39,30 @@ export function RepoCloneDropdown({
         rootRef.current &&
         !rootRef.current.contains(event.target as Node)
       ) {
-        setOpen(false)
+        close()
       }
     }
 
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        close()
+        triggerRef.current?.focus()
+      }
+    }
+
+    function closeOnFocusLeave(event: FocusEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) close()
+    }
+
     document.addEventListener('mousedown', closeOnOutsidePointer)
-    return () =>
+    document.addEventListener('keydown', closeOnEscape)
+    document.addEventListener('focusin', closeOnFocusLeave)
+    return () => {
       document.removeEventListener('mousedown', closeOnOutsidePointer)
+      document.removeEventListener('keydown', closeOnEscape)
+      document.removeEventListener('focusin', closeOnFocusLeave)
+    }
   }, [open])
 
   function toggleOpen() {
@@ -53,6 +72,7 @@ export function RepoCloneDropdown({
   return (
     <div className="relative" ref={rootRef}>
       <Button
+        ref={triggerRef}
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={toggleOpen}

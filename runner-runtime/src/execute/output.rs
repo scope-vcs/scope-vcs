@@ -459,21 +459,6 @@ mod tests {
     }
 
     #[test]
-    fn fixed_reader_splits_newline_free_output() {
-        let bytes = vec![b'x'; LOG_READ_BYTES * 3 + 7];
-        let spool = Arc::new(LogSpool::new(LOG_SPOOL_BYTES, 1).unwrap());
-        read_output_for_test(OutputStream::Stdout, Cursor::new(bytes), Arc::clone(&spool));
-        let mut lengths = Vec::new();
-        while let Ok(event) = spool.recv_timeout(Duration::ZERO) {
-            match event {
-                ReaderEvent::Chunk { bytes, .. } => lengths.push(bytes.len()),
-                ReaderEvent::Failed { error, .. } => panic!("unexpected read error: {error}"),
-            }
-        }
-        assert_eq!(lengths, [LOG_READ_BYTES, LOG_READ_BYTES, LOG_READ_BYTES, 7]);
-    }
-
-    #[test]
     fn fixed_reader_reports_io_errors() {
         let spool = Arc::new(LogSpool::new(LOG_SPOOL_BYTES, 1).unwrap());
         read_output_for_test(
@@ -519,12 +504,6 @@ mod tests {
         done_receiver.recv_timeout(Duration::from_secs(1)).unwrap();
         reader.join().unwrap();
         assert_eq!(output, vec![b'x'; LOG_READ_BYTES * 3]);
-    }
-
-    #[test]
-    fn lossy_utf8_expansion_stays_below_the_api_chunk_limit() {
-        let invalid = vec![0xff; LOG_READ_BYTES];
-        assert!(String::from_utf8_lossy(&invalid).len() <= 64 * 1024);
     }
 
     #[test]

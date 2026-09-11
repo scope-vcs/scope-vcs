@@ -15,7 +15,7 @@ import {
 import { cn } from '@/lib/utils'
 import DOMPurify from 'dompurify'
 import { File, FileText, TriangleAlert, X } from 'lucide-react'
-import { type ReactNode, useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import {
   reviewFileDiffEmptyLabel,
   reviewFileDiffModeChangeLabel,

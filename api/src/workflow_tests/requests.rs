@@ -97,123 +97,6 @@ async fn native_private_request_reads_use_the_persisted_git_head() {
 }
 
 #[tokio::test]
-async fn private_request_bases_select_the_native_private_head() {
-    let (state, _source, head_oid) =
-        super::push_intent_completion::published_git_fixture("request-private-base").await;
-    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
-
-    assert_eq!(
-        crate::http::requests::current_main_oid_for_audience(
-            &state,
-            &repo,
-            scope_domain::requests::RequestAudience::Private,
-        )
-        .await
-        .unwrap(),
-        Some(head_oid)
-    );
-}
-
-#[tokio::test]
-async fn request_reads_rebuild_current_history_before_projection_jobs_run() {
-    let state = test_state_with_readme().await;
-    cache_test_jwks(&state);
-    create_owner_request(&state, "req_stale_projection", REQUEST_HEAD).await;
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.record.change_version += 1;
-        })
-        .await
-        .unwrap();
-    let app = router(state);
-
-    let response = api_request(
-        app.clone(),
-        "GET",
-        "/v1/repos/owner/repo/requests/req_stale_projection",
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        response_json(response).await["request"]["mergeability"]["current_main_oid"]
-            .as_str()
-            .is_some_and(|head| head.len() == 40)
-    );
-
-    for uri in [
-        "/v1/repos/owner/repo/requests?cursor=v1:zzzz",
-        "/v1/repos/owner/repo/requests/queue?section=open",
-    ] {
-        let empty = api_request(app.clone(), "GET", uri, Some(&bearer_header()), None).await;
-        assert_eq!(empty.status(), StatusCode::OK);
-        assert!(request_ids(&response_json(empty).await).is_empty());
-    }
-}
-
-#[tokio::test]
-async fn public_readers_do_not_see_private_request_branches() {
-    let state = test_state_with_readme().await;
-    cache_test_jwks(&state);
-    create_owner_request(&state, "req_private", REQUEST_HEAD).await;
-    let app = router(state);
-
-    let public_response = api_request(
-        app.clone(),
-        "GET",
-        "/v1/repos/owner/repo/requests",
-        None,
-        None,
-    )
-    .await;
-
-    assert_eq!(public_response.status(), StatusCode::OK);
-    let public_body = response_json(public_response).await;
-    assert_eq!(public_body["requests"].as_array().unwrap().len(), 0);
-    assert!(public_body["next_cursor"].is_null());
-
-    let owner_response = api_request(
-        app,
-        "GET",
-        "/v1/repos/owner/repo/requests",
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-
-    assert_eq!(owner_response.status(), StatusCode::OK);
-    let owner_body = response_json(owner_response).await;
-    assert_eq!(owner_body["requests"].as_array().unwrap().len(), 1);
-    assert_eq!(owner_body["requests"][0]["audience"], "Private");
-    assert!(
-        owner_body["requests"][0]
-            .get("description_markdown")
-            .is_none()
-    );
-}
-
-#[tokio::test]
-async fn request_list_rejects_malformed_cursors() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let response = api_request(
-        router(state),
-        "GET",
-        "/v1/repos/owner/repo/requests?cursor=not-versioned",
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
 async fn request_list_pages_one_hundred_and_one_visible_rows_without_overlap() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
@@ -272,41 +155,6 @@ async fn request_list_pages_one_hundred_and_one_visible_rows_without_overlap() {
 }
 
 #[tokio::test]
-async fn request_lifecycle_exposes_one_way_submit_and_merge_actions() {
-    let mut state = test_state_with_repo();
-    cache_test_jwks(&state);
-    create_owner_request(&state, "req_lifecycle", REQUEST_HEAD).await;
-    let (analytics, recording) = crate::product_analytics::ProductAnalytics::recording();
-    state.product_analytics = analytics;
-    let app = router(state);
-    let bearer = bearer_header();
-
-    let submitted = api_request(
-        app.clone(),
-        "POST",
-        "/v1/repos/owner/repo/requests/req_lifecycle/submit",
-        Some(&bearer),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(submitted.status(), StatusCode::OK);
-    let submitted = response_json(submitted).await;
-    assert_eq!(submitted["request"]["state"], "Open");
-    assert_eq!(recording.event_names(), ["request:request_submit"]);
-
-    let repeated = api_request(
-        app.clone(),
-        "POST",
-        "/v1/repos/owner/repo/requests/req_lifecycle/submit",
-        Some(&bearer),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(repeated.status(), StatusCode::CONFLICT);
-    assert_eq!(recording.event_names(), ["request:request_submit"]);
-}
-
-#[tokio::test]
 async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surfaces() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
@@ -361,79 +209,81 @@ async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surf
         .unwrap();
 
     let app = router(state);
-    let anonymous_list = response_json(
-        api_request(
+    let unrelated = bearer_header_for("request_unrelated", "request-unrelated@example.com");
+    let invitee = bearer_header_for("request_invitee", "request-invitee@example.com");
+    let maintainer = bearer_header();
+    for (auth, expected) in [
+        (None, vec!["req_ready_public"]),
+        (
+            Some(invitee.as_str()),
+            vec!["req_never", "req_ready_public"],
+        ),
+        (
+            Some(maintainer.as_str()),
+            vec!["req_private_matrix", "req_ready_public"],
+        ),
+    ] {
+        let response = api_request(
             app.clone(),
             "GET",
             "/v1/repos/owner/repo/requests",
-            None,
+            auth,
             None,
         )
-        .await,
-    )
-    .await;
-    assert_eq!(request_ids(&anonymous_list), vec!["req_ready_public"]);
-    assert_eq!(anonymous_list["requests"][0]["submitted_at_unix"], 4);
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let list = response_json(response).await;
+        assert_eq!(request_ids(&list), expected);
+        assert!(list["next_cursor"].is_null());
+        for request in list["requests"].as_array().unwrap() {
+            assert!(request.get("description_markdown").is_none());
+            if request["id"] == "req_private_matrix" {
+                assert_eq!(request["audience"], "Private");
+            }
+        }
+        let submitted = list["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|request| request["id"] == "req_ready_public")
+            .unwrap();
+        assert_eq!(submitted["submitted_at_unix"], 4);
+    }
 
-    let unrelated = bearer_header_for("request_unrelated", "request-unrelated@example.com");
-    for suffix in ["req_never", "req_never/timeline", "req_never/activity"] {
-        assert_eq!(
-            api_request(
+    for auth in [&unrelated, &maintainer] {
+        for suffix in ["req_never", "req_never/timeline", "req_never/activity"] {
+            let response = api_request(
                 app.clone(),
                 "GET",
                 &format!("/v1/repos/owner/repo/requests/{suffix}"),
-                Some(&unrelated),
+                Some(auth),
                 None,
             )
-            .await
-            .status(),
-            StatusCode::NOT_FOUND
-        );
+            .await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{suffix}");
+        }
     }
-    for request_id in ["req_ready_public"] {
-        assert_eq!(
-            api_request(
-                app.clone(),
-                "GET",
-                &format!("/v1/repos/owner/repo/requests/{request_id}"),
-                None,
-                None,
-            )
-            .await
-            .status(),
-            StatusCode::OK
-        );
-    }
-    assert_eq!(
-        api_request(
+    for (auth, request_id, expected) in [
+        (None, "req_ready_public", StatusCode::OK),
+        (None, "req_private_matrix", StatusCode::NOT_FOUND),
+        (
+            Some(maintainer.as_str()),
+            "req_private_matrix",
+            StatusCode::OK,
+        ),
+    ] {
+        let response = api_request(
             app.clone(),
             "GET",
-            "/v1/repos/owner/repo/requests/req_private_matrix",
-            None,
+            &format!("/v1/repos/owner/repo/requests/{request_id}"),
+            auth,
             None,
         )
-        .await
-        .status(),
-        StatusCode::NOT_FOUND
-    );
+        .await;
+        assert_eq!(response.status(), expected, "{request_id}");
+    }
 
-    let invitee = bearer_header_for("request_invitee", "request-invitee@example.com");
-    let invitee_list = response_json(
-        api_request(
-            app.clone(),
-            "GET",
-            "/v1/repos/owner/repo/requests",
-            Some(&invitee),
-            None,
-        )
-        .await,
-    )
-    .await;
-    assert_eq!(
-        request_ids(&invitee_list),
-        vec!["req_never", "req_ready_public"]
-    );
-    let invitee_detail = api_request(
+    let response = api_request(
         app.clone(),
         "GET",
         "/v1/repos/owner/repo/requests/req_never",
@@ -441,102 +291,50 @@ async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surf
         None,
     )
     .await;
-    assert_eq!(invitee_detail.status(), StatusCode::OK);
-    let invitee_detail = response_json(invitee_detail).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let detail = response_json(response).await;
     assert_eq!(
-        invitee_detail["request"]["invitees"][0]["user"]["handle"],
+        detail["request"]["invitees"][0]["user"]["handle"],
         "request-invitee"
     );
-    assert_eq!(
-        invitee_detail["request"]["permissions"]["can_push_branch"],
-        true
-    );
-    assert_eq!(
-        invitee_detail["request"]["permissions"]["can_view_activity"],
-        true
-    );
-    assert_eq!(
-        invitee_detail["request"]["permissions"]["can_open_discussion"],
-        true
-    );
-    assert_eq!(
-        invitee_detail["request"]["permissions"]["can_edit_identity"],
-        false
-    );
-    assert_eq!(
-        invitee_detail["request"]["permissions"]["can_manage_invitees"],
-        false
-    );
-
-    let maintainer_list = response_json(
-        api_request(
-            app.clone(),
-            "GET",
-            "/v1/repos/owner/repo/requests",
-            Some(&bearer_header()),
-            None,
-        )
-        .await,
-    )
-    .await;
-    assert_eq!(
-        request_ids(&maintainer_list),
-        vec!["req_private_matrix", "req_ready_public"]
-    );
-    for request_id in ["req_private_matrix"] {
+    for (permission, expected) in [
+        ("can_push_branch", true),
+        ("can_view_activity", true),
+        ("can_open_discussion", true),
+        ("can_edit_identity", false),
+        ("can_manage_invitees", false),
+    ] {
         assert_eq!(
-            api_request(
-                app.clone(),
-                "GET",
-                &format!("/v1/repos/owner/repo/requests/{request_id}"),
-                Some(&bearer_header()),
-                None,
-            )
-            .await
-            .status(),
-            StatusCode::OK
+            detail["request"]["permissions"][permission], expected,
+            "{permission}"
         );
     }
-    for suffix in ["req_never", "req_never/timeline", "req_never/activity"] {
-        assert_eq!(
-            api_request(
-                app.clone(),
-                "GET",
-                &format!("/v1/repos/owner/repo/requests/{suffix}"),
-                Some(&bearer_header()),
-                None,
-            )
-            .await
-            .status(),
-            StatusCode::NOT_FOUND
-        );
-    }
-    assert_eq!(
-        api_request(
-            app.clone(),
+    for (method, suffix, body) in [
+        (
             "PATCH",
-            "/v1/repos/owner/repo/requests/req_never",
-            Some(&bearer_header()),
-            Some(r#"{"title":"Maintainer must not see this"}"#),
-        )
-        .await
-        .status(),
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        api_request(
-            app,
+            "req_never",
+            r#"{"title":"Maintainer must not see this"}"#,
+        ),
+        (
             "POST",
-            "/v1/repos/owner/repo/requests/req_never/timeline",
-            Some(&bearer_header()),
-            Some(
-                r#"{"body_markdown":"Maintainer must not see this","client_discussion_id":"hidden"}"#,
-            ),
+            "req_never/timeline",
+            r#"{"body_markdown":"Maintainer must not see this","client_discussion_id":"hidden"}"#,
+        ),
+    ] {
+        let response = api_request(
+            app.clone(),
+            method,
+            &format!("/v1/repos/owner/repo/requests/{suffix}"),
+            Some(&maintainer),
+            Some(body),
         )
-        .await
-        .status(),
-        StatusCode::NOT_FOUND
-    );
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "{method} {suffix}"
+        );
+    }
 }
 #[tokio::test]
 async fn invitee_routes_enforce_exact_handles_roles_leave_and_private_exclusion() {

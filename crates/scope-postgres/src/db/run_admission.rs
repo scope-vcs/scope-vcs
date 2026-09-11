@@ -1,21 +1,13 @@
 use super::{
-    DispatchClaim, RunStore, entities,
-    run_attempt_persistence::{
-        locked_attempt_steps, locked_jobs, locked_run, save_attempt, save_jobs, save_run,
-    },
-    runs::workflow_revision_for_run,
+    DispatchClaim, RunStore,
+    run_attempt_persistence::{locked_jobs, locked_run},
 };
 use crate::error::PostgresError;
-use scope_domain::runs::{attempt::MAX_RUN_ATTEMPTS, job::reconcile_run};
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
-    QuerySelect, Statement, TransactionTrait,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement, TransactionTrait};
 
 #[derive(Debug)]
 pub enum DispatchAdmission {
     Admitted(Box<DispatchClaim>),
-    Exhausted(Box<DispatchClaim>),
     AtCapacity,
     Contended,
     Empty,
@@ -55,22 +47,21 @@ impl RunStore {
             return Ok(DispatchAdmission::AtCapacity);
         }
         let Some(row) = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one(Statement::from_string(
                 DatabaseBackend::Postgres,
                 "SELECT job.run_id, job.job_key FROM scope_run_jobs job
              JOIN scope_runs run ON run.id = job.run_id
              WHERE job.state = 'queued'
                AND run.state IN ('queued', 'dispatching', 'running')
                AND run.cancellation_requested = FALSE
-               AND (job.last_attempt_number = $1 OR NOT EXISTS (
+               AND NOT EXISTS (
                  SELECT 1 FROM scope_run_attempts previous
                  WHERE previous.run_id = job.run_id AND previous.job_key = job.job_key
                    AND previous.state IN ('succeeded', 'failed', 'canceled', 'lost')
                    AND previous.runner_stop_completed_at_unix IS NULL
-               ))
+               )
              ORDER BY job.created_at_unix, job.run_id, job.job_key
              LIMIT 1",
-                [i64::from(MAX_RUN_ATTEMPTS).into()],
             ))
             .await
             .map_err(PostgresError::internal)?
@@ -84,73 +75,32 @@ impl RunStore {
             .try_get::<String>("", "job_key")
             .map_err(PostgresError::internal)?;
         // Match cancellation/completion lock order: all jobs, then run, then attempt.
-        let mut jobs = locked_jobs(&tx, &run_id).await?;
-        let mut run = locked_run(&tx, &run_id).await?;
-        let mut job = jobs
+        let jobs = locked_jobs(&tx, &run_id).await?;
+        let run = locked_run(&tx, &run_id).await?;
+        let job = jobs
             .iter()
             .find(|job| job.key.as_str() == job_key)
-            .ok_or_else(|| PostgresError::internal_message("admission job is missing"))?
-            .clone();
+            .ok_or_else(|| PostgresError::internal_message("admission job is missing"))?;
         if job.state != scope_domain::runs::job::RunJobState::Queued
             || run.cancellation_requested
             || run.state.is_terminal()
         {
             return Ok(DispatchAdmission::Contended);
         }
-        let result = if job.last_attempt_number == MAX_RUN_ATTEMPTS {
-            // Forward repair keeps terminal job and attempt rules in the domain.
-            let mut attempt = entities::run_attempt::Entity::find()
-                .filter(entities::run_attempt::Column::RunId.eq(&run_id))
-                .filter(entities::run_attempt::Column::JobKey.eq(&job_key))
-                .filter(entities::run_attempt::Column::Number.eq(i64::from(MAX_RUN_ATTEMPTS)))
-                .lock_exclusive()
-                .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?
-                .ok_or_else(|| PostgresError::internal_message("exhausted job attempt is missing"))?
-                .try_into_domain()?;
-            let steps = locked_attempt_steps(&tx, &attempt.id).await?;
-            attempt
-                .repair_dispatch_exhaustion(&mut job, now_unix)
-                .map_err(PostgresError::from)?;
-            attempt
-                .validate_execution(&steps)
-                .map_err(PostgresError::from)?;
-            save_attempt(&tx, &attempt).await?;
-            let workflow_revision = workflow_revision_for_run(&tx, &run).await?;
-            *jobs
-                .iter_mut()
-                .find(|stored| stored.key == job.key)
-                .ok_or_else(|| PostgresError::internal_message("exhausted job is missing"))? =
-                job.clone();
-            reconcile_run(&mut run, &mut jobs, &workflow_revision, now_unix)
-                .map_err(PostgresError::from)?;
-            save_jobs(&tx, &jobs).await?;
-            save_run(&tx, &run).await?;
-            DispatchAdmission::Exhausted(Box::new(DispatchClaim {
-                run,
-                job,
-                attempt,
-                steps,
-                workflow_revision,
-            }))
-        } else {
-            DispatchAdmission::Admitted(Box::new(
-                self.dispatch_in_transaction(
-                    &tx,
-                    &run_id,
-                    &job_key,
-                    attempt_id,
-                    token_hash,
-                    runtime_version,
-                    now_unix,
-                    lease_expires_at_unix,
-                )
-                .await?,
-            ))
-        };
+        let claim = self
+            .dispatch_in_transaction(
+                &tx,
+                &run_id,
+                &job_key,
+                attempt_id,
+                token_hash,
+                runtime_version,
+                now_unix,
+                lease_expires_at_unix,
+            )
+            .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(result)
+        Ok(DispatchAdmission::Admitted(Box::new(claim)))
     }
 }
 

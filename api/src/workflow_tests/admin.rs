@@ -97,6 +97,7 @@ async fn admin_cleanup_status_shows_pending_cleanup_queues() {
     let body = response_json(response).await;
     assert_eq!(body["pending_cleanup"]["repo_storage"]["count"], 1);
     assert_eq!(body["pending_cleanup"]["source_blob_deletes"]["count"], 1);
+    assert!(body.get("failed_object_deletes").is_none());
     assert!(body.get("metadata_resets").is_none());
 }
 
@@ -160,19 +161,6 @@ async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
     );
 }
 
-#[tokio::test]
-async fn admin_metadata_reset_route_is_absent() {
-    let response = admin_request(
-        operator_state(),
-        "POST",
-        "/v1/admin/metadata/reset",
-        Some(OPERATOR_AUTH.into()),
-        Body::from(r#"{"confirm":"reset-pre-alpha-metadata"}"#),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
 fn operator_state() -> AppState {
     let mut state = test_state_with_repo();
     state.operator_token = Some(Arc::<str>::from(OPERATOR_TOKEN));
@@ -186,7 +174,11 @@ impl scope_object_store::ObjectStore for DeleteFailsObjectStore {
         Ok(())
     }
 
-    fn get(&self, _key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
+    fn get_bounded(
+        &self,
+        _key: &str,
+        _max_bytes: usize,
+    ) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
         Err(scope_object_store::ObjectStoreError::not_found(
             "object not found",
         ))

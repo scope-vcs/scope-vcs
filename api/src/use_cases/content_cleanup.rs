@@ -5,11 +5,14 @@ use scope_domain::{content::SourceBlob, repo_actions::RepoStorageCleanup, reposi
 pub(crate) struct CleanupDrainReport {
     pub(crate) repo_storage: RepoStorageCleanupDrainReport,
     pub(crate) source_blobs: SourceBlobCleanupDrainReport,
+    pub(crate) request_refs: super::request_ref_cleanup::RequestRefCleanupDrainReport,
 }
 
 impl CleanupDrainReport {
     pub(crate) fn has_failures(&self) -> bool {
-        self.repo_storage.has_failures() || self.source_blobs.has_failures()
+        !self.repo_storage.failed.is_empty()
+            || !self.source_blobs.failed_object_deletes.is_empty()
+            || !self.request_refs.failed.is_empty()
     }
 }
 
@@ -19,12 +22,6 @@ pub(crate) struct RepoStorageCleanupDrainReport {
     pub(crate) deleted: usize,
     pub(crate) retained: usize,
     pub(crate) failed: Vec<RepoStorageCleanupFailure>,
-}
-
-impl RepoStorageCleanupDrainReport {
-    fn has_failures(&self) -> bool {
-        !self.failed.is_empty()
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,12 +38,6 @@ pub(crate) struct SourceBlobCleanupDrainReport {
     pub(crate) retained: usize,
     pub(crate) skipped_referenced: usize,
     pub(crate) failed_object_deletes: Vec<SourceBlobCleanupFailure>,
-}
-
-impl SourceBlobCleanupDrainReport {
-    fn has_failures(&self) -> bool {
-        !self.failed_object_deletes.is_empty()
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,6 +65,7 @@ impl SourceBlobCleanupFailure {
 pub(crate) struct CleanupStatus {
     pub(crate) repo_storage: Vec<RepoStorageCleanup>,
     pub(crate) source_blob_deletes: Vec<SourceBlob>,
+    pub(crate) request_refs: Vec<scope_postgres::db::cleanup_queue::RequestRefCleanup>,
 }
 
 pub(crate) async fn cleanup_status(state: &AppState) -> Result<CleanupStatus, ApiError> {
@@ -82,6 +74,11 @@ pub(crate) async fn cleanup_status(state: &AppState) -> Result<CleanupStatus, Ap
     Ok(CleanupStatus {
         repo_storage,
         source_blob_deletes,
+        request_refs: state
+            .metadata
+            .cleanup()
+            .pending_request_ref_cleanups(None)
+            .await?,
     })
 }
 
@@ -91,6 +88,8 @@ pub(crate) async fn drain_pending_cleanup(
     Ok(CleanupDrainReport {
         repo_storage: drain_pending_repo_storage_deletions_report(state).await?,
         source_blobs: drain_pending_source_blob_deletions_report(state).await?,
+        request_refs: super::request_ref_cleanup::drain_request_ref_cleanup(state, unix_now()?)
+            .await?,
     })
 }
 

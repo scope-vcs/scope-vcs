@@ -71,8 +71,8 @@ pub(crate) async fn put_upload_part(
         .await?
         .filter(|authorized| {
             authorized.repository_id == claims.repository_id
-                && authorized.attachment.upload_id == claims.upload_id
-                && authorized.attachment.uploader_user_id == claims.uploader_user_id
+                && authorized.upload_id == claims.upload_id
+                && authorized.uploader_user_id == claims.uploader_user_id
         })
         .ok_or_else(ServiceError::not_found)?;
     drop(authorized);
@@ -182,29 +182,22 @@ async fn buffer_upload_body(
     Ok((permit, bytes))
 }
 
-pub(crate) async fn get_original(
+pub(crate) async fn original(
     state: State<AppState>,
     path: Path<String>,
     query: Query<GrantQuery>,
     headers: HeaderMap,
+    method: Method,
 ) -> Result<Response, ServiceError> {
-    serve_media(state.0, path.0, None, query.0.grant, headers, Method::GET).await
+    serve_media(state.0, path.0, None, query.0.grant, headers, method).await
 }
 
-pub(crate) async fn head_original(
-    state: State<AppState>,
-    path: Path<String>,
-    query: Query<GrantQuery>,
-    headers: HeaderMap,
-) -> Result<Response, ServiceError> {
-    serve_media(state.0, path.0, None, query.0.grant, headers, Method::HEAD).await
-}
-
-pub(crate) async fn get_derivative(
+pub(crate) async fn derivative(
     state: State<AppState>,
     Path((attachment_id, derivative_id)): Path<(String, String)>,
     query: Query<GrantQuery>,
     headers: HeaderMap,
+    method: Method,
 ) -> Result<Response, ServiceError> {
     serve_media(
         state.0,
@@ -212,24 +205,7 @@ pub(crate) async fn get_derivative(
         Some(derivative_id),
         query.0.grant,
         headers,
-        Method::GET,
-    )
-    .await
-}
-
-pub(crate) async fn head_derivative(
-    state: State<AppState>,
-    Path((attachment_id, derivative_id)): Path<(String, String)>,
-    query: Query<GrantQuery>,
-    headers: HeaderMap,
-) -> Result<Response, ServiceError> {
-    serve_media(
-        state.0,
-        attachment_id,
-        Some(derivative_id),
-        query.0.grant,
-        headers,
-        Method::HEAD,
+        method,
     )
     .await
 }
@@ -262,9 +238,7 @@ async fn serve_media(
         .await?
         .filter(|authorized| authorized.repository_id == claims.repository_id)
         .ok_or_else(ServiceError::not_found)?;
-    let original_filename = derivative_id
-        .is_none()
-        .then(|| authorized.attachment.filename.clone());
+    let original_filename = derivative_id.is_none().then(|| authorized.filename.clone());
     let db_target = match derivative_id.as_deref() {
         Some(id) => RequestMediaObjectTarget::Derivative(id),
         None => RequestMediaObjectTarget::Original,

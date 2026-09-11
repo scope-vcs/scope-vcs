@@ -16,20 +16,13 @@ metadata="$(mktemp)"
 pull_config="$(mktemp -d)"
 trap 'rm -f "$metadata"; rm -rf "$pull_config"' EXIT
 
-dockerfile=deploy/railway/prebuilt.Dockerfile
-install_git=0
-binary=""
-case "$component" in
-  api) install_git=1; binary=scope-vcs ;;
-  run-worker) install_git=1; binary=scope-worker ;;
-  cache) binary=scope-cache-service ;;
-  git-router) binary=scope-repo-router ;;
-  media-api) binary=scope-media-service ;;
-  cli-downloads) binary=scope-cli-service ;;
-  web) dockerfile=deploy/railway/web.Dockerfile; test -s "$context_root/.output/server/index.mjs" ;;
-  *) echo "Unknown release component $component" >&2; exit 2 ;;
-esac
-if [[ "$component" != web ]]; then
+definition="$(node .github/scripts/deployment-components.mjs describe "$component")"
+dockerfile="$(jq -er '.artifact.dockerfile' <<< "$definition")"
+install_git="$(jq -r 'if .artifact.installGit then 1 else 0 end' <<< "$definition")"
+binary="$(jq -r '.artifact.binary // ""' <<< "$definition")"
+if [[ "$(jq -r '.artifact.kind' <<< "$definition")" == web ]]; then
+  test -s "$context_root/.output/server/index.mjs"
+else
   test -x "$context_root/bin/$binary"
 fi
 if [[ "$component" == api ]]; then

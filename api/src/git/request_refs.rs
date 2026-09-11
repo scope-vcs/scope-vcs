@@ -1,3 +1,4 @@
+use crate::git::import::refs_for_prefixes;
 use crate::{
     config::{DEFAULT_GIT_BRANCH, EMPTY_GIT_OID},
     error::ApiError,
@@ -24,14 +25,14 @@ use std::{
     path::{Path as FsPath, PathBuf},
 };
 
+mod cleanup;
+pub(crate) use cleanup::cleanup_deleted_request_ref;
 mod locks;
 mod revision;
 #[cfg(test)]
 use crate::persistence::unix_now;
 use locks::acquire_request_ref_store_lock;
-pub(crate) use locks::acquire_request_ref_update_lock;
-#[cfg(test)]
-use locks::git_lock_is_stale;
+pub(crate) use locks::acquire_request_ref_update_lock_async;
 pub(crate) use revision::with_request_revision_store_repo;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -241,52 +242,6 @@ pub(crate) fn attach_visible_request_refs(
     Ok(())
 }
 
-pub(crate) fn delete_request_ref_from_store(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    request_ref: &str,
-) -> Result<(), ApiError> {
-    let _update_lock = acquire_request_ref_update_lock(state, incarnation, request_ref)?;
-    let store_repo = request_ref_store_repo_path(state, incarnation);
-    if !store_repo.exists() {
-        return Ok(());
-    }
-    let _store_lock = acquire_request_ref_store_lock(state, incarnation)?;
-    if request_ref_exists(&store_repo, request_ref)? {
-        run_git(
-            Some(&store_repo),
-            &["update-ref", "-d", request_ref],
-            "deleting request ref",
-        )?;
-    }
-    Ok(())
-}
-
-fn refs_for_prefixes(
-    repo: &FsPath,
-    prefixes: &[&str],
-    action: &str,
-) -> Result<Vec<(String, String)>, ApiError> {
-    let mut args = vec!["for-each-ref", "--format=%(refname)%00%(objectname)"];
-    args.extend(prefixes.iter().copied());
-    let output = run_git_output(Some(repo), &args, action)?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "{action}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let text = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
-    text.lines()
-        .map(|line| {
-            let (refname, oid) = line
-                .split_once('\0')
-                .ok_or_else(|| ApiError::internal_message("invalid git ref listing"))?;
-            Ok((refname.to_string(), oid.to_string()))
-        })
-        .collect()
-}
-
 fn refs_by_name(refs: &[(String, String)]) -> BTreeMap<String, String> {
     refs.iter()
         .map(|(refname, oid)| (refname.clone(), oid.clone()))
@@ -314,19 +269,96 @@ pub(crate) async fn persist_request_ref_to_store(
     request: &Request,
     update: &RequestRefUpdate,
 ) -> Result<PersistedRequestRef, ApiError> {
-    ensure_request_ref_oid_is_commit(staging_repo, &update.new_head_oid)?;
-    ensure_request_ref_descends_from_base(
-        staging_repo,
-        &request.base_main_oid,
-        &update.new_head_oid,
-    )?;
+    let path = staging_repo.to_path_buf();
+    let base_oid = request.base_main_oid.clone();
+    let head_oid = update.new_head_oid.clone();
+    crate::git::blocking::run(move || {
+        ensure_request_ref_oid_is_commit(&path, &head_oid)?;
+        ensure_request_ref_descends_from_base(&path, &base_oid, &head_oid)
+    })
+    .await?;
     if request.audience == RequestAudience::Public {
         ensure_public_request_ref_is_public_safe(repo, state, staging_repo, &update.new_head_oid)
             .await?;
     }
     let incarnation = repo.incarnation();
-    let _store_lock = acquire_request_ref_store_lock(state, &incarnation)?;
-    let store_repo = ensure_request_ref_store_repo_locked(state, &incarnation)?;
+    let prepared = {
+        let state = state.clone();
+        let incarnation = incarnation.clone();
+        let path = staging_repo.to_path_buf();
+        let request = request.clone();
+        let update = update.clone();
+        crate::git::blocking::run(move || {
+            prepare_request_ref_snapshot(&state, &incarnation, &path, &request, &update)
+        })
+        .await?
+    };
+    let PreparedRequestRef {
+        store_lock,
+        previous_head,
+        git_snapshot,
+        snapshot_bytes,
+    } = prepared;
+    let fence = match state
+        .metadata
+        .acquire_content_ref_fence(std::slice::from_ref(&git_snapshot.content_ref))
+        .await
+    {
+        Ok(fence) => fence,
+        Err(error) => {
+            let state = state.clone();
+            let request_ref = update.request_ref.clone();
+            crate::git::blocking::run(move || {
+                let _store_lock = store_lock;
+                rollback_request_ref(&state, &incarnation, &request_ref, previous_head);
+                Ok(())
+            })
+            .await?;
+            return Err(error.into());
+        }
+    };
+    let result = {
+        let state = state.clone();
+        let request_ref = update.request_ref.clone();
+        let previous_head = previous_head.clone();
+        let object_key = scope_object_store::object_key(&git_snapshot);
+        crate::git::blocking::run(move || {
+            let _store_lock = store_lock;
+            if let Err(error) = state.object_store.put(&object_key, snapshot_bytes) {
+                rollback_request_ref(&state, &incarnation, &request_ref, previous_head);
+                return Err(error.into());
+            }
+            Ok(())
+        })
+        .await
+    };
+    if let Err(error) = result {
+        fence.release().await;
+        return Err(error);
+    }
+    Ok(PersistedRequestRef {
+        previous_head,
+        git_snapshot,
+        fence,
+    })
+}
+
+struct PreparedRequestRef {
+    store_lock: locks::GitLockFile,
+    previous_head: Option<String>,
+    git_snapshot: SourceBlob,
+    snapshot_bytes: Vec<u8>,
+}
+
+fn prepare_request_ref_snapshot(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    staging_repo: &FsPath,
+    request: &Request,
+    update: &RequestRefUpdate,
+) -> Result<PreparedRequestRef, ApiError> {
+    let store_lock = acquire_request_ref_store_lock(state, incarnation)?;
+    let store_repo = ensure_request_ref_store_repo_locked(state, incarnation)?;
     ensure_request_ref_available_in_store_locked(state, &store_repo, request)?;
     let previous_head = request_ref_head(&store_repo, &update.request_ref)?;
     let expected_stored_head = previous_head.as_deref().or_else(|| {
@@ -352,33 +384,15 @@ pub(crate) async fn persist_request_ref_to_store(
         match git_snapshot_from_ref(&store_repo, &update.request_ref) {
             Ok(snapshot) => snapshot,
             Err(error) => {
-                rollback_request_ref(state, &incarnation, &update.request_ref, previous_head);
+                rollback_request_ref(state, incarnation, &update.request_ref, previous_head);
                 return Err(error);
             }
         };
-    let fence = match state
-        .metadata
-        .acquire_content_ref_fence(std::slice::from_ref(&git_snapshot.content_ref))
-        .await
-    {
-        Ok(fence) => fence,
-        Err(error) => {
-            rollback_request_ref(state, &incarnation, &update.request_ref, previous_head);
-            return Err(error.into());
-        }
-    };
-    if let Err(error) = state.object_store.put(
-        &scope_object_store::object_key(&git_snapshot),
-        snapshot_bytes,
-    ) {
-        rollback_request_ref(state, &incarnation, &update.request_ref, previous_head);
-        fence.release().await;
-        return Err(error.into());
-    }
-    Ok(PersistedRequestRef {
+    Ok(PreparedRequestRef {
+        store_lock,
         previous_head,
         git_snapshot,
-        fence,
+        snapshot_bytes,
     })
 }
 
@@ -549,14 +563,20 @@ fn request_ref_head(store_repo: &FsPath, request_ref: &str) -> Result<Option<Str
     }
     let output = run_git_output(
         Some(store_repo),
-        &["rev-parse", "--verify", request_ref],
+        &["rev-parse", "--verify", "--quiet", request_ref],
         "reading stored request ref",
     )?;
     if output.status.success() {
         let head = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
         return Ok(Some(head.trim().to_string()));
     }
-    Ok(None)
+    if output.status.code() == Some(1) {
+        return Ok(None);
+    }
+    Err(ApiError::infrastructure_unavailable(format!(
+        "reading stored request ref: {}",
+        crate::git::upload::truncated_git_stderr(&output.stderr).trim(),
+    )))
 }
 
 pub(crate) fn rollback_request_ref(

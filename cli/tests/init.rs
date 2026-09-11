@@ -7,7 +7,6 @@ use axum::{
 };
 use std::{
     fs,
-    path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -61,66 +60,6 @@ fn init_configures_an_unborn_repository_for_its_first_push() {
             .unwrap()
             .status
             .success()
-    );
-}
-
-#[test]
-fn init_keeps_the_existing_committed_repository_flow() {
-    let dir = TempDir::new("committed");
-    create_repo_with_head(dir.path());
-    let server = InitServer::start();
-
-    let output = server
-        .server
-        .command(dir.path())
-        .args(["init", "--name", "sample"])
-        .output()
-        .unwrap();
-    server.finish();
-
-    assert_success(&output, "scope init in committed repository");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stdout.contains("Run: scope push"), "{stdout}");
-    assert!(!stdout.contains("Create your first commit"), "{stdout}");
-    assert!(!stderr.contains("No such remote"), "{stderr}");
-    assert_eq!(
-        git_stdout(dir.path(), ["remote", "get-url", "scope"]),
-        REMOTE_URL
-    );
-}
-
-#[test]
-fn init_restores_the_remote_and_retains_created_repo_when_local_setup_fails() {
-    let dir = TempDir::new("rollback");
-    create_repo_with_head(dir.path());
-    run_git(
-        dir.path(),
-        ["remote", "add", "scope", "https://old.scope.example/repo"],
-    );
-    fs::write(
-        dir.path().join(".git/scope"),
-        "blocks Scope state directory\n",
-    )
-    .unwrap();
-    let server = InitServer::start();
-
-    let output = server
-        .server
-        .command(dir.path())
-        .args(["init", "--name", "sample"])
-        .output()
-        .unwrap();
-    let rolled_back = server.finish();
-
-    assert_failure(&output, "scope init with failed local config");
-    assert!(
-        !rolled_back,
-        "the created server repository must remain available for recovery"
-    );
-    assert_eq!(
-        git_stdout(dir.path(), ["remote", "get-url", "scope"]),
-        "https://old.scope.example/repo"
     );
 }
 
@@ -191,6 +130,10 @@ fn init_requires_explicit_name_when_noninteractive() {
 fn init_partial_failure_json_identifies_retained_repository() {
     let dir = TempDir::new("init-partial-json");
     create_repo_with_head(dir.path());
+    run_git(
+        dir.path(),
+        ["remote", "add", "scope", "https://old.scope.example/repo"],
+    );
     fs::write(dir.path().join(".git/scope"), "block state directory").unwrap();
     let server = InitServer::start();
     let output = server
@@ -200,6 +143,10 @@ fn init_partial_failure_json_identifies_retained_repository() {
         .output()
         .unwrap();
     assert!(!server.finish());
+    assert_eq!(
+        git_stdout(dir.path(), ["remote", "get-url", "scope"]),
+        "https://old.scope.example/repo"
+    );
     assert_eq!(output.status.code(), Some(5));
     let value: serde_json::Value = serde_json::from_str(
         String::from_utf8_lossy(&output.stderr)
@@ -217,29 +164,6 @@ fn init_partial_failure_json_identifies_retained_repository() {
             .unwrap()
             .len()
             >= 3
-    );
-}
-
-fn git_stdout<const N: usize>(cwd: &Path, args: [&str; N]) -> String {
-    let output = std::process::Command::new("git")
-        .current_dir(cwd)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
-
-fn assert_success(output: &std::process::Output, action: &str) {
-    assert!(
-        output.status.success(),
-        "{action} failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -302,7 +226,6 @@ fn create_repo_response() -> serde_json::Value {
             "can_read_private_files": true,
             "can_push": true,
             "can_change_file_visibility": true,
-            "can_apply_changes": true,
             "can_manage_members": true,
             "can_delete_repo": true
         },

@@ -41,37 +41,27 @@ test('latest repository activity survives child navigation without another reque
   }
 })
 
-test('repository events received off-page refresh retained activity without blanking it', async () => {
+test('repository events refresh retained activity and public source off-page without blanking either', async () => {
   const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
   let requests = 0
+  let files = 0
+  let trees = 0
   let originalMessage = ''
   let release
   const held = new Promise((resolve) => { release = resolve })
-  await page.addInitScript(() => {
-    const originalFetch = window.fetch.bind(window)
-    const streams = new Set()
-    window.__scopeRepositoryStreamCount = () => streams.size
-    window.__scopeEmitRepositoryEvent = (event) => {
-      for (const stream of streams) stream.enqueue(new TextEncoder().encode(`event: repo-change\ndata: ${JSON.stringify(event)}\n\n`))
-    }
-    window.fetch = (input, init) => {
-      const url = new URL(typeof input === 'string' ? input : input.url ?? String(input), location.href)
-      if (!url.pathname.endsWith('/events')) return originalFetch(input, init)
-      const body = new ReadableStream({
-        start(controller) {
-          streams.add(controller)
-          init?.signal?.addEventListener('abort', () => {
-            streams.delete(controller)
-            controller.close()
-          }, { once: true })
-        },
-      })
-      return Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } }))
-    }
-  })
+  await installRepositoryStream(page)
   await page.route('**/_serverFn/**', async (route) => {
-    if (serverFunctionName(route.request()) !== 'loadRepositoryLatestActivity_createServerFn_handler') {
+    const name = serverFunctionName(route.request())
+    if (name === 'loadRepoContent_createServerFn_handler') trees += 1
+    if (name === 'loadRepoFile_createServerFn_handler' && ++files > 1) {
+      const response = await route.fetch()
+      const body = await response.text()
+      assert(body.includes('export function greet'))
+      await held
+      return route.fulfill({ response, body: body.replaceAll('export function greet', 'export function refreshedGreet') })
+    }
+    if (name !== 'loadRepositoryLatestActivity_createServerFn_handler') {
       await route.continue()
       return
     }
@@ -88,7 +78,11 @@ test('repository events received off-page refresh retained activity without blan
     await route.fulfill({ response, body: updated })
   })
   try {
-    await page.goto(`${baseUrl}/${repo}`)
+    await page.goto(`${baseUrl}/${repo}?file=src%2Fapp.ts`)
+    const source = page.locator('pre code').filter({ hasText: 'export function greet' })
+    await source.waitFor()
+    assert.equal(files, 1)
+    assert.equal(trees, 1)
     const activity = page.getByLabel('Latest repository change', { exact: true })
     await activity.waitFor()
     const original = await activity.innerText()
@@ -104,14 +98,18 @@ test('repository events received off-page refresh retained activity without blan
     })
     await (await revalidated).finished()
     await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
-    await page.getByRole('link', { name: 'Code', exact: true }).first().click()
-    await page.waitForURL(`${baseUrl}/${repo}`)
+    await page.goBack()
+    await source.waitFor()
+    assert.equal(await page.getByLabel('Loading file content', { exact: true }).count(), 0)
     assert.equal(await activity.isVisible(), true)
     assert.equal(await activity.innerText(), original)
     assert.equal(await page.getByLabel('Loading latest repository change', { exact: true }).count(), 0)
     release()
     await activity.getByRole('link', { name: 'New repository activity', exact: true }).waitFor()
+    await page.locator('pre code').filter({ hasText: 'export function refreshedGreet' }).waitFor()
     assert.equal(requests, 2)
+    assert.equal(files, 2)
+    assert.equal(trees, 2)
   } finally {
     release()
     await browser.close()
@@ -149,3 +147,28 @@ test('leaving and returning during a file load reuses its pending resource reque
     await browser.close()
   }
 })
+
+async function installRepositoryStream(page) {
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window)
+    const streams = new Set()
+    window.__scopeRepositoryStreamCount = () => streams.size
+    window.__scopeEmitRepositoryEvent = (event) => {
+      for (const stream of streams) stream.enqueue(new TextEncoder().encode(`event: repo-change\ndata: ${JSON.stringify(event)}\n\n`))
+    }
+    window.fetch = (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input.url ?? String(input), location.href)
+      if (!url.pathname.endsWith('/events')) return originalFetch(input, init)
+      const body = new ReadableStream({
+        start(controller) {
+          streams.add(controller)
+          init?.signal?.addEventListener('abort', () => {
+            streams.delete(controller)
+            controller.close()
+          }, { once: true })
+        },
+      })
+      return Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } }))
+    }
+  })
+}

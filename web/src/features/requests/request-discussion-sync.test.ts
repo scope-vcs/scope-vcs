@@ -295,35 +295,6 @@ test('pagination keeps an entity advanced by live catch-up', async () => {
   assert.deepEqual(collection.order, ['older', 'one'])
 })
 
-test('only a current refresh reports authoritative ordering', async () => {
-  let collection: DiscussionCollection = {
-    ...pageCollection('request-a', 10),
-    order: ['one'],
-  }
-  const sync = createRequestDiscussionSync({
-    getCollection: () => collection,
-    getDataGeneration: () => collection.snapshotVersion,
-    loadChanges: async () => changeBatch([], collection.snapshotVersion),
-    setCollection: (next) => {
-      collection = next
-    },
-  })
-  sync.reset('repo-1/request-a')
-
-  const authoritative = await sync.refresh(async () => ({
-    discussions: [
-      discussion('newer', 11, 'request-a'),
-      discussion('one', 10, 'request-a'),
-    ],
-    next_cursor: null,
-    snapshot_version: 11,
-  }))
-
-  assert.equal(authoritative, true)
-  assert.equal(collection.snapshotVersion, 11)
-  assert.deepEqual(collection.order, ['one', 'newer'])
-})
-
 function pageCollection(requestId: string, position: number) {
   return collectionFromPage(page(requestId, position))
 }

@@ -39,12 +39,9 @@ test('changes retry keeps the document and selected revision', async () => {
     let injected = false
     await page.route('**/_serverFn/**', async (route) => {
       const name = serverFunctionName(route.request())
-      if (!injected && name === 'loadChangesPage_createServerFn_handler') {
+      if (!injected && name === 'loadRevisions_createServerFn_handler') {
         injected = true
-        await route.fulfill({
-          contentType: 'application/json',
-          body: JSON.stringify({ result: { discussionReferences: { commitKey: null, page: null }, revisions: null }, context: {} }),
-        })
+        await route.abort('failed')
       } else {
         await route.continue()
       }
@@ -77,8 +74,9 @@ test('changes retry keeps the document and selected revision', async () => {
     }
     assert.equal(await page.evaluate(() => window.__recoveryDocument), 'preserved')
     assert.equal(await heading.evaluate((element) => element.isConnected), true)
-    assert.deepEqual(requests, ['loadChangesPage_createServerFn_handler'])
     await page.getByLabel('Commit file navigator').waitFor()
+    await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
+    assert.deepEqual(requests, ['loadRevisions_createServerFn_handler', 'loadDiscussions_createServerFn_handler'])
     assert.equal(await retry.count(), 0)
     const discussion = page.getByRole('navigation', { name: 'Request views' }).getByRole('link', { name: 'Discussion', exact: true })
     await discussion.click()

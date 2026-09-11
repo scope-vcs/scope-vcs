@@ -40,71 +40,41 @@ async fn fresh_database_reaches_exact_latest_schema() {
             .try_get::<bool>("", "required_identity")
             .unwrap()
     );
-    let execution_provider_columns = db
-        .query_one(Statement::from_string(
+    let attempt_columns = db
+        .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
-            "SELECT count(*) AS count
-             FROM information_schema.columns
-             WHERE table_schema = current_schema()
-               AND table_name = 'scope_run_attempts'
-               AND column_name = 'execution_provider'"
-                .to_string(),
+            "SELECT column_name FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'scope_run_attempts'
+           AND column_name IN ('execution_provider', 'runner_stop_claimed_at_unix',
+                               'runner_stop_completed_at_unix')
+         ORDER BY column_name",
         ))
         .await
         .unwrap()
-        .unwrap()
-        .try_get::<i64>("", "count")
-        .unwrap();
-    assert_eq!(execution_provider_columns, 0);
-    let runner_stop_columns = db
-        .query_one(Statement::from_string(
+        .into_iter()
+        .map(|row| row.try_get::<String>("", "column_name").unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        attempt_columns,
+        [
+            "runner_stop_claimed_at_unix",
+            "runner_stop_completed_at_unix"
+        ]
+    );
+    let scope_tables = db
+        .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
-            "SELECT count(*) AS count
-             FROM information_schema.columns
-             WHERE table_schema = current_schema()
-               AND table_name = 'scope_run_attempts'
-               AND column_name = 'runner_stop_claimed_at_unix'"
-                .to_string(),
+            "SELECT tablename FROM pg_tables
+             WHERE schemaname = current_schema() AND left(tablename, 6) = 'scope_'
+             ORDER BY tablename",
         ))
         .await
         .unwrap()
-        .unwrap()
-        .try_get::<i64>("", "count")
-        .unwrap();
-    assert_eq!(runner_stop_columns, 1);
-    let runner_stop_completion_columns = db
-        .query_one(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT count(*) AS count
-             FROM information_schema.columns
-             WHERE table_schema = current_schema()
-               AND table_name = 'scope_run_attempts'
-               AND column_name = 'runner_stop_completed_at_unix'"
-                .to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<i64>("", "count")
-        .unwrap();
-    assert_eq!(runner_stop_completion_columns, 1);
-    let scope_table_count = db
-        .query_one(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "
-                SELECT count(*) AS count
-                FROM pg_tables
-                WHERE schemaname = current_schema()
-                  AND left(tablename, 6) = 'scope_'
-            "
-            .to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<i64>("", "count")
-        .unwrap();
-    assert_eq!(scope_table_count, 67);
+        .into_iter()
+        .map(|row| row.try_get::<String>("", "tablename").unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(scope_tables.len(), 68);
+    assert!(relation_exists(db.as_ref(), "scope_request_ref_cleanup_jobs").await);
     assert!(relation_exists(db.as_ref(), "scope_repository_history_views").await);
     assert!(relation_exists(db.as_ref(), "scope_repository_history_entries").await);
     assert!(relation_exists(db.as_ref(), "scope_git_segment_uploads").await);

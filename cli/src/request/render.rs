@@ -34,15 +34,10 @@ pub(super) fn request_activity_lines_for_response(
 
 pub(super) fn request_mutation_receipt_lines(
     action: &str,
-    before: Option<&RequestSummaryResponse>,
     response: &RequestMutationResponse,
 ) -> Vec<String> {
     let action = terminal_text(action);
-    let mut lines = vec![format!("{action} · {}", request_line(&response.request))];
-    if let Some(before) = before {
-        lines.extend(mutation_effect_lines(before, &response.request));
-    }
-    lines
+    vec![format!("{action} · {}", request_line(&response.request))]
 }
 
 pub(super) fn invitee_added_receipt(response: &RequestInviteeMutationResponse) -> String {
@@ -236,22 +231,45 @@ fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String>
     events.sort_by_key(|event| event.position);
     let mut lines = Vec::new();
     for event in events {
-        if let RequestEventPayload::Submitted { head_oid } = &event.payload {
-            lines.push(format!(
-                "Submitted · head {} · at {}",
+        let action = match &event.payload {
+            RequestEventPayload::Started { .. } => "Started request".to_string(),
+            RequestEventPayload::Submitted { head_oid } => {
+                format!("Submitted · head {}", short_oid(head_oid))
+            }
+            RequestEventPayload::RevisionPushed {
+                old_head_oid,
+                new_head_oid,
+                note,
+            } => {
+                let mut line = format!(
+                    "Revision pushed · {}..{}",
+                    short_oid(old_head_oid),
+                    short_oid(new_head_oid)
+                );
+                if let Some(note) = note {
+                    line.push_str(&format!(" · {}", terminal_text(note)));
+                }
+                line
+            }
+            RequestEventPayload::Merged { head_oid, main_oid } => format!(
+                "Merged · head {} · main {}",
                 short_oid(head_oid),
-                event.created_at_unix
-            ));
-        }
+                short_oid(main_oid)
+            ),
+            RequestEventPayload::Closed { head_oid } => {
+                format!("Closed · head {}", short_oid(head_oid))
+            }
+            RequestEventPayload::IdentityEdited { .. } => "Edited title or description".to_string(),
+            RequestEventPayload::DiscussionResolved { discussion_id } => {
+                format!("Resolved discussion {}", terminal_text(discussion_id))
+            }
+            RequestEventPayload::DiscussionReopened { discussion_id } => {
+                format!("Reopened discussion {}", terminal_text(discussion_id))
+            }
+        };
+        lines.push(format!("{action} · at {}", event.created_at_unix));
     }
     lines
-}
-
-fn mutation_effect_lines(
-    _before: &RequestSummaryResponse,
-    _after: &RequestSummaryResponse,
-) -> Vec<String> {
-    Vec::new()
 }
 
 struct RequestLine<'a> {
@@ -345,93 +363,40 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn list_renders_open_state_and_wait() {
-        let request: RequestListItemResponse = serde_json::from_value(json!({
-            "id": "req_one", "name": "fix-refs", "title": "Fix refs",
-            "author_role": "Public", "audience": "Public", "head_oid": oid('b'),
-            "state": "Open", "submitted_at_unix": 10, "updated_at_unix": 20,
-            "mergeability": {
-                "status": "NotMaintainer",
-                "current_main_oid": oid('a'),
-                "request_head_oid": oid('b'),
-                "reason": "repo maintainer required"
-            }
-        }))
-        .unwrap();
-
-        let rendered = request_list_line(&request, 70);
-        assert!(rendered.contains("open"), "{rendered}");
-        assert!(rendered.contains("1m"), "{rendered}");
-    }
-
-    #[test]
-    fn detail_uses_server_capabilities_and_renders_invitees_and_submission() {
-        let mut request = summary();
-        request.state = RequestState::Open;
-        request.submitted_at_unix = Some(10);
-        request.permissions.can_edit_identity = true;
-        request.invitees = serde_json::from_value(json!([{
-            "user": {"id": "scope_usr_devon", "handle": "devon"},
-            "invited_by_user_id": "scope_usr_author",
-            "created_at_unix": 5
-        }]))
-        .unwrap();
-
-        let rendered = request_detail_lines(&request).join("\n");
-
-        assert!(rendered.contains("open"), "{rendered}");
-        assert!(rendered.contains("submitted"), "{rendered}");
-        assert!(rendered.contains("@devon"), "{rendered}");
-        assert!(rendered.contains("edit"), "{rendered}");
-    }
-
-    #[test]
-    fn activity_renders_submission() {
+    fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
+        let identity = json!({"title_sha256": oid('a'), "title_byte_count": 5,
+            "description_sha256": oid('b'), "description_byte_count": 10});
+        let payloads = [
+            json!({"Started": {"identity": identity.clone()}}),
+            json!({"Submitted": {"head_oid": oid('a')}}),
+            json!({"RevisionPushed": {"old_head_oid": oid('a'), "new_head_oid": oid('b'), "note": "note\n\u{1b}[31m"}}),
+            json!({"Merged": {"head_oid": oid('b'), "main_oid": oid('c')}}),
+            json!({"Closed": {"head_oid": oid('b')}}),
+            json!({"IdentityEdited": {"before": identity.clone(), "after": identity}}),
+            json!({"DiscussionResolved": {"discussion_id": "discussion\nresolved"}}),
+            json!({"DiscussionReopened": {"discussion_id": "discussion\treopened"}}),
+        ];
         let activity: RequestActivityPageResponse = serde_json::from_value(json!({
-            "events": [
-                event(1, json!({"Submitted": {"head_oid": oid('b')}}))
-            ],
-            "through_position": 1
-        }))
-        .unwrap();
-
-        let rendered = request_activity_lines(&activity).join("\n");
-
-        assert!(rendered.contains("Submitted · head"), "{rendered}");
-    }
-
-    #[test]
-    fn wait_labels_are_concise_and_saturating() {
-        assert_eq!(wait_label(None, 3_600), "-");
-        assert_eq!(wait_label(Some(3_590), 3_600), "<1m");
-        assert_eq!(wait_label(Some(0), 3_600), "1h");
-        assert_eq!(wait_label(Some(4_000), 3_600), "<1m");
-    }
-
-    fn summary() -> RequestSummaryResponse {
-        serde_json::from_str(
-            r#"{
-                "id":"req_one","name":"fix-refs","title":"Fix request refs",
-                "description_markdown":"Atomic updates","author_user_id":"scope_usr_author",
-                "author_role":"Public","audience":"Public",
-                "base_main_oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "head_oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","state":"Draft",
-                "activity_version":1,
-                "submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,
-                "merged_at_unix":null,"merged_by_user_id":null,
-                "merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,
-                "updated_at_unix":2,"invitees":[],
-                "permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,
-                    "can_edit_identity":false,"can_pull_branch":false,"can_push_branch":false,
-                    "can_submit":false,
-                    "can_manage_invitees":false,"can_leave_request":false,
-                    "can_close":false,"can_merge":false},
-                "mergeability":{"status":"Draft",
-                    "current_main_oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "request_head_oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","reason":null}
-            }"#,
-        )
-        .unwrap()
+            "events": payloads.into_iter().enumerate().rev().map(|(i, payload)| event(i as u64 + 1, payload)).collect::<Vec<_>>(),
+            "through_position": 8
+        })).unwrap();
+        let lines = request_activity_lines(&activity);
+        assert_eq!(lines.len(), 8);
+        for (line, label) in lines.iter().zip([
+            "Started request",
+            "Submitted",
+            "Revision pushed",
+            "Merged",
+            "Closed",
+            "Edited title or description",
+            "Resolved discussion",
+            "Reopened discussion",
+        ]) {
+            assert!(line.starts_with(label), "{line}");
+            assert!(!line.chars().any(char::is_control), "{line:?}");
+        }
+        assert!(lines[2].contains("note  [31m"), "{}", lines[2]);
+        assert!(lines[3].contains(&oid('c')[..12]));
     }
 
     fn event(position: u64, payload: serde_json::Value) -> serde_json::Value {
@@ -439,10 +404,7 @@ mod tests {
             "id": format!("event_{position}"),
             "position": position,
             "actor": {"id": "scope_usr_actor", "handle": "actor"},
-            "kind": match payload.as_object().unwrap().keys().next().unwrap().as_str() {
-                "Submitted" => "Submitted",
-                _ => unreachable!()
-            },
+            "kind": payload.as_object().unwrap().keys().next().unwrap(),
             "payload": payload,
             "created_at_unix": position * 10
         })

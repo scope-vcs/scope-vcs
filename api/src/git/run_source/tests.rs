@@ -8,77 +8,11 @@ use scope_domain::{
 #[tokio::test]
 async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinned_bundle() {
     let mut state = AppState::test_state();
-    let owner = UserAccount {
-        id: "user-owner".to_string(),
-        handle: "owner".to_string(),
-        email: "owner@example.test".to_string(),
-        email_verified: true,
-    };
-    let mut catalog = scope_postgres::db::CatalogFixture::default();
-    catalog
-        .create_repository(&owner, "repo", Visibility::Private)
-        .unwrap();
-    catalog.users.insert(owner.id.clone(), owner);
-    state
-        .metadata
-        .admin()
-        .seed_catalog_for_tests(catalog)
-        .unwrap();
-    let repository = tempfile::tempdir().unwrap();
-    run_git(
-        None,
-        &["init", "-b", "main", repository.path().to_str().unwrap()],
-        "initialize source repo",
-    )
-    .unwrap();
-    run_git(
-        Some(repository.path()),
-        &["config", "user.email", "scope@test.invalid"],
-        "configure source repository email",
-    )
-    .unwrap();
-    run_git(
-        Some(repository.path()),
-        &["config", "user.name", "Scope test"],
-        "configure source repository name",
-    )
-    .unwrap();
     let content = (0_u64..32_768)
         .flat_map(|index| Sha256::digest(index.to_le_bytes()))
         .collect::<Vec<_>>();
-    fs::write(repository.path().join("README.md"), content).unwrap();
-    run_git(
-        Some(repository.path()),
-        &["add", "README.md"],
-        "stage source file",
-    )
-    .unwrap();
-    run_git(
-        Some(repository.path()),
-        &["commit", "-m", "pin source"],
-        "commit source file",
-    )
-    .unwrap();
-
-    let pushed = git_push_from_repo(&state, "owner/repo", repository.path(), None)
-        .await
-        .unwrap();
-    let source = RunSource::accepted_git_head(
-        "owner/repo",
-        GitHead {
-            change_version: 1,
-            ..pushed.stored.head.clone()
-        },
-        vec![pushed.stored.pack_span.clone()],
-        ProjectionViewKey::Private,
-    )
-    .unwrap();
-
-    state
-        .git_segment_store
-        .cleanup_local("owner/repo", &pushed.stored.pack_span.segment.segment_id)
-        .await
-        .unwrap();
+    let (source, repository) = git_head_fixture(&state, &content).await;
+    let segment = &source.retained_git_segments()[0].segment_id;
     let incarnation = state
         .metadata
         .repositories()
@@ -94,12 +28,10 @@ async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinn
                 ..Default::default()
             },
         ));
-    let started = Instant::now();
     let results = futures_util::future::join_all((0..8).map(|_| {
         materialize_accepted_git_head_bundle(&state, &incarnation, &source, 4 * 1024 * 1024)
     }))
     .await;
-    let cold_elapsed = started.elapsed();
     let mut results = results.into_iter();
     let materialized = results.next().unwrap().unwrap();
     assert!(!materialized.bytes.is_empty());
@@ -116,28 +48,18 @@ async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinn
     // Warm reads require neither Git admission nor the original remote pack.
     state
         .git_segment_store
-        .cleanup_local("owner/repo", &pushed.stored.pack_span.segment.segment_id)
+        .cleanup_local("owner/repo", segment)
         .await
         .unwrap();
     state
         .git_segment_store
-        .delete_remote(&scope_git_storage::object_key(
-            "owner/repo",
-            &pushed.stored.pack_span.segment.segment_id,
-        ))
+        .delete_remote(&scope_git_storage::object_key("owner/repo", segment))
         .await
         .unwrap();
     let _busy = state.runtime_budgets.try_git_materialization().unwrap();
-    let started = Instant::now();
     let warm = materialize_accepted_git_head_bundle(&state, &incarnation, &source, 4 * 1024 * 1024)
         .await
         .unwrap();
-    eprintln!(
-        "run source eight cold followers: {:?}; warm read: {:?}; bundle bytes: {}",
-        cold_elapsed,
-        started.elapsed(),
-        warm.bytes.len()
-    );
     assert_eq!(warm.bytes, materialized.bytes);
     assert_eq!(warm.sha256, materialized.sha256);
     assert!(
@@ -159,10 +81,13 @@ async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinn
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains(&pushed.stored.head.head_oid));
+    assert!(String::from_utf8_lossy(&output.stdout).contains(source.git_oid()));
 }
 
-async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirectory) {
+async fn git_head_fixture(
+    state: &AppState,
+    content: &[u8],
+) -> (RunSource, TemporarySourceDirectory) {
     let owner = UserAccount {
         id: "user-owner".to_string(),
         handle: "owner".to_string(),
@@ -199,7 +124,7 @@ async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirect
         "configure source repository name",
     )
     .unwrap();
-    fs::write(repository.path().join("README.md"), "pinned run source").unwrap();
+    fs::write(repository.path().join("README.md"), content).unwrap();
     run_git(
         Some(repository.path()),
         &["add", "README.md"],
@@ -248,7 +173,7 @@ async fn cancelled_index_and_bundle_requests_keep_repository_and_capacity_until_
     for phase in [3, 7] {
         for outcome in ["success", "failure", "panic"] {
             let state = AppState::test_state();
-            let (source, _fixture) = git_head_fixture(&state).await;
+            let (source, _fixture) = git_head_fixture(&state, b"pinned run source").await;
             let _other_permit = state.runtime_budgets.try_git_materialization().unwrap();
             let (started_tx, started_rx) = tokio::sync::oneshot::channel();
             let started_tx = Mutex::new(Some(started_tx));
@@ -414,5 +339,90 @@ fn manual_bundle_inspection_reads_the_requested_workflow_at_the_pinned_commit() 
     assert_eq!(
         revision.workflow().path().as_str(),
         "/.scope/runs/checks.yml"
+    );
+}
+
+#[test]
+fn workflow_blob_inspection_distinguishes_absence_invalid_type_oversize_and_read_failure() {
+    let source = tempfile::tempdir().unwrap();
+    run_git(
+        Some(source.path()),
+        &["init", "-q"],
+        "initialize workflow fixture",
+    )
+    .unwrap();
+    fs::create_dir_all(source.path().join(".scope/runs/directory.yml")).unwrap();
+    fs::write(
+        source.path().join(".scope/runs/directory.yml/nested"),
+        "nested",
+    )
+    .unwrap();
+    fs::write(source.path().join(".scope/runs/good.yml"), "name: Checks\n").unwrap();
+    fs::write(
+        source.path().join(".scope/runs/large.yml"),
+        vec![b'x'; scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES + 1],
+    )
+    .unwrap();
+    run_git(Some(source.path()), &["add", "."], "stage workflow fixture").unwrap();
+    run_git(
+        Some(source.path()),
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.test",
+            "commit",
+            "-qm",
+            "workflows",
+        ],
+        "commit workflow fixture",
+    )
+    .unwrap();
+    let bare = source.path().join(".git");
+    assert_eq!(
+        git_blob(&bare, "HEAD", ".scope/runs/missing.yml").unwrap(),
+        None
+    );
+    assert_eq!(
+        git_blob(&bare, "HEAD", ".scope/runs/good.yml")
+            .unwrap()
+            .unwrap(),
+        b"name: Checks\n"
+    );
+    assert_eq!(
+        git_blob(&bare, "HEAD", ".scope/runs/directory.yml")
+            .unwrap_err()
+            .status(),
+        axum::http::StatusCode::BAD_REQUEST
+    );
+    assert!(
+        git_blob(&bare, "HEAD", ".scope/runs/large.yml")
+            .unwrap_err()
+            .public_message()
+            .contains("exceeds")
+    );
+    assert_eq!(
+        git_blob(&bare, "invalid-object", ".scope/runs/good.yml")
+            .unwrap_err()
+            .status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    let oid = String::from_utf8(
+        run_git_output(
+            Some(source.path()),
+            &["rev-parse", "HEAD:.scope/runs/good.yml"],
+            "find workflow blob",
+        )
+        .unwrap()
+        .stdout,
+    )
+    .unwrap();
+    let oid = oid.trim();
+    fs::remove_file(bare.join("objects").join(&oid[..2]).join(&oid[2..])).unwrap();
+    assert_eq!(
+        git_blob(&bare, "HEAD", ".scope/runs/good.yml")
+            .unwrap_err()
+            .status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
     );
 }

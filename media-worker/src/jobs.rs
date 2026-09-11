@@ -53,7 +53,7 @@ pub async fn run_processing_loop(
         }
         let outcome =
             process_next_job(&metadata, &storage, &pipeline, &scratch, &settings, &health).await;
-        let should_wait = should_wait_after_poll(&outcome);
+        let should_wait = matches!(&outcome, Ok(ProcessingOutcome::NoJob) | Err(_));
         match &outcome {
             Ok(ProcessingOutcome::NoJob) => {}
             Ok(value) => tracing::info!(outcome = ?value, "media processing job finished"),
@@ -67,10 +67,6 @@ pub async fn run_processing_loop(
             return Ok(());
         }
     }
-}
-
-fn should_wait_after_poll(outcome: &anyhow::Result<ProcessingOutcome>) -> bool {
-    matches!(outcome, Ok(ProcessingOutcome::NoJob) | Err(_))
 }
 
 async fn process_next_job(
@@ -759,7 +755,7 @@ fn codec_user_message(kind: CodecFailureKind) -> &'static str {
 
 async fn delete_parts(storage: &MediaStorage, parts: &[StagedMediaPart]) {
     for part in parts {
-        if let Err(error) = storage.delete_staged_part(part).await {
+        if let Err(error) = storage.delete_object_key(&part.object_key).await {
             tracing::warn!(%error, object_key = %part.object_key, "failed to discard staged derivative part");
         }
     }
@@ -782,14 +778,29 @@ mod tests {
     };
 
     #[test]
-    fn poll_waits_when_idle_or_after_an_error() {
-        assert!(should_wait_after_poll(&Ok(ProcessingOutcome::NoJob)));
-        assert!(should_wait_after_poll(&Err(anyhow::anyhow!(
-            "database unavailable"
-        ))));
-        assert!(!should_wait_after_poll(&Ok(ProcessingOutcome::Completed)));
-        assert!(!should_wait_after_poll(&Ok(ProcessingOutcome::Failed)));
-        assert!(!should_wait_after_poll(&Ok(ProcessingOutcome::LeaseLost)));
+    fn storage_retry_policy_distinguishes_absence_from_filesystem_failure() {
+        use scope_object_store::{
+            FileObjectStore, FileObjectStoreSettings, MemoryObjectStore, ObjectStore,
+        };
+        let root = tempfile::tempdir().unwrap();
+        let file_store =
+            FileObjectStore::new(FileObjectStoreSettings::new(root.path().join("objects")));
+        let memory_store = MemoryObjectStore::new();
+        for store in [&file_store as &dyn ObjectStore, &memory_store] {
+            let error = MediaStorageError::from(store.get_bounded("missing", 4).unwrap_err());
+            let failure = storage_failure(&error);
+            assert_eq!(failure.code, RequestAttachmentFailureCode::CorruptMedia);
+            assert!(!failure.retryable);
+        }
+        // An inaccessible storage hierarchy is an I/O failure, not absent media.
+        std::fs::write(root.path().join("objects"), b"not a directory").unwrap();
+        let error = MediaStorageError::from(file_store.get_bounded("missing", 4).unwrap_err());
+        let failure = storage_failure(&error);
+        assert_eq!(
+            failure.code,
+            RequestAttachmentFailureCode::StorageUnavailable
+        );
+        assert!(failure.retryable);
     }
 
     #[tokio::test(flavor = "current_thread")]

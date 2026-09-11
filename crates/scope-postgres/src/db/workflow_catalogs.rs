@@ -106,13 +106,6 @@ impl RepositoryStore {
         load_repository_workflow_catalogs(self.db.as_ref()).await
     }
 
-    pub async fn repository_workflow_catalog(
-        &self,
-        repo_id: &str,
-    ) -> Result<Option<RepositoryWorkflowCatalog>, PostgresError> {
-        repository_workflow_catalog(self.db.as_ref(), repo_id).await
-    }
-
     pub async fn current_repository_workflow_catalog(
         &self,
         repo_id: &str,

@@ -20,7 +20,7 @@ const REPOSITORY_ID: &str = "repository-123";
 mod ingest_control;
 mod multipart_backend;
 mod multipart_performance;
-use multipart_backend::{MinimumS3PartStore, TestMultipartStore};
+use multipart_backend::TestMultipartStore;
 
 #[tokio::test]
 async fn ingest_writes_both_destinations_and_restore_verifies_the_stream() {
@@ -244,10 +244,8 @@ async fn failed_part_aborts_multipart_and_removes_local_output() {
         .await
         .unwrap_err();
 
-    assert!(matches!(
-        error,
-        GitStorageError::IncompleteIngest | GitStorageError::Multipart(_)
-    ));
+    assert!(matches!(error, GitStorageError::Multipart(_)));
+    assert!(error.to_string().contains("part failed"));
     assert_eq!(fixture.backend.aborted(), 1);
     assert_eq!(fixture.backend.completed(), 0);
     assert!(all_files(&fixture.local_root).await.is_empty());
@@ -340,11 +338,12 @@ async fn local_failure_aborts_the_remote_upload() {
     let config = test_config(invalid_root, 4, 8, 1);
     let store = GitSegmentStore::new(backend.clone(), test_key(), config).unwrap();
 
-    store
+    let error = store
         .ingest(REPOSITORY_ID, &b"local write fails"[..], u64::MAX)
         .await
         .unwrap_err();
 
+    assert!(matches!(error, GitStorageError::Local(_)));
     assert_eq!(backend.aborted(), 1);
     assert!(backend.objects().is_empty());
 }
@@ -521,11 +520,12 @@ async fn restore_rejects_truncation_and_bytes_after_final_frame() {
 
 #[test]
 fn s3_rejects_parts_smaller_than_five_mib() {
-    let backend: Arc<dyn MultipartStore> = Arc::new(MinimumS3PartStore);
+    let mut backend = TestMultipartStore::default();
+    backend.minimum_part_bytes = 5 * 1024 * 1024;
     let mut config = GitSegmentStoreConfig::new("/tmp/scope-git-storage-config-test");
     config.multipart_part_bytes = 5 * 1024 * 1024 - 1;
 
-    let error = GitSegmentStore::new(backend, test_key(), config)
+    let error = GitSegmentStore::new(Arc::new(backend), test_key(), config)
         .err()
         .expect("undersized S3 part must fail");
     assert!(matches!(error, GitStorageError::InvalidConfiguration(_)));

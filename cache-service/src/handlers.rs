@@ -180,35 +180,7 @@ pub(crate) async fn commit_upload(
             expires_at_unix,
             ..
         } => (object, expires_at_unix),
-        CacheCommitResult::Stale {
-            orphaned_object_key,
-        } => {
-            let store = state.object_store.clone();
-            match tokio::task::spawn_blocking(move || store.delete(&orphaned_object_key)).await {
-                Ok(Ok(())) => {
-                    state
-                        .metadata
-                        .caches()
-                        .complete_upload_cleanup(request.lease_id.as_str())
-                        .await?;
-                }
-                Ok(Err(error)) => {
-                    state
-                        .metadata
-                        .caches()
-                        .retry_upload_cleanup(request.lease_id.as_str())
-                        .await?;
-                    tracing::warn!(%error, "stale cache upload deletion will be retried");
-                }
-                Err(error) => {
-                    state
-                        .metadata
-                        .caches()
-                        .retry_upload_cleanup(request.lease_id.as_str())
-                        .await?;
-                    tracing::warn!(%error, "stale cache upload deletion task failed");
-                }
-            }
+        CacheCommitResult::Stale => {
             return Err(ServiceError::conflict("cache upload lease is stale"));
         }
     };
@@ -735,14 +707,13 @@ mod tests {
             )
             .await
             .unwrap();
-        let offer = store.runs().next_dispatchable_job().await.unwrap().unwrap();
         let attempt_id = "attempt-cache-service".to_string();
         let attempt_token_hash = "e".repeat(64);
         store
             .runs()
             .dispatch_job(
-                &offer.run.id,
-                offer.job.key.as_str(),
+                "cache-service-run",
+                "checks",
                 &attempt_id,
                 &attempt_token_hash,
                 "test-runtime",

@@ -45,11 +45,15 @@ export function RequestDescription({
             onCancel={() => setEditing(false)}
             onSubmit={async (markdown, baseText) => {
               setError(null)
-              if (await onSave(markdown, baseText ?? description)) {
-                setEditing(false)
-                return true
+              try {
+                if (await onSave(markdown, baseText ?? description)) {
+                  setEditing(false)
+                  return true
+                }
+                setError('The request description could not be saved.')
+              } catch (saveError) {
+                setError(saveError instanceof Error ? saveError.message : 'The request description could not be saved.')
               }
-              setError('The request description could not be saved.')
               return false
             }}
             placeholder="Explain the intent, approach, and how this request was tested."

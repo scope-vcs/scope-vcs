@@ -5,7 +5,6 @@ import {
 } from '@/api/request-queue-input'
 import { RequestsPage } from '@/features/requests/requests-page'
 import { RequestsPagePending } from '@/features/requests/requests-page-pending'
-import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useCallback } from 'react'
@@ -30,7 +29,6 @@ export const Route = createFileRoute('/$owner/$repo/requests/')({
 function RequestsRoute() {
   const params = Route.useParams()
   const { owner, repo } = params
-  const live = useRepoLayout()
   const initialPages = Route.useLoaderData()
   const loadPage = useCallback(
     (

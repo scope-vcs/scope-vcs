@@ -21,12 +21,10 @@ use axum::{
     response::Response,
     routing::{get, put},
 };
-use config::MediaObjectStoreSettings;
 use scope_api_contract::routes::{
     MEDIA_ATTACHMENT_DERIVATIVE, MEDIA_ATTACHMENT_ORIGINAL, MEDIA_UPLOAD_PART,
 };
 use scope_media_storage::MediaStorage;
-use scope_object_store::{FileObjectStore, ObjectStore, S3ObjectStore};
 use scope_postgres::db::MetadataStore;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -45,19 +43,10 @@ pub struct AppState {
 impl AppState {
     pub async fn from_settings(settings: Settings) -> anyhow::Result<Self> {
         let metadata = MetadataStore::connect_worker(settings.database_url).await?;
-        let raw_store: Arc<dyn ObjectStore> = match settings.object_store {
-            MediaObjectStoreSettings::Filesystem(settings) => {
-                Arc::new(FileObjectStore::new(settings))
-            }
-            MediaObjectStoreSettings::S3(settings) => {
-                Arc::new(tokio::task::spawn_blocking(move || S3ObjectStore::new(settings)).await??)
-            }
-        };
-        let storage = MediaStorage::encrypted(
-            raw_store,
-            settings.encryption_key,
-            settings.max_blocking_operations,
-        )?;
+        let storage = settings
+            .storage
+            .connect(settings.max_blocking_operations)
+            .await?;
         Ok(Self {
             metadata,
             storage,
@@ -75,11 +64,11 @@ pub fn router(state: AppState, allowed_origin: Option<&str>) -> anyhow::Result<R
         .route(MEDIA_UPLOAD_PART, put(handlers::put_upload_part))
         .route(
             MEDIA_ATTACHMENT_ORIGINAL,
-            get(handlers::get_original).head(handlers::head_original),
+            get(handlers::original).head(handlers::original),
         )
         .route(
             MEDIA_ATTACHMENT_DERIVATIVE,
-            get(handlers::get_derivative).head(handlers::head_derivative),
+            get(handlers::derivative).head(handlers::derivative),
         )
         .layer(middleware::from_fn(redacted_access_log))
         .with_state(state);

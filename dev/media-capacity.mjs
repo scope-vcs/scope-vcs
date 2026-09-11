@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
+import { sampleRequest, summarize } from './media-capacity-samples.mjs'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -89,37 +90,8 @@ try {
 process.stdout.write(`${JSON.stringify({ ...receipt, samples: undefined, receipt_path: output }, null, 2)}\n`)
 if (!receipt.passed) process.exitCode = 1
 
-async function sample() {
-  const started = performance.now()
-  let status = 0
-  try {
-    const response = await fetch(requestUrl, {
-      headers: { Authorization: `Bearer ${process.env.SCOPE_MEDIA_SMOKE_TOKEN}` },
-      signal: AbortSignal.timeout(15000),
-    })
-    status = response.status
-    await response.arrayBuffer()
-  } catch { /* A timed-out request remains a failed sample. */ }
-  let gatewayRssBytes = null
-  if (gatewayPid) {
-    const status = await readFile(`/proc/${gatewayPid}/status`, 'utf8').catch(() => '')
-    const kib = status.match(/^VmRSS:\s+(\d+)\s+kB$/m)?.[1]
-    if (kib) gatewayRssBytes = Number(kib) * 1024
-  }
-  return { at: new Date().toISOString(), status, latency_ms: performance.now() - started, gateway_rss_bytes: gatewayRssBytes }
-}
-
-function summarize(samples) {
-  const latencies = samples.map(({ latency_ms }) => latency_ms).sort((a, b) => a - b)
-  const memory = samples.flatMap(({ gateway_rss_bytes }) => gateway_rss_bytes === null ? [] : [gateway_rss_bytes])
-  return {
-    requests: samples.length,
-    failed_requests: samples.filter(({ status }) => status !== 200).length,
-    p50_ms: latencies[Math.floor(latencies.length * 0.5)] ?? null,
-    p95_ms: latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * 0.95))] ?? null,
-    max_ms: latencies.at(-1) ?? null,
-    peak_gateway_rss_bytes: memory.length ? Math.max(...memory) : null,
-  }
+function sample() {
+  return sampleRequest(requestUrl, process.env.SCOPE_MEDIA_SMOKE_TOKEN, gatewayPid)
 }
 
 async function runSmoke(file, index) {

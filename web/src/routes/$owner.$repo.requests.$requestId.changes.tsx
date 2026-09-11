@@ -1,3 +1,7 @@
+import { useAuth } from '@clerk/tanstack-react-start'
+import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import { requestChangesSelectionIdentity, requestChangesResource } from '@/features/requests/request-changes-resource'
+import { useRequestChangesResource } from '@/features/requests/use-request-changes-resource'
 import {
   parseLoadRequestRevisionsInput,
   parseLoadRequestRevisionDiffInput,
@@ -25,24 +29,10 @@ import {
 } from '@/features/requests/request-changes-model'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
-import { createFileRoute, getRouteApi, useRouter } from '@tanstack/react-router'
+import { createFileRoute, getRouteApi } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
-import { useEffect, useMemo, useState } from 'react'
-
-type LoadRequestRevisionsInput = ReturnType<typeof parseLoadRequestRevisionsInput>
-
-type ChangesPage = Awaited<ReturnType<typeof loadChangesPage>>
-type ChangesLoaderData = ChangesPage & {
-  pin: RequestChangesSearch | null
-}
-
-type PinnedChangesReplay = {
-  data: ChangesLoaderData
-  key: string
-}
-
-const pinnedChangesReplay: { current: PinnedChangesReplay | null } = { current: null }
+import { useCallback, useEffect, useMemo } from 'react'
 
 const requestRoute = getRouteApi('/$owner/$repo/requests/$requestId')
 
@@ -67,6 +57,10 @@ const loadChangesPage = createServerFn({ method: 'GET' })
     }
     return { discussionReferences, revisions }
   })
+
+const loadRevisions = createServerFn({ method: 'GET' })
+  .validator(parseLoadRequestRevisionsInput)
+  .handler(({ data }) => loadRequestRevisionsForRequest(data))
 
 const loadRevisionDiff = createServerFn({ method: 'GET' })
   .validator(parseLoadRequestRevisionDiffInput)
@@ -93,21 +87,16 @@ export const Route = createFileRoute(
       commit_oid: selectionSearch.commit,
       revision_id: selectionSearch.revision,
     }
-    const replay = takePinnedChangesReplay(input)
-    if (replay) return replay
-    const page = await loadChangesPage({ data: input })
-    return pinChangesPage(page, selectionSearch)
+    if (typeof window !== 'undefined') return null
+    return loadChangesPage({ data: input })
   },
   pendingComponent: RequestChangesPending,
   component: RequestChangesRoute,
 })
 
 function RequestChangesRoute() {
-  const router = useRouter()
-  const [retrying, setRetrying] = useState(false)
   const page = requestRoute.useLoaderData()
   const changes = Route.useLoaderData()
-  const matchId = Route.useMatch().id
   const params = Route.useParams()
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -117,55 +106,44 @@ function RequestChangesRoute() {
     () => requestParamsForRoute({ owner, repo, requestId }),
     [owner, repo, requestId],
   )
+  const { userId, isLoaded } = useAuth()
+  const scope = isLoaded ? repoResourceScope(live.repo, userId ?? null) : null
+  const identity = scope ? requestChangesSelectionIdentity(scope, requestId, search.revision, search.commit) : null
+  const load = useCallback(() => loadRevisions({ data: { ...requestParams, revision_id: search.revision, commit_oid: search.commit } }), [requestParams, search.revision, search.commit])
+  const { initial, resource } = useRequestChangesResource({
+    access: JSON.stringify(live.repo.access), identity, initial: changes,
+    initialViewerId: page.account?.identity?.user_id ?? null,
+    load, viewerId: userId ?? null,
+  })
+  const revisions = resource.value ?? initial?.revisions ?? null
+  const selection = revisions ? requestChangeSelection(revisions.revisions, revisions.review_revision_id, search) : null
+  const pinRevision = selection?.revision ?? null
+  const pinCommit = selection?.commit ?? null
+  const pin = useMemo(() => requestRevisionPin(pinRevision, pinCommit, search.revision), [pinRevision, pinCommit, search.revision])
   useEffect(() => {
-    if (!changes.pin || search.revision) return
-    const replay = rememberPinnedChangesReplay(
-      {
-        ...requestParams,
-        commit_oid: changes.pin.commit,
-        revision_id: changes.pin.revision,
-      },
-      changes,
-    )
+    if (!pin || !scope || !revisions) return
+    const pinnedIdentity = requestChangesSelectionIdentity(scope, requestId, pin.revision, pin.commit)
+    if (requestChangesResource.getSnapshot(pinnedIdentity).version === null) {
+      requestChangesResource.write(pinnedIdentity, revisions)
+    }
     void navigate({
-      params,
-      replace: true,
-      resetScroll: false,
-      search: (current) => ({ ...current, ...changes.pin }),
+      params, replace: true, resetScroll: false,
+      search: (current) => ({ ...current, ...pin }),
       to: '/$owner/$repo/requests/$requestId/changes',
-    }).then(
-      () => forgetPinnedChangesReplay(replay),
-      () => forgetPinnedChangesReplay(replay),
-    )
-  }, [changes, navigate, params, requestParams, search.revision])
+    })
+  }, [navigate, params, pin, requestId, revisions, scope])
 
   if (!page.detail) return null
+  if (!revisions && (!isLoaded || resource.refreshing)) return <RequestChangesPending />
 
   return (
     <RequestChangesView
       audience={live.repo.access.can_read_private_files ? 'private' : 'public'}
-      initialDiscussionReferences={changes.discussionReferences}
+      initialDiscussionReferences={initial?.discussionReferences ?? { commitKey: null, page: null }}
       loadDiff={loadDiffForView}
       loadDiscussions={loadDiscussionsForView}
-      retrying={retrying}
-      onRetry={() => {
-        setRetrying(true)
-        void loadChangesPage({
-          data: {
-            ...requestParams,
-            commit_oid: search.commit,
-            revision_id: search.revision,
-          },
-        })
-          .then((result) => {
-            router.updateMatch(matchId, (match) => ({
-              ...match,
-              loaderData: pinChangesPage(result, search),
-            }))
-          })
-          .catch((error: unknown) => console.error('Retrying request changes failed', error))
-          .finally(() => setRetrying(false))
-      }}
+      retrying={resource.refreshing}
+      onRetry={resource.retry}
       onSearchChange={(nextSearch) => {
         void navigate({
           params,
@@ -177,7 +155,8 @@ function RequestChangesRoute() {
       }}
       params={requestParams}
       repoId={live.repo.id}
-      revisions={changes.revisions}
+      revisions={revisions}
+      scope={scope}
       search={search}
     />
   )
@@ -189,51 +168,5 @@ function requestChangesSelectionSearch(search: unknown): RequestChangesSearch {
   return {
     commit: typeof values.commit === 'string' ? values.commit : undefined,
     revision: typeof values.revision === 'string' ? values.revision : undefined,
-  }
-}
-
-function rememberPinnedChangesReplay(
-  input: LoadRequestRevisionsInput,
-  data: ChangesLoaderData,
-) {
-  if (typeof window === 'undefined') return null
-  const replay = { data, key: changesSelectionKey(input) }
-  pinnedChangesReplay.current = replay
-  return replay
-}
-
-function takePinnedChangesReplay(input: LoadRequestRevisionsInput) {
-  if (typeof window === 'undefined') return null
-  const replay = pinnedChangesReplay.current
-  if (!replay || replay.key !== changesSelectionKey(input)) return null
-  pinnedChangesReplay.current = null
-  return replay.data
-}
-
-function forgetPinnedChangesReplay(replay: PinnedChangesReplay | null) {
-  if (pinnedChangesReplay.current === replay) pinnedChangesReplay.current = null
-}
-
-function changesSelectionKey(input: LoadRequestRevisionsInput) {
-  return [
-    input.owner,
-    input.repo,
-    input.request_id,
-    input.revision_id ?? '',
-    input.commit_oid ?? '',
-  ].join('\0')
-}
-
-function pinChangesPage(page: ChangesPage, search: RequestChangesSearch): ChangesLoaderData {
-  const { revisions } = page
-  if (!revisions) return { ...page, pin: null }
-  const selection = requestChangeSelection(
-    revisions.revisions,
-    revisions.review_revision_id,
-    search,
-  )
-  return {
-    ...page,
-    pin: requestRevisionPin(selection.revision, selection.commit, search.revision),
   }
 }

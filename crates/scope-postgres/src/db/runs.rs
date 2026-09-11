@@ -3,8 +3,8 @@ use super::{
     git_segments::insert_git_segment_references,
     object_references::insert_object_reference,
     run_attempt_persistence::{
-        attempt_run_id, jobs_for_run, locked_attempt_steps, locked_heartbeat_context, locked_jobs,
-        locked_run, save_attempt, save_attempt_steps, save_jobs, save_run,
+        attempt_run_id, locked_attempt_steps, locked_heartbeat_context, locked_jobs, locked_run,
+        save_attempt, save_attempt_steps, save_jobs, save_run,
     },
 };
 use crate::error::PostgresError;
@@ -30,18 +30,6 @@ pub struct DispatchClaim {
     pub attempt: RunAttempt,
     pub steps: Vec<RunAttemptStep>,
     pub workflow_revision: WorkflowRevision,
-}
-
-#[cfg(any(
-    test,
-    feature = "test-support",
-    feature = "local-dev",
-    feature = "smoke-seed"
-))]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DispatchOffer {
-    pub run: Run,
-    pub job: RunJob,
 }
 
 impl RunStore {
@@ -303,8 +291,7 @@ pub(super) async fn enqueue_run_in_transaction(
                 PostgresError::conflict("run id is already used by another idempotency key")
             })?
             .try_into_domain()?;
-        let stored_jobs = jobs_for_run(tx, &stored.id).await?;
-        if !stored.has_same_enqueue_request_identity(&run) || stored_jobs != requested_jobs {
+        if !stored.has_same_enqueue_request_identity(&run) {
             return Err(PostgresError::conflict(
                 "run idempotency key is already used by a different enqueue request",
             ));

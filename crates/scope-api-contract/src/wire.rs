@@ -106,7 +106,6 @@ wire_enum!(FileChangeKind => DomainFileChangeKind { Added, Modified, Deleted });
 pub struct RepositoryMemberPermissions {
     pub can_push: bool,
     pub can_change_file_visibility: bool,
-    pub can_apply_changes: bool,
 }
 
 impl From<DomainRepositoryMemberPermissions> for RepositoryMemberPermissions {
@@ -114,7 +113,6 @@ impl From<DomainRepositoryMemberPermissions> for RepositoryMemberPermissions {
         Self {
             can_push: value.can_push,
             can_change_file_visibility: value.can_change_file_visibility,
-            can_apply_changes: value.can_apply_changes,
         }
     }
 }
@@ -124,7 +122,6 @@ impl From<RepositoryMemberPermissions> for DomainRepositoryMemberPermissions {
         Self {
             can_push: value.can_push,
             can_change_file_visibility: value.can_change_file_visibility,
-            can_apply_changes: value.can_apply_changes,
         }
     }
 }

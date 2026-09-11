@@ -243,9 +243,13 @@ mod tests {
         ) -> Result<(), scope_object_store::ObjectStoreError> {
             self.inner.put(key, bytes)
         }
-        fn get(&self, key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
+        fn get_bounded(
+            &self,
+            key: &str,
+            max_bytes: usize,
+        ) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
             self.loads.fetch_add(1, Ordering::SeqCst);
-            self.inner.get(key)
+            self.inner.get_bounded(key, max_bytes)
         }
         fn delete(&self, key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
             self.inner.delete(key)

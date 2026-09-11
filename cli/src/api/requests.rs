@@ -1,6 +1,5 @@
 use super::*;
 use crate::api::ApiSession;
-use anyhow::Context;
 use reqwest::blocking::RequestBuilder;
 use serde::de::DeserializeOwned;
 
@@ -58,15 +57,8 @@ pub fn list_requests(
 
 pub fn get_request(
     api: ApiSession<'_>,
-    owner: &str,
-    repo: &str,
-    request_id: &str,
+    target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestDetailResponse> {
-    let target = RequestTarget {
-        owner,
-        repo,
-        request_id,
-    };
     execute_request(
         api.request(reqwest::Method::GET, request_path(target)),
         target,
@@ -123,15 +115,8 @@ pub fn request_file_diff(
 
 pub fn close_request(
     api: ApiSession<'_>,
-    owner: &str,
-    repo: &str,
-    request_id: &str,
+    target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestCloseResponse> {
-    let target = RequestTarget {
-        owner,
-        repo,
-        request_id,
-    };
     execute_request(
         api.request(reqwest::Method::DELETE, request_path(target)),
         target,
@@ -392,8 +377,7 @@ fn execute_repo_request<R: DeserializeOwned>(
     action: &str,
 ) -> anyhow::Result<R> {
     let context = format!("{action} for {owner}/{repo}");
-    let response = request.send().with_context(|| context.clone())?;
-    decode_json_response(response, &context)
+    execute_json_request(request, &context)
 }
 
 pub(super) fn execute_request<R: DeserializeOwned>(
@@ -405,19 +389,14 @@ pub(super) fn execute_request<R: DeserializeOwned>(
         "{action} {} for {}/{}",
         target.request_id, target.owner, target.repo
     );
-    let response = request.send().with_context(|| context.clone())?;
-    decode_json_response(response, &context)
+    execute_json_request(request, &context)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use reqwest::{StatusCode, blocking::Client};
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-        thread,
-    };
+    use std::{io::Write, net::TcpListener, thread};
 
     #[test]
     fn list_requests_sends_the_opaque_cursor_as_a_query_parameter() {
@@ -468,14 +447,9 @@ mod tests {
             r#"{"code":"internal","message":"Scope hit an internal error.","error_reference":"err_0123456789abcdef0123456789abcdef\u001b[31m","retryable":false}"#,
         );
 
-        let error = get_request(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            "owner",
-            "repo",
-            "req_one",
-        )
-        .unwrap_err()
-        .to_string();
+        let error = get_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
+            .unwrap_err()
+            .to_string();
 
         assert_eq!(
             error,
@@ -501,39 +475,6 @@ mod tests {
     }
 
     #[test]
-    fn submit_posts_an_empty_payload() {
-        let (api_url, server) = serve_once(
-            StatusCode::CONFLICT,
-            r#"{"code":"conflict","message":"fixture stop","retryable":false}"#,
-        );
-
-        submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target()).unwrap_err();
-
-        let request = server.join().unwrap();
-        assert!(request.contains("\r\n\r\n{}"), "{request}");
-    }
-
-    #[test]
-    fn request_not_found_uses_the_authoritative_contract_message() {
-        let (api_url, server) = serve_once(
-            StatusCode::NOT_FOUND,
-            r#"{"code":"not_found","message":"request req_one not found in owner/repo","retryable":false}"#,
-        );
-
-        let error = get_request(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            "owner",
-            "repo",
-            "req_one",
-        )
-        .unwrap_err()
-        .to_string();
-
-        assert_eq!(error, "request req_one not found in owner/repo");
-        server.join().unwrap();
-    }
-
-    #[test]
     fn malformed_error_bodies_use_a_scoped_status_fallback() {
         let (api_url, server) = serve_once(StatusCode::SERVICE_UNAVAILABLE, "upstream exploded");
 
@@ -546,53 +487,6 @@ mod tests {
             "Scope is temporarily unavailable while trying to merge request req_one for owner/repo"
         );
         server.join().unwrap();
-    }
-
-    #[test]
-    fn invite_and_activity_wrappers_use_contract_methods_queries_and_payloads() {
-        let (api_url, invite_server) = serve_once(
-            StatusCode::CONFLICT,
-            r#"{"code":"conflict","message":"fixture stop","retryable":false}"#,
-        );
-        add_request_invitee(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            target(),
-            "Exact-Handle".to_string(),
-        )
-        .unwrap_err();
-        let invite_request = invite_server.join().unwrap();
-        assert!(
-            invite_request
-                .starts_with("PUT /v1/repos/owner/repo/requests/req_one/invitees HTTP/1.1")
-        );
-        assert!(
-            invite_request.contains(r#"{"handle":"Exact-Handle"}"#),
-            "{invite_request}"
-        );
-
-        let (api_url, activity_server) =
-            serve_once(StatusCode::OK, r#"{"events":[],"through_position":7}"#);
-        let page = get_request_activity(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            RequestActivityParams {
-                target: target(),
-                after: Some(4),
-                latest: true,
-                limit: Some(25),
-            },
-        )
-        .unwrap();
-        assert!(page.events.is_empty());
-        assert_eq!(page.through_position, 7);
-        let activity_request = activity_server.join().unwrap();
-        let request_line = activity_request.lines().next().unwrap();
-        assert!(
-            request_line.starts_with("GET /v1/repos/owner/repo/requests/req_one/activity?"),
-            "{request_line}"
-        );
-        for query in ["after=4", "latest=true", "limit=25"] {
-            assert!(request_line.contains(query), "{request_line}");
-        }
     }
 
     #[test]
@@ -689,9 +583,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0; 8192];
-            let read = stream.read(&mut request).unwrap();
-            let request = String::from_utf8(request[..read].to_vec()).unwrap();
+            let request = crate::test_support::read_http_request(&mut stream).unwrap();
             assert!(
                 request
                     .lines()

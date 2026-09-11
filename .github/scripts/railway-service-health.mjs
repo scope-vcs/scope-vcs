@@ -3,25 +3,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-
-export const RAILWAY_COMPONENTS = [
-  "cache",
-  "run-worker",
-  "media-worker",
-  "git-router",
-  "media-api",
-  "api",
-  "web",
-  "cli-downloads",
-];
-export const RAILWAY_CONFIG_PATHS = {
-  cache: "cache-service/railway.json",
-  "run-worker": "worker/railway.json",
-  "git-router": "repo-router/railway.json",
-  "media-api": "media-service/railway.json",
-  api: "api/railway.json",
-  web: "web/railway.json",
-};
+import { RAILWAY_COMPONENTS, RAILWAY_CONFIG_PATHS } from "./deployment-components.mjs";
 
 const SOURCE_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const REQUIRED_DEPLOY_SETTINGS = [
@@ -83,7 +65,7 @@ export function assertHealthyRailwayService(services, serviceId, expectedDeploym
   const service = services.find(({ id, name }) => id === serviceId || name === serviceId);
   if (!service) throw new Error(`Railway service ${serviceId} is missing`);
 
-  const replicas = service.replicas ?? {};
+  const replicas = railwayReplicaCounts(service);
   if (service.status !== "SUCCESS") {
     throw new Error(`Railway service ${serviceId} is ${service.status || "UNKNOWN"}`);
   }
@@ -98,7 +80,7 @@ export function assertHealthyRailwayService(services, serviceId, expectedDeploym
       `Railway service ${serviceId} has ${replicas.running ?? 0}/${replicas.configured} running replicas`,
     );
   }
-  if ((replicas.crashed ?? 0) !== 0) {
+  if (replicas.crashed !== 0) {
     throw new Error(`Railway service ${serviceId} has ${replicas.crashed} crashed replicas`);
   }
   if (expectedDeploymentId && service.deploymentId !== expectedDeploymentId) {
@@ -107,6 +89,24 @@ export function assertHealthyRailwayService(services, serviceId, expectedDeploym
     );
   }
   return service;
+}
+
+export function railwayReplicaCounts(service) {
+  const replicas = service?.replicas;
+  for (const key of ["running", "crashed"]) {
+    if (!Number.isInteger(replicas?.[key]) || replicas[key] < 0) {
+      throw new Error(`Railway service ${service?.name || service?.id || "unknown"} is missing valid ${key} replica evidence`);
+    }
+  }
+  return replicas;
+}
+
+export function railwayServiceIsStopped(services, serviceId) {
+  if (!Array.isArray(services)) throw new Error("Railway service state must be an array");
+  const matches = services.filter(({ id }) => id === serviceId);
+  if (matches.length !== 1) throw new Error(`Railway service ${serviceId} must have exactly one state entry`);
+  const replicas = railwayReplicaCounts(matches[0]);
+  return replicas.running === 0 && replicas.crashed === 0;
 }
 
 export function verifyProductionRailwayServices({
@@ -162,6 +162,10 @@ function environmentJson(name) {
 
 function main() {
   const state = environmentJson("SCOPE_RAILWAY_SERVICES_JSON");
+  if (process.argv[2] === "stopped") {
+    process.stdout.write(`${railwayServiceIsStopped(state, process.env.SCOPE_RAILWAY_SERVICE_ID)}\n`);
+    return;
+  }
   if (process.env.SCOPE_PRODUCTION_DEPLOYMENTS_JSON) {
     const manifest = environmentJson("SCOPE_DEPLOYMENT_MANIFEST_JSON");
     const verified = verifyProductionRailwayServices({

@@ -173,13 +173,7 @@ for component in cache run-worker media-api media-worker api git-router web; do
       node .github/scripts/deploy-railway-image.mjs "$service" "$image"
       ;;
     *)
-      case "$component" in
-        cache) root=cache-service ;;
-        git-router) root=repo-router ;;
-        run-worker) root=worker ;;
-        media-api) root=media ;;
-        *) root="$component" ;;
-      esac
+      root="$(node .github/scripts/deployment-components.mjs field "$component" root)"
       bash .github/scripts/deploy-railway.sh "$service" "$root"
       ;;
   esac

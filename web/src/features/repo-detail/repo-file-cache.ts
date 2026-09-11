@@ -1,5 +1,6 @@
 import type { RepoFileContent } from '@/api/types'
 import { createCachedResource } from '../../lib/cached-resource'
+import { repoContentCacheKey, type RepoContentIdentity } from './repo-content-cache'
 
 const MAX_CACHE_ENTRIES = 32
 const MAX_CACHE_BYTES = 24 * 1024 * 1024
@@ -10,18 +11,8 @@ export const repoFileResource = createCachedResource<RepoFileContent>({
   weightOf: approximateFileBytes,
 })
 
-export function repoFileCacheKey({
-  audience,
-  changeVersion,
-  path,
-  repoId,
-}: {
-  audience: 'private' | 'public'
-  changeVersion: number
-  path: string
-  repoId: string
-}) {
-  return [repoId, changeVersion, audience, path.replace(/^\/+/, '')].join('\0')
+export function repoFileCacheKey(identity: RepoContentIdentity & { path: string }) {
+  return [repoContentCacheKey(identity), identity.path.replace(/^\/+/, '')].join('\0')
 }
 
 function approximateFileBytes(file: RepoFileContent) {

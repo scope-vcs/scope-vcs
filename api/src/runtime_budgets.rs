@@ -230,7 +230,7 @@ impl ObjectStore for BudgetedObjectStore {
         result
     }
 
-    fn get(&self, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
+    fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
         let _permit = self
             .budgets
             .try_object_store("object store read")
@@ -238,9 +238,10 @@ impl ObjectStore for BudgetedObjectStore {
                 ObjectStoreError::capacity_exhausted(error.into_operator_diagnostic())
             })?;
         let started = Instant::now();
-        let result = self
-            .inner
-            .get_bounded(key, self.budgets.git_storage_limits.max_object_bytes());
+        let result = self.inner.get_bounded(
+            key,
+            max_bytes.min(self.budgets.git_storage_limits.max_object_bytes()),
+        );
         match result {
             Ok(bytes) => {
                 tracing::info!(
@@ -309,7 +310,83 @@ fn parse_u64_env(name: &str, default: u64) -> anyhow::Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use scope_object_store::{EncryptedObjectStore, MemoryObjectStore, ObjectStoreErrorKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Default)]
+    struct RecordingReadStore {
+        inner: MemoryObjectStore,
+        limit: AtomicUsize,
+    }
+
+    impl ObjectStore for RecordingReadStore {
+        fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
+            self.inner.put(key, bytes)
+        }
+
+        fn get(&self, _key: &str) -> Result<Vec<u8>, ObjectStoreError> {
+            panic!("budgeted reads must pass the limit to the backend");
+        }
+
+        fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
+            self.limit.store(max_bytes, Ordering::SeqCst);
+            self.inner.get_bounded(key, max_bytes)
+        }
+
+        fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
+            self.inner.delete(key)
+        }
+    }
+
+    #[test]
+    fn object_reads_forward_the_smaller_caller_limit_before_loading() {
+        let raw = Arc::new(RecordingReadStore::default());
+        let budgets = Arc::new(RuntimeBudgets::from_config(RuntimeBudgetConfig {
+            object_store_concurrency: 1,
+            git_storage_limits: GitStorageLimits::new(16).unwrap(),
+            ..Default::default()
+        }));
+        let store = BudgetedObjectStore::new(raw.clone(), budgets.clone());
+        store.put("object", vec![42; 16]).unwrap();
+        assert_eq!(
+            store.get_bounded("object", 4).unwrap_err().kind,
+            ObjectStoreErrorKind::PayloadTooLarge
+        );
+        assert_eq!(raw.limit.load(Ordering::SeqCst), 4);
+        assert_eq!(store.get_bounded("object", 32).unwrap(), vec![42; 16]);
+        assert_eq!(raw.limit.load(Ordering::SeqCst), 16);
+        assert_eq!(store.get("object").unwrap(), vec![42; 16]);
+        let _occupied = budgets.try_object_store("test").unwrap();
+        assert_eq!(
+            store.get_bounded("object", 1).unwrap_err().kind,
+            ObjectStoreErrorKind::CapacityExhausted
+        );
+        assert_eq!(
+            raw.limit.load(Ordering::SeqCst),
+            16,
+            "exhausted capacity must prevent the backend read"
+        );
+    }
+
+    #[test]
+    fn encrypted_budgeted_reads_preserve_the_plaintext_limit() {
+        let raw = Arc::new(RecordingReadStore::default());
+        let budgets = Arc::new(RuntimeBudgets::from_config(RuntimeBudgetConfig {
+            git_storage_limits: GitStorageLimits::new(16).unwrap(),
+            ..Default::default()
+        }));
+        let encrypted = Arc::new(EncryptedObjectStore::new(raw.clone(), [7; 32]));
+        let store = BudgetedObjectStore::new(encrypted, budgets);
+        store.put("object", vec![42; 16]).unwrap();
+        let envelope_bytes = raw.inner.get("object").unwrap().len() - 16;
+        assert_eq!(
+            store.get_bounded("object", 4).unwrap_err().kind,
+            ObjectStoreErrorKind::PayloadTooLarge
+        );
+        assert_eq!(raw.limit.load(Ordering::SeqCst), envelope_bytes + 4);
+        assert_eq!(store.get_bounded("object", 32).unwrap(), vec![42; 16]);
+        assert_eq!(raw.limit.load(Ordering::SeqCst), envelope_bytes + 16);
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn queued_inspections_respect_the_shared_git_capacity() {

@@ -20,7 +20,7 @@ fn write_git_credential_response(
     reader: impl BufRead,
     writer: impl Write,
 ) -> anyhow::Result<()> {
-    let configured_api_url = api_url();
+    let configured_api_url = api_url()?;
     write_git_credential_response_with(
         operation,
         reader,

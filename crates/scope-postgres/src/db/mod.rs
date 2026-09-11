@@ -46,7 +46,7 @@ mod migration_harness_tests;
 mod migration_tests;
 pub use cache_service::{
     CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
-    CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
+    CacheUploadCleanupClaim, CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
 };
 pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
 mod git_push_reads;
@@ -100,12 +100,11 @@ pub use request_rows::{RequestListPageQuery, RequestListRow};
 mod request_media;
 mod request_merge;
 pub use request_media::{
-    AuthorizedRequestAttachment, CompleteRequestAttachmentProcessingCommand,
-    CompletedRequestAttachmentDerivative, CompletedRequestMediaManifest,
-    FailRequestAttachmentProcessingCommand, FinishRequestAttachmentUploadCommand,
-    MediaLeaseMutation, PrepareRequestAttachmentCommand, PreparedRequestAttachment,
-    RequestAttachmentCleanupReason, RequestMediaChunk, RequestMediaManifest,
-    RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+    CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
+    CompletedRequestMediaManifest, FailRequestAttachmentProcessingCommand,
+    FinishRequestAttachmentUploadCommand, MediaLeaseMutation, PrepareRequestAttachmentCommand,
+    PreparedRequestAttachment, RequestAttachmentCleanupReason, RequestMediaChunk,
+    RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
     StoredRequestAttachmentPart, ValidateRequestAttachmentSourceCommand,
     ValidatedRequestAttachmentSource,
 };
@@ -130,8 +129,9 @@ pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePr
 pub use run_details::{RunAttemptDetail, RunDetail};
 pub use run_dispatch::CloudTaskStop;
 pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
-pub use run_log_reads::{RecentRunLogs, StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
+pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
 pub use run_log_writes::AppendRunLogResult;
+pub use run_operations::RunSnapshot;
 pub use runs::{DispatchClaim, EnqueueRunResult};
 #[cfg(any(
     test,
@@ -140,7 +140,6 @@ pub use runs::{DispatchClaim, EnqueueRunResult};
     feature = "test-support"
 ))]
 mod test_support;
-mod visibility_changes;
 mod workflow_catalogs;
 pub use workflow_catalogs::{
     CurrentRepositoryWorkflowCatalog, RepositoryWorkflowCatalogBackfillCandidate,
@@ -159,7 +158,8 @@ use history_rows::load_repository_histories;
 use locks::acquire_aggregate_lock;
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{
-    CreateRepositoryInviteMutation, UpdateRepositoryMemberPermissionsCommand,
+    CreateRepositoryInviteMutation, RepositoryCollaborationMutation,
+    UpdateRepositoryMemberPermissionsCommand,
 };
 pub use repo_lifecycle::{CreateRepositoryCommand, RepositoryCreationError};
 pub use repo_mutation::{RepositoryMutation, RepositoryMutationError};
@@ -180,7 +180,6 @@ use sqlx::{Connection as _, PgConnection};
 use std::sync::Arc;
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::TestDatabaseTarget;
-pub use visibility_changes::UpdateRepoFileVisibilityCommand;
 
 #[derive(Clone)]
 pub struct MetadataStore {
@@ -308,6 +307,13 @@ impl MetadataStore {
         connect_postgres_store(database_url).await
     }
 
+    #[cfg(feature = "local-dev")]
+    pub async fn connect_local_dev(
+        target: crate::local_dev_database::LocalDevDatabase,
+    ) -> anyhow::Result<Self> {
+        connect_postgres_store_with_options(target.url, target.options).await
+    }
+
     pub async fn connect_worker(database_url: String) -> anyhow::Result<Self> {
         connect_postgres_worker_store(database_url).await
     }
@@ -348,8 +354,16 @@ impl AdminStore {
 }
 
 async fn connect_postgres_store(database_url: String) -> anyhow::Result<MetadataStore> {
+    let options = database_url.parse()?;
+    connect_postgres_store_with_options(database_url, options).await
+}
+
+async fn connect_postgres_store_with_options(
+    database_url: String,
+    connection_options: sqlx::postgres::PgConnectOptions,
+) -> anyhow::Result<MetadataStore> {
     let database_url = Arc::<str>::from(database_url);
-    let db = connect_writer_database(&database_url).await?;
+    let db = connect_writer_database(&database_url, connection_options).await?;
     if let Err(error) = crate::migrations::assert_exact_state(&db).await {
         // A rejected startup must release its writer fence before maintenance retries.
         db.close().await?;
@@ -480,7 +494,10 @@ impl ExclusiveWriterFence {
     }
 }
 
-async fn connect_writer_database(database_url: &str) -> anyhow::Result<DatabaseConnection> {
+async fn connect_writer_database(
+    database_url: &str,
+    connection_options: sqlx::postgres::PgConnectOptions,
+) -> anyhow::Result<DatabaseConnection> {
     let mut options = ConnectOptions::new(database_url.to_string());
     options.min_connections(1);
     let fence_statement = writer_fence_statement("pg_advisory_lock_shared");
@@ -495,7 +512,7 @@ async fn connect_writer_database(database_url: &str) -> anyhow::Result<DatabaseC
                     .map(|_| ())
             })
         })
-        .connect(database_url)
+        .connect_with(connection_options)
         .await?;
     Ok(SqlxPostgresConnector::from_sqlx_postgres_pool(pool))
 }
@@ -593,7 +610,7 @@ where
             let history = histories_by_repo.remove(&repo_id).ok_or_else(|| {
                 PostgresError::internal_message(format!("repository history missing for {repo_id}"))
             })?;
-            repo.try_into_domain(facts.into_facts(), members, invitations, history)
+            repo.try_into_domain(facts, members, invitations, history)
         })
         .collect()
 }

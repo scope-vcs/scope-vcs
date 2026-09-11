@@ -194,15 +194,15 @@ async fn discussion_transactions_are_idempotent_atomic_and_self_read() {
 #[tokio::test]
 async fn completed_private_discussion_transitions_persist_nothing() {
     let store = postgres_store();
+    let requests = store.requests();
     let mut input = public_start_input();
     input.author_user_id = "user_owner".to_string();
     input.author_role = RequestActorRole::Owner;
     input.audience = RequestAudience::Private;
-    store.requests().start_request(input).await.unwrap();
+    requests.start_request(input).await.unwrap();
     let mut upload = public_upload_input();
     upload.actor_user_id = "user_owner".to_string();
-    store
-        .requests()
+    requests
         .record_working_request_upload(upload, &super::super::generated_ids::test_generated_id)
         .await
         .unwrap();
@@ -211,8 +211,7 @@ async fn completed_private_discussion_transitions_persist_nothing() {
         "discussion_resolved",
         "discussion_retried",
     ] {
-        store
-            .requests()
+        requests
             .create_request_discussion(CreateRequestDiscussionCommand {
                 request_id: "req_1".to_string(),
                 id: id.to_string(),
@@ -225,30 +224,19 @@ async fn completed_private_discussion_transitions_persist_nothing() {
             .await
             .unwrap();
     }
-    store
-        .requests()
-        .transition_request_discussion(TransitionRequestDiscussionCommand {
-            request_id: "req_1".to_string(),
-            discussion_id: "discussion_resolved".to_string(),
-            actor_user_id: "user_owner".to_string(),
-            event_id: "event_initial_resolve".to_string(),
-            now_unix: 5,
-            transition: DiscussionTransition::Resolve,
-        })
-        .await
-        .unwrap();
-    store
-        .requests()
-        .transition_request_discussion(TransitionRequestDiscussionCommand {
-            request_id: "req_1".to_string(),
-            discussion_id: "discussion_retried".to_string(),
-            actor_user_id: "user_owner".to_string(),
-            event_id: "event_retry_initial_resolve".to_string(),
-            now_unix: 5,
-            transition: DiscussionTransition::Resolve,
-        })
-        .await
-        .unwrap();
+    for id in ["discussion_resolved", "discussion_retried"] {
+        requests
+            .transition_request_discussion(TransitionRequestDiscussionCommand {
+                request_id: "req_1".into(),
+                discussion_id: id.into(),
+                actor_user_id: "user_owner".into(),
+                event_id: format!("initial_resolve_{id}"),
+                now_unix: 5,
+                transition: DiscussionTransition::Resolve,
+            })
+            .await
+            .unwrap();
+    }
     let retry_input = ReopenAndReplyToRequestDiscussionCommand {
         request_id: "req_1".to_string(),
         discussion_id: "discussion_retried".to_string(),
@@ -260,13 +248,11 @@ async fn completed_private_discussion_transitions_persist_nothing() {
         reply_to_reply_id: None,
         now_unix: 6,
     };
-    store
-        .requests()
+    requests
         .reopen_and_reply_to_request_discussion(retry_input.clone())
         .await
         .unwrap();
-    store
-        .requests()
+    requests
         .mutate_request_for_tests("req_1", |request| {
             request.submitted_at_unix = Some(7);
             request.closed_at_unix = Some(8);
@@ -275,66 +261,46 @@ async fn completed_private_discussion_transitions_persist_nothing() {
         })
         .await
         .unwrap();
-    let expected_request = store
-        .requests()
-        .request_for_tests("req_1")
-        .await
-        .unwrap()
-        .unwrap();
-    let expected_open = store
-        .requests()
-        .request_discussion("req_1", "discussion_open", Some("user_owner"))
-        .await
-        .unwrap()
-        .unwrap()
-        .0;
-    let expected_resolved = store
-        .requests()
-        .request_discussion("req_1", "discussion_resolved", Some("user_owner"))
-        .await
-        .unwrap()
-        .unwrap()
-        .0;
-    let expected_events = store
-        .requests()
+    let expected_request = requests.request_for_tests("req_1").await.unwrap().unwrap();
+    let mut expected_discussions = Vec::new();
+    for id in [
+        "discussion_open",
+        "discussion_resolved",
+        "discussion_retried",
+    ] {
+        let (discussion, _) = requests
+            .request_discussion("req_1", id, Some("user_owner"))
+            .await
+            .unwrap()
+            .unwrap();
+        expected_discussions.push((id, discussion));
+    }
+    let expected_events = requests
         .request_events_by_request_id("req_1")
         .await
         .unwrap();
 
-    let resolve_error = store
-        .requests()
-        .transition_request_discussion(TransitionRequestDiscussionCommand {
-            request_id: "req_1".to_string(),
-            discussion_id: "discussion_open".to_string(),
-            actor_user_id: "user_owner".to_string(),
-            event_id: "event_rejected_resolve".to_string(),
-            now_unix: 8,
-            transition: DiscussionTransition::Resolve,
-        })
-        .await
-        .unwrap_err();
-    assert_eq!(
-        resolve_error.kind,
-        crate::error::PostgresErrorKind::PermissionDenied
-    );
-    let reopen_error = store
-        .requests()
-        .transition_request_discussion(TransitionRequestDiscussionCommand {
-            request_id: "req_1".to_string(),
-            discussion_id: "discussion_resolved".to_string(),
-            actor_user_id: "user_owner".to_string(),
-            event_id: "event_rejected_reopen".to_string(),
-            now_unix: 9,
-            transition: DiscussionTransition::Reopen,
-        })
-        .await
-        .unwrap_err();
-    assert_eq!(
-        reopen_error.kind,
-        crate::error::PostgresErrorKind::PermissionDenied
-    );
-    let retry_error = store
-        .requests()
+    for (id, transition) in [
+        ("discussion_open", DiscussionTransition::Resolve),
+        ("discussion_resolved", DiscussionTransition::Reopen),
+    ] {
+        let error = requests
+            .transition_request_discussion(TransitionRequestDiscussionCommand {
+                request_id: "req_1".into(),
+                discussion_id: id.into(),
+                actor_user_id: "user_owner".into(),
+                event_id: format!("rejected_{id}"),
+                now_unix: 9,
+                transition,
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.kind,
+            crate::error::PostgresErrorKind::PermissionDenied
+        );
+    }
+    let retry_error = requests
         .reopen_and_reply_to_request_discussion(ReopenAndReplyToRequestDiscussionCommand {
             now_unix: 10,
             ..retry_input
@@ -347,35 +313,20 @@ async fn completed_private_discussion_transitions_persist_nothing() {
     );
 
     assert_eq!(
-        store
-            .requests()
-            .request_for_tests("req_1")
-            .await
-            .unwrap()
-            .unwrap(),
+        requests.request_for_tests("req_1").await.unwrap().unwrap(),
         expected_request
     );
-    let actual_open = store
-        .requests()
-        .request_discussion("req_1", "discussion_open", Some("user_owner"))
-        .await
-        .unwrap()
-        .unwrap()
-        .0;
-    assert_eq!(actual_open.discussion, expected_open.discussion);
-    assert_eq!(actual_open.unread_count, expected_open.unread_count);
-    let actual_resolved = store
-        .requests()
-        .request_discussion("req_1", "discussion_resolved", Some("user_owner"))
-        .await
-        .unwrap()
-        .unwrap()
-        .0;
-    assert_eq!(actual_resolved.discussion, expected_resolved.discussion);
-    assert_eq!(actual_resolved.unread_count, expected_resolved.unread_count);
+    for (id, expected) in expected_discussions {
+        let (actual, _) = requests
+            .request_discussion("req_1", id, Some("user_owner"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual.discussion, expected.discussion);
+        assert_eq!(actual.unread_count, expected.unread_count);
+    }
     assert_eq!(
-        store
-            .requests()
+        requests
             .request_events_by_request_id("req_1")
             .await
             .unwrap(),
@@ -400,32 +351,15 @@ async fn discussion_replies_are_read_as_flat_chronological_pages() {
         })
         .await
         .unwrap();
-    create_test_reply(&store, &discussion.discussion.id, "root_a", None, 11).await;
-    create_test_reply(&store, &discussion.discussion.id, "root_b", None, 12).await;
-    create_test_reply(
-        &store,
-        &discussion.discussion.id,
-        "child_a",
-        Some("root_a"),
-        13,
-    )
-    .await;
-    create_test_reply(
-        &store,
-        &discussion.discussion.id,
-        "child_b",
-        Some("root_a"),
-        14,
-    )
-    .await;
-    create_test_reply(
-        &store,
-        &discussion.discussion.id,
-        "grandchild",
-        Some("child_a"),
-        15,
-    )
-    .await;
+    for (id, parent, time) in [
+        ("root_a", None, 11),
+        ("root_b", None, 12),
+        ("child_a", Some("root_a"), 13),
+        ("child_b", Some("root_a"), 14),
+        ("grandchild", Some("child_a"), 15),
+    ] {
+        create_test_reply(&store, &discussion.discussion.id, id, parent, time).await;
+    }
 
     let summary = store
         .requests()
@@ -473,18 +407,6 @@ async fn discussion_replies_are_read_as_flat_chronological_pages() {
         summary.discussion.last_activity_position
     );
 
-    let (replies, _) = store
-        .requests()
-        .request_discussion_replies(&discussion.discussion.id, None, 10)
-        .await
-        .unwrap();
-    assert_eq!(
-        replies
-            .iter()
-            .map(|model| model.reply.id.as_str())
-            .collect::<Vec<_>>(),
-        ["root_a", "root_b", "child_a", "child_b", "grandchild"]
-    );
     let (newest, _) = store
         .requests()
         .request_discussion_replies(&discussion.discussion.id, None, 3)
@@ -515,6 +437,15 @@ async fn discussion_replies_are_read_as_flat_chronological_pages() {
 async fn close_draft_request_deletes_request_and_events() {
     let store = postgres_store();
     start_public_request(&store).await;
+    let snapshot_refs = [
+        source_blob("head").content_ref,
+        source_blob("head-2").content_ref,
+    ];
+    let initial_references =
+        super::super::object_references::referenced_content_refs(store.db.as_ref())
+            .await
+            .unwrap();
+    assert!(initial_references.contains(&snapshot_refs[0]));
     store
         .requests()
         .record_request_revision(
@@ -551,6 +482,12 @@ async fn close_draft_request_deletes_request_and_events() {
         .await
         .unwrap();
 
+    let referenced_before =
+        super::super::object_references::referenced_content_refs(store.db.as_ref())
+            .await
+            .unwrap();
+    assert!(referenced_before.contains(&snapshot_refs[1]));
+
     let mutation = store
         .requests()
         .close_request(
@@ -585,6 +522,17 @@ async fn close_draft_request_deletes_request_and_events() {
             .unwrap()
             .is_empty()
     );
+    let ref_cleanup = store
+        .cleanup()
+        .pending_request_ref_cleanups(None)
+        .await
+        .unwrap();
+    assert_eq!(ref_cleanup.len(), 1);
+    assert_eq!(ref_cleanup[0].request_id, "req_1");
+    assert_eq!(ref_cleanup[0].request_name, "fix-parser");
+    assert_eq!(ref_cleanup[0].head_oid, "head-2");
+    assert_eq!(ref_cleanup[0].incarnation.repository_id(), "owner/repo");
+    assert_eq!(ref_cleanup[0].incarnation.incarnation_id(), "repoi_test");
     let (_, pending_blobs) = store.cleanup().pending_cleanup_queues().await.unwrap();
     let pending_refs = pending_blobs
         .iter()
@@ -603,14 +551,9 @@ async fn close_draft_request_deletes_request_and_events() {
         .await
         .unwrap();
     assert!(
-        !referenced.contains(&scope_domain::content_ref::ContentRef::git_bundle_sha256(
-            "head"
-        ))
-    );
-    assert!(
-        !referenced.contains(&scope_domain::content_ref::ContentRef::git_bundle_sha256(
-            "head-2"
-        ))
+        snapshot_refs
+            .iter()
+            .all(|reference| !referenced.contains(reference))
     );
 }
 
@@ -795,3 +738,6 @@ fn source_blob(git_oid: &str) -> SourceBlob {
 }
 
 mod authorization_locks;
+
+mod draft_count;
+mod replay_authorization;

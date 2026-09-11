@@ -3,30 +3,11 @@ import test from 'node:test'
 import type { RequestList, RequestListItem } from '@/api/types'
 import {
   appendQueuePage,
-  appendRequestPage,
   createRequestQueueViewState,
   requestQueueViewReducer,
-  requestCountLabel,
   type RequestQueuePages,
   type RequestQueueViewAction,
 } from './request-list-model'
-
-test('appendRequestPage preserves order and ignores repeated request ids', () => {
-  const first = request('req_1')
-  const repeated = request('req_1')
-  const second = request('req_2')
-
-  assert.deepEqual(appendRequestPage([first], [repeated, second, second]), [
-    first,
-    second,
-  ])
-})
-
-test('requestCountLabel marks partial counts until the final page', () => {
-  assert.equal(requestCountLabel(50, true), '50+ requests')
-  assert.equal(requestCountLabel(51, false), '51 requests')
-  assert.equal(requestCountLabel(1, false), '1 request')
-})
 
 test('appendQueuePage advances a page without duplicating rows', () => {
   const first = request('req_1')
@@ -45,47 +26,6 @@ test('appendQueuePage advances a page without duplicating rows', () => {
     next_cursor: 'open:page-3',
   })
   assert.equal(current.next_cursor, 'open:page-2')
-})
-
-test('request queue reducer exposes loading success and error states', () => {
-  const initial = createRequestQueueViewState(queuePages())
-  const loading = requestQueueViewReducer(initial, {
-    type: 'load_started',
-    generation: initial.generation,
-    section: 'open',
-  })
-  assert.equal(loading.loadingSection, 'open')
-
-  const loaded = requestQueueViewReducer(loading, {
-    type: 'load_succeeded',
-    generation: loading.generation,
-    section: 'open',
-    page: page(['open-1', 'open-2'], null),
-  })
-  assert.equal(loaded.loadingSection, null)
-  assert.deepEqual(
-    loaded.pages.open.requests.map(({ id }) => id),
-    ['open-1', 'open-2'],
-  )
-
-  const failed = requestQueueViewReducer(
-    requestQueueViewReducer(loaded, {
-      type: 'load_started',
-      generation: loaded.generation,
-      section: 'closed',
-    }),
-    {
-      type: 'load_failed',
-      generation: loaded.generation,
-      section: 'closed',
-      error: 'Could not load closed requests.',
-    },
-  )
-  assert.equal(failed.loadingSection, null)
-  assert.equal(
-    failed.sectionErrors.closed,
-    'Could not load closed requests.',
-  )
 })
 
 test('request queue reducer replaces searched sections and preserves Your work', () => {

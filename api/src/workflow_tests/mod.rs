@@ -195,7 +195,7 @@ fn unix_now() -> u64 {
         .as_secs()
 }
 
-fn test_owner_id() -> String {
+pub(crate) fn test_owner_id() -> String {
     scope_postgres::db::scope_user_id_for_auth_identity("clerk", TEST_CLERK_USER_ID)
 }
 
@@ -208,7 +208,7 @@ fn test_user(id: impl Into<String>, handle: &str, email: &str) -> UserAccount {
     }
 }
 
-fn test_state_with_repo() -> AppState {
+pub(crate) fn test_state_with_repo() -> AppState {
     let owner_id = test_owner_id();
     let owner = test_user(&owner_id, TEST_REPO_OWNER, TEST_OWNER_EMAIL);
     let repo = test_repo(&owner_id);
@@ -305,7 +305,7 @@ fn assert_text_content(value: &serde_json::Value, expected: &str) {
     assert_eq!(value["text"], expected);
 }
 
-struct TempGitRepo(PathBuf);
+pub(crate) struct TempGitRepo(PathBuf);
 
 impl Deref for TempGitRepo {
     type Target = FsPath;
@@ -327,7 +327,7 @@ impl Drop for TempGitRepo {
     }
 }
 
-fn temp_git_repo(label: &str) -> TempGitRepo {
+pub(crate) fn temp_git_repo(label: &str) -> TempGitRepo {
     let repo = unique_test_path(label);
     let _ = fs::remove_dir_all(&repo);
     fs::create_dir_all(&repo).unwrap();
@@ -337,6 +337,12 @@ fn temp_git_repo(label: &str) -> TempGitRepo {
         "init test repo",
     )
     .unwrap();
+    for (key, value) in [
+        ("user.name", "Scope Test"),
+        ("user.email", "scope-test@example.test"),
+    ] {
+        run_git(Some(&repo), &["config", key, value], "set test identity").unwrap();
+    }
     fs::create_dir_all(repo.join(".scope")).unwrap();
     fs::write(repo.join(".scope/RULES.md"), []).unwrap();
     run_git(
@@ -368,7 +374,7 @@ fn clone_test_repo(source: &FsPath, label: &str, bare: bool) -> TempGitRepo {
     TempGitRepo(repo)
 }
 
-fn commit_all(repo: &FsPath, message: &str) {
+pub(crate) fn commit_all(repo: &FsPath, message: &str) {
     run_git(
         Some(repo),
         &[
@@ -735,12 +741,10 @@ fn test_repository_member(
 fn member_permissions(
     can_push: bool,
     can_change_file_visibility: bool,
-    can_apply_changes: bool,
 ) -> RepositoryMemberPermissions {
     RepositoryMemberPermissions {
         can_push,
         can_change_file_visibility,
-        can_apply_changes,
     }
 }
 

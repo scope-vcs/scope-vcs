@@ -57,8 +57,11 @@ function knownSmallBody(response: Response) {
 function compressBody(body: ReadableStream<Uint8Array>, encoding: Encoding) {
   const source = Readable.fromWeb(body as unknown as NodeReadableStream)
   const compressor = encoding === 'br'
-    ? createBrotliCompress({ params: { [constants.BROTLI_PARAM_QUALITY]: 4 } })
-    : createGzip()
+    ? createBrotliCompress({
+        params: { [constants.BROTLI_PARAM_QUALITY]: 4 },
+        flush: constants.BROTLI_OPERATION_FLUSH,
+      })
+    : createGzip({ flush: constants.Z_SYNC_FLUSH })
   const output = new PassThrough()
 
   pipeline(source, compressor, output).catch((error) => {

@@ -1,6 +1,9 @@
 use super::{
-    AuthorizedRequestAttachment, MediaStore, RequestMediaManifest, RequestMediaObjectTarget,
-    persistence::{attachment_by_id, bindings_for_attachment, manifest_by_id},
+    MediaStore, RequestMediaManifest, RequestMediaObjectTarget,
+    persistence::{
+        attachment_by_id, attachments_for_request, bindings_for_attachment, bindings_for_request,
+        manifest_by_id,
+    },
 };
 use crate::{
     db::{
@@ -9,7 +12,9 @@ use crate::{
     },
     error::PostgresError,
 };
-use scope_domain::requests::attachments::{RequestAttachmentState, can_view_request_attachment};
+use scope_domain::requests::attachments::{
+    RequestAttachment, RequestAttachmentState, can_view_request_attachment,
+};
 use scope_domain::requests::{RequestViewer, request_policy};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
@@ -19,7 +24,7 @@ impl MediaStore {
         request_id: &str,
         attachment_id: &str,
         viewer_user_id: Option<&str>,
-    ) -> Result<Option<AuthorizedRequestAttachment>, PostgresError> {
+    ) -> Result<Option<RequestAttachment>, PostgresError> {
         authorized_attachment(self.db.as_ref(), request_id, attachment_id, viewer_user_id).await
     }
 
@@ -27,32 +32,43 @@ impl MediaStore {
         &self,
         request_id: &str,
         viewer_user_id: Option<&str>,
-    ) -> Result<Vec<AuthorizedRequestAttachment>, PostgresError> {
-        let ids = self
-            .db
-            .query_all(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT id FROM scope_request_media_attachments
-                 WHERE request_id = $1 ORDER BY created_at_unix, id",
-                [request_id.into()],
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-            .into_iter()
-            .map(|row| {
-                row.try_get::<String>("", "id")
-                    .map_err(PostgresError::internal)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut visible = Vec::new();
-        for attachment_id in ids {
-            if let Some(attachment) =
-                authorized_attachment(self.db.as_ref(), request_id, &attachment_id, viewer_user_id)
-                    .await?
-            {
-                visible.push(attachment);
-            }
+    ) -> Result<Vec<RequestAttachment>, PostgresError> {
+        let tx = crate::db::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let Some(request) = request_by_id(&tx, request_id).await? else {
+            return Ok(Vec::new());
+        };
+        let Some(repo) = repository_access(&tx, &request.repo_id, viewer_user_id).await? else {
+            return Ok(Vec::new());
+        };
+        let is_invitee = match viewer_user_id {
+            Some(user_id) => request_is_invitee(&tx, request_id, user_id).await?,
+            None => false,
+        };
+        let policy = request_policy(
+            &request,
+            RequestViewer::new(repo.access, viewer_user_id, is_invitee),
+        );
+        if !policy.exact_visible {
+            return Ok(Vec::new());
         }
+        let attachments = attachments_for_request(&tx, request_id).await?;
+        let mut bindings = bindings_for_request(&tx, request_id).await?;
+        let visible = attachments
+            .into_iter()
+            .filter_map(|attachment| {
+                let attachment_bindings = bindings.remove(&attachment.id).unwrap_or_default();
+                (attachment.repository_id == request.repo_id
+                    && can_view_request_attachment(
+                        &attachment,
+                        &attachment_bindings,
+                        viewer_user_id,
+                        policy.exact_visible,
+                        policy.discussion_visible,
+                    ))
+                .then_some(attachment)
+            })
+            .collect();
+        tx.commit().await.map_err(PostgresError::internal)?;
         Ok(visible)
     }
 
@@ -70,18 +86,14 @@ impl MediaStore {
             return Ok(None);
         };
         let manifest_id = match target {
-            RequestMediaObjectTarget::Original if authorized.attachment.original_is_grantable() => {
-                authorized
-                    .attachment
-                    .original
-                    .as_ref()
-                    .map(|object| object.object_key.as_str())
-            }
+            RequestMediaObjectTarget::Original if authorized.original_is_grantable() => authorized
+                .original
+                .as_ref()
+                .map(|object| object.object_key.as_str()),
             RequestMediaObjectTarget::Derivative(derivative_id)
-                if authorized.attachment.state == RequestAttachmentState::Ready =>
+                if authorized.state == RequestAttachmentState::Ready =>
             {
                 authorized
-                    .attachment
                     .derivatives
                     .iter()
                     .find(|derivative| derivative.id == derivative_id)
@@ -95,7 +107,7 @@ impl MediaStore {
         let mut manifest = manifest_by_id(self.db.as_ref(), manifest_id).await?;
         if matches!(target, RequestMediaObjectTarget::Original)
             && let Some(manifest) = manifest.as_mut()
-            && let Some(detected_media_type) = authorized.attachment.detected_media_type
+            && let Some(detected_media_type) = authorized.detected_media_type
         {
             // The declared type is retained in the immutable upload manifest. Once the
             // worker validates the source, serving uses the detected type.
@@ -110,7 +122,7 @@ async fn authorized_attachment<C>(
     request_id: &str,
     attachment_id: &str,
     viewer_user_id: Option<&str>,
-) -> Result<Option<AuthorizedRequestAttachment>, PostgresError>
+) -> Result<Option<RequestAttachment>, PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -154,10 +166,7 @@ where
     ) {
         return Ok(None);
     }
-    Ok(Some(AuthorizedRequestAttachment {
-        repository_id: attachment.repository_id.clone(),
-        attachment,
-    }))
+    Ok(Some(attachment))
 }
 
 pub(super) async fn cleanup_tombstone_exists<C>(

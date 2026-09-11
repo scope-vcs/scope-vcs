@@ -240,6 +240,7 @@ test('request and file server functions bind their exact input validators', () =
     },
     '$owner.$repo.requests.$requestId.changes.tsx': {
       loadChangesPage: uses('parseLoadRequestRevisionsInput'),
+      loadRevisions: uses('parseLoadRequestRevisionsInput'),
       loadRevisionDiff: uses('parseLoadRequestRevisionDiffInput'),
       loadDiscussions: uses('parseLoadDiscussionsInput'),
     },

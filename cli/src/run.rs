@@ -174,7 +174,7 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
                 vec![format!(
                     "Cancellation requested for {} · {}",
                     run.id,
-                    state_label(run.state)
+                    output::run_state_label(run.state)
                 )],
             )
         }
@@ -218,7 +218,7 @@ impl Connection {
     }
 
     fn new(target: ScopeRemote) -> anyhow::Result<Self> {
-        let api_url = api_url();
+        let api_url = api_url()?;
         let client = run_client(Duration::from_secs(120))?;
         let session = session_from_cache_or_browser(&client, &api_url)?;
         Ok(Self {
@@ -311,22 +311,8 @@ fn run_client(timeout: Duration) -> anyhow::Result<Client> {
         .context("build run HTTP client")
 }
 
-fn state_label(state: RunState) -> &'static str {
-    match state {
-        RunState::Queued => "queued",
-        RunState::Dispatching => "dispatching",
-        RunState::Running => "running",
-        RunState::Succeeded => "succeeded",
-        RunState::Failed => "failed",
-        RunState::Canceled => "canceled",
-        RunState::Lost => "lost",
-    }
-}
 fn is_terminal_state(state: RunState) -> bool {
-    matches!(
-        state,
-        RunState::Succeeded | RunState::Failed | RunState::Canceled | RunState::Lost
-    )
+    scope_domain::runs::run::RunState::from(state).is_terminal()
 }
 fn short_oid(oid: &str) -> &str {
     oid.get(..7).unwrap_or(oid)

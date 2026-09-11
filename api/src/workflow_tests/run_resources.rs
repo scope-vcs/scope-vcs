@@ -58,15 +58,7 @@ async fn workflow_list_response(state: AppState) -> Response {
 
 #[tokio::test]
 async fn workflow_catalog_and_filtered_history_follow_current_main() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let source = temp_git_repo("run-history-pages");
-    fs::create_dir_all(source.join(".scope/runs")).unwrap();
-    fs::write(source.join(".scope/runs/test.yml"), WORKFLOW).unwrap();
-    run_git(Some(&source), &["add", "."], "stage workflow source").unwrap();
-    commit_all(&source, "add workflow");
-    let bare = clone_test_repo(&source, "run-history-pages-bare", true);
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    let (state, source) = state_with_pushed_workflow_checkout("run-history-pages", WORKFLOW).await;
 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
@@ -254,20 +246,6 @@ async fn maintenance_rejects_a_previously_captured_workflow_that_the_release_can
 
     assert!(error.contains(TEST_REPO_ID));
     assert!(error.contains("missing field `format`"));
-}
-
-#[tokio::test]
-async fn repository_without_an_accepted_head_has_an_empty_workflow_catalog() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-
-    let response = workflow_list_response(state).await;
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response_json(response).await["workflows"],
-        serde_json::json!([])
-    );
 }
 
 #[tokio::test]

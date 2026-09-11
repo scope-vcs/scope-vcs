@@ -30,26 +30,16 @@ impl From<ProjectionPreviewAudience> for ProjectionAudience {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "type-export", ts(rename_all = "lowercase"))]
-pub(crate) enum ProjectionPreviewSource {
-    Live,
-}
-
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct ProjectionPreviewRequest {
     pub(crate) audience: ProjectionPreviewAudience,
-    pub(crate) source: Option<ProjectionPreviewSource>,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct ProjectionPreviewResponse {
     pub(crate) audience: ProjectionPreviewAudience,
-    pub(crate) source: ProjectionPreviewSource,
     pub(crate) repo_id: String,
     pub(crate) view_key: String,
     pub(crate) head_oid: Option<String>,
@@ -71,7 +61,7 @@ pub(crate) struct ProjectionPreviewFileResponse {
 pub(crate) struct ProjectionPreviewCommitResponse {
     pub(crate) projected_id: String,
     pub(crate) logical_commit_id: String,
-    pub(crate) parent_projected_id: Option<String>,
+    pub(crate) parent_projected_ids: Vec<String>,
     pub(crate) author: Option<String>,
     pub(crate) message: String,
     pub(crate) visibility: ProjectionPreviewCommitVisibilityResponse,
@@ -117,8 +107,11 @@ pub(crate) struct RepoFileContentResponse {
 pub(crate) fn projection_preview_response(
     repo: &Repository,
     audience: ProjectionPreviewAudience,
-    source: ProjectionPreviewSource,
     include_private_counts: bool,
+    native_details: &std::collections::BTreeMap<
+        String,
+        scope_domain::projection::NativePublicCommitDetails,
+    >,
 ) -> Result<ProjectionPreviewResponse, ApiError> {
     let projection_audience = ProjectionAudience::from(audience);
     let projection = project_graph(
@@ -126,17 +119,16 @@ pub(crate) fn projection_preview_response(
         &repo.visibility_change_sets,
         projection_audience.into(),
     );
-    if projection.preserves_git_commits() {
-        return Err(ApiError::not_implemented(
-            "projection preview is unavailable for preserved public request commits until native per-commit metadata is represented accurately",
-        ));
-    }
-    let preview = projection_preview(repo, projection_audience, include_private_counts);
+    let preview = projection_preview(
+        repo,
+        projection_audience,
+        include_private_counts,
+        native_details,
+    )?;
     let head_oid = scope_git::projection_head_oid(&projection).map_err(ApiError::internal)?;
 
     Ok(ProjectionPreviewResponse {
         audience,
-        source,
         repo_id: preview.repo_id,
         view_key: preview.view_key,
         head_oid,
@@ -176,7 +168,7 @@ fn projection_preview_commit_response(
     ProjectionPreviewCommitResponse {
         projected_id: commit.projected_id,
         logical_commit_id: commit.logical_commit_id,
-        parent_projected_id: commit.parent_projected_id,
+        parent_projected_ids: commit.parent_projected_ids,
         author: commit.author,
         message: commit.message,
         visibility: projection_preview_commit_visibility_response(commit.visibility),

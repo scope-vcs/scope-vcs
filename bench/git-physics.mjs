@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import {
   mkdir, mkdtemp, open, readFile, readdir, rm, stat, statfs, writeFile,
 } from 'node:fs/promises';
@@ -10,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
+import { execute } from './subprocess.mjs';
 import { writeLinearHistoryStream } from './git-history.mjs';
 import { bytesLabel, normalizeProcessMeasurement, round } from './metrics.mjs';
 
@@ -63,12 +62,14 @@ async function main() {
 export function configuration(env = process.env) {
   const profile = env.SCOPE_PHYSICS_PROFILE || 'smoke';
   if (!DEFAULT_CASES[profile]) throw new Error(`unknown SCOPE_PHYSICS_PROFILE: ${profile}`);
+  const fileBytes = parseBytes(env.SCOPE_PHYSICS_FILE_BYTES || '8MiB');
+  if (fileBytes === 0) throw new Error('SCOPE_PHYSICS_FILE_BYTES must be positive');
   return {
     profile,
     cases: parseCases(env.SCOPE_PHYSICS_CASES || DEFAULT_CASES[profile]),
     operations: parseOperations(env.SCOPE_PHYSICS_OPERATIONS || [...OPERATIONS].join(',')),
     samples: positiveInteger(env.SCOPE_PHYSICS_SAMPLES, profile === 'smoke' ? 2 : 3),
-    fileBytes: parseBytes(env.SCOPE_PHYSICS_FILE_BYTES || '8MiB'),
+    fileBytes,
     evictBytes: parseBytes(env.SCOPE_PHYSICS_EVICT_BYTES || '0'),
     timeoutMs: positiveInteger(env.SCOPE_PHYSICS_TIMEOUT_MS, 30 * 60 * 1000),
     runLabel: env.SCOPE_BENCH_RUN_LABEL?.trim() || 'unlabeled',
@@ -179,7 +180,7 @@ async function createFixture(config, caseRoot, repo, spec) {
   await checked(config, 'git', ['-C', repo, 'add', '--all']);
   await checked(config, 'git', ['-C', repo, 'commit', '--quiet', '-m', 'Base payload']);
   if (spec.commits > 1) await addHistory(config, caseRoot, repo, spec.commits - 1);
-  const countObjects = parseCountObjects(await checkedOutput(config, 'git', ['-C', repo, 'count-objects', '-v']));
+  const countObjects = parseCountObjects(await checked(config, 'git', ['-C', repo, 'count-objects', '-v'], { captureStdout: true }));
   return {
     repo,
     repoBytes: await directoryBytes(repo),
@@ -191,7 +192,7 @@ async function createFixture(config, caseRoot, repo, spec) {
 
 async function addHistory(config, caseRoot, repo, count) {
   const streamPath = join(caseRoot, 'history.fast-import');
-  const base = await checkedOutput(config, 'git', ['-C', repo, 'rev-parse', 'HEAD']);
+  const base = await checked(config, 'git', ['-C', repo, 'rev-parse', 'HEAD'], { captureStdout: true });
   await writeLinearHistoryStream(streamPath, base, count);
   await checked(config, 'git', ['-C', repo, 'fast-import', '--quiet'], { stdinPath: streamPath });
   await rm(streamPath, { force: true });
@@ -247,9 +248,9 @@ async function measured(config, workdir, program, args, options = {}) {
     stdinPath: options.stdinPath,
     timeoutMs: config.timeoutMs,
   });
+  if (execution.code !== 0 || execution.error || execution.timedOut) throw new Error(`${program} ${args.join(' ')} failed: ${execution.error || execution.signal || execution.stderr.slice(-1000)}`);
   const timing = parseTimeReport(await readFile(timePath, 'utf8'));
   await rm(timePath, { force: true });
-  if (execution.code !== 0) throw new Error(`${program} ${args.join(' ')} failed: ${execution.stderr.slice(-1000)}`);
   const measuredWallMs = round(performance.now() - started);
   return {
     ...timing,
@@ -264,46 +265,8 @@ async function measured(config, workdir, program, args, options = {}) {
 
 async function checked(config, program, args, options = {}) {
   const result = await execute(program, args, { ...options, timeoutMs: config.timeoutMs });
-  if (result.code !== 0) throw new Error(`${program} ${args.join(' ')} failed: ${result.stderr.slice(-1000)}`);
-}
-
-async function checkedOutput(config, program, args) {
-  const result = await execute(program, args, { timeoutMs: config.timeoutMs, captureStdout: true });
-  if (result.code !== 0) throw new Error(`${program} ${args.join(' ')} failed: ${result.stderr.slice(-1000)}`);
+  if (result.code !== 0 || result.error || result.timedOut) throw new Error(`${program} ${args.join(' ')} failed: ${result.error || result.signal || result.stderr.slice(-1000)}`);
   return result.stdout;
-}
-
-function execute(program, args, options = {}) {
-  return new Promise((resolveCommand, rejectCommand) => {
-    const child = spawn(program, args, { cwd: options.cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-    const stdout = [];
-    const stderr = [];
-    child.stdout.on('data', (chunk) => {
-      stdoutBytes += chunk.length;
-      if (options.captureStdout) stdout.push(chunk);
-    });
-    child.stderr.on('data', (chunk) => {
-      stderrBytes += chunk.length;
-      if (stderrBytes <= 1024 * 1024) stderr.push(chunk);
-    });
-    if (options.stdinPath) createReadStream(options.stdinPath).on('error', rejectCommand).pipe(child.stdin);
-    else child.stdin.end();
-    const timer = setTimeout(() => child.kill('SIGKILL'), options.timeoutMs || 60_000);
-    child.on('error', rejectCommand);
-    child.on('close', (code, signal) => {
-      clearTimeout(timer);
-      resolveCommand({
-        code,
-        signal,
-        stdoutBytes,
-        stderrBytes,
-        stdout: Buffer.concat(stdout).toString('utf8'),
-        stderr: Buffer.concat(stderr).toString('utf8'),
-      });
-    });
-  });
 }
 
 async function prepareCache(config, caseRoot, sampleIndex) {
@@ -398,7 +361,7 @@ async function hostFacts(outputRoot) {
     filesystemBlockSize: disk.bsize,
     filesystemTotalBytes: disk.blocks * disk.bsize,
     filesystemFreeBytesAtStart: disk.bavail * disk.bsize,
-    gitVersion: (await checkedOutput({ timeoutMs: 10_000 }, 'git', ['--version'])).trim(),
+    gitVersion: (await checked({ timeoutMs: 10_000 }, 'git', ['--version'], { captureStdout: true })).trim(),
     outputFilesystemPath: resolve(outputRoot),
   };
 }
