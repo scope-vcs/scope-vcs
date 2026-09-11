@@ -64,14 +64,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub scope-vcs-${Environment}-runner
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   RunnerInternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -79,14 +71,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub scope-vcs-${Environment}-runner
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   RunnerInternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -101,14 +85,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub scope-vcs-${Environment}-runner-public
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   RunnerPublicRoute:
     Type: AWS::EC2::Route
@@ -128,14 +104,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub scope-vcs-${Environment}-runner-public-a
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   RunnerPublicSubnetTwo:
     Type: AWS::EC2::Subnet
@@ -147,14 +115,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub scope-vcs-${Environment}-runner-public-b
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   RunnerPublicSubnetOneRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -182,14 +142,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub scope-vcs-${Environment}-runner
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   RunnerCluster:
     Type: AWS::ECS::Cluster
@@ -200,30 +152,12 @@ Resources:
       DefaultCapacityProviderStrategy:
         - CapacityProvider: FARGATE
           Weight: 1
-      Tags:
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   RunnerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /scope-vcs/${Environment}/cloud-runner
       RetentionInDays: 14
-      Tags:
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   ChecksImageRepository:
     Type: AWS::ECR::Repository
@@ -254,14 +188,8 @@ Resources:
             ]
           }
       Tags:
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
         - Key: Component
           Value: checks-image
-        - Key: ManagedBy
-          Value: cloudformation
 
   GitHubOidcProvider:
     Type: AWS::IAM::OIDCProvider
@@ -271,14 +199,8 @@ Resources:
       ClientIdList:
         - sts.amazonaws.com
       Tags:
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
         - Key: Component
           Value: checks-image
-        - Key: ManagedBy
-          Value: cloudformation
 
   ChecksImagePublisherRole:
     Type: AWS::IAM::Role
@@ -324,14 +246,8 @@ Resources:
                   - ecr:UploadLayerPart
                 Resource: !GetAtt ChecksImageRepository.Arn
       Tags:
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
         - Key: Component
           Value: checks-image
-        - Key: ManagedBy
-          Value: cloudformation
 
   GitHubInfrastructureRole:
     Type: AWS::IAM::Role
@@ -360,14 +276,8 @@ Resources:
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess
       Tags:
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
         - Key: Component
           Value: infrastructure
-        - Key: ManagedBy
-          Value: cloudformation
 
   RunnerTaskExecutionRole:
     Type: AWS::IAM::Role
@@ -414,29 +324,11 @@ Resources:
                   - ecr:BatchGetImage
                   - ecr:GetDownloadUrlForLayer
                 Resource: !GetAtt ChecksImageRepository.Arn
-      Tags:
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   RailwayDispatcherUser:
     Type: AWS::IAM::User
     Properties:
       UserName: !Sub ${AWS::StackName}-railway-dispatcher
-      Tags:
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
   RailwayDispatcherPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -571,15 +463,6 @@ Resources:
           Subscribers:
             - Address: !Ref BudgetNotificationEmail
               SubscriptionType: EMAIL
-      ResourceTags:
-        - Key: Project
-          Value: scope-vcs
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Component
-          Value: cloud-runner
-        - Key: ManagedBy
-          Value: cloudformation
 
 Outputs:
   AwsRegion:

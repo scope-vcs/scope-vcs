@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const template = readFileSync(new URL('./cloud-runner.yaml', import.meta.url), 'utf8')
-const applyScript = readFileSync(new URL('./apply-cloud-runner.sh', import.meta.url), 'utf8')
 const infrastructureWorkflow = readFileSync(
   new URL('../../.github/workflows/scope-aws-infrastructure.yml', import.meta.url),
   'utf8',
@@ -60,18 +59,6 @@ test('the Railway dispatcher is denied direct secret values and discovery', () =
   )
 })
 
-test('the same optional ARN reaches CloudFormation without becoming a secret value', () => {
-  assert.match(
-    applyScript,
-    /registry_credentials_secret_arn="\$\{SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN:-\}"/,
-  )
-  assert.match(
-    applyScript,
-    /ParameterKey=RegistryCredentialsSecretArn,ParameterValue=\$registry_credentials_secret_arn/,
-  )
-  assert.match(
-    infrastructureWorkflow,
-    /SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN: \$\{\{ vars\.SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN \}\}/,
-  )
+test('the registry credentials ARN is a repository variable, not a secret', () => {
   assert.doesNotMatch(infrastructureWorkflow, /secrets\.SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN/)
 })

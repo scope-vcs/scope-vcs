@@ -66,8 +66,7 @@
     },
     "staging": {
       "gatewayDomain": "scope-media-api-staging.up.railway.app"
-    },
-    "workerImage": "ghcr.io/scope-vcs/scope-media-worker"
+    }
   },
   "changeScopes": {
     "all": {
@@ -80,14 +79,11 @@
         "dev/check",
         ".scope/runs/checks.yml",
         "dev/media-smoke.mjs",
-        "dev/media-capacity.mjs",
         "dev/run-ci-local-stack",
         "dev/scope-dev",
         "deploy/railway/reconcile-media.mjs",
         "deploy/railway/reconcile-media.test.mjs",
-        "deploy/railway/MEDIA.md",
-        "deploy/railway/rekey-deployment-receipts.mjs",
-        "deploy/railway/rekey-deployment-receipts.test.mjs"
+        "deploy/railway/MEDIA.md"
       ],
       "prefixes": [
         "legal/",
@@ -170,11 +166,8 @@
     "media-api": {
       "files": [
         "dev/media-smoke.mjs",
-        "dev/media-capacity.mjs",
         "dev/run-ci-local-stack",
         "dev/scope-dev",
-        "deploy/railway/prebuilt-media.railpack.json",
-        "deploy/railway/start-prebuilt.sh",
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml"
@@ -213,7 +206,6 @@
     "cli-downloads": {
       "files": [
         "deploy/railway/prebuilt-cli.railpack.json",
-        "deploy/railway/start-prebuilt.sh",
         "Cargo.lock",
         "Cargo.toml",
         "Cross.toml",

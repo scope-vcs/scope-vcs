@@ -79,11 +79,6 @@ test("changes select the required deployment lanes", () => {
     ],
     ["router changes deploy the Git router", ["repo-router/src/main.rs"], { "git-router": true }],
     [
-      "CLI prebuilt launcher selects the CLI service",
-      ["deploy/railway/start-prebuilt.sh"],
-      { "media-api": true, "cli-downloads": true },
-    ],
-    [
       "backend runtime image selects every backend service",
       ["deploy/railway/prebuilt.Dockerfile"],
       { cache: true, "run-worker": true, "git-router": true, api: true },
