@@ -516,15 +516,7 @@ mod tests {
         .unwrap();
         run_git(
             Some(&repo),
-            &[
-                "-c",
-                "user.name=Scope Test",
-                "-c",
-                "user.email=scope-test@example.test",
-                "commit",
-                "--amend",
-                "--no-edit",
-            ],
+            &["commit", "--amend", "--no-edit"],
             "amending merge with request rules override",
         )
         .unwrap();

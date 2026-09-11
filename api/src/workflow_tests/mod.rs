@@ -337,6 +337,12 @@ pub(crate) fn temp_git_repo(label: &str) -> TempGitRepo {
         "init test repo",
     )
     .unwrap();
+    for (key, value) in [
+        ("user.name", "Scope Test"),
+        ("user.email", "scope-test@example.test"),
+    ] {
+        run_git(Some(&repo), &["config", key, value], "set test identity").unwrap();
+    }
     fs::create_dir_all(repo.join(".scope")).unwrap();
     fs::write(repo.join(".scope/RULES.md"), []).unwrap();
     run_git(
