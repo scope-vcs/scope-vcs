@@ -3,7 +3,7 @@ use scope_domain::{
     projection::{NativePublicCommit, NativePublicCommitDetails},
     repository::RepositoryIncarnation,
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Instant};
 
 /// Read immutable native objects only after the caller selects audience-authorized refs.
 pub(crate) async fn native_commit_details(
@@ -14,6 +14,8 @@ pub(crate) async fn native_commit_details(
     if commits.is_empty() {
         return Ok(BTreeMap::new());
     }
+    // Every commit and subprocess shares this request budget.
+    let deadline = Instant::now() + state.runtime_budgets.git_command_timeout();
     let (head, spans) = state
         .metadata
         .repositories()
@@ -35,6 +37,7 @@ pub(crate) async fn native_commit_details(
                 crate::git::public_request_commit::inspect_native_public_commit(
                     repo.as_ref(),
                     commit,
+                    deadline,
                 )
                 .map(|details| (commit.oid.clone(), details))
             })

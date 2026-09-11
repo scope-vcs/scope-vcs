@@ -21,7 +21,11 @@ use scope_git::{GitTreePath, StoredGitPush, prepare_git_push};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_git_storage::{GitStorageError, StagedGitSegment};
 use scope_object_store::{ContentObjectKind, content_object_for_bytes};
-use std::{path::Path as FsPath, process::Command, time::Instant};
+use std::{
+    path::Path as FsPath,
+    process::Command,
+    time::{Duration, Instant},
+};
 
 pub(super) fn pushed_commit_time(staging_repo: &FsPath, head_oid: &str) -> Result<i64, ApiError> {
     git_stdout_text(
@@ -95,7 +99,13 @@ pub(super) fn git_tree_entries(
     staging_repo: &FsPath,
     head_oid: &str,
 ) -> Result<Vec<GitTreeFile>, ApiError> {
-    git_tree_entries_for_path(staging_repo, head_oid, None, true)
+    git_tree_entries_for_path(
+        staging_repo,
+        head_oid,
+        None,
+        true,
+        Instant::now() + RuntimeBudgets::default_git_command_timeout(),
+    )
 }
 
 pub(super) fn git_tree_entries_under(
@@ -103,7 +113,13 @@ pub(super) fn git_tree_entries_under(
     head_oid: &str,
     path: &str,
 ) -> Result<Vec<GitTreeFile>, ApiError> {
-    git_tree_entries_for_path(staging_repo, head_oid, Some(path), false)
+    git_tree_entries_for_path(
+        staging_repo,
+        head_oid,
+        Some(path),
+        false,
+        Instant::now() + RuntimeBudgets::default_git_command_timeout(),
+    )
 }
 
 fn git_tree_entries_for_path(
@@ -111,12 +127,13 @@ fn git_tree_entries_for_path(
     head_oid: &str,
     path: Option<&str>,
     enforce_import_limits: bool,
+    deadline: Instant,
 ) -> Result<Vec<GitTreeFile>, ApiError> {
     let mut args = vec!["ls-tree", "-rz", "-r", "-l", head_oid];
     if let Some(path) = path {
         args.extend(["--", path]);
     }
-    let output = run_git_output(Some(staging_repo), &args, "reading pushed tree")?;
+    let output = run_git_output_until(Some(staging_repo), &args, "reading pushed tree", deadline)?;
     if !output.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
             "reading pushed tree: {}",
@@ -184,14 +201,15 @@ pub(crate) fn git_changed_tree_entries(
     staging_repo: &FsPath,
     base_oid: Option<&str>,
     head_oid: &str,
+    deadline: Instant,
 ) -> Result<Vec<(ScopePath, Option<GitTreeFile>)>, ApiError> {
     let Some(base_oid) = base_oid else {
-        return git_tree_entries(staging_repo, head_oid)?
+        return git_tree_entries_for_path(staging_repo, head_oid, None, true, deadline)?
             .into_iter()
             .map(|entry| Ok((entry.path.to_scope_path(), Some(entry))))
             .collect();
     };
-    let output = run_git_output(
+    let output = run_git_output_until(
         Some(staging_repo),
         &[
             "diff-tree",
@@ -204,6 +222,7 @@ pub(crate) fn git_changed_tree_entries(
             head_oid,
         ],
         "reading pushed Git delta",
+        deadline,
     )?;
     if !output.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
@@ -264,7 +283,7 @@ pub(crate) fn git_changed_tree_entries(
                 "--batch-check=%(objectname) %(objecttype) %(objectsize)",
             ]),
             Some(requested_oids.into_bytes()),
-            RuntimeBudgets::default_git_command_timeout(),
+            remaining_git_time(deadline)?,
         )?;
         if !output.status.success() {
             return Err(ApiError::infrastructure_unavailable(format!(
@@ -605,22 +624,40 @@ pub(crate) fn run_git_output(
     args: &[&str],
     action: &str,
 ) -> Result<std::process::Output, ApiError> {
+    run_git_output_until(
+        repo,
+        args,
+        action,
+        Instant::now() + RuntimeBudgets::default_git_command_timeout(),
+    )
+}
+
+pub(crate) fn remaining_git_time(deadline: Instant) -> Result<Duration, ApiError> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| ApiError::infrastructure_unavailable("Git inspection deadline exceeded"))
+}
+
+pub(crate) fn run_git_output_until(
+    repo: Option<&FsPath>,
+    args: &[&str],
+    action: &str,
+    deadline: Instant,
+) -> Result<std::process::Output, ApiError> {
     let mut command = Command::new("git");
     if let Some(repo) = repo {
         command.arg("-C").arg(repo);
     }
     command.args(args);
-    git_process_output_with_timeout(
-        &mut command,
-        None,
-        RuntimeBudgets::default_git_command_timeout(),
+    git_process_output_with_timeout(&mut command, None, remaining_git_time(deadline)?).map_err(
+        |error| {
+            ApiError::infrastructure_unavailable(format!(
+                "failed {action}: {}",
+                error.operator_diagnostic()
+            ))
+        },
     )
-    .map_err(|error| {
-        ApiError::infrastructure_unavailable(format!(
-            "failed {action}: {}",
-            error.operator_diagnostic()
-        ))
-    })
 }
 
 pub(crate) fn run_git_output_bounded(

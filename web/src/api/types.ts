@@ -264,7 +264,7 @@ export type HistoryPageInput = RepoParams & HistoryPageRequest
 export type HistoryEntryDetailInput = RepoParams & HistoryEntryRequest & {
   entry: string
 }
-export type HistoryEntryFileDiffInput = RepoParams & HistoryEntryFileDiffRequest & {
+export type HistoryEntryFileDiffInput = RepoParams & Omit<HistoryEntryFileDiffRequest, 'commit_oid'> & {
   entry: string
 }
 

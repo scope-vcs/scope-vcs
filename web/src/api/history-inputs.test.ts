@@ -58,14 +58,3 @@ test('preserves an exact visibility effect selector without adding one to conten
   assert.equal(parseHistoryEntryFileDiffInput({ ...request, visibility_change: ' change-2 ' }).visibility_change, 'change-2')
   assert.throws(() => parseHistoryEntryFileDiffInput({ ...request, visibility_change: 12 }), /visibility change id/)
 })
-
-test('native history diffs preserve a validated commit selector while logical updates retain their net diff', () => {
-  const input = { owner: 'scope', repo: 'vcs', entry: 'push-1', path: '/same.ts' }
-  assert.equal(parseHistoryEntryFileDiffInput(input).commit_oid, null)
-  assert.equal(parseHistoryEntryFileDiffInput({ ...input, commit_oid: null }).commit_oid, null)
-  assert.equal(parseHistoryEntryFileDiffInput({ ...input, commit_oid: ` ${'A'.repeat(40)} ` }).commit_oid, 'a'.repeat(40))
-  for (const commit_oid of ['', 'HEAD', 'abc123', 'z'.repeat(40), 42]) {
-    assert.throws(() => parseHistoryEntryFileDiffInput({ ...input, commit_oid }), /native commit OID/)
-  }
-  assert.throws(() => parseHistoryEntryFileDiffInput({ ...input, commit_oid: 'a'.repeat(40), visibility_change: 'change-1' }), /cannot be selected together/)
-})

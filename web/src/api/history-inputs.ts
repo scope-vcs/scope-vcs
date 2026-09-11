@@ -32,15 +32,10 @@ export function parseHistoryEntryDetailInput(input: unknown): HistoryEntryDetail
 
 export function parseHistoryEntryFileDiffInput(input: unknown): HistoryEntryFileDiffInput {
   const data = input as Partial<HistoryEntryFileDiffInput> | null
-  const commitOid = parseNativeCommitOid(data?.commit_oid)
-  const visibilityChange = parseVisibilityChange(data?.visibility_change)
-  if (commitOid && visibilityChange) throw new Error('A native commit and a visibility change cannot be selected together.')
-
   return {
     ...parseHistoryEntryDetailInput(input),
     path: parseFilePath(data?.path),
-    commit_oid: commitOid,
-    visibility_change: visibilityChange,
+    visibility_change: parseVisibilityChange(data?.visibility_change),
   }
 }
 
@@ -79,12 +74,4 @@ export function parseVisibilityChange(value: unknown): string | null {
     throw new Error('A visibility change id must be a non-empty string.')
   }
   return value.trim()
-}
-
-function parseNativeCommitOid(value: unknown): string | null {
-  if (value === undefined || value === null) return null
-  if (typeof value !== 'string' || !/^[0-9a-f]{40}$/i.test(value.trim())) {
-    throw new Error('A native commit OID must be a full hexadecimal object ID.')
-  }
-  return value.trim().toLowerCase()
 }

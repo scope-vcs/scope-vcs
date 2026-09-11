@@ -246,7 +246,6 @@ function useHistoryPageModel({ initialPage, initialEntry, initialEntryScope, par
         owner: params.owner,
         path: selectedFilePath ?? '',
         visibility_change: selectedVisibilityId,
-        commit_oid: null,
         repo: params.repo,
       },
       signal,

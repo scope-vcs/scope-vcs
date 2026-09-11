@@ -245,7 +245,12 @@ fn inspect_received_tree(
     let occurred_at_unix = Some(pushed_commit_time(staging_repo, head_oid)?);
     validate_pushed_commit_range(staging_repo, base_head_oid, head_oid)?;
     let diff_started = Instant::now();
-    let pushed_entries = git_changed_tree_entries(staging_repo, base_head_oid, head_oid)?;
+    let pushed_entries = git_changed_tree_entries(
+        staging_repo,
+        base_head_oid,
+        head_oid,
+        Instant::now() + crate::runtime_budgets::RuntimeBudgets::default_git_command_timeout(),
+    )?;
     let diff_ms = diff_started.elapsed().as_millis();
     if pushed_entries.is_empty() && mode != ReviewedUpdateMode::RequestMerge {
         return Err(ApiError::bad_request(

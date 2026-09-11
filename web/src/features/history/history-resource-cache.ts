@@ -87,7 +87,6 @@ export function historyEntryDiffCacheKey({
   repoId,
   viewKey,
   visibilityChange = null,
-  commitOid = null,
 }: {
   scope: string
   audience: ProjectionPreviewAudience
@@ -98,7 +97,6 @@ export function historyEntryDiffCacheKey({
   path: string
   repoId: string
   visibilityChange?: string | null
-  commitOid?: string | null
   viewKey: string
 }) {
   return [historyDiffCacheKey({
@@ -111,7 +109,7 @@ export function historyEntryDiffCacheKey({
     path,
     repoId,
     viewKey,
-  }), visibilityChange ?? '', commitOid ?? ''].join('\0')
+  }), visibilityChange ?? ''].join('\0')
 }
 
 export function readHistoryDiffScroll(key: string | null) {

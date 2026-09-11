@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::Path};
+use std::{collections::BTreeMap, path::Path, time::Instant};
 
 use scope_domain::{
     policy::Visibility,
@@ -9,7 +9,7 @@ use crate::{
     error::ApiError,
     git::{
         content::git_blob_reference,
-        import::{git_changed_tree_entries, git_stdout_text, run_git_output},
+        import::{git_changed_tree_entries, remaining_git_time, run_git_output_until},
     },
 };
 
@@ -19,37 +19,57 @@ use crate::{
 pub(crate) fn inspect_native_public_commit(
     repo: &Path,
     native: &NativePublicCommit,
+    deadline: Instant,
 ) -> Result<NativePublicCommitDetails, ApiError> {
-    let oid = git_stdout_text(
-        repo,
+    let output = run_git_output_until(
+        Some(repo),
         &[
-            "rev-parse",
-            "--verify",
-            &format!("{}^{{commit}}", native.oid),
+            "show",
+            "-s",
+            "--format=%H%x00%T%x00%P%x00%ct%x00%an <%ae>%x00%B",
+            &native.oid,
         ],
-        "resolving public request commit",
+        "reading public request commit metadata",
+        deadline,
     )?;
-    let tree_oid = commit_field(repo, &native.oid, "%T")?;
-    let parents = commit_field(repo, &native.oid, "%P")?;
-    let parent_oids = parents.split_ascii_whitespace().collect::<Vec<_>>();
-    if oid.trim() != native.oid
-        || tree_oid.trim() != native.tree_oid
-        || parent_oids != native.parent_oids
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "reading public request commit metadata: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    // Split only the metadata separators: display text can contain NULs and
+    // non-UTF-8 bytes, while the retained Git identity must remain strict.
+    let fields = output
+        .stdout
+        .splitn(6, |byte| *byte == 0)
+        .collect::<Vec<_>>();
+    if fields.len() != 6 {
+        return Err(ApiError::internal_message(
+            "invalid public request commit metadata",
+        ));
+    }
+    let parents = std::str::from_utf8(fields[2]).map_err(ApiError::internal)?;
+    if fields[0] != native.oid.as_bytes()
+        || fields[1] != native.tree_oid.as_bytes()
+        || parents.split_ascii_whitespace().collect::<Vec<_>>() != native.parent_oids
     {
         return Err(ApiError::internal_message(
             "public request commit does not match its recorded Git identity",
         ));
     }
-    let author = display_commit_field(repo, &native.oid, "%an <%ae>")?;
-    let message = display_commit_field(repo, &native.oid, "%B")?;
-    let occurred_at_unix = commit_field(repo, &native.oid, "%ct")?
-        .trim()
+    let occurred_at_unix = std::str::from_utf8(fields[3])
+        .map_err(ApiError::internal)?
         .parse()
         .map_err(|_| ApiError::internal_message("invalid public request commit time"))?;
+    let author = String::from_utf8_lossy(fields[4]).into_owned();
+    let message = String::from_utf8_lossy(fields[5])
+        .trim_end_matches(&['\r', '\n'][..])
+        .to_string();
     let first_parent = native.parent_oids.first().map(String::as_str);
-    let new_entries = git_changed_tree_entries(repo, first_parent, &native.oid)?;
+    let new_entries = git_changed_tree_entries(repo, first_parent, &native.oid, deadline)?;
     let mut old_entries = match first_parent {
-        Some(parent) => git_changed_tree_entries(repo, Some(&native.oid), parent)?
+        Some(parent) => git_changed_tree_entries(repo, Some(&native.oid), parent, deadline)?
             .into_iter()
             .collect::<BTreeMap<_, _>>(),
         None => BTreeMap::new(),
@@ -68,40 +88,13 @@ pub(crate) fn inspect_native_public_commit(
             }
         })
         .collect();
+    remaining_git_time(deadline)?;
     Ok(NativePublicCommitDetails {
         author,
         message,
         occurred_at_unix,
         changes,
     })
-}
-
-fn commit_field(repo: &Path, oid: &str, format: &str) -> Result<String, ApiError> {
-    git_stdout_text(
-        repo,
-        &["show", "-s", &format!("--format={format}"), oid],
-        "reading public request commit metadata",
-    )
-    .map(|value| value.trim_end_matches(&['\r', '\n'][..]).to_string())
-}
-
-// Git permits non-UTF-8 display text. Match request review's lossy decoding;
-// identity fields above remain strict and are checked against retained refs.
-fn display_commit_field(repo: &Path, oid: &str, format: &str) -> Result<String, ApiError> {
-    let output = run_git_output(
-        Some(repo),
-        &["show", "-s", &format!("--format={format}"), oid],
-        "reading public request commit display metadata",
-    )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading public request commit display metadata: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .trim_end_matches(&['\r', '\n'][..])
-        .to_string())
 }
 
 #[cfg(test)]
