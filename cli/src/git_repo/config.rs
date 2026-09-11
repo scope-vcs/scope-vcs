@@ -52,6 +52,7 @@ pub fn scope_git_origin(repo: &GitRepo, fallback_url: &str) -> anyhow::Result<St
 pub fn scope_api_url_from_git_config(repo_root: &Path) -> anyhow::Result<Option<String>> {
     let output = Command::new("git")
         .current_dir(repo_root)
+        .env("LC_ALL", "C")
         .args(["config", "--local", "--get", SCOPE_API_URL_CONFIG_KEY])
         .output()
         .context("read configured Scope API URL")?;
@@ -59,10 +60,16 @@ pub fn scope_api_url_from_git_config(repo_root: &Path) -> anyhow::Result<Option<
         let api_url = String::from_utf8_lossy(&output.stdout).trim().to_string();
         return Ok((!api_url.is_empty()).then_some(api_url));
     }
-    if output.status.code() == Some(1) {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if output.status.code() == Some(1)
+        || stderr.trim() == "fatal: --local can only be used inside a git repository"
+    {
         return Ok(None);
     }
-    bail!("read configured Scope API URL failed")
+    bail!(
+        "read configured Scope API URL failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    )
 }
 
 fn transport_origin(value: &str) -> anyhow::Result<String> {
@@ -158,7 +165,13 @@ pub fn branch_config_value(
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
         return Ok((!value.is_empty()).then_some(value));
     }
-    Ok(None)
+    if output.status.code() == Some(1) {
+        return Ok(None);
+    }
+    bail!(
+        "read branch configuration failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    )
 }
 
 pub fn set_branch_config_value(

@@ -118,7 +118,8 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
         return Ok(());
     };
     let object_store = if settings.role.runs_cleanup() {
-        Some(object_store_from_env(&settings.data_dir)?)
+        let data_dir = settings.data_dir.clone();
+        Some(tokio::task::spawn_blocking(move || object_store_from_env(&data_dir)).await??)
     } else {
         None
     };

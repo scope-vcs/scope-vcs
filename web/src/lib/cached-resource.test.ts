@@ -298,3 +298,32 @@ test('an uncached oversized route result still resolves for its caller', async (
   assert.deepEqual(await store.load('large', '', async () => value('oversized')), value('oversized'))
   assert.equal(store.stats().entries, 0)
 })
+
+test('hydration seeds only an absent scoped resource and never replaces retained or invalidated values', async () => {
+  const store = resource()
+  store.seed('viewer-a:repo', value('initial'))
+  let calls = 0
+  await store.ensure('viewer-a:repo', '', async () => { calls++; return value('unexpected') })
+  assert.equal(calls, 0)
+  store.write('viewer-a:repo', value('updated'))
+  store.seed('viewer-a:repo', value('old hydration'))
+  assert.equal(store.peek('viewer-a:repo')?.text, 'updated')
+  store.invalidate('viewer-a:repo')
+  store.seed('viewer-a:repo', value('old hydration'))
+  assert.equal(store.getSnapshot('viewer-a:repo').stale, true)
+  await store.ensure('viewer-a:repo', '', async () => value('refreshed'))
+  assert.equal(store.peek('viewer-a:repo')?.text, 'refreshed')
+  assert.equal(store.peek('viewer-b:repo'), null)
+})
+
+test('late hydration never replaces an in-flight request', async () => {
+  const store = resource()
+  const response = deferred<Value>()
+  const pending = store.ensure('repo', '', () => response.promise)
+  store.seed('repo', value('old hydration'))
+  assert.equal(store.getSnapshot('repo').pending, true)
+  assert.equal(store.peek('repo'), null)
+  response.resolve(value('fresh'))
+  await pending
+  assert.equal(store.peek('repo')?.text, 'fresh')
+})

@@ -3,6 +3,7 @@ use crate::config::{
     LOCAL_APP_ORIGIN, SCOPE_API_PUBLIC_URL_ENV, SCOPE_APP_ORIGIN_ENV, non_empty_env,
 };
 use crate::demo_seed::DevSeedUser;
+use scope_postgres::local_dev_database::LocalDevDatabase;
 
 pub(super) const SCOPE_ENV_ENV: &str = "SCOPE_ENV";
 const SCOPE_OBJECT_STORE_ENV: &str = "SCOPE_OBJECT_STORE";
@@ -10,9 +11,9 @@ pub(super) const LOCAL_SCOPE_ENV: &str = "local";
 pub(super) const SCOPE_DEV_USER_EMAIL_ENV: &str = "SCOPE_DEV_USER_EMAIL";
 pub(super) const SCOPE_DEV_USER_HANDLE_ENV: &str = "SCOPE_DEV_USER_HANDLE";
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub(super) struct LocalDevSettings {
-    pub(super) database_url: String,
+    pub(super) database: LocalDevDatabase,
     pub(super) seed_user: DevSeedUser,
 }
 
@@ -88,7 +89,7 @@ fn validate_snapshot(snapshot: &DevEnvSnapshot) -> anyhow::Result<LocalDevSettin
         .database_url
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("{DATABASE_URL_ENV} is required in local dev"))?;
-    validate_local_database_url(database_url)?;
+    let database = LocalDevDatabase::parse(database_url)?;
 
     let clerk_issuer = snapshot
         .clerk_issuer
@@ -103,7 +104,7 @@ fn validate_snapshot(snapshot: &DevEnvSnapshot) -> anyhow::Result<LocalDevSettin
     }
 
     Ok(LocalDevSettings {
-        database_url: database_url.to_string(),
+        database,
         seed_user: dev_seed_user(snapshot)?,
     })
 }
@@ -125,85 +126,6 @@ fn validate_local_clerk_issuer(issuer: &str) -> anyhow::Result<()> {
         anyhow::bail!("{CLERK_ISSUER_ENV} must point at a Clerk development issuer");
     }
     Ok(())
-}
-
-fn validate_local_database_url(database_url: &str) -> anyhow::Result<()> {
-    reject_production_database_url(database_url)?;
-
-    let lower = database_url.trim().to_ascii_lowercase();
-    if !(lower.starts_with("postgres://") || lower.starts_with("postgresql://")) {
-        anyhow::bail!("{DATABASE_URL_ENV} must be a postgres:// or postgresql:// URL");
-    }
-
-    let after_scheme = lower
-        .split_once("://")
-        .map(|(_, rest)| rest)
-        .unwrap_or_default();
-    let authority = after_scheme.split('/').next().unwrap_or_default();
-    let host_port = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    let host = host_port
-        .trim_start_matches('[')
-        .split(']')
-        .next()
-        .unwrap_or(host_port)
-        .split(':')
-        .next()
-        .unwrap_or_default();
-    if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
-        anyhow::bail!("{DATABASE_URL_ENV} must target localhost in local dev");
-    }
-
-    let database_and_query = after_scheme
-        .split_once('/')
-        .map(|(_, path)| path)
-        .unwrap_or_default();
-    let database_name = database_and_query
-        .split(['?', '#'])
-        .next()
-        .unwrap_or_default();
-    let query = database_and_query
-        .split_once('?')
-        .map(|(_, query)| query.split('#').next().unwrap_or_default())
-        .unwrap_or_default();
-    let query_has_schema_marker = query
-        .split('&')
-        .filter_map(|part| part.split_once('='))
-        .any(|(key, value)| {
-            matches!(
-                key,
-                "search_path" | "schema" | "current_schema" | "currentschema"
-            ) && has_local_database_marker(value)
-        });
-
-    if !has_local_database_marker(database_name) && !query_has_schema_marker {
-        anyhow::bail!("{DATABASE_URL_ENV} must visibly target a Scope local/dev database");
-    }
-
-    Ok(())
-}
-
-fn reject_production_database_url(database_url: &str) -> anyhow::Result<()> {
-    let lower = database_url.trim().to_ascii_lowercase();
-    if lower.contains("railway") || lower.contains("scope-postgres") || lower.contains("production")
-    {
-        anyhow::bail!("{DATABASE_URL_ENV} must not point at production data in local dev");
-    }
-    Ok(())
-}
-
-fn has_local_database_marker(value: &str) -> bool {
-    value.contains("scope_dev")
-        || value.contains("scope-dev")
-        || value.contains("scope_local")
-        || value.contains("scope-local")
-        || value.contains("scope_vcs_dev")
-        || value.contains("scope-vcs-dev")
-        || value.contains("scope_vcs_local")
-        || value.contains("scope-vcs-local")
-        || value.contains("scope_test")
-        || value.contains("scope-test")
 }
 
 fn configured_list_contains(values: &str, expected: &str) -> bool {
@@ -312,24 +234,7 @@ mod tests {
 
         let error = validate_snapshot(&snapshot).unwrap_err();
 
-        assert!(error.to_string().contains("production data"));
-    }
-
-    #[test]
-    fn local_postgres_requires_localhost_and_scope_marker() {
-        validate_local_database_url("postgres://scope:scope@127.0.0.1:5432/scope_dev").unwrap();
-        validate_local_database_url(
-            "postgres://scope:scope@localhost/postgres?search_path=scope_test",
-        )
-        .unwrap();
-
-        let error = validate_local_database_url("postgres://scope:scope@db.example.com/scope_dev")
-            .unwrap_err();
         assert!(error.to_string().contains("localhost"));
-
-        let error =
-            validate_local_database_url("postgres://scope:scope@localhost/postgres").unwrap_err();
-        assert!(error.to_string().contains("local/dev database"));
     }
 
     #[test]

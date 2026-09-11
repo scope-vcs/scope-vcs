@@ -2,7 +2,7 @@ use super::{FileChangeKind, HistoryEntryFile, visibility_change_id};
 use crate::{
     content::SourceBlob,
     policy::ScopePath,
-    projection::{ProjectedChange, Projection},
+    projection::{ProjectedChange, Projection, ProjectionMaterialization},
     reviewed_updates::content::source_content_matches,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -13,6 +13,7 @@ pub(super) struct ProjectedAction {
     pub message: String,
     pub files: Vec<HistoryEntryFile>,
     pub paths: BTreeSet<ScopePath>,
+    pub preserves_git_commits: bool,
 }
 
 #[derive(Default)]
@@ -40,6 +41,10 @@ impl ProjectionHistory {
                 }
             } else {
                 let action = result.actions.entry(commit.logical_commit_id).or_default();
+                action.preserves_git_commits |= matches!(
+                    commit.materialization,
+                    ProjectionMaterialization::PreserveGitCommit { .. }
+                );
                 action.author = commit.author;
                 action.message = commit.message;
                 for change in commit.changes {

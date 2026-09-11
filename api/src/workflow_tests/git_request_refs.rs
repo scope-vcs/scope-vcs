@@ -19,12 +19,14 @@ const PRIVATE_REQUEST_ID: &str = "req_private";
 const PRIVATE_REQUEST_REF: &str = "refs/heads/private-request";
 
 mod cache;
+mod cleanup;
 mod http;
 mod merge;
 mod policy;
 mod privacy;
 mod refs;
 mod review;
+mod root_history;
 
 use http::public_get_json;
 async fn assert_restored_request_head(state: &AppState, expected: &str) -> PathBuf {

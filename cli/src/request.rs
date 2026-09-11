@@ -268,6 +268,10 @@ fn start_request_discussion(
     )?;
     let mut human_lines = discussion_started_receipt(&request_id, &response);
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
+    let saved = serde_json::json!({
+        "operation": "request.discussion.start", "saved": true,
+        "request_id": &request_id, "discussion": &response.discussion,
+    });
     let uploaded_attachments = if attachment_args.wait {
         attachments::wait_for_processing(
             api,
@@ -277,18 +281,13 @@ fn start_request_discussion(
                 request_id: &request_id,
             },
             uploaded.attachments,
-            serde_json::json!({
-                "operation": "request.discussion.start",
-                "saved": true,
-                "request_id": &request_id,
-                "discussion": &response.discussion,
-            }),
+            saved.clone(),
         )?
     } else {
         uploaded.attachments
     };
     if let Some(mutation) = &pending_mutation {
-        attachments::complete_mutation(mutation, &uploaded.receipt_keys)?;
+        attachments::complete_saved_uploads(Some(mutation), &uploaded.receipt_keys, saved)?;
     }
     if has_attachments {
         return Ok(RequestCommandOutcome::new(
@@ -372,6 +371,11 @@ fn reply_to_request_discussion(
     )?;
     let mut human_lines = vec![discussion_replied_receipt(&response)];
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
+    let saved = serde_json::json!({
+        "operation": "request.discussion.reply", "saved": true,
+        "request_id": &request_id, "discussion": &response.discussion,
+        "reply": &response.reply,
+    });
     let uploaded_attachments = if attachment_args.wait {
         attachments::wait_for_processing(
             api,
@@ -381,19 +385,13 @@ fn reply_to_request_discussion(
                 request_id: &request_id,
             },
             uploaded.attachments,
-            serde_json::json!({
-                "operation": "request.discussion.reply",
-                "saved": true,
-                "request_id": &request_id,
-                "discussion": &response.discussion,
-                "reply": &response.reply,
-            }),
+            saved.clone(),
         )?
     } else {
         uploaded.attachments
     };
     if let Some(mutation) = &pending_mutation {
-        attachments::complete_mutation(mutation, &uploaded.receipt_keys)?;
+        attachments::complete_saved_uploads(Some(mutation), &uploaded.receipt_keys, saved)?;
     }
     if has_attachments {
         return Ok(RequestCommandOutcome::new(
@@ -507,6 +505,11 @@ fn reopen_request_discussion(
     )?;
     let mut human_lines = vec![discussion_reopened_receipt(&response)];
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
+    let saved = serde_json::json!({
+        "operation": "request.discussion.reopen", "saved": true,
+        "request_id": &request_id, "discussion": &response.discussion,
+        "reply": &response.reply,
+    });
     let uploaded_attachments = if attachment_args.wait {
         attachments::wait_for_processing(
             api,
@@ -516,19 +519,13 @@ fn reopen_request_discussion(
                 request_id: &request_id,
             },
             uploaded.attachments,
-            serde_json::json!({
-                "operation": "request.discussion.reopen",
-                "saved": true,
-                "request_id": &request_id,
-                "discussion": &response.discussion,
-                "reply": &response.reply,
-            }),
+            saved.clone(),
         )?
     } else {
         uploaded.attachments
     };
     if let Some(mutation) = &pending_mutation {
-        attachments::complete_mutation(mutation, &uploaded.receipt_keys)?;
+        attachments::complete_saved_uploads(Some(mutation), &uploaded.receipt_keys, saved)?;
     }
     if has_attachments {
         return Ok(RequestCommandOutcome::new(

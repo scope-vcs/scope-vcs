@@ -84,7 +84,13 @@ pub fn doctor(remote: Option<&str>, offline: bool) -> anyhow::Result<()> {
 }
 
 fn inspect(remote: Option<&str>, offline: bool) -> Report {
-    let endpoint = api::api_url();
+    let (endpoint, endpoint_error) = match api::api_url().and_then(|endpoint| {
+        context::validate_api_url(&endpoint)?;
+        Ok(endpoint)
+    }) {
+        Ok(endpoint) => (endpoint, None),
+        Err(error) => ("invalid endpoint".to_string(), Some(error)),
+    };
     let mut report = Report {
         api_url: endpoint.clone(),
         offline,
@@ -99,13 +105,12 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
         diagnostics: Vec::new(),
         next_actions: Vec::new(),
     };
-    let valid_endpoint = match context::validate_api_url(&endpoint) {
-        Ok(()) => {
+    let valid_endpoint = match endpoint_error {
+        None => {
             record(&mut report, "endpoint", "ok", endpoint.clone(), None);
             true
         }
-        Err(error) => {
-            report.api_url = "invalid endpoint".into();
+        Some(error) => {
             record(
                 &mut report,
                 "endpoint",

@@ -9,6 +9,7 @@ use crate::{
     repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
+    use_cases::repository_collaboration::publish_committed_mutation,
 };
 use axum::{
     Json,
@@ -19,9 +20,10 @@ use scope_domain::{
     account::UserAccount,
     repository::Repository,
     repository::access::RepositoryAccess,
-    repository::collaboration::{RepositoryInvite, RepositoryInviteState, RepositoryMember},
+    repository::collaboration::{RepositoryInvite, RepositoryInviteState},
     requests::{Request, RequestViewer, request_policy},
 };
+use scope_postgres::db::RepositoryCollaborationMutation;
 
 pub(crate) async fn list_repository_collaboration(
     State(state): State<AppState>,
@@ -77,10 +79,10 @@ pub(crate) async fn create_repository_invite(
                     &crate::persistence_ids::generate_persistence_id,
                 )
                 .await?;
-            Ok(CreateRepositoryInviteResponse {
+            Ok(invite.map(|invite| CreateRepositoryInviteResponse {
                 invite: repository_invite_response(&invite),
                 invite_url: format!("{}/invites/{}", app_origin.trim_end_matches('/'), secret),
-            })
+            }))
         },
     )
     .await?;
@@ -105,7 +107,8 @@ pub(crate) async fn update_repository_member(
         &repo_name,
         RepoChangeReason::MemberPermissionsChanged,
         |user| async move {
-            metadata
+            let member_user = metadata.repositories().user(&member_user_id).await?;
+            let mutation = metadata
                 .repositories()
                 .update_repository_member_permissions(
                     scope_postgres::db::UpdateRepositoryMemberPermissionsCommand {
@@ -118,13 +121,13 @@ pub(crate) async fn update_repository_member(
                     },
                     &crate::persistence_ids::generate_persistence_id,
                 )
-                .await
-                .map_err(Into::into)
+                .await?;
+            Ok(mutation.map(|member| repository_member_response(&member, &member_user)))
         },
     )
     .await?;
 
-    Ok(Json(member_response_for_user(&state, &member).await?))
+    Ok(Json(member))
 }
 
 pub(crate) async fn delete_repository_invite(
@@ -177,7 +180,8 @@ pub(crate) async fn delete_repository_member(
         &repo_name,
         RepoChangeReason::MemberRemoved,
         |user| async move {
-            metadata
+            let member_user = metadata.repositories().user(&member_user_id).await?;
+            let mutation = metadata
                 .repositories()
                 .remove_repository_member(
                     &mutation_owner,
@@ -187,13 +191,13 @@ pub(crate) async fn delete_repository_member(
                     now_unix,
                     &crate::persistence_ids::generate_persistence_id,
                 )
-                .await
-                .map_err(Into::into)
+                .await?;
+            Ok(mutation.map(|member| repository_member_response(&member, &member_user)))
         },
     )
     .await?;
 
-    Ok(Json(member_response_for_user(&state, &member).await?))
+    Ok(Json(member))
 }
 
 pub(crate) async fn get_repository_invite(
@@ -264,38 +268,13 @@ async fn mutate_owned_collaboration<T, F, Fut>(
 ) -> Result<T, ApiError>
 where
     F: FnOnce(UserAccount) -> Fut,
-    Fut: std::future::Future<Output = Result<T, ApiError>>,
+    Fut: std::future::Future<Output = Result<RepositoryCollaborationMutation<T>, ApiError>>,
 {
     let user = require_scope_user(state, headers).await?;
     let repo = find_repo(state, owner, repo_name).await?;
     ensure_collaboration_owner_access(state, &repo, &user.id)?;
-    let incarnation = repo.incarnation();
-    let result = mutate(user).await?;
-    publish_collaboration_change(state, owner, repo_name, &incarnation, event).await?;
-    Ok(result)
-}
-
-async fn publish_collaboration_change(
-    state: &AppState,
-    owner: &str,
-    repo_name: &str,
-    expected_incarnation: &scope_domain::repository::RepositoryIncarnation,
-    event: RepoChangeReason,
-) -> Result<(), ApiError> {
-    let Some(repo) = state
-        .metadata
-        .repositories()
-        .repository(owner, repo_name)
-        .await?
-    else {
-        return Ok(());
-    };
-    if &repo.incarnation() == expected_incarnation {
-        state
-            .publish_repo_change(expected_incarnation, repo.record.change_version, event)
-            .await;
-    }
-    Ok(())
+    let mutation = mutate(user).await?;
+    Ok(publish_committed_mutation(state, mutation, event).await)
 }
 
 fn ensure_collaboration_owner_access(
@@ -339,12 +318,4 @@ async fn open_request_count_for_access(
 
 fn request_counts_for_access(request: &Request, access: RepositoryAccess) -> bool {
     request_policy(request, RequestViewer::new(access, None, false)).counts_as_open
-}
-
-async fn member_response_for_user(
-    state: &AppState,
-    member: &RepositoryMember,
-) -> Result<RepositoryMemberResponse, ApiError> {
-    let user = state.metadata.repositories().user(&member.user_id).await?;
-    Ok(repository_member_response(member, &user))
 }

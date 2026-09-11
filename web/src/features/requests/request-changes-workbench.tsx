@@ -1,4 +1,4 @@
-import { appendDiscussionReferencePage } from './request-changes-discussion-references'
+import { loadMoreDiscussionReferences, requestDiscussionReferenceIdentity, requestDiscussionReferenceResource } from './request-changes-resource'
 import type {
   CommitDetail,
   CommitFile,
@@ -22,7 +22,7 @@ import type {
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
 import { GitCommit, MessageSquare } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
 import type { LoadDiscussionsInput } from './request-discussion-api'
 import {
@@ -68,6 +68,7 @@ export function RequestChangesWorkbench({
   repoId,
   revisions,
   search,
+  scope,
 }: {
   audience: ProjectionPreviewAudience
   initialDiscussionReferences: RequestChangesDiscussionReferences
@@ -81,6 +82,7 @@ export function RequestChangesWorkbench({
   repoId: string
   revisions: RequestRevisions
   search: RequestChangesSearch
+  scope: string | null
 }) {
   const model = useRequestChangesModel({
     audience,
@@ -90,6 +92,7 @@ export function RequestChangesWorkbench({
     repoId,
     revisions,
     search,
+    scope,
   })
   const discussionReferences = useRequestDiscussionReferences({
     commitOid: model.selectedCommitOid,
@@ -97,6 +100,7 @@ export function RequestChangesWorkbench({
     loadDiscussions,
     params,
     revision: model.selectedRevision,
+    scope,
   })
   const references = useMemo(
     () => discussionsForRequestCommit(
@@ -147,99 +151,41 @@ export function RequestChangesWorkbench({
 }
 
 function useRequestDiscussionReferences({
-  commitOid,
-  initialReferences,
-  loadDiscussions,
-  params,
-  revision,
+  commitOid, initialReferences, loadDiscussions, params, revision, scope,
 }: {
   commitOid: string | null
   initialReferences: RequestChangesDiscussionReferences
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
   params: { owner: string; repo: string; request_id: string }
   revision: RequestRevisions['revisions'][number] | null
+  scope: string | null
 }): DiscussionReferenceState {
-  const key = revision && commitOid
-    ? requestRevisionCommitId(revision.id, commitOid)
-    : null
-  const initialPage = key === initialReferences.commitKey ? initialReferences.page : null
-  const [resource, setResource] = useState<{
-    discussions: RequestDiscussion[]
-    error: string | null
-    initialPage: RequestDiscussionPage | null
-    key: string | null
-    snapshotVersion: number | null
-    nextCursor: string | null
-    status: 'failed' | 'loaded' | 'loading'
-  }>(() => discussionReferenceResource(initialPage, key))
-  const active = resource.initialPage === initialPage && resource.key === key
-    ? resource
-    : discussionReferenceResource(initialPage, key)
-  if (active !== resource) setResource(active)
-  const loadPage = useCallback(async () => {
-    if (!revision || !commitOid) return
-    const cursor = active.nextCursor ?? undefined
-    setResource((current) => current.initialPage === initialPage && current.key === key ? {
-      ...current,
-      error: null,
-      status: 'loading',
-    } : current)
-    try {
-      const page = await loadDiscussions({
-        ...params,
-        commit_oid: commitOid,
-        cursor,
-        include_revision_anchor: commitOid === revision.commits.at(-1)?.oid,
-        limit: 100,
-        revision_id: revision.id,
-      })
-      const nextPage = cursor && active.snapshotVersion !== null
-        ? appendDiscussionReferencePage({
-            discussions: active.discussions,
-            next_cursor: cursor,
-            snapshot_version: active.snapshotVersion,
-          }, page)
-        : page
-      setResource((current) => current.initialPage === initialPage && current.key === key ? {
-        discussions: nextPage.discussions,
-        key,
-        snapshotVersion: nextPage.snapshot_version,
-        error: null,
-        initialPage,
-        nextCursor: page.next_cursor,
-        status: 'loaded',
-      } : current)
-    } catch (error) {
-      setResource((current) => current.initialPage === initialPage && current.key === key ? {
-        ...current,
-        error: error instanceof Error ? error.message : 'Discussion references are unavailable.',
-        status: 'failed',
-      } : current)
-    }
-  }, [active.discussions, active.nextCursor, active.snapshotVersion, commitOid, initialPage, key, loadDiscussions, params, revision])
+  const commitKey = revision && commitOid ? requestRevisionCommitId(revision.id, commitOid) : null
+  const identity = scope && commitKey ? requestDiscussionReferenceIdentity(scope, params.request_id, commitKey) : null
+  const initialPage = commitKey === initialReferences.commitKey ? initialReferences.page : null
+  const loadPage = useCallback(async (cursor?: string) => {
+    if (!revision || !commitOid) throw new Error('Select a request commit.')
+    return loadDiscussions({
+      ...params, commit_oid: commitOid, cursor,
+      include_revision_anchor: commitOid === revision.commits.at(-1)?.oid,
+      limit: 100, revision_id: revision.id,
+    })
+  }, [commitOid, loadDiscussions, params, revision])
+  const loadFirstPage = useCallback(() => loadPage(), [loadPage])
+  const resource = useCachedResource({
+    identity, initialValue: initialPage, load: loadFirstPage, resource: requestDiscussionReferenceResource,
+    fallbackError: 'Discussion references are unavailable.',
+  })
+  const page = resource.value ?? initialPage
   return {
-    discussions: active.discussions,
-    error: active.error,
-    incomplete: active.nextCursor !== null,
-    loadMore: active.nextCursor && active.status === 'loaded'
-      ? () => void loadPage()
+    discussions: page?.discussions ?? [],
+    error: resource.error,
+    incomplete: page?.next_cursor != null,
+    loadMore: identity && page?.next_cursor && !resource.refreshing && !resource.error
+      ? () => { void loadMoreDiscussionReferences(identity, (cursor) => loadPage(cursor)) }
       : undefined,
-    retry: active.status === 'failed'
-      ? () => void loadPage()
-      : undefined,
-    status: active.status,
-  }
-}
-
-function discussionReferenceResource(initialPage: RequestDiscussionPage | null, key: string | null) {
-  return {
-    discussions: initialPage?.discussions ?? [],
-    error: initialPage ? null : 'Discussion references are unavailable.',
-    initialPage,
-    key,
-    snapshotVersion: initialPage?.snapshot_version ?? null,
-    nextCursor: initialPage?.next_cursor ?? null,
-    status: initialPage ? 'loaded' as const : 'failed' as const,
+    retry: resource.error ? resource.retry : undefined,
+    status: resource.error ? 'failed' : resource.refreshing ? 'loading' : 'loaded',
   }
 }
 
@@ -251,6 +197,7 @@ function useRequestChangesModel({
   repoId,
   revisions,
   search,
+  scope,
 }: {
   audience: ProjectionPreviewAudience
   loadDiff: (
@@ -262,6 +209,7 @@ function useRequestChangesModel({
   repoId: string
   revisions: RequestRevisions
   search: RequestChangesSearch
+  scope: string | null
 }) {
   const orderedRevisions = revisions.revisions
   const commits = useMemo(
@@ -300,9 +248,10 @@ function useRequestChangesModel({
   const selectedFile = selectedCommit?.files.find(
     ({ path }) => path === selectedFilePath,
   ) ?? null
-  const diffIdentity = selectedCommitId && selectedFile && selectedRevision
+  const diffIdentity = scope && selectedCommitId && selectedFile && selectedRevision
     ? historyDiffCacheKey({
         audience,
+        scope,
         commit: selectedCommitId,
         generation,
         newOid: selectedFile.new_oid,

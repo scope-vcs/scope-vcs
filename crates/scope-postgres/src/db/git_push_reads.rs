@@ -1,15 +1,12 @@
 use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities, git_segments::load_git_pack_spans,
-    history_rows::RepositoryHistory, repository_rows::RepositoryFactRows,
 };
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
-use std::collections::BTreeMap;
+use sea_orm::{ConnectionTrait, EntityTrait};
 use {
     crate::error::PostgresError,
     scope_domain::{
-        projection::SourceGraph,
         repo_config::RepoConfig,
-        repository::access::RepositoryAccess,
+        repository::access::{RepositoryAccess, repository_access_for_user_id},
         repository::git::{GitHead, GitPackSpan},
         repository::{RepoLifecycleState, RepositoryIncarnation, repo_id},
     },
@@ -92,43 +89,33 @@ pub(super) async fn git_push_context_for_id<C: ConnectionTrait>(
         .map(entities::git_head::Model::try_into_domain)
         .transpose()?;
     let pack_spans = load_git_pack_spans(conn, &id).await?;
-    let members = entities::repository_member::Entity::find()
-        .filter(entities::repository_member::Column::RepoId.eq(id.clone()))
-        .filter(entities::repository_member::Column::UserId.eq(user_id.to_string()))
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(entities::repository_member::Model::try_into_domain)
-        .collect::<Result<Vec<_>, _>>()?;
-    let repo = repo_row.try_into_domain(
-        RepositoryFactRows {
-            git_head: head,
-            git_pack_spans: pack_spans,
-            ..Default::default()
-        }
-        .into_facts(),
-        members,
-        Vec::new(),
-        RepositoryHistory {
-            graph: SourceGraph {
-                repo_id: id.clone(),
-                commits: Vec::new(),
-            },
-            visibility_change_sets: Vec::new(),
-            live_files: BTreeMap::new(),
-        },
-    )?;
+    let permissions =
+        entities::repository_member::Entity::find_by_id((id.clone(), user_id.to_string()))
+            .one(conn)
+            .await
+            .map_err(PostgresError::internal)?
+            .map(entities::repository_member::Model::try_into_domain)
+            .transpose()?
+            .map(|member| member.permissions);
+    let lifecycle_state = entities::decode_enum(repo_row.publication_state)?;
+    let access = repository_access_for_user_id(
+        &repo_row.owner_user_id,
+        lifecycle_state,
+        permissions,
+        user_id,
+    );
     let context = GitPushContext {
+        incarnation: RepositoryIncarnation::new(id.clone(), repo_row.incarnation_id)
+            .map_err(PostgresError::internal)?,
         repo_id: id,
-        incarnation: repo.incarnation(),
-        owner_user_id: repo.record.owner_user_id.clone(),
-        lifecycle_state: repo.record.lifecycle_state,
-        access: repo.access_for_user_id(user_id),
-        repo_config: repo.repo_config,
-        git_head: repo.git_head,
-        git_pack_spans: repo.git_pack_spans,
-        change_version: repo.record.change_version,
+        owner_user_id: repo_row.owner_user_id,
+        lifecycle_state,
+        access,
+        repo_config: serde_json::from_value(repo_row.repo_config)
+            .map_err(PostgresError::internal)?,
+        git_head: head,
+        git_pack_spans: pack_spans,
+        change_version: entities::i64_to_u64(repo_row.change_version, "repository change version")?,
     };
     Ok(Some(context))
 }

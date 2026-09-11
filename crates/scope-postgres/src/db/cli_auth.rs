@@ -76,10 +76,6 @@ impl AuthStore {
             now_unix,
         )? {
             cli_auth_rules::BrowserLoginCompletionDecision::Expired => {
-                entities::cli_browser_login::Entity::delete_by_id(login.request_id)
-                    .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
                 return Err(PostgresError::conflict("CLI browser login expired"));
             }
             cli_auth_rules::BrowserLoginCompletionDecision::Complete => {}
@@ -141,10 +137,6 @@ impl AuthStore {
             callback_code_hash,
         )? {
             cli_auth_rules::BrowserLoginExchangeDecision::Expired => {
-                entities::cli_browser_login::Entity::delete_by_id(login.request_id)
-                    .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
                 return Err(PostgresError::conflict("CLI browser login expired"));
             }
             cli_auth_rules::BrowserLoginExchangeDecision::Complete { user_id } => user_id,
@@ -214,10 +206,6 @@ impl AuthStore {
             now_unix,
         )? {
             cli_auth_rules::CliExchangeGrantDecision::Expired => {
-                entities::cli_exchange_grant::Entity::delete_by_id(grant.grant_hash)
-                    .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
                 return Err(PostgresError::conflict("CLI exchange token expired"));
             }
             cli_auth_rules::CliExchangeGrantDecision::Complete { user_id } => user_id,

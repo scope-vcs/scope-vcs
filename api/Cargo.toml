@@ -33,6 +33,7 @@ path = "tests/workflows.rs"
 required-features = ["test-support"]
 
 [dependencies]
+scope_service_config.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 base64.workspace = true
@@ -73,6 +74,7 @@ tracing-subscriber.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 scope_object_store = { workspace = true, features = ["test-support"] }
 scope_postgres = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true

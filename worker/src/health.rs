@@ -17,6 +17,7 @@ pub(crate) struct WorkerHealth {
 struct WorkerHealthState {
     schema_ready: AtomicBool,
     last_successful_poll_unix: [AtomicU64; 3],
+    work_valid_until_unix: [AtomicU64; 3],
     required_roles: [bool; 3],
     stale_after_secs: u64,
 }
@@ -28,6 +29,7 @@ impl WorkerHealth {
             state: Arc::new(WorkerHealthState {
                 schema_ready: AtomicBool::new(false),
                 last_successful_poll_unix: std::array::from_fn(|_| AtomicU64::new(0)),
+                work_valid_until_unix: std::array::from_fn(|_| AtomicU64::new(0)),
                 required_roles: [
                     role.runs_control(),
                     role.runs_compaction(),
@@ -44,7 +46,18 @@ impl WorkerHealth {
 
     pub(crate) fn mark_poll_succeeded(&self, role: WorkerRole, now_unix: u64) {
         let index = concrete_role_index(role);
+        self.state.work_valid_until_unix[index].store(0, Ordering::Release);
         self.state.last_successful_poll_unix[index].store(now_unix, Ordering::Release);
+        self.state.schema_ready.store(true, Ordering::Release);
+    }
+
+    /// A successful durable lease claim/renewal proves the bounded operation is
+    /// being supervised even when it has not reached the next idle poll yet.
+    pub(crate) fn mark_work_progress(&self, role: WorkerRole, now_unix: u64, valid_for: Duration) {
+        self.state.work_valid_until_unix[concrete_role_index(role)].store(
+            now_unix.saturating_add(valid_for.as_secs()),
+            Ordering::Release,
+        );
         self.state.schema_ready.store(true, Ordering::Release);
     }
 
@@ -68,14 +81,18 @@ impl WorkerHealth {
         self.state
             .required_roles
             .iter()
-            .zip(&self.state.last_successful_poll_unix)
-            .all(|(required, last_success)| {
+            .enumerate()
+            .all(|(index, required)| {
                 if !required {
                     return true;
                 }
-                let last_success = last_success.load(Ordering::Acquire);
-                last_success > 0
-                    && now_unix.saturating_sub(last_success) <= self.state.stale_after_secs
+                let work_valid_until =
+                    self.state.work_valid_until_unix[index].load(Ordering::Acquire);
+                let last_success =
+                    self.state.last_successful_poll_unix[index].load(Ordering::Acquire);
+                (work_valid_until > 0 && now_unix <= work_valid_until)
+                    || (last_success > 0
+                        && now_unix.saturating_sub(last_success) <= self.state.stale_after_secs)
             })
     }
 }
@@ -111,6 +128,20 @@ mod tests {
 
         health.mark_schema_waiting();
         assert!(!health.is_ready_at(100));
+    }
+
+    #[test]
+    fn active_compaction_is_ready_until_its_lease_progress_expires() {
+        let health = WorkerHealth::new(Duration::from_secs(1), WorkerRole::Compaction);
+        health.mark_work_progress(WorkerRole::Compaction, 100, Duration::from_secs(150));
+        assert!(health.is_ready_at(111));
+        assert!(health.is_ready_at(200));
+        assert!(!health.is_ready_at(251));
+        health.mark_work_progress(WorkerRole::Compaction, 200, Duration::from_secs(150));
+        assert!(health.is_ready_at(251));
+        health.mark_poll_succeeded(WorkerRole::Compaction, 260);
+        assert!(health.is_ready_at(270));
+        assert!(!health.is_ready_at(271));
     }
 
     #[test]

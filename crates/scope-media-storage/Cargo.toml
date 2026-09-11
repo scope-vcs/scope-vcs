@@ -6,6 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+base64.workspace = true
+scope_service_config.workspace = true
 bytes.workspace = true
 getrandom.workspace = true
 hex.workspace = true
@@ -17,6 +19,7 @@ tokio = { workspace = true, features = ["io-util", "rt", "sync"] }
 tokio-stream = "0.1.17"
 
 [dev-dependencies]
+tempfile.workspace = true
 serde_json.workspace = true
 scope_object_store = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread"] }

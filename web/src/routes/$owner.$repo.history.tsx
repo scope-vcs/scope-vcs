@@ -1,5 +1,6 @@
 import { parseHistoryFeed, parseVisibilityChange } from '@/api/history-inputs'
-import type { ProjectionPreviewAudience } from '@/api/types'
+import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import type { ProjectionPreviewAudience, RepoLiveState } from '@/api/types'
 import { HistoryError } from '@/features/history/history-error'
 import { HistoryPagePending } from '@/features/history/history-page-pending'
 import { HistoryPage } from '@/features/history/history-page'
@@ -11,14 +12,18 @@ export const Route = createFileRoute('/$owner/$repo/history')({
   validateSearch: parseHistorySearch,
   loaderDeps: ({ search }) => ({ audience: search.audience ?? null, feed: search.feed ?? 'updates' }),
   staleTime: Infinity,
-  loader: async ({ deps, params, location }) => {
+  loader: async ({ deps, params, location, parentMatchPromise }) => {
     const search = parseHistorySearch(location.search)
-    const [page, initialEntry] = await Promise.all([
+    const [parent, page, preloadedEntry] = await Promise.all([
+      parentMatchPromise,
       loadHistoryPage({ data: { ...params, audience: deps.audience, feed: deps.feed, before: null } }),
       search.entry
         ? loadHistoryEntry({ data: { ...params, audience: deps.audience, entry: search.entry } })
         : Promise.resolve(null),
     ])
+    const initialEntry = preloadedEntry?.entry ?? null
+    const live = parent.loaderData as RepoLiveState
+    const initialEntryScope = preloadedEntry ? repoResourceScope(live.repo, preloadedEntry.viewerId) : null
     if (deps.feed === 'updates' && initialEntry?.kind === 'visibility_change') {
       throw redirect({
         to: '/$owner/$repo/history',
@@ -27,7 +32,7 @@ export const Route = createFileRoute('/$owner/$repo/history')({
         replace: true,
       })
     }
-    return { page, initialEntry }
+    return { page, initialEntry, initialEntryScope }
   },
   errorComponent: HistoryError,
   pendingComponent: HistoryPagePending,
@@ -35,11 +40,12 @@ export const Route = createFileRoute('/$owner/$repo/history')({
 })
 
 function HistoryRoute() {
-  const { page, initialEntry } = Route.useLoaderData()
+  const { page, initialEntry, initialEntryScope } = Route.useLoaderData()
   return (
     <HistoryPage
       initialPage={page}
       initialEntry={initialEntry}
+      initialEntryScope={initialEntryScope}
       key={`${page.repo_id}:${page.audience}:${page.feed}:${page.generation}`}
       params={Route.useParams()}
       search={Route.useSearch()}

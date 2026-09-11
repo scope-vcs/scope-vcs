@@ -117,6 +117,12 @@ fn git_tree_entries_for_path(
         args.extend(["--", path]);
     }
     let output = run_git_output(Some(staging_repo), &args, "reading pushed tree")?;
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "reading pushed tree: {}",
+            truncated_git_stderr(&output.stderr).trim()
+        )));
+    }
     let mut pending_files = Vec::new();
     for raw in output.stdout.split(|byte| *byte == 0) {
         if raw.is_empty() {
@@ -174,7 +180,7 @@ fn git_tree_entries_for_path(
     Ok(pending_files)
 }
 
-pub(super) fn git_changed_tree_entries(
+pub(crate) fn git_changed_tree_entries(
     staging_repo: &FsPath,
     base_oid: Option<&str>,
     head_oid: &str,
@@ -349,10 +355,13 @@ pub(crate) async fn git_push_from_repo(
 ) -> Result<StagedGitPush, ApiError> {
     let _ingest_permit = state.runtime_budgets.try_git_segment_ingest()?;
     let storage_limits = state.runtime_budgets.git_storage_limits();
-    let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
-    let head_oid = git_stdout_text(repo, &["rev-parse", &refname], "reading pushed Git head")?
-        .trim()
-        .to_string();
+    let path = repo.to_path_buf();
+    let (head_oid, ingest_permit) = crate::git::blocking::run(move || {
+        let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
+        let head = git_stdout_text(&path, &["rev-parse", &refname], "reading pushed Git head")?;
+        Ok((head.trim().to_string(), _ingest_permit))
+    })
+    .await?;
     let mut revisions = format!("{head_oid}\n");
     if let Some(previous) = previous {
         revisions.push('^');
@@ -369,6 +378,7 @@ pub(crate) async fn git_push_from_repo(
     let repo = repo.to_path_buf();
     let timeout = state.runtime_budgets.git_command_timeout();
     let output = tokio::task::spawn_blocking(move || {
+        let _ingest_permit = ingest_permit;
         let runtime = tokio::runtime::Handle::current();
         let mut command = Command::new("git");
         command
@@ -493,13 +503,8 @@ pub(crate) async fn git_push_from_repo(
         duration_us = timings.total.as_micros(),
         bytes = timings.plaintext_bytes,
         blocked_us = timings.fanout_blocked.as_micros(),
-        active_ingests = 1_u64,
-        buffered_bytes = timings.chunk_bytes.saturating_mul(timings.channel_capacity),
-        disk_free_bytes = disk_free_bytes(staged_segment.local_pack_path()),
-        ledger_uploading = 0_u64,
-        ledger_ready = 1_u64,
-        ledger_published = 0_u64,
-        orphan_count = 0_u64,
+        configured_buffer_capacity_bytes =
+            timings.chunk_bytes.saturating_mul(timings.channel_capacity),
         "Git segment ingest telemetry"
     );
     tracing::info!(
@@ -517,54 +522,18 @@ pub(crate) async fn git_push_from_repo(
     })
 }
 
-#[cfg(unix)]
-fn disk_free_bytes(path: &FsPath) -> u64 {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-
-    let Some(path) = path.parent() else {
-        return 0;
-    };
-    let Ok(path) = CString::new(path.as_os_str().as_bytes()) else {
-        return 0;
-    };
-    let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
-    // SAFETY: `path` is a live NUL-terminated string and `stats` points to
-    // writable storage initialized by statvfs on success.
-    if unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) } != 0 {
-        return 0;
-    }
-    // SAFETY: statvfs returned success and initialized the structure.
-    let stats = unsafe { stats.assume_init() };
-    stats.f_bavail.saturating_mul(stats.f_frsize)
-}
-
-#[cfg(not(unix))]
-fn disk_free_bytes(_path: &FsPath) -> u64 {
-    0
-}
-
 pub(crate) fn git_snapshot_from_ref(
     repo: &FsPath,
     refname: &str,
 ) -> Result<(SourceBlob, Vec<u8>), ApiError> {
-    git_snapshot_from_refs(repo, &[refname.to_string()])
-}
-
-fn git_snapshot_from_refs(
-    repo: &FsPath,
-    refs: &[String],
-) -> Result<(SourceBlob, Vec<u8>), ApiError> {
-    let [refname] = refs else {
-        return Err(ApiError::internal_message(
-            "Git snapshots must contain exactly one ref",
-        ));
-    };
     let head_oid = git_stdout_text(repo, &["rev-parse", refname], "reading Git snapshot head")?;
     let bundle_path = repo.join(format!("scope-snapshot-{}.bundle", random_bundle_id()?));
     let bundle = bundle_path.to_string_lossy().to_string();
-    let mut args = vec!["bundle", "create", bundle.as_str()];
-    args.extend(refs.iter().map(String::as_str));
-    run_git(Some(repo), &args, "creating Git snapshot bundle")?;
+    run_git(
+        Some(repo),
+        &["bundle", "create", bundle.as_str(), refname],
+        "creating Git snapshot bundle",
+    )?;
     let bytes = std::fs::read(&bundle_path).map_err(ApiError::internal)?;
     let _ = std::fs::remove_file(&bundle_path);
     let mut snapshot = content_object_for_bytes(ContentObjectKind::GitBundle, &bytes);
@@ -732,6 +701,27 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path.as_str(), ".scope/runs/test.yml");
+
+        let invalid = git_tree_entries_under(&root, "invalid-object", ".scope/runs").unwrap_err();
+        assert_eq!(
+            invalid.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        let subtree =
+            git_stdout_text(&root, &["rev-parse", "HEAD:.scope/runs"], "reading subtree").unwrap();
+        let subtree = subtree.trim();
+        fs::remove_file(
+            root.join(".git/objects")
+                .join(&subtree[..2])
+                .join(&subtree[2..]),
+        )
+        .unwrap();
+        let missing = git_tree_entries_under(&root, &head, ".scope/runs").unwrap_err();
+        assert_eq!(
+            missing.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert!(git_tree_entries(&root, &head).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }

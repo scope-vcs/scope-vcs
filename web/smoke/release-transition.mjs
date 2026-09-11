@@ -6,6 +6,7 @@ import { access, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
+import { observeEventStreams } from "./event-stream-evidence.mjs";
 
 const DEFAULT_TRANSITION_TIMEOUT_MS = 15 * 60 * 1_000;
 const DEFAULT_RECONNECT_BOUND_MS = 10_000;
@@ -38,7 +39,6 @@ export async function verifyReleaseTransition(options) {
   const failedFetches = [];
   const streamStarts = [];
   const streamEnds = [];
-  const streamRequests = new Map();
   const streamPathSuffix = `/v1/repos/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repo)}/events`;
   let browser;
   let page;
@@ -57,40 +57,18 @@ export async function verifyReleaseTransition(options) {
         text: redactDiagnosticText(message.text()),
       });
     });
-    page.on("request", (request) => {
-      if (!isEventRequest(request.url(), streamPathSuffix)) return;
-      const event = { at: new Date().toISOString(), sequence: streamStarts.length + 1 };
-      streamRequests.set(request, event);
-      streamStarts.push(event);
-    });
-    const recordStreamEnd = (request, outcome, errorText) => {
-      const started = streamRequests.get(request);
-      if (!started || streamEnds.some(({ sequence }) => sequence === started.sequence)) return;
-      streamEnds.push({
-        at: new Date().toISOString(),
-        outcome,
-        sequence: started.sequence,
-        ...(started.status ? { status: started.status } : {}),
-        ...(errorText ? { errorText: redactDiagnosticText(errorText) } : {}),
-      });
-    };
+    await observeEventStreams(page, streamPathSuffix, streamStarts, streamEnds);
     page.on("requestfailed", (request) => {
-      if (isEventRequest(request.url(), streamPathSuffix)) {
-        recordStreamEnd(request, "failed", request.failure()?.errorText);
-      } else {
+      if (!isEventRequest(request.url(), streamPathSuffix)) {
         recordFailedFetch(failedFetches, request, options.baseUrl, {
           outcome: "failed",
           errorText: request.failure()?.errorText,
         });
       }
     });
-    page.on("requestfinished", (request) => recordStreamEnd(request, "finished"));
     page.on("response", (response) => {
       const request = response.request();
-      const stream = streamRequests.get(request);
-      if (stream) {
-        stream.status = response.status();
-      } else if (response.status() >= 400) {
+      if (!isEventRequest(request.url(), streamPathSuffix) && response.status() >= 400) {
         recordFailedFetch(failedFetches, request, options.baseUrl, {
           outcome: "response",
           status: response.status(),
@@ -108,7 +86,7 @@ export async function verifyReleaseTransition(options) {
     await Promise.all([activity.waitFor(), navigator.waitFor()]);
     await page.getByRole("tabpanel").waitFor();
     await page.waitForFunction(() => globalThis.__TSR_ROUTER__?.state.status === "idle");
-    await waitUntil(() => streamStarts.length > 0, 30_000, "repository event stream did not connect");
+    await waitUntil(() => streamStarts.some(stream => stream.confirmedAt), 30_000, "repository event stream did not connect");
     const initialActivity = await activity.innerText();
     const initialContent = await page.getByRole("tabpanel").innerText();
     const selectedTab = await page.getByRole("tab", { selected: true }).getAttribute("aria-label");
@@ -300,15 +278,15 @@ export function findReconnect(starts, ends, activationAt, boundMs) {
   for (const end of relevantEnds) {
     const endTime = Date.parse(end.at);
     const start = starts.find((candidate) => (
-      candidate.sequence > end.sequence
+      candidate.sequence > end.sequence && candidate.confirmedAt && !candidate.observationFailed
     ));
     if (!start) return null;
-    const reconnectMs = Math.max(0, Date.parse(start.at) - endTime);
+    const reconnectMs = Math.max(0, Date.parse(start.confirmedAt) - endTime);
     if (reconnectMs > boundMs) return null;
     pairs.push({
       interruptedAt: end.at,
       interruptionOutcome: end.outcome,
-      reconnectedAt: start.at,
+      reconnectedAt: start.confirmedAt,
       reconnectMs,
     });
   }

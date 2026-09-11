@@ -4,6 +4,7 @@ use scope_domain::{
     account::UserAccount, policy::Visibility, projection::ProjectionViewKey,
     repository::git::GitHead, runs::source::RunSource,
 };
+use std::time::Instant;
 
 #[tokio::test]
 async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinned_bundle() {
@@ -414,5 +415,90 @@ fn manual_bundle_inspection_reads_the_requested_workflow_at_the_pinned_commit() 
     assert_eq!(
         revision.workflow().path().as_str(),
         "/.scope/runs/checks.yml"
+    );
+}
+
+#[test]
+fn workflow_blob_inspection_distinguishes_absence_invalid_type_oversize_and_read_failure() {
+    let source = tempfile::tempdir().unwrap();
+    run_git(
+        Some(source.path()),
+        &["init", "-q"],
+        "initialize workflow fixture",
+    )
+    .unwrap();
+    fs::create_dir_all(source.path().join(".scope/runs/directory.yml")).unwrap();
+    fs::write(
+        source.path().join(".scope/runs/directory.yml/nested"),
+        "nested",
+    )
+    .unwrap();
+    fs::write(source.path().join(".scope/runs/good.yml"), "name: Checks\n").unwrap();
+    fs::write(
+        source.path().join(".scope/runs/large.yml"),
+        vec![b'x'; scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES + 1],
+    )
+    .unwrap();
+    run_git(Some(source.path()), &["add", "."], "stage workflow fixture").unwrap();
+    run_git(
+        Some(source.path()),
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.test",
+            "commit",
+            "-qm",
+            "workflows",
+        ],
+        "commit workflow fixture",
+    )
+    .unwrap();
+    let bare = source.path().join(".git");
+    assert_eq!(
+        git_blob(&bare, "HEAD", ".scope/runs/missing.yml").unwrap(),
+        None
+    );
+    assert_eq!(
+        git_blob(&bare, "HEAD", ".scope/runs/good.yml")
+            .unwrap()
+            .unwrap(),
+        b"name: Checks\n"
+    );
+    assert_eq!(
+        git_blob(&bare, "HEAD", ".scope/runs/directory.yml")
+            .unwrap_err()
+            .status(),
+        axum::http::StatusCode::BAD_REQUEST
+    );
+    assert!(
+        git_blob(&bare, "HEAD", ".scope/runs/large.yml")
+            .unwrap_err()
+            .public_message()
+            .contains("exceeds")
+    );
+    assert_eq!(
+        git_blob(&bare, "invalid-object", ".scope/runs/good.yml")
+            .unwrap_err()
+            .status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    let oid = String::from_utf8(
+        run_git_output(
+            Some(source.path()),
+            &["rev-parse", "HEAD:.scope/runs/good.yml"],
+            "find workflow blob",
+        )
+        .unwrap()
+        .stdout,
+    )
+    .unwrap();
+    let oid = oid.trim();
+    fs::remove_file(bare.join("objects").join(&oid[..2]).join(&oid[2..])).unwrap();
+    assert_eq!(
+        git_blob(&bare, "HEAD", ".scope/runs/good.yml")
+            .unwrap_err()
+            .status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
     );
 }

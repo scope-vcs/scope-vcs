@@ -63,6 +63,7 @@ export async function loadHistoryEntryFileDiffForRequest(
   })
 
   if (data.visibility_change) query.set('visibility_change', data.visibility_change)
+  if (data.commit_oid) query.set('commit_oid', data.commit_oid)
 
   const diff = await createApiClient().get(
     `${buildApiPath(ApiRouteTemplates.repoHistoryEntryFileDiff, {

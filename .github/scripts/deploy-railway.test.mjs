@@ -30,6 +30,8 @@ function deploy(t, status, predecessors = [], failedPolls = []) {
   const bin = join(root, "bin");
   mkdirSync(scripts, { recursive: true });
   mkdirSync(bin);
+  writeFileSync(join(scripts, "deployment-components.mjs"), readFileSync(new URL("./deployment-components.mjs", import.meta.url)));
+  writeFileSync(join(root, ".github/deployment-services.json"), readFileSync(new URL("../deployment-services.json", import.meta.url)));
   writeFileSync(join(root, "status.json"), JSON.stringify(status));
   writeFileSync(join(root, "prepared.json"), JSON.stringify({
     components: { cache: { serviceId: "cache-id" } },

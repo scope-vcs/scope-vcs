@@ -108,6 +108,10 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
     },
     peek: (identity: string) => getSnapshot(identity).value,
     read: (identity: string) => entries.get(identity)?.value ?? null,
+    seed(identity: string, value: T, version = '') {
+      if (getSnapshot(identity).version !== null) return
+      publish(identity, { value, version, error: null, stale: false, pending: false })
+    },
     write(identity: string, value: T, version = '') {
       cancel(identity)
       publish(identity, { value, version, error: null, stale: false, pending: false })

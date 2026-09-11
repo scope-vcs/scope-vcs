@@ -8,11 +8,11 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    policy::{ScopePath, Visibility},
+    policy::ScopePath,
     projection::NativePublicCommit,
     projection::{ProjectionViewKey, project_graph},
-    repo_control::is_public_request_protected_path,
     repository::Repository,
+    requests::{PublicRequestPathError, PublicRequestPaths},
 };
 use std::{collections::BTreeSet, path::Path as FsPath};
 
@@ -33,14 +33,24 @@ pub(super) async fn ensure_public_request_ref_is_public_safe(
 ) -> Result<(), ApiError> {
     let (_, public_visible_paths) =
         fetch_current_public_projection(repo, state, staging_repo).await?;
-    public_request_branch_base_oid(staging_repo, new_head_oid)?;
-    let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, new_head_oid)?;
-    validated_public_parent_oids(staging_repo, &commit_oids)?;
-    for commit_oid in commit_oids {
-        validate_pushed_tree(staging_repo, &commit_oid)?;
-        ensure_public_request_commit_paths(repo, &public_visible_paths, staging_repo, &commit_oid)?;
-    }
-    Ok(())
+    let repo = repo.clone();
+    let staging_repo = staging_repo.to_path_buf();
+    let new_head_oid = new_head_oid.to_string();
+    crate::git::blocking::run(move || {
+        let repo = &repo;
+        let staging_repo = staging_repo.as_path();
+        let new_head_oid = new_head_oid.as_str();
+        public_request_branch_base_oid(staging_repo, new_head_oid)?;
+        let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, new_head_oid)?;
+        validated_public_parent_oids(staging_repo, &commit_oids)?;
+        let path_policy = PublicRequestPaths::new(repo, &public_visible_paths);
+        for commit_oid in commit_oids {
+            validate_pushed_tree(staging_repo, &commit_oid)?;
+            ensure_public_request_commit_paths(&path_policy, staging_repo, &commit_oid)?;
+        }
+        Ok(())
+    })
+    .await
 }
 
 pub(crate) async fn validate_public_request_merge_range(
@@ -51,6 +61,13 @@ pub(crate) async fn validate_public_request_merge_range(
 ) -> Result<ValidatedPublicRequestRange, ApiError> {
     let (public_base_oid, public_visible_paths) =
         fetch_current_public_projection(repo, state, staging_repo).await?;
+    let repo = repo.clone();
+    let staging_repo = staging_repo.to_path_buf();
+    let request_head_oid = request_head_oid.to_string();
+    crate::git::blocking::run(move || {
+        let repo = &repo;
+        let staging_repo = staging_repo.as_path();
+        let request_head_oid = request_head_oid.as_str();
     ensure_public_head_is_request_ancestor(staging_repo, request_head_oid)?;
     let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, request_head_oid)?;
     if commit_oids.is_empty() {
@@ -66,11 +83,11 @@ pub(crate) async fn validate_public_request_merge_range(
     }
 
     let mut commits = Vec::with_capacity(commit_oids.len());
+    let path_policy = PublicRequestPaths::new(repo, &public_visible_paths);
     for commit_oid in commit_oids {
         validate_pushed_tree(staging_repo, &commit_oid)?;
         let changed_paths = ensure_public_request_commit_paths(
-            repo,
-            &public_visible_paths,
+            &path_policy,
             staging_repo,
             &commit_oid,
         )?;
@@ -86,6 +103,7 @@ pub(crate) async fn validate_public_request_merge_range(
         public_parent_oids,
         commits,
     })
+    }).await
 }
 
 fn validated_public_parent_oids(
@@ -187,18 +205,22 @@ async fn fetch_current_public_projection(
         &repo.git_pack_spans,
     )
     .await?;
-    let refspec = format!("+refs/heads/{DEFAULT_GIT_BRANCH}:{PUBLIC_REQUEST_BASE_REF}");
-    run_git(
-        Some(staging_repo),
-        &[
-            "fetch",
-            public_repo.to_string_lossy().as_ref(),
-            refspec.as_str(),
-        ],
-        "fetching public request base",
-    )?;
-    let public_base_oid = git_commit_oid(staging_repo, PUBLIC_REQUEST_BASE_REF)?;
-    Ok((public_base_oid, public_visible_paths))
+    let staging_repo = staging_repo.to_path_buf();
+    crate::git::blocking::run(move || {
+        let refspec = format!("+refs/heads/{DEFAULT_GIT_BRANCH}:{PUBLIC_REQUEST_BASE_REF}");
+        run_git(
+            Some(&staging_repo),
+            &[
+                "fetch",
+                public_repo.to_string_lossy().as_ref(),
+                refspec.as_str(),
+            ],
+            "fetching public request base",
+        )?;
+        let public_base_oid = git_commit_oid(&staging_repo, PUBLIC_REQUEST_BASE_REF)?;
+        Ok((public_base_oid, public_visible_paths))
+    })
+    .await
 }
 
 fn public_request_branch_base_oid(
@@ -322,18 +344,22 @@ fn git_text(staging_repo: &FsPath, args: &[&str], context: &str) -> Result<Strin
 }
 
 fn ensure_public_request_commit_paths(
-    repo: &Repository,
-    public_visible_paths: &BTreeSet<String>,
+    policy: &PublicRequestPaths<'_>,
     staging_repo: &FsPath,
     commit_oid: &str,
 ) -> Result<Vec<ScopePath>, ApiError> {
     let mut changed_paths = BTreeSet::new();
     for path in public_request_changed_paths(staging_repo, commit_oid)? {
-        changed_paths.insert(ensure_public_request_path(
-            repo,
-            public_visible_paths,
-            &path,
-        )?);
+        let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
+        policy
+            .ensure_editable(&scope_path)
+            .map_err(|error| match error {
+                PublicRequestPathError::ProtectedPath => ApiError::protected_paths(vec![path]),
+                PublicRequestPathError::PrivatePath => {
+                    ApiError::conflict("public request cannot change a private path")
+                }
+            })?;
+        changed_paths.insert(scope_path);
     }
     Ok(changed_paths.into_iter().collect())
 }
@@ -384,59 +410,6 @@ fn public_request_changed_paths(
         changed_paths.push(path);
     }
     Ok(changed_paths)
-}
-
-fn ensure_public_request_path(
-    repo: &Repository,
-    public_visible_paths: &BTreeSet<String>,
-    path: &str,
-) -> Result<ScopePath, ApiError> {
-    let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
-    if is_public_request_protected_path(&scope_path) {
-        return Err(ApiError::protected_paths(vec![path.to_string()]));
-    }
-    if public_visible_paths
-        .iter()
-        .any(|path| path == scope_path.as_str())
-    {
-        return Ok(scope_path);
-    }
-    if repo.graph_has_file(&scope_path) {
-        return Err(ApiError::conflict(
-            "public request cannot change a private path",
-        ));
-    }
-    if repo_path_has_private_history(repo, &scope_path) {
-        return Err(ApiError::conflict(
-            "public request cannot change a private path",
-        ));
-    }
-    if repo.repo_config.visibility_for_path(&scope_path) == Visibility::Public {
-        Ok(scope_path)
-    } else {
-        Err(ApiError::conflict(
-            "public request cannot change a private path",
-        ))
-    }
-}
-
-fn repo_path_has_private_history(repo: &Repository, scope_path: &ScopePath) -> bool {
-    repo.graph
-        .commits
-        .iter()
-        .flat_map(|commit| &commit.changes)
-        .any(|change| {
-            change.path.as_str() == scope_path.as_str() && change.visibility == Visibility::Private
-        })
-        || repo
-            .visibility_change_sets
-            .iter()
-            .flat_map(|set| &set.changes)
-            .any(|change| {
-                change.path.as_str() == scope_path.as_str()
-                    && (change.old_visibility == Visibility::Private
-                        || change.new_visibility == Visibility::Private)
-            })
 }
 
 #[cfg(test)]

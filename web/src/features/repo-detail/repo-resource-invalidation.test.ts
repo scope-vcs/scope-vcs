@@ -41,3 +41,31 @@ test('recovery invalidates cached activity but ordinary connection and run event
   invalidateRepoResources('viewer-a', event('Lagged'))
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, true)
 })
+
+test('public code with unchanged version refreshes retained tree and file on repository changes', async () => {
+  const { repoContentCacheKey, repoContentResource } = await import('./repo-content-cache')
+  const { repoFileCacheKey, repoFileResource } = await import('./repo-file-cache')
+  repoContentResource.clear()
+  repoFileResource.clear()
+  const identity = { scope: 'viewer-a', repoId: 'repo', audience: 'public' as const, changeVersion: 0 }
+  const treeKey = repoContentCacheKey(identity)
+  const fileKey = repoFileCacheKey({ ...identity, path: 'README.md' })
+  let loads = 0
+  const loadTree = async () => { loads += 1; return { clone_remote_url: 'remote', files: [] } }
+  const oldFile = { content: { kind: 'text' as const, text: 'old' }, oid: 'old', path: 'README.md', size_bytes: 3, visibility: 'Public' as const }
+  await repoContentResource.load(treeKey, '', loadTree)
+  await repoContentResource.load(treeKey, '', loadTree)
+  repoFileResource.write(fileKey, oldFile)
+  assert.equal(loads, 1)
+  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'push' } }))
+  assert.equal(repoContentResource.getSnapshot(treeKey).stale, true)
+  assert.equal(repoFileResource.getSnapshot(fileKey).stale, true)
+  assert.equal(repoFileResource.peek(fileKey), oldFile)
+  await repoContentResource.load(treeKey, '', loadTree)
+  await repoFileResource.load(fileKey, '', async () => ({ ...oldFile, oid: 'new', content: { kind: 'text', text: 'new' } }))
+  assert.equal(loads, 2)
+  assert.equal(repoFileResource.peek(fileKey)?.oid, 'new')
+  assert.equal(repoContentResource.peek(repoContentCacheKey({ ...identity, scope: 'viewer-b' })), null)
+  invalidateRepoResources('viewer-a')
+  assert.equal(repoFileResource.getSnapshot(fileKey).stale, true)
+})

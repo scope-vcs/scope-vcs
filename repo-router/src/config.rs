@@ -25,6 +25,8 @@ pub struct RouterConfig {
     pub read_timeout: Duration,
     pub read_replicas: usize,
     pub upload_pack_replay_max_bytes: usize,
+    pub upload_pack_replay_slots: usize,
+    pub incoming_body_timeout: Duration,
 }
 
 impl RouterConfig {
@@ -48,6 +50,14 @@ impl RouterConfig {
             )?,
             read_timeout: duration_from_env(READ_TIMEOUT_MILLIS_ENV, DEFAULT_READ_TIMEOUT_MILLIS)?,
             read_replicas: positive_usize_from_env(READ_REPLICAS_ENV, DEFAULT_READ_REPLICAS)?,
+            upload_pack_replay_slots: positive_usize_from_env(
+                "SCOPE_REPO_ROUTER_UPLOAD_PACK_REPLAY_SLOTS",
+                4,
+            )?,
+            incoming_body_timeout: duration_from_env(
+                "SCOPE_REPO_ROUTER_INCOMING_BODY_TIMEOUT_MILLIS",
+                15_000,
+            )?,
             upload_pack_replay_max_bytes: positive_usize_from_env(
                 UPLOAD_PACK_REPLAY_MAX_BYTES_ENV,
                 DEFAULT_UPLOAD_PACK_REPLAY_MAX_BYTES,

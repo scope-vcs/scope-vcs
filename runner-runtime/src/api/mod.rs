@@ -34,6 +34,8 @@ use std::{
     time::Duration,
 };
 
+const CONTROL_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Clone)]
 pub struct RuntimeClient {
     client: Client,
@@ -97,6 +99,7 @@ impl RuntimeClient {
     ) -> anyhow::Result<T> {
         let response = self
             .auth(self.client.post(self.url(action)))
+            .timeout(CONTROL_REQUEST_TIMEOUT)
             .json(body)
             .send()
             .with_context(|| label.to_string())?;
@@ -111,6 +114,7 @@ impl RuntimeClient {
     ) -> anyhow::Result<()> {
         let response = self
             .auth(self.client.post(self.url(action)))
+            .timeout(CONTROL_REQUEST_TIMEOUT)
             .json(body)
             .send()
             .with_context(|| label.to_string())?;

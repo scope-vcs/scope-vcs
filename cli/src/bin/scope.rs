@@ -278,7 +278,7 @@ fn run_rules(command: RulesCommand) -> anyhow::Result<()> {
 }
 fn run_request(args: RequestArgs, json: bool) -> anyhow::Result<()> {
     let command = prepare_request_command(args)?;
-    let api_url = api_url();
+    let api_url = api_url()?;
     let client = http_client()?;
     let session = session_from_cache_or_browser(&client, &api_url)?;
     run_request_command(

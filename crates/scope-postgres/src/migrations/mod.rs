@@ -1,5 +1,10 @@
 mod baseline;
 mod m0043_retire_git_manifests;
+mod m0044_run_execution_invariants;
+mod m0045_cache_upload_cleanup_leases;
+mod m0046_request_media_budget_release;
+mod m0047_retire_apply_changes_permission;
+mod m0048_request_ref_cleanup;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -20,6 +25,8 @@ pub struct PendingMigration {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct MigrationPlan {
     pub exact: bool,
+    #[serde(rename = "metadataRestoreSafe")]
+    pub metadata_restore_safe: bool,
     pub applied: Vec<String>,
     pub pending: Vec<PendingMigration>,
 }
@@ -27,11 +34,51 @@ pub struct MigrationPlan {
 #[sea_orm_migration::async_trait::async_trait]
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![
-            Box::new(baseline::Migration),
-            Box::new(m0043_retire_git_manifests::Migration),
-        ]
+        migration_registry()
+            .into_iter()
+            .map(|entry| entry.migration)
+            .collect()
     }
+}
+
+// Every migration declares whether restoring metadata also restores everything it changes.
+// A migration that queues external deletion cannot be undone by a database snapshot.
+struct RegisteredMigration {
+    migration: Box<dyn MigrationTrait>,
+    metadata_restore_safe: bool,
+}
+
+fn migration_registry() -> Vec<RegisteredMigration> {
+    vec![
+        RegisteredMigration {
+            migration: Box::new(baseline::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0043_retire_git_manifests::Migration),
+            metadata_restore_safe: false,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0044_run_execution_invariants::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0045_cache_upload_cleanup_leases::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0046_request_media_budget_release::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0047_retire_apply_changes_permission::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0048_request_ref_cleanup::Migration),
+            metadata_restore_safe: true,
+        },
+    ]
 }
 
 /// Per-statement limits for the migration transaction, independent of outage reporting.
@@ -116,10 +163,10 @@ where
     C: ConnectionTrait,
 {
     let actual = applied_migration_names(db).await?;
-    let migrations = Migrator::migrations();
+    let migrations = migration_registry();
     let expected = migrations
         .iter()
-        .map(|migration| migration.name().to_string())
+        .map(|entry| entry.migration.name().to_string())
         .collect::<Vec<_>>();
     let original_chain = baseline::is_original_chain(&actual);
     if !original_chain && !expected.starts_with(&actual) {
@@ -130,15 +177,22 @@ where
             baseline::ORIGINAL_CHAIN_REVISION
         )));
     }
-    let pending = migrations
+    let pending_entries = migrations
         .into_iter()
         .skip(if original_chain { 0 } else { actual.len() })
-        .map(|migration| PendingMigration {
-            name: migration.name().to_string(),
+        .collect::<Vec<_>>();
+    let metadata_restore_safe = pending_entries
+        .iter()
+        .all(|entry| entry.metadata_restore_safe);
+    let pending = pending_entries
+        .into_iter()
+        .map(|entry| PendingMigration {
+            name: entry.migration.name().to_string(),
         })
         .collect::<Vec<_>>();
     Ok(MigrationPlan {
         exact: pending.is_empty(),
+        metadata_restore_safe,
         applied: actual,
         pending,
     })

@@ -54,7 +54,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         ensure_review_terminal_available("scope push review")?;
     }
 
-    let api_url = api_url();
+    let api_url = api_url()?;
     let remote = select_scope_push_remote(&git_repo, &api_url, explicit_remote)?;
     let target = load_scope_remote(&git_repo, &api_url, &remote)?;
     let client = http_client()?;

@@ -307,6 +307,7 @@ body {
 }
 
 .review-diff-viewer diffs-container {
+  color-scheme: inherit;
   --diffs-dark: var(--foreground);
   --diffs-dark-bg: var(--background);
   --diffs-font-family: var(--font-mono);

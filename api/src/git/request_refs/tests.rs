@@ -60,36 +60,6 @@ fn request_ref_store_head_must_match_advertised_old_head() {
 }
 
 #[test]
-fn git_lock_with_current_owner_is_not_stale() {
-    let path = temp_lock_path("current-owner");
-    fs::write(
-        &path,
-        format!(
-            "pid={}\ncreated_at_unix={}",
-            std::process::id(),
-            unix_now().unwrap()
-        ),
-    )
-    .unwrap();
-
-    assert!(!git_lock_is_stale(&path).unwrap());
-    let _ = fs::remove_file(path);
-}
-
-#[test]
-fn git_lock_with_old_timestamp_is_stale() {
-    let path = temp_lock_path("old-timestamp");
-    fs::write(
-        &path,
-        format!("pid={}\ncreated_at_unix=1", std::process::id()),
-    )
-    .unwrap();
-
-    assert!(git_lock_is_stale(&path).unwrap());
-    let _ = fs::remove_file(path);
-}
-
-#[test]
 fn request_ref_head_must_be_commit_object_not_annotated_tag() {
     let repo = temp_repo_path("tag-object");
     run_git(
@@ -180,16 +150,6 @@ fn git_stdout(repo: &FsPath, args: &[&str]) -> String {
     let output = run_git_output(Some(repo), args, "read test git stdout").unwrap();
     assert!(output.status.success());
     String::from_utf8(output.stdout).unwrap()
-}
-
-fn temp_lock_path(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "scope-vcs-request-ref-{label}-{}-{}.lock",
-        std::process::id(),
-        unix_now().unwrap()
-    ));
-    let _ = fs::remove_file(&path);
-    path
 }
 
 fn temp_repo_path(label: &str) -> PathBuf {

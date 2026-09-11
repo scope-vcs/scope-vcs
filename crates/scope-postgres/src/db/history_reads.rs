@@ -97,7 +97,7 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
     head_oid: Option<String>,
 ) -> Result<(), PostgresError> {
     let audience = projection.view_key;
-    let available = !projection.preserves_git_commits();
+    let available = true;
     conn.execute(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "DELETE FROM scope_repository_history_views WHERE repo_id=$1 AND audience=$2",

@@ -261,14 +261,7 @@ if [[ -n "$prepared_release" ]]; then
     echo 'Prepared artifact service does not match the activation target.' >&2
     exit 2
   }
-  case "$deployment_component" in
-    run-worker) expected_config=worker/railway.json ;;
-    cli-downloads) expected_config=cli/railway.json ;;
-    cache) expected_config=cache-service/railway.json ;;
-    git-router) expected_config=repo-router/railway.json ;;
-    media-api) expected_config=media-service/railway.json ;;
-    *) expected_config="$deployment_component/railway.json" ;;
-  esac
+  expected_config="$(node .github/scripts/deployment-components.mjs field "$deployment_component" runtimeConfig)"
   previous_deployment_ids="$(railway_read status \
     --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" --json |
     jq -ce --arg environment "$railway_environment" --arg service "$service_name" '

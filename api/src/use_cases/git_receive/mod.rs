@@ -238,7 +238,7 @@ pub(crate) async fn prepare(
     let incarnation = access.incarnation().clone();
     let staging_repo = match &access {
         ReceivePackAccess::FirstPush { .. } => {
-            ensure_first_push_receive_pack_staging_repo(state, &incarnation)?
+            ensure_first_push_receive_pack_staging_repo(state, &incarnation).await?
         }
         ReceivePackAccess::ReadyMember { author_id, .. } => {
             let staging = ensure_ready_receive_pack_staging_repo(
@@ -273,7 +273,8 @@ pub(crate) async fn prepare(
     let refs_before = if advertisement_only {
         None
     } else {
-        match receive_pack_refs(&staging_repo) {
+        let path = staging_repo.clone();
+        match crate::git::blocking::run(move || receive_pack_refs(&path)).await {
             Ok(refs) => Some(refs),
             Err(error) => {
                 let _ = crate::git::storage::remove_dir_if_exists(&staging_repo);
@@ -296,7 +297,8 @@ pub(crate) async fn complete(
     preparation: ReceivePreparation,
     receive_elapsed: Duration,
 ) -> Result<ReceiveCompletion, ApiError> {
-    let refs_after = receive_pack_refs(staging_repo)?;
+    let path = staging_repo.to_path_buf();
+    let refs_after = crate::git::blocking::run(move || receive_pack_refs(&path)).await?;
     let refs_before = preparation
         .refs_before
         .ok_or_else(|| ApiError::internal_message("missing refs before receive-pack"))?;

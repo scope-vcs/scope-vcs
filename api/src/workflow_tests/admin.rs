@@ -97,6 +97,7 @@ async fn admin_cleanup_status_shows_pending_cleanup_queues() {
     let body = response_json(response).await;
     assert_eq!(body["pending_cleanup"]["repo_storage"]["count"], 1);
     assert_eq!(body["pending_cleanup"]["source_blob_deletes"]["count"], 1);
+    assert!(body.get("failed_object_deletes").is_none());
     assert!(body.get("metadata_resets").is_none());
 }
 
@@ -186,7 +187,11 @@ impl scope_object_store::ObjectStore for DeleteFailsObjectStore {
         Ok(())
     }
 
-    fn get(&self, _key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
+    fn get_bounded(
+        &self,
+        _key: &str,
+        _max_bytes: usize,
+    ) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
         Err(scope_object_store::ObjectStoreError::not_found(
             "object not found",
         ))

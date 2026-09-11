@@ -735,12 +735,10 @@ fn test_repository_member(
 fn member_permissions(
     can_push: bool,
     can_change_file_visibility: bool,
-    can_apply_changes: bool,
 ) -> RepositoryMemberPermissions {
     RepositoryMemberPermissions {
         can_push,
         can_change_file_visibility,
-        can_apply_changes,
     }
 }
 

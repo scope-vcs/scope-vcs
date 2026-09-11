@@ -8,15 +8,17 @@ export const repoContentResource = createCachedResource<RepoContent>({
 })
 
 export function repoContentCacheKey({
+  scope,
   audience,
   changeVersion,
   repoId,
 }: {
+  scope: string
   audience: 'private' | 'public'
   changeVersion: number
   repoId: string
 }) {
-  return [repoId, changeVersion, audience].join('\0')
+  return [scope, repoId, changeVersion, audience].join('\0')
 }
 
 function approximateContentBytes(content: RepoContent) {

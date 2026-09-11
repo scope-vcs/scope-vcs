@@ -1,4 +1,4 @@
-use anyhow::{Context as _, bail};
+use anyhow::Context as _;
 use std::{env, path::PathBuf};
 
 pub struct RuntimeSettings {
@@ -11,10 +11,10 @@ pub struct RuntimeSettings {
 
 impl RuntimeSettings {
     pub fn from_env() -> anyhow::Result<Self> {
-        let api_url = required("SCOPE_API_URL")?.trim_end_matches('/').to_string();
-        if !(api_url.starts_with("https://") || api_url.starts_with("http://127.0.0.1")) {
-            bail!("SCOPE_API_URL must use HTTPS outside local development");
-        }
+        let api_url = scope_service_config::ServiceEndpoint::parse(&required("SCOPE_API_URL")?)
+            .context("SCOPE_API_URL")?
+            .as_str()
+            .to_string();
         let attempt_deadline_unix = required("SCOPE_ATTEMPT_DEADLINE_UNIX")?
             .parse::<u64>()
             .context("SCOPE_ATTEMPT_DEADLINE_UNIX must be an unsigned Unix timestamp")?;

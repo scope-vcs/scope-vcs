@@ -178,7 +178,7 @@ test("prepared replay rejects empty, unknown, mismatched, and incomplete backend
 test("cutover recovery retains its complete backend requirement", async () => {
   const state = fixture();
   state.prepared.components = { web: state.prepared.components.web };
-  await assert.rejects(validateRecoveryPreparation(state.prepared, state.request, repository, manifest), /missing api/);
+  await assert.rejects(validateRecoveryPreparation(state.prepared, state.request, repository, manifest), /missing cache/);
 });
 
 
@@ -197,7 +197,17 @@ test("replay selects only validated manifest components", async () => {
   assert.equal(result.prepared_run_id, sourceRunId);
   assert.equal(result.recover_cutover_id, "");
   assert.equal(result.reuse_components.web, true);
+  assert.equal(result.reuse_components.backend, true);
   assert.deepEqual(result.prepared, state.prepared);
+});
+
+test("web-only replay does not select the backend", async () => {
+  const state = fixture();
+  state.prepared.components = { web: state.prepared.components.web };
+  const result = await selectRelease({ sourceSha: mainSha, sourceRunId, repository,
+    loadPrepared: async () => state.prepared }, path => path.startsWith("/deployments?") ? [] : state.request(path));
+  assert.equal(result.reuse_components.web, true);
+  assert.equal(result.reuse_components.backend, false);
 });
 
 test("recovery overrides new main and rejects a different replay run", async () => {

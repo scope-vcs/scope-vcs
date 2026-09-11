@@ -24,6 +24,7 @@ function diff(path: string, text = 'content'): ReviewFileDiff {
 
 test('keys resources by immutable audience-aware identities', () => {
   const commitBase = {
+    scope: 'viewer-a',
     audience: 'public' as const,
     entry: 'c1',
     generation: 'generation-1',
@@ -93,7 +94,27 @@ test('evicts large text diffs at the byte budget', () => {
 })
 
 test('isolates content and exact visibility preview caches for the same file and blobs', () => {
-  const base = { audience: 'public' as const, entry: 'push-1', generation: 'g1', repoId: 'scope/demo', viewKey: 'public', path: '/same.ts', oldOid: null, newOid: 'blob' }
+  const base = { scope: 'viewer-a', audience: 'public' as const, entry: 'push-1', generation: 'g1', repoId: 'scope/demo', viewKey: 'public', path: '/same.ts', oldOid: null, newOid: 'blob' }
   assert.notEqual(historyEntryDiffCacheKey(base), historyEntryDiffCacheKey({ ...base, visibilityChange: 'first' }))
   assert.notEqual(historyEntryDiffCacheKey({ ...base, visibilityChange: 'first' }), historyEntryDiffCacheKey({ ...base, visibilityChange: 'second' }))
+})
+
+test('same-viewer history diffs reuse data while viewer and access changes load independently', async () => {
+  resetHistoryResourceCache()
+  const base = { scope: 'viewer-a:member', audience: 'private' as const, commit: 'c1', generation: 'g1', newOid: 'new', oldOid: 'old', path: '/README.md', repoId: 'scope/demo', viewKey: 'private' }
+  let loads = 0
+  const load = async () => { loads += 1; return diff(base.path) }
+  const key = historyDiffCacheKey(base)
+  await historyDiffResource.load(key, '', load)
+  await historyDiffResource.load(historyDiffCacheKey({ ...base }), '', load)
+  assert.equal(loads, 1)
+  await historyDiffResource.load(historyDiffCacheKey({ ...base, scope: 'viewer-b:member' }), '', load)
+  await historyDiffResource.load(historyDiffCacheKey({ ...base, scope: 'viewer-a:public', audience: 'public' }), '', load)
+  assert.equal(loads, 3)
+})
+
+test('native commit file diffs do not share a cache entry with their logical update net diff', () => {
+  const base = { scope: 'viewer-a', audience: 'private' as const, entry: 'push-1', generation: 'g1', repoId: 'scope/demo', viewKey: 'private', path: '/same.ts', oldOid: 'old', newOid: 'new' }
+  assert.notEqual(historyEntryDiffCacheKey(base), historyEntryDiffCacheKey({ ...base, commitOid: 'a'.repeat(40) }))
+  assert.notEqual(historyEntryDiffCacheKey({ ...base, commitOid: 'a'.repeat(40) }), historyEntryDiffCacheKey({ ...base, commitOid: 'b'.repeat(40) }))
 })

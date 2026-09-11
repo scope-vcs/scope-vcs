@@ -1,5 +1,5 @@
 use super::{
-    policy::{Policy, ScopePath, Visibility},
+    policy::{ScopePath, Visibility},
     repo_control::{is_private_control_path, is_repo_control_pattern, is_repo_rules_path},
 };
 use serde::{Deserialize, Serialize};
@@ -223,27 +223,6 @@ pub fn validate_config_path(path: &str) -> Result<ScopePath, RepoConfigError> {
         return Err(RepoConfigError::InvalidSegment);
     }
     Ok(parsed)
-}
-
-pub fn repo_config_from_policy(
-    policy: &Policy,
-    default_visibility: Visibility,
-    history: RepoConfigHistory,
-) -> Result<RepoConfig, RepoConfigError> {
-    let mut config =
-        RepoConfig::with_default_visibility(ConfigVisibility::from(default_visibility));
-    config.visibility.rules = policy
-        .rules()
-        .iter()
-        .filter(|rule| !is_repo_control_pattern(rule.path.as_str()))
-        .map(|rule| RepoConfigVisibilityRule {
-            path: rule.path.as_str().to_string(),
-            visibility: ConfigVisibility::from(rule.visibility),
-        })
-        .collect();
-    config.history = history;
-    config.validate()?;
-    Ok(config)
 }
 
 pub fn repo_config_fingerprint(config: &RepoConfig) -> Result<String, serde_json::Error> {

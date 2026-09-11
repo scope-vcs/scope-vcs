@@ -1,13 +1,14 @@
 use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
-    http::{request_review::RequestRevisionCommitVisibility, requests::*, responses::*},
+    http::{requests::*, responses::*},
     state::AppState,
     use_cases::request_discussion_mutation::{
         self, CreateDiscussionCommand, CreateReplyCommand, DiscussionAnchorInput,
         DiscussionMutationResult, DiscussionTransition, MarkDiscussionReadCommand,
         ReopenAndReplyCommand, ReplyMutationResult, TransitionDiscussionCommand,
     },
+    use_cases::request_revision_inspection::RequestRevisionCommitVisibility,
 };
 use axum::{
     Json,

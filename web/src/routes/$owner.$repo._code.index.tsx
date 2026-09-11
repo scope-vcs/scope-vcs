@@ -5,7 +5,7 @@ import {
   loadRepoFileForRequest,
   parseRepoParams,
 } from '@/api/repos'
-import type { RepoContent, RepoFileContent, RepoLiveState, RepoSummary } from '@/api/types'
+import type { RepoContent, RepoFileContent, RepoSummary } from '@/api/types'
 import { RepoContentError } from '@/components/repo-content-error'
 import {
   repoContentResource,
@@ -16,12 +16,9 @@ import {
   repoFileCacheKey,
 } from '@/features/repo-detail/repo-file-cache'
 import { RepoDetailPage } from '@/features/repo-detail/repo-detail-page'
-import { RepositoryCodePending } from '@/features/repo-detail/repository-code-pending'
 import {
   repositoryLandingPath,
   loadRepoFileWhenReady,
-  settleRepoCodeResource,
-  repoCodeResourceLoader,
   type RepoFileLoadResult,
 } from '@/features/repo-detail/repo-code-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
@@ -36,7 +33,9 @@ import {
 } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
+import { useAuth } from '@clerk/tanstack-react-start'
+import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 
 const PROJECTION_REBUILDING_MESSAGE = 'repository projection is rebuilding; retry shortly'
 
@@ -66,50 +65,23 @@ const loadRepoFile = createServerFn({ method: 'GET' })
 
 export const Route = createFileRoute('/$owner/$repo/_code/')({
   validateSearch: parseRepoCodeSearch,
-  loaderDeps: ({ search }) => ({ file: search.file ?? null }),
-  loader: async ({ abortController, deps, params, parentMatchPromise }) => {
-    const live = (await parentMatchPromise).loaderData as RepoLiveState
-    const { contentIdentity, fileIdentity } = repoCodeCacheKeys(live.repo, deps.file)
-    const signal = abortController.signal
-    const content = typeof window === 'undefined'
-      ? loadRepoContent({ data: params, signal })
-      : repoContentResource.load(contentIdentity, '', (signal) => loadRepoContent({ data: params, signal }))
-    const file = deps.file && fileIdentity
-      ? typeof window === 'undefined'
-        ? loadAddressedFile({ ...params, path: deps.file }, signal)
-        : repoFileResource.load(fileIdentity, '', (signal) => loadAddressedFile({ ...params, path: deps.file! }, signal))
-      : null
-    const initialContent = settleRepoCodeResource(content)
-    const initialFile = file ? settleRepoCodeResource(file) : null
-    // Client loads already belong to the cache. Only SSR promises need a
-    // handoff; retaining a client promise here would replay it on explicit retry.
-    return {
-      content: typeof window === 'undefined' ? initialContent : null,
-      file: typeof window === 'undefined' ? initialFile : null,
-      contentIdentity,
-      fileIdentity,
-    }
-  },
   errorComponent: RepoContentError,
-  pendingComponent: RepositoryCodePending,
   component: RepoIndexRoute,
 })
 
 function RepoIndexRoute() {
   const params = Route.useParams()
   const { repo } = useRepoLayout()
-  const page = Route.useLoaderData()
+  const { userId, isLoaded } = useAuth()
+  const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
   const owner = params.owner
   const repoName = params.repo
-  const { contentIdentity } = repoCodeCacheKeys(repo, null)
-  const loadContent = useMemo(() => repoCodeResourceLoader(
-    page.contentIdentity === contentIdentity ? page.content : null,
-    (signal: AbortSignal): Promise<RepoContent> => loadRepoContent({
-      data: { owner, repo: repoName }, signal,
-    }),
-  ), [contentIdentity, owner, page.content, page.contentIdentity, repoName])
+  const { contentIdentity } = repoCodeCacheKeys(repo, scope, null)
+  const loadContent = useCallback((signal: AbortSignal): Promise<RepoContent> => loadRepoContent({
+    data: { owner, repo: repoName }, signal,
+  }), [owner, repoName])
   const contentResource = useCachedResource({
     fallbackError: 'Repository files are unavailable.',
     identity: contentIdentity,
@@ -120,14 +92,11 @@ function RepoIndexRoute() {
   // A new version can remove file visibility. Revalidate the landing path from
   // the current tree instead of retaining the previous version's README.
   const selectedPath = search.file ?? (content ? repositoryLandingPath(content.files) : null)
-  const { fileIdentity: selectedFileIdentity } = repoCodeCacheKeys(repo, selectedPath)
-  const loadSelectedFile = useMemo(() => repoCodeResourceLoader(
-    page.fileIdentity === selectedFileIdentity ? page.file : null,
-    (signal: AbortSignal) => {
-      if (!selectedPath) throw new Error('No file selected.')
-      return loadAddressedFile({ owner, path: selectedPath, repo: repoName }, signal)
-    },
-  ), [owner, page.file, page.fileIdentity, repoName, selectedFileIdentity, selectedPath])
+  const { fileIdentity: selectedFileIdentity } = repoCodeCacheKeys(repo, scope, selectedPath)
+  const loadSelectedFile = useCallback((signal: AbortSignal) => {
+    if (!selectedPath) throw new Error('No file selected.')
+    return loadAddressedFile({ owner, path: selectedPath, repo: repoName }, signal)
+  }, [owner, repoName, selectedPath])
   const selectedFileResource = useCachedResource({
     fallbackError: 'File content is unavailable.',
     identity: selectedFileIdentity,
@@ -149,7 +118,7 @@ function RepoIndexRoute() {
     <RepoDetailPage
       content={content}
       contentError={contentResource.error}
-      contentLoading={contentResource.status === 'loading'}
+      contentLoading={!isLoaded || contentResource.status === 'loading'}
       contentRetry={contentResource.retry}
       onSelectFilePath={selectFile}
       params={params}
@@ -157,7 +126,7 @@ function RepoIndexRoute() {
       selectedFile={selectedFileResource.value}
       selectedFileError={selectedFileResource.error}
       selectedFileIdentity={selectedFileIdentity}
-      selectedFileLoading={selectedFileResource.status === 'loading'}
+      selectedFileLoading={!isLoaded || selectedFileResource.status === 'loading'}
       selectedFileRetry={selectedFileResource.retry}
       selectedPath={selectedPath}
     />
@@ -182,14 +151,16 @@ async function loadAddressedFile(
   return file
 }
 
-function repoCodeCacheKeys(repo: RepoSummary, path: string | null) {
-  const scope = {
+function repoCodeCacheKeys(repo: RepoSummary, scope: string | null, path: string | null) {
+  if (!scope) return { contentIdentity: null, fileIdentity: null }
+  const identity = {
+    scope,
     audience: repo.access.can_read_private_files ? 'private' as const : 'public' as const,
     changeVersion: repo.change_version,
     repoId: repo.id,
   }
   return {
-    contentIdentity: repoContentCacheKey(scope),
-    fileIdentity: path ? repoFileCacheKey({ ...scope, path }) : null,
+    contentIdentity: repoContentCacheKey(identity),
+    fileIdentity: path ? repoFileCacheKey({ ...identity, path }) : null,
   }
 }

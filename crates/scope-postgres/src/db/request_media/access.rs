@@ -1,6 +1,9 @@
 use super::{
     AuthorizedRequestAttachment, MediaStore, RequestMediaManifest, RequestMediaObjectTarget,
-    persistence::{attachment_by_id, bindings_for_attachment, manifest_by_id},
+    persistence::{
+        attachment_by_id, attachments_for_request, bindings_for_attachment, bindings_for_request,
+        manifest_by_id,
+    },
 };
 use crate::{
     db::{
@@ -28,31 +31,45 @@ impl MediaStore {
         request_id: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Vec<AuthorizedRequestAttachment>, PostgresError> {
-        let ids = self
-            .db
-            .query_all(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT id FROM scope_request_media_attachments
-                 WHERE request_id = $1 ORDER BY created_at_unix, id",
-                [request_id.into()],
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-            .into_iter()
-            .map(|row| {
-                row.try_get::<String>("", "id")
-                    .map_err(PostgresError::internal)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut visible = Vec::new();
-        for attachment_id in ids {
-            if let Some(attachment) =
-                authorized_attachment(self.db.as_ref(), request_id, &attachment_id, viewer_user_id)
-                    .await?
-            {
-                visible.push(attachment);
-            }
+        let tx = crate::db::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let Some(request) = request_by_id(&tx, request_id).await? else {
+            return Ok(Vec::new());
+        };
+        let Some(repo) = repository_access(&tx, &request.repo_id, viewer_user_id).await? else {
+            return Ok(Vec::new());
+        };
+        let is_invitee = match viewer_user_id {
+            Some(user_id) => request_is_invitee(&tx, request_id, user_id).await?,
+            None => false,
+        };
+        let policy = request_policy(
+            &request,
+            RequestViewer::new(repo.access, viewer_user_id, is_invitee),
+        );
+        if !policy.exact_visible {
+            return Ok(Vec::new());
         }
+        let attachments = attachments_for_request(&tx, request_id).await?;
+        let mut bindings = bindings_for_request(&tx, request_id).await?;
+        let visible = attachments
+            .into_iter()
+            .filter_map(|attachment| {
+                let attachment_bindings = bindings.remove(&attachment.id).unwrap_or_default();
+                (attachment.repository_id == request.repo_id
+                    && can_view_request_attachment(
+                        &attachment,
+                        &attachment_bindings,
+                        viewer_user_id,
+                        policy.exact_visible,
+                        policy.discussion_visible,
+                    ))
+                .then(|| AuthorizedRequestAttachment {
+                    repository_id: attachment.repository_id.clone(),
+                    attachment,
+                })
+            })
+            .collect();
+        tx.commit().await.map_err(PostgresError::internal)?;
         Ok(visible)
     }
 

@@ -17,31 +17,102 @@
     "cache": {
       "name": "scope-cache",
       "id": "668d47df-8f68-4f96-b52f-7c02324829e3",
-      "dependsOn": []
+      "dependsOn": [],
+      "deployment": {
+        "backend": true,
+        "runtimeConfig": "cache-service/railway.json",
+        "verifyTransitionConfig": true,
+        "artifact": {
+          "kind": "binary",
+          "binary": "scope-cache-service",
+          "imageName": "cache",
+          "dockerfile": "deploy/railway/prebuilt.Dockerfile",
+          "installGit": false,
+          "sourceBinary": "scope-cache-service"
+        }
+      }
     },
     "run-worker": {
       "name": "scope-run-worker",
       "id": "a474a0d1-3000-4a95-9ca3-cd3a7f3ef669",
       "dependsOn": [
         "cache"
-      ]
+      ],
+      "deployment": {
+        "backend": true,
+        "runtimeConfig": "worker/railway.json",
+        "verifyTransitionConfig": true,
+        "artifact": {
+          "kind": "binary",
+          "binary": "scope-worker",
+          "imageName": "worker",
+          "dockerfile": "deploy/railway/prebuilt.Dockerfile",
+          "installGit": true,
+          "sourceBinary": "worker"
+        }
+      }
     },
     "git-router": {
       "name": "scope-git-router",
       "id": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c",
-      "dependsOn": []
+      "dependsOn": [],
+      "deployment": {
+        "backend": true,
+        "runtimeConfig": "repo-router/railway.json",
+        "verifyTransitionConfig": true,
+        "artifact": {
+          "kind": "binary",
+          "binary": "scope-repo-router",
+          "imageName": "router",
+          "dockerfile": "deploy/railway/prebuilt.Dockerfile",
+          "installGit": false,
+          "sourceBinary": "scope-repo-router"
+        }
+      }
     },
     "media-api": {
       "name": "scope-media-api",
       "id": "6d7b48da-e52e-47bb-b4af-d6fc2d03aec3",
-      "dependsOn": []
+      "dependsOn": [],
+      "deployment": {
+        "backend": true,
+        "runtimeConfig": "media-service/railway.json",
+        "verifyTransitionConfig": true,
+        "artifact": {
+          "kind": "binary",
+          "binary": "scope-media-service",
+          "imageName": "media",
+          "dockerfile": "deploy/railway/prebuilt.Dockerfile",
+          "installGit": false,
+          "sourceBinary": "scope-media-service"
+        },
+        "reconcile": {
+          "replicas": 1,
+          "restartPolicyType": "ON_FAILURE",
+          "restartPolicyMaxRetries": 10
+        }
+      }
     },
     "media-worker": {
       "name": "scope-media-worker",
       "id": "8aaade33-a730-408b-bab3-298119369420",
       "dependsOn": [
         "media-api"
-      ]
+      ],
+      "deployment": {
+        "backend": true,
+        "runtimeConfig": "media-worker/railway.json",
+        "verifyTransitionConfig": false,
+        "artifact": {
+          "kind": "external-image",
+          "binary": "scope-media-worker"
+        },
+        "reconcile": {
+          "replicas": 1,
+          "restartPolicyType": "ON_FAILURE",
+          "restartPolicyMaxRetries": 10
+        }
+      }
     },
     "api": {
       "name": "scope-api",
@@ -51,21 +122,57 @@
         "git-router",
         "media-api",
         "media-worker"
-      ]
+      ],
+      "deployment": {
+        "backend": true,
+        "runtimeConfig": "api/railway.json",
+        "verifyTransitionConfig": true,
+        "artifact": {
+          "kind": "binary",
+          "binary": "scope-vcs",
+          "imageName": "api",
+          "dockerfile": "deploy/railway/prebuilt.Dockerfile",
+          "installGit": true,
+          "sourceBinary": "api"
+        }
+      }
     },
     "web": {
       "name": "scope-web",
       "id": "df831355-3056-4d1a-a4be-37735fb83d00",
       "dependsOn": [
         "api"
-      ]
+      ],
+      "deployment": {
+        "backend": false,
+        "runtimeConfig": "web/railway.json",
+        "verifyTransitionConfig": true,
+        "artifact": {
+          "kind": "web",
+          "imageName": "web",
+          "dockerfile": "deploy/railway/web.Dockerfile",
+          "installGit": false
+        }
+      }
     },
     "cli-downloads": {
       "name": "scope-cli-downloads",
       "id": "a212bccb-ed1a-4574-a031-2b0183e08a2d",
       "dependsOn": [
         "api"
-      ]
+      ],
+      "deployment": {
+        "backend": false,
+        "runtimeConfig": "cli/railway.json",
+        "verifyTransitionConfig": false,
+        "artifact": {
+          "kind": "upload",
+          "binary": "scope-cli-service",
+          "imageName": "cli",
+          "dockerfile": "deploy/railway/prebuilt.Dockerfile",
+          "installGit": false
+        }
+      }
     }
   },
   "mediaResources": {
@@ -173,7 +280,10 @@
         ".github/scripts/staging-baseline.sh",
         ".github/scripts/staging-baseline.integration.test.mjs",
         "deploy/railway/rekey-deployment-receipts.mjs",
-        "deploy/railway/rekey-deployment-receipts.test.mjs"
+        "deploy/railway/rekey-deployment-receipts.test.mjs",
+        ".github/scripts/deployment-components.mjs",
+        ".github/scripts/deployment-components.test.mjs",
+        ".github/scripts/railway-deployment-history.test.mjs"
       ],
       "prefixes": [
         "legal/",
@@ -408,7 +518,8 @@
   "environments": {
     "production": {
       "environmentId": "2f21f6b6-6817-4338-9e08-cf18e78b8f46",
-      "environmentName": "production"
+      "environmentName": "production",
+      "cliPublicOrigin": "https://scope-cli-production.up.railway.app"
     },
     "staging": {
       "environmentId": "f6cdb01a-7a42-40ff-b799-bffe254191b2",

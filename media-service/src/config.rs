@@ -1,18 +1,7 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use scope_object_store::{FileObjectStoreSettings, S3ObjectStoreSettings};
-use std::path::PathBuf;
+use scope_media_storage::MediaStorageSettings;
 
 const DATABASE_URL: &str = "DATABASE_URL";
-const MEDIA_BUCKET_ENDPOINT: &str = "SCOPE_MEDIA_BUCKET_ENDPOINT";
-const MEDIA_BUCKET_NAME: &str = "SCOPE_MEDIA_BUCKET_NAME";
-const MEDIA_BUCKET_REGION: &str = "SCOPE_MEDIA_BUCKET_REGION";
-const MEDIA_BUCKET_ACCESS_KEY_ID: &str = "SCOPE_MEDIA_BUCKET_ACCESS_KEY_ID";
-const MEDIA_BUCKET_SECRET_ACCESS_KEY: &str = "SCOPE_MEDIA_BUCKET_SECRET_ACCESS_KEY";
-const MEDIA_BUCKET_FORCE_PATH_STYLE: &str = "SCOPE_MEDIA_BUCKET_FORCE_PATH_STYLE";
-const MEDIA_ENCRYPTION_KEY: &str = "SCOPE_MEDIA_ENCRYPTION_KEY";
 const MEDIA_GRANT_PUBLIC_KEY: &str = "SCOPE_MEDIA_GRANT_PUBLIC_KEY";
-const MEDIA_OBJECT_STORE: &str = "SCOPE_MEDIA_OBJECT_STORE";
-const MEDIA_OBJECT_STORE_DIR: &str = "SCOPE_MEDIA_OBJECT_STORE_DIR";
 const MEDIA_BLOCKING_OPERATIONS: &str = "SCOPE_MEDIA_MAX_BLOCKING_OPERATIONS";
 const MEDIA_ALLOWED_ORIGIN: &str = "SCOPE_MEDIA_ALLOWED_ORIGIN";
 const MEDIA_CONCURRENT_UPLOADS: &str = "SCOPE_MEDIA_MAX_CONCURRENT_UPLOADS";
@@ -22,15 +11,9 @@ const DEFAULT_BLOCKING_OPERATIONS: usize = 4;
 const DEFAULT_CONCURRENT_UPLOADS: usize = 4;
 const DEFAULT_CONCURRENT_READS: usize = 8;
 
-pub(crate) enum MediaObjectStoreSettings {
-    Filesystem(FileObjectStoreSettings),
-    S3(S3ObjectStoreSettings),
-}
-
 pub struct Settings {
     pub(crate) database_url: String,
-    pub(crate) object_store: MediaObjectStoreSettings,
-    pub(crate) encryption_key: [u8; 32],
+    pub(crate) storage: MediaStorageSettings,
     pub(crate) grant_public_key_pem: String,
     pub(crate) max_blocking_operations: usize,
     pub(crate) max_concurrent_uploads: usize,
@@ -40,19 +23,7 @@ pub struct Settings {
 
 impl Settings {
     pub fn from_env() -> anyhow::Result<Self> {
-        let object_store = match optional(MEDIA_OBJECT_STORE).as_deref() {
-            Some("filesystem") => {
-                MediaObjectStoreSettings::Filesystem(FileObjectStoreSettings::new(
-                    optional(MEDIA_OBJECT_STORE_DIR)
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("data/media-objects")),
-                ))
-            }
-            Some(value) if value != "s3" => {
-                anyhow::bail!("unsupported {MEDIA_OBJECT_STORE} value {value}")
-            }
-            _ => MediaObjectStoreSettings::S3(s3_settings_from_env()?),
-        };
+        let storage = MediaStorageSettings::from_env()?;
         let max_blocking_operations = optional(MEDIA_BLOCKING_OPERATIONS)
             .map(|value| value.parse::<usize>())
             .transpose()?
@@ -69,8 +40,7 @@ impl Settings {
             positive_limit(MEDIA_CONCURRENT_READS, DEFAULT_CONCURRENT_READS)?;
         Ok(Self {
             database_url: required(DATABASE_URL)?,
-            object_store,
-            encryption_key: encryption_key(&required(MEDIA_ENCRYPTION_KEY)?)?,
+            storage,
             grant_public_key_pem: required(MEDIA_GRANT_PUBLIC_KEY)?,
             max_blocking_operations,
             max_concurrent_uploads,
@@ -84,59 +54,13 @@ impl Settings {
     }
 }
 
-fn s3_settings_from_env() -> anyhow::Result<S3ObjectStoreSettings> {
-    let endpoint = required(MEDIA_BUCKET_ENDPOINT)?;
-    validate_origin_url(MEDIA_BUCKET_ENDPOINT, &endpoint)?;
-    let mut settings = S3ObjectStoreSettings::new(
-        endpoint,
-        required(MEDIA_BUCKET_NAME)?,
-        required(MEDIA_BUCKET_REGION)?,
-        required(MEDIA_BUCKET_ACCESS_KEY_ID)?,
-        required(MEDIA_BUCKET_SECRET_ACCESS_KEY)?,
-    );
-    settings.force_path_style = optional(MEDIA_BUCKET_FORCE_PATH_STYLE)
-        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes"));
-    Ok(settings)
-}
-
-fn encryption_key(encoded: &str) -> anyhow::Result<[u8; 32]> {
-    let decoded = BASE64
-        .decode(encoded)
-        .map_err(|_| anyhow::anyhow!("{MEDIA_ENCRYPTION_KEY} must be valid base64"))?;
-    decoded.try_into().map_err(|bytes: Vec<u8>| {
-        anyhow::anyhow!(
-            "{MEDIA_ENCRYPTION_KEY} must decode to 32 bytes, got {}",
-            bytes.len()
-        )
-    })
-}
-
 fn validate_origin(origin: String) -> anyhow::Result<String> {
-    validate_origin_url(MEDIA_ALLOWED_ORIGIN, &origin)?;
-    Ok(origin)
-}
-
-fn validate_origin_url(name: &str, value: &str) -> anyhow::Result<()> {
-    let parsed = url::Url::parse(value).map_err(|_| anyhow::anyhow!("{name} is not a URL"))?;
-    let local = matches!(
-        parsed.host(),
-        Some(url::Host::Domain("localhost"))
-            | Some(url::Host::Ipv4(std::net::Ipv4Addr::LOCALHOST))
-            | Some(url::Host::Ipv6(std::net::Ipv6Addr::LOCALHOST))
+    let parsed = scope_service_config::ServiceEndpoint::parse_origin(&origin)?;
+    anyhow::ensure!(
+        parsed.as_str() == origin,
+        "{MEDIA_ALLOWED_ORIGIN} must be an exact canonical origin"
     );
-    let secure = parsed.scheme() == "https" || (parsed.scheme() == "http" && local);
-    if !secure
-        || parsed.cannot_be_a_base()
-        || parsed.username() != ""
-        || parsed.password().is_some()
-        || parsed.path() != "/"
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-        || parsed.origin().ascii_serialization() != value
-    {
-        anyhow::bail!("{name} must be an exact HTTPS origin, or an HTTP loopback origin")
-    }
-    Ok(())
+    Ok(origin)
 }
 
 fn positive_limit(name: &str, default: usize) -> anyhow::Result<usize> {
@@ -163,14 +87,6 @@ fn optional(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn media_key_must_be_exactly_32_bytes() {
-        let key = BASE64.encode([7_u8; 32]);
-        assert_eq!(encryption_key(&key).unwrap(), [7_u8; 32]);
-        assert!(encryption_key(&BASE64.encode([7_u8; 31])).is_err());
-        assert!(encryption_key("not base64").is_err());
-    }
 
     #[test]
     fn browser_origin_has_no_trailing_slash_or_insecure_remote_scheme() {

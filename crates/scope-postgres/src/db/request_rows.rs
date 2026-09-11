@@ -2,7 +2,7 @@ use super::entities;
 use super::object_references::{delete_object_reference, replace_object_reference};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
+    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
     sea_query::{Expr, Query},
 };
 use {
@@ -237,6 +237,27 @@ where
         .into_iter()
         .map(entities::request::Model::try_into_domain)
         .collect()
+}
+
+pub(super) async fn public_draft_count<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    author_user_id: &str,
+) -> Result<usize, PostgresError> {
+    let count = entities::request::Entity::find()
+        .filter(entities::request::Column::RepoId.eq(repo_id))
+        .filter(entities::request::Column::AuthorUserId.eq(author_user_id))
+        .filter(
+            entities::request::Column::AuthorRole
+                .eq(entities::encode_enum(RequestActorRole::Public)?),
+        )
+        .filter(entities::request::Column::SubmittedAtUnix.is_null())
+        .filter(entities::request::Column::ClosedAtUnix.is_null())
+        .filter(entities::request::Column::MergedAtUnix.is_null())
+        .count(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    usize::try_from(count).map_err(PostgresError::internal)
 }
 
 pub async fn requests_by_repo_author<C>(

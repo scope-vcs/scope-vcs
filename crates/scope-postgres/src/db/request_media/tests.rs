@@ -857,3 +857,7 @@ async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discov
     assert_ne!(replacement.attachment.id, prepared.attachment.id);
     assert_ne!(replacement.upload_id, prepared.upload_id);
 }
+
+mod access_regressions;
+mod cleanup_regressions;
+mod query_counts;

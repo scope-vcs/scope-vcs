@@ -128,7 +128,7 @@ async fn insert_push_member(state: &AppState, subject: &str) -> String {
             repo.members.push(test_repository_member(
                 TEST_REPO_ID,
                 member_id,
-                member_permissions(true, false, false),
+                member_permissions(true, false),
             ));
         })
         .await
@@ -337,7 +337,9 @@ async fn unpublished_upload_pack_member_scope_session_stays_hidden() {
 async fn first_push_staging_repo_head_points_to_default_branch() {
     let state = test_state_with_repo();
     let staging_repo =
-        ensure_first_push_receive_pack_staging_repo(&state, &test_repo_incarnation()).unwrap();
+        ensure_first_push_receive_pack_staging_repo(&state, &test_repo_incarnation())
+            .await
+            .unwrap();
     let head = git_stdout_text(
         &staging_repo,
         &["symbolic-ref", "HEAD"],

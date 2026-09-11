@@ -15,10 +15,12 @@ import type { FormEvent } from 'react'
 import { useId, useState } from 'react'
 
 export function DeleteRepositoryDialog({
+  error,
   onCancel,
   onConfirm,
   repo,
 }: {
+  error: string | null
   onCancel: () => void
   onConfirm: (repo: RepoSummary) => Promise<void>
   repo: RepoSummary
@@ -90,6 +92,8 @@ export function DeleteRepositoryDialog({
               />
             </div>
           )}
+
+          {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
 
           <AlertDialogFooter>
             {!confirmed ? (

@@ -430,7 +430,6 @@ fn maintainer_access() -> RepositoryAccess {
         can_read_private_files: true,
         can_push: true,
         can_change_file_visibility: false,
-        can_apply_changes: false,
         can_manage_members: false,
         can_delete_repo: false,
     }

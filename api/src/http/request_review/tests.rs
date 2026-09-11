@@ -272,3 +272,124 @@ fn git(repo: &Path, args: &[&str], stdin: Option<&str>) -> String {
     );
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
+
+#[test]
+fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
+    use crate::use_cases::request_revision_inspection::{
+        commit_is_fully_visible, request_revision_commit_files, visible_commit_paths,
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let raw_repo = directory.path();
+    git(raw_repo, &["init", "--quiet"], None);
+    let empty_tree = git(raw_repo, &["mktree"], Some(""));
+    let base = git(raw_repo, &["commit-tree", &empty_tree, "-m", "base"], None);
+    let blob = git(
+        raw_repo,
+        &["hash-object", "-w", "--stdin"],
+        Some("root file\n"),
+    );
+    let tree = git(
+        raw_repo,
+        &["mktree"],
+        Some(&format!("100644 blob {blob}\troot.txt\n")),
+    );
+    let root = git(
+        raw_repo,
+        &["commit-tree", &tree, "-m", "unrelated root"],
+        None,
+    );
+    let head = git(
+        raw_repo,
+        &[
+            "commit-tree",
+            &tree,
+            "-p",
+            &base,
+            "-p",
+            &root,
+            "-m",
+            "merge roots",
+        ],
+        None,
+    );
+    git(
+        raw_repo,
+        &["merge-base", "--is-ancestor", &base, &head],
+        None,
+    );
+    let revision = RequestRevision {
+        id: "revision-root".to_string(),
+        request_id: "request-root".to_string(),
+        position: 1,
+        actor_user_id: "owner-1".to_string(),
+        old_head_oid: base,
+        new_head_oid: head,
+        git_snapshot: SourceBlob {
+            content_ref: ContentRef::blob_sha256("snapshot"),
+            sha256: "snapshot".to_string(),
+            git_oid: "snapshot".to_string(),
+            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
+            size_bytes: 1,
+        },
+        created_at_unix: 1,
+    };
+    let owner = UserAccount {
+        id: "owner-1".to_string(),
+        handle: "owner".to_string(),
+        email: "owner@example.test".to_string(),
+        email_verified: true,
+    };
+    let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
+    let owner_access = repo.access_for_user_id(&owner.id);
+    for file_budget in [0, 100] {
+        let listing = request_revision_commits(
+            raw_repo,
+            &repo,
+            owner_access,
+            &revision,
+            None,
+            100,
+            file_budget,
+        )
+        .unwrap();
+        let root_summary = listing
+            .visible
+            .iter()
+            .find(|commit| commit.oid == root)
+            .unwrap();
+        assert!(root_summary.parent_oids.is_empty());
+        assert_eq!(root_summary.change_count, 1);
+        assert_eq!(root_summary.files_truncated, file_budget == 0);
+    }
+    let files =
+        request_revision_commit_files(raw_repo, &repo.policy, owner_access, &revision, &root)
+            .unwrap();
+    assert_eq!(files.commit.files.len(), 1);
+    let file = &files.commit.files[0];
+    assert_eq!(file.path, "root.txt");
+    assert_eq!(file.old_oid, None);
+    assert_eq!(file.new_oid.as_deref(), Some(blob.as_str()));
+    assert_eq!(file.kind, scope_domain::history::FileChangeKind::Added);
+    let public = RepositoryAccess::public();
+    assert!(commit_is_fully_visible(raw_repo, &repo.policy, public, &revision, &root).unwrap());
+    assert!(
+        visible_commit_paths(raw_repo, &repo.policy, public, &revision, &root)
+            .unwrap()
+            .contains(&ScopePath::parse("/root.txt").unwrap())
+    );
+
+    repo.policy
+        .add_rule(VisibilityRule::private(
+            ScopePath::parse("/root.txt").unwrap(),
+        ))
+        .unwrap();
+    for file_budget in [0, 100] {
+        let listing =
+            request_revision_commits(raw_repo, &repo, public, &revision, None, 100, file_budget)
+                .unwrap();
+        assert!(!listing.visible.iter().any(|commit| commit.oid == root));
+    }
+    assert!(!commit_is_fully_visible(raw_repo, &repo.policy, public, &revision, &root).unwrap());
+    assert!(visible_commit_paths(raw_repo, &repo.policy, public, &revision, &root).is_err());
+    assert!(visible_commit_paths(raw_repo, &repo.policy, owner_access, &revision, &root).is_ok());
+}

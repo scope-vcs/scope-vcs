@@ -82,7 +82,7 @@ pub struct RepoConfigContext {
     pub head_oid: Option<String>,
 }
 
-pub fn api_url() -> String {
+pub fn api_url() -> anyhow::Result<String> {
     crate::context::api_url(
         option_env!("SCOPE_API_URL")
             .or(option_env!("SCOPE_API_PUBLIC_URL"))
@@ -91,7 +91,7 @@ pub fn api_url() -> String {
 }
 
 pub fn http_client() -> anyhow::Result<Client> {
-    crate::context::validate_api_url(&api_url())?;
+    crate::context::validate_api_url(&api_url()?)?;
     http_client_builder()
         .timeout(Duration::from_secs(20))
         .build()
@@ -349,11 +349,7 @@ pub fn display_user(user: &UserResponse) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-        thread,
-    };
+    use std::{io::Write, net::TcpListener, thread};
 
     #[test]
     fn shared_http_client_sends_cli_compatibility_identity() {
@@ -361,12 +357,11 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut bytes = [0_u8; 8192];
-            let read = stream.read(&mut bytes).unwrap();
+            let request = crate::test_support::read_http_request(&mut stream).unwrap();
             stream
                 .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
                 .unwrap();
-            String::from_utf8(bytes[..read].to_vec()).unwrap()
+            request
         });
 
         let response = http_client()

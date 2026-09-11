@@ -12,9 +12,9 @@ use super::{
     request_revision_rows::{insert_revision, revisions_for_request_ids},
     request_rows::{
         delete_request_rows, insert_request_event_row, insert_request_row, latest_request_events,
-        request_by_id, request_by_name, request_event_by_id, request_events_after_position,
-        request_events_by_request_id, request_list_page, requests_by_repo_author,
-        requests_by_repo_id, save_request_row,
+        public_draft_count, request_by_id, request_by_name, request_event_by_id,
+        request_events_after_position, request_events_by_request_id, request_list_page,
+        requests_by_repo_author, requests_by_repo_id, save_request_row,
     },
 };
 use sea_orm::TransactionTrait;
@@ -23,11 +23,10 @@ use {
     crate::error::PostgresError,
     scope_domain::requests::{
         CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
-        RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request, RequestActorRole,
-        RequestEvent, RequestRevisionMutation, RequestState, RequestTimelineMutation,
-        StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
-        close_request, edit_request_identity, record_request_revision,
-        record_working_request_upload, start_request,
+        RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request, RequestEvent,
+        RequestRevisionMutation, RequestTimelineMutation, StartRequestFacts, StartRequestInput,
+        StartRequestMutation, WorkingRequestUploadMutation, close_request, edit_request_identity,
+        record_request_revision, record_working_request_upload, start_request,
     },
 };
 
@@ -113,20 +112,17 @@ impl RequestStore {
             input,
         )?;
 
-        let author_requests =
-            requests_by_repo_author(&tx, &input.repo_id, &input.author_user_id).await?;
         let facts = StartRequestFacts {
             request_id_exists: request_by_id(&tx, &input.id).await?.is_some(),
             request_name_exists: request_by_name(&tx, &input.repo_id, &input.name)
                 .await?
                 .is_some(),
-            public_working_request_count: author_requests
-                .iter()
-                .filter(|request| {
-                    request.author_role == RequestActorRole::Public
-                        && request.state() == RequestState::Draft
-                })
-                .count(),
+            public_working_request_count: public_draft_count(
+                &tx,
+                &input.repo_id,
+                &input.author_user_id,
+            )
+            .await?,
         };
         let mutation = start_request(facts, input)?;
         insert_request_row(&tx, &mutation.request).await?;
@@ -281,6 +277,14 @@ impl RequestStore {
                 orphan_objects,
                 ..
             } => {
+                super::cleanup_queue::queue_pending_request_ref_cleanup(
+                    &tx,
+                    &repo.incarnation(),
+                    request,
+                    now_unix,
+                    generated_ids,
+                )
+                .await?;
                 tombstone_request_attachments(&tx, &request.id, now_unix).await?;
                 for revision in revisions {
                     delete_object_reference(&tx, "request_revision_snapshot", &revision.id).await?;

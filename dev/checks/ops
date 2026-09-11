@@ -6,12 +6,16 @@ node --test .github/scripts/audit-railway-experiments.test.mjs
 node --test .github/scripts/check-daily-release.test.mjs
 node --test .github/scripts/production-deployment-progress.test.mjs
 node --test .github/scripts/plan-production-deployment.test.mjs
+node --test .github/scripts/deployment-components.test.mjs
+node --test .github/scripts/railway-deployment-history.test.mjs
 node --test .github/scripts/verify-staging-target.test.mjs
 node --test .github/scripts/stop-staging-writers.test.mjs
 node --test deploy/railway/reconcile-media.test.mjs
 node --check .github/scripts/deploy-railway-image.mjs
 node --test .github/scripts/deploy-railway-image.test.mjs
 node --check dev/media-smoke.mjs
+node --test dev/media-capacity-samples.test.mjs
+python3 -m unittest dev/test_local_process.py
 bash -n .github/scripts/deploy-staging-railway.sh
 bash -n .github/scripts/staging-git-smoke.sh
 bash .github/scripts/test-deploy-backend-railway.sh

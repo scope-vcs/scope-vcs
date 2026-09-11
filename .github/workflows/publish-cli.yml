@@ -114,6 +114,10 @@ jobs:
           SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.environments.production.environmentId' "$manifest")"
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
           service_id="$(jq -r '.services["cli-downloads"].id' "$manifest")"
+          public_origin="$(jq -er '.environments.production.cliPublicOrigin' "$manifest")"
+          railway variable set --project "$RAILWAY_PROJECT_ID" \
+            --environment "$SCOPE_RAILWAY_ENVIRONMENT_ID" --service "$service_id" \
+            --skip-deploys "SCOPE_CLI_PUBLIC_URL=$public_origin"
           bash .github/scripts/deploy-railway.sh "$service_id" .railway-upload
 
       - name: Record successful Railway deployment

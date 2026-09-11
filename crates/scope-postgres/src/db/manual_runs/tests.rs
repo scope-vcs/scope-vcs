@@ -196,7 +196,7 @@ async fn uploaded_enqueue_that_wins_repository_lock_completes_before_real_revoca
         .unwrap()
         .unwrap();
     assert!(enqueued.inserted);
-    assert_eq!(removed.user_id, "member");
+    assert_eq!(removed.value.user_id, "member");
     assert_eq!(
         store.runs().run(&enqueued.run.id).await.unwrap().unwrap(),
         enqueued.run
@@ -214,7 +214,7 @@ async fn uploaded_enqueue_replay_requires_current_membership_and_matching_reques
     assert!(first.inserted);
     let replay = store
         .runs()
-        .enqueue_uploaded_manual_run(&request, object.clone(), revision.clone(), 10)
+        .enqueue_uploaded_manual_run(&request, object.clone(), revision.clone(), 11)
         .await
         .unwrap();
     assert!(!replay.inserted);
@@ -304,4 +304,54 @@ async fn uploaded_enqueue_rejects_mismatched_workflow_without_persisting() {
         PostgresErrorKind::InvalidInput,
     );
     assert_no_enqueue_rows(&store).await;
+}
+
+#[tokio::test]
+async fn uploaded_enqueue_replay_preserves_dispatch_and_terminal_execution() {
+    let (store, request, revision, object) = fixture();
+    let runs = store.runs();
+    let first = runs
+        .enqueue_uploaded_manual_run(&request, object.clone(), revision.clone(), 10)
+        .await
+        .unwrap();
+    let token = "e".repeat(64);
+    runs.dispatch_job(
+        &first.run.id,
+        "checks",
+        "replay-attempt",
+        &token,
+        "runtime",
+        12,
+        100,
+    )
+    .await
+    .unwrap();
+    let dispatched = runs.run_detail(&first.run.id).await.unwrap().unwrap();
+    let replay = runs
+        .enqueue_uploaded_manual_run(&request, object.clone(), revision.clone(), 13)
+        .await
+        .unwrap();
+    assert!(!replay.inserted);
+    assert_eq!(replay.run, dispatched.run);
+    assert_eq!(
+        runs.run_detail(&first.run.id).await.unwrap().unwrap(),
+        dispatched
+    );
+
+    runs.expire_attempt("replay-attempt", 100).await.unwrap();
+    runs.request_run_cancellation("member", "owner/repo", &first.run.id, 101)
+        .await
+        .unwrap();
+    let terminal = runs.run_detail(&first.run.id).await.unwrap().unwrap();
+    assert!(terminal.run.state.is_terminal());
+    let replay = runs
+        .enqueue_uploaded_manual_run(&request, object, revision, 102)
+        .await
+        .unwrap();
+    assert!(!replay.inserted);
+    assert_eq!(replay.run, terminal.run);
+    assert_eq!(
+        runs.run_detail(&first.run.id).await.unwrap().unwrap(),
+        terminal
+    );
 }

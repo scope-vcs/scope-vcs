@@ -6,6 +6,8 @@ use scope_domain::runs::{
     step::StepConclusion,
 };
 
+mod status_events;
+
 const INSPECTION_WORKFLOW: &str = r#"
 name: Inspection
 on:
@@ -34,6 +36,25 @@ async fn inspectable_run(logs_truncated: bool) -> InspectableRun {
 }
 
 async fn inspectable_run_with_long_logs(logs_truncated: bool, long: bool) -> InspectableRun {
+    let fixture = active_inspectable_run(long).await;
+    fixture
+        .state
+        .metadata
+        .runs()
+        .complete_attempt_step(
+            &fixture.attempt_id,
+            &"d".repeat(64),
+            0,
+            StepConclusion::Succeeded,
+            logs_truncated,
+            7,
+        )
+        .await
+        .unwrap();
+    fixture
+}
+
+async fn active_inspectable_run(long: bool) -> InspectableRun {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     let revision = scope_run_config::parse_workflow(
@@ -43,10 +64,7 @@ async fn inspectable_run_with_long_logs(logs_truncated: bool, long: bool) -> Ins
     .unwrap()
     .into_revision(TEST_REPO_ID.to_string())
     .unwrap();
-    let run_id = format!(
-        "run_inspection_{}",
-        if logs_truncated { "cut" } else { "full" }
-    );
+    let run_id = "run_inspection".to_string();
     let mut source = scope_object_store::content_object_for_bytes(
         ContentObjectKind::GitBundle,
         b"inspection bundle",
@@ -167,20 +185,6 @@ async fn inspectable_run_with_long_logs(logs_truncated: bool, long: bool) -> Ins
             );
         }
     }
-    state
-        .metadata
-        .runs()
-        .complete_attempt_step(
-            &attempt_id,
-            &attempt_token_hash,
-            0,
-            StepConclusion::Succeeded,
-            logs_truncated,
-            7,
-        )
-        .await
-        .unwrap();
-
     InspectableRun {
         state,
         run_id,

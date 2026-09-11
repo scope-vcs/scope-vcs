@@ -1,7 +1,12 @@
-use super::*;
+use super::{RequestCommitSummary, changes::request_commit_changes, commit_belongs_to_revision};
 use crate::runtime_budgets::RuntimeBudgets;
-use scope_domain::{policy::Policy, repository::RepositoryIncarnation};
+use crate::{error::ApiError, git::import::run_git_output_bounded};
+use scope_domain::policy::Policy;
+use scope_domain::{
+    policy::ScopePath, repository::access::RepositoryAccess, requests::RequestRevision,
+};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
+use std::path::Path as FsPath;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{BufRead, BufReader, Read},
@@ -12,7 +17,7 @@ const MAX_REQUEST_COMMIT_IDENTITY_BYTES: usize = 64 * 1024;
 const MAX_REQUEST_COMMIT_METADATA_BYTES: usize = 64 * 1024;
 const MAX_REQUEST_DIFF_FIELD_BYTES: usize = 64 * 1024;
 
-pub(super) fn request_revision_commit_files(
+pub(crate) fn request_revision_commit_files(
     raw_repo: &FsPath,
     policy: &Policy,
     access: RepositoryAccess,
@@ -29,11 +34,11 @@ pub(super) fn request_revision_commit_files(
     Ok(InspectedRequestCommitFiles { commit })
 }
 
-pub(super) struct InspectedRequestCommitFiles {
-    pub(super) commit: RequestRevisionCommitResponse,
+pub(crate) struct InspectedRequestCommitFiles {
+    pub(crate) commit: RequestCommitSummary,
 }
 
-fn request_commit_is_visible_to(
+pub(super) fn request_commit_is_visible_to(
     raw_repo: &FsPath,
     policy: &Policy,
     access: RepositoryAccess,
@@ -44,96 +49,7 @@ fn request_commit_is_visible_to(
         .map(|changes| !changes.hidden)
 }
 
-pub(crate) struct RequestRevisionCommitVisibility<'a> {
-    state: &'a AppState,
-    incarnation: &'a RepositoryIncarnation,
-    policy: &'a Policy,
-    access: RepositoryAccess,
-    request: &'a Request,
-}
-
-impl<'a> RequestRevisionCommitVisibility<'a> {
-    pub(crate) fn new(
-        state: &'a AppState,
-        incarnation: &'a RepositoryIncarnation,
-        policy: &'a Policy,
-        access: RepositoryAccess,
-        request: &'a Request,
-    ) -> Self {
-        Self {
-            state,
-            incarnation,
-            policy,
-            access,
-            request,
-        }
-    }
-
-    pub(crate) async fn visible_commits(
-        &self,
-        commits_by_revision: &BTreeMap<String, BTreeSet<String>>,
-    ) -> BTreeSet<(String, String)> {
-        let mut visible = BTreeSet::new();
-        for (revision_id, commit_oids) in commits_by_revision {
-            let result = self
-                .visible_commits_in_revision(revision_id, commit_oids)
-                .await;
-            match result {
-                Ok(commit_oids) => visible.extend(
-                    commit_oids
-                        .into_iter()
-                        .map(|commit_oid| (revision_id.clone(), commit_oid)),
-                ),
-                Err(error) => tracing::warn!(
-                    request_id = %self.request.id,
-                    revision_id,
-                    error = ?error,
-                    "redacting discussion anchors because request revision inspection failed"
-                ),
-            }
-        }
-        visible
-    }
-
-    async fn visible_commits_in_revision(
-        &self,
-        revision_id: &str,
-        commit_oids: &BTreeSet<String>,
-    ) -> Result<BTreeSet<String>, ApiError> {
-        let Some(revision) = self
-            .state
-            .metadata
-            .requests()
-            .request_revision(&self.request.id, revision_id)
-            .await?
-        else {
-            return Ok(BTreeSet::new());
-        };
-        let policy = self.policy.clone();
-        let access = self.access;
-        let commit_oids = commit_oids.clone();
-        with_request_revision_store_repo(
-            self.state,
-            self.incarnation,
-            self.request,
-            &revision,
-            move |raw_repo, revision| {
-                let mut visible = BTreeSet::new();
-                for commit_oid in &commit_oids {
-                    if commit_belongs_to_revision(raw_repo, revision, commit_oid)?
-                        && request_commit_is_visible_to(raw_repo, &policy, access, commit_oid)?
-                    {
-                        visible.insert(commit_oid.clone());
-                    }
-                }
-                Ok(visible)
-            },
-        )
-        .await
-    }
-}
-
-pub(super) fn inspect_request_commit(
+pub(crate) fn inspect_request_commit(
     raw_repo: &FsPath,
     policy: &Policy,
     access: RepositoryAccess,
@@ -145,12 +61,12 @@ pub(super) fn inspect_request_commit(
     if changes.hidden {
         return Ok(InspectedRequestCommit {
             commit: None,
-            inspection: RequestRevisionInspectionState::Complete,
+            inspection_complete: true,
         });
     }
     let metadata = request_commit_display_metadata(raw_repo, commit_oid)?;
     Ok(InspectedRequestCommit {
-        commit: Some(RequestRevisionCommitResponse {
+        commit: Some(RequestCommitSummary {
             oid: commit_oid.to_string(),
             parent_oids: if access.can_read_private_files {
                 identity.parent_oids
@@ -164,15 +80,11 @@ pub(super) fn inspect_request_commit(
             files: changes.files,
             files_truncated: false,
         }),
-        inspection: if metadata.complete {
-            RequestRevisionInspectionState::Complete
-        } else {
-            RequestRevisionInspectionState::Incomplete
-        },
+        inspection_complete: metadata.complete,
     })
 }
 
-pub(super) fn inspect_request_commits_identity_only(
+pub(crate) fn inspect_request_commits_identity_only(
     raw_repo: &FsPath,
     policy: &Policy,
     access: RepositoryAccess,
@@ -188,13 +100,13 @@ pub(super) fn inspect_request_commits_identity_only(
             if changes.hidden {
                 return Ok(InspectedRequestCommit {
                     commit: None,
-                    inspection: RequestRevisionInspectionState::Complete,
+                    inspection_complete: true,
                 });
             }
             let identity = request_commit_identity(raw_repo, commit_oid)?;
             let metadata = request_commit_display_metadata(raw_repo, commit_oid)?;
             Ok(InspectedRequestCommit {
-                commit: Some(RequestRevisionCommitResponse {
+                commit: Some(RequestCommitSummary {
                     oid: commit_oid.clone(),
                     parent_oids: if access.can_read_private_files {
                         identity.parent_oids
@@ -208,19 +120,15 @@ pub(super) fn inspect_request_commits_identity_only(
                     files: Vec::new(),
                     files_truncated: changes.change_count != 0,
                 }),
-                inspection: if metadata.complete && changes.change_count == 0 {
-                    RequestRevisionInspectionState::Complete
-                } else {
-                    RequestRevisionInspectionState::Incomplete
-                },
+                inspection_complete: metadata.complete && changes.change_count == 0,
             })
         })
         .collect()
 }
 
-pub(super) struct InspectedRequestCommit {
-    pub(super) commit: Option<RequestRevisionCommitResponse>,
-    pub(super) inspection: RequestRevisionInspectionState,
+pub(crate) struct InspectedRequestCommit {
+    pub(crate) commit: Option<RequestCommitSummary>,
+    pub(crate) inspection_complete: bool,
 }
 
 #[derive(Default)]
@@ -245,6 +153,7 @@ fn request_commit_change_summaries(
     let mut command = Command::new("git");
     command.arg("-C").arg(raw_repo).args([
         "diff-tree",
+        "--root",
         "--stdin",
         "--raw",
         "-r",
@@ -342,12 +251,7 @@ fn validate_request_diff_header(field: &BoundedNulField) -> Result<(), ApiError>
         ));
     }
     let header = std::str::from_utf8(&field.bytes).map_err(ApiError::bad_request)?;
-    let columns = header.split_ascii_whitespace().collect::<Vec<_>>();
-    if columns.len() != 5 || !columns[0].starts_with(':') {
-        return Err(ApiError::internal_message(format!(
-            "invalid request identity diff header {header}"
-        )));
-    }
+    super::changes::parse_request_diff_header(header)?;
     Ok(())
 }
 
@@ -399,7 +303,7 @@ fn read_nul_field_bounded(reader: &mut impl BufRead) -> Result<Option<BoundedNul
     }
 }
 
-fn request_commit_identity(
+pub(super) fn request_commit_identity(
     raw_repo: &FsPath,
     commit_oid: &str,
 ) -> Result<RequestCommitIdentity, ApiError> {
@@ -415,28 +319,7 @@ fn request_commit_identity(
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
-    let identity = parse_request_commit_identity(&output.stdout)?;
-    if identity.parent_oids.is_empty() {
-        return Err(ApiError::conflict(
-            "request revision commit must have a parent",
-        ));
-    }
-    Ok(identity)
-}
-
-fn request_commit_changes(
-    raw_repo: &FsPath,
-    policy: &Policy,
-    access: RepositoryAccess,
-    parent_oids: &[String],
-    commit_oid: &str,
-) -> Result<VisibleRequestChanges, ApiError> {
-    // Request-ref validation requires every revision head to descend from its recorded base,
-    // so commits introduced by a revision cannot be parentless roots.
-    let parent = parent_oids
-        .first()
-        .ok_or_else(|| ApiError::conflict("request revision commit must have a parent"))?;
-    request_changes_from_repo_with_visibility(raw_repo, policy, access, parent, commit_oid, None)
+    parse_request_commit_identity(&output.stdout)
 }
 
 fn request_commit_display_metadata(
@@ -468,9 +351,9 @@ fn request_commit_display_metadata(
     parse_request_commit_display_metadata(&output.stdout)
 }
 
-struct RequestCommitIdentity {
-    parent_oids: Vec<String>,
-    authored_at_unix: u64,
+pub(super) struct RequestCommitIdentity {
+    pub(super) parent_oids: Vec<String>,
+    pub(super) authored_at_unix: u64,
 }
 
 struct RequestCommitDisplayMetadata {

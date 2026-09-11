@@ -3,10 +3,10 @@ use super::{
     request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, Statement, TransactionTrait,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -47,6 +47,16 @@ pub struct LeaveRequestCommand {
 }
 
 impl RequestStore {
+    /// Loads policy inputs with at most two queries, independent of request count.
+    /// Permission decisions remain in the request domain policy.
+    pub async fn requests_with_invitee_status(
+        &self,
+        repository_id: &str,
+        viewer_user_id: Option<&str>,
+    ) -> Result<Vec<(scope_domain::requests::Request, bool)>, PostgresError> {
+        requests_with_invitee_status(self.db.as_ref(), repository_id, viewer_user_id).await
+    }
+
     pub async fn request_invitees(
         &self,
         request_id: &str,
@@ -173,6 +183,40 @@ fn ensure_exact_visibility(visible: bool) -> Result<(), PostgresError> {
     } else {
         Err(PostgresError::not_found("request not found"))
     }
+}
+
+async fn requests_with_invitee_status<C: ConnectionTrait>(
+    conn: &C,
+    repository_id: &str,
+    viewer_user_id: Option<&str>,
+) -> Result<Vec<(scope_domain::requests::Request, bool)>, PostgresError> {
+    let requests = super::request_rows::requests_by_repo_id(conn, repository_id).await?;
+    let invitees = match viewer_user_id {
+        Some(user_id) => conn
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT i.request_id FROM scope_request_invitees i
+                 JOIN scope_requests r ON r.id = i.request_id
+                 WHERE r.repo_id = $1 AND i.user_id = $2",
+                [repository_id.into(), user_id.into()],
+            ))
+            .await
+            .map_err(PostgresError::internal)?
+            .into_iter()
+            .map(|row| {
+                row.try_get::<String>("", "request_id")
+                    .map_err(PostgresError::internal)
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?,
+        None => BTreeSet::new(),
+    };
+    Ok(requests
+        .into_iter()
+        .map(|request| {
+            let is_invitee = invitees.contains(&request.id);
+            (request, is_invitee)
+        })
+        .collect())
 }
 
 pub(super) async fn request_invitee_map<C>(
@@ -332,6 +376,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    mod batch_reads;
     use super::*;
     use crate::db::{MetadataStore, TestDatabaseTarget};
     use crate::error::PostgresErrorKind;

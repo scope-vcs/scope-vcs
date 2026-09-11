@@ -2,6 +2,7 @@
 """Extract compiled release data without trusting archive paths or file types."""
 
 import os
+import json
 from pathlib import Path, PurePosixPath
 import shutil
 import sys
@@ -9,9 +10,15 @@ import tarfile
 
 BACKEND_FILES = {
     'LICENSE', 'NOTICE', 'third-party-rust.txt', 'scope-maintenance',
-    'scope-vcs', 'scope-worker', 'scope-cache-service', 'scope-repo-router',
-    'scope-media-service', 'scope-smoke-seed',
+    'scope-smoke-seed',
 }
+with (Path(__file__).resolve().parents[1] / 'deployment-services.json').open() as manifest_file:
+    services = json.load(manifest_file)['services']
+BACKEND_FILES.update(
+    definition['artifact']['binary']
+    for service in services.values()
+    if (definition := service['deployment'])['backend'] and definition['artifact']['kind'] == 'binary'
+)
 
 
 def archive_path(member, kind):

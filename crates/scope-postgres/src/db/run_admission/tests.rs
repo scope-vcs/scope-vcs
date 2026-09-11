@@ -142,10 +142,10 @@ async fn concurrent_admission_obeys_global_capacity() {
 }
 
 #[tokio::test]
-async fn exhausted_oldest_job_is_repaired_and_healthy_job_progresses() {
+async fn final_dispatch_expiry_is_terminal_and_healthy_job_progresses() {
     let store = fixture(2).await;
     let runs = store.runs();
-    // Reproduce the persisted state from the former final pre-start expiry behavior.
+    // The final pre-start expiry must become terminal without another admission pass.
     runs.db
         .execute_unprepared(
             "UPDATE scope_run_jobs SET last_attempt_number = 99 WHERE run_id = 'run-000'",
@@ -165,17 +165,14 @@ async fn exhausted_oldest_job_is_repaired_and_healthy_job_progresses() {
         .await
         .unwrap();
     runs.expire_attempt(&claim.attempt.id, 12).await.unwrap();
-    runs.db.execute_unprepared("UPDATE scope_run_jobs SET state = 'queued', completed_at_unix = NULL WHERE run_id = 'run-000'; UPDATE scope_runs SET state = 'queued', completed_at_unix = NULL WHERE id = 'run-000'; UPDATE scope_run_attempts SET terminal_reason = '{\"kind\":\"execution-lost\",\"step_index\":null}' WHERE id = 'last-attempt'").await.unwrap();
-    let outcome = runs
-        .admit_next_job(1, "unused", &"c".repeat(64), "runtime", 13, 20)
-        .await
-        .unwrap();
-    let DispatchAdmission::Exhausted(repaired) = outcome else {
-        panic!("expected exhaustion repair");
-    };
-    assert_eq!(repaired.run.state, scope_domain::runs::run::RunState::Lost);
+    let terminal = runs.run_detail("run-000").await.unwrap().unwrap();
+    assert_eq!(terminal.run.state, scope_domain::runs::run::RunState::Lost);
     assert_eq!(
-        repaired.attempt.terminal_reason,
+        terminal.jobs[0].state,
+        scope_domain::runs::job::RunJobState::Lost
+    );
+    assert_eq!(
+        terminal.attempts[0].attempt.terminal_reason,
         Some(scope_domain::runs::step::AttemptTerminalReason::DispatchAttemptsExhausted)
     );
     let outcome = runs

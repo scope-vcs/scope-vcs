@@ -244,10 +244,8 @@ async fn failed_part_aborts_multipart_and_removes_local_output() {
         .await
         .unwrap_err();
 
-    assert!(matches!(
-        error,
-        GitStorageError::IncompleteIngest | GitStorageError::Multipart(_)
-    ));
+    assert!(matches!(error, GitStorageError::Multipart(_)));
+    assert!(error.to_string().contains("part failed"));
     assert_eq!(fixture.backend.aborted(), 1);
     assert_eq!(fixture.backend.completed(), 0);
     assert!(all_files(&fixture.local_root).await.is_empty());
@@ -340,11 +338,12 @@ async fn local_failure_aborts_the_remote_upload() {
     let config = test_config(invalid_root, 4, 8, 1);
     let store = GitSegmentStore::new(backend.clone(), test_key(), config).unwrap();
 
-    store
+    let error = store
         .ingest(REPOSITORY_ID, &b"local write fails"[..], u64::MAX)
         .await
         .unwrap_err();
 
+    assert!(matches!(error, GitStorageError::Local(_)));
     assert_eq!(backend.aborted(), 1);
     assert!(backend.objects().is_empty());
 }

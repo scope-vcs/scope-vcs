@@ -438,3 +438,36 @@ function coordinatorFor(
     versioned,
   })
 }
+
+test('completed stream reconnect delays release abort listeners before reconnecting', async () => {
+  const { default: Events } = await import('node:events')
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  const controller = new AbortController()
+  let connections = 0
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      setTimeout: (callback: () => void) => { queueMicrotask(callback); return 1 },
+      clearTimeout: () => {},
+    },
+  })
+  try {
+    await runRepoEventStream({
+      connect: async () => {
+        assert.equal(Events.getEventListeners(controller.signal, 'abort').length, 0)
+        connections += 1
+        if (connections === 20) controller.abort()
+        return { type: 'transport' }
+      },
+      onDiagnostic: () => {},
+      onEvent: () => {},
+      onInterrupted: () => {},
+      signal: controller.signal,
+    })
+    assert.equal(connections, 20)
+    assert.equal(Events.getEventListeners(controller.signal, 'abort').length, 0)
+  } finally {
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
+    else Reflect.deleteProperty(globalThis, 'window')
+  }
+})

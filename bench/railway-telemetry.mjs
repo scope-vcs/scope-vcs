@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -60,7 +60,8 @@ async function main() {
   const environment = required('SCOPE_RAILWAY_ENVIRONMENT');
   const since = process.env.SCOPE_RAILWAY_SINCE || '1h';
   const until = process.env.SCOPE_RAILWAY_UNTIL?.trim() || null;
-  const services = (process.env.SCOPE_RAILWAY_SERVICES || 'scope-api,scope-worker')
+  const manifest = JSON.parse(await readFile(new URL('../.github/deployment-services.json', import.meta.url), 'utf8'));
+  const services = (process.env.SCOPE_RAILWAY_SERVICES || ['api', 'run-worker'].map((key) => manifest.services[key].name).join(','))
     .split(',')
     .map((service) => service.trim())
     .filter(Boolean);

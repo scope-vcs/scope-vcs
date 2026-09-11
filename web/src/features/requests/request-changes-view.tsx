@@ -35,6 +35,7 @@ type RequestChangesViewProps = {
   }
   repoId: string
   revisions: RequestRevisions | null
+  scope: string | null
   search: RequestChangesSearch
 }
 
@@ -50,6 +51,7 @@ export function RequestChangesView({
   repoId,
   revisions,
   search,
+  scope,
 }: RequestChangesViewProps) {
   if (!revisions) {
     return (
@@ -85,6 +87,7 @@ export function RequestChangesView({
       repoId={repoId}
       revisions={revisions}
       search={search}
+      scope={scope}
     />
   )
 }

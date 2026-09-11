@@ -1,3 +1,4 @@
+mod heartbeat;
 mod output;
 mod process;
 mod sink;

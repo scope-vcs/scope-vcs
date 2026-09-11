@@ -15,10 +15,16 @@ mod git_segment_schema;
 mod maintenance_cutover;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
+mod run_execution_invariants;
 
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0042_current_schema_baseline",
     "m0043_retire_git_manifests",
+    "m0044_run_execution_invariants",
+    "m0045_cache_upload_cleanup_leases",
+    "m0046_request_media_budget_release",
+    "m0047_retire_apply_changes_permission",
+    "m0048_request_ref_cleanup",
 ];
 
 pub(super) async fn isolated_database() -> (

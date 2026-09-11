@@ -290,25 +290,38 @@ impl S3ObjectStore {
         for (name, value) in signed.headers {
             request = request.header(name, value);
         }
-        send_blocking_request(method, key.unwrap_or("bucket"), request, max_bytes)
+        send_blocking_request(method, key, request, max_bytes)
     }
 }
 
 fn send_blocking_request(
     method: &str,
-    key: &str,
+    key: Option<&str>,
     request: reqwest::blocking::RequestBuilder,
     max_bytes: Option<usize>,
 ) -> Result<Vec<u8>, ObjectStoreError> {
     let send = || {
-        let response = request.send().map_err(ObjectStoreError::internal)?;
+        let label = key.unwrap_or("bucket");
+        let response = request.send().map_err(|error| {
+            ObjectStoreError::service_unavailable(format!(
+                "object store {method} failed for {label}: {error}"
+            ))
+        })?;
         let status = response.status();
         if !status.is_success() {
-            return Err(ObjectStoreError::service_unavailable(format!(
-                "object store {method} failed for {key}: {status}"
-            )));
+            let message = format!("object store {method} failed for {label}: {status}");
+            return Err(
+                if key.is_some()
+                    && matches!(method, "GET" | "HEAD")
+                    && status == reqwest::StatusCode::NOT_FOUND
+                {
+                    ObjectStoreError::not_found(message)
+                } else {
+                    ObjectStoreError::service_unavailable(message)
+                },
+            );
         }
-        read_response_body(response, key, max_bytes)
+        read_response_body(response, label, max_bytes)
     };
 
     if tokio::runtime::Handle::try_current().is_ok() {
@@ -325,9 +338,9 @@ fn read_response_body(
 ) -> Result<Vec<u8>, ObjectStoreError> {
     let Some(max_bytes) = max_bytes else {
         let mut body = Vec::new();
-        response
-            .read_to_end(&mut body)
-            .map_err(ObjectStoreError::internal)?;
+        response.read_to_end(&mut body).map_err(|error| {
+            ObjectStoreError::service_unavailable(format!("reading object {key} failed: {error}"))
+        })?;
         return Ok(body);
     };
 
@@ -346,7 +359,9 @@ fn read_response_body(
     response
         .take((max_bytes as u64).saturating_add(1))
         .read_to_end(&mut body)
-        .map_err(ObjectStoreError::internal)?;
+        .map_err(|error| {
+            ObjectStoreError::service_unavailable(format!("reading object {key} failed: {error}"))
+        })?;
     ensure_object_size("read", key, body.len(), max_bytes)?;
     Ok(body)
 }
@@ -653,22 +668,38 @@ mod tests {
         store.request_timeout = Duration::from_millis(50);
         let started = std::time::Instant::now();
         let error = store.get("stalled").unwrap_err();
-        assert_eq!(error.kind, crate::ObjectStoreErrorKind::Internal);
+        assert_eq!(error.kind, crate::ObjectStoreErrorKind::ServiceUnavailable);
         assert!(started.elapsed() < Duration::from_secs(1));
         server.join().unwrap();
     }
 
     #[test]
-    fn s3_http_errors_preserve_service_unavailable_classification() {
-        for status in ["404 Not Found", "403 Forbidden", "503 Service Unavailable"] {
+    fn s3_reads_distinguish_missing_objects_from_unavailable_storage() {
+        use crate::ObjectStoreErrorKind::{NotFound, ServiceUnavailable};
+        for (status, expected) in [
+            ("404 Not Found", NotFound),
+            ("403 Forbidden", ServiceUnavailable),
+            ("503 Service Unavailable", ServiceUnavailable),
+        ] {
             let server = TestS3Server::start_wire_responses(vec![
                 format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                     .into_bytes(),
             ]);
             let error = test_s3_store(&server.endpoint).get("missing").unwrap_err();
-            assert_eq!(error.kind, crate::ObjectStoreErrorKind::ServiceUnavailable);
+            assert_eq!(error.kind, expected);
             assert!(error.message.contains(status));
         }
+    }
+
+    #[test]
+    fn missing_bucket_is_an_unavailable_store() {
+        let server = TestS3Server::start_wire_responses(vec![
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+        ]);
+        let error = test_s3_store(&server.endpoint)
+            .readiness_check()
+            .unwrap_err();
+        assert_eq!(error.kind, crate::ObjectStoreErrorKind::ServiceUnavailable);
     }
 
     fn test_s3_store(endpoint: &str) -> S3ObjectStore {

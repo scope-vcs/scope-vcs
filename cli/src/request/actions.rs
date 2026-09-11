@@ -36,11 +36,11 @@ pub(super) fn submit_request_command(
     yes: bool,
     machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
+    let (context, request_id, _) = load_exact_request(git_repo, api, target)?;
     let prompt = "Submit this request to its maintainers";
     require_confirmation(prompt, yes, !machine_output)?;
     let response = api_submit_request(api, api_target(&context, &request_id))?;
-    let human_lines = request_mutation_receipt_lines("Submitted", Some(&before.request), &response);
+    let human_lines = request_mutation_receipt_lines("Submitted", &response);
     Ok(RequestCommandOutcome::new(
         "request.submit",
         RequestCommandResult::Mutation(RepoResponse {
@@ -93,25 +93,23 @@ pub(super) fn edit_request(
         description,
         has_attachments.then(|| before.request.description_markdown.clone()),
     )?;
-    let mut human_lines =
-        request_mutation_receipt_lines("Edited request", Some(&before.request), &response);
+    let mut human_lines = request_mutation_receipt_lines("Edited request", &response);
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
+    let saved = serde_json::json!({
+        "operation": "request.edit", "saved": true,
+        "request_id": &request_id, "request": &response.request,
+    });
     let attachments = if args.attachments.wait {
         attachments::wait_for_processing(
             api,
             api_target(&context, &request_id),
             uploaded.attachments,
-            serde_json::json!({
-                "operation": "request.edit",
-                "saved": true,
-                "request_id": &request_id,
-                "request": &response.request,
-            }),
+            saved.clone(),
         )?
     } else {
         uploaded.attachments
     };
-    attachments::complete_uploads(&uploaded.receipt_keys)?;
+    attachments::complete_saved_uploads(None, &uploaded.receipt_keys, saved)?;
     if has_attachments {
         return Ok(RequestCommandOutcome::new(
             "request.edit",
@@ -217,7 +215,7 @@ pub(super) fn merge_request_command(
         !machine_output,
     )?;
     let response = merge_request(api, api_target(&context, &request_id))?;
-    let human_lines = request_mutation_receipt_lines("Merged", Some(&before.request), &response);
+    let human_lines = request_mutation_receipt_lines("Merged", &response);
     Ok(RequestCommandOutcome::new(
         "request.merge",
         RequestCommandResult::Mutation(RepoResponse {

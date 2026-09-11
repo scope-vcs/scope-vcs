@@ -180,9 +180,16 @@ fi
 
 if [[ "$1 $2" == "deployment list" ]]; then
   service=""
+  history_only=0
   while [[ "$#" -gt 0 ]]; do
-    if [[ "$1" == "--service" ]]; then service="$2"; shift 2; else shift; fi
+    if [[ "$1" == "--service" ]]; then service="$2"; shift 2
+    elif [[ "$1" == "--limit" && "$2" == 1 ]]; then history_only=1; shift 2
+    else shift; fi
   done
+  if [[ "$history_only" == 1 && "$service" == "${FAKE_HISTORY_FAILURE_SERVICE:-}" ]]; then
+    echo '[]'
+    exit 73
+  fi
   if [[ -f "$FAKE_RAILWAY_STATE/gate-${service}" ]]; then
     jq -cn --arg service "$service" --arg image "$(cat "$FAKE_RAILWAY_STATE/gate-${service}")" \
       '[{id:("gate-"+$service),serviceId:$service,status:"SUCCESS",deploymentStopped:false,createdAt:"2026-01-01T00:00:00Z",meta:{serviceManifest:{source:{image:$image},deploy:{startCommand:"/app/bin/scope-maintenance serve",healthcheckPath:"/readyz"}}}},{id:("old-"+$service),serviceId:$service,status:"REMOVED",deploymentStopped:true}]'

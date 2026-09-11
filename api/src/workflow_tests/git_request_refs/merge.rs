@@ -281,7 +281,43 @@ async fn merge_route_persists_git_content_once() {
         )
         .await
         .unwrap();
-    assert_eq!(public_history.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(public_history.status(), StatusCode::OK);
+    let history = response_json(public_history).await;
+    let entry = history["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["kind"] == "merged_request")
+        .unwrap();
+    let detail = public_get_json(
+        &app,
+        format!(
+            "/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/history/{}?audience=public",
+            entry["source_id"].as_str().unwrap()
+        ),
+    )
+    .await;
+    let native = detail["native_commits"].as_array().unwrap();
+    assert!(native.len() >= 3);
+    assert_eq!(native.last().unwrap()["oid"], request_head);
+    let merge_commit = native
+        .iter()
+        .find(|commit| commit["parent_oids"].as_array().unwrap().len() == 2)
+        .unwrap();
+    assert_eq!(merge_commit["message"], "update request onto public main");
+    assert_eq!(
+        merge_commit["author"],
+        "Scope Test <scope-test@example.test>"
+    );
+    let upstream_file = merge_commit["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["path"] == "/README.md")
+        .unwrap();
+    assert_ne!(upstream_file["old_oid"], upstream_file["new_oid"]);
+    let diff = public_get_json(&app, format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/history/{}/file-diff?audience=public&commit_oid={}&path=/README.md", entry["source_id"].as_str().unwrap(), merge_commit["oid"].as_str().unwrap())).await;
+    assert_eq!(diff["path"], "/README.md");
     let public_preview = app
         .clone()
         .oneshot(
@@ -294,7 +330,23 @@ async fn merge_route_persists_git_content_once() {
         )
         .await
         .unwrap();
-    assert_eq!(public_preview.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(public_preview.status(), StatusCode::OK);
+    let preview = response_json(public_preview).await;
+    for commit in native {
+        let projected = preview["commits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|preview| preview["projected_id"] == commit["oid"])
+            .unwrap();
+        assert_eq!(projected["parent_projected_ids"], commit["parent_oids"]);
+        assert_eq!(projected["message"], commit["message"]);
+        assert_eq!(projected["author"], commit["author"]);
+        assert_eq!(
+            projected["change_count"].as_u64().unwrap() as usize,
+            commit["files"].as_array().unwrap().len()
+        );
+    }
     let committed_repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();

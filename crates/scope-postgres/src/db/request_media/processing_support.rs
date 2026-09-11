@@ -2,9 +2,9 @@ use super::{
     CompletedRequestAttachmentDerivative, CompletedRequestMediaManifest,
     ValidatedRequestAttachmentSource,
     access::cleanup_tombstone_exists,
+    budget::{lock_media_budget, media_usage},
     default_limits,
     persistence::{as_i32, as_i64, attachment_by_id, enum_string},
-    upload::lock_media_budget,
 };
 use crate::{db::locks::acquire_shared_repository_lock, error::PostgresError};
 use scope_domain::requests::attachments::{
@@ -590,34 +590,9 @@ pub(super) async fn ensure_derivative_budget<C>(
 where
     C: ConnectionTrait,
 {
-    let row = conn
-        .query_one(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT COALESCE(SUM(
-                        other.reserved_source_bytes
-                        + CASE WHEN other.actual_derivative_bytes IS NULL
-                               THEN other.reserved_derivative_bytes
-                               ELSE other.actual_derivative_bytes END
-                    ), 0)::bigint AS other_bytes
-             FROM scope_request_media_attachments current
-             LEFT JOIN scope_request_media_attachments other
-               ON other.repository_id = current.repository_id AND other.id <> current.id
-               AND NOT EXISTS (
-                    SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
-                    WHERE cleanup.attachment_id = other.id AND cleanup.state = 'Completed'
-               )
-             WHERE current.id = $1
-             GROUP BY current.id",
-            [attachment.id.clone().into()],
-        ))
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| PostgresError::internal_message("attachment budget row missing"))?;
-    let other_bytes = u64::try_from(
-        row.try_get::<i64>("", "other_bytes")
-            .map_err(PostgresError::internal)?,
-    )
-    .map_err(PostgresError::internal)?;
+    let other_bytes = media_usage(conn, &attachment.repository_id, None, Some(&attachment.id))
+        .await?
+        .repository_bytes;
     let total = other_bytes
         .checked_add(attachment.size_bytes)
         .and_then(|value| value.checked_add(actual_derivative_bytes))

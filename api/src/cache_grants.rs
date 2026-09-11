@@ -22,10 +22,8 @@ impl CacheGrantIssuer {
     }
 
     fn new(endpoint: String, backend: String, private_key_pem: String) -> anyhow::Result<Self> {
-        let endpoint = endpoint.trim_end_matches('/').to_string();
-        if !(endpoint.starts_with("https://") || endpoint.starts_with("http://127.0.0.1")) {
-            anyhow::bail!("SCOPE_CACHE_URL must use HTTPS outside local development");
-        }
+        let endpoint = scope_service_config::ServiceEndpoint::parse(&endpoint)
+            .map_err(|error| anyhow::anyhow!("SCOPE_CACHE_URL: {error}"))?;
         if backend.is_empty()
             || backend.len() > 64
             || backend.starts_with('-')
@@ -40,7 +38,7 @@ impl CacheGrantIssuer {
             );
         }
         Ok(Self {
-            endpoint: Arc::from(endpoint),
+            endpoint: Arc::from(endpoint.as_str()),
             backend: Arc::from(backend),
             key: Arc::new(EncodingKey::from_ed_pem(private_key_pem.as_bytes())?),
         })
@@ -98,6 +96,27 @@ pub(crate) const TEST_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2
 mod tests {
     use super::*;
     use jsonwebtoken::{DecodingKey, Validation, decode};
+
+    #[test]
+    fn configured_endpoint_is_validated_and_canonicalized_before_issuance() {
+        for endpoint in [
+            "http://127.0.0.1.example.net",
+            "http://127.0.0.1@remote.example",
+            "https://",
+        ] {
+            assert!(
+                CacheGrantIssuer::new(endpoint.into(), "test".into(), TEST_PRIVATE_KEY.into())
+                    .is_err()
+            );
+        }
+        let issuer = CacheGrantIssuer::new(
+            "https://EXAMPLE.com:443/cache/".into(),
+            "test".into(),
+            TEST_PRIVATE_KEY.into(),
+        )
+        .unwrap();
+        assert_eq!(issuer.endpoint(), "https://example.com/cache");
+    }
 
     #[test]
     fn grant_is_signed_with_the_dedicated_ed25519_key() {

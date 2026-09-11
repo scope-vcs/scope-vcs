@@ -199,78 +199,83 @@ async fn configured_private_intermediate_path_cannot_enter_public_request_histor
 }
 
 async fn assert_private_history_push_rejected(history: PrivacyHistory, source_label: &str) {
-    let state = test_state_with_request().await;
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
     state
         .metadata
         .repositories()
         .replace_repository_for_tests(privacy_repo(&state, history))
         .await
         .unwrap();
+    state
+        .metadata
+        .auth()
+        .insert_user_for_tests(test_user(public_user_id(), "public", PUBLIC_EMAIL))
+        .await
+        .unwrap();
+    start_public_request(&state).await;
     insert_member_user(&state).await;
-    let (origin, _server) = spawn_test_server(&state).await;
 
-    let source = checkout_dir(source_label);
-    let permissioned_remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
-    match history {
-        PrivacyHistory::Mixed => clone_with_bearer(
-            &permissioned_remote,
-            &source,
-            &bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL),
-            "clone private repo for public request",
-        ),
-        PrivacyHistory::Revealed | PrivacyHistory::Deleted => {
-            let private_source = checkout_dir(&format!("{source_label}-private-source"));
-            let public_remote = format!("{origin}/git/public/{TEST_REPO_ID}");
-            run_git(
-                None,
-                &["clone", &public_remote, source.to_str().unwrap()],
-                "clone public repo for private history request",
-            )
-            .unwrap();
-            clone_with_bearer(
-                &permissioned_remote,
-                &private_source,
-                &bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL),
-                "clone private history source",
-            );
-            run_git(
-                Some(&source),
-                &["remote", "add", "private", private_source.to_str().unwrap()],
-                "add private history remote",
-            )
-            .unwrap();
-            run_git(
-                Some(&source),
-                &["fetch", "private", "main"],
-                "fetch private history",
-            )
-            .unwrap();
-            run_git(
-                Some(&source),
-                &[
-                    "-c",
-                    "user.name=Scope Test",
-                    "-c",
-                    "user.email=scope-test@example.test",
-                    "merge",
-                    "--allow-unrelated-histories",
-                    "-s",
-                    "ours",
-                    "--no-edit",
-                    "private/main",
-                ],
-                "merge private history into public request branch",
-            )
-            .unwrap();
-        }
-    }
-    fs::write(source.join("request.txt"), "request edit\n").unwrap();
-    run_git(Some(&source), &["add", "-A"], "add request edit").unwrap();
-    commit_all(&source, "request edit carrying private history");
-    configure_bearer_header(
+    let (source, permissioned_remote, _server) =
+        request_push_checkout(&state, source_label, PUBLIC_SUBJECT, PUBLIC_EMAIL).await;
+    push_change(
         &source,
         &permissioned_remote,
+        REQUEST_REF,
+        "README.md",
+        "clean public request edit\n",
+        "accept public history from the request author",
+    )
+    .unwrap();
+    let request_before = stored_request(&state, REQUEST_ID).await;
+    assert_eq!(request_before.head_oid, git_head_oid(&source));
+    assert!(request_before.git_snapshot.is_some());
+    let event_count_before = request_event_count(&state).await;
+
+    let private_source = checkout_dir(&format!("{source_label}-private-source"));
+    clone_with_bearer(
+        &permissioned_remote,
+        &private_source,
         &bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL),
+        "clone private history source",
+    );
+    run_git(
+        Some(&source),
+        &["remote", "add", "private", private_source.to_str().unwrap()],
+        "add private history remote",
+    )
+    .unwrap();
+    run_git(
+        Some(&source),
+        &["fetch", "private", "main"],
+        "fetch private history",
+    )
+    .unwrap();
+    run_git(
+        Some(&source),
+        &[
+            "-c",
+            "user.name=Scope Test",
+            "-c",
+            "user.email=scope-test@example.test",
+            "merge",
+            "--allow-unrelated-histories",
+            "-s",
+            "ours",
+            "--no-edit",
+            "private/main",
+        ],
+        "merge private history while preserving the accepted public tree",
+    )
+    .unwrap();
+    assert_eq!(
+        git_stdout_text(
+            &source,
+            &["diff", &request_before.head_oid, "HEAD"],
+            "compare request trees"
+        )
+        .unwrap(),
+        "",
     );
 
     let output = run_git_output(
@@ -279,13 +284,14 @@ async fn assert_private_history_push_rejected(history: PrivacyHistory, source_la
         "push private history to public request",
     )
     .unwrap();
-
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{source_label}: {stderr}");
     assert!(
-        !output.status.success(),
-        "{source_label}: private-history side branch push unexpectedly succeeded: {}",
-        String::from_utf8_lossy(&output.stderr)
+        stderr.contains("public request history must be based on public main"),
+        "{source_label}: expected private ancestry rejection, got: {stderr}",
     );
-    assert_request_branch_unchanged(&state).await;
+    assert_eq!(stored_request(&state, REQUEST_ID).await, request_before);
+    assert_eq!(request_event_count(&state).await, event_count_before);
 }
 
 fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {

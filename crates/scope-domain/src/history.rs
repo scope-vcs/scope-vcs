@@ -2,8 +2,8 @@ use crate::{
     content::SourceBlob,
     policy::{ScopePath, Visibility},
     projection::{
-        LogicalCommit, LogicalCommitOrigin, Projection, ProjectionViewKey, SourceGraph,
-        project_graph,
+        LogicalCommit, LogicalCommitOrigin, NativePublicCommit, Projection, ProjectionViewKey,
+        SourceGraph, project_graph,
     },
     visibility_changes::VisibilityChangeSet,
 };
@@ -18,7 +18,7 @@ pub use feed::HistoryFeed;
 use generation::history_generation;
 use projection_history::{ProjectedAction, ProjectionHistory};
 
-pub const HISTORY_GENERATION_VERSION: &str = "v6";
+pub const HISTORY_GENERATION_VERSION: &str = "v7";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FileChangeKind {
@@ -49,6 +49,8 @@ pub struct HistoryEntry {
     /// Content changes caused by this action. Visibility previews are owned by their transitions.
     pub files: Vec<HistoryEntryFile>,
     pub visibility_changes: Vec<HistoryEntryVisibilityChange>,
+    /// Audience-authorized native objects whose details are read from Git.
+    pub native_commits: Vec<NativePublicCommit>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,7 +144,16 @@ pub fn history_view_from_projection(
         let files = source
             .map(|action| action.files.clone())
             .unwrap_or_default();
-        if !files.is_empty() || !visibility_changes.is_empty() {
+        let native_commits = match &logical.origin {
+            LogicalCommitOrigin::PublicRequestMerge { commits, .. }
+                if view_key == ProjectionViewKey::Private
+                    || source.is_some_and(|action| action.preserves_git_commits) =>
+            {
+                commits.clone()
+            }
+            _ => Vec::new(),
+        };
+        if !files.is_empty() || !visibility_changes.is_empty() || !native_commits.is_empty() {
             let (author, message, occurred_at_unix) = action_metadata(logical, source, view_key);
             entries.push(HistoryEntry {
                 occurred_at_unix,
@@ -160,6 +171,7 @@ pub fn history_view_from_projection(
                 message,
                 files,
                 visibility_changes,
+                native_commits,
             });
         }
         append_visibility_actions(
@@ -189,7 +201,9 @@ fn action_metadata(
     projected: Option<&ProjectedAction>,
     view_key: ProjectionViewKey,
 ) -> (Option<String>, String, Option<i64>) {
-    let (author, message) = if view_key == ProjectionViewKey::Private {
+    let (author, message) = if view_key == ProjectionViewKey::Private
+        || projected.is_some_and(|action| action.preserves_git_commits)
+    {
         (Some(logical.author_id.clone()), logical.message.clone())
     } else {
         // A public boundary can reveal files from an otherwise private push. Only
@@ -232,6 +246,7 @@ fn append_visibility_actions(
             message: visibility_change_message(&visibility_changes),
             files: Vec::new(),
             visibility_changes,
+            native_commits: Vec::new(),
         });
     }
 }

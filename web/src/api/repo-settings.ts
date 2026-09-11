@@ -42,11 +42,12 @@ export async function deleteRepoForRequest(data: DeleteRepoInput) {
 
 export async function loadRepoCollaborationForRequest(
   data: RepoParams,
+  signal?: AbortSignal,
 ): Promise<RepoCollaboration> {
   return createApiClient().get(
     repoRoute(ApiRouteTemplates.repoMembers, data),
     apiValidators.RepositoryCollaborationResponse,
-    { auth: 'required' },
+    { auth: 'required', signal },
   )
 }
 

@@ -6,7 +6,7 @@ use crate::api::{
     get_request_attachment_limits, prepare_request_attachment, upload_request_attachment_part,
 };
 use anyhow::{Context, bail};
-pub(super) use journal::{begin_mutation, complete_mutation, complete_uploads};
+pub(super) use journal::begin_mutation;
 use journal::{fingerprint, rotate_upload_operation, unix_now, upload_operations};
 use scope_api_contract::attachments::{
     FinishRequestAttachmentRequest, PrepareRequestAttachmentRequest, RequestAttachmentKind,
@@ -22,6 +22,22 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+
+pub(super) fn complete_saved_uploads(
+    mutation: Option<&journal::PendingMutation>,
+    receipt_keys: &[String],
+    mut saved: serde_json::Value,
+) -> anyhow::Result<()> {
+    let result = match mutation {
+        Some(mutation) => journal::complete_mutation(mutation, receipt_keys),
+        None => journal::complete_uploads(receipt_keys),
+    };
+    result.map_err(|error| {
+        saved["saved"] = serde_json::json!(true);
+        saved["recovery"] = serde_json::json!("The server saved this change. Local attachment receipt cleanup failed; preserve the journal and inspect the saved result before retrying the command.");
+        crate::error::CliError::partial(format!("Change saved, but attachment receipt cleanup failed: {error:#}"), saved).into()
+    })
+}
 
 const MAX_PART_BYTES: usize = 8 * 1024 * 1024;
 const HASH_BUFFER_BYTES: usize = 1024 * 1024;

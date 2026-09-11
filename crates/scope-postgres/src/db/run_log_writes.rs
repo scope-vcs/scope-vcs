@@ -2,8 +2,8 @@ use super::{RunStore, StoredRunLog, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::log::RunLogChunk;
 use sea_orm::{
-    ActiveValue::NotSet, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait,
+    ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,6 +96,17 @@ impl RunStore {
             ));
         }
 
+        // A run cursor spans parallel jobs. Allocate its positions in commit order,
+        // after the attempt locks, without locking sibling jobs or the parent row.
+        tx.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT pg_advisory_xact_lock(hashtextextended(
+                'scope:run-log:' || current_schema() || ':' || $1, 0))",
+            [run.id.clone().into()],
+        ))
+        .await
+        .map_err(PostgresError::internal)?;
+
         let mut model = entities::run_log::Model::from_domain(&run.id, &chunk)?.into_active_model();
         model.position = NotSet;
         let inserted = entities::run_log::Entity::insert(model)
@@ -119,3 +130,6 @@ impl RunStore {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

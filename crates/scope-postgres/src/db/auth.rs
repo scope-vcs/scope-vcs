@@ -1,7 +1,7 @@
 use super::{
     AuthStore, acquire_aggregate_lock,
     cli_auth_results::{DeviceLoginPoll, NewCliSession, StartDeviceLoginCommand},
-    cli_sessions::insert_cli_session_in_tx,
+    cli_sessions::{insert_cli_session_in_tx, record_cli_session_use},
     entities,
 };
 use crate::error::PostgresError;
@@ -79,10 +79,6 @@ impl AuthStore {
             now_unix,
         )? {
             cli_auth_rules::DeviceLoginCompletionDecision::Expired => {
-                entities::cli_device_login::Entity::delete_by_id(login.device_code_hash)
-                    .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
                 return Err(PostgresError::conflict("CLI login code expired"));
             }
             cli_auth_rules::DeviceLoginCompletionDecision::Complete => {}
@@ -133,10 +129,6 @@ impl AuthStore {
             now_unix,
         )? {
             cli_auth_rules::DeviceLoginPollDecision::Expired => {
-                entities::cli_device_login::Entity::delete_by_id(login.device_code_hash)
-                    .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
                 Err(PostgresError::conflict("CLI device login expired"))
             }
             cli_auth_rules::DeviceLoginPollDecision::Pending { expires_at_unix } => {
@@ -193,6 +185,7 @@ impl AuthStore {
             cli_auth_rules::CliSessionUseDecision::Active { user_id } => user_id,
         };
         let user = load_user_by_id(&tx, &user_id).await?;
+        record_cli_session_use(&tx, &session.id, now_unix).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(user)
     }
@@ -219,10 +212,6 @@ impl AuthStore {
             now_unix,
         ) {
             cli_auth_rules::CliSessionRevokeDecision::Expired => {
-                entities::cli_session::Entity::delete_by_id(session.id)
-                    .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
                 return Err(PostgresError::unauthenticated("CLI token expired"));
             }
             cli_auth_rules::CliSessionRevokeDecision::Revoke => {}

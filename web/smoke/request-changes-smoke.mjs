@@ -125,10 +125,35 @@ export async function assertUpdateSelectionReloadsSelectedPayload(page) {
       !url.searchParams.has('path')
     ))
     await page.getByRole('heading', { level: 3, name: title }).waitFor()
+    await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
   } finally {
     page.off('request', recordServerFunction)
   }
-  assert.deepEqual(serverFunctions, ['loadChangesPage_createServerFn_handler'])
+  assert.deepEqual(serverFunctions, ['loadRevisions_createServerFn_handler', 'loadDiscussions_createServerFn_handler'])
+
+  const selectedUrl = page.url()
+  await page.getByRole('navigation', { name: 'Request views' })
+    .getByRole('link', { name: 'Discussion', exact: true }).click()
+  await page.waitForURL((url) => !url.pathname.endsWith('/changes'))
+  await page.locator('.request-discussion-thread').first().waitFor()
+  const reopenedLoads = []
+  const recordReopenedLoad = (request) => {
+    if (!request.url().includes('/_serverFn/')) return
+    const name = serverFunctionName(request)
+    if (name === 'loadRevisions_createServerFn_handler' || name === 'loadDiscussions_createServerFn_handler') {
+      reopenedLoads.push(name)
+    }
+  }
+  page.on('request', recordReopenedLoad)
+  try {
+    await page.goBack()
+    await page.waitForURL(selectedUrl)
+    await page.getByRole('heading', { level: 3, name: title }).waitFor()
+    await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
+    assert.deepEqual(reopenedLoads, [])
+  } finally {
+    page.off('request', recordReopenedLoad)
+  }
 }
 
 export async function assertRequestShellPreserved(page, shell) {

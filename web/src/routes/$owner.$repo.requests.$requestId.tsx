@@ -179,7 +179,15 @@ function RequestRoute() {
       performAction={performAction}
       ratings={page.ratings}
       rateRequest={rateParticipant}
-      updateDescription={(data) => updateDescription({ data })}
+      updateDescription={async (data) => {
+        try {
+          return await updateDescription({ data })
+        } catch (error) {
+          // Reload the server description so the preserved draft has an explicit recovery path.
+          await router.invalidate().catch(() => {})
+          throw error
+        }
+      }}
       viewerId={page.account?.user?.id ?? 'anonymous'}
     >
       <Outlet />

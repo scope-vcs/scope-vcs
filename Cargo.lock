@@ -84,6 +84,7 @@ dependencies = [
  "scope-object-store",
  "scope-postgres",
  "scope-run-config",
+ "scope-service-config",
  "serde",
  "serde_json",
  "sha1 0.10.6",
@@ -3512,6 +3513,7 @@ dependencies = [
  "scope-domain",
  "scope-object-store",
  "scope-postgres",
+ "scope-service-config",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3591,7 +3593,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
- "base64",
  "bytes",
  "getrandom 0.3.4",
  "hex",
@@ -3601,6 +3602,7 @@ dependencies = [
  "scope-media-storage",
  "scope-object-store",
  "scope-postgres",
+ "scope-service-config",
  "serde",
  "sha2 0.10.9",
  "tokio",
@@ -3609,20 +3611,22 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "url",
 ]
 
 [[package]]
 name = "scope-media-storage"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytes",
  "getrandom 0.3.4",
  "hex",
  "scope-object-store",
+ "scope-service-config",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -3635,7 +3639,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "base64",
  "getrandom 0.3.4",
  "hex",
  "libc",
@@ -3693,6 +3696,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -3704,6 +3708,7 @@ dependencies = [
  "reqwest 0.12.28",
  "sha2 0.10.9",
  "tokio",
+ "tokio-stream",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -3733,12 +3738,21 @@ dependencies = [
  "scope-cache-contract",
  "scope-cache-domain",
  "scope-domain",
+ "scope-service-config",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tar",
  "tempfile",
  "zstd",
+]
+
+[[package]]
+name = "scope-service-config"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "url",
 ]
 
 [[package]]
@@ -5436,6 +5450,7 @@ dependencies = [
  "scope-git-storage",
  "scope-object-store",
  "scope-postgres",
+ "scope-service-config",
  "serde",
  "serde_json",
  "sha2 0.10.9",

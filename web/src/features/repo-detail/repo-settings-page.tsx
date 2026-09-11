@@ -1,3 +1,4 @@
+import { mutateSettings } from './settings-mutation'
 import type {
   CreateRepoInviteInput,
   CreateRepoInviteResponse,
@@ -16,7 +17,7 @@ import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { storeHomeFlash } from '@/lib/home-flash'
 import { useNavigate, useRouter } from '@tanstack/react-router'
-import { useReducer } from 'react'
+import { useReducer, useState } from 'react'
 import { DeleteRepositoryDialog } from './delete-repository-dialog'
 import {
   MemberAccessSections,
@@ -35,7 +36,7 @@ export function RepoSettingsPage({
   deleteInvite,
   deleteMember,
   deleteRepo,
-  initialCollaboration,
+  collaboration,
   params,
   updateMember,
   updateMetadata,
@@ -46,7 +47,7 @@ export function RepoSettingsPage({
   deleteInvite: (input: DeleteRepoInviteInput) => Promise<RepoInvite>
   deleteMember: (input: DeleteRepoMemberInput) => Promise<RepoMember>
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
-  initialCollaboration: RepoCollaboration | null
+  collaboration: RepoCollaboration | null
   params: RepoParams
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepoMember>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummary>
@@ -58,13 +59,14 @@ export function RepoSettingsPage({
     repoSettingsPageReducer,
     initialRepoSettingsPageState,
   )
-  const collaboration = initialCollaboration
+  const [refreshError, setRefreshError] = useState<string | null>(null)
   const { deleteError, deleteTarget } = state
 
   async function mutateAndRefresh<T>(mutation: Promise<T>) {
-    const result = await mutation
-    await router.invalidate()
-    return result
+    setRefreshError(null)
+    return mutateSettings(mutation, () => router.invalidate(), () => {
+      setRefreshError('Your change was saved, but the updated settings could not be loaded. Refresh to try again.')
+    })
   }
 
   async function deleteRepository(target: RepoSummary) {
@@ -109,7 +111,8 @@ export function RepoSettingsPage({
     <>
       <PageContent>
         <h1 className="sr-only">Settings</h1>
-        {deleteError && (
+        {refreshError && <PageErrorAlert title="Settings refresh failed">{refreshError}</PageErrorAlert>}
+        {deleteError && !deleteTarget && (
           <PageErrorAlert title="Repository deletion failed">
             {deleteError}
           </PageErrorAlert>
@@ -124,6 +127,7 @@ export function RepoSettingsPage({
 
         {repo.access.actor !== 'Public' && (
           <RepositoryMetadataForm
+            key={repo.id}
             repo={repo}
             save={(metadata) => mutateAndRefresh(updateMetadata({ ...params, ...metadata }))}
           />
@@ -156,6 +160,7 @@ export function RepoSettingsPage({
 
       {deleteTarget && (
         <DeleteRepositoryDialog
+          error={deleteError}
           onCancel={() =>
             dispatch({ repo: null, type: 'deleteTargetChanged' })
           }

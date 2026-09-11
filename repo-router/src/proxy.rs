@@ -5,7 +5,7 @@ use crate::{
     rank_backends, repository_key,
 };
 use axum::{
-    body::{Body, Bytes, to_bytes},
+    body::{Body, Bytes},
     extract::{Request, State},
     http::{HeaderMap, HeaderName, Method, StatusCode, header},
     response::{IntoResponse, Response},
@@ -79,24 +79,20 @@ pub(crate) async fn repository_request(
 
     match kind {
         GitRequestKind::UploadPackRead => {
-            let body = match to_bytes(request.into_body(), state.upload_pack_replay_max_bytes).await
-            {
-                Ok(body) => body,
-                Err(error) => {
-                    tracing::warn!(
-                        repository,
-                        %error,
-                        max_bytes = state.upload_pack_replay_max_bytes,
-                        "Git upload-pack request exceeds router replay bound"
-                    );
-                    return (
-                        StatusCode::PAYLOAD_TOO_LARGE,
-                        "Git upload-pack request is too large",
-                    )
-                        .into_response();
-                }
+            let buffered = match state.replay.collect(request.into_body()).await {
+                Ok(buffered) => buffered,
+                Err(error) => return error.into_response(),
             };
-            forward_upload_pack(&state, &route, &candidate_ranks, upstream_request, body).await
+            let response = forward_upload_pack(
+                &state,
+                &route,
+                &candidate_ranks,
+                upstream_request,
+                buffered.bytes.clone(),
+            )
+            .await;
+            drop(buffered);
+            response
         }
         GitRequestKind::PrimaryOnly => {
             let rank = candidate_ranks[0];
@@ -467,6 +463,8 @@ mod tests {
             read_timeout: std::time::Duration::from_millis(20),
             read_replicas: 1,
             upload_pack_replay_max_bytes: 1024,
+            upload_pack_replay_slots: 4,
+            incoming_body_timeout: Duration::from_secs(15),
         })
         .unwrap();
 

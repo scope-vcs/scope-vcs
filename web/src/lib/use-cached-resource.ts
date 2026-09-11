@@ -16,6 +16,7 @@ export function useCachedResource<T extends object>({
   enabled = true,
   fallbackError,
   identity,
+  initialValue,
   load,
   resource,
   version = '',
@@ -23,6 +24,7 @@ export function useCachedResource<T extends object>({
   enabled?: boolean
   fallbackError: string
   identity: string | null
+  initialValue?: T | null
   load: (signal: AbortSignal) => Promise<T>
   resource: CachedResourceStore<T>
   version?: string
@@ -36,8 +38,10 @@ export function useCachedResource<T extends object>({
   const snapshot = useSyncExternalStore(subscribe, read, resource.getServerSnapshot)
 
   useEffect(() => {
-    if (enabled && identity) void resource.ensure(identity, version, load)
-  }, [enabled, identity, load, resource, snapshot.stale, version])
+    if (!enabled || !identity) return
+    if (initialValue) resource.seed(identity, initialValue, version)
+    void resource.ensure(identity, version, load)
+  }, [enabled, identity, initialValue, load, resource, snapshot.stale, version])
 
   const retry = useCallback(() => {
     if (!identity) return

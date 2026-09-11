@@ -72,6 +72,7 @@ jobs:
       deployed_revisions: ${{ steps.progress.outputs.revisions }}
       deployed_components: ${{ steps.progress.outputs.deployments }}
       checks_image: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['checks-image'] || false) || steps.plan.outputs.checks_image }}
+      backend_selected: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components).backend || false) || steps.plan.outputs.backend_selected }}
       cache: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['cache'] || false) || steps.plan.outputs.cache }}
       worker: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['run-worker'] || false) || steps.plan.outputs.worker }}
       media_worker: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['media-worker'] || false) || steps.plan.outputs.media_worker }}
@@ -175,9 +176,7 @@ jobs:
       !cancelled() &&
       github.ref == 'refs/heads/main' &&
       needs.validation.result == 'success' &&
-      (needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
-      needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
-      needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' ||
+      (needs.plan.outputs.backend_selected == 'true' ||
       needs.plan.outputs.web == 'true')
     permissions:
       actions: read
@@ -188,13 +187,9 @@ jobs:
     with:
       source_sha: ${{ needs.plan.outputs.release_sha }}
       prepare_backend: >-
-        ${{ needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
-        needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
-        needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' }}
+        ${{ needs.plan.outputs.backend_selected == 'true' }}
       prepare_router: >-
-        ${{ needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
-        needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
-        needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' }}
+        ${{ needs.plan.outputs.backend_selected == 'true' }}
       prepare_web: ${{ needs.plan.outputs.web == 'true' }}
       recover_cutover_id: ${{ needs.plan.outputs.recover_cutover_id || '' }}
       prepared_run_id: ${{ needs.plan.outputs.prepared_run_id }}
@@ -207,9 +202,7 @@ jobs:
     if: >-
       !cancelled() && needs.plan.outputs.prepared_run_id == '' &&
       needs.release-preparation.result == 'success' &&
-      (needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' ||
-      needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' ||
-      needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true')
+      (needs.plan.outputs.backend_selected == 'true')
     runs-on: blacksmith-2vcpu-ubuntu-2404
     environment: production
     steps:
@@ -278,12 +271,7 @@ jobs:
       needs.validation.result == 'success' &&
       needs.release-preparation.result == 'success' &&
       ((needs.plan.outputs.prepared_run_id != '' && needs.plan.outputs.resume_staging != 'true') || needs.staging.result == 'success') &&
-      (needs.plan.outputs.cache == 'true' ||
-      needs.plan.outputs.worker == 'true' ||
-      needs.plan.outputs.media_worker == 'true' ||
-      needs.plan.outputs.router == 'true' ||
-      needs.plan.outputs.media == 'true' ||
-      needs.plan.outputs.api == 'true')
+      (needs.plan.outputs.backend_selected == 'true')
     permissions:
       actions: read
       contents: read
@@ -311,19 +299,9 @@ jobs:
       ((needs.plan.outputs.prepared_run_id != '' && needs.plan.outputs.resume_staging != 'true') || needs.staging.result == 'success') &&
       needs.plan.outputs.web == 'true' &&
       needs.backend-deploy.outputs.web_activated != 'true' &&
-      (((needs.plan.outputs.cache == 'true' ||
-      needs.plan.outputs.worker == 'true' ||
-      needs.plan.outputs.media_worker == 'true' ||
-      needs.plan.outputs.router == 'true' ||
-      needs.plan.outputs.media == 'true' ||
-      needs.plan.outputs.api == 'true') &&
+      (((needs.plan.outputs.backend_selected == 'true') &&
       needs.backend-deploy.result == 'success') ||
-      ((needs.plan.outputs.cache != 'true' &&
-      needs.plan.outputs.worker != 'true' &&
-      needs.plan.outputs.media_worker != 'true' &&
-      needs.plan.outputs.router != 'true' &&
-      needs.plan.outputs.media != 'true' &&
-      needs.plan.outputs.api != 'true') &&
+      ((needs.plan.outputs.backend_selected != 'true') &&
       needs.backend-deploy.result == 'skipped'))
     permissions:
       contents: read
@@ -344,19 +322,9 @@ jobs:
       needs.plan.outputs.cli == 'true' &&
       (needs.staging.result == 'success' ||
       (needs.backend-deploy.result == 'skipped' && needs.plan.outputs.web != 'true')) &&
-      (((needs.plan.outputs.cache == 'true' ||
-      needs.plan.outputs.worker == 'true' ||
-      needs.plan.outputs.media_worker == 'true' ||
-      needs.plan.outputs.router == 'true' ||
-      needs.plan.outputs.media == 'true' ||
-      needs.plan.outputs.api == 'true') &&
+      (((needs.plan.outputs.backend_selected == 'true') &&
       needs.backend-deploy.result == 'success') ||
-      ((needs.plan.outputs.cache != 'true' &&
-      needs.plan.outputs.worker != 'true' &&
-      needs.plan.outputs.media_worker != 'true' &&
-      needs.plan.outputs.router != 'true' &&
-      needs.plan.outputs.media != 'true' &&
-      needs.plan.outputs.api != 'true') &&
+      ((needs.plan.outputs.backend_selected != 'true') &&
       needs.backend-deploy.result == 'skipped'))
     permissions:
       actions: read
@@ -373,23 +341,10 @@ jobs:
     if: >-
       !cancelled() && github.ref == 'refs/heads/main' &&
       needs.validation.result == 'success' &&
-      (needs.plan.outputs.checks_image == 'true' || needs.plan.outputs.cache == 'true' ||
-      needs.plan.outputs.worker == 'true' || needs.plan.outputs.media_worker == 'true' ||
-      needs.plan.outputs.router == 'true' || needs.plan.outputs.media == 'true' ||
-      needs.plan.outputs.api == 'true' || needs.plan.outputs.web == 'true' || needs.plan.outputs.cli == 'true') &&
-      (((needs.plan.outputs.cache == 'true' ||
-      needs.plan.outputs.worker == 'true' ||
-      needs.plan.outputs.media_worker == 'true' ||
-      needs.plan.outputs.router == 'true' ||
-      needs.plan.outputs.media == 'true' ||
-      needs.plan.outputs.api == 'true') &&
+      (needs.plan.outputs.checks_image == 'true' || needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true' || needs.plan.outputs.cli == 'true') &&
+      (((needs.plan.outputs.backend_selected == 'true') &&
       needs.backend-deploy.result == 'success') ||
-      ((needs.plan.outputs.cache != 'true' &&
-      needs.plan.outputs.worker != 'true' &&
-      needs.plan.outputs.media_worker != 'true' &&
-      needs.plan.outputs.router != 'true' &&
-      needs.plan.outputs.media != 'true' &&
-      needs.plan.outputs.api != 'true') &&
+      ((needs.plan.outputs.backend_selected != 'true') &&
       needs.backend-deploy.result == 'skipped')) &&
       ((needs.plan.outputs.web == 'true' && (needs.web-deploy.result == 'success' ||
       (needs.backend-deploy.outputs.web_activated == 'true' && needs.web-deploy.result == 'skipped'))) ||
@@ -417,13 +372,13 @@ jobs:
         run: node .github/scripts/production-deployment-progress.mjs read
 
       - name: Install Railway CLI
-        if: needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' || needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' || needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' || needs.plan.outputs.web == 'true'
+        if: needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true'
         run: |
           railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
           npm install -g "@railway/cli@$railway_cli_version"
 
       - name: Verify exact live production deployments
-        if: needs.plan.outputs.cache == 'true' || needs.plan.outputs.worker == 'true' || needs.plan.outputs.media_worker == 'true' || needs.plan.outputs.router == 'true' || needs.plan.outputs.media == 'true' || needs.plan.outputs.api == 'true' || needs.plan.outputs.web == 'true'
+        if: needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true'
         shell: bash
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

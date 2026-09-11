@@ -15,6 +15,9 @@ const INTERNAL_REAPER_CHILD_ENV: &str = "SCOPE_INTERNAL_REAPER_CHILD";
 #[cfg(unix)]
 static PENDING_REAPER_SIGNAL: AtomicI32 = AtomicI32::new(0);
 
+#[cfg(unix)]
+const REAPER_IDLE_POLL: Duration = Duration::from_millis(25);
+
 /// When the service itself is PID 1, respawn it behind a minimal init process.
 ///
 /// Railway can override image entrypoints, so relying on an external init is
@@ -35,8 +38,8 @@ pub fn install_pid1_reaper_if_needed() -> std::io::Result<()> {
         .args(std::env::args_os().skip(1))
         .env(INTERNAL_REAPER_CHILD_ENV, "1")
         .process_group(0);
-    let child = command.spawn()?;
     install_reaper_signal_handlers()?;
+    let child = command.spawn()?;
     reap_service_process(child.id())
 }
 
@@ -74,17 +77,12 @@ fn reap_service_process(service_pid: u32) -> std::io::Result<()> {
         .map_err(|_| std::io::Error::other("service process id exceeds i32"))?;
     loop {
         forward_pending_signal(service_pid);
-        let mut status = 0;
-        // SAFETY: waitpid writes only to the supplied status integer. PID -1
-        // is intentional because this process exists solely to reap children.
-        let reaped = unsafe { libc::waitpid(-1, &mut status, 0) };
-        if reaped == -1 {
-            let error = std::io::Error::last_os_error();
-            if error.kind() == ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(error);
-        }
+        let Some((reaped, status)) = reap_exited_child()? else {
+            // A signal can arrive after the pending check. Never block in
+            // waitpid here: the next poll must forward an already-handled signal.
+            thread::sleep(REAPER_IDLE_POLL);
+            continue;
+        };
         if reaped != service_pid {
             continue;
         }
@@ -142,16 +140,29 @@ fn drain_adopted_descendants() {
 
 #[cfg(unix)]
 fn reap_exited_descendants() {
+    while let Ok(Some(_)) = reap_exited_child() {}
+}
+
+#[cfg(unix)]
+fn reap_exited_child() -> std::io::Result<Option<(i32, i32)>> {
     loop {
         let mut status = 0;
-        // SAFETY: after the service exits, every remaining descendant is
-        // owned by this dedicated reaper. WNOHANG prevents shutdown hangs.
+        // SAFETY: this dedicated reaper owns all children. The pointer is a
+        // valid status integer and WNOHANG keeps signal forwarding responsive.
         let reaped = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
-        if reaped <= 0 {
-            return;
+        if reaped == -1 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() == ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(error);
         }
+        return Ok((reaped != 0).then_some((reaped, status)));
     }
 }
+
+#[cfg(all(test, unix))]
+mod reaper_tests;
 
 #[cfg(unix)]
 pub(crate) fn wait_status_exit_code(status: i32) -> i32 {

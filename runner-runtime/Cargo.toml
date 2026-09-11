@@ -10,6 +10,7 @@ name = "scope-runner-runtime"
 path = "src/main.rs"
 
 [dependencies]
+scope_service_config.workspace = true
 anyhow.workspace = true
 filetime.workspace = true
 getrandom.workspace = true

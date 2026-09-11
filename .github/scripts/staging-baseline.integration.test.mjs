@@ -53,7 +53,7 @@ else console.log('true');
   const binary = join(root, 'bin/maintenance');
   writeFileSync(join(root, 'prepared.json'), JSON.stringify({ schemaVersion: 1, sourceSha: 'a'.repeat(40), components: {},
     maintenanceSha256: createHash('sha256').update(readFileSync(binary)).digest('hex') }));
-  const plan = { applied: ['m0001_initial'], pending: [{ name: 'm0002_metadata' }], exact: false };
+  const plan = { metadataRestoreSafe: true, applied: ['m0001_initial'], pending: [{ name: 'm0002_metadata' }], exact: false };
   writeFileSync(join(root, 'production.json'), JSON.stringify(plan));
   const env = { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, RAILWAY_TOKEN: 'test', RAILWAY_API_TOKEN: '',
     TEST_GH_TRACE: join(root, 'gh-trace'), TEST_DATABASE: database, TEST_ARCHIVE: join(root, 'snapshot.zip'), GITHUB_REPOSITORY: 'scope-vcs/scope-vcs',
@@ -80,6 +80,14 @@ else console.log('true');
   assert.notEqual(result.status, 0, 'A pending migration must not retain an unencrypted snapshot');
   assert.equal(existsSync(join(env.SCOPE_STAGING_BASELINE_DIR, 'database.dump')), false);
   env.SCOPE_STAGING_BASELINE_KEY = randomBytes(32).toString('hex');
+  const undeclaredPlan = { ...plan };
+  delete undeclaredPlan.metadataRestoreSafe;
+  writeFileSync(join(root, 'production.json'), JSON.stringify(undeclaredPlan));
+  result = run();
+  assert.notEqual(result.status, 0, 'A migration plan must declare its restore implications');
+  assert.match(result.stderr, /must declare metadataRestoreSafe/);
+  assert.equal(existsSync(join(env.SCOPE_STAGING_BASELINE_DIR, 'database.dump')), false);
+  writeFileSync(join(root, 'production.json'), JSON.stringify(plan));
   result = run();
   assert.equal(result.status, 0, result.stderr);
   const encryptedPath = join(env.SCOPE_STAGING_BASELINE_DIR, 'database.dump.enc');
@@ -134,7 +142,7 @@ else console.log('true');
   assert.equal(sql("SELECT count(*) FROM information_schema.tables WHERE table_name='candidate_only'"), '0');
   assert.equal(sql("SELECT count(*) FROM information_schema.columns WHERE table_name='scope_repositories' AND column_name='candidate'"), '0');
   const metadataPath = join(env.SCOPE_STAGING_BASELINE_DIR, 'baseline.json');
-  writeFileSync(join(root, 'production.json'), JSON.stringify({ ...plan, pending: [{ name: 'm0043_retire_git_manifests' }] }));
+  writeFileSync(join(root, 'production.json'), JSON.stringify({ ...plan, metadataRestoreSafe: false, pending: [{ name: 'm0003_external_storage' }] }));
   result = run();
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(readFileSync(metadataPath)).metadataRestoreSafe, false);

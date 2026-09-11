@@ -218,7 +218,7 @@ impl Connection {
     }
 
     fn new(target: ScopeRemote) -> anyhow::Result<Self> {
-        let api_url = api_url();
+        let api_url = api_url()?;
         let client = run_client(Duration::from_secs(120))?;
         let session = session_from_cache_or_browser(&client, &api_url)?;
         Ok(Self {

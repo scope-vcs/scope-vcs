@@ -17,6 +17,7 @@ members = [
     "crates/scope-object-store",
     "crates/scope-git-process",
     "crates/scope-run-config",
+    "crates/scope-service-config",
     "runner-runtime",
     "worker",
 ]
@@ -81,3 +82,5 @@ scope_postgres = { package = "scope-postgres", path = "crates/scope-postgres" }
 scope_run_config = { package = "scope-run-config", path = "crates/scope-run-config" }
 
 scope_media_storage = { package = "scope-media-storage", path = "crates/scope-media-storage" }
+
+scope_service_config = { package = "scope-service-config", path = "crates/scope-service-config" }

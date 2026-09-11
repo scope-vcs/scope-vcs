@@ -3,6 +3,7 @@ import { SectionRow, SectionRows } from '@/components/section-rows'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useState, type FormEvent } from 'react'
+import { reconcileMetadataDraft, repositoryMetadata, sameMetadata, type MetadataDraft } from './repository-metadata-draft'
 
 type Metadata = Pick<UpdateRepoMetadataInput, 'description' | 'website_url'>
 type SaveState =
@@ -17,17 +18,22 @@ export function RepositoryMetadataForm({
   save: (metadata: Metadata) => Promise<RepoSummary>
 }) {
   const [state, setState] = useState<SaveState>({ status: 'idle' })
+  const incoming = repositoryMetadata(repo)
+  const [draft, setDraft] = useState<MetadataDraft>(() => ({ source: incoming, value: incoming, conflict: false }))
+  if (!sameMetadata(draft.source, incoming)) setDraft(reconcileMetadataDraft(draft, incoming))
+
+  function edit(field: keyof Metadata, value: string) {
+    setDraft((current) => ({ ...current, value: { ...current.value, [field]: value } }))
+    setState({ status: 'idle' })
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (state.status === 'saving') return
-    const data = new FormData(event.currentTarget)
     setState({ status: 'saving' })
     try {
-      await save({
-        description: String(data.get('description') ?? ''),
-        website_url: String(data.get('website_url') ?? ''),
-      })
+      const saved = await save(draft.value)
+      setDraft((current) => ({ ...current, value: repositoryMetadata(saved), conflict: false }))
       setState({ status: 'saved' })
     } catch (error) {
       setState({
@@ -44,10 +50,6 @@ export function RepositoryMetadataForm({
         title="Repository details"
       >
         <form
-          key={`${repo.id}\0${repo.description}\0${repo.website_url}`}
-          onChange={() => {
-            if (state.status !== 'saving') setState({ status: 'idle' })
-          }}
           onSubmit={submit}
         >
           <fieldset className="max-w-xl space-y-4" disabled={state.status === 'saving'}>
@@ -56,7 +58,8 @@ export function RepositoryMetadataForm({
                 Description
               </label>
               <Input
-                defaultValue={repo.description ?? ''}
+                value={draft.value.description}
+                onChange={(event) => edit('description', event.target.value)}
                 id="repo-description"
                 maxLength={160}
                 name="description"
@@ -68,7 +71,8 @@ export function RepositoryMetadataForm({
                 Website or documentation
               </label>
               <Input
-                defaultValue={repo.website_url ?? ''}
+                value={draft.value.website_url}
+                onChange={(event) => edit('website_url', event.target.value)}
                 id="repo-website"
                 maxLength={2048}
                 name="website_url"
@@ -76,6 +80,15 @@ export function RepositoryMetadataForm({
                 type="url"
               />
             </div>
+            {draft.conflict && (
+              <p className="text-sm text-muted-foreground" role="status">
+                Repository details changed while you were editing. Your draft is preserved.
+                {' '}<button className="underline" type="button" onClick={() => {
+                  setDraft((current) => ({ ...current, value: current.source, conflict: false }))
+                  setState({ status: 'idle' })
+                }}>Use updated details</button>
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               <Button size="sm" type="submit">
                 {state.status === 'saving' ? 'Saving…' : 'Save details'}

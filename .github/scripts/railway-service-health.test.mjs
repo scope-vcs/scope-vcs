@@ -10,6 +10,7 @@ import {
   assertEffectiveRailwayDeployConfig,
   assertHealthyRailwayService,
   railwayServicesFromStatus,
+  railwayServiceIsStopped,
   verifyProductionRailwayServices,
 } from "./railway-service-health.mjs";
 
@@ -20,6 +21,16 @@ const expectedDeploy = {
   overlapSeconds: "30",
   drainingSeconds: "30",
 };
+
+test("writer closure requires explicit nonnegative integer replica evidence", () => {
+  assert.equal(railwayServiceIsStopped([{ id: "api", replicas: { running: 0, crashed: 0 } }], "api"), true);
+  assert.equal(railwayServiceIsStopped([{ id: "api", replicas: { running: 1, crashed: 0 } }], "api"), false);
+  for (const replicas of [undefined, null, {}, { running: 0 }, { crashed: 0 }, { running: null, crashed: 0 }, { running: "0", crashed: 0 }, { running: 0, crashed: -1 }, { running: 0.5, crashed: 0 }]) {
+    assert.throws(() => railwayServiceIsStopped([{ id: "api", replicas }], "api"), /replica evidence/);
+  }
+  assert.throws(() => railwayServiceIsStopped([], "api"), /exactly one/);
+  assert.throws(() => railwayServiceIsStopped([{ id: "api" }, { id: "api" }], "api"), /exactly one/);
+});
 
 function healthyService(id) {
   return {

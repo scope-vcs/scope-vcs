@@ -141,22 +141,12 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     };
     let mut requests = Vec::new();
     let mut hidden_request_refs = Vec::new();
-    for request in state
+    for (request, is_invitee) in state
         .metadata
         .requests()
-        .requests_by_repo_id(&repo.record.id)
+        .requests_with_invitee_status(&repo.record.id, viewer_user_id.as_deref())
         .await?
     {
-        let is_invitee = match viewer_user_id.as_deref() {
-            Some(user_id) => {
-                state
-                    .metadata
-                    .requests()
-                    .request_is_invitee(&request.id, user_id)
-                    .await?
-            }
-            None => false,
-        };
         let decision = request_policy(
             &request,
             RequestViewer::new(access, viewer_user_id.as_deref(), is_invitee),
@@ -214,28 +204,23 @@ async fn git_read_view_repo(
     if requests.is_empty() {
         return Ok(base_repo);
     }
-    let base_repo_path = base_repo.as_ref().to_path_buf();
-    let public_base_repo_path = public_base_repo.as_deref().map(FsPath::to_path_buf);
-    let (main_oid, public_main_oid) = tokio::task::spawn_blocking(move || {
-        let head = |path: &FsPath| {
-            git_command_output(
-                Command::new("git")
-                    .arg("--git-dir")
-                    .arg(path)
-                    .arg("rev-parse")
-                    .arg(format!("refs/heads/{DEFAULT_GIT_BRANCH}")),
-                None,
-            )
-        };
-        Ok::<_, ApiError>((
-            head(&base_repo_path)?,
-            public_base_repo_path.as_deref().map(head).transpose()?,
-        ))
-    })
-    .await
-    .map_err(|error| {
-        ApiError::internal_message(format!("Git read-view identity task failed: {error}"))
-    })??;
+    let (main_oid, public_main_oid, base_repo, public_base_repo) =
+        crate::git::blocking::run(move || {
+            let head = |path: &FsPath| {
+                git_command_output(
+                    Command::new("git")
+                        .arg("--git-dir")
+                        .arg(path)
+                        .arg("rev-parse")
+                        .arg(format!("refs/heads/{DEFAULT_GIT_BRANCH}")),
+                    None,
+                )
+            };
+            let main_oid = head(&base_repo)?;
+            let public_main_oid = public_base_repo.as_deref().map(head).transpose()?;
+            Ok((main_oid, public_main_oid, base_repo, public_base_repo))
+        })
+        .await?;
     let cache_key = GitReadViewIdentity::from_authorized_output(
         incarnation,
         &main_oid,

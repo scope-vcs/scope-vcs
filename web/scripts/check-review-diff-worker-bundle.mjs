@@ -97,9 +97,15 @@ function runWorker(workerData) {
     const deadline = setTimeout(() => {
       void finish(new Error('built review diff worker missed its smoke deadline'))
     }, 10_000)
-    worker.once('message', (message) => void finish(null, message))
+    worker.once('message', (message) => {
+      if (message.kind !== 'ready') {
+        void finish(new Error('built review diff worker did not announce readiness'))
+        return
+      }
+      worker.once('message', (result) => void finish(null, result))
+      worker.postMessage(workerData)
+    })
     worker.once('error', (error) => void finish(error))
-    worker.postMessage(workerData)
     worker.once('exit', (code) => {
       if (code !== 0) void finish(new Error(`built review diff worker exited ${code}`))
     })

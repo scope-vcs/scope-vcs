@@ -2,6 +2,8 @@ use super::*;
 
 pub(super) struct TestMultipartStore {
     state: Mutex<TestState>,
+    pub(super) fail_begin: AtomicBool,
+    pub(super) begin_failed: Notify,
     pub(super) fail_part: AtomicBool,
     pub(super) fail_complete: AtomicBool,
     pub(super) block_parts: AtomicBool,
@@ -18,6 +20,8 @@ impl Default for TestMultipartStore {
     fn default() -> Self {
         Self {
             state: Mutex::new(TestState::default()),
+            fail_begin: AtomicBool::new(false),
+            begin_failed: Notify::new(),
             fail_part: AtomicBool::new(false),
             fail_complete: AtomicBool::new(false),
             block_parts: AtomicBool::new(false),
@@ -90,6 +94,10 @@ impl TestMultipartStore {
 #[async_trait]
 impl MultipartStore for TestMultipartStore {
     async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {
+        if self.fail_begin.load(Ordering::SeqCst) {
+            self.begin_failed.notify_one();
+            return Err(MultipartError::new("begin failed"));
+        }
         let mut state = self.state.lock().unwrap();
         state.next_upload += 1;
         let upload_id = state.next_upload.to_string();

@@ -91,7 +91,6 @@ fn repository_lifecycle_invite_and_permissions_persisted_json_shapes_are_stable(
     let permissions = RepositoryMemberPermissions {
         can_push: true,
         can_change_file_visibility: false,
-        can_apply_changes: true,
     };
     let invite = RepositoryInvite {
         id: "invite-1".to_string(),
@@ -119,7 +118,6 @@ fn repository_lifecycle_invite_and_permissions_persisted_json_shapes_are_stable(
         json!({
             "can_push": true,
             "can_change_file_visibility": false,
-            "can_apply_changes": true,
         })
     );
     assert_eq!(
@@ -132,7 +130,6 @@ fn repository_lifecycle_invite_and_permissions_persisted_json_shapes_are_stable(
             "permissions": {
                 "can_push": true,
                 "can_change_file_visibility": false,
-                "can_apply_changes": true,
             },
             "invited_by_user_id": "owner-user",
             "state": "Pending",

@@ -18,6 +18,7 @@ function textFile(path: string, oid: string, text: string): RepoFileContent {
 
 test('keys file entries by repository version, audience and normalized path', () => {
   const base = {
+    scope: 'viewer-a',
     audience: 'public' as const,
     changeVersion: 3,
     path: 'README.html',

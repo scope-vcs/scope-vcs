@@ -3,7 +3,7 @@ use super::repo_io::{
     git_refs, git_tree_entries_under, pushed_commit_message, pushed_commit_time,
     run_git_output_bounded, validate_pushed_commit_range,
 };
-use super::segment_upload::{GitSegmentUploadHeartbeat, best_effort_delete_staged_git_segment};
+use super::segment_upload::GitSegmentUploadHeartbeat;
 use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
 use crate::{error::ApiError, git::content::git_blob_reference, state::AppState};
 use scope_domain::landing_file::{
@@ -130,7 +130,8 @@ async fn reviewed_update_from_staging_repo_mode(
     config: RepoConfig,
     mode: ReviewedUpdateMode,
 ) -> Result<PreparedReceivePackUpdate, ApiError> {
-    let refs = git_refs(staging_repo)?;
+    let path = staging_repo.to_path_buf();
+    let refs = crate::git::blocking::run(move || git_refs(&path)).await?;
     if refs.len() != 1 {
         return Err(ApiError::bad_request(format!(
             "push must update exactly one branch and no tags; found {}",
@@ -155,18 +156,32 @@ async fn reviewed_update_from_staging_repo_mode(
         return Err(ApiError::conflict("repo must be ready before push"));
     }
     let base_config_hash = crate::push_intents::repo_config_fingerprint(&repo.repo_config)?;
-    let message = pushed_commit_message(staging_repo, &head_oid)?;
-    let occurred_at_unix = Some(pushed_commit_time(staging_repo, &head_oid)?);
-    let base_head_oid = repo.git_head.as_ref().map(|head| head.head_oid.as_str());
-    validate_pushed_commit_range(staging_repo, base_head_oid, &head_oid)?;
-    let diff_started = Instant::now();
-    let pushed_entries = git_changed_tree_entries(staging_repo, base_head_oid, &head_oid)?;
-    let diff_ms = diff_started.elapsed().as_millis();
-    if pushed_entries.is_empty() && mode != ReviewedUpdateMode::RequestMerge {
-        return Err(ApiError::bad_request(
-            "receive-pack update did not change the live tree",
-        ));
-    }
+    let inspected = {
+        let path = staging_repo.to_path_buf();
+        let head = head_oid.clone();
+        let repo_id = repo.repo_id.clone();
+        let base_head = repo.git_head.as_ref().map(|head| head.head_oid.clone());
+        let change_version = repo.change_version.saturating_add(1);
+        crate::git::blocking::run(move || {
+            inspect_received_tree(
+                &path,
+                &head,
+                base_head.as_deref(),
+                &repo_id,
+                change_version,
+                mode,
+            )
+        })
+        .await?
+    };
+    let InspectedReceiveTree {
+        message,
+        occurred_at_unix,
+        changes,
+        landing_file_mutation,
+        workflow_catalog,
+        diff_ms,
+    } = inspected;
     let pack_started = Instant::now();
     let StagedGitPush {
         stored: mut created_push,
@@ -176,22 +191,6 @@ async fn reviewed_update_from_staging_repo_mode(
     created_push.head.change_version = repo.change_version.saturating_add(1);
     let pack_put_ms = pack_started.elapsed().as_millis();
     let pack_bytes = created_push.pack_span.segment.plaintext_bytes;
-    let landing_file_mutation =
-        match repository_landing_file_mutation(staging_repo, &pushed_entries) {
-            Ok(mutation) => mutation,
-            Err(error) => {
-                best_effort_delete_staged_git_segment(state, &repo.repo_id, &staged_segment).await;
-                return Err(error);
-            }
-        };
-    let changes = pushed_entries
-        .into_iter()
-        .map(|(path, entry)| ReceivePackFileChange {
-            path,
-            content: entry.map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
-        })
-        .collect::<Vec<_>>();
-
     tracing::info!(
         owner,
         repo = repo_name,
@@ -202,18 +201,6 @@ async fn reviewed_update_from_staging_repo_mode(
         "prepared durable Git push objects"
     );
 
-    let workflow_catalog = match capture_repository_workflow_catalog(
-        staging_repo,
-        &repo.repo_id,
-        &head_oid,
-        created_push.head.change_version,
-    ) {
-        Ok(catalog) => catalog,
-        Err(error) => {
-            best_effort_delete_staged_git_segment(state, &repo.repo_id, &staged_segment).await;
-            return Err(error);
-        }
-    };
     Ok(PreparedReceivePackUpdate {
         update: ReceivePackUpdate {
             occurred_at_unix,
@@ -234,6 +221,54 @@ async fn reviewed_update_from_staging_repo_mode(
         staged_segment,
         upload_heartbeat,
         write_lease,
+    })
+}
+
+struct InspectedReceiveTree {
+    message: String,
+    occurred_at_unix: Option<i64>,
+    changes: Vec<ReceivePackFileChange>,
+    landing_file_mutation: RepositoryLandingFileMutation,
+    workflow_catalog: RepositoryWorkflowCatalog,
+    diff_ms: u128,
+}
+
+fn inspect_received_tree(
+    staging_repo: &FsPath,
+    head_oid: &str,
+    base_head_oid: Option<&str>,
+    repository_id: &str,
+    change_version: u64,
+    mode: ReviewedUpdateMode,
+) -> Result<InspectedReceiveTree, ApiError> {
+    let message = pushed_commit_message(staging_repo, head_oid)?;
+    let occurred_at_unix = Some(pushed_commit_time(staging_repo, head_oid)?);
+    validate_pushed_commit_range(staging_repo, base_head_oid, head_oid)?;
+    let diff_started = Instant::now();
+    let pushed_entries = git_changed_tree_entries(staging_repo, base_head_oid, head_oid)?;
+    let diff_ms = diff_started.elapsed().as_millis();
+    if pushed_entries.is_empty() && mode != ReviewedUpdateMode::RequestMerge {
+        return Err(ApiError::bad_request(
+            "receive-pack update did not change the live tree",
+        ));
+    }
+    let landing_file_mutation = repository_landing_file_mutation(staging_repo, &pushed_entries)?;
+    let workflow_catalog =
+        capture_repository_workflow_catalog(staging_repo, repository_id, head_oid, change_version)?;
+    let changes = pushed_entries
+        .into_iter()
+        .map(|(path, entry)| ReceivePackFileChange {
+            path,
+            content: entry.map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
+        })
+        .collect();
+    Ok(InspectedReceiveTree {
+        message,
+        occurred_at_unix,
+        changes,
+        landing_file_mutation,
+        workflow_catalog,
+        diff_ms,
     })
 }
 

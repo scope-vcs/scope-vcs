@@ -27,7 +27,7 @@ use std::{
 pub fn run(name: Option<String>) -> anyhow::Result<()> {
     let git_repo = discover_git_repo("scope init")?;
     let has_head = git_repo_has_head(&git_repo);
-    let api_url = api_url();
+    let api_url = api_url()?;
     let repo_name = match name.as_deref() {
         Some(name) => normalize_repo_name(name)?,
         None if interactive() => prompt_repo_name(&git_repo.root)?,

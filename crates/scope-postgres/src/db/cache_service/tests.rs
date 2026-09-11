@@ -198,13 +198,39 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
             .unwrap()
             .is_empty()
     );
-    caches.retry_upload_cleanup("expired-upload").await.unwrap();
-    assert_eq!(
-        caches.expire_uploads(cleanup_now, 10).await.unwrap().len(),
-        1
-    );
+    let reclaimed = caches.expire_uploads(cleanup_now + 300, 10).await.unwrap();
+    assert_eq!(reclaimed.len(), 1);
     caches
-        .complete_upload_cleanup("expired-upload")
+        .cleanup_upload(&expired[0], || async {
+            panic!("a stale claim must never delete an object");
+        })
+        .await
+        .unwrap();
+    assert!(
+        caches
+            .cleanup_upload(&reclaimed[0], || async {
+                Err(PostgresError::internal_message("object store unavailable"))
+            })
+            .await
+            .is_err()
+    );
+    assert!(
+        caches
+            .expire_uploads(cleanup_now + 300, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let retried = caches.expire_uploads(cleanup_now + 600, 10).await.unwrap();
+    assert_eq!(retried.len(), 1);
+    caches
+        .cleanup_upload(&retried[0], || async { Ok(()) })
+        .await
+        .unwrap();
+    caches
+        .cleanup_upload(&retried[0], || async {
+            panic!("an acknowledged claim must never delete a reused object key");
+        })
         .await
         .unwrap();
     assert!(

@@ -5,6 +5,7 @@ impl RuntimeClient {
         let response = self
             .client
             .post(self.url("claim"))
+            .timeout(CONTROL_REQUEST_TIMEOUT)
             .bearer_auth(bootstrap_token)
             .send()
             .context("claim cloud run attempt")?;

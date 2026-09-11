@@ -61,6 +61,7 @@ struct FakeState {
     cancel_on_start: bool,
     cancel_on_heartbeat: AtomicBool,
     heartbeat_observed: Mutex<Option<mpsc::Sender<()>>>,
+    heartbeat_gate: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>>,
 }
 
 impl FakeSink {
@@ -72,6 +73,7 @@ impl FakeSink {
                 cancel_on_start: false,
                 cancel_on_heartbeat: AtomicBool::new(false),
                 heartbeat_observed: Mutex::new(None),
+                heartbeat_gate: Mutex::new(None),
             }),
         }
     }
@@ -139,6 +141,11 @@ impl ExecutionSink for FakeSink {
 
     fn heartbeat(&self) -> anyhow::Result<bool> {
         self.record(Call::Heartbeat);
+        let gate = self.state.heartbeat_gate.lock().unwrap().take();
+        if let Some((entered, release)) = gate {
+            entered.send(()).unwrap();
+            release.recv().unwrap();
+        }
         let cancellation_requested = self.state.cancel_on_heartbeat.load(Ordering::Acquire);
         if cancellation_requested
             && let Some(observed) = self.state.heartbeat_observed.lock().unwrap().as_ref()
@@ -468,6 +475,44 @@ fn heartbeat_can_cancel_while_an_append_is_blocked() {
     assert_eq!(run.join().unwrap().unwrap(), ExecutionOutcome::Terminal);
     assert!(started.elapsed() < Duration::from_secs(2));
     assert!(sink.calls().contains(&Call::CompleteCanceled(true)));
+}
+
+#[test]
+fn a_stalled_heartbeat_cannot_delay_process_timeout() {
+    let (entered, received) = mpsc::channel();
+    let (release, blocked) = mpsc::channel();
+    let sink = FakeSink::new([]);
+    *sink.state.heartbeat_gate.lock().unwrap() = Some((entered, blocked));
+    let workspace = tempfile::tempdir().unwrap();
+    let path = workspace.path().to_owned();
+    let run_sink = sink.clone();
+    let run = thread::spawn(move || {
+        run_steps_with_options(
+            run_sink,
+            &job(&[("deadline", "echo $$ > child.pid; sleep 30 & wait")]),
+            &path,
+            SupervisorOptions::for_test(Duration::from_millis(150)),
+        )
+    });
+    received.recv_timeout(TEST_SYNC_TIMEOUT).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !sink.calls().contains(&Call::CompleteTimeout(false)) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    let completed_while_blocked = sink.calls().contains(&Call::CompleteTimeout(false));
+    let pid: i32 = std::fs::read_to_string(workspace.path().join("child.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let child_still_exists = unsafe { libc::kill(pid, 0) } == 0;
+    release.send(()).unwrap();
+    assert_eq!(run.join().unwrap().unwrap(), ExecutionOutcome::Terminal);
+    assert!(completed_while_blocked, "heartbeat blocked the job timeout");
+    assert!(
+        !child_still_exists,
+        "child must be reaped before heartbeat returns"
+    );
 }
 
 #[test]

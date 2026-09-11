@@ -16,6 +16,8 @@ import {
 } from 'react'
 import {
   addRequestAttachmentDraftFiles,
+  beginRequestAttachmentSubmission,
+  finishRequestAttachmentSubmission,
   clearRequestAttachmentDraft,
   readRequestAttachmentDraft,
   requestAttachmentDraftKey,
@@ -64,7 +66,7 @@ export function RequestAttachmentEditor({
   label: string
   onCancel: () => void
   onCancelQuote?: () => void
-  onSubmit: (markdown: string, baseText: string | null) => Promise<boolean>
+  onSubmit: (markdown: string, baseText: string | null, submissionId: string) => Promise<boolean>
   placeholder: string
   quote?: { author: string; body: string } | null
   submitIcon: ReactNode
@@ -75,7 +77,6 @@ export function RequestAttachmentEditor({
   const editorId = useId()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [pending, setPending] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
   const draftKey = requestAttachmentDraftKey({
@@ -91,6 +92,8 @@ export function RequestAttachmentEditor({
   )
   const read = useCallback(() => readRequestAttachmentDraft(draftKey), [draftKey])
   const draft = useSyncExternalStore(subscribe, read, read)
+  const pending = draft.pending
+  const staleDescription = target === 'description' && draft.initialized && draft.baseText !== initialText
   const acceptedMedia = environment.limits
     ? [
         ...environment.limits.accepted_photo_media_types,
@@ -116,29 +119,26 @@ export function RequestAttachmentEditor({
   )
   const attachmentCount = requestAttachmentContentCount(draft.text, draft.attachments)
   const attachmentLimit = environment.limits?.max_attachments_per_content ?? 10
-  const canSubmit = !pending && transfersReady && attachmentCount <= attachmentLimit && (
+  const canSubmit = !pending && !staleDescription && transfersReady && attachmentCount <= attachmentLimit && (
     target === 'description' || Boolean(draft.text.trim()) || readyAttachments.length > 0
   )
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!canSubmit) return
-    setPending(true)
+    const markdown = markdownWithAttachments(draft.text, readyAttachments)
+    const submissionId = beginRequestAttachmentSubmission(draftKey, JSON.stringify([markdown, draft.baseText]))
+    if (!submissionId) return
+    let posted = false
     try {
-      const posted = await onSubmit(
-        markdownWithAttachments(draft.text, readyAttachments),
-        draft.baseText,
-      )
-      if (posted) {
-        clearRequestAttachmentDraft(draftKey)
-        onCancelQuote?.()
-      }
+      posted = await onSubmit(markdown, draft.baseText, submissionId)
     } finally {
-      setPending(false)
+      finishRequestAttachmentSubmission(submissionId, posted)
     }
   }
 
   function addFiles(files: File[]) {
+    if (readRequestAttachmentDraft(draftKey).pending) return
     const resumableCount = draft.attachments.filter((attachment) => attachment.file === null && files.some((file) =>
       attachment.name === (file.name || 'Pasted image') && attachment.size === file.size,
     )).length
@@ -195,7 +195,7 @@ export function RequestAttachmentEditor({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.nativeEvent.isComposing) return
+    if (pending || event.nativeEvent.isComposing) return
     if (event.key === 'Escape') {
       event.preventDefault()
       if (quote && onCancelQuote) onCancelQuote()
@@ -216,7 +216,7 @@ export function RequestAttachmentEditor({
             <span className="font-medium text-foreground">{quote.author}</span>
             <span className="ml-1 line-clamp-1">{quote.body}</span>
           </div>
-          <button aria-label="Cancel quoted reply" className="shrink-0 p-1 hover:text-foreground" onClick={onCancelQuote} type="button">
+          <button aria-label="Cancel quoted reply" className="shrink-0 p-1 hover:text-foreground" disabled={pending} onClick={onCancelQuote} type="button">
             <X className="size-3.5" />
           </button>
         </div>
@@ -250,6 +250,7 @@ export function RequestAttachmentEditor({
             {draft.attachments.map((attachment) => (
               <DraftAttachmentRow
                 attachment={attachment}
+                disabled={pending}
                 key={attachment.localId}
                 onRemove={() => removeUploadingRequestAttachment(draftKey, attachment.localId)}
                 onRetry={() => void uploadRequestAttachment({
@@ -270,6 +271,7 @@ export function RequestAttachmentEditor({
             accept={acceptedMedia.join(',')}
             aria-label="Attach photos or videos"
             className="sr-only"
+            disabled={pending}
             multiple
             onChange={(event) => {
               addFiles([...(event.target.files ?? [])])
@@ -278,16 +280,31 @@ export function RequestAttachmentEditor({
             ref={fileInputRef}
             type="file"
           />
-          <Button onClick={() => fileInputRef.current?.click()} size="sm" type="button" variant="ghost">
+          <Button disabled={pending} onClick={() => fileInputRef.current?.click()} size="sm" type="button" variant="ghost">
             <Paperclip className="size-3.5" />
             Attach files
           </Button>
           <span className="text-xs text-muted-foreground">Drop files or paste an image</span>
         </div>
       </div>
+      {target === 'description' ? (
+        <div className="mt-2 space-y-2 text-sm">
+          {staleDescription ? (
+            <>
+              <p role="alert">The description changed while you were editing. Your draft is kept.</p>
+              <details><summary className="cursor-pointer">Current description</summary><pre className="mt-2 whitespace-pre-wrap break-words font-sans">{initialText || 'No description.'}</pre></details>
+            </>
+          ) : null}
+          <Button className="h-auto whitespace-normal text-left" disabled={pending} onClick={() => {
+            clearRequestAttachmentDraft(draftKey)
+            seedRequestAttachmentDraft(draftKey, initialText)
+            setValidationError(null)
+          }} size="sm" type="button" variant="ghost">Discard draft and load current description</Button>
+        </div>
+      ) : null}
       {validationError ? <p className="mt-2 text-sm text-destructive" role="alert">{validationError}</p> : null}
-      <div className="mt-2 flex items-center justify-between gap-3">
-        <p aria-live="polite" className="text-xs text-muted-foreground">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <p aria-live="polite" className="min-w-0 flex-1 basis-40 text-xs text-muted-foreground">
           {attachmentCount > attachmentLimit
             ? `You can attach up to ${attachmentLimit} files here.`
             : hasFailedTransfer
@@ -298,7 +315,7 @@ export function RequestAttachmentEditor({
                 ? 'Markdown · Shift+Enter for a new line'
                 : 'Markdown · Draft kept while you navigate'}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <Button disabled={pending} onClick={onCancel} size="sm" type="button" variant="ghost">Cancel</Button>
           <Button disabled={!canSubmit} size="sm" type="submit">
             {submitIcon}
@@ -312,11 +329,13 @@ export function RequestAttachmentEditor({
 
 function DraftAttachmentRow({
   attachment,
+  disabled,
   onRemove,
   onReselect,
   onRetry,
 }: {
   attachment: DraftAttachment
+  disabled: boolean
   onRemove: () => void
   onReselect: () => void
   onRetry: () => void
@@ -352,6 +371,7 @@ function DraftAttachmentRow({
       <div className="flex items-center">
         {attachment.status === 'failed' ? (
           <Button
+            disabled={disabled}
             aria-label={attachment.file ? `Retry ${attachment.name}` : `Select ${attachment.name} again`}
             onClick={attachment.file ? onRetry : onReselect}
             size="icon-sm"
@@ -360,7 +380,7 @@ function DraftAttachmentRow({
             variant="ghost"
           ><RotateCcw /></Button>
         ) : null}
-        <Button aria-label={`Remove ${attachment.name}`} onClick={onRemove} size="icon-sm" title="Remove attachment" type="button" variant="ghost"><X /></Button>
+        <Button disabled={disabled} aria-label={`Remove ${attachment.name}`} onClick={onRemove} size="icon-sm" title="Remove attachment" type="button" variant="ghost"><X /></Button>
       </div>
     </div>
   )

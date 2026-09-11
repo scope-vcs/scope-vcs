@@ -224,6 +224,18 @@ impl MediaStore {
             ))
             .await
             .map_err(PostgresError::internal)?;
+            tx.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE scope_request_media_attachments
+                 SET budget_released_at_unix = COALESCE(budget_released_at_unix, $2)
+                 WHERE id = $1",
+                [
+                    attachment_id.into(),
+                    as_i64(now_unix, "media budget release time")?.into(),
+                ],
+            ))
+            .await
+            .map_err(PostgresError::internal)?;
             mark_all_inventory_deleted(&tx, attachment_id, now_unix).await?;
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(MediaLeaseMutation::Applied(()));
@@ -601,21 +613,25 @@ async fn claim_orphan_objects(
 ) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError> {
     let tx = db.begin().await.map_err(PostgresError::internal)?;
     let candidate = tx
-        .query_one(Statement::from_string(
+        .query_one(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT attachment.id, attachment.repository_id
              FROM scope_request_media_attachments attachment
              WHERE NOT EXISTS (
                     SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
                     WHERE cleanup.attachment_id = attachment.id
+               ) AND NOT EXISTS (
+                    SELECT 1 FROM scope_request_media_orphan_cleanup_leases lease
+                    WHERE lease.attachment_id = attachment.id
+                      AND lease.lease_expires_at_unix > $1
                ) AND (
                     EXISTS (SELECT 1 FROM scope_request_media_processing_objects object
                             WHERE object.attachment_id = attachment.id AND object.state = 'Orphaned')
                     OR EXISTS (SELECT 1 FROM scope_request_media_abandoned_objects object
                                WHERE object.attachment_id = attachment.id AND object.deleted_at_unix IS NULL)
                )
-             ORDER BY attachment.id LIMIT 1"
-                .to_string(),
+             ORDER BY attachment.id FOR UPDATE OF attachment SKIP LOCKED LIMIT 1",
+            [as_i64(now_unix, "orphan cleanup claim time")?.into()],
         ))
         .await
         .map_err(PostgresError::internal)?;
@@ -626,13 +642,6 @@ async fn claim_orphan_objects(
     let attachment_id = candidate
         .try_get::<String>("", "id")
         .map_err(PostgresError::internal)?;
-    tx.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT pg_advisory_xact_lock(hashtextextended('scope:request-media-orphan:' || $1, 0))",
-        [attachment_id.clone().into()],
-    ))
-    .await
-    .map_err(PostgresError::internal)?;
     let existing = tx
         .query_one(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,

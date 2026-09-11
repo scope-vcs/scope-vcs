@@ -201,7 +201,7 @@ async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
     );
 }
 
-fn store_with_public_user_membership() -> MetadataStore {
+pub(super) fn store_with_public_user_membership() -> MetadataStore {
     use scope_domain::repository::collaboration::{RepositoryMember, RepositoryMemberPermissions};
 
     let target = super::super::super::TestDatabaseTarget::required().unwrap();
@@ -218,7 +218,6 @@ fn store_with_public_user_membership() -> MetadataStore {
             permissions: RepositoryMemberPermissions {
                 can_push: true,
                 can_change_file_visibility: true,
-                can_apply_changes: true,
             },
             created_at_unix: 1,
             updated_at_unix: 1,

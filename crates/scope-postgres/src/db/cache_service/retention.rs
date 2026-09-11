@@ -150,56 +150,87 @@ impl CacheStore {
         &self,
         now_unix: u64,
         limit: u64,
-    ) -> Result<Vec<CacheUploadRecord>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let rows = tx
+    ) -> Result<Vec<CacheUploadCleanupClaim>, PostgresError> {
+        let rows = self
+            .db
             .query_all(statement(
                 "WITH due AS (
-                    SELECT upload_id FROM scope_cache_uploads
-                    WHERE state = 'active' AND expires_at_unix <= $1
-                    ORDER BY expires_at_unix
-                    FOR UPDATE SKIP LOCKED LIMIT $2
-                 )
-                 UPDATE scope_cache_uploads u SET state = 'deleting'
-                 FROM due WHERE u.upload_id = due.upload_id
-                 RETURNING u.upload_id, u.repository_id, u.identity_digest,
-                    u.compatibility_group_digest, u.checksum_sha256,
-                    u.storage_backend, u.object_key, u.size_bytes,
-                    u.state, u.created_at_unix, u.expires_at_unix",
-                vec![to_i64(now_unix)?.into(), to_i64(limit)?.into()],
+                SELECT upload_id FROM scope_cache_uploads
+                WHERE (state = 'active' AND expires_at_unix <= $1)
+                   OR (state = 'deleting' AND cleanup_lease_expires_at_unix <= $1)
+                ORDER BY expires_at_unix
+                FOR UPDATE SKIP LOCKED LIMIT $2
+             )
+             UPDATE scope_cache_uploads u
+             SET state = 'deleting', cleanup_generation = cleanup_generation + 1,
+                 cleanup_lease_expires_at_unix = $3
+             FROM due WHERE u.upload_id = due.upload_id
+             RETURNING u.upload_id, u.object_key, u.cleanup_generation",
+                vec![
+                    to_i64(now_unix)?.into(),
+                    to_i64(limit)?.into(),
+                    to_i64(now_unix.saturating_add(300))?.into(),
+                ],
             ))
             .await
             .map_err(PostgresError::internal)?;
-        let uploads = rows
-            .iter()
-            .map(decode_upload)
-            .collect::<Result<Vec<_>, _>>()?;
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(uploads)
+        rows.into_iter()
+            .map(|row| {
+                Ok(CacheUploadCleanupClaim {
+                    upload_id: row
+                        .try_get("", "upload_id")
+                        .map_err(PostgresError::internal)?,
+                    object_key: row
+                        .try_get("", "object_key")
+                        .map_err(PostgresError::internal)?,
+                    generation: row
+                        .try_get("", "cleanup_generation")
+                        .map_err(PostgresError::internal)?,
+                })
+            })
+            .collect()
     }
 
-    pub async fn complete_upload_cleanup(&self, upload_id: &str) -> Result<(), PostgresError> {
-        self.db
-            .execute(statement(
-                "DELETE FROM scope_cache_uploads
-                 WHERE upload_id = $1 AND state = 'deleting'",
-                vec![upload_id.into()],
+    /// Hold the upload row lock through deletion and acknowledgement. This prevents a
+    /// delayed worker from deleting a key after another worker has freed it for reuse.
+    pub async fn cleanup_upload<F, Fut>(
+        &self,
+        claim: &CacheUploadCleanupClaim,
+        delete: F,
+    ) -> Result<(), PostgresError>
+    where
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<(), PostgresError>> + Send + 'static,
+    {
+        let db = self.db.clone();
+        let claim = claim.clone();
+        // Keep the row lock if the caller is cancelled while blocking object-store IO runs.
+        tokio::spawn(async move {
+            let tx = db.begin().await.map_err(PostgresError::internal)?;
+            let current = tx
+                .query_one(statement(
+                    "SELECT upload_id FROM scope_cache_uploads
+             WHERE upload_id = $1 AND state = 'deleting' AND cleanup_generation = $2
+             FOR UPDATE",
+                    vec![claim.upload_id.clone().into(), claim.generation.into()],
+                ))
+                .await
+                .map_err(PostgresError::internal)?;
+            if current.is_none() {
+                return Ok(());
+            }
+            // Deletion failure and failed commit leave the claim reclaimable.
+            delete().await?;
+            tx.execute(statement(
+                "DELETE FROM scope_cache_uploads WHERE upload_id = $1",
+                vec![claim.upload_id.clone().into()],
             ))
             .await
             .map_err(PostgresError::internal)?;
-        Ok(())
-    }
-
-    pub async fn retry_upload_cleanup(&self, upload_id: &str) -> Result<(), PostgresError> {
-        self.db
-            .execute(statement(
-                "UPDATE scope_cache_uploads SET state = 'active'
-                 WHERE upload_id = $1 AND state = 'deleting'",
-                vec![upload_id.into()],
-            ))
-            .await
-            .map_err(PostgresError::internal)?;
-        Ok(())
+            tx.commit().await.map_err(PostgresError::internal)
+        })
+        .await
+        .map_err(PostgresError::internal)?
     }
 
     pub async fn expire_committed_uploads(

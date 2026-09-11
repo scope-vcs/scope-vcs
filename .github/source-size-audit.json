@@ -2,34 +2,14 @@
   "version": 1,
   "production": [
     {
-      "path": "api/src/git/cache.rs",
-      "owner": "repository Git materialization cache",
-      "reason": "Materialization coordination, leases, pruning, and their concurrency and eviction tests define one cache lifecycle."
-    },
-    {
       "path": "api/src/git/import/repo_io.rs",
       "owner": "Git push repository ingestion",
       "reason": "Pack production, segment upload state, content fencing, and prepared-push assembly form one bounded ingestion transaction."
     },
     {
-      "path": "api/src/git/repository_engine.rs",
-      "owner": "repository Git materialization engine",
-      "reason": "Replica selection, local cache synchronization, cold restoration, and projection materialization coordinate one repository view."
-    },
-    {
-      "path": "api/src/git/request_ref_public_safety.rs",
-      "owner": "public request-ref safety",
-      "reason": "Commit reachability, path disclosure checks, and adversarial fixtures jointly enforce one public-request invariant."
-    },
-    {
       "path": "api/src/http/request_discussions.rs",
       "owner": "request discussion HTTP delivery",
       "reason": "Discussion queries and mutations share visibility projection, cursor, anchor, and response mapping rules."
-    },
-    {
-      "path": "api/src/http/requests.rs",
-      "owner": "request HTTP delivery",
-      "reason": "Request list, lifecycle, identity, and participant endpoints share request lookup, visibility, and response projection."
     },
     {
       "path": "cache-service/src/handlers.rs",
@@ -45,11 +25,6 @@
       "path": "cli/src/api/requests.rs",
       "owner": "CLI request API client",
       "reason": "Typed request and discussion calls share URL construction, authenticated execution, decoding, and client tests."
-    },
-    {
-      "path": "cli/src/request.rs",
-      "owner": "CLI request command orchestration",
-      "reason": "Command dispatch, repository and request context resolution, discussion lifecycles, and local request identity coordinate one authenticated request-command boundary; behavior-specific policy and rendering remain in focused submodules."
     },
     {
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
@@ -100,11 +75,6 @@
       "path": "crates/scope-postgres/src/db/request_media/cleanup.rs",
       "owner": "request media deletion lifecycle",
       "reason": "Request and repository tombstones, orphan inventory, claim revalidation, lease grace, and reconciliation share one deletion-wins lock order; row mapping and supporting SQL are already isolated in cleanup_support."
-    },
-    {
-      "path": "crates/scope-postgres/src/db/request_media/processing_support.rs",
-      "owner": "request media processing persistence",
-      "reason": "Lease locking, immutable manifest adoption, derivative budgeting, and final attachment writes support one fenced processing transaction; public job operations remain in processing."
     },
     {
       "path": "crates/scope-postgres/src/db/request_media/upload.rs",

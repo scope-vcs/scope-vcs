@@ -1,3 +1,4 @@
+import { usePendingActions } from '@/lib/use-pending-actions'
 import {
   createCliExchangeGrantForRequest,
   listCliSessionsForRequest,
@@ -57,34 +58,32 @@ function AccountRoute() {
   const loaded = Route.useLoaderData()
   const [grant, setGrant] = useState<CliExchangeGrant | null>(null)
   const [sessions, setSessions] = useState(() => loaded.sessions)
-  const [pending, setPending] = useState<'grant' | string | null>(null)
+  const { pending, run } = usePendingActions()
   const [error, setError] = useState<string | null>(null)
 
   async function createGrant() {
-    setPending('grant')
-    setError(null)
-    try {
-      setGrant(await createCliExchangeGrant())
-      toast.success('Login command created')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Could not create login command')
-    } finally {
-      setPending(null)
-    }
+    await run('grant', async () => {
+      setError(null)
+      try {
+        setGrant(await createCliExchangeGrant())
+        toast.success('Login command created')
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not create login command')
+      }
+    })
   }
 
   async function revokeSession(sessionId: string) {
-    setPending(sessionId)
-    setError(null)
-    try {
-      await revokeCliSession({ data: { sessionId } })
-      setSessions((current) => current.filter((session) => session.id !== sessionId))
-      toast.success('CLI session revoked')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Could not revoke CLI session')
-    } finally {
-      setPending(null)
-    }
+    await run(sessionId, async () => {
+      setError(null)
+      try {
+        await revokeCliSession({ data: { sessionId } })
+        setSessions((current) => current.filter((session) => session.id !== sessionId))
+        toast.success('CLI session revoked')
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not revoke CLI session')
+      }
+    })
   }
 
   return (
@@ -115,12 +114,12 @@ function AccountRoute() {
           >
             <div className="space-y-3">
               <Button
-                disabled={pending === 'grant'}
+                disabled={pending.has('grant')}
                 onClick={() => void createGrant()}
                 size="sm"
                 type="button"
               >
-                {pending === 'grant' ? (
+                {pending.has('grant') ? (
                   <LoaderCircle className="size-3.5 animate-spin" />
                 ) : (
                   <Plus className="size-3.5" />

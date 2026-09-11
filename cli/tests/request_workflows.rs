@@ -1,3 +1,6 @@
+#[cfg(unix)]
+#[path = "request_workflows/pull.rs"]
+mod pull;
 mod support;
 
 use axum::{
@@ -483,7 +486,7 @@ impl FixtureServer {
 }
 
 fn repository() -> Value {
-    json!({"id":"repo_one","owner_handle":"owner","name":"repo","git_remote_url":"https://scope.example/git/public/owner/repo","lifecycle_state":"Ready","change_version":1,"access":{"actor":"Public","can_read_private_files":false,"can_push":false,"can_change_file_visibility":false,"can_apply_changes":false,"can_manage_members":false,"can_delete_repo":false},"open_request_count":2,"request_permissions":{"can_start_request":true}})
+    json!({"id":"repo_one","owner_handle":"owner","name":"repo","git_remote_url":"https://scope.example/git/public/owner/repo","lifecycle_state":"Ready","change_version":1,"access":{"actor":"Public","can_read_private_files":false,"can_push":false,"can_change_file_visibility":false,"can_manage_members":false,"can_delete_repo":false},"open_request_count":2,"request_permissions":{"can_start_request":true}})
 }
 fn list_item(id: &str, name: &str, state: &str) -> Value {
     json!({"id":id,"name":name,"title":name,"author_role":"Public","audience":"Public","head_oid":OID,"state":state,"submitted_at_unix":1,"updated_at_unix":2,"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})

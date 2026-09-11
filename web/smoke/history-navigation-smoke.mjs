@@ -57,6 +57,19 @@ export async function assertHistoryFirstFileStaysInRoute(page) {
       host.shadowRoot.textContent?.trim().length > 0
     )
   }, 'README.html diff')
+  const initialTheme = await page.locator('html').evaluate((root) => getComputedStyle(root).colorScheme)
+  assert.equal(
+    await page.locator('diffs-container').evaluate((host) => getComputedStyle(host).colorScheme),
+    initialTheme,
+    'diff colors must follow the application theme',
+  )
+  for (const theme of [initialTheme === 'dark' ? 'light' : 'dark', initialTheme]) {
+    await page.getByRole('button', { name: `Switch to ${theme} mode` }).click()
+    await page.waitForFunction((expected) => {
+      const host = document.querySelector('diffs-container')
+      return host && getComputedStyle(host).colorScheme === expected
+    }, theme)
+  }
 }
 
 export async function assertHistoryFeedNavigation(page) {

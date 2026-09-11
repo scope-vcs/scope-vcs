@@ -226,12 +226,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
         .unwrap();
     let rebuilt = store
         .jobs()
-        .run_ready_outbox_jobs(
-            "history-regression",
-            10,
-            &|| Ok(1_700_000_000),
-            &crate::db::generated_ids::test_generated_id,
-        )
+        .run_ready_outbox_jobs("history-regression", 10, &|| Ok(1_700_000_000))
         .await
         .unwrap();
     assert!(rebuilt.completed > 0);
@@ -461,7 +456,6 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
         permissions: RepositoryMemberPermissions {
             can_push: true,
             can_change_file_visibility: false,
-            can_apply_changes: false,
         },
         created_at_unix: 1,
         updated_at_unix: 1,

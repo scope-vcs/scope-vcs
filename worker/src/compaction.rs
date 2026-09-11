@@ -39,11 +39,8 @@ pub(crate) async fn run(
         let made_progress = match compact_one_git_repository(
             &metadata,
             Arc::clone(&segment_store),
-            &settings.worker_id,
-            settings.git_compaction_spans,
-            settings.git_storage_limits,
-            settings.git_compaction_timeout,
-            settings.data_dir.clone(),
+            &settings,
+            &health,
         )
         .await
         {
@@ -73,12 +70,10 @@ pub(crate) async fn run(
 pub(crate) async fn compact_one_git_repository(
     metadata: &MetadataStore,
     segment_store: Arc<GitSegmentStore>,
-    worker_id: &str,
-    minimum_spans: usize,
-    storage_limits: GitStorageLimits,
-    timeout: Duration,
-    data_dir: std::path::PathBuf,
+    settings: &WorkerSettings,
+    health: &WorkerHealth,
 ) -> anyhow::Result<CompactionOutcome> {
+    let timeout = settings.git_compaction_timeout;
     let attempt_started = Instant::now();
     let claim_now_unix = super::unix_now()?;
     let candidate_started = Instant::now();
@@ -86,8 +81,8 @@ pub(crate) async fn compact_one_git_repository(
     let Some(claim) = metadata
         .jobs()
         .claim_git_compaction(
-            worker_id,
-            minimum_spans as u64,
+            &settings.worker_id,
+            settings.git_compaction_spans as u64,
             claim_now_unix,
             lease_seconds,
             &crate::generate_persistence_id,
@@ -97,6 +92,11 @@ pub(crate) async fn compact_one_git_repository(
     else {
         return Ok(CompactionOutcome::NoJob);
     };
+    health.mark_work_progress(
+        WorkerRole::Compaction,
+        super::unix_now()?,
+        Duration::from_secs(lease_seconds),
+    );
     let Some(candidate) = claim.candidate.as_ref() else {
         metadata
             .jobs()
@@ -123,6 +123,8 @@ pub(crate) async fn compact_one_git_repository(
     let build_candidate = candidate.clone();
     let build_store = Arc::clone(&segment_store);
     let build_reservation = reservation.clone();
+    let storage_limits = settings.git_storage_limits;
+    let data_dir = settings.data_dir.clone();
     let mut build = tokio::spawn(async move {
         build_compacted_span(
             build_store,
@@ -157,7 +159,7 @@ pub(crate) async fn compact_one_git_repository(
                     super::unix_now()?,
                     lease_seconds,
                 ).await {
-                    Ok(true) => {}
+                    Ok(true) => health.mark_work_progress(WorkerRole::Compaction, super::unix_now()?, Duration::from_secs(lease_seconds)),
                     Ok(false) => tracing::warn!(
                         target_sequence = claim.target_sequence,
                         "Git compaction lease was lost while external work was still running"

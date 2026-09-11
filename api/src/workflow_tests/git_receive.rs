@@ -112,15 +112,9 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
     let initial_rebuild = state
         .metadata
         .jobs()
-        .run_ready_outbox_jobs(
-            "content-push-test",
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .run_ready_outbox_jobs("content-push-test", 10, &|| {
+            crate::persistence::unix_now().map_err(crate::error::ApiError::into_operator_diagnostic)
+        })
         .await
         .unwrap();
     assert_eq!(initial_rebuild.failed, 0);
@@ -164,15 +158,10 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         let rebuilt = state
             .metadata
             .jobs()
-            .run_ready_outbox_jobs(
-                "content-push-test",
-                10,
-                &|| {
-                    crate::persistence::unix_now()
-                        .map_err(crate::error::ApiError::into_operator_diagnostic)
-                },
-                &crate::persistence_ids::generate_persistence_id,
-            )
+            .run_ready_outbox_jobs("content-push-test", 10, &|| {
+                crate::persistence::unix_now()
+                    .map_err(crate::error::ApiError::into_operator_diagnostic)
+            })
             .await
             .unwrap();
         assert_eq!(rebuilt.failed, 0);
@@ -286,7 +275,7 @@ async fn published_receive_pack_rejects_non_fast_forward_push() {
 async fn push_only_member_can_apply_content_without_visibility_changes() {
     let state = test_state_with_repo();
     let member_id = "user_push_only";
-    repo_with_push_member(&state, member_id, member_permissions(true, false, false)).await;
+    repo_with_push_member(&state, member_id, member_permissions(true, false)).await;
 
     let persisted = persist_and_promote_test_update(
         &state,
@@ -307,7 +296,7 @@ async fn push_only_member_can_apply_content_without_visibility_changes() {
 async fn published_push_rechecks_member_permission_before_persisting() {
     let state = test_state_with_repo();
     let member_id = "user_removed_during_push";
-    repo_with_push_member(&state, member_id, member_permissions(true, false, true)).await;
+    repo_with_push_member(&state, member_id, member_permissions(true, false)).await;
     state
         .metadata
         .repositories()

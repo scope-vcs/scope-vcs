@@ -65,7 +65,6 @@ pub(crate) async fn get_history_page(
             limit: HISTORY_PAGE_SIZE as u64,
         })
         .await?;
-    ensure_history_available(page.available)?;
     let view = page.view;
     let entries = view.entries.as_slice();
     let next_cursor = page
@@ -111,7 +110,6 @@ pub(crate) async fn get_history_entry(
             limit: 1,
         })
         .await?;
-    ensure_history_available(page.available)?;
     let view = page.view;
     let entry = history_entry_for_id(&view.entries, &entry_id)?;
 
@@ -120,8 +118,18 @@ pub(crate) async fn get_history_entry(
         .auth()
         .users_by_ids(entry.author.iter().cloned())
         .await?;
+    let native_details = crate::use_cases::native_commit_details::native_commit_details(
+        &state,
+        &repo.incarnation(),
+        &entry.native_commits,
+    )
+    .await?;
     Ok(Json(history_entry_detail_response(
-        audience, &view, entry, &users,
+        audience,
+        &view,
+        entry,
+        &users,
+        &native_details,
     )?))
 }
 
@@ -146,11 +154,36 @@ pub(crate) async fn get_history_entry_file_diff(
             limit: 1,
         })
         .await?;
-    ensure_history_available(page.available)?;
     let view = page.view;
     let entry = history_entry_for_id(&view.entries, &entry_id)?;
     let path = repo_scope_path(&input.path)?;
-    let file = history_entry_file(entry, path.as_str(), input.visibility_change.as_deref())?;
+    if input.commit_oid.is_some() && input.visibility_change.is_some() {
+        return Err(ApiError::bad_request(
+            "commit_oid and visibility_change cannot be combined",
+        ));
+    }
+    let native_file;
+    let file = if let Some(oid) = input.commit_oid.as_deref() {
+        let commit = entry
+            .native_commits
+            .iter()
+            .find(|commit| commit.oid == oid)
+            .ok_or_else(|| ApiError::not_found("native commit not found in history entry"))?;
+        let details = crate::use_cases::native_commit_details::native_commit_details(
+            &state,
+            &repo.incarnation(),
+            std::slice::from_ref(commit),
+        )
+        .await?;
+        let change = details
+            .get(oid)
+            .and_then(|details| details.changes.iter().find(|change| change.path == path))
+            .ok_or_else(|| ApiError::not_found(format!("file {path} not found")))?;
+        native_file = crate::http::responses::native_history_file(change);
+        &native_file
+    } else {
+        history_entry_file(entry, path.as_str(), input.visibility_change.as_deref())?
+    };
 
     Ok(Json(
         history_entry_file_diff_response(&state, &repo, file).await?,
@@ -206,16 +239,6 @@ fn history_view_key(audience: ProjectionPreviewAudience) -> ProjectionViewKey {
     match audience {
         ProjectionPreviewAudience::Private => ProjectionViewKey::Private,
         ProjectionPreviewAudience::Public => ProjectionViewKey::Public,
-    }
-}
-
-fn ensure_history_available(available: bool) -> Result<(), ApiError> {
-    if available {
-        Ok(())
-    } else {
-        Err(ApiError::not_implemented(
-            "history is unavailable for preserved public request commits until native per-commit diffs are represented accurately",
-        ))
     }
 }
 

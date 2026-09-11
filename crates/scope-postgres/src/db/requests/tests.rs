@@ -515,6 +515,15 @@ async fn discussion_replies_are_read_as_flat_chronological_pages() {
 async fn close_draft_request_deletes_request_and_events() {
     let store = postgres_store();
     start_public_request(&store).await;
+    let snapshot_refs = [
+        source_blob("head").content_ref,
+        source_blob("head-2").content_ref,
+    ];
+    let initial_references =
+        super::super::object_references::referenced_content_refs(store.db.as_ref())
+            .await
+            .unwrap();
+    assert!(initial_references.contains(&snapshot_refs[0]));
     store
         .requests()
         .record_request_revision(
@@ -551,6 +560,12 @@ async fn close_draft_request_deletes_request_and_events() {
         .await
         .unwrap();
 
+    let referenced_before =
+        super::super::object_references::referenced_content_refs(store.db.as_ref())
+            .await
+            .unwrap();
+    assert!(referenced_before.contains(&snapshot_refs[1]));
+
     let mutation = store
         .requests()
         .close_request(
@@ -585,6 +600,17 @@ async fn close_draft_request_deletes_request_and_events() {
             .unwrap()
             .is_empty()
     );
+    let ref_cleanup = store
+        .cleanup()
+        .pending_request_ref_cleanups(None)
+        .await
+        .unwrap();
+    assert_eq!(ref_cleanup.len(), 1);
+    assert_eq!(ref_cleanup[0].request_id, "req_1");
+    assert_eq!(ref_cleanup[0].request_name, "fix-parser");
+    assert_eq!(ref_cleanup[0].head_oid, "head-2");
+    assert_eq!(ref_cleanup[0].incarnation.repository_id(), "owner/repo");
+    assert_eq!(ref_cleanup[0].incarnation.incarnation_id(), "repoi_test");
     let (_, pending_blobs) = store.cleanup().pending_cleanup_queues().await.unwrap();
     let pending_refs = pending_blobs
         .iter()
@@ -603,14 +629,9 @@ async fn close_draft_request_deletes_request_and_events() {
         .await
         .unwrap();
     assert!(
-        !referenced.contains(&scope_domain::content_ref::ContentRef::git_bundle_sha256(
-            "head"
-        ))
-    );
-    assert!(
-        !referenced.contains(&scope_domain::content_ref::ContentRef::git_bundle_sha256(
-            "head-2"
-        ))
+        snapshot_refs
+            .iter()
+            .all(|reference| !referenced.contains(reference))
     );
 }
 
@@ -795,3 +816,6 @@ fn source_blob(git_oid: &str) -> SourceBlob {
 }
 
 mod authorization_locks;
+
+mod draft_count;
+mod replay_authorization;

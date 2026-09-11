@@ -1,5 +1,6 @@
 use super::{
     ExecutionSink,
+    heartbeat::Heartbeat,
     output::{OutputCapture, OutputNotice, UploadPolicy},
     process::StepProcess,
 };
@@ -53,6 +54,7 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
     options: SupervisorOptions,
 ) -> anyhow::Result<ExecutionOutcome> {
     let sink = Arc::new(sink);
+    let mut heartbeat = Heartbeat::start(Arc::clone(&sink))?;
     let timeout = options
         .timeout
         .unwrap_or_else(|| Duration::from_secs(job.timeout_seconds()));
@@ -248,7 +250,19 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
                 return Ok(ExecutionOutcome::Terminal);
             }
             if now >= next_heartbeat {
-                match sink.heartbeat() {
+                if let Err(error) = heartbeat.request() {
+                    return cleanup_after_error(
+                        sink.as_ref(),
+                        process.take().expect("step process exists"),
+                        capture.take(),
+                        options.termination_grace,
+                        error,
+                    );
+                }
+                next_heartbeat = now + options.heartbeat_interval;
+            }
+            if let Some(result) = heartbeat.poll() {
+                match result {
                     Ok(true) => {
                         let logs_truncated = terminate_step(
                             process.take().expect("step process exists"),
@@ -259,7 +273,7 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
                         complete_canceled_or_abandon(sink.as_ref(), logs_truncated)?;
                         return Ok(ExecutionOutcome::Terminal);
                     }
-                    Ok(false) => next_heartbeat = now + options.heartbeat_interval,
+                    Ok(false) => {}
                     Err(error) => {
                         return cleanup_after_error(
                             sink.as_ref(),

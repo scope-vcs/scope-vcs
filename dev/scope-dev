@@ -231,21 +231,11 @@ assert_port_free() {
 }
 
 stop_pid_file() {
-  local pid_file="$1"
-  local pid
-  [[ -f "$pid_file" ]] || return 0
-  pid="$(tr -d '[:space:]' < "$pid_file")"
-  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-    for _ in {1..30}; do
-      kill -0 "$pid" 2>/dev/null || break
-      sleep 0.1
-    done
-    if kill -0 "$pid" 2>/dev/null; then
-      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-    fi
-  fi
-  rm -f "$pid_file"
+  python3 "$ROOT/dev/local-process.py" stop "$1"
+}
+
+record_pid_file() {
+  python3 "$ROOT/dev/local-process.py" record "$1" "$2"
 }
 
 stop_owned_processes() {
@@ -420,7 +410,7 @@ start_api() {
   object_key="$(get_object_key)"
   write_api_runner "$issuer" "$dev_email" "$dev_handle" "$object_key"
   setsid "$STATE_DIR/api.sh" > "$API_OUT_LOG" 2> "$API_ERR_LOG" &
-  echo "$!" > "$API_PID_FILE"
+  record_pid_file "$API_PID_FILE" "$!"
 }
 
 prepare_local_schema() {
@@ -459,25 +449,25 @@ build_local_services() {
 start_worker() {
   write_worker_runner
   setsid "$STATE_DIR/worker.sh" > "$WORKER_OUT_LOG" 2> "$WORKER_ERR_LOG" &
-  echo "$!" > "$WORKER_PID_FILE"
+  record_pid_file "$WORKER_PID_FILE" "$!"
 }
 
 start_media() {
   write_media_runner
   setsid "$STATE_DIR/media.sh" > "$MEDIA_OUT_LOG" 2> "$MEDIA_ERR_LOG" &
-  echo "$!" > "$MEDIA_PID_FILE"
+  record_pid_file "$MEDIA_PID_FILE" "$!"
 }
 
 start_media_worker() {
   write_media_worker_runner
   setsid "$STATE_DIR/media-worker.sh" > "$MEDIA_WORKER_OUT_LOG" 2> "$MEDIA_WORKER_ERR_LOG" &
-  echo "$!" > "$MEDIA_WORKER_PID_FILE"
+  record_pid_file "$MEDIA_WORKER_PID_FILE" "$!"
 }
 
 start_web() {
   write_web_runner
   setsid "$STATE_DIR/web.sh" > "$WEB_OUT_LOG" 2> "$WEB_ERR_LOG" &
-  echo "$!" > "$WEB_PID_FILE"
+  record_pid_file "$WEB_PID_FILE" "$!"
 }
 
 wait_http() {
@@ -494,18 +484,7 @@ wait_http() {
 }
 
 pid_status() {
-  local pid_file="$1"
-  local pid
-  if [[ ! -f "$pid_file" ]]; then
-    echo "stopped"
-    return
-  fi
-  pid="$(tr -d '[:space:]' < "$pid_file")"
-  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-    echo "running pid $pid"
-    return
-  fi
-  echo "stale"
+  python3 "$ROOT/dev/local-process.py" status "$1"
 }
 
 doctor() {
@@ -515,6 +494,7 @@ doctor() {
   assert_command node
   assert_command openssl
   assert_command pnpm
+  assert_command python3
   assert_command setsid
   assert_command ss
   assert_command "${SCOPE_MEDIA_FFMPEG:-ffmpeg}"
@@ -682,15 +662,17 @@ status() {
 }
 
 reset() {
-  stop_owned_processes
-  local resolved_data resolved_root
-  resolved_data="$(realpath -m "$DATA_DIR")"
+  local target resolved_target resolved_root
   resolved_root="$(realpath -m "$ROOT")"
-  if [[ "$resolved_data" != "$resolved_root"/* ]]; then
-    echo "refusing to remove data outside repo: $resolved_data" >&2
-    exit 1
-  fi
-  rm -rf "$DATA_DIR" "$STATE_DIR"
+  for target in "$DATA_DIR" "$STATE_DIR"; do
+    resolved_target="$(realpath -m "$target")"
+    if [[ "$resolved_target" != "$resolved_root"/* ]]; then
+      echo "refusing to remove data outside repo: $resolved_target" >&2
+      exit 1
+    fi
+  done
+  stop_owned_processes
+  rm -rf -- "$DATA_DIR" "$STATE_DIR"
   echo "local dev state reset"
 }
 

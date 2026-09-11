@@ -1,7 +1,10 @@
 use super::{
     content::SourceBlob,
     policy::{Principal, ScopePath, Visibility},
-    projection::{Projection, ProjectionViewKey, project_graph},
+    projection::{
+        NativePublicCommitDetails, Projection, ProjectionMaterialization, ProjectionViewKey,
+        project_graph,
+    },
     repository::{Repository, repo_relative_scope_path},
 };
 use crate::error::DomainError;
@@ -43,7 +46,7 @@ pub struct ProjectionPreviewFile {
 pub struct ProjectionPreviewCommit {
     pub projected_id: String,
     pub logical_commit_id: String,
-    pub parent_projected_id: Option<String>,
+    pub parent_projected_ids: Vec<String>,
     pub author: Option<String>,
     pub message: String,
     pub visibility: ProjectionPreviewCommitVisibility,
@@ -83,7 +86,8 @@ pub fn projection_preview(
     repo: &Repository,
     audience: ProjectionAudience,
     include_private_counts: bool,
-) -> ProjectionPreviewView {
+    native_details: &BTreeMap<String, NativePublicCommitDetails>,
+) -> Result<ProjectionPreviewView, DomainError> {
     let view_key = ProjectionViewKey::from(audience);
     let projection = project_graph(&repo.graph, &repo.visibility_change_sets, view_key);
     let files = projection_preview_files(repo, &projection);
@@ -101,19 +105,42 @@ pub fn projection_preview(
     let commits = projection
         .commits
         .iter()
-        .map(|commit| ProjectionPreviewCommit {
-            projected_id: commit.projected_id.clone(),
-            logical_commit_id: commit.logical_commit_id.clone(),
-            parent_projected_id: commit.parent_projected_id.clone(),
-            author: commit.author.clone(),
-            message: commit.message.clone(),
-            visibility: logical_commit_visibility
-                .get(commit.logical_commit_id.as_str())
-                .copied()
-                .unwrap_or(ProjectionPreviewCommitVisibility::FullyPublic),
-            change_count: commit.changes.len(),
+        .map(|commit| {
+            let native = match &commit.materialization {
+                ProjectionMaterialization::PreserveGitCommit { oid, .. } => {
+                    Some(native_details.get(oid).ok_or_else(|| {
+                        DomainError::invariant_violation("native preview metadata is missing")
+                    })?)
+                }
+                ProjectionMaterialization::Generate => None,
+            };
+            Ok(ProjectionPreviewCommit {
+                projected_id: commit.projected_id.clone(),
+                logical_commit_id: commit.logical_commit_id.clone(),
+                parent_projected_ids: match &commit.materialization {
+                    ProjectionMaterialization::PreserveGitCommit { parent_oids, .. } => {
+                        parent_oids.clone()
+                    }
+                    ProjectionMaterialization::Generate => {
+                        commit.parent_projected_id.iter().cloned().collect()
+                    }
+                },
+                author: native
+                    .map(|details| details.author.clone())
+                    .or_else(|| commit.author.clone()),
+                message: native
+                    .map(|details| details.message.clone())
+                    .unwrap_or_else(|| commit.message.clone()),
+                visibility: logical_commit_visibility
+                    .get(commit.logical_commit_id.as_str())
+                    .copied()
+                    .unwrap_or(ProjectionPreviewCommitVisibility::FullyPublic),
+                change_count: native
+                    .map(|details| details.changes.len())
+                    .unwrap_or(commit.changes.len()),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, DomainError>>()?;
     let visible_files = files.len();
     let visible_commits = commits.len();
     let (hidden_files, hidden_commits) =
@@ -132,7 +159,7 @@ pub fn projection_preview(
             (0, 0)
         };
 
-    ProjectionPreviewView {
+    Ok(ProjectionPreviewView {
         repo_id: repo.record.id.clone(),
         view_key: projection.view_key.as_str().to_string(),
         files,
@@ -143,7 +170,7 @@ pub fn projection_preview(
             visible_commits,
             hidden_commits,
         },
-    }
+    })
 }
 
 fn projection_preview_commit_visibility(
@@ -240,13 +267,6 @@ pub fn projected_file_content(
         },
         blob,
     })
-}
-
-pub fn files_for_visibility_update(
-    repo: &Repository,
-    principal: &Principal,
-) -> Result<Vec<ProjectionViewFile>, DomainError> {
-    Ok(projected_files(repo, principal))
 }
 
 pub fn repo_scope_path(path: &str) -> Result<ScopePath, DomainError> {

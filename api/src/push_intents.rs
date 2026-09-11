@@ -1,9 +1,4 @@
-use crate::{
-    config::non_empty_env,
-    error::ApiError,
-    persistence::{ensure_private_dir, unix_now},
-    state::AppState,
-};
+use crate::{config::non_empty_env, error::ApiError, persistence::unix_now, state::AppState};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
 use scope_domain::{
@@ -12,14 +7,13 @@ use scope_domain::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use std::{fs, path::Path, sync::Arc};
+use std::sync::Arc;
 
 const PUSH_INTENT_TTL_SECS: u64 = 10 * 60;
 const PUSH_INTENT_TOKEN_PREFIX: &str = "scope_pi_";
 const PUSH_INTENT_KIND: &str = "scope.push-intent";
 const PUSH_INTENT_VERSION: u8 = 2;
 const PUSH_INTENT_SIGNING_KEY_ENV: &str = "SCOPE_PUSH_INTENT_SIGNING_KEY";
-const PUSH_INTENT_SIGNING_KEY_FILE: &str = "push-intent-signing-key";
 const PUSH_INTENT_KEY_DERIVATION_CONTEXT: &[u8] = b"scope.push-intent.signing-key.v1";
 type HmacSha256 = Hmac<Sha256>;
 
@@ -113,39 +107,11 @@ impl AppState {
     }
 }
 
-pub(crate) fn push_intent_signing_key(
-    data_dir: &Path,
-    shared_root_key: Option<&[u8]>,
-) -> Result<Arc<[u8]>, ApiError> {
+pub(crate) fn push_intent_signing_key(shared_root_key: &[u8]) -> Result<Arc<[u8]>, ApiError> {
     if let Some(secret) = non_empty_env(PUSH_INTENT_SIGNING_KEY_ENV) {
         return Ok(Arc::from(secret.into_bytes()));
     }
-    if let Some(shared_root_key) = shared_root_key {
-        return derive_push_intent_signing_key(shared_root_key);
-    }
-
-    ensure_private_dir(data_dir)?;
-    let key_path = data_dir.join(PUSH_INTENT_SIGNING_KEY_FILE);
-    if key_path.exists() {
-        let secret = fs::read_to_string(&key_path).map_err(ApiError::internal)?;
-        let secret = secret.trim();
-        if secret.is_empty() {
-            return Err(ApiError::internal_message(
-                "push intent signing key file is empty",
-            ));
-        }
-        return Ok(Arc::from(secret.as_bytes()));
-    }
-
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(|error| {
-        ApiError::internal_message(format!(
-            "push intent signing key generation failed: {error}"
-        ))
-    })?;
-    let secret = URL_SAFE_NO_PAD.encode(bytes);
-    fs::write(&key_path, format!("{secret}\n")).map_err(ApiError::internal)?;
-    Ok(Arc::from(secret.into_bytes()))
+    derive_push_intent_signing_key(shared_root_key)
 }
 
 fn derive_push_intent_signing_key(shared_root_key: &[u8]) -> Result<Arc<[u8]>, ApiError> {

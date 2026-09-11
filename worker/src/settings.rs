@@ -185,12 +185,11 @@ fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> 
     if !enabled {
         return Ok(None);
     }
-    let api_url = required_env("SCOPE_PUBLIC_API_URL")?
-        .trim_end_matches('/')
-        .to_string();
-    if !api_url.starts_with("https://") && !api_url.starts_with("http://127.0.0.1") {
-        anyhow::bail!("SCOPE_PUBLIC_API_URL must use HTTPS outside local development");
-    }
+    let api_url =
+        scope_service_config::ServiceEndpoint::parse(&required_env("SCOPE_PUBLIC_API_URL")?)
+            .map_err(|error| anyhow::anyhow!("SCOPE_PUBLIC_API_URL: {error}"))?
+            .as_str()
+            .to_string();
     let max_concurrency = parse_usize_env("SCOPE_CLOUD_RUNS_MAX_CONCURRENCY", 20)?;
     if !(1..=MAX_CLOUD_RUN_CONCURRENCY).contains(&max_concurrency) {
         anyhow::bail!(

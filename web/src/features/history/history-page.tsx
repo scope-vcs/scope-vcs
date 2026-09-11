@@ -46,6 +46,7 @@ import { historyFileSelection } from './history-selection'
 type HistoryPageProps = {
   initialPage: HistoryPageResponse
   initialEntry: HistoryEntryDetail | null
+  initialEntryScope: string | null
   params: RepoParams
   search: {
     audience?: ProjectionPreviewAudience
@@ -59,13 +60,25 @@ type HistoryPageProps = {
 export function HistoryPage(props: HistoryPageProps) {
   const { userId, isLoaded } = useAuth()
   const { repo } = useRepoLayout()
-  const cacheKey = isLoaded
-    ? historyPageCacheKey(repoResourceScope(repo, userId ?? null), props.initialPage)
+  const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
+  const cacheKey = scope
+    ? historyPageCacheKey(scope, props.initialPage)
     : null
-  return <HistoryPageContent initialPage={props.initialPage} initialEntry={props.initialEntry} params={props.params} search={props.search} key={cacheKey ?? 'pending'} cacheKey={cacheKey} />
+  return (
+    <HistoryPageContent
+      initialPage={props.initialPage}
+      initialEntry={props.initialEntry}
+      initialEntryScope={props.initialEntryScope}
+      params={props.params}
+      search={props.search}
+      key={cacheKey ?? 'pending'}
+      cacheKey={cacheKey}
+      scope={scope}
+    />
+  )
 }
 
-function HistoryPageContent(props: HistoryPageProps & { cacheKey: string | null }) {
+function HistoryPageContent(props: HistoryPageProps & { cacheKey: string | null; scope: string | null }) {
   const {
     audience,
     availableAudiences,
@@ -157,7 +170,7 @@ function HistoryPageContent(props: HistoryPageProps & { cacheKey: string | null 
   )
 }
 
-function useHistoryPageModel({ initialPage, initialEntry, params, search, cacheKey }: HistoryPageProps & { cacheKey: string | null }) {
+function useHistoryPageModel({ initialPage, initialEntry, initialEntryScope, params, search, cacheKey, scope }: HistoryPageProps & { cacheKey: string | null; scope: string | null }) {
   const navigate = useNavigate()
   const locationKey = useLocation({ select: (location) => location.state.__TSR_key })
   const [diffSelection, setDiffSelection] = useState({ locationKey, dismissed: false })
@@ -175,8 +188,9 @@ function useHistoryPageModel({ initialPage, initialEntry, params, search, cacheK
     ? ['private', 'public']
     : ['public']
   const selectedEntryId = search.entry ?? loaded.entries[0]?.source_id ?? null
-  const entryIdentity = selectedEntryId
+  const entryIdentity = scope && selectedEntryId
     ? historyEntryCacheKey({
+        scope,
         audience,
         entry: selectedEntryId,
         generation: initialPage.generation,
@@ -185,7 +199,7 @@ function useHistoryPageModel({ initialPage, initialEntry, params, search, cacheK
       })
     : null
   const loadSelectedEntry = useCallback(
-    (signal: AbortSignal) => initialEntry?.source_id === selectedEntryId
+    (signal: AbortSignal) => scope === initialEntryScope && initialEntry?.source_id === selectedEntryId
       ? Promise.resolve(initialEntry)
       : loadHistoryEntry({
       data: {
@@ -195,8 +209,8 @@ function useHistoryPageModel({ initialPage, initialEntry, params, search, cacheK
         repo: params.repo,
       },
       signal,
-    }),
-    [audience, initialEntry, params.owner, params.repo, selectedEntryId],
+    }).then((result) => result.entry),
+    [audience, initialEntry, initialEntryScope, params.owner, params.repo, selectedEntryId, scope],
   )
   const entryResource = useCachedResource({
     fallbackError: 'This history update is unavailable.',
@@ -210,8 +224,9 @@ function useHistoryPageModel({ initialPage, initialEntry, params, search, cacheK
     selectedEntry,
     diffSelection.locationKey === locationKey && diffSelection.dismissed,
   )
-  const diffIdentity = selectedEntryId && selectedFile
+  const diffIdentity = scope && selectedEntryId && selectedFile
     ? historyEntryDiffCacheKey({
+        scope,
         audience,
         entry: selectedEntryId,
         generation: initialPage.generation,
@@ -231,6 +246,7 @@ function useHistoryPageModel({ initialPage, initialEntry, params, search, cacheK
         owner: params.owner,
         path: selectedFilePath ?? '',
         visibility_change: selectedVisibilityId,
+        commit_oid: null,
         repo: params.repo,
       },
       signal,

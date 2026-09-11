@@ -141,6 +141,9 @@ pub(crate) fn begin_mutation(
 }
 
 pub(crate) fn complete_uploads(receipt_keys: &[String]) -> anyhow::Result<()> {
+    if receipt_keys.is_empty() {
+        return Ok(());
+    }
     let path = journal_path()?;
     let _lock = lock_journal(&path)?;
     let mut journal = load_journal(&path)?;
@@ -260,21 +263,9 @@ fn save_journal(path: &Path, journal: &mut ReceiptJournal) -> anyhow::Result<()>
 }
 
 fn replace_journal_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
-    #[cfg(not(windows))]
-    {
-        fs::rename(temp_path, path).context("replace Scope attachment receipt journal")
-    }
-    #[cfg(windows)]
-    {
-        match fs::remove_file(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(error).context("replace Scope attachment receipt journal");
-            }
-        }
-        fs::rename(temp_path, path).context("replace Scope attachment receipt journal")
-    }
+    // std::fs::rename replaces an existing file on Windows as well as Unix.
+    // Never unlink the durable journal before the replacement succeeds.
+    fs::rename(temp_path, path).context("replace Scope attachment receipt journal")
 }
 
 fn journal_path() -> anyhow::Result<PathBuf> {
@@ -355,6 +346,63 @@ pub(super) fn unix_now() -> anyhow::Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replacing_journal_preserves_other_retry_identities() {
+        let dir = crate::test_support::TestDir::new("replace-journal");
+        let path = dir.path().join("receipts.json");
+        let mut journal = ReceiptJournal::default();
+        let first = journal.upload_operation_id("first", 1).unwrap();
+        journal.pending_mutations.push(PendingMutationReceipt {
+            key: "pending".into(),
+            client_id: "client_pending".into(),
+            updated_at_unix: 1,
+        });
+        save_journal(&path, &mut journal).unwrap();
+        journal.upload_operation_id("second", 2).unwrap();
+        save_journal(&path, &mut journal).unwrap();
+        let stored = load_journal(&path).unwrap();
+        assert_eq!(stored.uploads.len(), 2);
+        assert_eq!(
+            stored
+                .uploads
+                .iter()
+                .find(|r| r.key == "first")
+                .unwrap()
+                .operation_id,
+            first
+        );
+        assert_eq!(stored.pending_mutations[0].client_id, "client_pending");
+    }
+
+    #[test]
+    fn failed_replacement_keeps_the_previous_journal() {
+        let dir = crate::test_support::TestDir::new("failed-journal-replacement");
+        let path = dir.path().join("receipts.json");
+        fs::write(&path, b"durable retry identities").unwrap();
+        assert!(replace_journal_file(&dir.path().join("missing-temp"), &path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"durable retry identities");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_replacement_sharing_failure_keeps_both_files() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = crate::test_support::TestDir::new("locked-journal-replacement");
+        let path = dir.path().join("receipts.json");
+        let temp = dir.path().join("receipts.tmp");
+        fs::write(&path, b"old retry identities").unwrap();
+        fs::write(&temp, b"new retry identities").unwrap();
+        let held = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&temp)
+            .unwrap();
+        assert!(replace_journal_file(&temp, &path).is_err());
+        drop(held);
+        assert_eq!(fs::read(path).unwrap(), b"old retry identities");
+        assert_eq!(fs::read(temp).unwrap(), b"new retry identities");
+    }
 
     #[test]
     fn receipt_child() {

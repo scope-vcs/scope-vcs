@@ -302,7 +302,6 @@ fn create_repo_response() -> serde_json::Value {
             "can_read_private_files": true,
             "can_push": true,
             "can_change_file_visibility": true,
-            "can_apply_changes": true,
             "can_manage_members": true,
             "can_delete_repo": true
         },

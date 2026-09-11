@@ -7,6 +7,8 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { verifyStagingTarget, verifyStagingTopology } from './verify-staging-target.mjs'
 
+const deploymentServices = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url), 'utf8')).services
+
 function fixture() {
   const manifest = {
     railway: {
@@ -41,6 +43,9 @@ function fixture() {
       staging: { gatewayDomain: 'media-staging.example.test' },
     },
   }
+  for (const [component, service] of Object.entries(manifest.services)) {
+    service.deployment = deploymentServices[component].deployment
+  }
   const services = [
     { id: 'database', name: 'scope-postgres' },
     { id: 'cache', name: 'scope-cache-service', status: 'SUCCESS', replicas: healthyReplicas(1) },
@@ -68,6 +73,7 @@ function candidateCheckout(t) {
   const scripts = join(root, '.github/scripts')
   const bin = join(root, 'bin')
   mkdirSync(scripts, { recursive: true })
+  copyFileSync(new URL('./deployment-components.mjs', import.meta.url), join(scripts, 'deployment-components.mjs'))
   mkdirSync(bin)
   execFileSync('git', ['init', '--quiet', root])
   execFileSync('git', ['-c', 'user.name=Scope Test', '-c', 'user.email=scope@example.test',
@@ -201,7 +207,9 @@ for (const resume of [false, true]) {
 test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness before its Git router and records each participant once`, (t) => {
   const { root, scripts, bin, candidate } = candidateCheckout(t)
   const input = fixture()
-  input.manifest.services['git-router'] = { id: 'router', name: 'scope-repo-router' }
+  input.manifest.services['git-router'] = {
+    id: 'router', name: 'scope-repo-router', deployment: deploymentServices['git-router'].deployment,
+  }
   for (const service of input.services.filter(({ id }) => id !== 'database')) {
     service.status = 'STOPPED'
     service.replicas = { configured: service.id === 'api' ? 3 : 1, running: 0, crashed: 0 }

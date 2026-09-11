@@ -260,7 +260,7 @@ pub struct CompiledWorkflow {
 struct PersistedCompiledWorkflow {
     name: String,
     triggers: PersistedWorkflowTriggers,
-    jobs: Vec<PersistedWorkflowJob>,
+    jobs: Vec<WorkflowJob>,
 }
 
 #[derive(Deserialize)]
@@ -377,56 +377,7 @@ impl<'de> Deserialize<'de> for CompiledWorkflow {
         let triggers =
             WorkflowTriggers::new(persisted.triggers.manual, persisted.triggers.push_main)
                 .map_err(D::Error::custom)?;
-        let jobs = persisted
-            .jobs
-            .into_iter()
-            .map(|job| {
-                let id = WorkflowJobId::parse(job.id)?;
-                let needs = job
-                    .needs
-                    .into_iter()
-                    .map(WorkflowJobId::parse)
-                    .collect::<Result<Vec<_>, _>>()?;
-                let container = ContainerSpec::new(job.container.image)?;
-                let caches = job
-                    .caches
-                    .into_iter()
-                    .map(|cache| {
-                        WorkflowCache::new(
-                            cache.name,
-                            cache.path,
-                            cache.format,
-                            CacheKeyInputs::new(
-                                cache.compatibility.files,
-                                cache.compatibility.environment,
-                                cache.compatibility.source,
-                            )?,
-                            CacheKeyInputs::new(
-                                cache.exact.files,
-                                cache.exact.environment,
-                                cache.exact.source,
-                            )?,
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let steps = job
-                    .steps
-                    .into_iter()
-                    .map(|step| WorkflowStep::new(step.name, step.run))
-                    .collect::<Result<Vec<_>, _>>()?;
-                WorkflowJob::new(
-                    id,
-                    needs,
-                    container,
-                    job.timeout_seconds,
-                    caches,
-                    job.environment,
-                    steps,
-                )
-            })
-            .collect::<Result<Vec<_>, WorkflowError>>()
-            .map_err(D::Error::custom)?;
-        Self::new(persisted.name, triggers, jobs).map_err(D::Error::custom)
+        Self::new(persisted.name, triggers, persisted.jobs).map_err(D::Error::custom)
     }
 }
 

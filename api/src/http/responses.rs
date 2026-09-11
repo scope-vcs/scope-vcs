@@ -110,7 +110,6 @@ pub(crate) struct SessionCapabilities {
     pub(crate) can_read_private_files: bool,
     pub(crate) can_push: bool,
     pub(crate) can_change_file_visibility: bool,
-    pub(crate) can_apply_changes: bool,
     pub(crate) can_manage_members: bool,
     pub(crate) can_delete_repo: bool,
 }
@@ -193,6 +192,7 @@ pub(crate) struct HistoryEntryRequest {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryEntryFileDiffRequest {
+    pub(crate) commit_oid: Option<String>,
     pub(crate) visibility_change: Option<String>,
     pub(crate) audience: Option<ProjectionPreviewAudience>,
     pub(crate) path: String,
@@ -252,6 +252,7 @@ pub(crate) enum HistoryEntryKind {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryEntryDetailResponse {
+    pub(crate) native_commits: Vec<NativeHistoryCommitResponse>,
     pub(crate) audience: ProjectionPreviewAudience,
     pub(crate) repo_id: String,
     pub(crate) view_key: String,
@@ -272,6 +273,18 @@ pub(crate) struct HistoryEntryDetailResponse {
 pub(crate) struct HistoryVisibilitySummaryResponse {
     pub(crate) made_public_count: usize,
     pub(crate) made_private_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct NativeHistoryCommitResponse {
+    pub(crate) oid: String,
+    pub(crate) parent_oids: Vec<String>,
+    pub(crate) tree_oid: String,
+    pub(crate) author: String,
+    pub(crate) message: String,
+    pub(crate) occurred_at_unix: i64,
+    pub(crate) files: Vec<HistoryEntryFileResponse>,
 }
 
 #[derive(Debug, Serialize)]
@@ -358,7 +371,6 @@ pub(crate) fn repository_access_response(access: RepositoryAccess) -> Repository
         can_read_private_files: access.can_read_private_files,
         can_push: access.can_push,
         can_change_file_visibility: access.can_change_file_visibility,
-        can_apply_changes: access.can_apply_changes,
         can_manage_members: access.can_manage_members,
         can_delete_repo: access.can_delete_repo,
     }
@@ -373,7 +385,6 @@ pub(crate) fn session_capabilities_response(
         can_read_private_files: access.can_read_private_files,
         can_push: access.can_push,
         can_change_file_visibility: access.can_change_file_visibility,
-        can_apply_changes: access.can_apply_changes,
         can_manage_members: access.can_manage_members,
         can_delete_repo: access.can_delete_repo,
     }
@@ -501,8 +512,32 @@ pub(crate) fn history_entry_detail_response(
     view: &HistoryView,
     entry: &HistoryEntry,
     users: &BTreeMap<String, UserAccount>,
+    native_details: &BTreeMap<String, scope_domain::projection::NativePublicCommitDetails>,
 ) -> Result<HistoryEntryDetailResponse, ApiError> {
+    let native_commits = entry
+        .native_commits
+        .iter()
+        .map(|commit| {
+            let details = native_details
+                .get(&commit.oid)
+                .ok_or_else(|| ApiError::internal_message("native history metadata is missing"))?;
+            Ok(NativeHistoryCommitResponse {
+                oid: commit.oid.clone(),
+                parent_oids: commit.parent_oids.clone(),
+                tree_oid: commit.tree_oid.clone(),
+                author: details.author.clone(),
+                message: details.message.clone(),
+                occurred_at_unix: details.occurred_at_unix,
+                files: details
+                    .changes
+                    .iter()
+                    .map(|change| history_entry_file_response(&native_history_file(change)))
+                    .collect(),
+            })
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
     Ok(HistoryEntryDetailResponse {
+        native_commits,
         audience,
         repo_id: view.repo_id.clone(),
         view_key: view.view_key.clone(),
@@ -609,5 +644,21 @@ fn history_entry_file_response(file: &HistoryEntryFile) -> HistoryEntryFileRespo
         old_oid: file.old_content.as_ref().map(|blob| blob.git_oid.clone()),
         new_oid: file.new_content.as_ref().map(|blob| blob.git_oid.clone()),
         visibility: file.visibility.into(),
+    }
+}
+
+pub(crate) fn native_history_file(
+    change: &scope_domain::projection::FileChange,
+) -> HistoryEntryFile {
+    HistoryEntryFile {
+        path: change.path.clone(),
+        kind: match (&change.old_content, &change.new_content) {
+            (None, Some(_)) => scope_domain::history::FileChangeKind::Added,
+            (Some(_), None) => scope_domain::history::FileChangeKind::Deleted,
+            _ => scope_domain::history::FileChangeKind::Modified,
+        },
+        old_content: change.old_content.clone(),
+        new_content: change.new_content.clone(),
+        visibility: change.visibility,
     }
 }

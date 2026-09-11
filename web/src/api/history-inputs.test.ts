@@ -29,11 +29,21 @@ test('validates direct history entry and file diff requests', () => {
   }).entry, 'update-100')
   assert.equal(parseHistoryEntryFileDiffInput({
     entry: 'update-100', owner: 'scope', path: ' /README.md ', repo: 'vcs',
-  }).path, '/README.md')
+  }).path, ' /README.md ')
   assert.throws(
     () => parseHistoryEntryDetailInput({ entry: ' ', owner: 'scope', repo: 'vcs' }),
     /history entry id is required/,
   )
+})
+
+test('history diffs preserve filename whitespace and reject invalid paths', () => {
+  const input = { entry: 'update-100', owner: 'scope', repo: 'vcs' }
+  for (const path of ['/trailing-space.txt ', '/ leading-space.txt', '/tab\t.txt']) {
+    assert.equal(parseHistoryEntryFileDiffInput({ ...input, path }).path, path)
+  }
+  for (const path of [undefined, 12, '', ' ', '/nul\0.txt', 'x'.repeat(4097)]) {
+    assert.throws(() => parseHistoryEntryFileDiffInput({ ...input, path }), /path/)
+  }
 })
 
 test('defaults to pushes and merges and validates the independent feed', () => {
@@ -47,4 +57,15 @@ test('preserves an exact visibility effect selector without adding one to conten
   assert.equal(parseHistoryEntryFileDiffInput(request).visibility_change, null)
   assert.equal(parseHistoryEntryFileDiffInput({ ...request, visibility_change: ' change-2 ' }).visibility_change, 'change-2')
   assert.throws(() => parseHistoryEntryFileDiffInput({ ...request, visibility_change: 12 }), /visibility change id/)
+})
+
+test('native history diffs preserve a validated commit selector while logical updates retain their net diff', () => {
+  const input = { owner: 'scope', repo: 'vcs', entry: 'push-1', path: '/same.ts' }
+  assert.equal(parseHistoryEntryFileDiffInput(input).commit_oid, null)
+  assert.equal(parseHistoryEntryFileDiffInput({ ...input, commit_oid: null }).commit_oid, null)
+  assert.equal(parseHistoryEntryFileDiffInput({ ...input, commit_oid: ` ${'A'.repeat(40)} ` }).commit_oid, 'a'.repeat(40))
+  for (const commit_oid of ['', 'HEAD', 'abc123', 'z'.repeat(40), 42]) {
+    assert.throws(() => parseHistoryEntryFileDiffInput({ ...input, commit_oid }), /native commit OID/)
+  }
+  assert.throws(() => parseHistoryEntryFileDiffInput({ ...input, commit_oid: 'a'.repeat(40), visibility_change: 'change-1' }), /cannot be selected together/)
 })

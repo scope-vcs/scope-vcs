@@ -1,3 +1,5 @@
+#[path = "request_attachments/cleanup.rs"]
+mod cleanup;
 mod support;
 
 use axum::{
@@ -477,6 +479,7 @@ fn request_edit_appends_attachment_to_supplied_description_file() {
 #[derive(Default)]
 struct FixtureState {
     api_url: String,
+    block_cleanup: Option<std::path::PathBuf>,
     fail_second_part_once: bool,
     fail_discussion_once: bool,
     fail_grant_once: bool,
@@ -577,7 +580,7 @@ async fn repository() -> Json<Value> {
         "id":"repo_one","owner_handle":"owner","name":"repo",
         "git_remote_url":"https://scope.example/git/public/owner/repo",
         "lifecycle_state":"Ready","change_version":1,
-        "access":{"actor":"Owner","can_read_private_files":true,"can_push":true,"can_change_file_visibility":true,"can_apply_changes":true,"can_manage_members":true,"can_delete_repo":true},
+        "access":{"actor":"Owner","can_read_private_files":true,"can_push":true,"can_change_file_visibility":true,"can_manage_members":true,"can_delete_repo":true},
         "open_request_count":1,"request_permissions":{"can_start_request":true}
     }))
 }
@@ -709,7 +712,9 @@ async fn edit_request(
 ) -> Response {
     let mut state = state.lock().unwrap();
     state.edits.push(body.clone());
-    state.current_description = body["description_markdown"].as_str().unwrap().to_string();
+    if let Some(description) = body["description_markdown"].as_str() {
+        state.current_description = description.to_string();
+    }
     if state.fail_edit_once {
         state.fail_edit_once = false;
         return (
@@ -720,6 +725,7 @@ async fn edit_request(
         )
             .into_response();
     }
+    block_cleanup(&mut state);
     Json(json!({"request":request_json(&state.current_description)})).into_response()
 }
 
@@ -740,6 +746,7 @@ async fn create_discussion(
         )
             .into_response();
     }
+    block_cleanup(&mut state);
     Json(json!({
         "discussion":{
             "id":"dsc_one","request_id":"req_one",
@@ -774,6 +781,7 @@ fn reply_response(state: Arc<Mutex<FixtureState>>, operation: &str, body: Value)
         .unwrap()
         .replies
         .push((operation.to_string(), body.clone()));
+    block_cleanup(&mut state.lock().unwrap());
     let reply = json!({
         "id":"rpl_one","discussion_id":"dsc_one","position":2,
         "author":{"id":"usr_test","handle":"owner"},
@@ -818,4 +826,11 @@ fn request_json(description: &str) -> Value {
             "can_manage_invitees":true,"can_leave_request":false,"can_close":true,"can_merge":true},
         "mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}
     })
+}
+
+fn block_cleanup(state: &mut FixtureState) {
+    if let Some(lock) = state.block_cleanup.take() {
+        fs::remove_file(&lock).unwrap();
+        fs::create_dir(lock).unwrap();
+    }
 }

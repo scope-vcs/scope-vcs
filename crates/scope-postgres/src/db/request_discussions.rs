@@ -369,6 +369,10 @@ impl RequestStore {
         )
         .await?
         {
+            // Replays need current visibility, not permission to create new activity.
+            if !policy.discussion_visible {
+                return Err(PostgresError::not_found("request discussion not found"));
+            }
             let state = match read_state(&tx, &discussion.id, &input.actor_user_id).await? {
                 Some(state) => state,
                 None => {
@@ -451,6 +455,9 @@ impl RequestStore {
         )
         .await?
         {
+            if !policy.discussion_visible {
+                return Err(PostgresError::not_found("request discussion not found"));
+            }
             let state = monotonic_read_state(
                 &tx,
                 &discussion,

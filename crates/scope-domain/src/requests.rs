@@ -1,5 +1,8 @@
 use crate::error::DomainError;
 
+mod public_paths;
+pub use public_paths::{PublicRequestPathError, PublicRequestPaths};
+
 mod access;
 pub use access::{
     RequestListPredicate, RequestMergeability, RequestMergeabilityStatus, RequestPermissions,

@@ -5,7 +5,7 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::account::SessionIdentity;
-use sea_orm::{ActiveModelTrait, IntoActiveModel};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseBackend, IntoActiveModel, Statement};
 
 pub async fn insert_cli_session_in_tx<C>(
     conn: &C,
@@ -43,4 +43,105 @@ pub fn cli_session_summary_from_model(
         last_used_at_unix: session.last_used_at_unix.map(i64_to_u64).transpose()?,
         expires_at_unix: i64_to_u64(session.expires_at_unix)?,
     })
+}
+
+// Session activity is approximate to one minute; successful reads do not write on every request.
+const CLI_SESSION_ACTIVITY_INTERVAL_SECONDS: u64 = 60;
+
+pub(super) async fn record_cli_session_use<C: ConnectionTrait>(
+    conn: &C,
+    session_id: &str,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    conn.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_cli_sessions SET last_used_at_unix = $2
+         WHERE id = $1 AND revoked_at_unix IS NULL AND expires_at_unix > $2
+           AND (last_used_at_unix IS NULL OR last_used_at_unix <= $3)",
+        [
+            session_id.into(),
+            u64_to_i64(now_unix)?.into(),
+            u64_to_i64(now_unix.saturating_sub(CLI_SESSION_ACTIVITY_INTERVAL_SECONDS))?.into(),
+        ],
+    ))
+    .await
+    .map_err(PostgresError::internal)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
+    use scope_domain::account::UserAccount;
+    use sea_orm::{EntityTrait, Set};
+
+    #[tokio::test]
+    async fn successful_session_authentication_records_throttled_monotonic_activity() {
+        let target = TestDatabaseTarget::required().unwrap();
+        let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
+        let user = UserAccount {
+            id: "user_session_activity".into(),
+            handle: "session-activity".into(),
+            email: "session-activity@example.com".into(),
+            email_verified: true,
+        };
+        let mut catalog = CatalogFixture::default();
+        catalog.users.insert(user.id.clone(), user.clone());
+        store.admin().seed_catalog_for_tests(catalog).unwrap();
+        insert_cli_session_in_tx(
+            store.db.as_ref(),
+            &user.id,
+            NewCliSession {
+                id: "session_activity".into(),
+                token_hash: "activity-token-hash".into(),
+                label: "Activity test".into(),
+                created_at_unix: 100,
+                expires_at_unix: 1000,
+            },
+        )
+        .await
+        .unwrap();
+        for (now, expected) in [(110, 110), (120, 110), (170, 170), (160, 170)] {
+            store
+                .auth()
+                .verify_cli_session_by_hash("activity-token-hash", now)
+                .await
+                .unwrap();
+            let session = entities::cli_session::Entity::find_by_id("session_activity")
+                .one(store.db.as_ref())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(session.last_used_at_unix, Some(expected));
+        }
+        assert!(
+            store
+                .auth()
+                .verify_cli_session_by_hash("activity-token-hash", 1000)
+                .await
+                .is_err()
+        );
+        let mut session = entities::cli_session::Entity::find_by_id("session_activity")
+            .one(store.db.as_ref())
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        session.revoked_at_unix = Set(Some(180));
+        session.update(store.db.as_ref()).await.unwrap();
+        assert!(
+            store
+                .auth()
+                .verify_cli_session_by_hash("activity-token-hash", 190)
+                .await
+                .is_err()
+        );
+        let session = entities::cli_session::Entity::find_by_id("session_activity")
+            .one(store.db.as_ref())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(session.last_used_at_unix, Some(170));
+    }
 }

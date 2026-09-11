@@ -14,7 +14,7 @@ const sourceFunctions = {
   'src/routes/$owner.$repo.requests.index.tsx': ['loadRequestQueuePage'],
   'src/routes/$owner.$repo.requests.$requestId.tsx': ['loadRequestPage', 'loadActivity', 'listRequestAttachments', 'loadAttachmentLimits', 'prepareAttachment', 'finishAttachment', 'retryAttachment', 'grantAttachmentMedia'],
   'src/routes/$owner.$repo.requests.$requestId.index.tsx': ['loadDiscussionPage', 'loadDiscussions', 'loadReplies', 'loadDiscussionChanges'],
-  'src/routes/$owner.$repo.requests.$requestId.changes.tsx': ['loadChangesPage', 'loadRevisionDiff', 'loadDiscussions'],
+  'src/routes/$owner.$repo.requests.$requestId.changes.tsx': ['loadChangesPage', 'loadRevisions', 'loadRevisionDiff', 'loadDiscussions'],
 }
 
 export const productionFunctions = new Map(Object.entries(sourceFunctions).flatMap(([filename, names]) => (

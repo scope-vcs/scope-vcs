@@ -287,7 +287,8 @@ async fn baseline_initialization_refuses_an_untracked_nonempty_schema() {
 async fn preflight_checks_retained_schema_with_writers_online_without_changing_data() {
     let (target, db, _lease) = isolated_database().await;
     original_chain_database(&db).await;
-    let writer = crate::db::connect_writer_database(&target.schema_database_url())
+    let database_url = target.schema_database_url();
+    let writer = crate::db::connect_writer_database(&database_url, database_url.parse().unwrap())
         .await
         .unwrap();
     let before = representative_business_snapshot(&db).await;

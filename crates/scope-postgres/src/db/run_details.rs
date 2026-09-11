@@ -56,13 +56,6 @@ impl RunStore {
             attempts,
         }))
     }
-
-    pub async fn run_attempt_details(
-        &self,
-        run_id: &str,
-    ) -> Result<Vec<RunAttemptDetail>, PostgresError> {
-        run_attempt_details_with(self.db.as_ref(), run_id).await
-    }
 }
 
 async fn run_attempt_details_with<C>(

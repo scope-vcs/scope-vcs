@@ -77,7 +77,6 @@ impl JobStore {
         worker_id: &str,
         limit: usize,
         current_time: &dyn Fn() -> Result<u64, String>,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<OutboxRunSummary, PostgresError> {
         if limit == 0 {
             return Ok(OutboxRunSummary::default());
@@ -96,7 +95,7 @@ impl JobStore {
             };
             summary.claimed += 1;
 
-            match execute_outbox_job(db.as_ref(), &job, claim_now_unix, generated_ids).await {
+            match execute_outbox_job(db.as_ref(), &job, claim_now_unix).await {
                 Ok(created_runs) => {
                     let (_, completion_now) = outbox_time(current_time)?;
                     complete_outbox_job(db.as_ref(), &job, &worker_id, completion_now).await?;
@@ -127,15 +126,7 @@ impl JobStore {
                             "outbox job failed; scheduling retry"
                         );
                     }
-                    fail_outbox_job(
-                        db.as_ref(),
-                        &job,
-                        &worker_id,
-                        message,
-                        completion_now,
-                        generated_ids,
-                    )
-                    .await?;
+                    fail_outbox_job(db.as_ref(), &job, &worker_id, message, completion_now).await?;
                     summary.failed += 1;
                 }
             }
@@ -287,7 +278,6 @@ async fn execute_outbox_job<C>(
     conn: &C,
     job: &ClaimedOutboxJob,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<Vec<OutboxCreatedRun>, PostgresError>
 where
     C: ConnectionTrait + TransactionTrait,
@@ -298,8 +288,7 @@ where
             Ok(Vec::new())
         }
         super::push_triggers::JOB_KIND => {
-            let run_ids =
-                super::push_triggers::evaluate(conn, job, now_unix, generated_ids).await?;
+            let run_ids = super::push_triggers::evaluate(conn, job, now_unix).await?;
             Ok(run_ids
                 .into_iter()
                 .map(|run_id| OutboxCreatedRun {
@@ -409,7 +398,6 @@ async fn fail_outbox_job<C>(
     worker_id: &str,
     error: String,
     now: i64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait + TransactionTrait,
@@ -474,7 +462,6 @@ where
             persisted_error,
             u64::try_from(now)
                 .map_err(|_| PostgresError::internal_message("outbox failure time is negative"))?,
-            generated_ids,
         )
         .await?;
     }
@@ -552,6 +539,7 @@ fn unix_timestamp_i64(now_unix: u64) -> Result<i64, PostgresError> {
 mod tests {
     use super::*;
     use scope_domain::{account::UserAccount, policy::Visibility};
+    use sea_orm::ActiveModelTrait;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
@@ -592,12 +580,7 @@ mod tests {
         let clock = || Ok(START + elapsed.fetch_add(STEP, Ordering::SeqCst));
         let summary = store
             .jobs()
-            .run_ready_outbox_jobs(
-                "worker",
-                2,
-                &clock,
-                &crate::db::generated_ids::test_generated_id,
-            )
+            .run_ready_outbox_jobs("worker", 2, &clock)
             .await
             .unwrap();
 
@@ -650,13 +633,7 @@ mod tests {
             .expect("the rebuild job should be ready");
             claimed_tx.send(job.id.clone()).unwrap();
             deleted_rx.await.unwrap();
-            execute_outbox_job(
-                worker_store.db.as_ref(),
-                &job,
-                unix_now().unwrap(),
-                &crate::db::generated_ids::test_generated_id,
-            )
-            .await?;
+            execute_outbox_job(worker_store.db.as_ref(), &job, unix_now().unwrap()).await?;
             complete_outbox_job(
                 worker_store.db.as_ref(),
                 &job,
@@ -802,7 +779,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn terminal_retry_marks_job_failed() {
+    async fn terminal_retry_marks_malformed_push_job_and_evaluation_failed() {
         let target = super::super::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         seed_outbox_repo(&store).await;
@@ -816,6 +793,33 @@ mod tests {
         .unwrap()
         .unwrap();
         job.attempts = MAX_JOB_ATTEMPTS - 1;
+        job.kind = super::super::push_triggers::JOB_KIND.to_string();
+        entities::outbox_job::Entity::update_many()
+            .filter(entities::outbox_job::Column::Id.eq(job.id.clone()))
+            .col_expr(
+                entities::outbox_job::Column::Kind,
+                Expr::value(job.kind.clone()),
+            )
+            .col_expr(
+                entities::outbox_job::Column::Payload,
+                Expr::value(serde_json::json!({"workflow_schema_version": 5})),
+            )
+            .exec(store.db.as_ref())
+            .await
+            .unwrap();
+        let evaluation = scope_domain::runs::trigger::PushTriggerEvaluation::pending(
+            &job.repo_id,
+            job.repo_version.try_into().unwrap(),
+            "a".repeat(40),
+            unix_now().unwrap(),
+        )
+        .unwrap();
+        entities::push_trigger_evaluation::Model::from_domain(&evaluation)
+            .unwrap()
+            .into_active_model()
+            .insert(store.db.as_ref())
+            .await
+            .unwrap();
 
         fail_outbox_job(
             store.db.as_ref(),
@@ -823,7 +827,6 @@ mod tests {
             "worker",
             "failed".to_string(),
             unix_timestamp_i64(unix_now().unwrap()).unwrap(),
-            &crate::db::generated_ids::test_generated_id,
         )
         .await
         .unwrap();
@@ -835,6 +838,29 @@ mod tests {
         assert_eq!(row.state, JOB_FAILED);
         assert_eq!(row.attempts, MAX_JOB_ATTEMPTS);
         assert!(row.completed_at_unix.is_some());
+        let evaluation =
+            entities::push_trigger_evaluation::Entity::find_by_id((job.repo_id, job.repo_version))
+                .one(store.db.as_ref())
+                .await
+                .unwrap()
+                .unwrap()
+                .try_into_domain()
+                .unwrap();
+        assert_eq!(
+            evaluation.state,
+            scope_domain::runs::trigger::PushTriggerEvaluationState::Failed
+        );
+        assert!(
+            claim_next_ready_job(
+                store.db.as_ref(),
+                "next-worker",
+                60,
+                unix_timestamp_i64(unix_now().unwrap()).unwrap() + 120
+            )
+            .await
+            .unwrap()
+            .is_none()
+        );
     }
 
     async fn seed_outbox_repo(store: &MetadataStore) -> (String, u64) {

@@ -115,8 +115,7 @@ export function parseRepoInviteTokenInput(
 function parseMemberPermissions(input: unknown): RepoMemberPermissions {
   const data = input as Partial<RepoMemberPermissions> | null
   return {
-    can_apply_changes: false,
-    can_change_file_visibility: false,
+    can_change_file_visibility: data?.can_change_file_visibility === true,
     can_push: data?.can_push === true,
   }
 }

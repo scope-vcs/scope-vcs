@@ -1,3 +1,4 @@
+import { usePendingActions } from '@/lib/use-pending-actions'
 import type {
   CreateRepoInviteInput,
   CreateRepoInviteResponse,
@@ -27,12 +28,16 @@ import {
 import { useReducer, useState, type FormEvent } from 'react'
 
 const defaultPermissions: RepoMemberPermissions = {
-  can_apply_changes: false,
   can_change_file_visibility: false,
   can_push: false,
 }
 
 const permissionLabels = [
+  {
+    description: 'Allows changes to file visibility rules in repository configuration.',
+    key: 'can_change_file_visibility',
+    label: 'Change file visibility',
+  },
   {
     description: 'Allows Git pushes to this repository.',
     key: 'can_push',
@@ -245,8 +250,8 @@ function InviteMemberForm({
       </div>
 
       <div className="rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm leading-5 text-warning-strong">
-        Members always read private files once they accept. This toggle grants
-        repository push access only.
+        Members always read private files once they accept. These toggles grant
+        additional repository actions.
       </div>
 
       <PermissionEditor
@@ -286,7 +291,7 @@ function MemberList({
 }) {
   const [error, setError] = useState<string | null>(null)
   const [confirmMember, setConfirmMember] = useState<RepoMember | null>(null)
-  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const { pending: pendingMembers, run } = usePendingActions()
 
   if (members.length === 0) {
     return (
@@ -301,38 +306,37 @@ function MemberList({
     permissions: RepoMemberPermissions,
   ) {
     setError(null)
-    setPendingKey(member.user_id)
-    try {
-      await updateMember({
-        ...params,
-        member_user_id: member.user_id,
-        permissions,
-      })
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'member update failed')
-    } finally {
-      setPendingKey(null)
-    }
+    await run(member.user_id, async () => {
+      try {
+        await updateMember({
+          ...params,
+          member_user_id: member.user_id,
+          permissions,
+        })
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'member update failed')
+      }
+    })
   }
 
   async function remove(member: RepoMember) {
     setError(null)
-    setPendingKey(member.user_id)
-    try {
-      await deleteMember(member.user_id)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'member removal failed')
-    } finally {
-      setPendingKey(null)
-      setConfirmMember(null)
-    }
+    await run(member.user_id, async () => {
+      try {
+        await deleteMember(member.user_id)
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'member removal failed')
+      } finally {
+        setConfirmMember(null)
+      }
+    })
   }
 
   return (
     <div className="space-y-3">
       <ul className="divide-y divide-border">
         {members.map((member) => {
-          const pending = pendingKey === member.user_id
+          const pending = pendingMembers.has(member.user_id)
           return (
             <li className="space-y-3 py-3 first:pt-0" key={member.user_id}>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -376,10 +380,10 @@ function MemberList({
           if (confirmMember) void remove(confirmMember)
         }}
         onOpenChange={(open) => {
-          if (!open && !pendingKey) setConfirmMember(null)
+          if (!open && !pendingMembers.has(confirmMember?.user_id ?? '')) setConfirmMember(null)
         }}
         open={Boolean(confirmMember)}
-        pending={Boolean(confirmMember && pendingKey === confirmMember.user_id)}
+        pending={Boolean(confirmMember && pendingMembers.has(confirmMember.user_id))}
         subject={confirmMember ? `@${confirmMember.handle} · ${confirmMember.email}` : ''}
         title="Remove repository member?"
       />

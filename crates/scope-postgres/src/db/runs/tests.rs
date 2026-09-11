@@ -84,7 +84,6 @@ async fn fixture(command: Command) -> MetadataStore {
         permissions: RepositoryMemberPermissions {
             can_push: false,
             can_change_file_visibility: false,
-            can_apply_changes: false,
         },
         created_at_unix: 1,
         updated_at_unix: 1,
@@ -267,7 +266,7 @@ async fn run_control_that_wins_repository_lock_completes_before_real_revocation(
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(removed.user_id, MEMBER);
+        assert_eq!(removed.value.user_id, MEMBER);
         assert_success(&store, command, run).await;
         assert_eq!(
             command

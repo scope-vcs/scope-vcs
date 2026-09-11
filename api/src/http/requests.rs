@@ -1,10 +1,9 @@
 use crate::{
     auth::scope::{optional_scope_user, principal_for_scope_user, require_scope_user},
     error::ApiError,
-    git::request_refs::delete_request_ref_from_store,
     http::responses::*,
     persistence::unix_now,
-    product_analytics::{ProductEvent, RequestCloseOutcome},
+    product_analytics::ProductEvent,
     repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
@@ -28,11 +27,11 @@ use scope_domain::{
     repository::access::{RepositoryAccess, RepositoryAccessContext, RepositoryActor},
     requests::{
         CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
-        RequestAudience, RequestViewer, StartRequestInput, canonical_request_ref,
-        request_actor_role, request_mergeability, request_policy,
+        RequestAudience, RequestViewer, StartRequestInput, request_actor_role,
+        request_mergeability, request_policy,
     },
 };
-use scope_postgres::db::{CloseRequestCommand, EditRequestIdentityCommand, SubmitRequestCommand};
+use scope_postgres::db::{EditRequestIdentityCommand, SubmitRequestCommand};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -255,60 +254,21 @@ pub(crate) async fn close_request(
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let request =
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
-    let request_audience = request.audience;
-    let actor_role = request_actor_role(access);
     if !request_policy(&request, RequestViewer::new(access, Some(&user.id), false))
         .permissions
         .can_close
     {
         return Err(ApiError::forbidden("request close access required"));
     }
-    let request_ref = canonical_request_ref(&request.name);
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    let mutation = state
-        .metadata
-        .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: request.id,
-                actor_user_id: user.id.clone(),
-                event_id: random_id("event_request_closed")?,
-                now_unix: unix_now()?,
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await?;
+    let mutation =
+        crate::use_cases::request_close::close_request(&state, &repo, &request, &user.id).await?;
     match mutation {
-        CloseRequestMutation::DeletedDraft { .. } => {
-            state
-                .product_analytics
-                .capture(ProductEvent::request_closed(
-                    &user.id,
-                    request_audience,
-                    actor_role,
-                    RequestCloseOutcome::DraftDeleted,
-                ));
-            delete_request_ref_from_store(&state, &repo.incarnation(), &request_ref)?;
-            state
-                .publish_request_summary_refresh(
-                    &repo.incarnation(),
-                    RepoChangeReason::RequestDeleted,
-                )
-                .await;
-            Ok(Json(RequestCloseResponse {
-                deleted: true,
-                request: None,
-            }))
-        }
+        CloseRequestMutation::DeletedDraft { .. } => Ok(Json(RequestCloseResponse {
+            deleted: true,
+            request: None,
+        })),
         CloseRequestMutation::Closed { request, .. } => {
-            state
-                .product_analytics
-                .capture(ProductEvent::request_closed(
-                    &user.id,
-                    request_audience,
-                    actor_role,
-                    RequestCloseOutcome::Closed,
-                ));
             let request = request_response_for_viewer(
                 &state,
                 request,
@@ -317,12 +277,6 @@ pub(crate) async fn close_request(
                 Some(&user.id),
             )
             .await?;
-            state
-                .publish_request_summary_refresh(
-                    &repo.incarnation(),
-                    RepoChangeReason::RequestClosed,
-                )
-                .await;
             Ok(Json(RequestCloseResponse {
                 deleted: false,
                 request: Some(request),

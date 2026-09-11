@@ -112,15 +112,9 @@ async fn public_files_use_the_projected_blob() {
     let rebuilt = state
         .metadata
         .jobs()
-        .run_ready_outbox_jobs(
-            "repo-visibility-test",
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .run_ready_outbox_jobs("repo-visibility-test", 10, &|| {
+            crate::persistence::unix_now().map_err(crate::error::ApiError::into_operator_diagnostic)
+        })
         .await
         .unwrap();
     assert_eq!(rebuilt.failed, 0);
@@ -262,7 +256,6 @@ async fn published_repo_projection_preview_serves_public_file_subset() {
     assert_eq!(public.status(), StatusCode::OK);
     let public = response_json(public).await;
     assert_eq!(public["audience"], "public");
-    assert_eq!(public["source"], "live");
     assert_eq!(public["summary"]["visible_files"], 1);
     assert_eq!(public["summary"]["hidden_files"], 0);
     assert_eq!(public["summary"]["hidden_commits"], 0);
@@ -310,15 +303,9 @@ async fn canonical_rules_alone_do_not_publish_a_repository() {
     state
         .metadata
         .jobs()
-        .run_ready_outbox_jobs(
-            "rules-only-visibility-test",
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .run_ready_outbox_jobs("rules-only-visibility-test", 10, &|| {
+            crate::persistence::unix_now().map_err(crate::error::ApiError::into_operator_diagnostic)
+        })
         .await
         .unwrap();
     let files = get(state.clone(), "/v1/repos/owner/repo/files", None).await;
@@ -372,15 +359,9 @@ async fn owner_profile_lists_only_repositories_visible_to_the_viewer() {
     state
         .metadata
         .jobs()
-        .run_ready_outbox_jobs(
-            "owner-profile-test",
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .run_ready_outbox_jobs("owner-profile-test", 10, &|| {
+            crate::persistence::unix_now().map_err(crate::error::ApiError::into_operator_diagnostic)
+        })
         .await
         .unwrap();
 

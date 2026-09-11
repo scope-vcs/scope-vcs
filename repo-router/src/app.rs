@@ -9,7 +9,7 @@ pub(crate) struct RouterState {
     pub(crate) discovery: BackendDiscovery,
     pub(crate) http: reqwest::Client,
     pub(crate) selector: BackendSelector,
-    pub(crate) upload_pack_replay_max_bytes: usize,
+    pub(crate) replay: crate::replay::ReplayBuffer,
 }
 
 pub fn router(config: RouterConfig) -> anyhow::Result<Router> {
@@ -23,7 +23,11 @@ pub fn router(config: RouterConfig) -> anyhow::Result<Router> {
         discovery,
         http,
         selector,
-        upload_pack_replay_max_bytes: config.upload_pack_replay_max_bytes,
+        replay: crate::replay::ReplayBuffer::new(
+            config.upload_pack_replay_slots,
+            config.upload_pack_replay_max_bytes,
+            config.incoming_body_timeout,
+        )?,
     }))
 }
 
@@ -74,7 +78,12 @@ pub(crate) fn test_router_with_read_replicas(
         discovery: BackendDiscovery::fixed(backends),
         http: reqwest::Client::new(),
         selector: BackendSelector::new(read_replicas),
-        upload_pack_replay_max_bytes: 64 * 1024 * 1024,
+        replay: crate::replay::ReplayBuffer::new(
+            4,
+            64 * 1024 * 1024,
+            std::time::Duration::from_secs(15),
+        )
+        .unwrap(),
     })
 }
 
@@ -89,7 +98,12 @@ pub(crate) fn test_router_with_state(
         discovery,
         http,
         selector: BackendSelector::new(read_replicas),
-        upload_pack_replay_max_bytes,
+        replay: crate::replay::ReplayBuffer::new(
+            4,
+            upload_pack_replay_max_bytes,
+            std::time::Duration::from_secs(15),
+        )
+        .unwrap(),
     })
 }
 

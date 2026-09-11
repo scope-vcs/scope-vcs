@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+scope_service_config.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 getrandom.workspace = true

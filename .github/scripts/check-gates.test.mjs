@@ -149,6 +149,8 @@ function releasePath(selected, { reuse = false, resumeStaging = false, failure =
   const jobs = releaseJobs();
   const outputs = Object.fromEntries(['checks_image', 'cache', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
     .map((key) => [key, String(selected.includes(key))]));
+  outputs.backend_selected = String(['cache', 'worker', 'media_worker', 'router', 'media', 'api']
+    .some((key) => selected.includes(key)));
   outputs.prepared_run_id = reuse || resumeStaging ? '123' : '';
   outputs.recover_cutover_id = reuse ? '456' : '';
   outputs.resume_staging = String(resumeStaging);

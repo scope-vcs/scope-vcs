@@ -11,6 +11,7 @@ use scope_domain::requests::attachments::{
     RequestAttachmentStoredObject, RequestAttachmentTarget, RequestAttachmentVideoMetadata,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, QueryResult, Statement};
+use std::collections::BTreeMap;
 
 #[derive(FromQueryResult)]
 struct AttachmentRow {
@@ -29,6 +30,8 @@ struct AttachmentRow {
     sha256: String,
     state: String,
     original_manifest_id: Option<String>,
+    original_size_bytes: Option<i64>,
+    original_sha256: Option<String>,
     original_validated_at_unix: Option<i64>,
     failure_json: Option<serde_json::Value>,
     image_width: Option<i32>,
@@ -44,6 +47,7 @@ struct AttachmentRow {
 #[derive(FromQueryResult)]
 struct DerivativeRow {
     id: String,
+    attachment_id: String,
     kind: String,
     media_type: String,
     manifest_id: String,
@@ -92,7 +96,10 @@ where
     let Some(row) = conn
         .query_one(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "SELECT * FROM scope_request_media_attachments WHERE id = $1",
+            "SELECT attachment.*, original.size_bytes AS original_size_bytes, original.sha256 AS original_sha256
+             FROM scope_request_media_attachments attachment
+             LEFT JOIN scope_request_media_manifests original ON original.id = attachment.original_manifest_id
+             WHERE attachment.id = $1",
             [attachment_id.into()],
         ))
         .await
@@ -100,30 +107,71 @@ where
     else {
         return Ok(None);
     };
-    Ok(Some(attachment_from_row(conn, row).await?))
+    let row = AttachmentRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+    let derivatives = derivatives_for_attachment(conn, &row.id).await?;
+    Ok(Some(attachment_from_row(row, derivatives)?))
 }
 
-pub(super) async fn attachment_from_row<C>(
+pub(super) async fn attachments_for_request<C: ConnectionTrait>(
     conn: &C,
-    row: QueryResult,
-) -> Result<RequestAttachment, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let row = AttachmentRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
-    let attachment_id = row.id;
-    let original = match row.original_manifest_id {
-        Some(manifest_id) => {
-            let manifest = manifest_by_id(conn, &manifest_id).await?.ok_or_else(|| {
-                PostgresError::internal_message("request media original manifest is missing")
-            })?;
-            Some(RequestAttachmentStoredObject {
-                object_key: manifest.id,
-                size_bytes: manifest.size_bytes,
-                sha256: manifest.sha256,
-            })
+    request_id: &str,
+) -> Result<Vec<RequestAttachment>, PostgresError> {
+    let rows = conn.query_all(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT attachment.*, original.size_bytes AS original_size_bytes, original.sha256 AS original_sha256
+         FROM scope_request_media_attachments attachment
+         LEFT JOIN scope_request_media_manifests original ON original.id = attachment.original_manifest_id
+         WHERE attachment.request_id = $1 AND NOT EXISTS (
+             SELECT 1 FROM scope_request_media_cleanup_jobs cleanup WHERE cleanup.attachment_id = attachment.id
+         ) ORDER BY attachment.created_at_unix, attachment.id",
+        [request_id.into()],
+    )).await.map_err(PostgresError::internal)?;
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut derivatives: BTreeMap<String, Vec<RequestAttachmentDerivative>> = BTreeMap::new();
+    for row in conn.query_all(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT derivative.* FROM scope_request_media_derivatives derivative
+         JOIN scope_request_media_attachments attachment ON attachment.id = derivative.attachment_id
+         WHERE attachment.request_id = $1 AND NOT EXISTS (
+             SELECT 1 FROM scope_request_media_cleanup_jobs cleanup WHERE cleanup.attachment_id = attachment.id
+         ) ORDER BY derivative.id",
+        [request_id.into()],
+    )).await.map_err(PostgresError::internal)? {
+        let row = DerivativeRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+        derivatives.entry(row.attachment_id.clone()).or_default().push(derivative_from_row(row)?);
+    }
+    rows.into_iter()
+        .map(|row| {
+            let row =
+                AttachmentRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+            let values = derivatives.remove(&row.id).unwrap_or_default();
+            attachment_from_row(row, values)
+        })
+        .collect()
+}
+
+fn attachment_from_row(
+    row: AttachmentRow,
+    derivatives: Vec<RequestAttachmentDerivative>,
+) -> Result<RequestAttachment, PostgresError> {
+    let original = match (
+        row.original_manifest_id,
+        row.original_size_bytes,
+        row.original_sha256,
+    ) {
+        (Some(id), Some(size_bytes), Some(sha256)) => Some(RequestAttachmentStoredObject {
+            object_key: id,
+            size_bytes: to_u64(size_bytes, "original manifest size")?,
+            sha256,
+        }),
+        (None, None, None) => None,
+        _ => {
+            return Err(PostgresError::internal_message(
+                "request media original manifest is missing",
+            ));
         }
-        None => None,
     };
     let target = serde_json::from_value::<RequestAttachmentTarget>(row.target_json)
         .map_err(PostgresError::internal)?;
@@ -133,7 +181,7 @@ where
         .transpose()
         .map_err(PostgresError::internal)?;
     Ok(RequestAttachment {
-        id: attachment_id.clone(),
+        id: row.id,
         repository_id: row.repository_id,
         request_id: row.request_id,
         uploader_user_id: row.uploader_user_id,
@@ -180,7 +228,7 @@ where
                 ));
             }
         },
-        derivatives: derivatives_for_attachment(conn, &attachment_id).await?,
+        derivatives,
         created_at_unix: to_u64(row.created_at_unix, "attachment creation time")?,
         updated_at_unix: to_u64(row.updated_at_unix, "attachment update time")?,
         upload_expires_at_unix: to_u64(row.upload_expires_at_unix, "upload expiry")?,
@@ -204,33 +252,37 @@ where
     .into_iter()
     .map(|row| {
         let row = DerivativeRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
-        let width = row
-            .width
-            .map(|value| to_u32(value, "derivative width"))
-            .transpose()?;
-        let height = row
-            .height
-            .map(|value| to_u32(value, "derivative height"))
-            .transpose()?;
-        let duration_millis = row
-            .duration_millis
-            .map(|value| to_u64(value, "derivative duration"))
-            .transpose()?;
-        Ok(RequestAttachmentDerivative {
-            id: row.id,
-            kind: decode_enum::<RequestAttachmentDerivativeKind>(row.kind)?,
-            media_type: row.media_type,
-            object: RequestAttachmentStoredObject {
-                object_key: row.manifest_id,
-                size_bytes: to_u64(row.size_bytes, "derivative size")?,
-                sha256: row.sha256,
-            },
-            width,
-            height,
-            duration_millis,
-        })
+        derivative_from_row(row)
     })
     .collect()
+}
+
+fn derivative_from_row(row: DerivativeRow) -> Result<RequestAttachmentDerivative, PostgresError> {
+    let width = row
+        .width
+        .map(|value| to_u32(value, "derivative width"))
+        .transpose()?;
+    let height = row
+        .height
+        .map(|value| to_u32(value, "derivative height"))
+        .transpose()?;
+    let duration_millis = row
+        .duration_millis
+        .map(|value| to_u64(value, "derivative duration"))
+        .transpose()?;
+    Ok(RequestAttachmentDerivative {
+        id: row.id,
+        kind: decode_enum::<RequestAttachmentDerivativeKind>(row.kind)?,
+        media_type: row.media_type,
+        object: RequestAttachmentStoredObject {
+            object_key: row.manifest_id,
+            size_bytes: to_u64(row.size_bytes, "derivative size")?,
+            sha256: row.sha256,
+        },
+        width,
+        height,
+        duration_millis,
+    })
 }
 
 pub(super) async fn manifest_by_id<C>(
@@ -307,32 +359,51 @@ where
     .await
     .map_err(PostgresError::internal)?
     .into_iter()
-    .map(|row| {
-        let row = BindingRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
-        let target = match (row.target_kind.as_str(), row.discussion_id, row.reply_id) {
-            ("Description", None, None) => RequestAttachmentBindingTarget::Description,
-            ("Discussion", Some(discussion_id), None) => {
-                RequestAttachmentBindingTarget::Discussion { discussion_id }
-            }
-            ("Reply", Some(discussion_id), Some(reply_id)) => {
-                RequestAttachmentBindingTarget::Reply {
-                    discussion_id,
-                    reply_id,
-                }
-            }
-            _ => {
-                return Err(PostgresError::internal_message(
-                    "request media binding target is invalid",
-                ));
-            }
-        };
-        Ok(RequestAttachmentBinding {
-            attachment_id: row.attachment_id,
-            request_id: row.request_id,
-            target,
-        })
-    })
+    .map(binding_from_row)
     .collect()
+}
+
+pub(super) async fn bindings_for_request<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+) -> Result<BTreeMap<String, Vec<RequestAttachmentBinding>>, PostgresError> {
+    let mut bindings: BTreeMap<String, Vec<RequestAttachmentBinding>> = BTreeMap::new();
+    for row in conn.query_all(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT binding.* FROM scope_request_media_bindings binding
+         WHERE binding.request_id = $1 AND NOT EXISTS (
+             SELECT 1 FROM scope_request_media_cleanup_jobs cleanup WHERE cleanup.attachment_id = binding.attachment_id
+         ) ORDER BY binding.target_key",
+        [request_id.into()],
+    )).await.map_err(PostgresError::internal)? {
+        let binding = binding_from_row(row)?;
+        bindings.entry(binding.attachment_id.clone()).or_default().push(binding);
+    }
+    Ok(bindings)
+}
+
+fn binding_from_row(row: QueryResult) -> Result<RequestAttachmentBinding, PostgresError> {
+    let row = BindingRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+    let target = match (row.target_kind.as_str(), row.discussion_id, row.reply_id) {
+        ("Description", None, None) => RequestAttachmentBindingTarget::Description,
+        ("Discussion", Some(discussion_id), None) => {
+            RequestAttachmentBindingTarget::Discussion { discussion_id }
+        }
+        ("Reply", Some(discussion_id), Some(reply_id)) => RequestAttachmentBindingTarget::Reply {
+            discussion_id,
+            reply_id,
+        },
+        _ => {
+            return Err(PostgresError::internal_message(
+                "request media binding target is invalid",
+            ));
+        }
+    };
+    Ok(RequestAttachmentBinding {
+        attachment_id: row.attachment_id,
+        request_id: row.request_id,
+        target,
+    })
 }
 
 pub(super) fn binding_target_parts(

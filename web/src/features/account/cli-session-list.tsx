@@ -11,7 +11,7 @@ export function CliSessionList({
   sessions,
 }: {
   formatTime: (value: number) => string
-  pending: string | null
+  pending: ReadonlySet<string>
   revokeSession: (sessionId: string) => void
   sessions: CliSession[]
 }) {
@@ -43,14 +43,14 @@ export function CliSessionList({
             </div>
             <Button
               aria-label={`Revoke ${session.label}`}
-              disabled={pending === session.id}
+              disabled={pending.has(session.id)}
               onClick={() => setConfirmSession(session)}
               size="icon-sm"
               title={`Revoke ${session.label}`}
               type="button"
               variant="destructive"
             >
-              {pending === session.id ? (
+              {pending.has(session.id) ? (
                 <LoaderCircle className="size-3.5 animate-spin" />
               ) : (
                 <Trash2 className="size-3.5" />
@@ -69,10 +69,10 @@ export function CliSessionList({
           }
         }}
         onOpenChange={(open) => {
-          if (!open && !pending) setConfirmSession(null)
+          if (!open && !pending.has(confirmSession?.id ?? '')) setConfirmSession(null)
         }}
         open={Boolean(confirmSession)}
-        pending={Boolean(confirmSession && pending === confirmSession.id)}
+        pending={Boolean(confirmSession && pending.has(confirmSession.id))}
         subject={confirmSession?.label ?? ''}
         title="Revoke CLI session?"
       />
