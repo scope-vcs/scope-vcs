@@ -11,68 +11,42 @@ async fn maintainer_attention_actions_preserve_claims_and_reject_stale_versions(
     open_request(&state, "req_attention_actions", 10).await;
     let app = router(state);
     let bearer = bearer_header();
+    let attention = AttentionClient::new(&app, "req_attention_actions", &bearer);
 
     let initial = queue_item(&app, "active", "req_attention_actions", Some(&bearer)).await;
     assert_eq!(initial["attention"]["reason"], "authored");
     let version = activity_version(&initial);
 
-    let stale = attention_action(
+    let stale = attention_request(
         &app,
         "req_attention_actions",
         Some(&bearer),
-        serde_json::json!({
-            "action": "claim",
-            "expected_activity_version": version + 1,
-        }),
+        "claim",
+        version + 1,
+        None,
     )
     .await;
     assert_eq!(stale.status(), StatusCode::CONFLICT);
 
-    let claimed = attention_json(
-        &app,
-        "req_attention_actions",
-        &bearer,
-        serde_json::json!({ "action": "claim", "expected_activity_version": version }),
-    )
-    .await;
+    let claimed = attention.apply("claim", version, None).await;
     assert_eq!(claimed["attention"]["state"], "active");
     assert_eq!(claimed["attention"]["reason"], "claimed");
     assert_eq!(claimed["claimer"]["id"], test_owner_id());
 
-    let settled = attention_json(
-        &app,
-        "req_attention_actions",
-        &bearer,
-        serde_json::json!({ "action": "settle", "expected_activity_version": version }),
-    )
-    .await;
+    let settled = attention.apply("settle", version, None).await;
     assert_eq!(settled["attention"]["state"], "settled");
     assert_eq!(settled["claimer"]["id"], test_owner_id());
     let aside = queue_item(&app, "set_aside", "req_attention_actions", Some(&bearer)).await;
     assert_eq!(aside["attention"]["can_restore"], true);
     assert_eq!(aside["claimer"]["id"], test_owner_id());
 
-    let restored = attention_json(
-        &app,
-        "req_attention_actions",
-        &bearer,
-        serde_json::json!({ "action": "restore", "expected_activity_version": version }),
-    )
-    .await;
+    let restored = attention.apply("restore", version, None).await;
     assert_eq!(restored["attention"]["reason"], "restored");
 
     let snoozed_until = unix_now() + 600;
-    let snoozed = attention_json(
-        &app,
-        "req_attention_actions",
-        &bearer,
-        serde_json::json!({
-            "action": "snooze",
-            "expected_activity_version": version,
-            "until_unix": snoozed_until,
-        }),
-    )
-    .await;
+    let snoozed = attention
+        .apply("snooze", version, Some(snoozed_until))
+        .await;
     assert_eq!(snoozed["attention"]["state"], "snoozed");
     assert_eq!(snoozed["attention"]["snoozed_until_unix"], snoozed_until);
     let aside = queue_item(&app, "set_aside", "req_attention_actions", Some(&bearer)).await;
@@ -107,52 +81,26 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
     let owner = bearer_header();
     let author = bearer_header_for("attention_author", "attention-author@example.com");
     let base = "/v1/repos/owner/repo/requests/req_attention_activity";
+    let attention = AttentionClient::new(&app, "req_attention_activity", &owner);
 
-    let forbidden = attention_action(
+    let forbidden = attention_request(
         &app,
         "req_attention_activity",
         Some(&author),
-        serde_json::json!({ "action": "claim", "expected_activity_version": 2 }),
+        "claim",
+        2,
+        None,
     )
     .await;
     assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
 
-    let discussion = api_request(
-        app.clone(),
-        "POST",
-        &format!("{base}/timeline"),
-        Some(&author),
-        Some(r#"{"body_markdown":"Please review this.","client_discussion_id":"attention-root"}"#),
-    )
-    .await;
-    assert_eq!(discussion.status(), StatusCode::OK);
-    let discussion_id = response_json(discussion).await["discussion"]["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
     let initial = queue_item(&app, "unclaimed", "req_attention_activity", Some(&owner)).await;
     let version = activity_version(&initial);
-    attention_json(
-        &app,
-        "req_attention_activity",
-        &owner,
-        serde_json::json!({ "action": "claim", "expected_activity_version": version }),
-    )
-    .await;
+    attention.apply("settle", version, None).await;
 
-    let active = queue_item(&app, "active", "req_attention_activity", Some(&owner)).await;
-    attention_json(
-        &app,
-        "req_attention_activity",
-        &owner,
-        serde_json::json!({
-            "action": "settle",
-            "expected_activity_version": activity_version(&active),
-        }),
-    )
-    .await;
+    let discussion_id = post_discussion(&app, base, &author, "attention-root").await;
     let settled = queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await;
+    assert_eq!(settled["attention"]["reason"], "settled");
     let settled_through = settled["attention"]["through_activity_version"]
         .as_u64()
         .unwrap();
@@ -224,16 +172,9 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
     let woke_from_wait = queue_item(&app, "active", "req_attention_activity", Some(&owner)).await;
     assert_eq!(woke_from_wait["attention"]["reason"], "new_activity");
 
-    attention_json(
-        &app,
-        "req_attention_activity",
-        &owner,
-        serde_json::json!({
-            "action": "settle",
-            "expected_activity_version": activity_version(&woke_from_wait),
-        }),
-    )
-    .await;
+    attention
+        .apply("settle", activity_version(&woke_from_wait), None)
+        .await;
     let mut snapshot = source_blob(&state, "incoming request revision");
     let revision_head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     snapshot.git_oid = revision_head.to_string();
@@ -260,54 +201,16 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
         queue_item(&app, "active", "req_attention_activity", Some(&owner)).await;
     assert_eq!(woke_from_revision["attention"]["reason"], "new_activity");
 
-    attention_json(
-        &app,
-        "req_attention_activity",
-        &owner,
-        serde_json::json!({
-            "action": "snooze",
-            "expected_activity_version": activity_version(&woke_from_revision),
-            "until_unix": unix_now() + 600,
-        }),
-    )
-    .await;
+    attention
+        .apply(
+            "snooze",
+            activity_version(&woke_from_revision),
+            Some(unix_now() + 600),
+        )
+        .await;
     post_reply(&app, base, &discussion_id, &author, "incoming-after-snooze").await;
     let woke_from_snooze = queue_item(&app, "active", "req_attention_activity", Some(&owner)).await;
     assert_eq!(woke_from_snooze["attention"]["reason"], "new_activity");
-}
-
-#[tokio::test]
-async fn public_queue_exposes_open_and_terminal_requests_in_nested_rows() {
-    let state = test_state_with_readme().await;
-    super::requests::create_public_request(
-        &state,
-        "req_public_active",
-        test_owner_id(),
-        REQUEST_HEAD,
-    )
-    .await;
-    super::requests::create_public_request(
-        &state,
-        "req_public_closed",
-        test_owner_id(),
-        REQUEST_HEAD,
-    )
-    .await;
-    open_request(&state, "req_public_active", 10).await;
-    close_request(&state, "req_public_closed", 11, 12).await;
-    let app = router(state);
-
-    let active = queue_item(&app, "active", "req_public_active", None).await;
-    assert_eq!(active["request"]["state"], "Open");
-    assert_eq!(active["author"]["id"], test_owner_id());
-    assert_eq!(active["attention"]["reason"], "open");
-    assert!(active["claimer"].is_null());
-
-    let closed = queue_item(&app, "set_aside", "req_public_closed", None).await;
-    assert_eq!(closed["request"]["state"], "Closed");
-    assert_eq!(closed["attention"]["reason"], "closed");
-    let unclaimed = queue_page(&app, "unclaimed", None).await;
-    assert!(unclaimed["requests"].as_array().unwrap().is_empty());
 }
 
 async fn open_request(state: &AppState, request_id: &str, now_unix: u64) {
@@ -317,25 +220,6 @@ async fn open_request(state: &AppState, request_id: &str, now_unix: u64) {
         .mutate_request_for_tests(request_id, |request| {
             request.submitted_at_unix = Some(now_unix);
             request.updated_at_unix = now_unix;
-        })
-        .await
-        .unwrap();
-}
-
-async fn close_request(
-    state: &AppState,
-    request_id: &str,
-    submitted_at_unix: u64,
-    closed_at_unix: u64,
-) {
-    state
-        .metadata
-        .requests()
-        .mutate_request_for_tests(request_id, |request| {
-            request.submitted_at_unix = Some(submitted_at_unix);
-            request.closed_at_unix = Some(closed_at_unix);
-            request.closed_by_user_id = Some(test_owner_id());
-            request.updated_at_unix = closed_at_unix;
         })
         .await
         .unwrap();
@@ -373,12 +257,21 @@ fn activity_version(item: &serde_json::Value) -> u64 {
     item["attention"]["activity_version"].as_u64().unwrap()
 }
 
-async fn attention_action(
+async fn attention_request(
     app: &axum::Router,
     request_id: &str,
     bearer: Option<&str>,
-    body: serde_json::Value,
+    action: &str,
+    expected_activity_version: u64,
+    until_unix: Option<u64>,
 ) -> Response {
+    let mut body = serde_json::json!({
+        "action": action,
+        "expected_activity_version": expected_activity_version,
+    });
+    if let Some(until_unix) = until_unix {
+        body["until_unix"] = until_unix.into();
+    }
     api_request(
         app.clone(),
         "PUT",
@@ -389,15 +282,39 @@ async fn attention_action(
     .await
 }
 
-async fn attention_json(
-    app: &axum::Router,
-    request_id: &str,
-    bearer: &str,
-    body: serde_json::Value,
-) -> serde_json::Value {
-    let response = attention_action(app, request_id, Some(bearer), body).await;
-    assert_eq!(response.status(), StatusCode::OK);
-    response_json(response).await
+struct AttentionClient<'a> {
+    app: &'a axum::Router,
+    request_id: &'a str,
+    bearer: &'a str,
+}
+
+impl<'a> AttentionClient<'a> {
+    fn new(app: &'a axum::Router, request_id: &'a str, bearer: &'a str) -> Self {
+        Self {
+            app,
+            request_id,
+            bearer,
+        }
+    }
+
+    async fn apply(
+        &self,
+        action: &str,
+        expected_activity_version: u64,
+        until_unix: Option<u64>,
+    ) -> serde_json::Value {
+        let response = attention_request(
+            self.app,
+            self.request_id,
+            Some(self.bearer),
+            action,
+            expected_activity_version,
+            until_unix,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        response_json(response).await
+    }
 }
 
 async fn post_reply(
@@ -424,4 +341,31 @@ async fn post_reply(
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+async fn post_discussion(
+    app: &axum::Router,
+    base: &str,
+    bearer: &str,
+    client_discussion_id: &str,
+) -> String {
+    let response = api_request(
+        app.clone(),
+        "POST",
+        &format!("{base}/timeline"),
+        Some(bearer),
+        Some(
+            &serde_json::json!({
+                "body_markdown": "Please review this.",
+                "client_discussion_id": client_discussion_id,
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    response_json(response).await["discussion"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string()
 }

@@ -4,13 +4,15 @@ use scope_domain::{
     account::UserAccount,
     repository::access::RepositoryAccess,
     requests::{
-        REQUEST_LIST_MAX_PAGE_SIZE, RequestActorRole, RequestAttention, RequestAttentionReason,
-        RequestAttentionState, RequestAudience, RequestClaim, RequestQueueClassification,
-        RequestQueueFacts, RequestQueueSection, RequestState, classify_request_queue_item,
+        REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_QUEUE_RULES, RequestActorRole, RequestAttention,
+        RequestAttentionReason, RequestAttentionState, RequestAudience, RequestClaim,
+        RequestListPredicate, RequestQueueClassification, RequestQueueFacts, RequestQueuePredicate,
+        RequestQueuePredicateAtom, RequestQueueSection, RequestState, classify_request_queue_item,
+        request_queue_visibility_predicate,
     },
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Write as _};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestQueueCursor {
@@ -77,13 +79,6 @@ impl RequestStore {
         &self,
         input: RequestQueuePageQuery<'_>,
     ) -> Result<RequestQueuePage, PostgresError> {
-        if !input.access.is_maintainer() && input.section == RequestQueueSection::Unclaimed {
-            return Ok(RequestQueuePage {
-                rows: Vec::new(),
-                users: BTreeMap::new(),
-                next_attention_at_unix: None,
-            });
-        }
         let viewer = input.viewer_user_id.map(str::to_string);
         let search = input.search.map(escaped_search_pattern);
         let after_time = input
@@ -92,16 +87,16 @@ impl RequestStore {
             .transpose()?;
         let after_id = input.after.map(|cursor| cursor.request_id.clone());
         let limit = input.limit.min((REQUEST_LIST_MAX_PAGE_SIZE + 1) as u64);
+        let sql = queue_sql(input.access, input.viewer_user_id);
         let rows = QueueModel::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            QUEUE_SQL,
+            sql,
             [
                 input.repo_id.into(),
                 viewer.clone().into(),
                 input.access.is_maintainer().into(),
-                (!input.access.is_maintainer()).into(),
                 search.into(),
-                section_name(input.section).into(),
+                input.section.as_str().into(),
                 entities::u64_to_i64(input.now_unix, "queue time")?.into(),
                 after_time.into(),
                 after_id.into(),
@@ -283,14 +278,6 @@ fn optional_u64(value: Option<i64>, field: &str) -> Result<Option<u64>, Postgres
         .transpose()
 }
 
-fn section_name(section: RequestQueueSection) -> &'static str {
-    match section {
-        RequestQueueSection::Active => "active",
-        RequestQueueSection::Unclaimed => "unclaimed",
-        RequestQueueSection::SetAside => "set_aside",
-    }
-}
-
 fn escaped_search_pattern(value: &str) -> String {
     format!(
         "%{}%",
@@ -299,6 +286,93 @@ fn escaped_search_pattern(value: &str) -> String {
             .replace('%', "\\%")
             .replace('_', "\\_")
     )
+}
+
+fn queue_sql(access: RepositoryAccess, viewer_user_id: Option<&str>) -> String {
+    QUEUE_SQL
+        .replace(
+            "{request_visibility}",
+            &request_visibility_sql(&request_queue_visibility_predicate(access, viewer_user_id)),
+        )
+        .replace("{queue_placement}", &queue_placement_sql())
+}
+
+fn request_visibility_sql(predicate: &RequestListPredicate<'_>) -> String {
+    match predicate {
+        RequestListPredicate::All(predicates) => join_sql_predicates(predicates, " AND "),
+        RequestListPredicate::Any(predicates) => join_sql_predicates(predicates, " OR "),
+        RequestListPredicate::Audience(RequestAudience::Public) => "r.audience = 'Public'".into(),
+        RequestListPredicate::Audience(RequestAudience::Private) => "r.audience = 'Private'".into(),
+        RequestListPredicate::Submitted => "r.submitted_at_unix IS NOT NULL".into(),
+        RequestListPredicate::Author(_) => "r.author_user_id = $2".into(),
+        RequestListPredicate::Invitee(_) => "EXISTS (
+            SELECT 1 FROM scope_request_invitees visible_invitee
+            WHERE visible_invitee.request_id = r.id AND visible_invitee.user_id = $2
+        )"
+        .into(),
+    }
+}
+
+fn join_sql_predicates(predicates: &[RequestListPredicate<'_>], operator: &str) -> String {
+    let predicates = predicates
+        .iter()
+        .map(request_visibility_sql)
+        .collect::<Vec<_>>();
+    format!("({})", predicates.join(operator))
+}
+
+fn queue_placement_sql() -> String {
+    let mut sql = String::from("CASE");
+    for rule in REQUEST_QUEUE_RULES {
+        write!(
+            sql,
+            " WHEN {} THEN '{}'",
+            queue_predicate_sql(rule.predicate()),
+            rule.section().as_str()
+        )
+        .expect("writing to a string cannot fail");
+    }
+    sql.push_str(" END");
+    sql
+}
+
+fn queue_predicate_sql(predicate: RequestQueuePredicate) -> String {
+    match predicate {
+        RequestQueuePredicate::Atom(atom) => queue_atom_sql(atom).into(),
+        RequestQueuePredicate::All(left, right) => {
+            format!("({} AND {})", queue_atom_sql(left), queue_atom_sql(right))
+        }
+    }
+}
+
+fn queue_atom_sql(atom: RequestQueuePredicateAtom) -> &'static str {
+    match atom {
+        RequestQueuePredicateAtom::Terminal => {
+            "closed_at_unix IS NOT NULL OR merged_at_unix IS NOT NULL"
+        }
+        RequestQueuePredicateAtom::ViewerIsMaintainer => "$3",
+        RequestQueuePredicateAtom::ViewerIsNotMaintainer => "NOT $3",
+        RequestQueuePredicateAtom::ViewerIsAuthor => "author_user_id = $2",
+        RequestQueuePredicateAtom::ViewerIsInvitee => "viewer_is_invitee",
+        RequestQueuePredicateAtom::AttentionIsWaitingOrSettled => {
+            "attention_state IN ('waiting', 'settled')"
+        }
+        RequestQueuePredicateAtom::AttentionIsActive => "attention_state = 'active'",
+        RequestQueuePredicateAtom::SnoozedAfterNow => {
+            "attention_state = 'snoozed' AND snoozed_until_unix > $6"
+        }
+        RequestQueuePredicateAtom::SnoozedAtOrBeforeNow => {
+            "attention_state = 'snoozed' AND snoozed_until_unix <= $6"
+        }
+        RequestQueuePredicateAtom::ClaimedByViewer => "claimer_user_id = $2",
+        RequestQueuePredicateAtom::ClaimedByOther => {
+            "claimer_user_id IS NOT NULL AND claimer_user_id <> $2"
+        }
+        RequestQueuePredicateAtom::RequestIsOpen => {
+            "submitted_at_unix IS NOT NULL AND closed_at_unix IS NULL AND merged_at_unix IS NULL"
+        }
+        RequestQueuePredicateAtom::Always => "TRUE",
+    }
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -343,7 +417,7 @@ WITH facts AS (
         r.updated_at_unix, r.activity_version, r.git_snapshot IS NOT NULL AS has_git_snapshot,
         GREATEST(r.updated_at_unix,
             CASE WHEN $3 THEN COALESCE(a.updated_at_unix, 0) ELSE 0 END,
-            CASE WHEN $3 AND a.state = 'snoozed' AND a.snoozed_until_unix <= $7
+            CASE WHEN $3 AND a.state = 'snoozed' AND a.snoozed_until_unix <= $6
                 THEN a.snoozed_until_unix ELSE 0 END
         ) AS attention_at_unix,
         EXISTS (
@@ -360,37 +434,10 @@ WITH facts AS (
         ON a.request_id = r.id AND a.user_id = $2
     LEFT JOIN scope_request_claims c ON c.request_id = r.id
     WHERE r.repo_id = $1
-      AND (
-        NOT $4 OR r.audience = 'Public' OR
-        ($2 IS NOT NULL AND (
-            r.author_user_id = $2 OR
-            EXISTS (
-                SELECT 1 FROM scope_request_invitees i
-                WHERE i.request_id = r.id AND i.user_id = $2
-            )
-        ))
-      )
-      AND (
-        r.submitted_at_unix IS NOT NULL OR
-        ($2 IS NOT NULL AND r.author_user_id = $2) OR
-        EXISTS (
-            SELECT 1 FROM scope_request_invitees i
-            WHERE i.request_id = r.id AND i.user_id = $2
-        )
-      )
-      AND ($5::text IS NULL OR r.title ILIKE $5 ESCAPE '\' OR r.description_markdown ILIKE $5 ESCAPE '\')
+      AND {request_visibility}
+      AND ($4::text IS NULL OR r.title ILIKE $4 ESCAPE '\' OR r.description_markdown ILIKE $4 ESCAPE '\')
 ), classified AS (
-    SELECT facts.*, CASE
-        WHEN closed_at_unix IS NOT NULL OR merged_at_unix IS NOT NULL THEN 'set_aside'
-        WHEN $3 AND attention_state IN ('waiting', 'settled') THEN 'set_aside'
-        WHEN $3 AND attention_state = 'snoozed' AND snoozed_until_unix > $7 THEN 'set_aside'
-        WHEN $3 AND claimer_user_id IS NOT NULL AND claimer_user_id <> $2 THEN 'set_aside'
-        WHEN NOT $3 THEN 'active'
-        WHEN claimer_user_id = $2 OR attention_state = 'active' OR
-             (attention_state = 'snoozed' AND snoozed_until_unix <= $7) OR
-             author_user_id = $2 OR viewer_is_invitee THEN 'active'
-        ELSE 'unclaimed'
-    END AS queue_section
+    SELECT facts.*, {queue_placement} AS queue_section
     FROM facts
 )
 SELECT id, name, title, author_user_id, author_role, audience, head_oid,
@@ -399,8 +446,11 @@ SELECT id, name, title, author_user_id, author_role, audience, head_oid,
     attention_reason, through_activity_version, snoozed_until_unix,
     attention_updated_at_unix, claimer_user_id, claimed_at_unix, claim_updated_at_unix
 FROM classified
-WHERE queue_section = $6
-  AND ($8::bigint IS NULL OR attention_at_unix < $8 OR (attention_at_unix = $8 AND id > $9))
+WHERE queue_section = $5
+  AND ($7::bigint IS NULL OR attention_at_unix < $7 OR (attention_at_unix = $7 AND id > $8))
 ORDER BY attention_at_unix DESC, id ASC
-LIMIT $10
+LIMIT $9
 "#;
+
+#[cfg(test)]
+mod tests;

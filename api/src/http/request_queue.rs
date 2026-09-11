@@ -306,11 +306,7 @@ fn cursor_key(signing_key: &[u8]) -> [u8; 32] {
 }
 
 fn cursor_aad(repo_id: &str, section: RequestQueueSection) -> String {
-    let section = match section {
-        RequestQueueSection::Active => "active",
-        RequestQueueSection::Unclaimed => "unclaimed",
-        RequestQueueSection::SetAside => "set_aside",
-    };
+    let section = section.as_str();
     format!("{CURSOR_AAD_DOMAIN}\0{repo_id}\0{section}")
 }
 

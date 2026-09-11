@@ -1,10 +1,11 @@
-import { type CSSProperties, type ReactNode, useId, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useId, useState } from 'react'
 import {
   REQUEST_WORKSPACE_COLLAPSED_WIDTH,
   requestWorkspaceWidthFromDrag,
   requestWorkspaceWidthFromKey,
-  type RequestWorkspaceWidthDrag,
 } from './request-workspace-width'
+import { PaneResizeHandle } from '@/components/pane-resize-handle'
+import { FILE_PANE_MAX_WIDTH } from '@/components/file-workbench-width'
 import './request-workspace-sidebar.css'
 
 type RequestWorkspaceShellProps = {
@@ -22,8 +23,7 @@ export function RequestWorkspaceShell({
   onCollapsedChange,
   sidebar,
 }: RequestWorkspaceShellProps) {
-  const [width, setWidth] = useState(360)
-  const drag = useRef<RequestWorkspaceWidthDrag | null>(null)
+  const [width, setWidth] = useState(FILE_PANE_MAX_WIDTH)
   const sidebarId = useId()
 
   return (
@@ -33,57 +33,35 @@ export function RequestWorkspaceShell({
       data-detail-open={detailOpenOnMobile || undefined}
       style={{ '--request-workspace-sidebar-width': `${width}px` } as CSSProperties}
     >
-      <div className="request-workspace-sidebar-container" id={sidebarId}>{sidebar}</div>
-      <button
-        aria-controls={sidebarId}
-        aria-label="Requests sidebar width"
-        aria-orientation="vertical"
-        aria-valuemax={360}
-        aria-valuemin={REQUEST_WORKSPACE_COLLAPSED_WIDTH}
-        aria-valuenow={collapsed ? REQUEST_WORKSPACE_COLLAPSED_WIDTH : width}
-        aria-valuetext={collapsed ? 'Collapsed' : `${width} pixels`}
+      <div className="request-workspace-sidebar-container" id={sidebarId}>
+        {sidebar}
+      </div>
+      <PaneResizeHandle
         className="request-workspace-resize-handle"
-        onKeyDown={(event) => {
-          const next = requestWorkspaceWidthFromKey({ collapsed, width }, event.key)
-          if (!next) return
-          event.preventDefault()
-          setWidth(next.width)
-          onCollapsedChange(next.collapsed)
-        }}
-        onLostPointerCapture={() => {
-          drag.current = null
-        }}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return
-          event.preventDefault()
-          event.currentTarget.focus()
-          event.currentTarget.setPointerCapture(event.pointerId)
-          drag.current = {
-            startedCollapsed: collapsed,
-            width: collapsed ? REQUEST_WORKSPACE_COLLAPSED_WIDTH : width,
-            x: event.clientX,
-          }
-        }}
-        onPointerMove={(event) => {
-          const start = drag.current
-          if (!start) return
-          const next = requestWorkspaceWidthFromDrag(start, event.clientX)
+        controls={sidebarId}
+        label="Requests sidebar width"
+        max={FILE_PANE_MAX_WIDTH}
+        min={REQUEST_WORKSPACE_COLLAPSED_WIDTH}
+        onDrag={(distance) => {
+          const next = requestWorkspaceWidthFromDrag(
+            { startedCollapsed: collapsed, width, x: 0 },
+            distance,
+          )
           if (!next) return
           setWidth(next.width)
           onCollapsedChange(next.collapsed)
         }}
-        onPointerUp={(event) => {
-          drag.current = null
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId)
-          }
+        onKey={(key) => {
+          const next = requestWorkspaceWidthFromKey({ collapsed, width }, key)
+          if (!next) return false
+          setWidth(next.width)
+          onCollapsedChange(next.collapsed)
+          return true
         }}
-        role="separator"
-        tabIndex={0}
-        type="button"
+        valueText={collapsed ? 'Collapsed' : `${width} pixels`}
+        width={collapsed ? REQUEST_WORKSPACE_COLLAPSED_WIDTH : width}
       />
       <section className="request-workspace-detail">{children}</section>
     </div>
   )
 }
-

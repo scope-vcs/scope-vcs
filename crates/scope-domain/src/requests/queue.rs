@@ -2,6 +2,12 @@ use super::{Request, RequestState};
 use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 
+mod placement;
+pub use placement::{
+    REQUEST_QUEUE_RULES, RequestQueuePredicate, RequestQueuePredicateAtom, RequestQueueRule,
+    request_queue_visibility_predicate,
+};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RequestQueueSection {
@@ -213,70 +219,47 @@ pub fn apply_request_attention_action(
 
 pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueueClassification {
     let request_version = facts.request_activity_version;
-    let viewer_is_author = facts
-        .viewer_user_id
-        .is_some_and(|viewer| viewer == facts.request_author_user_id);
-    let terminal_reason = match facts.request_state {
-        RequestState::Closed => Some(RequestAttentionReason::Closed),
-        RequestState::Merged => Some(RequestAttentionReason::Merged),
-        RequestState::Draft | RequestState::Open => None,
-    };
-    if let Some(reason) = terminal_reason {
-        return RequestQueueClassification {
-            section: RequestQueueSection::SetAside,
+    let rule = REQUEST_QUEUE_RULES
+        .iter()
+        .copied()
+        .find(|rule| rule.predicate().matches(&facts))
+        .expect("request queue placement has a fallback rule");
+    let actionable = facts.viewer_is_maintainer && facts.request_state == RequestState::Open;
+
+    match rule {
+        RequestQueueRule::Terminal => RequestQueueClassification {
+            section: rule.section(),
             state: RequestAttentionState::Settled,
-            reason,
+            reason: match facts.request_state {
+                RequestState::Closed => RequestAttentionReason::Closed,
+                RequestState::Merged => RequestAttentionReason::Merged,
+                RequestState::Draft | RequestState::Open => {
+                    unreachable!("terminal placement requires a terminal request")
+                }
+            },
             through_activity_version: request_version,
             snoozed_until_unix: None,
             can_claim: false,
             can_set_aside: false,
             can_restore: false,
-        };
-    }
-
-    if facts.viewer_is_maintainer
-        && let Some(attention) = facts.attention
-        && matches!(
-            attention.state,
-            RequestAttentionState::Waiting | RequestAttentionState::Settled
-        )
-    {
-        return RequestQueueClassification {
-            section: RequestQueueSection::SetAside,
-            state: attention.state,
-            reason: attention.reason,
-            through_activity_version: attention.through_activity_version,
-            snoozed_until_unix: attention.snoozed_until_unix,
-            can_claim: false,
-            can_set_aside: false,
-            can_restore: true,
-        };
-    }
-    if facts.viewer_is_maintainer
-        && let Some(attention) = facts.attention
-        && attention.state == RequestAttentionState::Snoozed
-        && attention
-            .snoozed_until_unix
-            .is_some_and(|until| until > facts.now_unix)
-    {
-        return RequestQueueClassification {
-            section: RequestQueueSection::SetAside,
-            state: attention.state,
-            reason: attention.reason,
-            through_activity_version: attention.through_activity_version,
-            snoozed_until_unix: attention.snoozed_until_unix,
-            can_claim: false,
-            can_set_aside: false,
-            can_restore: true,
-        };
-    }
-
-    if facts.viewer_is_maintainer
-        && let (Some(viewer), Some(claim)) = (facts.viewer_user_id, facts.claim)
-        && claim.claimer_user_id != viewer
-    {
-        return RequestQueueClassification {
-            section: RequestQueueSection::SetAside,
+        },
+        RequestQueueRule::Waiting | RequestQueueRule::Snoozed => {
+            let attention = facts
+                .attention
+                .expect("set-aside placement requires attention");
+            RequestQueueClassification {
+                section: rule.section(),
+                state: attention.state,
+                reason: attention.reason,
+                through_activity_version: attention.through_activity_version,
+                snoozed_until_unix: attention.snoozed_until_unix,
+                can_claim: false,
+                can_set_aside: false,
+                can_restore: true,
+            }
+        }
+        RequestQueueRule::ClaimedElsewhere => RequestQueueClassification {
+            section: rule.section(),
             state: RequestAttentionState::Active,
             reason: RequestAttentionReason::ClaimedElsewhere,
             through_activity_version: request_version,
@@ -284,64 +267,50 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             can_claim: false,
             can_set_aside: false,
             can_restore: false,
-        };
-    }
-
-    let active_reason = if facts.viewer_is_maintainer {
-        match (facts.viewer_user_id, facts.claim, facts.attention) {
-            (_, _, Some(attention)) if attention.state == RequestAttentionState::Active => {
-                Some(attention.reason)
+        },
+        RequestQueueRule::ActiveAttention
+        | RequestQueueRule::SnoozeExpired
+        | RequestQueueRule::Claimed
+        | RequestQueueRule::Authored
+        | RequestQueueRule::Invited
+        | RequestQueueRule::Open => {
+            let reason = match rule {
+                RequestQueueRule::ActiveAttention => {
+                    facts
+                        .attention
+                        .expect("active attention placement requires attention")
+                        .reason
+                }
+                RequestQueueRule::SnoozeExpired => RequestAttentionReason::SnoozeExpired,
+                RequestQueueRule::Claimed => RequestAttentionReason::Claimed,
+                RequestQueueRule::Authored => RequestAttentionReason::Authored,
+                RequestQueueRule::Invited => RequestAttentionReason::Invited,
+                RequestQueueRule::Open => RequestAttentionReason::Open,
+                _ => unreachable!(),
+            };
+            RequestQueueClassification {
+                section: rule.section(),
+                state: RequestAttentionState::Active,
+                reason,
+                through_activity_version: facts
+                    .attention
+                    .map_or(request_version, |state| state.through_activity_version),
+                snoozed_until_unix: None,
+                can_claim: actionable && facts.claim.is_none(),
+                can_set_aside: actionable,
+                can_restore: false,
             }
-            (_, _, Some(attention))
-                if attention.state == RequestAttentionState::Snoozed
-                    && attention
-                        .snoozed_until_unix
-                        .is_some_and(|until| until <= facts.now_unix) =>
-            {
-                Some(RequestAttentionReason::SnoozeExpired)
-            }
-            (Some(viewer), Some(claim), _) if claim.claimer_user_id == viewer => {
-                Some(RequestAttentionReason::Claimed)
-            }
-            _ if viewer_is_author => Some(RequestAttentionReason::Authored),
-            _ if facts.viewer_is_invitee => Some(RequestAttentionReason::Invited),
-            _ => None,
         }
-    } else if viewer_is_author {
-        Some(RequestAttentionReason::Authored)
-    } else if facts.viewer_is_invitee {
-        Some(RequestAttentionReason::Invited)
-    } else if facts.request_state == RequestState::Open {
-        Some(RequestAttentionReason::Open)
-    } else {
-        None
-    };
-
-    if let Some(reason) = active_reason {
-        let actionable = facts.viewer_is_maintainer && facts.request_state == RequestState::Open;
-        return RequestQueueClassification {
-            section: RequestQueueSection::Active,
+        RequestQueueRule::Unclaimed => RequestQueueClassification {
+            section: rule.section(),
             state: RequestAttentionState::Active,
-            reason,
-            through_activity_version: facts
-                .attention
-                .map_or(request_version, |state| state.through_activity_version),
+            reason: RequestAttentionReason::Unclaimed,
+            through_activity_version: request_version,
             snoozed_until_unix: None,
-            can_claim: actionable && facts.claim.is_none(),
+            can_claim: actionable,
             can_set_aside: actionable,
             can_restore: false,
-        };
-    }
-
-    RequestQueueClassification {
-        section: RequestQueueSection::Unclaimed,
-        state: RequestAttentionState::Active,
-        reason: RequestAttentionReason::Unclaimed,
-        through_activity_version: request_version,
-        snoozed_until_unix: None,
-        can_claim: facts.viewer_is_maintainer && facts.request_state == RequestState::Open,
-        can_set_aside: facts.viewer_is_maintainer && facts.request_state == RequestState::Open,
-        can_restore: false,
+        },
     }
 }
 

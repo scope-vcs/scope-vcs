@@ -1,11 +1,14 @@
-import { clampFilePaneWidth, filePaneKeyboardWidth } from '../../components/file-workbench-width'
+import {
+  clampFilePaneWidth,
+  filePaneKeyboardWidth,
+  FILE_PANE_MIN_WIDTH,
+  FILE_PANE_MAX_WIDTH,
+} from '../../components/file-workbench-width'
 
 export const REQUEST_WORKSPACE_COLLAPSED_WIDTH = 54
 
 const COLLAPSE_DRAG_THRESHOLD = 150
 const REOPEN_DRAG_DISTANCE = 32
-const MIN_EXPANDED_WIDTH = 180
-const MAX_EXPANDED_WIDTH = 360
 
 export type RequestWorkspaceWidthState = {
   collapsed: boolean
@@ -27,7 +30,7 @@ export function requestWorkspaceWidthFromDrag(
     if (movement < REOPEN_DRAG_DISTANCE) return null
     return {
       collapsed: false,
-      width: clampFilePaneWidth(MIN_EXPANDED_WIDTH + movement - REOPEN_DRAG_DISTANCE),
+      width: clampFilePaneWidth(FILE_PANE_MIN_WIDTH + movement - REOPEN_DRAG_DISTANCE),
     }
   }
 
@@ -35,7 +38,7 @@ export function requestWorkspaceWidthFromDrag(
   if (nextWidth < COLLAPSE_DRAG_THRESHOLD) {
     return { collapsed: true, width: start.width }
   }
-  if (nextWidth < MIN_EXPANDED_WIDTH) return null
+  if (nextWidth < FILE_PANE_MIN_WIDTH) return null
   return { collapsed: false, width: clampFilePaneWidth(nextWidth) }
 }
 
@@ -44,11 +47,11 @@ export function requestWorkspaceWidthFromKey(
   key: string,
 ): RequestWorkspaceWidthState | null {
   if (state.collapsed) {
-    if (key === 'ArrowRight') return { collapsed: false, width: MIN_EXPANDED_WIDTH }
-    if (key === 'End') return { collapsed: false, width: MAX_EXPANDED_WIDTH }
+    if (key === 'ArrowRight') return { collapsed: false, width: FILE_PANE_MIN_WIDTH }
+    if (key === 'End') return { collapsed: false, width: FILE_PANE_MAX_WIDTH }
     return null
   }
-  if (key === 'ArrowLeft' && state.width === MIN_EXPANDED_WIDTH) {
+  if (key === 'ArrowLeft' && state.width === FILE_PANE_MIN_WIDTH) {
     return { collapsed: true, width: state.width }
   }
   const width = filePaneKeyboardWidth(state.width, key)
