@@ -36,7 +36,7 @@ export function RepositoryDependencyCheckView({
       </summary>
       <div className="px-5 pb-4 pl-12 text-xs sm:px-6 sm:pl-14 lg:px-8 lg:pl-16">
         {report.findings.length > 0 && (
-          <ul aria-label="Public files importing private files" className="max-h-72 max-w-4xl overflow-y-auto border-b border-border">
+          <ul aria-label="Public files importing private files" className="max-h-72 max-w-4xl overflow-y-auto">
             {report.findings.map((finding, index) => (
               <li
                 className="grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1fr)] items-center gap-2 border-t border-border py-2.5 sm:gap-4"
@@ -80,7 +80,7 @@ export function RepositoryDependencyCheckView({
             </ul>
           </div>
         )}
-        <p className="mt-3 max-w-4xl border-t border-border pt-2.5 text-[11px] leading-4 text-muted-foreground">
+        <p className="mt-3 max-w-4xl text-[11px] leading-4 text-muted-foreground">
           {presentation.coverage}
         </p>
       </div>
