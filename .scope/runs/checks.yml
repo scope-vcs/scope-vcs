@@ -32,23 +32,6 @@ jobs:
           files: &root-cargo-cache-files
             - Cargo.lock
             - Cargo.toml
-            - api/Cargo.toml
-            - cache-service/Cargo.toml
-            - media-service/Cargo.toml
-            - media-worker/Cargo.toml
-            - crates/scope-api-contract/Cargo.toml
-            - crates/scope-cache-contract/Cargo.toml
-            - crates/scope-cache-domain/Cargo.toml
-            - crates/scope-content-lifecycle/Cargo.toml
-            - crates/scope-domain/Cargo.toml
-            - crates/scope-git-process/Cargo.toml
-            - crates/scope-git/Cargo.toml
-            - crates/scope-object-store/Cargo.toml
-            - crates/scope-media-storage/Cargo.toml
-            - crates/scope-postgres/Cargo.toml
-            - crates/scope-run-config/Cargo.toml
-            - runner-runtime/Cargo.toml
-            - worker/Cargo.toml
           environment: []
           source: false
       - name: cargo-target
@@ -82,8 +65,6 @@ jobs:
           files: &cli-cargo-cache-files
             - cli/Cargo.lock
             - cli/Cargo.toml
-            - crates/scope-api-contract/Cargo.toml
-            - crates/scope-domain/Cargo.toml
           environment: []
           source: false
       - name: cargo-target

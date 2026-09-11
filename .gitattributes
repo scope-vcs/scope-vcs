@@ -14,4 +14,3 @@ web/public/*.txt text eol=lf
 web/public/LICENSE.txt linguist-generated=true
 web/public/NOTICE.txt linguist-generated=true
 web/public/third-party-licenses.txt linguist-generated=true
-web/vendor/PAGENT-LICENSING.txt text eol=lf
