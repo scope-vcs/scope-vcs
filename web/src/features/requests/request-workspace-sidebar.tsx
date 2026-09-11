@@ -74,7 +74,7 @@ export function RequestWorkspaceSidebar({
             onChange={onSearch}
             onOpen={openSearch}
             placeholder="Search requests"
-            status={loading ? 'Searching requests' : undefined}
+            status={loading && searching ? 'Searching requests' : undefined}
             value={query}
           />
           <Button

@@ -23,6 +23,9 @@ export function PaneResizeHandle({
   className?: string
 }) {
   const drag = useRef<{ x: number; resize: typeof onDrag } | null>(null)
+  function resize(clientX: number) {
+    if (drag.current) drag.current.resize(clientX - drag.current.x)
+  }
   return (
     <button
       aria-controls={controls}
@@ -49,10 +52,9 @@ export function PaneResizeHandle({
         event.currentTarget.setPointerCapture(event.pointerId)
         drag.current = { x: event.clientX, resize: onDrag }
       }}
-      onPointerMove={(event) => {
-        if (drag.current) drag.current.resize(event.clientX - drag.current.x)
-      }}
+      onPointerMove={(event) => resize(event.clientX)}
       onPointerUp={(event) => {
+        resize(event.clientX)
         drag.current = null
         if (event.currentTarget.hasPointerCapture(event.pointerId))
           event.currentTarget.releasePointerCapture(event.pointerId)
