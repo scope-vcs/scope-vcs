@@ -9,7 +9,12 @@ source_sha="${SCOPE_DEPLOYMENT_SOURCE_SHA:-${GITHUB_SHA:-}}"
 : "${SCOPE_RAILWAY_REGISTRY_USERNAME:?Private image preparation requires durable registry username}"
 : "${SCOPE_RAILWAY_REGISTRY_PASSWORD:?Private image preparation requires durable registry password}"
 : "${GITHUB_TOKEN:?Private image preparation requires publishing token for visibility verification}"
-service_id="$(jq -er --arg component "$component" '.services[$component].id' "${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}")"
+manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
+service_id="$(jq -er --arg component "$component" '.services[$component].id' "$manifest")" || {
+  echo "Unknown release component $component" >&2
+  exit 2
+}
+binary="$(jq -r --arg component "$component" '.services[$component].binary // ""' "$manifest")"
 image_repository="$(node .github/scripts/railway-artifact.mjs image-repository "$component")"
 image_tag="$image_repository:$component-$source_sha-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 metadata="$(mktemp)"
@@ -18,18 +23,16 @@ trap 'rm -f "$metadata"; rm -rf "$pull_config"' EXIT
 
 dockerfile=deploy/railway/prebuilt.Dockerfile
 install_git=0
-binary=""
 case "$component" in
-  api) install_git=1; binary=scope-vcs ;;
-  run-worker) install_git=1; binary=scope-worker ;;
-  cache) binary=scope-cache-service ;;
-  git-router) binary=scope-repo-router ;;
-  media-api) binary=scope-media-service ;;
-  cli-downloads) binary=scope-cli-service ;;
-  web) dockerfile=deploy/railway/web.Dockerfile; test -s "$context_root/.output/server/index.mjs" ;;
-  *) echo "Unknown release component $component" >&2; exit 2 ;;
+  api|run-worker) install_git=1 ;;
 esac
-if [[ "$component" != web ]]; then
+if [[ "$component" == web ]]; then
+  dockerfile=deploy/railway/web.Dockerfile
+  test -s "$context_root/.output/server/index.mjs"
+elif [[ -z "$binary" ]]; then
+  echo "Release component $component has no prebuilt binary to package." >&2
+  exit 2
+else
   test -x "$context_root/bin/$binary"
 fi
 if [[ "$component" == api ]]; then

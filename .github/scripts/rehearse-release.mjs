@@ -141,8 +141,7 @@ async function main() {
         await processTask(process.execPath, ['.github/scripts/deploy-railway-image.mjs', serviceId,
           prepared.components['media-worker'].image], deploymentEnv).done;
       } else {
-        await processTask('bash', ['.github/scripts/deploy-railway.sh', serviceId,
-          component === 'cache' ? 'cache-service' : component === 'git-router' ? 'repo-router' : component === 'run-worker' ? 'worker' : component === 'media-api' ? 'media' : component], deploymentEnv).done;
+        await processTask('bash', ['.github/scripts/deploy-railway.sh', serviceId], deploymentEnv).done;
       }
       const records = (await readFile(resolve(directory, 'deployments.ndjson'), 'utf8'))
         .trim().split('\n').map(JSON.parse);

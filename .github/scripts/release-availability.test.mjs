@@ -513,7 +513,7 @@ function readiness(service, checks = []) {
 }
 
 function homepage() {
-  return "<!doctype html><title>Scope</title><h1>One repository. <span>You choose</span> what’s public.</h1>";
+  return '<!doctype html><title>Scope</title><main data-scope-page="landing"><h1>Landing</h1></main>';
 }
 
 function html(response, body) {

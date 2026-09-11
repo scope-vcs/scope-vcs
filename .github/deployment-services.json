@@ -10,35 +10,48 @@
   "services": {
     "cache": {
       "name": "scope-cache",
-      "id": "668d47df-8f68-4f96-b52f-7c02324829e3"
+      "id": "668d47df-8f68-4f96-b52f-7c02324829e3",
+      "sourceDirectory": "cache-service",
+      "binary": "scope-cache-service"
     },
     "run-worker": {
       "name": "scope-run-worker",
-      "id": "a474a0d1-3000-4a95-9ca3-cd3a7f3ef669"
+      "id": "a474a0d1-3000-4a95-9ca3-cd3a7f3ef669",
+      "sourceDirectory": "worker",
+      "binary": "scope-worker"
     },
     "git-router": {
       "name": "scope-git-router",
-      "id": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c"
+      "id": "30f8e9d2-6d66-4f88-ad96-a65e1bba503c",
+      "sourceDirectory": "repo-router",
+      "binary": "scope-repo-router"
     },
     "media-api": {
       "name": "scope-media-api",
-      "id": "6d7b48da-e52e-47bb-b4af-d6fc2d03aec3"
+      "id": "6d7b48da-e52e-47bb-b4af-d6fc2d03aec3",
+      "sourceDirectory": "media-service",
+      "binary": "scope-media-service"
     },
     "media-worker": {
       "name": "scope-media-worker",
-      "id": "8aaade33-a730-408b-bab3-298119369420"
+      "id": "8aaade33-a730-408b-bab3-298119369420",
+      "sourceDirectory": "media-worker"
     },
     "api": {
       "name": "scope-api",
-      "id": "9456cd8d-40bd-489a-a181-72b7f777c4a8"
+      "id": "9456cd8d-40bd-489a-a181-72b7f777c4a8",
+      "sourceDirectory": "api",
+      "binary": "scope-vcs"
     },
     "web": {
       "name": "scope-web",
-      "id": "df831355-3056-4d1a-a4be-37735fb83d00"
+      "id": "df831355-3056-4d1a-a4be-37735fb83d00",
+      "sourceDirectory": "web"
     },
     "cli-downloads": {
       "name": "scope-cli-downloads",
-      "id": "a212bccb-ed1a-4574-a031-2b0183e08a2d"
+      "id": "a212bccb-ed1a-4574-a031-2b0183e08a2d",
+      "sourceDirectory": "cli"
     }
   },
   "mediaResources": {

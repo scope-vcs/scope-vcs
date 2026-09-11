@@ -131,12 +131,7 @@ jobs:
           if [[ "$SCOPE_DEPLOY_MEDIA_WORKER" == "1" ]]; then
             node .github/scripts/deploy-railway-image.mjs configure-registry "$SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID"
           fi
-          bash .github/scripts/deploy-monitored-railway.sh backend bash .github/scripts/deploy-backend-railway.sh \
-            api \
-            worker \
-            cache-service \
-            repo-router \
-            media
+          bash .github/scripts/deploy-monitored-railway.sh backend bash .github/scripts/deploy-backend-railway.sh
 
       - name: Read maintenance duration warning
         id: warning

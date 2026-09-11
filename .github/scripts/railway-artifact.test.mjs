@@ -183,7 +183,6 @@ test('release package naming has one validated manifest owner', () => {
     ['run-worker', 'worker', 'scope-worker'],
     ['git-router', 'router', 'scope-repo-router'],
     ['media-api', 'media', 'scope-media-service'],
-    ['cli-downloads', 'cli', 'scope-cli-service'],
   ]) {
     assert.equal(releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', component), `ghcr.io/scope-vcs/scope-vcs/railway-private-${imageSuffix}`);
     assert.equal(artifactDeploymentInput(component, release().components.api, config).startCommand, `/app/bin/${binary}`);

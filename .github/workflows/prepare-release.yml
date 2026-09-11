@@ -107,13 +107,7 @@ jobs:
               root=".railway-prepared/$component"
               mkdir -p "$root/bin"
               cp artifacts/backend/bin/LICENSE artifacts/backend/bin/NOTICE artifacts/backend/bin/third-party-rust.txt "$root/bin/"
-              case "$component" in
-                api) binary=scope-vcs ;;
-                run-worker) binary=scope-worker ;;
-                cache) binary=scope-cache-service ;;
-                git-router) binary=scope-repo-router ;;
-                media-api) binary=scope-media-service ;;
-              esac
+              binary="$(jq -er --arg component "$component" '.services[$component].binary' .github/deployment-services.json)"
               install -m 0755 "artifacts/backend/bin/$binary" "$root/bin/$binary"
               if [[ "$component" == api ]]; then
                 install -m 0755 "$SCOPE_MAINTENANCE_BINARY" "$root/bin/scope-maintenance"

@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-api_upload_root="${1:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
-worker_upload_root="${2:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
-cache_upload_root="${3:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
-router_upload_root="${4:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
-media_upload_root="${5:?usage: deploy-backend-railway.sh <api-root> <worker-root> <cache-root> <router-root> <media-root>}"
 maintenance_binary="${SCOPE_MAINTENANCE_BINARY:-./target/release/scope-maintenance}"
 environment="${SCOPE_RAILWAY_ENVIRONMENT_ID:?SCOPE_RAILWAY_ENVIRONMENT_ID is required}"
 api_service="${SCOPE_RAILWAY_API_SERVICE_ID:?SCOPE_RAILWAY_API_SERVICE_ID is required}"
@@ -300,14 +295,13 @@ restore_old_release() {
 deploy_release() {
   local component="$1"
   local service_name="$2"
-  local upload_root="$3"
   local verified_sha
   verified_sha="$(successful_deployment_field "$component" sourceSha)"
   SCOPE_DEPLOYMENT_COMPONENT="$component" \
     SCOPE_DEPLOYMENT_EVIDENCE_PATH="$pending_evidence_path" \
     SCOPE_DEFER_SERVICE_HEALTH=1 \
     SCOPE_VERIFIED_SUCCESSFUL_SHA="$verified_sha" \
-    bash .github/scripts/deploy-railway.sh "$service_name" "$upload_root"
+    bash .github/scripts/deploy-railway.sh "$service_name"
 }
 
 pending_deployment_id() {
@@ -325,10 +319,9 @@ process.stdout.write(evidence?.evidenceId || "");
 activate_release() {
   local component="$1"
   local service_name="$2"
-  local upload_root="$3"
   local actual_deployment_id expected_deployment_id
   restore_candidate_configuration "$component"
-  deploy_release "$component" "$service_name" "$upload_root"
+  deploy_release "$component" "$service_name"
   expected_deployment_id="$(pending_deployment_id "$component")"
   [[ -n "$expected_deployment_id" ]] \
     || expected_deployment_id="$(require_successful_deployment_id "$component")"
@@ -340,7 +333,7 @@ activate_release() {
   if [[ "$(running_replicas "$service_name")" == "0" ]]; then
     deployment_action Restart "$service_name" "$expected_deployment_id"
   fi
-  wait_for_service_health "$service_name" "$expected_deployment_id" 1
+  wait_for_service_health "$service_name" "$expected_deployment_id" "$(railway_config_path "$component")"
 }
 
 activate_image_release() {
@@ -377,15 +370,15 @@ discard_pending_evidence() {
 
 deploy_selected_releases() {
   if [[ "$deploy_cache_requested" == "1" ]]; then
-    activate_release cache "$cache_service" "$cache_upload_root"
+    activate_release cache "$cache_service"
     promote_pending_evidence
   fi
   if [[ "$deploy_worker_requested" == "1" ]]; then
-    activate_release run-worker "$worker_service" "$worker_upload_root"
+    activate_release run-worker "$worker_service"
     promote_pending_evidence
   fi
   if [[ "$deploy_media_requested" == "1" ]]; then
-    activate_release media-api "$media_service" "$media_upload_root"
+    activate_release media-api "$media_service"
     promote_pending_evidence
   fi
   if [[ "$deploy_media_worker_requested" == "1" ]]; then
@@ -393,7 +386,7 @@ deploy_selected_releases() {
     promote_pending_evidence
   fi
   if [[ "$deploy_api_requested" == "1" ]]; then
-    activate_release api "$api_service" "$api_upload_root"
+    activate_release api "$api_service"
     promote_pending_evidence
   fi
 }
@@ -408,29 +401,29 @@ deploy_and_reopen() {
   # first so the failure handler stops whichever deployment the provider currently reports.
   cutover_phase activating-cache
   cache_closed=0
-  activate_release cache "$cache_service" "$cache_upload_root"
+  activate_release cache "$cache_service"
   cutover_phase activating-worker
   worker_closed=0
-  activate_release run-worker "$worker_service" "$worker_upload_root"
+  activate_release run-worker "$worker_service"
   cutover_phase activating-media
   media_closed=0
-  activate_release media-api "$media_service" "$media_upload_root"
+  activate_release media-api "$media_service"
   cutover_phase activating-media-worker
   media_worker_closed=0
   activate_image_release media-worker "$media_worker_service" "$media_worker_image"
   cutover_phase activating-api
   api_closed=0
-  activate_release api "$api_service" "$api_upload_root"
+  activate_release api "$api_service"
   maintenance_read verify
   cutover_phase activating-router
-  activate_release git-router "$router_service" "$router_upload_root"
+  activate_release git-router "$router_service"
   assert_router_topology
   cutover_phase activating-web
   restore_candidate_configuration web
-  deploy_release web "$web_service" web
+  deploy_release web "$web_service"
   local web_deployment_id
   web_deployment_id="$(pending_deployment_id web)"
-  wait_for_service_health "$web_service" "$web_deployment_id" 1
+  wait_for_service_health "$web_service" "$web_deployment_id" "$(railway_config_path web)"
   mark_maintenance_end
   # Every database writer forms one cutover. Publish their evidence only after all writers are healthy
   # so the durable ledger cannot claim a deployment that the failure trap subsequently closes.
@@ -467,6 +460,7 @@ leave_failure_state() {
 }
 trap 'leave_failure_state $?' EXIT
 
+source .github/scripts/railway-service-health.sh
 source .github/scripts/railway-backend-control.sh
 source .github/scripts/release-maintenance-gates.sh
 source .github/scripts/release-cutover.sh
@@ -556,7 +550,7 @@ case "$plan_status" in
       fi
     done
     if [[ "$deploy_router_requested" == "1" ]]; then
-      activate_release git-router "$router_service" "$router_upload_root"
+      activate_release git-router "$router_service"
       assert_router_topology
       promote_pending_evidence
     elif ! assert_router_topology || ! carried_service_is_healthy git-router "$router_service"; then
