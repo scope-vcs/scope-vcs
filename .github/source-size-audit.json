@@ -57,11 +57,6 @@
       "reason": "Durable evaluation input, trigger selection, atomic run enqueue, source release, and workflow tests form one job."
     },
     {
-      "path": "crates/scope-postgres/src/db/request_discussions.rs",
-      "owner": "request discussion persistence",
-      "reason": "Discussion and reply mutations, visibility, read state, attachment binding, and notifications share the same request discussion transaction boundary."
-    },
-    {
       "path": "crates/scope-postgres/src/db/request_media/cleanup.rs",
       "owner": "request media deletion lifecycle",
       "reason": "Request and repository tombstones, orphan inventory, claim revalidation, lease grace, and reconciliation share one deletion-wins lock order; row mapping and supporting SQL are already isolated in cleanup_support."

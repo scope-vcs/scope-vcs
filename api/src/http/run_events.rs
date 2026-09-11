@@ -181,12 +181,11 @@ async fn stream_run_events(
             continue;
         }
         if !terminal || !has_full_page {
-            let response = match run_response(run, &snapshot.jobs, snapshot.logs_truncated)
-                .and_then(|response| serde_json::to_string(&response).map_err(ApiError::internal))
+            let response = match serde_json::to_string(&run_response(run, snapshot.logs_truncated))
             {
                 Ok(response) => response,
                 Err(error) => {
-                    send_stream_error(&sender, error).await;
+                    send_stream_error(&sender, ApiError::internal(error)).await;
                     return;
                 }
             };

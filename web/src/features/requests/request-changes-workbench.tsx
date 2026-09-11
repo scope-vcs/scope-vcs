@@ -17,7 +17,6 @@ import {
 import { HistoryWorkbench } from '@/features/history/history-workbench'
 import {
   resourceToDiffState,
-  type CommitDetailState,
   type CommitFileDiffState,
 } from '@/features/history/history-state'
 import { useCachedResource } from '@/lib/use-cached-resource'
@@ -124,24 +123,24 @@ export function RequestChangesWorkbench({
     ) : undefined,
     [discussionReferences, model.selectedCommitSummary, model.selectedRevision, params, references, revisions.has_earlier_revisions],
   )
-  const emptyDescription = model.commitState.status === 'failed'
-    ? model.commitState.error ?? 'Request changes are unavailable.'
+  const emptyDescription = model.commitError !== null
+    ? model.commitError
     : 'Changes appear here after the request branch is pushed.'
-  const emptyTitle = model.commitState.status === 'failed'
+  const emptyTitle = model.commitError !== null
     ? 'Request changes unavailable'
     : 'No request changes yet'
 
   return (
     <HistoryWorkbench
       commitContext={commitContext}
-      commitState={model.commitState}
+      commit={model.commit}
+      commitError={model.commitError}
       commits={model.commits}
       diffIdentity={model.diffIdentity}
       emptyDescription={emptyDescription}
       emptyTitle={emptyTitle}
       fileDiffState={model.fileDiffState}
       onCloseDiff={model.closeDiff}
-      onRetryCommit={model.retryCommit}
       onRetryDiff={model.retryDiff}
       onSelectCommit={model.selectCommit}
       onSelectFile={model.selectFile}
@@ -282,11 +281,6 @@ function useRequestChangesModel({
     load: loadSelectedDiff,
     resource: historyDiffResource,
   })
-  const commitState: CommitDetailState = selection.error
-    ? { commit: null, error: selection.error, status: 'failed' }
-    : selectedCommit
-      ? { commit: selectedCommit, error: null, status: 'loaded' }
-      : { commit: null, error: null, status: 'idle' }
   const fileDiffState: CommitFileDiffState =
     selectedFilePath && selectedCommit && !selectedFile
       ? {
@@ -313,10 +307,10 @@ function useRequestChangesModel({
   return {
     closeDiff: () => replaceSelection(selectedRevision, selectedCommitOid, null),
     commits,
-    commitState,
+    commit: selectedCommit,
+    commitError: selection.error,
     diffIdentity,
     fileDiffState,
-    retryCommit: undefined,
     retryDiff: selectedFilePath && selectedCommit && !selectedFile
       ? undefined
       : diffResource.retry,

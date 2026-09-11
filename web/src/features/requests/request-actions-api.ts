@@ -1,10 +1,7 @@
+import { requestRoute } from '@/api/request-route'
 import { createApiClient } from '@/api/client'
 import type { RequestParams } from '@/api/types'
-import type {
-  RequestInviteeMutationResponse,
-  RequestMutationResponse,
-} from '@/api/types.generated'
-import { ApiRouteTemplates, buildApiPath } from '@/api/types.generated'
+import { ApiRouteTemplates } from '@/api/types.generated'
 import { apiValidators } from '@/api/validators.generated'
 
 export type RequestActionCommand =
@@ -30,17 +27,19 @@ export async function performRequestActionForRequest(
 
   switch (input.action) {
     case 'submit':
-      return mutationResult(await api.post(
+      await api.post(
         requestRoute(ApiRouteTemplates.repoRequestSubmit, input),
         apiValidators.RequestMutationResponse,
         { ...mutationOptions, body: {} },
-      ))
+      )
+      break
     case 'merge':
-      return mutationResult(await api.post(
+      await api.post(
         requestRoute(ApiRouteTemplates.repoRequestMerge, input),
         apiValidators.RequestMutationResponse,
         mutationOptions,
-      ))
+      )
+      break
     case 'close': {
       const result = await api.delete(
         requestRoute(ApiRouteTemplates.repoRequest, input),
@@ -50,39 +49,26 @@ export async function performRequestActionForRequest(
       return { deleted: result.deleted }
     }
     case 'add_invitee':
-      return inviteeResult(await api.put(
+      await api.put(
         requestRoute(ApiRouteTemplates.repoRequestInvitees, input),
         apiValidators.RequestInviteeMutationResponse,
         { ...mutationOptions, body: { handle: input.handle } },
-      ))
+      )
+      break
     case 'remove_invitee':
-      return inviteeResult(await api.delete(
+      await api.delete(
         requestRoute(ApiRouteTemplates.repoRequestInvitees, input),
         apiValidators.RequestInviteeMutationResponse,
         { ...mutationOptions, body: { handle: input.handle } },
-      ))
+      )
+      break
     case 'leave':
       await api.delete(
         requestRoute(ApiRouteTemplates.repoRequestInviteesMe, input),
         apiValidators.LeaveRequestResponse,
         mutationOptions,
       )
-      return { deleted: false }
+      break
   }
-}
-
-function requestRoute(template: string, data: RequestParams) {
-  return buildApiPath(template, {
-    owner: data.owner,
-    repo: data.repo,
-    request_id: data.request_id,
-  })
-}
-
-function mutationResult(_result: RequestMutationResponse): RequestActionResult {
-  return { deleted: false }
-}
-
-function inviteeResult(_result: RequestInviteeMutationResponse): RequestActionResult {
   return { deleted: false }
 }

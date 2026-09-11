@@ -64,11 +64,11 @@ pub fn router(state: AppState, allowed_origin: Option<&str>) -> anyhow::Result<R
         .route(MEDIA_UPLOAD_PART, put(handlers::put_upload_part))
         .route(
             MEDIA_ATTACHMENT_ORIGINAL,
-            get(handlers::get_original).head(handlers::head_original),
+            get(handlers::original).head(handlers::original),
         )
         .route(
             MEDIA_ATTACHMENT_DERIVATIVE,
-            get(handlers::get_derivative).head(handlers::head_derivative),
+            get(handlers::derivative).head(handlers::derivative),
         )
         .layer(middleware::from_fn(redacted_access_log))
         .with_state(state);

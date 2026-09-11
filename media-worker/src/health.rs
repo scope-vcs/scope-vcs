@@ -15,8 +15,7 @@ pub struct WorkerHealth {
 
 struct HealthState {
     codecs_ready: AtomicBool,
-    schema_ready: AtomicBool,
-    storage_ready: AtomicBool,
+    dependencies_ready: AtomicBool,
     processing_poll_unix: AtomicU64,
     cleanup_poll_unix: AtomicU64,
     processing_active: AtomicBool,
@@ -29,8 +28,7 @@ impl WorkerHealth {
         Self {
             state: Arc::new(HealthState {
                 codecs_ready: AtomicBool::new(false),
-                schema_ready: AtomicBool::new(false),
-                storage_ready: AtomicBool::new(false),
+                dependencies_ready: AtomicBool::new(false),
                 processing_poll_unix: AtomicU64::new(0),
                 cleanup_poll_unix: AtomicU64::new(0),
                 processing_active: AtomicBool::new(false),
@@ -45,13 +43,13 @@ impl WorkerHealth {
     }
 
     pub fn mark_dependencies_ready(&self) {
-        self.state.schema_ready.store(true, Ordering::Release);
-        self.state.storage_ready.store(true, Ordering::Release);
+        self.state.dependencies_ready.store(true, Ordering::Release);
     }
 
     pub fn mark_dependencies_waiting(&self) {
-        self.state.schema_ready.store(false, Ordering::Release);
-        self.state.storage_ready.store(false, Ordering::Release);
+        self.state
+            .dependencies_ready
+            .store(false, Ordering::Release);
     }
 
     pub fn mark_processing_poll(&self, now_unix: u64) {
@@ -66,20 +64,12 @@ impl WorkerHealth {
             .store(now_unix, Ordering::Release);
     }
 
-    pub fn processing_activity(&self) -> ActivityGuard {
-        self.state.processing_active.store(true, Ordering::Release);
-        ActivityGuard {
-            state: Arc::clone(&self.state),
-            kind: ActivityKind::Processing,
-        }
+    pub fn processing_activity(&self) -> ActivityGuard<'_> {
+        ActivityGuard::start(&self.state.processing_active)
     }
 
-    pub fn cleanup_activity(&self) -> ActivityGuard {
-        self.state.cleanup_active.store(true, Ordering::Release);
-        ActivityGuard {
-            state: Arc::clone(&self.state),
-            kind: ActivityKind::Cleanup,
-        }
+    pub fn cleanup_activity(&self) -> ActivityGuard<'_> {
+        ActivityGuard::start(&self.state.cleanup_active)
     }
 
     pub async fn serve(self, port: u16) -> anyhow::Result<()> {
@@ -98,8 +88,7 @@ impl WorkerHealth {
 
     fn ready_at(&self, now_unix: u64) -> bool {
         self.state.codecs_ready.load(Ordering::Acquire)
-            && self.state.schema_ready.load(Ordering::Acquire)
-            && self.state.storage_ready.load(Ordering::Acquire)
+            && self.state.dependencies_ready.load(Ordering::Acquire)
             && (self.state.processing_active.load(Ordering::Acquire)
                 || recent(
                     &self.state.processing_poll_unix,
@@ -115,23 +104,18 @@ impl WorkerHealth {
     }
 }
 
-pub struct ActivityGuard {
-    state: Arc<HealthState>,
-    kind: ActivityKind,
+pub struct ActivityGuard<'a>(&'a AtomicBool);
+
+impl<'a> ActivityGuard<'a> {
+    fn start(active: &'a AtomicBool) -> Self {
+        active.store(true, Ordering::Release);
+        Self(active)
+    }
 }
 
-enum ActivityKind {
-    Processing,
-    Cleanup,
-}
-
-impl Drop for ActivityGuard {
+impl Drop for ActivityGuard<'_> {
     fn drop(&mut self) {
-        match self.kind {
-            ActivityKind::Processing => &self.state.processing_active,
-            ActivityKind::Cleanup => &self.state.cleanup_active,
-        }
-        .store(false, Ordering::Release);
+        self.0.store(false, Ordering::Release);
     }
 }
 

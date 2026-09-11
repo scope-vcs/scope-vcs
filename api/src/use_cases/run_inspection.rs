@@ -1,9 +1,6 @@
 use crate::{error::ApiError, state::AppState};
-use scope_domain::{
-    repository::access::RepositoryAccessContext,
-    runs::{job::RunJob, run::Run},
-};
-use scope_postgres::db::{RunDetail, StepLogCursor, StoredRunLog};
+use scope_domain::{repository::access::RepositoryAccessContext, runs::run::Run};
+use scope_postgres::db::{RunDetail, RunSnapshot, StepLogCursor, StoredRunLog};
 
 pub(crate) struct RunStepLogs {
     pub(crate) logs: Vec<StoredRunLog>,
@@ -11,12 +8,6 @@ pub(crate) struct RunStepLogs {
     pub(crate) logs_truncated: bool,
     pub(crate) has_earlier: bool,
     pub(crate) has_more: bool,
-}
-
-pub(crate) struct InspectedRun {
-    pub(crate) run: Run,
-    pub(crate) jobs: Vec<RunJob>,
-    pub(crate) logs_truncated: bool,
 }
 
 pub(crate) async fn require_repo_member(
@@ -61,19 +52,14 @@ pub(crate) async fn inspect_run(
     owner: &str,
     repo_name: &str,
     run_id: &str,
-) -> Result<InspectedRun, ApiError> {
+) -> Result<RunSnapshot, ApiError> {
     require_run_access(state, user_id, owner, repo_name, run_id).await?;
-    let snapshot = state
+    state
         .metadata
         .runs()
         .run_snapshot(run_id)
         .await?
-        .ok_or_else(|| ApiError::not_found("run not found"))?;
-    Ok(InspectedRun {
-        run: snapshot.run,
-        jobs: snapshot.jobs,
-        logs_truncated: snapshot.logs_truncated,
-    })
+        .ok_or_else(|| ApiError::not_found("run not found"))
 }
 
 pub(crate) async fn inspect_run_detail(

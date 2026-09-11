@@ -217,7 +217,7 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
         .unwrap()
         .record
         .change_version;
-    let (secret, token_hash) = crate::auth::tokens::generate_repository_invite_token().unwrap();
+    let (_, token_hash) = crate::auth::tokens::generate_repository_invite_token().unwrap();
     let invite = state
         .metadata
         .repositories()
@@ -254,15 +254,20 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
         .await
         .unwrap();
     assert!(revoked.change_version > committed_version);
-    let expected_url = format!("https://app.example.com/invites/{secret}");
+    let expected_invite = invite.value.clone();
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
     let response = crate::use_cases::repository_collaboration::publish_committed_mutation(
         &state,
-        invite.map(|invite| (invite.id, expected_url.clone())),
+        invite,
         RepoChangeReason::InviteUpdated,
     )
     .await;
-    assert_eq!(response, ("invite_version".to_string(), expected_url));
+    assert_eq!(response, expected_invite);
+    assert_eq!(response.id, "invite_version");
+    assert_eq!(
+        response.state,
+        scope_domain::repository::collaboration::RepositoryInviteState::Pending
+    );
     let event = events.recv().await.unwrap();
     assert_eq!(event.version, committed_version);
     assert_eq!(

@@ -100,12 +100,11 @@ pub use request_rows::{RequestListPageQuery, RequestListRow};
 mod request_media;
 mod request_merge;
 pub use request_media::{
-    AuthorizedRequestAttachment, CompleteRequestAttachmentProcessingCommand,
-    CompletedRequestAttachmentDerivative, CompletedRequestMediaManifest,
-    FailRequestAttachmentProcessingCommand, FinishRequestAttachmentUploadCommand,
-    MediaLeaseMutation, PrepareRequestAttachmentCommand, PreparedRequestAttachment,
-    RequestAttachmentCleanupReason, RequestMediaChunk, RequestMediaManifest,
-    RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+    CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
+    CompletedRequestMediaManifest, FailRequestAttachmentProcessingCommand,
+    FinishRequestAttachmentUploadCommand, MediaLeaseMutation, PrepareRequestAttachmentCommand,
+    PreparedRequestAttachment, RequestAttachmentCleanupReason, RequestMediaChunk,
+    RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
     StoredRequestAttachmentPart, ValidateRequestAttachmentSourceCommand,
     ValidatedRequestAttachmentSource,
 };
@@ -132,6 +131,7 @@ pub use run_dispatch::CloudTaskStop;
 pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
 pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
 pub use run_log_writes::AppendRunLogResult;
+pub use run_operations::RunSnapshot;
 pub use runs::{DispatchClaim, EnqueueRunResult};
 #[cfg(any(
     test,

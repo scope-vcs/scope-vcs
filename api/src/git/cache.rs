@@ -33,9 +33,9 @@ pub(crate) struct RepositoryGitCache {
     max_bytes: usize,
 }
 
+#[derive(Debug)]
 pub(crate) struct GitRepoHandle {
     path: PathBuf,
-    _lease: RepositoryGitCacheLease,
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -43,10 +43,6 @@ struct AppliedRepositoryFrontier {
     version: u8,
     incarnation: RepositoryIncarnation,
     push_sequence: u64,
-}
-
-struct RepositoryGitCacheLease {
-    path: PathBuf,
 }
 
 fn cache_users() -> &'static Mutex<BTreeMap<PathBuf, usize>> {
@@ -110,10 +106,7 @@ impl RepositoryGitCache {
             touch_if_materialized(&path)?;
             *users.entry(path.clone()).or_default() += 1;
         }
-        Ok(GitRepoHandle {
-            path: path.clone(),
-            _lease: RepositoryGitCacheLease { path },
-        })
+        Ok(GitRepoHandle { path })
     }
 
     pub(crate) fn note_applied(
@@ -282,15 +275,6 @@ fn prune_stale_materializations(
     Ok(())
 }
 
-impl std::fmt::Debug for GitRepoHandle {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("GitRepoHandle")
-            .field("path", &self.path)
-            .finish_non_exhaustive()
-    }
-}
-
 impl Deref for GitRepoHandle {
     type Target = Path;
 
@@ -305,7 +289,7 @@ impl AsRef<Path> for GitRepoHandle {
     }
 }
 
-impl Drop for RepositoryGitCacheLease {
+impl Drop for GitRepoHandle {
     fn drop(&mut self) {
         if let Ok(mut users) = cache_users().lock() {
             match users.get_mut(&self.path) {

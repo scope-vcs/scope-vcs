@@ -755,7 +755,7 @@ fn codec_user_message(kind: CodecFailureKind) -> &'static str {
 
 async fn delete_parts(storage: &MediaStorage, parts: &[StagedMediaPart]) {
     for part in parts {
-        if let Err(error) = storage.delete_staged_part(part).await {
+        if let Err(error) = storage.delete_object_key(&part.object_key).await {
             tracing::warn!(%error, object_key = %part.object_key, "failed to discard staged derivative part");
         }
     }

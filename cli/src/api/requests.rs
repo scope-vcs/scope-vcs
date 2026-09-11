@@ -1,6 +1,5 @@
 use super::*;
 use crate::api::ApiSession;
-use anyhow::Context;
 use reqwest::blocking::RequestBuilder;
 use serde::de::DeserializeOwned;
 
@@ -58,15 +57,8 @@ pub fn list_requests(
 
 pub fn get_request(
     api: ApiSession<'_>,
-    owner: &str,
-    repo: &str,
-    request_id: &str,
+    target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestDetailResponse> {
-    let target = RequestTarget {
-        owner,
-        repo,
-        request_id,
-    };
     execute_request(
         api.request(reqwest::Method::GET, request_path(target)),
         target,
@@ -123,15 +115,8 @@ pub fn request_file_diff(
 
 pub fn close_request(
     api: ApiSession<'_>,
-    owner: &str,
-    repo: &str,
-    request_id: &str,
+    target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestCloseResponse> {
-    let target = RequestTarget {
-        owner,
-        repo,
-        request_id,
-    };
     execute_request(
         api.request(reqwest::Method::DELETE, request_path(target)),
         target,
@@ -392,8 +377,7 @@ fn execute_repo_request<R: DeserializeOwned>(
     action: &str,
 ) -> anyhow::Result<R> {
     let context = format!("{action} for {owner}/{repo}");
-    let response = request.send().with_context(|| context.clone())?;
-    decode_json_response(response, &context)
+    execute_json_request(request, &context)
 }
 
 pub(super) fn execute_request<R: DeserializeOwned>(
@@ -405,8 +389,7 @@ pub(super) fn execute_request<R: DeserializeOwned>(
         "{action} {} for {}/{}",
         target.request_id, target.owner, target.repo
     );
-    let response = request.send().with_context(|| context.clone())?;
-    decode_json_response(response, &context)
+    execute_json_request(request, &context)
 }
 
 #[cfg(test)]
@@ -464,14 +447,9 @@ mod tests {
             r#"{"code":"internal","message":"Scope hit an internal error.","error_reference":"err_0123456789abcdef0123456789abcdef\u001b[31m","retryable":false}"#,
         );
 
-        let error = get_request(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            "owner",
-            "repo",
-            "req_one",
-        )
-        .unwrap_err()
-        .to_string();
+        let error = get_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
+            .unwrap_err()
+            .to_string();
 
         assert_eq!(
             error,

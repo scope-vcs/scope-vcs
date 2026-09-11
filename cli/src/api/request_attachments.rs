@@ -1,4 +1,4 @@
-use super::{RequestTarget, decode_json_response};
+use super::{RequestTarget, execute_json_request};
 use crate::api::ApiSession;
 use anyhow::{Context, bail};
 use reqwest::{Url, blocking::Client};
@@ -98,14 +98,14 @@ pub fn upload_request_attachment_part(
     bytes: Vec<u8>,
 ) -> anyhow::Result<RequestAttachmentPartReceiptResponse> {
     let url = upload_part_url(media_base_url, upload_id, part_number)?;
-    let response = client
-        .put(url)
-        .bearer_auth(grant)
-        .timeout(Duration::from_secs(120))
-        .body(bytes)
-        .send()
-        .context("upload request attachment part")?;
-    decode_json_response(response, "upload request attachment part")
+    execute_json_request(
+        client
+            .put(url)
+            .bearer_auth(grant)
+            .timeout(Duration::from_secs(120))
+            .body(bytes),
+        "upload request attachment part",
+    )
 }
 
 fn upload_part_url(media_base_url: &str, upload_id: &str, part_number: u32) -> anyhow::Result<Url> {

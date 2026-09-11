@@ -94,6 +94,13 @@ pub fn http_client() -> anyhow::Result<Client> {
         .context("build HTTP client")
 }
 
+pub(crate) fn execute_json_request<T: DeserializeOwned>(
+    request: reqwest::blocking::RequestBuilder,
+    context: &str,
+) -> anyhow::Result<T> {
+    decode_json_response(request.send().with_context(|| context.to_owned())?, context)
+}
+
 pub(crate) fn decode_json_response<T: DeserializeOwned>(
     response: Response,
     context: &str,
@@ -243,9 +250,7 @@ pub fn validate_session_token(api: ApiSession<'_>) -> anyhow::Result<Option<User
 
     let session: AccountSessionResponse =
         decode_json_response(response, "validate saved Scope login")?;
-    let AccountSessionResponse { identity, user, .. } = session;
-    drop(identity);
-    Ok(user)
+    Ok(session.user)
 }
 
 pub fn revoke_cli_session(api: ApiSession<'_>) -> anyhow::Result<()> {
@@ -266,12 +271,11 @@ pub fn create_repo(api: ApiSession<'_>, name: String) -> anyhow::Result<CreateRe
         name,
         file_default_visibility: None,
     };
-    let response = api
-        .request(reqwest::Method::POST, scope_api_contract::routes::REPOS)
-        .json(&request)
-        .send()
-        .context("create Scope repository")?;
-    decode_json_response(response, "create Scope repository")
+    execute_json_request(
+        api.request(reqwest::Method::POST, scope_api_contract::routes::REPOS)
+            .json(&request),
+        "create Scope repository",
+    )
 }
 
 pub fn get_repo(
@@ -279,14 +283,13 @@ pub fn get_repo(
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepoSummaryResponse> {
-    let response = api
-        .request(
+    execute_json_request(
+        api.request(
             reqwest::Method::GET,
             scope_api_contract::routes::repo(owner, repo),
-        )
-        .send()
-        .with_context(|| format!("load Scope repo {owner}/{repo}"))?;
-    decode_json_response(response, &format!("load Scope repo {owner}/{repo}"))
+        ),
+        &format!("load Scope repo {owner}/{repo}"),
+    )
 }
 
 pub fn get_repo_config(
@@ -294,15 +297,13 @@ pub fn get_repo_config(
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepoConfigContext> {
-    let response = api
-        .request(
+    let response: RepoConfigResponse = execute_json_request(
+        api.request(
             reqwest::Method::GET,
             scope_api_contract::routes::repo_config(owner, repo),
-        )
-        .send()
-        .with_context(|| format!("get repo config for {owner}/{repo}"))?;
-    let response: RepoConfigResponse =
-        decode_json_response(response, &format!("get repo config for {owner}/{repo}"))?;
+        ),
+        &format!("get repo config for {owner}/{repo}"),
+    )?;
     Ok(RepoConfigContext {
         config: response.config.into(),
         config_hash: response.config_hash,
@@ -316,8 +317,8 @@ pub fn create_push_intent(
     api: ApiSession<'_>,
     params: CreatePushIntentParams<'_>,
 ) -> anyhow::Result<CreatePushIntentResponse> {
-    let response = api
-        .request(
+    execute_json_request(
+        api.request(
             reqwest::Method::POST,
             scope_api_contract::routes::repo_push_intents(params.owner, params.repo),
         )
@@ -325,11 +326,7 @@ pub fn create_push_intent(
             head_oid: params.head_oid.to_string(),
             base_config_hash: params.base_config_hash.to_string(),
             config: params.config.clone().into(),
-        })
-        .send()
-        .with_context(|| format!("create push intent for {}/{}", params.owner, params.repo))?;
-    decode_json_response(
-        response,
+        }),
         &format!("create push intent for {}/{}", params.owner, params.repo),
     )
 }

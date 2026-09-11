@@ -18,6 +18,16 @@ pub struct RequestDiscussionReplyReadModel {
     pub reply_to: Option<RequestDiscussionReplyReferenceReadModel>,
 }
 
+impl RequestDiscussionReplyReadModel {
+    pub(super) fn author_user_ids(&self) -> impl Iterator<Item = String> + '_ {
+        std::iter::once(self.reply.author_user_id.clone()).chain(
+            self.reply_to
+                .as_ref()
+                .map(|target| target.author_user_id.clone()),
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RequestDiscussionReplyReferenceReadModel {
     pub id: String,

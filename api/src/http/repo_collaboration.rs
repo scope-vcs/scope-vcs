@@ -23,7 +23,6 @@ use scope_domain::{
     repository::collaboration::{RepositoryInvite, RepositoryInviteState},
     requests::{Request, RequestViewer, request_policy},
 };
-use scope_postgres::db::RepositoryCollaborationMutation;
 
 pub(crate) async fn list_repository_collaboration(
     State(state): State<AppState>,
@@ -49,45 +48,34 @@ pub(crate) async fn create_repository_invite(
     Path((owner, repo_name)): Path<(String, String)>,
     Json(input): Json<CreateRepositoryInviteRequest>,
 ) -> Result<Json<CreateRepositoryInviteResponse>, ApiError> {
-    let metadata = state.metadata.clone();
-    let mutation_owner = owner.clone();
-    let mutation_repo_name = repo_name.clone();
-    let response = mutate_owned_collaboration(
-        &state,
-        &headers,
-        &owner,
-        &repo_name,
-        RepoChangeReason::InviteUpdated,
-        |user| async move {
-            let app_origin = public_app_origin("building repository invite URL")?;
-            let (secret, token_hash) = generate_repository_invite_token()?;
-            let now = unix_now()?;
-            let invite_id = format!("repo_invite_{}", token_hash.replace([':', '/'], "_"));
-            let invite = metadata
-                .repositories()
-                .create_repository_invite(
-                    scope_postgres::db::CreateRepositoryInviteMutation {
-                        owner: mutation_owner,
-                        name: mutation_repo_name,
-                        owner_user: user.clone(),
-                        invited_email: input.email,
-                        permissions: input.permissions.into(),
-                        invite_id,
-                        token_hash,
-                        now_unix: now,
-                    },
-                    &crate::persistence_ids::generate_persistence_id,
-                )
-                .await?;
-            Ok(invite.map(|invite| CreateRepositoryInviteResponse {
-                invite: repository_invite_response(&invite),
-                invite_url: format!("{}/invites/{}", app_origin.trim_end_matches('/'), secret),
-            }))
-        },
-    )
-    .await?;
-
-    Ok(Json(response))
+    let user = require_collaboration_owner(&state, &headers, &owner, &repo_name).await?;
+    let app_origin = public_app_origin("building repository invite URL")?;
+    let (secret, token_hash) = generate_repository_invite_token()?;
+    let now = unix_now()?;
+    let invite_id = format!("repo_invite_{}", token_hash.replace([':', '/'], "_"));
+    let mutation = state
+        .metadata
+        .repositories()
+        .create_repository_invite(
+            scope_postgres::db::CreateRepositoryInviteMutation {
+                owner,
+                name: repo_name,
+                owner_user: user,
+                invited_email: input.email,
+                permissions: input.permissions.into(),
+                invite_id,
+                token_hash,
+                now_unix: now,
+            },
+            &crate::persistence_ids::generate_persistence_id,
+        )
+        .await?;
+    let invite =
+        publish_committed_mutation(&state, mutation, RepoChangeReason::InviteUpdated).await;
+    Ok(Json(CreateRepositoryInviteResponse {
+        invite: repository_invite_response(&invite),
+        invite_url: format!("{}/invites/{}", app_origin.trim_end_matches('/'), secret),
+    }))
 }
 
 pub(crate) async fn update_repository_member(
@@ -96,38 +84,27 @@ pub(crate) async fn update_repository_member(
     Path((owner, repo_name, member_user_id)): Path<(String, String, String)>,
     Json(input): Json<UpdateRepositoryMemberRequest>,
 ) -> Result<Json<RepositoryMemberResponse>, ApiError> {
-    let metadata = state.metadata.clone();
-    let mutation_owner = owner.clone();
-    let mutation_repo_name = repo_name.clone();
     let now_unix = unix_now()?;
-    let member = mutate_owned_collaboration(
-        &state,
-        &headers,
-        &owner,
-        &repo_name,
-        RepoChangeReason::MemberPermissionsChanged,
-        |user| async move {
-            let member_user = metadata.repositories().user(&member_user_id).await?;
-            let mutation = metadata
-                .repositories()
-                .update_repository_member_permissions(
-                    scope_postgres::db::UpdateRepositoryMemberPermissionsCommand {
-                        owner: mutation_owner,
-                        name: mutation_repo_name,
-                        owner_user_id: user.id,
-                        member_user_id,
-                        permissions: input.permissions.into(),
-                        now_unix,
-                    },
-                    &crate::persistence_ids::generate_persistence_id,
-                )
-                .await?;
-            Ok(mutation.map(|member| repository_member_response(&member, &member_user)))
-        },
-    )
-    .await?;
-
-    Ok(Json(member))
+    let user = require_collaboration_owner(&state, &headers, &owner, &repo_name).await?;
+    let repositories = state.metadata.repositories();
+    let member_user = repositories.user(&member_user_id).await?;
+    let mutation = repositories
+        .update_repository_member_permissions(
+            scope_postgres::db::UpdateRepositoryMemberPermissionsCommand {
+                owner,
+                name: repo_name,
+                owner_user_id: user.id,
+                member_user_id,
+                permissions: input.permissions.into(),
+                now_unix,
+            },
+            &crate::persistence_ids::generate_persistence_id,
+        )
+        .await?;
+    let member =
+        publish_committed_mutation(&state, mutation, RepoChangeReason::MemberPermissionsChanged)
+            .await;
+    Ok(Json(repository_member_response(&member, &member_user)))
 }
 
 pub(crate) async fn delete_repository_invite(
@@ -135,32 +112,21 @@ pub(crate) async fn delete_repository_invite(
     headers: HeaderMap,
     Path((owner, repo_name, invite_id)): Path<(String, String, String)>,
 ) -> Result<Json<RepositoryInviteResponse>, ApiError> {
-    let metadata = state.metadata.clone();
-    let mutation_owner = owner.clone();
-    let mutation_repo_name = repo_name.clone();
-    let invite = mutate_owned_collaboration(
-        &state,
-        &headers,
-        &owner,
-        &repo_name,
-        RepoChangeReason::InviteRevoked,
-        |user| async move {
-            metadata
-                .repositories()
-                .revoke_repository_invite(
-                    &mutation_owner,
-                    &mutation_repo_name,
-                    &user.id,
-                    &invite_id,
-                    unix_now()?,
-                    &crate::persistence_ids::generate_persistence_id,
-                )
-                .await
-                .map_err(Into::into)
-        },
-    )
-    .await?;
-
+    let user = require_collaboration_owner(&state, &headers, &owner, &repo_name).await?;
+    let mutation = state
+        .metadata
+        .repositories()
+        .revoke_repository_invite(
+            &owner,
+            &repo_name,
+            &user.id,
+            &invite_id,
+            unix_now()?,
+            &crate::persistence_ids::generate_persistence_id,
+        )
+        .await?;
+    let invite =
+        publish_committed_mutation(&state, mutation, RepoChangeReason::InviteRevoked).await;
     Ok(Json(repository_invite_response(&invite)))
 }
 
@@ -169,35 +135,23 @@ pub(crate) async fn delete_repository_member(
     headers: HeaderMap,
     Path((owner, repo_name, member_user_id)): Path<(String, String, String)>,
 ) -> Result<Json<RepositoryMemberResponse>, ApiError> {
-    let metadata = state.metadata.clone();
-    let mutation_owner = owner.clone();
-    let mutation_repo_name = repo_name.clone();
     let now_unix = unix_now()?;
-    let member = mutate_owned_collaboration(
-        &state,
-        &headers,
-        &owner,
-        &repo_name,
-        RepoChangeReason::MemberRemoved,
-        |user| async move {
-            let member_user = metadata.repositories().user(&member_user_id).await?;
-            let mutation = metadata
-                .repositories()
-                .remove_repository_member(
-                    &mutation_owner,
-                    &mutation_repo_name,
-                    &user.id,
-                    &member_user_id,
-                    now_unix,
-                    &crate::persistence_ids::generate_persistence_id,
-                )
-                .await?;
-            Ok(mutation.map(|member| repository_member_response(&member, &member_user)))
-        },
-    )
-    .await?;
-
-    Ok(Json(member))
+    let user = require_collaboration_owner(&state, &headers, &owner, &repo_name).await?;
+    let repositories = state.metadata.repositories();
+    let member_user = repositories.user(&member_user_id).await?;
+    let mutation = repositories
+        .remove_repository_member(
+            &owner,
+            &repo_name,
+            &user.id,
+            &member_user_id,
+            now_unix,
+            &crate::persistence_ids::generate_persistence_id,
+        )
+        .await?;
+    let member =
+        publish_committed_mutation(&state, mutation, RepoChangeReason::MemberRemoved).await;
+    Ok(Json(repository_member_response(&member, &member_user)))
 }
 
 pub(crate) async fn get_repository_invite(
@@ -258,23 +212,16 @@ pub(crate) async fn accept_repository_invite(
     }))
 }
 
-async fn mutate_owned_collaboration<T, F, Fut>(
+async fn require_collaboration_owner(
     state: &AppState,
     headers: &HeaderMap,
     owner: &str,
     repo_name: &str,
-    event: RepoChangeReason,
-    mutate: F,
-) -> Result<T, ApiError>
-where
-    F: FnOnce(UserAccount) -> Fut,
-    Fut: std::future::Future<Output = Result<RepositoryCollaborationMutation<T>, ApiError>>,
-{
+) -> Result<UserAccount, ApiError> {
     let user = require_scope_user(state, headers).await?;
     let repo = find_repo(state, owner, repo_name).await?;
     ensure_collaboration_owner_access(state, &repo, &user.id)?;
-    let mutation = mutate(user).await?;
-    Ok(publish_committed_mutation(state, mutation, event).await)
+    Ok(user)
 }
 
 fn ensure_collaboration_owner_access(

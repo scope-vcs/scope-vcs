@@ -1,50 +1,30 @@
 import { PanelState } from '@/components/empty-state'
-import { PendingSurface } from '@/components/pending-surface'
-import { Button } from '@/components/ui/button'
 import { historyCommitTitle } from '@/features/history/history-row-labels'
-import type { CommitDetailState } from '@/features/history/history-state'
+import type { CommitDetail } from '@/api/types'
 import { GitCommit, TriangleAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { ChangedFilesWorkbench, useChangedFileNavigation, type ChangedFilesProps } from './changed-files-workbench'
-import { CommitDetailSkeleton } from './history-commit-detail-skeleton'
 
 type CommitDetailPanelProps = ChangedFilesProps & {
   commitContext?: ReactNode
-  commitState: CommitDetailState
-  onRetryCommit?: () => void
+  commit: CommitDetail | null
+  commitError: string | null
 }
 
 export function CommitDetailPanel(props: CommitDetailPanelProps) {
-  const { commitContext, commitState, onCloseDiff, onRetryCommit, selectedFilePath } = props
+  const { commit, commitContext, commitError, onCloseDiff } = props
   const navigation = useChangedFileNavigation(onCloseDiff)
 
-  if (commitState.status === 'loading') {
-    return (
-      <PendingSurface
-        className="min-h-[340px]"
-        delay
-        label="Loading commit details"
-      >
-        <CommitDetailSkeleton showDiff={selectedFilePath !== null} />
-      </PendingSurface>
-    )
-  }
-
-  if (commitState.status === 'failed') {
+  if (commitError !== null) {
     return (
       <PanelState tone="error">
         <TriangleAlert className="size-5" />
-        <span>{commitState.error}</span>
-        {onRetryCommit && (
-          <Button onClick={onRetryCommit} size="sm" type="button" variant="secondary">
-            Retry
-          </Button>
-        )}
+        <span>{commitError}</span>
       </PanelState>
     )
   }
 
-  if (!commitState.commit) {
+  if (!commit) {
     return (
       <PanelState>
         <GitCommit className="size-5" />
@@ -53,7 +33,6 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
     )
   }
 
-  const commit = commitState.commit
   const filesTruncated = commit.files_truncated
   return (
     <div className="scope-content-enter min-w-0">

@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, ops::RangeInclusive, pin::Pin, sync::Arc};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
-    sync::{OwnedSemaphorePermit, Semaphore, mpsc},
+    sync::{Semaphore, mpsc},
 };
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 
@@ -111,14 +111,7 @@ impl MediaStorage {
                 "media object digest does not match the completed parts",
             ));
         }
-        let object = MediaObject {
-            media_type,
-            plaintext_bytes: expected_bytes,
-            sha256: actual_sha256.clone(),
-            chunks,
-        };
-        object.validate()?;
-        Ok(object)
+        MediaObject::new(media_type, expected_bytes, actual_sha256, chunks)
     }
 
     pub async fn read_range(
@@ -205,13 +198,6 @@ impl MediaStorage {
         Ok(())
     }
 
-    pub async fn delete_staged_part(
-        &self,
-        part: &StagedMediaPart,
-    ) -> Result<(), MediaStorageError> {
-        self.delete_object_key(&part.object_key).await
-    }
-
     pub async fn delete_object_key(&self, object_key: &str) -> Result<(), MediaStorageError> {
         if !object_key.starts_with("media/v1/staged/")
             || object_key.len() > 1024
@@ -221,7 +207,8 @@ impl MediaStorage {
                 "media object key is outside the staged media namespace",
             ));
         }
-        self.delete_key(object_key.to_string()).await
+        let key = object_key.to_string();
+        self.run_blocking(move |store| store.delete(&key)).await
     }
 
     async fn read_verified_chunk(&self, chunk: &MediaChunk) -> Result<Vec<u8>, MediaStorageError> {
@@ -241,10 +228,6 @@ impl MediaStorage {
         Ok(bytes)
     }
 
-    async fn delete_key(&self, key: String) -> Result<(), MediaStorageError> {
-        self.run_blocking(move |store| store.delete(&key)).await
-    }
-
     async fn run_blocking<T, F>(&self, operation: F) -> Result<T, MediaStorageError>
     where
         T: Send + 'static,
@@ -259,24 +242,16 @@ impl MediaStorage {
             .await
             .map_err(|_| MediaStorageError::internal("media blocking operation pool is closed"))?;
         let store = self.store.clone();
-        tokio::task::spawn_blocking(move || run_with_permit(permit, store, operation))
-            .await
-            .map_err(|error| {
-                MediaStorageError::internal(format!("media blocking operation failed: {error}"))
-            })?
-            .map_err(Into::into)
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            operation(store)
+        })
+        .await
+        .map_err(|error| {
+            MediaStorageError::internal(format!("media blocking operation failed: {error}"))
+        })?
+        .map_err(Into::into)
     }
-}
-
-fn run_with_permit<T, F>(
-    _permit: OwnedSemaphorePermit,
-    store: Arc<dyn ObjectStore>,
-    operation: F,
-) -> Result<T, scope_object_store::ObjectStoreError>
-where
-    F: FnOnce(Arc<dyn ObjectStore>) -> Result<T, scope_object_store::ObjectStoreError>,
-{
-    operation(store)
 }
 
 fn contiguous_chunks(

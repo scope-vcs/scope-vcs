@@ -2,7 +2,7 @@ import type { RequestParams, RequestRating, RequestRatings } from '@/api/types'
 import type { RateRequestInput } from '@/api/requests'
 import { Button } from '@/components/ui/button'
 import { Star } from 'lucide-react'
-import { type FormEvent, useReducer } from 'react'
+import { type FormEvent, useState } from 'react'
 
 type FormState = {
   error: string | null
@@ -11,28 +11,11 @@ type FormState = {
   submitting: boolean
 }
 
-type FormAction =
-  | { type: 'score_changed'; score: number }
-  | { type: 'reason_changed'; reason: string }
-  | { type: 'submission_started' }
-  | { type: 'submission_succeeded' }
-  | { type: 'submission_failed'; error: string }
-
 const initialFormState: FormState = {
   error: null,
   reason: '',
   score: 5,
   submitting: false,
-}
-
-function formReducer(state: FormState, action: FormAction): FormState {
-  switch (action.type) {
-    case 'score_changed': return { ...state, score: action.score }
-    case 'reason_changed': return { ...state, reason: action.reason }
-    case 'submission_started': return { ...state, error: null, submitting: true }
-    case 'submission_succeeded': return { ...state, reason: '', submitting: false }
-    case 'submission_failed': return { ...state, error: action.error, submitting: false }
-  }
 }
 
 export function RequestRatingsSection({
@@ -44,24 +27,22 @@ export function RequestRatingsSection({
   onRate: (input: RateRequestInput) => Promise<RequestRating>
   params: RequestParams
 }) {
-  const [{ error, reason, score, submitting }, dispatch] = useReducer(
-    formReducer,
-    initialFormState,
-  )
+  const [{ error, reason, score, submitting }, setForm] = useState(initialFormState)
   const { eligible_subject: eligibleSubject, ratings } = initial
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!eligibleSubject || submitting) return
-    dispatch({ type: 'submission_started' })
+    setForm(current => ({ ...current, error: null, submitting: true }))
     try {
       await onRate({ ...params, reason, score })
-      dispatch({ type: 'submission_succeeded' })
+      setForm(current => ({ ...current, reason: '', submitting: false }))
     } catch (cause) {
-      dispatch({
-        type: 'submission_failed',
+      setForm(current => ({
+        ...current,
         error: cause instanceof Error ? cause.message : 'Could not submit rating.',
-      })
+        submitting: false,
+      }))
     }
   }
 
@@ -97,10 +78,7 @@ export function RequestRatingsSection({
             <select
               className="h-9 rounded-md border border-input bg-background px-2 text-sm"
               disabled={submitting}
-              onChange={(event) => dispatch({
-                type: 'score_changed',
-                score: Number(event.target.value),
-              })}
+              onChange={(event) => setForm(current => ({ ...current, score: Number(event.target.value) }))}
               value={score}
             >
               {[5, 4, 3, 2, 1].map((value) => (
@@ -114,10 +92,7 @@ export function RequestRatingsSection({
               className="min-h-24 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm font-normal"
               disabled={submitting}
               maxLength={1024}
-              onChange={(event) => dispatch({
-                type: 'reason_changed',
-                reason: event.target.value,
-              })}
+              onChange={(event) => setForm(current => ({ ...current, reason: event.target.value }))}
               required
               value={reason}
             />

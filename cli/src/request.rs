@@ -154,12 +154,7 @@ fn show_request_status(
     let context = load_context(git_repo, api, remote.as_deref())?;
     let mut human_lines = repo_access_lines(&context.repo);
     if let Some(request_id) = maybe_request_id_for_context(git_repo, api, &context, request_id)? {
-        let detail = get_request(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            &request_id,
-        )?;
+        let detail = get_request(api, context.api_target(&request_id))?;
         human_lines.extend(request_detail_lines_for_response(&detail));
         return Ok(RequestCommandOutcome::new(
             "request.status",
@@ -438,12 +433,7 @@ fn close_request_branch(
         format!("Close published request {}", before.request.name)
     };
     require_confirmation(&prompt, yes, !machine_output)?;
-    let response = api_close_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )?;
+    let response = api_close_request(api, context.api_target(&request_id))?;
     let human_line = close_receipt(&request_id, &response);
     Ok(RequestCommandOutcome::new(
         "request.close",
@@ -488,13 +478,7 @@ pub fn inspect_current_request(
         return Ok(None);
     };
     Ok(Some(
-        get_request(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            &request_id,
-        )?
-        .request,
+        get_request(api, context.api_target(&request_id))?.request,
     ))
 }
 

@@ -1,3 +1,4 @@
+import { requestRoute } from '@/api/request-route'
 import { createApiClient } from '@/api/client'
 import type { RequestParams } from '@/api/types'
 import {
@@ -86,13 +87,6 @@ export function grantRequestAttachmentMedia(input: GrantAttachmentInput) {
   )
 }
 
-function requestRoute(template: string, input: RequestParams) {
-  return buildApiPath(template, {
-    owner: input.owner,
-    repo: input.repo,
-    request_id: input.request_id,
-  })
-}
 
 function attachmentRoute(template: string, input: RequestAttachmentActionInput) {
   return buildApiPath(template, {

@@ -10,8 +10,8 @@ pub(crate) struct CleanupDrainReport {
 
 impl CleanupDrainReport {
     pub(crate) fn has_failures(&self) -> bool {
-        self.repo_storage.has_failures()
-            || self.source_blobs.has_failures()
+        !self.repo_storage.failed.is_empty()
+            || !self.source_blobs.failed_object_deletes.is_empty()
             || !self.request_refs.failed.is_empty()
     }
 }
@@ -22,12 +22,6 @@ pub(crate) struct RepoStorageCleanupDrainReport {
     pub(crate) deleted: usize,
     pub(crate) retained: usize,
     pub(crate) failed: Vec<RepoStorageCleanupFailure>,
-}
-
-impl RepoStorageCleanupDrainReport {
-    fn has_failures(&self) -> bool {
-        !self.failed.is_empty()
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,12 +38,6 @@ pub(crate) struct SourceBlobCleanupDrainReport {
     pub(crate) retained: usize,
     pub(crate) skipped_referenced: usize,
     pub(crate) failed_object_deletes: Vec<SourceBlobCleanupFailure>,
-}
-
-impl SourceBlobCleanupDrainReport {
-    fn has_failures(&self) -> bool {
-        !self.failed_object_deletes.is_empty()
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

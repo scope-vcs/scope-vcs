@@ -1,3 +1,4 @@
+import { requestRoute } from '@/api/request-route'
 import { createApiClient } from '@/api/client'
 import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
 import type {
@@ -116,13 +117,6 @@ function requestPath(data: RequestParams) {
   return requestRoute(ApiRouteTemplates.repoRequest, data)
 }
 
-function requestRoute(template: string, data: RequestParams) {
-  return buildApiPath(template, {
-    owner: data.owner,
-    repo: data.repo,
-    request_id: data.request_id,
-  })
-}
 
 function requestRevisionCommitRoute(
   template: string,

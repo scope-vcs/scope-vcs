@@ -84,13 +84,7 @@ pub(crate) async fn git_http_backend_streaming(
     let writer = async move {
         let mut stream = body.into_data_stream();
         let mut written = 0usize;
-        loop {
-            let next = tokio::time::timeout_at(process_deadline, stream.next())
-                .await
-                .map_err(|_| ApiError::infrastructure_unavailable("git request upload stalled"))?;
-            let Some(chunk) = next else {
-                break;
-            };
+        while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(ApiError::bad_request)?;
             written = written
                 .checked_add(chunk.len())

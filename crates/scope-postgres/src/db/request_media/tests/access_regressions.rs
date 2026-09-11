@@ -69,7 +69,7 @@ async fn attachment_access_controls_lists_and_retry_replay() {
         assert_eq!(
             attachments
                 .iter()
-                .map(|value| value.attachment.id.as_str())
+                .map(|value| value.id.as_str())
                 .collect::<Vec<_>>(),
             expected
         );

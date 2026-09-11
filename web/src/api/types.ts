@@ -1,28 +1,19 @@
 import type {
   AccountSessionResponse,
-  BrowserLoginCompleteResponse,
   CliExchangeGrantResponse,
   CliSessionResponse,
-  CliSessionsResponse,
   CommitFileResponse,
   DeleteRepoResponse as GeneratedDeleteRepoResponse,
-  FirstPushTokenResponse,
-  FirstPushTokenStatus,
   ProjectionPreviewAudience as GeneratedProjectionPreviewAudience,
   AcceptRepositoryInviteResponse,
   CreateRepositoryInviteResponse,
-  RequestActorRole,
-  RequestAudience,
   RequestDetailResponse,
   RequestEventKind,
   RequestEventResponse,
   RequestListResponse,
   RequestListItemResponse,
-  RequestMergeabilityResponse,
-  RequestMergeabilityStatus,
   RequestMutationResponse,
   RequestRevisionListResponse,
-  RequestPermissionsResponse,
   RequestRatingResponse,
   RequestRatingsResponse,
   RequestState,
@@ -33,7 +24,6 @@ import type {
   RepoLifecycleState as GeneratedRepoLifecycleState,
   RepoSummaryResponse,
   OwnerProfileResponse,
-  RepositoryAccessResponse,
   RepositoryActor as GeneratedRepositoryActor,
   RepositoryCollaborationResponse,
   RepositoryInviteLookupResponse,
@@ -42,18 +32,14 @@ import type {
   RepositoryMemberResponse,
   RepositoryRunHistoryPageResponse,
   RepositoryRunWorkflowListResponse,
-  RepositoryRunWorkflowResponse,
   RepositoryRunDetailResponse,
   RepositoryRunAttemptResponse,
   RepositoryRunCacheResponse,
   RepositoryRunJobDetailResponse,
-  RepositoryRunJobResponse,
-  RepositoryRunJobState,
   RepositoryRunLogResponse,
   RepositoryRunStepLogPageResponse,
   RepositoryRunStepResponse,
   RepositoryRunState,
-  RepositoryRunSummaryResponse,
   RepositoryRunTerminalReason,
   RepositoryRunTrigger,
   SessionIdentity as GeneratedSessionIdentity,
@@ -74,7 +60,6 @@ export type Visibility = GeneratedVisibility
 export type VisibilityState = Visibility | 'Mixed'
 export type RepositoryActor = GeneratedRepositoryActor
 export type RepoLifecycleState = GeneratedRepoLifecycleState
-export type TokenStatus = FirstPushTokenStatus
 export type FileChangeKind = GeneratedFileChangeKind
 export type ProjectionPreviewAudience = GeneratedProjectionPreviewAudience
 export type HistoryEntryKind = GeneratedHistoryEntryKind
@@ -82,13 +67,10 @@ export type HistoryEntryKind = GeneratedHistoryEntryKind
 export type SessionIdentity = GeneratedSessionIdentity
 export type User = UserResponse
 export type AccountSession = AccountSessionResponse
-export type BrowserLoginComplete = BrowserLoginCompleteResponse
 export type CliExchangeGrant = CliExchangeGrantResponse
 export type CliSession = CliSessionResponse
-export type CliSessions = CliSessionsResponse
 export type RepoSummary = RepoSummaryResponse
 export type OwnerProfile = OwnerProfileResponse
-export type RepoAccess = RepositoryAccessResponse
 export type RepoMemberPermissions = RepositoryMemberPermissions
 export type RepoMember = RepositoryMemberResponse
 export type RepoInvite = RepositoryInviteResponse
@@ -98,23 +80,18 @@ export type RepoInviteLookup = RepositoryInviteLookupResponse
 export type AcceptRepoInviteResponse = AcceptRepositoryInviteResponse
 export type RepoFile = RepoFileResponse
 export type RepoFileContent = RepoFileContentResponse
-export type RepoRun = RepositoryRunSummaryResponse
 export type RepoRunHistoryPage = RepositoryRunHistoryPageResponse
 export type RepoRunWorkflowList = RepositoryRunWorkflowListResponse
-export type RepoRunWorkflow = RepositoryRunWorkflowResponse
 export type RepoRunState = RepositoryRunState
 export type RepoRunDetail = RepositoryRunDetailResponse
 export type RepoRunAttempt = RepositoryRunAttemptResponse
 export type RepoRunCache = RepositoryRunCacheResponse
 export type RepoRunJobDetail = RepositoryRunJobDetailResponse
-export type RepoRunJob = RepositoryRunJobResponse
-export type RepoRunJobState = RepositoryRunJobState
 export type RepoRunLog = RepositoryRunLogResponse
 export type RepoRunStep = RepositoryRunStepResponse
 export type RepoRunTerminalReason = RepositoryRunTerminalReason
 export type RepoRunTrigger = RepositoryRunTrigger
 export type RepoRunStepLogPage = RepositoryRunStepLogPageResponse
-export type FirstPushToken = FirstPushTokenResponse
 export type DeleteRepoResponse = GeneratedDeleteRepoResponse
 export type CommitFile = CommitFileResponse
 export type CommitSummary = {
@@ -172,16 +149,11 @@ export type RequestDetail = RequestDetailResponse
 export type RequestMutation = RequestMutationResponse
 export type RequestRevisions = RequestRevisionListResponse
 export type RequestSummary = RequestSummaryResponse
-export type RequestPermissions = RequestPermissionsResponse
 export type RequestRating = RequestRatingResponse
 export type RequestRatings = RequestRatingsResponse
-export type RequestMergeability = RequestMergeabilityResponse
-export type RequestMergeabilityState = RequestMergeabilityStatus
 export type RequestEvent = RequestEventResponse
 export type RequestWorkflowState = RequestState
 export type RequestWorkflowEventKind = RequestEventKind
-export type RequestWorkflowActorRole = RequestActorRole
-export type RequestWorkflowAudience = RequestAudience
 
 export type RepoContent = {
   clone_remote_url: string
@@ -258,7 +230,6 @@ export type RepoInviteTokenInput = {
   token: string
 }
 
-export type ReviewFile = RepoFile | CommitFile
 
 export type HistoryPageInput = RepoParams & HistoryPageRequest
 export type HistoryEntryDetailInput = RepoParams & HistoryEntryRequest & {

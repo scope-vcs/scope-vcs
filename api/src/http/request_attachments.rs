@@ -60,10 +60,7 @@ pub(crate) async fn list(
         .list_request_attachments_for_viewer(&request_id, viewer.as_deref())
         .await?;
     Ok(Json(RequestAttachmentListResponse {
-        attachments: attachments
-            .into_iter()
-            .map(|read| read.attachment.into())
-            .collect(),
+        attachments: attachments.into_iter().map(Into::into).collect(),
     }))
 }
 
@@ -79,7 +76,7 @@ pub(crate) async fn get(
         .request_attachment_for_viewer(&request_id, &attachment_id, viewer.as_deref())
         .await?
         .ok_or_else(|| ApiError::not_found("attachment not found"))?;
-    Ok(Json(attachment.attachment.into()))
+    Ok(Json(attachment.into()))
 }
 
 pub(crate) async fn prepare(

@@ -33,14 +33,6 @@ impl<T> RepositoryCollaborationMutation<T> {
             value,
         }
     }
-
-    pub fn map<U>(self, convert: impl FnOnce(T) -> U) -> RepositoryCollaborationMutation<U> {
-        RepositoryCollaborationMutation {
-            incarnation: self.incarnation,
-            change_version: self.change_version,
-            value: convert(self.value),
-        }
-    }
 }
 
 pub struct CreateRepositoryInviteMutation {
