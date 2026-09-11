@@ -1,4 +1,5 @@
 import { createApiClient } from '@/api/client'
+import { requestRoute } from '@/api/paths'
 import type { RequestParams } from '@/api/types'
 import { ApiRouteTemplates, buildApiPath } from '@/api/types.generated'
 import { apiValidators } from '@/api/validators.generated'
@@ -23,8 +24,6 @@ export type LoadRepliesInput = RequestParams & {
   reply?: string
 }
 
-export type LoadActivityInput = RequestParams
-
 export type RequestDiscussionActionInput = RequestParams & {
   discussion_id: string
 }
@@ -40,6 +39,9 @@ export type UpdateDescriptionInput = RequestParams & {
   expected_description_markdown: string
 }
 
+// The activity drawer reads this to tell a full page from a complete history.
+export const REQUEST_ACTIVITY_PAGE_SIZE = 50
+
 export type RequestDiscussionRepliesPage = {
   next_before_position: number | null
   replies: RequestDiscussionReply[]
@@ -50,7 +52,7 @@ export async function loadRequestDiscussionsForRequest(
   options?: { signal?: AbortSignal; maxResponseBytes?: number },
 ) {
   return createApiClient().get(
-    `${requestDiscussionsPath(data)}${query({
+    `${requestRoute(ApiRouteTemplates.repoRequestDiscussions, data)}${query({
       commit: data.commit_oid,
       cursor: data.cursor,
       discussion: data.discussion_id,
@@ -91,12 +93,12 @@ export async function loadRequestDiscussionChangesForRequest(
 }
 
 export async function loadRequestActivityForRequest(
-  data: LoadActivityInput,
+  data: RequestParams,
 ) {
   return createApiClient().get(
     `${requestRoute(ApiRouteTemplates.repoRequestActivity, data)}${query({
       latest: 'true',
-      limit: '50',
+      limit: String(REQUEST_ACTIVITY_PAGE_SIZE),
     })}`,
     apiValidators.RequestActivityPageResponse,
     { auth: 'optional' },
@@ -107,7 +109,7 @@ export async function createRequestDiscussionForRequest(
   data: CreateDiscussionInput,
 ) {
   return createApiClient().post(
-    requestDiscussionsPath(data),
+    requestRoute(ApiRouteTemplates.repoRequestDiscussions, data),
     apiValidators.RequestDiscussionMutationResponse,
     {
       auth: 'required',
@@ -203,18 +205,6 @@ export async function updateRequestDescriptionForRequest(
       },
     },
   )
-}
-
-function requestDiscussionsPath(data: RequestParams) {
-  return requestRoute(ApiRouteTemplates.repoRequestDiscussions, data)
-}
-
-function requestRoute(template: string, data: RequestParams) {
-  return buildApiPath(template, {
-    owner: data.owner,
-    repo: data.repo,
-    request_id: data.request_id,
-  })
 }
 
 function requestDiscussionRoute(

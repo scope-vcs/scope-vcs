@@ -20,10 +20,8 @@ import {
 import { includeFocusedDiscussion } from '@/features/requests/request-discussion-model'
 import { RequestDiscussionView } from '@/features/requests/request-discussion-view'
 import { RequestDiscussionPending } from '@/features/requests/request-page-pending'
-import {
-  loadOptionalSelectedRequestResource,
-  requestParamsForRoute,
-} from '@/features/requests/request-route-data'
+import { requestParamsForRoute } from '@/features/requests/request-route-data'
+import { loadOptionalResource } from '@/api/http'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { createFileRoute, getRouteApi } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
@@ -40,9 +38,9 @@ const loadDiscussionPage = createServerFn({ method: 'GET' })
       request_id: data.request_id,
     }
     const [discussionPage, focusedDiscussionPage] = await Promise.all([
-      loadOptionalSelectedRequestResource(() => loadRequestDiscussionsForRequest(requestParams)),
+      loadOptionalResource(() => loadRequestDiscussionsForRequest(requestParams)),
       data.discussion_id
-        ? loadOptionalSelectedRequestResource(() => loadRequestDiscussionsForRequest(data))
+        ? loadOptionalResource(() => loadRequestDiscussionsForRequest(data))
         : Promise.resolve(null),
     ])
     return includeFocusedDiscussion(discussionPage, focusedDiscussionPage)

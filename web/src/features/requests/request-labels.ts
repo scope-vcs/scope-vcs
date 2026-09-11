@@ -6,8 +6,7 @@ import type {
   RequestWorkflowState,
 } from '@/api/types'
 import type { BadgeVariant } from '@/components/ui/badge'
-
-export type BadgeTone = BadgeVariant
+import { shortOid } from '../../lib/short-oid'
 
 const REQUEST_STATES = {
   Draft: { label: 'Draft', tone: 'neutral' },
@@ -16,7 +15,7 @@ const REQUEST_STATES = {
   Merged: { label: 'Merged', tone: 'success' },
 } as const satisfies Record<
   RequestWorkflowState,
-  { label: string; tone: BadgeTone }
+  { label: string; tone: BadgeVariant }
 >
 
 const EVENT_LABELS = {
@@ -39,7 +38,7 @@ const MERGEABILITY = {
   MissingRequestBranch: { label: 'Branch missing', tone: 'warning' },
 } as const satisfies Record<
   RequestSummary['mergeability']['status'],
-  { label: string; tone: BadgeTone }
+  { label: string; tone: BadgeVariant }
 >
 
 type RequestLabelSource = RequestSummary | RequestListItem
@@ -48,7 +47,7 @@ export function requestStatusLabel(request: RequestLabelSource) {
   return REQUEST_STATES[request.state].label
 }
 
-export function requestStatusTone(request: RequestLabelSource): BadgeTone {
+export function requestStatusTone(request: RequestLabelSource): BadgeVariant {
   return REQUEST_STATES[request.state].tone
 }
 
@@ -75,7 +74,7 @@ export function requestMergeabilityLabel(request: RequestLabelSource) {
   return MERGEABILITY[request.mergeability.status].label
 }
 
-export function requestMergeabilityTone(request: RequestLabelSource): BadgeTone {
+export function requestMergeabilityTone(request: RequestLabelSource): BadgeVariant {
   return MERGEABILITY[request.mergeability.status].tone
 }
 
@@ -110,13 +109,6 @@ export function requestEventBody(event: RequestEvent) {
         ? `Discussion ${stringValue(value.discussion_id)}`
         : null
   }
-}
-
-export function shortOid(oid: string | null | undefined) {
-  if (!oid) {
-    return 'none'
-  }
-  return oid.length > 12 ? oid.slice(0, 12) : oid
 }
 
 function oidText(value: unknown) {

@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { GitCommit } from 'lucide-react'
 import type { RequestDiscussion } from './request-discussion-types'
-import { shortOid } from './request-labels'
+import { shortOid } from '@/lib/short-oid'
 
 /**
  * Where a discussion was opened. The revision ordinal is the part readers

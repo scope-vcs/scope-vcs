@@ -1,4 +1,5 @@
 import { createCachedResource } from '../../lib/cached-resource'
+import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import { collectionFromPage, mergeRefreshedDiscussionPage, type DiscussionCollection } from './request-discussion-model'
 import { createRequestDiscussionSync } from './request-discussion-sync'
 import type { RequestDiscussionChanges, RequestDiscussionPage } from './request-discussion-types'
@@ -61,8 +62,9 @@ export function openRequestDiscussion(
       }
       return loadChanges(after)
     },
-    onCatchUpError: (error) => update({ error: error instanceof Error && error.message.trim()
-      ? error.message : 'New discussion activity could not be loaded.' }),
+    onCatchUpError: (error) => update({
+      error: resourceErrorMessage(error, 'New discussion activity could not be loaded.'),
+    }),
     setCollection: (collection) => updateCollection(() => collection),
   })
   const session: DiscussionSession = {

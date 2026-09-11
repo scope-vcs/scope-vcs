@@ -1,4 +1,3 @@
-import { appendDiscussionReferencePage } from './request-changes-discussion-references'
 import type {
   CommitDetail,
   CommitFile,
@@ -15,15 +14,24 @@ import {
   historyDiffResource,
 } from '@/features/history/history-resource-cache'
 import { HistoryWorkbench } from '@/features/history/history-workbench'
-import type {
-  CommitDetailState,
-  CommitFileDiffState,
+import {
+  resourceToDiffState,
+  type CommitDetailState,
+  type CommitFileDiffState,
 } from '@/features/history/history-state'
+import { shortOid } from '@/lib/short-oid'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
 import { GitCommit, MessageSquare } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
+import {
+  discussionReferenceQuery,
+  loadMoreRequestDiscussionReferences,
+  openRequestDiscussionReferences,
+  requestDiscussionReferenceIdentity,
+  requestDiscussionReferenceResource,
+} from './request-changes-discussion-references'
 import type { LoadDiscussionsInput } from './request-discussion-api'
 import {
   discussionsForRequestCommit,
@@ -54,11 +62,12 @@ type DiscussionReferenceState = {
   error: string | null
   incomplete: boolean
   loadMore?: () => void
+  loading: boolean
   retry?: () => void
-  status: 'failed' | 'loaded' | 'loading'
 }
 
 export function RequestChangesWorkbench({
+  accessScope,
   audience,
   initialDiscussionReferences,
   loadDiff,
@@ -69,6 +78,7 @@ export function RequestChangesWorkbench({
   revisions,
   search,
 }: {
+  accessScope: string
   audience: ProjectionPreviewAudience
   initialDiscussionReferences: RequestChangesDiscussionReferences
   loadDiff: (
@@ -92,6 +102,7 @@ export function RequestChangesWorkbench({
     search,
   })
   const discussionReferences = useRequestDiscussionReferences({
+    accessScope,
     commitOid: model.selectedCommitOid,
     initialReferences: initialDiscussionReferences,
     loadDiscussions,
@@ -136,7 +147,6 @@ export function RequestChangesWorkbench({
       emptyTitle={emptyTitle}
       fileDiffState={model.fileDiffState}
       onCloseDiff={model.closeDiff}
-      onRetryCommit={model.retryCommit}
       onRetryDiff={model.retryDiff}
       onSelectCommit={model.selectCommit}
       onSelectFile={model.selectFile}
@@ -147,99 +157,60 @@ export function RequestChangesWorkbench({
 }
 
 function useRequestDiscussionReferences({
+  accessScope,
   commitOid,
   initialReferences,
   loadDiscussions,
   params,
   revision,
 }: {
+  accessScope: string
   commitOid: string | null
   initialReferences: RequestChangesDiscussionReferences
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
   params: { owner: string; repo: string; request_id: string }
   revision: RequestRevisions['revisions'][number] | null
 }): DiscussionReferenceState {
-  const key = revision && commitOid
-    ? requestRevisionCommitId(revision.id, commitOid)
+  const query = revision && commitOid
+    ? discussionReferenceQuery(params, revision, commitOid)
     : null
-  const initialPage = key === initialReferences.commitKey ? initialReferences.page : null
-  const [resource, setResource] = useState<{
-    discussions: RequestDiscussion[]
-    error: string | null
-    initialPage: RequestDiscussionPage | null
-    key: string | null
-    snapshotVersion: number | null
-    nextCursor: string | null
-    status: 'failed' | 'loaded' | 'loading'
-  }>(() => discussionReferenceResource(initialPage, key))
-  const active = resource.initialPage === initialPage && resource.key === key
-    ? resource
-    : discussionReferenceResource(initialPage, key)
-  if (active !== resource) setResource(active)
-  const loadPage = useCallback(async () => {
-    if (!revision || !commitOid) return
-    const cursor = active.nextCursor ?? undefined
-    setResource((current) => current.initialPage === initialPage && current.key === key ? {
-      ...current,
-      error: null,
-      status: 'loading',
-    } : current)
-    try {
-      const page = await loadDiscussions({
-        ...params,
-        commit_oid: commitOid,
-        cursor,
-        include_revision_anchor: commitOid === revision.commits.at(-1)?.oid,
-        limit: 100,
-        revision_id: revision.id,
-      })
-      const nextPage = cursor && active.snapshotVersion !== null
-        ? appendDiscussionReferencePage({
-            discussions: active.discussions,
-            next_cursor: cursor,
-            snapshot_version: active.snapshotVersion,
-          }, page)
-        : page
-      setResource((current) => current.initialPage === initialPage && current.key === key ? {
-        discussions: nextPage.discussions,
-        key,
-        snapshotVersion: nextPage.snapshot_version,
-        error: null,
-        initialPage,
-        nextCursor: page.next_cursor,
-        status: 'loaded',
-      } : current)
-    } catch (error) {
-      setResource((current) => current.initialPage === initialPage && current.key === key ? {
-        ...current,
-        error: error instanceof Error ? error.message : 'Discussion references are unavailable.',
-        status: 'failed',
-      } : current)
-    }
-  }, [active.discussions, active.nextCursor, active.snapshotVersion, commitOid, initialPage, key, loadDiscussions, params, revision])
+  const identity = query ? requestDiscussionReferenceIdentity(accessScope, query.key) : null
+  const seed = query && query.key === initialReferences.commitKey ? initialReferences.page : null
+  useMemo(() => {
+    if (identity && seed) openRequestDiscussionReferences(identity, seed)
+  }, [identity, seed])
+  const input = query?.input
+  const loadFirstPage = useCallback(() => {
+    if (!input) throw new Error('Select a commit.')
+    return loadDiscussions(input)
+  }, [input, loadDiscussions])
+  const page = useCachedResource({
+    fallbackError: 'Discussion references are unavailable.',
+    identity,
+    load: loadFirstPage,
+    resource: requestDiscussionReferenceResource,
+  })
+  const loadMore = useCallback(() => {
+    if (!identity || !input) return
+    void loadMoreRequestDiscussionReferences(
+      identity,
+      (cursor) => loadDiscussions({ ...input, cursor }),
+    )
+  }, [identity, input, loadDiscussions])
+  const retry = page.retry
   return {
-    discussions: active.discussions,
-    error: active.error,
-    incomplete: active.nextCursor !== null,
-    loadMore: active.nextCursor && active.status === 'loaded'
-      ? () => void loadPage()
+    discussions: page.value?.discussions ?? [],
+    error: page.error,
+    incomplete: page.value?.next_cursor != null,
+    loadMore: page.status === 'loaded' && page.value.next_cursor && !page.refreshing && !page.error
+      ? loadMore
       : undefined,
-    retry: active.status === 'failed'
-      ? () => void loadPage()
-      : undefined,
-    status: active.status,
-  }
-}
-
-function discussionReferenceResource(initialPage: RequestDiscussionPage | null, key: string | null) {
-  return {
-    discussions: initialPage?.discussions ?? [],
-    error: initialPage ? null : 'Discussion references are unavailable.',
-    initialPage,
-    key,
-    snapshotVersion: initialPage?.snapshot_version ?? null,
-    nextCursor: initialPage?.next_cursor ?? null,
-    status: initialPage ? 'loaded' as const : 'failed' as const,
+    loading: page.status === 'loading' || page.refreshing,
+    retry: page.status === 'failed'
+      ? retry
+      : page.status === 'loaded' && page.error
+        ? loadMore
+        : undefined,
   }
 }
 
@@ -366,7 +337,6 @@ function useRequestChangesModel({
     commitState,
     diffIdentity,
     fileDiffState,
-    retryCommit: undefined,
     retryDiff: selectedFilePath && selectedCommit && !selectedFile
       ? undefined
       : diffResource.retry,
@@ -455,7 +425,7 @@ function RequestCommitContext({
           ))}
         </div>
       ) : null}
-      {discussionReferences.status === 'loading' ? (
+      {discussionReferences.loading ? (
         <PendingSurface
           className="mt-3 min-h-6"
           delay
@@ -475,7 +445,7 @@ function RequestCommitContext({
           </div>
         </PendingSurface>
       ) : null}
-      {discussionReferences.status === 'failed' ? (
+      {discussionReferences.error ? (
         <div className="mt-3 flex items-center gap-2">
           <span>{discussionReferences.error}</span>
           <button
@@ -528,20 +498,4 @@ function commitDetail(
     repo_id: repoId,
     view_key: `request:${requestId}:${revisionId}`,
   }
-}
-
-function resourceToDiffState(
-  resource: ReturnType<typeof useCachedResource<ReviewFileDiff>>,
-): CommitFileDiffState {
-  if (resource.status === 'loaded') {
-    return { diff: resource.value, error: null, status: 'loaded' }
-  }
-  if (resource.status === 'failed') {
-    return { diff: null, error: resource.error, status: 'failed' }
-  }
-  return { diff: null, error: null, status: resource.status }
-}
-
-function shortOid(oid: string) {
-  return oid.slice(0, 8)
 }

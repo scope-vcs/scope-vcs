@@ -32,6 +32,7 @@ import {
   requestStatusTone,
 } from './request-labels'
 import { AbsoluteTimestamp } from '@/components/timestamp'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
 
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
@@ -120,7 +121,7 @@ function RequestsPageContent({
         type: 'load_failed',
         generation: operationGeneration,
         section,
-        error: errorMessage(
+        error: resourceErrorMessage(
           error,
           `Could not load more ${SECTION_DETAILS[section].title.toLowerCase()} requests.`,
         ),
@@ -152,7 +153,7 @@ function RequestsPageContent({
       dispatch({
         type: 'search_failed',
         generation: operationGeneration,
-        error: errorMessage(error, 'Could not search requests.'),
+        error: resourceErrorMessage(error, 'Could not search requests.'),
       })
     }
   }
@@ -417,8 +418,4 @@ function QueueDate({
       value={request.updated_at_unix}
     />
   )
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback
 }

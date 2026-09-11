@@ -1,5 +1,6 @@
 import type { RequestParams, RequestSummary } from '@/api/types'
 import { EmptyState } from '@/components/empty-state'
+import { mainScrollContainer } from '@/components/main-content'
 import { Button } from '@/components/ui/button'
 import { CircleAlert, MessageSquare } from 'lucide-react'
 import { domAnimation, LazyMotion } from 'motion/react'
@@ -55,7 +56,7 @@ export function RequestDiscussionWorkbench({
   const [activeComposer, setActiveComposer] = useState<string | null>(null)
 
   useEffect(() => {
-    const scrollContainer = document.querySelector<HTMLElement>('#main-content')
+    const scrollContainer = mainScrollContainer()
     if (!scrollContainer) return
     scrollContainer.scrollTop = readRequestDiscussionScroll(store.cacheKey)
     return () => {

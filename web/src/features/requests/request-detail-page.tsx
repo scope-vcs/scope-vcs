@@ -30,6 +30,7 @@ import {
   requestStatusTone,
 } from './request-labels'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
+import { hasRequestLifecycleActions } from './request-lifecycle-model'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
 import { requestActivityIdentity } from './request-activity-resource'
@@ -111,9 +112,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     repo: params.repo,
     request_id: request.id,
   }), [params.owner, params.repo, request.id])
-  const hasLifecycleActions = request.permissions.can_submit ||
-    request.permissions.can_merge ||
-    request.permissions.can_close
+  const hasLifecycleActions = hasRequestLifecycleActions(request)
 
   async function saveDescription(nextDescription: string, expectedDescription: string) {
     try {

@@ -1,3 +1,4 @@
+import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import { useCallback, useState } from 'react'
 import type {
   RequestActionCommand,
@@ -24,11 +25,7 @@ export function useRequestActions(
       if (result.synchronizationError) setError(result.synchronizationError)
       return true
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'The request could not be updated.',
-      )
+      setError(resourceErrorMessage(cause, 'The request could not be updated.'))
       return false
     } finally {
       setPending(null)

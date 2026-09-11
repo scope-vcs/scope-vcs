@@ -13,7 +13,7 @@ export type RequestDiscussionSyncOptions = {
   getCollection: () => DiscussionCollection
   getDataGeneration: () => number
   loadChanges: (after: number) => Promise<RequestDiscussionChanges>
-  onCatchUpError?: (error: unknown) => void
+  onCatchUpError: (error: unknown) => void
   setCollection: (collection: DiscussionCollection) => void
 }
 
@@ -142,7 +142,7 @@ export function createRequestDiscussionSync(
         return
       }
     } catch (error) {
-      if (isActive(issuedGeneration)) options.onCatchUpError?.(error)
+      if (isActive(issuedGeneration)) options.onCatchUpError(error)
     }
   }
 

@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/skeleton'
 import * as Dialog from '@radix-ui/react-dialog'
 import { History, TriangleAlert, X } from 'lucide-react'
+import { REQUEST_ACTIVITY_PAGE_SIZE } from './request-discussion-api'
 import { eventKindLabel, requestEventBody } from './request-labels'
 import { RelativeTimestamp } from '@/components/timestamp'
 import type {
@@ -146,9 +147,9 @@ export function RequestActivityDrawer({
               </p>
             )}
           </div>
-          {activity?.events.length === 50 ? (
+          {activity?.events.length === REQUEST_ACTIVITY_PAGE_SIZE ? (
             <p className="border-t border-border px-5 py-3 text-xs text-muted-foreground">
-              Showing the latest 50 events.
+              Showing the latest {REQUEST_ACTIVITY_PAGE_SIZE} events.
             </p>
           ) : null}
         </Dialog.Content>

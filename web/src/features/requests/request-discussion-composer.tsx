@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import { MessageSquarePlus, Reply, RotateCcw } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { useState } from 'react'
 import { RequestAttachmentEditor } from './request-attachment-editor'
 
 /**
@@ -33,7 +33,7 @@ export function RequestDiscussionComposer({
   }
 
   return (
-    <Composer
+    <RequestAttachmentEditor
       autoFocus
       label="Start a new discussion"
       onCancel={() => setOpen(false)}
@@ -66,7 +66,7 @@ export function RequestReplyComposer({
   reopen: boolean
 }) {
   return (
-    <Composer
+    <RequestAttachmentEditor
       autoFocus
       label={reopen ? 'Reopen and reply' : 'Reply'}
       onCancel={onCancel}
@@ -87,45 +87,6 @@ export function RequestReplyComposer({
       }
       submitLabel={reopen ? 'Reopen and reply' : 'Reply'}
       target={`reply:${discussionId}`}
-    />
-  )
-}
-
-function Composer({
-  autoFocus = false,
-  label,
-  onCancel,
-  onCancelQuote,
-  onSubmit,
-  placeholder,
-  quote,
-  submitIcon,
-  submitLabel,
-  target,
-}: {
-  autoFocus?: boolean
-  label: string
-  onCancel: () => void
-  onCancelQuote?: () => void
-  onSubmit: (body: string) => Promise<boolean>
-  placeholder: string
-  quote?: { author: string; body: string } | null
-  submitIcon: ReactNode
-  submitLabel: string
-  target: 'discussion' | `reply:${string}`
-}) {
-  return (
-    <RequestAttachmentEditor
-      autoFocus={autoFocus}
-      label={label}
-      onCancel={onCancel}
-      onCancelQuote={onCancelQuote}
-      onSubmit={onSubmit}
-      placeholder={placeholder}
-      quote={quote}
-      submitIcon={submitIcon}
-      submitLabel={submitLabel}
-      target={target}
     />
   )
 }

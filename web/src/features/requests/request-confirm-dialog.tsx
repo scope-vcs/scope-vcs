@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { LoaderCircle } from 'lucide-react'
-import type { ReactNode } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 
 export function RequestConfirmDialog({
   children,
@@ -30,8 +30,9 @@ export function RequestConfirmDialog({
   pending: boolean
   title: string
 }) {
-  async function confirm() {
-    if (await onConfirm()) onOpenChange(false)
+  async function confirm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!pending && await onConfirm()) onOpenChange(false)
   }
 
   return (
@@ -41,28 +42,29 @@ export function RequestConfirmDialog({
       }}
       open={open}
     >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div className="grid gap-2">{children}</div>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending} size="sm">
-            Cancel
-          </AlertDialogCancel>
-          <Button
-            disabled={pending}
-            onClick={() => void confirm()}
-            size="sm"
-            type="button"
-            variant={destructive ? 'destructive' : 'default'}
-          >
-            {pending ? <LoaderCircle className="animate-spin" /> : null}
-            {confirmLabel}
-          </Button>
-        </AlertDialogFooter>
+      <AlertDialogContent asChild>
+        <form onSubmit={(event) => void confirm(event)}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{title}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="grid gap-2">{children}</div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending} size="sm">
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              disabled={pending}
+              size="sm"
+              type="submit"
+              variant={destructive ? 'destructive' : 'default'}
+            >
+              {pending ? <LoaderCircle className="animate-spin" /> : null}
+              {confirmLabel}
+            </Button>
+          </AlertDialogFooter>
+        </form>
       </AlertDialogContent>
     </AlertDialog>
   )

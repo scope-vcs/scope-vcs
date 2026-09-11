@@ -220,6 +220,8 @@ test('request and file server functions bind their exact input validators', () =
       updateDescription: uses('parseUpdateDescriptionInput'),
       runRequestAction: uses('parseRequestActionInput'),
       rateRequest: uses('parseRateRequestInput'),
+    },
+    '-request-attachment-actions.ts': {
       listRequestAttachments: uses('parseRequestParams'),
       loadAttachmentLimits: uses('parseRequestParams'),
       prepareAttachment: uses('parsePrepareAttachmentInput'),

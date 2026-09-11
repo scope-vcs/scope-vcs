@@ -22,7 +22,6 @@ export function HistoryWorkbench({
   emptyTitle,
   fileDiffState,
   onCloseDiff,
-  onRetryCommit,
   onRetryDiff,
   onSelectCommit,
   onSelectFile,
@@ -37,7 +36,6 @@ export function HistoryWorkbench({
   emptyTitle: string
   fileDiffState: CommitFileDiffState
   onCloseDiff: () => void
-  onRetryCommit?: () => void
   onRetryDiff?: () => void
   onSelectCommit: (commit: CommitSummary) => void
   onSelectFile: (file: CommitFile) => void
@@ -73,7 +71,6 @@ export function HistoryWorkbench({
             fileDiffState={fileDiffState}
             onCloseDiff={onCloseDiff}
             onDiffScroll={(scrollTop) => writeHistoryDiffScroll(diffIdentity, scrollTop)}
-            onRetryCommit={onRetryCommit}
             onRetryDiff={onRetryDiff}
             onSelectFile={onSelectFile}
             selectedFilePath={selectedFilePath}

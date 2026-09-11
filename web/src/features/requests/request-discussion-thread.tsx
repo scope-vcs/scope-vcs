@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { mainScrollContainer } from '@/components/main-content'
 import {
   Check,
   ChevronDown,
@@ -176,7 +177,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
     await loading
     requestAnimationFrame(() => {
       const topAfter = firstReply.getBoundingClientRect().top
-      const scrollContainer = document.querySelector<HTMLElement>('#main-content')
+      const scrollContainer = mainScrollContainer()
       if (scrollContainer) scrollContainer.scrollTop += topAfter - topBefore
     })
   }

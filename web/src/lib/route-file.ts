@@ -20,3 +20,8 @@ export function selectedRouteFilePath(
     null
   )
 }
+
+export function parseRouteFilePathSearch(value: unknown) {
+  const path = parseRouteFileSearch(value)
+  return path ? `/${path}` : undefined
+}

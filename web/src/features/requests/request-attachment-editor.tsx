@@ -1,4 +1,6 @@
+import type { RequestAttachmentLimitsResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
+import { formatBytes } from '@/lib/format-bytes'
 import { cn } from '@/lib/utils'
 import { FileImage, FileVideo, Paperclip, RotateCcw, X } from 'lucide-react'
 import {
@@ -17,6 +19,7 @@ import {
 import {
   addRequestAttachmentDraftFiles,
   clearRequestAttachmentDraft,
+  inferredMediaType,
   readRequestAttachmentDraft,
   requestAttachmentDraftKey,
   requestAttachmentMarkdownReference,
@@ -38,11 +41,6 @@ import {
   requestAttachmentDraftReference,
   requestAttachmentContentCount,
 } from './request-attachment-reference'
-
-const FALLBACK_ACCEPTED_MEDIA = [
-  'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/heic', 'image/heif',
-  'video/mp4', 'video/quicktime', 'video/webm',
-]
 
 export function RequestAttachmentEditor({
   autoFocus = false,
@@ -91,12 +89,10 @@ export function RequestAttachmentEditor({
   )
   const read = useCallback(() => readRequestAttachmentDraft(draftKey), [draftKey])
   const draft = useSyncExternalStore(subscribe, read, read)
-  const acceptedMedia = environment.limits
-    ? [
-        ...environment.limits.accepted_photo_media_types,
-        ...environment.limits.accepted_video_media_types,
-      ]
-    : FALLBACK_ACCEPTED_MEDIA
+  const limits = environment.limits
+  const acceptedMedia = limits
+    ? [...limits.accepted_photo_media_types, ...limits.accepted_video_media_types]
+    : []
 
   useEffect(() => {
     seedRequestAttachmentDraft(draftKey, initialText)
@@ -115,8 +111,8 @@ export function RequestAttachmentEditor({
     (attachment) => attachment.status === 'failed',
   )
   const attachmentCount = requestAttachmentContentCount(draft.text, draft.attachments)
-  const attachmentLimit = environment.limits?.max_attachments_per_content ?? 10
-  const canSubmit = !pending && transfersReady && attachmentCount <= attachmentLimit && (
+  const overLimit = limits !== null && attachmentCount > limits.max_attachments_per_content
+  const canSubmit = !pending && transfersReady && !overLimit && (
     target === 'description' || Boolean(draft.text.trim()) || readyAttachments.length > 0
   )
 
@@ -139,14 +135,14 @@ export function RequestAttachmentEditor({
   }
 
   function addFiles(files: File[]) {
+    if (!limits) {
+      setValidationError(environment.attachmentsError ?? 'Attachment limits are still loading.')
+      return
+    }
     const resumableCount = draft.attachments.filter((attachment) => attachment.file === null && files.some((file) =>
       attachment.name === (file.name || 'Pasted image') && attachment.size === file.size,
     )).length
-    const accepted = validateFiles(
-      files,
-      attachmentCount - resumableCount,
-      environment.limits,
-    )
+    const accepted = validateFiles(files, attachmentCount - resumableCount, limits)
     setValidationError(accepted.error)
     const attachments = addRequestAttachmentDraftFiles(draftKey, accepted.files)
     const unplaced = attachments.filter((attachment) =>
@@ -278,7 +274,7 @@ export function RequestAttachmentEditor({
             ref={fileInputRef}
             type="file"
           />
-          <Button onClick={() => fileInputRef.current?.click()} size="sm" type="button" variant="ghost">
+          <Button disabled={!limits} onClick={() => fileInputRef.current?.click()} size="sm" type="button" variant="ghost">
             <Paperclip className="size-3.5" />
             Attach files
           </Button>
@@ -288,8 +284,8 @@ export function RequestAttachmentEditor({
       {validationError ? <p className="mt-2 text-sm text-destructive" role="alert">{validationError}</p> : null}
       <div className="mt-2 flex items-center justify-between gap-3">
         <p aria-live="polite" className="text-xs text-muted-foreground">
-          {attachmentCount > attachmentLimit
-            ? `You can attach up to ${attachmentLimit} files here.`
+          {limits && attachmentCount > limits.max_attachments_per_content
+            ? `You can attach up to ${limits.max_attachments_per_content} files here.`
             : hasFailedTransfer
             ? 'Remove or retry failed files before saving.'
             : transferPending
@@ -372,10 +368,11 @@ function markdownWithAttachments(text: string, attachments: DraftAttachment[]) {
     if (!attachment.attachmentId) return []
     const path = requestAttachmentMarkdownReference(attachment.attachmentId)
     if (trimmed.includes(`](${path})`)) return []
-    const label = attachment.name.replaceAll('\\', '\\\\').replaceAll(']', '\\]')
-    return [attachment.contentType.startsWith('image/')
-      ? `![${label}](${path})`
-      : `[${label}](${path})`]
+    return [requestAttachmentDraftReference({
+      contentType: attachment.contentType,
+      localId: attachment.attachmentId,
+      name: attachment.name,
+    })]
   })
   return [trimmed, ...references].filter(Boolean).join('\n\n')
 }
@@ -383,27 +380,25 @@ function markdownWithAttachments(text: string, attachments: DraftAttachment[]) {
 function validateFiles(
   files: File[],
   currentCount: number,
-  limits: ReturnType<typeof useRequestAttachments>['limits'],
+  limits: RequestAttachmentLimitsResponse,
 ) {
-  const available = Math.max(0, (limits?.max_attachments_per_content ?? 10) - currentCount)
+  const available = Math.max(0, limits.max_attachments_per_content - currentCount)
   const accepted: File[] = []
   let error: string | null = files.length > available
-    ? `You can attach up to ${limits?.max_attachments_per_content ?? 10} files here.`
+    ? `You can attach up to ${limits.max_attachments_per_content} files here.`
     : null
-  const photoTypes = new Set(limits?.accepted_photo_media_types ??
-    FALLBACK_ACCEPTED_MEDIA.filter((type) => type.startsWith('image/')))
-  const videoTypes = new Set(limits?.accepted_video_media_types ??
-    FALLBACK_ACCEPTED_MEDIA.filter((type) => type.startsWith('video/')))
+  const photoTypes = new Set(limits.accepted_photo_media_types)
+  const videoTypes = new Set(limits.accepted_video_media_types)
   for (const file of files.slice(0, available)) {
-    const mediaType = browserMediaType(file)
+    const mediaType = inferredMediaType(file)
     const isPhoto = photoTypes.has(mediaType)
     const isVideo = videoTypes.has(mediaType)
     if (!isPhoto && !isVideo) {
       error = `${file.name} is not a supported photo or video.`
       continue
     }
-    const maxBytes = isVideo ? limits?.max_video_bytes : limits?.max_photo_bytes
-    if (maxBytes !== undefined && file.size > maxBytes) {
+    const maxBytes = isVideo ? limits.max_video_bytes : limits.max_photo_bytes
+    if (file.size > maxBytes) {
       error = `${file.name} is larger than the ${formatBytes(maxBytes)} limit.`
       continue
     }
@@ -412,18 +407,3 @@ function validateFiles(
   return { error, files: accepted }
 }
 
-function browserMediaType(file: File) {
-  if (file.type) return file.type
-  const extension = file.name.split('.').at(-1)?.toLowerCase()
-  if (extension === 'heic' || extension === 'heif') return `image/${extension}`
-  if (extension === 'mov') return 'video/quicktime'
-  if (extension === 'mp4' || extension === 'webm') return `video/${extension}`
-  if (extension && ['png', 'jpeg', 'webp', 'gif'].includes(extension)) return `image/${extension}`
-  if (extension === 'jpg') return 'image/jpeg'
-  return 'application/octet-stream'
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
-}

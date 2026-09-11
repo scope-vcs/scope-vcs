@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestRevisions } from '@/api/types'
-import type { RequestDiscussion } from './request-discussion-types'
+import { discussion } from './request-discussion-test-fixtures'
 import {
   discussionsForRequestCommit,
   missingRequestCommitFileError,
@@ -126,9 +126,9 @@ test('keeps repeated commit OIDs distinct across revisions', () => {
 
 test('orders matching commit and revision discussions chronologically', () => {
   const discussions = [
-    discussion('later', 8, { revision_id: 'revision-1', revision_position: 1, commit_oid: 'commit-b', path: null }),
-    discussion('revision', 5, { revision_id: 'revision-1', revision_position: 1, commit_oid: null, path: null }),
-    discussion('other', 6, { revision_id: 'revision-1', revision_position: 1, commit_oid: 'commit-a', path: null }),
+    discussion('later', 8, { anchor: { revision_id: 'revision-1', revision_position: 1, commit_oid: 'commit-b', path: null } }),
+    discussion('revision', 5, { anchor: { revision_id: 'revision-1', revision_position: 1, commit_oid: null, path: null } }),
+    discussion('other', 6, { anchor: { revision_id: 'revision-1', revision_position: 1, commit_oid: 'commit-a', path: null } }),
   ]
   assert.deepEqual(
     discussionsForRequestCommit(discussions, revisions[0], 'commit-b')
@@ -169,30 +169,5 @@ function revision(
     new_head_oid: commits.at(-1) ?? 'base',
     old_head_oid: 'base',
     position,
-  }
-}
-
-function discussion(
-  id: string,
-  openedPosition: number,
-  anchor: NonNullable<RequestDiscussion['anchor']>,
-): RequestDiscussion {
-  return {
-    anchor,
-    author: { handle: 'adam', id: 'user-1' },
-    body_markdown: id,
-    client_discussion_id: id,
-    created_at_unix: openedPosition,
-    id,
-    last_activity_position: openedPosition,
-    latest_replies: [],
-    opened_position: openedPosition,
-    read_through_position: openedPosition,
-    reply_count: 0,
-    request_id: 'request-1',
-    resolved_at_unix: null,
-    resolved_by: null,
-    status: 'Open',
-    unread_count: 0,
   }
 }

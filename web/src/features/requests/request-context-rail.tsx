@@ -7,9 +7,9 @@ import type { RateRequestInput } from '@/api/requests'
 import {
   requestAudienceLabel,
   requestAuthorRoleLabel,
-  shortOid,
 } from './request-labels'
 import { AbsoluteTimestamp } from '@/components/timestamp'
+import { shortOid } from '@/lib/short-oid'
 import type { RequestActionController } from './use-request-actions'
 
 export function RequestContextRail({

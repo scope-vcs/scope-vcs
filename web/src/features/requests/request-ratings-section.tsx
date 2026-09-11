@@ -1,6 +1,7 @@
 import type { RequestParams, RequestRating, RequestRatings } from '@/api/types'
 import type { RateRequestInput } from '@/api/requests'
 import { Button } from '@/components/ui/button'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { Star } from 'lucide-react'
 import { type FormEvent, useReducer } from 'react'
 
@@ -60,7 +61,7 @@ export function RequestRatingsSection({
     } catch (cause) {
       dispatch({
         type: 'submission_failed',
-        error: cause instanceof Error ? cause.message : 'Could not submit rating.',
+        error: resourceErrorMessage(cause, 'Could not submit rating.'),
       })
     }
   }
