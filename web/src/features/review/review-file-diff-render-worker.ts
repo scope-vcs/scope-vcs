@@ -37,12 +37,6 @@ const REVIEW_FILE_DIFF_OPTIONS = {
 async function renderReviewFileDiff(
   input: ReviewFileDiffWorkerInput,
 ): Promise<ReviewFileDiffWorkerResult> {
-  if (
-    Object.keys(REVIEW_DIFF_LANGUAGE_BY_EXTENSION).length >
-    input.budget.maxHighlightLanguages
-  ) {
-    return { kind: 'error' }
-  }
   const language = reviewDiffLanguage(input.path)
   const fileDiff = parseDiffFromFile(
     { contents: input.oldText, lang: language, name: input.path },
