@@ -1,35 +1,36 @@
-import type { RepoRunAttempt, RepoRunJobDetail, RepoRunStep } from '@/api/types'
 import { cn } from '@/lib/utils'
-import type { StepLogState, StepSelection } from './repository-run-detail-controller'
+import type {
+  StepLogs,
+  StepSelection,
+} from './repository-run-detail-controller'
 import { RunAttemptEnvironment } from './run-attempt-environment'
 import { RunDuration } from './run-duration'
 import { RunLogView } from './run-log-view'
 import { RunStatusIcon } from './run-status-icon'
 import { RUN_STEP_ROW_CLASS } from './run-step-layout'
 import { runStatus } from './run-status'
+import type {
+  RepositoryRunAttemptResponse,
+  RepositoryRunJobDetailResponse,
+  RepositoryRunStepResponse,
+} from '@/api/types.generated'
 
 /** The steps of a single job attempt: an attempt switcher only when more than
  * one attempt exists, then the attempt's environment facts and step list. */
 export function RunDetailSteps({
   attempt,
   jobDetail,
-  onLogRetry,
-  onLogEarlier,
-  onLogLatest,
   onSelectAttempt,
   onSelectStep,
-  selectedLogState,
   selection,
+  stepLogs,
 }: {
-  attempt: RepoRunAttempt | null
-  jobDetail: RepoRunJobDetail
-  onLogRetry: () => void
-  onLogEarlier: () => void
-  onLogLatest: () => void
+  attempt: RepositoryRunAttemptResponse | null
+  jobDetail: RepositoryRunJobDetailResponse
   onSelectAttempt: (attemptId: string) => void
   onSelectStep: (attemptId: string, stepIndex: number) => void
-  selectedLogState: StepLogState
   selection: StepSelection | null
+  stepLogs: StepLogs
 }) {
   const { attempts, job } = jobDetail
   const terminalNotice = attempt ? attemptTerminalNotice(attempt) : null
@@ -66,15 +67,12 @@ export function RunDetailSteps({
               <StepRow
                 attemptId={attempt.id}
                 key={step.index}
-                onLogRetry={onLogRetry}
-                onLogEarlier={onLogEarlier}
-                onLogLatest={onLogLatest}
                 onSelect={() => onSelectStep(attempt.id, step.index)}
                 selected={selection?.jobKey === job.key &&
                   selection.attemptId === attempt.id &&
                   selection.stepIndex === step.index}
-                selectedLogState={selectedLogState}
                 step={step}
+                stepLogs={stepLogs}
               />
             ))}
           </div>
@@ -97,7 +95,7 @@ export function RunDetailSteps({
   )
 }
 
-function attemptTerminalNotice(attempt: RepoRunAttempt) {
+function attemptTerminalNotice(attempt: RepositoryRunAttemptResponse) {
   const reason = attempt.terminal_reason
   if (!reason) return null
   const status = runStatus(attempt.state, reason)
@@ -113,7 +111,7 @@ function AttemptSwitcher({
   onSelect,
   selectedAttemptId,
 }: {
-  attempts: readonly RepoRunAttempt[]
+  attempts: readonly RepositoryRunAttemptResponse[]
   onSelect: (attemptId: string) => void
   selectedAttemptId: string | null
 }) {
@@ -148,22 +146,16 @@ function AttemptSwitcher({
 
 function StepRow({
   attemptId,
-  onLogRetry,
-  onLogEarlier,
-  onLogLatest,
   onSelect,
   selected,
-  selectedLogState,
   step,
+  stepLogs,
 }: {
   attemptId: string
-  onLogRetry: () => void
-  onLogEarlier: () => void
-  onLogLatest: () => void
   onSelect: () => void
   selected: boolean
-  selectedLogState: StepLogState
-  step: RepoRunStep
+  step: RepositoryRunStepResponse
+  stepLogs: StepLogs
 }) {
   const panelId = `run-step-${attemptId}-${step.index}`
   return (
@@ -192,10 +184,7 @@ function StepRow({
         <RunLogView
           id={panelId}
           key={panelId}
-          logState={selectedLogState}
-          onRetry={onLogRetry}
-          onEarlier={onLogEarlier}
-          onLatest={onLogLatest}
+          logs={stepLogs}
           step={step}
         />
       ) : null}

@@ -1,4 +1,21 @@
-use super::*;
+use super::{RuntimeClient, ensure_success, json};
+use anyhow::{Context as _, bail};
+use scope_api_contract::{
+    ReportAttemptCacheFinalizationsRequest, ReportAttemptCachePreparationsRequest,
+};
+use scope_cache_contract::{
+    COMMIT_CACHE_UPLOAD_PATH, CommitCacheUploadRequest, CommitCacheUploadResponse,
+    PREPARE_CACHE_UPLOAD_PATH, PrepareCacheUploadRequest, PrepareCacheUploadResponse,
+    RESTORE_CACHE_PATH, RestoreCacheRequest, RestoreCacheResponse,
+};
+use scope_cache_domain::validate_object_size;
+use sha2::{Digest as _, Sha256};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{Read, Write},
+    path::Path,
+};
 
 #[derive(Debug)]
 pub(crate) enum CacheDownloadError {
@@ -65,7 +82,8 @@ impl RuntimeClient {
     ) -> CacheDownloadAttempt {
         let download_started = std::time::Instant::now();
         let download = (|| {
-            validate_cache_size(expected_size).map_err(CacheDownloadError::Invalid)?;
+            validate_object_size(expected_size)
+                .map_err(|error| CacheDownloadError::Invalid(anyhow::Error::new(error)))?;
             let mut response = self
                 .client
                 .get(url)
@@ -189,13 +207,6 @@ pub(super) fn copy_hashed(
         return Err(CacheDownloadError::Invalid(anyhow::anyhow!(
             "cache object integrity check failed"
         )));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_cache_size(size: u64) -> anyhow::Result<()> {
-    if size > MAX_CACHE_OBJECT_BYTES {
-        bail!("cache exceeds {MAX_CACHE_OBJECT_BYTES} bytes");
     }
     Ok(())
 }

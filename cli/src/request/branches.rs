@@ -98,7 +98,7 @@ pub(super) fn start_request_branch(
             "Started request {} ({}) on branch {branch} from {} ({})",
             response.request.name,
             response.request.id,
-            projection_label_for_audience(audience),
+            audience_label(audience),
             short_oid(&base_oid)
         ),
         "Next: commit changes, then run scope request push".to_string(),
@@ -127,9 +127,8 @@ pub(super) fn push_request_branch(
     api: ApiSession<'_>,
     remote: Option<String>,
     request_id: Option<String>,
-    machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    if !machine_output {
+    if !crate::execution::json() {
         warn_if_dirty_working_tree(git_repo)?;
     }
     let context = load_context(Some(git_repo), api, remote.as_deref())?;
@@ -198,7 +197,7 @@ pub(super) fn push_request_branch(
     )
     .map_err(|error| recover("refresh_request", error))?;
     let mut human_lines = repo_access_lines(&context.repo);
-    human_lines.extend(request_detail_lines_for_response(&detail));
+    human_lines.extend(request_detail_lines(&detail.request));
     let result = DetailResult {
         repo: context.repo,
         request: detail.request,

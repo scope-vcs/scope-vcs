@@ -4,7 +4,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 variant="${1:?usage: backend with-api|without-api}"
 case "$variant" in
-  with-api) selection=(--workspace --features api/test-support) ;;
+  with-api) selection=(--workspace) ;;
   without-api) selection=(--workspace --exclude api) ;;
   *) echo "unknown backend variant: $variant" >&2; exit 2 ;;
 esac

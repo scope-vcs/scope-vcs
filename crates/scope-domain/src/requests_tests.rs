@@ -1,12 +1,16 @@
 use super::requests::*;
 use crate::{
-    content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     repository::access::{RepositoryAccess, RepositoryActor},
+    requests::fixtures::{open_request, source_blob, start_input},
 };
 
 #[test]
 fn new_request_is_an_unsubmitted_draft() {
-    let mutation = start_request(StartRequestFacts::default(), public_start_input()).unwrap();
+    let mutation = start_request(
+        StartRequestFacts::default(),
+        start_input(RequestActorRole::Public),
+    )
+    .unwrap();
 
     assert_eq!(mutation.request.state(), RequestState::Draft);
     assert!(!mutation.request.is_submitted());
@@ -45,13 +49,17 @@ fn request_name_rules_and_repository_uniqueness_remain_domain_owned() {
         "UPPER",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     ] {
-        let mut input = public_start_input();
+        let mut input = start_input(RequestActorRole::Public);
         input.name = invalid.to_string();
         assert!(start_request(StartRequestFacts::default(), input).is_err());
     }
 
-    start_request(StartRequestFacts::default(), public_start_input()).unwrap();
-    let mut duplicate = public_start_input();
+    start_request(
+        StartRequestFacts::default(),
+        start_input(RequestActorRole::Public),
+    )
+    .unwrap();
+    let mut duplicate = start_input(RequestActorRole::Public);
     duplicate.id = "request_2".to_string();
     assert!(
         start_request(
@@ -368,49 +376,8 @@ fn policy_for(request: &Request, viewer: ViewerKind) -> RequestPolicyDecision {
     request_policy(request, RequestViewer::new(access, user_id, false))
 }
 
-fn public_start_input() -> StartRequestInput {
-    StartRequestInput {
-        id: "request_1".to_string(),
-        repo_id: "owner/repo".to_string(),
-        name: "fix-parser".to_string(),
-        author_user_id: "author".to_string(),
-        title: Some("Fix parser".to_string()),
-        author_role: RequestActorRole::Public,
-        audience: RequestAudience::Public,
-        base_main_oid: "base".to_string(),
-        event_id: "event_started".to_string(),
-        now_unix: 10,
-    }
-}
-
-pub(super) fn working_request() -> Request {
-    start_request(StartRequestFacts::default(), public_start_input())
-        .unwrap()
-        .request
-}
-
 fn pushed_draft() -> Request {
-    let mut request = working_request();
-    request.head_oid = "head".to_string();
-    request.git_snapshot = Some(source_blob("head"));
-    request.updated_at_unix = 11;
-    request
-}
-
-pub(super) fn open_request() -> Request {
-    submit_request(
-        &pushed_draft(),
-        SubmitRequestInput {
-            request_id: "request_1".to_string(),
-            actor_user_id: "author".to_string(),
-            actor_is_author: true,
-            actor_can_submit: true,
-            event_id: "event_submitted".to_string(),
-            now_unix: 20,
-        },
-    )
-    .unwrap()
-    .request
+    crate::requests::fixtures::pushed_draft(RequestActorRole::Public)
 }
 
 fn close_input(actor: &str, actor_is_author: bool, actor_is_maintainer: bool) -> CloseRequestInput {
@@ -436,16 +403,6 @@ fn maintainer_access() -> RepositoryAccess {
     }
 }
 
-fn source_blob(git_oid: &str) -> SourceBlob {
-    SourceBlob {
-        content_ref: crate::content_ref::ContentRef::blob_sha256(git_oid),
-        sha256: format!("sha256-{git_oid}"),
-        git_oid: git_oid.to_string(),
-        git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-        size_bytes: 1,
-    }
-}
-
 #[test]
 fn request_creation_checks_id_then_name_then_public_working_limit() {
     let mut facts = StartRequestFacts {
@@ -454,30 +411,30 @@ fn request_creation_checks_id_then_name_then_public_working_limit() {
         public_working_request_count: PUBLIC_WORKING_REQUEST_LIMIT,
     };
     assert_eq!(
-        start_request(facts, public_start_input())
+        start_request(facts, start_input(RequestActorRole::Public))
             .unwrap_err()
             .message,
         "request already exists"
     );
     facts.request_id_exists = false;
     assert_eq!(
-        start_request(facts, public_start_input())
+        start_request(facts, start_input(RequestActorRole::Public))
             .unwrap_err()
             .message,
         "request name already exists"
     );
     facts.request_name_exists = false;
     assert!(
-        start_request(facts, public_start_input())
+        start_request(facts, start_input(RequestActorRole::Public))
             .unwrap_err()
             .message
             .contains("Working requests")
     );
-    let mut maintainer = public_start_input();
+    let mut maintainer = start_input(RequestActorRole::Public);
     maintainer.author_role = RequestActorRole::Member;
     assert!(start_request(facts, maintainer).is_ok());
     facts.public_working_request_count -= 1;
-    assert!(start_request(facts, public_start_input()).is_ok());
+    assert!(start_request(facts, start_input(RequestActorRole::Public)).is_ok());
 }
 
 #[test]

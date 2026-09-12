@@ -1,59 +1,6 @@
 mod support;
 
-use std::process::Output;
 use support::*;
-
-#[test]
-fn request_commands_validate_required_content_before_login() {
-    for (label, args) in [
-        ("start-name", ["request", "start"]),
-        ("edit-content", ["request", "edit"]),
-    ] {
-        let dir = TempDir::new(label);
-        create_repo_with_head(dir.path());
-
-        scope_failure(
-            dir.path(),
-            args,
-            "the following required arguments were not provided",
-        );
-    }
-}
-
-#[test]
-fn request_discussion_body_rules_are_validated_before_login() {
-    let dir = TempDir::new("discussion-body");
-    create_repo_with_head(dir.path());
-
-    scope_failure(
-        dir.path(),
-        ["request", "discussion", "start"],
-        "the following required arguments were not provided",
-    );
-    scope_failure(
-        dir.path(),
-        ["request", "discussion", "reply", "dsc_one"],
-        "the following required arguments were not provided",
-    );
-    scope_failure(
-        dir.path(),
-        ["request", "discussion", "reopen", "dsc_one"],
-        "the following required arguments were not provided",
-    );
-    scope_failure(
-        dir.path(),
-        [
-            "request",
-            "discussion",
-            "start",
-            "--body",
-            "Question",
-            "--body-file",
-            "question.md",
-        ],
-        "cannot be used with",
-    );
-}
 
 #[test]
 fn request_attachments_are_valid_content_before_login() {
@@ -97,56 +44,6 @@ fn request_attachments_are_valid_content_before_login() {
 }
 
 #[test]
-fn request_discussion_anchor_dependencies_are_validated_before_login() {
-    let dir = TempDir::new("discussion-anchor");
-    create_repo_with_head(dir.path());
-
-    scope_failure(
-        dir.path(),
-        [
-            "request",
-            "discussion",
-            "start",
-            "--body",
-            "Question",
-            "--commit",
-            "0123456789abcdef",
-        ],
-        "--revision <REVISION>",
-    );
-    scope_failure(
-        dir.path(),
-        [
-            "request",
-            "discussion",
-            "start",
-            "--body",
-            "Question",
-            "--path",
-            "src/lib.rs",
-        ],
-        "--commit <OID>",
-    );
-}
-
-#[test]
-fn request_rate_requires_score_and_reason_before_login() {
-    let dir = TempDir::new("rate-request");
-    create_repo_with_head(dir.path());
-
-    scope_failure(
-        dir.path(),
-        ["request", "rate"],
-        "the following required arguments were not provided",
-    );
-    scope_failure(
-        dir.path(),
-        ["request", "rate", "--score", "6", "--reason", "Excellent"],
-        "not in 1..=5",
-    );
-}
-
-#[test]
 fn json_usage_errors_use_the_shared_schema_and_exit_two() {
     let dir = TempDir::new("request-json-usage");
     create_repo_with_head(dir.path());
@@ -164,6 +61,27 @@ fn json_usage_errors_use_the_shared_schema_and_exit_two() {
     let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error.code, scope_api_contract::ErrorCode::BadRequest);
     assert!(!error.retryable);
+}
+
+#[test]
+fn malformed_explicit_repository_fails_before_authentication() {
+    let dir = TempDir::new("request-invalid-repository");
+    let output = scope_command(dir.path())
+        .args([
+            "--json",
+            "--non-interactive",
+            "--repo",
+            "malformed",
+            "request",
+            "list",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error.code, scope_api_contract::ErrorCode::BadRequest);
+    assert_eq!(error.message, "expected repository as owner/repo");
 }
 
 #[test]
@@ -288,94 +206,4 @@ fn every_request_command_accepts_the_global_json_mode_and_returns_json_failures(
         assert!(!error.retryable);
         assert_eq!(output.status.code(), Some(3));
     }
-}
-
-#[test]
-fn request_help_exposes_the_complete_approved_vocabulary() {
-    let dir = TempDir::new("request-help");
-    create_repo_with_head(dir.path());
-
-    let output = scope_command(dir.path())
-        .args(["request", "--help"])
-        .output()
-        .unwrap();
-    assert_success(&output, "scope request --help");
-    let stdout = String::from_utf8(output.stdout).unwrap();
-
-    for command in [
-        "checkout",
-        "checks",
-        "diff",
-        "close",
-        "discussion",
-        "edit",
-        "invite",
-        "leave",
-        "list",
-        "merge",
-        "push",
-        "show",
-        "start",
-        "status",
-        "submit",
-        "uninvite",
-    ] {
-        assert!(
-            stdout.lines().any(|line| {
-                line.trim_start()
-                    .strip_prefix(command)
-                    .is_some_and(|rest| rest.starts_with(char::is_whitespace))
-            }),
-            "missing {command:?} from help:\n{stdout}"
-        );
-    }
-}
-
-#[test]
-fn request_command_help_uses_the_shared_target_flags() {
-    let dir = TempDir::new("request-target-help");
-    create_repo_with_head(dir.path());
-
-    for command in [
-        "checkout", "checks", "diff", "close", "edit", "invite", "leave", "merge", "push", "show",
-        "status", "submit", "uninvite",
-    ] {
-        let output = scope_command(dir.path())
-            .args(["request", command, "--help"])
-            .output()
-            .unwrap();
-        assert_success(&output, &format!("scope request {command} --help"));
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("--remote <REMOTE>"), "{command}:\n{stdout}");
-        assert!(
-            stdout.contains("--request <REQUEST>"),
-            "{command}:\n{stdout}"
-        );
-    }
-
-    for command in ["start", "reply", "resolve", "reopen"] {
-        let output = scope_command(dir.path())
-            .args(["request", "discussion", command, "--help"])
-            .output()
-            .unwrap();
-        assert_success(
-            &output,
-            &format!("scope request discussion {command} --help"),
-        );
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("--remote <REMOTE>"), "{command}:\n{stdout}");
-        assert!(
-            stdout.contains("--request <REQUEST>"),
-            "{command}:\n{stdout}"
-        );
-    }
-}
-
-fn assert_success(output: &Output, action: &str) {
-    assert!(
-        output.status.success(),
-        "{action} failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

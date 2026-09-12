@@ -4,9 +4,11 @@ import type {
   ReviewFileDiff,
 } from '@/api/types'
 import { PanelState } from '@/components/empty-state'
-import { displayPath } from '@/components/file-system-tree-model'
+import { normalizeFilePath } from '@/components/file-system-tree-model'
 import { PendingSurface } from '@/components/pending-surface'
 import { Button } from '@/components/ui/button'
+import { formatBytes } from '@/lib/format-bytes'
+import { shortOid } from '@/lib/short-oid'
 import {
   LineSkeleton,
   TextSkeleton,
@@ -24,7 +26,6 @@ import {
 
 export function ReviewFileDiffDrawer({
   cacheKey,
-  className,
   diff,
   error,
   loading,
@@ -35,7 +36,6 @@ export function ReviewFileDiffDrawer({
   selectedPath,
 }: {
   cacheKey?: string | null
-  className?: string
   diff: ReviewFileDiff | null
   error: string | null
   loading: boolean
@@ -45,7 +45,7 @@ export function ReviewFileDiffDrawer({
   scrollTop?: number
   selectedPath: string | null
 }) {
-  const displayName = displayPath(diff?.path ?? selectedPath ?? '')
+  const displayName = normalizeFilePath(diff?.path ?? selectedPath ?? '')
   const scrollRef = useRef<HTMLDivElement>(null)
   const restoredScrollKeyRef = useRef<string | null>(null)
   const scrollKey = cacheKey ?? selectedPath ?? null
@@ -59,7 +59,7 @@ export function ReviewFileDiffDrawer({
   return (
     <aside
       aria-label={displayName ? `${displayName} diff` : 'File diff'}
-      className={cn('h-full min-h-[340px] bg-background', className)}
+      className="h-full min-h-[340px] bg-background"
     >
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex min-h-14 items-center gap-3 border-b border-border px-3 py-2.5">
@@ -251,7 +251,7 @@ function BinarySummary({ sides }: { sides: ReviewDiffBinarySide[] }) {
           >
             <span className="text-muted-foreground">{side.label}</span>
             <span className="min-w-0 break-all">
-              {formatBytes(side.sizeBytes)} - {abbreviateOid(side.oid)}
+              {formatBytes(side.sizeBytes)} - {shortOid(side.oid)}
             </span>
           </div>
         ))}
@@ -273,16 +273,3 @@ function OmittedDiffState({
   )
 }
 
-function abbreviateOid(oid: string) {
-  return oid.length > 12 ? oid.slice(0, 12) : oid
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}

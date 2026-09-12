@@ -1,4 +1,4 @@
-use super::definition::validate_cache_name;
+use super::{definition::validate_cache_name, identity::validate_lowercase_sha256};
 use crate::{
     error::DomainError,
     runs::workflow::{definition::WorkflowJobId, identity::WorkflowPath},
@@ -14,9 +14,6 @@ pub enum CacheColdReason {
     MetadataMissing,
     MetadataInvalid,
     MetadataNotReady,
-    VolumeMissing,
-    VolumeInvalid,
-    BackingDirectoryMissing,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -69,19 +66,20 @@ impl AttemptCacheSetupObservation {
     }
 }
 
+/// Measured cache preparation phases. Only [`Self::new`] constructs one, so a
+/// timing value is valid wherever it appears.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AttemptCachePreparationTiming {
-    pub key_ms: u64,
-    pub metadata_ms: u64,
-    pub size_bytes: u64,
-    pub download_verify_ms: u64,
-    pub sync_ms: u64,
-    pub extraction_ms: u64,
-    pub prepare_ms: u64,
+    key_ms: u64,
+    metadata_ms: u64,
+    size_bytes: u64,
+    download_verify_ms: u64,
+    sync_ms: u64,
+    extraction_ms: u64,
+    prepare_ms: u64,
 }
 
 impl AttemptCachePreparationTiming {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         key_ms: u64,
         metadata_ms: u64,
@@ -127,6 +125,34 @@ impl AttemptCachePreparationTiming {
             prepare_ms,
         })
     }
+
+    pub fn key_ms(&self) -> u64 {
+        self.key_ms
+    }
+
+    pub fn metadata_ms(&self) -> u64 {
+        self.metadata_ms
+    }
+
+    pub fn size_bytes(&self) -> u64 {
+        self.size_bytes
+    }
+
+    pub fn download_verify_ms(&self) -> u64 {
+        self.download_verify_ms
+    }
+
+    pub fn sync_ms(&self) -> u64 {
+        self.sync_ms
+    }
+
+    pub fn extraction_ms(&self) -> u64 {
+        self.extraction_ms
+    }
+
+    pub fn prepare_ms(&self) -> u64 {
+        self.prepare_ms
+    }
 }
 
 /// Durable facts observed by a runner for one cache during one attempt.
@@ -165,24 +191,7 @@ impl AttemptCacheObservation {
         let cache_name = cache_name.into();
         validate_cache_name(&cache_name).map_err(DomainError::invalid_input)?;
         let identity_digest = identity_digest.into();
-        if identity_digest.len() != 64
-            || !identity_digest
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(DomainError::invalid_input(
-                "cache observation identity digest must be 64 lowercase hexadecimal characters",
-            ));
-        }
-        AttemptCachePreparationTiming::new(
-            timing.key_ms,
-            timing.metadata_ms,
-            timing.size_bytes,
-            timing.download_verify_ms,
-            timing.sync_ms,
-            timing.extraction_ms,
-            timing.prepare_ms,
-        )?;
+        validate_lowercase_sha256("cache observation identity digest", &identity_digest)?;
         Ok(Self {
             attempt_id,
             workflow_path,
@@ -268,6 +277,35 @@ impl AttemptCacheObservation {
             && self.identity_digest == other.identity_digest
             && self.preparation == other.preparation
             && self.timing == other.timing
+    }
+}
+
+impl AttemptCachePreparationTiming {
+    /// Builds a timing from measured phases, deriving the total once so no
+    /// reporter has to restate the sum rule.
+    pub fn measured(
+        key_ms: u64,
+        metadata_ms: u64,
+        size_bytes: u64,
+        download_verify_ms: u64,
+        sync_ms: u64,
+        extraction_ms: u64,
+    ) -> Result<Self, DomainError> {
+        let prepare_ms = key_ms
+            .checked_add(metadata_ms)
+            .and_then(|total| total.checked_add(download_verify_ms))
+            .and_then(|total| total.checked_add(sync_ms))
+            .and_then(|total| total.checked_add(extraction_ms))
+            .ok_or_else(|| DomainError::invalid_input("cache preparation duration overflow"))?;
+        Self::new(
+            key_ms,
+            metadata_ms,
+            size_bytes,
+            download_verify_ms,
+            sync_ms,
+            extraction_ms,
+            prepare_ms,
+        )
     }
 }
 

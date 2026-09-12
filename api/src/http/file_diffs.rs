@@ -48,16 +48,12 @@ pub(crate) async fn review_content_response_for_blob(
     blob: &SourceBlob,
     git_source: Option<(RepositoryIncarnation, &GitHead, &[GitPackSpan])>,
 ) -> Result<ReviewFileContentResponse, ApiError> {
-    if nonrenderable_blob(blob) {
-        return Ok(binary_content(blob));
+    if blob.size_bytes > MAX_RENDERED_TEXT_BYTES as u64 {
+        return Ok(binary_content_response(&blob.git_oid, blob.size_bytes));
     }
 
     let bytes = source_content_bytes(state, blob, git_source).await?;
-    Ok(review_content_from_bytes(blob, &bytes))
-}
-
-fn review_content_from_bytes(blob: &SourceBlob, bytes: &[u8]) -> ReviewFileContentResponse {
-    review_content_response_for_bytes(&blob.git_oid, bytes)
+    Ok(review_content_response_for_bytes(&blob.git_oid, &bytes))
 }
 
 pub(crate) fn review_content_response_for_bytes(
@@ -83,12 +79,4 @@ pub(crate) fn binary_content_response(oid: &str, size_bytes: u64) -> ReviewFileC
         oid: oid.to_string(),
         size_bytes,
     }
-}
-
-fn binary_content(blob: &SourceBlob) -> ReviewFileContentResponse {
-    binary_content_response(&blob.git_oid, blob.size_bytes)
-}
-
-fn nonrenderable_blob(blob: &SourceBlob) -> bool {
-    blob.size_bytes > MAX_RENDERED_TEXT_BYTES as u64
 }

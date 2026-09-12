@@ -149,9 +149,6 @@ jobs:
           printf 'VITE_CLERK_PUBLISHABLE_KEY=pk_test_%s\n' \
             "$clerk_payload" > web/.env.local
 
-      - name: Build local API and worker
-        run: cargo build -p api -p worker --features api/local-dev --locked
-
       - name: Build scope-cli
         if: inputs.run_cli
         run: cargo build --manifest-path cli/Cargo.toml --locked --bin scope

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RepoFileContent } from '@/api/types'
 import {
   loadRepoFileWhenReady,
   repositoryLandingPath,
@@ -8,8 +7,9 @@ import {
   settleRepoCodeResource,
   type RepoFileLoadResult,
 } from './repo-code-route-data'
+import type { RepoFileContentResponse } from '@/api/types.generated'
 
-const readme: RepoFileContent = {
+const readme: RepoFileContentResponse = {
   content: { kind: 'text', text: '<h1>Scope</h1>' },
   oid: 'readme-oid',
   path: '/README.html',
@@ -89,8 +89,8 @@ test('keeps missing-file errors local and allows a real retry after route failur
 })
 
 test('does not publish deferred content after navigation cancellation', async () => {
-  let finish: ((file: RepoFileContent) => void) | undefined
-  const pending = new Promise<RepoFileContent>((resolve) => { finish = resolve })
+  let finish: ((file: RepoFileContentResponse) => void) | undefined
+  const pending = new Promise<RepoFileContentResponse>((resolve) => { finish = resolve })
   const load = repoCodeResourceLoader(settleRepoCodeResource(pending), async () => readme)
   const controller = new AbortController()
   const result = load(controller.signal)

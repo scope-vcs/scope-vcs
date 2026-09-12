@@ -12,34 +12,41 @@ pub(crate) async fn require_attempt(
     headers: &HeaderMap,
     attempt_id: &str,
 ) -> Result<DispatchClaim, ApiError> {
-    let secret =
-        bearer_token(headers)?.ok_or_else(|| ApiError::unauthorized("attempt token required"))?;
-    if !secret.starts_with("scope_attempt_") {
-        return Err(ApiError::unauthorized("attempt credentials are invalid"));
-    }
+    let token_hash = attempt_token_hash(headers)?;
     Ok(state
         .metadata
         .runs()
-        .authenticate_attempt(attempt_id, &machine_token_hash(secret), unix_now()?)
+        .authenticate_attempt(attempt_id, &token_hash, unix_now()?)
         .await?)
 }
 
 pub(crate) fn attempt_token_hash(headers: &HeaderMap) -> Result<String, ApiError> {
-    let secret =
-        bearer_token(headers)?.ok_or_else(|| ApiError::unauthorized("attempt token required"))?;
-    if !secret.starts_with("scope_attempt_") {
-        return Err(ApiError::unauthorized("attempt credentials are invalid"));
-    }
-    Ok(machine_token_hash(secret))
+    Ok(machine_token_hash(machine_secret(
+        headers,
+        "scope_attempt_",
+        "attempt",
+    )?))
 }
 
 pub(crate) fn bootstrap_token_hash(headers: &HeaderMap) -> Result<String, ApiError> {
+    Ok(machine_token_hash(machine_secret(
+        headers,
+        "scope_bootstrap_",
+        "runtime bootstrap",
+    )?))
+}
+
+fn machine_secret<'a>(
+    headers: &'a HeaderMap,
+    prefix: &str,
+    label: &str,
+) -> Result<&'a str, ApiError> {
     let secret = bearer_token(headers)?
-        .ok_or_else(|| ApiError::unauthorized("runtime bootstrap token required"))?;
-    if !secret.starts_with("scope_bootstrap_") {
-        return Err(ApiError::unauthorized(
-            "runtime bootstrap credentials are invalid",
-        ));
+        .ok_or_else(|| ApiError::unauthorized(format!("{label} token required")))?;
+    if !secret.starts_with(prefix) {
+        return Err(ApiError::unauthorized(format!(
+            "{label} credentials are invalid"
+        )));
     }
-    Ok(machine_token_hash(secret))
+    Ok(secret)
 }

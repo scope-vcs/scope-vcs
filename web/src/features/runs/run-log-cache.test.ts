@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { beforeEach, test } from 'node:test'
-import type { RepoRunDetail } from '@/api/types'
 import { mergeStepLogPage } from './repository-run-detail-model'
 import {
   canReuseRunLogs,
@@ -13,12 +12,13 @@ import {
   writeRunLogCache,
   type StepLogState,
 } from './run-log-cache'
+import type { RepositoryRunDetailResponse } from '@/api/types.generated'
 
 const readRunLogCache = (key: string) => runLogsResource.read(key) ?? {}
 
 const selection = { jobKey: 'test', attemptId: 'attempt-1', stepIndex: 0 }
 const key = runLogCacheKey('viewer-1:repo-1:member', 'run-1')
-const detail: RepoRunDetail = {
+const detail: RepositoryRunDetailResponse = {
   run: {
     id: 'run-1', workflow_name: 'tests', git_oid: 'abc', trigger: 'manual',
     state: 'succeeded', cancellation_requested: false, created_at_unix: 1,
@@ -48,7 +48,7 @@ test('returning to completed run output reuses its loaded page without refreshin
 })
 
 test('live output survives navigation and appends missing output during recovery', () => {
-  const running: RepoRunDetail = {
+  const running: RepositoryRunDetailResponse = {
     ...detail,
     run: { ...detail.run, state: 'running', completed_at_unix: null },
   }

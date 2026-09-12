@@ -8,7 +8,10 @@ use sea_orm::{
     IntoActiveModel, QueryFilter, Statement, TransactionTrait,
 };
 use {
-    crate::error::PostgresError,
+    crate::{
+        db::integer_columns::{i32_to_u32, i64_to_u64, u64_to_i64},
+        error::PostgresError,
+    },
     scope_domain::repository::{
         git::{GitPackSpan, validate_git_pack_layout},
         git_compaction::{GitCompactionPlan, validate_minimum_spans},
@@ -44,12 +47,8 @@ pub(super) async fn schedule_git_compaction<C>(
 where
     C: ConnectionTrait,
 {
-    let target_sequence = i64::try_from(target_sequence).map_err(|_| {
-        PostgresError::internal_message("Git compaction target exceeds database bigint")
-    })?;
-    let now = i64::try_from(now_unix).map_err(|_| {
-        PostgresError::internal_message("Git compaction schedule time exceeds database bigint")
-    })?;
+    let target_sequence = u64_to_i64(target_sequence, "Git compaction target sequence")?;
+    let now = u64_to_i64(now_unix, "Git compaction schedule time")?;
     conn.execute(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
@@ -96,12 +95,8 @@ impl JobStore {
                 "Git compaction lease must be greater than zero",
             ));
         }
-        let now = i64::try_from(now_unix).map_err(|_| {
-            PostgresError::internal_message("Git compaction claim time exceeds database bigint")
-        })?;
-        let lease_seconds = i64::try_from(lease_seconds).map_err(|_| {
-            PostgresError::internal_message("Git compaction lease exceeds database bigint")
-        })?;
+        let now = u64_to_i64(now_unix, "Git compaction claim time")?;
+        let lease_seconds = u64_to_i64(lease_seconds, "Git compaction lease")?;
         let lease_expires = now.checked_add(lease_seconds).ok_or_else(|| {
             PostgresError::internal_message("Git compaction lease expiry exceeds database bigint")
         })?;
@@ -161,14 +156,9 @@ impl JobStore {
                 name: repo.name,
                 plan,
             });
-        let target_sequence = u64::try_from(job.target_sequence).map_err(|_| {
-            PostgresError::internal_message("Git compaction target sequence is negative")
-        })?;
-        let attempts = u32::try_from(job.attempts).map_err(|_| {
-            PostgresError::internal_message("Git compaction attempt count is invalid")
-        })?;
-        let due_at_unix = u64::try_from(job.next_run_at_unix)
-            .map_err(|_| PostgresError::internal_message("Git compaction due time is negative"))?;
+        let target_sequence = i64_to_u64(job.target_sequence, "Git compaction target sequence")?;
+        let attempts = i32_to_u32(job.attempts, "Git compaction attempt count")?;
+        let due_at_unix = i64_to_u64(job.next_run_at_unix, "Git compaction due time")?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(Some(GitCompactionClaim {
             target_sequence,
@@ -185,7 +175,7 @@ impl JobStore {
         claim: &GitCompactionClaim,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let now = compaction_time(now_unix)?;
+        let now = u64_to_i64(now_unix, "Git compaction time")?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         tx.execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -206,13 +196,7 @@ impl JobStore {
                 claim.repo_id.clone().into(),
                 claim.lease_generation.clone().into(),
                 now.into(),
-                i64::try_from(claim.target_sequence)
-                    .map_err(|_| {
-                        PostgresError::internal_message(
-                            "Git compaction target exceeds database bigint",
-                        )
-                    })?
-                    .into(),
+                u64_to_i64(claim.target_sequence, "Git compaction target sequence")?.into(),
             ],
         ))
         .await
@@ -224,13 +208,7 @@ impl JobStore {
             [
                 claim.repo_id.clone().into(),
                 claim.lease_generation.clone().into(),
-                i64::try_from(claim.target_sequence)
-                    .map_err(|_| {
-                        PostgresError::internal_message(
-                            "Git compaction target exceeds database bigint",
-                        )
-                    })?
-                    .into(),
+                u64_to_i64(claim.target_sequence, "Git compaction target sequence")?.into(),
             ],
         ))
         .await
@@ -249,10 +227,8 @@ impl JobStore {
                 "Git compaction lease must be greater than zero",
             ));
         }
-        let now = compaction_time(now_unix)?;
-        let lease_seconds = i64::try_from(lease_seconds).map_err(|_| {
-            PostgresError::internal_message("Git compaction lease exceeds database bigint")
-        })?;
+        let now = u64_to_i64(now_unix, "Git compaction time")?;
+        let lease_seconds = u64_to_i64(lease_seconds, "Git compaction lease")?;
         let lease_expires = now.checked_add(lease_seconds).ok_or_else(|| {
             PostgresError::internal_message("Git compaction lease expiry exceeds database bigint")
         })?;
@@ -285,7 +261,7 @@ impl JobStore {
         claim: &GitCompactionClaim,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let now = compaction_time(now_unix)?;
+        let now = u64_to_i64(now_unix, "Git compaction time")?;
         self.db
             .execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -317,7 +293,7 @@ impl JobStore {
         error: &str,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let now = compaction_time(now_unix)?;
+        let now = u64_to_i64(now_unix, "Git compaction time")?;
         let error = bounded_compaction_error(error);
         self.db
             .execute(Statement::from_sql_and_values(
@@ -355,7 +331,6 @@ impl JobStore {
         plan: &GitCompactionPlan,
         replacement: GitPackSpan,
         now_unix: u64,
-        _generated_ids: &dyn GeneratedIdSource,
     ) -> Result<bool, PostgresError> {
         plan.validate_replacement(&replacement)
             .map_err(|error| PostgresError::internal_message(error.to_string()))?;
@@ -395,13 +370,8 @@ impl JobStore {
                 entities::git_pack_span::Column::FirstSequence.is_in(
                     expected_spans
                         .iter()
-                        .map(|span| i64::try_from(span.first_sequence))
-                        .collect::<Result<Vec<_>, _>>()
-                        .map_err(|_| {
-                            PostgresError::internal_message(
-                                "Git pack span sequence exceeds database bigint",
-                            )
-                        })?,
+                        .map(|span| u64_to_i64(span.first_sequence, "Git pack span sequence"))
+                        .collect::<Result<Vec<_>, _>>()?,
                 ),
             )
             .exec(&tx)
@@ -421,11 +391,6 @@ impl JobStore {
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(true)
     }
-}
-
-fn compaction_time(now_unix: u64) -> Result<i64, PostgresError> {
-    i64::try_from(now_unix)
-        .map_err(|_| PostgresError::internal_message("Git compaction time exceeds database bigint"))
 }
 
 fn bounded_compaction_error(error: &str) -> String {

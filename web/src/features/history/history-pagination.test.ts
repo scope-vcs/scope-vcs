@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { HistoryEntrySummary, HistoryPage } from '@/api/types'
 import {
   appendHistoryPage,
   historySummary,
   type LoadedHistory,
 } from './history-pagination'
+import type {
+  HistoryEntrySummaryResponse,
+  HistoryPageResponse,
+} from '@/api/types.generated'
 
 test('appends 120 distinct source actions across page boundaries', () => {
   const allEntries = Array.from({ length: 120 }, (_, index) => entry(index))
@@ -39,7 +42,7 @@ test('describes a partial page as the most recent updates', () => {
   assert.equal(historySummary([entry(0)], false), '1 update')
 })
 
-function page(entries: HistoryEntrySummary[], nextCursor: string | null): HistoryPage {
+function page(entries: HistoryEntrySummaryResponse[], nextCursor: string | null): HistoryPageResponse {
   return {
     audience: 'public',
     feed: 'updates',
@@ -52,7 +55,7 @@ function page(entries: HistoryEntrySummary[], nextCursor: string | null): Histor
   }
 }
 
-function entry(index: number): HistoryEntrySummary {
+function entry(index: number): HistoryEntrySummaryResponse {
   return {
     author: null,
     occurred_at_unix: null,

@@ -23,7 +23,7 @@ use super::{
     request_rows::save_request_row,
 };
 use sea_orm::TransactionTrait;
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use {
     crate::error::PostgresError,
     scope_domain::account::UserAccount,
@@ -339,17 +339,12 @@ impl RequestStore {
         &self,
         command: CreateRequestDiscussionCommand,
     ) -> Result<CreateRequestDiscussionMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
+        let now_unix = command.now_unix;
         let input = CreateRequestDiscussionInput {
             request_id: command.request_id,
             id: command.id,
@@ -404,15 +399,16 @@ impl RequestStore {
             mutation.discussion.created_at_unix,
         )
         .await?;
+        let discussion = &mutation.discussion;
         replace_bindings_for_markdown(
             &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
+            &discussion.request_id,
+            &discussion.author_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Discussion {
-                discussion_id: binding_discussion_id,
+                discussion_id: discussion.id.clone(),
             },
-            &binding_markdown,
-            binding_now_unix,
+            &discussion.body_markdown,
+            now_unix,
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -438,8 +434,7 @@ impl RequestStore {
             now_unix,
             transition,
         } = command;
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) = lock_request_repository(&tx, &request_id, &actor_user_id).await?;
         ensure_user_exists(&tx, &actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &actor_user_id).await?;
@@ -532,20 +527,14 @@ impl RequestStore {
         command: CreateRequestDiscussionReplyCommand,
         reopen_event_id: Option<String>,
     ) -> Result<CreateRequestDiscussionReplyMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
         let actor_is_maintainer = repo.access.is_maintainer();
         let wait_after_reply = command.wait_after_reply;
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.discussion_id.clone();
-        let binding_reply_id = command.id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
+        let now_unix = command.now_unix;
         if reopen_event_id.is_some() {
             ensure_request_discussion_transition_allowed(
                 &request,
@@ -654,16 +643,17 @@ impl RequestStore {
             )
             .await?;
         }
+        let reply = &mutation.reply;
         replace_bindings_for_markdown(
             &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
+            &mutation.discussion.request_id,
+            &reply.author_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Reply {
-                discussion_id: binding_discussion_id,
-                reply_id: binding_reply_id,
+                discussion_id: reply.discussion_id.clone(),
+                reply_id: reply.id.clone(),
             },
-            &binding_markdown,
-            binding_now_unix,
+            &reply.body_markdown,
+            now_unix,
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -674,8 +664,7 @@ impl RequestStore {
         &self,
         input: MarkRequestDiscussionReadInput,
     ) -> Result<RequestDiscussionReadState, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         ensure_user_exists(&tx, &input.user_id).await?;
         let discussion = discussion_by_id(&tx, &input.discussion_id)
             .await?

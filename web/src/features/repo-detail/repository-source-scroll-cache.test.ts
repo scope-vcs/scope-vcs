@@ -2,12 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   readRepositorySourceScroll,
-  resetRepositorySourceScrollCache,
+  sourceScrollPositions,
   writeRepositorySourceScroll,
 } from './repository-source-scroll-cache'
 
 test('bounds source scroll positions at sixty-four entries', () => {
-  resetRepositorySourceScrollCache()
+  sourceScrollPositions.clear()
   for (let index = 0; index < 65; index += 1) {
     writeRepositorySourceScroll(`source-${index}`, index + 1)
   }
@@ -17,7 +17,7 @@ test('bounds source scroll positions at sixty-four entries', () => {
 })
 
 test('restoring scroll does not promote an entry', () => {
-  resetRepositorySourceScrollCache()
+  sourceScrollPositions.clear()
   for (let index = 0; index < 64; index += 1) {
     writeRepositorySourceScroll(`source-${index}`, index + 1)
   }
@@ -30,7 +30,7 @@ test('restoring scroll does not promote an entry', () => {
 })
 
 test('saving scroll promotes an existing entry', () => {
-  resetRepositorySourceScrollCache()
+  sourceScrollPositions.clear()
   for (let index = 0; index < 64; index += 1) {
     writeRepositorySourceScroll(`source-${index}`, index + 1)
   }
@@ -43,7 +43,7 @@ test('saving scroll promotes an existing entry', () => {
 })
 
 test('null identities do not create cache entries', () => {
-  resetRepositorySourceScrollCache()
+  sourceScrollPositions.clear()
   writeRepositorySourceScroll(null, 42)
 
   assert.equal(readRepositorySourceScroll(null), 0)

@@ -1,6 +1,6 @@
 use crate::{
-    CacheDigest, CacheDomainError, CacheObject, CachePolicy, CacheReference, DeletionCandidate,
-    UploadLease, UploadLeaseId,
+    CacheDigest, CacheDomainError, CacheObject, CacheReference, DeletionCandidate,
+    MAX_REPOSITORY_CACHE_BYTES, UploadLease, UploadLeaseId, validate_repository_growth,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,7 +27,6 @@ pub struct PrepareUpload<'a> {
 }
 
 pub fn prepare_upload(
-    policy: CachePolicy,
     request: PrepareUpload<'_>,
 ) -> Result<PrepareUploadDecision, CacheDomainError> {
     validate_reference_scope(
@@ -50,12 +49,11 @@ pub fn prepare_upload(
                 request.compatibility_group_digest,
                 request.object,
                 request.now_unix,
-                policy,
             )?,
         });
     }
 
-    policy.validate_repository_growth(
+    validate_repository_growth(
         request.repository_storage_bytes,
         request.object.size_bytes(),
     )?;
@@ -66,7 +64,6 @@ pub fn prepare_upload(
             request.compatibility_group_digest,
             request.object,
             request.now_unix,
-            policy,
         )?,
     })
 }
@@ -76,11 +73,10 @@ pub fn prepare_upload(
 /// The access timestamp and policy-owned TTL advance together and can be
 /// persisted as one atomic update.
 pub fn access_reference(
-    policy: CachePolicy,
     reference: &CacheReference,
     now_unix: u64,
 ) -> Result<CacheReference, CacheDomainError> {
-    reference.accessed_at(now_unix, policy)
+    reference.accessed_at(now_unix)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -90,7 +86,6 @@ pub enum CommitUploadDecision {
 }
 
 pub fn commit_upload(
-    policy: CachePolicy,
     lease: &UploadLease,
     uploaded_object: &CacheObject,
     current_reference: Option<&CacheReference>,
@@ -130,31 +125,14 @@ pub fn commit_upload(
         lease.compatibility_group_digest().clone(),
         uploaded_object,
         now_unix,
-        policy,
     )?;
     Ok(CommitUploadDecision::Committed { reference })
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EvictionCause {
-    Expired,
-    RepositoryBudget,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RetentionReason {
-    ActiveReference,
-    GracePeriod,
-    Referenced,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EvictionDecision {
-    Retain {
-        reason: RetentionReason,
-    },
+    Retain,
     RemoveReference {
-        cause: EvictionCause,
         deletion: DeletionCandidate,
     },
     DeleteObject {
@@ -168,27 +146,16 @@ pub enum EvictionDecision {
 /// When a repository is over budget, the persistence adapter selects the least
 /// recently used reference and passes it here. This function owns the actual rule.
 pub fn decide_reference_eviction(
-    policy: CachePolicy,
     reference: &CacheReference,
     repository_storage_bytes: u64,
     now_unix: u64,
 ) -> Result<EvictionDecision, CacheDomainError> {
-    let cause = if reference.is_expired_at(now_unix) {
-        Some(EvictionCause::Expired)
-    } else if repository_storage_bytes > policy.max_repository_bytes() {
-        Some(EvictionCause::RepositoryBudget)
+    if reference.is_expired_at(now_unix) || repository_storage_bytes > MAX_REPOSITORY_CACHE_BYTES {
+        Ok(EvictionDecision::RemoveReference {
+            deletion: DeletionCandidate::after_reference_removal(reference, now_unix)?,
+        })
     } else {
-        None
-    };
-
-    match cause {
-        Some(cause) => Ok(EvictionDecision::RemoveReference {
-            cause,
-            deletion: DeletionCandidate::after_reference_removal(reference, now_unix, policy)?,
-        }),
-        None => Ok(EvictionDecision::Retain {
-            reason: RetentionReason::ActiveReference,
-        }),
+        Ok(EvictionDecision::Retain)
     }
 }
 
@@ -197,14 +164,8 @@ pub fn decide_object_deletion(
     live_reference_count: u64,
     now_unix: u64,
 ) -> EvictionDecision {
-    if live_reference_count > 0 {
-        EvictionDecision::Retain {
-            reason: RetentionReason::Referenced,
-        }
-    } else if now_unix < candidate.eligible_after_unix() {
-        EvictionDecision::Retain {
-            reason: RetentionReason::GracePeriod,
-        }
+    if live_reference_count > 0 || now_unix < candidate.eligible_after_unix() {
+        EvictionDecision::Retain
     } else {
         EvictionDecision::DeleteObject {
             repository_id: candidate.repository_id().clone(),
@@ -252,7 +213,6 @@ mod tests {
             digest(digest_value),
             size_bytes,
             now,
-            CachePolicy,
         )
         .unwrap()
     }
@@ -265,19 +225,16 @@ mod tests {
         repository_storage_bytes: u64,
         now: u64,
     ) -> Result<PrepareUploadDecision, CacheDomainError> {
-        prepare_upload(
-            CachePolicy,
-            PrepareUpload {
-                identity_digest,
-                compatibility_group_digest: digest('f'),
-                object,
-                object_already_stored,
-                current_reference,
-                repository_storage_bytes,
-                lease_id: UploadLeaseId::parse("lease-1").unwrap(),
-                now_unix: now,
-            },
-        )
+        prepare_upload(PrepareUpload {
+            identity_digest,
+            compatibility_group_digest: digest('f'),
+            object,
+            object_already_stored,
+            current_reference,
+            repository_storage_bytes,
+            lease_id: UploadLeaseId::parse("lease-1").unwrap(),
+            now_unix: now,
+        })
     }
 
     #[test]
@@ -305,7 +262,7 @@ mod tests {
             unreachable!();
         };
 
-        let refreshed = access_reference(CachePolicy, &reference, 20).unwrap();
+        let refreshed = access_reference(&reference, 20).unwrap();
         assert_eq!(refreshed.repository_id(), reference.repository_id());
         assert_eq!(refreshed.identity_digest(), reference.identity_digest());
         assert_eq!(refreshed.object_digest(), reference.object_digest());
@@ -315,7 +272,7 @@ mod tests {
             20 + CACHE_REFERENCE_TTL_SECONDS
         );
         assert_eq!(
-            access_reference(CachePolicy, &refreshed, 19),
+            access_reference(&refreshed, 19),
             Err(CacheDomainError::ReferenceAccessBeforeLastUpdate)
         );
     }
@@ -378,25 +335,19 @@ mod tests {
             unreachable!();
         };
         let CommitUploadDecision::Committed { reference } =
-            commit_upload(CachePolicy, &lease, &object, None, 20).unwrap()
+            commit_upload(&lease, &object, None, 20).unwrap()
         else {
             unreachable!();
         };
 
         assert!(matches!(
-            commit_upload(
-                CachePolicy,
-                &lease,
-                &object,
-                Some(&reference),
-                lease.expires_at_unix(),
-            ),
+            commit_upload(&lease, &object, Some(&reference), lease.expires_at_unix(),),
             Ok(CommitUploadDecision::AlreadyCommitted { .. })
         ));
 
         let other_object = cache_object("repo-2", 'a', 100, 1);
         assert_eq!(
-            commit_upload(CachePolicy, &lease, &other_object, None, 20),
+            commit_upload(&lease, &other_object, None, 20),
             Err(CacheDomainError::UploadLeaseMismatch)
         );
 
@@ -409,7 +360,6 @@ mod tests {
         };
         assert_eq!(
             commit_upload(
-                CachePolicy,
                 &expired_lease,
                 &expired_object,
                 None,
@@ -436,13 +386,7 @@ mod tests {
             unreachable!();
         };
         assert_eq!(
-            commit_upload(
-                CachePolicy,
-                &lease,
-                &replacement,
-                Some(&published_reference),
-                22,
-            ),
+            commit_upload(&lease, &replacement, Some(&published_reference), 22,),
             Err(CacheDomainError::StaleUploadLease)
         );
     }
@@ -456,34 +400,26 @@ mod tests {
             unreachable!();
         };
         assert_eq!(
-            decide_reference_eviction(CachePolicy, &reference, 100, 20).unwrap(),
-            EvictionDecision::Retain {
-                reason: RetentionReason::ActiveReference,
-            }
+            decide_reference_eviction(&reference, 100, 20).unwrap(),
+            EvictionDecision::Retain
         );
 
-        let EvictionDecision::RemoveReference { cause, deletion } =
-            decide_reference_eviction(CachePolicy, &reference, 100, reference.expires_at_unix())
-                .unwrap()
+        let EvictionDecision::RemoveReference { deletion } =
+            decide_reference_eviction(&reference, 100, reference.expires_at_unix()).unwrap()
         else {
             unreachable!();
         };
-        assert_eq!(cause, EvictionCause::Expired);
         assert_eq!(
             deletion.eligible_after_unix(),
             reference.expires_at_unix() + DELETION_GRACE_SECONDS
         );
         assert_eq!(
             decide_object_deletion(&deletion, 1, deletion.eligible_after_unix()),
-            EvictionDecision::Retain {
-                reason: RetentionReason::Referenced,
-            }
+            EvictionDecision::Retain
         );
         assert_eq!(
             decide_object_deletion(&deletion, 0, deletion.eligible_after_unix() - 1),
-            EvictionDecision::Retain {
-                reason: RetentionReason::GracePeriod,
-            }
+            EvictionDecision::Retain
         );
         assert!(matches!(
             decide_object_deletion(&deletion, 0, deletion.eligible_after_unix()),
@@ -491,11 +427,8 @@ mod tests {
         ));
 
         assert!(matches!(
-            decide_reference_eviction(CachePolicy, &reference, MAX_REPOSITORY_CACHE_BYTES + 1, 20,),
-            Ok(EvictionDecision::RemoveReference {
-                cause: EvictionCause::RepositoryBudget,
-                ..
-            })
+            decide_reference_eviction(&reference, MAX_REPOSITORY_CACHE_BYTES + 1, 20,),
+            Ok(EvictionDecision::RemoveReference { .. })
         ));
     }
 

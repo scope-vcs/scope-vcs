@@ -3,7 +3,7 @@ use scope_domain::{
     account::UserAccount,
     repository::Repository,
     repository::collaboration::{RepositoryMember, RepositoryMemberPermissions},
-    requests::{RequestDiscussionAnchor, RequestDiscussionStatus},
+    requests::RequestDiscussionAnchor,
 };
 use scope_postgres::db::{
     CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
@@ -73,16 +73,6 @@ pub(crate) async fn seed_request_discussion_gallery(
     create_resolved_docs_conversation(metadata).await?;
     create_revision_conversations(metadata).await?;
 
-    let resolved = metadata
-        .requests()
-        .request_discussion(REQUEST_ID, RESOLVED_DOCS_ID, Some(super::DEV_SEED_USER_ID))
-        .await?
-        .ok_or_else(|| ApiError::internal_message("seeded resolved discussion is missing"))?;
-    if resolved.0.discussion.status != RequestDiscussionStatus::Resolved {
-        return Err(ApiError::internal_message(
-            "seeded resolved discussion did not resolve",
-        ));
-    }
     Ok(())
 }
 
@@ -309,6 +299,7 @@ fn user(id: &str, handle: &str, email: &str) -> UserAccount {
 mod tests {
     use super::*;
     use crate::demo_seed::DevSeedUser;
+    use scope_domain::requests::RequestDiscussionStatus;
     use scope_domain::requests::RequestEventKind;
     use scope_object_store::{EncryptedObjectStore, MemoryObjectStore};
     use std::sync::Arc;

@@ -21,17 +21,6 @@ struct MemoryUpload {
     parts: HashMap<i32, Bytes>,
 }
 
-impl MemoryMultipartStore {
-    pub fn object(&self, key: &str) -> Option<Bytes> {
-        self.state
-            .lock()
-            .expect("memory multipart store lock")
-            .objects
-            .get(key)
-            .cloned()
-    }
-}
-
 #[async_trait]
 impl MultipartStore for MemoryMultipartStore {
     async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {

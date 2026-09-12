@@ -1,8 +1,8 @@
+import type { CommitSummary } from '@/api/types'
 import type {
-  CommitSummary,
   HistoryEntryKind,
-  HistoryEntrySummary,
-} from '@/api/types'
+  HistoryEntrySummaryResponse,
+} from '@/api/types.generated'
 
 type HistoryRowCommit = Pick<
   CommitSummary,
@@ -30,7 +30,7 @@ export function historyCommitTitle(commit: Pick<CommitSummary, 'message'>) {
   return commit.message.split(/\r?\n/, 1)[0]?.trim() || '(no message)'
 }
 
-export function historyEntryLabels(entry: HistoryEntrySummary) {
+export function historyEntryLabels(entry: HistoryEntrySummaryResponse) {
   const title = historyCommitTitle(entry)
   const kind = historyEntryKindLabel(entry.kind)
   const counts = historyEntryCountLabel(entry)
@@ -59,7 +59,7 @@ function compactHistorySourceId(sourceId: string) {
   return reviewedPush ? reviewedPush[1].slice(0, 12) : sourceId
 }
 
-export function historyEntryCountLabel(entry: Pick<HistoryEntrySummary, 'file_change_count' | 'kind' | 'visibility_summary'>) {
+export function historyEntryCountLabel(entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>) {
   const files = entry.kind === 'visibility_change' ? 0 : entry.file_change_count
   const { made_public_count: madePublic, made_private_count: madePrivate } = entry.visibility_summary
   return [

@@ -189,7 +189,7 @@ SCOPE_LOAD_CONFIRM_SECONDS=0 \
 node bench/railway-load.mjs
 ```
 
-Repeat the same run with `SCOPE_LOAD_PUSH_PATH=aggregate`. Keep the environment, deployment resources, history depth, file counts, file size, and stage duration identical when comparing builds. The persistence telemetry report includes hydration, domain, history-row, live-file-row, side-effect, lock-wait, and commit timings for the two paths.
+Repeat the same run with `SCOPE_LOAD_PUSH_PATH=aggregate`. Keep the environment, deployment resources, history depth, file counts, file size, and stage duration identical when comparing builds. Compare the push latencies recorded by the two load runs.
 
 Use `SCOPE_LOAD_RATES=1,2,4` for an open-loop arrival-rate staircase. The runner stops above 1% errors, twice the first-stage p95, or one arrival interval of client scheduling delay. `safeMaxPerSecond` is 70% of the last confirmed healthy throughput. It is a test result, not a production capacity promise.
 
@@ -207,7 +207,7 @@ SCOPE_LOAD_PROTOCOL_LABEL=batched-wal SCOPE_LOAD_NODE_SCALE_LABEL=api-1 ...
 
 Repeat the winner at one, two, and four nodes. Do not compare runs unless fixture sizes, stage controls, database and object-store class, region, and build are identical.
 
-Run `railway-telemetry.mjs` for the same interval. Its report separates capacity rejections from scheduler outcomes and records peak CPU, RSS, cgroup PIDs, open file descriptors, and zombie children. Use those counters to tell a fixed permit ceiling from CPU, memory, process, or shared-service saturation.
+Run `railway-telemetry.mjs` for the same interval. Its report separates capacity rejections from scheduler outcomes and records peak CPU and RSS. Compare those measurements with the load results to identify CPU, memory, or permit saturation.
 
 The benchmark does not fake CAS or WAL behavior with a SQL-only microbenchmark. Such a test omits pack durability, object-store calls, serialization, recovery, and read visibility. It cannot select the production protocol honestly. Deploy callable production variants, run this black-box suite, then delete the losing variants.
 
@@ -224,9 +224,7 @@ node bench/railway-telemetry.mjs
 
 The telemetry report groups:
 
-- process, thread, file-descriptor, child, zombie, and cgroup PID snapshots;
 - compaction phase timings and outcomes;
-- push persistence lock wait, serialization, transaction body, commit, and total time by protocol;
 - object-store operation latency, failures, bytes, and MiB per second of summed service time;
 - Git segment ingest phases, including local write and fsync, tee blocking, frame encryption, and multipart first-part, last-part, completion, and abort timings;
 - Git segment restore phases;

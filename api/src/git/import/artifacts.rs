@@ -1,11 +1,11 @@
 use super::repo_io::{
     GitTreeFile, StagedGitPush, describe_refs, git_changed_tree_entries, git_push_from_repo,
     git_refs, git_tree_entries_under, pushed_commit_message, pushed_commit_time,
-    run_git_output_bounded, validate_pushed_commit_range,
+    validate_pushed_commit_range,
 };
 use super::segment_upload::{GitSegmentUploadHeartbeat, best_effort_delete_staged_git_segment};
 use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
-use crate::{error::ApiError, git::content::git_blob_reference, state::AppState};
+use crate::{error::ApiError, git::command::run_git_output_bounded, state::AppState};
 use scope_domain::landing_file::{
     MAX_REPOSITORY_LANDING_FILE_BYTES, REPOSITORY_LANDING_FILE_PATH, RepositoryLandingFile,
     RepositoryLandingFileMutation,
@@ -20,12 +20,13 @@ use scope_domain::runs::{
     },
     workflow::identity::WorkflowPath,
 };
+use scope_git::git_blob_reference;
 use scope_git_storage::StagedGitSegment;
 use scope_postgres::db::RepositoryGitWriteLease;
 use std::{path::Path as FsPath, time::Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ReviewedUpdateMode {
+pub(crate) enum ReviewedUpdateMode {
     FirstPush,
     ReadyPush,
     RequestMerge,
@@ -61,67 +62,7 @@ impl std::ops::DerefMut for PreparedReceivePackUpdate {
     }
 }
 
-pub(crate) async fn receive_pack_update_from_staging_repo(
-    state: &AppState,
-    owner: &str,
-    repo_name: &str,
-    staging_repo: &FsPath,
-    author_id: &str,
-    config: RepoConfig,
-) -> Result<PreparedReceivePackUpdate, ApiError> {
-    reviewed_update_from_staging_repo_mode(
-        state,
-        owner,
-        repo_name,
-        staging_repo,
-        author_id,
-        config,
-        ReviewedUpdateMode::ReadyPush,
-    )
-    .await
-}
-
-pub(crate) async fn request_merge_update_from_staging_repo(
-    state: &AppState,
-    owner: &str,
-    repo_name: &str,
-    staging_repo: &FsPath,
-    author_id: &str,
-    config: RepoConfig,
-) -> Result<PreparedReceivePackUpdate, ApiError> {
-    reviewed_update_from_staging_repo_mode(
-        state,
-        owner,
-        repo_name,
-        staging_repo,
-        author_id,
-        config,
-        ReviewedUpdateMode::RequestMerge,
-    )
-    .await
-}
-
 pub(crate) async fn reviewed_update_from_staging_repo(
-    state: &AppState,
-    owner: &str,
-    repo_name: &str,
-    staging_repo: &FsPath,
-    author_id: &str,
-    config: RepoConfig,
-) -> Result<PreparedReceivePackUpdate, ApiError> {
-    reviewed_update_from_staging_repo_mode(
-        state,
-        owner,
-        repo_name,
-        staging_repo,
-        author_id,
-        config,
-        ReviewedUpdateMode::FirstPush,
-    )
-    .await
-}
-
-async fn reviewed_update_from_staging_repo_mode(
     state: &AppState,
     owner: &str,
     repo_name: &str,
@@ -250,7 +191,7 @@ fn repository_landing_file_mutation(
     let Some(entry) = entry else {
         return Ok(RepositoryLandingFileMutation::Delete);
     };
-    if entry.size_bytes > MAX_REPOSITORY_LANDING_FILE_BYTES {
+    if entry.size_bytes > MAX_REPOSITORY_LANDING_FILE_BYTES as u64 {
         return Ok(RepositoryLandingFileMutation::Delete);
     }
 
@@ -261,7 +202,7 @@ fn repository_landing_file_mutation(
         "reading repository landing file",
         MAX_REPOSITORY_LANDING_FILE_BYTES,
     )?;
-    if !output.status.success() || output.stdout.len() != entry.size_bytes {
+    if !output.status.success() || output.stdout.len() as u64 != entry.size_bytes {
         return Err(ApiError::infrastructure_unavailable(
             "reading repository landing file failed",
         ));
@@ -302,7 +243,7 @@ fn capture_repository_workflow_catalog(
             )
             .map_err(ApiError::internal);
         }
-        if entry.size_bytes > MAX_WORKFLOW_DEFINITION_BYTES {
+        if entry.size_bytes > MAX_WORKFLOW_DEFINITION_BYTES as u64 {
             return RepositoryWorkflowCatalog::rejected(
                 repository_id,
                 head_oid,
@@ -318,7 +259,7 @@ fn capture_repository_workflow_catalog(
             "reading repository workflow definition",
             MAX_WORKFLOW_DEFINITION_BYTES,
         )?;
-        if !output.status.success() || output.stdout.len() != entry.size_bytes {
+        if !output.status.success() || output.stdout.len() as u64 != entry.size_bytes {
             return Err(ApiError::infrastructure_unavailable(format!(
                 "reading repository workflow {path} failed"
             )));
@@ -335,7 +276,10 @@ fn capture_repository_workflow_catalog(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::import::{run_git, run_git_output, validate_pushed_file_path};
+    use crate::git::{
+        command::{run_git, run_git_output},
+        import::validate_pushed_file_path,
+    };
     use scope_domain::{content::DEFAULT_GIT_FILE_MODE, policy::ScopePath};
     use std::{
         fs,
@@ -361,7 +305,7 @@ mod tests {
             path: validate_pushed_file_path("README.html").unwrap(),
             mode: DEFAULT_GIT_FILE_MODE.to_string(),
             oid: "unused".to_string(),
-            size_bytes: MAX_REPOSITORY_LANDING_FILE_BYTES + 1,
+            size_bytes: MAX_REPOSITORY_LANDING_FILE_BYTES as u64 + 1,
         };
         assert_eq!(
             repository_landing_file_mutation(FsPath::new("unused"), &[(path, Some(oversized))],)
@@ -397,7 +341,7 @@ mod tests {
             path: validate_pushed_file_path("README.html").unwrap(),
             mode: DEFAULT_GIT_FILE_MODE.to_string(),
             oid: oid.clone(),
-            size_bytes: bytes.len(),
+            size_bytes: bytes.len() as u64,
         };
 
         let mutation = repository_landing_file_mutation(

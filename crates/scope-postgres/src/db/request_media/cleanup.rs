@@ -5,14 +5,16 @@ use super::{
     persistence::{as_i32, as_i64},
 };
 use crate::{db::locks::acquire_shared_repository_lock, error::PostgresError};
-use scope_domain::requests::attachments::{RequestAttachmentCleanupLease, validate_cleanup_lease};
+use scope_domain::requests::attachments::{
+    RequestAttachmentCleanupLease, validate_cleanup_lease, validate_lease_grant,
+};
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, TransactionTrait};
 
+use super::locks::{lock_attachment_row, lock_processing_job};
 use support::{
     all_attachment_object_keys, attachment_cleanup_is_due, cancel_processing_and_orphan_outputs,
-    cleanup_available_at, lock_attachment_row, lock_processing_job_if_present,
-    mark_all_inventory_deleted, mark_orphan_inventory_deleted, orphan_object_keys,
-    reconcile_completed_inventories,
+    cleanup_available_at, mark_all_inventory_deleted, mark_orphan_inventory_deleted,
+    orphan_object_keys, reconcile_completed_inventories,
 };
 
 const LATE_WRITE_GRACE_SECONDS: u64 = 60;
@@ -68,7 +70,7 @@ impl MediaStore {
                 .map_err(PostgresError::internal)?;
             let tx = self.db.begin().await.map_err(PostgresError::internal)?;
             acquire_shared_repository_lock(&tx, &repository_id).await?;
-            lock_processing_job_if_present(&tx, &attachment_id).await?;
+            lock_processing_job(&tx, &attachment_id).await?;
             let Some(row) = lock_attachment_row(&tx, &attachment_id).await? else {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 continue;
@@ -111,7 +113,7 @@ impl MediaStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError> {
-        validate_new_cleanup_lease(lease_token, now_unix, lease_expires_at_unix)?;
+        validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
         if let Some(lease) = claim_attachment_tombstone(
             self.db.as_ref(),
             lease_token,
@@ -139,7 +141,7 @@ impl MediaStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<bool, PostgresError> {
-        validate_new_cleanup_lease(lease_token, now_unix, lease_expires_at_unix)?;
+        validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
         let updated = self
             .db
             .execute(Statement::from_sql_and_values(
@@ -406,7 +408,7 @@ where
     // lifecycle work overlaps: every job first, then every attachment, with
     // identifiers sorted inside each class.
     for attachment_id in &attachment_ids {
-        lock_processing_job_if_present(conn, attachment_id).await?;
+        lock_processing_job(conn, attachment_id).await?;
     }
     let mut locked_attachments = Vec::with_capacity(attachment_ids.len());
     for attachment_id in &attachment_ids {
@@ -499,7 +501,7 @@ async fn claim_attachment_tombstone(
         .try_get::<String>("", "repository_id")
         .map_err(PostgresError::internal)?;
     acquire_shared_repository_lock(&tx, &observed_repository_id).await?;
-    lock_processing_job_if_present(&tx, &attachment_id).await?;
+    lock_processing_job(&tx, &attachment_id).await?;
     let Some(attachment) = lock_attachment_row(&tx, &attachment_id).await? else {
         tx.commit().await.map_err(PostgresError::internal)?;
         return Ok(None);
@@ -814,17 +816,4 @@ where
         )
         .map_err(PostgresError::internal)?,
     })
-}
-
-fn validate_new_cleanup_lease(
-    lease_token: &str,
-    now_unix: u64,
-    lease_expires_at_unix: u64,
-) -> Result<(), PostgresError> {
-    if lease_token.trim().is_empty() || lease_expires_at_unix <= now_unix {
-        return Err(PostgresError::invalid_input(
-            "cleanup lease must have a token and future expiry",
-        ));
-    }
-    Ok(())
 }

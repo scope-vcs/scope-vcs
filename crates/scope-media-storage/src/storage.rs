@@ -1,14 +1,14 @@
 use crate::{
     MediaChunk, MediaObject, MediaStorageError, MediaStorageErrorKind, StagedMediaPart,
-    WriteAttempt, keys::staged_chunk_key, manifest::validate_digest,
+    WriteAttempt, keys::staged_chunk_key,
 };
 use bytes::Bytes;
 use scope_object_store::{EncryptedObjectStore, ObjectStore};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, ops::RangeInclusive, pin::Pin, sync::Arc};
+use std::{ops::RangeInclusive, pin::Pin, sync::Arc};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
-    sync::{OwnedSemaphorePermit, Semaphore, mpsc},
+    sync::{Semaphore, mpsc},
 };
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 
@@ -97,27 +97,22 @@ impl MediaStorage {
         expected_sha256: &str,
         parts: Vec<StagedMediaPart>,
     ) -> Result<MediaObject, MediaStorageError> {
-        validate_digest("expected media object", expected_sha256)?;
-        let media_type = content_type.into();
-        let chunks = contiguous_chunks(parts, expected_bytes)?;
+        let object = MediaObject::new(
+            content_type,
+            expected_bytes,
+            expected_sha256,
+            chunks_in_part_order(parts),
+        )?;
         let mut whole_digest = Sha256::new();
-        for chunk in &chunks {
+        for chunk in &object.chunks {
             let bytes = self.read_verified_chunk(chunk).await?;
             whole_digest.update(&bytes);
         }
-        let actual_sha256 = hex::encode(whole_digest.finalize());
-        if actual_sha256 != expected_sha256.to_ascii_lowercase() {
+        if hex::encode(whole_digest.finalize()) != object.sha256 {
             return Err(MediaStorageError::integrity(
                 "media object digest does not match the completed parts",
             ));
         }
-        let object = MediaObject {
-            media_type,
-            plaintext_bytes: expected_bytes,
-            sha256: actual_sha256.clone(),
-            chunks,
-        };
-        object.validate()?;
         Ok(object)
     }
 
@@ -259,76 +254,35 @@ impl MediaStorage {
             .await
             .map_err(|_| MediaStorageError::internal("media blocking operation pool is closed"))?;
         let store = self.store.clone();
-        tokio::task::spawn_blocking(move || run_with_permit(permit, store, operation))
-            .await
-            .map_err(|error| {
-                MediaStorageError::internal(format!("media blocking operation failed: {error}"))
-            })?
-            .map_err(Into::into)
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            operation(store)
+        })
+        .await
+        .map_err(|error| {
+            MediaStorageError::internal(format!("media blocking operation failed: {error}"))
+        })?
+        .map_err(Into::into)
     }
 }
 
-fn run_with_permit<T, F>(
-    _permit: OwnedSemaphorePermit,
-    store: Arc<dyn ObjectStore>,
-    operation: F,
-) -> Result<T, scope_object_store::ObjectStoreError>
-where
-    F: FnOnce(Arc<dyn ObjectStore>) -> Result<T, scope_object_store::ObjectStoreError>,
-{
-    operation(store)
-}
-
-fn contiguous_chunks(
-    parts: Vec<StagedMediaPart>,
-    expected_bytes: u64,
-) -> Result<Vec<MediaChunk>, MediaStorageError> {
-    let mut by_number = BTreeMap::new();
-    for part in parts {
-        if part.part_number == 0
-            || part.size_bytes == 0
-            || part.size_bytes > MAX_CHUNK_BYTES as u64
-            || !part.object_key.starts_with("media/v1/staged/")
-        {
-            return Err(MediaStorageError::invalid(
-                "completed media upload contains an invalid part",
-            ));
-        }
-        validate_digest("completed media part", &part.sha256)?;
-        if by_number.insert(part.part_number, part).is_some() {
-            return Err(MediaStorageError::invalid(
-                "completed media upload contains a duplicate part",
-            ));
-        }
-    }
+/// Orders staged parts and assigns plaintext offsets. `MediaObject::validate`
+/// owns every rule about part numbering, sizes, digests and keys.
+fn chunks_in_part_order(mut parts: Vec<StagedMediaPart>) -> Vec<MediaChunk> {
+    parts.sort_by_key(|part| part.part_number);
     let mut offset = 0_u64;
-    let part_count = by_number.len();
-    let mut chunks = Vec::with_capacity(part_count);
-    for (index, (_, part)) in by_number.into_iter().enumerate() {
-        let expected_part = u32::try_from(index + 1)
-            .map_err(|_| MediaStorageError::invalid("media upload has too many parts"))?;
-        if part.part_number != expected_part
-            || (index + 1 < part_count && part.size_bytes != MAX_CHUNK_BYTES as u64)
-        {
-            return Err(MediaStorageError::invalid(
-                "completed media parts must be contiguous and full-sized except for the last",
-            ));
-        }
-        chunks.push(MediaChunk {
-            part_number: part.part_number,
-            plaintext_offset: offset,
-            plaintext_bytes: part.size_bytes,
-            sha256: part.sha256.to_ascii_lowercase(),
-            object_key: part.object_key,
-        });
-        offset = offset
-            .checked_add(part.size_bytes)
-            .ok_or_else(|| MediaStorageError::invalid("media upload size overflowed"))?;
-    }
-    if offset != expected_bytes {
-        return Err(MediaStorageError::invalid(
-            "completed media parts do not match the expected object size",
-        ));
-    }
-    Ok(chunks)
+    parts
+        .into_iter()
+        .map(|part| {
+            let chunk = MediaChunk {
+                part_number: part.part_number,
+                plaintext_offset: offset,
+                plaintext_bytes: part.size_bytes,
+                sha256: part.sha256,
+                object_key: part.object_key,
+            };
+            offset = offset.saturating_add(part.size_bytes);
+            chunk
+        })
+        .collect()
 }

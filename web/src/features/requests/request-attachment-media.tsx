@@ -3,7 +3,8 @@ import type {
   RequestAttachmentResponse,
 } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
-import { useCachedResource } from '@/lib/use-cached-resource'
+import { formatBytes } from '@/lib/format-bytes'
+import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
 import * as Dialog from '@radix-ui/react-dialog'
 import { CircleAlert, Download, Expand, LoaderCircle, RotateCcw, X } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
@@ -174,7 +175,7 @@ function AttachmentNotReady({ attachment }: { attachment: RequestAttachmentRespo
         attachments: current.attachments.map((value) => value.id === updated.id ? updated : value),
       })
     }).catch((error: unknown) => {
-      setRetryError(error instanceof Error ? error.message : 'Processing could not be retried.')
+      setRetryError(resourceErrorMessage(error, 'Processing could not be retried.'))
     }).finally(() => setRetrying(false))
   }
 
@@ -313,12 +314,6 @@ function derivativeOf(
   kind: RequestAttachmentDerivativeKind,
 ) {
   return attachment.derivatives.find((derivative) => derivative.kind === kind)
-}
-
-function formatBytes(bytes: number) {
-  return bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function safeMediaUrl(value: string) {

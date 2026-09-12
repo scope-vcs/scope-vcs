@@ -1,7 +1,7 @@
 use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
-    http::requests::{random_id, repo_metadata_and_access, visible_request},
+    http::requests::{repo_metadata_and_access, visible_request},
     persistence::unix_now,
     state::AppState,
 };
@@ -96,27 +96,21 @@ pub(crate) async fn prepare(
     let prepared = state
         .metadata
         .media()
-        .prepare_request_attachment(
-            PrepareRequestAttachmentCommand {
-                attachment_id: random_id("attachment")?,
-                upload_id: random_id("upload")?,
-                operation_id: input.operation_id,
-                request_id,
-                actor_user_id: user.id,
-                target: input.target.try_into()?,
-                filename: input.filename,
-                declared_media_type: input.declared_media_type,
-                size_bytes: input.size_bytes,
-                sha256: input.sha256,
-                now_unix: now,
-            },
-            limits,
-        )
+        .prepare_request_attachment(PrepareRequestAttachmentCommand {
+            attachment_id: crate::persistence_ids::generate_prefixed_id("attachment")?,
+            upload_id: crate::persistence_ids::generate_prefixed_id("upload")?,
+            operation_id: input.operation_id,
+            request_id,
+            actor_user_id: user.id,
+            target: input.target.try_into()?,
+            filename: input.filename,
+            declared_media_type: input.declared_media_type,
+            size_bytes: input.size_bytes,
+            sha256: input.sha256,
+            now_unix: now,
+        })
         .await?;
-    let expires_at_unix = state
-        .media_grants
-        .expires_at(now)
-        .map_err(|error| ApiError::internal_message(error.to_string()))?;
+    let expires_at_unix = state.media_grants.expires_at(now)?;
     let grant = state
         .media_grants
         .issue_upload(&RequestAttachmentUploadGrantClaims {
@@ -126,8 +120,7 @@ pub(crate) async fn prepare(
             uploader_user_id: prepared.attachment.uploader_user_id.clone(),
             upload_id: prepared.upload_id.clone(),
             expires_at_unix,
-        })
-        .map_err(|error| ApiError::internal_message(error.to_string()))?;
+        })?;
     Ok(Json(PrepareRequestAttachmentResponse {
         attachment: prepared.attachment.into(),
         transfer: RequestAttachmentTransferResponse {
@@ -213,10 +206,7 @@ pub(crate) async fn media_grant(
         .authorized_media_manifest(&request_id, &attachment_id, viewer.as_deref(), target)
         .await?
         .ok_or_else(|| ApiError::not_found("attachment media is not available"))?;
-    let expires_at_unix = state
-        .media_grants
-        .expires_at(unix_now()?)
-        .map_err(|error| ApiError::internal_message(error.to_string()))?;
+    let expires_at_unix = state.media_grants.expires_at(unix_now()?)?;
     let grant = state
         .media_grants
         .issue_media(&RequestAttachmentMediaGrantClaims {
@@ -224,15 +214,12 @@ pub(crate) async fn media_grant(
             repository_id: attachment.repository_id,
             request_id,
             viewer_user_id: viewer,
-            method: RequestAttachmentMediaGrantMethod::Get,
             target: input.target.clone(),
             expires_at_unix,
-        })
-        .map_err(|error| ApiError::internal_message(error.to_string()))?;
+        })?;
     let media_url = state
         .media_grants
-        .media_url(&attachment_id, &input.target, &grant)
-        .map_err(|error| ApiError::internal_message(error.to_string()))?;
+        .media_url(&attachment_id, &input.target, &grant)?;
     Ok(Json(CreateRequestAttachmentMediaGrantResponse {
         media_url,
         grant,

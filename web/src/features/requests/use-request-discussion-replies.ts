@@ -1,3 +1,4 @@
+import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
@@ -105,7 +106,7 @@ export function useRequestDiscussionReplies({
     } catch (error) {
       setReplyState((current) =>
         updateReplyPage(current, {
-          error: messageFor(error, 'Earlier replies could not be loaded.'),
+          error: resourceErrorMessage(error, 'Earlier replies could not be loaded.'),
           loading: false,
         }),
       )
@@ -153,7 +154,7 @@ export function useRequestDiscussionReplies({
       } catch (error) {
         setReplyState((current) =>
           updateReplyPage(current, {
-            error: messageFor(error, 'Linked reply could not be loaded.'),
+            error: resourceErrorMessage(error, 'Linked reply could not be loaded.'),
             loading: false,
           }),
         )
@@ -230,7 +231,7 @@ export function useRequestDiscussionReplies({
     } catch (error) {
       setReplyState((current) =>
         updateReplyPage(markReplyFailed(current, clientReplyId), {
-          error: messageFor(error, 'Reply could not be posted.'),
+          error: resourceErrorMessage(error, 'Reply could not be posted.'),
         }),
       )
       return false
@@ -304,8 +305,3 @@ function optimisticReply({
   }
 }
 
-function messageFor(error: unknown, fallback: string) {
-  return error instanceof Error && error.message.trim()
-    ? error.message
-    : fallback
-}

@@ -101,51 +101,6 @@ console.log([
 '
 }
 
-wait_for_service_health() {
-  local service_name="$1"
-  local expected_deployment_id="${2:-}"
-  local verify_config="${3:-0}"
-  local timeout="${SCOPE_SERVICE_HEALTH_TIMEOUT_SECONDS:-600}"
-  local interval="${SCOPE_SERVICE_HEALTH_POLL_SECONDS:-10}"
-  local deadline=$((SECONDS + timeout))
-  while true; do
-    if service_is_healthy "$service_name" "$expected_deployment_id" "$verify_config" 2>/dev/null; then
-      return 0
-    fi
-    (( SECONDS < deadline )) || break
-    sleep "$interval"
-  done
-  service_is_healthy "$service_name" "$expected_deployment_id" "$verify_config" || true
-  echo "Timed out waiting for $service_name to reach its configured healthy replica count." >&2
-  return 1
-}
-
-service_is_healthy() {
-  local service_name="$1"
-  local expected_deployment_id="${2:-}"
-  local services_json
-  local verify_config="${3:-0}"
-  local expected_config
-  case "$service_name" in
-    "$api_service") expected_config=api/railway.json ;;
-    "$worker_service") expected_config=worker/railway.json ;;
-    "$cache_service") expected_config=cache-service/railway.json ;;
-    "$router_service") expected_config=repo-router/railway.json ;;
-    "$media_service") expected_config=media-service/railway.json ;;
-    "$media_worker_service") expected_config="" ;;
-    "$web_service") expected_config=web/railway.json ;;
-    *) echo "Unknown backend service: $service_name" >&2; return 1 ;;
-  esac
-  [[ "$verify_config" == "1" ]] || expected_config=""
-  services_json="$(railway status "${railway_scope[@]}" --json)"
-  SCOPE_RAILWAY_ENVIRONMENT_ID="$environment" \
-    SCOPE_EXPECTED_RAILWAY_CONFIG="$expected_config" \
-    SCOPE_RAILWAY_SERVICES_JSON="$services_json" \
-    SCOPE_RAILWAY_SERVICE_ID="$service_name" \
-    SCOPE_EXPECTED_RAILWAY_DEPLOYMENT_ID="$expected_deployment_id" \
-    node .github/scripts/railway-service-health.mjs >/dev/null
-}
-
 running_replicas() {
   local line status running crashed configured stopped id
   line="$(service_state_line "$1")"

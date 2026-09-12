@@ -5,19 +5,7 @@ use axum::{
 };
 use scope_api_contract::{ErrorCode, ErrorResponse};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ErrorKind {
-    BadRequest,
-    Conflict,
-    Forbidden,
-    Internal,
-    NotFound,
-    NotImplemented,
-    PayloadTooLarge,
-    ServiceUnavailable,
-    TooManyRequests,
-    Unauthorized,
-}
+pub(crate) use scope_service_runtime::http::ErrorKind;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ApiError {
@@ -122,18 +110,7 @@ impl ApiError {
     }
 
     pub(crate) fn status(&self) -> StatusCode {
-        match self.kind {
-            ErrorKind::BadRequest => StatusCode::BAD_REQUEST,
-            ErrorKind::Conflict => StatusCode::CONFLICT,
-            ErrorKind::Forbidden => StatusCode::FORBIDDEN,
-            ErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
-            ErrorKind::NotFound => StatusCode::NOT_FOUND,
-            ErrorKind::NotImplemented => StatusCode::NOT_IMPLEMENTED,
-            ErrorKind::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
-            ErrorKind::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
-            ErrorKind::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
-            ErrorKind::Unauthorized => StatusCode::UNAUTHORIZED,
-        }
+        self.kind.status()
     }
 
     pub(crate) fn into_public_parts(self) -> (StatusCode, ErrorResponse) {
@@ -186,23 +163,17 @@ impl From<scope_postgres::error::PostgresError> for ApiError {
     fn from(error: scope_postgres::error::PostgresError) -> Self {
         use scope_postgres::error::PostgresErrorKind;
 
-        match error.kind {
-            PostgresErrorKind::AttachmentUploadExpired => {
-                let mut error = Self::new(ErrorKind::Conflict, error.message);
-                error.code = ErrorCode::AttachmentUploadExpired;
-                error
-            }
-            PostgresErrorKind::InvalidInput => Self::new(ErrorKind::BadRequest, error.message),
-            PostgresErrorKind::Conflict => Self::new(ErrorKind::Conflict, error.message),
-            PostgresErrorKind::PermissionDenied => Self::new(ErrorKind::Forbidden, error.message),
-            PostgresErrorKind::Internal => Self::internal_message(error.message),
-            PostgresErrorKind::NotFound => Self::new(ErrorKind::NotFound, error.message),
-            PostgresErrorKind::Unavailable => Self::temporarily_unavailable(error.message),
-            PostgresErrorKind::ResourceExhausted => {
-                Self::new(ErrorKind::TooManyRequests, error.message)
-            }
-            PostgresErrorKind::Unauthenticated => Self::new(ErrorKind::Unauthorized, error.message),
+        let expired = error.kind == PostgresErrorKind::AttachmentUploadExpired;
+        let kind = scope_service_runtime::http::postgres_error_kind(error.kind);
+        let mut error = match kind {
+            ErrorKind::Internal => Self::internal_message(error.message),
+            ErrorKind::ServiceUnavailable => Self::temporarily_unavailable(error.message),
+            kind => Self::new(kind, error.message),
+        };
+        if expired {
+            error.code = ErrorCode::AttachmentUploadExpired;
         }
+        error
     }
 }
 
@@ -251,13 +222,13 @@ impl From<scope_domain::error::DomainError> for ApiError {
     }
 }
 
-impl From<scope_git::GitStorageError> for ApiError {
-    fn from(error: scope_git::GitStorageError) -> Self {
+impl From<scope_git::GitSnapshotError> for ApiError {
+    fn from(error: scope_git::GitSnapshotError) -> Self {
         match error {
-            scope_git::GitStorageError::StorageLimit(error) => {
+            scope_git::GitSnapshotError::StorageLimit(error) => {
                 Self::infrastructure_unavailable(format!("{error}; retry after compaction"))
             }
-            scope_git::GitStorageError::ObjectStore(error) => error.into(),
+            scope_git::GitSnapshotError::ObjectStore(error) => error.into(),
         }
     }
 }
@@ -338,6 +309,12 @@ const fn error_code(kind: ErrorKind) -> ErrorCode {
         ErrorKind::ServiceUnavailable => ErrorCode::ServiceUnavailable,
         ErrorKind::TooManyRequests => ErrorCode::TooManyRequests,
         ErrorKind::Unauthorized => ErrorCode::Unauthorized,
+    }
+}
+
+impl From<anyhow::Error> for ApiError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::internal_message(error.to_string())
     }
 }
 

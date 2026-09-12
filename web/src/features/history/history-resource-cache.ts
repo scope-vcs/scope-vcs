@@ -1,8 +1,8 @@
+import type { ReviewFileDiff } from '@/api/types'
 import type {
-  HistoryEntryDetail,
+  HistoryEntryDetailResponse,
   ProjectionPreviewAudience,
-  ReviewFileDiff,
-} from '@/api/types'
+} from '@/api/types.generated'
 import { createBoundedCache } from '../../lib/bounded-cache'
 import { createCachedResource } from '../../lib/cached-resource'
 
@@ -11,7 +11,7 @@ const MAX_ENTRY_BYTES = 4 * 1024 * 1024
 const MAX_DIFF_ENTRIES = 20
 const MAX_DIFF_BYTES = 32 * 1024 * 1024
 
-export const historyEntryResource = createCachedResource<HistoryEntryDetail>({
+export const historyEntryResource = createCachedResource<HistoryEntryDetailResponse>({
   maxEntries: MAX_ENTRY_ENTRIES,
   maxWeight: MAX_ENTRY_BYTES,
   weightOf: approximateSerializedBytes,

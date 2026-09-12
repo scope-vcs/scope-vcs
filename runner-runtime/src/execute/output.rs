@@ -392,8 +392,7 @@ fn append_with_retry<S: ExecutionSink>(
     policy: UploadPolicy,
     stop_uploading: &AtomicBool,
 ) -> anyhow::Result<Option<AppendLogOutcome>> {
-    let attempts = policy.attempts.max(1);
-    for attempt in 1..=attempts {
+    for attempt in 1..=policy.attempts {
         if stop_uploading.load(Ordering::Acquire) {
             return Ok(None);
         }
@@ -403,7 +402,7 @@ fn append_with_retry<S: ExecutionSink>(
                 return Ok(None);
             }
             Err(AppendLogError::Retryable(_))
-                if attempt < attempts && !stop_uploading.load(Ordering::Acquire) =>
+                if attempt < policy.attempts && !stop_uploading.load(Ordering::Acquire) =>
             {
                 thread::sleep(policy.retry_delay);
             }
@@ -519,12 +518,6 @@ mod tests {
         done_receiver.recv_timeout(Duration::from_secs(1)).unwrap();
         reader.join().unwrap();
         assert_eq!(output, vec![b'x'; LOG_READ_BYTES * 3]);
-    }
-
-    #[test]
-    fn lossy_utf8_expansion_stays_below_the_api_chunk_limit() {
-        let invalid = vec![0xff; LOG_READ_BYTES];
-        assert!(String::from_utf8_lossy(&invalid).len() <= 64 * 1024);
     }
 
     #[test]

@@ -28,6 +28,5 @@ const start = closures.length ? Math.min(...closures.map(({at}) => Date.parse(at
 if (!Number.isFinite(start)) throw new Error("Recovery closure timestamp is invalid");
 writeFileSync(process.argv[3], `${start}\n`);
 NODE
-  export SCOPE_RELEASE_SKIP_BASELINE=1
 fi
 bash .github/scripts/with-release-availability.sh "$output/config.json" "$output" -- "$@"

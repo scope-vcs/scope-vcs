@@ -1,4 +1,5 @@
-use super::{error::WorkflowError, validation::is_kebab_name};
+use super::error::WorkflowError;
+use crate::runs::validation::is_kebab_name;
 use serde::Serialize;
 
 pub const MAX_WORKFLOW_PATH_NAME_BYTES: usize = 64;

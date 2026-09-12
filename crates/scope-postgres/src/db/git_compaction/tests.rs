@@ -388,7 +388,6 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
             &candidate.plan,
             replacement.clone(),
             10,
-            &test_generated_id,
         )
         .await
         .unwrap();
@@ -458,7 +457,6 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
                 &stale_plan,
                 winning_replacement.clone(),
                 11,
-                &test_generated_id,
             )
             .await
             .unwrap()
@@ -482,7 +480,6 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
                 &stale_plan,
                 stale_replacement.clone(),
                 12,
-                &test_generated_id,
             )
             .await
             .unwrap()
@@ -572,7 +569,6 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
                 &stale_plan,
                 unused_replacement.clone(),
                 12,
-                &test_generated_id,
             )
             .await
             .unwrap()
@@ -638,13 +634,7 @@ async fn adapter_preserves_compaction_validation_diagnostics_and_order() {
     };
     let error = store
         .jobs()
-        .replace_git_pack_spans_with_compaction(
-            COMPACTION_REPO_ID,
-            &plan,
-            wrong_head,
-            11,
-            &test_generated_id,
-        )
+        .replace_git_pack_spans_with_compaction(COMPACTION_REPO_ID, &plan, wrong_head, 11)
         .await
         .unwrap_err();
     assert_eq!(error.kind, PostgresErrorKind::Internal);

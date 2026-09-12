@@ -1,5 +1,5 @@
-import type { RepoLifecycleState } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
+import type { RepoLifecycleState } from '@/api/types.generated'
 
 type BadgeVariant = 'success' | 'warning' | 'info'
 
@@ -13,16 +13,6 @@ const LIFECYCLE_LABEL: Record<RepoLifecycleState, string> = {
   Ready: 'Ready',
 }
 
-export function LifecycleBadge({
-  raw = false,
-  state,
-}: {
-  raw?: boolean
-  state: RepoLifecycleState
-}) {
-  return (
-    <Badge variant={LIFECYCLE_VARIANT[state]}>
-      {raw ? state : LIFECYCLE_LABEL[state]}
-    </Badge>
-  )
+export function LifecycleBadge({ state }: { state: RepoLifecycleState }) {
+  return <Badge variant={LIFECYCLE_VARIANT[state]}>{LIFECYCLE_LABEL[state]}</Badge>
 }

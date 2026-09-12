@@ -63,7 +63,7 @@ fn added(path_value: &str, visibility: Visibility, content: &str) -> FileChange 
     change(path_value, visibility, None, Some(blob(content)))
 }
 
-fn commit(id: &str, _parent_id: Option<&str>, message: &str, change: FileChange) -> LogicalCommit {
+fn commit(id: &str, message: &str, change: FileChange) -> LogicalCommit {
     LogicalCommit {
         occurred_at_unix: None,
         id: id.to_string(),
@@ -109,14 +109,6 @@ fn visibility_event(
     }
 }
 
-fn project_public(
-    _policy: &Policy,
-    graph: &SourceGraph,
-    events: &[VisibilityChangeSet],
-) -> scope_domain::projection::Projection {
-    project_graph(graph, events, ProjectionViewKey::Public)
-}
-
 type EventSpec<'a> = (
     &'a str,
     Option<&'a str>,
@@ -126,30 +118,22 @@ type EventSpec<'a> = (
 );
 
 fn project_timeline(
-    default_visibility: Visibility,
     path_value: &str,
     versions: &[(&str, Visibility, &str)],
     event_specs: &[EventSpec<'_>],
 ) -> scope_domain::projection::Projection {
-    let mut policy = Policy::new(default_visibility);
-    if default_visibility == Visibility::Private {
-        policy
-            .add_rule(VisibilityRule::public(path(path_value)))
-            .unwrap();
-    }
     let commits = versions
         .iter()
         .enumerate()
         .map(|(index, (id, visibility, content))| {
-            let previous = index.checked_sub(1).map(|index| versions[index]);
+            let previous_content = index.checked_sub(1).map(|index| blob(versions[index].2));
             commit(
                 id,
-                previous.map(|(id, _, _)| id),
                 content,
                 change(
                     path_value,
                     *visibility,
-                    previous.map(|(_, _, content)| blob(content)),
+                    previous_content,
                     Some(blob(content)),
                 ),
             )
@@ -162,7 +146,7 @@ fn project_timeline(
             visibility_event(id, *after, *source, path_value, *visibility, blob(content))
         })
         .collect::<Vec<_>>();
-    project_public(&policy, &graph, &events)
+    project_graph(&graph, &events, ProjectionViewKey::Public)
 }
 
 fn published_test_repo(default_visibility: Visibility) -> Repository {
@@ -187,7 +171,6 @@ fn published_repo_with_public_file(message: &str, path: &str, content: &str) -> 
     let content = blob(content);
     repo.graph.commits.push(commit(
         "rv1",
-        None,
         message,
         change(path, Visibility::Public, None, Some(content.clone())),
     ));
@@ -346,7 +329,7 @@ fn content_push_command_returns_normalized_effects_without_previous_config() {
             change_version: repo.record.change_version,
             policy: repo.policy.clone(),
             repo_config: config.clone(),
-            live_files: repo.live_tree(),
+            live_files: repo.live_files.clone(),
             git_head: repo.git_head.clone(),
         },
         reviewed_update(
@@ -384,7 +367,7 @@ fn public_request_merge_requires_an_ordered_public_native_range() {
         change_version: repo.record.change_version,
         policy: repo.policy.clone(),
         repo_config: config.clone(),
-        live_files: repo.live_tree(),
+        live_files: repo.live_files.clone(),
         git_head: repo.git_head.clone(),
     };
     let update = reviewed_update(
@@ -517,7 +500,7 @@ fn public_request_merge_rejects_private_paths() {
                 change_version: repo.record.change_version,
                 policy: repo.policy.clone(),
                 repo_config: config.clone(),
-                live_files: repo.live_tree(),
+                live_files: repo.live_files.clone(),
                 git_head: repo.git_head.clone(),
             },
             reviewed_update(
@@ -618,7 +601,6 @@ fn config_only_update_changes_policy_without_content_commit() {
     let mut repo = published_test_repo(Visibility::Private);
     repo.graph.commits.push(commit(
         "rv1",
-        None,
         "initial",
         added("/README.md", Visibility::Private, "hello"),
     ));
@@ -660,7 +642,6 @@ fn config_only_update_changes_policy_without_content_commit() {
 fn public_projection_contains_only_visible_paths_from_mixed_commit() {
     let mut mixed = commit(
         "rv1",
-        None,
         "mixed",
         added("/README.md", Visibility::Public, "hello"),
     );
@@ -669,10 +650,6 @@ fn public_projection_contains_only_visible_paths_from_mixed_commit() {
         .push(added("/internal/model.rs", Visibility::Private, "secret"));
     let graph = graph(vec![mixed]);
 
-    let mut policy = Policy::new(Visibility::Public);
-    policy
-        .add_rule(VisibilityRule::private(path("/internal")))
-        .unwrap();
     let projection = project_graph(&graph, &[], ProjectionViewKey::Public);
 
     assert_eq!(projection.commits.len(), 1);
@@ -685,7 +662,6 @@ fn public_projection_contains_only_visible_paths_from_mixed_commit() {
 fn public_request_origin_expands_to_exact_native_commits_only_in_public_view() {
     let mut request_merge = commit(
         "rv_merge_canonical",
-        None,
         "merge public request",
         added("/README.md", Visibility::Public, "contributor version"),
     );
@@ -740,21 +716,26 @@ fn public_request_origin_expands_to_exact_native_commits_only_in_public_view() {
 }
 
 #[test]
-fn public_projection_keeps_public_history_when_policy_later_marks_path_private() {
-    let mut policy = Policy::new(Visibility::Public);
-    policy
-        .add_rule(VisibilityRule::private(
-            ScopePath::parse("/README.md").unwrap(),
-        ))
-        .unwrap();
-    let graph = graph(vec![commit(
-        "rv1",
-        None,
-        "public readme",
-        added("/README.md", Visibility::Public, "public readme"),
-    )]);
+fn public_projection_keeps_public_history_when_a_later_edit_is_private() {
+    let graph = graph(vec![
+        commit(
+            "rv1",
+            "public readme",
+            added("/README.md", Visibility::Public, "public readme"),
+        ),
+        commit(
+            "rv2",
+            "private readme",
+            change(
+                "/README.md",
+                Visibility::Private,
+                Some(blob("public readme")),
+                Some(blob("private readme")),
+            ),
+        ),
+    ]);
 
-    let projection = project_public(&policy, &graph, &[]);
+    let projection = project_graph(&graph, &[], ProjectionViewKey::Public);
 
     assert_eq!(projection.commits.len(), 1);
     assert_eq!(projection.commits[0].logical_commit_id, "rv1");
@@ -763,15 +744,13 @@ fn public_projection_keeps_public_history_when_policy_later_marks_path_private()
 
 #[test]
 fn public_projection_never_contains_tracked_workflow_definitions() {
-    let policy = Policy::new(Visibility::Public);
     let graph = graph(vec![commit(
         "rv1",
-        None,
         "add workflow",
         added("/.scope/runs/test.yml", Visibility::Public, "name: Test"),
     )]);
 
-    let projection = project_public(&policy, &graph, &[]);
+    let projection = project_graph(&graph, &[], ProjectionViewKey::Public);
 
     assert!(projection.visible_paths().is_empty());
 }
@@ -781,7 +760,6 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
     let mut repo = published_repo_with_public_file("initial", "/README.md", "hello");
     let mut request_merge = commit(
         "rv_request_merge",
-        Some("rv1"),
         "merge public request",
         added("/kept.txt", Visibility::Public, "kept"),
     );
@@ -805,7 +783,6 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
     repo.live_files.insert(path("/kept.txt"), blob("kept"));
     let mut later_request_merge = commit(
         "rv_later_request_merge",
-        Some("rv_request_merge"),
         "merge later public request",
         added("/later.txt", Visibility::Public, "later"),
     );
@@ -888,7 +865,6 @@ fn unchanged_history_rewrite_is_not_reapplied_on_later_push() {
 fn public_projection_handles_reveal_and_private_gap_timelines() {
     let cases = [
         (
-            Visibility::Private,
             vec![
                 ("rv1", Visibility::Private, "draft"),
                 ("rv2", Visibility::Public, "release"),
@@ -897,13 +873,11 @@ fn public_projection_handles_reveal_and_private_gap_timelines() {
             vec!["rv2"],
         ),
         (
-            Visibility::Private,
             vec![("rv1", Visibility::Private, "draft")],
             vec![("vis_1", Some("rv1"), None, Visibility::Public, "draft")],
             vec!["vis_1"],
         ),
         (
-            Visibility::Public,
             vec![
                 ("rv1", Visibility::Public, "v1"),
                 ("rv2", Visibility::Private, "v2"),
@@ -916,7 +890,6 @@ fn public_projection_handles_reveal_and_private_gap_timelines() {
             vec!["rv1", "rv2", "rv3"],
         ),
         (
-            Visibility::Public,
             vec![("rv1", Visibility::Public, "readme")],
             vec![
                 ("vis_1", Some("rv1"), None, Visibility::Private, "readme"),
@@ -925,8 +898,8 @@ fn public_projection_handles_reveal_and_private_gap_timelines() {
             vec!["rv1", "vis_1", "vis_2"],
         ),
     ];
-    for (default, versions, events, expected_ids) in cases {
-        let projection = project_timeline(default, "/file", &versions, &events);
+    for (versions, events, expected_ids) in cases {
+        let projection = project_timeline("/file", &versions, &events);
         assert_eq!(
             projection
                 .commits

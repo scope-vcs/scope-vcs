@@ -1,7 +1,4 @@
-use super::{
-    entities::{self, i64_to_u64},
-    object_references::replace_object_reference,
-};
+use super::{entities, integer_columns::i64_to_u64, object_references::replace_object_reference};
 use crate::error::PostgresError;
 use scope_domain::requests::RequestRevision;
 use sea_orm::{

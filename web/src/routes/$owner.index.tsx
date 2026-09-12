@@ -1,9 +1,8 @@
-import { HttpError } from '@/api/client'
+import { isNotFoundError } from '@/api/http'
 import { loadOwnerProfileForRequest } from '@/api/profile'
-import { OwnerProfileError } from '@/features/home/owner-profile-error'
-import { OwnerProfileNotFound } from '@/features/home/owner-profile-not-found'
+import { RouteErrorPage } from '@/components/route-error-page'
+import { OwnerProfilePage } from '@/features/home/owner-profile-page'
 import { OwnerProfilePending } from '@/features/home/owner-profile-pending'
-import { OwnerProfileRoute } from '@/features/home/owner-profile-route'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 
@@ -13,17 +12,27 @@ const loadOwnerProfile = createServerFn({ method: 'GET' })
     try {
       return await loadOwnerProfileForRequest(data.owner)
     } catch (error) {
-      if (error instanceof HttpError && error.status === 404) {
-        throw notFound()
-      }
+      if (isNotFoundError(error)) throw notFound()
       throw error
     }
   })
 
 export const Route = createFileRoute('/$owner/')({
   loader: ({ params }) => loadOwnerProfile({ data: params }),
-  errorComponent: OwnerProfileError,
-  notFoundComponent: OwnerProfileNotFound,
+  errorComponent: ({ error }) => (
+    <RouteErrorPage
+      error={error}
+      fallbackMessage="Unexpected profile error"
+      title="Profile unavailable"
+    />
+  ),
+  notFoundComponent: () => (
+    <RouteErrorPage
+      error={new Error('No user exists with that handle.')}
+      fallbackMessage="User not found"
+      title="Profile not found"
+    />
+  ),
   pendingComponent: OwnerProfileRoutePending,
   component: OwnerProfileRoute,
 })
@@ -31,4 +40,8 @@ export const Route = createFileRoute('/$owner/')({
 function OwnerProfileRoutePending() {
   const { owner } = Route.useParams()
   return <OwnerProfilePending owner={owner} />
+}
+
+function OwnerProfileRoute() {
+  return <OwnerProfilePage state={Route.useLoaderData()} />
 }

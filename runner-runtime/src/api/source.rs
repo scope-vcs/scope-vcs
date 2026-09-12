@@ -1,4 +1,13 @@
-use super::*;
+use super::RuntimeClient;
+use anyhow::Context as _;
+use reqwest::StatusCode;
+use sha2::{Digest as _, Sha256};
+use std::{
+    io::{Read, Write},
+    path::Path,
+    thread,
+    time::Duration,
+};
 
 pub(super) const MAX_SOURCE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_SOURCE_DOWNLOAD_ATTEMPTS: usize = 3;
@@ -27,12 +36,8 @@ impl RuntimeClient {
                 Err(SourceDownloadError::Retryable(error))
                     if attempt < MAX_SOURCE_DOWNLOAD_ATTEMPTS =>
                 {
-                    let delay = source_retry_delay(attempt);
-                    if started_at.elapsed().saturating_add(delay) >= SOURCE_DOWNLOAD_TIMEOUT {
-                        return Err(error.context("download run source exceeded its total timeout"));
-                    }
                     eprintln!("download run source attempt {attempt} failed: {error:#}; retrying");
-                    thread::sleep(delay);
+                    thread::sleep(SOURCE_RETRY_DELAY * attempt as u32);
                 }
                 Err(SourceDownloadError::Retryable(error)) => {
                     return Err(error.context(format!(
@@ -155,17 +160,6 @@ impl RuntimeClient {
         })?;
         Ok(())
     }
-}
-
-fn source_retry_delay(failed_attempt: usize) -> Duration {
-    let base = SOURCE_RETRY_DELAY * failed_attempt as u32;
-    let mut random = [0_u8; 1];
-    let jitter = if getrandom::fill(&mut random).is_ok() {
-        base.mul_f64(f64::from(random[0]) / 510.0)
-    } else {
-        Duration::ZERO
-    };
-    base + jitter
 }
 
 pub(super) fn retryable_source_status(status: StatusCode) -> bool {

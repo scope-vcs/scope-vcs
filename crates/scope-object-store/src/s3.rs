@@ -13,6 +13,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use reqwest::blocking::Client;
 use std::{
     io::Read,
+    mem::ManuallyDrop,
     time::{Duration, SystemTime},
 };
 
@@ -53,7 +54,10 @@ impl S3ObjectStoreSettings {
 }
 
 pub struct S3ObjectStore {
-    client: Option<Client>,
+    /// reqwest's blocking client owns runtime resources. This object is
+    /// process-lifetime state, so the client is never dropped, which avoids
+    /// async-context shutdown panics.
+    client: ManuallyDrop<Client>,
     signer: S3Presigner,
     request_timeout: Duration,
 }
@@ -246,7 +250,7 @@ impl S3Presigner {
 impl S3ObjectStore {
     pub fn new(settings: S3ObjectStoreSettings) -> Result<Self, ObjectStoreError> {
         Ok(Self {
-            client: Some(
+            client: ManuallyDrop::new(
                 Client::builder()
                     .connect_timeout(settings.connect_timeout)
                     .build()
@@ -275,10 +279,8 @@ impl S3ObjectStore {
             None,
             SystemTime::now(),
         )?;
-        let client = self.client.as_ref().ok_or_else(|| {
-            ObjectStoreError::internal_message("object store client is shut down")
-        })?;
-        let mut request = client
+        let mut request = self
+            .client
             .request(
                 method.parse().map_err(ObjectStoreError::internal)?,
                 &signed.url,
@@ -349,16 +351,6 @@ fn read_response_body(
         .map_err(ObjectStoreError::internal)?;
     ensure_object_size("read", key, body.len(), max_bytes)?;
     Ok(body)
-}
-
-impl Drop for S3ObjectStore {
-    fn drop(&mut self) {
-        if let Some(client) = self.client.take() {
-            // reqwest's blocking client owns runtime resources. This object is
-            // process-lifetime state, so avoid async-context shutdown panics.
-            std::mem::forget(client);
-        }
-    }
 }
 
 impl ObjectStore for S3ObjectStore {

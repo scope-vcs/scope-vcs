@@ -154,48 +154,33 @@ assert.equal(process.env.SCOPE_MEDIA_SMOKE_TOKEN, 'scope_private_session_value')
 writeFileSync(value('--receipt'), '{"passed":true,"request_deleted":true}\n')
 appendFileSync(process.env.TRACE_PATH, 'media-smoke\n')
 EOF
-cat > "$test_root/media-capacity.mjs" <<'EOF'
-import { appendFileSync, writeFileSync } from 'node:fs'
-import assert from 'node:assert/strict'
-const args = process.argv.slice(2)
-const value = (name) => args[args.indexOf(name) + 1]
-assert.equal(process.env.SCOPE_MEDIA_SMOKE_TOKEN, 'scope_private_session_value')
-assert.equal(value('--small-uploads'), '4')
-writeFileSync(value('--output'), '{"passed":true,"loaded":{"failed_requests":0}}\n')
-appendFileSync(process.env.TRACE_PATH, 'media-capacity\n')
-EOF
-
 # The later workflow invocation reuses the same session after the exchange is consumed.
-capacity_dir="$smoke_dir"
-capacity_token="$token_path"
+reuse_dir="$smoke_dir"
+reuse_token="$token_path"
 printf 'photo' > "$test_root/photo.png"
 printf 'video' > "$test_root/video.mp4"
 FAKE_SCOPE_SESSION_TOKEN='scope_private_session_value' \
   SCOPE_API_URL='https://api-staging.example.test' \
   SCOPE_GIT_ROUTER_URL='https://router-staging.example.test' \
   SCOPE_CLI_BINARY="$fake_bin/scope" \
-  SCOPE_EXCHANGE_TOKEN_PATH="$capacity_token" \
-  SCOPE_GIT_SMOKE_DIR="$capacity_dir" \
+  SCOPE_EXCHANGE_TOKEN_PATH="$reuse_token" \
+  SCOPE_GIT_SMOKE_DIR="$reuse_dir" \
   SCOPE_MEDIA_GATEWAY_URL='https://media-staging.example.test' \
   SCOPE_MEDIA_SMOKE_SCRIPT="$test_root/media-smoke.mjs" \
   SCOPE_MEDIA_SMOKE_PNG="$test_root/photo.png" \
   SCOPE_MEDIA_SMOKE_MP4="$test_root/video.mp4" \
   SCOPE_MEDIA_SMOKE_RECEIPT="$test_root/media-receipt.json" \
   SCOPE_MEDIA_SMOKE_SOURCE_SHA='1111111111111111111111111111111111111111' \
-  SCOPE_MEDIA_CAPACITY_SCRIPT="$test_root/media-capacity.mjs" \
-  SCOPE_MEDIA_CAPACITY_VIDEO="$test_root/video.mp4" \
-  SCOPE_MEDIA_CAPACITY_RECEIPT="$test_root/capacity-receipt.json" \
   GITHUB_SHA='test-sha' \
-  bash "$repo_root/.github/scripts/staging-git-smoke.sh" > "$test_root/capacity-output" 2>&1
-test -d "$capacity_dir/config/scope/sessions"
-test -z "$(find "$capacity_dir" -maxdepth 1 -name 'invocation.*' -print)"
+  bash "$repo_root/.github/scripts/staging-git-smoke.sh" > "$test_root/reuse-output" 2>&1
+test -d "$reuse_dir/config/scope/sessions"
+test -z "$(find "$reuse_dir" -maxdepth 1 -name 'invocation.*' -print)"
 test "$(grep -c '^scope-login-file$' "$trace_path")" = 1
 test "$(sort -u "$trace_path.checkouts" | wc -l)" = 2
 while IFS= read -r checkout; do test ! -e "$checkout"; done < "$trace_path.checkouts"
 grep -Fxq 'media-smoke' "$trace_path"
-grep -Fxq 'media-capacity' "$trace_path"
-if grep -Fq 'scope_private_session_value' "$test_root/capacity-output" "$trace_path"; then
-  echo "staging capacity proof exposed its private session" >&2
+if grep -Fq 'scope_private_session_value' "$test_root/reuse-output" "$trace_path"; then
+  echo "staging session reuse exposed its private session" >&2
   exit 1
 fi
 

@@ -334,5 +334,12 @@ mod tests {
             cursor
         );
         assert!(parse_cursor(b"key", "repo", RequestQueueSection::SetAside, &encoded).is_err());
+        let out_of_range = scope_postgres::db::RequestQueueCursor {
+            updated_at_unix: i64::MAX as u64 + 1,
+            request_id: "request".into(),
+        };
+        let encoded =
+            encode_cursor(b"key", "repo", RequestQueueSection::Active, &out_of_range).unwrap();
+        assert!(parse_cursor(b"key", "repo", RequestQueueSection::Active, &encoded).is_err());
     }
 }

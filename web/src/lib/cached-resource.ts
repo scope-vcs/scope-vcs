@@ -97,9 +97,6 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
     getSnapshot,
     getServerSnapshot: (): ResourceSnapshot<T> => emptySnapshot,
     invalidate,
-    invalidateAll() {
-      for (const identity of identities()) invalidate(identity)
-    },
     invalidateMatching(matches: (identity: string) => boolean) {
       for (const identity of identities()) if (matches(identity)) invalidate(identity)
     },

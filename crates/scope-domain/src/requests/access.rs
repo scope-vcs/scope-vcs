@@ -41,8 +41,6 @@ pub struct RequestPolicyDecision {
     pub exact_visible: bool,
     pub discussion_visible: bool,
     pub activity_stream_visible: bool,
-    pub git_advertised: bool,
-    pub request_ref_readable: bool,
     pub branch_mutable: bool,
     pub counts_as_open: bool,
     pub permissions: RequestPermissions,
@@ -144,14 +142,6 @@ pub fn request_policy(request: &Request, viewer: RequestViewer<'_>) -> RequestPo
     };
     let listable =
         request_list_predicate(viewer.access, viewer.user_id).matches(request, viewer.is_invitee);
-    let git_advertised = if private {
-        maintainer
-    } else if submitted {
-        true
-    } else {
-        author || invitee
-    };
-    let request_ref_readable = exact_visible;
     let branch_actor = if private {
         maintainer
     } else {
@@ -168,7 +158,7 @@ pub fn request_policy(request: &Request, viewer: RequestViewer<'_>) -> RequestPo
         can_wait_after_reply: can_discuss && maintainer && open,
         can_transition_discussion: discussion_visible && authenticated && (public || !terminal),
         can_edit_identity: exact_visible && !terminal && (author || maintainer),
-        can_pull_branch: request_ref_readable,
+        can_pull_branch: exact_visible,
         can_push_branch: branch_mutable,
         can_submit: exact_visible && !submitted && author,
         can_manage_invitees: exact_visible && public && !terminal && (author || maintainer),
@@ -184,8 +174,6 @@ pub fn request_policy(request: &Request, viewer: RequestViewer<'_>) -> RequestPo
         exact_visible,
         discussion_visible,
         activity_stream_visible,
-        git_advertised,
-        request_ref_readable,
         branch_mutable,
         counts_as_open: open && exact_visible,
         permissions,

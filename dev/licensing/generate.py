@@ -129,7 +129,13 @@ def supplement(entries):
     by_key = {f"{entry['ecosystem']}:{entry['name']}@{entry['version']}": entry for entry in entries}
     configuration = {}
     for path in ["legal/rust-supplements.json", "legal/web-supplements.json"]:
-        configuration.update(json.loads((ROOT / path).read_text(encoding="utf-8")))
+        document = json.loads((ROOT / path).read_text(encoding="utf-8"))
+        for key, addition in document["packages"].items():
+            if "reason_key" in addition:
+                addition["reason"] = document["reasons"][addition.pop("reason_key")]
+            elif "reason" not in addition:
+                addition["reason"] = document["inherited_reasons"][addition["from_package"]]
+            configuration[key] = addition
     for key, addition in configuration.items():
         if key not in by_key:
             raise ValueError(f"Remove stale license supplement: {key}")
@@ -317,7 +323,6 @@ def render_inventory(metadata, packages):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Fail if committed artifacts differ.")
-    parser.add_argument("--audit-only", action="store_true", help="Report missing coverage without writing artifacts.")
     args = parser.parse_args()
     check_first_party()
     if args.check:
@@ -332,9 +337,6 @@ def main():
         print("Missing license declaration or license text:\n" + "\n".join(missing))
         (CACHE / "audit.json").write_text(json.dumps(entries, indent=2), encoding="utf-8")
         raise SystemExit(1)
-    if args.audit_only:
-        print(f"Audited {len(entries)} dependency and copied-source entries.")
-        return
     inventory = [{**entry, "documents": [{key: value for key, value in document.items() if key != "text"}
         for document in entry["documents"]]} for entry in entries]
     outputs = {

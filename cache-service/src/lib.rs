@@ -31,7 +31,7 @@ pub struct AppState {
 
 impl AppState {
     pub async fn from_settings(settings: Settings) -> anyhow::Result<Self> {
-        let metadata = MetadataStore::connect_worker(settings.database_url).await?;
+        let metadata = MetadataStore::connect(settings.database_url).await?;
         let object_store_settings = settings.object_store.clone();
         let object_store = Arc::new(
             tokio::task::spawn_blocking(move || S3ObjectStore::new(object_store_settings))

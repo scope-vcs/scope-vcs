@@ -162,7 +162,7 @@ pub async fn replies_for_discussion<C>(
 where
     C: ConnectionTrait,
 {
-    let rows = conn
+    let mut replies = conn
         .query_all(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
@@ -201,7 +201,6 @@ where
         .iter()
         .map(reply_read_model)
         .collect::<Result<Vec<_>, _>>()?;
-    let mut replies = rows;
     replies.reverse();
     Ok(replies)
 }

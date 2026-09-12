@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{RunStore, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::{log::RunLogChunk, workflow::definition::WorkflowJobId};
@@ -12,12 +13,6 @@ pub struct StoredRunLog {
     pub run_id: String,
     pub job_key: String,
     pub chunk: RunLogChunk,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RecentRunLogs {
-    pub logs: Vec<StoredRunLog>,
-    pub truncated_in_view: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,15 +48,15 @@ impl RunLogReadRow {
     fn try_into_stored(self) -> Result<StoredRunLog, PostgresError> {
         let job_key = WorkflowJobId::parse(self.job_key).map_err(PostgresError::invalid_input)?;
         Ok(StoredRunLog {
-            position: entities::i64_to_u64(self.position, "run log position")?,
+            position: integer_columns::i64_to_u64(self.position, "run log position")?,
             run_id: self.run_id,
             job_key: job_key.as_str().to_string(),
             chunk: RunLogChunk::new(
                 self.attempt_id,
-                entities::i32_to_u32(self.step_index, "run log step index")?,
-                entities::i64_to_u64(self.sequence, "run log sequence")?,
+                integer_columns::i32_to_u32(self.step_index, "run log step index")?,
+                integer_columns::i64_to_u64(self.sequence, "run log sequence")?,
                 self.text,
-                entities::i64_to_u64(self.created_at_unix, "run log creation time")?,
+                integer_columns::i64_to_u64(self.created_at_unix, "run log creation time")?,
             )
             .map_err(PostgresError::invalid_input)?,
         })
@@ -137,7 +132,7 @@ impl RunStore {
         .map_err(PostgresError::internal)?
         .into_iter()
         .map(|model| -> Result<StoredRunLog, PostgresError> {
-            let position = entities::i64_to_u64(model.position, "run log position")?;
+            let position = integer_columns::i64_to_u64(model.position, "run log position")?;
             let run_id = model.run_id.clone();
             Ok(StoredRunLog {
                 position,
@@ -194,33 +189,6 @@ impl RunStore {
         .await
     }
 
-    pub async fn recent_run_logs(
-        &self,
-        run_id: &str,
-        limit: u64,
-    ) -> Result<RecentRunLogs, PostgresError> {
-        let fetch_limit = limit.saturating_add(1);
-        let fetch_limit = i64::try_from(fetch_limit)
-            .map_err(|_| PostgresError::invalid_input("recent run log limit is too large"))?;
-        let mut logs = joined_run_logs(
-            self.db.as_ref(),
-            "WHERE log.run_id = $1
-             ORDER BY log.position DESC
-             LIMIT $2",
-            [run_id.into(), fetch_limit.into()],
-        )
-        .await?;
-        let truncated_in_view = logs.len() as u64 > limit;
-        if truncated_in_view {
-            logs.pop();
-        }
-        logs.reverse();
-        Ok(RecentRunLogs {
-            logs,
-            truncated_in_view,
-        })
-    }
-
     pub async fn next_attempt_log_sequence(&self, attempt_id: &str) -> Result<u64, PostgresError> {
         let last = entities::run_log::Entity::find()
             .filter(entities::run_log::Column::AttemptId.eq(attempt_id))
@@ -229,7 +197,7 @@ impl RunStore {
             .await
             .map_err(PostgresError::internal)?;
         match last {
-            Some(log) => entities::i64_to_u64(log.sequence, "run log sequence")?
+            Some(log) => integer_columns::i64_to_u64(log.sequence, "run log sequence")?
                 .checked_add(1)
                 .ok_or_else(|| PostgresError::conflict("run log sequence overflow")),
             None => Ok(1),

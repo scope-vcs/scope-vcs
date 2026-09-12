@@ -1,5 +1,5 @@
 use super::requests::*;
-use crate::content::{DEFAULT_GIT_FILE_MODE, SourceBlob};
+use crate::requests::fixtures::{open_request, pushed_draft, submit_input};
 
 #[test]
 fn author_submits_a_pushed_draft_exactly_once() {
@@ -61,17 +61,6 @@ fn merge_is_maintainer_only_and_terminal() {
     assert!(merge_request(&merged.request, merge_input()).is_err());
 }
 
-fn submit_input() -> SubmitRequestInput {
-    SubmitRequestInput {
-        request_id: "request_1".to_string(),
-        actor_user_id: "author".to_string(),
-        actor_is_author: true,
-        actor_can_submit: true,
-        event_id: "event_submitted".to_string(),
-        now_unix: 20,
-    }
-}
-
 fn merge_input() -> MergeRequestInput {
     MergeRequestInput {
         request_id: "request_1".to_string(),
@@ -82,40 +71,4 @@ fn merge_input() -> MergeRequestInput {
         merged_event_id: "event_merged".to_string(),
         now_unix: 31,
     }
-}
-
-fn pushed_draft(role: RequestActorRole) -> Request {
-    let mut request = start_request(
-        StartRequestFacts::default(),
-        StartRequestInput {
-            id: "request_1".to_string(),
-            repo_id: "owner/repo".to_string(),
-            name: "fix-parser".to_string(),
-            author_user_id: "author".to_string(),
-            title: Some("Fix parser".to_string()),
-            author_role: role,
-            audience: RequestAudience::Public,
-            base_main_oid: "base".to_string(),
-            event_id: "event_started".to_string(),
-            now_unix: 10,
-        },
-    )
-    .unwrap()
-    .request;
-    request.head_oid = "head".to_string();
-    request.git_snapshot = Some(SourceBlob {
-        content_ref: crate::content_ref::ContentRef::git_bundle_sha256("head"),
-        sha256: "sha256-head".to_string(),
-        git_oid: "head".to_string(),
-        git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-        size_bytes: 1,
-    });
-    request.updated_at_unix = 11;
-    request
-}
-
-fn open_request() -> Request {
-    submit_request(&pushed_draft(RequestActorRole::Public), submit_input())
-        .unwrap()
-        .request
 }

@@ -151,7 +151,7 @@ test('API preparation embeds and binds the original maintenance binary before pu
   const original = join(f.root, 'build-artifact-maintenance');
   writeFileSync(original, readFileSync(f.imageBinary));
   const result = spawnSync('bash', [preparer, 'api', context, f.manifest], {
-    cwd: repository, encoding: 'utf8', env: { ...f.env, GITHUB_REPOSITORY: 'example/release', SCOPE_MAINTENANCE_BINARY: original, SCOPE_RAILWAY_REGISTRY_USERNAME: 'pull-user', SCOPE_RAILWAY_REGISTRY_PASSWORD: 'durable-read-token', SCOPE_ARTIFACT_IMAGE_REPOSITORY: 'ghcr.io/attacker/ignored-override' },
+    cwd: repository, encoding: 'utf8', env: { ...f.env, GITHUB_REPOSITORY: 'example/release', SCOPE_MAINTENANCE_BINARY: original, SCOPE_RAILWAY_REGISTRY_USERNAME: 'pull-user', SCOPE_RAILWAY_REGISTRY_PASSWORD: 'durable-read-token' },
   });
   assert.equal(result.status, 0, result.stderr);
   const prepared = JSON.parse(readFileSync(f.manifest));

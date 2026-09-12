@@ -1,9 +1,11 @@
-import { compactMarkdownComponents } from '@/components/compact-markdown-components'
+import { markdownComponents } from '@/components/markdown-components'
 import { SafeMarkdown } from '@/components/safe-markdown'
 import { cn } from '@/lib/utils'
 import type { ComponentProps, ReactNode } from 'react'
 import { RequestAttachmentMedia } from './request-attachment-media'
 import { requestAttachmentIdFromUrl } from './request-attachment-reference'
+
+const compactMarkdownComponents = markdownComponents('compact')
 
 const requestMarkdownComponents = {
   ...compactMarkdownComponents,

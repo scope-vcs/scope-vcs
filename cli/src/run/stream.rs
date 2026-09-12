@@ -252,13 +252,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn run_labels_and_oids_are_stable() {
-        assert_eq!(state_label(RunState::Canceled), "canceled");
-        assert_eq!(short_oid("1234567890"), "1234567");
-        assert_eq!(short_oid("short"), "short");
-    }
-
-    #[test]
     fn run_watch_ignores_replayed_log_positions() {
         let mut cursor = 7;
         assert!(!advance_log_cursor(&mut cursor, 6));

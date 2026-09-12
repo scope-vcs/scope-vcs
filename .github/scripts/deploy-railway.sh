@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-service_name="${1:?usage: deploy-railway.sh <service-name> <upload-root>}"
-upload_root="${2:?usage: deploy-railway.sh <service-name> <upload-root>}"
+# Prepared activations (SCOPE_PREPARED_RELEASE_PATH) deploy an immutable image and
+# take no upload root; source uploads require the directory to send to Railway.
+service_name="${1:?usage: deploy-railway.sh <service-name> [upload-root]}"
+upload_root="${2:-}"
 
 if [[ -z "${RAILWAY_API_TOKEN:-}" && -z "${RAILWAY_TOKEN:-}" ]]; then
   echo "Set RAILWAY_API_TOKEN or RAILWAY_TOKEN before deploying ${service_name}."
@@ -19,7 +21,7 @@ if [ -z "${RAILWAY_PROJECT_ID:-}" ]; then
   exit 1
 fi
 
-railway_environment="${SCOPE_RAILWAY_ENVIRONMENT_ID:-production}"
+railway_environment="${SCOPE_RAILWAY_ENVIRONMENT_ID:?SCOPE_RAILWAY_ENVIRONMENT_ID is required}"
 deployment_component="${SCOPE_DEPLOYMENT_COMPONENT:-}"
 deployment_source_sha="${SCOPE_DEPLOYMENT_SOURCE_SHA:-${GITHUB_SHA:-}}"
 deployment_evidence_path="${SCOPE_DEPLOYMENT_EVIDENCE_PATH:-}"
@@ -56,6 +58,8 @@ railway_read() {
   node "$(dirname "${BASH_SOURCE[0]}")/railway-read.mjs" "$@"
 }
 
+source "$(dirname "${BASH_SOURCE[0]}")/railway-service-health.sh"
+
 ensure_service_exists() {
   local service_name="$1"
   local services_json
@@ -72,42 +76,6 @@ ensure_service_exists() {
     echo "Create the service in Railway, configure its variables, then rerun this workflow."
     return 1
   fi
-}
-
-service_is_healthy() {
-  local service_name="$1"
-  local expected_deployment_id="${2:-}"
-  local services_json
-  services_json="$(
-    railway_read status \
-      --project "$RAILWAY_PROJECT_ID" \
-      --environment "$railway_environment" \
-      --json
-  )"
-  SCOPE_RAILWAY_ENVIRONMENT_ID="$railway_environment" \
-    SCOPE_EXPECTED_RAILWAY_CONFIG="$expected_config" \
-    SCOPE_RAILWAY_SERVICES_JSON="$services_json" \
-    SCOPE_RAILWAY_SERVICE_ID="$service_name" \
-    SCOPE_EXPECTED_RAILWAY_DEPLOYMENT_ID="$expected_deployment_id" \
-    node .github/scripts/railway-service-health.mjs >/dev/null
-}
-
-wait_for_service_health() {
-  local service_name="$1"
-  local expected_deployment_id="${2:-}"
-  local timeout="${SCOPE_SERVICE_HEALTH_TIMEOUT_SECONDS:-600}"
-  local interval="${SCOPE_SERVICE_HEALTH_POLL_SECONDS:-10}"
-  local deadline=$((SECONDS + timeout))
-  while true; do
-    if service_is_healthy "$service_name" "$expected_deployment_id" 2>/dev/null; then
-      return 0
-    fi
-    (( SECONDS < deadline )) || break
-    sleep "$interval"
-  done
-  service_is_healthy "$service_name" "$expected_deployment_id" || true
-  echo "Timed out waiting for $service_name to reach its exact healthy deployment." >&2
-  return 1
 }
 
 print_deployment_logs() {
@@ -261,14 +229,7 @@ if [[ -n "$prepared_release" ]]; then
     echo 'Prepared artifact service does not match the activation target.' >&2
     exit 2
   }
-  case "$deployment_component" in
-    run-worker) expected_config=worker/railway.json ;;
-    cli-downloads) expected_config=cli/railway.json ;;
-    cache) expected_config=cache-service/railway.json ;;
-    git-router) expected_config=repo-router/railway.json ;;
-    media-api) expected_config=media-service/railway.json ;;
-    *) expected_config="$deployment_component/railway.json" ;;
-  esac
+  expected_config="$(railway_config_path "$deployment_component")"
   previous_deployment_ids="$(railway_read status \
     --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" --json |
     jq -ce --arg environment "$railway_environment" --arg service "$service_name" '
@@ -284,6 +245,10 @@ if [[ -n "$prepared_release" ]]; then
   deploy_output="$(node .github/scripts/railway-artifact.mjs activate \
     "$prepared_release" "$deployment_component" "$railway_environment")"
 else
+  [[ -n "$upload_root" ]] || {
+    echo 'usage: deploy-railway.sh <service-name> <upload-root>' >&2
+    exit 2
+  }
   deploy_output="$(
     railway up "$upload_root" \
       --path-as-root \
@@ -313,9 +278,9 @@ if [[ -n "$prepared_release" ]]; then
 fi
 if [[ "$defer_service_health" == "0" ]]; then
   if [[ "$deployment_was_skipped" == "1" ]]; then
-    service_is_healthy "$service_name"
+    service_is_healthy "$service_name" "" "$expected_config"
   else
-    wait_for_service_health "$service_name" "$deployment_id"
+    wait_for_service_health "$service_name" "$deployment_id" "$expected_config"
   fi
 fi
 if [[ -n "${SCOPE_RELEASE_DEPLOYMENTS_FILE:-}" ]]; then

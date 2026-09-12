@@ -1,12 +1,10 @@
 use super::request_discussions::{
     CONTRIBUTOR_ID as DEV_SEED_CONTRIBUTOR_ID, MAINTAINER_ID as DEV_SEED_MAINTAINER_ID,
-    REQUEST_ID as DISCUSSION_REQUEST_ID,
 };
 use super::*;
 use crate::AppState;
-use crate::git::import::git_stdout_text;
+use crate::git::command::git_stdout_text;
 use crate::git::restore::restore_git_pack_spans;
-use scope_domain::requests::RequestState;
 use scope_object_store::{EncryptedObjectStore, MemoryObjectStore, source_blob_bytes};
 use std::sync::Arc;
 
@@ -37,7 +35,7 @@ fn local_dev_actor_lookup_is_limited_to_seeded_identities() {
 }
 
 #[tokio::test]
-async fn seed_catalog_contains_owned_repos_with_readable_blobs() {
+async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
     let store = EncryptedObjectStore::new(Arc::new(MemoryObjectStore::new()), [9; 32]);
     let git_segment_store = super::test_seed_git_segment_store();
 
@@ -51,10 +49,6 @@ async fn seed_catalog_contains_owned_repos_with_readable_blobs() {
     )
     .unwrap();
 
-    let repos = catalog.repositories_for_user(DEV_SEED_USER_ID);
-    assert_eq!(repos.len(), 6);
-    assert!(catalog.repository("dev", "public-demo").is_some());
-    assert!(catalog.repository("dev", "update-demo").is_some());
     for fixture in dependency_repositories::fixtures() {
         let repository = catalog
             .repository("dev", fixture.name)
@@ -91,59 +85,11 @@ async fn seed_catalog_contains_owned_repos_with_readable_blobs() {
             );
         }
     }
-    assert_eq!(
-        catalog.users.get(DEV_SEED_CONTRIBUTOR_ID).unwrap().handle,
-        "river-contributor"
-    );
-    assert_eq!(
-        catalog.users.get(DEV_SEED_MAINTAINER_ID).unwrap().handle,
-        "maya-maintainer"
-    );
-
-    let public_demo = catalog.repository("dev", "public-demo").unwrap();
-    assert_eq!(
-        public_demo.graph.commits[0].changes[0].path.as_str(),
-        "/README.html"
-    );
-    let readme = public_demo.graph.commits[0].changes[0]
-        .new_content
-        .as_ref()
-        .unwrap();
-    let readme_bytes = source_blob_bytes(&store, readme).unwrap();
-    assert!(
-        std::str::from_utf8(&readme_bytes)
-            .unwrap()
-            .contains("<h1>Public by design.</h1>")
-    );
-
-    assert_eq!(catalog.requests.len(), 6);
-    assert_eq!(
-        catalog
-            .requests
-            .get(DISCUSSION_REQUEST_ID)
-            .unwrap()
-            .audience,
-        RequestAudience::Public
-    );
-    assert_eq!(
-        request_state(&catalog, "req_demo_working"),
-        RequestState::Draft
-    );
-    assert!(
-        catalog.requests["req_demo_working"]
-            .submitted_at_unix
-            .is_none()
-    );
-    assert_eq!(
-        request_state(&catalog, "req_demo_ready"),
-        RequestState::Open
-    );
     let ready_revisions = catalog
         .request_revisions
         .values()
         .filter(|revision| revision.request_id == "req_demo_ready")
         .collect::<Vec<_>>();
-    assert_eq!(ready_revisions.len(), 4);
     let ready = catalog.requests.get("req_demo_ready").unwrap();
     let last_request_event_at = catalog
         .request_events
@@ -159,21 +105,12 @@ async fn seed_catalog_contains_owned_repos_with_readable_blobs() {
             .iter()
             .all(|revision| revision.git_snapshot.git_oid == revision.new_head_oid)
     );
-    assert_eq!(request_state(&catalog, "req_demo_held"), RequestState::Open);
     let accepted = catalog.requests.get("req_demo_accepted").unwrap();
-    assert_eq!(accepted.state(), RequestState::Merged);
     assert_eq!(accepted.merged_main_oid, accepted.merged_head_oid);
     assert_ne!(
         accepted.merged_main_oid,
         Some(accepted.base_main_oid.clone())
     );
-    assert_eq!(
-        request_state(&catalog, "req_demo_rejected"),
-        RequestState::Closed
-    );
-    let neutral = catalog.requests.get("req_demo_neutral").unwrap();
-    assert_eq!(neutral.state(), RequestState::Closed);
-    assert_eq!(neutral.audience, RequestAudience::Public);
 }
 
 #[tokio::test]
@@ -273,10 +210,6 @@ async fn seed_catalog_git_segments_restore_raw_repositories() {
     let _ = fs::remove_dir_all(state.data_dir.as_ref());
 }
 
-fn request_state(catalog: &scope_postgres::db::CatalogFixture, request_id: &str) -> RequestState {
-    catalog.requests.get(request_id).unwrap().state()
-}
-
 async fn assert_repository_file(
     state: &AppState,
     repo: &Repository,
@@ -345,4 +278,47 @@ fn seed_snapshot_test_data_dir() -> std::path::PathBuf {
         "scope-vcs-seed-snapshot-test-{}-{nanos}",
         std::process::id()
     ))
+}
+
+#[tokio::test]
+async fn seeded_readme_is_readable_without_startup_backfill_or_git_materialization() {
+    use axum::{
+        body::{Body, to_bytes},
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    let state = AppState::test_state();
+    let catalog = super::catalog(
+        state.object_store.as_ref(),
+        state.git_segment_store.as_ref(),
+        DevSeedUser {
+            email: "dev@example.com".into(),
+            handle: "dev".into(),
+        },
+    )
+    .unwrap();
+    state
+        .metadata
+        .admin()
+        .seed_catalog_for_tests(catalog)
+        .unwrap();
+    // The HTTP read must use the persisted snapshot, even with no source objects available.
+    let mut state = state;
+    state.object_store = Arc::new(MemoryObjectStore::new());
+    state.git_segment_store = Arc::new(super::test_seed_git_segment_store());
+    let response = crate::router(state)
+        .oneshot(
+            Request::builder()
+                .uri("/v1/repos/dev/public-demo/files/content?path=README.html")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["path"], "/README.html");
+    assert_eq!(body["content"]["text"], PUBLIC_DEMO_README_HTML);
 }

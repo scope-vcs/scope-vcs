@@ -1,0 +1,17 @@
+[package]
+name = "scope-service-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+postgres = ["dep:scope_postgres"]
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+scope_postgres = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["macros", "net", "signal"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true

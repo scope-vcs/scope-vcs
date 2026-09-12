@@ -3,10 +3,11 @@ use super::segment_upload::{
     best_effort_delete_git_segment_identity, best_effort_delete_staged_git_segment,
 };
 use crate::{
-    config::{DEFAULT_GIT_BRANCH, MAX_PENDING_IMPORT_BLOB_BYTES, MAX_PENDING_IMPORT_FILES},
+    config::{MAX_PENDING_IMPORT_BLOB_BYTES, MAX_PENDING_IMPORT_FILES},
     error::ApiError,
-    git::upload::{
-        git_process_output_with_limits, git_process_output_with_timeout, truncated_git_stderr,
+    git::command::{
+        git_process_output, git_ref_listing, git_stdout_text, run_git, run_git_output,
+        truncated_git_stderr,
     },
     runtime_budgets::RuntimeBudgets,
     state::AppState,
@@ -17,6 +18,7 @@ use scope_domain::{
     policy::ScopePath,
     repo_control::{RepoControlPath, classify_repo_control_path},
 };
+use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git::{GitTreePath, StoredGitPush, prepare_git_push};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_git_storage::{GitStorageError, StagedGitSegment};
@@ -53,31 +55,11 @@ pub(super) fn pushed_commit_message(
 
 pub(crate) fn git_refs(staging_repo: &FsPath) -> Result<Vec<(String, String)>, ApiError> {
     let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
-    let output = run_git_output(
-        Some(staging_repo),
-        &[
-            "for-each-ref",
-            "--format=%(refname)%00%(objectname)",
-            &main_ref,
-            "refs/tags",
-        ],
+    git_ref_listing(
+        staging_repo,
+        &[&main_ref, "refs/tags"],
         "reading pushed refs",
-    )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading pushed refs: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let text = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
-    text.lines()
-        .map(|line| {
-            let (refname, oid) = line
-                .split_once('\0')
-                .ok_or_else(|| ApiError::internal_message("invalid git ref listing"))?;
-            Ok((refname.to_string(), oid.to_string()))
-        })
-        .collect()
+    )
 }
 
 pub(super) fn describe_refs(refs: &[(String, String)]) -> String {
@@ -156,9 +138,9 @@ fn git_tree_entries_for_path(
             )));
         }
         let blob_size = size
-            .parse::<usize>()
+            .parse::<u64>()
             .map_err(|_| ApiError::internal_message("invalid Git blob size"))?;
-        if enforce_import_limits && blob_size > MAX_PENDING_IMPORT_BLOB_BYTES {
+        if enforce_import_limits && blob_size > MAX_PENDING_IMPORT_BLOB_BYTES as u64 {
             return Err(ApiError::bad_request(format!(
                 "blob {path} is larger than {MAX_PENDING_IMPORT_BLOB_BYTES} bytes"
             )));
@@ -252,13 +234,13 @@ pub(super) fn git_changed_tree_entries(
         .map(|oid| format!("{oid}\n"))
         .collect::<String>();
     if !requested_oids.is_empty() {
-        let output = git_process_output_with_timeout(
+        let output = git_process_output(
             Command::new("git").current_dir(staging_repo).args([
                 "cat-file",
                 "--batch-check=%(objectname) %(objecttype) %(objectsize)",
             ]),
             Some(requested_oids.into_bytes()),
-            RuntimeBudgets::default_git_command_timeout(),
+            ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
         )?;
         if !output.status.success() {
             return Err(ApiError::infrastructure_unavailable(format!(
@@ -273,7 +255,7 @@ pub(super) fn git_changed_tree_entries(
                 return Err(ApiError::bad_request("pushed path is not a Git blob"));
             }
             values[2]
-                .parse::<usize>()
+                .parse::<u64>()
                 .map_err(|_| ApiError::internal_message("invalid Git blob size"))
         });
         for (_, entry) in &mut pending {
@@ -281,7 +263,7 @@ pub(super) fn git_changed_tree_entries(
                 entry.size_bytes = sizes
                     .next()
                     .ok_or_else(|| ApiError::internal_message("missing Git blob size"))??;
-                if entry.size_bytes > MAX_PENDING_IMPORT_BLOB_BYTES {
+                if entry.size_bytes > MAX_PENDING_IMPORT_BLOB_BYTES as u64 {
                     return Err(ApiError::bad_request(format!(
                         "blob {} is larger than {MAX_PENDING_IMPORT_BLOB_BYTES} bytes",
                         entry.path
@@ -380,12 +362,12 @@ pub(crate) async fn git_push_from_repo(
             ProcessLimits::new(timeout),
             "creating incremental Git pack",
             move |stdout, cancellation| {
-                runtime.block_on(segment_store.ingest_reserved_blocking_reader_cancellable(
+                runtime.block_on(segment_store.ingest_reserved_blocking_reader(
                     &repository_id_for_ingest,
                     reservation,
                     stdout,
                     storage_limits.max_object_bytes() as u64,
-                    cancellation,
+                    Some(cancellation),
                 ))
             },
         )
@@ -547,24 +529,14 @@ pub(crate) fn git_snapshot_from_ref(
     repo: &FsPath,
     refname: &str,
 ) -> Result<(SourceBlob, Vec<u8>), ApiError> {
-    git_snapshot_from_refs(repo, &[refname.to_string()])
-}
-
-fn git_snapshot_from_refs(
-    repo: &FsPath,
-    refs: &[String],
-) -> Result<(SourceBlob, Vec<u8>), ApiError> {
-    let [refname] = refs else {
-        return Err(ApiError::internal_message(
-            "Git snapshots must contain exactly one ref",
-        ));
-    };
     let head_oid = git_stdout_text(repo, &["rev-parse", refname], "reading Git snapshot head")?;
     let bundle_path = repo.join(format!("scope-snapshot-{}.bundle", random_bundle_id()?));
     let bundle = bundle_path.to_string_lossy().to_string();
-    let mut args = vec!["bundle", "create", bundle.as_str()];
-    args.extend(refs.iter().map(String::as_str));
-    run_git(Some(repo), &args, "creating Git snapshot bundle")?;
+    run_git(
+        Some(repo),
+        &["bundle", "create", bundle.as_str(), refname],
+        "creating Git snapshot bundle",
+    )?;
     let bytes = std::fs::read(&bundle_path).map_err(ApiError::internal)?;
     let _ = std::fs::remove_file(&bundle_path);
     let mut snapshot = content_object_for_bytes(ContentObjectKind::GitBundle, &bytes);
@@ -585,7 +557,7 @@ pub(crate) struct GitTreeFile {
     pub(crate) path: GitTreePath,
     pub(crate) mode: String,
     pub(crate) oid: String,
-    pub(crate) size_bytes: usize,
+    pub(crate) size_bytes: u64,
 }
 
 pub(crate) fn validate_pushed_file_path(path: &str) -> Result<GitTreePath, ApiError> {
@@ -604,81 +576,6 @@ pub(crate) fn validate_pushed_file_path(path: &str) -> Result<GitTreePath, ApiEr
     Ok(path)
 }
 
-pub(crate) fn run_git(repo: Option<&FsPath>, args: &[&str], action: &str) -> Result<(), ApiError> {
-    let output = run_git_output(repo, args, action)?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(ApiError::infrastructure_unavailable(format!(
-            "{action}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )))
-    }
-}
-
-pub(crate) fn git_stdout_text(
-    repo: &FsPath,
-    args: &[&str],
-    action: &str,
-) -> Result<String, ApiError> {
-    let output = run_git_output(Some(repo), args, action)?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "{action}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    String::from_utf8(output.stdout).map_err(ApiError::bad_request)
-}
-
-pub(crate) fn run_git_output(
-    repo: Option<&FsPath>,
-    args: &[&str],
-    action: &str,
-) -> Result<std::process::Output, ApiError> {
-    let mut command = Command::new("git");
-    if let Some(repo) = repo {
-        command.arg("-C").arg(repo);
-    }
-    command.args(args);
-    git_process_output_with_timeout(
-        &mut command,
-        None,
-        RuntimeBudgets::default_git_command_timeout(),
-    )
-    .map_err(|error| {
-        ApiError::infrastructure_unavailable(format!(
-            "failed {action}: {}",
-            error.operator_diagnostic()
-        ))
-    })
-}
-
-pub(crate) fn run_git_output_bounded(
-    repo: Option<&FsPath>,
-    args: &[&str],
-    action: &str,
-    max_stdout_bytes: usize,
-) -> Result<std::process::Output, ApiError> {
-    let mut command = Command::new("git");
-    if let Some(repo) = repo {
-        command.arg("-C").arg(repo);
-    }
-    command.args(args);
-    git_process_output_with_limits(
-        &mut command,
-        None,
-        RuntimeBudgets::default_git_command_timeout(),
-        max_stdout_bytes,
-    )
-    .map_err(|error| match error.status() {
-        axum::http::StatusCode::PAYLOAD_TOO_LARGE => {
-            ApiError::payload_too_large(format!("{action} exceeded {max_stdout_bytes} bytes"))
-        }
-        _ => error,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -686,13 +583,6 @@ mod tests {
         fs,
         time::{SystemTime, UNIX_EPOCH},
     };
-
-    #[test]
-    fn bounded_git_output_rejects_stdout_over_the_limit() {
-        let error =
-            run_git_output_bounded(None, &["--version"], "reading Git version", 1).unwrap_err();
-        assert_eq!(error.status(), axum::http::StatusCode::PAYLOAD_TOO_LARGE);
-    }
 
     #[test]
     fn workflow_tree_listing_is_scoped_to_the_runs_directory() {

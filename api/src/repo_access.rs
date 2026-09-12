@@ -33,17 +33,13 @@ pub(crate) async fn find_repo(
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{name} not found")))
 }
 
-pub(crate) fn ensure_repo_read(
-    state: &AppState,
-    repo: &Repository,
-    principal: &Principal,
-) -> Result<(), ApiError> {
+pub(crate) fn ensure_repo_read(repo: &Repository, principal: &Principal) -> Result<(), ApiError> {
     let access = repo.access_for_principal(principal);
     let readable = if access.actor == RepositoryActor::Public {
         repo.record.lifecycle_state == RepoLifecycleState::Ready
             && has_visible_projected_non_control_files(repo, principal)
     } else {
-        can_read_path(state, repo, principal, &ScopePath::root())?
+        repo.can_read_path(principal, &ScopePath::root())
     };
 
     if readable {
@@ -54,13 +50,4 @@ pub(crate) fn ensure_repo_read(
             repo.record.id
         )))
     }
-}
-
-pub(crate) fn can_read_path(
-    _state: &AppState,
-    repo: &Repository,
-    principal: &Principal,
-    path: &ScopePath,
-) -> Result<bool, ApiError> {
-    Ok(repo.can_read_path(principal, path))
 }

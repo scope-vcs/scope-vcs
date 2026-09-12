@@ -1,18 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chromium } from 'playwright'
+import { repo, repoPath, withPage } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
-const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000'
-const repo = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
-
 test('an interrupted stream recovers through failed reloads without replacing repository data', async () => {
-  const browser = await chromium.launch({ headless: true })
-  try {
-    const page = await browser.newPage()
-    let interrupted = false
-    let failedReloads = 0
-    let streamRequests = 0
+  let interrupted = false
+  let failedReloads = 0
+  let streamRequests = 0
+  const prepare = async (page) => {
     page.on('request', (request) => {
       if (new URL(request.url()).pathname.endsWith(`/v1/repos/${repo}/events`)) streamRequests += 1
     })
@@ -34,7 +29,8 @@ test('an interrupted stream recovers through failed reloads without replacing re
       }
       return route.continue()
     })
-    await page.goto(`${baseUrl}/${repo}`)
+  }
+  await withPage(repoPath, async (page) => {
     const activity = page.getByLabel('Latest repository change', { exact: true })
     const navigator = page.getByLabel('Repository file navigator', { exact: true })
     await activity.waitFor()
@@ -69,7 +65,5 @@ test('an interrupted stream recovers through failed reloads without replacing re
       window.__repoRecoveryObserver.disconnect()
       return window.__repoRecoveryBlanked
     }), false)
-  } finally {
-    await browser.close()
-  }
+  }, { prepare })
 })

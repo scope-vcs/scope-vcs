@@ -1,9 +1,13 @@
 use super::*;
-use crate::git::import::{git_push_from_repo, run_git, run_git_output};
+use crate::git::{
+    command::{run_git, run_git_output},
+    import::git_push_from_repo,
+};
 use scope_domain::{
     account::UserAccount, policy::Visibility, projection::ProjectionViewKey,
     repository::git::GitHead, runs::source::RunSource,
 };
+use std::time::Instant;
 
 #[tokio::test]
 async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinned_bundle() {

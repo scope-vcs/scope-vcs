@@ -9,14 +9,12 @@ pub(crate) fn public_git_origin(state: &AppState) -> &str {
 }
 
 pub(crate) fn public_app_origin(action: &str) -> Result<String, ApiError> {
-    public_origin(SCOPE_APP_ORIGIN_ENV, LOCAL_APP_ORIGIN, action)
-}
-
-fn public_origin(env_name: &str, debug_fallback: &str, action: &str) -> Result<String, ApiError> {
-    non_empty_env(env_name)
-        .or_else(|| cfg!(debug_assertions).then(|| debug_fallback.to_string()))
+    non_empty_env(SCOPE_APP_ORIGIN_ENV)
+        .or_else(|| cfg!(debug_assertions).then(|| LOCAL_APP_ORIGIN.to_string()))
         .map(|value| value.trim_end_matches('/').to_string())
         .ok_or_else(|| {
-            ApiError::infrastructure_unavailable(format!("{env_name} is required to {action}"))
+            ApiError::infrastructure_unavailable(format!(
+                "{SCOPE_APP_ORIGIN_ENV} is required to {action}"
+            ))
         })
 }

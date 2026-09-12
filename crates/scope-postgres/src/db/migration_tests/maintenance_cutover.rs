@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::{
-    apply_maintenance_migrations, connect_postgres_store, connect_postgres_worker_store,
-    connect_writer_database, terminate_metadata_writer_sessions, verify_writer_fence_available,
+    apply_maintenance_migrations, connect_postgres_store, connect_writer_database,
+    terminate_metadata_writer_sessions, verify_writer_fence_available,
 };
 
 #[tokio::test]
@@ -27,16 +27,6 @@ async fn ordinary_startup_refuses_pending_maintenance_migration() {
     };
     assert!(api_error.to_string().contains("does not match this binary"));
     assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), plan);
-
-    let worker_error = match connect_postgres_worker_store(target.schema_database_url()).await {
-        Ok(_) => panic!("worker must refuse a pending maintenance migration"),
-        Err(error) => error,
-    };
-    assert!(
-        worker_error
-            .to_string()
-            .contains("does not match this binary")
-    );
 }
 
 #[tokio::test]
@@ -93,7 +83,7 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
     assert!(migrations::plan(db.as_ref()).await.unwrap().exact);
 
-    let worker_store = connect_postgres_worker_store(target.schema_database_url())
+    let worker_store = connect_postgres_store(target.schema_database_url())
         .await
         .unwrap();
     worker_store.admin().readiness_check().await.unwrap();

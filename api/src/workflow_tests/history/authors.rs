@@ -10,10 +10,12 @@ async fn history_resolves_handles_in_pages_and_details_without_changing_stored_a
     assert_ne!(test_owner_id(), TEST_REPO_OWNER);
 
     for audience in ["public", "private"] {
-        let page = history_get(
-            state.clone(),
-            format!("/v1/repos/owner/repo/history?feed=all&audience={audience}"),
-            audience == "private",
+        let page = api_request(
+            router(state.clone()),
+            "GET",
+            &format!("/v1/repos/owner/repo/history?feed=all&audience={audience}"),
+            (audience == "private").then(bearer_header).as_deref(),
+            None,
         )
         .await;
         assert_eq!(page.status(), StatusCode::OK);
@@ -21,10 +23,12 @@ async fn history_resolves_handles_in_pages_and_details_without_changing_stored_a
         for entry in page["entries"].as_array().unwrap() {
             assert_eq!(entry["author"], TEST_REPO_OWNER);
         }
-        let detail = history_get(
-            state.clone(),
-            format!("/v1/repos/owner/repo/history/{source_id}?audience={audience}"),
-            audience == "private",
+        let detail = api_request(
+            router(state.clone()),
+            "GET",
+            &format!("/v1/repos/owner/repo/history/{source_id}?audience={audience}"),
+            (audience == "private").then(bearer_header).as_deref(),
+            None,
         )
         .await;
         assert_eq!(detail.status(), StatusCode::OK);
@@ -54,9 +58,8 @@ async fn public_history_keeps_partial_update_authors_hidden() {
     replace_test_repo(
         &state,
         history_repo(
-            vec![history_commit(
+            vec![logical_commit(
                 "mixed-update",
-                None,
                 "Private metadata",
                 vec![
                     history_change(
@@ -78,20 +81,24 @@ async fn public_history_keeps_partial_update_authors_hidden() {
     )
     .await;
 
-    let page = history_get(
-        state.clone(),
+    let page = api_request(
+        router(state.clone()),
+        "GET",
         "/v1/repos/owner/repo/history?audience=public",
-        false,
+        None,
+        None,
     )
     .await;
     assert_eq!(page.status(), StatusCode::OK);
     let page = response_json(page).await;
     assert!(page["entries"][0]["author"].is_null());
     let source_id = page["entries"][0]["source_id"].as_str().unwrap();
-    let detail = history_get(
-        state,
-        format!("/v1/repos/owner/repo/history/{source_id}?audience=public"),
-        false,
+    let detail = api_request(
+        router(state),
+        "GET",
+        &format!("/v1/repos/owner/repo/history/{source_id}?audience=public"),
+        None,
+        None,
     )
     .await;
     assert_eq!(detail.status(), StatusCode::OK);

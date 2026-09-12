@@ -1,11 +1,10 @@
+import type { RepoLiveState, RepoParams } from '@/api/types'
 import type {
-  RequestDetail,
-  RepoLiveState,
-  RepoParams,
-  RequestMutation,
-  RequestRating,
-  RequestRatings,
-} from '@/api/types'
+  RequestDetailResponse,
+  RequestMutationResponse,
+  RequestRatingResponse,
+  RequestRatingsResponse,
+} from '@/api/types.generated'
 import type { RateRequestInput } from '@/api/requests'
 import { EmptyState } from '@/components/empty-state'
 import { PageContent, WorkbenchPane } from '@/components/page-header'
@@ -40,6 +39,7 @@ import {
   requestStatusTone,
 } from './request-labels'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
+import { hasRequestLifecycleActions } from './request-lifecycle-model'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
 import { requestActivityIdentity } from './request-activity-resource'
@@ -72,14 +72,14 @@ export function RequestUnavailablePage({ params }: { params: RepoParams }) {
 type RequestDetailPageProps = {
   attachmentActions: RequestAttachmentActions
   children: ReactNode
-  detail: RequestDetail
+  detail: RequestDetailResponse
   live: RepoLiveState
   loadActivity: (signal: AbortSignal) => Promise<RequestActivityPage>
   params: RepoParams
   performAction: (command: RequestActionCommand) => Promise<RequestActionResult>
-  ratings: RequestRatings
-  rateRequest: (input: RateRequestInput) => Promise<RequestRating>
-  updateDescription: (input: UpdateDescriptionInput) => Promise<RequestMutation>
+  ratings: RequestRatingsResponse
+  rateRequest: (input: RateRequestInput) => Promise<RequestRatingResponse>
+  updateDescription: (input: UpdateDescriptionInput) => Promise<RequestMutationResponse>
   viewerId: string
 }
 
@@ -123,9 +123,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     repo: params.repo,
     request_id: request.id,
   }), [params.owner, params.repo, request.id])
-  const hasLifecycleActions = request.permissions.can_submit ||
-    request.permissions.can_merge ||
-    request.permissions.can_close
+  const hasLifecycleActions = hasRequestLifecycleActions(request)
 
   async function saveDescription(nextDescription: string, expectedDescription: string) {
     try {

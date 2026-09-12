@@ -20,8 +20,7 @@ const loadIndex = createServerFn({ method: 'GET' }).handler(async () => {
     return {
       cliInstallCommands: buildCliInstallCommands(),
       initialCliPlatform: detectCliPlatform(platformHeader),
-      kind: 'marketing',
-    } as const
+    }
   }
 
   const account = await loadAuthenticatedAccountForRequest()
@@ -44,13 +43,10 @@ function IndexPending() {
 
 function IndexRoute() {
   const state = Route.useLoaderData()
-
-  if (state.kind === 'marketing') {
-    return (
-      <MarketingLandingPage
-        cliInstallCommands={state.cliInstallCommands}
-        initialCliPlatform={state.initialCliPlatform}
-      />
-    )
-  }
+  return (
+    <MarketingLandingPage
+      cliInstallCommands={state.cliInstallCommands}
+      initialCliPlatform={state.initialCliPlatform}
+    />
+  )
 }

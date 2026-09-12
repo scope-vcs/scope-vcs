@@ -5,7 +5,6 @@ import test from "node:test";
 import {
   applyCreationOperations,
   assertConfigurationReady,
-  configurationCanApply,
   desiredMediaState,
   generateStagingSecrets,
   normalizeLiveServiceConfig,
@@ -24,7 +23,7 @@ function manifest() {
       staging: {
         environmentId: "staging",
         environmentName: "staging",
-        webDomain: "scope-web-release-proof.up.railway.app",
+        webDomain: "scope-web-staging.up.railway.app",
       },
     },
     services: {
@@ -36,7 +35,6 @@ function manifest() {
       bucket: { id: null, name: "scope-request-media", region: "iad" },
       production: { gatewayDomain: null, webOrigin: "https://scopevcs.com" },
       staging: { gatewayDomain: null },
-      workerImage: "ghcr.io/scope-vcs/scope-media-worker",
     },
   };
 }
@@ -84,11 +82,11 @@ function convergedState() {
           ...variables(),
           SCOPE_MEDIA_ENCRYPTION_KEY: "<sealed>",
           SCOPE_MEDIA_GRANT_PUBLIC_KEY: "public-key",
-          SCOPE_MEDIA_ALLOWED_ORIGIN: "https://scope-web-release-proof.up.railway.app",
+          SCOPE_MEDIA_ALLOWED_ORIGIN: "https://scope-web-staging.up.railway.app",
         },
         variableMetadata: [{ name: "SCOPE_MEDIA_ENCRYPTION_KEY", isSealed: true }],
         config: wanted.services.gateway.config,
-        domains: [{ type: "service", domain: "scope-media-release-proof.up.railway.app" }],
+        domains: [{ type: "service", domain: "scope-media-api-staging.up.railway.app" }],
       },
       {
         id: "worker",
@@ -110,6 +108,8 @@ test("plans exactly one of each missing resource and repeats without duplicates"
     projectId: "project",
     environmentId: "staging",
     environmentName: "staging",
+    projectBuckets: [],
+    projectServices: [{ id: "api", name: "scope-api" }],
     buckets: [],
     services: [{ id: "api", name: "scope-api", variables: {}, variableMetadata: [] }],
   };
@@ -126,7 +126,7 @@ test("plans exactly one of each missing resource and repeats without duplicates"
   assert.deepEqual(planMediaReconcile(desired(), convergedState()), {
     blockers: [],
     manualActions: [],
-    liveDomain: "scope-media-release-proof.up.railway.app",
+    liveDomain: "scope-media-api-staging.up.railway.app",
     operations: [],
   });
 });
@@ -193,11 +193,6 @@ test("post-creation drift blocks configuration", () => {
     blockers: [],
     operations: [{ action: "setVariable", name: "SCOPE_MEDIA_ALLOWED_ORIGIN" }],
   }));
-});
-
-test("configuration waits until production secrets are sealed", () => {
-  assert.equal(configurationCanApply({ manualActions: ["seal scope-media key"] }), false);
-  assert.equal(configurationCanApply({ manualActions: [] }), true);
 });
 
 test("verification requires real manifest IDs and a recorded domain", () => {

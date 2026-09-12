@@ -187,7 +187,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
         )
         .await
         .unwrap();
-    let cleanup_now = now + 10 + CachePolicy.upload_lease_seconds();
+    let cleanup_now = now + 10 + scope_cache_domain::UPLOAD_LEASE_SECONDS;
     let expired = caches.expire_uploads(cleanup_now, 10).await.unwrap();
     assert_eq!(expired.len(), 1);
     assert_eq!(expired[0].upload_id, "expired-upload");
@@ -214,6 +214,75 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn job_errors_are_bounded_and_never_empty() {
+    use super::retention::bounded_job_error;
+    assert_eq!(bounded_job_error(""), "cache object deletion failed");
+    assert_eq!(bounded_job_error("disk full"), "disk full");
+    assert_eq!(bounded_job_error(&"x".repeat(9_000)).chars().count(), 8_192);
+}
+
+#[tokio::test]
+async fn failed_deletions_with_empty_errors_stay_retryable() {
+    let target = TestDatabaseTarget::required().unwrap();
+    let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
+    let repository_id = seed_repository(&store);
+    let caches = store.caches();
+    let now = 1_700_000_000_u64;
+    let identity = "5".repeat(64);
+    let compatibility_group = "f".repeat(64);
+    let digest = "e".repeat(64);
+    caches
+        .prepare_upload(
+            &repository_id,
+            &identity,
+            &compatibility_group,
+            &digest,
+            100,
+            "test-local",
+            "retry-upload",
+            now,
+        )
+        .await
+        .unwrap();
+    caches.commit_upload("retry-upload", now + 1).await.unwrap();
+    let expired = now + 1 + scope_cache_domain::CACHE_REFERENCE_TTL_SECONDS;
+    assert_eq!(caches.expire_references(expired, 10).await.unwrap(), 1);
+    let due = expired + scope_cache_domain::DELETION_GRACE_SECONDS;
+    let deletions = caches.claim_deletions(due, due + 60, 10).await.unwrap();
+    assert_eq!(deletions.len(), 1);
+
+    for error in ["", "delete failed"] {
+        caches
+            .fail_deletion(&deletions[0], due + 1, error)
+            .await
+            .unwrap();
+        let stored = caches
+            .db
+            .query_one(statement(
+                "SELECT last_error FROM scope_cache_deletion_queue
+                 WHERE repository_id = $1 AND checksum_sha256 = $2",
+                vec![repository_id.clone().into(), digest.clone().into()],
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<Option<String>>("", "last_error")
+            .unwrap();
+        assert_eq!(
+            stored.as_deref(),
+            Some(if error.is_empty() {
+                "cache object deletion failed"
+            } else {
+                error
+            })
+        );
+    }
+    let retried = caches.claim_deletions(due + 2, due + 60, 10).await.unwrap();
+    assert_eq!(retried.len(), 1);
+    assert_eq!(retried[0].attempts, 2);
 }
 
 fn seed_repository(store: &MetadataStore) -> String {

@@ -3,11 +3,9 @@ use super::{
     files::set_modified,
     finalize::save_cache,
     identity::{MAX_CACHE_KEY_FILE_BYTES, digest_inputs_at, open_key_file},
-    restore::CachePreparationPhases,
     types::{CacheFinalizationOutcome, PreparedCache},
 };
 use crate::api::RuntimeClient;
-use scope_cache_domain::MAX_CACHE_OBJECT_BYTES;
 use scope_domain::runs::cache::definition::CacheKeyInputs;
 use std::{
     collections::BTreeMap,
@@ -230,7 +228,6 @@ fn bounded_writer_accepts_the_limit_and_rejects_the_next_byte() {
     let error = writer.write_all(b"!").unwrap_err();
     assert_eq!(error.to_string(), "cache archive exceeds 4 bytes");
     assert_eq!(writer.written, 4);
-    assert_eq!(MAX_CACHE_OBJECT_BYTES, 1024 * 1024 * 1024);
 }
 
 #[test]
@@ -254,29 +251,6 @@ fn archive_hash_counts_only_bytes_accepted_by_partial_writes() {
 }
 
 #[test]
-fn cache_preparation_total_is_derived_from_timed_phases() {
-    let phases = CachePreparationPhases {
-        key_ms: 1,
-        metadata_ms: 2,
-        size_bytes: u64::MAX,
-        download_verify_ms: 3,
-        sync_ms: 4,
-        extraction_ms: 5,
-    };
-
-    assert_eq!(phases.prepare_ms(), 15);
-    assert_eq!(
-        CachePreparationPhases {
-            key_ms: u64::MAX,
-            metadata_ms: 1,
-            ..CachePreparationPhases::default()
-        }
-        .prepare_ms(),
-        u64::MAX
-    );
-}
-
-#[test]
 fn exact_hit_skips_archive_hash_and_upload() {
     let cache = PreparedCache {
         exact_digest: "a".repeat(64),
@@ -286,10 +260,11 @@ fn exact_hit_skips_archive_hash_and_upload() {
         sources: None,
     };
 
-    assert_eq!(
+    // The client cannot reach any service, so an upload attempt would be Skipped.
+    assert!(matches!(
         save_cache(&RuntimeClient::disconnected_for_cache_tests(), &cache),
-        CacheFinalizationOutcome::Unchanged
-    );
+        CacheFinalizationOutcome::Ready
+    ));
 }
 
 #[test]

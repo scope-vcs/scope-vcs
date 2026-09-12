@@ -4,53 +4,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { positiveInteger, required } from './env.mjs';
 import { percentile, round } from './metrics.mjs';
-
-const PROCESS_FIELDS = [
-  'process_id',
-  'parent_process_id',
-  'threads',
-  'open_file_descriptors',
-  'child_processes',
-  'zombie_child_processes',
-  'cgroup_pids_current',
-  'cgroup_pids_max',
-];
-
-const PUSH_PERSISTENCE_TIMINGS = [
-  ['lockWaitUs', 'lock_wait_us'],
-  ['metadataUs', 'metadata_us'],
-  ['repositoryRowUs', 'repository_row_us'],
-  ['hydrateUs', 'hydrate_us'],
-  ['cloneUs', 'clone_us'],
-  ['loadLiveFilesUs', 'load_live_files_us'],
-  ['loadPreviousCommitUs', 'load_previous_commit_us'],
-  ['loadGitHeadUs', 'load_git_head_us'],
-  ['domainApplyUs', 'domain_apply_us'],
-  ['catalogVerifyUs', 'catalog_verify_us'],
-  ['repositoryFactsUs', 'repository_facts_us'],
-  ['loadPackSpansUs', 'load_pack_spans_us'],
-  ['historyRowsUs', 'history_rows_us'],
-  ['liveFileRowsUs', 'live_file_rows_us'],
-  ['saveDeltaUs', 'save_delta_us'],
-  ['landingFileUs', 'landing_file_us'],
-  ['workflowCatalogUs', 'workflow_catalog_us'],
-  ['projectionUs', 'projection_us'],
-  ['pushTriggerUs', 'push_trigger_us'],
-  ['orphanQueueUs', 'orphan_queue_us'],
-  ['serializedUs', 'serialized_us'],
-  ['bodyUs', 'body_us'],
-  ['commitUs', 'commit_us'],
-  ['totalUs', 'total_us'],
-];
-const PUSH_PERSISTENCE_COUNTS = [
-  'changed_file_count',
-  'live_file_count',
-  'logical_commit_count',
-  'visibility_change_set_count',
-  'policy_rule_count',
-  'config_rule_count',
-];
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   await main();
@@ -70,7 +25,7 @@ async function main() {
   await mkdir(outputRoot, { recursive: true });
 
   const report = {
-    version: 4,
+    version: 5,
     generatedAt: new Date().toISOString(),
     runLabel: process.env.SCOPE_BENCH_RUN_LABEL?.trim() || 'unlabeled',
     environment,
@@ -89,20 +44,10 @@ async function main() {
     ]);
     const gitLogs = [restoreLogs, contentLogs, materializationLogs].flat();
     const segmentLogs = [segmentIngestLogs, segmentRestoreLogs].flat();
-    const snapshots = logs.flatMap((entry) => {
-      const message = stripAnsi(entry.message || '');
-      if (!message.includes('runtime process snapshot')) return [];
-      return [{ timestamp: entry.timestamp, ...numericFields(message, PROCESS_FIELDS) }];
-    });
     const compactions = logs.flatMap((entry) => {
       const message = stripAnsi(entry.message || '');
       if (!message.includes('Git compaction attempt completed')) return [];
       return [{ timestamp: entry.timestamp, ...compactionFields(message) }];
-    });
-    const pushPersistence = logs.flatMap((entry) => {
-      const message = stripAnsi(entry.message || '');
-      if (!isPushPersistenceMessage(message)) return [];
-      return [{ timestamp: entry.timestamp, ...pushPersistenceFields(message) }];
     });
     const objectStoreOperations = logs.flatMap((entry) => {
       const message = stripAnsi(entry.message || '');
@@ -132,13 +77,9 @@ async function main() {
     });
     const metrics = JSON.parse(await railway(railwayMetricArgs(service, environment, since, until)));
     report.services[service] = {
-      processSummary: summarizeSnapshots(snapshots),
       resourceSummary: summarizeMetrics(metrics),
-      snapshots,
       compactions,
       compactionSummary: summarizeCompactions(compactions),
-      pushPersistence,
-      pushPersistenceSummary: summarizePushPersistence(pushPersistence),
       objectStoreOperations,
       objectStoreSummary: summarizeObjectStore(objectStoreOperations),
       gitOperations,
@@ -191,7 +132,6 @@ export function railwayMetricArgs(service, environment, since, until = null) {
 function railway(args) {
   return command('railway', args, {
     ...process.env,
-    RAILWAY_CALLER: 'skill:use-railway@1.3.6',
     RAILWAY_AGENT_SESSION: process.env.RAILWAY_AGENT_SESSION || 'railway-scope-stress-collector',
   });
 }
@@ -273,23 +213,6 @@ export function summarizeCapacityRejections(events) {
   return Object.fromEntries(
     groupBy(events, (event) => event.operation).map(([operation, values]) => [operation, values.length]),
   );
-}
-
-export function pushPersistenceFields(message) {
-  return {
-    repositoryId: textField(message, 'repository_id'),
-    protocol: textField(message, 'protocol') || 'unknown',
-    configChanged: booleanField(message, 'config_changed'),
-    ...numericFields(message, [
-      ...PUSH_PERSISTENCE_COUNTS,
-      ...PUSH_PERSISTENCE_TIMINGS.map(([, field]) => field),
-    ]),
-  };
-}
-
-export function isPushPersistenceMessage(message) {
-  return message.includes('Git push persistence timing')
-    || message.includes('repository mutation persistence timing');
 }
 
 export function objectStoreFields(message) {
@@ -386,19 +309,6 @@ export function summarizeGitSegmentTelemetry(events) {
   };
 }
 
-export function summarizePushPersistence(events) {
-  return Object.fromEntries(groupBy(events, ({ protocol }) => protocol).map(([protocol, values]) => [protocol, {
-    count: values.length,
-    configChanges: values.filter(({ configChanged }) => configChanged === true).length,
-    changedFileCount: gaugeSummary(values, 'changed_file_count'),
-    liveFileCount: gaugeSummary(values, 'live_file_count'),
-    ...Object.fromEntries(PUSH_PERSISTENCE_TIMINGS.map(([name, field]) => [
-      name,
-      timingSummary(values, field),
-    ])),
-  }]));
-}
-
 export function summarizeObjectStore(events) {
   return Object.fromEntries(groupBy(events, ({ operation }) => operation).map(([operation, values]) => {
     const successful = values.filter(({ success }) => success === true);
@@ -433,15 +343,6 @@ export function summarizeMaterializations(events) {
     count: values.length,
     durationMs: timingSummary(values, 'durationMs'),
   }]));
-}
-
-export function summarizeSnapshots(snapshots) {
-  return Object.fromEntries(PROCESS_FIELDS.flatMap((field) => {
-    const values = snapshots.map((snapshot) => snapshot[field]).filter(Number.isFinite);
-    return values.length > 0
-      ? [[field, { minimum: Math.min(...values), maximum: Math.max(...values), last: values.at(-1) }]]
-      : [];
-  }));
 }
 
 function summarizeMetrics(metrics) {
@@ -509,10 +410,6 @@ function telemetryMarkdown(report) {
     const outcomes = Object.entries(summary.outcomes).map(([name, count]) => `${name}:${count}`).join(', ') || 'none';
     return `| ${service} | ${summary.count} | ${outcomes} | ${summary.queueDelayMs?.p95 ?? 'n/a'} | ${summary.attempts?.maximum ?? 'n/a'} | ${summary.totalMs?.p95 ?? 'n/a'} |`;
   }).join('\n');
-  const persistenceRows = Object.entries(report.services).flatMap(([service, data]) =>
-    Object.entries(data.pushPersistenceSummary).map(([protocol, summary]) =>
-      `| ${service} | ${protocol} | ${summary.count} | ${summary.lockWaitUs?.p95 ?? 'n/a'} | ${summary.bodyUs?.p95 ?? 'n/a'} | ${summary.commitUs?.p95 ?? 'n/a'} | ${summary.totalUs?.p95 ?? 'n/a'} |`,
-    )).join('\n');
   const objectRows = Object.entries(report.services).flatMap(([service, data]) =>
     Object.entries(data.objectStoreSummary).map(([operation, summary]) =>
       `| ${service} | ${operation} | ${summary.count} | ${summary.failures} | ${summary.elapsedUs?.p95 ?? 'n/a'} | ${summary.totalBytes} | ${summary.serviceTimeMiBPerSecond ?? 'n/a'} |`,
@@ -525,30 +422,18 @@ function telemetryMarkdown(report) {
     Object.entries(data.materializationSummary).map(([outcome, summary]) =>
       `| ${service} | ${outcome} | ${summary.count} | ${summary.durationMs?.p95 ?? 'n/a'} |`,
     )).join('\n');
-  const pressureRows = Object.entries(report.services).map(([service, data]) => {
-    const process = data.processSummary;
+  const resourceRows = Object.entries(report.services).map(([service, data]) => {
     const resources = data.resourceSummary;
     const cpu = resources.CPU_USAGE?.maximum ?? 'n/a';
     const rssMiB = resources.MEMORY_USAGE_GB?.maximum == null
       ? 'n/a'
       : round(resources.MEMORY_USAGE_GB.maximum * 1024, 2);
-    return `| ${service} | ${cpu} | ${rssMiB} | ${process.cgroup_pids_current?.maximum ?? 'n/a'} | ${process.open_file_descriptors?.maximum ?? 'n/a'} | ${process.zombie_child_processes?.maximum ?? 'n/a'} |`;
+    return `| ${service} | ${cpu} | ${rssMiB} |`;
   }).join('\n');
   const rejectionRows = Object.entries(report.services).flatMap(([service, data]) =>
     Object.entries(data.capacityRejectionSummary).map(([operation, count]) =>
       `| ${service} | ${operation} | ${count} |`,
     )).join('\n') || '| none | none | 0 |';
-  return `# Railway Git storage telemetry\n\nGenerated: ${report.generatedAt}\n\nRun label: ${report.runLabel}\n\nEnvironment: ${report.environment}\n\n## Git segment phases\n\n| Service | Kind/phase | Count | Failures | Duration p95 us | Blocked p95 us | Bytes |\n|---|---|---:|---:|---:|---:|---:|\n${segmentRows}\n\n## Git segment pressure and cleanup\n\n| Service | Peak active ingests | Peak buffered bytes | Minimum disk free bytes | Uploading last | Ready last | Published last | Peak orphans |\n|---|---:|---:|---:|---:|---:|---:|---:|\n${segmentPressureRows}\n\n## Git materialization outcomes\n\n| Service | Cache/path | Count | Duration p95 ms |\n|---|---|---:|---:|\n${materializationRows}\n\n## Git materialization phases\n\n| Service | Operation | Count | Failures | Duration p95 ms | Summed service ms | Bytes |\n|---|---|---:|---:|---:|---:|---:|\n${gitOperationRows}\n\n## Compaction scheduler\n\n| Service | Count | Outcomes | Queue delay p95 ms | Max attempts | Total p95 ms |\n|---|---:|---|---:|---:|---:|\n${compactionRows}\n\n## Capacity rejections\n\n| Service | Operation | Count |\n|---|---|---:|\n${rejectionRows}\n\n## Runtime pressure\n\n| Service | Peak CPU cores | Peak RSS MiB | Peak cgroup PIDs | Peak open FDs | Peak zombies |\n|---|---:|---:|---:|---:|---:|\n${pressureRows}\n\n## Push persistence\n\n| Service | Protocol | Count | Lock wait p95 us | Body p95 us | Commit p95 us | Total p95 us |\n|---|---|---:|---:|---:|---:|---:|\n${persistenceRows}\n\n## Object storage\n\n| Service | Operation | Count | Failures | Latency p95 us | Bytes | Service-time MiB/s |\n|---|---|---:|---:|---:|---:|---:|\n${objectRows}\n`;
+  return `# Railway Git storage telemetry\n\nGenerated: ${report.generatedAt}\n\nRun label: ${report.runLabel}\n\nEnvironment: ${report.environment}\n\n## Git segment phases\n\n| Service | Kind/phase | Count | Failures | Duration p95 us | Blocked p95 us | Bytes |\n|---|---|---:|---:|---:|---:|---:|\n${segmentRows}\n\n## Git segment pressure and cleanup\n\n| Service | Peak active ingests | Peak buffered bytes | Minimum disk free bytes | Uploading last | Ready last | Published last | Peak orphans |\n|---|---:|---:|---:|---:|---:|---:|---:|\n${segmentPressureRows}\n\n## Git materialization outcomes\n\n| Service | Cache/path | Count | Duration p95 ms |\n|---|---|---:|---:|\n${materializationRows}\n\n## Git materialization phases\n\n| Service | Operation | Count | Failures | Duration p95 ms | Summed service ms | Bytes |\n|---|---|---:|---:|---:|---:|---:|\n${gitOperationRows}\n\n## Compaction scheduler\n\n| Service | Count | Outcomes | Queue delay p95 ms | Max attempts | Total p95 ms |\n|---|---:|---|---:|---:|---:|\n${compactionRows}\n\n## Capacity rejections\n\n| Service | Operation | Count |\n|---|---|---:|\n${rejectionRows}\n\n## Runtime resources\n\n| Service | Peak CPU cores | Peak RSS MiB |\n|---|---:|---:|\n${resourceRows}\n\n## Object storage\n\n| Service | Operation | Count | Failures | Latency p95 us | Bytes | Service-time MiB/s |\n|---|---|---:|---:|---:|---:|---:|\n${objectRows}\n`;
 }
 
-function required(name) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
-
-function positiveInteger(name, fallback) {
-  const value = Number.parseInt(process.env[name] || String(fallback), 10);
-  if (!Number.isInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
-  return value;
-}

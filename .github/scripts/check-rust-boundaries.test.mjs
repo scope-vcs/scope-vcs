@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  requiredSourceHomes,
   validateRustBoundaries,
   validateSourceLayout,
   validateStandaloneManifests,
@@ -98,27 +99,12 @@ test('keeps CLI-staged dependency manifests self-contained', () => {
   ])
 })
 
-test('requires behavior-owned source homes and rejects retired catch-alls', () => {
-  const current = new Set([
-    'api/src/use_cases/content_cleanup.rs',
-    'api/src/use_cases/git_receive/mod.rs',
-    'api/src/use_cases/request_discussion_mutation.rs',
-    'api/src/use_cases/request_merge.rs',
-    'api/src/use_cases/run_inspection.rs',
-    'crates/scope-domain/src/repository/mod.rs',
-    'crates/scope-domain/src/reviewed_updates/mod.rs',
-    'crates/scope-domain/src/runs/cache/mod.rs',
-    'crates/scope-domain/src/runs/workflow/mod.rs',
-    'crates/scope-postgres/src/db/cleanup_queue/mod.rs',
-    'runner-runtime/src/api/mod.rs',
-    'runner-runtime/src/cache/mod.rs',
-    'runner-runtime/src/workflow.rs',
-  ])
+test('requires every behavior-owned source home', () => {
+  const current = new Set(requiredSourceHomes)
   assert.deepEqual(validateSourceLayout(current), [])
 
   current.delete('api/src/use_cases/request_merge.rs')
-  current.add('api/src/git/request_merge.rs')
-  const errors = validateSourceLayout(current)
-  assert.ok(errors.some((error) => error.includes('required behavior-owned source home is missing')))
-  assert.ok(errors.some((error) => error.includes('retired catch-all source home was reintroduced')))
+  assert.deepEqual(validateSourceLayout(current), [
+    'api/src/use_cases/request_merge.rs: required behavior-owned source home is missing',
+  ])
 })

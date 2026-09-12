@@ -42,12 +42,30 @@ pub(crate) fn retry_delay(attempt: u32) -> Duration {
 }
 
 pub(crate) fn db_error(error: scope_postgres::error::PostgresError) -> anyhow::Error {
-    anyhow::anyhow!(error.message)
+    anyhow::Error::new(error)
 }
 
 pub(crate) async fn wait_or_shutdown(duration: Duration) -> bool {
     tokio::select! {
         _ = crate::shutdown_signal() => true,
         _ = tokio::time::sleep(duration) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn database_error_preserves_kind_for_recovery_decisions() {
+        let error = db_error(scope_postgres::error::PostgresError::conflict("lease lost"));
+        let source = error
+            .downcast_ref::<scope_postgres::error::PostgresError>()
+            .unwrap();
+        assert_eq!(
+            source.kind,
+            scope_postgres::error::PostgresErrorKind::Conflict
+        );
+        assert_eq!(source.message, "lease lost");
+        assert_eq!(error.to_string(), "lease lost");
     }
 }

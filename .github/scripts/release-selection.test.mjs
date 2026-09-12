@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-
 import { validatePreparedDeployment, selectRelease } from "./release-selection.mjs";
 import { validateRecoveryPreparation } from "./recovery-preparation-trust.mjs";
 
@@ -149,12 +148,7 @@ for (const [name, selected] of [
     const state = fixture();
     state.prepared.components = Object.fromEntries(selected.map((component) => [component, state.prepared.components[component]]));
     if (name === "web-only") delete state.prepared.maintenanceSha256;
-    const proof = await validatePreparedDeployment(state.prepared, sourceRunId, state.request, repository);
-    const backend = selected.some((component) => component !== "web");
-    assert.equal(proof.selection.backend, backend);
-    for (const component of ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"]) {
-      assert.equal(proof.selection[component], selected.includes(component));
-    }
+    assert.equal((await validatePreparedDeployment(state.prepared, sourceRunId, state.request, repository)).sourceSha, sourceSha);
     state.jobs[2].conclusion = "failure";
     await assert.rejects(validatePreparedDeployment(state.prepared, sourceRunId, state.request, repository), /staging/);
   });
@@ -181,7 +175,6 @@ test("cutover recovery retains its complete backend requirement", async () => {
   await assert.rejects(validateRecoveryPreparation(state.prepared, state.request, repository, manifest), /missing api/);
 });
 
-
 test("ordinary selection pins requested revision without downloading artifacts", async () => {
   const result = await selectRelease({ sourceSha, repository,
     loadPrepared: () => { throw new Error("unexpected download"); } }, async () => []);
@@ -196,7 +189,7 @@ test("replay selects only validated manifest components", async () => {
   assert.equal(result.sha, sourceSha);
   assert.equal(result.prepared_run_id, sourceRunId);
   assert.equal(result.recover_cutover_id, "");
-  assert.equal(result.reuse_components.web, true);
+  assert.equal(result.recover_components.web, true);
   assert.deepEqual(result.prepared, state.prepared);
 });
 

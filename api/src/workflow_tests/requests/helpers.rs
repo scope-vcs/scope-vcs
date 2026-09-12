@@ -3,36 +3,14 @@ use scope_domain::requests::{
     RecordWorkingRequestUploadInput, RequestActorRole, RequestAudience, StartRequestInput,
 };
 
-pub(crate) async fn rebuild_request_projection(state: &AppState) {
-    let rebuilt = state
-        .metadata
-        .jobs()
-        .run_ready_outbox_jobs(
-            "request-read-test",
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await
-        .unwrap();
-    assert_eq!(rebuilt.failed, 0);
-}
-
 pub(crate) async fn create_owner_request(state: &AppState, request_id: &str, head_oid: &str) {
-    create_request(RequestFixture {
+    create_request(
         state,
         request_id,
-        author_user_id: test_owner_id(),
-        title: "Owner request",
-        role: RequestActorRole::Owner,
-        audience: RequestAudience::Private,
-        base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        test_owner_id(),
+        RequestAudience::Private,
         head_oid,
-        snapshot: "owner request git snapshot",
-    })
+    )
     .await;
 }
 
@@ -42,65 +20,62 @@ pub(crate) async fn create_public_request(
     author_user_id: String,
     head_oid: &str,
 ) {
-    create_request(RequestFixture {
+    create_request(
         state,
         request_id,
         author_user_id,
-        title: "Public request",
-        role: RequestActorRole::Public,
-        audience: RequestAudience::Public,
-        base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        RequestAudience::Public,
         head_oid,
-        snapshot: "public request git snapshot",
-    })
+    )
     .await;
 }
 
-struct RequestFixture<'a> {
-    state: &'a AppState,
-    request_id: &'a str,
+async fn create_request(
+    state: &AppState,
+    request_id: &str,
     author_user_id: String,
-    title: &'a str,
-    role: RequestActorRole,
     audience: RequestAudience,
-    base_main_oid: &'a str,
-    head_oid: &'a str,
-    snapshot: &'a str,
-}
-
-async fn create_request(fixture: RequestFixture<'_>) {
-    rebuild_request_projection(fixture.state).await;
-    fixture
-        .state
-        .metadata
-        .requests()
+    head_oid: &str,
+) {
+    let (role, title, snapshot) = match audience {
+        RequestAudience::Private => (
+            RequestActorRole::Owner,
+            "Owner request",
+            "owner request git snapshot",
+        ),
+        RequestAudience::Public => (
+            RequestActorRole::Public,
+            "Public request",
+            "public request git snapshot",
+        ),
+    };
+    drain_outbox(state, "request-read-test").await;
+    let requests = state.metadata.requests();
+    requests
         .start_request(StartRequestInput {
-            id: fixture.request_id.to_string(),
+            id: request_id.to_string(),
             repo_id: TEST_REPO_ID.to_string(),
-            name: request_name(fixture.request_id),
-            author_user_id: fixture.author_user_id.clone(),
-            title: Some(fixture.title.to_string()),
-            author_role: fixture.role,
-            audience: fixture.audience,
-            base_main_oid: fixture.base_main_oid.to_string(),
-            event_id: format!("event_{}_started", fixture.request_id),
+            name: request_id.replace('_', "-"),
+            author_user_id: author_user_id.clone(),
+            title: Some(title.to_string()),
+            author_role: role,
+            audience,
+            base_main_oid: REQUEST_HEAD.to_string(),
+            event_id: format!("event_{request_id}_started"),
             now_unix: 2,
         })
         .await
         .unwrap();
-    let mut git_snapshot = source_blob(fixture.state, fixture.snapshot);
-    git_snapshot.git_oid = fixture.head_oid.to_string();
-    fixture
-        .state
-        .metadata
-        .requests()
+    let mut git_snapshot = source_blob(state, snapshot);
+    git_snapshot.git_oid = head_oid.to_string();
+    requests
         .record_working_request_upload(
             RecordWorkingRequestUploadInput {
-                request_id: fixture.request_id.to_string(),
-                actor_user_id: fixture.author_user_id.clone(),
+                request_id: request_id.to_string(),
+                actor_user_id: author_user_id,
                 actor_can_edit: true,
                 expected_old_head_oid: None,
-                new_head_oid: fixture.head_oid.to_string(),
+                new_head_oid: head_oid.to_string(),
                 git_snapshot,
                 now_unix: 3,
             },
@@ -108,8 +83,4 @@ async fn create_request(fixture: RequestFixture<'_>) {
         )
         .await
         .unwrap();
-}
-
-fn request_name(request_id: &str) -> String {
-    request_id.replace('_', "-")
 }

@@ -73,8 +73,5 @@ case "$MODE" in
     ;;
 esac
 
-cargo build -p api --features local-dev --locked
-cargo build -p worker -p scope-media-service -p scope-media-worker --locked
-
 ./dev/scope-dev up
 "$@"

@@ -1,3 +1,4 @@
+use super::validation::validate_git_oid;
 use super::{
     catalog::RepositoryWorkflowCatalog,
     workflow::{error::WorkflowError, identity::WorkflowPath},
@@ -35,11 +36,7 @@ impl PushTriggerInput {
         configuration_error: Option<String>,
     ) -> Result<Self, DomainError> {
         let head_oid = head_oid.into();
-        if head_oid.len() != 40 || !head_oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(DomainError::invalid_input(
-                "push trigger head must be a SHA-1 hex digest",
-            ));
-        }
+        validate_git_oid("push trigger head", &head_oid)?;
         Ok(Self {
             head_oid,
             workflows,
@@ -76,12 +73,6 @@ pub enum PushTriggerEvaluationState {
     Failed,
 }
 
-impl PushTriggerEvaluationState {
-    pub fn is_terminal(self) -> bool {
-        !matches!(self, Self::Pending)
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PushTriggerCheck {
     pub workflow_path: String,
@@ -115,11 +106,7 @@ impl PushTriggerEvaluation {
                 "push trigger evaluation identity is invalid",
             ));
         }
-        if head_oid.len() != 40 || !head_oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(DomainError::invalid_input(
-                "push trigger evaluation head must be a SHA-1 hex digest",
-            ));
-        }
+        validate_git_oid("push trigger evaluation head", &head_oid)?;
         Ok(Self {
             repository_id,
             change_version,

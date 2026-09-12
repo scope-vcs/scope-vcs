@@ -23,18 +23,17 @@ function fixture() {
         environmentName: 'staging',
         routerDomain: 'router-staging.example.test',
         routerReplicas: 1,
-        routerServiceId: 'router',
-        routerServiceName: 'scope-repo-router',
         webDomain: 'web-staging.example.test',
       },
     },
     services: {
-      api: { id: 'api', name: 'scope-api' },
-      cache: { id: 'cache', name: 'scope-cache-service' },
-      'media-api': { id: 'media', name: 'scope-media' },
-      'media-worker': { id: 'media-worker', name: 'scope-media-worker' },
-      web: { id: 'web', name: 'scope-web' },
-      'run-worker': { id: 'worker', name: 'scope-worker' },
+      api: { id: 'api', name: 'scope-api', sourceDirectory: 'api', binary: 'scope-vcs' },
+      cache: { id: 'cache', name: 'scope-cache-service', sourceDirectory: 'cache-service', binary: 'scope-cache-service' },
+      'git-router': { id: 'router', name: 'scope-repo-router', sourceDirectory: 'repo-router', binary: 'scope-repo-router' },
+      'media-api': { id: 'media', name: 'scope-media', sourceDirectory: 'media-service', binary: 'scope-media-service' },
+      'media-worker': { id: 'media-worker', name: 'scope-media-worker', sourceDirectory: 'media-worker' },
+      web: { id: 'web', name: 'scope-web', sourceDirectory: 'web' },
+      'run-worker': { id: 'worker', name: 'scope-worker', sourceDirectory: 'worker', binary: 'scope-worker' },
     },
     mediaResources: {
       bucket: { id: 'media-bucket' },
@@ -201,7 +200,6 @@ for (const resume of [false, true]) {
 test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness before its Git router and records each participant once`, (t) => {
   const { root, scripts, bin, candidate } = candidateCheckout(t)
   const input = fixture()
-  input.manifest.services['git-router'] = { id: 'router', name: 'scope-repo-router' }
   for (const service of input.services.filter(({ id }) => id !== 'database')) {
     service.status = 'STOPPED'
     service.replicas = { configured: service.id === 'api' ? 3 : 1, running: 0, crashed: 0 }
@@ -245,7 +243,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       assert.equal(process.env.DATABASE_URL, 'postgres://staging-fixture');
       assert.ok(state.services.filter(s => ['api', 'cache', 'worker', 'media', 'media-worker'].includes(s.id))
         .every(s => s.replicas.running === 0));
-      assert.ok(['plan', 'validate-workflow-catalogs', 'apply', 'backfill-landing-files', 'backfill-workflow-catalogs'].includes(args[0]));
+      assert.ok(['plan', 'validate-workflow-catalogs', 'apply', 'backfill-workflow-catalogs'].includes(args[0]));
       state.maintenance.push(args[0]);
       save();
       if (args[0] === 'plan') console.log(JSON.stringify({ exact: true, applied: ['m0001_initial'], pending: [] }));

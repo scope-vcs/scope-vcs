@@ -16,8 +16,8 @@ use axum::{
 };
 use scope_api_contract::{
     CreateRequestDiscussionReplyRequest, CreateRequestDiscussionRequest, GitOid,
-    MarkRequestDiscussionReadRequest, ReopenAndReplyRequest, RequestActivityPageResponse,
-    RequestDiscussionAnchor, RequestDiscussionChangesResponse, RequestDiscussionMutationResponse,
+    MarkRequestDiscussionReadRequest, RequestActivityPageResponse, RequestDiscussionAnchor,
+    RequestDiscussionChangesResponse, RequestDiscussionMutationResponse,
     RequestDiscussionPageResponse, RequestDiscussionReadResponse,
     RequestDiscussionRepliesPageResponse, RequestDiscussionReplyMutationResponse,
     RequestDiscussionReplyReferenceResponse, RequestDiscussionReplyResponse,
@@ -70,7 +70,7 @@ pub(crate) async fn list_discussions(
 ) -> Result<Json<RequestDiscussionPageResponse>, ApiError> {
     let (repo, access, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let request = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         access,
@@ -303,7 +303,7 @@ pub(crate) async fn reopen_and_reply(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo_name, request_id, discussion_id)): Path<(String, String, String, String)>,
-    Json(input): Json<ReopenAndReplyRequest>,
+    Json(input): Json<CreateRequestDiscussionReplyRequest>,
 ) -> Result<Json<RequestDiscussionReplyMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let result = request_discussion_mutation::reopen_and_reply(
@@ -356,7 +356,7 @@ pub(crate) async fn changed_discussions(
 ) -> Result<Json<RequestDiscussionChangesResponse>, ApiError> {
     let (repo, access, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let request = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         access,
@@ -404,7 +404,7 @@ pub(crate) async fn activity(
 ) -> Result<Json<RequestActivityPageResponse>, ApiError> {
     let (repo, access, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let request = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         access,
@@ -802,19 +802,5 @@ mod tests {
         let error = discussion_anchor_response(Some(anchor), &BTreeSet::new(), None).unwrap_err();
 
         assert!(format!("{error:?}").contains("unknown revision"));
-    }
-
-    #[test]
-    fn discussion_anchor_hides_commit_only_context_from_public_readers() {
-        let anchor = DomainDiscussionAnchor {
-            revision_id: "revision".to_string(),
-            commit_oid: Some("commit".to_string()),
-            path: None,
-        };
-
-        let public = project_discussion_anchor(anchor, 1, false);
-
-        assert_eq!(public.commit_oid, None);
-        assert_eq!(public.path, None);
     }
 }

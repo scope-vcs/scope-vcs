@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { RepoRunCache } from '@/api/types'
 import {
   cacheExplanation,
   cachePreparationDetail,
@@ -10,8 +9,9 @@ import {
   pinnedImageLabel,
   summarizeAttemptCaches,
 } from './run-attempt-environment-model'
+import type { RepositoryRunCacheResponse } from '@/api/types.generated'
 
-const caches: RepoRunCache[] = [
+const caches: RepositoryRunCacheResponse[] = [
   {
     name: 'cargo',
     path: '/scope/cache/cargo',
@@ -124,7 +124,7 @@ describe('run attempt environment model', () => {
   it('shows bytes and every preparation phase without inventing a total', () => {
     assert.equal(
       cachePreparationDetail(caches[0]!),
-      '512.0 MiB compressed · key 10ms · metadata 20ms · download + verify 80ms · sync 40ms · extract 50ms',
+      '512.0 MB compressed · key 10ms · metadata 20ms · download + verify 80ms · sync 40ms · extract 50ms',
     )
     assert.equal(
       cachePreparationDetail(caches[1]!),
@@ -133,7 +133,7 @@ describe('run attempt environment model', () => {
     assert.equal(cacheTimingLabel(caches[0]!), 'total 200ms · finalize 100ms')
     assert.equal(
       cachePreparationDetail(caches[2]!),
-      '1.00 GiB compressed · key 100ms · metadata 100ms · download + verify 300ms · sync 100ms · extract 300ms',
+      '1.0 GB compressed · key 100ms · metadata 100ms · download + verify 300ms · sync 100ms · extract 300ms',
     )
     assert.equal(cachePreparationDetail(caches[3]!), null)
   })

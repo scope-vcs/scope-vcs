@@ -230,16 +230,23 @@ from tests and support code.
 
 The guardrail is enforced in CI and by `./dev/check guardrails`.
 
-## Retained documentation
+## Documentation index
 
 - `README.md` is the product and repository entrypoint.
 - `docs/architecture.md` is the current technical ownership guide.
-- `docs/maintenance-cutovers.md` documents migration recovery and the
-  forward-only cutover rule; `docs/operations/current-schema-baseline.md` covers
-  adoption of the current baseline.
+- `docs/cli.md` documents the standalone CLI, its distribution, and the
+  download service.
+- `docs/licensing.md` documents third-party license inventory generation.
+- `docs/maintenance-cutovers.md` documents releases, migration recovery, and
+  the forward-only cutover rule; `docs/operations/current-schema-baseline.md`
+  covers adoption of the current baseline.
+- `docs/railway-experiments.md` documents the owner and expiry policy for
+  provider experiments.
 - `deploy/aws/OPERATIONS.md` documents Fargate cloud-run provisioning and
-  operation.
-- `bench/README.md` documents local Git and deployed-system benchmarks.
+  operation; `deploy/railway/MEDIA.md` documents request media resources,
+  backup, and restore.
+- `bench/README.md` documents local Git and deployed-system benchmarks;
+  `dev/checks/README.md` documents the check entrypoints.
 - `.scope/RULES.md`, `AGENTS.md`, and `CLAUDE.md` are contribution and agent
   governance, not product architecture references.
 

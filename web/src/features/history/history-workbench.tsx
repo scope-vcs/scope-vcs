@@ -1,4 +1,5 @@
-import type { CommitFile, CommitSummary } from '@/api/types'
+import type { CommitSummary } from '@/api/types'
+import type { CommitFileResponse } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
 import { CommitDetailPanel } from '@/features/history/history-commit-detail'
 import { CommitList } from '@/features/history/history-commit-list'
@@ -22,7 +23,6 @@ export function HistoryWorkbench({
   emptyTitle,
   fileDiffState,
   onCloseDiff,
-  onRetryCommit,
   onRetryDiff,
   onSelectCommit,
   onSelectFile,
@@ -37,10 +37,9 @@ export function HistoryWorkbench({
   emptyTitle: string
   fileDiffState: CommitFileDiffState
   onCloseDiff: () => void
-  onRetryCommit?: () => void
   onRetryDiff?: () => void
   onSelectCommit: (commit: CommitSummary) => void
-  onSelectFile: (file: CommitFile) => void
+  onSelectFile: (file: CommitFileResponse) => void
   selectedCommitId: string | null
   selectedFilePath: string | null
 }) {
@@ -73,7 +72,6 @@ export function HistoryWorkbench({
             fileDiffState={fileDiffState}
             onCloseDiff={onCloseDiff}
             onDiffScroll={(scrollTop) => writeHistoryDiffScroll(diffIdentity, scrollTop)}
-            onRetryCommit={onRetryCommit}
             onRetryDiff={onRetryDiff}
             onSelectFile={onSelectFile}
             selectedFilePath={selectedFilePath}

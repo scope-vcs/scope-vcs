@@ -1,4 +1,4 @@
-use super::{Request, validate_body_size, validate_required_body, validate_required_id};
+use super::{Request, validate_body_size, validate_required};
 use crate::error::DomainError;
 
 pub const REQUEST_RATING_REASON_MAX_BYTES: usize = 1024;
@@ -81,9 +81,9 @@ pub fn create_request_rating(
     existing_ratings: &[RequestRating],
     input: CreateRequestRatingInput,
 ) -> Result<RequestRating, DomainError> {
-    validate_required_id("rating id", &input.id)?;
-    validate_required_id("request id", &input.request_id)?;
-    validate_required_id("rating actor", &input.actor_user_id)?;
+    validate_required("rating id", &input.id)?;
+    validate_required("request id", &input.request_id)?;
+    validate_required("rating actor", &input.actor_user_id)?;
     if input.request_id != request.id {
         return Err(DomainError::conflict("rating request does not match"));
     }
@@ -92,7 +92,7 @@ pub fn create_request_rating(
             "request rating score must be between 1 and 5",
         ));
     }
-    validate_required_body("request rating reason", &input.reason)?;
+    validate_required("request rating reason", &input.reason)?;
     let reason = input.reason.trim().to_string();
     validate_body_size(
         "request rating reason",

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Open source shouldn't be all or nothing. Scope keeps public and private code in one Git repository.">
-  <title>Scope | Open source shouldn't be all or nothing.</title>
+  <meta name="description" content="One repository. You choose what's public. Scope keeps public and private code in one Git repository.">
+  <title>Scope | One repository. You choose what's public.</title>
   <script>
     (() => {
       document.documentElement.classList.add('interactive');
@@ -288,7 +288,7 @@
     <section class="shell hero" id="top">
       <div>
         <p class="eyebrow">Source control with boundaries</p>
-        <h1>Open source shouldn't <span>be all or nothing.</span></h1>
+        <h1>One repository. <span>You choose what's public.</span></h1>
       </div>
       <div class="hero-copy">
         <p><strong>Scope keeps public and private code in one Git repository.</strong> A public clone contains only the files you choose to share. Contributors submit requests against that view, and accepted work returns to the same history.</p>
@@ -527,13 +527,11 @@
     });
 
     const copyButton = document.getElementById('copySetup');
+    const setupCommands = document.getElementById('setupCommands');
     copyButton.addEventListener('click', async () => {
-      const commands = [
-        'cp .env.example .env.local',
-        'cp web/.env.example web/.env.local',
-        './dev/scope-dev doctor',
-        './dev/scope-dev up',
-      ].join('\n');
+      const commands = [...setupCommands.querySelectorAll('.prompt')]
+        .map((prompt) => prompt.nextSibling.textContent.trim())
+        .join('\n');
       try {
         await navigator.clipboard.writeText(commands);
         copyButton.textContent = 'Copied';

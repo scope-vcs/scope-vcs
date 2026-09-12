@@ -2,7 +2,7 @@ use super::{
     PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request, RequestActorRole,
     RequestAudience, RequestEvent, RequestEventKind, RequestEventPayload, RequestRevision,
     RequestState, advance_request_activity, ensure_event_id_available, ensure_request_matches,
-    request_identity_audit_fact, validate_body_size, validate_required_id,
+    request_identity_audit_fact, validate_body_size, validate_required,
 };
 use crate::{content::SourceBlob, error::DomainError};
 
@@ -157,9 +157,9 @@ pub fn record_working_request_upload(
     mut request: Request,
     input: RecordWorkingRequestUploadInput,
 ) -> Result<WorkingRequestUploadMutation, DomainError> {
-    validate_required_id("request id", &input.request_id)?;
-    validate_required_id("actor user id", &input.actor_user_id)?;
-    validate_required_id("head oid", &input.new_head_oid)?;
+    validate_required("request id", &input.request_id)?;
+    validate_required("actor user id", &input.actor_user_id)?;
+    validate_required("head oid", &input.new_head_oid)?;
     ensure_request_matches(&request, &input.request_id)?;
     if !input.actor_can_edit {
         return Err(DomainError::forbidden(
@@ -186,10 +186,10 @@ pub fn record_request_revision(
     event_id_exists: bool,
     input: RecordRequestRevisionInput,
 ) -> Result<RequestRevisionMutation, DomainError> {
-    validate_required_id("request id", &input.request_id)?;
-    validate_required_id("actor user id", &input.actor_user_id)?;
-    validate_required_id("head oid", &input.new_head_oid)?;
-    validate_required_id("event id", &input.event_id)?;
+    validate_required("request id", &input.request_id)?;
+    validate_required("actor user id", &input.actor_user_id)?;
+    validate_required("head oid", &input.new_head_oid)?;
+    validate_required("event id", &input.event_id)?;
     ensure_event_id_available(event_id_exists)?;
     ensure_request_matches(&request, &input.request_id)?;
     if !input.actor_can_edit {
@@ -238,9 +238,9 @@ pub fn close_request(
     revisions: Vec<RequestRevision>,
     input: CloseRequestInput,
 ) -> Result<CloseRequestMutation, DomainError> {
-    validate_required_id("request id", &input.request_id)?;
-    validate_required_id("actor user id", &input.actor_user_id)?;
-    validate_required_id("event id", &input.event_id)?;
+    validate_required("request id", &input.request_id)?;
+    validate_required("actor user id", &input.actor_user_id)?;
+    validate_required("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
     match request.state() {
         RequestState::Draft
@@ -311,22 +311,31 @@ pub fn close_request(
 }
 
 fn validate_start_request_input(input: &StartRequestInput) -> Result<(), DomainError> {
-    validate_required_id("request id", &input.id)?;
-    validate_required_id("repo id", &input.repo_id)?;
-    validate_required_id("author user id", &input.author_user_id)?;
+    validate_required("request id", &input.id)?;
+    validate_required("repo id", &input.repo_id)?;
+    validate_required("author user id", &input.author_user_id)?;
     validate_request_name(&input.name)?;
     if let Some(title) = &input.title {
-        validate_required_id("title", title)?;
+        validate_required("title", title)?;
         validate_body_size("request title", title, REQUEST_TITLE_MAX_BYTES)?;
     }
-    validate_required_id("base main oid", &input.base_main_oid)?;
-    validate_required_id("event id", &input.event_id)?;
-    if input.author_role == RequestActorRole::Public && input.audience != RequestAudience::Public {
-        return Err(DomainError::invalid_input(
-            "public contributors can only create public requests",
-        ));
-    }
+    validate_required("base main oid", &input.base_main_oid)?;
+    validate_required("event id", &input.event_id)?;
+    validate_start_request_audience(input.author_role, input.audience)?;
     Ok(())
+}
+
+pub fn validate_start_request_audience(
+    author_role: RequestActorRole,
+    audience: RequestAudience,
+) -> Result<(), DomainError> {
+    if author_role == RequestActorRole::Public && audience != RequestAudience::Public {
+        Err(DomainError::invalid_input(
+            "public contributors can only create public requests",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn validate_expected_head(request: &Request, expected: Option<&str>) -> Result<(), DomainError> {
@@ -352,7 +361,7 @@ fn validate_snapshot_head(snapshot: &SourceBlob, head_oid: &str) -> Result<(), D
 }
 
 pub fn validate_request_name(name: &str) -> Result<(), DomainError> {
-    validate_required_id("request name", name)?;
+    validate_required("request name", name)?;
     if name.len() > 48
         || !name.bytes().enumerate().all(|(index, byte)| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || (index > 0 && byte == b'-')
@@ -366,4 +375,34 @@ pub fn validate_request_name(name: &str) -> Result<(), DomainError> {
         return Err(DomainError::invalid_input("request name is reserved"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_contributors_can_only_start_public_requests() {
+        assert!(
+            validate_start_request_audience(RequestActorRole::Public, RequestAudience::Public)
+                .is_ok()
+        );
+        let error =
+            validate_start_request_audience(RequestActorRole::Public, RequestAudience::Private)
+                .unwrap_err();
+        assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
+        assert_eq!(
+            error.message,
+            "public contributors can only create public requests"
+        );
+    }
+
+    #[test]
+    fn maintainers_can_start_public_or_private_requests() {
+        for role in [RequestActorRole::Member, RequestActorRole::Owner] {
+            for audience in [RequestAudience::Public, RequestAudience::Private] {
+                assert!(validate_start_request_audience(role, audience).is_ok());
+            }
+        }
+    }
 }

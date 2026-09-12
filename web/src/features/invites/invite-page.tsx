@@ -1,8 +1,8 @@
+import type { RepoInviteTokenInput } from '@/api/types'
 import type {
-  AcceptRepoInviteResponse,
-  RepoInviteLookup,
-  RepoInviteTokenInput,
-} from '@/api/types'
+  AcceptRepositoryInviteResponse,
+  RepositoryInviteLookupResponse,
+} from '@/api/types.generated'
 import { ApplicationTopbar } from '@/components/application-topbar'
 import { AppShell } from '@/components/app-shell'
 import { PageContent, PageHeader } from '@/components/page-header'
@@ -21,8 +21,8 @@ export function InvitePage({
 }: {
   acceptInvite: (
     input: RepoInviteTokenInput,
-  ) => Promise<AcceptRepoInviteResponse>
-  invite: RepoInviteLookup
+  ) => Promise<AcceptRepositoryInviteResponse>
+  invite: RepositoryInviteLookupResponse
   token: string
 }) {
   const { isLoaded, isSignedIn } = useAuth()
@@ -31,15 +31,13 @@ export function InvitePage({
   const [accepting, setAccepting] = useState(false)
   const returnPath = `/invites/${encodeURIComponent(token)}`
 
-  async function onAccept(input: RepoInviteTokenInput) {
-    if (!isSignedIn || accepting) {
-      return
-    }
+  async function onAccept() {
+    if (accepting) return
 
     setAcceptError(null)
     setAccepting(true)
     try {
-      const accepted = await acceptInvite(input)
+      const accepted = await acceptInvite({ token })
       await navigate({
         params: {
           owner: accepted.repo.owner_handle,
@@ -99,7 +97,7 @@ export function InvitePage({
               {isLoaded && isSignedIn ? (
                 <Button
                   disabled={accepting}
-                  onClick={() => void onAccept({ token })}
+                  onClick={() => void onAccept()}
                   type="button"
                 >
                   {accepting ? (

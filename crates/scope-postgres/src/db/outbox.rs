@@ -6,14 +6,11 @@ use super::{
     repository_from_model,
 };
 use crate::error::PostgresError;
-#[cfg(any(test, feature = "test-support"))]
-use sea_orm::PaginatorTrait;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait, TryInsertResult,
+    QuerySelect, TransactionTrait,
     sea_query::{Expr, LockBehavior, LockType, OnConflict},
 };
-use std::sync::Arc;
 
 const PROJECTION_READ_MODEL_REBUILD: &str = "projection_read_model_rebuild";
 const JOB_READY: &str = "ready";
@@ -83,23 +80,26 @@ impl JobStore {
             return Ok(OutboxRunSummary::default());
         }
 
-        let db = Arc::clone(&self.db);
         let worker_id = worker_id.to_string();
         let mut summary = OutboxRunSummary::default();
         for _ in 0..limit {
             let (claim_now_unix, claim_now) = outbox_time(current_time)?;
-            let Some(job) =
-                claim_next_ready_job(db.as_ref(), &worker_id, DEFAULT_JOB_LEASE_SECS, claim_now)
-                    .await?
+            let Some(job) = claim_next_ready_job(
+                self.db.as_ref(),
+                &worker_id,
+                DEFAULT_JOB_LEASE_SECS,
+                claim_now,
+            )
+            .await?
             else {
                 break;
             };
             summary.claimed += 1;
 
-            match execute_outbox_job(db.as_ref(), &job, claim_now_unix, generated_ids).await {
+            match execute_outbox_job(self.db.as_ref(), &job, claim_now_unix, generated_ids).await {
                 Ok(created_runs) => {
                     let (_, completion_now) = outbox_time(current_time)?;
-                    complete_outbox_job(db.as_ref(), &job, &worker_id, completion_now).await?;
+                    complete_outbox_job(self.db.as_ref(), &job, &worker_id, completion_now).await?;
                     summary.completed += 1;
                     summary.created_runs.extend(created_runs);
                 }
@@ -128,7 +128,7 @@ impl JobStore {
                         );
                     }
                     fail_outbox_job(
-                        db.as_ref(),
+                        self.db.as_ref(),
                         &job,
                         &worker_id,
                         message,
@@ -145,33 +145,11 @@ impl JobStore {
 
     #[cfg(any(test, feature = "test-support"))]
     pub async fn outbox_job_counts_for_tests(&self) -> Result<OutboxJobCounts, PostgresError> {
-        let db = Arc::clone(&self.db);
         let rows = entities::outbox_job::Entity::find()
-            .all(db.as_ref())
+            .all(self.db.as_ref())
             .await
             .map_err(PostgresError::internal)?;
         Ok(outbox_job_counts(rows))
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub async fn projection_read_model_count_for_tests(
-        &self,
-        repo_id: &str,
-    ) -> Result<usize, PostgresError> {
-        let repo_id = repo_id.to_string();
-        let db = Arc::clone(&self.db);
-        entities::projection_read_model::Entity::find()
-            .filter(entities::projection_read_model::Column::RepoId.eq(repo_id))
-            .count(db.as_ref())
-            .await
-            .map_err(PostgresError::internal)
-            .and_then(|count| {
-                usize::try_from(count).map_err(|_| {
-                    PostgresError::internal_message(
-                        "projection read-model count exceeds usize range",
-                    )
-                })
-            })
     }
 }
 
@@ -191,7 +169,7 @@ where
         repo_version,
         now_unix,
     )?;
-    match entities::outbox_job::Entity::insert(job.into_active_model())
+    entities::outbox_job::Entity::insert(job.into_active_model())
         .on_conflict(
             OnConflict::column(entities::outbox_job::Column::IdempotencyKey)
                 .do_nothing()
@@ -200,10 +178,7 @@ where
         .do_nothing()
         .exec(conn)
         .await
-        .map_err(PostgresError::internal)?
-    {
-        TryInsertResult::Empty | TryInsertResult::Conflicted | TryInsertResult::Inserted(_) => {}
-    }
+        .map_err(PostgresError::internal)?;
     Ok(())
 }
 
@@ -552,7 +527,10 @@ fn unix_timestamp_i64(now_unix: u64) -> Result<i64, PostgresError> {
 mod tests {
     use super::*;
     use scope_domain::{account::UserAccount, policy::Visibility};
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    };
 
     #[test]
     fn retry_backoff_is_bounded() {

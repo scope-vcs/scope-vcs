@@ -1,3 +1,4 @@
+import { PageHeader } from '@/components/page-header'
 import { ApplicationPendingShell } from '@/components/pending-surface'
 import {
   TextSkeleton,
@@ -15,9 +16,7 @@ export function OwnerProfilePending({ owner }: { owner: string }) {
   return (
     <ApplicationPendingShell label={`Loading @${owner}`}>
       <div className="py-8 lg:py-10">
-        <h1 className="text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[32px]">
-          @{owner}
-        </h1>
+        <PageHeader title={`@${owner}`} />
         <div className="mt-6 divide-y divide-border border-y border-border">
           {PENDING_REPOSITORIES.map((repository) => (
             <div className="py-4" key={repository.id}>

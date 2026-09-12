@@ -1,4 +1,5 @@
-import type { RepoParams, RepoRunWorkflowList } from '@/api/types'
+import type { RepoParams } from '@/api/types'
+import type { RepositoryRunWorkflowListResponse } from '@/api/types.generated'
 import { cn } from '@/lib/utils'
 import { useNavigate } from '@tanstack/react-router'
 import {
@@ -19,7 +20,7 @@ export function RunsFilterBar({
   params: RepoParams
   selectedWorkflow?: string
   statusFilter: RunStatusFilter
-  workflows: RepoRunWorkflowList['workflows']
+  workflows: RepositoryRunWorkflowListResponse['workflows']
 }) {
   const navigate = useNavigate()
 

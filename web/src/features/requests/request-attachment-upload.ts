@@ -9,6 +9,7 @@ import {
 } from './request-attachment-drafts'
 import { hashAttachmentFile } from './request-attachment-hash-client'
 import { HttpError } from '../../api/http'
+import { resourceErrorMessage } from '../../lib/use-cached-resource'
 
 export type AttachmentUploadParams = {
   owner: string
@@ -157,7 +158,7 @@ export async function uploadRequestAttachment({
   } catch (error) {
     if (!controller.signal.aborted) {
       patchRequestAttachmentDraftFile(draftKey, localId, {
-        error: messageFor(error),
+        error: resourceErrorMessage(error, 'The file could not be uploaded.'),
         status: 'failed',
       })
     }
@@ -347,10 +348,4 @@ function safeMediaBaseUrl(value: string) {
     throw new Error('The media service returned an invalid upload URL.')
   }
   return url.origin
-}
-
-function messageFor(error: unknown) {
-  return error instanceof Error && error.message.trim()
-    ? error.message
-    : 'The file could not be uploaded.'
 }

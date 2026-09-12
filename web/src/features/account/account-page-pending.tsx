@@ -1,4 +1,5 @@
 import { ApplicationPendingShell } from '@/components/pending-surface'
+import { AccountPageHeader } from './account-page-header'
 import { SectionRow, SectionRows } from '@/components/section-rows'
 import {
   BlockSkeleton,
@@ -12,12 +13,7 @@ export function AccountPagePending() {
   return (
     <ApplicationPendingShell contextLabel="Account" label="Loading account">
       <div className="py-8 lg:py-10">
-        <h1 className="text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[32px]">
-          Account
-        </h1>
-        <p className="mt-2 text-[15px] leading-6 text-muted-foreground">
-          Manage Scope CLI access for this account.
-        </p>
+        <AccountPageHeader />
         <SectionRows>
           {['login', 'sessions'].map((row) => (
             <SectionRow

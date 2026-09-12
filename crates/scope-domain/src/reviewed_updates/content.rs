@@ -18,7 +18,10 @@ use crate::{
     },
     visibility_changes::{VisibilityChange, VisibilityChangeSet, visibility_change_set_id},
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::LazyLock,
+};
 
 #[derive(Clone, Debug)]
 pub struct ReviewedContentChange {
@@ -121,17 +124,18 @@ pub fn apply_reviewed_update_to_repo(
     {
         return apply_content_only_update(repo, update);
     }
-    let old_tree = repo.live_tree();
-    ensure_rules_remain_present(old_tree.contains_key(&repo_rules_path()), &update.changes)?;
+    let old_tree = repo.live_files.clone();
+    ensure_rules_remain_present(&old_tree, &update.changes)?;
+    let mut file_changes = build_file_changes(
+        &old_tree,
+        &repo.policy,
+        &update.config,
+        update.changes,
+        WrittenFileVisibility::FromConfig,
+    );
     let mut new_tree = old_tree.clone();
-    let mut file_changes = Vec::with_capacity(update.changes.len());
-    for change in update.changes {
-        let old_content = old_tree.get(&change.path).cloned();
-        if source_content_matches(old_content.as_ref(), change.content.as_ref()) {
-            continue;
-        }
-
-        match &change.content {
+    for change in &file_changes {
+        match &change.new_content {
             Some(content) => {
                 new_tree.insert(change.path.clone(), content.clone());
             }
@@ -139,18 +143,6 @@ pub fn apply_reviewed_update_to_repo(
                 new_tree.remove(&change.path);
             }
         }
-
-        let visibility = if change.content.is_some() {
-            update.config.visibility_for_path(&change.path)
-        } else {
-            repo.policy.effective_visibility(&change.path)
-        };
-        file_changes.push(FileChange {
-            visibility,
-            path: change.path,
-            old_content,
-            new_content: change.content,
-        });
     }
 
     if file_changes.is_empty() {
@@ -263,7 +255,7 @@ fn apply_content_only_update(
             change_version: repo.record.change_version,
             policy: repo.policy.clone(),
             repo_config: repo.repo_config.clone(),
-            live_files: repo.live_tree(),
+            live_files: repo.live_files.clone(),
             git_head: repo.git_head.clone(),
         },
         update,
@@ -282,7 +274,7 @@ pub fn apply_request_merge_to_repo(
             change_version: repo.record.change_version,
             policy: repo.policy.clone(),
             repo_config: repo.repo_config.clone(),
-            live_files: repo.live_tree(),
+            live_files: repo.live_files.clone(),
             git_head: repo.git_head.clone(),
         },
         update,
@@ -354,29 +346,15 @@ fn accept_content_update(
             "repo config changed since review; rerun scope push --main",
         ));
     }
-    ensure_rules_remain_present(
-        state.live_files.contains_key(&repo_rules_path()),
-        &update.changes,
-    )?;
+    ensure_rules_remain_present(&state.live_files, &update.changes)?;
 
-    let mut file_changes = Vec::with_capacity(update.changes.len());
-    for change in update.changes {
-        let old_content = state.live_files.get(&change.path).cloned();
-        if source_content_matches(old_content.as_ref(), change.content.as_ref()) {
-            continue;
-        }
-        let visibility = if old_content.is_some() || change.content.is_none() {
-            state.policy.effective_visibility(&change.path)
-        } else {
-            update.config.visibility_for_path(&change.path)
-        };
-        file_changes.push(FileChange {
-            visibility,
-            path: change.path,
-            old_content,
-            new_content: change.content,
-        });
-    }
+    let file_changes = build_file_changes(
+        &state.live_files,
+        &state.policy,
+        &update.config,
+        update.changes,
+        WrittenFileVisibility::ExistingFromPolicy,
+    );
     if file_changes.is_empty() && !allow_unchanged_tree {
         return Err(ReviewedUpdateError::BadRequest(
             "update did not change the live tree",
@@ -425,6 +403,50 @@ fn accept_content_update(
     })
 }
 
+/// Which rule assigns the visibility of a file written by a reviewed update.
+/// Deleted files always take the policy's current visibility for their path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WrittenFileVisibility {
+    /// The push carries a new repo config: every written file follows it.
+    FromConfig,
+    /// The repo config is unchanged: existing files keep their policy visibility
+    /// and only newly added files read the config.
+    ExistingFromPolicy,
+}
+
+fn build_file_changes(
+    live_tree: &BTreeMap<ScopePath, SourceBlob>,
+    policy: &Policy,
+    config: &RepoConfig,
+    changes: Vec<ReviewedContentChange>,
+    written_visibility: WrittenFileVisibility,
+) -> Vec<FileChange> {
+    let mut file_changes = Vec::with_capacity(changes.len());
+    for change in changes {
+        let old_content = live_tree.get(&change.path).cloned();
+        if source_content_matches(old_content.as_ref(), change.content.as_ref()) {
+            continue;
+        }
+        let visibility = match (written_visibility, &old_content, &change.content) {
+            (_, _, None) => policy.effective_visibility(&change.path),
+            (WrittenFileVisibility::FromConfig, _, Some(_))
+            | (WrittenFileVisibility::ExistingFromPolicy, None, Some(_)) => {
+                config.visibility_for_path(&change.path)
+            }
+            (WrittenFileVisibility::ExistingFromPolicy, Some(_), Some(_)) => {
+                policy.effective_visibility(&change.path)
+            }
+        };
+        file_changes.push(FileChange {
+            visibility,
+            path: change.path,
+            old_content,
+            new_content: change.content,
+        });
+    }
+    file_changes
+}
+
 fn validate_git_push_transition(
     previous: Option<&GitHead>,
     next: &GitHead,
@@ -451,19 +473,22 @@ fn validate_git_push_transition(
     Ok(())
 }
 
-fn repo_rules_path() -> ScopePath {
+static REPO_RULES_SCOPE_PATH: LazyLock<ScopePath> = LazyLock::new(|| {
     ScopePath::parse(REPO_RULES_PATH).expect("canonical repo rules path is valid")
-}
+});
 
 fn ensure_rules_remain_present(
-    currently_present: bool,
+    live_tree: &BTreeMap<ScopePath, SourceBlob>,
     changes: &[ReviewedContentChange],
 ) -> ReviewedUpdateResult<()> {
+    let rules_path = &*REPO_RULES_SCOPE_PATH;
     let resulting_presence = changes
         .iter()
         .rev()
-        .find(|change| change.path.as_str() == REPO_RULES_PATH)
-        .map_or(currently_present, |change| change.content.is_some());
+        .find(|change| &change.path == rules_path)
+        .map_or(live_tree.contains_key(rules_path), |change| {
+            change.content.is_some()
+        });
     if resulting_presence {
         Ok(())
     } else {

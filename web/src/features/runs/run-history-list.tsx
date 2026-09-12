@@ -1,4 +1,5 @@
-import type { RepoParams, RepoRunHistoryPage } from '@/api/types'
+import type { RepoParams } from '@/api/types'
+import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
 import { LoaderCircle, TerminalSquare } from 'lucide-react'
@@ -16,7 +17,7 @@ export function RunHistoryList({
   loadMore: () => void
   loadingMore: boolean
   params: RepoParams
-  runs: RepoRunHistoryPage['runs']
+  runs: RepositoryRunHistoryPageResponse['runs']
   selectedWorkflowName?: string
   showLoadMore: boolean
   totalRunCount: number

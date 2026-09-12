@@ -1,13 +1,20 @@
-use crate::settings::WorkerRole;
 use axum::{Router, extract::State, http::StatusCode, routing::get};
 use std::{
-    net::{Ipv6Addr, SocketAddr},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
+
+/// The four loops every worker runs; readiness needs a recent poll from each.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum WorkerLoop {
+    Control,
+    Compaction,
+    Cleanup,
+    Dependencies,
+}
 
 #[derive(Clone)]
 pub(crate) struct WorkerHealth {
@@ -17,81 +24,54 @@ pub(crate) struct WorkerHealth {
 struct WorkerHealthState {
     schema_ready: AtomicBool,
     last_successful_poll_unix: [AtomicU64; 4],
-    required_roles: [bool; 4],
     stale_after_secs: u64,
 }
 
 impl WorkerHealth {
-    pub(crate) fn new(poll_interval: Duration, role: WorkerRole) -> Self {
+    pub(crate) fn new(poll_interval: Duration) -> Self {
         let stale_after_secs = poll_interval.as_secs().saturating_mul(3).max(10);
         Self {
             state: Arc::new(WorkerHealthState {
                 schema_ready: AtomicBool::new(false),
                 last_successful_poll_unix: std::array::from_fn(|_| AtomicU64::new(0)),
-                required_roles: [
-                    role.runs_control(),
-                    role.runs_compaction(),
-                    role.runs_cleanup(),
-                    role.runs_dependencies(),
-                ],
                 stale_after_secs,
             }),
         }
+    }
+
+    pub(crate) fn mark_schema_ready(&self) {
+        self.state.schema_ready.store(true, Ordering::Release);
     }
 
     pub(crate) fn mark_schema_waiting(&self) {
         self.state.schema_ready.store(false, Ordering::Release);
     }
 
-    pub(crate) fn mark_poll_succeeded(&self, role: WorkerRole, now_unix: u64) {
-        let index = concrete_role_index(role);
-        self.state.last_successful_poll_unix[index].store(now_unix, Ordering::Release);
-        self.state.schema_ready.store(true, Ordering::Release);
+    pub(crate) fn mark_poll_succeeded(&self, worker_loop: WorkerLoop, now_unix: u64) {
+        self.state.last_successful_poll_unix[worker_loop as usize]
+            .store(now_unix, Ordering::Release);
     }
 
     pub(crate) async fn serve(self, port: u16) -> anyhow::Result<()> {
-        let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
-        let app = Router::new()
-            .route("/healthz", get(healthz))
-            .with_state(self);
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        tracing::info!(%addr, "starting worker health server");
-        axum::serve(listener, app)
-            .with_graceful_shutdown(super::shutdown_signal())
-            .await?;
-        Ok(())
+        let app = Router::new().route("/readyz", get(readyz)).with_state(self);
+        scope_service_runtime::serve(port, app, "worker health server").await
     }
 
     fn is_ready_at(&self, now_unix: u64) -> bool {
-        if !self.state.schema_ready.load(Ordering::Acquire) {
-            return false;
-        }
-        self.state
-            .required_roles
-            .iter()
-            .zip(&self.state.last_successful_poll_unix)
-            .all(|(required, last_success)| {
-                if !required {
-                    return true;
-                }
-                let last_success = last_success.load(Ordering::Acquire);
-                last_success > 0
-                    && now_unix.saturating_sub(last_success) <= self.state.stale_after_secs
-            })
+        self.state.schema_ready.load(Ordering::Acquire)
+            && self
+                .state
+                .last_successful_poll_unix
+                .iter()
+                .all(|last_success| {
+                    let last_success = last_success.load(Ordering::Acquire);
+                    last_success > 0
+                        && now_unix.saturating_sub(last_success) <= self.state.stale_after_secs
+                })
     }
 }
 
-fn concrete_role_index(role: WorkerRole) -> usize {
-    match role {
-        WorkerRole::Control => 0,
-        WorkerRole::Compaction => 1,
-        WorkerRole::Cleanup => 2,
-        WorkerRole::Dependencies => 3,
-        WorkerRole::All => panic!("health updates require one concrete worker role"),
-    }
-}
-
-async fn healthz(State(health): State<WorkerHealth>) -> StatusCode {
+async fn readyz(State(health): State<WorkerHealth>) -> StatusCode {
     match super::unix_now() {
         Ok(now_unix) if health.is_ready_at(now_unix) => StatusCode::OK,
         _ => StatusCode::SERVICE_UNAVAILABLE,
@@ -103,11 +83,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn health_requires_matching_schema_and_a_recent_poll() {
-        let health = WorkerHealth::new(Duration::from_secs(1), WorkerRole::Control);
+    fn readiness_requires_a_ready_schema_and_a_recent_poll_from_every_loop() {
+        let health = WorkerHealth::new(Duration::from_secs(1));
+        health.mark_schema_ready();
+        health.mark_poll_succeeded(WorkerLoop::Control, 100);
+        health.mark_poll_succeeded(WorkerLoop::Compaction, 100);
         assert!(!health.is_ready_at(100));
 
-        health.mark_poll_succeeded(WorkerRole::Control, 100);
+        health.mark_poll_succeeded(WorkerLoop::Cleanup, 100);
+        assert!(!health.is_ready_at(100));
+        health.mark_poll_succeeded(WorkerLoop::Dependencies, 100);
         assert!(health.is_ready_at(110));
         assert!(!health.is_ready_at(111));
 
@@ -116,15 +101,22 @@ mod tests {
     }
 
     #[test]
-    fn all_role_health_requires_every_loop() {
-        let health = WorkerHealth::new(Duration::from_secs(1), WorkerRole::All);
-        health.mark_poll_succeeded(WorkerRole::Control, 100);
-        health.mark_poll_succeeded(WorkerRole::Compaction, 100);
-        assert!(!health.is_ready_at(100));
-
-        health.mark_poll_succeeded(WorkerRole::Cleanup, 100);
-        assert!(!health.is_ready_at(100));
-        health.mark_poll_succeeded(WorkerRole::Dependencies, 100);
-        assert!(health.is_ready_at(100));
+    fn work_failures_do_not_report_the_schema_as_waiting() {
+        let health = WorkerHealth::new(Duration::from_secs(1));
+        health.mark_schema_ready();
+        for worker_loop in [
+            WorkerLoop::Control,
+            WorkerLoop::Compaction,
+            WorkerLoop::Cleanup,
+            WorkerLoop::Dependencies,
+        ] {
+            health.mark_poll_succeeded(worker_loop, 100);
+        }
+        // A loop that stops polling goes stale on its own timestamp; the schema
+        // flag is owned by the readiness check alone.
+        assert!(health.is_ready_at(110));
+        assert!(!health.is_ready_at(111));
+        health.mark_poll_succeeded(WorkerLoop::Control, 111);
+        assert!(!health.is_ready_at(111));
     }
 }

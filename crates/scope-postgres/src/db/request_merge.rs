@@ -4,21 +4,18 @@ use super::{
     GeneratedIdSource, MergeRequestContentCommand, RequestStore, acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_request_merge},
     entities,
+    repository_access::repository_access,
     request_access::ensure_user_exists,
     request_rows::request_by_id,
     request_submission_transactions::persist_lifecycle_mutation,
 };
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{EntityTrait, TransactionTrait};
 use {
     crate::error::PostgresError,
     scope_domain::{
-        landing_file::RepositoryLandingFileMutation,
         repository::RepoLifecycleState,
         repository::git::GitHead,
-        repository::updates::RequestMergeOrigin,
         requests::{MergeRequestInput, RequestLifecycleMutation, merge_request},
-        reviewed_updates::content::ReviewedUpdateInput,
-        runs::catalog::RepositoryWorkflowCatalog,
     },
 };
 
@@ -29,28 +26,32 @@ pub struct MergeRequestContentMutation {
 }
 
 impl RequestStore {
-    #[allow(clippy::too_many_arguments)]
     pub async fn merge_request_content(
         &self,
-        owner: &str,
-        name: &str,
-        expected_git_frontier: &scope_domain::repository::git::GitFrontier,
-        expected_repo_change_version: u64,
-        expected_request_head_oid: &str,
-        update: ReviewedUpdateInput,
-        landing_file_mutation: RepositoryLandingFileMutation,
-        workflow_catalog: RepositoryWorkflowCatalog,
-        origin: RequestMergeOrigin,
         command: MergeRequestContentCommand,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<MergeRequestContentMutation, PostgresError> {
-        let now_unix = command.now_unix;
-        let repo_id = scope_domain::repository::repo_id(owner, name);
+        let MergeRequestContentCommand {
+            owner,
+            name,
+            request_id,
+            actor_user_id,
+            merged_event_id,
+            expected_git_frontier,
+            expected_repo_change_version,
+            expected_request_head_oid,
+            update,
+            landing_file_mutation,
+            workflow_catalog,
+            origin,
+            now_unix,
+        } = command;
+        let repo_id = scope_domain::repository::repo_id(&owner, &name);
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
-        acquire_aggregate_lock(&tx, "request", &command.request_id).await?;
+        acquire_aggregate_lock(&tx, "request", &request_id).await?;
 
-        let request = request_by_id(&tx, &command.request_id)
+        let request = request_by_id(&tx, &request_id)
             .await?
             .filter(|request| request.repo_id == repo_id)
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
@@ -59,26 +60,22 @@ impl RequestStore {
                 "request changed since merge was prepared; retry merge",
             ));
         }
-        ensure_user_exists(&tx, &command.actor_user_id).await?;
+        ensure_user_exists(&tx, &actor_user_id).await?;
 
         let repo_row = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
             .await
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
-        let repo_change_version = u64::try_from(repo_row.change_version).map_err(|_| {
-            PostgresError::internal_message("repository change version is negative")
-        })?;
-        if repo_change_version != expected_repo_change_version {
+        let context = repository_access(&tx, &repo_id, Some(&actor_user_id))
+            .await?
+            .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
+        if context.record.change_version != expected_repo_change_version {
             return Err(PostgresError::conflict(
                 "repo changed since merge was prepared; retry merge",
             ));
         }
-        let publication_state: RepoLifecycleState = serde_json::from_value(
-            serde_json::Value::String(repo_row.publication_state.clone()),
-        )
-        .map_err(PostgresError::internal)?;
-        if publication_state != RepoLifecycleState::Ready {
+        if context.record.lifecycle_state != RepoLifecycleState::Ready {
             return Err(PostgresError::conflict("repo must be ready before merge"));
         }
         let head = entities::git_head::Entity::find_by_id(repo_id.clone())
@@ -87,28 +84,20 @@ impl RequestStore {
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::conflict("repo has no accepted Git head"))?
             .try_into_domain()?;
-        if &head.frontier() != expected_git_frontier {
+        if head.frontier() != expected_git_frontier {
             return Err(PostgresError::conflict(
                 "repo changed since merge was prepared; retry merge",
             ));
         }
-        let is_member = entities::repository_member::Entity::find()
-            .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
-            .filter(entities::repository_member::Column::UserId.eq(command.actor_user_id.clone()))
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .is_some();
-        let actor_is_maintainer = repo_row.owner_user_id == command.actor_user_id || is_member;
         let request_mutation = merge_request(
             &request,
             MergeRequestInput {
-                request_id: command.request_id,
-                actor_user_id: command.actor_user_id,
-                actor_is_maintainer,
-                merged_head_oid: expected_request_head_oid.to_string(),
+                request_id,
+                actor_user_id,
+                actor_is_maintainer: context.access.is_maintainer(),
+                merged_head_oid: expected_request_head_oid,
                 merged_main_oid: update.git_head.head_oid.clone(),
-                merged_event_id: command.merged_event_id,
+                merged_event_id,
                 now_unix,
             },
         )?;
@@ -169,19 +158,7 @@ mod tests {
         let error = store
             .requests()
             .merge_request_content(
-                "owner",
-                "repo",
-                &prepared.expected_git_frontier,
-                prepared.expected_repo_change_version,
-                "head",
-                prepared.update,
-                RepositoryLandingFileMutation::Unchanged,
-                prepared.workflow_catalog,
-                RequestMergeOrigin::Private {
-                    request_id: "req_1".to_string(),
-                    request_head_oid: "head".to_string(),
-                },
-                merge_command("user_public"),
+                merge_command("user_public", prepared),
                 &super::super::generated_ids::test_generated_id,
             )
             .await
@@ -219,19 +196,7 @@ mod tests {
         let mutation = store
             .requests()
             .merge_request_content(
-                "owner",
-                "repo",
-                &prepared.expected_git_frontier,
-                prepared.expected_repo_change_version,
-                "head",
-                prepared.update,
-                RepositoryLandingFileMutation::Unchanged,
-                prepared.workflow_catalog,
-                RequestMergeOrigin::Private {
-                    request_id: "req_1".to_string(),
-                    request_head_oid: "head".to_string(),
-                },
-                merge_command("user_owner"),
+                merge_command("user_owner", prepared),
                 &super::super::generated_ids::test_generated_id,
             )
             .await
@@ -394,11 +359,26 @@ mod tests {
         }
     }
 
-    fn merge_command(actor_user_id: &str) -> MergeRequestContentCommand {
+    fn merge_command(
+        actor_user_id: &str,
+        prepared: MergePreparation,
+    ) -> MergeRequestContentCommand {
         MergeRequestContentCommand {
+            owner: "owner".to_string(),
+            name: "repo".to_string(),
             request_id: "req_1".to_string(),
             actor_user_id: actor_user_id.to_string(),
             merged_event_id: format!("event_merged_{actor_user_id}"),
+            expected_git_frontier: prepared.expected_git_frontier,
+            expected_repo_change_version: prepared.expected_repo_change_version,
+            expected_request_head_oid: "head".to_string(),
+            update: prepared.update,
+            landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
+            workflow_catalog: prepared.workflow_catalog,
+            origin: RequestMergeOrigin::Private {
+                request_id: "req_1".to_string(),
+                request_head_oid: "head".to_string(),
+            },
             now_unix: 5,
         }
     }

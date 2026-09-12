@@ -1,4 +1,5 @@
-import type { RepoParams, RepoSummary } from '@/api/types'
+import type { RepoParams } from '@/api/types'
+import type { RepoSummaryResponse } from '@/api/types.generated'
 import { PendingSurface } from '@/components/pending-surface'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { TextSkeleton } from '@/components/ui/skeleton'
@@ -11,7 +12,7 @@ import { useCallback } from 'react'
 import { repoResourceScope } from './repo-resource-scope'
 import { repositoryActivityResource } from './repository-activity-resource'
 
-export function RepositoryLatestActivity({ params, repo }: { params: RepoParams; repo: RepoSummary }) {
+export function RepositoryLatestActivity({ params, repo }: { params: RepoParams; repo: RepoSummaryResponse }) {
   const { isLoaded, userId } = useAuth()
   const ready = repo.lifecycle_state === 'Ready'
   const identity = ready && isLoaded ? repoResourceScope(repo, userId ?? null) : null

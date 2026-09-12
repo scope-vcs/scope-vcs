@@ -60,16 +60,19 @@ export function buildRunJobGraph(
   }
 
   for (const job of jobs) layerFor(job.job.key)
+  // layerFor has now visited every job and every `needs` key and thrown for any
+  // absent from byKey, so lookups below cannot miss and layers are all cached.
+  const needsOf = (key: string) => byKey.get(key)!.job.needs
   const layerCount = Math.max(0, ...layers.values()) + 1
   const keysByLayer = Array.from({ length: layerCount }, () => [] as string[])
-  for (const [key, layer] of layers) keysByLayer[layer]?.push(key)
+  for (const [key, layer] of layers) keysByLayer[layer].push(key)
   for (const keys of keysByLayer) keys.sort()
   const dependencies = keysByLayer.flatMap((keys, layer) =>
-    keys.flatMap((to) => (byKey.get(to)?.job.needs ?? []).map((from) => ({
+    keys.flatMap((to) => needsOf(to).map((from) => ({
       endLayer: layer,
       from,
       key: edgeKey(from, to),
-      startLayer: layers.get(from) ?? 0,
+      startLayer: layerFor(from),
       to,
     }))))
   const longEdgeLanes = assignLongEdgeLanes(
@@ -99,17 +102,15 @@ export function buildRunJobGraph(
     return keys.map((key, row) => ({
       key,
       layer,
-      needs: byKey.get(key)?.job.needs ?? [],
+      needs: needsOf(key),
       x: GRAPH_PADDING + layer * (JOB_GRAPH_NODE_WIDTH + LAYER_GAP),
       y: top + row * (JOB_GRAPH_NODE_HEIGHT + ROW_GAP),
     }))
   })
   const positions = new Map(nodes.map((node) => [node.key, node]))
   const edges = dependencies.map((edge) => {
-    const source = positions.get(edge.from)
-    const target = positions.get(edge.to)
-    if (!source) throw new Error(`Run graph dependency ${edge.from} is missing`)
-    if (!target) throw new Error(`Run graph job ${edge.to} is missing`)
+    const source = positions.get(edge.from)!
+    const target = positions.get(edge.to)!
     const startX = source.x + JOB_GRAPH_NODE_WIDTH
     const startY = source.y + JOB_GRAPH_NODE_HEIGHT / 2
     const endX = target.x

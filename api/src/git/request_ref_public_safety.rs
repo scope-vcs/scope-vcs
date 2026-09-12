@@ -1,8 +1,10 @@
 use crate::{
-    config::DEFAULT_GIT_BRANCH,
     error::ApiError,
     git::{
-        import::{run_git, run_git_output, validate_pushed_tree},
+        command::{
+            git_is_ancestor, git_stdout_text, run_git, run_git_output, successful_git_output,
+        },
+        import::validate_pushed_tree,
         projection_repo::projection_bare_repo_for_state,
     },
     state::AppState,
@@ -14,6 +16,7 @@ use scope_domain::{
     repo_control::is_public_request_protected_path,
     repository::Repository,
 };
+use scope_git::DEFAULT_GIT_BRANCH;
 use std::{collections::BTreeSet, path::Path as FsPath};
 
 const PUBLIC_REQUEST_BASE_REF: &str = "refs/scope/internal/public-request-base";
@@ -33,7 +36,7 @@ pub(super) async fn ensure_public_request_ref_is_public_safe(
 ) -> Result<(), ApiError> {
     let (_, public_visible_paths) =
         fetch_current_public_projection(repo, state, staging_repo).await?;
-    public_request_branch_base_oid(staging_repo, new_head_oid)?;
+    ensure_public_request_branch_is_based_on_public_main(staging_repo, new_head_oid)?;
     let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, new_head_oid)?;
     validated_public_parent_oids(staging_repo, &commit_oids)?;
     for commit_oid in commit_oids {
@@ -99,7 +102,7 @@ fn validated_public_parent_oids(
     let mut seen = BTreeSet::new();
     let mut public_parent_oids = BTreeSet::new();
     for commit_oid in commit_oids {
-        let parent_oids = git_text(
+        let parent_oids = git_stdout_text(
             staging_repo,
             &["show", "-s", "--format=%P", commit_oid],
             "reading public request commit parents",
@@ -119,8 +122,12 @@ fn validated_public_parent_oids(
                         "public request commits are not ordered ancestor-first",
                     ));
                 }
-            } else if git_revision_is_ancestor(staging_repo, &parent_oid, PUBLIC_REQUEST_BASE_REF)?
-            {
+            } else if git_is_ancestor(
+                staging_repo,
+                &parent_oid,
+                PUBLIC_REQUEST_BASE_REF,
+                "checking public request parent ancestry",
+            )? {
                 public_parent_oids.insert(parent_oid);
             } else {
                 return Err(ApiError::conflict(
@@ -136,28 +143,6 @@ fn validated_public_parent_oids(
         ));
     }
     Ok(public_parent_oids.into_iter().collect())
-}
-
-fn git_revision_is_ancestor(
-    staging_repo: &FsPath,
-    ancestor: &str,
-    descendant: &str,
-) -> Result<bool, ApiError> {
-    let output = run_git_output(
-        Some(staging_repo),
-        &["merge-base", "--is-ancestor", ancestor, descendant],
-        "checking public request parent ancestry",
-    )?;
-    if output.status.success() {
-        return Ok(true);
-    }
-    if output.status.code() == Some(1) {
-        return Ok(false);
-    }
-    Err(ApiError::infrastructure_unavailable(format!(
-        "checking public request parent ancestry: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    )))
 }
 
 async fn fetch_current_public_projection(
@@ -201,24 +186,21 @@ async fn fetch_current_public_projection(
     Ok((public_base_oid, public_visible_paths))
 }
 
-fn public_request_branch_base_oid(
+fn ensure_public_request_branch_is_based_on_public_main(
     staging_repo: &FsPath,
     new_head_oid: &str,
-) -> Result<String, ApiError> {
+) -> Result<(), ApiError> {
     let output = run_git_output(
         Some(staging_repo),
         &["merge-base", PUBLIC_REQUEST_BASE_REF, new_head_oid],
         "checking public request branch base",
     )?;
-    if !output.status.success() {
-        return Err(ApiError::conflict(
-            "public request branch must be based on public main",
-        ));
+    if output.status.success() {
+        return Ok(());
     }
-    Ok(String::from_utf8(output.stdout)
-        .map_err(ApiError::bad_request)?
-        .trim()
-        .to_string())
+    Err(ApiError::conflict(
+        "public request branch must be based on public main",
+    ))
 }
 
 fn commits_after(
@@ -227,8 +209,8 @@ fn commits_after(
     new_head_oid: &str,
 ) -> Result<Vec<String>, ApiError> {
     let exclude_base = format!("^{base}");
-    let output = run_git_output(
-        Some(staging_repo),
+    Ok(git_stdout_text(
+        staging_repo,
         &[
             "rev-list",
             "--reverse",
@@ -237,36 +219,23 @@ fn commits_after(
             exclude_base.as_str(),
         ],
         "reading public request branch commits",
-    )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading public request branch commits: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    Ok(String::from_utf8(output.stdout)
-        .map_err(ApiError::bad_request)?
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(ToString::to_string)
-        .collect())
+    )?
+    .lines()
+    .filter(|line| !line.trim().is_empty())
+    .map(ToString::to_string)
+    .collect())
 }
 
 fn ensure_public_head_is_request_ancestor(
     staging_repo: &FsPath,
     request_head_oid: &str,
 ) -> Result<(), ApiError> {
-    let output = run_git_output(
-        Some(staging_repo),
-        &[
-            "merge-base",
-            "--is-ancestor",
-            PUBLIC_REQUEST_BASE_REF,
-            request_head_oid,
-        ],
+    if git_is_ancestor(
+        staging_repo,
+        PUBLIC_REQUEST_BASE_REF,
+        request_head_oid,
         "checking current public main ancestry",
-    )?;
-    if output.status.success() {
+    )? {
         return Ok(());
     }
     Err(ApiError::conflict(
@@ -279,12 +248,14 @@ fn public_request_commit_fact(
     commit_oid: &str,
     changed_paths: Vec<ScopePath>,
 ) -> Result<NativePublicCommit, ApiError> {
-    let tree_oid = git_text(
+    let tree_oid = git_stdout_text(
         staging_repo,
         &["show", "-s", "--format=%T", commit_oid],
         "reading public request commit tree",
-    )?;
-    let parents = git_text(
+    )?
+    .trim()
+    .to_string();
+    let parents = git_stdout_text(
         staging_repo,
         &["show", "-s", "--format=%P", commit_oid],
         "reading public request commit parents",
@@ -301,24 +272,12 @@ fn public_request_commit_fact(
 }
 
 fn git_commit_oid(staging_repo: &FsPath, revision: &str) -> Result<String, ApiError> {
-    git_text(
+    git_stdout_text(
         staging_repo,
         &["rev-parse", "--verify", &format!("{revision}^{{commit}}")],
         "reading current public main",
     )
-}
-
-fn git_text(staging_repo: &FsPath, args: &[&str], context: &str) -> Result<String, ApiError> {
-    let output = run_git_output(Some(staging_repo), args, context)?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "{context}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    String::from_utf8(output.stdout)
-        .map_err(ApiError::bad_request)
-        .map(|value| value.trim().to_string())
+    .map(|oid| oid.trim().to_string())
 }
 
 fn ensure_public_request_commit_paths(
@@ -343,7 +302,7 @@ fn public_request_changed_paths(
     commit_oid: &str,
 ) -> Result<Vec<String>, ApiError> {
     let public_base_oid = git_commit_oid(staging_repo, PUBLIC_REQUEST_BASE_REF)?;
-    let parents = git_text(
+    let parents = git_stdout_text(
         staging_repo,
         &["show", "-s", "--format=%P", commit_oid],
         "reading public request commit parents",
@@ -356,25 +315,23 @@ fn public_request_changed_paths(
         .find(|parent| parent.as_str() == public_base_oid)
         .or_else(|| parents.first())
         .ok_or_else(|| ApiError::conflict("public request commit must have a parent"))?;
-    let output = run_git_output(
-        Some(staging_repo),
-        &[
-            "diff",
-            "-r",
-            "--name-only",
-            "-z",
-            "--no-renames",
-            diff_base,
-            commit_oid,
-        ],
-        "reading public request commit paths",
+    let action = "reading public request commit paths";
+    let output = successful_git_output(
+        run_git_output(
+            Some(staging_repo),
+            &[
+                "diff",
+                "-r",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                diff_base,
+                commit_oid,
+            ],
+            action,
+        )?,
+        action,
     )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading public request commit paths: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
     let mut changed_paths = Vec::new();
     for path in output.stdout.split(|byte| *byte == 0) {
         if path.is_empty() {
@@ -401,7 +358,7 @@ fn ensure_public_request_path(
     {
         return Ok(scope_path);
     }
-    if repo.graph_has_file(&scope_path) {
+    if repo.live_file_exists(&scope_path) {
         return Err(ApiError::conflict(
             "public request cannot change a private path",
         ));
@@ -699,7 +656,10 @@ mod tests {
     }
 
     fn oid(repo: &Path, revision: &str) -> String {
-        git_text(repo, &["rev-parse", revision], "reading safety test oid").unwrap()
+        git_stdout_text(repo, &["rev-parse", revision], "reading safety test oid")
+            .unwrap()
+            .trim()
+            .to_string()
     }
 
     fn temp_repo_path(label: &str) -> PathBuf {

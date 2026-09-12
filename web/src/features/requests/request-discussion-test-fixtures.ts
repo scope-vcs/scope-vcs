@@ -34,3 +34,11 @@ export function reply(id: string, position: number, overrides: Partial<RequestDi
     ...overrides,
   }
 }
+
+export function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((complete) => {
+    resolve = complete
+  })
+  return { promise, resolve }
+}

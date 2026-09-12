@@ -1,13 +1,9 @@
+use super::runtime::{AttemptState, CacheFinalState, CachePreparation, StepState};
 use crate::wire::wire_enum;
+use scope_domain::runs::trigger::PushTriggerEvaluationState as DomainPushTriggerEvaluationState;
 use scope_domain::runs::{
-    attempt::AttemptState as DomainAttemptState,
-    cache::observation::{
-        CacheColdReason as DomainCacheColdReason, CacheFinalState as DomainCacheFinalState,
-    },
-    job::RunJobState as DomainRunJobState,
-    run::RunState as DomainRunState,
+    job::RunJobState as DomainRunJobState, run::RunState as DomainRunState,
     source::RunTrigger as DomainRunTrigger,
-    step::StepState as DomainStepState,
 };
 use serde::{Deserialize, Serialize};
 
@@ -57,20 +53,6 @@ pub struct RunResponse {
 wire_enum!(
     #[serde(rename_all = "kebab-case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-    RepositoryRunState => DomainRunState {
-        Queued,
-        Dispatching,
-        Running,
-        Succeeded,
-        Failed,
-        Canceled,
-        Lost,
-    }
-);
-
-wire_enum!(
-    #[serde(rename_all = "kebab-case")]
-    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
     RepositoryRunTrigger => DomainRunTrigger {
         Manual,
         PushMain,
@@ -84,7 +66,7 @@ pub struct RepositoryRunSummaryResponse {
     pub workflow_name: String,
     pub git_oid: String,
     pub trigger: RepositoryRunTrigger,
-    pub state: RepositoryRunState,
+    pub state: RunState,
     pub cancellation_requested: bool,
     pub created_at_unix: u64,
     pub updated_at_unix: u64,
@@ -109,33 +91,6 @@ wire_enum!(
     }
 );
 
-wire_enum!(
-    #[serde(rename_all = "kebab-case")]
-    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-    RepositoryRunAttemptState => DomainAttemptState {
-        Dispatching,
-        Running,
-        Succeeded,
-        Failed,
-        Canceled,
-        Lost,
-    }
-);
-
-wire_enum!(
-    #[serde(rename_all = "kebab-case")]
-    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-    RepositoryRunStepState => DomainStepState {
-        Pending,
-        Running,
-        Succeeded,
-        Failed,
-        Canceled,
-        Lost,
-        Skipped,
-    }
-);
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -149,48 +104,13 @@ pub enum RepositoryRunTerminalReason {
     RuntimeSetupFailed { exit_code: i32, message: String },
 }
 
-wire_enum!(
-    #[serde(rename_all = "kebab-case")]
-    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-    RepositoryRunCacheColdReason => DomainCacheColdReason {
-        MetadataMissing,
-        MetadataInvalid,
-        MetadataNotReady,
-        VolumeMissing,
-        VolumeInvalid,
-        BackingDirectoryMissing,
-    }
-);
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(tag = "kind", rename_all = "kebab-case"))]
-pub enum RepositoryRunCachePreparation {
-    Exact,
-    Compatible,
-    Cold {
-        reason: RepositoryRunCacheColdReason,
-    },
-}
-
-wire_enum!(
-    #[serde(rename_all = "kebab-case")]
-    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
-    RepositoryRunCacheFinalState => DomainCacheFinalState {
-        Pending,
-        Ready,
-        Evicted,
-    }
-);
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RepositoryRunCacheObservationResponse {
     pub workflow_path: String,
     pub job_key: String,
     pub identity_digest: String,
-    pub preparation: RepositoryRunCachePreparation,
+    pub preparation: CachePreparation,
     pub key_ms: u64,
     pub metadata_ms: u64,
     pub size_bytes: u64,
@@ -198,7 +118,7 @@ pub struct RepositoryRunCacheObservationResponse {
     pub sync_ms: u64,
     pub extraction_ms: u64,
     pub prepare_ms: u64,
-    pub final_state: RepositoryRunCacheFinalState,
+    pub final_state: CacheFinalState,
     pub finalize_ms: Option<u64>,
 }
 
@@ -223,7 +143,7 @@ pub struct RepositoryRunStepResponse {
     pub index: u32,
     pub name: String,
     pub command: String,
-    pub state: RepositoryRunStepState,
+    pub state: StepState,
     pub started_at_unix: Option<u64>,
     pub completed_at_unix: Option<u64>,
     pub exit_code: Option<i32>,
@@ -236,7 +156,7 @@ pub struct RepositoryRunAttemptResponse {
     pub number: u32,
     pub external_run_id: Option<String>,
     pub runtime_version: String,
-    pub state: RepositoryRunAttemptState,
+    pub state: AttemptState,
     pub created_at_unix: u64,
     pub started_at_unix: Option<u64>,
     pub completed_at_unix: Option<u64>,
@@ -280,14 +200,16 @@ pub struct PushTriggerCheckResponse {
     pub run: RunResponse,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum PushTriggerEvaluationState {
-    Pending,
-    Succeeded,
-    ConfigurationError,
-    Failed,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    PushTriggerEvaluationState => DomainPushTriggerEvaluationState {
+        Pending,
+        Succeeded,
+        ConfigurationError,
+        Failed,
+    }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PushTriggerEvaluationResponse {
@@ -362,6 +284,7 @@ pub struct RepositoryRunStepLogPageResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CacheColdReason;
 
     #[test]
     fn repository_run_states_keep_the_existing_json() {
@@ -392,8 +315,8 @@ mod tests {
                 workflow_path: "/.scope/runs/checks.yml".to_string(),
                 job_key: "backend".to_string(),
                 identity_digest: "a".repeat(64),
-                preparation: RepositoryRunCachePreparation::Cold {
-                    reason: RepositoryRunCacheColdReason::MetadataMissing,
+                preparation: CachePreparation::Cold {
+                    reason: CacheColdReason::MetadataMissing,
                 },
                 key_ms: 5,
                 metadata_ms: 7,
@@ -402,7 +325,7 @@ mod tests {
                 sync_ms: 0,
                 extraction_ms: 0,
                 prepare_ms: 12,
-                final_state: RepositoryRunCacheFinalState::Ready,
+                final_state: CacheFinalState::Ready,
                 finalize_ms: Some(8),
             }),
         };

@@ -10,7 +10,7 @@ pub const REQUEST_TIMELINE_BODY_MAX_BYTES: usize = 16 * 1024;
 pub const REQUEST_TITLE_MAX_BYTES: usize = 256;
 pub const PUBLIC_WORKING_REQUEST_LIMIT: usize = 3;
 
-pub(crate) fn validate_required_body(label: &str, value: &str) -> Result<(), DomainError> {
+pub(crate) fn validate_required(label: &str, value: &str) -> Result<(), DomainError> {
     if value.trim().is_empty() {
         return Err(DomainError::invalid_input(format!("{label} is required")));
     }

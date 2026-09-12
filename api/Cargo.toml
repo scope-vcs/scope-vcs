@@ -10,7 +10,6 @@ repository.workspace = true
 default = []
 local-dev = ["scope_postgres/local-dev"]
 smoke-seed = ["scope_postgres/smoke-seed"]
-test-support = ["scope_postgres/test-support", "scope_object_store/test-support"]
 type-export = ["dep:schemars", "dep:ts-rs", "scope_api_contract/ts"]
 
 [[bin]]
@@ -27,12 +26,8 @@ name = "scope-smoke-seed"
 path = "src/bin/scope_smoke_seed.rs"
 required-features = ["smoke-seed"]
 
-[[test]]
-name = "workflows"
-path = "tests/workflows.rs"
-required-features = ["test-support"]
-
 [dependencies]
+scope_service_runtime = { workspace = true, features = ["postgres"] }
 anyhow.workspace = true
 axum.workspace = true
 base64.workspace = true
@@ -69,7 +64,6 @@ tokio = { workspace = true, features = ["io-util", "macros", "process", "rt-mult
 tokio-stream = { version = "0.1.17", features = ["sync"] }
 tower-http = { workspace = true, features = ["cors"] }
 tracing.workspace = true
-tracing-subscriber.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]

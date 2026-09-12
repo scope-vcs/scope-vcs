@@ -161,12 +161,6 @@ test('zero-hunk and adversarial fixtures return bounded worker results', async (
     { kind: 'empty' },
   )
   assert.deepEqual(
-    await runSourceWorker(workerInput('a\n', 'b\n', {
-      maxHighlightLanguages: 0,
-    })),
-    { kind: 'error' },
-  )
-  assert.deepEqual(
     await runSourceWorker(workerInput('a\n', 'b\n', { maxHunks: 0 })),
     { kind: 'omitted', reason: 'hunks' },
   )
@@ -244,7 +238,6 @@ function workerInput(
 ): ReviewFileDiffWorkerInput {
   return {
     budget: {
-      maxHighlightLanguages: REVIEW_FILE_DIFF_RENDER_BUDGET.maxHighlightLanguages,
       maxHunks: REVIEW_FILE_DIFF_RENDER_BUDGET.maxHunks,
       maxOutputBytes: REVIEW_FILE_DIFF_RENDER_BUDGET.maxOutputBytes,
       maxRenderedLines: REVIEW_FILE_DIFF_RENDER_BUDGET.maxRenderedLines,

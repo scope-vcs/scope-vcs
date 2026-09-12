@@ -1,8 +1,5 @@
 use crate::{error::ApiError, state::AppState};
-use scope_domain::{
-    repository::access::RepositoryAccessContext,
-    runs::{job::RunJob, run::Run},
-};
+use scope_domain::{repository::access::RepositoryAccessContext, runs::run::Run};
 use scope_postgres::db::{RunDetail, StepLogCursor, StoredRunLog};
 
 pub(crate) struct RunStepLogs {
@@ -15,7 +12,6 @@ pub(crate) struct RunStepLogs {
 
 pub(crate) struct InspectedRun {
     pub(crate) run: Run,
-    pub(crate) jobs: Vec<RunJob>,
     pub(crate) logs_truncated: bool,
 }
 
@@ -71,7 +67,6 @@ pub(crate) async fn inspect_run(
         .ok_or_else(|| ApiError::not_found("run not found"))?;
     Ok(InspectedRun {
         run: snapshot.run,
-        jobs: snapshot.jobs,
         logs_truncated: snapshot.logs_truncated,
     })
 }

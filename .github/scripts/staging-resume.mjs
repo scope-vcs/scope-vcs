@@ -18,7 +18,7 @@ export function validateStagingResumeEvidence(prepared, evidence, manifest) {
   assert(Array.isArray(evidence.deployments), 'Staging deployment evidence is missing');
   const targets = Object.entries(prepared.components).map(([component, artifact]) => ({
     component,
-    serviceId: component === 'git-router' ? manifest.environments.staging.routerServiceId : artifact.serviceId,
+    serviceId: artifact.serviceId,
   }));
   assert.equal(evidence.deployments.length, targets.length, 'Staging evidence has unexpected components');
   for (const { serviceId } of targets) {

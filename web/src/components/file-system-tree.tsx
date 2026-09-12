@@ -13,7 +13,7 @@ import {
 import {
   buildFileSystemTree,
   ancestorFolderKeys,
-  displayPath,
+  normalizeFilePath,
   folderVisibility,
   type FileSystemTreeFileBase,
   type FileSystemTreeNode,
@@ -43,7 +43,7 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
 }) {
   const root = useMemo(() => buildFileSystemTree(files), [files])
   const treeKey = useMemo(
-    () => files.map((file) => displayPath(file.path)).join('\0'),
+    () => files.map((file) => normalizeFilePath(file.path)).join('\0'),
     [files],
   )
   const columnsClassName = compactVisibility
@@ -88,7 +88,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
     collapsedForSelection: new Map(),
     expanded: new Set(),
   }))
-  const selectedPath = displayPath(selectedFilePath ?? '')
+  const selectedPath = normalizeFilePath(selectedFilePath ?? '')
   const selectedAncestorKeys = useMemo(
     () => new Set(ancestorFolderKeys(selectedPath)),
     [selectedPath],
@@ -182,7 +182,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
   if (node.type === 'file') {
     const selected =
       selectedFilePath !== null &&
-      displayPath(selectedFilePath) === displayPath(node.file.path)
+      normalizeFilePath(selectedFilePath) === normalizeFilePath(node.file.path)
     return (
       <li
         className={cn(
@@ -236,7 +236,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
     folderState,
     node.key,
     selectedAncestorKeys,
-    displayPath(selectedFilePath ?? ''),
+    normalizeFilePath(selectedFilePath ?? ''),
   )
   const visibility = folderVisibility(node.files)
 
@@ -331,7 +331,7 @@ function FilePathLabel({ compact, name, path }: { compact: boolean; name: string
     <>
       {!compact ? <span className="size-6 shrink-0" /> : null}
       <File className="size-4 shrink-0 text-[var(--platinum)]" strokeWidth={1.7} />
-      <span className="min-w-0 truncate font-mono text-xs" title={displayPath(path)}>
+      <span className="min-w-0 truncate font-mono text-xs" title={normalizeFilePath(path)}>
         {name}
       </span>
     </>
