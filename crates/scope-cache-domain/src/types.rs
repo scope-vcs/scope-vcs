@@ -1,4 +1,6 @@
-use crate::{CacheDomainError, CachePolicy};
+use crate::{
+    CacheDomainError, deletion_eligible_at, reference_expiry, upload_expiry, validate_object_size,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -116,9 +118,8 @@ impl CacheObject {
         digest: CacheDigest,
         size_bytes: u64,
         created_at_unix: u64,
-        policy: CachePolicy,
     ) -> Result<Self, CacheDomainError> {
-        policy.validate_object_size(size_bytes)?;
+        validate_object_size(size_bytes)?;
         Ok(Self {
             repository_id,
             digest,
@@ -161,7 +162,6 @@ impl CacheReference {
         compatibility_group_digest: CacheDigest,
         object: &CacheObject,
         now_unix: u64,
-        policy: CachePolicy,
     ) -> Result<Self, CacheDomainError> {
         Ok(Self {
             repository_id: object.repository_id.clone(),
@@ -169,15 +169,11 @@ impl CacheReference {
             compatibility_group_digest,
             object_digest: object.digest.clone(),
             updated_at_unix: now_unix,
-            expires_at_unix: policy.reference_expiry(now_unix)?,
+            expires_at_unix: reference_expiry(now_unix)?,
         })
     }
 
-    pub(crate) fn accessed_at(
-        &self,
-        now_unix: u64,
-        policy: CachePolicy,
-    ) -> Result<Self, CacheDomainError> {
+    pub(crate) fn accessed_at(&self, now_unix: u64) -> Result<Self, CacheDomainError> {
         if now_unix < self.updated_at_unix {
             return Err(CacheDomainError::ReferenceAccessBeforeLastUpdate);
         }
@@ -187,7 +183,7 @@ impl CacheReference {
             compatibility_group_digest: self.compatibility_group_digest.clone(),
             object_digest: self.object_digest.clone(),
             updated_at_unix: now_unix,
-            expires_at_unix: policy.reference_expiry(now_unix)?,
+            expires_at_unix: reference_expiry(now_unix)?,
         })
     }
 
@@ -198,9 +194,8 @@ impl CacheReference {
         object_digest: CacheDigest,
         updated_at_unix: u64,
         expires_at_unix: u64,
-        policy: CachePolicy,
     ) -> Result<Self, CacheDomainError> {
-        if policy.reference_expiry(updated_at_unix)? != expires_at_unix {
+        if reference_expiry(updated_at_unix)? != expires_at_unix {
             return Err(CacheDomainError::InvalidReferenceExpiry);
         }
         Ok(Self {
@@ -262,7 +257,6 @@ impl UploadLease {
         compatibility_group_digest: CacheDigest,
         object: &CacheObject,
         now_unix: u64,
-        policy: CachePolicy,
     ) -> Result<Self, CacheDomainError> {
         Ok(Self {
             id,
@@ -272,7 +266,7 @@ impl UploadLease {
             object_digest: object.digest.clone(),
             size_bytes: object.size_bytes,
             issued_at_unix: now_unix,
-            expires_at_unix: policy.upload_expiry(now_unix)?,
+            expires_at_unix: upload_expiry(now_unix)?,
         })
     }
 
@@ -286,10 +280,9 @@ impl UploadLease {
         size_bytes: u64,
         issued_at_unix: u64,
         expires_at_unix: u64,
-        policy: CachePolicy,
     ) -> Result<Self, CacheDomainError> {
-        policy.validate_object_size(size_bytes)?;
-        if policy.upload_expiry(issued_at_unix)? != expires_at_unix {
+        validate_object_size(size_bytes)?;
+        if upload_expiry(issued_at_unix)? != expires_at_unix {
             return Err(CacheDomainError::InvalidUploadLeaseExpiry);
         }
         Ok(Self {
@@ -328,10 +321,6 @@ impl UploadLease {
         self.size_bytes
     }
 
-    pub fn issued_at_unix(&self) -> u64 {
-        self.issued_at_unix
-    }
-
     pub fn expires_at_unix(&self) -> u64 {
         self.expires_at_unix
     }
@@ -352,12 +341,11 @@ impl DeletionCandidate {
     pub(crate) fn after_reference_removal(
         reference: &CacheReference,
         now_unix: u64,
-        policy: CachePolicy,
     ) -> Result<Self, CacheDomainError> {
         Ok(Self {
             repository_id: reference.repository_id.clone(),
             object_digest: reference.object_digest.clone(),
-            eligible_after_unix: policy.deletion_eligible_at(now_unix)?,
+            eligible_after_unix: deletion_eligible_at(now_unix)?,
         })
     }
 

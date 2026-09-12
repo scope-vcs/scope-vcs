@@ -1,8 +1,9 @@
 use super::CacheStore;
 use crate::error::PostgresError;
 use scope_cache_domain::{
-    CacheDigest, CacheDomainError, CacheObject, CachePolicy, CacheReference, CommitUploadDecision,
-    PrepareUpload, PrepareUploadDecision, RepositoryId, UploadLease, UploadLeaseId,
+    CacheDigest, CacheDomainError, CacheObject, CacheReference, CommitUploadDecision,
+    MAX_REPOSITORY_CACHE_BYTES, PrepareUpload, PrepareUploadDecision, RepositoryId, UploadLease,
+    UploadLeaseId,
 };
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseTransaction, FromQueryResult, QueryResult, Statement,
@@ -68,7 +69,6 @@ impl CacheStore {
             .map_err(PostgresError::internal)?;
         let current = decode_reference(&row)?;
         let reference = scope_cache_domain::access_reference(
-            CachePolicy,
             &domain_reference(repository_id, &restored_identity, &current)?,
             now_unix,
         )?;
@@ -126,7 +126,6 @@ impl CacheStore {
             CacheDigest::parse(checksum_sha256.to_string())?,
             size_bytes,
             now_unix,
-            CachePolicy,
         )?;
         let identity = CacheDigest::parse(identity_digest.to_string())?;
         let lease_id = UploadLeaseId::parse(upload_id.to_string())?;
@@ -163,21 +162,18 @@ impl CacheStore {
                 ));
             }
             let PrepareUploadDecision::UseObject { reference } =
-                scope_cache_domain::prepare_upload(
-                    CachePolicy,
-                    PrepareUpload {
-                        identity_digest: identity,
-                        compatibility_group_digest: CacheDigest::parse(
-                            compatibility_group_digest.to_string(),
-                        )?,
-                        object: &domain_object(&object)?,
-                        object_already_stored: true,
-                        current_reference: None,
-                        repository_storage_bytes: 0,
-                        lease_id,
-                        now_unix,
-                    },
-                )?
+                scope_cache_domain::prepare_upload(PrepareUpload {
+                    identity_digest: identity,
+                    compatibility_group_digest: CacheDigest::parse(
+                        compatibility_group_digest.to_string(),
+                    )?,
+                    object: &domain_object(&object)?,
+                    object_already_stored: true,
+                    current_reference: None,
+                    repository_storage_bytes: 0,
+                    lease_id,
+                    now_unix,
+                })?
             else {
                 return Err(PostgresError::internal_message(
                     "stored cache object unexpectedly required an upload",
@@ -212,15 +208,14 @@ impl CacheStore {
             repository_id,
             identity_digest,
             size,
-            to_i64(CachePolicy.max_repository_bytes())?,
+            to_i64(MAX_REPOSITORY_CACHE_BYTES)?,
             now_unix,
         )
         .await?;
         let repository_storage_bytes =
             from_i64(active_repository_bytes(&tx, repository_id).await?)?;
-        let PrepareUploadDecision::Upload { lease } = scope_cache_domain::prepare_upload(
-            CachePolicy,
-            PrepareUpload {
+        let PrepareUploadDecision::Upload { lease } =
+            scope_cache_domain::prepare_upload(PrepareUpload {
                 identity_digest: identity,
                 compatibility_group_digest: CacheDigest::parse(
                     compatibility_group_digest.to_string(),
@@ -231,8 +226,7 @@ impl CacheStore {
                 repository_storage_bytes,
                 lease_id,
                 now_unix,
-            },
-        )?
+            })?
         else {
             return Err(PostgresError::internal_message(
                 "missing cache object unexpectedly bypassed upload",
@@ -356,10 +350,8 @@ impl CacheStore {
             CacheDigest::parse(upload.checksum_sha256.clone())?,
             upload.size_bytes,
             upload.created_at_unix,
-            CachePolicy,
         )?;
         let decision = match scope_cache_domain::commit_upload(
-            CachePolicy,
             &domain_upload(&upload)?,
             &uploaded_object,
             current_domain.as_ref(),
@@ -684,7 +676,6 @@ fn domain_object(record: &CacheObjectRecord) -> Result<CacheObject, PostgresErro
         CacheDigest::parse(record.checksum_sha256.clone())?,
         record.size_bytes,
         record.created_at_unix,
-        CachePolicy,
     )
     .map_err(PostgresError::from)
 }
@@ -701,7 +692,6 @@ fn domain_reference(
         CacheDigest::parse(row.checksum_sha256.clone())?,
         row.last_accessed_at_unix,
         row.expires_at_unix,
-        CachePolicy,
     )
     .map_err(PostgresError::from)
 }
@@ -716,7 +706,6 @@ fn domain_upload(record: &CacheUploadRecord) -> Result<UploadLease, PostgresErro
         record.size_bytes,
         record.created_at_unix,
         record.expires_at_unix,
-        CachePolicy,
     )
     .map_err(PostgresError::from)
 }

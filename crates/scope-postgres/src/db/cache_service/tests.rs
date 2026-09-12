@@ -187,7 +187,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
         )
         .await
         .unwrap();
-    let cleanup_now = now + 10 + CachePolicy.upload_lease_seconds();
+    let cleanup_now = now + 10 + scope_cache_domain::UPLOAD_LEASE_SECONDS;
     let expired = caches.expire_uploads(cleanup_now, 10).await.unwrap();
     assert_eq!(expired.len(), 1);
     assert_eq!(expired[0].upload_id, "expired-upload");

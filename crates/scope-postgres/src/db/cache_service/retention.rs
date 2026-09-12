@@ -114,13 +114,8 @@ impl CacheStore {
                 .try_get("", "checksum_sha256")
                 .map_err(PostgresError::internal)?;
             let reference = domain_reference_from_query(&repository_id, &identity_digest, row)?;
-            let EvictionDecision::RemoveReference { deletion, .. } =
-                scope_cache_domain::decide_reference_eviction(
-                    CachePolicy,
-                    &reference,
-                    0,
-                    now_unix,
-                )?
+            let EvictionDecision::RemoveReference { deletion } =
+                scope_cache_domain::decide_reference_eviction(&reference, 0, now_unix)?
             else {
                 return Err(PostgresError::internal_message(
                     "expired cache reference was unexpectedly retained",
@@ -385,13 +380,8 @@ pub(super) async fn expire_repository_references(
             .try_get("", "checksum_sha256")
             .map_err(PostgresError::internal)?;
         let reference = domain_reference_from_query(repository_id, &identity, &row)?;
-        let EvictionDecision::RemoveReference { deletion, .. } =
-            scope_cache_domain::decide_reference_eviction(
-                CachePolicy,
-                &reference,
-                0,
-                from_i64(now)?,
-            )?
+        let EvictionDecision::RemoveReference { deletion } =
+            scope_cache_domain::decide_reference_eviction(&reference, 0, from_i64(now)?)?
         else {
             return Err(PostgresError::internal_message(
                 "expired cache reference was unexpectedly retained",
@@ -453,9 +443,8 @@ pub(super) async fn make_repository_room(
             .map_err(PostgresError::internal)?;
         let reference = domain_reference_from_query(repository_id, &identity, &victim)?;
         let storage_with_upload = from_i64(usage.saturating_add(additional_bytes))?;
-        let EvictionDecision::RemoveReference { deletion, .. } =
+        let EvictionDecision::RemoveReference { deletion } =
             scope_cache_domain::decide_reference_eviction(
-                CachePolicy,
                 &reference,
                 storage_with_upload,
                 now_unix,
