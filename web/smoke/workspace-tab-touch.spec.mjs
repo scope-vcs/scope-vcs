@@ -68,6 +68,7 @@ test('workspace tabs retain mouse hover disclosure', async () => {
       })
     }, repoPath)
     await page.getByRole('tab', { name: 'src/app.ts', exact: true }).waitFor()
+    await page.mouse.move(tabletViewport.width - 1, tabletViewport.height - 1)
     const close = page.getByRole('button', {
       name: `Close ${firstLabel}`,
       exact: true,
