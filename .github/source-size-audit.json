@@ -77,11 +77,6 @@
       "reason": "Object, upload, reference, deletion, and repository-budget operations share one locked cache metadata model."
     },
     {
-      "path": "crates/scope-postgres/src/db/git_compaction.rs",
-      "owner": "Git compaction persistence",
-      "reason": "Scheduling, claiming, replacement validation, completion, retry state, and transaction tests form one durable workflow."
-    },
-    {
       "path": "crates/scope-postgres/src/db/outbox.rs",
       "owner": "projection read-model outbox",
       "reason": "Enqueue, claim, execute, lease, retry, completion, pruning, and queue tests implement one durable outbox."

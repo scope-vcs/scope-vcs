@@ -295,7 +295,7 @@ pub(crate) async fn compact_one_git_repository(
         .jobs()
         .replace_git_pack_spans_with_compaction(
             &candidate.repo_id,
-            &candidate.spans,
+            &candidate.plan,
             built.replacement,
             persist_now_unix,
             &crate::generate_persistence_id,
@@ -308,7 +308,7 @@ pub(crate) async fn compact_one_git_repository(
                 cleanup_retired_local_segments(
                     segment_store.as_ref(),
                     &candidate.repo_id,
-                    &candidate.spans,
+                    candidate.plan.selected_spans(),
                 )
                 .await;
             } else if let Err(error) = delete_deleting_upload(
@@ -568,30 +568,15 @@ async fn build_compacted_span(
 ) -> anyhow::Result<BuiltCompaction> {
     let pack = build_compacted_pack(
         segment_store,
-        candidate,
+        &candidate.repo_id,
+        &candidate.plan,
         reservation,
         storage_limits,
         timeout,
         data_dir,
     )
     .await?;
-    let first = candidate
-        .spans
-        .first()
-        .expect("persistence returns nonempty compaction candidates");
-    let last = candidate
-        .spans
-        .last()
-        .expect("persistence returns nonempty compaction candidates");
-    let mut replacement = GitPackSpan {
-        first_sequence: first.first_sequence,
-        last_sequence: last.last_sequence,
-        geometric_tier: 0,
-        base_oid: first.base_oid.clone(),
-        head_oid: last.head_oid.clone(),
-        segment: pack.staged.segment.clone(),
-    };
-    replacement.geometric_tier = replacement.expected_geometric_tier()?;
+    let replacement = candidate.plan.replacement(pack.staged.segment.clone())?;
     Ok(BuiltCompaction {
         replacement,
         metrics: CompactionMetrics {
