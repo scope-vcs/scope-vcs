@@ -90,8 +90,8 @@ impl From<scope_cache_domain::CacheDomainError> for PostgresError {
     }
 }
 
-impl From<scope_git::GitStorageError> for PostgresError {
-    fn from(error: scope_git::GitStorageError) -> Self {
+impl From<scope_git::GitSnapshotError> for PostgresError {
+    fn from(error: scope_git::GitSnapshotError) -> Self {
         Self::internal(error)
     }
 }

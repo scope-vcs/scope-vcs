@@ -105,7 +105,7 @@ impl MediaObject {
                 MediaStorageError::integrity("media manifest plaintext size overflowed")
             })?;
         }
-        if offset != self.plaintext_bytes || (offset == 0 && !self.chunks.is_empty()) {
+        if offset != self.plaintext_bytes {
             return Err(MediaStorageError::integrity(
                 "media manifest plaintext size does not match its chunks",
             ));

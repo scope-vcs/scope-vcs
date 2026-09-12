@@ -4,10 +4,9 @@ use super::{
 };
 use crate::{
     content::{SourceBlob, is_supported_git_file_mode},
-    content_ref::ContentRef,
+    content_ref::{ContentRef, git_blob_oid},
 };
-use sha1::{Digest, Sha1};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
@@ -330,13 +329,6 @@ fn validate_identity(
         return Err(RepositoryWorkflowCatalogError::InvalidSourceChangeVersion);
     }
     Ok(())
-}
-
-fn git_blob_oid(bytes: &[u8]) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(format!("blob {}\0", bytes.len()));
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
 }
 
 fn source_blob_identity_matches(blob: &SourceBlob) -> bool {

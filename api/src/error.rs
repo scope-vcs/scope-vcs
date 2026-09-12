@@ -251,13 +251,13 @@ impl From<scope_domain::error::DomainError> for ApiError {
     }
 }
 
-impl From<scope_git::GitStorageError> for ApiError {
-    fn from(error: scope_git::GitStorageError) -> Self {
+impl From<scope_git::GitSnapshotError> for ApiError {
+    fn from(error: scope_git::GitSnapshotError) -> Self {
         match error {
-            scope_git::GitStorageError::StorageLimit(error) => {
+            scope_git::GitSnapshotError::StorageLimit(error) => {
                 Self::infrastructure_unavailable(format!("{error}; retry after compaction"))
             }
-            scope_git::GitStorageError::ObjectStore(error) => error.into(),
+            scope_git::GitSnapshotError::ObjectStore(error) => error.into(),
         }
     }
 }
