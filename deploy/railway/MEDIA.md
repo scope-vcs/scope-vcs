@@ -18,7 +18,7 @@ configuration, and keys in that private copy. Verify the database can restore an
 objects match their inventory. Production has no existing media objects before this first
 activation. Subsequent backups containing media must include the full backup unit below.
 
-Use the passing staging capacity receipt and deployment checks to verify the release. The
+Use the passing staging deployment checks to verify the release. The
 pre-alpha rollout does not require zero downtime or a new monitoring service. Production
 verification must cover service health, existing repository reads, Git access, and media
 upload, processing, playback, and cleanup before deleting the recovery copy.
@@ -84,45 +84,7 @@ staging-scoped token and revokes it when the job finishes. The media receipt rec
 the tested revision and deployments.
 
 Use `deployment-tests.yml` with a prepared release run ID for repeated transition
-tests. Capacity testing remains available through `dev/media-capacity.mjs` against
-the retained staging environment. Staging and production have distinct physical
-bucket instances and keys.
-
-## Capacity proof
-
-Use a valid video between 490 MB and 500 MiB, not random bytes, plus a valid photo. The staging
-workflow creates this fixture and invokes the harness without exporting its private session. The harness
-runs one large recording and four small uploads through three concurrent smoke flows while it
-samples authenticated request-list latency. With a local gateway PID it also samples gateway
-RSS. Each flow records processing time, initial-range playback time, cross-chunk seek time, full
-download time, byte integrity, derivative reads, and cleanup.
-
-For a local diagnostic run only, invoke the same harness with a short-lived test session:
-
-```bash
-SCOPE_MEDIA_SMOKE_TOKEN='<short-lived private smoke session>' \
-node dev/media-capacity.mjs \
-  --api 'https://scope-api-staging.up.railway.app' \
-  --media-origin 'https://scope-media-api-staging.up.railway.app' \
-  --repo dev/public-demo \
-  --source-sha '<exact 40-character deployed commit>' \
-  --large-video /secure/path/valid-500mb-recording.mp4 \
-  --photo /secure/path/photo.png \
-  --small-uploads 4 \
-  --output .tmp/media-capacity/staging.json
-```
-
-Do not log or store the smoke token in the receipt. Retain the capacity receipt and its
-`flow-*.json` files with the staging deployment evidence. Record the accepted numeric values for:
-
-- API loaded p95 and maximum latency relative to baseline;
-- peak gateway RSS and the Railway memory limit;
-- large-video processing duration and processing-queue age;
-- initial playback and cross-chunk seek duration;
-- conversion failure rate, scratch-space high-water mark, cleanup backlog age, and upload bytes.
-
-Set alerts only after the staging run supplies those values. Unmeasured values remain explicit
-verification limits; do not turn local measurements into claimed staging results.
+tests. Staging and production have distinct physical bucket instances and keys.
 
 ## Lifecycle and cleanup
 

@@ -303,7 +303,6 @@ def render_inventory(metadata, packages):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Fail if committed artifacts differ.")
-    parser.add_argument("--audit-only", action="store_true", help="Report missing coverage without writing artifacts.")
     args = parser.parse_args()
     check_first_party()
     if args.check:
@@ -318,9 +317,6 @@ def main():
         print("Missing license declaration or license text:\n" + "\n".join(missing))
         (CACHE / "audit.json").write_text(json.dumps(entries, indent=2), encoding="utf-8")
         raise SystemExit(1)
-    if args.audit_only:
-        print(f"Audited {len(entries)} dependency and copied-source entries.")
-        return
     inventory = [{**entry, "documents": [{key: value for key, value in document.items() if key != "text"}
         for document in entry["documents"]]} for entry in entries]
     outputs = {

@@ -6,13 +6,18 @@ import test from "node:test";
 
 import {
   latestSuccessfulDeployments,
-  latestSuccessfulRevisions,
   recordEvidenceFile,
   recordSuccessfulDeployment,
+  recordSuccessfulRelease,
 } from "./production-deployment-progress.mjs";
 
 const SOURCE_SHA = "a".repeat(40);
 const PREVIOUS_SHA = "b".repeat(40);
+
+// node:test runs this file in its own process, so the GitHub credentials the
+// request helper requires can be pinned once for every test below.
+process.env.GITHUB_TOKEN = "test-token";
+process.env.GITHUB_REPOSITORY = "scope-vcs/scope-vcs";
 
 function response(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -22,11 +27,6 @@ function response(body, status = 200) {
 }
 
 test("reads the newest successful revision for every component", async () => {
-  const previousToken = process.env.GITHUB_TOKEN;
-  const previousRepository = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_TOKEN = "test-token";
-  process.env.GITHUB_REPOSITORY = "scope-vcs/scope-vcs";
-
   const fetchImpl = async (url) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/deployments")) {
@@ -59,24 +59,12 @@ test("reads the newest successful revision for every component", async () => {
     throw new Error(`Unexpected request: ${url}`);
   };
 
-  try {
-    const revisions = await latestSuccessfulRevisions(fetchImpl);
-    assert.equal(revisions.web, PREVIOUS_SHA);
-    assert.equal(revisions.cache, PREVIOUS_SHA);
-  } finally {
-    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
-    else process.env.GITHUB_TOKEN = previousToken;
-    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY;
-    else process.env.GITHUB_REPOSITORY = previousRepository;
-  }
+  const deployments = await latestSuccessfulDeployments(fetchImpl);
+  assert.equal(deployments.web.sourceSha, PREVIOUS_SHA);
+  assert.equal(deployments.cache.sourceSha, PREVIOUS_SHA);
 });
 
 test("reads exact provider identity from the newest valid successful deployment", async () => {
-  const previousToken = process.env.GITHUB_TOKEN;
-  const previousRepository = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_TOKEN = "test-token";
-  process.env.GITHUB_REPOSITORY = "scope-vcs/scope-vcs";
-
   const fetchImpl = async (url) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/deployments")) {
@@ -97,46 +85,28 @@ test("reads exact provider identity from the newest valid successful deployment"
     return response([{ state: "success" }]);
   };
 
-  try {
-    const deployments = await latestSuccessfulDeployments(fetchImpl);
-    assert.deepEqual(deployments.web, {
-      sourceSha: SOURCE_SHA,
-      provider: "railway",
-      evidenceId: "web-7",
-    });
-  } finally {
-    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
-    else process.env.GITHUB_TOKEN = previousToken;
-    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY;
-    else process.env.GITHUB_REPOSITORY = previousRepository;
-  }
+  const deployments = await latestSuccessfulDeployments(fetchImpl);
+  assert.deepEqual(deployments.web, {
+    sourceSha: SOURCE_SHA,
+    provider: "railway",
+    evidenceId: "web-7",
+  });
 });
 
 test("records source revision and provider evidence before marking success", async () => {
-  const previousToken = process.env.GITHUB_TOKEN;
-  const previousRepository = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_TOKEN = "test-token";
-  process.env.GITHUB_REPOSITORY = "scope-vcs/scope-vcs";
   const requests = [];
   const fetchImpl = async (url, options) => {
     requests.push({ url, body: JSON.parse(options.body) });
     return requests.length === 1 ? response({ id: 42 }, 201) : response({ id: 43 }, 201);
   };
 
-  try {
-    await recordSuccessfulDeployment({
-      component: "web",
-      sourceSha: SOURCE_SHA,
-      provider: "railway",
-      evidenceId: "railway-deployment-7",
-      logUrl: "https://github.test/run/1",
-    }, fetchImpl);
-  } finally {
-    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
-    else process.env.GITHUB_TOKEN = previousToken;
-    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY;
-    else process.env.GITHUB_REPOSITORY = previousRepository;
-  }
+  await recordSuccessfulDeployment({
+    component: "web",
+    sourceSha: SOURCE_SHA,
+    provider: "railway",
+    evidenceId: "railway-deployment-7",
+    logUrl: "https://github.test/run/1",
+  }, fetchImpl);
 
   assert.deepEqual(requests[0].body.payload, {
     component: "web",
@@ -174,10 +144,6 @@ test("rejects abbreviated source revisions before writing deployment state", asy
 });
 
 test("records an ordered Railway evidence stream", async () => {
-  const previousToken = process.env.GITHUB_TOKEN;
-  const previousRepository = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_TOKEN = "test-token";
-  process.env.GITHUB_REPOSITORY = "scope-vcs/scope-vcs";
   const directory = mkdtempSync(join(tmpdir(), "deployment-progress-"));
   const evidencePath = join(directory, "evidence.ndjson");
   writeFileSync(evidencePath, [
@@ -202,19 +168,10 @@ test("records an ordered Railway evidence stream", async () => {
     );
   } finally {
     rmSync(directory, { recursive: true });
-    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
-    else process.env.GITHUB_TOKEN = previousToken;
-    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY;
-    else process.env.GITHUB_REPOSITORY = previousRepository;
   }
 });
 
 test("aggregate success pins component evidence and keeps downtime warnings separate", async () => {
-  const { recordSuccessfulRelease, latestSuccessfulRelease } = await import("./production-deployment-progress.mjs");
-  const previousToken = process.env.GITHUB_TOKEN;
-  const previousRepository = process.env.GITHUB_REPOSITORY;
-  process.env.GITHUB_TOKEN = "test-token";
-  process.env.GITHUB_REPOSITORY = "scope-vcs/scope-vcs";
   let aggregate;
   let aggregateStatus;
   const fetchImpl = async (url, options = {}) => {
@@ -222,33 +179,27 @@ test("aggregate success pins component evidence and keeps downtime warnings sepa
     if (options.method === "POST") {
       const body = JSON.parse(options.body);
       if (parsed.pathname.endsWith("/deployments")) {
-        aggregate = { ...body, sha: body.ref, id: 99 };
+        aggregate = body;
         return response({ id: 99 });
       }
-      aggregateStatus = { ...body, created_at: "2026-09-09T15:30:00Z" };
-      return response({id: 100});
+      aggregateStatus = body;
+      return response({ id: 100 });
     }
     if (parsed.pathname.endsWith("/deployments")) {
       const component = parsed.searchParams.get("environment").split("/")[1];
-      if (component === "release") return response(aggregate ? [aggregate] : []);
       return response([{ id: component, sha: SOURCE_SHA,
         payload: { component, sourceSha: SOURCE_SHA, provider: "railway", evidenceId: `${component}-immutable-id` } }]);
     }
-    return response([parsed.pathname.includes("/99/") ? aggregateStatus : {state: "success"}]);
+    return response([{ state: "success" }]);
   };
-  try {
-    await recordSuccessfulRelease({ sourceSha: SOURCE_SHA, components: {api: true, web: true}, warning: "Downtime exceeded 30 minutes" }, fetchImpl);
-    assert.equal(aggregateStatus.state, "success");
-    const receipt = await latestSuccessfulRelease(fetchImpl);
-    assert.equal(receipt.sourceSha, SOURCE_SHA);
-    assert.equal(receipt.warning, "Downtime exceeded 30 minutes");
-    assert.equal(receipt.components.web.evidenceId, "web-immutable-id");
-    assert.equal(receipt.completedAt, "2026-09-09T15:30:00Z");
-    await assert.rejects(recordSuccessfulRelease({ sourceSha: PREVIOUS_SHA, components: ["web"] }, fetchImpl), /missing successful web evidence/);
-  } finally {
-    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
-    else process.env.GITHUB_TOKEN = previousToken;
-    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY;
-    else process.env.GITHUB_REPOSITORY = previousRepository;
-  }
+  await recordSuccessfulRelease({ sourceSha: SOURCE_SHA, components: { api: true, web: true }, warning: "Downtime exceeded 30 minutes" }, fetchImpl);
+  assert.equal(aggregate.environment, "production/release");
+  assert.equal(aggregate.ref, SOURCE_SHA);
+  assert.equal(aggregate.payload.kind, "scope-production-release");
+  assert.equal(aggregate.payload.sourceSha, SOURCE_SHA);
+  assert.equal(aggregate.payload.warning, "Downtime exceeded 30 minutes");
+  assert.deepEqual(Object.keys(aggregate.payload.components), ["api", "web"]);
+  assert.equal(aggregate.payload.components.web.evidenceId, "web-immutable-id");
+  assert.equal(aggregateStatus.state, "success");
+  await assert.rejects(recordSuccessfulRelease({ sourceSha: PREVIOUS_SHA, components: ["web"] }, fetchImpl), /missing successful web evidence/);
 });

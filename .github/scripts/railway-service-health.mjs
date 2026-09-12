@@ -14,14 +14,17 @@ export const RAILWAY_COMPONENTS = [
   "web",
   "cli-downloads",
 ];
-export const RAILWAY_CONFIG_PATHS = {
-  cache: "cache-service/railway.json",
-  "run-worker": "worker/railway.json",
-  "git-router": "repo-router/railway.json",
-  "media-api": "media-service/railway.json",
-  api: "api/railway.json",
-  web: "web/railway.json",
-};
+// Components whose effective Railway deploy settings must match the checked-in
+// railway.json in their manifest source directory.
+export const RAILWAY_CONFIG_COMPONENTS = ["cache", "run-worker", "git-router", "media-api", "api", "web"];
+
+export function railwayConfigPath(manifest, component) {
+  const directory = manifest?.services?.[component]?.sourceDirectory;
+  if (typeof directory !== "string" || directory.length === 0) {
+    throw new Error(`Production manifest is missing the ${component} source directory`);
+  }
+  return `${directory}/railway.json`;
+}
 
 const SOURCE_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const REQUIRED_DEPLOY_SETTINGS = [
@@ -134,8 +137,8 @@ export function verifyProductionRailwayServices({
       throw new Error("Production media-worker has no exact OCI artifact evidence");
     }
     const service = assertHealthyRailwayService(services, serviceId, evidence.evidenceId);
-    const configPath = RAILWAY_CONFIG_PATHS[component];
-    if (configPath) {
+    if (RAILWAY_CONFIG_COMPONENTS.includes(component)) {
+      const configPath = railwayConfigPath(manifest, component);
       const config = serviceConfigs?.[component];
       if (!config) {
         throw new Error(`Production ${component} is missing expected Railway config`);
@@ -147,10 +150,10 @@ export function verifyProductionRailwayServices({
   return verified;
 }
 
-export function loadRailwayServiceConfigs(root = process.cwd()) {
-  return Object.fromEntries(Object.entries(RAILWAY_CONFIG_PATHS).map(([component, path]) => [
+export function loadRailwayServiceConfigs(manifest, root = process.cwd()) {
+  return Object.fromEntries(RAILWAY_CONFIG_COMPONENTS.map((component) => [
     component,
-    JSON.parse(readFileSync(resolve(root, path), "utf8")),
+    JSON.parse(readFileSync(resolve(root, railwayConfigPath(manifest, component)), "utf8")),
   ]));
 }
 
@@ -167,7 +170,7 @@ function main() {
     const verified = verifyProductionRailwayServices({
       deployments: environmentJson("SCOPE_PRODUCTION_DEPLOYMENTS_JSON"),
       manifest,
-      serviceConfigs: loadRailwayServiceConfigs(),
+      serviceConfigs: loadRailwayServiceConfigs(manifest),
       services: servicesFromState(state, manifest.environments?.production?.environmentId),
     });
     process.stdout.write(`${JSON.stringify(verified)}\n`);

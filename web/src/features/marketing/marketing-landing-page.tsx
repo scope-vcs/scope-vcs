@@ -49,7 +49,7 @@ export function MarketingLandingPage({
           <ThemeToggle />
         </nav>
       </header>
-      <main className={cn(shell, 'outline-none [--landing-section-space:104px] max-[901px]:[--landing-section-space:80px]')} id="main-content" tabIndex={-1}>
+      <main className={cn(shell, 'outline-none [--landing-section-space:104px] max-[901px]:[--landing-section-space:80px]')} data-scope-page="landing" id="main-content" tabIndex={-1}>
         <section className={cn('pt-16 max-[901px]:gap-9 max-[901px]:pt-10 max-[521px]:pt-8', sectionLayout)} aria-labelledby="hero-title">
           <div className="min-w-0 max-[901px]:max-w-[640px]">
             <h1 id="hero-title" className="enter text-[clamp(42px,4vw,56px)] leading-[1.06] font-[500] tracking-[-.05em] max-[901px]:text-[48px] max-[521px]:text-[clamp(34px,8.7vw,42px)]">

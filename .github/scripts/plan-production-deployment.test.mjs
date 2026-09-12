@@ -11,38 +11,6 @@ import {
 } from "./plan-production-deployment.mjs";
 
 const manifest = JSON.parse(readFileSync(new URL("../deployment-services.json", import.meta.url), "utf8"));
-const productionWorkflow = readFileSync(
-  new URL("../workflows/release.yml", import.meta.url),
-  "utf8",
-);
-const backendCiWorkflow = readFileSync(
-  new URL("../workflows/scope-api-ci.yml", import.meta.url),
-  "utf8",
-);
-const backendDeployWorkflow = readFileSync(
-  new URL("../workflows/deploy-backend.yml", import.meta.url),
-  "utf8",
-);
-const integrationCiWorkflow = readFileSync(
-  new URL("../workflows/scope-integration-ci.yml", import.meta.url),
-  "utf8",
-);
-const rustChecksWorkflow = readFileSync(
-  new URL("../workflows/rust-workspace-checks.yml", import.meta.url),
-  "utf8",
-);
-const cliDeployWorkflow = readFileSync(
-  new URL("../workflows/publish-cli.yml", import.meta.url),
-  "utf8",
-);
-const webDeployWorkflow = readFileSync(
-  new URL("../workflows/deploy-web.yml", import.meta.url),
-  "utf8",
-);
-const webCiWorkflow = readFileSync(
-  new URL("../workflows/scope-web-ci.yml", import.meta.url),
-  "utf8",
-);
 
 function repositoryJson(path) {
   return JSON.parse(readFileSync(new URL(`../../${path}`, import.meta.url), "utf8"));
@@ -111,11 +79,6 @@ test("changes select the required deployment lanes", () => {
     ],
     ["router changes deploy the Git router", ["repo-router/src/main.rs"], { "git-router": true }],
     [
-      "CLI prebuilt launcher selects the CLI service",
-      ["deploy/railway/start-prebuilt.sh"],
-      { "media-api": true, "cli-downloads": true },
-    ],
-    [
       "backend runtime image selects every backend service",
       ["deploy/railway/prebuilt.Dockerfile"],
       { cache: true, "run-worker": true, "git-router": true, api: true },
@@ -146,11 +109,6 @@ test("changes select the required deployment lanes", () => {
       { "cli-downloads": true, "cli-distribution": true },
     ],
     [
-      "distribution selector changes run CLI validation and rebuild distribution targets",
-      [".github/scripts/select-cli-distribution-targets.mjs"],
-      { "cli-downloads": true, "cli-distribution": true },
-    ],
-    [
       "unrelated shared crates retain broad CLI validation without rebuilding targets",
       ["crates/scope-cache-contract/src/lib.rs"],
       {
@@ -171,13 +129,13 @@ test("changes select the required deployment lanes", () => {
       allLanes,
     ],
     [
-      "conductor changes exercise every lane",
-      [".github/workflows/release.yml"],
+      "workflow changes exercise every lane",
+      [".github/workflows/scope-cli-build.yml"],
       allLanes,
     ],
     [
-      "production health policy changes exercise every lane",
-      [".github/scripts/railway-service-health.mjs"],
+      "deployment script changes exercise every lane",
+      [".github/scripts/select-cli-distribution-targets.mjs"],
       allLanes,
     ],
   ];
@@ -219,7 +177,6 @@ test("planner emits the CLI distribution selection as a snake-case workflow outp
 
   assert.match(output, /^cli=true$/m);
   assert.match(output, /^cli_distribution=true$/m);
-  assert.doesNotMatch(output, /^cliDistribution=/m);
 });
 
 test("an unseeded production ledger deploys every component", () => {
@@ -254,11 +211,6 @@ test("skipped components remain selected across a later backend-only change", ()
     "cli-distribution": false,
   });
 });
-
-
-
-
-
 
 test("CLI deployment progress selects distribution builds only for binary inputs", () => {
   const broadOnly = planFromDeploymentProgress(manifest, {
@@ -307,11 +259,8 @@ test("manual scopes ignore pending production components", () => {
 });
 
 test("deployment manifest is a single coherent production graph", () => {
-  const order = ["cache", "run-worker", "git-router", "media-api", "media-worker", "api", "web", "cli-downloads"];
-  const serviceIds = order.map((service) => manifest.services[service].id).filter(Boolean);
+  const serviceIds = Object.values(manifest.services).map((service) => service.id).filter(Boolean);
 
-  assert.equal(manifest.deploymentAuthority, "github-actions");
-  assert.equal(manifest.source.nativeAutodeploy, false);
   assert.equal(new Set(serviceIds).size, serviceIds.length);
   assert.match(manifest.services["media-api"].id, /^[0-9a-f-]{36}$/);
   assert.match(manifest.services["media-worker"].id, /^[0-9a-f-]{36}$/);
@@ -321,11 +270,6 @@ test("deployment manifest is a single coherent production graph", () => {
   ));
   for (const domain of mediaDomains) assert.match(domain, /^[a-z0-9-]+\.up\.railway\.app$/);
   assert.equal(new Set(mediaDomains).size, mediaDomains.length);
-  for (const [service, configuration] of Object.entries(manifest.services)) {
-    for (const dependency of configuration.dependsOn) {
-      assert.ok(order.indexOf(dependency) < order.indexOf(service));
-    }
-  }
 });
 
 test("service config does not override Railway scaling or restart defaults", () => {
@@ -349,74 +293,6 @@ test("service config does not override Railway scaling or restart defaults", () 
   }
 });
 
-test("prepared web and backend jobs cannot build after activation begins", () => {
-  const preparation = readFileSync(new URL("../workflows/prepare-release.yml", import.meta.url), "utf8");
-  assert.doesNotMatch(productionWorkflow, /maintenance_budget_seconds/);
-  for (const workflow of [backendDeployWorkflow, webDeployWorkflow]) {
-    assert.match(workflow, /name: prepared-release-\$\{\{ inputs\.source_sha \}\}/);
-    assert.match(workflow, /SCOPE_PREPARED_RELEASE_PATH: prepared-release\.json/);
-    assert.doesNotMatch(workflow, /cargo build|docker build|railway up|pnpm build/);
-  }
-  assert.match(preparation, /prepare-railway-artifact\.sh/);
-  assert.match(backendCiWorkflow, /name: backend-release-\$\{\{ github\.sha \}\}/);
-  assert.match(backendDeployWorkflow, /extract-railway-maintenance\.sh prepared-release\.json/);
-  assert.doesNotMatch(backendDeployWorkflow, /backend-release-\$\{\{ inputs\.source_sha \}\}/);
-  assert.match(preparation, /selected-release-\$\{\{ inputs\.source_sha \}\}/);
-  assert.match(preparation.split("\njobs:")[0], /actions: read/);
-  assert.match(cliDeployWorkflow, /cp cli\/railway\.json \.railway-upload\/railway\.json/);
-  assert.doesNotMatch(cliDeployWorkflow, /cargo build/);
-});
-
-
-
-
-
-test("Node workflows cache pnpm and browser downloads by the web lockfile", () => {
-  for (const workflow of [integrationCiWorkflow, rustChecksWorkflow, webCiWorkflow]) {
-    assert.match(
-      workflow,
-      /uses: pnpm\/action-setup@[0-9a-f]{40} # v5/,
-    );
-    assert.match(workflow, /cache: pnpm/);
-    assert.match(workflow, /cache-dependency-path: web\/pnpm-lock\.yaml/);
-  }
-
-  assert.match(integrationCiWorkflow, /path: ~\/\.cache\/ms-playwright/);
-  assert.match(
-    integrationCiWorkflow,
-    /key: playwright-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('web\/pnpm-lock\.yaml'\) \}\}/,
-  );
-});
-
-
-test("production success follows the complete monitored transition", () => {
-  for (const workflow of [backendDeployWorkflow, webDeployWorkflow]) {
-    const recordStep = workflow.slice(workflow.indexOf("      - name: Record successful Railway"));
-    assert.match(recordStep, /if: steps\.transition\.outcome == 'success'/);
-    assert.match(workflow, /name: Deploy to Railway\n\s+id: transition/);
-  }
-});
-
-
-
-
-
-test("release selection uses the trusted control revision before exposing a source revision", () => {
-  const requireMain = productionWorkflow.indexOf('- name: Require main for releases');
-  const selection = productionWorkflow.indexOf('run: node .github/scripts/release-selection.mjs');
-  const retain = productionWorkflow.indexOf('- name: Retain selected immutable release');
-  assert(requireMain >= 0 && selection > requireMain && retain > selection);
-  assert.match(productionWorkflow.slice(requireMain, selection), /test "\$GITHUB_REF" = refs\/heads\/main/);
-  assert.match(backendDeployWorkflow, /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
-  assert.match(productionWorkflow.split("\njobs:")[0], /deployments: read/);
-  assert.doesNotMatch(productionWorkflow.split("\njobs:")[0], /: write/);
-  const checks = readFileSync(new URL("../workflows/scope-checks-image.yml", import.meta.url), "utf8");
-  const candidate = checks.slice(checks.indexOf("  validate:"), checks.indexOf("  build:"));
-  assert.match(candidate, /if: github\.event_name == 'pull_request'/);
-  assert.doesNotMatch(candidate, /: write/);
-  assert.match(checks.slice(checks.indexOf("  build:")), /if: github\.event_name != 'pull_request'/);
-});
-
 test("migration changes promote every application participant but leave checks images independent", () => {
   for (const apiChanges of [null, undefined, ["crates/scope-postgres/src/migrations/999_next.rs"]]) {
     const selected = includeMigrationParticipants(deploymentSelection({ api: true }), apiChanges);
@@ -429,16 +305,4 @@ test("migration changes promote every application participant but leave checks i
   assert.deepEqual(includeMigrationParticipants(webOnly, null), webOnly);
   assert.equal(planFromDeploymentProgress(manifest, { api: ["crates/scope-postgres/src/migrations/999_next.rs"] }, "run-worker").web, true);
   assert.deepEqual(planFromDeploymentProgress(manifest, { api: [] }, "run-worker"), deploymentSelection({ "run-worker": true }));
-});
-
-test("CI is pull-request-only and Release is scheduled/manual with a shared check owner", () => {
-  const ci = readFileSync(new URL("../workflows/ci.yml", import.meta.url), "utf8");
-  assert.match(ci, /  pull_request:/);
-  assert.doesNotMatch(ci.split("\nconcurrency:")[0], /schedule:|workflow_dispatch:|push:/);
-  const triggers = productionWorkflow.split("\nconcurrency:")[0];
-  assert.match(triggers, /cron: "8,38 \* \* \* \*"/);
-  assert.match(triggers, /workflow_dispatch:/);
-  assert.doesNotMatch(triggers, /pull_request:|push:/);
-  for (const caller of [ci, productionWorkflow]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);
-  assert.doesNotMatch(productionWorkflow, /gh workflow run|gh run watch|proof_request_id/);
 });

@@ -6,7 +6,7 @@
     "inputs": [
       {
         "local": true,
-        "include": ["bin", "dist", "start.sh", ".scope-deployment-*"]
+        "include": ["bin", "dist", ".scope-deployment-*"]
       }
     ]
   }

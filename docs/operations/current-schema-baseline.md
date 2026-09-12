@@ -24,24 +24,13 @@ helpers can change historical migration behavior without changing its source.
 Do not edit existing migrations or regenerate their lock entries to make a
 schema check pass.
 
-## Observed retained states
+## Preparing a retained database
 
-Read-only inspection on September 8, 2026 found these public-schema ledgers.
-All five environments reported PostgreSQL 18.6.
-
-| Environment | Last original migration | Required preparation |
-| --- | --- | --- |
-| production | 42 | Verify schema and restoration proof, then bridge |
-| release-proof | 42 | Verify schema and restoration proof, then bridge |
-| media-proof | 42 | Verify schema and restoration proof, then bridge |
-| staging | 41 | Advance to 42 with the pinned original runner |
-| loadtest-push-persistence | 33 | Advance to 42 with the pinned original runner |
-
-These observations authorize no environment writes. Before deployment, settle
-which databases and backups must be retained, preserve their restore artifacts,
-and rehearse their transitions. Advancing the older environments and proving
-backup restoration remain deployment prerequisites. Preserve immutable images
-referenced by unresolved cutovers as described in
+Before deployment, settle which databases and backups must be retained,
+preserve their restore artifacts, and rehearse their transitions. A database
+behind the original migration 42 first advances to it with the pinned original
+runner; a database at 42 needs schema and restoration proof before bridging.
+Preserve immutable images referenced by unresolved cutovers as described in
 [maintenance migration recovery](../maintenance-cutovers.md).
 
 ## Maintenance behavior

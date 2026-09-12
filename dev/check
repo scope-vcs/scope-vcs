@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMMAND="${1:-all}"
+source "$ROOT/dev/dotenv.sh"
 
 usage() {
   cat <<'EOF'
@@ -18,25 +19,6 @@ usage: ./dev/check [all|guardrails|rust|cli|web|ops|smoke]
 EOF
 }
 
-read_root_env_value() {
-  local key="$1"
-  [[ -f .env.local ]] || return 0
-  awk -F= -v key="$key" '
-    /^[[:space:]]*#/ { next }
-    /^[[:space:]]*$/ { next }
-    $1 == key {
-      value = substr($0, index($0, "=") + 1)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-      if ((substr(value, 1, 1) == "\"" && substr(value, length(value), 1) == "\"") ||
-          (substr(value, 1, 1) == "'"'"'" && substr(value, length(value), 1) == "'"'"'")) {
-        value = substr(value, 2, length(value) - 2)
-      }
-      print value
-      exit
-    }
-  ' .env.local
-}
-
 guardrails() { ./dev/checks/policy; }
 rust() { ./dev/checks/backend with-api; }
 cli() { ./dev/checks/cli; }
@@ -47,18 +29,12 @@ smoke() {
   local smoke_repo="${SCOPE_SMOKE_REPO:-}"
   if [[ -z "$smoke_repo" ]]; then
     local handle
-    handle="$(read_root_env_value "SCOPE_DEV_USER_HANDLE")"
+    handle="$(read_dotenv_value "$ROOT/.env.local" "SCOPE_DEV_USER_HANDLE")"
     if [[ -n "$handle" ]]; then
       smoke_repo="$handle/public-demo"
     fi
   fi
-  (
-    if [[ -n "$smoke_repo" ]]; then
-      SCOPE_SMOKE_REPO="$smoke_repo" ./dev/checks/integration web
-    else
-      ./dev/checks/integration web
-    fi
-  )
+  env ${smoke_repo:+SCOPE_SMOKE_REPO="$smoke_repo"} ./dev/checks/integration web
 }
 
 cd "$ROOT"
