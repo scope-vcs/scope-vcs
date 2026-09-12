@@ -24,7 +24,6 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::fs::File;
 
 const DEFAULT_CHUNK_BYTES: usize = 1024 * 1024;
 const DEFAULT_PART_BYTES: usize = 8 * 1024 * 1024;
@@ -120,28 +119,13 @@ impl StagedGitSegment {
     pub fn local_pack_path(&self) -> &Path {
         &self.local_pack_path
     }
-
-    pub async fn open_local_pack(&self) -> Result<File, GitStorageError> {
-        File::open(&self.local_pack_path)
-            .await
-            .map_err(GitStorageError::Local)
-    }
 }
 
+#[derive(Clone)]
 pub struct GitSegmentStore {
     backend: Arc<dyn MultipartStore>,
     encryption_key: SegmentEncryptionKey,
     config: GitSegmentStoreConfig,
-}
-
-impl Clone for GitSegmentStore {
-    fn clone(&self) -> Self {
-        Self {
-            backend: Arc::clone(&self.backend),
-            encryption_key: self.encryption_key.clone(),
-            config: self.config.clone(),
-        }
-    }
 }
 
 impl GitSegmentStore {

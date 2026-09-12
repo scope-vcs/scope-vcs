@@ -63,7 +63,7 @@ pub(crate) struct ProjectionPreviewFileResponse {
 pub(crate) struct ProjectionPreviewCommitResponse {
     pub(crate) projected_id: String,
     pub(crate) logical_commit_id: String,
-    pub(crate) parent_projected_id: Option<String>,
+    pub(crate) parent_projected_ids: Vec<String>,
     pub(crate) author: Option<String>,
     pub(crate) message: String,
     pub(crate) visibility: ProjectionPreviewCommitVisibilityResponse,
@@ -93,6 +93,10 @@ pub(crate) fn projection_preview_response(
     repo: &Repository,
     audience: ProjectionPreviewAudience,
     include_private_counts: bool,
+    native_details: &std::collections::BTreeMap<
+        String,
+        scope_domain::projection::NativePublicCommitDetails,
+    >,
 ) -> Result<ProjectionPreviewResponse, ApiError> {
     let projection_audience = ProjectionAudience::from(audience);
     let projection = project_graph(
@@ -100,12 +104,12 @@ pub(crate) fn projection_preview_response(
         &repo.visibility_change_sets,
         projection_audience.into(),
     );
-    if projection.preserves_git_commits() {
-        return Err(ApiError::not_implemented(
-            "projection preview is unavailable for preserved public request commits until native per-commit metadata is represented accurately",
-        ));
-    }
-    let preview = projection_preview(repo, projection_audience, include_private_counts);
+    let preview = projection_preview(
+        repo,
+        projection_audience,
+        include_private_counts,
+        native_details,
+    )?;
     let head_oid = scope_git::projection_head_oid(&projection).map_err(ApiError::internal)?;
 
     Ok(ProjectionPreviewResponse {
@@ -149,7 +153,7 @@ fn projection_preview_commit_response(
     ProjectionPreviewCommitResponse {
         projected_id: commit.projected_id,
         logical_commit_id: commit.logical_commit_id,
-        parent_projected_id: commit.parent_projected_id,
+        parent_projected_ids: commit.parent_projected_ids,
         author: commit.author,
         message: commit.message,
         visibility: commit.visibility.into(),

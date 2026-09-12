@@ -13,11 +13,16 @@ const content: RepoContent = {
 
 test('keys repository content by version and audience', () => {
   const base = {
+    scope: 'viewer-a',
     audience: 'public' as const,
     changeVersion: 3,
     repoId: 'repo-1',
   }
 
+  assert.notEqual(
+    repoContentCacheKey(base),
+    repoContentCacheKey({ ...base, scope: 'viewer-b' }),
+  )
   assert.notEqual(
     repoContentCacheKey(base),
     repoContentCacheKey({ ...base, audience: 'private' }),

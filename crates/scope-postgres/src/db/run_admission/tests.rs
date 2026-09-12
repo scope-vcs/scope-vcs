@@ -1,11 +1,10 @@
 use super::*;
-use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
+use crate::db::{
+    MetadataStore,
+    test_support::fixtures::{repository, source_blob, store_with_repositories, user},
+};
 use scope_domain::{
-    account::UserAccount,
-    content::SourceBlob,
-    content_ref::ContentRef,
     policy::Visibility,
-    repository::{RepoLifecycleState, Repository},
     runs::{
         run::Run,
         source::{RunSource, RunTrigger},
@@ -57,43 +56,20 @@ fn run(revision: &WorkflowRevision, id: &str) -> Run {
         revision.digest(),
         RunTrigger::Manual,
         Some("user_cache_owner".into()),
-        RunSource::ephemeral_git_bundle(SourceBlob {
-            content_ref: ContentRef::git_bundle_sha256("c".repeat(64)),
-            sha256: "c".repeat(64),
-            git_oid: "d".repeat(40),
-            git_file_mode: "100644".into(),
-            size_bytes: 42,
-        })
-        .unwrap(),
+        RunSource::ephemeral_git_bundle(source_blob(&"d".repeat(40), &"c".repeat(64), 42)).unwrap(),
         10,
     )
     .unwrap()
 }
 
-fn seed_repository(store: &MetadataStore) -> String {
-    let owner = UserAccount {
-        id: "user_cache_owner".to_string(),
-        handle: "cache-owner".to_string(),
-        email: "cache-owner@example.com".to_string(),
-        email_verified: true,
-    };
-    let mut repository = Repository::new(&owner, "cache-repo", Visibility::Private, "repoi_test")
-        .expect("test repository is valid");
-    repository.record.lifecycle_state = RepoLifecycleState::Ready;
-    let repository_id = repository.record.id.clone();
-    let mut catalog = CatalogFixture::default();
-    catalog.users.insert(owner.id.clone(), owner);
-    catalog
-        .repositories
-        .insert(repository_id.clone(), repository);
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
-    repository_id
-}
-
 async fn fixture(count: usize) -> MetadataStore {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
-    let repository_id = seed_repository(&store);
+    let repo = repository(
+        &user("user_cache_owner", "cache-owner"),
+        "cache-repo",
+        Visibility::Private,
+    );
+    let repository_id = repo.record.id.clone();
+    let store = store_with_repositories([repo]);
     let revision = workflow(&repository_id);
     for index in 0..count {
         store
@@ -142,10 +118,10 @@ async fn concurrent_admission_obeys_global_capacity() {
 }
 
 #[tokio::test]
-async fn exhausted_oldest_job_is_repaired_and_healthy_job_progresses() {
+async fn final_dispatch_expiry_is_terminal_and_healthy_job_progresses() {
     let store = fixture(2).await;
     let runs = store.runs();
-    // Reproduce the persisted state from the former final pre-start expiry behavior.
+    // The final pre-start expiry must become terminal without another admission pass.
     runs.db
         .execute_unprepared(
             "UPDATE scope_run_jobs SET last_attempt_number = 99 WHERE run_id = 'run-000'",
@@ -165,17 +141,14 @@ async fn exhausted_oldest_job_is_repaired_and_healthy_job_progresses() {
         .await
         .unwrap();
     runs.expire_attempt(&claim.attempt.id, 12).await.unwrap();
-    runs.db.execute_unprepared("UPDATE scope_run_jobs SET state = 'queued', completed_at_unix = NULL WHERE run_id = 'run-000'; UPDATE scope_runs SET state = 'queued', completed_at_unix = NULL WHERE id = 'run-000'; UPDATE scope_run_attempts SET terminal_reason = '{\"kind\":\"execution-lost\",\"step_index\":null}' WHERE id = 'last-attempt'").await.unwrap();
-    let outcome = runs
-        .admit_next_job(1, "unused", &"c".repeat(64), "runtime", 13, 20)
-        .await
-        .unwrap();
-    let DispatchAdmission::Exhausted(repaired) = outcome else {
-        panic!("expected exhaustion repair");
-    };
-    assert_eq!(repaired.run.state, scope_domain::runs::run::RunState::Lost);
+    let terminal = runs.run_detail("run-000").await.unwrap().unwrap();
+    assert_eq!(terminal.run.state, scope_domain::runs::run::RunState::Lost);
     assert_eq!(
-        repaired.attempt.terminal_reason,
+        terminal.jobs[0].state,
+        scope_domain::runs::job::RunJobState::Lost
+    );
+    assert_eq!(
+        terminal.attempts[0].attempt.terminal_reason,
         Some(scope_domain::runs::step::AttemptTerminalReason::DispatchAttemptsExhausted)
     );
     let outcome = runs

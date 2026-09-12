@@ -3614,6 +3614,7 @@ dependencies = [
 name = "scope-media-storage"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytes",
  "getrandom 0.3.4",
  "hex",
@@ -3665,6 +3666,7 @@ dependencies = [
  "scope-domain",
  "sha2 0.10.9",
  "tokio",
+ "xmlparser",
 ]
 
 [[package]]
@@ -3688,6 +3690,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -3700,6 +3703,7 @@ dependencies = [
  "scope-service-runtime",
  "sha2 0.10.9",
  "tokio",
+ "tokio-stream",
  "tower",
  "tracing",
 ]
@@ -3728,6 +3732,7 @@ dependencies = [
  "scope-cache-domain",
  "scope-domain",
  "scope-git-process",
+ "scope-service-runtime",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3743,9 +3748,11 @@ dependencies = [
  "anyhow",
  "axum",
  "scope-postgres",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

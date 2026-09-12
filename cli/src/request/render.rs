@@ -227,13 +227,43 @@ fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String>
     events.sort_by_key(|event| event.position);
     let mut lines = Vec::new();
     for event in events {
-        if let RequestEventPayload::Submitted { head_oid } = &event.payload {
-            lines.push(format!(
-                "Submitted · head {} · at {}",
+        let action = match &event.payload {
+            RequestEventPayload::Started { .. } => "Started request".to_string(),
+            RequestEventPayload::Submitted { head_oid } => {
+                format!("Submitted · head {}", short_oid(head_oid))
+            }
+            RequestEventPayload::RevisionPushed {
+                old_head_oid,
+                new_head_oid,
+                note,
+            } => {
+                let mut line = format!(
+                    "Revision pushed · {}..{}",
+                    short_oid(old_head_oid),
+                    short_oid(new_head_oid)
+                );
+                if let Some(note) = note {
+                    line.push_str(&format!(" · {}", terminal_text(note)));
+                }
+                line
+            }
+            RequestEventPayload::Merged { head_oid, main_oid } => format!(
+                "Merged · head {} · main {}",
                 short_oid(head_oid),
-                event.created_at_unix
-            ));
-        }
+                short_oid(main_oid)
+            ),
+            RequestEventPayload::Closed { head_oid } => {
+                format!("Closed · head {}", short_oid(head_oid))
+            }
+            RequestEventPayload::IdentityEdited { .. } => "Edited title or description".to_string(),
+            RequestEventPayload::DiscussionResolved { discussion_id } => {
+                format!("Resolved discussion {}", terminal_text(discussion_id))
+            }
+            RequestEventPayload::DiscussionReopened { discussion_id } => {
+                format!("Reopened discussion {}", terminal_text(discussion_id))
+            }
+        };
+        lines.push(format!("{action} · at {}", event.created_at_unix));
     }
     lines
 }
@@ -370,18 +400,41 @@ mod tests {
     }
 
     #[test]
-    fn activity_renders_submission() {
+    fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
+        let identity = json!({"title_sha256": oid('a'), "title_byte_count": 5,
+            "description_sha256": oid('b'), "description_byte_count": 10});
+        let payloads = [
+            json!({"Started": {"identity": identity.clone()}}),
+            json!({"Submitted": {"head_oid": oid('a')}}),
+            json!({"RevisionPushed": {"old_head_oid": oid('a'), "new_head_oid": oid('b'), "note": "note\n\u{1b}[31m"}}),
+            json!({"Merged": {"head_oid": oid('b'), "main_oid": oid('c')}}),
+            json!({"Closed": {"head_oid": oid('b')}}),
+            json!({"IdentityEdited": {"before": identity.clone(), "after": identity}}),
+            json!({"DiscussionResolved": {"discussion_id": "discussion\nresolved"}}),
+            json!({"DiscussionReopened": {"discussion_id": "discussion\treopened"}}),
+        ];
         let activity: RequestActivityPageResponse = serde_json::from_value(json!({
-            "events": [
-                event(1, json!({"Submitted": {"head_oid": oid('b')}}))
-            ],
-            "through_position": 1
-        }))
-        .unwrap();
-
-        let rendered = request_activity_lines(&activity).join("\n");
-
-        assert!(rendered.contains("Submitted · head"), "{rendered}");
+            "events": payloads.into_iter().enumerate().rev().map(|(i, payload)| event(i as u64 + 1, payload)).collect::<Vec<_>>(),
+            "through_position": 8
+        })).unwrap();
+        let lines = request_activity_lines(&activity);
+        assert_eq!(lines.len(), 8);
+        for (line, label) in lines.iter().zip([
+            "Started request",
+            "Submitted",
+            "Revision pushed",
+            "Merged",
+            "Closed",
+            "Edited title or description",
+            "Resolved discussion",
+            "Reopened discussion",
+        ]) {
+            assert!(line.starts_with(label), "{line}");
+            assert!(!line.chars().any(char::is_control), "{line:?}");
+        }
+        assert!(lines[2].contains("note  [31m"), "{}", lines[2]);
+        let main_oid = oid('c');
+        assert!(lines[3].contains(short_oid(&main_oid)));
     }
 
     #[test]
@@ -423,10 +476,7 @@ mod tests {
             "id": format!("event_{position}"),
             "position": position,
             "actor": {"id": "scope_usr_actor", "handle": "actor"},
-            "kind": match payload.as_object().unwrap().keys().next().unwrap().as_str() {
-                "Submitted" => "Submitted",
-                _ => unreachable!()
-            },
+            "kind": payload.as_object().unwrap().keys().next().unwrap(),
             "payload": payload,
             "created_at_unix": position * 10
         })

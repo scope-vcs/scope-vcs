@@ -36,7 +36,7 @@ async fn real_git_binary_and_crlf_round_trip_across_first_and_published_pushes()
     )
     .unwrap();
 
-    let clone = unique_test_path("binary-first-clone");
+    let clone = TempGitRepo(unique_test_path("binary-first-clone"));
     run_git(
         None,
         &["clone", &public, clone.to_str().unwrap()],
@@ -72,7 +72,7 @@ async fn real_git_binary_and_crlf_round_trip_across_first_and_published_pushes()
     )
     .unwrap();
 
-    let final_clone = unique_test_path("binary-final-clone");
+    let final_clone = TempGitRepo(unique_test_path("binary-final-clone"));
     run_git(
         None,
         &["clone", &public, final_clone.to_str().unwrap()],

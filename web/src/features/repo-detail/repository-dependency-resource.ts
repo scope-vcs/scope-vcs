@@ -68,6 +68,10 @@ export function createRepositoryDependencyResource(
     peek: cache.peek,
     ensure,
     invalidate,
+    seed(identity: string, value: RepositoryDependencyCheckResponse, version = '') {
+      cache.seed(identity, value, version)
+      updatePoll(identity, value)
+    },
     write(identity: string, value: RepositoryDependencyCheckResponse, version = '') {
       cache.write(identity, value, version)
       updatePoll(identity, value)

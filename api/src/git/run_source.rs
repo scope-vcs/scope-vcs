@@ -3,7 +3,8 @@ pub(super) mod operation;
 use crate::{
     error::ApiError,
     git::{
-        cache::GitDerivedCacheNamespace, command::git_process_output,
+        cache::GitDerivedCacheNamespace,
+        command::{git_process_output, truncated_git_stderr},
         restore::restore_git_pack_spans,
     },
     state::AppState,
@@ -241,18 +242,52 @@ pub(crate) fn inspect_manual_run_bundle(
 
 fn git_blob(bare: &Path, git_oid: &str, path: &str) -> Result<Option<Vec<u8>>, ApiError> {
     let object = format!("{git_oid}:{path}");
-    let mut size = Command::new("git");
-    size.arg("--git-dir")
+    let mut inspect = Command::new("git");
+    inspect
+        .arg("--git-dir")
         .arg(bare)
-        .args(["cat-file", "-s", &object]);
-    let Some(size_text) = run_git_inspection(&mut size, "Git workflow size inspection", 64)? else {
+        .args(["ls-tree", "-lz", git_oid, "--", path]);
+    let output = git_process_output(
+        &mut inspect,
+        None,
+        ProcessLimits::new(GIT_INSPECTION_TIMEOUT).with_max_stdout_bytes(path.len() + 128),
+    )?;
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "reading Git workflow metadata: {}",
+            truncated_git_stderr(&output.stderr).trim()
+        )));
+    }
+    if output.stdout.is_empty() {
         return Ok(None);
+    }
+    let entry = std::str::from_utf8(&output.stdout)
+        .map_err(|_| ApiError::infrastructure_unavailable("invalid Git workflow metadata"))?
+        .trim_end_matches('\0');
+    let Some((metadata, listed_path)) = entry.split_once('\t') else {
+        return Err(ApiError::infrastructure_unavailable(
+            "invalid Git workflow metadata",
+        ));
     };
-    let size = std::str::from_utf8(&size_text)
-        .map_err(|_| ApiError::bad_request("Git reported an invalid workflow size"))?
-        .trim()
+    if listed_path != path {
+        return Err(ApiError::infrastructure_unavailable(
+            "Git returned a different workflow path",
+        ));
+    }
+    let fields = metadata.split_ascii_whitespace().collect::<Vec<_>>();
+    let [_, kind, _, size] = fields.as_slice() else {
+        return Err(ApiError::infrastructure_unavailable(
+            "invalid Git workflow metadata",
+        ));
+    };
+    if *kind != "blob" {
+        return Err(ApiError::bad_request(
+            "workflow definition must be a Git blob",
+        ));
+    }
+    let size = size
         .parse::<usize>()
-        .map_err(|_| ApiError::bad_request("Git reported an invalid workflow size"))?;
+        .map_err(|_| ApiError::infrastructure_unavailable("invalid Git workflow size"))?;
     if size > scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES {
         return Err(ApiError::bad_request(format!(
             "workflow definition exceeds {} bytes",
@@ -264,22 +299,19 @@ fn git_blob(bare: &Path, git_oid: &str, path: &str) -> Result<Option<Vec<u8>>, A
     blob.arg("--git-dir")
         .arg(bare)
         .args(["cat-file", "blob", &object]);
-    let Some(bytes) = run_git_inspection(
+    let output = git_process_output(
         &mut blob,
-        "Git workflow read",
-        scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES,
-    )?
-    else {
-        return Err(ApiError::bad_request(
-            "workflow changed while inspecting the Git bundle",
-        ));
-    };
-    if bytes.len() != size {
-        return Err(ApiError::bad_request(
-            "Git workflow size changed while inspecting the bundle",
-        ));
+        None,
+        ProcessLimits::new(GIT_INSPECTION_TIMEOUT)
+            .with_max_stdout_bytes(scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES),
+    )?;
+    if !output.status.success() || output.stdout.len() != size {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "reading Git workflow blob failed: {}",
+            truncated_git_stderr(&output.stderr).trim()
+        )));
     }
-    Ok(Some(bytes))
+    Ok(Some(output.stdout))
 }
 
 /// Runs an inspection command against caller-supplied bundle content. Timeouts and

@@ -18,12 +18,17 @@ function textFile(path: string, oid: string, text: string): RepoFileContentRespo
 
 test('keys file entries by repository version, audience and normalized path', () => {
   const base = {
+    scope: 'viewer-a',
     audience: 'public' as const,
     changeVersion: 3,
     path: 'README.html',
     repoId: 'repo-1',
   }
 
+  assert.notEqual(
+    repoFileCacheKey(base),
+    repoFileCacheKey({ ...base, scope: 'viewer-b' }),
+  )
   assert.notEqual(
     repoFileCacheKey(base),
     repoFileCacheKey({ ...base, audience: 'private' }),

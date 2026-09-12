@@ -231,6 +231,17 @@ impl CodecPipeline {
         }
     }
 
+    /// Keep decoder isolation and input thread limits identical for each transcode.
+    fn transcode_input(&self, source: &Path, strict: bool) -> Vec<OsString> {
+        let mut args = self.bounded_ffmpeg_prefix();
+        if strict {
+            args.push("-xerror".into());
+        }
+        args.push("-y".into());
+        args.extend(["-i".into(), path_arg(source)]);
+        args
+    }
+
     async fn process_image(
         &self,
         source: &Path,
@@ -299,11 +310,8 @@ impl CodecPipeline {
         let filter = format!(
             "scale=w='min({IMAGE_MAX_EDGE},iw)':h='min({IMAGE_MAX_EDGE},ih)':force_original_aspect_ratio=decrease,setsar=1"
         );
-        let mut args = self.bounded_ffmpeg_prefix();
-        args.extend(os_args(["-xerror", "-y"]));
-        args.extend(vec![
-            "-i".into(),
-            path_arg(probe_path),
+        let mut args = self.transcode_input(probe_path, true);
+        args.extend([
             "-map".into(),
             "0:v:0".into(),
             "-vf".into(),
@@ -417,11 +425,8 @@ impl CodecPipeline {
         } else {
             format!("{scale},format=yuv420p,setsar=1")
         };
-        let mut args = self.bounded_ffmpeg_prefix();
-        args.extend(os_args(["-y"]));
-        args.extend(vec![
-            "-i".into(),
-            path_arg(source),
+        let mut args = self.transcode_input(source, false);
+        args.extend([
             "-map".into(),
             "0:v:0".into(),
             "-map".into(),
@@ -508,11 +513,8 @@ impl CodecPipeline {
             .map_err(|error| error.after_validation(validated_source.clone()))?;
 
         let poster = work_dir.join("video-poster.webp");
-        let mut poster_args = self.bounded_ffmpeg_prefix();
-        poster_args.extend(os_args(["-y"]));
-        poster_args.extend(vec![
-            "-i".into(),
-            path_arg(&playback_derivative.path),
+        let mut poster_args = self.transcode_input(&playback_derivative.path, false);
+        poster_args.extend([
             "-map".into(),
             "0:v:0".into(),
             "-frames:v".into(),

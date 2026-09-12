@@ -1,5 +1,5 @@
 use super::requests::*;
-use crate::requests::fixtures::{open_request, pushed_draft, submit_input};
+use crate::requests::fixtures::{open_request, pushed_draft, submit_input, working_request};
 
 #[test]
 fn author_submits_a_pushed_draft_exactly_once() {
@@ -23,23 +23,7 @@ fn submission_requires_the_author_and_a_pushed_snapshot() {
     input.actor_is_author = false;
     assert!(submit_request(&pushed_draft(RequestActorRole::Member), input).is_err());
 
-    let draft = start_request(
-        StartRequestFacts::default(),
-        StartRequestInput {
-            id: "request_1".to_string(),
-            repo_id: "owner/repo".to_string(),
-            name: "fix-parser".to_string(),
-            author_user_id: "author".to_string(),
-            title: Some("Fix parser".to_string()),
-            author_role: RequestActorRole::Public,
-            audience: RequestAudience::Public,
-            base_main_oid: "base".to_string(),
-            event_id: "event_started".to_string(),
-            now_unix: 10,
-        },
-    )
-    .unwrap()
-    .request;
+    let draft = working_request();
     assert!(submit_request(&draft, submit_input()).is_err());
 }
 

@@ -3,7 +3,7 @@ use super::{
     MediaLeaseMutation, MediaStore, RequestMediaManifest, ValidateRequestAttachmentSourceCommand,
     access::cleanup_tombstone_exists,
     locks::{lock_attachment, lock_processing_job},
-    persistence::{as_i32, as_i64, attachment_by_id, manifest_by_id},
+    persistence::{as_i32, as_i64, attachment_by_id, bindings_for_attachment, manifest_by_id},
     processing_support::{
         BudgetLock, adopt_manifest_keys, complete_job, ensure_derivative_budget,
         ensure_manifest_keys_reserved, insert_derivative, lock_lease_attachment,
@@ -21,8 +21,9 @@ use crate::{
 };
 use scope_domain::requests::attachments::{
     RequestAttachment, RequestAttachmentProcessingLease, RequestAttachmentState,
-    mark_processing_source_validated, retry_attachment_processing, transition_attachment,
-    validate_lease_grant, validate_processing_completion, validate_processing_failure,
+    can_view_request_attachment, mark_processing_source_validated, retry_attachment_processing,
+    transition_attachment, validate_lease_grant, validate_processing_completion,
+    validate_processing_failure,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
@@ -539,6 +540,7 @@ impl MediaStore {
         {
             return Err(PostgresError::not_found("request attachment not found"));
         }
+        let policy = request_policy_for_user(&tx, &repo, &request, actor_user_id).await?;
         let existing_operation = tx
             .query_one(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -550,10 +552,21 @@ impl MediaStore {
             .map_err(PostgresError::internal)?
             .is_some();
         if existing_operation {
+            let bindings = bindings_for_attachment(&tx, attachment_id).await?;
+            if !policy.exact_visible
+                || !can_view_request_attachment(
+                    &attachment,
+                    &bindings,
+                    Some(actor_user_id),
+                    policy.exact_visible,
+                    policy.discussion_visible,
+                )
+            {
+                return Err(PostgresError::not_found("request attachment not found"));
+            }
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(attachment);
         }
-        let policy = request_policy_for_user(&tx, &repo, &request, actor_user_id).await?;
         let actor_can_write = match &attachment.target {
             scope_domain::requests::attachments::RequestAttachmentTarget::Description => {
                 policy.permissions.can_edit_identity

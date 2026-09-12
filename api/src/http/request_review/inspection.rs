@@ -44,7 +44,7 @@ fn request_commit_is_visible_to(
         raw_repo,
         policy,
         access,
-        &identity.parent_oids[0],
+        identity.parent_oids.first().map(String::as_str),
         commit_oid,
     )
     .map(|changes| !changes.hidden)
@@ -150,7 +150,7 @@ pub(super) fn inspect_request_commit(
         raw_repo,
         policy,
         access,
-        &identity.parent_oids[0],
+        identity.parent_oids.first().map(String::as_str),
         commit_oid,
     )?;
     if changes.hidden {
@@ -261,6 +261,7 @@ fn request_commit_change_summaries(
     command.arg("-C").arg(raw_repo).args([
         "diff-tree",
         "--stdin",
+        "--root",
         "--raw",
         "-r",
         "-z",
@@ -431,11 +432,6 @@ fn request_commit_identity(
         )));
     }
     let identity = parse_request_commit_identity(&output.stdout)?;
-    if identity.parent_oids.is_empty() {
-        return Err(ApiError::conflict(
-            "request revision commit must have a parent",
-        ));
-    }
     Ok(identity)
 }
 
@@ -443,10 +439,13 @@ fn request_commit_changes(
     raw_repo: &FsPath,
     policy: &Policy,
     access: RepositoryAccess,
-    parent: &str,
+    parent: Option<&str>,
     commit_oid: &str,
 ) -> Result<InspectedRequestChanges, ApiError> {
-    request_changes_from_repo_with_visibility(raw_repo, policy, access, parent, commit_oid)
+    let changes = crate::use_cases::request_revision_inspection::request_commit_changes(
+        raw_repo, parent, commit_oid,
+    )?;
+    parse_request_changes_with_visibility(&changes, policy, access)
 }
 
 fn request_commit_display_metadata(
@@ -575,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_review_inspects_only_the_first_parent_and_rejects_roots() {
+    fn merge_review_inspects_only_the_first_parent_and_accepts_roots() {
         let directory = tempfile::tempdir().unwrap();
         let repo = directory.path();
         git(repo, &["init", "--quiet"], None);
@@ -647,14 +646,13 @@ mod tests {
                 }
             );
         }
-        let error = inspect_request_commit(repo, &policy, RepositoryAccess::public(), &base)
-            .err()
+        let root = inspect_request_commit(repo, &policy, RepositoryAccess::public(), &base)
+            .unwrap()
+            .commit
             .unwrap();
-        assert_eq!(error.kind, ErrorKind::Conflict);
-        assert_eq!(
-            error.public_message(),
-            "request revision commit must have a parent"
-        );
+        assert!(root.parent_oids.is_empty());
+        assert_eq!(root.change_count, 0);
+        assert!(root.files.is_empty());
     }
 
     #[test]

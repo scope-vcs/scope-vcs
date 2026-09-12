@@ -16,6 +16,7 @@ mod maintenance_cutover;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
 mod run_attempt_active_indexes;
+mod run_execution_invariants;
 
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0042_current_schema_baseline",
@@ -25,6 +26,11 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0046_drop_attempt_token_expiry",
     "m0047_drop_git_manifest_orphan_jobs",
     "m0048_run_attempt_active_state_indexes",
+    "m0049_run_execution_invariants",
+    "m0050_cache_upload_cleanup_leases",
+    "m0051_request_media_budget_release",
+    "m0052_retire_apply_changes_permission",
+    "m0053_request_ref_cleanup",
 ];
 
 pub(super) async fn isolated_database() -> (

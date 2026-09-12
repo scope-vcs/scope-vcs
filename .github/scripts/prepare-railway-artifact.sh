@@ -14,28 +14,24 @@ service_id="$(jq -er --arg component "$component" '.services[$component].id' "$m
   echo "Unknown release component $component" >&2
   exit 2
 }
-binary="$(jq -r --arg component "$component" '.services[$component].binary // ""' "$manifest")"
+definition="$(node .github/scripts/deployment-components.mjs describe "$component")"
+dockerfile="$(jq -er '.artifact.dockerfile' <<< "$definition")"
+install_git="$(jq -r 'if .artifact.installGit then 1 else 0 end' <<< "$definition")"
+binary="$(jq -r '.artifact.binary // ""' <<< "$definition")"
 image_repository="$(node .github/scripts/railway-artifact.mjs image-repository "$component")"
 image_tag="$image_repository:$component-$source_sha-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 metadata="$(mktemp)"
 pull_config="$(mktemp -d)"
 trap 'rm -f "$metadata"; rm -rf "$pull_config"' EXIT
 
-dockerfile=deploy/railway/prebuilt.Dockerfile
-install_git=0
-case "$component" in
-  api) install_git=1 ;;
-  run-worker)
-    dockerfile=deploy/railway/worker.Dockerfile
-    test -s "$context_root/dependency-analyzer/package.json"
-    test -s "$context_root/dependency-analyzer/package-lock.json"
-    test -s "$context_root/dependency-analyzer/analyze.mjs"
-    test -d "$context_root/dependency-analyzer/src"
-    test ! -e "$context_root/dependency-analyzer/node_modules"
-    ;;
-esac
-if [[ "$component" == web ]]; then
-  dockerfile=deploy/railway/web.Dockerfile
+if [[ "$component" == run-worker ]]; then
+  test -s "$context_root/dependency-analyzer/package.json"
+  test -s "$context_root/dependency-analyzer/package-lock.json"
+  test -s "$context_root/dependency-analyzer/analyze.mjs"
+  test -d "$context_root/dependency-analyzer/src"
+  test ! -e "$context_root/dependency-analyzer/node_modules"
+fi
+if [[ "$(jq -r '.artifact.kind' <<< "$definition")" == web ]]; then
   test -s "$context_root/.output/server/index.mjs"
 elif [[ -z "$binary" ]]; then
   echo "Release component $component has no prebuilt binary to package." >&2

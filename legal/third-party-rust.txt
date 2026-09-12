@@ -1007,12 +1007,10 @@ Source: https://static.crates.io/crates/crc-catalog/crc-catalog-2.5.0.crate
 
 Published author metadata: ["Akhil Velagapudi <akhilvelagapudi@gmail.com>"]
 Repository: "https://github.com/akhilles/crc-catalog.git"
-Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision. MIT branch selected from the declared alternatives.
+MIT branch selected from the declared alternatives. The checksum-verified published crate contains both license texts in its nested LICENSES directory; preserve those archive documents.
 
 LICENSES/Apache-2.0.txt: text 9b531f5ced1b395b125eb2cbf9693e2621f5724d1fdfd052919238b1f1b67f53
 LICENSES/MIT.txt: text e40488cf301b57a46678f95ddcc9aeeb435c42cc0477814edc4d07f51b08dcd9
-legal/upstream/akhilles-crc-catalog-ed4ad631f22b-LICENSES-MIT.txt: text e40488cf301b57a46678f95ddcc9aeeb435c42cc0477814edc4d07f51b08dcd9
-legal/upstream/akhilles-crc-catalog-ed4ad631f22b-LICENSES-Apache-2.0.txt: text 9b531f5ced1b395b125eb2cbf9693e2621f5724d1fdfd052919238b1f1b67f53
 
 ==============================================================================
 crc-fast 1.10.0

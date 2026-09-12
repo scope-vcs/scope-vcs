@@ -18,7 +18,9 @@ import {
 } from 'react'
 import {
   addRequestAttachmentDraftFiles,
+  beginRequestAttachmentSubmission,
   clearRequestAttachmentDraft,
+  finishRequestAttachmentSubmission,
   inferredMediaType,
   readRequestAttachmentDraft,
   requestAttachmentDraftKey,
@@ -63,13 +65,13 @@ export function RequestAttachmentEditor({
   label: string
   onCancel: () => void
   onCancelQuote?: () => void
-  onSubmit: (markdown: string, baseText: string | null) => Promise<boolean>
+  onSubmit: (markdown: string, baseText: string | null, submissionId: string) => Promise<boolean>
   placeholder: string
   quote?: { author: string; body: string } | null
   secondarySubmit?: {
     icon: ReactNode
     label: string
-    onSubmit: (markdown: string, baseText: string | null) => Promise<boolean>
+    onSubmit: (markdown: string, baseText: string | null, submissionId: string) => Promise<boolean>
   }
   submitIcon: ReactNode
   submitLabel: string
@@ -95,6 +97,7 @@ export function RequestAttachmentEditor({
   )
   const read = useCallback(() => readRequestAttachmentDraft(draftKey), [draftKey])
   const draft = useSyncExternalStore(subscribe, read, read)
+  const staleDescription = target === 'description' && draft.initialized && draft.baseText !== initialText
   const limits = environment.limits
   const acceptedMedia = limits
     ? [...limits.accepted_photo_media_types, ...limits.accepted_video_media_types]
@@ -117,9 +120,9 @@ export function RequestAttachmentEditor({
     (attachment) => attachment.status === 'failed',
   )
   const attachmentCount = requestAttachmentContentCount(draft.text, draft.attachments)
-  const pending = pendingAction !== null
+  const pending = pendingAction !== null || draft.pending
   const overLimit = limits !== null && attachmentCount > limits.max_attachments_per_content
-  const canSubmit = !pending && transfersReady && !overLimit && (
+  const canSubmit = !pending && !staleDescription && transfersReady && !overLimit && (
     target === 'description' || Boolean(draft.text.trim()) || readyAttachments.length > 0
   )
 
@@ -135,22 +138,25 @@ export function RequestAttachmentEditor({
       ? secondarySubmit?.onSubmit
       : onSubmit
     if (!submitAction) return
+    const markdown = markdownWithAttachments(draft.text, readyAttachments)
+    const submissionId = beginRequestAttachmentSubmission(
+      draftKey,
+      JSON.stringify([action, markdown, draft.baseText]),
+    )
+    if (!submissionId) return
     setPendingAction(action)
+    let posted = false
     try {
-      const posted = await submitAction(
-        markdownWithAttachments(draft.text, readyAttachments),
-        draft.baseText,
-      )
-      if (posted) {
-        clearRequestAttachmentDraft(draftKey)
-        onCancelQuote?.()
-      }
+      posted = await submitAction(markdown, draft.baseText, submissionId)
+      if (posted) onCancelQuote?.()
     } finally {
+      finishRequestAttachmentSubmission(submissionId, posted)
       setPendingAction(null)
     }
   }
 
   function addFiles(files: File[]) {
+    if (readRequestAttachmentDraft(draftKey).pending) return
     if (!limits) {
       setValidationError(environment.attachmentsError ?? 'Attachment limits are still loading.')
       return
@@ -207,7 +213,7 @@ export function RequestAttachmentEditor({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.nativeEvent.isComposing) return
+    if (pending || event.nativeEvent.isComposing) return
     if (event.key === 'Escape') {
       event.preventDefault()
       if (quote && onCancelQuote) onCancelQuote()
@@ -228,7 +234,7 @@ export function RequestAttachmentEditor({
             <span className="font-medium text-foreground">{quote.author}</span>
             <span className="ml-1 line-clamp-1">{quote.body}</span>
           </div>
-          <button aria-label="Cancel quoted reply" className="shrink-0 p-1 hover:text-foreground" onClick={onCancelQuote} type="button">
+          <button aria-label="Cancel quoted reply" className="shrink-0 p-1 hover:text-foreground" disabled={pending} onClick={onCancelQuote} type="button">
             <X className="size-3.5" />
           </button>
         </div>
@@ -262,6 +268,7 @@ export function RequestAttachmentEditor({
             {draft.attachments.map((attachment) => (
               <DraftAttachmentRow
                 attachment={attachment}
+                disabled={pending}
                 key={attachment.localId}
                 onRemove={() => removeUploadingRequestAttachment(draftKey, attachment.localId)}
                 onRetry={() => void uploadRequestAttachment({
@@ -282,6 +289,7 @@ export function RequestAttachmentEditor({
             accept={acceptedMedia.join(',')}
             aria-label="Attach photos or videos"
             className="sr-only"
+            disabled={pending}
             multiple
             onChange={(event) => {
               addFiles([...(event.target.files ?? [])])
@@ -290,57 +298,153 @@ export function RequestAttachmentEditor({
             ref={fileInputRef}
             type="file"
           />
-          <Button disabled={!limits} onClick={() => fileInputRef.current?.click()} size="sm" type="button" variant="ghost">
+          <Button disabled={!limits || pending} onClick={() => fileInputRef.current?.click()} size="sm" type="button" variant="ghost">
             <Paperclip className="size-3.5" />
             Attach files
           </Button>
           <span className="text-xs text-muted-foreground">Drop files or paste an image</span>
         </div>
       </div>
+      {target === 'description' ? (
+        <DescriptionDraftRecovery
+          currentDescription={initialText}
+          disabled={pending}
+          onDiscard={() => {
+            clearRequestAttachmentDraft(draftKey)
+            seedRequestAttachmentDraft(draftKey, initialText)
+            setValidationError(null)
+          }}
+          stale={staleDescription}
+        />
+      ) : null}
       {validationError ? <p className="mt-2 text-sm text-destructive" role="alert">{validationError}</p> : null}
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-        <p aria-live="polite" className="min-w-48 flex-1 text-xs text-muted-foreground">
-          {limits && attachmentCount > limits.max_attachments_per_content
-            ? `You can attach up to ${limits.max_attachments_per_content} files here.`
-            : hasFailedTransfer
-            ? 'Remove or retry failed files before saving.'
-            : transferPending
-              ? 'Uploading files… Draft kept while you navigate.'
-              : enterSubmits
-                ? 'Markdown · Shift+Enter for a new line'
-                : 'Markdown · Draft kept while you navigate'}
-        </p>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          <Button disabled={pending} onClick={onCancel} size="sm" type="button" variant="ghost">Cancel</Button>
-          {secondarySubmit ? (
-            <Button
-              data-submit-action="secondary"
-              disabled={!canSubmit}
-              size="sm"
-              type="submit"
-              variant="secondary"
-            >
-              {secondarySubmit.icon}
-              {pendingAction === 'secondary' ? 'Saving…' : secondarySubmit.label}
-            </Button>
-          ) : null}
-          <Button disabled={!canSubmit} size="sm" type="submit">
-            {submitIcon}
-            {pendingAction === 'primary' ? 'Saving…' : submitLabel}
-          </Button>
-        </div>
-      </div>
+      <EditorActions
+        attachmentLimit={limits?.max_attachments_per_content ?? null}
+        attachmentCount={attachmentCount}
+        canSubmit={canSubmit}
+        enterSubmits={enterSubmits}
+        hasFailedTransfer={hasFailedTransfer}
+        onCancel={onCancel}
+        pending={pending}
+        pendingAction={pendingAction}
+        secondarySubmit={secondarySubmit}
+        submitIcon={submitIcon}
+        submitLabel={submitLabel}
+        transferPending={transferPending}
+      />
     </form>
+  )
+}
+
+function EditorActions({
+  attachmentCount,
+  attachmentLimit,
+  canSubmit,
+  enterSubmits,
+  hasFailedTransfer,
+  onCancel,
+  pending,
+  pendingAction,
+  secondarySubmit,
+  submitIcon,
+  submitLabel,
+  transferPending,
+}: {
+  attachmentCount: number
+  attachmentLimit: number | null
+  canSubmit: boolean
+  enterSubmits: boolean
+  hasFailedTransfer: boolean
+  onCancel: () => void
+  pending: boolean
+  pendingAction: 'primary' | 'secondary' | null
+  secondarySubmit?: { icon: ReactNode; label: string }
+  submitIcon: ReactNode
+  submitLabel: string
+  transferPending: boolean
+}) {
+  const status = attachmentLimit !== null && attachmentCount > attachmentLimit
+    ? `You can attach up to ${attachmentLimit} files here.`
+    : hasFailedTransfer
+      ? 'Remove or retry failed files before saving.'
+      : transferPending
+        ? 'Uploading files… Draft kept while you navigate.'
+        : enterSubmits
+          ? 'Markdown · Shift+Enter for a new line'
+          : 'Markdown · Draft kept while you navigate'
+  return (
+    <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+      <p aria-live="polite" className="min-w-48 flex-1 text-xs text-muted-foreground">{status}</p>
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        <Button disabled={pending} onClick={onCancel} size="sm" type="button" variant="ghost">Cancel</Button>
+        {secondarySubmit ? (
+          <Button
+            data-submit-action="secondary"
+            disabled={!canSubmit}
+            size="sm"
+            type="submit"
+            variant="secondary"
+          >
+            {secondarySubmit.icon}
+            {pendingAction === 'secondary' ? 'Saving…' : secondarySubmit.label}
+          </Button>
+        ) : null}
+        <Button disabled={!canSubmit} size="sm" type="submit">
+          {submitIcon}
+          {pendingAction === 'primary' ? 'Saving…' : submitLabel}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function DescriptionDraftRecovery({
+  currentDescription,
+  disabled,
+  onDiscard,
+  stale,
+}: {
+  currentDescription: string
+  disabled: boolean
+  onDiscard: () => void
+  stale: boolean
+}) {
+  return (
+    <div className="mt-2 space-y-2 text-sm">
+      {stale ? (
+        <>
+          <p role="alert">The description changed while you were editing. Your draft is kept.</p>
+          <details>
+            <summary className="cursor-pointer">Current description</summary>
+            <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
+              {currentDescription || 'No description.'}
+            </pre>
+          </details>
+        </>
+      ) : null}
+      <Button
+        className="h-auto whitespace-normal text-left"
+        disabled={disabled}
+        onClick={onDiscard}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        Discard draft and load current description
+      </Button>
+    </div>
   )
 }
 
 function DraftAttachmentRow({
   attachment,
+  disabled,
   onRemove,
   onReselect,
   onRetry,
 }: {
   attachment: DraftAttachment
+  disabled: boolean
   onRemove: () => void
   onReselect: () => void
   onRetry: () => void
@@ -376,6 +480,7 @@ function DraftAttachmentRow({
       <div className="flex items-center">
         {attachment.status === 'failed' ? (
           <Button
+            disabled={disabled}
             aria-label={attachment.file ? `Retry ${attachment.name}` : `Select ${attachment.name} again`}
             onClick={attachment.file ? onRetry : onReselect}
             size="icon-sm"
@@ -384,7 +489,7 @@ function DraftAttachmentRow({
             variant="ghost"
           ><RotateCcw /></Button>
         ) : null}
-        <Button aria-label={`Remove ${attachment.name}`} onClick={onRemove} size="icon-sm" title="Remove attachment" type="button" variant="ghost"><X /></Button>
+        <Button disabled={disabled} aria-label={`Remove ${attachment.name}`} onClick={onRemove} size="icon-sm" title="Remove attachment" type="button" variant="ghost"><X /></Button>
       </div>
     </div>
   )
@@ -434,4 +539,3 @@ function validateFiles(
   }
   return { error, files: accepted }
 }
-

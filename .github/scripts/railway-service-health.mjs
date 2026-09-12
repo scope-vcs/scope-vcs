@@ -3,28 +3,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { RAILWAY_COMPONENTS, RAILWAY_CONFIG_PATHS } from "./deployment-components.mjs";
 
-export const RAILWAY_COMPONENTS = [
-  "cache",
-  "run-worker",
-  "media-worker",
-  "git-router",
-  "media-api",
-  "api",
-  "web",
-  "cli-downloads",
-];
-// Components whose effective Railway deploy settings must match the checked-in
-// railway.json in their manifest source directory.
-export const RAILWAY_CONFIG_COMPONENTS = ["cache", "run-worker", "git-router", "media-api", "api", "web"];
-
-export function railwayConfigPath(manifest, component) {
-  const directory = manifest?.services?.[component]?.sourceDirectory;
-  if (typeof directory !== "string" || directory.length === 0) {
-    throw new Error(`Production manifest is missing the ${component} source directory`);
-  }
-  return `${directory}/railway.json`;
-}
+export { RAILWAY_COMPONENTS };
 
 const SOURCE_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const REQUIRED_DEPLOY_SETTINGS = [
@@ -86,7 +67,7 @@ export function assertHealthyRailwayService(services, serviceId, expectedDeploym
   const service = services.find(({ id, name }) => id === serviceId || name === serviceId);
   if (!service) throw new Error(`Railway service ${serviceId} is missing`);
 
-  const replicas = service.replicas ?? {};
+  const replicas = railwayReplicaCounts(service);
   if (service.status !== "SUCCESS") {
     throw new Error(`Railway service ${serviceId} is ${service.status || "UNKNOWN"}`);
   }
@@ -101,7 +82,7 @@ export function assertHealthyRailwayService(services, serviceId, expectedDeploym
       `Railway service ${serviceId} has ${replicas.running ?? 0}/${replicas.configured} running replicas`,
     );
   }
-  if ((replicas.crashed ?? 0) !== 0) {
+  if (replicas.crashed !== 0) {
     throw new Error(`Railway service ${serviceId} has ${replicas.crashed} crashed replicas`);
   }
   if (expectedDeploymentId && service.deploymentId !== expectedDeploymentId) {
@@ -110,6 +91,24 @@ export function assertHealthyRailwayService(services, serviceId, expectedDeploym
     );
   }
   return service;
+}
+
+export function railwayReplicaCounts(service) {
+  const replicas = service?.replicas;
+  for (const key of ["running", "crashed"]) {
+    if (!Number.isInteger(replicas?.[key]) || replicas[key] < 0) {
+      throw new Error(`Railway service ${service?.name || service?.id || "unknown"} is missing valid ${key} replica evidence`);
+    }
+  }
+  return replicas;
+}
+
+export function railwayServiceIsStopped(services, serviceId) {
+  if (!Array.isArray(services)) throw new Error("Railway service state must be an array");
+  const matches = services.filter(({ id }) => id === serviceId);
+  if (matches.length !== 1) throw new Error(`Railway service ${serviceId} must have exactly one state entry`);
+  const replicas = railwayReplicaCounts(matches[0]);
+  return replicas.running === 0 && replicas.crashed === 0;
 }
 
 export function verifyProductionRailwayServices({
@@ -137,8 +136,8 @@ export function verifyProductionRailwayServices({
       throw new Error("Production media-worker has no exact OCI artifact evidence");
     }
     const service = assertHealthyRailwayService(services, serviceId, evidence.evidenceId);
-    if (RAILWAY_CONFIG_COMPONENTS.includes(component)) {
-      const configPath = railwayConfigPath(manifest, component);
+    const configPath = RAILWAY_CONFIG_PATHS[component];
+    if (configPath) {
       const config = serviceConfigs?.[component];
       if (!config) {
         throw new Error(`Production ${component} is missing expected Railway config`);
@@ -150,10 +149,10 @@ export function verifyProductionRailwayServices({
   return verified;
 }
 
-export function loadRailwayServiceConfigs(manifest, root = process.cwd()) {
-  return Object.fromEntries(RAILWAY_CONFIG_COMPONENTS.map((component) => [
+export function loadRailwayServiceConfigs(root = process.cwd()) {
+  return Object.fromEntries(Object.entries(RAILWAY_CONFIG_PATHS).map(([component, path]) => [
     component,
-    JSON.parse(readFileSync(resolve(root, railwayConfigPath(manifest, component)), "utf8")),
+    JSON.parse(readFileSync(resolve(root, path), "utf8")),
   ]));
 }
 
@@ -165,12 +164,16 @@ function environmentJson(name) {
 
 function main() {
   const state = environmentJson("SCOPE_RAILWAY_SERVICES_JSON");
+  if (process.argv[2] === "stopped") {
+    process.stdout.write(`${railwayServiceIsStopped(state, process.env.SCOPE_RAILWAY_SERVICE_ID)}\n`);
+    return;
+  }
   if (process.env.SCOPE_PRODUCTION_DEPLOYMENTS_JSON) {
     const manifest = environmentJson("SCOPE_DEPLOYMENT_MANIFEST_JSON");
     const verified = verifyProductionRailwayServices({
       deployments: environmentJson("SCOPE_PRODUCTION_DEPLOYMENTS_JSON"),
       manifest,
-      serviceConfigs: loadRailwayServiceConfigs(manifest),
+      serviceConfigs: loadRailwayServiceConfigs(),
       services: servicesFromState(state, manifest.environments?.production?.environmentId),
     });
     process.stdout.write(`${JSON.stringify(verified)}\n`);

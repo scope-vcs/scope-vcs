@@ -75,8 +75,7 @@ function requiredId(value: unknown, message: string) {
 function parseMemberPermissions(input: unknown): RepositoryMemberPermissions {
   const data = input as Partial<RepositoryMemberPermissions> | null
   return {
-    can_apply_changes: false,
-    can_change_file_visibility: false,
+    can_change_file_visibility: data?.can_change_file_visibility === true,
     can_push: data?.can_push === true,
   }
 }

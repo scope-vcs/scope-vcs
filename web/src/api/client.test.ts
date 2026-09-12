@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import {
+  ApiResponseTooLargeError,
   HttpError,
   InvalidApiResponseError,
   loadJson,
@@ -214,7 +215,7 @@ test('loadJson cancels an oversized response stream before consuming further chu
     },
     cancel() { cancelled = true },
   }), { headers: { 'content-type': 'application/json' } })
-  await assert.rejects(loadJson('/v1/references', okValidator, {}, 150), InvalidApiResponseError)
+  await assert.rejects(loadJson('/v1/references', okValidator, {}, 150), ApiResponseTooLargeError)
   assert.equal(cancelled, true)
   assert.ok(pulls <= 3)
 })
@@ -222,4 +223,46 @@ test('loadJson cancels an oversized response stream before consuming further chu
 test('loadJson accepts a valid response within the streaming byte limit', async () => {
   globalThis.fetch = async () => jsonResponse({ ok: true }, 200)
   assert.deepEqual(await loadJson('/v1/references', okValidator, {}, 100), { ok: true })
+})
+
+test('body read failures preserve their cause and do not report contract failures', async () => {
+  const observed: InvalidApiResponseError[] = []
+  setInvalidApiResponseObserver((error) => observed.push(error))
+  for (const status of [200, 503]) {
+    for (const limit of [undefined, 100]) {
+      for (const failure of [new DOMException('cancelled', 'AbortError'), new Error('connection lost')]) {
+        globalThis.fetch = async () => new Response(new ReadableStream({
+          start(controller) { controller.error(failure) },
+        }), { status, headers: { 'content-type': 'application/json' } })
+        await assert.rejects(loadJson('/v1/repos', okValidator, {}, limit), (error) => error === failure)
+      }
+    }
+  }
+  assert.deepEqual(observed, [])
+})
+
+test('valid JSON above the byte limit has a separate error without a contract report', async () => {
+  const observed: InvalidApiResponseError[] = []
+  setInvalidApiResponseObserver((error) => observed.push(error))
+  for (const status of [200, 503]) {
+    globalThis.fetch = async () => jsonResponse({ ok: true }, status)
+    await assert.rejects(loadJson('/v1/repos', okValidator, {}, 2), (error: unknown) =>
+      error instanceof ApiResponseTooLargeError && error.limit === 2)
+  }
+  assert.deepEqual(observed, [])
+})
+
+test('malformed JSON remains a contract failure on success and error responses', async () => {
+  const observed: InvalidApiResponseError[] = []
+  setInvalidApiResponseObserver((error) => observed.push(error))
+  for (const status of [200, 503]) {
+    for (const limit of [undefined, 100]) {
+      globalThis.fetch = async () => new Response('{', {
+        status, headers: { 'content-type': 'application/json' },
+      })
+      await assert.rejects(loadJson('/v1/repos', okValidator, {}, limit), (error: unknown) =>
+        error instanceof InvalidApiResponseError && error.failureClass === 'json-syntax')
+    }
+  }
+  assert.equal(observed.length, 4)
 })

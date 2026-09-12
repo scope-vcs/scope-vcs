@@ -79,7 +79,9 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
     let Some(metadata) = connect_worker_or_wait(&settings, &health).await else {
         return Ok(());
     };
-    let object_store = object_store_from_env(&settings.data_dir)?;
+    let data_dir = settings.data_dir.clone();
+    let object_store =
+        tokio::task::spawn_blocking(move || object_store_from_env(&data_dir)).await??;
     let git_segment_store = Arc::new(git_segment_store_from_env(&settings)?);
     tokio::try_join!(
         control::run(metadata.clone(), settings.clone(), health.clone()),

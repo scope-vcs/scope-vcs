@@ -79,10 +79,8 @@ if jq -e '.pending | length == 0' "$SCOPE_PRODUCTION_MIGRATION_PLAN" >/dev/null;
   exit 0
 fi
 : "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to retain a snapshot}"
+restore_safe="$(jq -r 'if (.metadataRestoreSafe | type) == "boolean" then .metadataRestoreSafe else error("Migration plan must declare metadataRestoreSafe") end' "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
 pg_dump --dbname="$DATABASE_URL" --schema=public --format=custom --no-owner --no-privileges --file="$SCOPE_STAGING_BASELINE_DIR/database.dump"
-# Manifest retirement queues object deletion when the candidate worker starts.
-# A database-only snapshot cannot restore those objects after the staging trial.
-restore_safe="$(jq -r '[.pending[].name | select(. == "m0043_retire_git_manifests")] | length == 0' "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
 jq -n --argjson safe "$restore_safe" --arg environment "$environment" --arg key "$key" \
   '{environmentId: $environment, ledgerHash: $key, metadataRestoreSafe: $safe}' > "$SCOPE_STAGING_BASELINE_DIR/baseline.json"
 node .github/scripts/staging-baseline-crypto.mjs encrypt \

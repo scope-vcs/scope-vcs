@@ -333,12 +333,18 @@ if (environmentConfig.services?.[process.env.ROUTER_SERVICE_ID]?.groupId !== pro
 '
 }
 
+railway_inventory_read() {
+  node .github/scripts/railway-read.mjs "$@"
+}
+
 service_has_deployment_history() {
+  # Print 0/1 on a successful inventory read; exit status reports errors only.
   local deployments_json
-  deployments_json="$(railway deployment list "${railway_scope[@]}" --service "$1" --limit 1 --json)"
+  deployments_json="$(railway_inventory_read deployment list "${railway_scope[@]}" --service "$1" --limit 1 --json)" || return $?
   DEPLOYMENTS_JSON="$deployments_json" node -e '
-const deployments = JSON.parse(process.env.DEPLOYMENTS_JSON || "[]");
-process.exit(Array.isArray(deployments) && deployments.length > 0 ? 0 : 1);
+const deployments = JSON.parse(process.env.DEPLOYMENTS_JSON);
+if (!Array.isArray(deployments)) throw new Error("Railway deployment inventory must be an array.");
+console.log(deployments.length > 0 ? 1 : 0);
 '
 }
 

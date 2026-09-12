@@ -427,11 +427,7 @@ pub(super) fn execute<R: DeserializeOwned>(
 mod tests {
     use super::*;
     use reqwest::{StatusCode, blocking::Client};
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-        thread,
-    };
+    use std::{io::Write, net::TcpListener, thread};
 
     #[test]
     fn list_requests_sends_the_opaque_cursor_as_a_query_parameter() {
@@ -703,9 +699,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0; 8192];
-            let read = stream.read(&mut request).unwrap();
-            let request = String::from_utf8(request[..read].to_vec()).unwrap();
+            let request = crate::test_support::read_http_request(&mut stream).unwrap();
             assert!(
                 request
                     .lines()

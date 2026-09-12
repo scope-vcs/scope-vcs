@@ -40,6 +40,9 @@ import {
 } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
+import { auth } from '@clerk/tanstack-react-start/server'
+import { useAuth } from '@clerk/tanstack-react-start'
+import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { useCallback, useMemo } from 'react'
 
 const PROJECTION_REBUILDING_MESSAGE = 'repository projection is rebuilding; retry shortly'
@@ -70,24 +73,25 @@ export const Route = createFileRoute('/$owner/$repo/_code/')({
   validateSearch: parseRepoCodeSearch,
   loaderDeps: ({ search }) => ({ file: search.file ?? null }),
   loader: async ({ abortController, deps, params, parentMatchPromise }) => {
+    if (typeof window !== 'undefined') {
+      return { content: null, file: null, contentIdentity: null, fileIdentity: null }
+    }
     const live = (await parentMatchPromise).loaderData as RepoLiveState
-    const { contentIdentity, fileIdentity } = repoCodeCacheKeys(live.repo, deps.file)
+    const { userId } = await auth()
+    const scope = repoResourceScope(live.repo, userId)
+    const { contentIdentity, fileIdentity } = repoCodeCacheKeys(live.repo, scope, deps.file)
     const signal = abortController.signal
-    const content = typeof window === 'undefined'
-      ? loadRepoContent({ data: params, signal })
-      : repoContentResource.load(contentIdentity, '', (signal) => loadRepoContent({ data: params, signal }))
+    const content = loadRepoContent({ data: params, signal })
     const file = deps.file && fileIdentity
-      ? typeof window === 'undefined'
-        ? loadAddressedFile({ ...params, path: deps.file }, signal)
-        : repoFileResource.load(fileIdentity, '', (signal) => loadAddressedFile({ ...params, path: deps.file! }, signal))
+      ? loadAddressedFile({ ...params, path: deps.file }, signal)
       : null
     const initialContent = settleRepoCodeResource(content)
     const initialFile = file ? settleRepoCodeResource(file) : null
     // Client loads already belong to the cache. Only SSR promises need a
     // handoff; retaining a client promise here would replay it on explicit retry.
     return {
-      content: typeof window === 'undefined' ? initialContent : null,
-      file: typeof window === 'undefined' ? initialFile : null,
+      content: initialContent,
+      file: initialFile,
       contentIdentity,
       fileIdentity,
     }
@@ -100,12 +104,14 @@ export const Route = createFileRoute('/$owner/$repo/_code/')({
 function RepoIndexRoute() {
   const params = Route.useParams()
   const { repo } = useRepoLayout()
+  const { userId, isLoaded } = useAuth()
+  const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const page = Route.useLoaderData()
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
   const owner = params.owner
   const repoName = params.repo
-  const { contentIdentity } = repoCodeCacheKeys(repo, null)
+  const { contentIdentity } = repoCodeCacheKeys(repo, scope, null)
   const loadContent = useMemo(() => repoCodeResourceLoader(
     page.contentIdentity === contentIdentity ? page.content : null,
     (signal: AbortSignal): Promise<RepoContent> => loadRepoContent({
@@ -122,7 +128,7 @@ function RepoIndexRoute() {
   // A new version can remove file visibility. Revalidate the landing path from
   // the current tree instead of retaining the previous version's README.
   const selectedPath = search.file ?? (content ? repositoryLandingPath(content.files) : null)
-  const { fileIdentity: selectedFileIdentity } = repoCodeCacheKeys(repo, selectedPath)
+  const { fileIdentity: selectedFileIdentity } = repoCodeCacheKeys(repo, scope, selectedPath)
   const loadSelectedFile = useMemo(() => repoCodeResourceLoader(
     page.fileIdentity === selectedFileIdentity ? page.file : null,
     (signal: AbortSignal) => {
@@ -177,8 +183,10 @@ async function loadAddressedFile(
   return file
 }
 
-function repoCodeCacheKeys(repo: RepoSummaryResponse, path: string | null) {
+function repoCodeCacheKeys(repo: RepoSummaryResponse, accessScope: string | null, path: string | null) {
+  if (!accessScope) return { contentIdentity: null, fileIdentity: null }
   const scope = {
+    scope: accessScope,
     audience: repo.access.can_read_private_files ? 'private' as const : 'public' as const,
     changeVersion: repo.change_version,
     repoId: repo.id,

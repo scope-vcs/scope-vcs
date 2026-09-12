@@ -187,6 +187,7 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         HistoryFeed,
         HistoryEntryDetailResponse,
         HistoryEntryFileResponse,
+        NativeHistoryCommitResponse,
         HistoryVisibilitySummaryResponse,
         HistoryVisibilityChangeResponse,
         CommitFileResponse,

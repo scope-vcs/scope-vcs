@@ -7,6 +7,8 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { verifyStagingTarget, verifyStagingTopology } from './verify-staging-target.mjs'
 
+const deploymentServices = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url), 'utf8')).services
+
 function fixture() {
   const manifest = {
     railway: {
@@ -27,18 +29,21 @@ function fixture() {
       },
     },
     services: {
-      api: { id: 'api', name: 'scope-api', sourceDirectory: 'api', binary: 'scope-vcs' },
-      cache: { id: 'cache', name: 'scope-cache-service', sourceDirectory: 'cache-service', binary: 'scope-cache-service' },
-      'git-router': { id: 'router', name: 'scope-repo-router', sourceDirectory: 'repo-router', binary: 'scope-repo-router' },
-      'media-api': { id: 'media', name: 'scope-media', sourceDirectory: 'media-service', binary: 'scope-media-service' },
-      'media-worker': { id: 'media-worker', name: 'scope-media-worker', sourceDirectory: 'media-worker' },
-      web: { id: 'web', name: 'scope-web', sourceDirectory: 'web' },
-      'run-worker': { id: 'worker', name: 'scope-worker', sourceDirectory: 'worker', binary: 'scope-worker' },
+      api: { id: 'api', name: 'scope-api' },
+      cache: { id: 'cache', name: 'scope-cache-service' },
+      'git-router': { id: 'router', name: 'scope-repo-router' },
+      'media-api': { id: 'media', name: 'scope-media' },
+      'media-worker': { id: 'media-worker', name: 'scope-media-worker' },
+      web: { id: 'web', name: 'scope-web' },
+      'run-worker': { id: 'worker', name: 'scope-worker' },
     },
     mediaResources: {
       bucket: { id: 'media-bucket' },
       staging: { gatewayDomain: 'media-staging.example.test' },
     },
+  }
+  for (const [component, service] of Object.entries(manifest.services)) {
+    service.deployment = deploymentServices[component].deployment
   }
   const services = [
     { id: 'database', name: 'scope-postgres' },
@@ -67,6 +72,7 @@ function candidateCheckout(t) {
   const scripts = join(root, '.github/scripts')
   const bin = join(root, 'bin')
   mkdirSync(scripts, { recursive: true })
+  copyFileSync(new URL('./deployment-components.mjs', import.meta.url), join(scripts, 'deployment-components.mjs'))
   mkdirSync(bin)
   execFileSync('git', ['init', '--quiet', root])
   execFileSync('git', ['-c', 'user.name=Scope Test', '-c', 'user.email=scope@example.test',

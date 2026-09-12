@@ -10,7 +10,7 @@ import { RequestAttachmentEditor } from './request-attachment-editor'
 export function RequestDiscussionComposer({
   onSubmit,
 }: {
-  onSubmit: (body: string) => Promise<boolean>
+  onSubmit: (body: string, submissionId: string) => Promise<boolean>
 }) {
   const [open, setOpen] = useState(false)
 
@@ -37,8 +37,8 @@ export function RequestDiscussionComposer({
       autoFocus
       label="Start a new discussion"
       onCancel={() => setOpen(false)}
-      onSubmit={async (body) => {
-        const posted = await onSubmit(body)
+      onSubmit={async (body, _base, submissionId) => {
+        const posted = await onSubmit(body, submissionId)
         if (posted) setOpen(false)
         return posted
       }}
@@ -62,17 +62,17 @@ export function RequestReplyComposer({
   discussionId: string
   onCancel: () => void
   onCancelQuote: () => void
-  onSubmit: (body: string) => Promise<boolean>
+  onSubmit: (body: string, submissionId: string) => Promise<boolean>
   quote: { author: string; body: string } | null
   reopen: boolean
-  waitAfterReply?: (body: string) => Promise<boolean>
+  waitAfterReply?: (body: string, submissionId: string) => Promise<boolean>
 }) {
   return (
     <RequestAttachmentEditor
       autoFocus
       label={reopen ? 'Reopen and reply' : 'Reply'}
       onCancel={onCancel}
-      onSubmit={onSubmit}
+      onSubmit={(body, _base, submissionId) => onSubmit(body, submissionId)}
       placeholder={
         reopen
           ? 'Explain why this discussion needs to continue…'
@@ -83,7 +83,7 @@ export function RequestReplyComposer({
       secondarySubmit={waitAfterReply ? {
         icon: <Clock3 className="size-3.5" />,
         label: 'Reply & wait',
-        onSubmit: waitAfterReply,
+        onSubmit: (body, _base, submissionId) => waitAfterReply(body, submissionId),
       } : undefined}
       submitIcon={
         reopen ? (

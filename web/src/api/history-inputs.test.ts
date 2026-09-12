@@ -29,11 +29,21 @@ test('validates direct history entry and file diff requests', () => {
   }).entry, 'update-100')
   assert.equal(parseHistoryEntryFileDiffInput({
     entry: 'update-100', owner: 'scope', path: ' /README.md ', repo: 'vcs',
-  }).path, '/README.md')
+  }).path, ' /README.md ')
   assert.throws(
     () => parseHistoryEntryDetailInput({ entry: ' ', owner: 'scope', repo: 'vcs' }),
     /history entry id is required/,
   )
+})
+
+test('history diffs preserve filename whitespace and reject invalid paths', () => {
+  const input = { entry: 'update-100', owner: 'scope', repo: 'vcs' }
+  for (const path of ['/trailing-space.txt ', '/ leading-space.txt', '/tab\t.txt']) {
+    assert.equal(parseHistoryEntryFileDiffInput({ ...input, path }).path, path)
+  }
+  for (const path of [undefined, 12, '', ' ', '/nul\0.txt', 'x'.repeat(4097)]) {
+    assert.throws(() => parseHistoryEntryFileDiffInput({ ...input, path }), /path/)
+  }
 })
 
 test('defaults to pushes and merges and validates the independent feed', () => {

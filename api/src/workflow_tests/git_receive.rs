@@ -261,7 +261,7 @@ async fn published_receive_pack_rejects_non_fast_forward_push() {
 async fn push_only_member_can_apply_content_without_visibility_changes() {
     let state = test_state_with_repo();
     let member_id = "user_push_only";
-    repo_with_push_member(&state, member_id, member_permissions(true, false, false)).await;
+    repo_with_push_member(&state, member_id, member_permissions(true, false)).await;
 
     let persisted = persist_and_promote_test_update(
         &state,
@@ -282,7 +282,7 @@ async fn push_only_member_can_apply_content_without_visibility_changes() {
 async fn published_push_rechecks_member_permission_before_persisting() {
     let state = test_state_with_repo();
     let member_id = "user_removed_during_push";
-    repo_with_push_member(&state, member_id, member_permissions(true, false, true)).await;
+    repo_with_push_member(&state, member_id, member_permissions(true, false)).await;
     state
         .metadata
         .repositories()

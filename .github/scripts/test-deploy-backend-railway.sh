@@ -9,7 +9,7 @@ mkdir -p "$test_dir/bin" "$test_dir/api"
 printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/api/.scope-deployment-sha"
 
 cat > "$test_dir/services.json" <<'JSON'
-{"releasePolicy":{"maintenanceEnabled":true,"writerDrainTimeoutSeconds":120,"migrationLockTimeoutSeconds":120,"migrationStatementTimeoutSeconds":3600},"services":{"api":{"id":"scope-api","sourceDirectory":"api","binary":"scope-vcs"},"run-worker":{"id":"scope-worker","sourceDirectory":"worker","binary":"scope-worker"},"cache":{"id":"scope-cache-service","sourceDirectory":"cache-service","binary":"scope-cache-service"},"git-router":{"id":"scope-repo-router","sourceDirectory":"repo-router","binary":"scope-repo-router"},"media-api":{"id":"scope-media","sourceDirectory":"media-service","binary":"scope-media-service"},"media-worker":{"id":"scope-media-worker","sourceDirectory":"media-worker"},"web":{"id":"scope-web","sourceDirectory":"web"}}}
+{"releasePolicy":{"maintenanceEnabled":true,"writerDrainTimeoutSeconds":120,"migrationLockTimeoutSeconds":120,"migrationStatementTimeoutSeconds":3600},"services":{"api":{"id":"scope-api","deployment":{"runtimeConfig":"api/railway.json","verifyTransitionConfig":true}},"run-worker":{"id":"scope-worker","deployment":{"runtimeConfig":"worker/railway.json","verifyTransitionConfig":true}},"cache":{"id":"scope-cache-service","deployment":{"runtimeConfig":"cache-service/railway.json","verifyTransitionConfig":true}},"git-router":{"id":"scope-repo-router","deployment":{"runtimeConfig":"repo-router/railway.json","verifyTransitionConfig":true}},"media-api":{"id":"scope-media","deployment":{"runtimeConfig":"media-service/railway.json","verifyTransitionConfig":true}},"media-worker":{"id":"scope-media-worker","deployment":{"runtimeConfig":"media-worker/railway.json","verifyTransitionConfig":false}},"web":{"id":"scope-web","deployment":{"runtimeConfig":"web/railway.json","verifyTransitionConfig":true}}}}
 JSON
 
 # Persist the real journal API requests in fake remote storage across runner invocations.
@@ -158,6 +158,8 @@ run_cutover() {
   local router_instance_exists="${FAKE_ROUTER_INSTANCE_EXISTS:-1}"
   local unhealthy_after_up_service="${FAKE_UNHEALTHY_AFTER_UP_SERVICE:-}"
   local skip_up_service="${FAKE_SKIP_UP_SERVICE:-}"
+  local history_failure_service="${FAKE_HISTORY_FAILURE_SERVICE:-}"
+  local stopped_media_service="${FAKE_STOPPED_MEDIA_SERVICE:-}"
   if [[ -z "$successful_deployments" ]]; then
     successful_deployments='{"api":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-api"},"run-worker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-worker"},"cache":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-cache-service"},"media-api":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-media"},"media-worker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-media-worker","artifactDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"git-router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}'
   fi
@@ -167,6 +169,7 @@ run_cutover() {
   local state="$test_dir/$name-state"
   local trace="$test_dir/$name-trace"
   mkdir -p "$state"
+  [[ -z "$stopped_media_service" ]] || touch "$state/stopped-$stopped_media_service"
   [[ "$initial_exact" == "1" ]] && touch "$state/exact"
   if [[ "$initial_closed" == "1" ]]; then
     touch "$state/stopped-scope-api" "$state/stopped-scope-worker" \
@@ -213,6 +216,7 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     FAKE_RAILWAY_TRACE="$trace" \
     FAKE_FAIL_APPLY="$fail_apply" \
     FAKE_FAIL_UP_SERVICE="$fail_up_service" \
+    FAKE_HISTORY_FAILURE_SERVICE="$history_failure_service" \
     FAKE_CRASH_UP_SERVICE="$crash_up_service" \
     FAKE_NEW_REPLICAS="$new_replicas" \
     FAKE_DEGRADED_SERVICE="$degraded_service" \
@@ -330,6 +334,28 @@ if grep -E 'graphql stop|maintenance apply' "$test_dir/changed-plan-trace"; then
   echo "changed preclosure plan must prevent closure" >&2
   exit 1
 fi
+
+for service in scope-media scope-media-worker; do
+  FAKE_HISTORY_FAILURE_SERVICE="$service" run_cutover "history-failure-$service"
+  [[ "$(cat "$test_dir/history-failure-$service-result")" != "0" ]]
+  if grep -E 'graphql (stop|restart)|gate (enter|reclose)|up |maintenance apply' \
+    "$test_dir/history-failure-$service-trace"; then
+    echo "failed deployment inventory must not authorize closure or activation" >&2
+    exit 1
+  fi
+done
+FAKE_INITIAL_EXACT=1 FAKE_INITIAL_CLOSED=1 FAKE_NO_HISTORY=1 \
+  FAKE_HISTORY_FAILURE_SERVICE=scope-api run_cutover history-failure-bootstrap
+[[ "$(cat "$test_dir/history-failure-bootstrap-result")" != "0" ]]
+FAKE_INITIAL_EXACT=1 FAKE_STOPPED_MEDIA_SERVICE=scope-media \
+  FAKE_HISTORY_FAILURE_SERVICE=scope-media run_cutover history-failure-stopped-media
+[[ "$(cat "$test_dir/history-failure-stopped-media-result")" != "0" ]]
+for name in history-failure-bootstrap history-failure-stopped-media; do
+  if grep -E 'graphql (stop|restart)|gate (enter|reclose)|up |maintenance apply' "$test_dir/$name-trace"; then
+    echo "failed deployment inventory must not authorize bootstrap" >&2
+    exit 1
+  fi
+done
 
 run_cutover success
 [[ "$(cat "$test_dir/success-result")" == "0" ]]

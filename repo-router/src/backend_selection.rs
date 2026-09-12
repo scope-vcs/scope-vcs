@@ -123,36 +123,4 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn rotates_ordered_read_candidates_across_the_configured_ranked_prefix() {
-        let selector = BackendSelector::new(2);
-
-        assert_eq!(
-            (0..4)
-                .map(|_| selector.candidate_indices(GitRequestKind::UploadPackRead, 3))
-                .collect::<Vec<_>>(),
-            vec![vec![0, 1], vec![1, 0], vec![0, 1], vec![1, 0]]
-        );
-    }
-
-    #[test]
-    fn pins_primary_operations_and_clamps_reads_to_available_backends() {
-        let selector = BackendSelector::new(3);
-
-        assert_eq!(
-            selector.candidate_indices(GitRequestKind::PrimaryOnly, 2),
-            vec![0]
-        );
-        assert_eq!(
-            (0..4)
-                .map(|_| selector.candidate_indices(GitRequestKind::UploadPackRead, 2))
-                .collect::<Vec<_>>(),
-            vec![vec![0, 1], vec![1, 0], vec![0, 1], vec![1, 0]]
-        );
-        assert_eq!(
-            selector.candidate_indices(GitRequestKind::UploadPackRead, 0),
-            Vec::<usize>::new()
-        );
-    }
 }

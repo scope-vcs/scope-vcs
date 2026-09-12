@@ -42,23 +42,19 @@ fn commit_paths_accepts_large_identity_output_and_uses_the_first_parent() {
 }
 
 #[test]
-fn commit_paths_rejects_a_root_commit_with_the_existing_conflict() {
+fn commit_paths_accepts_a_root_commit() {
     let fixture = fixture();
 
-    let error = commit_paths(
+    let (paths, hidden) = commit_paths(
         fixture.directory.path(),
         &Policy::new(Visibility::Public),
         RepositoryAccess::public(),
         &fixture.base,
     )
-    .err()
     .unwrap();
 
-    assert_eq!(error.status(), StatusCode::CONFLICT);
-    assert_eq!(
-        error.public_message(),
-        "request revision commit must have a parent"
-    );
+    assert!(paths.is_empty());
+    assert!(!hidden);
 }
 
 #[test]

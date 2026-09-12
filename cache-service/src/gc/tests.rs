@@ -166,17 +166,27 @@ async fn expired_uploads_drain_multiple_batches_with_bounded_deletions() {
 }
 
 #[tokio::test]
-async fn failed_uploads_are_retried_on_the_next_sweep() {
+async fn failed_uploads_wait_for_claim_expiry_before_retrying() {
     let fixture = Fixture::new().await;
     for index in 1..=101 {
         fixture.upload(index, fixture.now - 3600, false).await;
     }
     fixture.fail.store(true, Ordering::SeqCst);
-    reconcile(&fixture.state).await.unwrap();
-    assert_eq!(fixture.requests.load(Ordering::SeqCst), 100);
+    reconcile_at(&fixture.state, fixture.now).await.unwrap();
+    assert_eq!(fixture.requests.load(Ordering::SeqCst), 101);
     fixture.fail.store(false, Ordering::SeqCst);
-    reconcile(&fixture.state).await.unwrap();
-    assert_eq!(fixture.requests.load(Ordering::SeqCst), 201);
+    reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS - 1)
+        .await
+        .unwrap();
+    assert_eq!(fixture.requests.load(Ordering::SeqCst), 101);
+    reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS)
+        .await
+        .unwrap();
+    assert_eq!(fixture.requests.load(Ordering::SeqCst), 202);
+    reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS * 2)
+        .await
+        .unwrap();
+    assert_eq!(fixture.requests.load(Ordering::SeqCst), 202);
     assert!(
         fixture
             .state

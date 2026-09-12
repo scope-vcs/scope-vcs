@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { snapshotGate, enterGate, restoreGateConfiguration, verifyGateDeployment } from './railway-maintenance-gate.mjs';
+import { snapshotGate, enterGate, recloseGate, restoreGateConfiguration, verifyGateDeployment } from './railway-maintenance-gate.mjs';
 const base = { projectId: '11111111-1111-1111-1111-111111111111', environmentId: '22222222-2222-2222-2222-222222222222', serviceId: '33333333-3333-3333-3333-333333333333', image: `ghcr.io/scope-vcs/scope-api@sha256:${'a'.repeat(64)}` };
 const previous = { source: { image: 'previous-image' }, build: { buildCommand: null, rootDirectory: '/', railwayConfigFile: null }, deploy: { startCommand: 'normal-server', healthcheckPath: '/healthz', healthcheckTimeout: 30, preDeployCommand: null } };
 test('snapshot persists only changed configuration before gate mutations', () => {
@@ -52,13 +52,52 @@ test('interrupted activation reconciles a unique exact gate without redeploying'
   assert.throws(() => enterGate(gate, { ...options, deployments: () => [candidate, { ...candidate, id: 'duplicate' }] }), /Multiple/);
   assert.throws(() => enterGate(gate, { ...options, deployments: () => [{ ...candidate, createdAt: '2026-09-08T12:00:00Z' }] }), /reconcile/);
 });
-test('reclose retains original configuration and replaces removed gate identity', async () => {
-  const { recloseGate } = await import('./railway-maintenance-gate.mjs');
+test('reclose retains original configuration and replaces removed gate identity', () => {
   const gate = { ...base, previous, deploymentId: 'removed-gate', phase: 'active' };
-  const reset = recloseGate(gate, { deployments: () => [{ id: 'new-writer', serviceId: base.serviceId, status: 'SUCCESS' }, { id: 'removed-gate', status: 'REMOVED' }], persist: () => {}, railway: query => ({ data: query.includes('MaintenanceGateConfig') ? { serviceInstanceUpdate: true } : { serviceInstanceDeployV2: 'new-gate' } }) });
+  const reset = recloseGate(gate, { deployments: () => [{ id: 'new-writer', serviceId: base.serviceId, status: 'SUCCESS' }, { id: 'removed-gate', serviceId: base.serviceId, status: 'REMOVED' }], persist: () => {}, railway: query => ({ data: query.includes('MaintenanceGateConfig') ? { serviceInstanceUpdate: true } : { serviceInstanceDeployV2: 'new-gate' } }) });
   assert.equal(reset.deploymentId, 'new-gate');
   assert.deepEqual(reset.previous, previous);
   assert.deepEqual(reset.predecessorIds, ['new-writer']);
+});
+test('reclose preserves a lost deployment response until the exact attempt appears', () => {
+  let persisted;
+  const gate = { ...base, previous, phase: 'snapshotted', capturedAt: '2026-09-09T12:00:00Z' };
+  assert.throws(() => enterGate(gate, {
+    persist: value => { persisted = value; },
+    railway: query => {
+      if (query.includes('MaintenanceGateConfig')) return { data: { serviceInstanceUpdate: true } };
+      throw new Error('Deployment accepted but response lost');
+    },
+  }), /response lost/);
+  assert.equal(persisted.phase, 'deploying');
+  const options = { railway: () => assert.fail('must not mutate'), persist: () => {}, deployments: () => [] };
+  assert.throws(() => recloseGate(persisted, options), /outcome is unknown/);
+  const candidate = { id: 'accepted-gate', serviceId: base.serviceId, createdAt: '2026-09-09T12:01:00Z', status: 'SUCCESS', meta: { serviceManifest: { source: { image: base.image }, deploy: { startCommand: '/app/bin/scope-maintenance serve' } } } };
+  assert.equal(recloseGate(persisted, { ...options, deployments: () => [candidate] }).deploymentId, candidate.id);
+  assert.throws(() => recloseGate(persisted, { ...options, deployments: () => [candidate, { ...candidate, id: 'duplicate' }] }), /Multiple/);
+});
+test('a gate absent from inventory must have positive terminal evidence before replacement', () => {
+  const gate = { ...base, previous, phase: 'active', deploymentId: 'old-gate' };
+  for (const deployment of [null, { id: 'old-gate', serviceId: base.serviceId, status: 'SUCCESS' }, { id: 'old-gate', serviceId: 'other', status: 'REMOVED' }]) {
+    assert.throws(() => recloseGate(gate, {
+      persist: () => assert.fail('must preserve journal'), deployments: () => [],
+      railway: query => {
+        assert.match(query, /^query MaintenancePreviousGate/);
+        return { data: { deployment } };
+      },
+    }), /outcome is unknown/);
+  }
+  const calls = [];
+  const replacement = recloseGate(gate, {
+    persist: () => {}, deployments: () => [],
+    railway: query => {
+      calls.push(query);
+      if (query.startsWith('query')) return { data: { deployment: { id: 'old-gate', serviceId: base.serviceId, status: 'REMOVED' } } };
+      return { data: query.includes('MaintenanceGateConfig') ? { serviceInstanceUpdate: true } : { serviceInstanceDeployV2: 'replacement' } };
+    },
+  });
+  assert.equal(replacement.deploymentId, 'replacement');
+  assert.equal(calls.length, 3);
 });
 test('predecessor shutdown targets exact old deployment and refuses gate identity', async () => {
   const { stopGatePredecessors } = await import('./railway-maintenance-gate.mjs');

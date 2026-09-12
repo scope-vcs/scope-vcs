@@ -10,11 +10,11 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    policy::{ScopePath, Visibility},
+    policy::ScopePath,
     projection::NativePublicCommit,
     projection::{ProjectionViewKey, project_graph},
-    repo_control::is_public_request_protected_path,
     repository::Repository,
+    requests::{PublicRequestPathError, PublicRequestPaths},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{collections::BTreeSet, path::Path as FsPath};
@@ -286,13 +286,19 @@ fn ensure_public_request_commit_paths(
     staging_repo: &FsPath,
     commit_oid: &str,
 ) -> Result<Vec<ScopePath>, ApiError> {
+    let policy = PublicRequestPaths::new(repo, public_visible_paths);
     let mut changed_paths = BTreeSet::new();
     for path in public_request_changed_paths(staging_repo, commit_oid)? {
-        changed_paths.insert(ensure_public_request_path(
-            repo,
-            public_visible_paths,
-            &path,
-        )?);
+        let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
+        policy
+            .ensure_editable(&scope_path)
+            .map_err(|error| match error {
+                PublicRequestPathError::ProtectedPath => ApiError::protected_paths(vec![path]),
+                PublicRequestPathError::PrivatePath => {
+                    ApiError::conflict("public request cannot change a private path")
+                }
+            })?;
+        changed_paths.insert(scope_path);
     }
     Ok(changed_paths.into_iter().collect())
 }
@@ -341,59 +347,6 @@ fn public_request_changed_paths(
         changed_paths.push(path);
     }
     Ok(changed_paths)
-}
-
-fn ensure_public_request_path(
-    repo: &Repository,
-    public_visible_paths: &BTreeSet<String>,
-    path: &str,
-) -> Result<ScopePath, ApiError> {
-    let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
-    if is_public_request_protected_path(&scope_path) {
-        return Err(ApiError::protected_paths(vec![path.to_string()]));
-    }
-    if public_visible_paths
-        .iter()
-        .any(|path| path == scope_path.as_str())
-    {
-        return Ok(scope_path);
-    }
-    if repo.live_file_exists(&scope_path) {
-        return Err(ApiError::conflict(
-            "public request cannot change a private path",
-        ));
-    }
-    if repo_path_has_private_history(repo, &scope_path) {
-        return Err(ApiError::conflict(
-            "public request cannot change a private path",
-        ));
-    }
-    if repo.repo_config.visibility_for_path(&scope_path) == Visibility::Public {
-        Ok(scope_path)
-    } else {
-        Err(ApiError::conflict(
-            "public request cannot change a private path",
-        ))
-    }
-}
-
-fn repo_path_has_private_history(repo: &Repository, scope_path: &ScopePath) -> bool {
-    repo.graph
-        .commits
-        .iter()
-        .flat_map(|commit| &commit.changes)
-        .any(|change| {
-            change.path.as_str() == scope_path.as_str() && change.visibility == Visibility::Private
-        })
-        || repo
-            .visibility_change_sets
-            .iter()
-            .flat_map(|set| &set.changes)
-            .any(|change| {
-                change.path.as_str() == scope_path.as_str()
-                    && (change.old_visibility == Visibility::Private
-                        || change.new_visibility == Visibility::Private)
-            })
 }
 
 #[cfg(test)]

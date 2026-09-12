@@ -22,8 +22,8 @@ export const requestDiscussionReferenceResource = createCachedResource<RequestDi
   weightOf: (page) => JSON.stringify(page).length * 2,
 })
 
-export function requestDiscussionReferenceIdentity(accessScope: string, commitKey: string) {
-  return `${accessScope}\0${commitKey}`
+export function requestDiscussionReferenceIdentity(accessScope: string, requestId: string, commitKey: string) {
+  return `${accessScope}\0${requestId}\0${commitKey}`
 }
 
 export function discussionReferenceQuery(
@@ -111,7 +111,7 @@ export function appendDiscussionReferencePage(
   page: RequestDiscussionPage,
 ): RequestDiscussionPage {
   if (page.snapshot_version !== previous.snapshot_version) {
-    throw new Error('Discussions changed. Reload Changes to continue.')
+    throw new Error('Discussions changed. Retry to refresh the references.')
   }
   if (page.next_cursor && page.next_cursor === previous.next_cursor) {
     throw new Error('Discussion reference pagination repeated a cursor.')

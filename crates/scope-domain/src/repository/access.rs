@@ -18,7 +18,6 @@ pub struct RepositoryAccess {
     pub can_read_private_files: bool,
     pub can_push: bool,
     pub can_change_file_visibility: bool,
-    pub can_apply_changes: bool,
     pub can_manage_members: bool,
     pub can_delete_repo: bool,
 }
@@ -122,7 +121,6 @@ impl RepositoryAccess {
             can_read_private_files: false,
             can_push: false,
             can_change_file_visibility: false,
-            can_apply_changes: false,
             can_manage_members: false,
             can_delete_repo: false,
         }
@@ -142,7 +140,6 @@ pub fn repository_access_for_user_id(
             can_read_private_files: true,
             can_push: ready,
             can_change_file_visibility: true,
-            can_apply_changes: true,
             can_manage_members: ready,
             can_delete_repo: true,
         };
@@ -156,7 +153,6 @@ pub fn repository_access_for_user_id(
         can_read_private_files: ready,
         can_push: ready && permissions.can_push,
         can_change_file_visibility: ready && permissions.can_change_file_visibility,
-        can_apply_changes: ready && permissions.can_apply_changes,
         can_manage_members: false,
         can_delete_repo: false,
     }
@@ -333,7 +329,6 @@ mod tests {
             let permissions = permissions.map(|can_push| RepositoryMemberPermissions {
                 can_push,
                 can_change_file_visibility: false,
-                can_apply_changes: false,
             });
             let policy = repository_push_policy_for_user_id("owner", state, permissions, user);
             assert_eq!(policy.mode, expected, "{state:?} {user}");

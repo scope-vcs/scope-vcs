@@ -82,7 +82,7 @@ test('native installer installs and updates on PATH, rejects bad checksums, and 
   const destination = join(installDir, executable);
   const env = { ...process.env, SCOPE_INSTALL_DIR: installDir };
   if (!windows) env.PATH = `${installDir}${delimiter}${process.env.PATH}`;
-  async function install() {
+  async function install({ processOnly = false, competing = false } = {}) {
     if (!windows) return execute('sh', [script], { env, timeout: 15_000 });
     // Verify the installer changes the current PowerShell PATH, then restore the
     // runner's persisted user PATH even when installation fails.
@@ -90,16 +90,37 @@ test('native installer installs and updates on PATH, rejects bad checksums, and 
       $ErrorActionPreference = 'Stop'
       $previousUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
       try {
-        . $env:SCOPE_TEST_INSTALL_SCRIPT
-        if ((Get-Command scope).Source -ne (Join-Path $env:SCOPE_INSTALL_DIR 'scope.exe')) {
-          throw 'installed scope is not first on PATH'
+        if ($env:SCOPE_TEST_PROCESS_ONLY -eq 'true') {
+          $env:Path = "$env:SCOPE_INSTALL_DIR;$env:Path"
         }
-        scope --version
+        if ($env:SCOPE_TEST_COMPETING -eq 'true') {
+          $env:Path = "$env:SCOPE_TEST_COMPETING_DIR;$env:Path"
+        }
+        . $env:SCOPE_TEST_INSTALL_SCRIPT
+        $expectedCommand = if ($env:SCOPE_TEST_COMPETING -eq 'true') {
+          Join-Path $env:SCOPE_TEST_COMPETING_DIR 'scope.exe'
+        } else { Join-Path $env:SCOPE_INSTALL_DIR 'scope.exe' }
+        if ((Get-Command scope).Source -ne $expectedCommand) {
+          throw 'installer changed command precedence unexpectedly'
+        }
+        if (-not (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'User')) $env:SCOPE_INSTALL_DIR)) {
+          throw 'install directory was not persisted in user PATH'
+        }
+        if ($env:SCOPE_TEST_PROCESS_ONLY -eq 'true') {
+          $savedProcessPath = $env:Path
+          $shell = (Get-Command pwsh).Source
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+          try {
+            $resolved = & $shell -NoProfile -Command '(Get-Command scope).Source'
+            if ($resolved -ne (Join-Path $env:SCOPE_INSTALL_DIR 'scope.exe')) { throw 'new shell cannot resolve the installed scope' }
+          } finally { $env:Path = $savedProcessPath }
+        }
+        & (Join-Path $env:SCOPE_INSTALL_DIR 'scope.exe') --version
         if ($LASTEXITCODE -ne 0) { throw 'installed scope failed' }
       } finally {
         [Environment]::SetEnvironmentVariable('Path', $previousUserPath, 'User')
       }
-    `], { env: { ...env, SCOPE_TEST_INSTALL_SCRIPT: script }, timeout: 15_000 });
+    `], { env: { ...env, SCOPE_TEST_INSTALL_SCRIPT: script, SCOPE_TEST_PROCESS_ONLY: String(processOnly), SCOPE_TEST_COMPETING: String(competing), SCOPE_TEST_COMPETING_DIR: join(workspace, 'competing bin') }, timeout: 15_000 });
   }
 
   await install();
@@ -108,6 +129,13 @@ test('native installer installs and updates on PATH, rejects bad checksums, and 
   if (!windows) {
     const found = await execute('sh', ['-c', 'command -v scope'], { env });
     assert.equal(found.stdout.trim(), destination);
+  }
+
+  if (windows) {
+    await install({ processOnly: true });
+    await mkdir(join(workspace, 'competing bin'));
+    await writeFile(join(workspace, 'competing bin', executable), bytes);
+    await install({ competing: true });
   }
 
   // An existing installation must be replaced rather than skipped.

@@ -200,13 +200,6 @@ impl MediaStorage {
         Ok(())
     }
 
-    pub async fn delete_staged_part(
-        &self,
-        part: &StagedMediaPart,
-    ) -> Result<(), MediaStorageError> {
-        self.delete_object_key(&part.object_key).await
-    }
-
     pub async fn delete_object_key(&self, object_key: &str) -> Result<(), MediaStorageError> {
         if !object_key.starts_with("media/v1/staged/")
             || object_key.len() > 1024
@@ -216,7 +209,8 @@ impl MediaStorage {
                 "media object key is outside the staged media namespace",
             ));
         }
-        self.delete_key(object_key.to_string()).await
+        let key = object_key.to_string();
+        self.run_blocking(move |store| store.delete(&key)).await
     }
 
     async fn read_verified_chunk(&self, chunk: &MediaChunk) -> Result<Vec<u8>, MediaStorageError> {
@@ -234,10 +228,6 @@ impl MediaStorage {
             ));
         }
         Ok(bytes)
-    }
-
-    async fn delete_key(&self, key: String) -> Result<(), MediaStorageError> {
-        self.run_blocking(move |store| store.delete(&key)).await
     }
 
     async fn run_blocking<T, F>(&self, operation: F) -> Result<T, MediaStorageError>

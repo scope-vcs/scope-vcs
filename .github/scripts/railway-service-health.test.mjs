@@ -4,12 +4,13 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { RAILWAY_COMPONENTS, RAILWAY_CONFIG_PATHS } from "./deployment-components.mjs";
+
 import {
-  RAILWAY_CONFIG_COMPONENTS,
-  RAILWAY_COMPONENTS,
   assertEffectiveRailwayDeployConfig,
   assertHealthyRailwayService,
   railwayServicesFromStatus,
+  railwayServiceIsStopped,
   verifyProductionRailwayServices,
 } from "./railway-service-health.mjs";
 
@@ -20,6 +21,16 @@ const expectedDeploy = {
   overlapSeconds: "30",
   drainingSeconds: "30",
 };
+
+test("writer closure requires explicit nonnegative integer replica evidence", () => {
+  assert.equal(railwayServiceIsStopped([{ id: "api", replicas: { running: 0, crashed: 0 } }], "api"), true);
+  assert.equal(railwayServiceIsStopped([{ id: "api", replicas: { running: 1, crashed: 0 } }], "api"), false);
+  for (const replicas of [undefined, null, {}, { running: 0 }, { crashed: 0 }, { running: null, crashed: 0 }, { running: "0", crashed: 0 }, { running: 0, crashed: -1 }, { running: 0.5, crashed: 0 }]) {
+    assert.throws(() => railwayServiceIsStopped([{ id: "api", replicas }], "api"), /replica evidence/);
+  }
+  assert.throws(() => railwayServiceIsStopped([], "api"), /exactly one/);
+  assert.throws(() => railwayServiceIsStopped([{ id: "api" }, { id: "api" }], "api"), /exactly one/);
+});
 
 function healthyService(id) {
   return {
@@ -187,7 +198,7 @@ test("production verification binds every live service to durable Railway eviden
   const services = [];
   const serviceConfigs = {};
   for (const component of RAILWAY_COMPONENTS) {
-    manifest.services[component] = { id: component, sourceDirectory: component };
+    manifest.services[component] = { id: component };
     deployments[component] = {
       sourceSha: SOURCE_SHA,
       provider: "railway",
@@ -197,7 +208,7 @@ test("production verification binds every live service to durable Railway eviden
     const service = healthyService(component);
     if (component === "cli-downloads") service.effectiveDeploy = undefined;
     services.push(service);
-    if (RAILWAY_CONFIG_COMPONENTS.includes(component)) {
+    if (RAILWAY_CONFIG_PATHS[component]) {
       serviceConfigs[component] = { deploy: expectedDeploy };
     }
   }

@@ -2,7 +2,7 @@
 //! global order: every processing job first, then every attachment, with
 //! identifiers sorted inside each class.
 
-use super::persistence::attachment_from_row;
+use super::persistence::attachment_by_id;
 use crate::error::PostgresError;
 use scope_domain::requests::attachments::RequestAttachment;
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement};
@@ -32,10 +32,12 @@ pub(super) async fn lock_attachment<C>(
 where
     C: ConnectionTrait,
 {
-    let row = lock_attachment_row(conn, attachment_id)
+    lock_attachment_row(conn, attachment_id)
         .await?
         .ok_or_else(|| PostgresError::not_found("request attachment not found"))?;
-    attachment_from_row(conn, row).await
+    attachment_by_id(conn, attachment_id)
+        .await?
+        .ok_or_else(|| PostgresError::not_found("request attachment not found"))
 }
 
 /// Locks the processing job row `FOR UPDATE`; returns whether one exists so

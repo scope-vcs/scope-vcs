@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { requestQueueResource } from './request-queue-cache'
+import { runRequestContentSubmission } from './request-attachment-drafts'
 import { openRequestDiscussionReplies, requestDiscussionRepliesResource } from './request-discussion-replies-resource'
 import type {
   CreateReplyInput,
@@ -175,10 +176,12 @@ export function useRequestDiscussionReplies({
       clientReplyId?: string
       replyToReplyId?: string | null
       retryReference?: RequestDiscussionReplyView['reply_to']
+      submissionId?: string
       waitAfterReply?: boolean
     } = {},
   ) {
-    const clientReplyId = options.clientReplyId ?? crypto.randomUUID()
+    const clientReplyId = options.clientReplyId ?? options.submissionId ?? crypto.randomUUID()
+    return runRequestContentSubmission(clientReplyId, async () => {
     const replyToReplyId = options.replyToReplyId === undefined
       ? quoteId
       : options.replyToReplyId
@@ -236,6 +239,7 @@ export function useRequestDiscussionReplies({
       )
       return false
     }
+    })
   }
 
   const canPostReply =
@@ -304,4 +308,3 @@ function optimisticReply({
       : null,
   }
 }
-

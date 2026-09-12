@@ -15,10 +15,12 @@ import { useId, useState } from 'react'
 import type { RepoSummaryResponse } from '@/api/types.generated'
 
 export function DeleteRepositoryDialog({
+  error,
   onCancel,
   onConfirm,
   repo,
 }: {
+  error: string | null
   onCancel: () => void
   onConfirm: (repo: RepoSummaryResponse) => Promise<void>
   repo: RepoSummaryResponse
@@ -90,6 +92,8 @@ export function DeleteRepositoryDialog({
               />
             </div>
           )}
+
+          {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
 
           <AlertDialogFooter>
             {!confirmed ? (

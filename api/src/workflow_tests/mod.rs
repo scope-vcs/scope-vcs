@@ -621,12 +621,10 @@ fn test_repository_member(
 fn member_permissions(
     can_push: bool,
     can_change_file_visibility: bool,
-    can_apply_changes: bool,
 ) -> RepositoryMemberPermissions {
     RepositoryMemberPermissions {
         can_push,
         can_change_file_visibility,
-        can_apply_changes,
     }
 }
 
@@ -786,6 +784,16 @@ impl scope_object_store::ObjectStore for DeleteFailsObjectStore {
         ))
     }
 
+    fn get_bounded(
+        &self,
+        _key: &str,
+        _max_bytes: usize,
+    ) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
+        Err(scope_object_store::ObjectStoreError::not_found(
+            "object not found",
+        ))
+    }
+
     fn delete(&self, _key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
         Err(scope_object_store::ObjectStoreError::service_unavailable(
             "delete failed",
@@ -806,6 +814,14 @@ impl scope_object_store::ObjectStore for PutFailsObjectStore {
 
     fn get(&self, key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
         scope_object_store::ObjectStore::get(self.readable.as_ref(), key)
+    }
+
+    fn get_bounded(
+        &self,
+        key: &str,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
+        scope_object_store::ObjectStore::get_bounded(self.readable.as_ref(), key, max_bytes)
     }
 
     fn delete(&self, key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
@@ -863,15 +879,9 @@ async fn drain_outbox(state: &AppState, label: &str) -> scope_postgres::db::Outb
     let report = state
         .metadata
         .jobs()
-        .run_ready_outbox_jobs(
-            label,
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .run_ready_outbox_jobs(label, 10, &|| {
+            crate::persistence::unix_now().map_err(crate::error::ApiError::into_operator_diagnostic)
+        })
         .await
         .unwrap();
     assert_eq!(report.failed, 0);

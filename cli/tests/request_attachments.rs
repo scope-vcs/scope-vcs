@@ -1,3 +1,5 @@
+#[path = "request_attachments/cleanup.rs"]
+mod cleanup;
 mod support;
 
 use axum::{
@@ -481,6 +483,7 @@ fn request_edit_appends_attachment_to_supplied_description_file() {
 #[derive(Default)]
 struct FixtureState {
     api_url: String,
+    block_cleanup: Option<std::path::PathBuf>,
     fail_second_part_once: bool,
     fail_discussion_once: bool,
     fail_grant_once: bool,
@@ -568,6 +571,19 @@ impl MediaFixture {
     fn command(&self, cwd: &std::path::Path) -> Command {
         self.server.command(cwd)
     }
+
+    fn request_command(
+        &self,
+        cwd: &std::path::Path,
+        args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+    ) -> Command {
+        let mut command = self.command(cwd);
+        command
+            .args(["--json", "--repo", "owner/repo", "request"])
+            .args(args)
+            .args(["--request", "req_one"]);
+        command
+    }
 }
 
 async fn session() -> Json<Value> {
@@ -580,7 +596,7 @@ async fn session() -> Json<Value> {
 
 async fn repository() -> Json<Value> {
     Json(repository_response(json!({
-        "access":{"actor":"Owner","can_read_private_files":true,"can_push":true,"can_change_file_visibility":true,"can_apply_changes":true,"can_manage_members":true,"can_delete_repo":true},
+        "access":{"actor":"Owner","can_read_private_files":true,"can_push":true,"can_change_file_visibility":true,"can_manage_members":true,"can_delete_repo":true},
         "open_request_count":1
     })))
 }
@@ -712,7 +728,9 @@ async fn edit_request(
 ) -> Response {
     let mut state = state.lock().unwrap();
     state.edits.push(body.clone());
-    state.current_description = body["description_markdown"].as_str().unwrap().to_string();
+    if let Some(description) = body["description_markdown"].as_str() {
+        state.current_description = description.to_string();
+    }
     if state.fail_edit_once {
         state.fail_edit_once = false;
         return (
@@ -723,6 +741,7 @@ async fn edit_request(
         )
             .into_response();
     }
+    block_cleanup(&mut state);
     Json(json!({"request":request_json(&state.current_description)})).into_response()
 }
 
@@ -743,6 +762,7 @@ async fn create_discussion(
         )
             .into_response();
     }
+    block_cleanup(&mut state);
     Json(json!({
         "discussion":{
             "id":"dsc_one","request_id":"req_one",
@@ -772,11 +792,9 @@ async fn reopen_and_reply(
 }
 
 fn reply_response(state: Arc<Mutex<FixtureState>>, operation: &str, body: Value) -> Json<Value> {
-    state
-        .lock()
-        .unwrap()
-        .replies
-        .push((operation.to_string(), body.clone()));
+    let mut state = state.lock().unwrap();
+    state.replies.push((operation.to_string(), body.clone()));
+    block_cleanup(&mut state);
     let reply = json!({
         "id":"rpl_one","discussion_id":"dsc_one","position":2,
         "author":{"id":"usr_test","handle":"owner"},
@@ -793,6 +811,13 @@ fn reply_response(state: Arc<Mutex<FixtureState>>, operation: &str, body: Value)
         },
         "reply":reply
     }))
+}
+
+fn block_cleanup(state: &mut FixtureState) {
+    if let Some(lock) = state.block_cleanup.take() {
+        fs::remove_file(&lock).unwrap();
+        fs::create_dir(lock).unwrap();
+    }
 }
 
 fn attachment_json(prepare: &Value, state: &str) -> Value {

@@ -19,7 +19,7 @@ async fn install_push_only_repo(state: &AppState, mut repo: Repository) {
     repo.members.push(test_repository_member(
         TEST_REPO_ID,
         PUSH_ONLY_MEMBER_ID,
-        member_permissions(true, false, true),
+        member_permissions(true, false),
     ));
     replace_test_repo(state, repo).await;
 }
@@ -95,12 +95,16 @@ async fn push_only_member_cannot_restore_stale_public_config_after_visibility_ch
     let state = test_state_with_repo();
     let readme_path = ScopePath::parse("/README.md").unwrap();
     let mut repo = repo_with_readme(&state);
-    scope_domain::repo_actions::set_visibility(
+    scope_domain::reviewed_updates::config::apply_reviewed_config_to_repo(
         &mut repo,
-        &test_owner_id(),
-        std::slice::from_ref(&readme_path),
-        Visibility::Private,
-        None,
+        scope_domain::reviewed_updates::config::ReviewedConfigUpdateInput {
+            author_id: test_owner_id(),
+            occurred_at_unix: 10,
+            config: config_with_rules(
+                Visibility::Public,
+                &[("/README.md", ConfigVisibility::Private)],
+            ),
+        },
     )
     .unwrap();
     assert_eq!(

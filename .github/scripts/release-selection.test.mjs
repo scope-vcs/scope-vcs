@@ -171,7 +171,7 @@ test("prepared replay rejects empty, unknown, mismatched, and incomplete backend
 
 test("cutover recovery retains its complete backend requirement", async () => {
   const state = fixture();
-  state.prepared.components = { web: state.prepared.components.web };
+  delete state.prepared.components.api;
   await assert.rejects(validateRecoveryPreparation(state.prepared, state.request, repository, manifest), /missing api/);
 });
 

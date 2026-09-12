@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  requiredSourceHomes,
   validateRustBoundaries,
-  validateSourceLayout,
   validateStandaloneManifests,
 } from './check-rust-boundaries.mjs'
 
@@ -96,15 +94,5 @@ test('keeps CLI-staged dependency manifests self-contained', () => {
   }), [
     'scope-domain: manifest must stay self-contained for standalone CLI staging',
     'scope-api-contract: manifest must stay self-contained for standalone CLI staging',
-  ])
-})
-
-test('requires every behavior-owned source home', () => {
-  const current = new Set(requiredSourceHomes)
-  assert.deepEqual(validateSourceLayout(current), [])
-
-  current.delete('api/src/use_cases/request_merge.rs')
-  assert.deepEqual(validateSourceLayout(current), [
-    'api/src/use_cases/request_merge.rs: required behavior-owned source home is missing',
   ])
 })

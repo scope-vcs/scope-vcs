@@ -16,5 +16,5 @@ export const renderReviewFileDiff = host[rendererKey] ??= createReviewFileDiffRe
     import.meta.env.PROD
       ? new URL('../_workers/review-file-diff-render-worker.mjs', import.meta.url)
       : new URL('./review-file-diff-render-worker.ts', import.meta.url),
-  ), REVIEW_FILE_DIFF_RENDER_BUDGET.maxConcurrentRenders),
+  ), REVIEW_FILE_DIFF_RENDER_BUDGET.maxConcurrentRenders, REVIEW_FILE_DIFF_RENDER_BUDGET.startupDeadlineMs),
 })
