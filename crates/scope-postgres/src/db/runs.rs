@@ -33,12 +33,7 @@ pub struct DispatchClaim {
     pub workflow_revision: WorkflowRevision,
 }
 
-#[cfg(any(
-    test,
-    feature = "test-support",
-    feature = "local-dev",
-    feature = "smoke-seed"
-))]
+#[cfg(any(test, feature = "seeding"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DispatchOffer {
     pub run: Run,
@@ -46,12 +41,7 @@ pub struct DispatchOffer {
 }
 
 impl RunStore {
-    #[cfg(any(
-        test,
-        feature = "test-support",
-        feature = "local-dev",
-        feature = "smoke-seed"
-    ))]
+    #[cfg(any(test, feature = "seeding"))]
     pub async fn enqueue_run(
         &self,
         run: Run,

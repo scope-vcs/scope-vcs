@@ -61,6 +61,7 @@ pub(super) fn decode_enum<T: serde::de::DeserializeOwned>(
     serde_json::from_value(serde_json::Value::String(value)).map_err(PostgresError::internal)
 }
 
+#[derive(Default)]
 pub struct RepositoryFacts {
     pub first_push_token: Option<FirstPushToken>,
     pub git_push_token: Option<GitPushToken>,

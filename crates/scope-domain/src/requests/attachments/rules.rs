@@ -485,6 +485,20 @@ pub fn can_view_request_attachment(
         })
 }
 
+/// A newly granted lease needs a token and an expiry after the grant time.
+pub fn validate_lease_grant(
+    lease_token: &str,
+    now_unix: u64,
+    lease_expires_at_unix: u64,
+) -> Result<(), DomainError> {
+    if lease_token.trim().is_empty() || lease_expires_at_unix <= now_unix {
+        return Err(DomainError::invalid_input(
+            "lease must have a token and a future expiry",
+        ));
+    }
+    Ok(())
+}
+
 pub fn validate_cleanup_lease(
     attachment_id: &str,
     lease: &super::RequestAttachmentCleanupLease,

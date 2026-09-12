@@ -6,7 +6,7 @@ use super::{
     repository_rows::save_repository_delta, workflow_catalogs::apply_repository_workflow_catalog,
 };
 use sea_orm::{EntityTrait, TransactionTrait};
-use std::{fmt, time::Instant};
+use std::fmt;
 use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
@@ -63,16 +63,6 @@ impl<R> RepositoryMutation<R> {
         }
     }
 
-    pub fn with_source_blob_deletions(result: R, orphan_objects: Vec<SourceBlob>) -> Self {
-        Self {
-            result,
-            orphan_objects,
-            push_trigger_input: None,
-            landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
-            workflow_catalog: None,
-        }
-    }
-
     pub fn with_push_trigger_input(
         result: R,
         push_trigger_input: scope_domain::runs::trigger::PushTriggerInput,
@@ -99,18 +89,11 @@ impl RepositoryStore {
         op: F,
     ) -> Result<R, RepositoryMutationError>
     where
-        R: Send + 'static,
-        F: FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError> + Send + 'static,
+        F: FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError>,
     {
         let repo_id = repo_id(owner, name);
-        let owner = owner.to_string();
-        let name = name.to_string();
-        let transaction_started = Instant::now();
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let lock_started = Instant::now();
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
-        let lock_wait = lock_started.elapsed();
-        let serialized_started = Instant::now();
         let repo = entities::repository::Entity::find_by_id(&repo_id)
             .one(&tx)
             .await
@@ -119,16 +102,6 @@ impl RepositoryStore {
         let mut repo = repository_from_model(&tx, repo).await?;
         let before = repo.clone();
         let mutation = op(&mut repo)?;
-        let changed_file_count = repo
-            .graph
-            .commits
-            .last()
-            .map_or(0, |commit| commit.changes.len());
-        let live_file_count = repo.live_files.len();
-        let logical_commit_count = repo.graph.commits.len();
-        let visibility_change_set_count = repo.visibility_change_sets.len();
-        let policy_rule_count = repo.policy.rules().len();
-        let config_rule_count = repo.repo_config.visibility.rules.len();
         if let Some(catalog) = &mutation.workflow_catalog {
             let head = repo.git_head.as_ref().ok_or_else(|| {
                 PostgresError::internal_message(
@@ -166,35 +139,14 @@ impl RepositoryStore {
             )
             .await?;
         }
-        if !mutation.orphan_objects.is_empty() {
-            queue_pending_source_blob_deletion_rows(
-                &tx,
-                mutation.orphan_objects,
-                now_unix,
-                generated_ids,
-            )
-            .await?;
-        }
-        let commit_started = Instant::now();
+        queue_pending_source_blob_deletion_rows(
+            &tx,
+            mutation.orphan_objects,
+            now_unix,
+            generated_ids,
+        )
+        .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        tracing::info!(
-            repository_id = repo_id,
-            protocol = "aggregate-mutation",
-            changed_file_count,
-            live_file_count,
-            logical_commit_count,
-            visibility_change_set_count,
-            policy_rule_count,
-            config_rule_count,
-            lock_wait_us = lock_wait.as_micros(),
-            body_us = commit_started
-                .duration_since(serialized_started)
-                .as_micros(),
-            serialized_us = serialized_started.elapsed().as_micros(),
-            commit_us = commit_started.elapsed().as_micros(),
-            total_us = transaction_started.elapsed().as_micros(),
-            "repository mutation persistence timing"
-        );
         Ok(mutation.result)
     }
 }

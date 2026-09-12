@@ -2,6 +2,7 @@ use super::{
     FinishRequestAttachmentUploadCommand, MediaStore, PrepareRequestAttachmentCommand,
     PreparedRequestAttachment, ReserveUploadPartResult, StorePartResult,
     StoredRequestAttachmentPart, default_limits,
+    locks::lock_attachment,
     persistence::{as_i32, as_i64, attachment_by_id, enum_string},
 };
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
 use scope_domain::requests::attachments::{
     PrepareRequestAttachmentInput, RequestAttachment, RequestAttachmentPartReceipt,
     RequestAttachmentState, RequestAttachmentStoredObject, RequestAttachmentTarget,
-    finish_attachment_upload, validate_prepare_attachment,
+    finish_attachment_upload, validate_lease_grant, validate_prepare_attachment,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, TransactionTrait};
 
@@ -82,10 +83,8 @@ impl MediaStore {
             &command.target,
         )
         .await?;
-        let request_source_bytes =
-            reserved_source_usage(&tx, "request_id", &command.request_id).await?;
-        let repository_reserved_bytes =
-            reserved_total_usage(&tx, "repository_id", &repo.record.id).await?;
+        let request_source_bytes = reserved_request_source_bytes(&tx, &command.request_id).await?;
+        let repository_reserved_bytes = reserved_repository_bytes(&tx, &repo.record.id).await?;
         let decision = validate_prepare_attachment(
             PrepareRequestAttachmentInput {
                 attachment_id: command.attachment_id,
@@ -134,7 +133,7 @@ impl MediaStore {
         now_unix: u64,
         write_expires_at_unix: u64,
     ) -> Result<ReserveUploadPartResult, PostgresError> {
-        validate_write_lease(write_token, now_unix, write_expires_at_unix)?;
+        validate_lease_grant(write_token, now_unix, write_expires_at_unix)?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let attachment = lock_authorized_upload(&tx, attachment_id, uploader_user_id)
             .await?
@@ -302,7 +301,7 @@ impl MediaStore {
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        let attachment = lock_upload_attachment(&tx, &command.attachment_id).await?;
+        let attachment = lock_attachment(&tx, &command.attachment_id).await?;
         if attachment.request_id != request.id
             || cleanup_tombstone_exists(&tx, &attachment.id).await?
         {
@@ -473,49 +472,52 @@ where
     usize::try_from(count).map_err(PostgresError::internal)
 }
 
-async fn reserved_source_usage<C>(conn: &C, column: &str, id: &str) -> Result<u64, PostgresError>
+/// Source bytes reserved by one request's attachments that are not yet deleted.
+async fn reserved_request_source_bytes<C>(conn: &C, request_id: &str) -> Result<u64, PostgresError>
 where
     C: ConnectionTrait,
 {
-    let sql = format!(
+    live_attachment_bytes(
+        conn,
         "SELECT COALESCE(SUM(attachment.reserved_source_bytes), 0)::bigint AS bytes
          FROM scope_request_media_attachments attachment
-         WHERE attachment.{column} = $1
+         WHERE attachment.request_id = $1
            AND NOT EXISTS (
                 SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
                 WHERE cleanup.attachment_id = attachment.id AND cleanup.state = 'Completed'
-           )"
-    );
-    let bytes = conn
-        .query_one(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            sql,
-            [id.into()],
-        ))
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| PostgresError::internal_message("attachment usage missing"))?
-        .try_get::<i64>("", "bytes")
-        .map_err(PostgresError::internal)?;
-    u64::try_from(bytes).map_err(PostgresError::internal)
+           )",
+        request_id,
+    )
+    .await
 }
 
-async fn reserved_total_usage<C>(conn: &C, column: &str, id: &str) -> Result<u64, PostgresError>
+/// Source plus derivative bytes held by one repository's attachments that are
+/// not yet deleted; reserved derivative bytes stand in until actual bytes are known.
+async fn reserved_repository_bytes<C>(conn: &C, repository_id: &str) -> Result<u64, PostgresError>
 where
     C: ConnectionTrait,
 {
-    let sql = format!(
+    live_attachment_bytes(
+        conn,
         "SELECT COALESCE(SUM(
             attachment.reserved_source_bytes
             + COALESCE(attachment.actual_derivative_bytes, attachment.reserved_derivative_bytes)
          ), 0)::bigint AS bytes
          FROM scope_request_media_attachments attachment
-         WHERE attachment.{column} = $1
+         WHERE attachment.repository_id = $1
            AND NOT EXISTS (
                 SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
                 WHERE cleanup.attachment_id = attachment.id AND cleanup.state = 'Completed'
-           )"
-    );
+           )",
+        repository_id,
+    )
+    .await
+}
+
+async fn live_attachment_bytes<C>(conn: &C, sql: &str, id: &str) -> Result<u64, PostgresError>
+where
+    C: ConnectionTrait,
+{
     let bytes = conn
         .query_one(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -642,30 +644,6 @@ where
     Ok(())
 }
 
-async fn lock_upload_attachment<C>(
-    conn: &C,
-    attachment_id: &str,
-) -> Result<RequestAttachment, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let row = conn
-        .query_one(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT id FROM scope_request_media_attachments WHERE id = $1 FOR UPDATE",
-            [attachment_id.into()],
-        ))
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| PostgresError::not_found("request attachment not found"))?;
-    let id = row
-        .try_get::<String>("", "id")
-        .map_err(PostgresError::internal)?;
-    attachment_by_id(conn, &id)
-        .await?
-        .ok_or_else(|| PostgresError::not_found("request attachment not found"))
-}
-
 async fn lock_authorized_upload<C>(
     conn: &C,
     attachment_id: &str,
@@ -701,10 +679,12 @@ where
         Err(error) if error.kind == PostgresErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
-    if !writable || cleanup_tombstone_exists(conn, attachment_id).await? {
+    if !writable {
         return Ok(None);
     }
-    let attachment = lock_upload_attachment(conn, attachment_id).await?;
+    // The tombstone check is ordered after the row lock so it closes the race
+    // with a concurrent deletion.
+    let attachment = lock_attachment(conn, attachment_id).await?;
     if attachment.request_id != request.id
         || attachment.uploader_user_id != uploader_user_id
         || cleanup_tombstone_exists(conn, attachment_id).await?
@@ -732,19 +712,6 @@ fn authorize_active_upload(
     }
     if now_unix >= attachment.upload_expires_at_unix {
         return Err(PostgresError::conflict("request attachment upload expired"));
-    }
-    Ok(())
-}
-
-fn validate_write_lease(
-    write_token: &str,
-    now_unix: u64,
-    write_expires_at_unix: u64,
-) -> Result<(), PostgresError> {
-    if write_token.trim().is_empty() || write_expires_at_unix <= now_unix {
-        return Err(PostgresError::invalid_input(
-            "upload part write lease must have a token and future expiry",
-        ));
     }
     Ok(())
 }

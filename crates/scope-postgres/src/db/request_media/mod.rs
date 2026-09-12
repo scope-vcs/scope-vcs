@@ -1,6 +1,7 @@
 mod access;
 mod bindings;
 mod cleanup;
+mod locks;
 mod persistence;
 mod processing;
 mod processing_support;

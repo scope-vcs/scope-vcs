@@ -131,7 +131,5 @@ fn operation_limit(name: &str, default: u32) -> anyhow::Result<u32> {
     };
     value
         .parse::<u32>()
-        .ok()
-        .filter(|value| *value > 0)
-        .ok_or_else(|| anyhow::anyhow!("{name} must be a positive number of seconds"))
+        .map_err(|error| anyhow::anyhow!("{name} must be a number of seconds: {error}"))
 }

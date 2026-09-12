@@ -1,4 +1,7 @@
-use super::{RunStore, entities, run_operations::run_jobs_by_ids};
+use super::{
+    RunStore, entities,
+    run_operations::{require_run_jobs, run_jobs_by_ids},
+};
 use crate::error::PostgresError;
 use scope_domain::runs::{job::RunJob, run::Run};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
@@ -54,12 +57,7 @@ impl RunStore {
                     PostgresError::internal_message("run creation sequence is negative")
                 })?;
                 let run = model.try_into_domain()?;
-                let jobs = jobs
-                    .remove(&run.id)
-                    .filter(|jobs| !jobs.is_empty())
-                    .ok_or_else(|| {
-                        PostgresError::internal_message("run is missing its persisted jobs")
-                    })?;
+                let jobs = require_run_jobs(&mut jobs, &run.id)?;
                 Ok(RepositoryRun {
                     jobs,
                     run,

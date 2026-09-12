@@ -170,19 +170,19 @@ async fn persist_prepared_merge(
         .metadata
         .requests()
         .merge_request_content(
-            &command.owner,
-            &command.repo_name,
-            &prepared.expected_git_frontier,
-            prepared.expected_repo_change_version,
-            &prepared.prepared_request_head_oid,
-            prepared.update.into_reviewed_update(),
-            prepared.landing_file_mutation,
-            prepared.workflow_catalog,
-            prepared.origin,
             MergeRequestContentCommand {
+                owner: command.owner.clone(),
+                name: command.repo_name.clone(),
                 request_id: command.request_id.clone(),
                 actor_user_id: command.actor_user_id.clone(),
                 merged_event_id,
+                expected_git_frontier: prepared.expected_git_frontier,
+                expected_repo_change_version: prepared.expected_repo_change_version,
+                expected_request_head_oid: prepared.prepared_request_head_oid,
+                update: prepared.update.into_reviewed_update(),
+                landing_file_mutation: prepared.landing_file_mutation,
+                workflow_catalog: prepared.workflow_catalog,
+                origin: prepared.origin,
                 now_unix,
             },
             &crate::persistence_ids::generate_persistence_id,

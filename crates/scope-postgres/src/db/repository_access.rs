@@ -79,6 +79,96 @@ impl RepositoryStore {
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(context)
     }
+
+    pub async fn repository_content_source(
+        &self,
+        incarnation: &scope_domain::repository::RepositoryIncarnation,
+    ) -> Result<
+        (
+            Option<scope_domain::repository::git::GitHead>,
+            Vec<scope_domain::repository::git::GitPackSpan>,
+        ),
+        PostgresError,
+    > {
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let context = repository_access(&tx, incarnation.repository_id(), None)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        if context.incarnation() != *incarnation {
+            return Err(PostgresError::conflict("repository was recreated; retry"));
+        }
+        let head = entities::git_head::Entity::find_by_id(incarnation.repository_id())
+            .one(&tx)
+            .await
+            .map_err(PostgresError::internal)?
+            .map(entities::git_head::Model::try_into_domain)
+            .transpose()?;
+        let spans =
+            super::git_segments::load_git_pack_spans(&tx, incarnation.repository_id()).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok((head, spans))
+    }
+
+    pub async fn repository_policy(
+        &self,
+        context: &RepositoryAccessContext,
+    ) -> Result<scope_domain::policy::Policy, PostgresError> {
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let current = repository_access(&tx, &context.record.id, None)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        ensure_current_context(context, &current)?;
+        let policy = entities::repository::Entity::find_by_id(&context.record.id)
+            .select_only()
+            .column(entities::repository::Column::Policy)
+            .into_tuple::<serde_json::Value>()
+            .one(&tx)
+            .await
+            .map_err(PostgresError::internal)?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        serde_json::from_value(policy).map_err(PostgresError::internal)
+    }
+
+    pub async fn repository_main_oid(
+        &self,
+        context: &RepositoryAccessContext,
+    ) -> Result<Option<String>, PostgresError> {
+        let audience = scope_domain::projection::ProjectionViewKey::from_access(context.access);
+        for _ in 0..2 {
+            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+            let current = repository_access(&tx, &context.record.id, None)
+                .await?
+                .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+            ensure_current_context(context, &current)?;
+            if context.access.can_read_private_files
+                && let Some(head) = entities::git_head::Entity::find_by_id(&context.record.id)
+                    .one(&tx)
+                    .await
+                    .map_err(PostgresError::internal)?
+            {
+                tx.commit().await.map_err(PostgresError::internal)?;
+                return Ok(Some(head.head_oid));
+            }
+            // History owns the current audience's head independently of the
+            // asynchronously rebuilt projection file cache.
+            let metadata = super::history_reads::history_view_metadata(
+                &tx,
+                &context.record.id,
+                context.record.change_version,
+                audience,
+            )
+            .await?;
+            tx.commit().await.map_err(PostgresError::internal)?;
+            if let Some(view) = metadata {
+                return Ok(view.head_oid);
+            }
+            self.ensure_history_view(&context.incarnation()).await?;
+        }
+        Err(PostgresError::conflict(
+            "repository changed while reading its head; retry",
+        ))
+    }
 }
 
 pub(super) async fn repository_access<C: ConnectionTrait>(
@@ -147,100 +237,6 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
         access,
         root_visibility: entities::decode_enum(row.root_visibility)?,
     }))
-}
-
-impl RepositoryStore {
-    pub async fn repository_content_source(
-        &self,
-        incarnation: &scope_domain::repository::RepositoryIncarnation,
-    ) -> Result<
-        (
-            Option<scope_domain::repository::git::GitHead>,
-            Vec<scope_domain::repository::git::GitPackSpan>,
-        ),
-        PostgresError,
-    > {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let context = repository_access(&tx, incarnation.repository_id(), None)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        if context.incarnation() != *incarnation {
-            return Err(PostgresError::conflict("repository was recreated; retry"));
-        }
-        let head = entities::git_head::Entity::find_by_id(incarnation.repository_id())
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .map(entities::git_head::Model::try_into_domain)
-            .transpose()?;
-        let spans =
-            super::git_segments::load_git_pack_spans(&tx, incarnation.repository_id()).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok((head, spans))
-    }
-}
-
-impl RepositoryStore {
-    pub async fn repository_policy(
-        &self,
-        context: &RepositoryAccessContext,
-    ) -> Result<scope_domain::policy::Policy, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let current = repository_access(&tx, &context.record.id, None)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        ensure_current_context(context, &current)?;
-        let policy = entities::repository::Entity::find_by_id(&context.record.id)
-            .select_only()
-            .column(entities::repository::Column::Policy)
-            .into_tuple::<serde_json::Value>()
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        tx.commit().await.map_err(PostgresError::internal)?;
-        serde_json::from_value(policy).map_err(PostgresError::internal)
-    }
-
-    pub async fn repository_main_oid(
-        &self,
-        context: &RepositoryAccessContext,
-    ) -> Result<Option<String>, PostgresError> {
-        let audience = scope_domain::projection::ProjectionViewKey::from_access(context.access);
-        for _ in 0..2 {
-            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-            let current = repository_access(&tx, &context.record.id, None)
-                .await?
-                .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-            ensure_current_context(context, &current)?;
-            if context.access.can_read_private_files
-                && let Some(head) = entities::git_head::Entity::find_by_id(&context.record.id)
-                    .one(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?
-            {
-                tx.commit().await.map_err(PostgresError::internal)?;
-                return Ok(Some(head.head_oid));
-            }
-            // History owns the current audience's head independently of the
-            // asynchronously rebuilt projection file cache.
-            let metadata = super::history_reads::history_view_metadata(
-                &tx,
-                &context.record.id,
-                context.record.change_version,
-                audience,
-            )
-            .await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
-            if let Some(view) = metadata {
-                return Ok(view.head_oid);
-            }
-            self.ensure_history_view(&context.incarnation()).await?;
-        }
-        Err(PostgresError::conflict(
-            "repository changed while reading its head; retry",
-        ))
-    }
 }
 
 fn ensure_current_context(

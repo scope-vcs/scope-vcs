@@ -3,7 +3,7 @@ use crate::error::PostgresError;
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use std::{sync::Arc, time::Duration};
 
-const POSTGRES_REPO_CHANGE_CHANNEL: &str = "scope_repo_changes";
+pub(crate) const POSTGRES_REPO_CHANGE_CHANNEL: &str = "scope_repo_changes";
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 type PayloadHandler = Arc<dyn Fn(String) + Send + Sync>;
 

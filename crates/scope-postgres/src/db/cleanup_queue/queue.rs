@@ -156,12 +156,7 @@ where
         .collect::<Vec<_>>();
     Ok(pending)
 }
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 pub async fn save_pending_repo_storage_deletions<C>(
     conn: &C,
     pending_repo_storage_deletions: &[RepoStorageCleanup],
@@ -234,12 +229,7 @@ where
         .collect::<Result<Vec<_>, PostgresError>>()?;
     Ok(pending)
 }
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 pub async fn save_pending_source_blob_deletions<C>(
     conn: &C,
     pending_source_blob_deletions: &[SourceBlob],

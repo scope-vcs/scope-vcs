@@ -14,11 +14,9 @@ use {
         projection_views::{
             ProjectionViewFile, ProjectionViewFileContent,
             projected_file_contents as domain_projected_file_contents,
-            projected_files as domain_projected_files,
         },
         repo_control::{REPO_CONTROL_PREFIX, REPO_CONTROL_ROOT},
         repository::Repository,
-        repository::access::{RepositoryAccess, RepositoryActor},
     },
 };
 
@@ -271,24 +269,6 @@ where
         .is_some())
 }
 
-async fn load_live_projection_files<C>(
-    conn: &C,
-    repo: &Repository,
-    principal: &Principal,
-) -> Result<Option<Vec<ProjectionViewFile>>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let audience = live_projection_audience(repo, principal);
-    load_live_projection_files_for_audience(
-        conn,
-        &repo.record.id,
-        repo.record.change_version,
-        audience,
-    )
-    .await
-}
-
 fn projected_files_for_audience(
     repo: &Repository,
     audience: ProjectionAudience,
@@ -312,18 +292,6 @@ fn projection_view_key(audience: ProjectionAudience) -> ProjectionViewKey {
     }
 }
 
-fn live_projection_audience(repo: &Repository, principal: &Principal) -> ProjectionAudience {
-    live_projection_audience_for_access(repo.access_for_principal(principal))
-}
-
-fn live_projection_audience_for_access(access: RepositoryAccess) -> ProjectionAudience {
-    if access.actor != RepositoryActor::Public && access.can_read_private_files {
-        ProjectionAudience::Private
-    } else {
-        ProjectionAudience::Public
-    }
-}
-
 impl RepositoryStore {
     pub async fn live_projection_head_oid(
         &self,
@@ -338,20 +306,6 @@ impl RepositoryStore {
         )
         .await
     }
-
-    pub async fn live_projection_files(
-        &self,
-        repo: &Repository,
-        principal: &Principal,
-    ) -> Result<Vec<ProjectionViewFile>, PostgresError> {
-        let repo = repo.clone();
-        let principal = principal.clone();
-        if let Some(files) = load_live_projection_files(self.db.as_ref(), &repo, &principal).await?
-        {
-            return Ok(files);
-        }
-        Ok(domain_projected_files(&repo, &principal))
-    }
 }
 
 pub(super) async fn live_projection_head_oid_for_frontier<C: ConnectionTrait>(
@@ -360,10 +314,7 @@ pub(super) async fn live_projection_head_oid_for_frontier<C: ConnectionTrait>(
     repo_version: u64,
     view_key: ProjectionViewKey,
 ) -> Result<Option<String>, PostgresError> {
-    let audience = match view_key {
-        ProjectionViewKey::Private => ProjectionAudience::Private,
-        ProjectionViewKey::Public => ProjectionAudience::Public,
-    };
+    let audience = ProjectionAudience::from(view_key);
     let expected_version = projection_repo_version(repo_version)?;
     let row = entities::projection_read_model::Entity::find()
         .filter(entities::projection_read_model::Column::RepoId.eq(repo_id.to_string()))

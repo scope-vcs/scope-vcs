@@ -5,19 +5,9 @@
 //! the workflow being persisted.
 
 mod auth;
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 mod catalog_fixture;
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 pub use catalog_fixture::CatalogFixture;
 mod cli_auth_results;
 pub use cli_auth_results::{
@@ -129,17 +119,11 @@ pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePr
 pub use run_details::{RunAttemptDetail, RunDetail};
 pub use run_dispatch::CloudTaskStop;
 pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
-pub use run_log_reads::{RecentRunLogs, StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
+pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
 pub use run_log_writes::AppendRunLogResult;
 pub use runs::{DispatchClaim, EnqueueRunResult};
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 mod test_support;
-mod visibility_changes;
 mod workflow_catalogs;
 pub use workflow_catalogs::{
     CurrentRepositoryWorkflowCatalog, RepositoryWorkflowCatalogBackfillCandidate,
@@ -178,7 +162,6 @@ use sqlx::{Connection as _, PgConnection};
 use std::sync::Arc;
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::TestDatabaseTarget;
-pub use visibility_changes::UpdateRepoFileVisibilityCommand;
 
 #[derive(Clone)]
 pub struct MetadataStore {
@@ -552,7 +535,7 @@ where
         .into_iter()
         .map(entities::repository_invite::Model::try_into_domain)
         .collect::<Result<Vec<RepositoryInvite>, _>>()?;
-    repository.try_into_domain(facts.into_facts(), members, invitations, history)
+    repository.try_into_domain(facts, members, invitations, history)
 }
 
 fn encode_json<T: Serialize>(value: &T) -> Result<serde_json::Value, PostgresError> {

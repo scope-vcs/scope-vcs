@@ -344,11 +344,7 @@ impl RequestStore {
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
+        let now_unix = command.now_unix;
         let input = CreateRequestDiscussionInput {
             request_id: command.request_id,
             id: command.id,
@@ -395,15 +391,16 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_discussion(&tx, &mutation.discussion).await?;
         save_read_state(&tx, &mutation.read_state).await?;
+        let discussion = &mutation.discussion;
         replace_bindings_for_markdown(
             &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
+            &discussion.request_id,
+            &discussion.author_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Discussion {
-                discussion_id: binding_discussion_id,
+                discussion_id: discussion.id.clone(),
             },
-            &binding_markdown,
-            binding_now_unix,
+            &discussion.body_markdown,
+            now_unix,
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -419,12 +416,7 @@ impl RequestStore {
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.discussion_id.clone();
-        let binding_reply_id = command.id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
+        let now_unix = command.now_unix;
         let input = CreateRequestDiscussionReplyInput {
             request_id: command.request_id,
             discussion_id: command.discussion_id,
@@ -483,16 +475,17 @@ impl RequestStore {
         save_discussion(&tx, &mutation.discussion).await?;
         insert_reply(&tx, &mutation.reply).await?;
         save_read_state(&tx, &mutation.read_state).await?;
+        let reply = &mutation.reply;
         replace_bindings_for_markdown(
             &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
+            &mutation.discussion.request_id,
+            &reply.author_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Reply {
-                discussion_id: binding_discussion_id,
-                reply_id: binding_reply_id,
+                discussion_id: reply.discussion_id.clone(),
+                reply_id: reply.id.clone(),
             },
-            &binding_markdown,
-            binding_now_unix,
+            &reply.body_markdown,
+            now_unix,
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -576,12 +569,7 @@ impl RequestStore {
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
         let actor_is_maintainer = repo.access.is_maintainer();
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.discussion_id.clone();
-        let binding_reply_id = command.reply_id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
+        let now_unix = command.now_unix;
         let input = ReopenAndReplyToRequestDiscussionInput {
             request_id: command.request_id,
             discussion_id: command.discussion_id,
@@ -643,16 +631,17 @@ impl RequestStore {
         if let Some(event) = &mutation.activity_event {
             insert_request_event_row(&tx, event).await?;
         }
+        let reply = &mutation.reply;
         replace_bindings_for_markdown(
             &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
+            &mutation.discussion.request_id,
+            &reply.author_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Reply {
-                discussion_id: binding_discussion_id,
-                reply_id: binding_reply_id,
+                discussion_id: reply.discussion_id.clone(),
+                reply_id: reply.id.clone(),
             },
-            &binding_markdown,
-            binding_now_unix,
+            &reply.body_markdown,
+            now_unix,
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;

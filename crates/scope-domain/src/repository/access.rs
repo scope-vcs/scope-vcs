@@ -51,12 +51,26 @@ impl RepositoryAccessContext {
     }
 
     pub fn can_read(&self, public_files_visible: bool) -> bool {
-        match self.access.actor {
-            RepositoryActor::Owner => true,
-            RepositoryActor::Member => self.record.lifecycle_state == RepoLifecycleState::Ready,
-            RepositoryActor::Public => {
-                self.record.lifecycle_state == RepoLifecycleState::Ready && public_files_visible
-            }
+        can_read_repository(
+            self.record.lifecycle_state,
+            self.access,
+            public_files_visible,
+        )
+    }
+}
+
+/// Whether a viewer with `access` may read the repository at all. Public
+/// viewers additionally need the public projection to expose at least one file.
+pub fn can_read_repository(
+    lifecycle_state: RepoLifecycleState,
+    access: RepositoryAccess,
+    public_files_visible: bool,
+) -> bool {
+    match access.actor {
+        RepositoryActor::Owner => true,
+        RepositoryActor::Member => lifecycle_state == RepoLifecycleState::Ready,
+        RepositoryActor::Public => {
+            lifecycle_state == RepoLifecycleState::Ready && public_files_visible
         }
     }
 }
@@ -77,6 +91,17 @@ pub struct RepositoryPushPolicy {
 impl RepositoryAccess {
     pub fn is_maintainer(self) -> bool {
         matches!(self.actor, RepositoryActor::Owner | RepositoryActor::Member)
+    }
+
+    /// The repository change counter a viewer may see. Private-only mutations
+    /// advance it too, so public viewers get 0 rather than a signal of
+    /// activity they cannot read.
+    pub fn visible_change_version(self, change_version: u64) -> u64 {
+        if self.actor == RepositoryActor::Public {
+            0
+        } else {
+            change_version
+        }
     }
 
     pub fn public() -> Self {
@@ -196,5 +221,65 @@ impl Repository {
 
     pub fn is_maintainer_user_id(&self, user_id: &str) -> bool {
         self.access_for_user_id(user_id).is_maintainer()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_viewers_never_see_the_change_version() {
+        assert_eq!(RepositoryAccess::public().visible_change_version(7), 0);
+        let owner =
+            repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");
+        assert_eq!(owner.visible_change_version(7), 7);
+        let member = repository_access_for_user_id(
+            "owner",
+            RepoLifecycleState::Ready,
+            Some(RepositoryMemberPermissions::default()),
+            "member",
+        );
+        assert_eq!(member.visible_change_version(7), 7);
+    }
+
+    #[test]
+    fn repository_readability_follows_actor_and_lifecycle() {
+        let owner =
+            repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");
+        let member = repository_access_for_user_id(
+            "owner",
+            RepoLifecycleState::Ready,
+            Some(RepositoryMemberPermissions::default()),
+            "member",
+        );
+        for state in [
+            RepoLifecycleState::AwaitingFirstPush,
+            RepoLifecycleState::Ready,
+        ] {
+            assert!(can_read_repository(state, owner, false));
+        }
+        assert!(can_read_repository(
+            RepoLifecycleState::Ready,
+            member,
+            false
+        ));
+        assert!(!can_read_repository(
+            RepoLifecycleState::AwaitingFirstPush,
+            member,
+            true
+        ));
+        let public = RepositoryAccess::public();
+        assert!(can_read_repository(RepoLifecycleState::Ready, public, true));
+        assert!(!can_read_repository(
+            RepoLifecycleState::Ready,
+            public,
+            false
+        ));
+        assert!(!can_read_repository(
+            RepoLifecycleState::AwaitingFirstPush,
+            public,
+            true
+        ));
     }
 }

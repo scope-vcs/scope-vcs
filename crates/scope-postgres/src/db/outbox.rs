@@ -7,10 +7,9 @@ use super::{
 };
 use crate::error::PostgresError;
 #[cfg(any(test, feature = "test-support"))]
-use sea_orm::PaginatorTrait;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait, TryInsertResult,
+    QuerySelect, TransactionTrait,
     sea_query::{Expr, LockBehavior, LockType, OnConflict},
 };
 
@@ -153,26 +152,6 @@ impl JobStore {
             .map_err(PostgresError::internal)?;
         Ok(outbox_job_counts(rows))
     }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub async fn projection_read_model_count_for_tests(
-        &self,
-        repo_id: &str,
-    ) -> Result<usize, PostgresError> {
-        let repo_id = repo_id.to_string();
-        entities::projection_read_model::Entity::find()
-            .filter(entities::projection_read_model::Column::RepoId.eq(repo_id))
-            .count(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)
-            .and_then(|count| {
-                usize::try_from(count).map_err(|_| {
-                    PostgresError::internal_message(
-                        "projection read-model count exceeds usize range",
-                    )
-                })
-            })
-    }
 }
 
 pub async fn enqueue_projection_read_model_rebuild<C>(
@@ -191,7 +170,7 @@ where
         repo_version,
         now_unix,
     )?;
-    match entities::outbox_job::Entity::insert(job.into_active_model())
+    entities::outbox_job::Entity::insert(job.into_active_model())
         .on_conflict(
             OnConflict::column(entities::outbox_job::Column::IdempotencyKey)
                 .do_nothing()
@@ -200,10 +179,7 @@ where
         .do_nothing()
         .exec(conn)
         .await
-        .map_err(PostgresError::internal)?
-    {
-        TryInsertResult::Empty | TryInsertResult::Conflicted | TryInsertResult::Inserted(_) => {}
-    }
+        .map_err(PostgresError::internal)?;
     Ok(())
 }
 

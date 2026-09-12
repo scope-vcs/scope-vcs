@@ -4,7 +4,6 @@ use super::{
     entities,
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
-use std::time::Instant;
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -51,14 +50,8 @@ impl RepositoryStore {
             now_unix,
         } = command;
         let repo_id = scope_domain::repository::repo_id(&owner, &name);
-        let transaction_started = Instant::now();
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let lock_started = Instant::now();
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
-        let lock_wait = lock_started.elapsed();
-        let serialized_started = Instant::now();
-        let changed_file_count = update.changes.len();
-        let config_rule_count = update.config.visibility.rules.len();
         let repo_row = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
             .await
@@ -71,10 +64,8 @@ impl RepositoryStore {
                 "repository was recreated since push preparation",
             ));
         }
-        let publication_state: RepoLifecycleState = serde_json::from_value(
-            serde_json::Value::String(repo_row.publication_state.clone()),
-        )
-        .map_err(PostgresError::internal)?;
+        let publication_state: RepoLifecycleState =
+            entities::decode_enum(repo_row.publication_state.clone())?;
         if publication_state != RepoLifecycleState::Ready {
             return Ok(None);
         }
@@ -106,14 +97,12 @@ impl RepositoryStore {
         );
         let current_config: RepoConfig = serde_json::from_value(repo_row.repo_config.clone())
             .map_err(PostgresError::internal)?;
-        let config_changed = current_config != update.config;
         authorize_reviewed_update(ReviewedUpdateAuthorization {
             access: push_policy.access,
             push_mode: push_policy.mode,
             current_config: &current_config,
             proposed_config: &update.config,
         })?;
-        let metadata_us = serialized_started.elapsed().as_micros();
         let git_head = accept_and_persist_content_push(
             &tx,
             repo_row,
@@ -127,24 +116,7 @@ impl RepositoryStore {
             generated_ids,
         )
         .await?;
-        let commit_started = Instant::now();
         tx.commit().await.map_err(PostgresError::internal)?;
-        tracing::info!(
-            repository_id = repo_id,
-            protocol = "focused-content-push",
-            changed_file_count,
-            config_rule_count,
-            config_changed,
-            lock_wait_us = lock_wait.as_micros(),
-            metadata_us,
-            body_us = commit_started
-                .duration_since(serialized_started)
-                .as_micros(),
-            serialized_us = serialized_started.elapsed().as_micros(),
-            commit_us = commit_started.elapsed().as_micros(),
-            total_us = transaction_started.elapsed().as_micros(),
-            "Git push persistence timing"
-        );
         Ok(Some(git_head))
     }
 }

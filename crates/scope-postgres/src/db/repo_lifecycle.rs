@@ -14,6 +14,7 @@ use super::{
     request_media::tombstone_repository_attachments,
     request_revision_rows::revisions_for_request_ids,
     request_rows::requests_by_repo_id,
+    run_retention::{delete_orphaned_workflow_revisions, delete_run_source_references},
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -24,12 +25,11 @@ use scope_domain::{
     repository::{Repository, RepositoryIncarnation, repo_id},
     requests::Request,
 };
-use sea_orm::sea_query::Query;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, Statement,
     TransactionTrait,
 };
-use std::{collections::BTreeSet, sync::Arc};
+use std::collections::BTreeSet;
 
 #[cfg(test)]
 use super::MetadataStore;
@@ -91,10 +91,9 @@ impl RepositoryStore {
         )
         .map_err(PostgresError::from)?;
         let repo = mutation.result;
-        let db = Arc::clone(&self.db);
         let repo_id = repo.record.id.clone();
         self.with_repo_storage_lock(&repo_id, move || async move {
-            let claim_tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+            let claim_tx = self.db.begin().await.map_err(PostgresError::internal)?;
             acquire_aggregate_lock(&claim_tx, "repository", &repo.record.id).await?;
             ensure_repository_absent(&claim_tx, &repo.record.id).await?;
             let cleanup_claim = claim_pending_repo_storage_cleanup(
@@ -111,7 +110,7 @@ impl RepositoryStore {
                     .map_err(RepositoryCreationError::Cleanup)?;
             }
 
-            let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+            let tx = self.db.begin().await.map_err(PostgresError::internal)?;
             acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
             ensure_repository_absent(&tx, &repo.record.id).await?;
             match cleanup_claim {
@@ -194,14 +193,7 @@ impl RepositoryStore {
                 .flat_map(|run| run.source.retained_objects())
                 .cloned(),
         );
-        if !run_ids.is_empty() {
-            entities::object_reference::Entity::delete_many()
-                .filter(entities::object_reference::Column::RefKind.eq("run_source"))
-                .filter(entities::object_reference::Column::RefId.is_in(run_ids))
-                .exec(&tx)
-                .await
-                .map_err(PostgresError::internal)?;
-        }
+        delete_run_source_references(&tx, &run_ids).await?;
 
         entities::repository_invite::Entity::delete_many()
             .filter(entities::repository_invite::Column::RepoId.eq(repo_id.clone()))
@@ -249,21 +241,7 @@ impl RepositoryStore {
             .exec(&tx)
             .await
             .map_err(PostgresError::internal)?;
-        if !workflow_digests.is_empty() {
-            entities::workflow_revision::Entity::delete_many()
-                .filter(entities::workflow_revision::Column::Digest.is_in(workflow_digests))
-                .filter(
-                    entities::workflow_revision::Column::Digest.not_in_subquery(
-                        Query::select()
-                            .column(entities::run::Column::WorkflowRevisionDigest)
-                            .from(entities::run::Entity)
-                            .to_owned(),
-                    ),
-                )
-                .exec(&tx)
-                .await
-                .map_err(PostgresError::internal)?;
-        }
+        delete_orphaned_workflow_revisions(&tx, workflow_digests).await?;
 
         save_repo_effects(&tx, &mutation.effects, now_unix, generated_ids).await?;
         queue_pending_source_blob_deletion_rows(&tx, retained_sources, now_unix, generated_ids)

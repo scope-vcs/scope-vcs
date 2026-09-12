@@ -144,15 +144,13 @@ impl RequestStore {
             .branch_mutable;
         let mutation = record_working_request_upload(request, input)?;
         save_request_row(&tx, &mutation.request).await?;
-        if !mutation.orphan_objects.is_empty() {
-            queue_pending_source_blob_deletion_rows(
-                &tx,
-                mutation.orphan_objects.clone(),
-                now_unix,
-                generated_ids,
-            )
-            .await?;
-        }
+        queue_pending_source_blob_deletion_rows(
+            &tx,
+            mutation.orphan_objects.clone(),
+            now_unix,
+            generated_ids,
+        )
+        .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)
     }
@@ -176,15 +174,13 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
-        if !mutation.orphan_objects.is_empty() {
-            queue_pending_source_blob_deletion_rows(
-                &tx,
-                mutation.orphan_objects.clone(),
-                now_unix,
-                generated_ids,
-            )
-            .await?;
-        }
+        queue_pending_source_blob_deletion_rows(
+            &tx,
+            mutation.orphan_objects.clone(),
+            now_unix,
+            generated_ids,
+        )
+        .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)
     }
@@ -275,15 +271,13 @@ impl RequestStore {
                     delete_object_reference(&tx, "request_revision_snapshot", &revision.id).await?;
                 }
                 delete_request_rows(&tx, &request.id).await?;
-                if !orphan_objects.is_empty() {
-                    queue_pending_source_blob_deletion_rows(
-                        &tx,
-                        orphan_objects.clone(),
-                        now_unix,
-                        generated_ids,
-                    )
-                    .await?;
-                }
+                queue_pending_source_blob_deletion_rows(
+                    &tx,
+                    orphan_objects.clone(),
+                    now_unix,
+                    generated_ids,
+                )
+                .await?;
             }
             CloseRequestMutation::Closed { request, event } => {
                 save_request_row(&tx, request).await?;

@@ -402,12 +402,7 @@ pub mod git_segment_upload {
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        #[cfg(any(
-            test,
-            feature = "local-dev",
-            feature = "smoke-seed",
-            feature = "test-support"
-        ))]
+        #[cfg(any(test, feature = "seeding"))]
         pub fn from_domain(upload: &GitSegmentUpload) -> Result<Self, PostgresError> {
             Ok(Self {
                 segment_id: upload.segment_id.clone(),

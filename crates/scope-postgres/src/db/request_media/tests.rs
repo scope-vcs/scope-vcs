@@ -778,7 +778,10 @@ async fn binding_a_ready_attachment_notifies_only_after_the_transaction_commits(
         sqlx::postgres::PgListener::connect_with(fixture.store.db.get_postgres_connection_pool())
             .await
             .unwrap();
-    listener.listen("scope_repo_changes").await.unwrap();
+    listener
+        .listen(crate::db::repo_change_notifications::POSTGRES_REPO_CHANGE_CHANNEL)
+        .await
+        .unwrap();
     let tx = fixture.store.db.begin().await.unwrap();
     replace_bindings_for_markdown(
         &tx,

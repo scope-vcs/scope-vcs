@@ -270,6 +270,26 @@ impl AuthStore {
             .map_err(PostgresError::internal)?;
         Ok(())
     }
+
+    pub async fn user_for_tests(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<UserAccount>, PostgresError> {
+        entities::user::Entity::find_by_id(user_id.to_string())
+            .one(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)?
+            .map(entities::user::Model::try_into_domain)
+            .transpose()
+    }
+
+    pub async fn user_count_for_tests(&self) -> Result<u64, PostgresError> {
+        use sea_orm::PaginatorTrait;
+        entities::user::Entity::find()
+            .count(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -365,25 +385,7 @@ impl RepositoryStore {
         .await?;
         tx.commit().await.map_err(PostgresError::internal)
     }
-}
 
-#[cfg(any(test, feature = "test-support"))]
-impl AuthStore {
-    pub async fn user_for_tests(
-        &self,
-        user_id: &str,
-    ) -> Result<Option<UserAccount>, PostgresError> {
-        entities::user::Entity::find_by_id(user_id.to_string())
-            .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .map(entities::user::Model::try_into_domain)
-            .transpose()
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl RepositoryStore {
     pub async fn repository_for_tests(
         &self,
         repo_id: &str,
@@ -397,21 +399,7 @@ impl RepositoryStore {
             None => Ok(None),
         }
     }
-}
 
-#[cfg(any(test, feature = "test-support"))]
-impl AuthStore {
-    pub async fn user_count_for_tests(&self) -> Result<u64, PostgresError> {
-        use sea_orm::PaginatorTrait;
-        entities::user::Entity::find()
-            .count(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl RepositoryStore {
     pub async fn repository_count_for_tests(&self) -> Result<u64, PostgresError> {
         use sea_orm::PaginatorTrait;
         entities::repository::Entity::find()
