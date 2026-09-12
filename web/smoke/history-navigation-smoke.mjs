@@ -1,23 +1,18 @@
 import assert from 'node:assert/strict'
+import { assertDocumentPreserved, markDocument, waitForClientHydration } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
-export async function assertHistoryFirstFileStaysInRoute(page) {
+export async function assertHistoryNavigationKeepsDocument(page) {
   const defaultDiff = page.getByLabel('README.html diff', { exact: true })
   await defaultDiff.waitFor()
   await defaultDiff.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
   const fileNavigator = page.getByLabel('Update file navigator')
-  await fileNavigator.waitFor()
-  await page.waitForFunction(
-    (element) => Object.keys(element).some((key) => key.startsWith('__reactProps$')),
-    await fileNavigator.elementHandle(),
-  )
+  await waitForClientHydration(fileNavigator)
   await page.waitForFunction(
     () => globalThis.__TSR_ROUTER__.state.status === 'idle',
   )
   const documentSentinel = 'scope-history-file-selection'
-  await page.evaluate((sentinel) => {
-    window.__scopeHistoryDocument = sentinel
-  }, documentSentinel)
+  await markDocument(page, documentSentinel)
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
@@ -43,10 +38,7 @@ export async function assertHistoryFirstFileStaysInRoute(page) {
   } finally {
     page.off('request', recordServerFunction)
   }
-  assert.equal(
-    await page.evaluate(() => window.__scopeHistoryDocument),
-    documentSentinel,
-  )
+  await assertDocumentPreserved(page, documentSentinel)
   assert.deepEqual(serverFunctions, [])
   await page.waitForFunction((diffLabel) => {
     const diff = document.querySelector(`[aria-label="${diffLabel}"]`)
@@ -57,9 +49,7 @@ export async function assertHistoryFirstFileStaysInRoute(page) {
       host.shadowRoot.textContent?.trim().length > 0
     )
   }, 'README.html diff')
-}
 
-export async function assertHistoryFeedNavigation(page) {
   const activity = page.getByRole('radiogroup', { name: 'History activity' })
   await activity.getByRole('radio', { name: 'All activity', exact: true }).click()
   await page.waitForURL((url) => url.searchParams.get('feed') === 'all')
@@ -70,5 +60,5 @@ export async function assertHistoryFeedNavigation(page) {
   await page.waitForURL((url) => url.searchParams.get('feed') === 'updates')
   await activity.getByRole('radio', { name: 'Pushes & merges', exact: true, checked: true }).waitFor()
   await page.getByLabel('History updates', { exact: true }).waitFor()
-  assert.equal(await page.evaluate(() => window.__scopeHistoryDocument), 'scope-history-file-selection')
+  await assertDocumentPreserved(page, documentSentinel)
 }

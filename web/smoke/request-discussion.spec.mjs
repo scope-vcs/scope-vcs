@@ -1,33 +1,30 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chromium } from 'playwright'
+import {
+  assertNodesPreserved,
+  baseUrl,
+  isClientHydrated,
+  requestRepoPath,
+  waitForClientHydration,
+  withBlankPage,
+  withPage,
+} from './browser-smoke.mjs'
 import {
   assertFileSelectionSkipsRevisionReload,
   assertRequestCrossLinksStayInDocument,
-  assertRequestShellPreserved,
   assertUpdateSelectionReloadsSelectedPayload,
-  waitForClientHydration,
+  captureRequestShell,
 } from './request-changes-smoke.mjs'
 
-const baseUrl = (
-  process.env.SCOPE_WEB_BASE_URL ??
-  process.env.PLAYWRIGHT_BASE_URL ??
-  'http://localhost:3000'
-).replace(/\/$/, '')
-const repoId = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
-const [owner, repo, extra] = repoId.split('/')
-
-if (!owner || !repo || extra) {
-  throw new Error('SCOPE_SMOKE_REPO must be an owner/repository pair')
-}
+const requestPath = `${requestRepoPath}/requests/req_demo_ready`
 
 test('discussion and reply chronology preserves quote targets', async () => {
-  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+  await withPage(requestPath, async (page) => {
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
     const resolvedThread = page.locator('#discussion-discussion_demo_resolved_docs')
     await resolvedThread.getByRole('button', { name: 'Show 1 reply' }).waitFor()
     await resolvedThread.getByText('The helper accepts milliseconds', { exact: false }).waitFor()
-    await waitForClientHydration(page, retryThread.getByRole('button', { name: 'Hide 3 replies' }))
+    await waitForClientHydration(retryThread.getByRole('button', { name: 'Hide 3 replies' }))
     assert.deepEqual(
       await page.locator('.request-discussion-thread').evaluateAll((elements) =>
         elements.map(({ id }) => id),
@@ -58,7 +55,7 @@ test('discussion and reply chronology preserves quote targets', async () => {
 })
 
 test('reply disclosure preserves scroll and remains reversible', async () => {
-  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+  await withPage(requestPath, async (page) => {
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
     const hideRetryReplies = retryThread.getByRole('button', {
       name: 'Hide 3 replies',
@@ -66,7 +63,7 @@ test('reply disclosure preserves scroll and remains reversible', async () => {
     const retryReplies = retryThread.locator(
       '#discussion-discussion_demo_retry_cap-replies',
     )
-    await waitForClientHydration(page, hideRetryReplies)
+    await waitForClientHydration(hideRetryReplies)
     const disclosureTop = await hideRetryReplies.evaluate(
       (element) => element.getBoundingClientRect().top,
     )
@@ -139,23 +136,20 @@ test('reply disclosure preserves scroll and remains reversible', async () => {
 })
 
 test('revision and discussion links retain the document and request shell', async () => {
-  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, assertRequestCrossLinksStayInDocument)
+  await withPage(requestPath, assertRequestCrossLinksStayInDocument)
 })
 
 test('changes navigation preserves the request shell and collapsed replies', async () => {
-  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
-    const requestHeading = await page.getByRole('heading', { level: 1 }).elementHandle()
-    const requestNavigation = await page.getByRole('navigation', { name: 'Request views' }).elementHandle()
-    assert(requestHeading)
-    assert(requestNavigation)
+  await withPage(requestPath, async (page) => {
+    const shell = await captureRequestShell(page)
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
     const disclosure = retryThread.getByRole('button', { name: 'Hide 3 replies' })
-    await waitForClientHydration(page, disclosure)
+    await waitForClientHydration(disclosure)
     await disclosure.click()
     await assertReplyRegion(page, retryThread.locator('#discussion-discussion_demo_retry_cap-replies'), false)
     const requestViews = page.getByRole('navigation', { name: 'Request views' })
     const changesLink = requestViews.getByRole('link', { name: 'Changes' })
-    await waitForClientHydration(page, changesLink)
+    await waitForClientHydration(changesLink)
     const transitionServerFunctions = []
     const recordServerFunction = (request) => {
       if (request.url().includes('/_serverFn/')) {
@@ -171,10 +165,7 @@ test('changes navigation preserves the request shell and collapsed replies', asy
       (url, index, requests) => requests.indexOf(url) !== index,
     )
     assert.deepEqual(repeatedServerFunctions, [])
-    await assertRequestShellPreserved(page, {
-      heading: requestHeading,
-      navigation: requestNavigation,
-    })
+    await assertNodesPreserved(page, shell)
     await page.getByRole('navigation', { name: 'Request views' })
       .getByRole('link', { name: 'Discussion' })
       .click()
@@ -190,15 +181,12 @@ test('changes navigation preserves the request shell and collapsed replies', asy
     await assertReplyRegion(page, restoredRetryReplies, false)
     await restoredRetryThread.getByRole('button', { name: 'Show 3 replies' }).click()
     await assertReplyRegion(page, restoredRetryReplies, true)
-    await assertRequestShellPreserved(page, {
-      heading: requestHeading,
-      navigation: requestNavigation,
-    })
+    await assertNodesPreserved(page, shell)
   })
 })
 
 test('file and update selection reload only the selected changes payload', async () => {
-  await withPage(`/${owner}/update-demo/requests/req_demo_ready/changes`, async (page) => {
+  await withPage(`${requestPath}/changes`, async (page) => {
     await page.getByLabel('Commit file navigator').waitFor()
     await assertFileSelectionSkipsRevisionReload(page, 'retry.ts', '/src/retry.ts')
     await assertUpdateSelectionReloadsSelectedPayload(page)
@@ -228,12 +216,12 @@ async function assertReplyRegion(page, region, expanded) {
 }
 
 test('request details disclose on mobile without replacing discussion or quote targets', async () => {
-  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+  await withPage(requestPath, async (page) => {
     await page.setViewportSize({ width: 390, height: 844 })
     const context = page.locator('.request-context-rail > details')
     const summary = context.locator(':scope > summary')
     await summary.waitFor()
-    await waitForClientHydration(page, summary)
+    await waitForClientHydration(summary)
     assert.equal(await context.getAttribute('open'), null)
     assert.doesNotMatch(await context.ariaSnapshot(), /Public request/)
     assert.equal(await context.count(), 1)
@@ -268,44 +256,41 @@ test('request details disclose on mobile without replacing discussion or quote t
 })
 
 test('details opened before hydration close on the next click and stay closed on mobile', async () => {
-  const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   let releaseScripts
   const scriptsHeld = new Promise((resolve) => { releaseScripts = resolve })
   try {
-    await page.route('**/*', async (route) => {
-      if (route.request().resourceType() === 'script') await scriptsHeld
-      await route.continue().catch(() => {})
-    })
-    await page.goto(new URL(`/${owner}/update-demo/requests/req_demo_ready`, baseUrl).href, {
-      waitUntil: 'commit',
-    })
-    const context = page.locator('.request-context-rail > details')
-    const summary = context.locator(':scope > summary')
-    await summary.waitFor()
-    assert.equal(await summary.evaluate((element) => Object.keys(element).some((key) => key.startsWith('__reactProps$'))), false)
-    await summary.click()
-    assert.equal(await context.getAttribute('open'), '')
-    releaseScripts()
-    await waitForClientHydration(page, summary)
-    await summary.click()
-    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
-    await page.setViewportSize({ width: 1440, height: 1000 })
-    await context.getByText('Public request', { exact: true }).waitFor()
-    await page.setViewportSize({ width: 390, height: 844 })
-    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
+    await withBlankPage(async (page) => {
+      await page.route('**/*', async (route) => {
+        if (route.request().resourceType() === 'script') await scriptsHeld
+        await route.continue().catch(() => {})
+      })
+      await page.goto(`${baseUrl}${requestPath}`, { waitUntil: 'commit' })
+      const context = page.locator('.request-context-rail > details')
+      const summary = context.locator(':scope > summary')
+      await summary.waitFor()
+      assert.equal(await isClientHydrated(summary), false)
+      await summary.click()
+      assert.equal(await context.getAttribute('open'), '')
+      releaseScripts()
+      await waitForClientHydration(summary)
+      await summary.click()
+      await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await context.getByText('Public request', { exact: true }).waitFor()
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
+    }, { viewport: { width: 390, height: 844 } })
   } finally {
     releaseScripts()
-    await browser.close()
   }
 })
 
 test('mobile details close survives desktop resize before native toggle delivery', async () => {
-  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+  await withPage(requestPath, async (page) => {
     await page.setViewportSize({ width: 390, height: 844 })
     const context = page.locator('.request-context-rail > details')
     const summary = context.locator(':scope > summary')
-    await waitForClientHydration(page, summary)
+    await waitForClientHydration(summary)
     await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
     await summary.press('Enter')
     await context.getByText('Public request', { exact: true }).waitFor()
@@ -349,23 +334,3 @@ test('mobile details close survives desktop resize before native toggle delivery
     assert(await originalInvitees.evaluate((element) => element.isConnected && element.open))
   })
 })
-
-async function withPage(path, assertion) {
-  const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage()
-  const pageErrors = []
-  page.on('pageerror', (error) => pageErrors.push(error.message))
-
-  try {
-    const response = await page.goto(new URL(path, `${baseUrl}/`).toString(), {
-      timeout: 30_000,
-      waitUntil: 'domcontentloaded',
-    })
-    assert(response, `navigation to ${path} did not produce a response`)
-    assert(response.status() < 400, `navigation to ${path} returned ${response.status()}`)
-    await assertion(page)
-    assert.deepEqual(pageErrors, [])
-  } finally {
-    await browser.close()
-  }
-}
