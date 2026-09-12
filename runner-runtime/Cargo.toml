@@ -19,6 +19,7 @@ scope_api_contract.workspace = true
 scope_cache_contract.workspace = true
 scope_cache_domain.workspace = true
 scope_domain.workspace = true
+scope_git_process.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

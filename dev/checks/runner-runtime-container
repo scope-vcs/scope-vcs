@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "usage: $0 --image IMAGE" >&2
+  exit 2
+}
+
+image=""
+if [[ "${1:-}" == "--image" && -n "${2:-}" && -z "${3:-}" ]]; then
+  image="$2"
+else
+  usage
+fi
+
+for command in docker git python3 timeout; do
+  command -v "$command" >/dev/null || {
+    echo "required command is unavailable: $command" >&2
+    exit 1
+  }
+done
+[[ "$(uname -s)" == "Linux" ]] || {
+  echo "the container entrypoint regression requires Linux Docker host networking" >&2
+  exit 1
+}
+docker image inspect "$image" >/dev/null
+
+repo_root="$(git rev-parse --show-toplevel)"
+fixture="$repo_root/runner-runtime/tests/container_entrypoint_protocol.py"
+test_root="$(mktemp -d "${TMPDIR:-/tmp}/scope-runtime-container.XXXXXX")"
+fixture_pid=""
+container=""
+current_shared=""
+
+cleanup() {
+  local result=$?
+  if [[ $result -ne 0 && -n "$container" ]]; then
+    docker inspect --format '{{json .State}}' "$container" >&2 2>/dev/null || true
+    docker logs "$container" >&2 2>/dev/null || true
+    if [[ -r "$current_shared/protocol-state.json" ]]; then
+      python3 -m json.tool "$current_shared/protocol-state.json" >&2 || true
+    fi
+  fi
+  if [[ -n "$container" ]]; then
+    docker rm --force "$container" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$fixture_pid" ]]; then
+    kill "$fixture_pid" >/dev/null 2>&1 || true
+    wait "$fixture_pid" 2>/dev/null || true
+  fi
+  rm -rf -- "$test_root"
+  exit "$result"
+}
+trap cleanup EXIT
+
+source_repo="$test_root/source"
+mkdir -p "$source_repo"
+git -C "$source_repo" init --quiet
+git -C "$source_repo" config user.name "Scope container fixture"
+git -C "$source_repo" config user.email "fixture@scope.invalid"
+printf 'container entrypoint fixture\n' > "$source_repo/fixture.txt"
+git -C "$source_repo" add fixture.txt
+git -C "$source_repo" commit --quiet -m fixture
+git_oid="$(git -C "$source_repo" rev-parse HEAD)"
+bundle="$test_root/source.bundle"
+git -C "$source_repo" bundle create "$bundle" HEAD
+
+wait_for_file() {
+  local path="$1"
+  local label="$2"
+  local seconds="${3:-5}"
+  python3 - "$path" "$label" "$seconds" <<'PY'
+import pathlib
+import sys
+import time
+
+path = pathlib.Path(sys.argv[1])
+deadline = time.monotonic() + float(sys.argv[3])
+while time.monotonic() < deadline:
+    if path.exists():
+        sys.exit(0)
+    time.sleep(0.01)
+raise SystemExit(f"timed out waiting for {sys.argv[2]}")
+PY
+}
+
+stop_scenario() {
+  if [[ -n "$container" ]]; then
+    docker rm --force "$container" >/dev/null 2>&1 || true
+    container=""
+  fi
+  if [[ -n "$fixture_pid" ]]; then
+    kill "$fixture_pid" >/dev/null 2>&1 || true
+    wait "$fixture_pid" 2>/dev/null || true
+    fixture_pid=""
+  fi
+}
+
+start_scenario() {
+  local scenario="$1"
+  local deadline="$2"
+  local shared="$test_root/$scenario"
+  current_shared="$shared"
+  local port_file="$shared/port"
+  mkdir -p "$shared"
+  python3 "$fixture" \
+    --scenario "$scenario" \
+    --bundle "$bundle" \
+    --git-oid "$git_oid" \
+    --shared "$shared" \
+    --port-file "$port_file" &
+  fixture_pid=$!
+  wait_for_file "$port_file" "protocol fixture port"
+  local port
+  port="$(<"$port_file")"
+  container="scope-runtime-entrypoint-${scenario}-$$"
+  docker run --detach \
+    --init=false \
+    --name "$container" \
+    --network host \
+    --volume "$shared:/scope-fixture" \
+    --env "SCOPE_API_URL=http://127.0.0.1:$port" \
+    --env "SCOPE_ATTEMPT_ID=container-regression" \
+    --env "SCOPE_BOOTSTRAP_TOKEN=bootstrap-token" \
+    --env "SCOPE_ATTEMPT_DEADLINE_UNIX=$deadline" \
+    --entrypoint /scope/bin/scope-runner-runtime \
+    "$image" >/dev/null
+  [[ "$(docker inspect --format '{{.HostConfig.Init}}' "$container")" != "true" ]]
+  local entrypoint
+  entrypoint="$(docker inspect --format '{{.Path}}' "$container")"
+  [[ "$entrypoint" == "/scope/bin/scope-runner-runtime" ]] || {
+    echo "unexpected container entrypoint: $entrypoint" >&2
+    return 1
+  }
+}
+
+wait_for_container() {
+  local seconds="$1"
+  local wait_status
+  set +e
+  wait_status="$(timeout "$seconds" docker wait "$container")"
+  local command_status=$?
+  set -e
+  if [[ $command_status -ne 0 ]]; then
+    echo "container did not stop within ${seconds}s" >&2
+    return 1
+  fi
+  printf '%s' "$wait_status"
+}
+
+assert_protocol() {
+  local scenario="$1"
+  local expected_attempt="$2"
+  local expected_step="$3"
+  local expected_heartbeats="$4"
+  python3 - \
+    "$test_root/$scenario/protocol-state.json" \
+    "$expected_attempt" \
+    "$expected_step" \
+    "$expected_heartbeats" <<'PY'
+import json
+import sys
+
+state = json.load(open(sys.argv[1]))
+expected_attempt = sys.argv[2]
+expected_step = sys.argv[3]
+assert state["claims"] == 1, state
+assert state["heartbeat_count"] == int(sys.argv[4]), state
+actions = [event["action"] for event in state["events"]]
+if state["scenario"] == "claim-error":
+    assert actions.count("source") == 0, state
+    assert actions.count("steps/0/start") == 0, state
+else:
+    assert actions.count("source") == 1, state
+    assert actions.count("steps/0/start") == 1, state
+if expected_attempt != "none":
+    assert len(state["attempt_completions"]) == 1, state
+    assert state["attempt_completions"][0]["conclusion"]["kind"] == expected_attempt, state
+else:
+    assert state["attempt_completions"] == [], state
+if expected_step != "none":
+    assert len(state["step_completions"]) == 1, state
+    assert state["step_completions"][0]["conclusion"]["kind"] == expected_step, state
+else:
+    assert state["step_completions"] == [], state
+PY
+}
+
+assert_process_tree_reaped() {
+  local scenario="$1"
+  local shared="$test_root/$scenario"
+  wait_for_file "$shared/complete-pending" "blocked terminal completion" 15
+  local child descendant
+  read -r child descendant < "$shared/processes"
+  if ! python3 - "$container" "$child" "$descendant" <<'PY'
+import subprocess
+import sys
+import time
+
+container, child, descendant = sys.argv[1:]
+deadline = time.monotonic() + 2
+command = [
+    "docker", "exec", container, "sh", "-c",
+    'test ! -e "/proc/$1" && test ! -e "/proc/$2"',
+    "sh", child, descendant,
+]
+while time.monotonic() < deadline:
+    try:
+        result = subprocess.run(
+            command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=max(0.001, deadline - time.monotonic()),
+        )
+    except subprocess.TimeoutExpired:
+        break
+    if result.returncode == 0 and time.monotonic() <= deadline:
+        sys.exit(0)
+    time.sleep(0.01)
+raise SystemExit(1)
+PY
+  then
+    docker exec "$container" sh -c \
+      'for pid in "$1" "$2"; do test ! -r "/proc/$pid/stat" || cat "/proc/$pid/stat"; done' \
+      sh "$child" "$descendant" >&2 || true
+    echo "step child $child or descendant $descendant was not reaped within two seconds" >&2
+    return 1
+  fi
+  touch "$shared/release-completion"
+}
+
+run_success() {
+  start_scenario success "$(($(date +%s) + 30))"
+  [[ "$(wait_for_container 10)" == "0" ]]
+  assert_protocol success succeeded succeeded 2
+  stop_scenario
+}
+
+run_step_failure() {
+  start_scenario step-failure "$(($(date +%s) + 30))"
+  [[ "$(wait_for_container 10)" == "0" ]]
+  assert_protocol step-failure none failed 1
+  python3 - "$test_root/step-failure/protocol-state.json" <<'PY'
+import json
+import sys
+state = json.load(open(sys.argv[1]))
+assert state["step_completions"][0]["conclusion"]["exit_code"] == 23, state
+PY
+  stop_scenario
+}
+
+run_claim_error() {
+  start_scenario claim-error "$(($(date +%s) + 30))"
+  [[ "$(wait_for_container 10)" == "1" ]]
+  assert_protocol claim-error none none 0
+  stop_scenario
+}
+
+run_tree_terminal() {
+  local scenario="$1"
+  local conclusion="$2"
+  start_scenario "$scenario" "$(($(date +%s) + 30))"
+  assert_process_tree_reaped "$scenario"
+  [[ "$(wait_for_container 10)" == "0" ]]
+  local expected_heartbeats=1
+  [[ "$scenario" == "cancel-tree" ]] && expected_heartbeats=2
+  assert_protocol "$scenario" "$conclusion" none "$expected_heartbeats"
+  stop_scenario
+}
+
+run_deadline() {
+  local started_at
+  started_at="$(date +%s%N)"
+  start_scenario deadline-tree "$(($(date +%s) + 4))"
+  wait_for_file "$test_root/deadline-tree/processes" "deadline process tree" 5
+  [[ "$(wait_for_container 8)" == "124" ]]
+  local elapsed_ms=$((($(date +%s%N) - started_at) / 1000000))
+  ((elapsed_ms >= 2000 && elapsed_ms < 8000)) || {
+    echo "absolute deadline fired outside its expected window: ${elapsed_ms}ms" >&2
+    return 1
+  }
+  assert_protocol deadline-tree none none 1
+  stop_scenario
+}
+
+run_sigterm() {
+  start_scenario sigterm-tree "$(($(date +%s) + 30))"
+  wait_for_file "$test_root/sigterm-tree/processes" "signal process tree" 5
+  docker kill --signal TERM "$container" >/dev/null
+  [[ "$(wait_for_container 8)" == "143" ]]
+  assert_protocol sigterm-tree none none 1
+  stop_scenario
+}
+
+run_success
+run_step_failure
+run_claim_error
+run_tree_terminal cancel-tree canceled
+run_tree_terminal timeout-tree timed-out
+run_deadline
+run_sigterm
+
+echo "runner runtime container entrypoint regression passed"
