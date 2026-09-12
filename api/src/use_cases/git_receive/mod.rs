@@ -514,6 +514,6 @@ async fn actor_can_receive_request_push(
     author_id: &str,
     access: scope_domain::repository::access::RepositoryAccess,
 ) -> Result<bool, ApiError> {
-    ensure_repo_read(state, repo, principal)?;
+    ensure_repo_read(repo, principal)?;
     request_ref::actor_has_open_editable_request(state, &repo.record.id, author_id, access).await
 }

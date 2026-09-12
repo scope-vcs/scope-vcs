@@ -1,7 +1,8 @@
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
+use serde::Serialize;
 use scope_domain::{content::SourceBlob, repo_actions::RepoStorageCleanup, repository::repo_id};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub(crate) struct CleanupDrainReport {
     pub(crate) repo_storage: RepoStorageCleanupDrainReport,
     pub(crate) source_blobs: SourceBlobCleanupDrainReport,
@@ -16,7 +17,7 @@ impl CleanupDrainReport {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub(crate) struct RepoStorageCleanupDrainReport {
     pub(crate) attempted: usize,
     pub(crate) deleted: usize,
@@ -24,14 +25,14 @@ pub(crate) struct RepoStorageCleanupDrainReport {
     pub(crate) failed: Vec<RepoStorageCleanupFailure>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub(crate) struct RepoStorageCleanupFailure {
     pub(crate) owner_handle: String,
     pub(crate) repo_name: String,
     pub(crate) error: String,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub(crate) struct SourceBlobCleanupDrainReport {
     pub(crate) attempted: usize,
     pub(crate) deleted: usize,
@@ -40,7 +41,7 @@ pub(crate) struct SourceBlobCleanupDrainReport {
     pub(crate) failed_object_deletes: Vec<SourceBlobCleanupFailure>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub(crate) struct SourceBlobCleanupFailure {
     pub(crate) object_key: String,
     pub(crate) sha256: String,

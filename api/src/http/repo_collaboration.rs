@@ -230,7 +230,7 @@ fn ensure_collaboration_owner_access(
     user_id: &str,
 ) -> Result<(), ApiError> {
     let principal = principal_for_user_id(repo, user_id);
-    ensure_repo_read(state, repo, &principal)?;
+    ensure_repo_read(repo, &principal)?;
     if repo.is_owner_user(user_id) {
         Ok(())
     } else {

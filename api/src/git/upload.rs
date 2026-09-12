@@ -65,7 +65,7 @@ pub(crate) async fn git_projection_for_request(
         ));
     }
 
-    ensure_repo_read(state, &repo, &principal)?;
+    ensure_repo_read(&repo, &principal)?;
     let access = repo.access_for_principal(&principal);
     let view_key = ProjectionViewKey::from_access(access);
     Ok(project_graph(
@@ -97,7 +97,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
             &repo, owner, repo_name, &principal,
         ));
     }
-    ensure_repo_read(state, &repo, &principal)?;
+    ensure_repo_read(&repo, &principal)?;
     let access = repo.access_for_principal(&principal);
     let private_view = ProjectionViewKey::from_access(access) == ProjectionViewKey::Private;
     let base_repo = if private_view {

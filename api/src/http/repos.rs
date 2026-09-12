@@ -185,7 +185,7 @@ pub(crate) async fn get_repo_config(
     if repo.access.actor == RepositoryActor::Public {
         let full_repo = find_repo(&state, &owner, &repo_name).await?;
         let principal = principal_for_scope_user(&full_repo, Some(&user));
-        crate::repo_access::ensure_repo_read(&state, &full_repo, &principal)?;
+        crate::repo_access::ensure_repo_read(&full_repo, &principal)?;
         return Err(ApiError::forbidden("repo membership required"));
     }
 

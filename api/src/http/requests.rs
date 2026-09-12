@@ -296,7 +296,7 @@ pub(crate) async fn start_request(
     let user = require_scope_user(&state, &headers).await?;
     let repo = find_repo(&state, &owner, &repo_name).await?;
     let principal = principal_for_scope_user(&repo, Some(&user));
-    ensure_repo_read(&state, &repo, &principal)?;
+    ensure_repo_read(&repo, &principal)?;
     let access = repo.access_for_principal(&principal);
     let audience: RequestAudience = input.audience.into();
     if access.actor == RepositoryActor::Public && audience != RequestAudience::Public {
@@ -516,7 +516,7 @@ pub(crate) async fn repo_and_access(
         .as_ref()
         .map(|user| principal_for_scope_user(&repo, Some(user)))
         .unwrap_or_else(scope_domain::policy::Principal::public);
-    ensure_repo_read(state, &repo, &principal)?;
+    ensure_repo_read(&repo, &principal)?;
     let access = repo.access_for_principal(&principal);
     Ok((repo, access, user.map(|user| user.id)))
 }

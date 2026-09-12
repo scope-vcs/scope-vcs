@@ -66,10 +66,8 @@ pub(super) fn edit_request(
             uploaded
                 .attachments
                 .iter()
-                .zip(uploaded.references)
-                .filter_map(|(attachment, reference)| {
-                    (!existing.contains(&attachment.id)).then_some(reference)
-                }),
+                .filter(|attachment| !existing.contains(&attachment.id))
+                .map(attachments::markdown_reference),
         ))
     } else {
         supplied_description
@@ -87,17 +85,13 @@ pub(super) fn edit_request(
         "operation": "request.edit", "saved": true,
         "request_id": &request_id, "request": &response.request,
     });
-    let attachments = if args.attachments.wait {
-        attachments::wait_for_processing(
-            api,
-            context.api_target(&request_id),
-            uploaded.attachments,
-            saved.clone(),
-        )?
-    } else {
-        uploaded.attachments
-    };
-    attachments::complete_saved_uploads(None, &uploaded.receipt_keys, saved)?;
+    let attachments = uploaded.complete_saved(
+        api,
+        context.api_target(&request_id),
+        args.attachments.wait,
+        None,
+        saved,
+    )?;
 
     Ok(RequestCommandOutcome::new(
         "request.edit",

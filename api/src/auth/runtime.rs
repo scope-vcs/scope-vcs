@@ -12,15 +12,11 @@ pub(crate) async fn require_attempt(
     headers: &HeaderMap,
     attempt_id: &str,
 ) -> Result<DispatchClaim, ApiError> {
-    let secret =
-        bearer_token(headers)?.ok_or_else(|| ApiError::unauthorized("attempt token required"))?;
-    if !secret.starts_with("scope_attempt_") {
-        return Err(ApiError::unauthorized("attempt credentials are invalid"));
-    }
+    let token_hash = attempt_token_hash(headers)?;
     Ok(state
         .metadata
         .runs()
-        .authenticate_attempt(attempt_id, &machine_token_hash(secret), unix_now()?)
+        .authenticate_attempt(attempt_id, &token_hash, unix_now()?)
         .await?)
 }
 

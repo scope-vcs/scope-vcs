@@ -107,8 +107,8 @@ pub fn run_request_command(
         RequestCommand::Push(args) => push_request_branch(
             git_repo.expect("prepared local command"),
             api,
-            args.target.remote,
-            args.target.request,
+            args.remote,
+            args.request,
             machine_output,
         ),
         RequestCommand::Submit(args) => {
@@ -124,7 +124,7 @@ pub fn run_request_command(
         RequestCommand::Uninvite(args) => {
             invite_request(git_repo, api, args.target, args.handle, false)
         }
-        RequestCommand::Leave(args) => leave_invited_request(git_repo, api, args.target),
+        RequestCommand::Leave(args) => leave_invited_request(git_repo, api, args),
         RequestCommand::Merge(args) => {
             merge_request_command(git_repo, api, args.target, args.yes, machine_output)
         }
@@ -132,15 +132,15 @@ pub fn run_request_command(
             rate_request_command(git_repo, api, args.target, args.score, args.reason)
         }
         RequestCommand::Discussion(args) => run_request_discussion_command(git_repo, api, args),
-        RequestCommand::Show(args) => show_one_request(git_repo, api, args.target),
+        RequestCommand::Show(args) => show_one_request(git_repo, api, args),
         RequestCommand::List(args) => list_request_status(git_repo, api, args),
         RequestCommand::Checkout(args) => {
             inspect::checkout_request(git_repo.expect("prepared local command"), api, args)
         }
         RequestCommand::Diff(args) => inspect::diff_request(git_repo, api, args),
-        RequestCommand::Checks(args) => inspect::request_checks(git_repo, api, args.target),
+        RequestCommand::Checks(args) => inspect::request_checks(git_repo, api, args),
         RequestCommand::Status(args) => {
-            show_request_status(git_repo, api, args.target.remote, args.target.request)
+            show_request_status(git_repo, api, args.remote, args.request)
         }
     }
 }
@@ -217,7 +217,13 @@ fn start_request_discussion(
         },
         attachment_args.paths,
     )?;
-    let body = text::append_attachment_references(body, uploaded.references);
+    let body = text::append_attachment_references(
+        body,
+        uploaded
+            .attachments
+            .iter()
+            .map(attachments::markdown_reference),
+    );
     let anchor = args
         .revision
         .map(|revision_id| RequestDiscussionAnchorInput {
@@ -261,19 +267,13 @@ fn start_request_discussion(
         "operation": "request.discussion.start", "saved": true,
         "request_id": &request_id, "discussion": &response.discussion,
     });
-    let uploaded_attachments = if attachment_args.wait {
-        attachments::wait_for_processing(
-            api,
-            context.api_target(&request_id),
-            uploaded.attachments,
-            saved.clone(),
-        )?
-    } else {
-        uploaded.attachments
-    };
-    if let Some(mutation) = &pending_mutation {
-        attachments::complete_saved_uploads(Some(mutation), &uploaded.receipt_keys, saved)?;
-    }
+    let uploaded_attachments = uploaded.complete_saved(
+        api,
+        context.api_target(&request_id),
+        attachment_args.wait,
+        pending_mutation.as_ref(),
+        saved,
+    )?;
 
     Ok(RequestCommandOutcome::new(
         "request.discussion.start",
@@ -313,7 +313,13 @@ fn reply_to_request_discussion(
         },
         attachment_args.paths,
     )?;
-    let body = text::append_attachment_references(body, uploaded.references);
+    let body = text::append_attachment_references(
+        body,
+        uploaded
+            .attachments
+            .iter()
+            .map(attachments::markdown_reference),
+    );
     let pending_mutation = has_attachments
         .then(|| {
             attachments::begin_mutation(
@@ -356,19 +362,13 @@ fn reply_to_request_discussion(
         "request_id": &request_id, "discussion": &response.discussion,
         "reply": &response.reply,
     });
-    let uploaded_attachments = if attachment_args.wait {
-        attachments::wait_for_processing(
-            api,
-            context.api_target(&request_id),
-            uploaded.attachments,
-            saved.clone(),
-        )?
-    } else {
-        uploaded.attachments
-    };
-    if let Some(mutation) = &pending_mutation {
-        attachments::complete_saved_uploads(Some(mutation), &uploaded.receipt_keys, saved)?;
-    }
+    let uploaded_attachments = uploaded.complete_saved(
+        api,
+        context.api_target(&request_id),
+        attachment_args.wait,
+        pending_mutation.as_ref(),
+        saved,
+    )?;
 
     Ok(RequestCommandOutcome::new(
         command,

@@ -81,36 +81,7 @@ if [[ -d "$HOME/.cargo/bin" ]]; then
   export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
-ensure_dir() {
-  mkdir -p "$1"
-}
-
-read_dotenv_value() {
-  local path="$1"
-  local key="$2"
-  [[ -f "$path" ]] || return 0
-
-  awk -v key="$key" '
-    /^[[:space:]]*#/ { next }
-    /^[[:space:]]*$/ { next }
-    {
-      split($0, parts, "=")
-      name = parts[1]
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
-      if (name != key) {
-        next
-      }
-      value = substr($0, index($0, "=") + 1)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-      if ((substr(value, 1, 1) == "\"" && substr(value, length(value), 1) == "\"") ||
-          (substr(value, 1, 1) == "'"'"'" && substr(value, length(value), 1) == "'"'"'")) {
-        value = substr(value, 2, length(value) - 2)
-      }
-      print value
-      exit
-    }
-  ' "$path"
-}
+source "$ROOT/dev/dotenv.sh"
 
 get_clerk_issuer() {
   local publishable_key payload mod clerk_host
@@ -170,7 +141,7 @@ local_database_url() {
 }
 
 get_object_key() {
-  ensure_dir "$DATA_DIR"
+  mkdir -p "$DATA_DIR"
   if [[ ! -f "$KEY_FILE" ]]; then
     openssl rand -base64 32 > "$KEY_FILE"
   fi
@@ -178,7 +149,7 @@ get_object_key() {
 }
 
 ensure_media_keys() {
-  ensure_dir "$DATA_DIR"
+  mkdir -p "$DATA_DIR"
   if [[ ! -f "$MEDIA_KEY_FILE" ]]; then
     openssl rand -base64 32 > "$MEDIA_KEY_FILE"
   fi
@@ -223,9 +194,13 @@ stop_owned_processes() {
 }
 
 start_service() {
-  local service="$1"
+  local service="$1" readiness="${2:-}" timeout="${3:-}"
   setsid "$STATE_DIR/$service.sh" > "$STATE_DIR/$service.out.log" 2> "$STATE_DIR/$service.err.log" &
   python3 "$ROOT/dev/local-process.py" record "$STATE_DIR/$service.pid" "$!"
+  if [[ -n "$readiness" ]] && ! wait_http "$readiness" "$timeout"; then
+    echo "${service//-/ } did not become ready; see $STATE_DIR/$service.err.log" >&2
+    exit 1
+  fi
 }
 
 # Every backend runner starts with the same local database and environment boundary.
@@ -389,19 +364,12 @@ wait_http() {
 }
 
 doctor() {
-  assert_command cargo
-  assert_command curl
-  assert_command git
-  assert_command node
-  assert_command openssl
-  assert_command pnpm
-  assert_command python3
-  assert_command setsid
-  assert_command ss
-  assert_command "${SCOPE_MEDIA_FFMPEG:-ffmpeg}"
-  assert_command "${SCOPE_MEDIA_FFPROBE:-ffprobe}"
-  assert_command "${SCOPE_MEDIA_HEIF_CONVERT:-heif-convert}"
-  assert_command "${SCOPE_MEDIA_HEIF_INFO:-heif-info}"
+  local tool
+  for tool in cargo curl git node openssl pnpm python3 setsid ss \
+    "${SCOPE_MEDIA_FFMPEG:-ffmpeg}" "${SCOPE_MEDIA_FFPROBE:-ffprobe}" \
+    "${SCOPE_MEDIA_HEIF_CONVERT:-heif-convert}" "${SCOPE_MEDIA_HEIF_INFO:-heif-info}"; do
+    assert_command "$tool"
+  done
 
   local issuer dev_email secret_key
   issuer="$(get_clerk_issuer)"
@@ -430,22 +398,11 @@ mint_bench_auth_token() {
   local api_origin="$1"
   curl -fsS --max-time 3 -X POST "$api_origin/v1/dev/bench/cli-session" \
     | node -e '
-let input = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  input += chunk;
-});
-process.stdin.on("end", () => {
-  try {
-    const body = JSON.parse(input);
-    if (typeof body.session_token !== "string" || !body.session_token.startsWith("scope_cli_")) {
-      process.exit(1);
-    }
-    process.stdout.write(body.session_token);
-  } catch {
-    process.exit(1);
-  }
-});
+try {
+  const { session_token } = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+  if (typeof session_token !== "string" || !session_token.startsWith("scope_cli_")) process.exit(1);
+  process.stdout.write(session_token);
+} catch { process.exit(1); }
 '
 }
 
@@ -499,9 +456,9 @@ up() {
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     assert_port_free 3000 "web"
   fi
-  ensure_dir "$STATE_DIR"
-  ensure_dir "$DATA_DIR"
-  ensure_dir "$MEDIA_OBJECT_DIR"
+  mkdir -p "$STATE_DIR"
+  mkdir -p "$DATA_DIR"
+  mkdir -p "$MEDIA_OBJECT_DIR"
   ensure_media_keys
   local service
   for service in api web worker media media-worker; do
@@ -509,57 +466,33 @@ up() {
   done
   build_local_services
   prepare_local_schema
-  start_service api
-  if ! wait_http "http://localhost:8080/readyz" 45; then
-    echo "api did not become ready; see $STATE_DIR/api.err.log" >&2
-    exit 1
-  fi
+  start_service api "http://localhost:8080/readyz" 45
   write_worker_runner
   start_service worker
   write_media_runner
-  start_service media
-  if ! wait_http "http://localhost:8083/healthz" 90; then
-    echo "media gateway did not become ready; see $STATE_DIR/media.err.log" >&2
-    exit 1
-  fi
+  start_service media "http://localhost:8083/healthz" 90
   write_media_worker_runner
-  start_service media-worker
-  if ! wait_http "http://localhost:8084/healthz" 90; then
-    echo "media worker did not become ready; see $STATE_DIR/media-worker.err.log" >&2
-    exit 1
-  fi
+  start_service media-worker "http://localhost:8084/healthz" 90
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     write_web_runner
-    start_service web
-    if ! wait_http "http://localhost:3000" 180; then
-      echo "web did not become ready; see $STATE_DIR/web.err.log" >&2
-      exit 1
-    fi
+    start_service web "http://localhost:3000" 180
   fi
   status
 }
 
 status() {
-  echo "api process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/api.pid")"
-  echo "worker process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/worker.pid")"
-  echo "media process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/media.pid")"
-  echo "media worker process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/media-worker.pid")"
-  echo "web process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/web.pid")"
-  if body="$(curl -fsS --max-time 3 "http://localhost:8080/readyz" 2>/dev/null)"; then
-    echo "api readyz: $body"
-  else
-    echo "api readyz: unavailable"
-  fi
-  if body="$(curl -fsS --max-time 3 "http://localhost:8083/healthz" 2>/dev/null)"; then
-    echo "media healthz: $body"
-  else
-    echo "media healthz: unavailable"
-  fi
-  if body="$(curl -fsS --max-time 3 "http://localhost:8084/healthz" 2>/dev/null)"; then
-    echo "media worker healthz: $body"
-  else
-    echo "media worker healthz: unavailable"
-  fi
+  local service port endpoint body
+  for service in api worker media media-worker web; do
+    echo "${service//-/ } process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/$service.pid")"
+  done
+  while read -r service port endpoint; do
+    body="$(curl -fsS --max-time 3 "http://localhost:$port/$endpoint" 2>/dev/null)" || body=unavailable
+    echo "${service//-/ } $endpoint: $body"
+  done <<'ENDPOINTS'
+api 8080 readyz
+media 8083 healthz
+media-worker 8084 healthz
+ENDPOINTS
   if code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "http://localhost:3000" 2>/dev/null)"; then
     echo "web: HTTP $code"
   else

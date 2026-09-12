@@ -74,7 +74,7 @@ pub(crate) async fn merge_request(
 ) -> Result<MergeRequestResult, ApiError> {
     let repo = find_repo(state, &command.owner, &command.repo_name).await?;
     let principal = principal_for_user_id(&repo, &command.actor_user_id);
-    ensure_repo_read(state, &repo, &principal)?;
+    ensure_repo_read(&repo, &principal)?;
     let access = repo.access_for_principal(&principal);
     let request = state
         .metadata
