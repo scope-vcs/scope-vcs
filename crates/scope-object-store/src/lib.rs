@@ -1,3 +1,4 @@
+pub mod config;
 mod encrypted;
 mod error;
 mod filesystem;

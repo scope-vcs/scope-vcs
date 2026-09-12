@@ -271,6 +271,35 @@ impl AttemptCacheObservation {
     }
 }
 
+impl AttemptCachePreparationTiming {
+    /// Builds a timing from measured phases, deriving the total once so no
+    /// reporter has to restate the sum rule.
+    pub fn measured(
+        key_ms: u64,
+        metadata_ms: u64,
+        size_bytes: u64,
+        download_verify_ms: u64,
+        sync_ms: u64,
+        extraction_ms: u64,
+    ) -> Result<Self, DomainError> {
+        let prepare_ms = key_ms
+            .checked_add(metadata_ms)
+            .and_then(|total| total.checked_add(download_verify_ms))
+            .and_then(|total| total.checked_add(sync_ms))
+            .and_then(|total| total.checked_add(extraction_ms))
+            .ok_or_else(|| DomainError::invalid_input("cache preparation duration overflow"))?;
+        Self::new(
+            key_ms,
+            metadata_ms,
+            size_bytes,
+            download_verify_ms,
+            sync_ms,
+            extraction_ms,
+            prepare_ms,
+        )
+    }
+}
+
 fn validate_observation_duration(duration_ms: u64) -> Result<(), DomainError> {
     if duration_ms > MAX_CACHE_OBSERVATION_DURATION_MS {
         return Err(DomainError::invalid_input(

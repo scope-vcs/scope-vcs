@@ -3,6 +3,7 @@ pub mod codec;
 pub mod config;
 pub mod health;
 pub mod jobs;
+mod lease;
 pub mod process;
 mod runtime;
 pub mod scratch;

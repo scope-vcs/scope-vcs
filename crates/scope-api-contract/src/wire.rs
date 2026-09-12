@@ -253,6 +253,24 @@ pub struct RepoChangeEvent {
     pub kind: RepoChangeKind,
 }
 
+impl RepoChangeEvent {
+    /// Run changes carry no repository change version; version 0 tells
+    /// subscribers to refresh unconditionally.
+    pub fn run_changed(
+        repo_id: String,
+        incarnation_id: String,
+        run_id: String,
+        change: RunChangeKind,
+    ) -> Self {
+        Self {
+            repo_id,
+            incarnation_id,
+            version: 0,
+            kind: RepoChangeKind::RunChanged { run_id, change },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoChangeNotification {
     pub event: RepoChangeEvent,
@@ -298,15 +316,12 @@ mod tests {
 
     #[test]
     fn run_change_uses_the_repo_event_envelope() {
-        let event = RepoChangeEvent {
-            repo_id: "owner/repo".to_string(),
-            incarnation_id: "inc_1".to_string(),
-            version: 0,
-            kind: RepoChangeKind::RunChanged {
-                run_id: "run_1".to_string(),
-                change: RunChangeKind::Created,
-            },
-        };
+        let event = RepoChangeEvent::run_changed(
+            "owner/repo".to_string(),
+            "inc_1".to_string(),
+            "run_1".to_string(),
+            RunChangeKind::Created,
+        );
 
         assert_eq!(
             serde_json::to_value(event).unwrap(),

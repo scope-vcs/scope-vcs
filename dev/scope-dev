@@ -355,7 +355,6 @@ while IFS='=' read -r name _; do
   [[ "\$name" == SCOPE_MEDIA_BUCKET_* ]] && unset "\$name"
 done < <(env)
 export PORT="8084"
-export SCOPE_MEDIA_WORKER_ID="local-dev-media-worker"
 export SCOPE_MEDIA_OBJECT_STORE="filesystem"
 export SCOPE_MEDIA_OBJECT_STORE_DIR="$MEDIA_OBJECT_DIR"
 export SCOPE_MEDIA_ENCRYPTION_KEY="\$(tr -d '\\r\\n' < "$MEDIA_KEY_FILE")"

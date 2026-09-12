@@ -1,4 +1,18 @@
-use super::*;
+use super::{CacheAccess, RuntimeClient, json};
+use anyhow::{Context as _, bail};
+use scope_api_contract::{
+    AttemptCacheKeyMaterial, AttemptHeartbeatRequest, AttemptHeartbeatResponse,
+    AttemptStatusResponse, ClaimRuntimeResponse,
+};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
+    thread,
+    time::Duration,
+};
 
 impl RuntimeClient {
     pub fn claim(&self, bootstrap_token: &str) -> anyhow::Result<ClaimRuntimeResponse> {
@@ -123,14 +137,5 @@ impl RuntimeHeartbeat {
             bail!("runtime lost contact with the Scope API");
         }
         Ok(self.canceled.load(Ordering::Acquire))
-    }
-}
-
-impl Drop for RuntimeHeartbeat {
-    fn drop(&mut self) {
-        let _ = self.stop.send(());
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
     }
 }

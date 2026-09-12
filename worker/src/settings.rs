@@ -1,6 +1,4 @@
-use scope_git::{
-    DEFAULT_GIT_COMPACTION_SPANS, DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits,
-};
+use scope_git::{DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits};
 use scope_git_storage::GitSegmentStoreConfig;
 use std::{path::PathBuf, time::Duration};
 
@@ -12,52 +10,23 @@ const SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_MULT
 const SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV: &str = "SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY";
 const SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN_ENV: &str = "SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN";
 const DEFAULT_HEALTH_PORT: u16 = 8081;
-const DEFAULT_BATCH_SIZE: usize = 10;
-const DEFAULT_POLL_INTERVAL_MS: u64 = 1_000;
-const DEFAULT_GIT_COMPACTION_TIMEOUT_SECS: u64 = 120;
-const MAX_CLOUD_RUN_CONCURRENCY: usize = 100;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum WorkerRole {
-    All,
-    Control,
-    Compaction,
-    Cleanup,
-}
-
-impl WorkerRole {
-    pub(crate) fn runs_control(self) -> bool {
-        matches!(self, Self::All | Self::Control)
-    }
-
-    pub(crate) fn runs_compaction(self) -> bool {
-        matches!(self, Self::All | Self::Compaction)
-    }
-
-    pub(crate) fn runs_cleanup(self) -> bool {
-        matches!(self, Self::All | Self::Cleanup)
-    }
-
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::All => "all",
-            Self::Control => "control",
-            Self::Compaction => "compaction",
-            Self::Cleanup => "cleanup",
-        }
-    }
-}
+/// Outbox jobs claimed per control poll.
+pub(crate) const BATCH_SIZE: usize = 10;
+/// Idle wait between polls for every worker loop.
+pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(1_000);
+/// Pack spans a repository accumulates before compaction is scheduled.
+pub(crate) const GIT_COMPACTION_SPANS: usize = scope_git::DEFAULT_GIT_COMPACTION_SPANS;
+/// Bound on one compaction's external git work.
+pub(crate) const GIT_COMPACTION_TIMEOUT: Duration = Duration::from_secs(120);
+/// Cloud run attempts one worker admits concurrently.
+const CLOUD_RUN_MAX_CONCURRENCY: usize = 20;
 
 #[derive(Clone)]
 pub(crate) struct WorkerSettings {
-    pub(crate) role: WorkerRole,
     pub(crate) database_url: String,
     pub(crate) health_port: u16,
     pub(crate) worker_id: String,
-    pub(crate) batch_size: usize,
-    pub(crate) poll_interval: Duration,
-    pub(crate) git_compaction_spans: usize,
-    pub(crate) git_compaction_timeout: Duration,
     pub(crate) git_storage_limits: GitStorageLimits,
     pub(crate) git_segment_store: GitSegmentStoreConfig,
     pub(crate) data_dir: PathBuf,
@@ -82,7 +51,6 @@ pub(crate) struct CloudExecutionSettings {
 impl WorkerSettings {
     pub(crate) fn from_env() -> anyhow::Result<Self> {
         let database_url = required_env(DATABASE_URL_ENV)?;
-        let role = worker_role_from_env()?;
         let health_port = match non_empty_env("PORT") {
             Some(value) => value
                 .parse::<u16>()
@@ -93,89 +61,32 @@ impl WorkerSettings {
             .ok()
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(default_worker_id);
-        let batch_size = if role.runs_control() {
-            parse_usize_env("SCOPE_WORKER_BATCH_SIZE", DEFAULT_BATCH_SIZE)?
-        } else {
-            DEFAULT_BATCH_SIZE
-        };
-        let poll_interval_ms =
-            parse_u64_env("SCOPE_WORKER_POLL_INTERVAL_MS", DEFAULT_POLL_INTERVAL_MS)?;
-        let (git_compaction_spans, git_compaction_timeout_secs, git_storage_limits) =
-            if role.runs_compaction() {
-                let spans =
-                    parse_usize_env("SCOPE_GIT_COMPACTION_SPANS", DEFAULT_GIT_COMPACTION_SPANS)?;
-                if spans < 2 {
-                    anyhow::bail!("SCOPE_GIT_COMPACTION_SPANS must be at least 2");
-                }
-                let timeout_secs = parse_u64_env(
-                    "SCOPE_GIT_COMPACTION_TIMEOUT_SECS",
-                    DEFAULT_GIT_COMPACTION_TIMEOUT_SECS,
-                )?;
-                if timeout_secs == 0 {
-                    anyhow::bail!("SCOPE_GIT_COMPACTION_TIMEOUT_SECS must be greater than zero");
-                }
-                let limits = git_storage_limits_from_env()?;
-                (spans, timeout_secs, limits)
-            } else {
-                (
-                    DEFAULT_GIT_COMPACTION_SPANS,
-                    DEFAULT_GIT_COMPACTION_TIMEOUT_SECS,
-                    GitStorageLimits::default(),
-                )
-            };
+        let git_storage_limits = git_storage_limits_from_env()?;
         let data_dir = non_empty_env(SCOPE_DATA_DIR_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(".scope"));
         let mut git_segment_store = GitSegmentStoreConfig::new(data_dir.join("git-segments"));
-        if role.runs_compaction() {
-            git_segment_store.chunk_bytes = parse_usize_env(
-                SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV,
-                git_segment_store.chunk_bytes,
-            )?;
-            git_segment_store.multipart_part_bytes = parse_usize_env(
-                SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV,
-                git_segment_store.multipart_part_bytes,
-            )?;
-            git_segment_store.channel_capacity = parse_usize_env(
-                SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV,
-                git_segment_store.channel_capacity,
-            )?;
-        }
-        let execution = if role.runs_control() {
-            cloud_execution_from_env()?
-        } else {
-            None
-        };
+        git_segment_store.chunk_bytes = parse_usize_env(
+            SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV,
+            git_segment_store.chunk_bytes,
+        )?;
+        git_segment_store.multipart_part_bytes = parse_usize_env(
+            SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV,
+            git_segment_store.multipart_part_bytes,
+        )?;
+        git_segment_store.channel_capacity = parse_usize_env(
+            SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV,
+            git_segment_store.channel_capacity,
+        )?;
         Ok(Self {
-            role,
             database_url,
             health_port,
             worker_id,
-            batch_size: batch_size.max(1),
-            poll_interval: Duration::from_millis(poll_interval_ms.max(100)),
-            git_compaction_spans,
-            git_compaction_timeout: Duration::from_secs(git_compaction_timeout_secs),
             git_storage_limits,
             git_segment_store,
             data_dir,
-            execution,
+            execution: cloud_execution_from_env()?,
         })
-    }
-}
-
-fn worker_role_from_env() -> anyhow::Result<WorkerRole> {
-    parse_worker_role(non_empty_env("SCOPE_WORKER_ROLE").as_deref())
-}
-
-fn parse_worker_role(value: Option<&str>) -> anyhow::Result<WorkerRole> {
-    match value {
-        None | Some("all") => Ok(WorkerRole::All),
-        Some("control") => Ok(WorkerRole::Control),
-        Some("compaction") => Ok(WorkerRole::Compaction),
-        Some("cleanup") => Ok(WorkerRole::Cleanup),
-        Some(value) => anyhow::bail!(
-            "SCOPE_WORKER_ROLE must be all, control, compaction, or cleanup; found {value}"
-        ),
     }
 }
 
@@ -190,12 +101,6 @@ fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> 
         .to_string();
     if !api_url.starts_with("https://") && !api_url.starts_with("http://127.0.0.1") {
         anyhow::bail!("SCOPE_PUBLIC_API_URL must use HTTPS outside local development");
-    }
-    let max_concurrency = parse_usize_env("SCOPE_CLOUD_RUNS_MAX_CONCURRENCY", 20)?;
-    if !(1..=MAX_CLOUD_RUN_CONCURRENCY).contains(&max_concurrency) {
-        anyhow::bail!(
-            "SCOPE_CLOUD_RUNS_MAX_CONCURRENCY must be between 1 and {MAX_CLOUD_RUN_CONCURRENCY}"
-        );
     }
     let aws_region = required_env("AWS_REGION")?;
     let registry_credentials_secret_arn = parse_registry_credentials_secret_arn(
@@ -212,9 +117,8 @@ fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> 
         ecs_log_group: required_env("SCOPE_ECS_LOG_GROUP")?,
         ecs_secret_name_key: secret_name_key_from_env()?,
         registry_credentials_secret_arn,
-        runtime_version: non_empty_env("SCOPE_RUNTIME_VERSION")
-            .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
-        max_concurrency,
+        runtime_version: env!("CARGO_PKG_VERSION").to_string(),
+        max_concurrency: CLOUD_RUN_MAX_CONCURRENCY,
     }))
 }
 
@@ -274,11 +178,11 @@ fn parse_comma_separated(name: &str, value: &str) -> anyhow::Result<Vec<String>>
     Ok(values)
 }
 
-fn required_env(name: &str) -> anyhow::Result<String> {
+pub(crate) fn required_env(name: &str) -> anyhow::Result<String> {
     non_empty_env(name).ok_or_else(|| anyhow::anyhow!("{name} is required"))
 }
 
-fn non_empty_env(name: &str) -> Option<String> {
+pub(crate) fn non_empty_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
 }
 
@@ -299,15 +203,6 @@ fn parse_usize_env(name: &str, default: usize) -> anyhow::Result<usize> {
     }
 }
 
-fn parse_u64_env(name: &str, default: u64) -> anyhow::Result<u64> {
-    match std::env::var(name) {
-        Ok(value) if !value.trim().is_empty() => value
-            .parse::<u64>()
-            .map_err(|error| anyhow::anyhow!("{name} must be an integer: {error}")),
-        _ => Ok(default),
-    }
-}
-
 fn default_worker_id() -> String {
     let host = std::env::var("RAILWAY_REPLICA_ID")
         .or_else(|_| std::env::var("HOSTNAME"))
@@ -318,25 +213,6 @@ fn default_worker_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn worker_roles_have_one_canonical_spelling() {
-        assert_eq!(parse_worker_role(None).unwrap(), WorkerRole::All);
-        assert_eq!(parse_worker_role(Some("all")).unwrap(), WorkerRole::All);
-        assert_eq!(
-            parse_worker_role(Some("control")).unwrap(),
-            WorkerRole::Control
-        );
-        assert_eq!(
-            parse_worker_role(Some("compaction")).unwrap(),
-            WorkerRole::Compaction
-        );
-        assert_eq!(
-            parse_worker_role(Some("cleanup")).unwrap(),
-            WorkerRole::Cleanup
-        );
-        assert!(parse_worker_role(Some("worker")).is_err());
-    }
 
     #[test]
     fn comma_separated_settings_ignore_only_empty_segments() {

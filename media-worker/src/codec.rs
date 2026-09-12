@@ -1,6 +1,6 @@
 use crate::{
     config::{CodecLimits, CodecPrograms},
-    process::{ProcessFailure, ProcessLimits, os_args, path_arg, run_bounded},
+    process::{CodecProcessLimits, ProcessFailure, os_args, path_arg, run_bounded},
 };
 use serde::Serialize;
 use std::{
@@ -136,7 +136,8 @@ impl CodecPipeline {
                 cwd,
             )
             .await?;
-        for encoder in ["libx264", "aac", "libwebp", "gif"] {
+        const REQUIRED_ENCODERS: [&str; 4] = ["libx264", "aac", "libwebp", "gif"];
+        for encoder in REQUIRED_ENCODERS {
             if !encoders.split_whitespace().any(|word| word == encoder) {
                 anyhow::bail!("required FFmpeg encoder is unavailable: {encoder}");
             }
@@ -160,7 +161,7 @@ impl CodecPipeline {
                 cwd,
             )
             .await?;
-        if !heif_output.contains("HEIC") || !heif_output.contains("-") {
+        if !heif_output.contains("HEIC") {
             anyhow::bail!("heif-convert has no HEIC decoder");
         }
         self.tool_output(&self.programs.heif_info, &os_args(["--version"]), cwd)
@@ -170,12 +171,7 @@ impl CodecPipeline {
             ffmpeg: first_line(&ffmpeg_version),
             ffprobe: first_line(&probe_version),
             heif: first_line(&heif_output),
-            encoders: vec![
-                "libx264".into(),
-                "aac".into(),
-                "libwebp".into(),
-                "gif".into(),
-            ],
+            encoders: REQUIRED_ENCODERS.into_iter().map(str::to_owned).collect(),
         })
     }
 
@@ -303,20 +299,9 @@ impl CodecPipeline {
         let filter = format!(
             "scale=w='min({IMAGE_MAX_EDGE},iw)':h='min({IMAGE_MAX_EDGE},ih)':force_original_aspect_ratio=decrease,setsar=1"
         );
-        let mut args = vec![
-            "-hide_banner".into(),
-            "-loglevel".into(),
-            "error".into(),
-            "-xerror".into(),
-            "-nostdin".into(),
-            "-y".into(),
-            "-protocol_whitelist".into(),
-            "file,pipe".into(),
-            "-filter_threads".into(),
-            self.limits.process_threads.to_string().into(),
-            // Input and output thread limits are separate FFmpeg options.
-            "-threads".into(),
-            self.limits.process_threads.to_string().into(),
+        let mut args = self.bounded_ffmpeg_prefix();
+        args.extend(os_args(["-xerror", "-y"]));
+        args.extend(vec![
             "-i".into(),
             path_arg(probe_path),
             "-map".into(),
@@ -332,7 +317,7 @@ impl CodecPipeline {
             "-1".into(),
             "-threads".into(),
             self.limits.process_threads.to_string().into(),
-        ];
+        ]);
         if animated_gif {
             args.extend(os_args([
                 "-c:v",
@@ -432,19 +417,9 @@ impl CodecPipeline {
         } else {
             format!("{scale},format=yuv420p,setsar=1")
         };
-        let args = vec![
-            "-hide_banner".into(),
-            "-loglevel".into(),
-            "error".into(),
-            "-nostdin".into(),
-            "-y".into(),
-            "-protocol_whitelist".into(),
-            "file,pipe".into(),
-            "-filter_threads".into(),
-            self.limits.process_threads.to_string().into(),
-            // Input and output thread limits are separate FFmpeg options.
-            "-threads".into(),
-            self.limits.process_threads.to_string().into(),
+        let mut args = self.bounded_ffmpeg_prefix();
+        args.extend(os_args(["-y"]));
+        args.extend(vec![
             "-i".into(),
             path_arg(source),
             "-map".into(),
@@ -488,7 +463,7 @@ impl CodecPipeline {
             "-threads".into(),
             self.limits.process_threads.to_string().into(),
             path_arg(&playback),
-        ];
+        ]);
         self.run_codec(&self.programs.ffmpeg, &args, work_dir)
             .await
             .map_err(|error| {
@@ -533,19 +508,9 @@ impl CodecPipeline {
             .map_err(|error| error.after_validation(validated_source.clone()))?;
 
         let poster = work_dir.join("video-poster.webp");
-        let poster_args = vec![
-            "-hide_banner".into(),
-            "-loglevel".into(),
-            "error".into(),
-            "-nostdin".into(),
-            "-y".into(),
-            "-protocol_whitelist".into(),
-            "file,pipe".into(),
-            "-filter_threads".into(),
-            self.limits.process_threads.to_string().into(),
-            // Input and output thread limits are separate FFmpeg options.
-            "-threads".into(),
-            self.limits.process_threads.to_string().into(),
+        let mut poster_args = self.bounded_ffmpeg_prefix();
+        poster_args.extend(os_args(["-y"]));
+        poster_args.extend(vec![
             "-i".into(),
             path_arg(&playback_derivative.path),
             "-map".into(),
@@ -566,7 +531,7 @@ impl CodecPipeline {
             "-threads".into(),
             self.limits.process_threads.to_string().into(),
             path_arg(&poster),
-        ];
+        ]);
         self.run_codec(&self.programs.ffmpeg, &poster_args, work_dir)
             .await
             .map_err(|error| {
@@ -705,24 +670,14 @@ impl CodecPipeline {
         cwd: &Path,
         include_audio: bool,
     ) -> Result<(), CodecFailure> {
-        let mut args = vec![
-            "-hide_banner".into(),
-            "-loglevel".into(),
-            "error".into(),
-            "-xerror".into(),
-            "-nostdin".into(),
-            "-protocol_whitelist".into(),
-            "file,pipe".into(),
-            "-filter_threads".into(),
-            self.limits.process_threads.to_string().into(),
-            // Input and output thread limits are separate FFmpeg options.
-            "-threads".into(),
-            self.limits.process_threads.to_string().into(),
+        let mut args = self.bounded_ffmpeg_prefix();
+        args.extend(os_args(["-xerror"]));
+        args.extend(vec![
             "-i".into(),
             path_arg(path),
             "-map".into(),
             "0:v:0".into(),
-        ];
+        ]);
         if include_audio {
             args.extend(os_args(["-map", "0:a?"]));
         } else {
@@ -764,8 +719,25 @@ impl CodecPipeline {
         Ok(String::from_utf8_lossy(&combined).into_owned())
     }
 
-    fn process_limits(&self) -> ProcessLimits {
-        ProcessLimits {
+    fn bounded_ffmpeg_prefix(&self) -> Vec<std::ffi::OsString> {
+        let mut args = os_args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-protocol_whitelist",
+            "file,pipe",
+            "-filter_threads",
+        ]);
+        args.push(self.limits.process_threads.to_string().into());
+        // Input and output thread limits are separate FFmpeg options.
+        args.push("-threads".into());
+        args.push(self.limits.process_threads.to_string().into());
+        args
+    }
+
+    fn process_limits(&self) -> CodecProcessLimits {
+        CodecProcessLimits {
             timeout: self.limits.process_timeout,
             memory_bytes: self.limits.max_process_memory_bytes,
             output_file_bytes: self.limits.max_derivative_bytes,

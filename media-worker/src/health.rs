@@ -85,7 +85,6 @@ impl WorkerHealth {
     pub async fn serve(self, port: u16) -> anyhow::Result<()> {
         let address = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
         let router = Router::new()
-            .route("/health", get(health))
             .route("/healthz", get(health))
             .with_state(self);
         let listener = tokio::net::TcpListener::bind(address).await?;

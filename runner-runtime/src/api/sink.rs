@@ -1,4 +1,5 @@
-use super::*;
+use super::RuntimeClient;
+use crate::execute::{AppendLogError, AppendLogOutcome, ExecutionSink};
 
 impl ExecutionSink for RuntimeClient {
     fn start_step(&self, step: u32) -> anyhow::Result<bool> {

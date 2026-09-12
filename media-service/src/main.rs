@@ -19,13 +19,13 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(8080);
     let address = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
     let settings = Settings::from_env()?;
-    let allowed_origin = settings.allowed_origin().map(str::to_string);
+    let allowed_origin = settings.allowed_origin().to_owned();
     let state = AppState::from_settings(settings).await?;
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .with_context(|| format!("binding media service on {address}"))?;
     tracing::info!(%address, "starting media service");
-    axum::serve(listener, router(state, allowed_origin.as_deref())?)
+    axum::serve(listener, router(state, &allowed_origin)?)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("serving media service")

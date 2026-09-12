@@ -199,12 +199,12 @@ pub(crate) fn run_change_event(
     run_id: String,
     change: RunChangeKind,
 ) -> RepoChangeEvent {
-    RepoChangeEvent {
-        repo_id: incarnation.repository_id().to_string(),
-        incarnation_id: incarnation.incarnation_id().to_string(),
-        version: 0,
-        kind: RepoChangeKind::RunChanged { run_id, change },
-    }
+    RepoChangeEvent::run_changed(
+        incarnation.repository_id().to_string(),
+        incarnation.incarnation_id().to_string(),
+        run_id,
+        change,
+    )
 }
 
 impl crate::state::AppState {

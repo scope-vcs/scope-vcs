@@ -90,6 +90,7 @@ pub(crate) async fn get_repository_run_history(
         .metadata
         .runs()
         .repository_run_history_page(RunHistoryPageQuery {
+            git_oid: None,
             repository_id: &repo.record.id,
             workflow_path: workflow_path.as_deref(),
             after: after.as_ref(),

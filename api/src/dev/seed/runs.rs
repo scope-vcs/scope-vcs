@@ -918,6 +918,7 @@ mod tests {
         let page = metadata
             .runs()
             .repository_run_history_page(RunHistoryPageQuery {
+                git_oid: None,
                 repository_id: &repository_id,
                 workflow_path: None,
                 after: None,

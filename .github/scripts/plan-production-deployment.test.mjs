@@ -84,9 +84,9 @@ test("changes select the required deployment lanes", () => {
     ["documentation-only changes do not deploy", ["docs/cache.md"], {}],
     ["cache service changes run backend only", ["cache-service/src/main.rs"], { cache: true }],
     [
-      "runner changes publish the image before the backend lane",
+      "runner changes publish the checks image and nothing else",
       ["runner-runtime/src/main.rs"],
-      { "checks-image": true, "run-worker": true },
+      { "checks-image": true },
     ],
     [
       "toolchain changes publish the checks image and rebuild Rust services",
@@ -331,7 +331,7 @@ test("deployment manifest is a single coherent production graph", () => {
 test("service config does not override Railway scaling or restart defaults", () => {
   const configs = {
     "api/railway.json": "/readyz",
-    "worker/railway.json": "/healthz",
+    "worker/railway.json": "/readyz",
     "cache-service/railway.json": "/readyz",
     "repo-router/railway.json": "/readyz",
     "media-service/railway.json": "/readyz",

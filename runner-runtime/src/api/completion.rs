@@ -1,4 +1,10 @@
-use super::*;
+use super::{RuntimeClient, ensure_success};
+use anyhow::Context as _;
+use scope_api_contract::{
+    AttemptConclusionRequest, AttemptStatusResponse, CompleteAttemptRequest,
+    CompleteAttemptStepRequest, StepConclusionRequest,
+};
+use scope_domain::runs::{exit_code::SetupFailure, step::StepConclusion};
 
 impl RuntimeClient {
     pub fn complete_step(
@@ -7,10 +13,9 @@ impl RuntimeClient {
         exit_code: i32,
         logs_truncated: bool,
     ) -> anyhow::Result<AttemptStatusResponse> {
-        let conclusion = if exit_code == 0 {
-            StepConclusionRequest::Succeeded
-        } else {
-            StepConclusionRequest::Failed { exit_code }
+        let conclusion = match StepConclusion::from_exit_code(exit_code) {
+            StepConclusion::Succeeded => StepConclusionRequest::Succeeded,
+            StepConclusion::Failed { exit_code } => StepConclusionRequest::Failed { exit_code },
         };
         self.post_json(
             &format!("steps/{step}/complete"),
@@ -35,17 +40,9 @@ impl RuntimeClient {
     }
 
     pub fn complete_setup_failure(&self, message: &str) -> anyhow::Result<()> {
-        if self
-            .attempt_token
-            .lock()
-            .expect("attempt token mutex poisoned")
-            .is_none()
-        {
-            return Ok(());
-        }
         self.complete(
             AttemptConclusionRequest::SetupFailed {
-                exit_code: 70,
+                exit_code: SetupFailure::RuntimeSetup.exit_code(),
                 message: message.chars().take(2048).collect(),
             },
             false,
