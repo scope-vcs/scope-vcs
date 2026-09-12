@@ -5,7 +5,7 @@ use scope_domain::{
     repository::access::RepositoryAccess,
     requests::RequestRevision,
 };
-use std::path::Path as FsPath;
+use std::{collections::BTreeSet, path::Path as FsPath};
 
 #[cfg(test)]
 mod tests;
@@ -19,7 +19,6 @@ pub(crate) enum DiffStatusValidationOrder {
 #[derive(Debug)]
 pub(crate) struct InspectedRequestChange {
     pub(crate) path: String,
-    pub(crate) scope_path: ScopePath,
     pub(crate) kind: FileChangeKind,
     pub(crate) old_mode: Option<String>,
     pub(crate) new_mode: Option<String>,
@@ -40,8 +39,54 @@ pub(crate) fn inspect_request_changes(
     access: RepositoryAccess,
     status_order: DiffStatusValidationOrder,
 ) -> Result<InspectedRequestChanges, ApiError> {
-    let mut fields = changes.split(|byte| *byte == 0);
     let mut files = Vec::new();
+    let hidden = visit_request_changes(
+        changes,
+        policy,
+        access,
+        status_order,
+        |path, scope_path, kind, columns| {
+            files.push(InspectedRequestChange {
+                path,
+                kind,
+                old_mode: git_mode(columns[0].trim_start_matches(':')),
+                new_mode: git_mode(columns[1]),
+                old_oid: (kind != FileChangeKind::Added).then(|| columns[2].to_string()),
+                new_oid: (kind != FileChangeKind::Deleted).then(|| columns[3].to_string()),
+                visibility: policy.effective_visibility(&scope_path),
+            });
+        },
+    )?;
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(InspectedRequestChanges { files, hidden })
+}
+
+pub(crate) fn inspect_request_paths(
+    changes: &[u8],
+    policy: &Policy,
+    access: RepositoryAccess,
+) -> Result<(BTreeSet<ScopePath>, bool), ApiError> {
+    let mut paths = BTreeSet::new();
+    let hidden = visit_request_changes(
+        changes,
+        policy,
+        access,
+        DiffStatusValidationOrder::BeforePath,
+        |_, scope_path, _, _| {
+            paths.insert(scope_path);
+        },
+    )?;
+    Ok((paths, hidden))
+}
+
+fn visit_request_changes(
+    changes: &[u8],
+    policy: &Policy,
+    access: RepositoryAccess,
+    status_order: DiffStatusValidationOrder,
+    mut visit: impl FnMut(String, ScopePath, FileChangeKind, &[&str]),
+) -> Result<bool, ApiError> {
+    let mut fields = changes.split(|byte| *byte == 0);
     let mut hidden = false;
     while let Some(header) = fields.next() {
         if header.is_empty() {
@@ -75,19 +120,9 @@ pub(crate) fn inspect_request_changes(
             Some(kind) => kind,
             None => request_change_kind(status)?,
         };
-        files.push(InspectedRequestChange {
-            path,
-            kind,
-            old_mode: git_mode(columns[0].trim_start_matches(':')),
-            new_mode: git_mode(columns[1]),
-            old_oid: (kind != FileChangeKind::Added).then(|| columns[2].to_string()),
-            new_oid: (kind != FileChangeKind::Deleted).then(|| columns[3].to_string()),
-            visibility: policy.effective_visibility(&scope_path),
-            scope_path,
-        });
+        visit(path, scope_path, kind, &columns);
     }
-    files.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(InspectedRequestChanges { files, hidden })
+    Ok(hidden)
 }
 
 fn request_change_kind(status: &[u8]) -> Result<FileChangeKind, ApiError> {

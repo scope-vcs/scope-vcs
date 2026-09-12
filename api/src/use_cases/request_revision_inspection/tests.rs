@@ -43,7 +43,6 @@ fn changes_preserve_kinds_modes_oids_raw_paths_and_sorting() {
         }
         assert_eq!(files[1].new_mode.as_deref(), Some("100755"));
         assert_eq!(files[2].new_mode.as_deref(), Some("120000"));
-        assert_eq!(files[2].scope_path.as_str(), "/nested/type.txt");
         assert_eq!(files[3].kind, FileChangeKind::Deleted);
         assert_eq!(files[3].old_mode.as_deref(), Some("100644"));
         assert_eq!(files[3].old_oid.as_deref(), Some("old"));
@@ -87,7 +86,6 @@ fn mixed_visibility_records_hidden_paths_without_hiding_readable_changes() {
             }
             let public = result.files.last().unwrap();
             assert_eq!(public.path, "public//file.txt");
-            assert_eq!(public.scope_path.as_str(), "/public/file.txt");
             assert_eq!(public.visibility, Visibility::Public);
         }
         let hidden = inspect_request_changes(
@@ -172,7 +170,6 @@ fn reader_keeps_existing_permissive_framing_and_status_interpretation() {
         )
         .unwrap();
         assert_eq!(empty_path.files[0].path, "");
-        assert_eq!(empty_path.files[0].scope_path, ScopePath::root());
         let empty = inspect_request_changes(
             b"\0",
             &Policy::new(Visibility::Public),

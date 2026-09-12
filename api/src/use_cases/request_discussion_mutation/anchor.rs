@@ -4,8 +4,7 @@ use crate::{
     git::{import::run_git_output, request_refs::with_request_revision_store_repo},
     state::AppState,
     use_cases::request_revision_inspection::{
-        DiffStatusValidationOrder, commit_belongs_to_revision, inspect_request_changes,
-        request_changes,
+        commit_belongs_to_revision, inspect_request_paths, request_changes,
     },
 };
 use scope_domain::{
@@ -184,28 +183,7 @@ fn commit_paths(
         .ok_or_else(|| ApiError::conflict("request revision commit must have a parent"))?;
     let changes = request_changes(raw_repo, &parent, commit_oid, None)?;
 
-    parse_commit_paths(&changes, policy, access)
-}
-
-fn parse_commit_paths(
-    changes: &[u8],
-    policy: &Policy,
-    access: RepositoryAccess,
-) -> Result<(BTreeSet<ScopePath>, bool), ApiError> {
-    let inspected = inspect_request_changes(
-        changes,
-        policy,
-        access,
-        DiffStatusValidationOrder::BeforePath,
-    )?;
-    Ok((
-        inspected
-            .files
-            .into_iter()
-            .map(|file| file.scope_path)
-            .collect(),
-        inspected.hidden,
-    ))
+    inspect_request_paths(&changes, policy, access)
 }
 
 fn normalized_scope_path(path: &str) -> Result<ScopePath, ApiError> {

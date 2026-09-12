@@ -1,4 +1,4 @@
-use super::parse_commit_paths;
+use super::inspect_request_paths;
 use axum::http::StatusCode;
 use scope_domain::{
     policy::{Policy, ScopePath, Visibility, VisibilityRule},
@@ -23,7 +23,7 @@ fn anchor_parser_preserves_status_before_path_validation() {
         diff("R100", "../private.txt"),
     ] {
         assert_api_error(
-            parse_commit_paths(changes.as_bytes(), &policy, RepositoryAccess::public())
+            inspect_request_paths(changes.as_bytes(), &policy, RepositoryAccess::public())
                 .unwrap_err(),
             StatusCode::INTERNAL_SERVER_ERROR,
             "Scope hit an internal error.",
@@ -32,14 +32,14 @@ fn anchor_parser_preserves_status_before_path_validation() {
     }
 
     assert_api_error(
-        parse_commit_paths(header("A").as_bytes(), &policy, RepositoryAccess::public())
+        inspect_request_paths(header("A").as_bytes(), &policy, RepositoryAccess::public())
             .unwrap_err(),
         StatusCode::INTERNAL_SERVER_ERROR,
         "Scope hit an internal error.",
         "request diff is missing a path",
     );
     assert_api_error(
-        parse_commit_paths(
+        inspect_request_paths(
             diff("A", "../private.txt").as_bytes(),
             &policy,
             RepositoryAccess::public(),
@@ -57,7 +57,7 @@ fn anchor_parser_validates_records_after_a_hidden_change() {
     let changes = format!("{}\0private.txt\0malformed\0", header("A"));
 
     assert_api_error(
-        parse_commit_paths(changes.as_bytes(), &policy, RepositoryAccess::public()).unwrap_err(),
+        inspect_request_paths(changes.as_bytes(), &policy, RepositoryAccess::public()).unwrap_err(),
         StatusCode::INTERNAL_SERVER_ERROR,
         "Scope hit an internal error.",
         "invalid request diff header malformed",
@@ -74,6 +74,7 @@ fn anchor_parser_accepts_all_statuses_and_canonicalizes_paths() {
         .unwrap();
     let changes = [
         diff("A", "z//added.txt"),
+        diff("M", "z/added.txt"),
         diff("M", "m-modified.txt"),
         diff("T", "a-type.txt"),
         diff("D", "d-deleted.txt"),
@@ -82,7 +83,7 @@ fn anchor_parser_accepts_all_statuses_and_canonicalizes_paths() {
     .concat();
 
     let (paths, hidden) =
-        parse_commit_paths(changes.as_bytes(), &policy, RepositoryAccess::public()).unwrap();
+        inspect_request_paths(changes.as_bytes(), &policy, RepositoryAccess::public()).unwrap();
 
     assert!(hidden);
     assert_eq!(
