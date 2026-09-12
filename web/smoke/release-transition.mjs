@@ -7,9 +7,9 @@ import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 
-const DEFAULT_TRANSITION_TIMEOUT_MS = 15 * 60 * 1_000;
-const DEFAULT_RECONNECT_BOUND_MS = 10_000;
-const DEFAULT_ACTIVITY_TIMEOUT_MS = 60_000;
+const TRANSITION_TIMEOUT_MS = 15 * 60 * 1_000;
+const RECONNECT_BOUND_MS = 10_000;
+const ACTIVITY_TIMEOUT_MS = 60_000;
 const MAX_DIAGNOSTICS = 20;
 const MAX_DIAGNOSTIC_TEXT_LENGTH = 300;
 
@@ -136,12 +136,12 @@ export async function verifyReleaseTransition(options) {
 
     const activationAt = await waitForMarker(
       options.activationFile,
-      options.transitionTimeoutMs,
+      TRANSITION_TIMEOUT_MS,
       "timed out waiting for release activation",
     );
     const transitionAt = await waitForMarker(
       options.transitionFile,
-      options.transitionTimeoutMs,
+      TRANSITION_TIMEOUT_MS,
       "timed out waiting for old deployment teardown",
     );
     const reconnect = options.requireSseReconnect
@@ -149,7 +149,7 @@ export async function verifyReleaseTransition(options) {
         streamStarts,
         streamEnds,
         activationAt,
-        options.reconnectBoundMs,
+        RECONNECT_BOUND_MS,
       )
       : null;
     const blanked = await page.evaluate(() => {
@@ -179,13 +179,13 @@ export async function verifyReleaseTransition(options) {
       });
       await waitForMarker(
         options.expectedActivityFile,
-        options.activityTimeoutMs,
+        ACTIVITY_TIMEOUT_MS,
         "timed out waiting for fixture update marker",
       );
       const expectedActivity = (await readFile(options.expectedActivityFile, "utf8")).trim();
       assert(expectedActivity, "expected activity marker must contain text");
       await activity.getByText(expectedActivity, { exact: false }).waitFor({
-        timeout: options.activityTimeoutMs,
+        timeout: ACTIVITY_TIMEOUT_MS,
       });
       observedActivity = await activity.innerText();
     }
@@ -239,17 +239,14 @@ export function parseArguments(argv) {
     values[flag] = value;
   }
   const allowed = new Set([
-    "--activity-timeout-ms",
     "--activation-file",
     "--base-url",
     "--expected-activity-file",
     "--ready-file",
-    "--reconnect-bound-ms",
     "--repo",
     "--require-sse-reconnect",
     "--summary",
     "--transition-file",
-    "--transition-timeout-ms",
     "--update-ready-file",
   ]);
   for (const flag of Object.keys(values)) {
@@ -258,28 +255,17 @@ export function parseArguments(argv) {
   const repoId = required(values, "--repo");
   const [owner, repo, extra] = repoId.split("/");
   if (!owner || !repo || extra) throw new Error("--repo must be an owner/repository pair");
-  const expectedActivityFile = values["--expected-activity-file"];
-  const updateReadyFile = values["--update-ready-file"];
-  if (Boolean(expectedActivityFile) !== Boolean(updateReadyFile)) {
-    throw new Error("--expected-activity-file and --update-ready-file must be provided together");
-  }
   return {
     activationFile: required(values, "--activation-file"),
-    activityTimeoutMs: positiveInteger(values["--activity-timeout-ms"], DEFAULT_ACTIVITY_TIMEOUT_MS),
     baseUrl: parseOrigin(required(values, "--base-url")),
-    expectedActivityFile,
+    expectedActivityFile: values["--expected-activity-file"],
     owner,
     readyFile: required(values, "--ready-file"),
-    reconnectBoundMs: positiveInteger(values["--reconnect-bound-ms"], DEFAULT_RECONNECT_BOUND_MS),
     repo,
     requireSseReconnect: booleanValue(values["--require-sse-reconnect"], true),
     summaryFile: required(values, "--summary"),
     transitionFile: required(values, "--transition-file"),
-    transitionTimeoutMs: positiveInteger(
-      values["--transition-timeout-ms"],
-      DEFAULT_TRANSITION_TIMEOUT_MS,
-    ),
-    updateReadyFile,
+    updateReadyFile: values["--update-ready-file"],
   };
 }
 
@@ -317,7 +303,7 @@ export function findReconnect(starts, ends, activationAt, boundMs) {
 
 function validateOptions(options) {
   if (Boolean(options.expectedActivityFile) !== Boolean(options.updateReadyFile)) {
-    throw new Error("expected activity and update-ready files must be provided together");
+    throw new Error("--expected-activity-file and --update-ready-file must be provided together");
   }
   const paths = [
     options.activationFile,
@@ -445,13 +431,6 @@ async function writeJsonAtomic(path, value) {
 function required(values, flag) {
   if (!values[flag]) throw new Error(`${flag} is required`);
   return values[flag];
-}
-
-function positiveInteger(value, fallback) {
-  if (value === undefined) return fallback;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error("timeouts must be positive integers");
-  return parsed;
 }
 
 function booleanValue(value, fallback) {
