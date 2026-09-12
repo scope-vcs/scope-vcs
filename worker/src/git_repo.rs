@@ -1,3 +1,4 @@
+use scope_domain::repository::git_compaction::GitCompactionPlan;
 use scope_git::{DEFAULT_GIT_BRANCH, GitStorageLimits};
 use scope_git_process::{
     ProcessCancellation, ProcessError, ProcessLimits, StreamingProcessError,
@@ -7,7 +8,6 @@ use scope_git_storage::{
     GitSegmentReservation, GitSegmentRestoreSource, GitSegmentRestoreTimings, GitSegmentStore,
     StagedGitSegment,
 };
-use scope_postgres::db::GitCompactionCandidate;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -43,7 +43,8 @@ pub(crate) struct CompactionPackMetrics {
 
 pub(crate) async fn build_compacted_pack(
     segment_store: Arc<GitSegmentStore>,
-    candidate: &GitCompactionCandidate,
+    repository_id: &str,
+    plan: &GitCompactionPlan,
     reservation: GitSegmentReservation,
     storage_limits: GitStorageLimits,
     timeout: Duration,
@@ -66,11 +67,11 @@ pub(crate) async fn build_compacted_pack(
     let mut predecessor_pack_bytes = 0usize;
     let mut local_restore_count = 0usize;
     let mut remote_restore_count = 0usize;
-    for (is_predecessor, span) in candidate
-        .predecessor
-        .iter()
+    for (is_predecessor, span) in plan
+        .predecessor()
+        .into_iter()
         .map(|span| (true, span))
-        .chain(candidate.spans.iter().map(|span| (false, span)))
+        .chain(plan.selected_spans().iter().map(|span| (false, span)))
     {
         if span.segment.plaintext_bytes
             > u64::try_from(storage_limits.max_object_bytes()).unwrap_or(u64::MAX)
@@ -83,7 +84,7 @@ pub(crate) async fn build_compacted_pack(
         let index_started = Instant::now();
         let restore = index_git_segment(
             segment_store.as_ref(),
-            &candidate.repo_id,
+            repository_id,
             &span.segment,
             &repo.path,
             timeout,
@@ -103,27 +104,8 @@ pub(crate) async fn build_compacted_pack(
             source_pack_bytes = source_pack_bytes.saturating_add(bytes);
         }
     }
-    let compacted_head = candidate
-        .spans
-        .last()
-        .ok_or_else(|| anyhow::anyhow!("Git compaction candidate has no pack spans"))?
-        .head_oid
-        .as_str();
-    let compacted_base = candidate
-        .spans
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("Git compaction candidate has no pack spans"))?
-        .base_oid
-        .as_deref();
-    match (compacted_base, candidate.predecessor.as_ref()) {
-        (None, None) => {}
-        (Some(base_oid), Some(predecessor)) if predecessor.head_oid == base_oid => {}
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Git compaction candidate has an invalid predecessor boundary"
-            ));
-        }
-    }
+    let compacted_head = plan.head_oid();
+    let compacted_base = plan.base_oid();
     let update_ref_started = Instant::now();
     run_git(
         Some(&repo.path),
@@ -159,7 +141,7 @@ pub(crate) async fn build_compacted_pack(
     let pack_started = Instant::now();
     let staged = ingest_compacted_pack(
         Arc::clone(&segment_store),
-        &candidate.repo_id,
+        repository_id,
         reservation,
         &repo.path,
         revisions.into_bytes(),
@@ -171,7 +153,7 @@ pub(crate) async fn build_compacted_pack(
     let compacted_bytes = usize::try_from(staged.segment.plaintext_bytes).unwrap_or(usize::MAX);
     Ok(CompactedPack {
         metrics: CompactionPackMetrics {
-            source_span_count: candidate.spans.len(),
+            source_span_count: plan.selected_spans().len(),
             source_pack_bytes,
             predecessor_pack_bytes,
             compacted_bytes,
@@ -595,18 +577,15 @@ mod tests {
                 .await
                 .unwrap();
         }
-        let candidate = GitCompactionCandidate {
-            repo_id: repository_id.to_string(),
-            owner: "owner".to_string(),
-            name: "repo".to_string(),
-            predecessor: Some(predecessor),
-            spans: selected,
-        };
+        let mut layout = vec![predecessor];
+        layout.extend(selected);
+        let plan = GitCompactionPlan::select(&layout, 3).unwrap().unwrap();
 
         let reservation = store.reserve(repository_id).unwrap();
         let compacted = build_compacted_pack(
             Arc::clone(&store),
-            &candidate,
+            repository_id,
+            &plan,
             reservation,
             GitStorageLimits::new(1024 * 1024).unwrap(),
             Duration::from_secs(2),
