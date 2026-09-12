@@ -353,7 +353,7 @@ pub fn reopen_and_reply_to_request_discussion(
             reqwest::Method::POST,
             request_discussion_action_path(params.target, params.discussion_id, "reopen-and-reply"),
         )
-        .json(&ReopenAndReplyRequest {
+        .json(&CreateRequestDiscussionReplyRequest {
             body_markdown: params.body_markdown,
             client_reply_id: params.client_reply_id,
             reply_to_reply_id: None,

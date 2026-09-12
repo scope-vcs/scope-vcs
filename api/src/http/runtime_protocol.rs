@@ -20,8 +20,8 @@ use axum::{
 use scope_api_contract::{
     AppendAttemptLogRequest, AttemptCacheKeyMaterial, AttemptConclusionRequest,
     AttemptHeartbeatRequest, AttemptHeartbeatResponse, AttemptRecoveryStatusResponse,
-    AttemptStatusResponse, AttemptStepStatusResponse, CachePreparation, ClaimRuntimeResponse,
-    CompleteAttemptRequest, CompleteAttemptStepRequest, ReportAttemptCacheFinalizationsRequest,
+    AttemptStatusResponse, AttemptStepStatusResponse, ClaimRuntimeResponse, CompleteAttemptRequest,
+    CompleteAttemptStepRequest, ReportAttemptCacheFinalizationsRequest,
     ReportAttemptCachePreparationsRequest, RunChangeKind, RunJobResponse, StepConclusionRequest,
     WorkflowCache, WorkflowCacheKeyInputs, WorkflowContainer, WorkflowJob, WorkflowStep,
 };
@@ -135,7 +135,7 @@ pub(crate) async fn report_cache_preparations(
                 .map(|cache| scope_postgres::db::AttemptCachePreparationCommand {
                     cache_name: cache.cache_name,
                     identity_digest: cache.identity_digest,
-                    preparation: domain_cache_preparation(cache.preparation),
+                    preparation: cache.preparation.into(),
                     key_ms: cache.key_ms,
                     metadata_ms: cache.metadata_ms,
                     size_bytes: cache.size_bytes,
@@ -480,21 +480,5 @@ fn workflow_cache_inputs(
         files: inputs.files().to_vec(),
         environment: inputs.environment().to_vec(),
         source: inputs.includes_source(),
-    }
-}
-
-fn domain_cache_preparation(
-    preparation: CachePreparation,
-) -> scope_domain::runs::cache::observation::CachePreparation {
-    match preparation {
-        CachePreparation::Exact => scope_domain::runs::cache::observation::CachePreparation::Exact,
-        CachePreparation::Compatible => {
-            scope_domain::runs::cache::observation::CachePreparation::Compatible
-        }
-        CachePreparation::Cold { reason } => {
-            scope_domain::runs::cache::observation::CachePreparation::Cold {
-                reason: reason.into(),
-            }
-        }
     }
 }

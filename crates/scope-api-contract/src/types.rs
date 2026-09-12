@@ -596,14 +596,6 @@ pub struct CreateRequestDiscussionReplyRequest {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub struct ReopenAndReplyRequest {
-    pub body_markdown: String,
-    pub client_reply_id: String,
-    pub reply_to_reply_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct MarkRequestDiscussionReadRequest {
     pub through_position: u64,
 }

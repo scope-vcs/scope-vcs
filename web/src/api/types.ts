@@ -52,10 +52,10 @@ import type {
   RepositoryRunLogResponse,
   RepositoryRunStepLogPageResponse,
   RepositoryRunStepResponse,
-  RepositoryRunState,
   RepositoryRunSummaryResponse,
   RepositoryRunTerminalReason,
   RepositoryRunTrigger,
+  RunState,
   SessionIdentity as GeneratedSessionIdentity,
   FileChangeKind as GeneratedFileChangeKind,
   HistoryEntryDetailResponse,
@@ -102,7 +102,7 @@ export type RepoRun = RepositoryRunSummaryResponse
 export type RepoRunHistoryPage = RepositoryRunHistoryPageResponse
 export type RepoRunWorkflowList = RepositoryRunWorkflowListResponse
 export type RepoRunWorkflow = RepositoryRunWorkflowResponse
-export type RepoRunState = RepositoryRunState
+export type RepoRunState = RunState
 export type RepoRunDetail = RepositoryRunDetailResponse
 export type RepoRunAttempt = RepositoryRunAttemptResponse
 export type RepoRunCache = RepositoryRunCacheResponse

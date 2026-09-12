@@ -1,7 +1,7 @@
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use scope_api_contract::attachments::{
-    RequestAttachmentMediaGrantClaims, RequestAttachmentMediaGrantMethod,
-    RequestAttachmentMediaTarget, RequestAttachmentUploadGrantClaims,
+    RequestAttachmentMediaGrantClaims, RequestAttachmentMediaTarget,
+    RequestAttachmentUploadGrantClaims,
 };
 use std::sync::Arc;
 
@@ -64,10 +64,6 @@ impl MediaGrantIssuer {
         &self,
         claims: &RequestAttachmentMediaGrantClaims,
     ) -> anyhow::Result<String> {
-        anyhow::ensure!(
-            claims.method == RequestAttachmentMediaGrantMethod::Get,
-            "media grants only authorize reading attachments"
-        );
         Ok(encode(&Header::new(Algorithm::EdDSA), claims, &self.key)?)
     }
 

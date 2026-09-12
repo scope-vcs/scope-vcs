@@ -221,7 +221,6 @@ pub(crate) async fn media_grant(
             repository_id: attachment.repository_id,
             request_id,
             viewer_user_id: viewer,
-            method: RequestAttachmentMediaGrantMethod::Get,
             target: input.target.clone(),
             expires_at_unix,
         })

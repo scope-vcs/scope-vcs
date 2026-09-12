@@ -1,16 +1,12 @@
 use crate::error::ApiError;
 use scope_api_contract::{
     RepositoryRunAttemptResponse, RepositoryRunCacheObservationResponse,
-    RepositoryRunCachePreparation, RepositoryRunCacheResponse,
-    RepositoryRunCacheSetupObservationResponse, RepositoryRunDetailResponse,
-    RepositoryRunJobDetailResponse, RepositoryRunJobResponse, RepositoryRunStepResponse,
-    RepositoryRunSummaryResponse, RepositoryRunTerminalReason,
+    RepositoryRunCacheResponse, RepositoryRunCacheSetupObservationResponse,
+    RepositoryRunDetailResponse, RepositoryRunJobDetailResponse, RepositoryRunJobResponse,
+    RepositoryRunStepResponse, RepositoryRunSummaryResponse, RepositoryRunTerminalReason,
 };
 use scope_domain::runs::{
-    cache::{
-        definition::WorkflowCache,
-        observation::{AttemptCacheObservation, CachePreparation},
-    },
+    cache::{definition::WorkflowCache, observation::AttemptCacheObservation},
     step::AttemptTerminalReason,
 };
 use scope_postgres::db::RunDetail;
@@ -163,7 +159,7 @@ fn cache_responses(
                     workflow_path: observation.workflow_path.as_str().to_string(),
                     job_key: observation.job_key.as_str().to_string(),
                     identity_digest: observation.identity_digest,
-                    preparation: cache_preparation(observation.preparation),
+                    preparation: observation.preparation.into(),
                     key_ms: observation.timing.key_ms(),
                     metadata_ms: observation.timing.metadata_ms(),
                     size_bytes: observation.timing.size_bytes(),
@@ -213,15 +209,5 @@ fn terminal_reason(reason: AttemptTerminalReason) -> RepositoryRunTerminalReason
         AttemptTerminalReason::RuntimeSetupFailed { exit_code, message } => {
             RepositoryRunTerminalReason::RuntimeSetupFailed { exit_code, message }
         }
-    }
-}
-
-fn cache_preparation(preparation: CachePreparation) -> RepositoryRunCachePreparation {
-    match preparation {
-        CachePreparation::Exact => RepositoryRunCachePreparation::Exact,
-        CachePreparation::Compatible => RepositoryRunCachePreparation::Compatible,
-        CachePreparation::Cold { reason } => RepositoryRunCachePreparation::Cold {
-            reason: reason.into(),
-        },
     }
 }

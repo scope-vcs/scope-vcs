@@ -16,8 +16,8 @@ use axum::{
 };
 use scope_api_contract::{
     CreateRequestDiscussionReplyRequest, CreateRequestDiscussionRequest, GitOid,
-    MarkRequestDiscussionReadRequest, ReopenAndReplyRequest, RequestActivityPageResponse,
-    RequestDiscussionAnchor, RequestDiscussionChangesResponse, RequestDiscussionMutationResponse,
+    MarkRequestDiscussionReadRequest, RequestActivityPageResponse, RequestDiscussionAnchor,
+    RequestDiscussionChangesResponse, RequestDiscussionMutationResponse,
     RequestDiscussionPageResponse, RequestDiscussionReadResponse,
     RequestDiscussionRepliesPageResponse, RequestDiscussionReplyMutationResponse,
     RequestDiscussionReplyReferenceResponse, RequestDiscussionReplyResponse,
@@ -302,7 +302,7 @@ pub(crate) async fn reopen_and_reply(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo_name, request_id, discussion_id)): Path<(String, String, String, String)>,
-    Json(input): Json<ReopenAndReplyRequest>,
+    Json(input): Json<CreateRequestDiscussionReplyRequest>,
 ) -> Result<Json<RequestDiscussionReplyMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let result = request_discussion_mutation::reopen_and_reply(

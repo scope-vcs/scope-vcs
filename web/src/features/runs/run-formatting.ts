@@ -1,5 +1,5 @@
 import type { RepoRunTrigger } from '@/api/types'
-import type { RepositoryRunState } from '@/api/types.generated'
+import type { RunState } from '@/api/types.generated'
 import { runCanChange } from './repository-run-detail-model'
 
 export function createRunTimeFormatter(timeZone?: string) {
@@ -16,8 +16,8 @@ export function runUnixTimeDate(value: number) {
 
 export function runDisplayState(run: {
   cancellation_requested: boolean
-  state: RepositoryRunState
-}): RepositoryRunState | 'canceling' {
+  state: RunState
+}): RunState | 'canceling' {
   return run.cancellation_requested && runCanChange(run.state)
     ? 'canceling'
     : run.state
