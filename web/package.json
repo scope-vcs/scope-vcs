@@ -2,7 +2,6 @@
   "name": "@scope/web",
   "license": "Apache-2.0",
   "private": true,
-  "sideEffects": false,
   "type": "module",
   "packageManager": "pnpm@11.24.0",
   "engines": {
@@ -16,13 +15,10 @@
     "check:diff-worker-bundle": "node scripts/check-review-diff-worker-bundle.mjs",
     "check:resource-boundary": "node --test scripts/resource-boundary.test.mjs && node scripts/check-resource-boundary.mjs",
     "check:observer-boundary": "node scripts/check-observer-boundary.mjs",
-    "check:konsistent": "konsistent check",
+    "check:konsistent": "konsistent validate && konsistent check",
     "check:react-doctor": "react-doctor --blocking warning --no-score --yes",
-    "konsistent": "konsistent check",
-    "konsistent:validate": "konsistent validate",
     "generate:api-contract": "node scripts/generate-api-contract.mjs",
-    "start": "node .output/server/index.mjs",
-    "test": "node -e \"const fs=require('node:fs'); fs.rmSync('.test-output',{recursive:true,force:true}); fs.mkdirSync('.test-output',{recursive:true}); fs.writeFileSync('.test-output/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && tsc -p tsconfig.test.json && TZ=UTC node --test \".test-output/**/*.test.js\"",
+    "test": "node scripts/prepare-test-output.mjs && tsc -p tsconfig.test.json && TZ=UTC node --test \".test-output/**/*.test.js\"",
     "test:smoke": "node --test \"smoke/**/*.spec.mjs\"",
     "typecheck": "tsc --noEmit"
   },
