@@ -9,14 +9,14 @@ import { classifyChanges } from './plan-production-deployment.mjs';
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const manifest = JSON.parse(read('.github/deployment-services.json'));
-const gates = ['backend', 'cli', 'web', 'contract', 'policy', 'integration', 'ops'];
+const gates = ['backend', 'cli', 'web', 'contract', 'policy', 'integration', 'ops', 'dependency-analyzer'];
 
 // Capture the commands actually executed, without requiring installed toolchains,
 // credentials, or a running stack. The scripts remain the command inventory.
 function commands(gate, ...args) {
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-gates-'));
   try {
-    for (const tool of ['cargo', 'pnpm', 'node', 'bash', 'python3']) {
+    for (const tool of ['cargo', 'npm', 'pnpm', 'node', 'bash', 'python3']) {
       writeFileSync(resolve(dir, tool), '#!/bin/sh\ncase "$1" in *dev/checks/*) exec /bin/bash "$@" ;; esac\nprintf "%s" "$(basename "$0")"\nprintf " %s" "$@"\nprintf "\\n"\n', { mode: 0o755 });
     }
     return execFileSync('/bin/bash', [resolve(root, `dev/checks/${gate}`), ...args], {
@@ -45,6 +45,9 @@ test('web gate includes contract, observer, and resource rules; CLI and integrat
   assert.ok(commands('cli').includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
   assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture']);
   assert.deepEqual(commands('integration', 'web'), ['pnpm test:smoke']);
+  assert.deepEqual(commands('dependency-analyzer'), [
+    'npm ci --ignore-scripts', 'npm test',
+  ]);
 });
 
 test('local and both CI callers use the shared inventory', () => {

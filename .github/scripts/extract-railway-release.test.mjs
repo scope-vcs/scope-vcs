@@ -32,14 +32,21 @@ function extract(kind, { archive, destination }) {
   return spawnSync('python3', [extractor, kind, archive, destination], { encoding: 'utf8' });
 }
 
-test('extracts backend executables and notices as regular files with sanitized permissions', (t) => {
-  const f = fixture(t, [{ name: './', type: 'directory' }, { name: './scope-vcs', mode: 0o6755, data: 'binary' }, { name: './scope-media-service', mode: 0o755, data: 'media gateway' }, { name: './LICENSE', data: 'license' }]);
+test('extracts backend executables, notices, and analyzer runtime with sanitized permissions', (t) => {
+  const f = fixture(t, [{ name: './', type: 'directory' }, { name: './scope-vcs', mode: 0o6755, data: 'binary' }, { name: './scope-media-service', mode: 0o755, data: 'media gateway' }, { name: './LICENSE', data: 'license' },
+    { name: './dependency-analyzer', type: 'directory' }, { name: './dependency-analyzer/src', type: 'directory' },
+    { name: './dependency-analyzer/package.json', data: '{}' }, { name: './dependency-analyzer/package-lock.json', data: '{}' },
+    { name: './dependency-analyzer/analyze.mjs', mode: 0o755, data: 'export {}' },
+    { name: './dependency-analyzer/src/analyzer.mjs', data: 'export {}' },
+    { name: './dependency-analyzer/third-party-dependency-analyzer.txt', data: 'notices' }]);
   const result = extract('backend', f);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(join(f.destination, 'scope-vcs'), 'utf8'), 'binary');
   assert.equal(statSync(join(f.destination, 'scope-vcs')).mode & 0o7777, 0o755);
   assert.equal(readFileSync(join(f.destination, 'scope-media-service'), 'utf8'), 'media gateway');
   assert.equal(statSync(join(f.destination, 'scope-media-service')).mode & 0o7777, 0o755);
+  assert.equal(readFileSync(join(f.destination, 'dependency-analyzer/src/analyzer.mjs'), 'utf8'), 'export {}');
+  assert.equal(statSync(join(f.destination, 'dependency-analyzer/analyze.mjs')).mode & 0o7777, 0o755);
 });
 
 test('extracts the compiled web tree including hidden data', (t) => {
@@ -66,6 +73,7 @@ for (const bad of [
 test('rejects publishing scripts, duplicate files and file-as-directory archives', (t) => {
   for (const [kind, entries] of [
     ['backend', [{ name: 'start.sh', data: 'steal credentials' }]],
+    ['backend', [{ name: 'dependency-analyzer/test/escape.test.mjs', data: 'unreviewed runtime' }]],
     ['web', [{ name: '.github/scripts/publish.sh', data: 'steal credentials' }]],
     ['backend', [{ name: 'scope-vcs' }, { name: './scope-vcs' }]],
     ['web', [{ name: '.output/server/index.mjs' }, { name: '.output/server' }]],

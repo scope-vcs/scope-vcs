@@ -104,9 +104,12 @@ async fn fresh_database_reaches_exact_latest_schema() {
         .unwrap()
         .try_get::<i64>("", "count")
         .unwrap();
-    assert_eq!(scope_table_count, 69);
+    assert_eq!(scope_table_count, 72);
     assert!(relation_exists(db.as_ref(), "scope_request_claims").await);
     assert!(relation_exists(db.as_ref(), "scope_request_attention_states").await);
+    assert!(relation_exists(db.as_ref(), "scope_dependency_analyses").await);
+    assert!(relation_exists(db.as_ref(), "scope_dependency_reports").await);
+    assert!(relation_exists(db.as_ref(), "scope_dependency_analysis_jobs").await);
     assert!(relation_exists(db.as_ref(), "scope_repository_history_views").await);
     assert!(relation_exists(db.as_ref(), "scope_repository_history_entries").await);
     assert!(relation_exists(db.as_ref(), "scope_git_segment_uploads").await);

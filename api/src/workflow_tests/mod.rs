@@ -56,6 +56,7 @@ mod auth;
 mod cli_auth;
 mod clone_access;
 mod cloud_runs;
+mod dependencies;
 mod device_login;
 mod git_binary;
 mod git_http;

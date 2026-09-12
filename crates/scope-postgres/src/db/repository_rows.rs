@@ -1,5 +1,7 @@
 use super::{
-    GeneratedIdSource, entities,
+    GeneratedIdSource,
+    dependency_analysis::enqueue_dependency_analysis_for_repository,
+    entities,
     git_segments::{load_git_pack_spans, publish_git_segment, retire_git_segment},
     history_rows::{
         RepositoryHistoryDelta, insert_repository_history, insert_repository_live_files,
@@ -145,6 +147,7 @@ where
         generated_ids,
     )
     .await?;
+    enqueue_dependency_analysis_for_repository(conn, after, now_unix).await?;
     Ok(())
 }
 

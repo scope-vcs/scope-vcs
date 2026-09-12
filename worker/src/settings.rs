@@ -23,6 +23,7 @@ pub(crate) enum WorkerRole {
     Control,
     Compaction,
     Cleanup,
+    Dependencies,
 }
 
 impl WorkerRole {
@@ -38,12 +39,17 @@ impl WorkerRole {
         matches!(self, Self::All | Self::Cleanup)
     }
 
+    pub(crate) fn runs_dependencies(self) -> bool {
+        matches!(self, Self::All | Self::Dependencies)
+    }
+
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::All => "all",
             Self::Control => "control",
             Self::Compaction => "compaction",
             Self::Cleanup => "cleanup",
+            Self::Dependencies => "dependencies",
         }
     }
 }
@@ -127,7 +133,7 @@ impl WorkerSettings {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(".scope"));
         let mut git_segment_store = GitSegmentStoreConfig::new(data_dir.join("git-segments"));
-        if role.runs_compaction() {
+        if role.runs_compaction() || role.runs_dependencies() {
             git_segment_store.chunk_bytes = parse_usize_env(
                 SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV,
                 git_segment_store.chunk_bytes,
@@ -173,8 +179,9 @@ fn parse_worker_role(value: Option<&str>) -> anyhow::Result<WorkerRole> {
         Some("control") => Ok(WorkerRole::Control),
         Some("compaction") => Ok(WorkerRole::Compaction),
         Some("cleanup") => Ok(WorkerRole::Cleanup),
+        Some("dependencies") => Ok(WorkerRole::Dependencies),
         Some(value) => anyhow::bail!(
-            "SCOPE_WORKER_ROLE must be all, control, compaction, or cleanup; found {value}"
+            "SCOPE_WORKER_ROLE must be all, control, compaction, cleanup, or dependencies; found {value}"
         ),
     }
 }

@@ -460,3 +460,39 @@ async fn run_changes_are_visible_to_members_and_hidden_from_public_repo_streams(
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn dependency_changes_are_hidden_from_public_repository_streams() {
+    let state = test_state_with_readme().await;
+    cache_test_jwks(&state);
+    let public = events(state.clone(), None).await;
+    let maintainer = events(state.clone(), Some(bearer_header())).await;
+    assert_eq!(public.status(), StatusCode::OK);
+    assert_eq!(maintainer.status(), StatusCode::OK);
+    let mut public_stream = public.into_body().into_data_stream();
+    let mut maintainer_stream = maintainer.into_body().into_data_stream();
+    assert!(next_event(&mut public_stream).await.contains("Connected"));
+    assert!(
+        next_event(&mut maintainer_stream)
+            .await
+            .contains("Connected")
+    );
+    state
+        .repo_events
+        .publish_event(scope_api_contract::RepoChangeEvent {
+            repo_id: TEST_REPO_ID.to_string(),
+            incarnation_id: test_repo_incarnation().incarnation_id().to_string(),
+            version: 0,
+            kind: scope_api_contract::RepoChangeKind::DependenciesChanged,
+        });
+    assert!(
+        next_event(&mut maintainer_stream)
+            .await
+            .contains("DependenciesChanged")
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(250), public_stream.next())
+            .await
+            .is_err()
+    );
+}

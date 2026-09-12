@@ -20,12 +20,12 @@ pub struct ProcessCancellation {
 }
 
 impl ProcessCancellation {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let (cancelled, _) = watch::channel(false);
         Self { cancelled }
     }
 
-    fn cancel(&self) {
+    pub fn cancel(&self) {
         self.cancelled.send_replace(true);
     }
 
@@ -43,6 +43,12 @@ impl ProcessCancellation {
                 return;
             }
         }
+    }
+}
+
+impl Default for ProcessCancellation {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -90,6 +96,8 @@ pub enum ProcessError {
         timeout_ms: u128,
         diagnostic: String,
     },
+    #[error("{action} was cancelled")]
+    Cancelled { action: String },
     #[error("{action} stdout exceeded {max_stdout_bytes} bytes{diagnostic}")]
     StdoutLimitExceeded {
         action: String,
@@ -129,6 +137,36 @@ pub fn run(
     limits: ProcessLimits,
     action: &str,
 ) -> Result<Output, ProcessError> {
+    run_inner(command, input, limits, action, None)
+}
+
+/// Runs a child with the same limits as [`run`] and permits external cancellation.
+///
+/// A cancellation requested before this call returns without spawning the child.
+/// Cancellation after spawn kills and reaps the complete process group before
+/// returning.
+pub fn run_cancellable(
+    command: &mut Command,
+    input: Option<Vec<u8>>,
+    limits: ProcessLimits,
+    action: &str,
+    cancellation: &ProcessCancellation,
+) -> Result<Output, ProcessError> {
+    run_inner(command, input, limits, action, Some(cancellation))
+}
+
+fn run_inner(
+    command: &mut Command,
+    input: Option<Vec<u8>>,
+    limits: ProcessLimits,
+    action: &str,
+    cancellation: Option<&ProcessCancellation>,
+) -> Result<Output, ProcessError> {
+    if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
+        return Err(ProcessError::Cancelled {
+            action: action.to_string(),
+        });
+    }
     if input.is_some() {
         command.stdin(Stdio::piped());
     } else {
@@ -159,7 +197,7 @@ pub fn run(
     } else {
         None
     };
-    wait_for_output(child, stdin_writer, limits, action)
+    wait_for_output(child, stdin_writer, limits, action, cancellation)
 }
 
 /// Runs a child while copying a caller-owned reader into stdin incrementally.
@@ -197,7 +235,7 @@ where
         std::io::copy(&mut input, &mut child_stdin)?;
         child_stdin.flush()
     });
-    wait_for_output(child, Some(stdin_writer), limits, action)
+    wait_for_output(child, Some(stdin_writer), limits, action, None)
 }
 
 /// Runs a child while a caller-owned consumer drains stdout incrementally.
@@ -366,6 +404,7 @@ fn wait_for_output(
     stdin_writer: Option<thread::JoinHandle<std::io::Result<()>>>,
     limits: ProcessLimits,
     action: &str,
+    cancellation: Option<&ProcessCancellation>,
 ) -> Result<Output, ProcessError> {
     let stdout = child
         .stdout
@@ -390,6 +429,15 @@ fn wait_for_output(
     let started_at = Instant::now();
     let mut status = None;
     let status = loop {
+        if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
+            child.terminate_and_reap();
+            let _ = join_writer(stdin_writer, action);
+            let _ = join_reader(stdout_reader, action);
+            let _ = join_reader(stderr_reader, action);
+            return Err(ProcessError::Cancelled {
+                action: action.to_string(),
+            });
+        }
         if stdout_limit_receiver.try_recv().is_ok() {
             child.terminate_and_reap();
             let _ = join_writer(stdin_writer, action);

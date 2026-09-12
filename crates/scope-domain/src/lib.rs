@@ -1,6 +1,7 @@
 pub mod account;
 pub mod content;
 pub mod content_ref;
+pub mod dependency_analysis;
 pub mod error;
 pub mod history;
 pub mod landing_file;

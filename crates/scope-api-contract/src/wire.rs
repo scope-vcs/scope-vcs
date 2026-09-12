@@ -288,6 +288,7 @@ pub enum RunChangeKind {
 pub enum RepoChangeKind {
     Connected,
     Lagged,
+    DependenciesChanged,
     RepositoryChanged {
         reason: String,
     },

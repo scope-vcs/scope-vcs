@@ -12,6 +12,21 @@ BACKEND_FILES = {
     'scope-vcs', 'scope-worker', 'scope-cache-service', 'scope-repo-router',
     'scope-media-service', 'scope-smoke-seed',
 }
+ANALYZER_FILES = {
+    'analyze.mjs', 'package.json', 'package-lock.json',
+    'third-party-dependency-analyzer.txt',
+}
+
+
+def valid_backend_entry(path, member):
+    if path == PurePosixPath('dependency-analyzer'):
+        return member.isdir()
+    if len(path.parts) == 1:
+        return path.name in BACKEND_FILES and member.isfile()
+    if path.parent == PurePosixPath('dependency-analyzer'):
+        return (path.name in ANALYZER_FILES and member.isfile()) or (path.name == 'src' and member.isdir())
+    return (path.parent == PurePosixPath('dependency-analyzer/src')
+        and path.suffix == '.mjs' and member.isfile())
 
 
 def archive_path(member, kind):
@@ -26,7 +41,7 @@ def archive_path(member, kind):
             return None
         raise ValueError('Archive root must be a directory')
     if kind == 'backend':
-        if len(path.parts) != 1 or path.name not in BACKEND_FILES or not member.isfile():
+        if not valid_backend_entry(path, member):
             raise ValueError(f'Unexpected backend archive entry: {name!r}')
     elif path.parts[0] != '.output' or (len(path.parts) == 1 and not member.isdir()):
         raise ValueError(f'Web archive entry is outside .output: {name!r}')
