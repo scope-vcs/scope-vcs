@@ -536,6 +536,7 @@ async fn ready_test_git_segment(
             reservation,
             std::io::Cursor::new(format!("test segment {label}").into_bytes()),
             u64::MAX,
+            None,
         )
         .await
         .unwrap();
@@ -598,6 +599,7 @@ async fn persist_and_promote_test_update(
                     reservation,
                     std::io::Cursor::new(b"test Git pack segment".to_vec()),
                     u64::MAX,
+                    None,
                 )
                 .await
                 .map_err(|error| crate::error::ApiError::internal_message(error.to_string()))?;

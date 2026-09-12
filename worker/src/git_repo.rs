@@ -294,12 +294,12 @@ async fn ingest_compacted_pack(
             ProcessLimits::new(timeout),
             "git pack-objects --revs --stdout",
             move |stdout, cancellation| {
-                runtime.block_on(segment_store.ingest_reserved_blocking_reader_cancellable(
+                runtime.block_on(segment_store.ingest_reserved_blocking_reader(
                     &repository_id,
                     reservation,
                     stdout,
                     max_bytes as u64,
-                    cancellation,
+                    Some(cancellation),
                 ))
             },
         )

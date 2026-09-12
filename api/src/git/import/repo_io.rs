@@ -380,12 +380,12 @@ pub(crate) async fn git_push_from_repo(
             ProcessLimits::new(timeout),
             "creating incremental Git pack",
             move |stdout, cancellation| {
-                runtime.block_on(segment_store.ingest_reserved_blocking_reader_cancellable(
+                runtime.block_on(segment_store.ingest_reserved_blocking_reader(
                     &repository_id_for_ingest,
                     reservation,
                     stdout,
                     storage_limits.max_object_bytes() as u64,
-                    cancellation,
+                    Some(cancellation),
                 ))
             },
         )
