@@ -161,7 +161,11 @@ pub(super) fn inspect_request_commit(
             authored_at_unix: identity.authored_at_unix,
             message: metadata.message,
             change_count: changes.files.len(),
-            files: changes.files,
+            files: changes
+                .files
+                .into_iter()
+                .map(request_file_response)
+                .collect(),
             files_truncated: false,
         }),
         inspection: if metadata.complete {
@@ -430,7 +434,7 @@ fn request_commit_changes(
     access: RepositoryAccess,
     parent_oids: &[String],
     commit_oid: &str,
-) -> Result<VisibleRequestChanges, ApiError> {
+) -> Result<InspectedRequestChanges, ApiError> {
     // Request-ref validation requires every revision head to descend from its recorded base,
     // so commits introduced by a revision cannot be parentless roots.
     let parent = parent_oids
@@ -520,7 +524,132 @@ fn parse_request_commit_display_metadata(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_request_commit_display_metadata, parse_request_commit_identity};
+    use super::{
+        MAX_REQUEST_COMMIT_IDENTITY_BYTES, inspect_request_commit,
+        parse_request_commit_display_metadata, parse_request_commit_identity,
+        request_commit_identity,
+    };
+    use crate::{error::ErrorKind, http::request_review::tests::git};
+    use scope_domain::{
+        policy::{Policy, ScopePath, Visibility, VisibilityRule},
+        repository::access::RepositoryAccess,
+    };
+
+    #[test]
+    fn commit_identity_keeps_its_64_kib_output_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        let repo = directory.path();
+        git(repo, &["init", "--quiet"], None);
+        let tree = git(repo, &["mktree"], Some(""));
+        let base = git(repo, &["commit-tree", &tree, "-m", "base"], None);
+        for parent_count in [1598, 1600] {
+            let commit = format!(
+                "tree {tree}\n{}author Scope Test <scope@example.test> 1700000000 +0000\ncommitter Scope Test <scope@example.test> 1700000000 +0000\n\nmany parents\n",
+                format!("parent {base}\n").repeat(parent_count),
+            );
+            let oid = git(
+                repo,
+                &["hash-object", "-t", "commit", "-w", "--stdin"],
+                Some(&commit),
+            );
+            let result = request_commit_identity(repo, &oid);
+            if parent_count == 1598 {
+                assert_eq!(result.unwrap().parent_oids.len(), parent_count);
+            } else {
+                let error = result.err().unwrap();
+                assert_eq!(error.kind, ErrorKind::PayloadTooLarge);
+                assert_eq!(
+                    error.public_message(),
+                    format!(
+                        "reading request commit identity exceeded {MAX_REQUEST_COMMIT_IDENTITY_BYTES} bytes"
+                    )
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn merge_review_inspects_only_the_first_parent_and_rejects_roots() {
+        let directory = tempfile::tempdir().unwrap();
+        let repo = directory.path();
+        git(repo, &["init", "--quiet"], None);
+        let empty = git(repo, &["mktree"], Some(""));
+        let base = git(repo, &["commit-tree", &empty, "-m", "base"], None);
+        let blob = git(repo, &["hash-object", "-w", "--stdin"], Some("content\n"));
+        let first_tree = git(
+            repo,
+            &["mktree"],
+            Some(&format!("100644 blob {blob}\tpublic.txt\n")),
+        );
+        let second_tree = git(
+            repo,
+            &["mktree"],
+            Some(&format!("100644 blob {blob}\thidden.txt\n")),
+        );
+        let first = git(
+            repo,
+            &["commit-tree", &first_tree, "-p", &base, "-m", "first"],
+            None,
+        );
+        let second = git(
+            repo,
+            &["commit-tree", &second_tree, "-p", &base, "-m", "second"],
+            None,
+        );
+        let merge_tree = git(
+            repo,
+            &["mktree"],
+            Some(&format!(
+                "100644 blob {blob}\tpublic.txt\n100644 blob {blob}\treview.txt\n"
+            )),
+        );
+        let merge = git(
+            repo,
+            &[
+                "commit-tree",
+                &merge_tree,
+                "-p",
+                &first,
+                "-p",
+                &second,
+                "-m",
+                "merge",
+            ],
+            None,
+        );
+        let mut policy = Policy::new(Visibility::Public);
+        policy
+            .add_rule(VisibilityRule::private(
+                ScopePath::parse("/hidden.txt").unwrap(),
+            ))
+            .unwrap();
+        for can_read_private_files in [false, true] {
+            let access = RepositoryAccess {
+                can_read_private_files,
+                ..RepositoryAccess::public()
+            };
+            let inspected = inspect_request_commit(repo, &policy, access, &merge).unwrap();
+            let commit = inspected.commit.unwrap();
+            assert_eq!(commit.change_count, 1);
+            assert_eq!(commit.files[0].path, "review.txt");
+            assert_eq!(
+                commit.parent_oids,
+                if can_read_private_files {
+                    vec![first.clone(), second.clone()]
+                } else {
+                    Vec::new()
+                }
+            );
+        }
+        let error = inspect_request_commit(repo, &policy, RepositoryAccess::public(), &base)
+            .err()
+            .unwrap();
+        assert_eq!(error.kind, ErrorKind::Conflict);
+        assert_eq!(
+            error.public_message(),
+            "request revision commit must have a parent"
+        );
+    }
 
     #[test]
     fn commit_metadata_decodes_non_utf8_display_fields_lossily() {

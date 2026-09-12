@@ -15,7 +15,10 @@ use crate::{
         },
     },
     state::AppState,
-    use_cases::request_revision_inspection::{commit_belongs_to_revision, request_changes},
+    use_cases::request_revision_inspection::{
+        DiffStatusValidationOrder, InspectedRequestChange, InspectedRequestChanges,
+        commit_belongs_to_revision, inspect_request_changes, request_changes,
+    },
 };
 use axum::{
     Json,
@@ -27,7 +30,6 @@ use scope_api_contract::{
     RequestRevisionListResponse, RequestRevisionResponse,
 };
 use scope_domain::{
-    history::FileChangeKind,
     policy::{Policy, ScopePath},
     repository::Repository,
     repository::access::RepositoryAccess,
@@ -427,11 +429,6 @@ fn request_revision_commit_oids(
         .collect())
 }
 
-struct VisibleRequestChanges {
-    files: Vec<CommitFileResponse>,
-    hidden: bool,
-}
-
 fn request_changes_from_repo_with_visibility(
     raw_repo: &FsPath,
     policy: &Policy,
@@ -439,62 +436,35 @@ fn request_changes_from_repo_with_visibility(
     old_head_oid: &str,
     new_head_oid: &str,
     path: Option<&str>,
-) -> Result<VisibleRequestChanges, ApiError> {
+) -> Result<InspectedRequestChanges, ApiError> {
     let changes = request_changes(raw_repo, old_head_oid, new_head_oid, path)?;
 
-    let mut fields = changes.split(|byte| *byte == 0);
-    let mut files = Vec::new();
-    let mut hidden = false;
-    while let Some(header) = fields.next() {
-        if header.is_empty() {
-            continue;
-        }
-        let header = std::str::from_utf8(header).map_err(ApiError::bad_request)?;
-        let columns = header.split_ascii_whitespace().collect::<Vec<_>>();
-        if columns.len() != 5 || !columns[0].starts_with(':') {
-            return Err(ApiError::internal_message(format!(
-                "invalid request diff header {header}"
-            )));
-        }
-        let status = columns[4].as_bytes();
-        let path = fields
-            .next()
-            .ok_or_else(|| ApiError::internal_message("request diff is missing a path"))?;
-        let path = String::from_utf8(path.to_vec()).map_err(ApiError::bad_request)?;
-        let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
-        if !policy.can_read(&scope_path, access.can_read_private_files) {
-            hidden = true;
-            continue;
-        }
-        let kind = match status[0] {
-            b'A' => FileChangeKind::Added,
-            b'M' | b'T' => FileChangeKind::Modified,
-            b'D' => FileChangeKind::Deleted,
-            _ => {
-                return Err(ApiError::internal_message(format!(
-                    "unsupported request diff status {}",
-                    String::from_utf8_lossy(status)
-                )));
-            }
-        };
-        let old_oid = (kind != FileChangeKind::Added).then(|| columns[2].to_string());
-        let new_oid = (kind != FileChangeKind::Deleted).then(|| columns[3].to_string());
-        files.push(CommitFileResponse {
-            path,
-            kind: kind.into(),
-            old_mode: git_mode(columns[0].trim_start_matches(':')),
-            new_mode: git_mode(columns[1]),
-            old_oid,
-            new_oid,
-            visibility: policy.effective_visibility(&scope_path).into(),
-        });
-    }
-    files.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(VisibleRequestChanges { files, hidden })
+    parse_request_changes_with_visibility(&changes, policy, access)
 }
 
-fn git_mode(mode: &str) -> Option<String> {
-    (mode != "000000").then(|| mode.to_string())
+fn parse_request_changes_with_visibility(
+    changes: &[u8],
+    policy: &Policy,
+    access: RepositoryAccess,
+) -> Result<InspectedRequestChanges, ApiError> {
+    inspect_request_changes(
+        changes,
+        policy,
+        access,
+        DiffStatusValidationOrder::AfterVisibility,
+    )
+}
+
+fn request_file_response(file: InspectedRequestChange) -> CommitFileResponse {
+    CommitFileResponse {
+        path: file.path,
+        kind: file.kind.into(),
+        old_mode: file.old_mode,
+        new_mode: file.new_mode,
+        old_oid: file.old_oid,
+        new_oid: file.new_oid,
+        visibility: file.visibility.into(),
+    }
 }
 
 fn git_blob_content(repo: &FsPath, oid: &str) -> Result<ReviewFileContentResponse, ApiError> {
