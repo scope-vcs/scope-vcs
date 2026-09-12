@@ -3,7 +3,6 @@ import type { ReviewDiffOmittedReason } from '../../api/types'
 export const REVIEW_FILE_DIFF_RENDER_BUDGET = Object.freeze({
   deadlineMs: 1_500,
   maxConcurrentRenders: 2,
-  maxHighlightLanguages: 16,
   maxHunks: 64,
   maxInputBytes: 256 * 1024,
   maxInputLineBytes: 16 * 1024,
@@ -21,7 +20,7 @@ export type ReviewFileDiffRenderBudget = Readonly<Record<
 export type ReviewFileDiffWorkerInput = {
   budget: Pick<
     ReviewFileDiffRenderBudget,
-    'maxHighlightLanguages' | 'maxHunks' | 'maxOutputBytes' | 'maxRenderedLines'
+    'maxHunks' | 'maxOutputBytes' | 'maxRenderedLines'
   >
   newText: string
   oldText: string

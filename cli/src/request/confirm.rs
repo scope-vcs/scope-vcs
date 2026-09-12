@@ -2,15 +2,11 @@ use crate::error::CliError;
 use scope_api_contract::{ErrorCode, ErrorResponse};
 use std::io::{self, Write};
 
-pub(super) fn require_confirmation(
-    prompt: &str,
-    yes: bool,
-    interactive: bool,
-) -> anyhow::Result<()> {
+pub(super) fn require_confirmation(prompt: &str, yes: bool) -> anyhow::Result<()> {
     if yes {
         return Ok(());
     }
-    if !interactive || !crate::execution::interactive() {
+    if crate::execution::json() || !crate::execution::interactive() {
         return Err(CliError::new(ErrorResponse::new(
             ErrorCode::BadRequest,
             format!("{prompt}; rerun with --yes to confirm"),
@@ -38,12 +34,12 @@ mod tests {
 
     #[test]
     fn yes_skips_interactive_confirmation() {
-        require_confirmation("consequential action", true, true).unwrap();
+        require_confirmation("consequential action", true).unwrap();
     }
 
     #[test]
     fn noninteractive_confirmation_requires_yes() {
-        let error = require_confirmation("consequential action", false, false).unwrap_err();
+        let error = require_confirmation("consequential action", false).unwrap_err();
         assert_eq!(crate::error::exit_code(&error), 2);
         assert_eq!(
             error.to_string(),

@@ -67,7 +67,7 @@ async fn receive_pack_accepts_gzip_encoded_request_body() {
     assert_eq!(repo.record.lifecycle_state, RepoLifecycleState::Ready);
     assert!(repo.first_push_token.is_none());
     let readme = match repo
-        .live_tree()
+        .live_files
         .get(&ScopePath::parse("/README.md").unwrap())
     {
         Some(blob) => Some(blob_content(&state, blob, &repo).await),

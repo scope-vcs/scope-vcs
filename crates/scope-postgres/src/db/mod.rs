@@ -5,19 +5,9 @@
 //! the workflow being persisted.
 
 mod auth;
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 mod catalog_fixture;
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 pub use catalog_fixture::CatalogFixture;
 mod cli_auth_results;
 pub use cli_auth_results::{
@@ -39,7 +29,6 @@ mod entities;
 mod fast_push;
 mod generated_ids;
 mod git_compaction;
-mod git_segment_cleanup;
 mod git_segments;
 #[cfg(test)]
 mod migration_harness_tests;
@@ -56,9 +45,9 @@ pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
 mod git_push_reads;
 mod history_reads;
 mod history_rows;
+mod integer_columns;
 pub use history_reads::{RepositoryHistoryBoundary, RepositoryHistoryPage, RepositoryHistoryQuery};
 mod landing_files;
-pub use landing_files::RepositoryLandingFileBackfillCandidate;
 mod locks;
 mod manual_runs;
 mod object_references;
@@ -138,17 +127,11 @@ pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePr
 pub use run_details::{RunAttemptDetail, RunDetail};
 pub use run_dispatch::CloudTaskStop;
 pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
-pub use run_log_reads::{RecentRunLogs, StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
+pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
 pub use run_log_writes::AppendRunLogResult;
 pub use runs::{DispatchClaim, EnqueueRunResult};
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 mod test_support;
-mod visibility_changes;
 mod workflow_catalogs;
 pub use workflow_catalogs::{
     CurrentRepositoryWorkflowCatalog, RepositoryWorkflowCatalogBackfillCandidate,
@@ -161,7 +144,6 @@ pub use clerk_users::scope_user_id_for_auth_identity;
 pub use fast_push::ApplyContentOnlyPushCommand;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::GitPushContext;
-pub use git_segment_cleanup::{GitSegmentV1Cleanup, LegacyGitSegmentObject};
 pub use git_segments::RepositoryGitWriteLease;
 use history_rows::load_repository_histories;
 use locks::acquire_aggregate_lock;
@@ -188,7 +170,6 @@ use sqlx::{Connection as _, PgConnection};
 use std::sync::Arc;
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::TestDatabaseTarget;
-pub use visibility_changes::UpdateRepoFileVisibilityCommand;
 
 #[derive(Clone)]
 pub struct MetadataStore {
@@ -316,10 +297,6 @@ impl MetadataStore {
         connect_postgres_store(database_url).await
     }
 
-    pub async fn connect_worker(database_url: String) -> anyhow::Result<Self> {
-        connect_postgres_worker_store(database_url).await
-    }
-
     #[cfg(any(test, feature = "test-support"))]
     pub fn connect_fresh_for_tests(target: &TestDatabaseTarget) -> anyhow::Result<Self> {
         test_support::connect_postgres_test_store(target)
@@ -369,10 +346,6 @@ async fn connect_postgres_store(database_url: String) -> anyhow::Result<Metadata
         #[cfg(any(test, feature = "test-support"))]
         _test_schema: None,
     })
-}
-
-async fn connect_postgres_worker_store(database_url: String) -> anyhow::Result<MetadataStore> {
-    connect_postgres_store(database_url).await
 }
 
 const WRITER_FENCE_KEY: &str = "scope:metadata-writers";
@@ -530,82 +503,6 @@ pub(super) async fn begin_metadata_read_snapshot(
     .map_err(PostgresError::internal)
 }
 
-async fn repositories_from_models<C>(
-    conn: &C,
-    repositories: Vec<entities::repository::Model>,
-) -> Result<Vec<Repository>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let repo_ids = repositories
-        .iter()
-        .map(|repo| repo.id.clone())
-        .collect::<Vec<_>>();
-    let mut facts_by_repo = load_repository_facts(conn, &repo_ids).await?;
-    let mut histories_by_repo = load_repository_histories(conn, &repo_ids).await?;
-    let members = if repo_ids.is_empty() {
-        Vec::new()
-    } else {
-        entities::repository_member::Entity::find()
-            .filter(entities::repository_member::Column::RepoId.is_in(repo_ids.clone()))
-            .order_by_asc(entities::repository_member::Column::RepoId)
-            .order_by_asc(entities::repository_member::Column::UserId)
-            .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
-    };
-    let invites = if repo_ids.is_empty() {
-        Vec::new()
-    } else {
-        entities::repository_invite::Entity::find()
-            .filter(entities::repository_invite::Column::RepoId.is_in(repo_ids))
-            .order_by_asc(entities::repository_invite::Column::RepoId)
-            .order_by_asc(entities::repository_invite::Column::InvitedEmailNormalized)
-            .order_by_asc(entities::repository_invite::Column::Id)
-            .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
-    };
-    let members_by_repo = members.into_iter().try_fold(
-        std::collections::BTreeMap::<String, Vec<RepositoryMember>>::new(),
-        |mut by_repo, member| {
-            let repo_id = member.repo_id.clone();
-            by_repo
-                .entry(repo_id)
-                .or_default()
-                .push(member.try_into_domain()?);
-            Ok::<_, PostgresError>(by_repo)
-        },
-    )?;
-    let invites_by_repo = invites.into_iter().try_fold(
-        std::collections::BTreeMap::<String, Vec<RepositoryInvite>>::new(),
-        |mut by_repo, invite| {
-            let repo_id = invite.repo_id.clone();
-            by_repo
-                .entry(repo_id)
-                .or_default()
-                .push(invite.try_into_domain()?);
-            Ok::<_, PostgresError>(by_repo)
-        },
-    )?;
-
-    repositories
-        .into_iter()
-        .map(|repo| {
-            let repo_id = repo.id.clone();
-            let members = members_by_repo.get(&repo_id).cloned().unwrap_or_default();
-            let invitations = invites_by_repo.get(&repo_id).cloned().unwrap_or_default();
-            let facts = facts_by_repo.remove(&repo_id).ok_or_else(|| {
-                PostgresError::internal_message(format!("repository facts missing for {repo_id}"))
-            })?;
-            let history = histories_by_repo.remove(&repo_id).ok_or_else(|| {
-                PostgresError::internal_message(format!("repository history missing for {repo_id}"))
-            })?;
-            repo.try_into_domain(facts.into_facts(), members, invitations, history)
-        })
-        .collect()
-}
-
 async fn repository_from_model<C>(
     conn: &C,
     repository: entities::repository::Model,
@@ -613,11 +510,40 @@ async fn repository_from_model<C>(
 where
     C: ConnectionTrait,
 {
-    repositories_from_models(conn, vec![repository])
+    let repo_id = repository.id.clone();
+    let repo_ids = [repo_id.clone()];
+    let facts = load_repository_facts(conn, &repo_ids)
         .await?
+        .remove(&repo_id)
+        .ok_or_else(|| {
+            PostgresError::internal_message(format!("repository facts missing for {repo_id}"))
+        })?;
+    let history = load_repository_histories(conn, &repo_ids)
+        .await?
+        .remove(&repo_id)
+        .ok_or_else(|| {
+            PostgresError::internal_message(format!("repository history missing for {repo_id}"))
+        })?;
+    let members = entities::repository_member::Entity::find()
+        .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
+        .order_by_asc(entities::repository_member::Column::UserId)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
         .into_iter()
-        .next()
-        .ok_or_else(|| PostgresError::internal_message("repository row disappeared while loading"))
+        .map(entities::repository_member::Model::try_into_domain)
+        .collect::<Result<Vec<RepositoryMember>, _>>()?;
+    let invitations = entities::repository_invite::Entity::find()
+        .filter(entities::repository_invite::Column::RepoId.eq(repo_id))
+        .order_by_asc(entities::repository_invite::Column::InvitedEmailNormalized)
+        .order_by_asc(entities::repository_invite::Column::Id)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(entities::repository_invite::Model::try_into_domain)
+        .collect::<Result<Vec<RepositoryInvite>, _>>()?;
+    repository.try_into_domain(facts, members, invitations, history)
 }
 
 fn encode_json<T: Serialize>(value: &T) -> Result<serde_json::Value, PostgresError> {

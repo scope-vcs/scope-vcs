@@ -1,6 +1,6 @@
 use super::{
     ENCODING_VERSION, GitSegmentRestoreSource, GitSegmentRestoreTimings, GitSegmentStore,
-    GitStorageError, MultipartError, object_key, valid_segment_id,
+    GitStorageError, MultipartError, is_hex_id_32, object_key,
 };
 use crate::envelope::{DecryptedFrame, EnvelopeReader};
 use scope_domain::repository::git::GitSegmentRef;
@@ -108,7 +108,7 @@ fn validate_restore_identity(
             segment.encoding_version
         )));
     }
-    if repository_id.is_empty() || !valid_segment_id(&segment.segment_id) {
+    if repository_id.is_empty() || !is_hex_id_32(&segment.segment_id) {
         return Err(GitStorageError::InvalidEnvelope(
             "repository id or segment id is invalid".into(),
         ));

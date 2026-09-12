@@ -6,7 +6,7 @@ import {
   resetRequestDiscussionCache,
 } from './request-discussion-cache'
 import { collectionFromPage } from './request-discussion-model'
-import { discussion } from './request-discussion-test-fixtures'
+import { deferred, discussion } from './request-discussion-test-fixtures'
 import type { RequestDiscussionChanges, RequestDiscussionPage } from './request-discussion-types'
 
 const page = (count: number): RequestDiscussionPage => ({
@@ -57,12 +57,6 @@ test('navigation reuses in-flight catch-up and pagination without losing complet
   assert.equal(current.nextCursor, null)
   assert.equal(current.snapshotVersion, 2)
 })
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((complete) => { resolve = complete })
-  return { promise, resolve }
-}
 
 test('reopening merges focused rows without resetting pagination and refreshes newer snapshots', async () => {
   resetRequestDiscussionCache()

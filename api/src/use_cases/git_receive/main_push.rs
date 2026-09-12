@@ -1,8 +1,8 @@
 use crate::{
     error::ApiError,
     git::import::{
-        PreparedReceivePackUpdate, ReceivePackUpdate, apply_receive_pack_update,
-        receive_pack_update_from_staging_repo, reviewed_update_from_staging_repo,
+        PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
+        apply_receive_pack_update, reviewed_update_from_staging_repo,
     },
     state::AppState,
 };
@@ -69,16 +69,18 @@ pub(super) async fn prepare_main_push(
             staging_repo,
             author_id,
             push_intent.config.clone(),
+            ReviewedUpdateMode::FirstPush,
         )
         .await?
     } else {
-        receive_pack_update_from_staging_repo(
+        reviewed_update_from_staging_repo(
             state,
             owner,
             repo_name,
             staging_repo,
             author_id,
             push_intent.config.clone(),
+            ReviewedUpdateMode::ReadyPush,
         )
         .await?
     };

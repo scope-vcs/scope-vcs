@@ -23,6 +23,28 @@ export class HttpError extends Error {
   }
 }
 
+// The viewer cannot see the resource: signed out, forbidden, or hidden behind
+// a 404 so its existence is not disclosed. Route loaders turn this into null
+// data and render their unavailable state instead of an error page.
+const ACCESS_DENIED_STATUSES = new Set([401, 403, 404])
+
+function isAccessDeniedError(error: unknown) {
+  return error instanceof HttpError && ACCESS_DENIED_STATUSES.has(error.status)
+}
+
+export function isNotFoundError(error: unknown) {
+  return error instanceof HttpError && error.status === 404
+}
+
+export async function loadOptionalResource<T>(load: () => Promise<T>): Promise<T | null> {
+  try {
+    return await load()
+  } catch (error) {
+    if (isAccessDeniedError(error)) return null
+    throw error
+  }
+}
+
 export type InvalidApiResponseFailure =
   | 'content-type'
   | 'json-syntax'

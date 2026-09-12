@@ -1,11 +1,5 @@
-import type {
-  CommitFile,
-  HistoryEntrySummary,
-  HistoryEntryDetail,
-  HistoryPage as HistoryPageResponse,
-  ProjectionPreviewAudience,
-  RepoParams,
-} from '@/api/types'
+import type { RepoParams } from '@/api/types'
+import type { HistoryPageResponse } from '@/api/types.generated'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { AudienceToggle } from '@/features/history/history-audience-toggle'
 import { HistoryEntryDetailPanel } from './history-entry-detail'
@@ -42,18 +36,26 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { historyPageCacheKey, restoreHistoryPages, retainHistoryPages } from './history-page-cache'
 import { historyFileSelection } from './history-selection'
+import type {
+  CommitFileResponse,
+  HistoryEntrySummaryResponse,
+  HistoryEntryDetailResponse,
+  ProjectionPreviewAudience,
+} from '@/api/types.generated'
+
+export type HistorySearch = {
+  audience?: ProjectionPreviewAudience
+  feed?: 'updates' | 'all'
+  visibility_change?: string
+  entry?: string
+  path?: string
+}
 
 type HistoryPageProps = {
   initialPage: HistoryPageResponse
-  initialEntry: HistoryEntryDetail | null
+  initialEntry: HistoryEntryDetailResponse | null
   params: RepoParams
-  search: {
-    audience?: ProjectionPreviewAudience
-    feed?: 'updates' | 'all'
-    visibility_change?: string
-    entry?: string
-    path?: string
-  }
+  search: HistorySearch
 }
 
 export function HistoryPage(props: HistoryPageProps) {
@@ -62,7 +64,7 @@ export function HistoryPage(props: HistoryPageProps) {
   const cacheKey = isLoaded
     ? historyPageCacheKey(repoResourceScope(repo, userId ?? null), props.initialPage)
     : null
-  return <HistoryPageContent initialPage={props.initialPage} initialEntry={props.initialEntry} params={props.params} search={props.search} key={cacheKey ?? 'pending'} cacheKey={cacheKey} />
+  return <HistoryPageContent key={cacheKey ?? 'pending'} {...props} cacheKey={cacheKey} />
 }
 
 function HistoryPageContent(props: HistoryPageProps & { cacheKey: string | null }) {
@@ -314,14 +316,14 @@ function useHistoryPageModel({ initialPage, initialEntry, params, search, cacheK
     [locationKey, replaceHistorySelection, selectedEntryId],
   )
   const selectEntry = useCallback(
-    (entry: HistoryEntrySummary) => {
+    (entry: HistoryEntrySummaryResponse) => {
       setDiffSelection({ locationKey, dismissed: false })
       return replaceHistorySelection(entry.source_id)
     },
     [locationKey, replaceHistorySelection],
   )
   const selectFile = useCallback(
-    (file: CommitFile) => {
+    (file: CommitFileResponse) => {
       setDiffSelection({ locationKey, dismissed: false })
       return replaceHistorySelection(selectedEntryId, file.path)
     },

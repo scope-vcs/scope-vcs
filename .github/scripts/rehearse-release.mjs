@@ -91,7 +91,7 @@ async function main() {
       commit: sourceSha,
       environmentId: manifest.environments.staging.environmentId,
       deployments: components.map((component) => ({
-        service: component === 'git-router' ? manifest.environments.staging.routerServiceId : services[component].id,
+        service: services[component].id,
         deploymentId: active[component],
         status: 'SUCCESS',
       })),
@@ -118,7 +118,7 @@ async function main() {
     await waitForFile(readyPath, browser);
     const current = await query('service', 'list');
     const previous = components.map((component) => {
-      const serviceId = component === 'git-router' ? manifest.environments.staging.routerServiceId : services[component].id;
+      const serviceId = services[component].id;
       const live = current.find(({ id }) => id === serviceId);
       assert(live?.deploymentId && live.status === 'SUCCESS', `${component} must have a healthy predecessor`);
       return { component, serviceId, deploymentId: live.deploymentId };
@@ -141,8 +141,7 @@ async function main() {
         await processTask(process.execPath, ['.github/scripts/deploy-railway-image.mjs', serviceId,
           prepared.components['media-worker'].image], deploymentEnv).done;
       } else {
-        await processTask('bash', ['.github/scripts/deploy-railway.sh', serviceId,
-          component === 'cache' ? 'cache-service' : component === 'git-router' ? 'repo-router' : component === 'run-worker' ? 'worker' : component === 'media-api' ? 'media' : component], deploymentEnv).done;
+        await processTask('bash', ['.github/scripts/deploy-railway.sh', serviceId], deploymentEnv).done;
       }
       const records = (await readFile(resolve(directory, 'deployments.ndjson'), 'utf8'))
         .trim().split('\n').map(JSON.parse);

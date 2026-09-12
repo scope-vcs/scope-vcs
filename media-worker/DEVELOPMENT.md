@@ -2,7 +2,7 @@
 
 The worker claims one attachment-processing job at a time, validates the source with
 FFmpeg or libheif, writes encrypted derivative chunks, and runs the durable object
-cleanup queue in parallel. It exposes `/health` and `/healthz`; readiness requires
+cleanup queue in parallel. It exposes `/healthz`; readiness requires
 the codecs, exact database schema, object storage, and recent polls from both loops.
 
 The production image is built from the repository root because the worker uses

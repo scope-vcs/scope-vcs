@@ -1,6 +1,8 @@
 use crate::error::DomainError;
+use serde::Serialize;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
 pub struct PinnedContainerImage(String);
 
 impl PinnedContainerImage {

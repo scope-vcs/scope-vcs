@@ -38,14 +38,13 @@ export type IsolatedReviewDiffRender = (
 export type ReviewDiffAdmissionState = { active: number }
 
 export function createReviewFileDiffRenderer({
-  budget = REVIEW_FILE_DIFF_RENDER_BUDGET,
   isolatedRender,
   state = { active: 0 },
 }: {
-  budget?: ReviewFileDiffRenderBudget
   isolatedRender: IsolatedReviewDiffRender
   state?: ReviewDiffAdmissionState
 }) {
+  const budget = REVIEW_FILE_DIFF_RENDER_BUDGET
   const presentations = createBoundedCache<string, ReviewFileDiffWorkerResult>({
     maxEntries: 64,
     maxWeight: 8 * 1024 * 1024,
@@ -92,7 +91,6 @@ export function createReviewFileDiffRenderer({
     try {
       const presentation = await isolatedRender({
         budget: {
-          maxHighlightLanguages: budget.maxHighlightLanguages,
           maxHunks: budget.maxHunks,
           maxOutputBytes: budget.maxOutputBytes,
           maxRenderedLines: budget.maxRenderedLines,

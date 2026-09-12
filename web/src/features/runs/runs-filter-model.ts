@@ -1,6 +1,6 @@
-import type { RepoRunHistoryPage } from '@/api/types'
 import { runDisplayState } from './run-formatting'
 import { type RunTone, runStatus } from './run-status'
+import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 
 export type RunStatusFilter = 'any' | 'failed' | 'running' | 'succeeded'
 
@@ -21,7 +21,7 @@ export const RUN_STATUS_FILTER_OPTIONS: {
 ]
 
 export function runMatchesStatusFilter(
-  run: RepoRunHistoryPage['runs'][number],
+  run: RepositoryRunHistoryPageResponse['runs'][number],
   filter: RunStatusFilter,
 ) {
   if (filter === 'any') return true

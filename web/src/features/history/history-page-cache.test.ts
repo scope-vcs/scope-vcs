@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { HistoryEntrySummary, HistoryPage } from '@/api/types'
 import { historyPageCacheKey, restoreHistoryPages, retainHistoryPages, resetHistoryPageCache } from './history-page-cache'
 import { appendHistoryPage } from './history-pagination'
+import type {
+  HistoryEntrySummaryResponse,
+  HistoryPageResponse,
+} from '@/api/types.generated'
 
-function page(overrides: Partial<HistoryPage> = {}): HistoryPage {
+function page(overrides: Partial<HistoryPageResponse> = {}): HistoryPageResponse {
   return {
     repo_id: 'repo', generation: 'generation1', view_key: 'public', audience: 'public', feed: 'updates',
-    head_oid: null, entries: [{ source_id: 'first' } as HistoryEntrySummary], next_cursor: 'older',
+    head_oid: null, entries: [{ source_id: 'first' } as HistoryEntrySummaryResponse], next_cursor: 'older',
     ...overrides,
   }
 }
@@ -16,7 +19,7 @@ test('navigation and entry selection restore accumulated history', () => {
   resetHistoryPageCache()
   const first = page()
   const key = historyPageCacheKey('viewer', first)
-  const loaded = appendHistoryPage(first, page({ entries: [{ source_id: 'older' } as HistoryEntrySummary], next_cursor: null }), 'older')
+  const loaded = appendHistoryPage(first, page({ entries: [{ source_id: 'older' } as HistoryEntrySummaryResponse], next_cursor: null }), 'older')
   retainHistoryPages(key, loaded)
   assert.deepEqual(restoreHistoryPages(historyPageCacheKey('viewer', page()), page()), loaded)
   assert.equal(restoreHistoryPages(key, page()).next_cursor, null)
@@ -43,6 +46,6 @@ test('history pagination retention is bounded', () => {
   for (let index = 0; index < 13; index++) retainHistoryPages(String(index), { entries: [], next_cursor: null })
   assert.equal(restoreHistoryPages('0', page()).entries.length, 1)
   assert.equal(restoreHistoryPages('12', page()).entries.length, 0)
-  retainHistoryPages('large', { entries: [{ message: 'x'.repeat(3 * 1024 * 1024) } as HistoryEntrySummary], next_cursor: null })
+  retainHistoryPages('large', { entries: [{ message: 'x'.repeat(3 * 1024 * 1024) } as HistoryEntrySummaryResponse], next_cursor: null })
   assert.equal(restoreHistoryPages('large', page()).next_cursor, 'older')
 })

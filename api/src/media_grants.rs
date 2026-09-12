@@ -1,7 +1,7 @@
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use scope_api_contract::attachments::{
-    RequestAttachmentMediaGrantClaims, RequestAttachmentMediaGrantMethod,
-    RequestAttachmentMediaTarget, RequestAttachmentUploadGrantClaims,
+    RequestAttachmentMediaGrantClaims, RequestAttachmentMediaTarget,
+    RequestAttachmentUploadGrantClaims,
 };
 use std::sync::Arc;
 
@@ -64,10 +64,6 @@ impl MediaGrantIssuer {
         &self,
         claims: &RequestAttachmentMediaGrantClaims,
     ) -> anyhow::Result<String> {
-        anyhow::ensure!(
-            claims.method == RequestAttachmentMediaGrantMethod::Get,
-            "media grants only authorize reading attachments"
-        );
         Ok(encode(&Header::new(Algorithm::EdDSA), claims, &self.key)?)
     }
 
@@ -100,7 +96,7 @@ impl MediaGrantIssuer {
         Ok(url.to_string())
     }
 
-    #[cfg(any(test, feature = "local-dev", feature = "test-support"))]
+    #[cfg(any(test, feature = "local-dev"))]
     pub(crate) fn test() -> Self {
         Self::new("http://127.0.0.1:8083".into(), TEST_PRIVATE_KEY.into()).unwrap()
     }
@@ -122,7 +118,7 @@ fn required_env(name: &str) -> anyhow::Result<String> {
     crate::config::non_empty_env(name).ok_or_else(|| anyhow::anyhow!("{name} is required"))
 }
 
-#[cfg(any(test, feature = "local-dev", feature = "test-support"))]
+#[cfg(any(test, feature = "local-dev"))]
 const TEST_PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIGrD/e7uKYqSY4twDEsRfMMuLSrODf14dpTiTK6K1YI0\n-----END PRIVATE KEY-----\n";
 
 #[cfg(test)]

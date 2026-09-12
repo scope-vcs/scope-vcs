@@ -1,10 +1,13 @@
-import type { HistoryEntrySummary, HistoryPage } from '@/api/types'
+import type {
+  HistoryEntrySummaryResponse,
+  HistoryPageResponse,
+} from '@/api/types.generated'
 
-export type LoadedHistory = Pick<HistoryPage, 'entries' | 'next_cursor'>
+export type LoadedHistory = Pick<HistoryPageResponse, 'entries' | 'next_cursor'>
 
 export function appendHistoryPage(
   current: LoadedHistory,
-  page: HistoryPage,
+  page: HistoryPageResponse,
   before: string,
 ): LoadedHistory {
   if (current.next_cursor !== before) return current
@@ -13,7 +16,7 @@ export function appendHistoryPage(
 }
 
 export function historySummary(
-  entries: HistoryEntrySummary[],
+  entries: HistoryEntrySummaryResponse[],
   hasOlderEntries: boolean,
 ) {
   if (hasOlderEntries) return `${entries.length} most recent updates`

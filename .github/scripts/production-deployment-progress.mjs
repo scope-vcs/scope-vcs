@@ -89,14 +89,6 @@ export async function latestSuccessfulDeployments(fetchImpl = fetch) {
   return Object.fromEntries(entries);
 }
 
-export async function latestSuccessfulRevisions(fetchImpl = fetch) {
-  const deployments = await latestSuccessfulDeployments(fetchImpl);
-  return Object.fromEntries(COMPONENTS.map((component) => [
-    component,
-    deployments[component]?.sourceSha ?? null,
-  ]));
-}
-
 export async function recordSuccessfulDeployment({
   component,
   sourceSha,
@@ -166,25 +158,6 @@ export async function recordEvidenceFile(path, logUrl = "", fetchImpl = fetch) {
   return deploymentIds;
 }
 
-export async function latestSuccessfulRelease(fetchImpl = fetch) {
-  for (let page = 1; ; page += 1) {
-    const deployments = await githubRequest(`/deployments?environment=production%2Frelease&per_page=100&page=${page}`, {}, fetchImpl);
-    for (const deployment of deployments) {
-      const payload = typeof deployment.payload === "string" ? JSON.parse(deployment.payload) : deployment.payload;
-      if (payload?.kind !== "scope-production-release" || payload.sourceSha !== deployment.sha
-          || !SOURCE_SHA_PATTERN.test(payload.sourceSha ?? "") || !payload.components
-          || !Object.keys(payload.components).length) continue;
-      if (Object.entries(payload.components).some(([component, receipt]) =>
-        !COMPONENTS.includes(component) || !deploymentEvidence(component, { sha: deployment.sha,
-          payload: { component, ...receipt } }))) continue;
-      const statuses = await githubRequest(`/deployments/${deployment.id}/statuses?per_page=100`, {}, fetchImpl);
-      const success = statuses.find(({ state }) => state === "success");
-      if (success) return { ...payload, id: String(deployment.id), completedAt: success.created_at };
-    }
-    if (deployments.length < 100) return null;
-  }
-}
-
 export async function recordSuccessfulRelease({ sourceSha, components, warning = "", logUrl = "" }, fetchImpl = fetch) {
   if (!SOURCE_SHA_PATTERN.test(sourceSha ?? "")) throw new Error("sourceSha must be a full lowercase commit SHA");
   const selected = Array.isArray(components) ? components : Object.keys(components ?? {}).filter(key => components[key] === true);
@@ -219,10 +192,6 @@ async function main() {
   if (command?.startsWith("cutover-")) {
     const result = await cutoverCommand(command, argument, githubRequest);
     if (result !== undefined) process.stdout.write(`${typeof result === "string" ? result : JSON.stringify(result)}\n`);
-    return;
-  }
-  if (command === "read-release") {
-    process.stdout.write(`${JSON.stringify(await latestSuccessfulRelease())}\n`);
     return;
   }
   if (command === "record-release") {

@@ -10,11 +10,10 @@ use scope_media_worker::{
 };
 use scope_postgres::db::MetadataStore;
 use std::{path::Path, time::Duration};
-use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_tracing();
+    scope_service_runtime::init_tracing("scope_media_worker=info,scope_postgres=info");
     let mut args = std::env::args_os();
     let _program = args.next();
     match args.next().as_deref().and_then(|value| value.to_str()) {
@@ -31,16 +30,6 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(command) => anyhow::bail!("unknown scope-media-worker command: {command}"),
     }
-}
-
-fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "scope_media_worker=info,scope_postgres=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
 }
 
 async fn run_service() -> anyhow::Result<()> {
@@ -91,7 +80,7 @@ async fn connect_metadata(
     health_task: &mut tokio::task::JoinHandle<anyhow::Result<()>>,
 ) -> anyhow::Result<Option<MetadataStore>> {
     loop {
-        let connection = MetadataStore::connect_worker(settings.database_url.clone());
+        let connection = MetadataStore::connect(settings.database_url.clone());
         tokio::pin!(connection);
         let attempt = tokio::select! {
             result = &mut connection => result,

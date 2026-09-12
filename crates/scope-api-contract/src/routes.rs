@@ -124,7 +124,6 @@ routes! {
                 request_id: &str,
                 attachment_id: &str,
             );
-        REPO_SESSION = "/v1/repos/{owner}/{repo}/session" => "repoSession";
         REPO_FILES = "/v1/repos/{owner}/{repo}/files" => "repoFiles";
         REPO_FILE_CONTENT = "/v1/repos/{owner}/{repo}/files/content" => "repoFileContent";
         REPO_REQUEST_REVISIONS = "/v1/repos/{owner}/{repo}/requests/{request_id}/changes"

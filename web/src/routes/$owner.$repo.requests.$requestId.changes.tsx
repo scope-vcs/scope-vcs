@@ -8,15 +8,22 @@ import {
   loadRequestRevisionCommitFileDiffForRequest,
   loadRequestRevisionsForRequest,
 } from '@/api/requests'
+import { EmptyState } from '@/components/empty-state'
+import { Button } from '@/components/ui/button'
 import {
   type LoadDiscussionsInput,
   loadRequestDiscussionsForRequest,
 } from '@/features/requests/request-discussion-api'
-import { RequestChangesView } from '@/features/requests/request-changes-view'
 import { loadDiscussionReferencePage, selectedDiscussionReferenceQuery } from '@/features/requests/request-changes-discussion-references'
-import type {
-  RequestChangesDiscussionReferences,
-  RequestChangesSearch,
+import {
+  forgetPinnedChangesReplay,
+  rememberPinnedChangesReplay,
+  takePinnedChangesReplay,
+} from '@/features/requests/request-changes-replay'
+import {
+  RequestChangesWorkbench,
+  type RequestChangesDiscussionReferences,
+  type RequestChangesSearch,
 } from '@/features/requests/request-changes-workbench'
 import { RequestChangesPending } from '@/features/requests/request-page-pending'
 import {
@@ -25,24 +32,17 @@ import {
 } from '@/features/requests/request-changes-model'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
-import { createFileRoute, getRouteApi, useRouter } from '@tanstack/react-router'
+import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import { Link, createFileRoute, getRouteApi, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
+import { GitCommit } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-
-type LoadRequestRevisionsInput = ReturnType<typeof parseLoadRequestRevisionsInput>
 
 type ChangesPage = Awaited<ReturnType<typeof loadChangesPage>>
 type ChangesLoaderData = ChangesPage & {
   pin: RequestChangesSearch | null
 }
-
-type PinnedChangesReplay = {
-  data: ChangesLoaderData
-  key: string
-}
-
-const pinnedChangesReplay: { current: PinnedChangesReplay | null } = { current: null }
 
 const requestRoute = getRouteApi('/$owner/$repo/requests/$requestId')
 
@@ -93,7 +93,7 @@ export const Route = createFileRoute(
       commit_oid: selectionSearch.commit,
       revision_id: selectionSearch.revision,
     }
-    const replay = takePinnedChangesReplay(input)
+    const replay = takePinnedChangesReplay<ChangesLoaderData>(input)
     if (replay) return replay
     const page = await loadChangesPage({ data: input })
     return pinChangesPage(page, selectionSearch)
@@ -141,31 +141,56 @@ function RequestChangesRoute() {
 
   if (!page.detail) return null
 
+  if (!changes.revisions) {
+    return (
+      <EmptyState
+        description="the discussion is still available. Try loading this revision again."
+        action={
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button
+              disabled={retrying}
+              onClick={() => {
+                setRetrying(true)
+                void loadChangesPage({
+                  data: {
+                    ...requestParams,
+                    commit_oid: search.commit,
+                    revision_id: search.revision,
+                  },
+                })
+                  .then((result) => {
+                    router.updateMatch(matchId, (match) => ({
+                      ...match,
+                      loaderData: pinChangesPage(result, search),
+                    }))
+                  })
+                  .catch((error: unknown) => console.error('Retrying request changes failed', error))
+                  .finally(() => setRetrying(false))
+              }}
+            >
+              {retrying ? 'retrying changes…' : 'retry changes'}
+            </Button>
+            <Button asChild variant="secondary">
+              <Link params={{ owner, repo, requestId }} to="/$owner/$repo/requests/$requestId">
+                back to discussion
+              </Link>
+            </Button>
+            <output className="sr-only">{retrying ? 'loading request changes' : 'changes could not load'}</output>
+          </div>
+        }
+        icon={<GitCommit />}
+        title="changes couldn't load"
+      />
+    )
+  }
+
   return (
-    <RequestChangesView
+    <RequestChangesWorkbench
+      accessScope={repoResourceScope(live.repo, page.account?.user?.id ?? null)}
       audience={live.repo.access.can_read_private_files ? 'private' : 'public'}
       initialDiscussionReferences={changes.discussionReferences}
       loadDiff={loadDiffForView}
       loadDiscussions={loadDiscussionsForView}
-      retrying={retrying}
-      onRetry={() => {
-        setRetrying(true)
-        void loadChangesPage({
-          data: {
-            ...requestParams,
-            commit_oid: search.commit,
-            revision_id: search.revision,
-          },
-        })
-          .then((result) => {
-            router.updateMatch(matchId, (match) => ({
-              ...match,
-              loaderData: pinChangesPage(result, search),
-            }))
-          })
-          .catch((error: unknown) => console.error('Retrying request changes failed', error))
-          .finally(() => setRetrying(false))
-      }}
       onSearchChange={(nextSearch) => {
         void navigate({
           params,
@@ -190,38 +215,6 @@ function requestChangesSelectionSearch(search: unknown): RequestChangesSearch {
     commit: typeof values.commit === 'string' ? values.commit : undefined,
     revision: typeof values.revision === 'string' ? values.revision : undefined,
   }
-}
-
-function rememberPinnedChangesReplay(
-  input: LoadRequestRevisionsInput,
-  data: ChangesLoaderData,
-) {
-  if (typeof window === 'undefined') return null
-  const replay = { data, key: changesSelectionKey(input) }
-  pinnedChangesReplay.current = replay
-  return replay
-}
-
-function takePinnedChangesReplay(input: LoadRequestRevisionsInput) {
-  if (typeof window === 'undefined') return null
-  const replay = pinnedChangesReplay.current
-  if (!replay || replay.key !== changesSelectionKey(input)) return null
-  pinnedChangesReplay.current = null
-  return replay.data
-}
-
-function forgetPinnedChangesReplay(replay: PinnedChangesReplay | null) {
-  if (pinnedChangesReplay.current === replay) pinnedChangesReplay.current = null
-}
-
-function changesSelectionKey(input: LoadRequestRevisionsInput) {
-  return [
-    input.owner,
-    input.repo,
-    input.request_id,
-    input.revision_id ?? '',
-    input.commit_oid ?? '',
-  ].join('\0')
 }
 
 function pinChangesPage(page: ChangesPage, search: RequestChangesSearch): ChangesLoaderData {

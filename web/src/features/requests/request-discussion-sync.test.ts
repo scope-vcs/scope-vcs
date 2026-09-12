@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { discussion as discussionFixture } from './request-discussion-test-fixtures'
+import { deferred, discussion as discussionFixture } from './request-discussion-test-fixtures'
 import {
   applyDiscussionChanges,
   collectionFromPage,
@@ -19,6 +19,7 @@ test('late refresh cannot overwrite a newer catch-up', async () => {
   const refreshPage = deferred<ReturnType<typeof page>>()
   const changes = deferred<RequestDiscussionChanges>()
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => collection.snapshotVersion,
     loadChanges: () => changes.promise,
@@ -44,6 +45,7 @@ test('late refresh cannot discard a concurrent mutation response', async () => {
   let dataGeneration = 0
   const refreshPage = deferred<ReturnType<typeof page>>()
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => dataGeneration,
     loadChanges: async () => changeBatch([], collection.snapshotVersion),
@@ -72,6 +74,7 @@ test('non-authoritative refresh drains changes from the prior snapshot', async (
   const refreshPage = deferred<ReturnType<typeof page>>()
   const afters: number[] = []
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => dataGeneration,
     loadChanges: async (after) => {
@@ -108,6 +111,7 @@ test('UI-only changes do not make a refresh non-authoritative', async () => {
   let dataGeneration = 0
   const refreshPage = deferred<ReturnType<typeof page>>()
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => dataGeneration,
     loadChanges: async () => changeBatch([], collection.snapshotVersion),
@@ -143,6 +147,7 @@ test('catch-up coalesces a newer target while a request is in flight', async () 
   const first = deferred<RequestDiscussionChanges>()
   const afters: number[] = []
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => collection.snapshotVersion,
     loadChanges: (after) => {
@@ -181,6 +186,7 @@ test('catch-up drains every server page when continuation is explicit', async ()
   ]
   const afters: number[] = []
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => collection.snapshotVersion,
     loadChanges: async (after) => {
@@ -210,6 +216,7 @@ test('lagged catch-up polls until an empty response confirms the head', async ()
   ]
   const afters: number[] = []
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => collection.snapshotVersion,
     loadChanges: async (after) => {
@@ -235,6 +242,7 @@ test('a completion from the previous request generation is discarded', async () 
   let collection = pageCollection('request-a', 5)
   const changes = deferred<RequestDiscussionChanges>()
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => collection.snapshotVersion,
     loadChanges: () => changes.promise,
@@ -264,6 +272,7 @@ test('pagination keeps an entity advanced by live catch-up', async () => {
   }
   const olderPage = deferred<ReturnType<typeof page>>()
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => collection.snapshotVersion,
     loadChanges: async () => changeBatch([], collection.snapshotVersion),
@@ -301,6 +310,7 @@ test('only a current refresh reports authoritative ordering', async () => {
     order: ['one'],
   }
   const sync = createRequestDiscussionSync({
+    onCatchUpError: () => {},
     getCollection: () => collection,
     getDataGeneration: () => collection.snapshotVersion,
     loadChanges: async () => changeBatch([], collection.snapshotVersion),
@@ -350,12 +360,4 @@ function changeBatch(
 
 function discussion(id: string, lastActivity: number, requestId: string) {
   return discussionFixture(id, lastActivity, { request_id: requestId })
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((complete) => {
-    resolve = complete
-  })
-  return { promise, resolve }
 }

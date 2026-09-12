@@ -1,6 +1,5 @@
 use axum::{Router, extract::State, http::StatusCode, routing::get};
 use std::{
-    net::{Ipv6Addr, SocketAddr},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -83,17 +82,10 @@ impl WorkerHealth {
     }
 
     pub async fn serve(self, port: u16) -> anyhow::Result<()> {
-        let address = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
         let router = Router::new()
-            .route("/health", get(health))
             .route("/healthz", get(health))
             .with_state(self);
-        let listener = tokio::net::TcpListener::bind(address).await?;
-        tracing::info!(%address, "media worker health server listening");
-        axum::serve(listener, router)
-            .with_graceful_shutdown(crate::shutdown_signal())
-            .await?;
-        Ok(())
+        scope_service_runtime::serve(port, router, "media worker health server").await
     }
 
     fn ready_at(&self, now_unix: u64) -> bool {

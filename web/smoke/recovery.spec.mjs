@@ -1,57 +1,38 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chromium } from 'playwright'
-import { waitForClientHydration } from './request-changes-smoke.mjs'
+import {
+  assertDocumentPreserved,
+  authEnabled,
+  baseUrl,
+  markDocument,
+  repoPath,
+  requestRepoPath,
+  waitForClientHydration,
+  withPage,
+} from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
-const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000'
-const repo = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
-const requestRepo = process.env.SCOPE_SMOKE_REQUEST_REPO ?? 'dev/update-demo'
-const authEnabled = process.env.SCOPE_SMOKE_AUTH_ENABLED === '1'
+const holdEventStream = (page) => page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
 
 test(`sign-in keeps Scope navigation when authentication is ${authEnabled ? 'enabled' : 'disabled'}`, async () => {
-  const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
-  const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  try {
-    await page.goto(`${baseUrl}/sign-in`)
+  await withPage('/sign-in', async (page) => {
     if (authEnabled) {
       await page.getByRole('textbox', { name: 'Email address', exact: true }).waitFor()
       await page.getByLabel('Password', { exact: true }).waitFor()
       await page.getByRole('link', { name: 'Scope home', exact: true }).click()
     } else {
-      await page.getByText('sign-in is disabled in this preview.', { exact: false }).waitFor()
-      await page.getByRole('link', { name: 'back to scope' }).click()
+      await page.getByText('Sign in is disabled in this preview.', { exact: false }).waitFor()
+      await page.getByRole('link', { name: 'Back to Scope', exact: true }).click()
     }
-    await page.waitForURL(new URL('/', baseUrl).href)
-    assert.deepEqual(errors, [])
-  } finally {
-    await browser.close()
-  }
+    await page.waitForURL(`${baseUrl}/`)
+  }, { viewport: { width: 390, height: 844 } })
 })
 
 test('changes retry keeps the document and selected revision', async () => {
-  const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage()
-  await page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
-  try {
-    let injected = false
-    await page.route('**/_serverFn/**', async (route) => {
-      const name = serverFunctionName(route.request())
-      if (!injected && name === 'loadChangesPage_createServerFn_handler') {
-        injected = true
-        await route.fulfill({
-          contentType: 'application/json',
-          body: JSON.stringify({ result: { discussionReferences: { commitKey: null, page: null }, revisions: null }, context: {} }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.goto(`${baseUrl}/${requestRepo}/requests/req_demo_ready`)
+  let injected = false
+  await withPage(`${requestRepoPath}/requests/req_demo_ready`, async (page) => {
     const changes = page.locator('#discussion-discussion_demo_revision_jitter').getByRole('link', { name: /View revision/ })
-    await waitForClientHydration(page, changes)
+    await waitForClientHydration(changes)
     await changes.click()
     const retry = page.getByRole('button', { name: 'retry changes', exact: true })
     await retry.waitFor()
@@ -59,14 +40,14 @@ test('changes retry keeps the document and selected revision', async () => {
     const before = page.url()
     assert.equal(new URL(before).searchParams.get('revision'), 'event_req_demo_ready_revision_2')
     const heading = await page.getByRole('heading', { name: 'Add bounded retry timing' }).elementHandle()
-    await page.evaluate(() => { window.__recoveryDocument = 'preserved' })
+    await markDocument(page, 'preserved')
     const requests = []
     page.on('request', (request) => {
       if (request.url().includes('/_serverFn/')) {
         requests.push(serverFunctionName(request))
       }
     })
-    await waitForClientHydration(page, retry)
+    await waitForClientHydration(retry)
     const response = page.waitForResponse((response) => response.url().includes('/_serverFn/'))
     await retry.click()
     await response
@@ -75,7 +56,7 @@ test('changes retry keeps the document and selected revision', async () => {
     for (const [key, value] of new URL(before).searchParams) {
       assert.equal(new URL(page.url()).searchParams.get(key), value)
     }
-    assert.equal(await page.evaluate(() => window.__recoveryDocument), 'preserved')
+    await assertDocumentPreserved(page, 'preserved')
     assert.equal(await heading.evaluate((element) => element.isConnected), true)
     assert.deepEqual(requests, ['loadChangesPage_createServerFn_handler'])
     await page.getByLabel('Commit file navigator').waitFor()
@@ -83,42 +64,53 @@ test('changes retry keeps the document and selected revision', async () => {
     const discussion = page.getByRole('navigation', { name: 'Request views' }).getByRole('link', { name: 'Discussion', exact: true })
     await discussion.click()
     await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready'))
-  } finally {
-    await browser.close()
-  }
+  }, {
+    prepare: async (page) => {
+      await holdEventStream(page)
+      await page.route('**/_serverFn/**', async (route) => {
+        const name = serverFunctionName(route.request())
+        if (!injected && name === 'loadChangesPage_createServerFn_handler') {
+          injected = true
+          await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({ result: { discussionReferences: { commitKey: null, page: null }, revisions: null }, context: {} }),
+          })
+        } else {
+          await route.continue()
+        }
+      })
+    },
+  })
 })
 
 test('a delayed file offers scoped retry and keeps its selection', async () => {
-  const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage()
-  await page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
   let release = () => {}
   try {
-    await page.goto(`${baseUrl}/${repo}`)
-    await page.locator('iframe[title="README.html preview"]').waitFor()
-    let attempts = 0
-    const held = new Promise((resolve) => { release = resolve })
-    await page.route('**/_serverFn/**', async (route) => {
-      if (decodeURIComponent(route.request().url()).includes('src/app.ts')) {
-        attempts += 1
-        if (attempts === 1) await held
-      }
-      await route.continue().catch(() => {})
-    })
-    const expand = page.getByRole('button', { name: 'Expand src', exact: true })
-    await waitForClientHydration(page, expand)
-    await expand.click()
-    await page.getByRole('button', { name: 'app.ts', exact: true }).click()
-    await page.getByText('this file is taking longer than usual', { exact: true }).waitFor({ timeout: 30_000 })
-    assert.equal(await page.locator('[data-slot="pending-surface"]').getAttribute('aria-busy'), 'true')
-    assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
-    assert.equal(await page.getByLabel('Repository file navigator').isVisible(), true)
-    await page.getByRole('button', { name: 'retry file', exact: true }).click()
-    await page.locator('pre code').filter({ hasText: 'export function greet' }).waitFor()
-    assert.equal(attempts, 2)
-    assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
+    await withPage(repoPath, async (page) => {
+      await page.locator('iframe[title="README.html preview"]').waitFor()
+      let attempts = 0
+      const held = new Promise((resolve) => { release = resolve })
+      await page.route('**/_serverFn/**', async (route) => {
+        if (decodeURIComponent(route.request().url()).includes('src/app.ts')) {
+          attempts += 1
+          if (attempts === 1) await held
+        }
+        await route.continue().catch(() => {})
+      })
+      const expand = page.getByRole('button', { name: 'Expand src', exact: true })
+      await waitForClientHydration(expand)
+      await expand.click()
+      await page.getByRole('button', { name: 'app.ts', exact: true }).click()
+      await page.getByText('this file is taking longer than usual', { exact: true }).waitFor({ timeout: 30_000 })
+      assert.equal(await page.locator('[data-slot="pending-surface"]').getAttribute('aria-busy'), 'true')
+      assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
+      assert.equal(await page.getByLabel('Repository file navigator').isVisible(), true)
+      await page.getByRole('button', { name: 'retry file', exact: true }).click()
+      await page.locator('pre code').filter({ hasText: 'export function greet' }).waitFor()
+      assert.equal(attempts, 2)
+      assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
+    }, { prepare: holdEventStream })
   } finally {
     release()
-    await browser.close()
   }
 })

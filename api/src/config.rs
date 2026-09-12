@@ -1,7 +1,4 @@
-use std::{
-    path::{Path as FsPath, PathBuf},
-    process::Command,
-};
+use std::path::{Path as FsPath, PathBuf};
 
 use scope_git::{DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits};
 
@@ -12,11 +9,6 @@ pub const SCOPE_GIT_PUBLIC_URL_ENV: &str = "SCOPE_GIT_PUBLIC_URL";
 pub const DATABASE_URL_ENV: &str = "DATABASE_URL";
 pub const SCOPE_REPO_ROOT_ENV: &str = "SCOPE_REPO_ROOT";
 pub const SCOPE_DATA_DIR_ENV: &str = "SCOPE_DATA_DIR";
-pub const SCOPE_BUCKET_ENDPOINT_ENV: &str = "SCOPE_BUCKET_ENDPOINT";
-pub const SCOPE_BUCKET_NAME_ENV: &str = "SCOPE_BUCKET_NAME";
-pub const SCOPE_BUCKET_REGION_ENV: &str = "SCOPE_BUCKET_REGION";
-pub const SCOPE_BUCKET_ACCESS_KEY_ID_ENV: &str = "SCOPE_BUCKET_ACCESS_KEY_ID";
-pub const SCOPE_BUCKET_SECRET_ACCESS_KEY_ENV: &str = "SCOPE_BUCKET_SECRET_ACCESS_KEY";
 pub const SCOPE_BUCKET_FORCE_PATH_STYLE_ENV: &str = "SCOPE_BUCKET_FORCE_PATH_STYLE";
 pub const SCOPE_OBJECT_ENCRYPTION_KEY_ENV: &str = "SCOPE_OBJECT_ENCRYPTION_KEY";
 pub const SCOPE_OBJECT_STORE_MAX_BYTES_ENV: &str = "SCOPE_OBJECT_STORE_MAX_BYTES";
@@ -32,7 +24,7 @@ pub const CLERK_AUTHORIZED_PARTIES_ENV: &str = "CLERK_AUTHORIZED_PARTIES";
 pub const CLERK_AUDIENCE_ENV: &str = "CLERK_AUDIENCE";
 pub const DEFAULT_CLERK_AUDIENCE: &str = "scope-api";
 pub const LOCAL_APP_ORIGIN: &str = "http://localhost:3000";
-#[cfg(any(test, feature = "local-dev", feature = "test-support"))]
+#[cfg(any(test, feature = "local-dev"))]
 pub const LOCAL_API_ORIGIN: &str = "http://localhost:8080";
 pub const FIRST_PUSH_TOKEN_PREFIX: &str = "scope_fp_";
 pub const GIT_PUSH_TOKEN_PREFIX: &str = "scope_git_";
@@ -41,7 +33,6 @@ pub const RECEIVE_PACK_STAGING_BYTES: usize = 16;
 pub const EMPTY_GIT_OID: &str = "0000000000000000000000000000000000000000";
 pub const GIT_UPLOAD_PACK: &str = "git-upload-pack";
 pub const GIT_RECEIVE_PACK: &str = "git-receive-pack";
-pub const DEFAULT_GIT_BRANCH: &str = "main";
 pub const DEFAULT_GIT_CACHE_MAX_BYTES: usize = 10 * 1024 * 1024 * 1024;
 pub const AWAITING_FIRST_PUSH_GIT_ERROR: &str = "repo is awaiting its first push";
 pub const MAX_RECEIVE_PACK_BYTES: usize = 512 * 1024 * 1024;
@@ -77,10 +68,6 @@ fn git_public_url(
 
 pub fn non_empty_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
-}
-
-pub fn default_git_storage_limits() -> GitStorageLimits {
-    GitStorageLimits::default()
 }
 
 pub fn git_storage_limits_from_env() -> anyhow::Result<GitStorageLimits> {
@@ -140,16 +127,6 @@ pub fn data_dir(repo_root: &FsPath) -> PathBuf {
 pub fn git_repo_root() -> PathBuf {
     if let Some(root) = non_empty_env(SCOPE_REPO_ROOT_ENV) {
         return PathBuf::from(root);
-    }
-
-    let output = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output();
-    if let Ok(output) = output
-        && output.status.success()
-        && let Ok(root) = String::from_utf8(output.stdout)
-    {
-        return PathBuf::from(root.trim());
     }
 
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))

@@ -14,6 +14,7 @@ use aws_sdk_ecs::{
 };
 use aws_sdk_secretsmanager::{Client as SecretsManagerClient, types::Tag as SecretTag};
 use hmac::{Hmac, Mac as _};
+use scope_domain::runs::image::PinnedContainerImage;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -359,7 +360,7 @@ impl EcsClient {
             .container_definitions(container)
             .tags(scope_tag("Project", "scope-vcs"))
             .tags(scope_tag("Component", "cloud-runner"))
-            .tags(scope_tag("ImageDigest", image_digest(image)?))
+            .tags(scope_tag("ImageDigest", &image_digest(image)?))
             .send()
             .await
             .context("register ECS task definition")?;
@@ -480,14 +481,11 @@ fn secret_tag(key: &str, value: &str) -> SecretTag {
     SecretTag::builder().key(key).value(value).build()
 }
 
-fn image_digest(image: &str) -> anyhow::Result<&str> {
-    let (_, digest) = image
-        .rsplit_once("@sha256:")
-        .context("runner image must be pinned by sha256 digest")?;
-    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        bail!("runner image has an invalid sha256 digest");
-    }
-    Ok(digest)
+fn image_digest(image: &str) -> anyhow::Result<String> {
+    Ok(PinnedContainerImage::parse(image)
+        .context("runner image must be pinned by sha256 digest")?
+        .digest()
+        .to_string())
 }
 
 fn task_family(attempt_id: &str) -> anyhow::Result<String> {

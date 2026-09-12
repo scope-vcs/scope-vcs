@@ -2,18 +2,19 @@ use super::{
     CompleteRequestAttachmentProcessingCommand, FailRequestAttachmentProcessingCommand,
     MediaLeaseMutation, MediaStore, RequestMediaManifest, ValidateRequestAttachmentSourceCommand,
     access::cleanup_tombstone_exists,
+    locks::{lock_attachment, lock_processing_job},
     persistence::{as_i32, as_i64, attachment_by_id, manifest_by_id},
     processing_support::{
-        adopt_manifest_keys, complete_job, ensure_derivative_budget, ensure_manifest_keys_reserved,
-        insert_derivative, lock_attachment, lock_lease_and_attachment,
-        lock_lease_attachment_and_budget, lock_processing_job, save_attachment_processing_state,
-        save_completed_attachment, save_validated_source, source_metadata,
-        validate_completed_derivatives, validate_new_lease, validate_source_identity,
+        BudgetLock, adopt_manifest_keys, complete_job, ensure_derivative_budget,
+        ensure_manifest_keys_reserved, insert_derivative, lock_lease_attachment,
+        save_attachment_processing_state, save_completed_attachment, save_validated_source,
+        source_metadata, validate_completed_derivatives, validate_source_identity,
     },
 };
 use crate::{
     db::{
         locks::acquire_shared_repository_lock,
+        repo_change_notifications::POSTGRES_REPO_CHANGE_CHANNEL,
         request_access::{lock_request_repository, request_policy_for_user},
     },
     error::PostgresError,
@@ -21,7 +22,7 @@ use crate::{
 use scope_domain::requests::attachments::{
     RequestAttachment, RequestAttachmentProcessingLease, RequestAttachmentState,
     mark_processing_source_validated, retry_attachment_processing, transition_attachment,
-    validate_processing_completion, validate_processing_failure,
+    validate_lease_grant, validate_processing_completion, validate_processing_failure,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
@@ -32,7 +33,7 @@ impl MediaStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<Option<RequestAttachmentProcessingLease>, PostgresError> {
-        validate_new_lease(lease_token, now_unix, lease_expires_at_unix)?;
+        validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let Some(candidate) = tx
             .query_one(Statement::from_sql_and_values(
@@ -178,7 +179,7 @@ impl MediaStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<bool, PostgresError> {
-        validate_new_lease(lease_token, now_unix, lease_expires_at_unix)?;
+        validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
         let result = self
             .db
             .execute(Statement::from_sql_and_values(
@@ -257,9 +258,16 @@ impl MediaStore {
             return Err(PostgresError::invalid_input("media object key is required"));
         }
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        if lock_lease_and_attachment(&tx, attachment_id, lease_token, lease_generation, now_unix)
-            .await?
-            .is_none()
+        if lock_lease_attachment(
+            &tx,
+            attachment_id,
+            lease_token,
+            lease_generation,
+            now_unix,
+            BudgetLock::Skip,
+        )
+        .await?
+        .is_none()
         {
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(MediaLeaseMutation::LeaseLost);
@@ -320,12 +328,13 @@ impl MediaStore {
         command: ValidateRequestAttachmentSourceCommand,
     ) -> Result<MediaLeaseMutation<RequestAttachment>, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let Some((lease, attachment)) = lock_lease_and_attachment(
+        let Some((lease, attachment)) = lock_lease_attachment(
             &tx,
             &command.attachment_id,
             &command.lease_token,
             command.lease_generation,
             command.now_unix,
+            BudgetLock::Skip,
         )
         .await?
         else {
@@ -355,12 +364,13 @@ impl MediaStore {
         command: CompleteRequestAttachmentProcessingCommand,
     ) -> Result<MediaLeaseMutation<RequestAttachment>, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let Some((lease, attachment)) = lock_lease_attachment_and_budget(
+        let Some((lease, attachment)) = lock_lease_attachment(
             &tx,
             &command.attachment_id,
             &command.lease_token,
             command.lease_generation,
             command.now_unix,
+            BudgetLock::Acquire,
         )
         .await?
         else {
@@ -424,12 +434,13 @@ impl MediaStore {
         command: FailRequestAttachmentProcessingCommand,
     ) -> Result<MediaLeaseMutation<RequestAttachment>, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let Some((lease, attachment)) = lock_lease_and_attachment(
+        let Some((lease, attachment)) = lock_lease_attachment(
             &tx,
             &command.attachment_id,
             &command.lease_token,
             command.lease_generation,
             command.now_unix,
+            BudgetLock::Skip,
         )
         .await?
         else {
@@ -517,7 +528,11 @@ impl MediaStore {
         if observed.request_id != request.id || observed.repository_id != repo.record.id {
             return Err(PostgresError::not_found("request attachment not found"));
         }
-        lock_processing_job(&tx, attachment_id).await?;
+        if !lock_processing_job(&tx, attachment_id).await? {
+            return Err(PostgresError::not_found(
+                "request attachment processing job not found",
+            ));
+        }
         let attachment = lock_attachment(&tx, attachment_id).await?;
         if attachment.request_id != request.id
             || cleanup_tombstone_exists(&tx, attachment_id).await?
@@ -606,6 +621,10 @@ where
         .await
         .map_err(PostgresError::internal)?
     else {
+        // Attachments carry no foreign key to their request or repository, and
+        // leased processing only checks the tombstone before taking the row
+        // lock, so a deletion that committed in between leaves nothing to
+        // notify about.
         return Ok(());
     };
     let incarnation_id = row
@@ -632,7 +651,7 @@ where
     .to_string();
     conn.execute(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT pg_notify('scope_repo_changes', $1)",
+        format!("SELECT pg_notify('{POSTGRES_REPO_CHANGE_CHANNEL}', $1)"),
         [payload.into()],
     ))
     .await

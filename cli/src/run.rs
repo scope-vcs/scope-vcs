@@ -1,4 +1,5 @@
 use crate::api::ApiSession;
+use crate::display::short_oid;
 use crate::{
     api::{self, api_url, http_client_builder, run_detail},
     git_repo::{GitRepo, ensure_git_repo_ready, head_oid, warn_if_dirty_working_tree},
@@ -7,9 +8,12 @@ use crate::{
 };
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use output::run_state_label as state_label;
 use reqwest::blocking::Client;
 use scope_api_contract::{CreateManualRunQuery, ResolveManualRunResponse, RunResponse, RunState};
 use std::time::Duration;
+
+const DEFAULT_WATCH_TIMEOUT_SECS: u64 = 1800;
 
 mod logs;
 mod output;
@@ -33,7 +37,7 @@ pub enum RunCommand {
         /// Return the queued run without watching it.
         #[arg(long)]
         no_watch: bool,
-        #[arg(long, default_value_t = 1800, value_parser = clap::value_parser!(u64).range(1..))]
+        #[arg(long, default_value_t = DEFAULT_WATCH_TIMEOUT_SECS, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
     },
     /// List workflows defined on the repository's current main.
@@ -53,7 +57,7 @@ pub enum RunCommand {
     Watch {
         run_id: String,
         /// Maximum seconds to watch, including reconnects.
-        #[arg(long, default_value_t = 1800, value_parser = clap::value_parser!(u64).range(1..))]
+        #[arg(long, default_value_t = DEFAULT_WATCH_TIMEOUT_SECS, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
         /// Resume after this log position.
         #[arg(long, default_value_t = 0)]
@@ -72,31 +76,29 @@ pub enum RunCommand {
         run_id: String,
         #[arg(long)]
         no_watch: bool,
-        #[arg(long, default_value_t = 1800, value_parser = clap::value_parser!(u64).range(1..))]
+        #[arg(long, default_value_t = DEFAULT_WATCH_TIMEOUT_SECS, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
     },
 }
 
 pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
     let remote = args.remote.as_deref();
-    if let RunCommand::Start {
-        workflow,
-        no_watch,
-        timeout,
-    } = args.command
-    {
-        let queued = queue(&workflow, remote)?;
-        print_queued("run.start", &queued.run)?;
-        return if no_watch {
-            Ok(())
-        } else {
-            queued.connection.watch(&queued.run.id, timeout, 0)
-        };
-    }
-    let connection = Connection::resolve(remote)?;
     match args.command {
-        RunCommand::Start { .. } => unreachable!(),
+        RunCommand::Start {
+            workflow,
+            no_watch,
+            timeout,
+        } => {
+            let queued = queue(&workflow, remote)?;
+            print_queued("run.start", &queued.run)?;
+            if no_watch {
+                Ok(())
+            } else {
+                queued.connection.watch(&queued.run.id, timeout, 0)
+            }
+        }
         RunCommand::Workflows => {
+            let connection = Connection::resolve(remote)?;
             let result = api::run_workflows(
                 connection.api(),
                 &connection.target.owner,
@@ -122,11 +124,13 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
             limit,
             after,
         } => {
+            let connection = Connection::resolve(remote)?;
             let result = api::run_history(
                 connection.api(),
                 &connection.target.owner,
                 &connection.target.repo,
                 workflow.as_deref(),
+                None,
                 limit,
                 after.as_deref(),
             )?;
@@ -152,6 +156,7 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
             crate::execution::emit("run.list", &result, lines)
         }
         RunCommand::Show { run_id } => {
+            let connection = Connection::resolve(remote)?;
             let detail = connection.detail(&run_id)?;
             crate::execution::emit("run.show", &detail, output::detail_lines(&detail))
         }
@@ -159,9 +164,12 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
             run_id,
             timeout,
             after,
-        } => connection.watch(&run_id, timeout, after),
-        RunCommand::Logs { run_id, job } => logs::print(&connection, &run_id, job.as_deref()),
+        } => Connection::resolve(remote)?.watch(&run_id, timeout, after),
+        RunCommand::Logs { run_id, job } => {
+            logs::print(&Connection::resolve(remote)?, &run_id, job.as_deref())
+        }
         RunCommand::Cancel { run_id } => {
+            let connection = Connection::resolve(remote)?;
             let run = api::cancel_run(
                 connection.api(),
                 &connection.target.owner,
@@ -183,6 +191,7 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
             no_watch,
             timeout,
         } => {
+            let connection = Connection::resolve(remote)?;
             let run = api::retry_run(
                 connection.api(),
                 &connection.target.owner,
@@ -301,7 +310,7 @@ fn print_queued(command: &'static str, run: &RunResponse) -> anyhow::Result<()> 
 }
 
 pub fn watch(run_id: &str, remote: Option<&str>) -> anyhow::Result<()> {
-    Connection::resolve(remote)?.watch(run_id, 1800, 0)
+    Connection::resolve(remote)?.watch(run_id, DEFAULT_WATCH_TIMEOUT_SECS, 0)
 }
 
 fn run_client(timeout: Duration) -> anyhow::Result<Client> {
@@ -311,25 +320,11 @@ fn run_client(timeout: Duration) -> anyhow::Result<Client> {
         .context("build run HTTP client")
 }
 
-fn state_label(state: RunState) -> &'static str {
-    match state {
-        RunState::Queued => "queued",
-        RunState::Dispatching => "dispatching",
-        RunState::Running => "running",
-        RunState::Succeeded => "succeeded",
-        RunState::Failed => "failed",
-        RunState::Canceled => "canceled",
-        RunState::Lost => "lost",
-    }
-}
 fn is_terminal_state(state: RunState) -> bool {
     matches!(
         state,
         RunState::Succeeded | RunState::Failed | RunState::Canceled | RunState::Lost
     )
-}
-fn short_oid(oid: &str) -> &str {
-    oid.get(..7).unwrap_or(oid)
 }
 
 /// Wait for a run without writing stdout, for aggregate command receipts.
@@ -337,7 +332,7 @@ pub fn wait_completion(run_id: &str, remote: Option<&str>) -> anyhow::Result<Run
     stream::completion(
         &Connection::resolve(remote)?,
         run_id,
-        Duration::from_secs(1800),
+        Duration::from_secs(DEFAULT_WATCH_TIMEOUT_SECS),
         0,
         false,
     )

@@ -20,8 +20,8 @@ pub(super) fn digest_inputs_at(
     git_oid: &str,
 ) -> anyhow::Result<String> {
     let mut digest = Sha256::new();
-    // Timestamp-preserving archives and the stable checkout path cannot reuse
-    // entries written by the previous runtime cache format.
+    // Domain-separate cache input digests from every other SHA-256 use of the
+    // same bytes; the suffix changes whenever the digested layout changes.
     digest.update(b"scope-cache-inputs-v2");
     let workspace = fs::canonicalize(root).context("resolve cache input workspace")?;
     let workspace_bytes = workspace.as_os_str().as_bytes();

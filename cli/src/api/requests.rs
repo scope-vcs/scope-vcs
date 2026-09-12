@@ -46,14 +46,11 @@ pub fn list_requests(
     repo: &str,
     cursor: Option<&str>,
 ) -> anyhow::Result<RequestListResponse> {
-    let mut request = api.request(
-        reqwest::Method::GET,
-        scope_api_contract::routes::repo_requests(owner, repo),
-    );
+    let mut request = api.request(reqwest::Method::GET, routes::repo_requests(owner, repo));
     if let Some(cursor) = cursor {
         request = request.query(&[("cursor", cursor)]);
     }
-    execute_repo_request(request, owner, repo, "list requests")
+    execute(request, format!("list requests for {owner}/{repo}"))
 }
 
 pub fn get_request(
@@ -67,10 +64,12 @@ pub fn get_request(
         repo,
         request_id,
     };
-    execute_request(
+    execute(
         api.request(reqwest::Method::GET, request_path(target)),
-        target,
-        "load request",
+        format!(
+            "load request {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -90,7 +89,13 @@ pub fn request_revisions(
     if let Some(commit) = commit {
         request = request.query(&[("commit", commit)]);
     }
-    execute_request(request, target, "inspect request revisions")
+    execute(
+        request,
+        format!(
+            "inspect request revisions {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
+    )
 }
 
 pub struct RequestFileDiffParams<'a> {
@@ -104,7 +109,7 @@ pub fn request_file_diff(
     api: ApiSession<'_>,
     params: RequestFileDiffParams<'_>,
 ) -> anyhow::Result<ReviewFileDiffResponse> {
-    execute_request(
+    execute(
         api.request(
             reqwest::Method::GET,
             routes::repo_request_revision_commit_file_diff(
@@ -116,8 +121,10 @@ pub fn request_file_diff(
             ),
         )
         .query(&[("path", params.path)]),
-        params.target,
-        "inspect request file diff",
+        format!(
+            "inspect request file diff {} for {}/{}",
+            params.target.request_id, params.target.owner, params.target.repo
+        ),
     )
 }
 
@@ -132,10 +139,12 @@ pub fn close_request(
         repo,
         request_id,
     };
-    execute_request(
+    execute(
         api.request(reqwest::Method::DELETE, request_path(target)),
-        target,
-        "close request",
+        format!(
+            "close request {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -145,19 +154,14 @@ pub fn start_request(
 ) -> anyhow::Result<RequestMutationResponse> {
     let owner = params.owner;
     let repo = params.repo;
-    execute_repo_request(
-        api.request(
-            reqwest::Method::POST,
-            scope_api_contract::routes::repo_requests(owner, repo),
-        )
-        .json(&StartRequestRequest {
-            name: params.name,
-            title: params.title,
-            audience: params.audience,
-        }),
-        owner,
-        repo,
-        "start request",
+    execute(
+        api.request(reqwest::Method::POST, routes::repo_requests(owner, repo))
+            .json(&StartRequestRequest {
+                name: params.name,
+                title: params.title,
+                audience: params.audience,
+            }),
+        format!("start request for {owner}/{repo}"),
     )
 }
 
@@ -165,11 +169,13 @@ pub fn submit_request(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestMutationResponse> {
-    execute_request(
+    execute(
         api.request(reqwest::Method::POST, request_action_path(target, "submit"))
             .json(&SubmitRequestRequest {}),
-        target,
-        "submit request",
+        format!(
+            "submit request {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -177,10 +183,12 @@ pub fn merge_request(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestMutationResponse> {
-    execute_request(
+    execute(
         api.request(reqwest::Method::POST, request_action_path(target, "merge")),
-        target,
-        "merge request",
+        format!(
+            "merge request {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -190,14 +198,16 @@ pub fn rate_request(
     score: u8,
     reason: String,
 ) -> anyhow::Result<RequestRatingResponse> {
-    execute_request(
+    execute(
         api.request(
             reqwest::Method::POST,
             request_action_path(target, "ratings"),
         )
         .json(&CreateRequestRatingRequest { score, reason }),
-        target,
-        "rate request participant",
+        format!(
+            "rate request participant {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -208,15 +218,17 @@ pub fn edit_request_identity(
     description_markdown: Option<String>,
     expected_description_markdown: Option<String>,
 ) -> anyhow::Result<RequestMutationResponse> {
-    execute_request(
+    execute(
         api.request(reqwest::Method::PATCH, request_path(target))
             .json(&EditRequestIdentityRequest {
                 title,
                 description_markdown,
                 expected_description_markdown,
             }),
-        target,
-        "edit request identity",
+        format!(
+            "edit request identity {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -225,14 +237,16 @@ pub fn add_request_invitee(
     target: RequestTarget<'_>,
     handle: String,
 ) -> anyhow::Result<RequestInviteeMutationResponse> {
-    execute_request(
+    execute(
         api.request(
             reqwest::Method::PUT,
             request_action_path(target, "invitees"),
         )
         .json(&AddRequestInviteeRequest { handle }),
-        target,
-        "invite request collaborator",
+        format!(
+            "invite request collaborator {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -241,14 +255,16 @@ pub fn remove_request_invitee(
     target: RequestTarget<'_>,
     handle: String,
 ) -> anyhow::Result<RequestInviteeMutationResponse> {
-    execute_request(
+    execute(
         api.request(
             reqwest::Method::DELETE,
             request_action_path(target, "invitees"),
         )
         .json(&RemoveRequestInviteeRequest { handle }),
-        target,
-        "remove request invitee",
+        format!(
+            "remove request invitee {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -256,17 +272,15 @@ pub fn leave_request(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
 ) -> anyhow::Result<LeaveRequestResponse> {
-    execute_request(
+    execute(
         api.request(
             reqwest::Method::DELETE,
-            scope_api_contract::routes::repo_request_invitees_me(
-                target.owner,
-                target.repo,
-                target.request_id,
-            ),
+            routes::repo_request_invitees_me(target.owner, target.repo, target.request_id),
         ),
-        target,
-        "leave request",
+        format!(
+            "leave request {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -287,7 +301,13 @@ pub fn get_request_activity(
     if let Some(limit) = params.limit {
         request = request.query(&[("limit", limit)]);
     }
-    execute_request(request, params.target, "load request activity")
+    execute(
+        request,
+        format!(
+            "load request activity {} for {}/{}",
+            params.target.request_id, params.target.owner, params.target.repo
+        ),
+    )
 }
 
 pub fn create_request_discussion(
@@ -295,7 +315,7 @@ pub fn create_request_discussion(
     params: CreateRequestDiscussionParams<'_>,
 ) -> anyhow::Result<RequestDiscussionMutationResponse> {
     let target = params.target;
-    execute_request(
+    execute(
         api.request(
             reqwest::Method::POST,
             request_action_path(target, "timeline"),
@@ -305,8 +325,10 @@ pub fn create_request_discussion(
             client_discussion_id: params.client_discussion_id,
             anchor: params.anchor,
         }),
-        target,
-        "create request discussion",
+        format!(
+            "create request discussion {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -314,7 +336,7 @@ pub fn create_request_discussion_reply(
     api: ApiSession<'_>,
     params: CreateRequestDiscussionReplyParams<'_>,
 ) -> anyhow::Result<RequestDiscussionReplyMutationResponse> {
-    execute_request(
+    execute(
         api.request(
             reqwest::Method::POST,
             request_discussion_action_path(params.target, params.discussion_id, "replies"),
@@ -325,8 +347,10 @@ pub fn create_request_discussion_reply(
             reply_to_reply_id: None,
             wait_after_reply: false,
         }),
-        params.target,
-        "reply to request discussion",
+        format!(
+            "reply to request discussion {} for {}/{}",
+            params.target.request_id, params.target.owner, params.target.repo
+        ),
     )
 }
 
@@ -335,13 +359,15 @@ pub fn resolve_request_discussion(
     target: RequestTarget<'_>,
     discussion_id: &str,
 ) -> anyhow::Result<RequestDiscussionMutationResponse> {
-    execute_request(
+    execute(
         api.request(
             reqwest::Method::POST,
             request_discussion_action_path(target, discussion_id, "resolve"),
         ),
-        target,
-        "resolve request discussion",
+        format!(
+            "resolve request discussion {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
     )
 }
 
@@ -349,19 +375,21 @@ pub fn reopen_and_reply_to_request_discussion(
     api: ApiSession<'_>,
     params: CreateRequestDiscussionReplyParams<'_>,
 ) -> anyhow::Result<RequestDiscussionReplyMutationResponse> {
-    execute_request(
+    execute(
         api.request(
             reqwest::Method::POST,
             request_discussion_action_path(params.target, params.discussion_id, "reopen-and-reply"),
         )
-        .json(&ReopenAndReplyRequest {
+        .json(&CreateRequestDiscussionReplyRequest {
             body_markdown: params.body_markdown,
             client_reply_id: params.client_reply_id,
             reply_to_reply_id: None,
             wait_after_reply: false,
         }),
-        params.target,
-        "reopen request discussion",
+        format!(
+            "reopen request discussion {} for {}/{}",
+            params.target.request_id, params.target.owner, params.target.repo
+        ),
     )
 }
 
@@ -387,26 +415,10 @@ fn request_discussion_action_path(
     )
 }
 
-fn execute_repo_request<R: DeserializeOwned>(
+pub(super) fn execute<R: DeserializeOwned>(
     request: RequestBuilder,
-    owner: &str,
-    repo: &str,
-    action: &str,
+    context: String,
 ) -> anyhow::Result<R> {
-    let context = format!("{action} for {owner}/{repo}");
-    let response = request.send().with_context(|| context.clone())?;
-    decode_json_response(response, &context)
-}
-
-pub(super) fn execute_request<R: DeserializeOwned>(
-    request: RequestBuilder,
-    target: RequestTarget<'_>,
-    action: &str,
-) -> anyhow::Result<R> {
-    let context = format!(
-        "{action} {} for {}/{}",
-        target.request_id, target.owner, target.repo
-    );
     let response = request.send().with_context(|| context.clone())?;
     decode_json_response(response, &context)
 }

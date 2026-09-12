@@ -3,7 +3,6 @@ import type { CachedResource } from '@/lib/use-cached-resource'
 
 export type CommitDetailState =
   | { commit: null; error: null; status: 'idle' }
-  | { commit: null; error: null; status: 'loading' }
   | { commit: CommitDetail; error: null; status: 'loaded' }
   | { commit: null; error: string; status: 'failed' }
 

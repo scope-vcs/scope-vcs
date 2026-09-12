@@ -1,3 +1,4 @@
+#![warn(unreachable_pub)]
 mod envelope;
 mod error;
 mod file;
@@ -144,17 +145,6 @@ impl Clone for GitSegmentStore {
 }
 
 impl GitSegmentStore {
-    pub fn in_memory(
-        encryption_key: SegmentEncryptionKey,
-        config: GitSegmentStoreConfig,
-    ) -> Result<Self, GitStorageError> {
-        Self::new(
-            Arc::new(MemoryMultipartStore::default()),
-            encryption_key,
-            config,
-        )
-    }
-
     pub fn new(
         backend: Arc<dyn MultipartStore>,
         encryption_key: SegmentEncryptionKey,
@@ -169,8 +159,9 @@ impl GitSegmentStore {
     }
 
     fn local_directory(&self, repository_id: &str) -> PathBuf {
-        let repository_hash = hex::encode(Sha256::digest(repository_id.as_bytes()));
-        self.config.local_root.join(&repository_hash[..32])
+        self.config
+            .local_root
+            .join(repository_namespace(repository_id))
     }
 
     fn local_pack_path(&self, repository_id: &str, segment_id: &str) -> PathBuf {
@@ -180,15 +171,39 @@ impl GitSegmentStore {
 }
 
 pub fn object_key(repository_id: &str, segment_id: &str) -> String {
-    let repository_hash = hex::encode(Sha256::digest(repository_id.as_bytes()));
-    format!("git/segments/v2/{}/{segment_id}", &repository_hash[..32])
+    format!(
+        "git/segments/v{ENCODING_VERSION}/{}/{segment_id}",
+        repository_namespace(repository_id)
+    )
 }
 
-fn valid_segment_id(segment_id: &str) -> bool {
-    segment_id.len() == 32
-        && segment_id
+/// The storage namespace a repository maps to, shared by the local staging
+/// directory and the remote object key.
+fn repository_namespace(repository_id: &str) -> String {
+    let mut repository_hash = hex::encode(Sha256::digest(repository_id.as_bytes()));
+    repository_hash.truncate(32);
+    repository_hash
+}
+
+/// Segment and multipart upload ids are 16 random bytes, lowercase hex encoded.
+fn is_hex_id_32(id: &str) -> bool {
+    id.len() == 32
+        && id
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+fn random_hex_id() -> Result<String, getrandom::Error> {
+    let mut bytes = [0_u8; 16];
+    getrandom::fill(&mut bytes)?;
+    Ok(hex::encode(bytes))
+}
+
+/// Durably records a rename or unlink in its containing directory.
+async fn sync_directory(directory: PathBuf) -> std::io::Result<()> {
+    tokio::task::spawn_blocking(move || std::fs::File::open(directory)?.sync_all())
+        .await
+        .map_err(std::io::Error::other)?
 }
 
 #[cfg(test)]

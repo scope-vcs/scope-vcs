@@ -1,4 +1,6 @@
-use scope_domain::policy::{Policy, PolicyError, ScopePath, Visibility, VisibilityRule};
+use scope_domain::policy::{
+    Policy, PolicyError, ScopePath, ScopePathError, Visibility, VisibilityRule,
+};
 
 fn path(value: &str) -> ScopePath {
     ScopePath::parse(value).unwrap()
@@ -9,14 +11,17 @@ fn scope_paths_preserve_filename_whitespace_without_relaxing_absolute_paths() {
     for value in ["/ leading.txt", "/trailing.txt ", "/tab\t", "/line\n"] {
         assert_eq!(path(value).as_str(), value);
     }
-    assert_eq!(ScopePath::parse(" /file"), Err(PolicyError::RelativePath));
+    assert_eq!(
+        ScopePath::parse(" /file"),
+        Err(ScopePathError::RelativePath)
+    );
     assert_eq!(
         ScopePath::parse("/../file"),
-        Err(PolicyError::InvalidSegment)
+        Err(ScopePathError::InvalidSegment)
     );
     assert_eq!(
         ScopePath::parse("/./file"),
-        Err(PolicyError::InvalidSegment)
+        Err(ScopePathError::InvalidSegment)
     );
     assert_eq!(path("//docs///file").as_str(), "/docs/file");
 }

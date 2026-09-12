@@ -11,19 +11,18 @@ use super::{RepositoryStore, content_fences};
 use crate::error::PostgresError;
 use sqlx::PgConnection;
 
+/// A session-scoped advisory lock on a dedicated connection. Dropping the
+/// lease closes that session, which releases the lock.
 pub struct RepositoryGitWriteLease {
-    connection: Option<PgConnection>,
+    connection: PgConnection,
     key: i64,
 }
 
 impl RepositoryGitWriteLease {
     pub async fn release(mut self) {
-        let Some(mut connection) = self.connection.take() else {
-            return;
-        };
         if let Err(error) = sqlx::query("SELECT pg_advisory_unlock($1)")
             .bind(self.key)
-            .execute(&mut connection)
+            .execute(&mut self.connection)
             .await
         {
             tracing::warn!(
@@ -31,12 +30,6 @@ impl RepositoryGitWriteLease {
                 "failed to release repository Git write lease; dropping its Postgres session"
             );
         }
-    }
-}
-
-impl Drop for RepositoryGitWriteLease {
-    fn drop(&mut self) {
-        self.connection.take();
     }
 }
 
@@ -67,10 +60,7 @@ impl RepositoryStore {
             .execute(&mut connection)
             .await
             .map_err(PostgresError::internal)?;
-        Ok(RepositoryGitWriteLease {
-            connection: Some(connection),
-            key,
-        })
+        Ok(RepositoryGitWriteLease { connection, key })
     }
 }
 

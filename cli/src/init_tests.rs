@@ -1,5 +1,9 @@
+#[allow(dead_code)]
+#[path = "test_fixtures.rs"]
+mod fixtures;
 use super::*;
-use crate::test_support::TestDir;
+use crate::test_support::TempDir;
+use fixtures::repository_response;
 use std::{path::Path, process::Command};
 
 const OLD_REMOTE: &str = "https://old.scope.example/git/adam/sample";
@@ -7,7 +11,7 @@ const NEW_REMOTE: &str = "https://scope.example/git/adam/sample";
 
 #[test]
 fn configure_remote_adds_or_updates_the_remote_idempotently() {
-    let new_dir = TestDir::git_repo("init-add-remote", "main");
+    let new_dir = TempDir::git_repo("init-add-remote", "main");
     let init = repo_init("scope", NEW_REMOTE);
 
     configure_remote(new_dir.path(), &init, "https://api.scope.example").unwrap();
@@ -27,7 +31,7 @@ fn configure_remote_adds_or_updates_the_remote_idempotently() {
         vec!["", "!scope git-credential"]
     );
 
-    let existing_dir = TestDir::git_repo("init-update-remote", "main");
+    let existing_dir = TempDir::git_repo("init-update-remote", "main");
     commit_empty(&existing_dir);
     existing_dir.run_git(["remote", "add", "scope", OLD_REMOTE]);
     existing_dir.run_git(["remote", "set-url", "--push", "scope", OLD_REMOTE]);
@@ -60,7 +64,7 @@ fn configure_remote_adds_or_updates_the_remote_idempotently() {
 #[test]
 fn remote_snapshot_restores_existing_and_absent_remote_state() {
     let init = repo_init("scope", NEW_REMOTE);
-    let existing_dir = TestDir::git_repo("init-restore-remote", "main");
+    let existing_dir = TempDir::git_repo("init-restore-remote", "main");
     commit_empty(&existing_dir);
     existing_dir.run_git(["remote", "add", "scope", OLD_REMOTE]);
     existing_dir.run_git(["remote", "set-url", "--push", "scope", OLD_REMOTE]);
@@ -93,7 +97,7 @@ fn remote_snapshot_restores_existing_and_absent_remote_state() {
         "refs/remotes/scope/legacy"
     ));
 
-    let absent_dir = TestDir::git_repo("init-restore-absent-remote", "main");
+    let absent_dir = TempDir::git_repo("init-restore-absent-remote", "main");
     let snapshot = RemoteConfigSnapshot::capture(absent_dir.path(), &init).unwrap();
     configure_remote(absent_dir.path(), &init, "https://api.scope.example").unwrap();
     snapshot.restore(absent_dir.path()).unwrap();
@@ -108,7 +112,7 @@ fn remote_snapshot_restores_existing_and_absent_remote_state() {
 
 fn repo_init(remote_name: &str, git_remote_url: &str) -> RepoInitResponse {
     serde_json::from_value(serde_json::json!({
-        "repo": {
+        "repo": repository_response(serde_json::json!({
             "id": "repo_test",
             "owner_handle": "adam",
             "name": "sample",
@@ -124,9 +128,8 @@ fn repo_init(remote_name: &str, git_remote_url: &str) -> RepoInitResponse {
                 "can_manage_members": true,
                 "can_delete_repo": true
             },
-            "open_request_count": 0,
-            "request_permissions": { "can_start_request": true }
-        },
+            "open_request_count": 0
+        })),
         "git_remote_url": git_remote_url,
         "remote_name": remote_name,
         "push_branch": "main",
@@ -189,7 +192,7 @@ fn git_ref_exists(path: &Path, name: &str) -> bool {
         .success()
 }
 
-fn commit_empty(dir: &TestDir) {
+fn commit_empty(dir: &TempDir) {
     dir.run_git([
         "-c",
         "user.name=Scope Test",

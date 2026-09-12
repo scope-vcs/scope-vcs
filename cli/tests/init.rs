@@ -7,7 +7,6 @@ use axum::{
 };
 use std::{
     fs,
-    path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -220,29 +219,6 @@ fn init_partial_failure_json_identifies_retained_repository() {
     );
 }
 
-fn git_stdout<const N: usize>(cwd: &Path, args: [&str; N]) -> String {
-    let output = std::process::Command::new("git")
-        .current_dir(cwd)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
-
-fn assert_success(output: &std::process::Output, action: &str) {
-    assert!(
-        output.status.success(),
-        "{action} failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 struct InitServer {
     server: TestServer,
     rolled_back: Arc<AtomicBool>,
@@ -253,7 +229,10 @@ impl InitServer {
         let rolled_back = Arc::new(AtomicBool::new(false));
         let rollback_state = rolled_back.clone();
         let app = Router::new()
-            .route("/v1/session", get(|| async { Json(session_response()) }))
+            .route(
+                "/v1/session",
+                get(|| async { Json(session_response("user_test", "adam", "adam@example.test")) }),
+            )
             .route("/v1/repos", post(|| async { Json(create_repo_response()) }))
             .route(
                 "/v1/repos/adam/sample",
@@ -277,20 +256,8 @@ impl InitServer {
     }
 }
 
-fn session_response() -> serde_json::Value {
-    serde_json::json!({
-        "identity": null,
-        "user": {
-            "id": "user_test",
-            "handle": "adam",
-            "email": "adam@example.test",
-            "email_verified": true
-        }
-    })
-}
-
 fn create_repo_response() -> serde_json::Value {
-    let repo = serde_json::json!({
+    let repo = repository_response(serde_json::json!({
         "id": "repo_test",
         "owner_handle": "adam",
         "name": "sample",
@@ -306,9 +273,8 @@ fn create_repo_response() -> serde_json::Value {
             "can_manage_members": true,
             "can_delete_repo": true
         },
-        "open_request_count": 0,
-        "request_permissions": { "can_start_request": true }
-    });
+        "open_request_count": 0
+    }));
     serde_json::json!({
         "repo": repo,
         "init": {

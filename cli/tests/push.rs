@@ -122,26 +122,3 @@ fn push_requires_explicit_main_before_any_repository_changes() {
     );
     assert!(!repo_config_path(dir.path()).unwrap().exists());
 }
-
-#[test]
-fn missing_repository_and_commit_are_usage_errors_in_json() {
-    let dir = TempDir::new("push-json-preconditions");
-    for initialize in [false, true] {
-        if initialize {
-            run_git(dir.path(), ["-c", "init.defaultBranch=main", "init"]);
-        }
-        let output = scope_command(dir.path())
-            .args(["--json", "push", "--main", "--no-review"])
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2));
-        let value: serde_json::Value = serde_json::from_str(
-            String::from_utf8_lossy(&output.stderr)
-                .lines()
-                .last()
-                .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(value["code"], "bad_request");
-    }
-}

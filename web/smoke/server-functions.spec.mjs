@@ -41,13 +41,9 @@ test('server function interception also decodes the development compiler format'
     'loadRepoFile_createServerFn_handler')
 })
 
-test('server function interception rejects unknown or malformed IDs', () => {
+test('server function interception rejects unknown IDs and ignores other endpoints', () => {
   for (const id of ['f'.repeat(64), '', 'invalid', Buffer.from('{}').toString('base64url')]) {
     assert.throws(() => serverFunctionName(request(`/_serverFn/${id}`)), /Unknown server function ID/)
   }
-})
-
-test('response predicates ignore requests outside the server function endpoint', () => {
   assert.equal(serverFunctionName(request('/assets/app.js')), '')
-  assert.equal(serverFunctionName(request('/v1/repos/dev/public-demo/events')), '')
 })

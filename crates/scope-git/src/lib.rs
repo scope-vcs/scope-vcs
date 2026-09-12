@@ -65,7 +65,7 @@ pub enum GitStorageLimitError {
 }
 
 #[derive(Debug, Error)]
-pub enum GitStorageError {
+pub enum GitSnapshotError {
     #[error(transparent)]
     StorageLimit(#[from] GitStorageLimitError),
     #[cfg(feature = "storage")]

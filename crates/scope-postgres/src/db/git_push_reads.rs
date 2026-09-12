@@ -1,6 +1,6 @@
 use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities, git_segments::load_git_pack_spans,
-    history_rows::RepositoryHistory, repository_rows::RepositoryFactRows,
+    history_rows::RepositoryHistory,
 };
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 use std::collections::BTreeMap;
@@ -102,12 +102,11 @@ pub(super) async fn git_push_context_for_id<C: ConnectionTrait>(
         .map(entities::repository_member::Model::try_into_domain)
         .collect::<Result<Vec<_>, _>>()?;
     let repo = repo_row.try_into_domain(
-        RepositoryFactRows {
+        entities::RepositoryFacts {
             git_head: head,
             git_pack_spans: pack_spans,
             ..Default::default()
-        }
-        .into_facts(),
+        },
         members,
         Vec::new(),
         RepositoryHistory {

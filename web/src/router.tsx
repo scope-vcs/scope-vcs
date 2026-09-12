@@ -1,4 +1,5 @@
 import { createRouter } from '@tanstack/react-router'
+import { MAIN_CONTENT_ID } from './components/main-content'
 import { PendingSurface } from './components/pending-surface'
 import { routeTree } from './routeTree.gen'
 
@@ -10,7 +11,7 @@ export function getRouter() {
     defaultPendingMs: 150,
     defaultPreload: 'intent',
     scrollRestoration: true,
-    scrollToTopSelectors: ['#main-content'],
+    scrollToTopSelectors: [`#${MAIN_CONTENT_ID}`],
   })
 }
 

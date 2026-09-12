@@ -1,4 +1,5 @@
-import type { RepoRunDetail, RunActionInput } from '@/api/types'
+import type { RunActionInput } from '@/api/types'
+import type { RepositoryRunDetailResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { Link } from '@tanstack/react-router'
 import { LoaderCircle, RotateCcw, Square } from 'lucide-react'
@@ -6,7 +7,7 @@ import { runDisplayState, runTriggerLabel } from './run-formatting'
 import { RunDuration } from './run-duration'
 import { RunStatusIcon } from './run-status-icon'
 import { runStatus } from './run-status'
-import { RunTimestamp } from './run-timestamp'
+import { RelativeTimestamp } from '@/components/timestamp'
 
 export function RunDetailHeader({
   detail,
@@ -17,7 +18,7 @@ export function RunDetailHeader({
   params,
   pendingAction,
 }: {
-  detail: RepoRunDetail
+  detail: RepositoryRunDetailResponse
   metadataError: string | null
   onCancel: () => void
   onRefresh: () => void
@@ -57,7 +58,7 @@ export function RunDetailHeader({
             <span aria-hidden="true">·</span>
             <span>{runTriggerLabel(run.trigger)}</span>
             <span aria-hidden="true">·</span>
-            <RunTimestamp value={run.updated_at_unix} />
+            <RelativeTimestamp value={run.updated_at_unix} />
           </p>
         </div>
         {/* Both controls keep their slot so the cluster never shifts when the

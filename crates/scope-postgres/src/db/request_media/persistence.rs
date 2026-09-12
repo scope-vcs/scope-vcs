@@ -1,8 +1,8 @@
 use super::{RequestMediaChunk, RequestMediaManifest};
-use crate::db::entities::{decode_enum, i32_to_u32 as to_u32, i64_to_u64 as to_u64};
-pub(super) use crate::db::entities::{
-    encode_enum as enum_string, u32_to_i32 as as_i32, u64_to_i64 as as_i64,
-};
+use crate::db::entities::decode_enum;
+pub(super) use crate::db::entities::encode_enum as enum_string;
+use crate::db::integer_columns::{i32_to_u32 as to_u32, i64_to_u64 as to_u64};
+pub(super) use crate::db::integer_columns::{u32_to_i32 as as_i32, u64_to_i64 as as_i64};
 use crate::error::PostgresError;
 use scope_domain::requests::attachments::{
     RequestAttachment, RequestAttachmentBinding, RequestAttachmentBindingTarget,

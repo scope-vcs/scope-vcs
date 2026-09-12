@@ -51,6 +51,33 @@ pub struct MediaObject {
 }
 
 impl MediaObject {
+    pub fn from_chunks(
+        media_type: impl Into<String>,
+        plaintext_bytes: u64,
+        sha256: impl Into<String>,
+        chunks: impl IntoIterator<Item = (u32, u64, u64, String, String)>,
+    ) -> Result<Self, MediaStorageError> {
+        Self::new(
+            media_type,
+            plaintext_bytes,
+            sha256,
+            chunks
+                .into_iter()
+                .map(
+                    |(part_number, plaintext_offset, plaintext_bytes, sha256, object_key)| {
+                        MediaChunk {
+                            part_number,
+                            plaintext_offset,
+                            plaintext_bytes,
+                            sha256,
+                            object_key,
+                        }
+                    },
+                )
+                .collect(),
+        )
+    }
+
     pub fn new(
         media_type: impl Into<String>,
         plaintext_bytes: u64,
@@ -105,7 +132,7 @@ impl MediaObject {
                 MediaStorageError::integrity("media manifest plaintext size overflowed")
             })?;
         }
-        if offset != self.plaintext_bytes || (offset == 0 && !self.chunks.is_empty()) {
+        if offset != self.plaintext_bytes {
             return Err(MediaStorageError::integrity(
                 "media manifest plaintext size does not match its chunks",
             ));

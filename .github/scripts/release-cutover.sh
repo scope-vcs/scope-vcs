@@ -26,13 +26,7 @@ validate_prepared_release() {
 }
 
 validate_maintenance_artifact() {
-  node --input-type=module -e '
-import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
-const prepared = JSON.parse(readFileSync(process.argv[1], "utf8"));
-const digest = createHash("sha256").update(readFileSync(process.argv[2])).digest("hex");
-if (prepared.maintenanceSha256 !== digest) throw new Error("Maintenance binary does not match the prepared release");
-' "$prepared_release_path" "$maintenance_binary"
+  node .github/scripts/railway-artifact.mjs verify-maintenance "$prepared_release_path" "$maintenance_binary" >/dev/null
 }
 
 begin_cutover() {

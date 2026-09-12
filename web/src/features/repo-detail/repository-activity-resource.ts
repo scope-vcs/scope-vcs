@@ -1,9 +1,12 @@
-import type { HistoryEntrySummary, ProjectionPreviewAudience } from '../../api/types'
 import { createCachedResource } from '../../lib/cached-resource'
+import type {
+  HistoryEntrySummaryResponse,
+  ProjectionPreviewAudience,
+} from '../../api/types.generated'
 
 export type RepositoryActivity = {
   audience: ProjectionPreviewAudience
-  entry: HistoryEntrySummary | null
+  entry: HistoryEntrySummaryResponse | null
   head_oid: string | null
 }
 

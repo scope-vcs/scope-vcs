@@ -1,11 +1,18 @@
 use super::*;
+use scope_domain::history::{HistoryView, history_view_from_projection};
+
+fn history_view(
+    graph: &SourceGraph,
+    sets: &[VisibilityChangeSet],
+    view_key: ProjectionViewKey,
+) -> HistoryView {
+    history_view_from_projection(project_graph(graph, sets, view_key), graph, sets)
+}
 
 #[test]
 fn history_times_follow_visible_metadata_without_changing_projected_revisions() {
-    use scope_domain::history::history_view;
     let mut source = graph(vec![commit(
         "private",
-        None,
         "Private history",
         added("/secret.md", Visibility::Private, "secret"),
     )]);

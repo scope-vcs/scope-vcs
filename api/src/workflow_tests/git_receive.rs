@@ -41,13 +41,14 @@ async fn published_receive_pack_push_applies_from_seeded_git_repo() {
     )
     .unwrap();
 
-    let update = receive_pack_update_from_staging_repo(
+    let update = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &staging_repo,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap();
@@ -109,20 +110,7 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
     repo.git_pack_spans.push(base_segment);
     replace_test_repo(&state, repo).await;
 
-    let initial_rebuild = state
-        .metadata
-        .jobs()
-        .run_ready_outbox_jobs(
-            "content-push-test",
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await
-        .unwrap();
+    let initial_rebuild = drain_outbox(&state, "content-push-test").await;
     assert_eq!(initial_rebuild.failed, 0);
     assert_eq!(initial_rebuild.completed, 1);
 
@@ -161,20 +149,7 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         assert_eq!(stored.record.change_version, sequence);
         assert_eq!(stored.git_head.unwrap().change_version, sequence);
 
-        let rebuilt = state
-            .metadata
-            .jobs()
-            .run_ready_outbox_jobs(
-                "content-push-test",
-                10,
-                &|| {
-                    crate::persistence::unix_now()
-                        .map_err(crate::error::ApiError::into_operator_diagnostic)
-                },
-                &crate::persistence_ids::generate_persistence_id,
-            )
-            .await
-            .unwrap();
+        let rebuilt = drain_outbox(&state, "content-push-test").await;
         assert_eq!(rebuilt.failed, 0);
         assert_eq!(rebuilt.completed, 2);
         let projected = state
@@ -414,25 +389,6 @@ async fn applying_push_retains_previous_git_segment() {
     }
 }
 
-#[test]
-fn bearer_token_ignores_removed_trusted_identity_headers() {
-    let mut headers = HeaderMap::new();
-    headers.insert("x-scope-user-email", TEST_OWNER_EMAIL.parse().unwrap());
-    headers.insert("x-scope-user-email-verified", "true".parse().unwrap());
-
-    assert_eq!(bearer_token(&headers).unwrap(), None);
-}
-
-#[test]
-fn bearer_token_rejects_non_bearer_authorization() {
-    let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, "Basic abc".parse().unwrap());
-
-    let error = bearer_token(&headers).unwrap_err();
-
-    assert_eq!(error.kind, crate::error::ErrorKind::Unauthorized);
-}
-
 #[tokio::test]
 async fn pending_object_cleanup_uses_transactional_reference_rows() {
     let state = test_state_with_repo();
@@ -452,6 +408,12 @@ async fn pending_object_cleanup_uses_transactional_reference_rows() {
             .await
             .unwrap();
     }
+    state
+        .metadata
+        .cleanup()
+        .expire_source_blob_cleanup_grace_for_tests()
+        .await
+        .unwrap();
 
     drain_pending_orphan_objects(&state).await.unwrap();
 

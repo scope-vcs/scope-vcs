@@ -320,7 +320,7 @@ jobs:
         working-directory: candidate
         env:
           SCOPE_SMOKE_SEED_BINARY: ./target/release/scope-smoke-seed
-        run: bash .github/scripts/staging-smoke-seed.sh grant
+        run: bash .github/scripts/staging-smoke-seed.sh
 
       - name: Exercise optional release transitions
         if: inputs.run_transition_tests

@@ -38,11 +38,7 @@ async fn workflow_intermediate_tree_cannot_enter_public_request_history() {
 
     let forbidden_dir = source.join(".scope/runs");
     fs::create_dir_all(&forbidden_dir).unwrap();
-    fs::write(
-        forbidden_dir.join("test.yml"),
-        "name: Test\non: { manual: true }\ncontainer: { image: rust@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }\ntimeout: 20m\nsteps: [{ name: Test, run: cargo test }]\n",
-    )
-    .unwrap();
+    fs::write(forbidden_dir.join("test.yml"), workflow_named("Test")).unwrap();
     run_git(
         Some(&source),
         &["add", "-A"],
@@ -85,14 +81,6 @@ async fn maintainer_controlled_intermediate_edits_cannot_enter_public_request_hi
     for (label, path, existed_before) in [
         ("rules", ".scope/RULES.md", true),
         ("agents", "AGENTS.md", false),
-        ("agents-override", "AGENTS.override.md", false),
-        ("claude", "CLAUDE.md", false),
-        ("claude-local", "CLAUDE.local.md", false),
-        ("codex-config", ".codex/config.toml", false),
-        ("claude-settings", ".claude/settings.json", false),
-        ("agent-skill", ".agents/skills/review/SKILL.md", false),
-        ("claude-mcp", ".mcp.json", false),
-        ("scope-image", ".scope/images/checks/Dockerfile", false),
     ] {
         let state = test_state_with_request().await;
         let (source, permissioned_remote, _server, _) =
@@ -209,7 +197,7 @@ async fn assert_private_history_push_rejected(history: PrivacyHistory, source_la
     insert_member_user(&state).await;
     let (origin, _server) = spawn_test_server(&state).await;
 
-    let source = checkout_dir(source_label);
+    let source = TempGitRepo(unique_test_path(source_label));
     let permissioned_remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
     match history {
         PrivacyHistory::Mixed => clone_with_bearer(
@@ -219,7 +207,8 @@ async fn assert_private_history_push_rejected(history: PrivacyHistory, source_la
             "clone private repo for public request",
         ),
         PrivacyHistory::Revealed | PrivacyHistory::Deleted => {
-            let private_source = checkout_dir(&format!("{source_label}-private-source"));
+            let private_source =
+                TempGitRepo(unique_test_path(&format!("{source_label}-private-source")));
             let public_remote = format!("{origin}/git/public/{TEST_REPO_ID}");
             run_git(
                 None,
@@ -291,9 +280,9 @@ async fn assert_private_history_push_rejected(history: PrivacyHistory, source_la
 fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
     let mut repo = test_repo(&test_owner_id());
     repo.graph.commits = match history {
-        PrivacyHistory::Mixed => vec![history_commit(
+        PrivacyHistory::Mixed => vec![logical_commit(
             "rv1",
-            None,
+            "rv1",
             vec![
                 history_change(state, Visibility::Public, "/README.md", None, Some("hello")),
                 history_change(
@@ -313,9 +302,9 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
                 ))
                 .unwrap();
             vec![
-                history_commit(
+                logical_commit(
                     "rv1",
-                    None,
+                    "rv1",
                     vec![history_change(
                         state,
                         Visibility::Private,
@@ -324,9 +313,9 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
                         Some("private draft"),
                     )],
                 ),
-                history_commit(
+                logical_commit(
                     "rv2",
-                    Some("rv1"),
+                    "rv2",
                     vec![history_change(
                         state,
                         Visibility::Public,
@@ -338,9 +327,9 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
             ]
         }
         PrivacyHistory::Deleted => vec![
-            history_commit(
+            logical_commit(
                 "rv1",
-                None,
+                "rv1",
                 vec![
                     history_change(state, Visibility::Public, "/README.md", None, Some("hello")),
                     history_change(
@@ -352,9 +341,9 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
                     ),
                 ],
             ),
-            history_commit(
+            logical_commit(
                 "rv2",
-                Some("rv1"),
+                "rv2",
                 vec![history_change(
                     state,
                     Visibility::Private,
@@ -382,19 +371,6 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
     repo
 }
 
-fn history_commit(id: &str, _parent: Option<&str>, changes: Vec<FileChange>) -> LogicalCommit {
-    LogicalCommit {
-        occurred_at_unix: None,
-        id: id.into(),
-        origin: LogicalCommitOrigin::CanonicalPush {
-            source_head_oid: id.to_string(),
-        },
-        author_id: test_owner_id(),
-        message: id.into(),
-        changes,
-    }
-}
-
 fn history_change(
     state: &AppState,
     visibility: Visibility,
@@ -402,10 +378,24 @@ fn history_change(
     old_content: Option<&str>,
     new_content: Option<&str>,
 ) -> FileChange {
-    FileChange {
+    super::history_change(
+        path,
         visibility,
-        path: ScopePath::parse(path).unwrap(),
-        old_content: old_content.map(|content| source_blob(state, content)),
-        new_content: new_content.map(|content| source_blob(state, content)),
+        old_content.map(|content| source_blob(state, content)),
+        new_content.map(|content| source_blob(state, content)),
+    )
+}
+
+fn populate_test_live_files(repo: &mut Repository) {
+    repo.live_files.clear();
+    for change in repo.graph.commits.iter().flat_map(|commit| &commit.changes) {
+        match &change.new_content {
+            Some(content) => {
+                repo.live_files.insert(change.path.clone(), content.clone());
+            }
+            None => {
+                repo.live_files.remove(&change.path);
+            }
+        }
     }
 }

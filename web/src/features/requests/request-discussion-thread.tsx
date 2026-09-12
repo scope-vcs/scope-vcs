@@ -1,6 +1,13 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Check, ChevronDown, CircleAlert, Reply, RotateCcw } from 'lucide-react'
+import { mainScrollContainer } from '@/components/main-content'
+import {
+  Check,
+  ChevronDown,
+  CircleAlert,
+  Reply,
+  RotateCcw,
+} from 'lucide-react'
 import { m, useReducedMotion } from 'motion/react'
 import { memo, useEffect, useRef } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
@@ -175,7 +182,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
     await loading
     requestAnimationFrame(() => {
       const topAfter = firstReply.getBoundingClientRect().top
-      const scrollContainer = document.querySelector<HTMLElement>('#main-content')
+      const scrollContainer = mainScrollContainer()
       if (scrollContainer) scrollContainer.scrollTop += topAfter - topBefore
     })
   }

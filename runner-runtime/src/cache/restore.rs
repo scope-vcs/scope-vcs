@@ -15,7 +15,7 @@ use scope_cache_contract::{CacheRestoreSource, RestoreCacheRequest, RestoreCache
 use scope_cache_domain::CacheDigest;
 use scope_domain::runs::cache::{
     identity::{CacheIdentity, CacheNamespace, CachePlatform},
-    observation::{CacheColdReason, CachePreparation},
+    observation::{AttemptCachePreparationTiming, CacheColdReason, CachePreparation},
 };
 use std::{
     fs,
@@ -93,22 +93,20 @@ pub(crate) fn prepare_caches(
             &compatibility_group_digest,
             &path,
             source_root,
-        )?;
-        let phases = CachePreparationPhases {
             key_ms,
-            ..restore.phases
-        };
+        )?;
+        let timing = restore.timing;
         reports.push(AttemptCachePreparationReport {
             cache_name: cache.as_str().to_string(),
             identity_digest: exact_digest.clone(),
             preparation: wire_cache_preparation(restore.preparation),
-            key_ms: phases.key_ms,
-            metadata_ms: phases.metadata_ms,
-            size_bytes: phases.size_bytes,
-            download_verify_ms: phases.download_verify_ms,
-            sync_ms: phases.sync_ms,
-            extraction_ms: phases.extraction_ms,
-            prepare_ms: phases.prepare_ms(),
+            key_ms: timing.key_ms(),
+            metadata_ms: timing.metadata_ms(),
+            size_bytes: timing.size_bytes(),
+            download_verify_ms: timing.download_verify_ms(),
+            sync_ms: timing.sync_ms(),
+            extraction_ms: timing.extraction_ms(),
+            prepare_ms: timing.prepare_ms(),
         });
         prepared.push(PreparedCache {
             exact_digest,
@@ -146,29 +144,35 @@ fn restore_cache(
     compatibility_group_digest: &str,
     destination: &Path,
     source_root: Option<&Path>,
+    key_ms: u64,
 ) -> anyhow::Result<CacheRestore> {
     let exact_identity_digest = CacheDigest::parse(exact_digest.to_string())?;
     let compatibility_group_digest = CacheDigest::parse(compatibility_group_digest.to_string())?;
     let metadata_started = Instant::now();
-    let session = match client.restore_cache(&RestoreCacheRequest {
+    let session = client.restore_cache(&RestoreCacheRequest {
         exact_identity_digest,
         compatibility_group_digest,
-    }) {
+    });
+    let metadata_ms = elapsed_ms(metadata_started);
+    let timing = |size_bytes, download_verify_ms, sync_ms, extraction_ms| {
+        AttemptCachePreparationTiming::measured(
+            key_ms,
+            metadata_ms,
+            size_bytes,
+            download_verify_ms,
+            sync_ms,
+            extraction_ms,
+        )
+    };
+    let session = match session {
         Ok(session) => session,
         Err(error) => {
             eprintln!("runtime cache restore unavailable for {exact_digest}: {error:#}");
             return Ok(CacheRestore::cold(
                 CacheColdReason::MetadataNotReady,
-                CachePreparationPhases {
-                    metadata_ms: elapsed_ms(metadata_started),
-                    ..CachePreparationPhases::default()
-                },
+                timing(0, 0, 0, 0)?,
             ));
         }
-    };
-    let mut phases = CachePreparationPhases {
-        metadata_ms: elapsed_ms(metadata_started),
-        ..CachePreparationPhases::default()
     };
     let (source, url, checksum, size) = match session {
         RestoreCacheResponse::Hit {
@@ -184,24 +188,24 @@ fn restore_cache(
             size_bytes,
         ),
         RestoreCacheResponse::Miss => {
-            return Ok(CacheRestore::cold(CacheColdReason::MetadataMissing, phases));
+            return Ok(CacheRestore::cold(
+                CacheColdReason::MetadataMissing,
+                timing(0, 0, 0, 0)?,
+            ));
         }
     };
-    phases.size_bytes = size;
     let temp_dir = match tempfile::tempdir().context("create cache download directory") {
         Ok(temp_dir) => temp_dir,
         Err(error) => {
             eprintln!("runtime cache restore staging failed for {exact_digest}: {error:#}");
             return Ok(CacheRestore::cold(
                 CacheColdReason::MetadataNotReady,
-                phases,
+                timing(size, 0, 0, 0)?,
             ));
         }
     };
     let archive = temp_dir.path().join("cache.tar.zst");
     let download = client.download_cache(&url, &archive, size, &checksum);
-    phases.download_verify_ms = download.download_verify_ms;
-    phases.sync_ms = download.sync_ms;
     if let Err(error) = download.outcome {
         let reason = match error {
             CacheDownloadError::Transport(error) => {
@@ -213,17 +217,25 @@ fn restore_cache(
                 CacheColdReason::MetadataInvalid
             }
         };
-        return Ok(CacheRestore::cold(reason, phases));
+        return Ok(CacheRestore::cold(
+            reason,
+            timing(size, download.download_verify_ms, download.sync_ms, 0)?,
+        ));
     }
     let extraction_started = Instant::now();
     let extraction = extract_archive(&archive, destination, source_root);
-    phases.extraction_ms = elapsed_ms(extraction_started);
+    let timing = timing(
+        size,
+        download.download_verify_ms,
+        download.sync_ms,
+        elapsed_ms(extraction_started),
+    )?;
     let archive = match extraction {
         Ok(archive) => archive,
         Err(error) => {
             reset_cache_directory(destination)?;
             eprintln!("runtime cache restore was corrupt for {exact_digest}: {error:#}");
-            return Ok(CacheRestore::cold(CacheColdReason::MetadataInvalid, phases));
+            return Ok(CacheRestore::cold(CacheColdReason::MetadataInvalid, timing));
         }
     };
     Ok(CacheRestore {
@@ -232,49 +244,26 @@ fn restore_cache(
             CacheRestoreSource::Compatible => CachePreparation::Compatible,
         },
         exact_hit: source == CacheRestoreSource::Exact,
-        phases,
+        timing,
         archive: Some(archive),
     })
 }
+
 struct CacheRestore {
     preparation: CachePreparation,
     exact_hit: bool,
-    phases: CachePreparationPhases,
+    timing: AttemptCachePreparationTiming,
     archive: Option<RestoredArchive>,
 }
 
 impl CacheRestore {
-    fn cold(reason: CacheColdReason, phases: CachePreparationPhases) -> Self {
+    fn cold(reason: CacheColdReason, timing: AttemptCachePreparationTiming) -> Self {
         Self {
             preparation: CachePreparation::Cold { reason },
             exact_hit: false,
-            phases,
+            timing,
             archive: None,
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct CachePreparationPhases {
-    pub(super) key_ms: u64,
-    pub(super) metadata_ms: u64,
-    pub(super) size_bytes: u64,
-    pub(super) download_verify_ms: u64,
-    pub(super) sync_ms: u64,
-    pub(super) extraction_ms: u64,
-}
-
-impl CachePreparationPhases {
-    pub(super) fn prepare_ms(self) -> u64 {
-        [
-            self.key_ms,
-            self.metadata_ms,
-            self.download_verify_ms,
-            self.sync_ms,
-            self.extraction_ms,
-        ]
-        .into_iter()
-        .fold(0, u64::saturating_add)
     }
 }
 
@@ -287,11 +276,6 @@ fn wire_cache_preparation(preparation: CachePreparation) -> WireCachePreparation
                 CacheColdReason::MetadataMissing => WireCacheColdReason::MetadataMissing,
                 CacheColdReason::MetadataInvalid => WireCacheColdReason::MetadataInvalid,
                 CacheColdReason::MetadataNotReady => WireCacheColdReason::MetadataNotReady,
-                CacheColdReason::VolumeMissing => WireCacheColdReason::VolumeMissing,
-                CacheColdReason::VolumeInvalid => WireCacheColdReason::VolumeInvalid,
-                CacheColdReason::BackingDirectoryMissing => {
-                    WireCacheColdReason::BackingDirectoryMissing
-                }
             },
         },
     }

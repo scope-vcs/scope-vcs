@@ -1,9 +1,8 @@
+import type { RunActionInput, RunStepLogsInput } from '@/api/types'
 import type {
-  RepoRunDetail,
-  RepoRunStepLogPage,
-  RunActionInput,
-  RunStepLogsInput,
-} from '@/api/types'
+  RepositoryRunDetailResponse,
+  RepositoryRunStepLogPageResponse,
+} from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { RouteErrorContent } from '@/components/route-error-page'
@@ -17,12 +16,12 @@ import { runLogCacheKey } from './run-log-cache'
 
 type RunDetailPageProps = {
   cancelRun: () => Promise<void>
-  initialDetail: RepoRunDetail
-  loadDetail: (signal?: AbortSignal) => Promise<RepoRunDetail>
+  initialDetail: RepositoryRunDetailResponse
+  loadDetail: (signal?: AbortSignal) => Promise<RepositoryRunDetailResponse>
   loadLogs: (
     input: RunStepLogsInput,
     signal?: AbortSignal,
-  ) => Promise<RepoRunStepLogPage>
+  ) => Promise<RepositoryRunStepLogPageResponse>
   params: RunActionInput
   retryRun: () => Promise<void>
 }
@@ -33,7 +32,7 @@ export function RepositoryRunDetailPage(props: RunDetailPageProps) {
   const cacheKey = isLoaded
     ? runLogCacheKey(repoResourceScope(repo, userId ?? null), props.params.run_id)
     : null
-  return <RunDetailView cancelRun={props.cancelRun} initialDetail={props.initialDetail} loadDetail={props.loadDetail} loadLogs={props.loadLogs} params={props.params} retryRun={props.retryRun} cacheKey={cacheKey} key={cacheKey ?? 'auth-pending'} />
+  return <RunDetailView key={cacheKey ?? 'auth-pending'} cacheKey={cacheKey} {...props} />
 }
 
 function RunDetailView({
@@ -53,12 +52,11 @@ function RunDetailView({
     pendingAction,
     performAction,
     refreshDetail,
-    refreshLogs,
     selectAttempt,
     selectedJobKey,
-    selectedLogState,
     selection,
     showGraph,
+    stepLogs,
     toggleGraph,
     toggleJob,
     toggleStep,
@@ -92,23 +90,14 @@ function RunDetailView({
         <RunDetailJobs
           attemptOverrides={attemptOverrides}
           jobs={detail.jobs}
-          onLogRetry={() => {
-            if (selection) void refreshLogs(selection, 'retry')
-          }}
-          onLogEarlier={() => {
-            if (selection) void refreshLogs(selection, 'earlier')
-          }}
-          onLogLatest={() => {
-            if (selection) void refreshLogs(selection, 'latest')
-          }}
           onSelectAttempt={selectAttempt}
           onSelectJob={toggleJob}
           onSelectStep={toggleStep}
           onToggleGraph={toggleGraph}
           selectedJobKey={selectedJobKey}
-          selectedLogState={selectedLogState}
           selection={selection}
           showGraph={showGraph}
+          stepLogs={stepLogs}
         />
       </main>
     </WorkbenchPane>

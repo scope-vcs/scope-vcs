@@ -1,14 +1,9 @@
-import type { HistoryEntrySummary } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { historyEntryLabels } from '@/features/history/history-row-labels'
 import { cn } from '@/lib/utils'
 import { History, LoaderCircle } from 'lucide-react'
-import {
-  HISTORY_ENTRY_PRIMARY_CLASS,
-  HISTORY_ENTRY_ROW_CLASS,
-  HISTORY_ENTRY_TITLE_CLASS,
-} from './history-entry-layout'
+import type { HistoryEntrySummaryResponse } from '@/api/types.generated'
 
 export function HistoryEntryList({
   entries,
@@ -19,11 +14,11 @@ export function HistoryEntryList({
   selectedEntryId,
   showLoadOlder,
 }: {
-  entries: HistoryEntrySummary[]
+  entries: HistoryEntrySummaryResponse[]
   loadOlderError: string | null
   loadingOlder: boolean
   onLoadOlder: () => void
-  onSelectEntry: (entry: HistoryEntrySummary) => void
+  onSelectEntry: (entry: HistoryEntrySummaryResponse) => void
   selectedEntryId: string | null
   showLoadOlder: boolean
 }) {
@@ -37,7 +32,7 @@ export function HistoryEntryList({
             aria-label={labels.ariaLabel}
             aria-pressed={selected}
             className={cn(
-              HISTORY_ENTRY_ROW_CLASS,
+              'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-5 py-2.5 text-left text-sm sm:px-6 lg:px-8',
               'transition-colors',
               selected
                 ? 'bg-accent shadow-[inset_2px_0_0_0_var(--brand)]'
@@ -48,10 +43,10 @@ export function HistoryEntryList({
             title={entry.source_id}
             type="button"
           >
-            <span className={HISTORY_ENTRY_PRIMARY_CLASS}>
+            <span className="flex min-w-0 items-center gap-2">
               <History className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="min-w-0">
-                <span className={HISTORY_ENTRY_TITLE_CLASS}>
+                <span className="flex min-w-0 items-center gap-2">
                   <Badge className="shrink-0" variant="neutral">{labels.kind}</Badge>
                   <span className="truncate text-[13px] font-medium">{labels.title}</span>
                 </span>

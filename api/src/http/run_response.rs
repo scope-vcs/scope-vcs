@@ -1,16 +1,11 @@
-use crate::error::ApiError;
 use scope_api_contract::{RepositoryRunSummaryResponse, RunResponse};
 use scope_domain::runs::{
     job::{RunJob, can_retry_run},
     run::Run,
 };
 
-pub(super) fn run_response(
-    run: &Run,
-    _jobs: &[RunJob],
-    logs_truncated: bool,
-) -> Result<RunResponse, ApiError> {
-    Ok(RunResponse {
+pub(super) fn run_response(run: &Run, logs_truncated: bool) -> RunResponse {
+    RunResponse {
         id: run.id.clone(),
         repository_id: run.workflow.repository_id().to_string(),
         workflow_name: run.workflow.path().name().to_string(),
@@ -21,14 +16,11 @@ pub(super) fn run_response(
         created_at_unix: run.created_at_unix,
         updated_at_unix: run.updated_at_unix,
         completed_at_unix: run.completed_at_unix,
-    })
+    }
 }
 
-pub(super) fn repository_run_summary(
-    run: &Run,
-    jobs: &[RunJob],
-) -> Result<RepositoryRunSummaryResponse, ApiError> {
-    Ok(RepositoryRunSummaryResponse {
+pub(super) fn repository_run_summary(run: &Run, jobs: &[RunJob]) -> RepositoryRunSummaryResponse {
+    RepositoryRunSummaryResponse {
         id: run.id.clone(),
         workflow_name: run.workflow.path().name().to_string(),
         git_oid: run.source.git_oid().to_string(),
@@ -40,5 +32,5 @@ pub(super) fn repository_run_summary(
         completed_at_unix: run.completed_at_unix,
         can_cancel: run.can_request_cancellation(),
         can_retry: can_retry_run(run, jobs),
-    })
+    }
 }

@@ -1,8 +1,6 @@
 use super::{
     archive::create_archive,
-    types::{
-        CacheFinalization, CacheFinalizationOutcome, CacheSkipReason, PreparedCache, elapsed_ms,
-    },
+    types::{CacheFinalization, CacheFinalizationOutcome, PreparedCache, elapsed_ms},
 };
 use crate::api::RuntimeClient;
 use anyhow::Context as _;
@@ -25,10 +23,7 @@ pub(crate) fn save_caches(
     for cache in caches {
         let started = Instant::now();
         let outcome = save_cache(client, cache);
-        if matches!(
-            outcome,
-            CacheFinalizationOutcome::Ready | CacheFinalizationOutcome::Unchanged
-        ) {
+        if matches!(outcome, CacheFinalizationOutcome::Ready) {
             reports.push(AttemptCacheFinalizationReport {
                 identity_digest: cache.exact_digest.clone(),
                 final_state: WireCacheFinalState::Ready,
@@ -53,24 +48,24 @@ pub(super) fn save_cache(
     cache: &PreparedCache,
 ) -> CacheFinalizationOutcome {
     if cache.exact_hit {
-        return CacheFinalizationOutcome::Unchanged;
+        return CacheFinalizationOutcome::Ready;
     }
     let temp = match tempfile::NamedTempFile::new().context("create cache upload file") {
         Ok(temp) => temp,
-        Err(error) => return skipped(CacheSkipReason::ArchiveFailed, error),
+        Err(error) => return CacheFinalizationOutcome::Skipped(error),
     };
     let (size_bytes, checksum_sha256) =
         match create_archive(&cache.path, temp.path(), cache.sources.as_deref()) {
             Ok(identity) => identity,
-            Err(error) => return skipped(CacheSkipReason::ArchiveFailed, error),
+            Err(error) => return CacheFinalizationOutcome::Skipped(error),
         };
     let exact_identity_digest = match CacheDigest::parse(cache.exact_digest.clone()) {
         Ok(digest) => digest,
-        Err(error) => return skipped(CacheSkipReason::ServiceUnavailable, error.into()),
+        Err(error) => return CacheFinalizationOutcome::Skipped(error.into()),
     };
     let object_digest = match CacheDigest::parse(checksum_sha256.clone()) {
         Ok(digest) => digest,
-        Err(error) => return skipped(CacheSkipReason::ArchiveFailed, error.into()),
+        Err(error) => return CacheFinalizationOutcome::Skipped(error.into()),
     };
     let session = match client.prepare_cache_upload(&PrepareCacheUploadRequest {
         exact_identity_digest: exact_identity_digest.clone(),
@@ -78,13 +73,13 @@ pub(super) fn save_cache(
             cache.compatibility_group_digest.clone(),
         ) {
             Ok(digest) => digest,
-            Err(error) => return skipped(CacheSkipReason::ServiceUnavailable, error.into()),
+            Err(error) => return CacheFinalizationOutcome::Skipped(error.into()),
         },
         object_digest: object_digest.clone(),
         size_bytes,
     }) {
         Ok(session) => session,
-        Err(error) => return skipped(CacheSkipReason::ServiceUnavailable, error),
+        Err(error) => return CacheFinalizationOutcome::Skipped(error),
     };
     match session {
         PrepareCacheUploadResponse::UseObject { .. } => CacheFinalizationOutcome::Ready,
@@ -95,23 +90,16 @@ pub(super) fn save_cache(
             ..
         } => {
             if let Err(error) = client.upload_cache(&upload_url, &upload_headers, temp.path()) {
-                return skipped(CacheSkipReason::UploadFailed, error);
+                return CacheFinalizationOutcome::Skipped(error);
             }
             if let Err(error) = client.commit_cache_upload(&CommitCacheUploadRequest {
                 lease_id,
                 object_digest,
                 size_bytes,
             }) {
-                return skipped(CacheSkipReason::CommitFailed, error);
+                return CacheFinalizationOutcome::Skipped(error);
             }
             CacheFinalizationOutcome::Ready
         }
-    }
-}
-
-fn skipped(reason: CacheSkipReason, error: anyhow::Error) -> CacheFinalizationOutcome {
-    CacheFinalizationOutcome::Skipped {
-        reason,
-        message: format!("{error:#}"),
     }
 }

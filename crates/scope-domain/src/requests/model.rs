@@ -47,17 +47,32 @@ pub struct Request {
     pub updated_at_unix: u64,
 }
 
+impl RequestState {
+    /// The lifecycle state implied by which transition timestamps are set.
+    pub fn from_timestamps(
+        merged_at_unix: Option<u64>,
+        closed_at_unix: Option<u64>,
+        submitted_at_unix: Option<u64>,
+    ) -> Self {
+        if merged_at_unix.is_some() {
+            Self::Merged
+        } else if closed_at_unix.is_some() {
+            Self::Closed
+        } else if submitted_at_unix.is_some() {
+            Self::Open
+        } else {
+            Self::Draft
+        }
+    }
+}
+
 impl Request {
     pub fn state(&self) -> RequestState {
-        if self.merged_at_unix.is_some() {
-            RequestState::Merged
-        } else if self.closed_at_unix.is_some() {
-            RequestState::Closed
-        } else if self.submitted_at_unix.is_some() {
-            RequestState::Open
-        } else {
-            RequestState::Draft
-        }
+        RequestState::from_timestamps(
+            self.merged_at_unix,
+            self.closed_at_unix,
+            self.submitted_at_unix,
+        )
     }
 
     pub fn is_submitted(&self) -> bool {

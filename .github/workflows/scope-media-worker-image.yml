@@ -12,8 +12,6 @@ on:
     outputs:
       image_ref:
         value: ${{ jobs.image.outputs.image_ref }}
-      image_digest:
-        value: ${{ jobs.image.outputs.image_digest }}
 
 permissions:
   contents: read
@@ -25,7 +23,6 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       image_ref: ${{ steps.identity.outputs.image_ref }}
-      image_digest: ${{ steps.identity.outputs.image_digest }}
     steps:
       - name: Checkout exact revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -77,5 +74,4 @@ jobs:
           if [[ "$PUBLISH" == "1" ]]; then
             [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
             echo "image_ref=ghcr.io/scope-vcs/scope-media-worker@$DIGEST" >> "$GITHUB_OUTPUT"
-            echo "image_digest=$DIGEST" >> "$GITHUB_OUTPUT"
           fi

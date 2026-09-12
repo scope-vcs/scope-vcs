@@ -10,7 +10,7 @@ use crate::{
     error::PostgresError,
 };
 use scope_domain::requests::attachments::{RequestAttachmentState, can_view_request_attachment};
-use scope_domain::requests::{RequestViewer, request_policy};
+use scope_domain::requests::{RequestPolicyDecision, RequestViewer, request_policy};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 impl MediaStore {
@@ -44,11 +44,20 @@ impl MediaStore {
                     .map_err(PostgresError::internal)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let Some(scope) =
+            visible_request_scope(self.db.as_ref(), request_id, viewer_user_id).await?
+        else {
+            return Ok(Vec::new());
+        };
         let mut visible = Vec::new();
         for attachment_id in ids {
-            if let Some(attachment) =
-                authorized_attachment(self.db.as_ref(), request_id, &attachment_id, viewer_user_id)
-                    .await?
+            if let Some(attachment) = authorized_attachment_in_scope(
+                self.db.as_ref(),
+                &scope,
+                &attachment_id,
+                viewer_user_id,
+            )
+            .await?
             {
                 visible.push(attachment);
             }
@@ -105,30 +114,25 @@ impl MediaStore {
     }
 }
 
-async fn authorized_attachment<C>(
+/// A request the viewer may currently see, with the policy that decides which
+/// of its attachments are visible.
+struct VisibleRequestScope {
+    request_id: String,
+    repository_id: String,
+    policy: RequestPolicyDecision,
+}
+
+async fn visible_request_scope<C>(
     conn: &C,
     request_id: &str,
-    attachment_id: &str,
     viewer_user_id: Option<&str>,
-) -> Result<Option<AuthorizedRequestAttachment>, PostgresError>
+) -> Result<Option<VisibleRequestScope>, PostgresError>
 where
     C: ConnectionTrait,
 {
-    if cleanup_tombstone_exists(conn, attachment_id).await? {
-        return Ok(None);
-    }
-    let Some(attachment) = attachment_by_id(conn, attachment_id).await? else {
-        return Ok(None);
-    };
-    if attachment.request_id != request_id {
-        return Ok(None);
-    }
     let Some(request) = request_by_id(conn, request_id).await? else {
         return Ok(None);
     };
-    if request.repo_id != attachment.repository_id {
-        return Ok(None);
-    }
     let Some(repo) = repository_access(conn, &request.repo_id, viewer_user_id).await? else {
         return Ok(None);
     };
@@ -144,13 +148,54 @@ where
     if !policy.exact_visible {
         return Ok(None);
     }
+    Ok(Some(VisibleRequestScope {
+        request_id: request.id,
+        repository_id: request.repo_id,
+        policy,
+    }))
+}
+
+async fn authorized_attachment<C>(
+    conn: &C,
+    request_id: &str,
+    attachment_id: &str,
+    viewer_user_id: Option<&str>,
+) -> Result<Option<AuthorizedRequestAttachment>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let Some(scope) = visible_request_scope(conn, request_id, viewer_user_id).await? else {
+        return Ok(None);
+    };
+    authorized_attachment_in_scope(conn, &scope, attachment_id, viewer_user_id).await
+}
+
+async fn authorized_attachment_in_scope<C>(
+    conn: &C,
+    scope: &VisibleRequestScope,
+    attachment_id: &str,
+    viewer_user_id: Option<&str>,
+) -> Result<Option<AuthorizedRequestAttachment>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    if cleanup_tombstone_exists(conn, attachment_id).await? {
+        return Ok(None);
+    }
+    let Some(attachment) = attachment_by_id(conn, attachment_id).await? else {
+        return Ok(None);
+    };
+    if attachment.request_id != scope.request_id || attachment.repository_id != scope.repository_id
+    {
+        return Ok(None);
+    }
     let bindings = bindings_for_attachment(conn, attachment_id).await?;
     if !can_view_request_attachment(
         &attachment,
         &bindings,
         viewer_user_id,
-        policy.exact_visible,
-        policy.discussion_visible,
+        scope.policy.exact_visible,
+        scope.policy.discussion_visible,
     ) {
         return Ok(None);
     }

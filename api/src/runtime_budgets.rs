@@ -1,7 +1,4 @@
-use crate::{
-    config::{default_git_storage_limits, git_storage_limits_from_env},
-    error::ApiError,
-};
+use crate::{config::git_storage_limits_from_env, error::ApiError};
 use scope_git::GitStorageLimits;
 use scope_object_store::{ObjectStore, ObjectStoreError, ensure_object_size};
 use std::{
@@ -17,13 +14,6 @@ const DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY: usize = 4;
 const DEFAULT_OBJECT_STORE_CONCURRENCY: usize = 16;
 const DEFAULT_GIT_COMMAND_TIMEOUT_SECS: u64 = 30;
 
-const RECEIVE_PACK_CONCURRENCY_ENV: &str = "SCOPE_GIT_RECEIVE_PACK_CONCURRENCY";
-const UPLOAD_PACK_CONCURRENCY_ENV: &str = "SCOPE_GIT_UPLOAD_PACK_CONCURRENCY";
-const GIT_MATERIALIZATION_CONCURRENCY_ENV: &str = "SCOPE_GIT_MATERIALIZATION_CONCURRENCY";
-const GIT_SEGMENT_INGEST_CONCURRENCY_ENV: &str = "SCOPE_GIT_SEGMENT_INGEST_CONCURRENCY";
-const OBJECT_STORE_CONCURRENCY_ENV: &str = "SCOPE_OBJECT_STORE_CONCURRENCY";
-const GIT_COMMAND_TIMEOUT_SECS_ENV: &str = "SCOPE_GIT_COMMAND_TIMEOUT_SECS";
-
 #[derive(Clone, Debug)]
 pub(crate) struct RuntimeBudgetConfig {
     pub(crate) receive_pack_concurrency: usize,
@@ -38,31 +28,8 @@ pub(crate) struct RuntimeBudgetConfig {
 impl RuntimeBudgetConfig {
     pub(crate) fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
-            receive_pack_concurrency: parse_usize_env(
-                RECEIVE_PACK_CONCURRENCY_ENV,
-                DEFAULT_RECEIVE_PACK_CONCURRENCY,
-            )?,
-            upload_pack_concurrency: parse_usize_env(
-                UPLOAD_PACK_CONCURRENCY_ENV,
-                DEFAULT_UPLOAD_PACK_CONCURRENCY,
-            )?,
-            git_materialization_concurrency: parse_usize_env(
-                GIT_MATERIALIZATION_CONCURRENCY_ENV,
-                DEFAULT_GIT_MATERIALIZATION_CONCURRENCY,
-            )?,
-            git_segment_ingest_concurrency: parse_usize_env(
-                GIT_SEGMENT_INGEST_CONCURRENCY_ENV,
-                DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY,
-            )?,
-            object_store_concurrency: parse_usize_env(
-                OBJECT_STORE_CONCURRENCY_ENV,
-                DEFAULT_OBJECT_STORE_CONCURRENCY,
-            )?,
-            git_command_timeout: Duration::from_secs(parse_u64_env(
-                GIT_COMMAND_TIMEOUT_SECS_ENV,
-                DEFAULT_GIT_COMMAND_TIMEOUT_SECS,
-            )?),
             git_storage_limits: git_storage_limits_from_env()?,
+            ..Self::default()
         })
     }
 }
@@ -76,7 +43,7 @@ impl Default for RuntimeBudgetConfig {
             git_segment_ingest_concurrency: DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY,
             object_store_concurrency: DEFAULT_OBJECT_STORE_CONCURRENCY,
             git_command_timeout: Duration::from_secs(DEFAULT_GIT_COMMAND_TIMEOUT_SECS),
-            git_storage_limits: default_git_storage_limits(),
+            git_storage_limits: GitStorageLimits::default(),
         }
     }
 }
@@ -285,24 +252,6 @@ impl ObjectStore for BudgetedObjectStore {
 
     fn readiness_check(&self) -> Result<(), ObjectStoreError> {
         self.inner.readiness_check()
-    }
-}
-
-fn parse_usize_env(name: &str, default: usize) -> anyhow::Result<usize> {
-    match std::env::var(name) {
-        Ok(value) if !value.trim().is_empty() => value
-            .parse::<usize>()
-            .map_err(|error| anyhow::anyhow!("{name} must be an integer: {error}")),
-        _ => Ok(default),
-    }
-}
-
-fn parse_u64_env(name: &str, default: u64) -> anyhow::Result<u64> {
-    match std::env::var(name) {
-        Ok(value) if !value.trim().is_empty() => value
-            .parse::<u64>()
-            .map_err(|error| anyhow::anyhow!("{name} must be an integer: {error}")),
-        _ => Ok(default),
     }
 }
 

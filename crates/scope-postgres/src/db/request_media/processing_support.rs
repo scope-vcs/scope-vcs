@@ -2,55 +2,17 @@ use super::{
     CompletedRequestAttachmentDerivative, CompletedRequestMediaManifest,
     ValidatedRequestAttachmentSource,
     access::cleanup_tombstone_exists,
-    default_limits,
+    locks::lock_attachment,
     persistence::{as_i32, as_i64, attachment_by_id, enum_string},
     upload::lock_media_budget,
 };
 use crate::{db::locks::acquire_shared_repository_lock, error::PostgresError};
 use scope_domain::requests::attachments::{
-    RequestAttachment, RequestAttachmentImageMetadata, RequestAttachmentProcessingLease,
-    RequestAttachmentVideoMetadata,
+    RequestAttachment, RequestAttachmentImageMetadata, RequestAttachmentLimits,
+    RequestAttachmentProcessingLease, RequestAttachmentVideoMetadata,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement};
+use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, Value};
 use std::collections::BTreeSet;
-
-pub(super) fn validate_new_lease(
-    lease_token: &str,
-    now_unix: u64,
-    lease_expires_at_unix: u64,
-) -> Result<(), PostgresError> {
-    if lease_token.trim().is_empty() {
-        return Err(PostgresError::invalid_input(
-            "processing lease token is required",
-        ));
-    }
-    if lease_expires_at_unix <= now_unix {
-        return Err(PostgresError::invalid_input(
-            "processing lease expiry must be in the future",
-        ));
-    }
-    Ok(())
-}
-
-pub(super) async fn lock_attachment<C>(
-    conn: &C,
-    attachment_id: &str,
-) -> Result<RequestAttachment, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    conn.query_one(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT id FROM scope_request_media_attachments WHERE id = $1 FOR UPDATE",
-        [attachment_id.into()],
-    ))
-    .await
-    .map_err(PostgresError::internal)?
-    .ok_or_else(|| PostgresError::not_found("request attachment not found"))?;
-    attachment_by_id(conn, attachment_id)
-        .await?
-        .ok_or_else(|| PostgresError::not_found("request attachment not found"))
-}
 
 async fn lock_live_job<C>(
     conn: &C,
@@ -79,74 +41,23 @@ where
     .map_err(PostgresError::internal)
 }
 
-pub(super) async fn lock_processing_job<C>(
-    conn: &C,
-    attachment_id: &str,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    conn.query_one(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT attachment_id FROM scope_request_media_processing_jobs
-         WHERE attachment_id = $1 FOR UPDATE",
-        [attachment_id.into()],
-    ))
-    .await
-    .map_err(PostgresError::internal)?
-    .ok_or_else(|| PostgresError::not_found("request attachment processing job not found"))?;
-    Ok(())
+/// Whether a leased operation also serialises against the repository's
+/// media storage budget (needed when it adds bytes).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum BudgetLock {
+    Skip,
+    Acquire,
 }
 
-pub(super) async fn lock_lease_and_attachment<C>(
+/// Validates the worker's lease and locks the attachment it covers; `None`
+/// means the lease is no longer live.
+pub(super) async fn lock_lease_attachment<C>(
     conn: &C,
     attachment_id: &str,
     lease_token: &str,
     lease_generation: u64,
     now_unix: u64,
-) -> Result<Option<(RequestAttachmentProcessingLease, RequestAttachment)>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    lock_lease_attachment(
-        conn,
-        attachment_id,
-        lease_token,
-        lease_generation,
-        now_unix,
-        false,
-    )
-    .await
-}
-
-pub(super) async fn lock_lease_attachment_and_budget<C>(
-    conn: &C,
-    attachment_id: &str,
-    lease_token: &str,
-    lease_generation: u64,
-    now_unix: u64,
-) -> Result<Option<(RequestAttachmentProcessingLease, RequestAttachment)>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    lock_lease_attachment(
-        conn,
-        attachment_id,
-        lease_token,
-        lease_generation,
-        now_unix,
-        true,
-    )
-    .await
-}
-
-async fn lock_lease_attachment<C>(
-    conn: &C,
-    attachment_id: &str,
-    lease_token: &str,
-    lease_generation: u64,
-    now_unix: u64,
-    lock_budget: bool,
+    budget: BudgetLock,
 ) -> Result<Option<(RequestAttachmentProcessingLease, RequestAttachment)>, PostgresError>
 where
     C: ConnectionTrait,
@@ -155,7 +66,7 @@ where
         return Ok(None);
     };
     acquire_shared_repository_lock(conn, &observed.repository_id).await?;
-    if lock_budget {
+    if budget == BudgetLock::Acquire {
         lock_media_budget(conn, &observed.repository_id).await?;
     }
     let Some(job) =
@@ -288,6 +199,35 @@ where
     Ok(())
 }
 
+/// The five nullable media-metadata columns, in table order: image width and
+/// height, then video width, height, and duration.
+fn media_metadata_columns(attachment: &RequestAttachment) -> Result<[Value; 5], PostgresError> {
+    let image = attachment.image.as_ref();
+    let video = attachment.video.as_ref();
+    Ok([
+        image
+            .map(|image| as_i32(image.width, "image width"))
+            .transpose()?
+            .into(),
+        image
+            .map(|image| as_i32(image.height, "image height"))
+            .transpose()?
+            .into(),
+        video
+            .map(|video| as_i32(video.width, "video width"))
+            .transpose()?
+            .into(),
+        video
+            .map(|video| as_i32(video.height, "video height"))
+            .transpose()?
+            .into(),
+        video
+            .map(|video| as_i64(video.duration_millis, "video duration"))
+            .transpose()?
+            .into(),
+    ])
+}
+
 pub(super) async fn save_validated_source<C>(
     conn: &C,
     attachment: &RequestAttachment,
@@ -295,22 +235,13 @@ pub(super) async fn save_validated_source<C>(
 where
     C: ConnectionTrait,
 {
-    let (image_width, image_height) = attachment
-        .image
-        .as_ref()
-        .map(|image| (Some(image.width), Some(image.height)))
-        .unwrap_or((None, None));
-    let (video_width, video_height, video_duration) = attachment
-        .video
-        .as_ref()
-        .map(|video| {
-            (
-                Some(video.width),
-                Some(video.height),
-                Some(video.duration_millis),
-            )
-        })
-        .unwrap_or((None, None, None));
+    let [
+        image_width,
+        image_height,
+        video_width,
+        video_height,
+        video_duration,
+    ] = media_metadata_columns(attachment)?;
     conn.execute(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_attachments
@@ -327,26 +258,11 @@ where
                 .map(|value| as_i64(value, "original validation time"))
                 .transpose()?
                 .into(),
-            image_width
-                .map(|value| as_i32(value, "image width"))
-                .transpose()?
-                .into(),
-            image_height
-                .map(|value| as_i32(value, "image height"))
-                .transpose()?
-                .into(),
-            video_width
-                .map(|value| as_i32(value, "video width"))
-                .transpose()?
-                .into(),
-            video_height
-                .map(|value| as_i32(value, "video height"))
-                .transpose()?
-                .into(),
-            video_duration
-                .map(|value| as_i64(value, "video duration"))
-                .transpose()?
-                .into(),
+            image_width,
+            image_height,
+            video_width,
+            video_height,
+            video_duration,
             as_i64(attachment.updated_at_unix, "attachment update time")?.into(),
         ],
     ))
@@ -622,7 +538,7 @@ where
         .checked_add(attachment.size_bytes)
         .and_then(|value| value.checked_add(actual_derivative_bytes))
         .ok_or_else(|| PostgresError::resource_exhausted("attachment storage budget overflow"))?;
-    if total > default_limits().max_repository_storage_bytes {
+    if total > RequestAttachmentLimits::default().max_repository_storage_bytes {
         return Err(PostgresError::resource_exhausted(
             "repository attachment storage budget exceeded",
         ));
@@ -638,22 +554,13 @@ pub(super) async fn save_completed_attachment<C>(
 where
     C: ConnectionTrait,
 {
-    let (image_width, image_height) = attachment
-        .image
-        .as_ref()
-        .map(|image| (Some(image.width), Some(image.height)))
-        .unwrap_or((None, None));
-    let (video_width, video_height, video_duration) = attachment
-        .video
-        .as_ref()
-        .map(|video| {
-            (
-                Some(video.width),
-                Some(video.height),
-                Some(video.duration_millis),
-            )
-        })
-        .unwrap_or((None, None, None));
+    let [
+        image_width,
+        image_height,
+        video_width,
+        video_height,
+        video_duration,
+    ] = media_metadata_columns(attachment)?;
     conn.execute(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_attachments
@@ -671,26 +578,11 @@ where
                 .map(|value| as_i64(value, "original validation time"))
                 .transpose()?
                 .into(),
-            image_width
-                .map(|value| as_i32(value, "image width"))
-                .transpose()?
-                .into(),
-            image_height
-                .map(|value| as_i32(value, "image height"))
-                .transpose()?
-                .into(),
-            video_width
-                .map(|value| as_i32(value, "video width"))
-                .transpose()?
-                .into(),
-            video_height
-                .map(|value| as_i32(value, "video height"))
-                .transpose()?
-                .into(),
-            video_duration
-                .map(|value| as_i64(value, "video duration"))
-                .transpose()?
-                .into(),
+            image_width,
+            image_height,
+            video_width,
+            video_height,
+            video_duration,
             as_i64(derivative_bytes, "derivative byte count")?.into(),
             as_i64(attachment.updated_at_unix, "attachment update time")?.into(),
         ],

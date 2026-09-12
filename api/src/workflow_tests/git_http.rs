@@ -75,15 +75,6 @@ async fn owner_can_create_first_push_intent_for_unpublished_repo() {
     assert!(body["expires_at_unix"].as_u64().unwrap() > unix_now());
 }
 
-fn push_intent_request_json(head_oid: &str) -> String {
-    serde_json::json!({
-        "head_oid": head_oid,
-        "base_config_hash": repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap(),
-        "config": repo_config(Visibility::Public),
-    })
-    .to_string()
-}
-
 async fn request_push_intent(state: AppState, authorization: &str, head_oid: &str) -> Response {
     cache_test_jwks(&state);
     api_request(
@@ -91,7 +82,10 @@ async fn request_push_intent(state: AppState, authorization: &str, head_oid: &st
         "POST",
         "/v1/repos/owner/repo/push-intents",
         Some(authorization),
-        Some(&push_intent_request_json(head_oid)),
+        Some(&push_intent_request_json(
+            head_oid,
+            repo_config(Visibility::Public),
+        )),
     )
     .await
 }
@@ -100,13 +94,16 @@ fn permissioned_git_service(repo: &str, service: &str) -> String {
     format!("/git/permissioned/owner/{repo}/info/refs?service={service}")
 }
 
-async fn git_get(app: &axum::Router, uri: String, authorization: Option<&str>) -> Response {
-    api_request(app.clone(), "GET", &uri, authorization, None).await
-}
-
 async fn assert_challenges(app: &axum::Router, service: &str, repos: &[&str]) {
     for repo in repos {
-        let response = git_get(app, permissioned_git_service(repo, service), None).await;
+        let response = api_request(
+            app.clone(),
+            "GET",
+            &permissioned_git_service(repo, service),
+            None,
+            None,
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert!(response.headers().contains_key(WWW_AUTHENTICATE));
     }
@@ -170,9 +167,11 @@ async fn receive_pack_requires_credentials_before_repo_state_is_revealed() {
 #[tokio::test]
 async fn public_git_remote_cannot_receive_pack() {
     let state = test_state_with_repo();
-    let response = git_get(
-        &router(state),
-        "/git/public/owner/repo/info/refs?service=git-receive-pack".to_string(),
+    let response = api_request(
+        router(state).clone(),
+        "GET",
+        "/git/public/owner/repo/info/refs?service=git-receive-pack",
+        None,
         None,
     )
     .await;
@@ -240,16 +239,20 @@ async fn upload_pack_wrong_basic_credentials_do_not_reveal_repo_existence() {
     let app = router(state);
     let wrong_basic = format!("Basic {}", BASE64.encode("scope:scope_git_wrong"));
 
-    let existing = git_get(
-        &app,
-        permissioned_git_service("repo", "git-upload-pack"),
+    let existing = api_request(
+        app.clone(),
+        "GET",
+        &permissioned_git_service("repo", "git-upload-pack"),
         Some(&wrong_basic),
+        None,
     )
     .await;
-    let missing = git_get(
-        &app,
-        permissioned_git_service("missing", "git-upload-pack"),
+    let missing = api_request(
+        app.clone(),
+        "GET",
+        &permissioned_git_service("missing", "git-upload-pack"),
         Some(&wrong_basic),
+        None,
     )
     .await;
     assert_eq!(existing.status(), StatusCode::UNAUTHORIZED);
@@ -369,7 +372,7 @@ async fn real_git_first_push_over_http_applies_immediately() {
         .unwrap();
     assert_eq!(repo.record.lifecycle_state, RepoLifecycleState::Ready);
     assert!(repo.first_push_token.is_none());
-    let live_tree = repo.live_tree();
+    let live_tree = &repo.live_files;
     assert_eq!(repo.repo_config, repo_config(Visibility::Public));
     assert_eq!(
         live_tree

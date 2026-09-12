@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::TestDir;
+use crate::test_support::TempDir;
 use std::{fs, path::Path, process::Command};
 
 const REMOTE: &str = "https://scope.example/git/permissioned/adam/random";
@@ -52,6 +52,24 @@ fn authenticated_git_plans_keep_secrets_in_numbered_environment_config() {
             "X-Scope-Push-Intent: scope_pi_secret",
         ],
     );
+    assert_auth_plan(
+        git_push_ref_auth_plan(
+            REMOTE,
+            "1234567890123456789012345678901234567890",
+            "refs/heads/requests/fix",
+            "scope_cli_secret",
+            Some(2),
+        ),
+        &[
+            "-c",
+            "push.recurseSubmodules=no",
+            "push",
+            REMOTE,
+            "1234567890123456789012345678901234567890:refs/heads/requests/fix",
+        ],
+        2,
+        &["Authorization: Bearer scope_cli_secret"],
+    );
 }
 
 fn assert_auth_plan(plan: GitCommandPlan, args: &[&str], inherited_count: usize, headers: &[&str]) {
@@ -82,7 +100,7 @@ fn assert_auth_plan(plan: GitCommandPlan, args: &[&str], inherited_count: usize,
 
 #[test]
 fn install_scope_fetch_auth_writes_secret_free_credential_helper_for_permissioned_remote() {
-    let dir = TestDir::git_repo("scope-fetch-auth", "main");
+    let dir = TempDir::git_repo("scope-fetch-auth", "main");
     let root = dir.path();
     let remote_url = "https://scope.example/git/permissioned/adam/random";
 
@@ -139,7 +157,7 @@ fn git_config(root: &Path, args: &[&str]) -> String {
 
 #[test]
 fn install_scope_fetch_auth_rejects_config_injection() {
-    let dir = TestDir::git_repo("scope-fetch-auth-injection", "main");
+    let dir = TempDir::git_repo("scope-fetch-auth-injection", "main");
     let root = dir.path();
     assert!(
         install_scope_fetch_auth(
@@ -473,14 +491,14 @@ fn request_side_paths_reject_criss_cross_histories_with_multiple_merge_bases() {
     assert!(error.to_string().contains("multiple Git merge bases"));
 }
 
-fn request_repo(label: &str) -> TestDir {
-    let dir = TestDir::git_repo(label, "main");
+fn request_repo(label: &str) -> TempDir {
+    let dir = TempDir::git_repo(label, "main");
     dir.run_git(["config", "user.email", "scope@example.test"]);
     dir.run_git(["config", "user.name", "Scope Test"]);
     dir
 }
 
-fn commit_all(dir: &TestDir, message: &str) {
+fn commit_all(dir: &TempDir, message: &str) {
     dir.run_git(["add", "-A"]);
     let output = Command::new("git")
         .current_dir(dir.path())
@@ -494,14 +512,14 @@ fn commit_all(dir: &TestDir, message: &str) {
     );
 }
 
-fn oid(dir: &TestDir) -> String {
+fn oid(dir: &TempDir) -> String {
     String::from_utf8(dir.run_git(["rev-parse", "HEAD"]).stdout)
         .unwrap()
         .trim()
         .to_string()
 }
 
-fn repo(dir: &TestDir) -> GitRepo {
+fn repo(dir: &TempDir) -> GitRepo {
     GitRepo {
         root: dir.path().to_path_buf(),
     }
@@ -509,7 +527,7 @@ fn repo(dir: &TestDir) -> GitRepo {
 
 #[test]
 fn changed_paths_preserve_whitespace_unicode_and_rename_identity() {
-    let dir = TestDir::git_repo("exact-changed-paths", "main");
+    let dir = TempDir::git_repo("exact-changed-paths", "main");
     dir.run_git(["config", "user.name", "Scope Test"]);
     dir.run_git(["config", "user.email", "scope@example.test"]);
     let names = [
@@ -568,7 +586,7 @@ fn changed_paths_preserve_whitespace_unicode_and_rename_identity() {
 #[test]
 fn changed_paths_reject_invalid_utf8_without_changing_path_identity() {
     use std::os::unix::ffi::OsStringExt;
-    let dir = TestDir::git_repo("invalid-utf8-path", "main");
+    let dir = TempDir::git_repo("invalid-utf8-path", "main");
     let name = std::ffi::OsString::from_vec(vec![b'a', 0xff]);
     fs::write(dir.path().join(name), "content").unwrap();
     dir.run_git(["add", "."]);

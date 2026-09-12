@@ -262,7 +262,7 @@ function validateHomepage({ body, contentType }) {
   if (
     APPLICATION_ERROR_TEXT.test(body) ||
     !/<title[^>]*>[^<]*scope/i.test(body) ||
-    !body.includes("One repository.")
+    !body.includes('data-scope-page="landing"')
   ) {
     return failure("application", "homepage returned an application error or unexpected document");
   }

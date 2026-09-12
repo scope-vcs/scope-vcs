@@ -1,4 +1,5 @@
-import type { Visibility, VisibilityState } from '@/api/types'
+import type { VisibilityState } from '@/api/types'
+import type { Visibility } from '@/api/types.generated'
 
 export type FileSystemTreeFileBase = {
   path: string
@@ -108,10 +109,6 @@ export function ancestorFolderKeys(path: string) {
   return parts.map(
     (_, index) => `folder:/${parts.slice(0, index + 1).join('/')}`,
   )
-}
-
-export function displayPath(path: string) {
-  return normalizeFilePath(path)
 }
 
 export function normalizeFilePath(path: string) {

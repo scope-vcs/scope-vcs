@@ -3,8 +3,8 @@ use super::{
     log::{MAX_RUN_LOG_BYTES_PER_ATTEMPT, RunLogChunk},
     run::Run,
     step::{
-        AttemptConclusion, AttemptTerminalReason, RunAttemptStep, StepState, interrupt_steps,
-        skip_pending_steps,
+        AttemptConclusion, AttemptTerminalReason, RunAttemptStep, StepInterruption, StepState,
+        interrupt_steps, skip_pending_steps,
     },
     validation::{required, validate_sha256_hash},
     workflow::definition::{MAX_WORKFLOW_TIMEOUT_SECONDS, WorkflowJobId},
@@ -46,7 +46,6 @@ pub struct RunAttempt {
     pub external_run_id: Option<String>,
     pub runtime_version: String,
     pub token_hash: String,
-    pub token_expires_at_unix: u64,
     pub state: AttemptState,
     pub lease_expires_at_unix: u64,
     pub last_heartbeat_at_unix: u64,
@@ -68,7 +67,6 @@ impl RunAttempt {
         external_run_id: Option<String>,
         runtime_version: impl Into<String>,
         token_hash: impl Into<String>,
-        token_expires_at_unix: u64,
         state: AttemptState,
         lease_expires_at_unix: u64,
         last_heartbeat_at_unix: u64,
@@ -91,7 +89,6 @@ impl RunAttempt {
                 .transpose()?,
             runtime_version: required("runtime version", runtime_version.into())?,
             token_hash,
-            token_expires_at_unix,
             state,
             lease_expires_at_unix,
             last_heartbeat_at_unix,
@@ -155,7 +152,6 @@ impl RunAttempt {
         }
         self.token_hash = attempt_token_hash;
         self.last_heartbeat_at_unix = now_unix;
-        self.token_expires_at_unix = lease_expires_at_unix;
         self.lease_expires_at_unix = lease_expires_at_unix;
         Ok(())
     }
@@ -185,7 +181,6 @@ impl RunAttempt {
         }
         self.last_heartbeat_at_unix = now_unix;
         self.lease_expires_at_unix = lease_expires_at_unix;
-        self.token_expires_at_unix = lease_expires_at_unix;
         Ok(run.cancellation_requested)
     }
 
@@ -204,7 +199,7 @@ impl RunAttempt {
                 "terminal attempts cannot append logs",
             ));
         }
-        self.validate_steps(steps)?;
+        self.validate_execution(steps)?;
         if steps
             .get(chunk.step_index as usize)
             .is_none_or(|step| step.state != StepState::Running)
@@ -228,12 +223,12 @@ impl RunAttempt {
         Ok(true)
     }
 
-    pub fn mark_step_logs_truncated(
+    pub(crate) fn mark_step_logs_truncated(
         &mut self,
         steps: &[RunAttemptStep],
         step_index: u32,
     ) -> Result<(), DomainError> {
-        self.validate_steps(steps)?;
+        self.validate_execution(steps)?;
         let step = steps
             .get(step_index as usize)
             .ok_or_else(|| DomainError::invalid_input("workflow step does not exist"))?;
@@ -252,15 +247,6 @@ impl RunAttempt {
                 Ok(())
             }
         }
-    }
-
-    pub fn authenticate_access(
-        &self,
-        job: &RunJob,
-        token_hash: &str,
-        now_unix: u64,
-    ) -> Result<(), DomainError> {
-        self.authenticate(job, token_hash, now_unix)
     }
 
     pub fn authorize_cache_access(&self, job: &RunJob, now_unix: u64) -> Result<(), DomainError> {
@@ -288,7 +274,7 @@ impl RunAttempt {
             }
             Ok(())
         } else {
-            self.authenticate_access(job, token_hash, now_unix)
+            self.authenticate(job, token_hash, now_unix)
         }
     }
 
@@ -314,7 +300,7 @@ impl RunAttempt {
             };
         }
         self.authenticate(job, token_hash, now_unix)?;
-        self.validate_steps(steps)?;
+        self.validate_execution(steps)?;
         if logs_truncated && self.first_truncated_step_index.is_none() {
             let step_index = steps
                 .iter()
@@ -371,7 +357,7 @@ impl RunAttempt {
                 )
             }
             AttemptConclusion::TimedOut => {
-                let step_index = interrupt_steps(steps, StepState::Canceled, now_unix);
+                let step_index = interrupt_steps(steps, StepInterruption::Canceled, now_unix);
                 (
                     AttemptState::Failed,
                     RunJobState::Failed,
@@ -382,7 +368,7 @@ impl RunAttempt {
                 if !run.cancellation_requested {
                     return Err(DomainError::conflict("run cancellation was not requested"));
                 }
-                let step_index = interrupt_steps(steps, StepState::Canceled, now_unix);
+                let step_index = interrupt_steps(steps, StepInterruption::Canceled, now_unix);
                 (
                     AttemptState::Canceled,
                     RunJobState::Canceled,
@@ -486,9 +472,9 @@ impl RunAttempt {
         if !run.cancellation_requested {
             return Err(DomainError::conflict("run cancellation was not requested"));
         }
-        self.validate_steps(steps)?;
+        self.validate_execution(steps)?;
         job.ensure_time_not_before_update(now_unix)?;
-        let step_index = interrupt_steps(steps, StepState::Canceled, now_unix);
+        let step_index = interrupt_steps(steps, StepInterruption::Canceled, now_unix);
         self.state = AttemptState::Canceled;
         self.terminal_reason = Some(AttemptTerminalReason::Canceled { step_index });
         self.completed_at_unix = Some(now_unix);
@@ -507,10 +493,10 @@ impl RunAttempt {
         now_unix: u64,
     ) -> Result<(), DomainError> {
         job.ensure_current_attempt(self)?;
-        self.validate_steps(steps)?;
+        self.validate_execution(steps)?;
         job.ensure_time_not_before_update(now_unix)?;
         let was_running = self.state == AttemptState::Running;
-        let step_index = interrupt_steps(steps, StepState::Lost, now_unix);
+        let step_index = interrupt_steps(steps, StepInterruption::Lost, now_unix);
         self.state = AttemptState::Lost;
         self.terminal_reason = Some(AttemptTerminalReason::ExecutionLost { step_index });
         self.completed_at_unix = Some(now_unix);
@@ -559,7 +545,7 @@ impl RunAttempt {
         Ok(())
     }
 
-    pub(crate) fn authenticate(
+    pub fn authenticate(
         &self,
         job: &RunJob,
         token_hash: &str,
@@ -604,7 +590,7 @@ impl RunAttempt {
     }
 
     fn ensure_lease_active(&self, now_unix: u64) -> Result<(), DomainError> {
-        if now_unix >= self.token_expires_at_unix {
+        if now_unix >= self.lease_expires_at_unix {
             return Err(DomainError::authentication_failed(
                 "attempt credentials are invalid or expired",
             ));
@@ -635,9 +621,8 @@ impl RunAttempt {
                 "run attempt log byte count exceeds its limit",
             ));
         }
-        if (self.state == AttemptState::Running || self.state.is_terminal())
+        if matches!(self.state, AttemptState::Running | AttemptState::Succeeded)
             && self.started_at_unix.is_none()
-            && matches!(self.state, AttemptState::Running | AttemptState::Succeeded)
         {
             return Err(DomainError::invariant_violation(
                 "running or successful attempt must have a start time",
@@ -648,8 +633,7 @@ impl RunAttempt {
                 "attempt terminal state and completion time disagree",
             ));
         }
-        if self.token_expires_at_unix != self.lease_expires_at_unix
-            || self.last_heartbeat_at_unix < self.created_at_unix
+        if self.last_heartbeat_at_unix < self.created_at_unix
             || self.last_heartbeat_at_unix >= self.lease_expires_at_unix
             || self.started_at_unix.is_some_and(|started| {
                 started < self.created_at_unix || started >= self.lease_expires_at_unix

@@ -1,13 +1,12 @@
-import type {
-  RequestEvent,
-  RequestListItem,
-  RequestSummary,
-  RequestWorkflowEventKind,
-  RequestWorkflowState,
-} from '@/api/types'
 import type { BadgeVariant } from '@/components/ui/badge'
-
-export type BadgeTone = BadgeVariant
+import { shortOid } from '../../lib/short-oid'
+import type {
+  RequestEventResponse,
+  RequestListItemResponse,
+  RequestSummaryResponse,
+  RequestEventKind,
+  RequestState,
+} from '@/api/types.generated'
 
 const REQUEST_STATES = {
   Draft: { label: 'Draft', tone: 'neutral' },
@@ -15,8 +14,8 @@ const REQUEST_STATES = {
   Closed: { label: 'Closed', tone: 'neutral' },
   Merged: { label: 'Merged', tone: 'success' },
 } as const satisfies Record<
-  RequestWorkflowState,
-  { label: string; tone: BadgeTone }
+  RequestState,
+  { label: string; tone: BadgeVariant }
 >
 
 const EVENT_LABELS = {
@@ -28,7 +27,7 @@ const EVENT_LABELS = {
   IdentityEdited: 'Request edited',
   DiscussionResolved: 'Discussion resolved',
   DiscussionReopened: 'Discussion reopened',
-} as const satisfies Record<RequestWorkflowEventKind, string>
+} as const satisfies Record<RequestEventKind, string>
 
 const MERGEABILITY = {
   Ready: { label: 'Clean merge available', tone: 'success' },
@@ -38,17 +37,17 @@ const MERGEABILITY = {
   NotMaintainer: { label: 'Maintainer required', tone: 'neutral' },
   MissingRequestBranch: { label: 'Branch missing', tone: 'warning' },
 } as const satisfies Record<
-  RequestSummary['mergeability']['status'],
-  { label: string; tone: BadgeTone }
+  RequestSummaryResponse['mergeability']['status'],
+  { label: string; tone: BadgeVariant }
 >
 
-type RequestLabelSource = RequestSummary | RequestListItem
+type RequestLabelSource = RequestSummaryResponse | RequestListItemResponse
 
 export function requestStatusLabel(request: RequestLabelSource) {
   return REQUEST_STATES[request.state].label
 }
 
-export function requestStatusTone(request: RequestLabelSource): BadgeTone {
+export function requestStatusTone(request: RequestLabelSource): BadgeVariant {
   return REQUEST_STATES[request.state].tone
 }
 
@@ -67,7 +66,7 @@ export function requestAudienceLabel(request: RequestLabelSource) {
   return request.audience === 'Private' ? 'Private request' : 'Public request'
 }
 
-export function eventKindLabel(kind: RequestWorkflowEventKind) {
+export function eventKindLabel(kind: RequestEventKind) {
   return EVENT_LABELS[kind]
 }
 
@@ -75,11 +74,11 @@ export function requestMergeabilityLabel(request: RequestLabelSource) {
   return MERGEABILITY[request.mergeability.status].label
 }
 
-export function requestMergeabilityTone(request: RequestLabelSource): BadgeTone {
+export function requestMergeabilityTone(request: RequestLabelSource): BadgeVariant {
   return MERGEABILITY[request.mergeability.status].tone
 }
 
-export function requestEventBody(event: RequestEvent) {
+export function requestEventBody(event: RequestEventResponse) {
   const payload = event.payload as unknown as Record<
     string,
     Record<string, unknown>
@@ -110,13 +109,6 @@ export function requestEventBody(event: RequestEvent) {
         ? `Discussion ${stringValue(value.discussion_id)}`
         : null
   }
-}
-
-export function shortOid(oid: string | null | undefined) {
-  if (!oid) {
-    return 'none'
-  }
-  return oid.length > 12 ? oid.slice(0, 12) : oid
 }
 
 function oidText(value: unknown) {

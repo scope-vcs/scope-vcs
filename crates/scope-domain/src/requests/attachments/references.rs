@@ -2,8 +2,8 @@ use crate::error::DomainError;
 use pulldown_cmark::{Event, Options, Parser, Tag};
 use std::collections::BTreeSet;
 
-pub const REQUEST_ATTACHMENT_REFERENCE_PREFIX: &str = "/request-attachments/";
-pub const REQUEST_ATTACHMENT_ID_MAX_BYTES: usize = 128;
+const REQUEST_ATTACHMENT_REFERENCE_PREFIX: &str = "/request-attachments/";
+pub(super) const REQUEST_ATTACHMENT_ID_MAX_BYTES: usize = 128;
 
 /// Extracts attachment IDs from links and images recognized by CommonMark.
 pub fn request_attachment_references(markdown: &str) -> Result<BTreeSet<String>, DomainError> {
@@ -30,7 +30,7 @@ fn capture_destination(
     Ok(())
 }
 
-pub fn validate_attachment_id(attachment_id: &str) -> Result<(), DomainError> {
+pub(super) fn validate_attachment_id(attachment_id: &str) -> Result<(), DomainError> {
     if attachment_id.is_empty()
         || attachment_id.len() > REQUEST_ATTACHMENT_ID_MAX_BYTES
         || !attachment_id

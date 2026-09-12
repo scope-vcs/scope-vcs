@@ -25,7 +25,7 @@ pub fn apply_reviewed_config_to_repo(
     if repo.repo_config == update.config {
         return Ok(false);
     }
-    let live_tree = repo.live_tree();
+    let live_tree = repo.live_files.clone();
     let after_commit_id = repo.graph.commits.last().map(|commit| commit.id.clone());
     let history_rewrites = update
         .config

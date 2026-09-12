@@ -1,4 +1,6 @@
-import type { RepoSummary, UpdateRepoMetadataInput } from '@/api/types'
+import type { UpdateRepoMetadataInput } from '@/api/types'
+import type { RepoSummaryResponse } from '@/api/types.generated'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { SectionRow, SectionRows } from '@/components/section-rows'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,8 +15,8 @@ export function RepositoryMetadataForm({
   repo,
   save,
 }: {
-  repo: RepoSummary
-  save: (metadata: Metadata) => Promise<RepoSummary>
+  repo: RepoSummaryResponse
+  save: (metadata: Metadata) => Promise<RepoSummaryResponse>
 }) {
   const [state, setState] = useState<SaveState>({ status: 'idle' })
 
@@ -31,7 +33,7 @@ export function RepositoryMetadataForm({
       setState({ status: 'saved' })
     } catch (error) {
       setState({
-        message: error instanceof Error ? error.message : 'Repository details could not be saved.',
+        message: resourceErrorMessage(error, 'Repository details could not be saved.'),
         status: 'failed',
       })
     }

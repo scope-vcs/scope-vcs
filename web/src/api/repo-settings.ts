@@ -1,27 +1,29 @@
 import { createApiClient } from '@/api/client'
 import type {
-  AcceptRepoInviteResponse,
   CreateRepoInviteInput,
-  CreateRepoInviteResponse,
   DeleteRepoInviteInput,
   DeleteRepoMemberInput,
-  DeleteRepoInput,
-  RepoCollaboration,
-  RepoInvite,
-  RepoInviteLookup,
-  RepoInviteTokenInput,
-  RepoMember,
   RepoParams,
+  RepoInviteTokenInput,
   UpdateRepoMemberInput,
   UpdateRepoMetadataInput,
-  RepoSummary,
 } from './types'
+import type {
+  AcceptRepositoryInviteResponse,
+  CreateRepositoryInviteResponse,
+  RepositoryCollaborationResponse,
+  RepositoryInviteResponse,
+  RepositoryInviteLookupResponse,
+  RepositoryMemberResponse,
+  RepoSummaryResponse,
+} from './types.generated'
+import { repoRoute } from './paths'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import { apiValidators } from './validators.generated'
 
 export async function updateRepoMetadataForRequest(
   data: UpdateRepoMetadataInput,
-): Promise<RepoSummary> {
+): Promise<RepoSummaryResponse> {
   return createApiClient().patch(
     repoRoute(ApiRouteTemplates.repoMetadata, data),
     apiValidators.RepoSummaryResponse,
@@ -32,7 +34,7 @@ export async function updateRepoMetadataForRequest(
   )
 }
 
-export async function deleteRepoForRequest(data: DeleteRepoInput) {
+export async function deleteRepoForRequest(data: RepoParams) {
   return createApiClient().delete(
     repoRoute(ApiRouteTemplates.repo, data),
     apiValidators.DeleteRepoResponse,
@@ -42,7 +44,7 @@ export async function deleteRepoForRequest(data: DeleteRepoInput) {
 
 export async function loadRepoCollaborationForRequest(
   data: RepoParams,
-): Promise<RepoCollaboration> {
+): Promise<RepositoryCollaborationResponse> {
   return createApiClient().get(
     repoRoute(ApiRouteTemplates.repoMembers, data),
     apiValidators.RepositoryCollaborationResponse,
@@ -52,7 +54,7 @@ export async function loadRepoCollaborationForRequest(
 
 export async function createRepoInviteForRequest(
   data: CreateRepoInviteInput,
-): Promise<CreateRepoInviteResponse> {
+): Promise<CreateRepositoryInviteResponse> {
   return createApiClient().post(
     repoRoute(ApiRouteTemplates.repoInvites, data),
     apiValidators.CreateRepositoryInviteResponse,
@@ -68,7 +70,7 @@ export async function createRepoInviteForRequest(
 
 export async function updateRepoMemberForRequest(
   data: UpdateRepoMemberInput,
-): Promise<RepoMember> {
+): Promise<RepositoryMemberResponse> {
   return createApiClient().patch(
     buildApiPath(ApiRouteTemplates.repoMember, {
       owner: data.owner,
@@ -87,7 +89,7 @@ export async function updateRepoMemberForRequest(
 
 export async function deleteRepoMemberForRequest(
   data: DeleteRepoMemberInput,
-): Promise<RepoMember> {
+): Promise<RepositoryMemberResponse> {
   return createApiClient().delete(
     buildApiPath(ApiRouteTemplates.repoMember, {
       owner: data.owner,
@@ -101,7 +103,7 @@ export async function deleteRepoMemberForRequest(
 
 export async function deleteRepoInviteForRequest(
   data: DeleteRepoInviteInput,
-): Promise<RepoInvite> {
+): Promise<RepositoryInviteResponse> {
   return createApiClient().delete(
     buildApiPath(ApiRouteTemplates.repoInvite, {
       owner: data.owner,
@@ -115,7 +117,7 @@ export async function deleteRepoInviteForRequest(
 
 export async function loadRepoInviteForRequest(
   data: RepoInviteTokenInput,
-): Promise<RepoInviteLookup> {
+): Promise<RepositoryInviteLookupResponse> {
   return createApiClient().get(
     buildApiPath(ApiRouteTemplates.repositoryInvite, { token: data.token }),
     apiValidators.RepositoryInviteLookupResponse,
@@ -125,7 +127,7 @@ export async function loadRepoInviteForRequest(
 
 export async function acceptRepoInviteForRequest(
   data: RepoInviteTokenInput,
-): Promise<AcceptRepoInviteResponse> {
+): Promise<AcceptRepositoryInviteResponse> {
   return createApiClient().post(
     buildApiPath(ApiRouteTemplates.repositoryInviteAccept, {
       token: data.token,
@@ -133,8 +135,4 @@ export async function acceptRepoInviteForRequest(
     apiValidators.AcceptRepositoryInviteResponse,
     { auth: 'required' },
   )
-}
-
-function repoRoute(template: string, data: RepoParams) {
-  return buildApiPath(template, { owner: data.owner, repo: data.repo })
 }

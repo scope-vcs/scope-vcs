@@ -12,7 +12,8 @@ const sourceFunctions = {
   'src/routes/-repo-activity-actions.ts': ['loadRepositoryLatestActivity'],
   'src/routes/-repo-history-actions.ts': ['loadHistoryPage', 'loadHistoryEntry', 'loadHistoryEntryFileDiff'],
   'src/routes/-request-workspace-actions.ts': ['loadRequestQueuePage', 'updateRequestAttention'],
-  'src/routes/$owner.$repo.requests.$requestId.tsx': ['loadRequestPage', 'loadActivity', 'listRequestAttachments', 'loadAttachmentLimits', 'prepareAttachment', 'finishAttachment', 'retryAttachment', 'grantAttachmentMedia'],
+  'src/routes/$owner.$repo.requests.$requestId.tsx': ['loadRequestPage', 'loadActivity'],
+  'src/routes/-request-attachment-actions.ts': ['listRequestAttachments', 'loadAttachmentLimits', 'prepareAttachment', 'finishAttachment', 'retryAttachment', 'grantAttachmentMedia'],
   'src/routes/$owner.$repo.requests.$requestId.index.tsx': ['loadDiscussionPage', 'loadDiscussions', 'loadReplies', 'loadDiscussionChanges'],
   'src/routes/$owner.$repo.requests.$requestId.changes.tsx': ['loadChangesPage', 'loadRevisionDiff', 'loadDiscussions'],
 }

@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mode="${1:?usage: staging-smoke-seed.sh <seed|grant>}"
-case "$mode" in
-  seed) seed_args=() ;;
-  grant) seed_args=(--grant-only) ;;
-  *) echo 'usage: staging-smoke-seed.sh <seed|grant>' >&2; exit 2 ;;
-esac
 : "${SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH:?SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH is required}"
 seed_binary="${SCOPE_SMOKE_SEED_BINARY:-./target/release/scope-smoke-seed}"
 test -x "$seed_binary"
@@ -45,4 +39,4 @@ export SCOPE_SMOKE_SEED_USER_HANDLE=dev
 # shellcheck disable=SC2016
 railway run "${scope[@]}" --service "$api_service" --no-local -- \
   sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" exec "$@"' \
-  scope-smoke-seed "$seed_binary" "${seed_args[@]}"
+  scope-smoke-seed "$seed_binary" --grant-only

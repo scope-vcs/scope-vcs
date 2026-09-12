@@ -1,3 +1,4 @@
+use crate::display::short_oid;
 use crate::{
     api::{api_url, http_client},
     git_repo::{
@@ -139,25 +140,15 @@ fn ref_change_lines(
     lines
 }
 
-fn short_oid(oid: &str) -> &str {
-    oid.get(..7).unwrap_or(oid)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::TestDir;
+    use crate::test_support::TempDir;
     use std::fs;
 
     #[test]
-    fn short_oid_handles_short_values() {
-        assert_eq!(short_oid("0123456789"), "0123456");
-        assert_eq!(short_oid("abc"), "abc");
-    }
-
-    #[test]
     fn current_branch_must_track_the_selected_remote_before_merge() {
-        let dir = TestDir::git_repo("pull-upstream", "main");
+        let dir = TempDir::git_repo("pull-upstream", "main");
         dir.run_git(["config", "user.name", "Scope Test"]);
         dir.run_git(["config", "user.email", "scope@example.invalid"]);
         fs::write(dir.path().join("README.md"), "test\n").unwrap();

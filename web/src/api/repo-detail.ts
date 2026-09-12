@@ -1,33 +1,31 @@
 import {
-  arrayOf,
   createApiClient,
   clerkApiTokenTemplate,
   getPublicApiConnection,
 } from '@/api/client'
-import { gitRemoteUrl } from './repo-urls'
-import type { RepoContent, RepoLiveState, RepoParams, RepoSummary } from './types'
-import type { RepositoryDependencyCheckResponse } from './types.generated'
+import { arrayOf, stripTrailingSlash } from './http'
+import { repoRoute } from './paths'
+import type { RepoContent, RepoLiveState, RepoParams } from './types'
+import type { RepoSummaryResponse, RepositoryDependencyCheckResponse } from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import { apiValidators } from './validators.generated'
-export { parseRepoParams } from './repo-params'
 
 export async function loadRepoContentForRequest(data: RepoParams, signal?: AbortSignal) {
   const api = createApiClient()
   const files = await api.get(
-    repoPath(ApiRouteTemplates.repoFiles, data),
+    repoRoute(ApiRouteTemplates.repoFiles, data),
     arrayOf(apiValidators.RepoFileResponse),
     { auth: 'optional', signal },
   )
 
+  const publicApi = stripTrailingSlash(getPublicApiConnection('building clone command'))
+  const gitPath = buildApiPath(ApiRouteTemplates.gitRepo, {
+    mode: 'public',
+    org: data.owner,
+    repo: data.repo,
+  })
   return {
-    clone_remote_url: gitRemoteUrl(
-      getPublicApiConnection('building clone command'),
-      buildApiPath(ApiRouteTemplates.gitRepo, {
-        mode: 'public',
-        org: data.owner,
-        repo: data.repo,
-      }),
-    ),
+    clone_remote_url: `${publicApi}${gitPath}`,
     files,
   } satisfies RepoContent
 }
@@ -35,7 +33,7 @@ export async function loadRepoContentForRequest(data: RepoParams, signal?: Abort
 export async function loadRepoLiveStateForRequest(data: RepoParams) {
   const api = createApiClient()
   const repo = await api.get(
-    repoPath(ApiRouteTemplates.repo, data),
+    repoRoute(ApiRouteTemplates.repo, data),
     apiValidators.RepoSummaryResponse,
     { auth: 'optional' },
   )
@@ -48,7 +46,7 @@ export async function loadRepoFileForRequest(
 ) {
   const api = createApiClient()
   return api.get(
-    `${repoPath(ApiRouteTemplates.repoFileContent, data)}?path=${encodeURIComponent(data.path)}`,
+    `${repoRoute(ApiRouteTemplates.repoFileContent, data)}?path=${encodeURIComponent(data.path)}`,
     apiValidators.RepoFileContentResponse,
     { auth: 'optional', signal },
   )
@@ -58,25 +56,18 @@ export async function loadRepoDependenciesForRequest(
   data: RepoParams,
   signal?: AbortSignal,
 ): Promise<RepositoryDependencyCheckResponse> {
-  const api = createApiClient()
-  return api.get(
-    repoPath(ApiRouteTemplates.repoDependencies, data),
+  return createApiClient().get(
+    repoRoute(ApiRouteTemplates.repoDependencies, data),
     apiValidators.RepositoryDependencyCheckResponse,
     { auth: 'required', maxResponseBytes: 8 * 1024 * 1024, signal },
   )
 }
 
-function repoLiveState(data: RepoParams, repo: RepoSummary): RepoLiveState {
+function repoLiveState(data: RepoParams, repo: RepoSummaryResponse): RepoLiveState {
+  const publicApi = stripTrailingSlash(getPublicApiConnection('building repo event stream URL'))
   return {
     clerk_token_template: clerkApiTokenTemplate(),
-    event_stream_url: gitRemoteUrl(
-      getPublicApiConnection('building repo event stream URL'),
-      repoPath(ApiRouteTemplates.repoEvents, data),
-    ),
+    event_stream_url: `${publicApi}${repoRoute(ApiRouteTemplates.repoEvents, data)}`,
     repo,
   }
-}
-
-function repoPath(template: string, data: RepoParams) {
-  return buildApiPath(template, { owner: data.owner, repo: data.repo })
 }

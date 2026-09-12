@@ -1,4 +1,3 @@
-import type { HistoryEntryDetail } from '@/api/types'
 import { PanelState } from '@/components/empty-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,9 +7,10 @@ import { ChangedFilesWorkbench, useChangedFileNavigation, type ChangedFilesProps
 import { CommitDetailSkeleton } from './history-commit-detail-skeleton'
 import { historyCommitTitle, historyEntryCountLabel, historyEntryKindLabel } from './history-row-labels'
 import { VisibilityChanges, type HistoryVisibilityChange } from './history-visibility-changes'
+import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 
 export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
-  resource: CachedResource<HistoryEntryDetail>
+  resource: CachedResource<HistoryEntryDetailResponse>
   onRetryDetail: () => void
   onSelectVisibility: (change: HistoryVisibilityChange) => void
   selectedVisibilityId: string | null

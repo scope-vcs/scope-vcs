@@ -332,7 +332,7 @@ function parseDraftKey(key: string) {
   }
 }
 
-function inferredMediaType(file: File) {
+export function inferredMediaType(file: File) {
   if (file.type) return file.type
   const extension = file.name.split('.').at(-1)?.toLowerCase()
   if (extension === 'heic') return 'image/heic'

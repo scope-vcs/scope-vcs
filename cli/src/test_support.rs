@@ -7,12 +7,12 @@ use std::{
 
 static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
 
-pub(crate) struct TestDir {
-    pub(crate) path: PathBuf,
+pub struct TempDir {
+    pub path: PathBuf,
 }
 
-impl TestDir {
-    pub(crate) fn new(label: &str) -> Self {
+impl TempDir {
+    pub fn new(label: &str) -> Self {
         let path = std::env::temp_dir().join(format!(
             "scope-cli-{label}-{}-{}",
             std::process::id(),
@@ -23,7 +23,7 @@ impl TestDir {
         Self { path }
     }
 
-    pub(crate) fn git_repo(label: &str, branch: &str) -> Self {
+    pub fn git_repo(label: &str, branch: &str) -> Self {
         let dir = Self::new(label);
         let status = Command::new("git")
             .current_dir(&dir.path)
@@ -34,11 +34,11 @@ impl TestDir {
         dir
     }
 
-    pub(crate) fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         &self.path
     }
 
-    pub(crate) fn run_git<const N: usize>(&self, args: [&str; N]) -> Output {
+    pub fn run_git<const N: usize>(&self, args: [&str; N]) -> Output {
         let output = Command::new("git")
             .current_dir(&self.path)
             .args(args)
@@ -54,7 +54,7 @@ impl TestDir {
     }
 }
 
-impl Drop for TestDir {
+impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.path);
     }

@@ -152,7 +152,7 @@ async fn seed_editable_request_refs_for_repo(
             &request,
             RequestViewer::new(access, Some(actor_user_id), is_invitee),
         );
-        if decision.branch_mutable && decision.git_advertised {
+        if decision.branch_mutable {
             requests.push(request);
         }
     }
@@ -229,7 +229,7 @@ pub(super) async fn persist_request_ref_revision(
                 expected_old_head_oid,
                 new_head_oid: update.new_head_oid.clone(),
                 git_snapshot: persisted.git_snapshot.clone(),
-                event_id: request_revision_event_id()?,
+                event_id: crate::persistence_ids::generate_prefixed_id("event_request_revision")?,
                 body: None,
                 now_unix,
             },
@@ -305,14 +305,4 @@ fn request_actor_can_edit_ref(
         RequestViewer::new(access, Some(actor_user_id), is_invitee),
     )
     .branch_mutable
-}
-
-fn request_revision_event_id() -> Result<String, ApiError> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| {
-        ApiError::internal_message(format!(
-            "failed to create request revision event id: {error}"
-        ))
-    })?;
-    Ok(format!("event_request_revision_{}", hex::encode(bytes)))
 }

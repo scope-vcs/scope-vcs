@@ -4,9 +4,12 @@ use super::{
     RequestAttachmentFailureCode, RequestAttachmentImageMetadata, RequestAttachmentKind,
     RequestAttachmentLimits, RequestAttachmentPartReceipt, RequestAttachmentProcessingLease,
     RequestAttachmentState, RequestAttachmentStoredObject, RequestAttachmentTarget,
-    RequestAttachmentVideoMetadata, request_attachment_references, validate_attachment_id,
+    RequestAttachmentVideoMetadata,
+    references::{
+        REQUEST_ATTACHMENT_ID_MAX_BYTES, request_attachment_references, validate_attachment_id,
+    },
 };
-use crate::error::DomainError;
+use crate::{error::DomainError, requests::validate_required};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug)]
@@ -40,8 +43,8 @@ pub struct PrepareRequestAttachmentDecision {
 
 pub fn validate_prepare_attachment(
     input: PrepareRequestAttachmentInput,
-    limits: RequestAttachmentLimits,
 ) -> Result<PrepareRequestAttachmentDecision, DomainError> {
+    let limits = RequestAttachmentLimits::default();
     validate_attachment_id(&input.attachment_id)?;
     for (label, value) in [
         ("repository id", input.repository_id.as_str()),
@@ -50,7 +53,7 @@ pub fn validate_prepare_attachment(
         ("upload id", input.upload_id.as_str()),
         ("operation id", input.operation_id.as_str()),
     ] {
-        require_value(label, value)?;
+        validate_required(label, value)?;
     }
     validate_identifier("upload id", &input.upload_id)?;
     validate_identifier("operation id", &input.operation_id)?;
@@ -141,7 +144,7 @@ pub fn validate_prepare_attachment(
     })
 }
 
-pub fn reserved_attachment_derivative_bytes(
+fn reserved_attachment_derivative_bytes(
     kind: RequestAttachmentKind,
     source_size_bytes: u64,
 ) -> Result<u64, DomainError> {
@@ -160,7 +163,6 @@ pub fn finish_attachment_upload(
     receipts: &[RequestAttachmentPartReceipt],
     original: RequestAttachmentStoredObject,
     now_unix: u64,
-    limits: RequestAttachmentLimits,
 ) -> Result<RequestAttachment, DomainError> {
     if attachment.uploader_user_id != actor_user_id {
         return Err(DomainError::forbidden(
@@ -172,13 +174,13 @@ pub fn finish_attachment_upload(
             "request attachment upload id mismatch",
         ));
     }
-    validate_part_receipts(attachment, receipts, limits)?;
+    validate_part_receipts(attachment, receipts)?;
     if original.size_bytes != attachment.size_bytes || original.sha256 != attachment.sha256 {
         return Err(DomainError::conflict(
             "request attachment original does not match the prepared file",
         ));
     }
-    require_value(
+    validate_required(
         "request attachment original object key",
         &original.object_key,
     )?;
@@ -204,21 +206,20 @@ pub fn finish_attachment_upload(
 pub fn validate_attachment_part(
     attachment: &RequestAttachment,
     receipt: &RequestAttachmentPartReceipt,
-    limits: RequestAttachmentLimits,
 ) -> Result<(), DomainError> {
     if attachment.state != RequestAttachmentState::Prepared {
         return Err(DomainError::conflict(
             "request attachment upload is already finalized",
         ));
     }
-    validate_part_range(attachment.size_bytes, receipt, limits)
+    validate_part_range(attachment.size_bytes, receipt)
 }
 
 fn validate_part_range(
     attachment_size_bytes: u64,
     receipt: &RequestAttachmentPartReceipt,
-    limits: RequestAttachmentLimits,
 ) -> Result<(), DomainError> {
+    let limits = RequestAttachmentLimits::default();
     if receipt.part_number == 0 || limits.preferred_part_bytes == 0 {
         return Err(DomainError::invalid_input(
             "request attachment part number and preferred size must be positive",
@@ -343,7 +344,6 @@ pub fn mark_processing_source_validated(
         &detected_media_type,
         image.as_ref(),
         video.as_ref(),
-        RequestAttachmentLimits::default(),
     )?;
     let mut next = transition_attachment(
         attachment,
@@ -398,7 +398,6 @@ pub fn retry_attachment_processing(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn replace_attachment_bindings(
     request_id: &str,
     actor_user_id: &str,
@@ -407,8 +406,8 @@ pub fn replace_attachment_bindings(
     markdown: &str,
     attachments: &[RequestAttachment],
     existing_bindings: &[RequestAttachmentBinding],
-    limits: RequestAttachmentLimits,
 ) -> Result<Vec<RequestAttachmentBinding>, DomainError> {
+    let limits = RequestAttachmentLimits::default();
     if !actor_can_write_target {
         return Err(DomainError::forbidden(
             "request attachment target write access required",
@@ -485,6 +484,20 @@ pub fn can_view_request_attachment(
         })
 }
 
+/// A newly granted lease needs a token and an expiry after the grant time.
+pub fn validate_lease_grant(
+    lease_token: &str,
+    now_unix: u64,
+    lease_expires_at_unix: u64,
+) -> Result<(), DomainError> {
+    if lease_token.trim().is_empty() || lease_expires_at_unix <= now_unix {
+        return Err(DomainError::invalid_input(
+            "lease must have a token and a future expiry",
+        ));
+    }
+    Ok(())
+}
+
 pub fn validate_cleanup_lease(
     attachment_id: &str,
     lease: &super::RequestAttachmentCleanupLease,
@@ -533,13 +546,13 @@ fn validate_processing_lease(
     Ok(())
 }
 
-pub fn validate_attachment_source(
+fn validate_attachment_source(
     attachment: &RequestAttachment,
     detected_media_type: &str,
     image: Option<&RequestAttachmentImageMetadata>,
     video: Option<&RequestAttachmentVideoMetadata>,
-    limits: RequestAttachmentLimits,
 ) -> Result<(), DomainError> {
+    let limits = RequestAttachmentLimits::default();
     let detected_kind =
         RequestAttachmentKind::from_media_type(detected_media_type).ok_or_else(|| {
             DomainError::invalid_input("detected attachment media type is unsupported")
@@ -568,15 +581,15 @@ pub fn validate_attachment_source(
             "validated request attachment exceeds its source byte limit",
         ));
     }
-    validate_source_metadata(attachment.kind, image, video, limits)
+    validate_source_metadata(attachment.kind, image, video)
 }
 
 fn validate_source_metadata(
     kind: RequestAttachmentKind,
     image: Option<&RequestAttachmentImageMetadata>,
     video: Option<&RequestAttachmentVideoMetadata>,
-    limits: RequestAttachmentLimits,
 ) -> Result<(), DomainError> {
+    let limits = RequestAttachmentLimits::default();
     match (kind, image, video) {
         (RequestAttachmentKind::Photo, Some(image), None)
             if image.width > 0
@@ -615,12 +628,12 @@ fn validate_derivatives(
         ));
     }
     for derivative in derivatives {
-        require_value("request attachment derivative id", &derivative.id)?;
-        require_value(
+        validate_required("request attachment derivative id", &derivative.id)?;
+        validate_required(
             "request attachment derivative media type",
             &derivative.media_type,
         )?;
-        require_value(
+        validate_required(
             "request attachment derivative object key",
             &derivative.object.object_key,
         )?;
@@ -696,7 +709,6 @@ fn validate_derivatives(
 fn validate_part_receipts(
     attachment: &RequestAttachment,
     receipts: &[RequestAttachmentPartReceipt],
-    limits: RequestAttachmentLimits,
 ) -> Result<(), DomainError> {
     if receipts.is_empty() {
         return Err(DomainError::invalid_input(
@@ -712,7 +724,7 @@ fn validate_part_receipts(
                 "request attachment parts must be contiguous and 1-based",
             ));
         }
-        validate_part_range(attachment.size_bytes, receipt, limits)?;
+        validate_part_range(attachment.size_bytes, receipt)?;
         total = total
             .checked_add(receipt.size_bytes)
             .ok_or_else(|| DomainError::invalid_input("request attachment part size overflow"))?;
@@ -844,17 +856,9 @@ fn checked_usage(current: u64, added: u64) -> Result<u64, DomainError> {
         .ok_or_else(|| DomainError::invalid_input("request attachment byte budget overflow"))
 }
 
-fn require_value(label: &str, value: &str) -> Result<(), DomainError> {
-    if value.trim().is_empty() {
-        Err(DomainError::invalid_input(format!("{label} is required")))
-    } else {
-        Ok(())
-    }
-}
-
 fn validate_identifier(label: &str, value: &str) -> Result<(), DomainError> {
-    require_value(label, value)?;
-    if value.len() > super::REQUEST_ATTACHMENT_ID_MAX_BYTES || value.chars().any(char::is_control) {
+    validate_required(label, value)?;
+    if value.len() > REQUEST_ATTACHMENT_ID_MAX_BYTES || value.chars().any(char::is_control) {
         return Err(DomainError::invalid_input(format!(
             "{label} exceeds request attachment identifier limits"
         )));
@@ -863,7 +867,7 @@ fn validate_identifier(label: &str, value: &str) -> Result<(), DomainError> {
 }
 
 fn validate_filename(filename: &str) -> Result<(), DomainError> {
-    require_value("filename", filename)?;
+    validate_required("filename", filename)?;
     if filename.len() > 255
         || filename
             .chars()

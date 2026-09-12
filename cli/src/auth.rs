@@ -126,14 +126,10 @@ pub fn delete_stored_session_token(api_url: &str) -> anyhow::Result<()> {
 
 #[cfg(not(any(target_os = "macos", windows)))]
 fn session_file_path(api_url: &str) -> anyhow::Result<PathBuf> {
-    let config_dir = scope_config_dir(
-        env::var_os("XDG_CONFIG_HOME"),
-        env::var_os("HOME"),
-        env::var_os("USERPROFILE"),
-    )
-    .context(session_file_error_context(
-        "locate Scope CLI session directory",
-    ))?;
+    let config_dir = scope_config_dir(env::var_os("XDG_CONFIG_HOME"), env::var_os("HOME"))
+        .context(session_file_error_context(
+            "locate Scope CLI session directory",
+        ))?;
     Ok(config_dir
         .join("scope")
         .join("sessions")
@@ -141,14 +137,9 @@ fn session_file_path(api_url: &str) -> anyhow::Result<PathBuf> {
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
-fn scope_config_dir(
-    xdg_config_home: Option<OsString>,
-    home: Option<OsString>,
-    userprofile: Option<OsString>,
-) -> Option<PathBuf> {
+fn scope_config_dir(xdg_config_home: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
     non_empty_path(xdg_config_home)
         .or_else(|| non_empty_path(home).map(|path| path.join(".config")))
-        .or_else(|| non_empty_path(userprofile).map(|path| path.join(".config")))
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -223,13 +214,8 @@ fn keychain_error_context(action: &str) -> String {
     )
 }
 
-fn session_storage_key(api_url: &str) -> String {
-    let mut encoded = String::with_capacity(api_url.len() * 2);
-    for byte in api_url.bytes() {
-        use std::fmt::Write as _;
-        write!(&mut encoded, "{byte:02x}").expect("writing to a string cannot fail");
-    }
-    format!("cli-session-{encoded}")
+pub fn session_storage_key(api_url: &str) -> String {
+    format!("cli-session-{}", hex::encode(api_url.as_bytes()))
 }
 
 #[cfg(test)]

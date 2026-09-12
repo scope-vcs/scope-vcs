@@ -1,6 +1,6 @@
-use super::text::terminal_text;
 use super::*;
 use crate::api::ApiSession;
+use crate::display::terminal_text;
 pub(super) fn load_exact_request(
     git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
@@ -21,7 +21,10 @@ pub(super) fn load_exact_request(
     Ok((context, request_id, detail))
 }
 
-fn api_target<'a>(context: &'a local::RequestContext, request_id: &'a str) -> RequestTarget<'a> {
+pub(super) fn api_target<'a>(
+    context: &'a local::RequestContext,
+    request_id: &'a str,
+) -> RequestTarget<'a> {
     RequestTarget {
         owner: &context.target.owner,
         repo: &context.target.repo,
@@ -34,18 +37,18 @@ pub(super) fn submit_request_command(
     api: ApiSession<'_>,
     target: RequestTargetArgs,
     yes: bool,
-    machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
+    let (context, request_id, _) = load_exact_request(git_repo, api, target)?;
     let prompt = "Submit this request to its maintainers";
-    require_confirmation(prompt, yes, !machine_output)?;
+    require_confirmation(prompt, yes)?;
     let response = api_submit_request(api, api_target(&context, &request_id))?;
-    let human_lines = request_mutation_receipt_lines("Submitted", Some(&before.request), &response);
+    let human_lines = request_mutation_receipt_lines("Submitted", &response);
     Ok(RequestCommandOutcome::new(
         "request.submit",
-        RequestCommandResult::Mutation(RepoResponse {
+        RequestCommandResult::Mutation(MutationResult {
             repo: context.repo,
             response,
+            attachments: Vec::new(),
         }),
         human_lines,
     ))
@@ -93,8 +96,7 @@ pub(super) fn edit_request(
         description,
         has_attachments.then(|| before.request.description_markdown.clone()),
     )?;
-    let mut human_lines =
-        request_mutation_receipt_lines("Edited request", Some(&before.request), &response);
+    let mut human_lines = request_mutation_receipt_lines("Edited request", &response);
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
     let attachments = if args.attachments.wait {
         attachments::wait_for_processing(
@@ -112,22 +114,12 @@ pub(super) fn edit_request(
         uploaded.attachments
     };
     attachments::complete_uploads(&uploaded.receipt_keys)?;
-    if has_attachments {
-        return Ok(RequestCommandOutcome::new(
-            "request.edit",
-            RequestCommandResult::AttachmentMutation(AttachmentMutationResult {
-                repo: context.repo,
-                response,
-                attachments,
-            }),
-            human_lines,
-        ));
-    }
     Ok(RequestCommandOutcome::new(
         "request.edit",
-        RequestCommandResult::Mutation(RepoResponse {
+        RequestCommandResult::Mutation(MutationResult {
             repo: context.repo,
             response,
+            attachments,
         }),
         human_lines,
     ))
@@ -208,21 +200,20 @@ pub(super) fn merge_request_command(
     api: ApiSession<'_>,
     target: RequestTargetArgs,
     yes: bool,
-    machine_output: bool,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
     require_confirmation(
-        &merge_confirmation(&before.request.name, before.request.state),
+        &format!("Merge request {} into main", before.request.name),
         yes,
-        !machine_output,
     )?;
     let response = merge_request(api, api_target(&context, &request_id))?;
-    let human_lines = request_mutation_receipt_lines("Merged", Some(&before.request), &response);
+    let human_lines = request_mutation_receipt_lines("Merged", &response);
     Ok(RequestCommandOutcome::new(
         "request.merge",
-        RequestCommandResult::Mutation(RepoResponse {
+        RequestCommandResult::Mutation(MutationResult {
             repo: context.repo,
             response,
+            attachments: Vec::new(),
         }),
         human_lines,
     ))
@@ -252,10 +243,6 @@ pub(super) fn rate_request_command(
         }),
         vec![human_line],
     ))
-}
-
-fn merge_confirmation(request_name: &str, _state: crate::api::RequestState) -> String {
-    format!("Merge request {request_name} into main")
 }
 
 fn events_through_version(
@@ -315,7 +302,7 @@ pub(super) fn show_one_request(
         0,
         detail.request.activity_version,
     )?;
-    let mut human_lines = request_detail_lines_for_response(&detail);
+    let mut human_lines = request_detail_lines(&detail.request);
     human_lines.extend(request_activity_lines_for_response(&activity));
     Ok(RequestCommandOutcome::new(
         "request.show",
@@ -451,18 +438,5 @@ mod tests {
         let bounded = events_through_version(events, 2);
         assert_eq!(bounded.len(), 1);
         assert_eq!(bounded[0].position, 2);
-    }
-
-    #[test]
-    fn merge_confirmation_names_the_request() {
-        use crate::api::RequestState;
-        assert_eq!(
-            merge_confirmation("change", RequestState::Open),
-            "Merge request change into main"
-        );
-        assert_eq!(
-            merge_confirmation("change", RequestState::Merged),
-            "Merge request change into main"
-        );
     }
 }

@@ -1,36 +1,24 @@
-import assert from 'node:assert/strict'
+import {
+  assertDocumentPreserved,
+  assertNodesPreserved,
+  captureRepositoryChrome,
+  markDocument,
+  requestRepoPath,
+} from './browser-smoke.mjs'
 
-export async function assertRepositoryMarkdownUsesClientNavigation(page, owner) {
+export async function assertRepositoryMarkdownUsesClientNavigation(page) {
   await page.getByRole('button', { name: 'README.md', exact: true }).click()
   await page.getByRole('heading', { level: 1, name: 'Update Demo' }).waitFor()
-  const header = await page.locator('header.sticky').elementHandle()
-  const navigation = await page
-    .getByRole('navigation', { name: 'Primary' })
-    .elementHandle()
-  assert(header)
-  assert(navigation)
+  const chrome = await captureRepositoryChrome(page)
   const documentSentinel = 'scope-repository-markdown-navigation'
-  await page.evaluate((sentinel) => {
-    window.__scopeMarkdownDocument = sentinel
-  }, documentSentinel)
+  await markDocument(page, documentSentinel)
 
   await page.getByRole('link', { name: 'Read the release guide' }).click()
   await page.waitForURL((url) => (
-    url.pathname === `/${owner}/update-demo` &&
+    url.pathname === requestRepoPath &&
     url.searchParams.get('file') === 'docs/release.md'
   ))
   await page.getByRole('heading', { level: 1, name: 'Release flow' }).waitFor()
-  assert.equal(
-    await page.evaluate(() => window.__scopeMarkdownDocument),
-    documentSentinel,
-  )
-  assert.equal(
-    await page.evaluate(
-      ({ header, navigation }) =>
-        header === document.querySelector('header.sticky') &&
-        navigation === document.querySelector('nav[aria-label="Primary"]'),
-      { header, navigation },
-    ),
-    true,
-  )
+  await assertDocumentPreserved(page, documentSentinel)
+  await assertNodesPreserved(page, chrome)
 }

@@ -1,4 +1,5 @@
 import { createApiClient } from '@/api/client'
+import { requestRoute } from '@/api/paths'
 import type { RequestParams } from '@/api/types'
 import {
   ApiRouteTemplates,
@@ -84,14 +85,6 @@ export function grantRequestAttachmentMedia(input: GrantAttachmentInput) {
     apiValidators.CreateRequestAttachmentMediaGrantResponse,
     { auth: 'optional', body: { target: input.target } },
   )
-}
-
-function requestRoute(template: string, input: RequestParams) {
-  return buildApiPath(template, {
-    owner: input.owner,
-    repo: input.repo,
-    request_id: input.request_id,
-  })
 }
 
 function attachmentRoute(template: string, input: RequestAttachmentActionInput) {

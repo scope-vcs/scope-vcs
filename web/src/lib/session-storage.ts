@@ -1,18 +1,9 @@
-type SessionStorageReader = Pick<Storage, 'getItem' | 'removeItem'>
-type SessionStorageWriter = SessionStorageReader & Pick<Storage, 'setItem'>
-
-function browserSessionStorage(): SessionStorageWriter | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
-
-  return window.sessionStorage
+function browserSessionStorage() {
+  return typeof window === 'undefined' ? null : window.sessionStorage
 }
 
-export function readAndClearSessionValue(
-  key: string,
-  storage: SessionStorageReader | null = browserSessionStorage(),
-) {
+export function readAndClearSessionValue(key: string) {
+  const storage = browserSessionStorage()
   if (!storage) {
     return null
   }
@@ -24,10 +15,6 @@ export function readAndClearSessionValue(
   return value
 }
 
-export function storeSessionValue(
-  key: string,
-  value: string,
-  storage: SessionStorageWriter | null = browserSessionStorage(),
-) {
-  storage?.setItem(key, value)
+export function storeSessionValue(key: string, value: string) {
+  browserSessionStorage()?.setItem(key, value)
 }

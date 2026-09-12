@@ -1,7 +1,5 @@
 use crate::{
-    error::ApiError,
-    http::responses::{ProjectionPreviewAudience, ProjectionPreviewSource},
-    repo_access::ensure_repo_read,
+    error::ApiError, http::responses::ProjectionPreviewAudience, repo_access::ensure_repo_read,
     state::AppState,
 };
 use scope_domain::{
@@ -13,10 +11,9 @@ pub(crate) fn ensure_projection_preview_access(
     repo: &Repository,
     requester: &Principal,
     audience: ProjectionPreviewAudience,
-    source: ProjectionPreviewSource,
 ) -> Result<(), ApiError> {
-    match (audience, source) {
-        (ProjectionPreviewAudience::Private, _) => {
+    match audience {
+        ProjectionPreviewAudience::Private => {
             ensure_repo_read(state, repo, requester)?;
             if repo.access_for_principal(requester).actor != RepositoryActor::Public {
                 Ok(())
@@ -24,7 +21,7 @@ pub(crate) fn ensure_projection_preview_access(
                 Err(ApiError::forbidden("repo membership required"))
             }
         }
-        (ProjectionPreviewAudience::Public, ProjectionPreviewSource::Live) => {
+        ProjectionPreviewAudience::Public => {
             if repo.access_for_principal(requester).actor != RepositoryActor::Public {
                 ensure_repo_read(state, repo, requester)
             } else {
@@ -32,11 +29,4 @@ pub(crate) fn ensure_projection_preview_access(
             }
         }
     }
-}
-
-pub(crate) fn projection_preview_repo(
-    repo: &Repository,
-    _source: ProjectionPreviewSource,
-) -> Result<Repository, ApiError> {
-    Ok(repo.clone())
 }

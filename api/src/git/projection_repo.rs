@@ -1,10 +1,9 @@
 use crate::{
-    config::DEFAULT_GIT_BRANCH,
     error::ApiError,
     git::{
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
+        command::{git_command_output, git_is_ancestor, git_process_output, truncated_git_stderr},
         content::source_content_bytes_from_repo,
-        upload::{git_command_output, git_process_output_with_timeout, truncated_git_stderr},
     },
     runtime_budgets::RuntimeBudgets,
     state::AppState,
@@ -14,6 +13,8 @@ use scope_domain::{
     projection::{Projection, ProjectionMaterialization},
     repository::RepositoryIncarnation,
 };
+use scope_git::DEFAULT_GIT_BRANCH;
+use scope_git_process::ProcessLimits;
 use sha1::{Digest, Sha1};
 use std::{
     collections::BTreeSet,
@@ -279,13 +280,13 @@ fn copy_and_verify_native_commit(
         if seen_oids.contains(parent_oid) {
             continue;
         }
-        let parent_is_public =
-            git_is_ancestor(target_repo, parent_oid, range_base_oid).map_err(|error| {
-                ApiError::internal_message(format!(
-                    "checking native parent {parent_oid} against public base {range_base_oid}: {}",
-                    error.operator_diagnostic()
-                ))
-            })?;
+        let parent_is_public = git_is_ancestor(
+            target_repo,
+            parent_oid,
+            range_base_oid,
+            &format!("checking native parent {parent_oid} against public base {range_base_oid}"),
+        )
+        .map_err(|error| ApiError::internal_message(error.operator_diagnostic()))?;
         if parent_is_public {
             continue;
         }
@@ -300,7 +301,7 @@ fn copy_and_verify_native_commit(
         revisions.push_str(parent_oid);
         revisions.push('\n');
     }
-    let pack = git_process_output_with_timeout(
+    let pack = git_process_output(
         Command::new("git").arg("--git-dir").arg(source_repo).args([
             "pack-objects",
             "--revs",
@@ -308,7 +309,7 @@ fn copy_and_verify_native_commit(
             "--thin",
         ]),
         Some(revisions.into_bytes()),
-        RuntimeBudgets::default_git_command_timeout(),
+        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
     )?;
     if !pack.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
@@ -316,14 +317,14 @@ fn copy_and_verify_native_commit(
             truncated_git_stderr(&pack.stderr)
         )));
     }
-    let indexed = git_process_output_with_timeout(
+    let indexed = git_process_output(
         Command::new("git").arg("--git-dir").arg(target_repo).args([
             "index-pack",
             "--stdin",
             "--fix-thin",
         ]),
         Some(pack.stdout),
-        RuntimeBudgets::default_git_command_timeout(),
+        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
     )?;
     if !indexed.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
@@ -339,7 +340,12 @@ fn finish_native_range(
     index: &ProjectionIndex,
     range: NativeRangeState,
 ) -> Result<(), ApiError> {
-    if !git_is_ancestor(repo_path, &range.base_oid, &range.head_oid)? {
+    if !git_is_ancestor(
+        repo_path,
+        &range.base_oid,
+        &range.head_oid,
+        "checking native public range ancestry",
+    )? {
         return Err(ApiError::internal_message(format!(
             "native public range {} does not descend from current public main",
             range.logical_commit_id
@@ -370,33 +376,6 @@ fn git_object_field(repo_path: &FsPath, oid: &str, format: &str) -> Result<Strin
     String::from_utf8(output)
         .map_err(ApiError::bad_request)
         .map(|value| value.trim().to_string())
-}
-
-fn git_is_ancestor(
-    repo_path: &FsPath,
-    ancestor_oid: &str,
-    descendant_oid: &str,
-) -> Result<bool, ApiError> {
-    let output = git_process_output_with_timeout(
-        Command::new("git")
-            .arg("--git-dir")
-            .arg(repo_path)
-            .arg("merge-base")
-            .arg("--is-ancestor")
-            .arg(ancestor_oid)
-            .arg(descendant_oid),
-        None,
-        RuntimeBudgets::default_git_command_timeout(),
-    )?;
-    if output.status.success() {
-        return Ok(true);
-    }
-    if output.status.code() == Some(1) {
-        return Ok(false);
-    }
-    Err(ApiError::infrastructure_unavailable(truncated_git_stderr(
-        &output.stderr,
-    )))
 }
 
 pub(crate) async fn projection_bare_repo_for_state(

@@ -1,8 +1,6 @@
-import { HttpError } from '@/api/client'
-import {
-  loadRepoLiveStateForRequest,
-  parseRepoParams,
-} from '@/api/repos'
+import { isNotFoundError } from '@/api/http'
+import { loadRepoLiveStateForRequest } from '@/api/repo-detail'
+import { parseRepoParams } from '@/api/repo-params'
 import { RepoShell } from '@/components/repo-shell'
 import { RepositoryRoutePending } from '@/components/repository-route-pending'
 import { RepositoryHtmlPreviewProvider } from '@/components/repository-html-preview-store'
@@ -31,9 +29,7 @@ const loadRepoLiveState = createServerFn({ method: 'GET' })
     try {
       return { live: await loadRepoLiveStateForRequest(data) }
     } catch (error) {
-      if (error instanceof HttpError && error.status === 404) {
-        throw notFound()
-      }
+      if (isNotFoundError(error)) throw notFound()
       if (isRetryableRepoLoadError(error)) {
         return { unavailable: 'Repository refresh is temporarily unavailable.' }
       }

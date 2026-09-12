@@ -1,11 +1,11 @@
 use crate::{
     auth::scope::principal_for_user_id,
-    config::DEFAULT_GIT_BRANCH,
     error::ApiError,
     git::{
+        command::{run_git, run_git_output},
         import::{
-            PreparedReceivePackUpdate, ReceivePackUpdate, request_merge_update_from_staging_repo,
-            run_git, run_git_output,
+            PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
+            reviewed_update_from_staging_repo,
         },
         projection_repo::verify_projection_materialization,
         request_ref_public_safety::validate_public_request_merge_range,
@@ -34,6 +34,7 @@ use scope_domain::{
     reviewed_updates::content::apply_request_merge_to_repo,
     runs::catalog::RepositoryWorkflowCatalog,
 };
+use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_storage::StagedGitSegment;
 use scope_postgres::db::{MergeRequestContentCommand, RepositoryGitWriteLease};
 
@@ -116,7 +117,8 @@ pub(crate) async fn merge_request(
         &request,
     )
     .await?;
-    let merged_event_id = match random_id("event_request_merged") {
+    let merged_event_id = match crate::persistence_ids::generate_prefixed_id("event_request_merged")
+    {
         Ok(event_id) => event_id,
         Err(error) => {
             cleanup_prepared_merge(state, prepared).await;
@@ -170,19 +172,19 @@ async fn persist_prepared_merge(
         .metadata
         .requests()
         .merge_request_content(
-            &command.owner,
-            &command.repo_name,
-            &prepared.expected_git_frontier,
-            prepared.expected_repo_change_version,
-            &prepared.prepared_request_head_oid,
-            prepared.update.into_reviewed_update(),
-            prepared.landing_file_mutation,
-            prepared.workflow_catalog,
-            prepared.origin,
             MergeRequestContentCommand {
+                owner: command.owner.clone(),
+                name: command.repo_name.clone(),
                 request_id: command.request_id.clone(),
                 actor_user_id: command.actor_user_id.clone(),
                 merged_event_id,
+                expected_git_frontier: prepared.expected_git_frontier,
+                expected_repo_change_version: prepared.expected_repo_change_version,
+                expected_request_head_oid: prepared.prepared_request_head_oid,
+                update: prepared.update.into_reviewed_update(),
+                landing_file_mutation: prepared.landing_file_mutation,
+                workflow_catalog: prepared.workflow_catalog,
+                origin: prepared.origin,
                 now_unix,
             },
             &crate::persistence_ids::generate_persistence_id,
@@ -303,13 +305,14 @@ pub(crate) async fn prepare_request_merge(
             staged_segment,
             write_lease,
             upload_heartbeat: _upload_heartbeat,
-        } = request_merge_update_from_staging_repo(
+        } = reviewed_update_from_staging_repo(
             state,
             owner,
             repo_name,
             &staging_repo,
             actor_user_id,
             repo.repo_config.clone(),
+            ReviewedUpdateMode::RequestMerge,
         )
         .await?;
         let preflight = (|| -> Result<(), ApiError> {
@@ -403,14 +406,6 @@ pub(crate) async fn persist_prepared_merge_for_tests(
     )
     .await
     .map(|mutation| mutation.request)
-}
-
-fn random_id(prefix: &str) -> Result<String, ApiError> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| {
-        ApiError::internal_message(format!("failed to create {prefix} id: {error}"))
-    })?;
-    Ok(format!("{prefix}_{}", hex::encode(bytes)))
 }
 
 fn merge_main_oid(

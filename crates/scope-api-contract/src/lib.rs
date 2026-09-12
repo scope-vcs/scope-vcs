@@ -6,6 +6,7 @@
 pub mod attachments;
 mod error;
 mod git_oid;
+mod projections;
 mod repo_config;
 mod runs;
 mod types;
@@ -22,6 +23,7 @@ pub use cli_output::*;
 pub use dependencies::*;
 pub use error::*;
 pub use git_oid::*;
+pub use projections::*;
 pub use repo_config::*;
 pub use runs::*;
 pub use types::*;

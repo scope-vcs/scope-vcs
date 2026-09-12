@@ -2,12 +2,10 @@ use crate::api::ApiSession;
 use crate::{
     api::{
         AuthenticatedSession, BrowserLoginExchangeRequest, BrowserLoginStartRequest,
-        BrowserLoginStartResponse, CLI_BROWSER_LOGIN_PATH, CLI_DEVICE_LOGIN_PATH,
-        CLI_EXCHANGE_GRANTS_EXCHANGE_PATH, CliExchangeGrantExchangeRequest,
-        CliSessionTokenResponse, DeviceLoginPollResponse, DeviceLoginStartResponse,
-        DeviceLoginStatus, api_url, cli_browser_login_exchange_path, cli_device_login_poll_path,
-        decode_json_response, display_user, http_client, revoke_cli_session,
-        validate_session_token,
+        BrowserLoginStartResponse, CliExchangeGrantExchangeRequest, CliSessionTokenResponse,
+        DeviceLoginPollResponse, DeviceLoginStartResponse, DeviceLoginStatus, api_url,
+        cli_browser_login_exchange_path, cli_device_login_poll_path, decode_json_response,
+        display_user, http_client, revoke_cli_session, routes, validate_session_token,
     },
     auth::{
         cached_cli_session, delete_stored_session_token, read_stored_session_token,
@@ -31,24 +29,11 @@ pub fn login(
     exchange: Option<String>,
     exchange_file: Option<&Path>,
 ) -> anyhow::Result<()> {
-    if headless && (exchange.is_some() || exchange_file.is_some()) {
-        return Err(CliError::usage(
-            "--headless and either --exchange or --exchange-file cannot be used together",
-        )
-        .into());
-    }
-
     let api_url = api_url();
     let client = http_client()?;
-    let exchange_token = match (exchange, exchange_file) {
-        (Some(token), None) => Some(token),
-        (None, Some(path)) => Some(read_private_exchange_token(path)?),
-        (None, None) => None,
-        (Some(_), Some(_)) => {
-            return Err(
-                CliError::usage("--exchange and --exchange-file cannot be used together").into(),
-            );
-        }
+    let exchange_token = match exchange {
+        Some(token) => Some(token),
+        None => exchange_file.map(read_private_exchange_token).transpose()?,
     };
     if let Some(exchange_token) = exchange_token {
         let session = exchange_login(&client, &api_url, &exchange_token)?;
@@ -61,9 +46,7 @@ pub fn login(
     }
 
     let session = if headless {
-        session_from_cache_or_login(&client, &api_url, |client, api_url| {
-            device_login(client, api_url, false)
-        })?
+        session_from_cache_or_login(&client, &api_url, device_login)?
     } else {
         session_from_cache_or_browser(&client, &api_url)?
     };
@@ -163,7 +146,7 @@ fn local_browser_login(client: &Client, api_url: &str) -> anyhow::Result<Authent
         .port();
     let callback_url = format!("http://127.0.0.1:{port}/scope-cli-callback");
     let response = client
-        .post(format!("{api_url}{CLI_BROWSER_LOGIN_PATH}"))
+        .post(format!("{api_url}{}", routes::CLI_BROWSER_LOGIN))
         .json(&BrowserLoginStartRequest { callback_url })
         .send()
         .context("start browser login")?;
@@ -205,7 +188,7 @@ fn exchange_login(
     exchange_token: &str,
 ) -> anyhow::Result<AuthenticatedSession> {
     let response = client
-        .post(format!("{api_url}{CLI_EXCHANGE_GRANTS_EXCHANGE_PATH}"))
+        .post(format!("{api_url}{}", routes::CLI_EXCHANGE_GRANTS_EXCHANGE))
         .json(&CliExchangeGrantExchangeRequest {
             exchange_token: exchange_token.to_string(),
         })
@@ -221,13 +204,9 @@ fn exchange_login(
     })
 }
 
-fn device_login(
-    client: &Client,
-    api_url: &str,
-    open_browser: bool,
-) -> anyhow::Result<AuthenticatedSession> {
+fn device_login(client: &Client, api_url: &str) -> anyhow::Result<AuthenticatedSession> {
     let response = client
-        .post(format!("{api_url}{CLI_DEVICE_LOGIN_PATH}"))
+        .post(format!("{api_url}{}", routes::CLI_DEVICE_LOGIN))
         .send()
         .context("start browser login")?;
     let start: DeviceLoginStartResponse = decode_json_response(response, "start browser login")?;
@@ -235,9 +214,6 @@ fn device_login(
     eprintln!("Open this URL to sign in:");
     eprintln!("{}", start.verification_url);
     eprintln!("Code: {}", format_user_code(&start.user_code));
-    if open_browser && let Err(error) = webbrowser::open(&start.verification_url) {
-        eprintln!("Could not open browser automatically: {error}");
-    }
 
     loop {
         if unix_now() >= start.expires_at_unix {
@@ -417,10 +393,10 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn exchange_token_file_must_be_private() {
-        use crate::test_support::TestDir;
+        use crate::test_support::TempDir;
         use std::os::unix::fs::PermissionsExt;
 
-        let temp = TestDir::new("exchange-token-file");
+        let temp = TempDir::new("exchange-token-file");
         let path = temp.path().join("exchange-token");
         fs::write(&path, "scope_otc_test\n").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();

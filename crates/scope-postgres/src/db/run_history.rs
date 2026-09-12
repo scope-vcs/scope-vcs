@@ -1,7 +1,10 @@
-use super::{RunStore, entities, run_operations::run_jobs_by_ids};
+use super::{
+    RunStore, entities,
+    run_operations::{require_run_jobs, run_jobs_by_ids},
+};
 use crate::error::PostgresError;
 use scope_domain::runs::{job::RunJob, run::Run};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, sea_query::Expr};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunHistoryCursor {
@@ -11,6 +14,7 @@ pub struct RunHistoryCursor {
 pub struct RunHistoryPageQuery<'a> {
     pub repository_id: &'a str,
     pub workflow_path: Option<&'a str>,
+    pub git_oid: Option<&'a str>,
     pub after: Option<&'a RunHistoryCursor>,
     pub limit: u64,
 }
@@ -33,6 +37,16 @@ impl RunStore {
         if let Some(workflow_path) = query.workflow_path {
             select = select.filter(entities::run::Column::WorkflowPath.eq(workflow_path));
         }
+        if let Some(git_oid) = query.git_oid {
+            select = select.filter(
+                Expr::cust(
+                    "CASE source->>'kind' \
+                     WHEN 'ephemeral-git-bundle' THEN source#>>'{object,git_oid}' \
+                     WHEN 'accepted-git-head' THEN source#>>'{head,head_oid}' END",
+                )
+                .eq(git_oid),
+            );
+        }
         if let Some(after) = query.after {
             let creation_sequence = i64::try_from(after.creation_sequence).map_err(|_| {
                 PostgresError::invalid_input("run history cursor sequence exceeds PostgreSQL range")
@@ -54,12 +68,7 @@ impl RunStore {
                     PostgresError::internal_message("run creation sequence is negative")
                 })?;
                 let run = model.try_into_domain()?;
-                let jobs = jobs
-                    .remove(&run.id)
-                    .filter(|jobs| !jobs.is_empty())
-                    .ok_or_else(|| {
-                        PostgresError::internal_message("run is missing its persisted jobs")
-                    })?;
+                let jobs = require_run_jobs(&mut jobs, &run.id)?;
                 Ok(RepositoryRun {
                     jobs,
                     run,

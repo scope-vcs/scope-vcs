@@ -6,21 +6,6 @@ use scope_domain::runs::{
     step::StepConclusion,
 };
 
-const INSPECTION_WORKFLOW: &str = r#"
-name: Inspection
-on:
-  manual: true
-caches: []
-container:
-  image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-timeout: 5m
-jobs:
-  checks:
-    steps:
-      - name: Test
-        run: printf 'inspect run\n'
-"#;
-
 struct InspectableRun {
     state: AppState,
     run_id: String,
@@ -29,24 +14,17 @@ struct InspectableRun {
     second_log_position: u64,
 }
 
-async fn inspectable_run(logs_truncated: bool) -> InspectableRun {
-    inspectable_run_with_long_logs(logs_truncated, false).await
-}
-
-async fn inspectable_run_with_long_logs(logs_truncated: bool, long: bool) -> InspectableRun {
+async fn active_run(log_chunks: usize) -> InspectableRun {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     let revision = scope_run_config::parse_workflow(
         "/.scope/runs/inspection.yml",
-        INSPECTION_WORKFLOW.as_bytes(),
+        workflow_named("Inspection").as_bytes(),
     )
     .unwrap()
     .into_revision(TEST_REPO_ID.to_string())
     .unwrap();
-    let run_id = format!(
-        "run_inspection_{}",
-        if logs_truncated { "cut" } else { "full" }
-    );
+    let run_id = "run_inspection".to_string();
     let mut source = scope_object_store::content_object_for_bytes(
         ContentObjectKind::GitBundle,
         b"inspection bundle",
@@ -125,61 +103,18 @@ async fn inspectable_run_with_long_logs(logs_truncated: bool, long: bool) -> Ins
         )
         .await
         .unwrap();
-    if long {
-        for sequence in 3..=18 {
-            state
-                .metadata
-                .runs()
-                .append_attempt_log(
-                    RunLogChunk::new(&attempt_id, 0, sequence, "x".repeat(64 * 1024), 6).unwrap(),
-                    &attempt_token_hash,
-                    6,
-                )
-                .await
-                .unwrap();
-        }
-        let retry = state
+    for sequence in 3..=log_chunks as u64 {
+        state
             .metadata
             .runs()
             .append_attempt_log(
-                RunLogChunk::new(&attempt_id, 0, 1, "first\n", 6).unwrap(),
+                RunLogChunk::new(&attempt_id, 0, sequence, "x".repeat(64 * 1024), 6).unwrap(),
                 &attempt_token_hash,
                 6,
             )
             .await
             .unwrap();
-        assert!(!retry.appended);
-        assert_eq!(retry.log.position, first.log.position);
-        for (sequence, text) in [(1, "different"), (20, "gap")] {
-            let error = state
-                .metadata
-                .runs()
-                .append_attempt_log(
-                    RunLogChunk::new(&attempt_id, 0, sequence, text, 6).unwrap(),
-                    &attempt_token_hash,
-                    6,
-                )
-                .await
-                .unwrap_err();
-            assert_eq!(
-                error.kind,
-                scope_postgres::error::PostgresErrorKind::Conflict
-            );
-        }
     }
-    state
-        .metadata
-        .runs()
-        .complete_attempt_step(
-            &attempt_id,
-            &attempt_token_hash,
-            0,
-            StepConclusion::Succeeded,
-            logs_truncated,
-            7,
-        )
-        .await
-        .unwrap();
 
     InspectableRun {
         state,
@@ -190,126 +125,9 @@ async fn inspectable_run_with_long_logs(logs_truncated: bool, long: bool) -> Ins
     }
 }
 
-async fn get_run(state: AppState, owner: &str, repo: &str, run_id: &str, auth: String) -> Response {
-    api_request(
-        router(state),
-        "GET",
-        &scope_api_contract::routes::repo_run(owner, repo, run_id),
-        Some(&auth),
-        None,
-    )
-    .await
-}
-
-#[tokio::test]
-async fn run_inspection_allows_the_repository_owner() {
-    let fixture = inspectable_run(false).await;
-    let response = get_run(
-        fixture.state,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &fixture.run_id,
-        bearer_header(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn run_inspection_allows_a_repository_member() {
-    let fixture = inspectable_run(false).await;
-    let member_subject = "user_run_member";
-    let member_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", member_subject);
-    fixture
-        .state
-        .metadata
-        .auth()
-        .insert_user_for_tests(test_user(
-            member_id.clone(),
-            "run-member",
-            "run-member@example.com",
-        ))
-        .await
-        .unwrap();
-    fixture
-        .state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members.push(test_repository_member(
-                TEST_REPO_ID,
-                member_id,
-                RepositoryMemberPermissions::default(),
-            ));
-        })
-        .await
-        .unwrap();
-
-    let response = get_run(
-        fixture.state,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &fixture.run_id,
-        bearer_header_for(member_subject, "run-member@example.com"),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn run_inspection_denies_a_public_actor() {
-    let fixture = inspectable_run(false).await;
-    let public_subject = "user_run_public";
-    let public_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", public_subject);
-    fixture
-        .state
-        .metadata
-        .auth()
-        .insert_user_for_tests(test_user(public_id, "run-public", "run-public@example.com"))
-        .await
-        .unwrap();
-
-    let response = get_run(
-        fixture.state,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &fixture.run_id,
-        bearer_header_for(public_subject, "run-public@example.com"),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-}
-
-#[tokio::test]
-async fn run_inspection_hides_a_run_from_another_repository() {
-    let fixture = inspectable_run(false).await;
-    let mut other = test_repo(&test_owner_id());
-    other.record.id = "owner/other".to_string();
-    other.record.incarnation_id = "repoi_owner_other".to_string();
-    other.record.name = "other".to_string();
-    other.graph.repo_id = other.record.id.clone();
-    fixture
-        .state
-        .metadata
-        .repositories()
-        .replace_repository_for_tests(other)
-        .await
-        .unwrap();
-
-    let response = get_run(
-        fixture.state,
-        TEST_REPO_OWNER,
-        "other",
-        &fixture.run_id,
-        bearer_header(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
 #[tokio::test]
 async fn run_detail_reconstructs_jobs_attempts_and_steps() {
-    let fixture = inspectable_run(false).await;
+    let fixture = inspectable_run(false, 2).await;
     let response = router(fixture.state)
         .oneshot(
             Request::builder()
@@ -333,13 +151,13 @@ async fn run_detail_reconstructs_jobs_attempts_and_steps() {
     assert_eq!(body["jobs"][0]["attempts"][0]["steps"][0]["name"], "Test");
     assert_eq!(
         body["jobs"][0]["attempts"][0]["steps"][0]["command"],
-        "printf 'inspect run\\n'"
+        "printf 'hello from runner\\n'"
     );
 }
 
 #[tokio::test]
 async fn step_log_inspection_applies_the_cursor_and_preserves_truncation() {
-    let fixture = inspectable_run(true).await;
+    let fixture = inspectable_run(true, 2).await;
     let response = router(fixture.state)
         .oneshot(
             Request::builder()
@@ -370,7 +188,7 @@ async fn step_log_inspection_applies_the_cursor_and_preserves_truncation() {
 
 #[tokio::test]
 async fn long_step_logs_open_at_the_tail_and_page_back_without_gaps() {
-    let fixture = inspectable_run_with_long_logs(false, true).await;
+    let fixture = inspectable_run(false, 18).await;
     let path = scope_api_contract::routes::repo_run_step_logs(
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
@@ -424,7 +242,7 @@ async fn long_step_logs_open_at_the_tail_and_page_back_without_gaps() {
 
 #[tokio::test]
 async fn step_log_inspection_rejects_conflicting_cursors() {
-    let fixture = inspectable_run(false).await;
+    let fixture = inspectable_run(false, 2).await;
     let path = scope_api_contract::routes::repo_run_step_logs(
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
@@ -443,4 +261,154 @@ async fn step_log_inspection_rejects_conflicting_cursors() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+async fn inspectable_run(logs_truncated: bool, log_chunks: usize) -> InspectableRun {
+    let fixture = active_run(log_chunks).await;
+    let attempt_token_hash = "d".repeat(64);
+    fixture
+        .state
+        .metadata
+        .runs()
+        .complete_attempt_step(
+            &fixture.attempt_id,
+            &attempt_token_hash,
+            0,
+            StepConclusion::Succeeded,
+            logs_truncated,
+            7,
+        )
+        .await
+        .unwrap();
+    fixture
+}
+
+#[tokio::test]
+async fn append_attempt_log_is_idempotent_and_rejects_sequence_gaps() {
+    let fixture = active_run(2).await;
+    let attempt_token_hash = "d".repeat(64);
+    let retry = fixture
+        .state
+        .metadata
+        .runs()
+        .append_attempt_log(
+            RunLogChunk::new(&fixture.attempt_id, 0, 1, "first\n", 6).unwrap(),
+            &attempt_token_hash,
+            6,
+        )
+        .await
+        .unwrap();
+    assert!(!retry.appended);
+    assert_eq!(retry.log.position, fixture.first_log_position);
+    for (sequence, text) in [(1, "different"), (4, "gap")] {
+        let error = fixture
+            .state
+            .metadata
+            .runs()
+            .append_attempt_log(
+                RunLogChunk::new(&fixture.attempt_id, 0, sequence, text, 6).unwrap(),
+                &attempt_token_hash,
+                6,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.kind,
+            scope_postgres::error::PostgresErrorKind::Conflict
+        );
+    }
+}
+
+#[tokio::test]
+async fn run_inspection_enforces_repository_access() {
+    let fixture = inspectable_run(false, 2).await;
+    let response = api_request(
+        router(fixture.state.clone()),
+        "GET",
+        &scope_api_contract::routes::repo_run(TEST_REPO_OWNER, TEST_REPO_NAME, &fixture.run_id),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let member_subject = "user_run_member";
+    let member_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", member_subject);
+    fixture
+        .state
+        .metadata
+        .auth()
+        .insert_user_for_tests(test_user(
+            member_id.clone(),
+            "run-member",
+            "run-member@example.com",
+        ))
+        .await
+        .unwrap();
+    fixture
+        .state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            repo.members.push(test_repository_member(
+                TEST_REPO_ID,
+                member_id,
+                RepositoryMemberPermissions::default(),
+            ));
+        })
+        .await
+        .unwrap();
+
+    let response = api_request(
+        router(fixture.state.clone()),
+        "GET",
+        &scope_api_contract::routes::repo_run(TEST_REPO_OWNER, TEST_REPO_NAME, &fixture.run_id),
+        Some(&bearer_header_for(member_subject, "run-member@example.com")),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let public_subject = "user_run_public";
+    let public_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", public_subject);
+    fixture
+        .state
+        .metadata
+        .auth()
+        .insert_user_for_tests(test_user(public_id, "run-public", "run-public@example.com"))
+        .await
+        .unwrap();
+
+    let response = api_request(
+        router(fixture.state.clone()),
+        "GET",
+        &scope_api_contract::routes::repo_run(TEST_REPO_OWNER, TEST_REPO_NAME, &fixture.run_id),
+        Some(&bearer_header_for(public_subject, "run-public@example.com")),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let mut other = test_repo(&test_owner_id());
+    other.record.id = "owner/other".to_string();
+    other.record.incarnation_id = "repoi_owner_other".to_string();
+    other.record.name = "other".to_string();
+    other.graph.repo_id = other.record.id.clone();
+    fixture
+        .state
+        .metadata
+        .repositories()
+        .replace_repository_for_tests(other)
+        .await
+        .unwrap();
+
+    let response = api_request(
+        router(fixture.state.clone()),
+        "GET",
+        &scope_api_contract::routes::repo_run(TEST_REPO_OWNER, "other", &fixture.run_id),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

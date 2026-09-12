@@ -236,25 +236,3 @@ async fn object_deletions_drain_batches_without_shortening_reference_grace() {
         1
     );
 }
-
-#[tokio::test]
-#[ignore = "manual sustained cache expiry experiment"]
-async fn measure_expired_upload_backlog() {
-    let fixture = Fixture::new().await;
-    for round in 0..3 {
-        for item in 0..200 {
-            fixture
-                .upload(round * 200 + item + 1, fixture.now - 3600, false)
-                .await;
-        }
-        let started = std::time::Instant::now();
-        reconcile(&fixture.state).await.unwrap();
-        eprintln!(
-            "GC round {round}: created {}, deleted {}, remaining {}, elapsed {:?}",
-            (round + 1) * 200,
-            fixture.requests.load(Ordering::SeqCst),
-            (round + 1) * 200 - fixture.requests.load(Ordering::SeqCst),
-            started.elapsed()
-        );
-    }
-}

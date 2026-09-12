@@ -2,6 +2,11 @@ import type {
   RepoChangeEvent,
   RunChangeKind,
 } from '@/api/types.generated'
+import {
+  browserScheduler,
+  createRefreshCoordinator,
+  type RefreshScheduler,
+} from '../../lib/refresh-coordinator'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   useRepoChangeSubscription,
@@ -9,7 +14,6 @@ import {
 } from '../repo-detail/repo-layout-context'
 
 const RECONCILIATION_INTERVAL_MS = 30_000
-const REFRESH_RETRY_DELAY_MS = 2_000
 const REFRESH_TIMEOUT_MS = 15_000
 
 export type RunRefreshReason = RunChangeKind | 'Recovery'
@@ -17,8 +21,6 @@ export type RunRefresh = (
   reasons: ReadonlySet<RunRefreshReason>,
   signal: AbortSignal,
 ) => Promise<unknown>
-
-type Scheduler = (callback: () => void, delayMs: number) => () => void
 
 export type RunRefreshCoordinator = {
   onEvent: (event: RepoChangeEvent) => void
@@ -100,73 +102,22 @@ export function createRunRefreshCoordinator({
   refresh: RunRefresh
   repoId: string
   runId?: string
-  schedule: Scheduler
+  schedule: RefreshScheduler
   timeoutMs?: number
 }): RunRefreshCoordinator {
   const accepted = new Set(acceptedChanges)
-  let activeController: AbortController | null = null
-  let cancelRetry: (() => void) | null = null
-  let pending = new Set<RunRefreshReason>()
-  let refreshInFlight = false
-  let stopped = false
-
-  const flush = async () => {
-    if (stopped || refreshInFlight || pending.size === 0) return
-    cancelRetry?.()
-    cancelRetry = null
-    const reasons = pending
-    pending = new Set()
-    refreshInFlight = true
-    const controller = new AbortController()
-    activeController = controller
-    const cancelTimeout = schedule(() => controller.abort(), timeoutMs)
-    const aborted = new Promise<never>((_resolve, reject) => {
-      controller.signal.addEventListener(
-        'abort',
-        () => reject(new Error('Run refresh timed out.')),
-        { once: true },
-      )
-    })
-    let failed = false
-    try {
-      await Promise.race([
-        refresh(reasons, controller.signal),
-        aborted,
-      ])
-    } catch {
-      failed = true
-      if (!stopped) {
-        for (const reason of reasons) pending.add(reason)
-      }
-    } finally {
-      cancelTimeout()
-      if (activeController === controller) activeController = null
-      refreshInFlight = false
-    }
-    if (stopped || pending.size === 0) return
-    if (failed) {
-      cancelRetry = schedule(() => {
-        cancelRetry = null
-        void flush()
-      }, REFRESH_RETRY_DELAY_MS)
-    } else {
-      void flush()
-    }
-  }
-
-  const requestRefresh = (reason: RunRefreshReason = 'Recovery') => {
-    if (stopped) return
-    pending.add(reason)
-    if (cancelRetry) {
-      cancelRetry()
-      cancelRetry = null
-    }
-    void flush()
-  }
+  const coordinator = createRefreshCoordinator<ReadonlySet<RunRefreshReason>>({
+    merge: (pending, next) => new Set([...pending, ...next]),
+    refresh,
+    schedule,
+    timeoutMs,
+  })
+  const requestRefresh = (reason: RunRefreshReason = 'Recovery') =>
+    coordinator.request(new Set([reason]))
 
   return {
     onEvent(event) {
-      if (stopped || event.repo_id !== repoId) return
+      if (event.repo_id !== repoId) return
       if (event.kind === 'Connected' || event.kind === 'Lagged') {
         requestRefresh('Recovery')
         return
@@ -182,18 +133,6 @@ export function createRunRefreshCoordinator({
       ) requestRefresh(changed.change)
     },
     requestRefresh,
-    stop() {
-      stopped = true
-      pending.clear()
-      cancelRetry?.()
-      cancelRetry = null
-      activeController?.abort()
-      activeController = null
-    },
+    stop: coordinator.stop,
   }
-}
-
-function browserScheduler(callback: () => void, delayMs: number) {
-  const timeout = window.setTimeout(callback, delayMs)
-  return () => window.clearTimeout(timeout)
 }

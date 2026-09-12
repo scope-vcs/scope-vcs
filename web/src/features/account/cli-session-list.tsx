@@ -1,21 +1,20 @@
-import type { CliSession } from '@/api/types'
 import { DestructiveActionDialog } from '@/components/destructive-action-dialog'
+import { AbsoluteTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
 import { LoaderCircle, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import type { CliSessionResponse } from '@/api/types.generated'
 
 export function CliSessionList({
-  formatTime,
   pending,
   revokeSession,
   sessions,
 }: {
-  formatTime: (value: number) => string
   pending: string | null
   revokeSession: (sessionId: string) => void
-  sessions: CliSession[]
+  sessions: CliSessionResponse[]
 }) {
-  const [confirmSession, setConfirmSession] = useState<CliSession | null>(null)
+  const [confirmSession, setConfirmSession] = useState<CliSessionResponse | null>(null)
 
   if (sessions.length === 0) {
     return <p className="text-sm leading-5 text-muted-foreground">No active CLI sessions.</p>
@@ -34,11 +33,11 @@ export function CliSessionList({
                 {session.label}
               </div>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs leading-4 text-muted-foreground">
-                <span>Created {formatTime(session.created_at_unix)}</span>
+                <AbsoluteTimestamp prefix="Created " value={session.created_at_unix} />
                 {session.last_used_at_unix ? (
-                  <span>Used {formatTime(session.last_used_at_unix)}</span>
+                  <AbsoluteTimestamp prefix="Used " value={session.last_used_at_unix} />
                 ) : null}
-                <span>Expires {formatTime(session.expires_at_unix)}</span>
+                <AbsoluteTimestamp prefix="Expires " value={session.expires_at_unix} />
               </div>
             </div>
             <Button

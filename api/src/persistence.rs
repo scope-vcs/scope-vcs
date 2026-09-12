@@ -1,7 +1,7 @@
 use crate::error::ApiError;
 use std::{fs, path::Path};
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 pub(crate) fn test_data_dir() -> std::path::PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -50,8 +50,5 @@ pub(crate) fn ensure_private_dir(path: &Path) -> Result<(), ApiError> {
 }
 
 pub(crate) fn unix_now() -> Result<u64, ApiError> {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .map_err(ApiError::internal)
+    scope_service_runtime::unix_now().map_err(ApiError::internal)
 }

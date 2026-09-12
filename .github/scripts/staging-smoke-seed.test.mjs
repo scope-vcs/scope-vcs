@@ -72,17 +72,15 @@ writeFileSync(e.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH, 'scope_otc_test\\n', { mod
   return { root, env, manifestPath };
 }
 
-for (const [mode, args] of [['seed', []], ['grant', ['--grant-only']]]) {
-  test(`${mode} uses the reviewed non-production identity and keeps the token private`, (t) => {
-    const { env } = fixture(t);
-    const result = spawnSync('bash', [seedScript, mode], { env, encoding: 'utf8' });
-    assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(JSON.parse(readFileSync(env.SEED_ARGS_PATH)), args);
-    assert.equal(statSync(env.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH).mode & 0o777, 0o600);
-    assert.doesNotMatch(result.stdout + result.stderr, /scope_otc_test|postgresql:/);
-    assert.deepEqual(readFileSync(env.CALLS_PATH, 'utf8').trim().split('\n'), ['status', 'service', 'variable', 'run']);
-  });
-}
+test('grant uses the reviewed non-production identity and keeps the token private', (t) => {
+  const { env } = fixture(t);
+  const result = spawnSync('bash', [seedScript], { env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(env.SEED_ARGS_PATH)), ['--grant-only']);
+  assert.equal(statSync(env.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH).mode & 0o777, 0o600);
+  assert.doesNotMatch(result.stdout + result.stderr, /scope_otc_test|postgresql:/);
+  assert.deepEqual(readFileSync(env.CALLS_PATH, 'utf8').trim().split('\n'), ['status', 'service', 'variable', 'run']);
+});
 
 test('production aliases and account tokens cannot issue smoke credentials', (t) => {
   for (const invalid of ['production', 'account-token']) {
@@ -92,7 +90,7 @@ test('production aliases and account tokens cannot issue smoke credentials', (t)
       changed.environments.staging.environmentId = changed.environments.production.environmentId;
       writeFileSync(manifestPath, JSON.stringify(changed));
     } else env.RAILWAY_API_TOKEN = 'test-account-token';
-    const result = spawnSync('bash', [seedScript, 'grant'], { env, encoding: 'utf8' });
+    const result = spawnSync('bash', [seedScript], { env, encoding: 'utf8' });
     assert.notEqual(result.status, 0);
     assert.equal(existsSync(env.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH), false);
     if (existsSync(env.CALLS_PATH)) assert.doesNotMatch(readFileSync(env.CALLS_PATH, 'utf8'), /variable|run/);
@@ -138,5 +136,5 @@ test('imported releases extract smoke tools and initialize private credentials',
   for (const name of ['Build smoke binaries', 'Upload staging commands', 'Extract candidate commands', 'Initialize smoke credentials directory']) {
     assert.doesNotMatch(workflowStep(name), /\n        if:/);
   }
-  assert.match(workflowStep('Issue smoke login without resetting existing data'), /staging-smoke-seed\.sh grant/);
+  assert.match(workflowStep('Issue smoke login without resetting existing data'), /staging-smoke-seed\.sh\n/);
 });

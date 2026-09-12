@@ -17,20 +17,7 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
     let bare = clone_test_repo(&source, "landing-file-direct-read-bare", true);
     apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
 
-    let rebuilt = state
-        .metadata
-        .jobs()
-        .run_ready_outbox_jobs(
-            "landing-file-test",
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await
-        .unwrap();
+    let rebuilt = drain_outbox(&state, "landing-file-test").await;
     assert_eq!(rebuilt.failed, 0);
 
     let path = ScopePath::parse("/README.html").unwrap();
@@ -45,14 +32,6 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
         captured.landing_file.unwrap().content_bytes,
         readme.as_bytes()
     );
-    state
-        .metadata
-        .repositories()
-        .delete_repository_landing_file_for_tests(TEST_REPO_ID)
-        .await
-        .unwrap();
-    assert_eq!(state.backfill_repository_landing_files().await.unwrap(), 1);
-    assert_eq!(state.backfill_repository_landing_files().await.unwrap(), 0);
 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
@@ -149,7 +128,7 @@ async fn landing_snapshot_failure_rolls_back_the_repository_transaction() {
     assert_eq!(after.git_pack_spans, before.git_pack_spans);
     assert!(
         !after
-            .live_tree()
+            .live_files
             .contains_key(&ScopePath::parse("/notes.md").unwrap())
     );
     assert_eq!(

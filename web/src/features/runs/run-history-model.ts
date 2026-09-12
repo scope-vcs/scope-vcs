@@ -1,8 +1,8 @@
-import type { RepoRunHistoryPage } from '@/api/types'
+import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 
 export async function reloadRunHistoryPages(
   pageCount: number,
-  loadPage: (after?: string) => Promise<RepoRunHistoryPage | null>,
+  loadPage: (after?: string) => Promise<RepositoryRunHistoryPageResponse | null>,
 ) {
   let refreshed = await loadPage()
   if (!refreshed) return null
@@ -25,8 +25,8 @@ export async function reloadRunHistoryPages(
 }
 
 export function mergeRunHistory(
-  first: RepoRunHistoryPage['runs'],
-  second: RepoRunHistoryPage['runs'],
+  first: RepositoryRunHistoryPageResponse['runs'],
+  second: RepositoryRunHistoryPageResponse['runs'],
 ) {
   const seen = new Set(first.map((run) => run.id))
   return [...first, ...second.filter((run) => !seen.has(run.id))]

@@ -3,7 +3,6 @@ import { test } from 'node:test'
 import {
   ancestorFolderKeys,
   buildFileSystemTree,
-  displayPath,
   folderCollapseKeys,
   folderVisibility,
   normalizeFilePath,
@@ -28,7 +27,7 @@ test('file tree normalizes, nests, sorts, and summarizes paths', () => {
   assert.deepEqual(src.children.map(({ type, name }) => [type, name]), [
     ['folder', 'components'], ['file', 'zeta.ts'],
   ])
-  assert.deepEqual(src.files.map(({ path }) => displayPath(path)), [
+  assert.deepEqual(src.files.map(({ path }) => normalizeFilePath(path)), [
     'src/components/Alert.tsx', 'src/components/Button.tsx', 'src/zeta.ts',
   ])
   assert.deepEqual(folderCollapseKeys(tree), [

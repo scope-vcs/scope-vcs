@@ -3,7 +3,7 @@ use crate::error::PostgresError;
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use std::{sync::Arc, time::Duration};
 
-const POSTGRES_REPO_CHANGE_CHANNEL: &str = "scope_repo_changes";
+pub(crate) const POSTGRES_REPO_CHANGE_CHANNEL: &str = "scope_repo_changes";
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 type PayloadHandler = Arc<dyn Fn(String) + Send + Sync>;
 
@@ -45,14 +45,14 @@ impl RepositoryStore {
     }
 
     pub async fn notify_repo_change(&self, payload: &str) -> Result<(), PostgresError> {
-        let db = Arc::clone(&self.db);
-        db.execute(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            format!("SELECT pg_notify('{POSTGRES_REPO_CHANGE_CHANNEL}', $1)"),
-            [payload.into()],
-        ))
-        .await
-        .map_err(PostgresError::internal)?;
+        self.db
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                format!("SELECT pg_notify('{POSTGRES_REPO_CHANGE_CHANNEL}', $1)"),
+                [payload.into()],
+            ))
+            .await
+            .map_err(PostgresError::internal)?;
         Ok(())
     }
 }

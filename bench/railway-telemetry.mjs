@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { positiveInteger, required } from './env.mjs';
 import { percentile, round } from './metrics.mjs';
 
 const PROCESS_FIELDS = [
@@ -191,7 +192,6 @@ export function railwayMetricArgs(service, environment, since, until = null) {
 function railway(args) {
   return command('railway', args, {
     ...process.env,
-    RAILWAY_CALLER: 'skill:use-railway@1.3.6',
     RAILWAY_AGENT_SESSION: process.env.RAILWAY_AGENT_SESSION || 'railway-scope-stress-collector',
   });
 }
@@ -541,14 +541,3 @@ function telemetryMarkdown(report) {
   return `# Railway Git storage telemetry\n\nGenerated: ${report.generatedAt}\n\nRun label: ${report.runLabel}\n\nEnvironment: ${report.environment}\n\n## Git segment phases\n\n| Service | Kind/phase | Count | Failures | Duration p95 us | Blocked p95 us | Bytes |\n|---|---|---:|---:|---:|---:|---:|\n${segmentRows}\n\n## Git segment pressure and cleanup\n\n| Service | Peak active ingests | Peak buffered bytes | Minimum disk free bytes | Uploading last | Ready last | Published last | Peak orphans |\n|---|---:|---:|---:|---:|---:|---:|---:|\n${segmentPressureRows}\n\n## Git materialization outcomes\n\n| Service | Cache/path | Count | Duration p95 ms |\n|---|---|---:|---:|\n${materializationRows}\n\n## Git materialization phases\n\n| Service | Operation | Count | Failures | Duration p95 ms | Summed service ms | Bytes |\n|---|---|---:|---:|---:|---:|---:|\n${gitOperationRows}\n\n## Compaction scheduler\n\n| Service | Count | Outcomes | Queue delay p95 ms | Max attempts | Total p95 ms |\n|---|---:|---|---:|---:|---:|\n${compactionRows}\n\n## Capacity rejections\n\n| Service | Operation | Count |\n|---|---|---:|\n${rejectionRows}\n\n## Runtime pressure\n\n| Service | Peak CPU cores | Peak RSS MiB | Peak cgroup PIDs | Peak open FDs | Peak zombies |\n|---|---:|---:|---:|---:|---:|\n${pressureRows}\n\n## Push persistence\n\n| Service | Protocol | Count | Lock wait p95 us | Body p95 us | Commit p95 us | Total p95 us |\n|---|---|---:|---:|---:|---:|---:|\n${persistenceRows}\n\n## Object storage\n\n| Service | Operation | Count | Failures | Latency p95 us | Bytes | Service-time MiB/s |\n|---|---|---:|---:|---:|---:|---:|\n${objectRows}\n`;
 }
 
-function required(name) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
-
-function positiveInteger(name, fallback) {
-  const value = Number.parseInt(process.env[name] || String(fallback), 10);
-  if (!Number.isInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
-  return value;
-}

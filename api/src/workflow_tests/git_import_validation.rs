@@ -119,13 +119,14 @@ async fn receive_pack_rejects_nested_windows_device_path_before_durable_side_eff
     )
     .unwrap();
 
-    let error = receive_pack_update_from_staging_repo(
+    let error = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &repo,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap_err();
@@ -160,13 +161,14 @@ async fn receive_pack_rejects_windows_device_path_removed_before_the_new_head() 
     run_git(Some(&repo), &["rm", "CON.txt"], "remove reserved path").unwrap();
     commit_all(&repo, "remove reserved path");
 
-    let error = receive_pack_update_from_staging_repo(
+    let error = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &repo,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap_err();
@@ -236,15 +238,6 @@ fn oversized_binary_push_names_path_and_limit() {
     );
 }
 
-#[test]
-fn pushed_tree_does_not_cap_total_repository_bytes() {
-    let repo = temp_git_repo("large-repository-test");
-    add_shared_large_files(&repo);
-    commit_all(&repo, "large repository");
-
-    validate_pushed_tree(&repo, "HEAD").unwrap();
-}
-
 #[tokio::test]
 async fn pushed_delta_does_not_cap_total_changed_bytes() {
     let state = test_state_with_repo();
@@ -260,13 +253,14 @@ async fn pushed_delta_does_not_cap_total_changed_bytes() {
     )
     .unwrap();
 
-    let update = receive_pack_update_from_staging_repo(
+    let update = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &staging_repo,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap();
@@ -291,12 +285,6 @@ async fn pushed_delta_does_not_cap_total_changed_bytes() {
 #[test]
 fn pushed_tree_rejects_paths_scope_would_normalize_or_git_cannot_serve() {
     validate_pushed_file_path("docs/read me.md").unwrap();
-    validate_pushed_file_path(".scope/RULES.md").unwrap();
-    validate_pushed_file_path(".scope/runs/test.yml").unwrap();
-    validate_pushed_file_path(".scope/runs/test-api.yaml").unwrap();
-    validate_pushed_file_path(".scope/images/checks/Dockerfile").unwrap();
-    validate_pushed_file_path(".scope/images/checks/.dockerignore").unwrap();
-    validate_pushed_file_path(".scope/images/checks/scripts/install.sh").unwrap();
     for path in [
         "README.md ",
         "dir\\file.txt",
@@ -305,16 +293,7 @@ fn pushed_tree_rejects_paths_scope_would_normalize_or_git_cannot_serve() {
         "docs/../README.md",
         ".git/config",
         "vendor/.GIT/index",
-        ".scope",
         ".scope/repo.json",
-        ".scope/anything.json",
-        ".scope/images",
-        ".scope/images/Dockerfile",
-        ".scope/images/Checks/Dockerfile",
-        ".scope/images/checks--api/Dockerfile",
-        ".scope/runs/Test.yml",
-        ".scope/runs/test.json",
-        ".scope/runs/nested/test.yml",
     ] {
         let error = validate_pushed_file_path(path).unwrap_err();
         assert_eq!(error.status(), StatusCode::BAD_REQUEST);

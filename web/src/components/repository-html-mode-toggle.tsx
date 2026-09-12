@@ -1,4 +1,5 @@
 import { Code, Eye } from 'lucide-react'
+import { displayRouteFilePath } from '@/lib/route-file'
 import type { RepositoryHtmlMode } from './repository-html-renderer'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
@@ -19,7 +20,7 @@ export function RepositoryHtmlModeToggle({
   return (
     <TooltipProvider>
       <ToggleGroup
-        aria-label={`${path.replace(/^\/+/, '')} display mode`}
+        aria-label={`${displayRouteFilePath(path)} display mode`}
         className="rounded-md p-0.5"
         onValueChange={(value) => {
           if (value === 'preview' || value === 'source') onSelect(value)

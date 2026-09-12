@@ -1,28 +1,32 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { HistoryEntryDetail } from '@/api/types'
-import { historyFileSelection, historySelectedFilePath } from './history-selection'
+import { historyFileSelection } from './history-selection'
+import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 
 const files = [{ path: '/first.ts' }, { path: '/second.ts' }]
 
+function detailWith(entries: { path: string }[]) {
+  return { files: entries as HistoryEntryDetailResponse['files'], visibility_changes: [] }
+}
+
 test('history selects the first available file only when the URL has no path', () => {
-  assert.equal(historySelectedFilePath(undefined, undefined, false), null)
-  assert.equal(historySelectedFilePath(undefined, [], false), null)
-  assert.equal(historySelectedFilePath(undefined, files, false), '/first.ts')
-  assert.equal(historySelectedFilePath('/second.ts', files, false), '/second.ts')
-  assert.equal(historySelectedFilePath('/missing.ts', files, false), '/missing.ts')
+  assert.equal(historyFileSelection({}, null, false).path, null)
+  assert.equal(historyFileSelection({}, detailWith([]), false).path, null)
+  assert.equal(historyFileSelection({}, detailWith(files), false).path, '/first.ts')
+  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files), false).path, '/second.ts')
+  assert.equal(historyFileSelection({ path: '/missing.ts' }, detailWith(files), false).path, '/missing.ts')
 })
 
 test('closing a diff dismisses only the current location and explicit selection can reopen it', () => {
-  assert.equal(historySelectedFilePath('/second.ts', files, true), null)
-  assert.equal(historySelectedFilePath(undefined, files, true), null)
-  assert.equal(historySelectedFilePath('/second.ts', files, false), '/second.ts')
+  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files), true).path, null)
+  assert.equal(historyFileSelection({}, detailWith(files), true).path, null)
+  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files), false).path, '/second.ts')
 })
 
 test('selects exact visibility effects independently of content and same-path transitions', () => {
-  const content: HistoryEntryDetail['files'][number] = { path: '/same.ts', kind: 'Modified', old_mode: '100644', new_mode: '100644', old_oid: 'a', new_oid: 'b', visibility: 'Public' }
+  const content: HistoryEntryDetailResponse['files'][number] = { path: '/same.ts', kind: 'Modified', old_mode: '100644', new_mode: '100644', old_oid: 'a', new_oid: 'b', visibility: 'Public' }
   const preview = { ...content, old_oid: null, new_oid: 'c' }
-  const detail: Pick<HistoryEntryDetail, 'files' | 'visibility_changes'> = {
+  const detail: Pick<HistoryEntryDetailResponse, 'files' | 'visibility_changes'> = {
     files: [content],
     visibility_changes: [
       { id: 'first', path: '/same.ts', old_visibility: 'Private', new_visibility: 'Public', file: preview },

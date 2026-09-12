@@ -1,25 +1,20 @@
+use crate::storage_runtime::{StorageRuntime, StorageSource};
 use crate::{
     auth::clerk::ClerkVerifier,
     cache_grants::CacheGrantIssuer,
     config::{
-        SCOPE_OPERATOR_TOKEN_ENV, data_dir, database_url_from_env, git_cache_max_bytes_from_env,
-        git_public_url_from_env, git_repo_root, non_empty_env,
+        SCOPE_OPERATOR_TOKEN_ENV, database_url_from_env, git_public_url_from_env, non_empty_env,
     },
     git::repository_engine::RepositoryEngine,
     media_grants::MediaGrantIssuer,
-    object_store_config::{encryption_key_from_env, git_segment_store_from_env, s3_from_env},
-    persistence::ensure_private_dir,
     product_analytics::ProductAnalytics,
-    push_intents::push_intent_signing_key,
     repo_events::RepoChangeBus,
-    runtime_budgets::{BudgetedObjectStore, RuntimeBudgets},
+    runtime_budgets::RuntimeBudgets,
     use_cases::content_cleanup::best_effort_drain_pending_repo_storage_deletions,
 };
 use scope_domain::repository::git::GitSegmentUploadState;
 use scope_git_storage::GitSegmentStore;
-#[cfg(any(test, feature = "test-support"))]
-use scope_git_storage::{GitSegmentStoreConfig, MemoryMultipartStore, SegmentEncryptionKey};
-use scope_object_store::{EncryptedObjectStore, ObjectStore};
+use scope_object_store::ObjectStore;
 use scope_postgres::db::MetadataStore;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
@@ -27,7 +22,6 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 pub struct AppState {
     pub(crate) metadata: MetadataStore,
     pub(crate) data_dir: Arc<PathBuf>,
-    pub(crate) _git_storage_writer: Arc<crate::retired_git_storage::StorageLock>,
     pub(crate) clerk: ClerkVerifier,
     pub(crate) object_store: Arc<dyn ObjectStore>,
     pub(crate) git_segment_store: Arc<GitSegmentStore>,
@@ -47,31 +41,10 @@ pub struct AppState {
 impl AppState {
     pub async fn from_env() -> anyhow::Result<Self> {
         let git_public_url = git_public_url_from_env(None)?;
-        let repo_root = git_repo_root();
-        let data_dir = data_dir(&repo_root);
-        ensure_private_dir(&data_dir)
-            .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
-        let git_storage_writer = Arc::new(crate::retired_git_storage::open_writer(&data_dir)?);
-        let object_encryption_key = encryption_key_from_env()?;
-        let git_segment_store = Arc::new(git_segment_store_from_env(
-            data_dir.join("git-segments"),
-            object_encryption_key,
-        )?);
-        git_segment_store.cleanup_all_local().await?;
-        let push_intent_signing_key =
-            push_intent_signing_key(&data_dir, Some(&object_encryption_key))
-                .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
+        let storage = StorageRuntime::from_env(StorageSource::S3).await?;
+        storage.git_segment_store.cleanup_all_local().await?;
         let metadata = MetadataStore::connect(database_url_from_env()?).await?;
         let repo_events = RepoChangeBus::default();
-        let runtime_budgets = Arc::new(RuntimeBudgets::from_env()?);
-        let s3 = tokio::task::spawn_blocking(s3_from_env).await??;
-        let object_store = Arc::new(BudgetedObjectStore::new(
-            Arc::new(EncryptedObjectStore::new(
-                Arc::new(s3),
-                object_encryption_key,
-            )),
-            runtime_budgets.clone(),
-        ));
         let cache_grants = CacheGrantIssuer::from_env()?;
         let media_grants = MediaGrantIssuer::from_env()?;
         let listener_bus = repo_events.clone();
@@ -80,31 +53,27 @@ impl AppState {
             .start_repo_change_listener(move |payload| {
                 listener_bus.publish_notification_payload(&payload)
             })?;
-        let repository_engine =
-            RepositoryEngine::new(data_dir.join("git-cache"), git_cache_max_bytes_from_env()?)
-                .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
         let product_analytics = ProductAnalytics::from_env().await?;
 
         let state = Self {
             metadata,
-            data_dir: Arc::new(data_dir),
-            _git_storage_writer: git_storage_writer,
+            data_dir: storage.data_dir,
             clerk: ClerkVerifier::from_env(),
-            object_store,
-            git_segment_store,
+            object_store: storage.object_store,
+            git_segment_store: storage.git_segment_store,
             cache_grants,
             media_grants,
-            runtime_budgets,
+            runtime_budgets: storage.runtime_budgets,
             operator_token: non_empty_env(SCOPE_OPERATOR_TOKEN_ENV).map(Arc::from),
             product_analytics,
             repo_events,
-            push_intent_signing_key,
-            repository_engine: repository_engine.clone(),
+            push_intent_signing_key: storage.push_intent_signing_key,
+            repository_engine: storage.repository_engine,
             git_public_url: Arc::from(git_public_url),
             #[cfg(test)]
             test_object_store: Arc::new(scope_object_store::MemoryObjectStore::new()),
         };
-        repository_engine.start_reaper();
+        state.repository_engine.start_reaper();
         state.start_run_attempt_recovery();
         state.start_run_retention();
         state.start_git_segment_recovery();
@@ -190,50 +159,19 @@ impl AppState {
                 )
                 .await?;
         }
-        tracing::info!(
-            phase = "recovery",
-            repository_id = "all",
-            segment_id = "all",
-            success = true,
-            duration_us = 0_u64,
-            bytes = 0_u64,
-            blocked_us = 0_u64,
-            active_ingests = 0_u64,
-            buffered_bytes = 0_u64,
-            disk_free_bytes = 0_u64,
-            ledger_uploading = 0_u64,
-            ledger_ready = 0_u64,
-            ledger_published = 0_u64,
-            orphan_count,
-            "Git segment ingest telemetry"
-        );
+        tracing::info!(orphan_count, "reconciled stale Git segment uploads");
         Ok(())
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub(crate) fn test_state() -> Self {
-        use crate::persistence::test_data_dir;
-
-        let data_dir = test_data_dir();
-        let runtime_budgets = Arc::new(RuntimeBudgets::from_config(Default::default()));
         let test_object_store = Arc::new(scope_object_store::MemoryObjectStore::new());
-        let git_segment_store = Arc::new(
-            GitSegmentStore::new(
-                Arc::new(MemoryMultipartStore::default()),
-                SegmentEncryptionKey::new("test", [9_u8; 32]).unwrap(),
-                GitSegmentStoreConfig::new(data_dir.join("git-segments")),
-            )
-            .unwrap(),
-        );
+        let storage = StorageRuntime::for_tests(test_object_store.clone());
         let target = scope_postgres::db::TestDatabaseTarget::required().unwrap();
         let metadata = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         Self {
             metadata,
-            data_dir: Arc::new(data_dir.clone()),
-            _git_storage_writer: {
-                ensure_private_dir(&data_dir).unwrap();
-                Arc::new(crate::retired_git_storage::open_writer(&data_dir).unwrap())
-            },
+            data_dir: storage.data_dir,
             clerk: ClerkVerifier::new_with_policy(
                 Some("https://clerk.test".to_string()),
                 Some("http://127.0.0.1/.well-known/jwks.json".to_string()),
@@ -242,23 +180,16 @@ impl AppState {
                     audiences: vec![crate::config::DEFAULT_CLERK_AUDIENCE.to_string()],
                 },
             ),
-            object_store: Arc::new(BudgetedObjectStore::new(
-                test_object_store.clone(),
-                runtime_budgets.clone(),
-            )),
-            git_segment_store,
+            object_store: storage.object_store,
+            git_segment_store: storage.git_segment_store,
             cache_grants: CacheGrantIssuer::test(),
             media_grants: MediaGrantIssuer::test(),
-            runtime_budgets,
+            runtime_budgets: storage.runtime_budgets,
             operator_token: None,
             product_analytics: ProductAnalytics::disabled(),
             repo_events: RepoChangeBus::default(),
-            push_intent_signing_key: Arc::from(b"scope-test-push-intent-signing-key".as_slice()),
-            repository_engine: RepositoryEngine::new(
-                data_dir.join("git-cache"),
-                crate::config::DEFAULT_GIT_CACHE_MAX_BYTES,
-            )
-            .unwrap(),
+            push_intent_signing_key: storage.push_intent_signing_key,
+            repository_engine: storage.repository_engine,
             git_public_url: Arc::from(crate::config::LOCAL_API_ORIGIN),
             #[cfg(test)]
             test_object_store,

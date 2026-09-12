@@ -5,12 +5,6 @@ import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-export const RESOURCE_NAMES = Object.freeze({
-  bucket: "scope-request-media",
-  gateway: "scope-media-api",
-  worker: "scope-media-worker",
-});
-
 const IMAGE_DIGEST = /^ghcr\.io\/scope-vcs\/scope-media-worker@sha256:[0-9a-f]{64}$/;
 const HOSTNAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 const SECRET_VARIABLES = Object.freeze({
@@ -53,7 +47,7 @@ function serviceVariables(bucketName) {
   };
 }
 
-export function desiredMediaState(manifest, environmentName, workerImageDigest = "") {
+export function desiredMediaState(manifest, environmentName, image = "") {
   const railway = manifest?.railway;
   const resources = manifest?.mediaResources;
   if (!railway || !resources) throw new Error("Deployment manifest has no media resource contract");
@@ -65,7 +59,6 @@ export function desiredMediaState(manifest, environmentName, workerImageDigest =
   const allowedOrigin = environmentName === "production"
     ? requiredString(resources.production?.webOrigin, "production web origin")
     : `https://${requiredString(manifest.environments.staging?.webDomain, "staging web domain")}`;
-  const image = workerImageDigest || resources.workerImageDigest || "";
   if (environmentName === "production" && !image) {
     throw new Error("Production media reconciliation requires --worker-image pinned by sha256 digest");
   }
@@ -93,7 +86,7 @@ export function desiredMediaState(manifest, environmentName, workerImageDigest =
       },
       gateway: {
         id: manifest.services?.["media-api"]?.id ?? null,
-        name: RESOURCE_NAMES.gateway,
+        name: requiredString(manifest.services?.["media-api"]?.name, "media gateway service name"),
         variables: {
           ...serviceVariables(bucketName),
           SCOPE_MEDIA_GRANT_PUBLIC_KEY: null,
@@ -110,7 +103,7 @@ export function desiredMediaState(manifest, environmentName, workerImageDigest =
       },
       worker: {
         id: manifest.services?.["media-worker"]?.id ?? null,
-        name: RESOURCE_NAMES.worker,
+        name: requiredString(manifest.services?.["media-worker"]?.name, "media worker service name"),
         variables: serviceVariables(bucketName),
         config: {
           healthcheckPath: "/healthz",
@@ -140,7 +133,7 @@ export function planMediaReconcile(desired, current, { requireManifestIds = fals
   const operations = [];
   const blockers = [];
   const manualActions = [];
-  const projectBucket = oneNamed(current.projectBuckets ?? current.buckets ?? [], desired.bucket.name, "project bucket");
+  const projectBucket = oneNamed(current.projectBuckets, desired.bucket.name, "project bucket");
   const bucket = oneNamed(current.buckets ?? [], desired.bucket.name, "bucket instance");
   if (projectBucket) {
     if (desired.bucket.id && projectBucket.id !== desired.bucket.id) {
@@ -163,11 +156,7 @@ export function planMediaReconcile(desired, current, { requireManifestIds = fals
   }
 
   for (const [role, wanted] of Object.entries(desired.services)) {
-    const projectService = oneNamed(
-      current.projectServices ?? current.services ?? [],
-      wanted.name,
-      "project service",
-    );
+    const projectService = oneNamed(current.projectServices, wanted.name, "project service");
     const actual = oneNamed(current.services ?? [], wanted.name, "service instance");
     if (projectService && wanted.id && projectService.id !== wanted.id) {
       blockers.push(`${wanted.name} project service ID differs: ${projectService.id}`);
@@ -298,7 +287,7 @@ export function assertConfigurationReady(plan) {
   }
 }
 
-export function configurationCanApply(plan) {
+function configurationCanApply(plan) {
   return plan.manualActions.length === 0;
 }
 

@@ -20,7 +20,7 @@ use bytes::Bytes;
 use scope_api_contract::{RequestAttachmentMediaTarget, RequestAttachmentPartReceiptResponse};
 use scope_domain::requests::attachments::RequestAttachmentPartReceipt;
 use scope_media_storage::{
-    MAX_CHUNK_BYTES, MediaByteStream, MediaChunk, MediaObject, StagedMediaPart, WriteAttempt,
+    MAX_CHUNK_BYTES, MediaByteStream, MediaObject, StagedMediaPart, WriteAttempt,
 };
 use scope_postgres::db::{
     RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
@@ -60,7 +60,7 @@ pub(crate) async fn put_upload_part(
     let claims = state
         .verifier
         .verify_upload(request.headers(), &upload_id, now_unix)?;
-    let authorized = state
+    state
         .metadata
         .media()
         .request_attachment_for_viewer(
@@ -75,7 +75,6 @@ pub(crate) async fn put_upload_part(
                 && authorized.attachment.uploader_user_id == claims.uploader_user_id
         })
         .ok_or_else(ServiceError::not_found)?;
-    drop(authorized);
 
     // Acquire before reading the body so queued uploads cannot each retain an 8 MiB part.
     let (_permit, bytes) = buffer_upload_body(
@@ -307,21 +306,19 @@ async fn serve_media(
 }
 
 fn media_object(manifest: &RequestMediaManifest) -> Result<MediaObject, ServiceError> {
-    MediaObject::new(
+    MediaObject::from_chunks(
         &manifest.media_type,
         manifest.size_bytes,
         &manifest.sha256,
-        manifest
-            .chunks
-            .iter()
-            .map(|chunk| MediaChunk {
-                part_number: chunk.index,
-                plaintext_offset: chunk.plaintext_offset,
-                plaintext_bytes: chunk.plaintext_size_bytes,
-                sha256: chunk.sha256.clone(),
-                object_key: chunk.object_key.clone(),
-            })
-            .collect(),
+        manifest.chunks.iter().map(|chunk| {
+            (
+                chunk.index,
+                chunk.plaintext_offset,
+                chunk.plaintext_size_bytes,
+                chunk.sha256.clone(),
+                chunk.object_key.clone(),
+            )
+        }),
     )
     .map_err(Into::into)
 }
@@ -462,10 +459,7 @@ impl Stream for PermittedStream {
 }
 
 fn unix_now() -> Result<u64, ServiceError> {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .map_err(|error| ServiceError::internal(error.to_string()))
+    scope_service_runtime::unix_now().map_err(|error| ServiceError::internal(error.to_string()))
 }
 
 fn random_token(prefix: &str) -> Result<String, ServiceError> {

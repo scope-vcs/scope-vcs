@@ -91,7 +91,7 @@ function pathsSinceSuccessfulDeployments(revisions, head) {
 
     try {
       return [component, changedPaths(revision, head, false)];
-    } catch (error) {
+    } catch {
       process.stderr.write(
         `Could not compare ${component} deployment ${revision} with ${head}; selecting it conservatively.\n`,
       );

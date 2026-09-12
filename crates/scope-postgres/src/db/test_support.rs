@@ -4,6 +4,7 @@ use super::{
         save_pending_repo_storage_deletions, save_pending_source_blob_deletions,
     },
     entities,
+    landing_files::apply_repository_landing_file_mutation,
     repository_rows::insert_repository,
     request_discussion_rows::{insert_discussion, insert_reply, save_read_state},
     request_revision_rows::insert_revision,
@@ -15,7 +16,7 @@ use super::{
     AuthStore, CleanupStore, MetadataStore, RepositoryStore, RequestStore,
     cleanup_queue::queue::{
         load_pending_repo_storage_deletions, load_pending_source_blob_deletions,
-        queue_pending_repo_storage_cleanup_row_at,
+        queue_pending_repo_storage_cleanup_row,
     },
     repository_from_model,
     repository_rows::save_repository_delta,
@@ -220,13 +221,29 @@ impl CleanupStore {
         cleanup: RepoStorageCleanup,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        queue_pending_repo_storage_cleanup_row_at(
+        queue_pending_repo_storage_cleanup_row(
             self.db.as_ref(),
             cleanup,
             now_unix,
             &super::generated_ids::test_generated_id,
         )
         .await
+    }
+
+    /// Makes every queued source blob cleanup due now, so a test can drain
+    /// work that production would hold for `SOURCE_BLOB_DELETE_GRACE_SECONDS`.
+    pub async fn expire_source_blob_cleanup_grace_for_tests(&self) -> Result<(), PostgresError> {
+        use sea_orm::{ColumnTrait, QueryFilter};
+        entities::source_blob_cleanup_job::Entity::update_many()
+            .filter(entities::source_blob_cleanup_job::Column::CompletedAtUnix.is_null())
+            .col_expr(
+                entities::source_blob_cleanup_job::Column::NextRunAtUnix,
+                sea_orm::sea_query::Expr::value(0_i64),
+            )
+            .exec(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(())
     }
 
     pub async fn pending_repo_storage_cleanups_for_tests(
@@ -253,6 +270,26 @@ impl AuthStore {
             .await
             .map_err(PostgresError::internal)?;
         Ok(())
+    }
+
+    pub async fn user_for_tests(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<UserAccount>, PostgresError> {
+        entities::user::Entity::find_by_id(user_id.to_string())
+            .one(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)?
+            .map(entities::user::Model::try_into_domain)
+            .transpose()
+    }
+
+    pub async fn user_count_for_tests(&self) -> Result<u64, PostgresError> {
+        use sea_orm::PaginatorTrait;
+        entities::user::Entity::find()
+            .count(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)
     }
 }
 
@@ -349,25 +386,7 @@ impl RepositoryStore {
         .await?;
         tx.commit().await.map_err(PostgresError::internal)
     }
-}
 
-#[cfg(any(test, feature = "test-support"))]
-impl AuthStore {
-    pub async fn user_for_tests(
-        &self,
-        user_id: &str,
-    ) -> Result<Option<UserAccount>, PostgresError> {
-        entities::user::Entity::find_by_id(user_id.to_string())
-            .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .map(entities::user::Model::try_into_domain)
-            .transpose()
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl RepositoryStore {
     pub async fn repository_for_tests(
         &self,
         repo_id: &str,
@@ -381,21 +400,7 @@ impl RepositoryStore {
             None => Ok(None),
         }
     }
-}
 
-#[cfg(any(test, feature = "test-support"))]
-impl AuthStore {
-    pub async fn user_count_for_tests(&self) -> Result<u64, PostgresError> {
-        use sea_orm::PaginatorTrait;
-        entities::user::Entity::find()
-            .count(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl RepositoryStore {
     pub async fn repository_count_for_tests(&self) -> Result<u64, PostgresError> {
         use sea_orm::PaginatorTrait;
         entities::repository::Entity::find()
@@ -576,6 +581,24 @@ async fn seed_catalog_rows(
             &super::generated_ids::test_generated_id,
         )
         .await?;
+        if let Some(landing) = catalog.repository_landing_files.remove(&repo.record.id) {
+            let path = scope_domain::policy::ScopePath::parse(
+                scope_domain::landing_file::REPOSITORY_LANDING_FILE_PATH,
+            )
+            .map_err(PostgresError::internal)?;
+            let source = repo.live_files.get(&path).ok_or_else(|| {
+                PostgresError::internal_message("seeded landing snapshot has no live file")
+            })?;
+            landing
+                .verify_source(source)
+                .map_err(PostgresError::internal)?;
+            apply_repository_landing_file_mutation(
+                tx,
+                &repo.record.id,
+                scope_domain::landing_file::RepositoryLandingFileMutation::Upsert(landing),
+            )
+            .await?;
+        }
         seed_empty_repository_workflow_catalog(tx, repo).await?;
     }
     for request in catalog.requests.values() {
