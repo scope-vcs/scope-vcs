@@ -2,6 +2,7 @@ pub mod access;
 pub mod collaboration;
 pub mod credentials;
 pub mod git;
+pub mod git_compaction;
 pub mod updates;
 
 use crate::{
