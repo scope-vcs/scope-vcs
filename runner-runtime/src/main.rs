@@ -11,6 +11,7 @@ use api::control::RuntimeHeartbeat;
 use settings::RuntimeSettings;
 
 fn main() -> anyhow::Result<()> {
+    scope_git_process::install_pid1_reaper_if_needed()?;
     let settings = RuntimeSettings::from_env()?;
     deadline::arm(settings.attempt_deadline_unix)?;
     let client = api::RuntimeClient::new(&settings)?;

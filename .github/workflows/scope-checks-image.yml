@@ -42,6 +42,11 @@ jobs:
           platforms: linux/amd64
           provenance: false
           push: false
+          load: true
+          tags: scope-checks:candidate
+
+      - name: Verify runtime process lifecycle
+        run: dev/checks/runner-runtime-container --image scope-checks:candidate
 
   build:
     name: Build checks image
@@ -130,8 +135,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and optionally publish
-        id: image
+      - name: Build image for verification
         uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
@@ -140,8 +144,29 @@ jobs:
           file: .scope/images/checks/Dockerfile
           platforms: linux/amd64
           provenance: false
-          push: ${{ steps.source.outputs.publish == 'true' }}
+          push: false
+          load: true
           tags: ${{ steps.tags.outputs.tags }}
+
+      - name: Verify runtime process lifecycle
+        env:
+          IMAGE: ${{ steps.tags.outputs.ghcr_image }}
+        run: dev/checks/runner-runtime-container --image "$IMAGE"
+
+      - name: Publish verified image
+        id: image
+        if: steps.source.outputs.publish == 'true'
+        env:
+          IMAGE: ${{ steps.tags.outputs.ghcr_image }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          while IFS= read -r tag; do
+            docker push "$tag"
+          done <<< "$TAGS"
+          digest="$(docker image inspect "$IMAGE" --format '{{json .RepoDigests}}' \
+            | jq -er --arg prefix "${IMAGE%:*}@" '.[] | select(startswith($prefix)) | ltrimstr($prefix)')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Install SOCI publishing tools
         if: steps.source.outputs.publish == 'true'
