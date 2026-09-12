@@ -3,7 +3,10 @@ use crate::{
     error::ApiError,
     git::{import::run_git_output, request_refs::with_request_revision_store_repo},
     state::AppState,
-    use_cases::request_revision_inspection::{commit_belongs_to_revision, request_changes},
+    use_cases::request_revision_inspection::{
+        DiffStatusValidationOrder, commit_belongs_to_revision, inspect_request_changes,
+        request_changes,
+    },
 };
 use scope_domain::{
     policy::{Policy, ScopePath},
@@ -180,39 +183,29 @@ fn commit_paths(
         .map(str::to_string)
         .ok_or_else(|| ApiError::conflict("request revision commit must have a parent"))?;
     let changes = request_changes(raw_repo, &parent, commit_oid, None)?;
-    let mut fields = changes.split(|byte| *byte == 0);
-    let mut visible = BTreeSet::new();
-    let mut has_hidden = false;
-    while let Some(header) = fields.next() {
-        if header.is_empty() {
-            continue;
-        }
-        let header = std::str::from_utf8(header).map_err(ApiError::bad_request)?;
-        let columns = header.split_ascii_whitespace().collect::<Vec<_>>();
-        if columns.len() != 5 || !columns[0].starts_with(':') {
-            return Err(ApiError::internal_message(format!(
-                "invalid request diff header {header}"
-            )));
-        }
-        let status = columns[4].as_bytes();
-        if !matches!(status.first(), Some(b'A' | b'M' | b'T' | b'D')) {
-            return Err(ApiError::internal_message(format!(
-                "unsupported request diff status {}",
-                String::from_utf8_lossy(status)
-            )));
-        }
-        let path = fields
-            .next()
-            .ok_or_else(|| ApiError::internal_message("request diff is missing a path"))?;
-        let path = String::from_utf8(path.to_vec()).map_err(ApiError::bad_request)?;
-        let path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
-        if policy.can_read(&path, access.can_read_private_files) {
-            visible.insert(path);
-        } else {
-            has_hidden = true;
-        }
-    }
-    Ok((visible, has_hidden))
+
+    parse_commit_paths(&changes, policy, access)
+}
+
+fn parse_commit_paths(
+    changes: &[u8],
+    policy: &Policy,
+    access: RepositoryAccess,
+) -> Result<(BTreeSet<ScopePath>, bool), ApiError> {
+    let inspected = inspect_request_changes(
+        changes,
+        policy,
+        access,
+        DiffStatusValidationOrder::BeforePath,
+    )?;
+    Ok((
+        inspected
+            .files
+            .into_iter()
+            .map(|file| file.scope_path)
+            .collect(),
+        inspected.hidden,
+    ))
 }
 
 fn normalized_scope_path(path: &str) -> Result<ScopePath, ApiError> {
@@ -232,3 +225,9 @@ fn canonical_git_oid(oid: String) -> Result<String, ApiError> {
     }
     Ok(oid.to_ascii_lowercase())
 }
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod identity_tests;

@@ -1,7 +1,10 @@
 use super::{
     MAX_IMPORTED_REQUEST_REVISIONS, MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES,
-    RequestRevisionListWorkBudget, request_revision_commits,
+    RequestRevisionListWorkBudget, parse_request_changes_with_visibility, request_file_response,
+    request_revision_commits,
 };
+use axum::http::StatusCode;
+use scope_api_contract::{FileChangeKind as ApiFileChangeKind, Visibility as ApiVisibility};
 use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
@@ -15,6 +18,176 @@ use std::{
     path::Path,
     process::{Command, Stdio},
 };
+
+const ZERO_OID: &str = "0000000000000000000000000000000000000000";
+const ONE_OID: &str = "1111111111111111111111111111111111111111";
+
+#[test]
+fn request_change_parser_preserves_path_before_status_validation() {
+    let mut policy = scope_domain::policy::Policy::new(Visibility::Public);
+    policy
+        .add_rule(VisibilityRule::private(
+            ScopePath::parse("/private.txt").unwrap(),
+        ))
+        .unwrap();
+
+    let hidden = parse_request_changes_with_visibility(
+        diff("R100", "private.txt").as_bytes(),
+        &policy,
+        RepositoryAccess::public(),
+    )
+    .unwrap();
+    assert!(hidden.hidden);
+    assert!(hidden.files.is_empty());
+
+    assert_api_error(
+        parse_request_changes_with_visibility(
+            header("R100").as_bytes(),
+            &policy,
+            RepositoryAccess::public(),
+        )
+        .err()
+        .unwrap(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Scope hit an internal error.",
+        "request diff is missing a path",
+    );
+    assert_api_error(
+        parse_request_changes_with_visibility(
+            diff("R100", "../private.txt").as_bytes(),
+            &policy,
+            RepositoryAccess::public(),
+        )
+        .err()
+        .unwrap(),
+        StatusCode::BAD_REQUEST,
+        "path cannot contain empty segments, . or ..",
+        "path cannot contain empty segments, . or ..",
+    );
+    assert_api_error(
+        parse_request_changes_with_visibility(
+            diff("R100", "public.txt").as_bytes(),
+            &policy,
+            RepositoryAccess::public(),
+        )
+        .err()
+        .unwrap(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Scope hit an internal error.",
+        "unsupported request diff status R100",
+    );
+}
+
+#[test]
+fn request_change_parser_validates_records_after_a_hidden_change() {
+    let policy = scope_domain::policy::Policy::new(Visibility::Private);
+    let changes = format!("{}\0private.txt\0malformed\0", header("A"));
+
+    assert_api_error(
+        parse_request_changes_with_visibility(
+            changes.as_bytes(),
+            &policy,
+            RepositoryAccess::public(),
+        )
+        .err()
+        .unwrap(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Scope hit an internal error.",
+        "invalid request diff header malformed",
+    );
+}
+
+#[test]
+fn request_change_parser_maps_statuses_sorts_and_keeps_raw_paths() {
+    let mut policy = scope_domain::policy::Policy::new(Visibility::Public);
+    policy
+        .add_rule(VisibilityRule::private(
+            ScopePath::parse("/z/added.txt").unwrap(),
+        ))
+        .unwrap();
+    let mut access = RepositoryAccess::public();
+    access.can_read_private_files = true;
+    let changes = [
+        diff("A", "z//added.txt"),
+        diff("M", "m-modified.txt"),
+        diff("T", "a-type.txt"),
+        diff("D", "d-deleted.txt"),
+    ]
+    .concat();
+
+    let parsed =
+        parse_request_changes_with_visibility(changes.as_bytes(), &policy, access).unwrap();
+
+    assert!(!parsed.hidden);
+    let files = parsed
+        .files
+        .into_iter()
+        .map(request_file_response)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        files
+            .iter()
+            .map(|file| (file.path.as_str(), file.kind, file.visibility))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "a-type.txt",
+                ApiFileChangeKind::Modified,
+                ApiVisibility::Public,
+            ),
+            (
+                "d-deleted.txt",
+                ApiFileChangeKind::Deleted,
+                ApiVisibility::Public,
+            ),
+            (
+                "m-modified.txt",
+                ApiFileChangeKind::Modified,
+                ApiVisibility::Public,
+            ),
+            (
+                "z//added.txt",
+                ApiFileChangeKind::Added,
+                ApiVisibility::Private,
+            ),
+        ]
+    );
+    let added = &files[3];
+    assert_eq!(added.old_mode, None);
+    assert_eq!(added.new_mode.as_deref(), Some("100644"));
+    assert_eq!(added.old_oid, None);
+    assert_eq!(added.new_oid.as_deref(), Some(ONE_OID));
+    let deleted = &files[1];
+    assert_eq!(deleted.old_mode.as_deref(), Some("100644"));
+    assert_eq!(deleted.new_mode, None);
+    assert_eq!(deleted.old_oid.as_deref(), Some(ZERO_OID));
+    assert_eq!(deleted.new_oid, None);
+}
+
+fn header(status: &str) -> String {
+    let (old_mode, new_mode) = match status.as_bytes().first() {
+        Some(b'A') => ("000000", "100644"),
+        Some(b'T') => ("100644", "100755"),
+        Some(b'D') => ("100644", "000000"),
+        _ => ("100644", "100644"),
+    };
+    format!(":{old_mode} {new_mode} {ZERO_OID} {ONE_OID} {status}")
+}
+
+fn diff(status: &str, path: &str) -> String {
+    format!("{}\0{path}\0", header(status))
+}
+
+fn assert_api_error(
+    error: crate::error::ApiError,
+    status: StatusCode,
+    public_message: &str,
+    diagnostic: &str,
+) {
+    assert_eq!(error.status(), status);
+    assert_eq!(error.public_message(), public_message);
+    assert_eq!(error.operator_diagnostic(), diagnostic);
+}
 
 #[test]
 fn revision_listing_budget_caps_snapshot_count_bytes_and_commit_work() {
@@ -237,7 +410,7 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
     assert_eq!(public_response.visible[0].oid, empty);
 }
 
-fn git(repo: &Path, args: &[&str], stdin: Option<&str>) -> String {
+pub(super) fn git(repo: &Path, args: &[&str], stdin: Option<&str>) -> String {
     let mut command = Command::new("git");
     command
         .arg("-C")
