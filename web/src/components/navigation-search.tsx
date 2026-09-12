@@ -67,7 +67,7 @@ export function NavigationSearch({
         aria-label={label}
         autoComplete="off"
         className={cn(
-          'h-8 w-full min-w-0 text-ellipsis rounded border border-border bg-background pr-8 pl-7 text-xs placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring',
+          'h-8 w-full min-w-0 text-ellipsis rounded border border-border bg-background pr-8 pl-7 text-xs placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-search-cancel-button]:hidden',
           status && value && 'pr-16',
         )}
         onChange={(event) => onChange(event.target.value)}
