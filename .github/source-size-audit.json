@@ -47,11 +47,6 @@
       "reason": "Typed request and discussion calls share URL construction, authenticated execution, decoding, and client tests."
     },
     {
-      "path": "cli/src/request.rs",
-      "owner": "CLI request command orchestration",
-      "reason": "Command dispatch, repository and request context resolution, discussion lifecycles, and local request identity coordinate one authenticated request-command boundary; behavior-specific policy and rendering remain in focused submodules."
-    },
-    {
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
       "owner": "request attachment aggregate",
       "reason": "Upload, processing, binding, access, and cleanup transitions share source, derivative, lease, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."

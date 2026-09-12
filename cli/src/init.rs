@@ -1,4 +1,5 @@
 use crate::api::ApiSession;
+use crate::git_repo::git_output_in_repo as git_output;
 use crate::{
     agent_context::sync_repo_rules,
     api::{RepoInitResponse, api_url, create_repo, display_user, http_client},
@@ -21,7 +22,7 @@ use std::{
     collections::BTreeSet,
     io::{self, Write},
     path::Path,
-    process::{Command, Output},
+    process::Output,
 };
 
 pub fn run(name: Option<String>) -> anyhow::Result<()> {
@@ -302,14 +303,6 @@ fn unset_local_config(git_root: &Path, key: &str) -> anyhow::Result<()> {
 fn run_git_quiet(git_root: &Path, args: &[&str], action: &str) -> anyhow::Result<()> {
     let output = git_output(git_root, args)?;
     ensure_git_success(&output, action)
-}
-
-fn git_output(git_root: &Path, args: &[&str]) -> anyhow::Result<Output> {
-    Command::new("git")
-        .current_dir(git_root)
-        .args(args)
-        .output()
-        .with_context(|| format!("run git {}", args.join(" ")))
 }
 
 fn ensure_git_success(output: &Output, action: &str) -> anyhow::Result<()> {

@@ -1,3 +1,4 @@
+use crate::display::short_oid;
 use scope_api_contract::{
     AttemptState, CacheColdReason, CacheFinalState, CachePreparation, RepositoryRunAttemptResponse,
     RepositoryRunCacheResponse, RepositoryRunDetailResponse, RepositoryRunJobState, RunState,
@@ -128,10 +129,6 @@ fn image_label(image: &str) -> String {
         .map(|(_, digest)| digest)
         .unwrap_or(image);
     format!("image sha256:{}", digest.get(..12).unwrap_or(digest))
-}
-
-fn short_oid(oid: &str) -> &str {
-    oid.get(..7).unwrap_or(oid)
 }
 
 pub(super) fn run_state_label(state: RunState) -> &'static str {

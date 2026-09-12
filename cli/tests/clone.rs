@@ -54,13 +54,9 @@ fn clone_json_keeps_git_output_off_stdout() {
     let destination = support::TempDir::new("clone-json-destination");
     let checkout = destination.path().join("checkout");
     let remote_url = format!("file://{}", source.path().display());
-    let response = serde_json::json!({
-        "id": "repo_test", "owner_handle": "adam", "name": "sample", "git_remote_url": remote_url,
-        "lifecycle_state": "Ready", "change_version": 1, "open_request_count": 0,
-        "access": {"actor": "Public", "can_read_private_files": false, "can_push": false,
-            "can_change_file_visibility": false, "can_apply_changes": false, "can_manage_members": false, "can_delete_repo": false},
-        "request_permissions": {"can_start_request": true}
-    });
+    let response = support::repository_response(serde_json::json!({
+        "id": "repo_test", "owner_handle": "adam", "name": "sample", "git_remote_url": remote_url
+    }));
     let app = Router::new().route(
         "/v1/repos/adam/sample",
         get(move || {

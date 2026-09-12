@@ -8,7 +8,7 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use support::{TempDir, commit_all, run_git};
+use support::{TempDir, assert_success, commit_all, git_stdout, run_git};
 
 const CONTRIBUTOR: &str = "river-contributor";
 const MAINTAINER: &str = "maya-maintainer";
@@ -479,13 +479,13 @@ impl Actor {
 }
 
 fn write_session(config: &Path, api_url: &str, token: &str) {
-    let key = api_url
-        .bytes()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
     let sessions = config.join("scope/sessions");
     fs::create_dir_all(&sessions).unwrap();
-    fs::write(sessions.join(format!("cli-session-{key}")), token).unwrap();
+    fs::write(
+        sessions.join(scope_cli::auth::session_storage_key(api_url)),
+        token,
+    )
+    .unwrap();
 }
 
 fn git_clone(remote: &str, destination: &Path) {
@@ -494,16 +494,6 @@ fn git_clone(remote: &str, destination: &Path) {
         .output()
         .unwrap();
     assert_success(&output, "public Git clone");
-}
-
-fn git_stdout<const N: usize>(repo: &Path, args: [&str; N]) -> String {
-    let output = Command::new("git")
-        .current_dir(repo)
-        .args(args)
-        .output()
-        .unwrap();
-    assert_success(&output, "inspect Git checkout");
-    String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
 fn error_json(output: &Output) -> Value {
@@ -552,13 +542,4 @@ fn string_at(document: &Value, pointer: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or_else(|| panic!("missing string at {pointer}: {document}"))
         .to_string()
-}
-
-fn assert_success(output: &Output, action: &str) {
-    assert!(
-        output.status.success(),
-        "{action} failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

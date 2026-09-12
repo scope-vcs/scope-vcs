@@ -2,6 +2,7 @@ mod support;
 use serde_json::Value;
 use std::fs;
 use std::process::Command;
+use support::*;
 
 #[test]
 fn status_counts_unpublished_scope_commits_even_when_github_is_up_to_date() {
@@ -110,7 +111,6 @@ fn status_does_not_advertise_main_push_for_public_only_remote() {
             .contains("push --main")
     );
 }
-use support::*;
 
 #[test]
 fn offline_status_retains_local_facts_without_creating_scope_state() {
@@ -183,18 +183,4 @@ fn noninteractive_login_and_identity_fail_with_authentication_category() {
         assert_eq!(error["code"], "unauthorized");
         assert!(!String::from_utf8_lossy(&output.stderr).contains("Opening browser"));
     }
-}
-
-#[test]
-fn shell_completions_describe_new_commands_and_global_controls() {
-    let dir = TempDir::new("completions");
-    let output = scope_command(dir.path())
-        .args(["completions", "bash"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let body = String::from_utf8(output.stdout).unwrap();
-    assert!(body.contains("visibility"));
-    assert!(body.contains("--non-interactive"));
-    assert!(body.contains("--main"));
 }

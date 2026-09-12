@@ -1,21 +1,17 @@
-use super::text::{short_oid, terminal_text};
 use crate::api::{
     LeaveRequestResponse, RepoSummaryResponse, RepositoryActor, RequestActivityPageResponse,
-    RequestAudience, RequestCloseResponse, RequestDetailResponse,
-    RequestDiscussionMutationResponse, RequestDiscussionReplyMutationResponse, RequestEventPayload,
-    RequestInviteeMutationResponse, RequestListItemResponse, RequestMergeabilityStatus,
-    RequestMutationResponse, RequestPermissionsResponse, RequestState, RequestSummaryResponse,
+    RequestAudience, RequestCloseResponse, RequestDiscussionMutationResponse,
+    RequestDiscussionReplyMutationResponse, RequestEventPayload, RequestInviteeMutationResponse,
+    RequestListItemResponse, RequestMergeabilityStatus, RequestMutationResponse,
+    RequestPermissionsResponse, RequestState, RequestSummaryResponse,
 };
+use crate::display::{short_oid, terminal_text};
 
 pub(super) fn repo_access_lines(repo: &RepoSummaryResponse) -> Vec<String> {
     vec![
         format!("Scope repo: {}/{}", repo.owner_handle, repo.name),
         format!("Permission: {}", access_label(repo.access.actor)),
     ]
-}
-
-pub(super) fn request_detail_lines_for_response(detail: &RequestDetailResponse) -> Vec<String> {
-    request_detail_lines(&detail.request)
 }
 
 pub(super) fn request_activity_lines_for_response(
@@ -34,15 +30,10 @@ pub(super) fn request_activity_lines_for_response(
 
 pub(super) fn request_mutation_receipt_lines(
     action: &str,
-    before: Option<&RequestSummaryResponse>,
     response: &RequestMutationResponse,
 ) -> Vec<String> {
     let action = terminal_text(action);
-    let mut lines = vec![format!("{action} · {}", request_line(&response.request))];
-    if let Some(before) = before {
-        lines.extend(mutation_effect_lines(before, &response.request));
-    }
-    lines
+    vec![format!("{action} · {}", request_line(&response.request))]
 }
 
 pub(super) fn invitee_added_receipt(response: &RequestInviteeMutationResponse) -> String {
@@ -169,7 +160,7 @@ fn wait_label(submitted_at_unix: Option<u64>, now_unix: u64) -> String {
     }
 }
 
-fn request_detail_lines(request: &RequestSummaryResponse) -> Vec<String> {
+pub(super) fn request_detail_lines(request: &RequestSummaryResponse) -> Vec<String> {
     let mut lines = vec![
         request_line(request),
         format!(
@@ -225,7 +216,7 @@ fn request_detail_lines(request: &RequestSummaryResponse) -> Vec<String> {
                 .merged_main_oid
                 .as_deref()
                 .map(short_oid)
-                .unwrap_or_else(|| "unknown".to_string())
+                .unwrap_or("unknown")
         ));
     }
     lines
@@ -245,13 +236,6 @@ fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String>
         }
     }
     lines
-}
-
-fn mutation_effect_lines(
-    _before: &RequestSummaryResponse,
-    _after: &RequestSummaryResponse,
-) -> Vec<String> {
-    Vec::new()
 }
 
 struct RequestLine<'a> {
@@ -323,7 +307,7 @@ fn access_label(actor: RepositoryActor) -> &'static str {
     }
 }
 
-fn audience_label(audience: RequestAudience) -> &'static str {
+pub(super) fn audience_label(audience: RequestAudience) -> &'static str {
     match audience {
         RequestAudience::Public => "public main",
         RequestAudience::Private => "private main",

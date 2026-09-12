@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::TestDir as TempDir;
+use crate::test_support::TempDir;
 
 #[cfg(unix)]
 #[test]

@@ -1,5 +1,6 @@
 use super::*;
 use crate::api::ApiSession;
+use crate::display::terminal_text;
 use crate::{
     api::{RequestFileDiffParams, request_file_diff, request_revisions},
     git_repo::{
@@ -8,7 +9,6 @@ use crate::{
 };
 use args::{RequestCheckoutArgs, RequestDiffArgs};
 use scope_api_contract::RequestRevisionInspectionState;
-use text::terminal_text;
 
 pub(super) fn checkout_request(
     git_repo: &GitRepo,
@@ -126,11 +126,7 @@ pub(super) fn diff_request(
     args: RequestDiffArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let (context, request_id, _) = load_exact_request(git_repo, api, args.target)?;
-    let target = RequestTarget {
-        owner: &context.target.owner,
-        repo: &context.target.repo,
-        request_id: &request_id,
-    };
+    let target = api_target(&context, &request_id);
     let revisions = request_revisions(
         api,
         target,
@@ -235,32 +231,36 @@ pub(super) fn request_checks(
     target: RequestTargetArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let (context, request_id, detail) = load_exact_request(git_repo, api, target)?;
-    let workflow_runs_available = matches!(
-        context.repo.access.actor,
-        crate::api::RepositoryActor::Owner | crate::api::RepositoryActor::Member
-    );
+    let mut workflow_runs_available = true;
     let mut runs = Vec::new();
-    if workflow_runs_available {
-        let mut cursor = None;
-        loop {
-            let page = crate::api::run_history(
-                api,
-                &context.target.owner,
-                &context.target.repo,
-                None,
-                100,
-                cursor.as_deref(),
-            )?;
-            runs.extend(
-                page.runs
-                    .into_iter()
-                    .filter(|run| run.git_oid == detail.request.head_oid.as_str()),
-            );
-            let Some(next) = page.next_cursor else {
+    let mut cursor = None;
+    loop {
+        let page = match crate::api::run_history(
+            api,
+            &context.target.owner,
+            &context.target.repo,
+            None,
+            Some(detail.request.head_oid.as_str()),
+            100,
+            cursor.as_deref(),
+        ) {
+            Ok(page) => page,
+            Err(error)
+                if error
+                    .downcast_ref::<crate::error::CliError>()
+                    .is_some_and(|error| error.response().code == ErrorCode::Forbidden) =>
+            {
+                workflow_runs_available = false;
+                runs.clear();
                 break;
-            };
-            cursor = Some(next);
-        }
+            }
+            Err(error) => return Err(error),
+        };
+        runs.extend(page.runs);
+        let Some(next) = page.next_cursor else {
+            break;
+        };
+        cursor = Some(next);
     }
     let mut lines = vec![
         format!(
@@ -302,12 +302,12 @@ pub(super) fn request_checks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::TestDir;
+    use crate::test_support::TempDir;
     use std::fs;
 
     #[test]
     fn checkout_preserves_unpublished_branch_commits() {
-        let dir = TestDir::git_repo("request-checkout-preserve", "main");
+        let dir = TempDir::git_repo("request-checkout-preserve", "main");
         fs::write(dir.path().join("file.txt"), "initial\n").unwrap();
         dir.run_git(["add", "."]);
         dir.run_git([
@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn checkout_creates_and_fast_forwards_without_losing_content() {
-        let dir = TestDir::git_repo("request-checkout-ff", "main");
+        let dir = TempDir::git_repo("request-checkout-ff", "main");
         fs::write(dir.path().join("file.txt"), "initial\n").unwrap();
         dir.run_git(["add", "."]);
         dir.run_git([

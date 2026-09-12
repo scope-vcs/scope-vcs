@@ -75,6 +75,18 @@ pub struct RepositoryPushPolicy {
 }
 
 impl RepositoryAccess {
+    pub fn main_push_mode(self, lifecycle_state: RepoLifecycleState) -> MainPushMode {
+        if lifecycle_state == RepoLifecycleState::AwaitingFirstPush
+            && self.actor == RepositoryActor::Owner
+        {
+            MainPushMode::FirstPush
+        } else if lifecycle_state == RepoLifecycleState::Ready && self.can_push {
+            MainPushMode::Ready
+        } else {
+            MainPushMode::Denied
+        }
+    }
+
     pub fn is_maintainer(self) -> bool {
         matches!(self.actor, RepositoryActor::Owner | RepositoryActor::Member)
     }
@@ -133,14 +145,7 @@ pub fn repository_push_policy_for_user_id(
 ) -> RepositoryPushPolicy {
     let access =
         repository_access_for_user_id(owner_user_id, lifecycle_state, member_permissions, user_id);
-    let mode =
-        if lifecycle_state == RepoLifecycleState::AwaitingFirstPush && owner_user_id == user_id {
-            MainPushMode::FirstPush
-        } else if lifecycle_state == RepoLifecycleState::Ready && access.can_push {
-            MainPushMode::Ready
-        } else {
-            MainPushMode::Denied
-        };
+    let mode = access.main_push_mode(lifecycle_state);
     RepositoryPushPolicy { access, mode }
 }
 
@@ -192,5 +197,67 @@ impl Repository {
                 .map(|member| member.permissions),
             user_id,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn main_push_policy_keeps_first_push_owner_only_and_honors_member_permissions() {
+        for (state, user, permissions, expected) in [
+            (
+                RepoLifecycleState::AwaitingFirstPush,
+                "owner",
+                None,
+                MainPushMode::FirstPush,
+            ),
+            (
+                RepoLifecycleState::Ready,
+                "owner",
+                None,
+                MainPushMode::Ready,
+            ),
+            (
+                RepoLifecycleState::AwaitingFirstPush,
+                "visitor",
+                None,
+                MainPushMode::Denied,
+            ),
+            (
+                RepoLifecycleState::Ready,
+                "visitor",
+                None,
+                MainPushMode::Denied,
+            ),
+            (
+                RepoLifecycleState::AwaitingFirstPush,
+                "member",
+                Some(true),
+                MainPushMode::Denied,
+            ),
+            (
+                RepoLifecycleState::Ready,
+                "member",
+                Some(true),
+                MainPushMode::Ready,
+            ),
+            (
+                RepoLifecycleState::Ready,
+                "member",
+                Some(false),
+                MainPushMode::Denied,
+            ),
+        ] {
+            let permissions = permissions.map(|can_push| RepositoryMemberPermissions {
+                can_push,
+                can_change_file_visibility: false,
+                can_apply_changes: false,
+            });
+            let policy = repository_push_policy_for_user_id("owner", state, permissions, user);
+            assert_eq!(policy.mode, expected, "{state:?} {user}");
+            assert_eq!(policy.access.main_push_mode(state), expected);
+        }
     }
 }

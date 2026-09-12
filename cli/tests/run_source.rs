@@ -31,8 +31,22 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
         let changing_checkout = checkout.path().to_path_buf();
         let uploaded_oid = oid.clone();
         let app = Router::new()
-                    .route("/v1/session", get(|| async { Json(serde_json::json!({"identity":null,"user":{"id":"user-test","handle":"owner","email":"owner@example.test","email_verified":true}})) }))
-                    .route("/v1/repos/owner/repo/runs/resolve", post(move |Query(query): Query<CreateManualRunQuery>, headers: HeaderMap, body: Bytes| {
+            .route(
+                "/v1/session",
+                get(|| async {
+                    Json(support::session_response(
+                        "user-test",
+                        "owner",
+                        "owner@example.test",
+                    ))
+                }),
+            )
+            .route(
+                "/v1/repos/owner/repo/runs/resolve",
+                post(
+                    move |Query(query): Query<CreateManualRunQuery>,
+                          headers: HeaderMap,
+                          body: Bytes| {
                         let oid = known_oid.clone();
                         let checkout = changing_checkout.clone();
                         async move {
@@ -45,10 +59,19 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
                             assert!(body.is_empty());
                             assert_eq!(query.git_oid, oid);
                             assert_eq!(query.workflow, "checks");
-                            Json(if known { serde_json::json!({"status":"queued","run":run_response(&query)}) } else { serde_json::json!({"status":"upload-required"}) })
+                            Json(if known {
+                                serde_json::json!({"status":"queued","run":run_response(&query)})
+                            } else {
+                                serde_json::json!({"status":"upload-required"})
+                            })
                         }
-                    }))
-                    .route("/v1/repos/owner/repo/runs", post(move |Query(query): Query<CreateManualRunQuery>, body: Bytes| {
+                    },
+                ),
+            )
+            .route(
+                "/v1/repos/owner/repo/runs",
+                post(
+                    move |Query(query): Query<CreateManualRunQuery>, body: Bytes| {
                         let upload = uploaded.clone();
                         let oid = uploaded_oid.clone();
                         async move {
@@ -57,7 +80,9 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
                             *upload.lock().unwrap() = Some(body.to_vec());
                             Json(run_response(&query))
                         }
-                    }));
+                    },
+                ),
+            );
         let server = TestServer::new(app);
         run_git(
             checkout.path(),
@@ -99,10 +124,6 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
             assert!(heads.status.success());
             assert!(String::from_utf8_lossy(&heads.stdout).contains(&oid));
         }
-        eprintln!(
-            "known={known}: {}",
-            String::from_utf8_lossy(&output.stdout).trim()
-        );
     }
 }
 
