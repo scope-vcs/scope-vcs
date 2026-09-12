@@ -76,7 +76,7 @@ pub(crate) async fn authorized_git_read(
             &repo, owner, repo_name, &principal,
         ));
     }
-    ensure_repo_read(state, &repo, &principal)?;
+    ensure_repo_read(&repo, &principal)?;
     let access = repo.access_for_principal(&principal);
     Ok((repo, access, viewer_user_id))
 }

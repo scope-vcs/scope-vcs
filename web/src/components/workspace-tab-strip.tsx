@@ -138,7 +138,7 @@ export function WorkspaceTabStrip({
               <button
                 aria-label={`Close ${accessibleLabel}`}
                 className={cn(
-                  'mr-1.5 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-[color,background-color,opacity] hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring sm:opacity-0 sm:group-hover/tab:opacity-100 sm:focus-visible:opacity-100',
+                  'mr-1.5 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-[color,background-color,opacity] hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring sm:opacity-0 sm:group-hover/tab:opacity-100 sm:focus-visible:opacity-100 [@media(hover:none)]:min-w-11 [@media(hover:none)]:!opacity-100 [@media(pointer:coarse)]:min-w-11 [@media(pointer:coarse)]:!opacity-100',
                   active && 'sm:opacity-60',
                 )}
                 onClick={() => closeTab(tab.id)}

@@ -13,7 +13,7 @@ pub(super) enum RequestCommand {
     #[command(about = "Start a draft request and create its local branch")]
     Start(RequestStartArgs),
     #[command(about = "Push the current commit to a request branch")]
-    Push(RequestPushArgs),
+    Push(RequestTargetArgs),
     #[command(about = "Submit a request to its maintainers")]
     Submit(RequestSubmitArgs),
     #[command(about = "Close a request")]
@@ -25,7 +25,7 @@ pub(super) enum RequestCommand {
     #[command(about = "Remove a request invitee")]
     Uninvite(RequestUninviteArgs),
     #[command(about = "Leave a request that invited you")]
-    Leave(RequestLeaveArgs),
+    Leave(RequestTargetArgs),
     #[command(about = "Merge a request into main")]
     Merge(RequestMergeArgs),
     #[command(about = "Rate the other terminal request participant")]
@@ -33,17 +33,17 @@ pub(super) enum RequestCommand {
     #[command(about = "Work with request discussions")]
     Discussion(RequestDiscussionArgs),
     #[command(about = "Show one request")]
-    Show(RequestShowArgs),
+    Show(RequestTargetArgs),
     #[command(about = "List visible requests")]
     List(RequestListArgs),
     #[command(about = "Show the current request or repository request status")]
-    Status(RequestStatusArgs),
+    Status(RequestTargetArgs),
     #[command(about = "Fetch a request and safely switch to its local branch")]
     Checkout(RequestCheckoutArgs),
     #[command(about = "Inspect the server-visible changes in a request revision")]
     Diff(RequestDiffArgs),
     #[command(about = "Show request mergeability and visible workflow runs for its head")]
-    Checks(RequestShowArgs),
+    Checks(RequestTargetArgs),
 }
 
 #[derive(Parser)]
@@ -72,12 +72,6 @@ pub(super) struct RequestTargetArgs {
         help = "Request name or req_ ID (defaults to the current branch or request ref)"
     )]
     pub(super) request: Option<String>,
-}
-
-#[derive(Parser)]
-pub(super) struct RequestPushArgs {
-    #[command(flatten)]
-    pub(super) target: RequestTargetArgs,
 }
 
 #[derive(Parser)]
@@ -132,12 +126,6 @@ pub(super) struct RequestUninviteArgs {
     pub(super) target: RequestTargetArgs,
     #[arg(value_name = "HANDLE", help = "Exact Scope handle to remove")]
     pub(super) handle: String,
-}
-
-#[derive(Parser)]
-pub(super) struct RequestLeaveArgs {
-    #[command(flatten)]
-    pub(super) target: RequestTargetArgs,
 }
 
 #[derive(Parser)]
@@ -261,12 +249,6 @@ pub(super) struct RequestDiscussionReopenArgs {
 }
 
 #[derive(Parser)]
-pub(super) struct RequestShowArgs {
-    #[command(flatten)]
-    pub(super) target: RequestTargetArgs,
-}
-
-#[derive(Parser)]
 pub(super) struct RequestListArgs {
     #[arg(long, help = "Scope Git remote for the target repository")]
     pub(super) remote: Option<String>,
@@ -328,12 +310,6 @@ impl From<RequestStateArg> for scope_api_contract::RequestState {
             RequestStateArg::Merged => Self::Merged,
         }
     }
-}
-
-#[derive(Parser)]
-pub(super) struct RequestStatusArgs {
-    #[command(flatten)]
-    pub(super) target: RequestTargetArgs,
 }
 
 #[derive(Clone, Copy, ValueEnum)]

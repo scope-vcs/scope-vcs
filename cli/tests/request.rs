@@ -64,6 +64,27 @@ fn json_usage_errors_use_the_shared_schema_and_exit_two() {
 }
 
 #[test]
+fn malformed_explicit_repository_fails_before_authentication() {
+    let dir = TempDir::new("request-invalid-repository");
+    let output = scope_command(dir.path())
+        .args([
+            "--json",
+            "--non-interactive",
+            "--repo",
+            "malformed",
+            "request",
+            "list",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error.code, scope_api_contract::ErrorCode::BadRequest);
+    assert_eq!(error.message, "expected repository as owner/repo");
+}
+
+#[test]
 fn global_json_supports_local_rule_sync_results() {
     let dir = TempDir::new("json-command-scope");
     create_repo_with_head(dir.path());

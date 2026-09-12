@@ -81,10 +81,8 @@ pub(super) fn edit_request(
             uploaded
                 .attachments
                 .iter()
-                .zip(uploaded.references)
-                .filter_map(|(attachment, reference)| {
-                    (!existing.contains(&attachment.id)).then_some(reference)
-                }),
+                .filter(|attachment| !existing.contains(&attachment.id))
+                .map(attachments::markdown_reference),
         ))
     } else {
         supplied_description
@@ -98,22 +96,18 @@ pub(super) fn edit_request(
     )?;
     let mut human_lines = request_mutation_receipt_lines("Edited request", &response);
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
-    let attachments = if args.attachments.wait {
-        attachments::wait_for_processing(
-            api,
-            api_target(&context, &request_id),
-            uploaded.attachments,
-            serde_json::json!({
-                "operation": "request.edit",
-                "saved": true,
-                "request_id": &request_id,
-                "request": &response.request,
-            }),
-        )?
-    } else {
-        uploaded.attachments
-    };
-    attachments::complete_uploads(&uploaded.receipt_keys)?;
+    let attachments = uploaded.complete_saved(
+        api,
+        api_target(&context, &request_id),
+        args.attachments.wait,
+        None,
+        serde_json::json!({
+            "operation": "request.edit",
+            "saved": true,
+            "request_id": &request_id,
+            "request": &response.request,
+        }),
+    )?;
     Ok(RequestCommandOutcome::new(
         "request.edit",
         RequestCommandResult::Mutation(MutationResult {

@@ -353,15 +353,14 @@ EOF
   chmod +x "$runner"
 }
 
-start_api() {
-  local issuer dev_email dev_handle object_key
-  issuer="$(get_clerk_issuer)"
-  dev_email="$(get_dev_user_email)"
-  dev_handle="$(get_dev_user_handle)"
-  object_key="$(get_object_key)"
-  write_api_runner "$issuer" "$dev_email" "$dev_handle" "$object_key"
-  setsid "$STATE_DIR/api.sh" > "$API_OUT_LOG" 2> "$API_ERR_LOG" &
-  echo "$!" > "$API_PID_FILE"
+start_service() {
+  local service="$1" readiness="${2:-}" timeout="${3:-}"
+  setsid "$STATE_DIR/$service.sh" > "$STATE_DIR/$service.out.log" 2> "$STATE_DIR/$service.err.log" &
+  echo "$!" > "$STATE_DIR/$service.pid"
+  if [[ -n "$readiness" ]] && ! wait_http "$readiness" "$timeout"; then
+    echo "${service//-/ } did not become ready; see $STATE_DIR/$service.err.log" >&2
+    exit 1
+  fi
 }
 
 prepare_local_schema() {
@@ -404,30 +403,6 @@ install_dependency_analyzer() {
   )
 }
 
-start_worker() {
-  write_worker_runner
-  setsid "$STATE_DIR/worker.sh" > "$WORKER_OUT_LOG" 2> "$WORKER_ERR_LOG" &
-  echo "$!" > "$WORKER_PID_FILE"
-}
-
-start_media() {
-  write_media_runner
-  setsid "$STATE_DIR/media.sh" > "$MEDIA_OUT_LOG" 2> "$MEDIA_ERR_LOG" &
-  echo "$!" > "$MEDIA_PID_FILE"
-}
-
-start_media_worker() {
-  write_media_worker_runner
-  setsid "$STATE_DIR/media-worker.sh" > "$MEDIA_WORKER_OUT_LOG" 2> "$MEDIA_WORKER_ERR_LOG" &
-  echo "$!" > "$MEDIA_WORKER_PID_FILE"
-}
-
-start_web() {
-  write_web_runner
-  setsid "$STATE_DIR/web.sh" > "$WEB_OUT_LOG" 2> "$WEB_ERR_LOG" &
-  echo "$!" > "$WEB_PID_FILE"
-}
-
 wait_http() {
   local url="$1"
   local seconds="$2"
@@ -457,19 +432,12 @@ pid_status() {
 }
 
 doctor() {
-  assert_command cargo
-  assert_command curl
-  assert_command git
-  assert_command node
-  assert_command npm
-  assert_command openssl
-  assert_command pnpm
-  assert_command setsid
-  assert_command ss
-  assert_command "${SCOPE_MEDIA_FFMPEG:-ffmpeg}"
-  assert_command "${SCOPE_MEDIA_FFPROBE:-ffprobe}"
-  assert_command "${SCOPE_MEDIA_HEIF_CONVERT:-heif-convert}"
-  assert_command "${SCOPE_MEDIA_HEIF_INFO:-heif-info}"
+  local tool
+  for tool in cargo curl git node npm openssl pnpm setsid ss \
+    "${SCOPE_MEDIA_FFMPEG:-ffmpeg}" "${SCOPE_MEDIA_FFPROBE:-ffprobe}" \
+    "${SCOPE_MEDIA_HEIF_CONVERT:-heif-convert}" "${SCOPE_MEDIA_HEIF_INFO:-heif-info}"; do
+    assert_command "$tool"
+  done
 
   local issuer dev_email secret_key
   issuer="$(get_clerk_issuer)"
@@ -554,38 +522,25 @@ up() {
   install_dependency_analyzer
   build_local_services
   prepare_local_schema
-  start_api
-  if ! wait_http "http://localhost:8080/readyz" 45; then
-    echo "api did not become ready; see $API_ERR_LOG" >&2
-    exit 1
-  fi
-  start_worker
-  start_media
-  if ! wait_http "http://localhost:8083/healthz" 90; then
-    echo "media gateway did not become ready; see $MEDIA_ERR_LOG" >&2
-    exit 1
-  fi
-  start_media_worker
-  if ! wait_http "http://localhost:8084/healthz" 90; then
-    echo "media worker did not become ready; see $MEDIA_WORKER_ERR_LOG" >&2
-    exit 1
-  fi
+  start_service api "http://localhost:8080/readyz" 45
+  write_worker_runner
+  start_service worker
+  write_media_runner
+  start_service media "http://localhost:8083/healthz" 90
+  write_media_worker_runner
+  start_service media-worker "http://localhost:8084/healthz" 90
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
-    start_web
-    if ! wait_http "http://localhost:3000" 180; then
-      echo "web did not become ready; see $WEB_ERR_LOG" >&2
-      exit 1
-    fi
+    write_web_runner
+    start_service web "http://localhost:3000" 180
   fi
   status
 }
 
 status() {
-  echo "api process: $(pid_status "$API_PID_FILE")"
-  echo "worker process: $(pid_status "$WORKER_PID_FILE")"
-  echo "media process: $(pid_status "$MEDIA_PID_FILE")"
-  echo "media worker process: $(pid_status "$MEDIA_WORKER_PID_FILE")"
-  echo "web process: $(pid_status "$WEB_PID_FILE")"
+  local service
+  for service in api worker media media-worker web; do
+    echo "${service//-/ } process: $(pid_status "$STATE_DIR/$service.pid")"
+  done
   probe "api readyz" "http://localhost:8080/readyz"
   probe "media healthz" "http://localhost:8083/healthz"
   probe "media worker healthz" "http://localhost:8084/healthz"

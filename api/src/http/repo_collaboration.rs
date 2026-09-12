@@ -30,7 +30,7 @@ pub(crate) async fn list_repository_collaboration(
 ) -> Result<Json<RepositoryCollaborationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let repo = find_repo(&state, &owner, &repo_name).await?;
-    ensure_collaboration_owner_access(&state, &repo, &user.id)?;
+    ensure_collaboration_owner_access(&repo, &user.id)?;
     let (repo, users) = state
         .metadata
         .repositories()
@@ -268,7 +268,7 @@ where
 {
     let user = require_scope_user(state, headers).await?;
     let repo = find_repo(state, owner, repo_name).await?;
-    ensure_collaboration_owner_access(state, &repo, &user.id)?;
+    ensure_collaboration_owner_access(&repo, &user.id)?;
     let incarnation = repo.incarnation();
     let result = mutate(user).await?;
     publish_collaboration_change(state, owner, repo_name, &incarnation, event).await?;
@@ -298,13 +298,9 @@ async fn publish_collaboration_change(
     Ok(())
 }
 
-fn ensure_collaboration_owner_access(
-    state: &AppState,
-    repo: &Repository,
-    user_id: &str,
-) -> Result<(), ApiError> {
+fn ensure_collaboration_owner_access(repo: &Repository, user_id: &str) -> Result<(), ApiError> {
     let principal = principal_for_user_id(repo, user_id);
-    ensure_repo_read(state, repo, &principal)?;
+    ensure_repo_read(repo, &principal)?;
     if repo.is_owner_user(user_id) {
         Ok(())
     } else {

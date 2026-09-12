@@ -8,7 +8,7 @@ pub(super) fn start_request_branch(
 ) -> anyhow::Result<RequestCommandOutcome> {
     let context = load_context(Some(git_repo), api, args.remote.as_deref())?;
     local::require_git_remote(&context)?;
-    let audience = start_audience(context.repo.access.actor, args.audience);
+    let audience = start_audience(context.repo.access.actor, args.audience)?;
     let base_oid = refresh_main_projection(git_repo, &context.target, audience, api.token)?;
     let branch = args.name.trim().to_string();
     scope_domain::requests::validate_request_name(&branch)

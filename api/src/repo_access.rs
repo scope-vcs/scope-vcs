@@ -33,11 +33,7 @@ pub(crate) async fn find_repo(
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{name} not found")))
 }
 
-pub(crate) fn ensure_repo_read(
-    _state: &AppState,
-    repo: &Repository,
-    principal: &Principal,
-) -> Result<(), ApiError> {
+pub(crate) fn ensure_repo_read(repo: &Repository, principal: &Principal) -> Result<(), ApiError> {
     let access = repo.access_for_principal(principal);
     let readable = if access.actor == RepositoryActor::Public {
         repo.record.lifecycle_state == RepoLifecycleState::Ready

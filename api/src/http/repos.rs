@@ -185,7 +185,7 @@ pub(crate) async fn get_repo_config(
     if repo.access.actor == RepositoryActor::Public {
         let full_repo = find_repo(&state, &owner, &repo_name).await?;
         let principal = principal_for_scope_user(&full_repo, Some(&user));
-        crate::repo_access::ensure_repo_read(&state, &full_repo, &principal)?;
+        crate::repo_access::ensure_repo_read(&full_repo, &principal)?;
         return Err(ApiError::forbidden("repo membership required"));
     }
 
@@ -355,7 +355,7 @@ pub(crate) async fn get_projection_preview(
     let repo = find_repo(&state, &owner, &repo_name).await?;
     let user = optional_scope_user(&state, &headers).await?;
     let requester = principal_for_scope_user(&repo, user.as_ref());
-    ensure_projection_preview_access(&state, &repo, &requester, input.audience)?;
+    ensure_projection_preview_access(&repo, &requester, input.audience)?;
     let include_private_counts =
         repo.access_for_principal(&requester).actor != RepositoryActor::Public;
 

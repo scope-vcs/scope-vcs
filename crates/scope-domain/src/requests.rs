@@ -32,6 +32,7 @@ pub use lifecycle::{
     RecordWorkingRequestUploadInput, RequestRevisionMutation, StartRequestFacts, StartRequestInput,
     StartRequestMutation, WorkingRequestUploadMutation, close_request, record_request_revision,
     record_working_request_upload, start_request, validate_request_name,
+    validate_start_request_audience,
 };
 mod invitees;
 pub use invitees::{

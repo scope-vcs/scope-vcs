@@ -58,6 +58,53 @@ fn request_reads_work_outside_a_checkout_with_explicit_repository() {
 }
 
 #[test]
+fn invalid_request_audience_fails_before_git_fetch() {
+    let dir = TempDir::new("request-invalid-audience");
+    create_repo_with_head(dir.path());
+    let server = FixtureServer::start();
+    let remote = format!("{}/git/public/owner/repo", server.server.api_url);
+    run_git(dir.path(), ["remote", "add", "scope", &remote]);
+    let trace_dir = TempDir::new("request-invalid-audience-trace");
+    let trace = trace_dir.path().join("git-trace.log");
+
+    let output = server
+        .command(dir.path())
+        .env("GIT_TRACE", &trace)
+        .args([
+            "--json",
+            "request",
+            "start",
+            "private-change",
+            "--remote",
+            "scope",
+            "--audience",
+            "private",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(
+        error.message,
+        "public contributors can only create public requests"
+    );
+    let git_trace = fs::read_to_string(trace).unwrap();
+    assert!(
+        !git_trace.lines().any(|line| line.contains(" fetch ")),
+        "{git_trace}"
+    );
+    assert!(
+        !server
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event == "POST request")
+    );
+}
+
+#[test]
 fn request_diff_uses_server_revision_and_path_with_no_local_private_data() {
     let dir = TempDir::new("request-diff");
     create_repo_with_head(dir.path());

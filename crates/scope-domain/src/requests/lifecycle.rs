@@ -321,12 +321,21 @@ fn validate_start_request_input(input: &StartRequestInput) -> Result<(), DomainE
     }
     validate_required("base main oid", &input.base_main_oid)?;
     validate_required("event id", &input.event_id)?;
-    if input.author_role == RequestActorRole::Public && input.audience != RequestAudience::Public {
-        return Err(DomainError::invalid_input(
-            "public contributors can only create public requests",
-        ));
-    }
+    validate_start_request_audience(input.author_role, input.audience)?;
     Ok(())
+}
+
+pub fn validate_start_request_audience(
+    author_role: RequestActorRole,
+    audience: RequestAudience,
+) -> Result<(), DomainError> {
+    if author_role == RequestActorRole::Public && audience != RequestAudience::Public {
+        Err(DomainError::invalid_input(
+            "public contributors can only create public requests",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn validate_expected_head(request: &Request, expected: Option<&str>) -> Result<(), DomainError> {
@@ -366,4 +375,34 @@ pub fn validate_request_name(name: &str) -> Result<(), DomainError> {
         return Err(DomainError::invalid_input("request name is reserved"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_contributors_can_only_start_public_requests() {
+        assert!(
+            validate_start_request_audience(RequestActorRole::Public, RequestAudience::Public)
+                .is_ok()
+        );
+        let error =
+            validate_start_request_audience(RequestActorRole::Public, RequestAudience::Private)
+                .unwrap_err();
+        assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
+        assert_eq!(
+            error.message,
+            "public contributors can only create public requests"
+        );
+    }
+
+    #[test]
+    fn maintainers_can_start_public_or_private_requests() {
+        for role in [RequestActorRole::Member, RequestActorRole::Owner] {
+            for audience in [RequestAudience::Public, RequestAudience::Private] {
+                assert!(validate_start_request_audience(role, audience).is_ok());
+            }
+        }
+    }
 }

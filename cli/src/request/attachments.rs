@@ -6,7 +6,7 @@ use crate::api::{
 };
 use crate::display::terminal_text;
 use anyhow::{Context, bail};
-pub(super) use journal::{begin_mutation, complete_mutation, complete_uploads};
+pub(super) use journal::begin_mutation;
 use journal::{fingerprint, rotate_upload_operation, unix_now, upload_operations};
 use scope_api_contract::attachments::{
     FinishRequestAttachmentRequest, PrepareRequestAttachmentRequest, RequestAttachmentKind,
@@ -30,8 +30,39 @@ const WAIT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 pub(super) struct UploadedAttachments {
     pub(super) attachments: Vec<RequestAttachmentResponse>,
-    pub(super) references: Vec<String>,
-    pub(super) receipt_keys: Vec<String>,
+    receipt_keys: Vec<String>,
+}
+
+impl UploadedAttachments {
+    pub(super) fn complete_saved(
+        self,
+        api: ApiSession<'_>,
+        target: RequestTarget<'_>,
+        wait: bool,
+        mutation: Option<&journal::PendingMutation>,
+        mut recovery: serde_json::Value,
+    ) -> anyhow::Result<Vec<RequestAttachmentResponse>> {
+        let attachments = if wait {
+            wait_for_processing(api, target, self.attachments, recovery.clone())?
+        } else {
+            self.attachments
+        };
+        let cleanup = match mutation {
+            Some(mutation) => journal::complete_mutation(mutation, &self.receipt_keys),
+            None => journal::complete_uploads(&self.receipt_keys),
+        };
+        cleanup.map_err(|error| {
+            recovery["saved"] = serde_json::json!(true);
+            recovery["recovery"] = serde_json::json!(
+                "The server saved this change. Local attachment receipt cleanup failed; preserve the journal and inspect the saved result before retrying the command."
+            );
+            crate::error::CliError::partial(
+                format!("Change saved, but attachment receipt cleanup failed: {error:#}"),
+                recovery,
+            )
+        })?;
+        Ok(attachments)
+    }
 }
 
 #[derive(Clone)]
@@ -54,7 +85,6 @@ pub(super) fn upload(
     if paths.is_empty() {
         return Ok(UploadedAttachments {
             attachments: Vec::new(),
-            references: Vec::new(),
             receipt_keys: Vec::new(),
         });
     }
@@ -108,7 +138,6 @@ pub(super) fn upload(
     )?;
 
     let mut attachments = Vec::with_capacity(files.len());
-    let mut references = Vec::with_capacity(files.len());
     for (file, operation_id) in files.iter().zip(operations) {
         let mut prepare_request = PrepareRequestAttachmentRequest {
             operation_id,
@@ -140,12 +169,10 @@ pub(super) fn upload(
             );
             prepared.attachment
         };
-        references.push(markdown_reference(&attachment));
         attachments.push(attachment);
     }
     Ok(UploadedAttachments {
         attachments,
-        references,
         receipt_keys: files.into_iter().map(|file| file.receipt_key).collect(),
     })
 }
@@ -424,7 +451,7 @@ fn media_type_for_path(path: &Path) -> anyhow::Result<&'static str> {
     }
 }
 
-fn markdown_reference(attachment: &RequestAttachmentResponse) -> String {
+pub(super) fn markdown_reference(attachment: &RequestAttachmentResponse) -> String {
     let label = attachment
         .filename
         .replace('\\', "\\\\")
@@ -437,7 +464,7 @@ fn markdown_reference(attachment: &RequestAttachmentResponse) -> String {
     }
 }
 
-pub(super) fn wait_for_processing(
+fn wait_for_processing(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
     attachments: Vec<RequestAttachmentResponse>,

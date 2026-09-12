@@ -29,7 +29,7 @@ use scope_domain::{
     requests::{
         CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
         RequestAudience, RequestViewer, StartRequestInput, canonical_request_ref,
-        request_actor_role, request_mergeability, request_policy,
+        request_actor_role, request_mergeability, request_policy, validate_start_request_audience,
     },
 };
 use scope_postgres::db::{CloseRequestCommand, EditRequestIdentityCommand, SubmitRequestCommand};
@@ -323,14 +323,11 @@ pub(crate) async fn start_request(
     let user = require_scope_user(&state, &headers).await?;
     let repo = find_repo(&state, &owner, &repo_name).await?;
     let principal = principal_for_scope_user(&repo, Some(&user));
-    ensure_repo_read(&state, &repo, &principal)?;
+    ensure_repo_read(&repo, &principal)?;
     let access = repo.access_for_principal(&principal);
     let audience: RequestAudience = input.audience.into();
-    if access.actor == RepositoryActor::Public && audience != RequestAudience::Public {
-        return Err(ApiError::forbidden(
-            "public contributors can only create public requests",
-        ));
-    }
+    validate_start_request_audience(request_actor_role(access), audience)
+        .map_err(|error| ApiError::forbidden(error.message))?;
     let base_main_oid = current_main_oid_for_audience(&state, &repo, audience)
         .await?
         .ok_or_else(|| ApiError::conflict("repo has no main branch to base a request on"))?;
@@ -529,7 +526,7 @@ pub(crate) async fn repo_and_access(
         .as_ref()
         .map(|user| principal_for_scope_user(&repo, Some(user)))
         .unwrap_or_else(scope_domain::policy::Principal::public);
-    ensure_repo_read(state, &repo, &principal)?;
+    ensure_repo_read(&repo, &principal)?;
     let access = repo.access_for_principal(&principal);
     Ok((repo, access, user.map(|user| user.id)))
 }

@@ -72,6 +72,9 @@ pub struct PreparedRequestCommand {
 }
 
 pub fn prepare_request_command(args: RequestArgs) -> anyhow::Result<PreparedRequestCommand> {
+    if let Some(repository) = crate::context::explicit_repository() {
+        crate::clone::parse_repo_spec(repository)?;
+    }
     let local_command = match &args.command {
         RequestCommand::Start(_) => Some(("scope request start", true)),
         RequestCommand::Push(_) => Some(("scope request push", false)),
@@ -110,8 +113,8 @@ pub fn run_request_command(
         RequestCommand::Push(args) => push_request_branch(
             git_repo.expect("prepared local command"),
             api,
-            args.target.remote,
-            args.target.request,
+            args.remote,
+            args.request,
         ),
         RequestCommand::Submit(args) => {
             submit_request_command(git_repo, api, args.target, args.yes)
@@ -124,21 +127,21 @@ pub fn run_request_command(
         RequestCommand::Uninvite(args) => {
             invite_request(git_repo, api, args.target, args.handle, false)
         }
-        RequestCommand::Leave(args) => leave_invited_request(git_repo, api, args.target),
+        RequestCommand::Leave(args) => leave_invited_request(git_repo, api, args),
         RequestCommand::Merge(args) => merge_request_command(git_repo, api, args.target, args.yes),
         RequestCommand::Rate(args) => {
             rate_request_command(git_repo, api, args.target, args.score, args.reason)
         }
         RequestCommand::Discussion(args) => run_request_discussion_command(git_repo, api, args),
-        RequestCommand::Show(args) => show_one_request(git_repo, api, args.target),
+        RequestCommand::Show(args) => show_one_request(git_repo, api, args),
         RequestCommand::List(args) => list_request_status(git_repo, api, args),
         RequestCommand::Checkout(args) => {
             inspect::checkout_request(git_repo.expect("prepared local command"), api, args)
         }
         RequestCommand::Diff(args) => inspect::diff_request(git_repo, api, args),
-        RequestCommand::Checks(args) => inspect::request_checks(git_repo, api, args.target),
+        RequestCommand::Checks(args) => inspect::request_checks(git_repo, api, args),
         RequestCommand::Status(args) => {
-            show_request_status(git_repo, api, args.target.remote, args.target.request)
+            show_request_status(git_repo, api, args.remote, args.request)
         }
     }
 }
@@ -315,13 +318,21 @@ fn close_request_branch(
 fn start_audience(
     actor: crate::api::RepositoryActor,
     requested: Option<RequestAudienceArg>,
-) -> RequestAudience {
-    requested.map(Into::into).unwrap_or(match actor {
+) -> anyhow::Result<RequestAudience> {
+    let audience = requested.map(Into::into).unwrap_or(match actor {
         crate::api::RepositoryActor::Public => RequestAudience::Public,
         crate::api::RepositoryActor::Owner | crate::api::RepositoryActor::Member => {
             RequestAudience::Private
         }
-    })
+    });
+    let author_role = match actor {
+        crate::api::RepositoryActor::Public => crate::api::RequestActorRole::Public,
+        crate::api::RepositoryActor::Member => crate::api::RequestActorRole::Member,
+        crate::api::RepositoryActor::Owner => crate::api::RequestActorRole::Owner,
+    };
+    scope_domain::requests::validate_start_request_audience(author_role.into(), audience.into())
+        .map_err(|error| crate::error::CliError::usage(error.message))?;
+    Ok(audience)
 }
 
 /// Read the request associated with the current branch without changing local state.
@@ -358,7 +369,7 @@ mod audience_tests {
             (RepositoryActor::Member, RequestAudience::Private),
             (RepositoryActor::Public, RequestAudience::Public),
         ] {
-            assert_eq!(start_audience(actor, None), expected);
+            assert_eq!(start_audience(actor, None).unwrap(), expected);
         }
     }
 }

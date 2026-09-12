@@ -53,7 +53,13 @@ pub(super) fn discussion_mutation(
         },
         attachment_args.paths,
     )?;
-    let body = text::append_attachment_references(body, uploaded.references);
+    let body = text::append_attachment_references(
+        body,
+        uploaded
+            .attachments
+            .iter()
+            .map(attachments::markdown_reference),
+    );
     let mut scope_parts = vec![
         scope,
         &context.target.owner,
@@ -108,21 +114,19 @@ pub(super) fn discussion_mutation(
         }
     };
     human_lines.extend(attachment_receipt_lines(&uploaded.attachments));
-    let uploaded_attachments = if attachment_args.wait {
-        let mut recovery = serde_json::json!({
-            "operation": command, "saved": true, "request_id": &request_id, "discussion": &discussion,
-        });
-        if let Some(reply) = &reply {
-            recovery["reply"] =
-                serde_json::to_value(reply).context("serialize discussion reply")?;
-        }
-        attachments::wait_for_processing(api, target, uploaded.attachments, recovery)?
-    } else {
-        uploaded.attachments
-    };
-    if let Some(mutation) = &pending_mutation {
-        attachments::complete_mutation(mutation, &uploaded.receipt_keys)?;
+    let mut recovery = serde_json::json!({
+        "operation": command, "saved": true, "request_id": &request_id, "discussion": &discussion,
+    });
+    if let Some(reply) = &reply {
+        recovery["reply"] = serde_json::to_value(reply).context("serialize discussion reply")?;
     }
+    let uploaded_attachments = uploaded.complete_saved(
+        api,
+        target,
+        attachment_args.wait,
+        pending_mutation.as_ref(),
+        recovery,
+    )?;
     let result = match reply {
         Some(reply) => RequestCommandResult::DiscussionReply(DiscussionReplyResult {
             repo: context.repo,
