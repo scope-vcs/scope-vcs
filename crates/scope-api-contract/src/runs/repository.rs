@@ -1,5 +1,6 @@
 use super::runtime::{AttemptState, CacheFinalState, CachePreparation, StepState};
 use crate::wire::wire_enum;
+use scope_domain::runs::trigger::PushTriggerEvaluationState as DomainPushTriggerEvaluationState;
 use scope_domain::runs::{
     job::RunJobState as DomainRunJobState, run::RunState as DomainRunState,
     source::RunTrigger as DomainRunTrigger,
@@ -199,14 +200,16 @@ pub struct PushTriggerCheckResponse {
     pub run: RunResponse,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum PushTriggerEvaluationState {
-    Pending,
-    Succeeded,
-    ConfigurationError,
-    Failed,
-}
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    PushTriggerEvaluationState => DomainPushTriggerEvaluationState {
+        Pending,
+        Succeeded,
+        ConfigurationError,
+        Failed,
+    }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PushTriggerEvaluationResponse {

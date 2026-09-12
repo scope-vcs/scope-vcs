@@ -47,13 +47,14 @@ async fn public_request_reads_remain_available_before_projection_outbox_catches_
     let before = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
-    let mut update = receive_pack_update_from_staging_repo(
+    let mut update = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &second,
         &test_owner_id(),
         config,
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap();

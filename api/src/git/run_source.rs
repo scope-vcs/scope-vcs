@@ -3,8 +3,8 @@ pub(super) mod operation;
 use crate::{
     error::ApiError,
     git::{
-        cache::GitDerivedCacheNamespace, restore::restore_git_pack_spans,
-        upload::git_process_output_with_limits,
+        cache::GitDerivedCacheNamespace, command::git_process_output,
+        restore::restore_git_pack_spans,
     },
     state::AppState,
 };
@@ -13,16 +13,16 @@ use scope_domain::{
     runs::{run::Run, source::RunSource, workflow::identity::WorkflowPath},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
+use scope_git_process::{ProcessLimits, run as run_process};
 use scope_object_store::source_blob_bytes_bounded;
 use sha2::{Digest as _, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
     io::Read as _,
-    os::unix::{fs::DirBuilderExt as _, fs::OpenOptionsExt as _, process::CommandExt as _},
+    os::unix::{fs::DirBuilderExt as _, fs::OpenOptionsExt as _},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
-    thread,
-    time::{Duration, Instant},
+    process::Command,
+    time::Duration,
 };
 
 const GIT_INSPECTION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -166,14 +166,13 @@ async fn materialize_owned_git_head_bundle(
     let repo_path = repo;
     let timeout = state.runtime_budgets.git_command_timeout();
     let output = operation::spawn_blocking(Some(&owner), move || {
-        git_process_output_with_limits(
+        git_process_output(
             Command::new("git")
                 .arg("--git-dir")
                 .arg(repo_path)
                 .args(["bundle", "create", "-", &main_ref]),
             None,
-            timeout,
-            max_bytes,
+            ProcessLimits::new(timeout).with_max_stdout_bytes(max_bytes),
         )
     })
     .await
@@ -207,36 +206,22 @@ pub(crate) fn inspect_manual_run_bundle(
     clone
         .args(["clone", "--bare", "--no-local"])
         .arg(&bundle)
-        .arg(&bare)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if !run_git_with_timeout(&mut clone, "Git bundle clone")? {
+        .arg(&bare);
+    if run_git_inspection(&mut clone, "Git bundle clone", 0)?.is_none() {
         return Err(ApiError::bad_request("invalid Git bundle"));
     }
     let mut commit = Command::new("git");
     commit
         .arg("--git-dir")
         .arg(&bare)
-        .args(["cat-file", "-e", &format!("{git_oid}^{{commit}}")])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if !run_git_with_timeout(&mut commit, "Git commit inspection")? {
+        .args(["cat-file", "-e", &format!("{git_oid}^{{commit}}")]);
+    if run_git_inspection(&mut commit, "Git commit inspection", 0)?.is_none() {
         return Err(ApiError::bad_request(
             "requested Git commit is not present in the bundle",
         ));
     }
-    let yml_bytes = git_blob(
-        &bare,
-        git_oid,
-        yml.as_str().trim_start_matches('/'),
-        &temp.path.join("workflow-yml"),
-    )?;
-    let yaml_bytes = git_blob(
-        &bare,
-        git_oid,
-        yaml.as_str().trim_start_matches('/'),
-        &temp.path.join("workflow-yaml"),
-    )?;
+    let yml_bytes = git_blob(&bare, git_oid, yml.as_str().trim_start_matches('/'))?;
+    let yaml_bytes = git_blob(&bare, git_oid, yaml.as_str().trim_start_matches('/'))?;
     let (path, workflow_bytes) = match (yml_bytes, yaml_bytes) {
         (Some(_), Some(_)) => {
             return Err(ApiError::bad_request(format!(
@@ -254,25 +239,15 @@ pub(crate) fn inspect_manual_run_bundle(
     scope_run_config::parse_workflow(path.as_str(), &workflow_bytes).map_err(ApiError::bad_request)
 }
 
-fn git_blob(
-    bare: &Path,
-    git_oid: &str,
-    path: &str,
-    output_prefix: &Path,
-) -> Result<Option<Vec<u8>>, ApiError> {
+fn git_blob(bare: &Path, git_oid: &str, path: &str) -> Result<Option<Vec<u8>>, ApiError> {
     let object = format!("{git_oid}:{path}");
-    let size_path = output_prefix.with_extension("size");
-    let size_file = create_private_file(&size_path)?;
     let mut size = Command::new("git");
     size.arg("--git-dir")
         .arg(bare)
-        .args(["cat-file", "-s", &object])
-        .stdout(Stdio::from(size_file))
-        .stderr(Stdio::null());
-    if !run_git_with_timeout(&mut size, "Git workflow size inspection")? {
+        .args(["cat-file", "-s", &object]);
+    let Some(size_text) = run_git_inspection(&mut size, "Git workflow size inspection", 64)? else {
         return Ok(None);
-    }
-    let size_text = read_bounded_file(&size_path, 64)?;
+    };
     let size = std::str::from_utf8(&size_text)
         .map_err(|_| ApiError::bad_request("Git reported an invalid workflow size"))?
         .trim()
@@ -285,20 +260,20 @@ fn git_blob(
         )));
     }
 
-    let blob_path = output_prefix.with_extension("blob");
-    let blob_file = create_private_file(&blob_path)?;
     let mut blob = Command::new("git");
     blob.arg("--git-dir")
         .arg(bare)
-        .args(["cat-file", "blob", &object])
-        .stdout(Stdio::from(blob_file))
-        .stderr(Stdio::null());
-    if !run_git_with_timeout(&mut blob, "Git workflow read")? {
+        .args(["cat-file", "blob", &object]);
+    let Some(bytes) = run_git_inspection(
+        &mut blob,
+        "Git workflow read",
+        scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES,
+    )?
+    else {
         return Err(ApiError::bad_request(
             "workflow changed while inspecting the Git bundle",
         ));
-    }
-    let bytes = read_bounded_file(&blob_path, scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES)?;
+    };
     if bytes.len() != size {
         return Err(ApiError::bad_request(
             "Git workflow size changed while inspecting the bundle",
@@ -307,27 +282,28 @@ fn git_blob(
     Ok(Some(bytes))
 }
 
-fn run_git_with_timeout(command: &mut Command, operation: &str) -> Result<bool, ApiError> {
-    command.process_group(0);
-    let mut child = command.spawn().map_err(ApiError::internal)?;
-    let started = Instant::now();
-    loop {
-        if let Some(status) = child.try_wait().map_err(ApiError::internal)? {
-            return Ok(status.success());
+/// Runs an inspection command against caller-supplied bundle content. Timeouts and
+/// oversized output are the bundle's fault, so they surface as bad requests; a non-zero
+/// exit yields `None` for the caller to interpret.
+fn run_git_inspection(
+    command: &mut Command,
+    operation: &str,
+    max_stdout_bytes: usize,
+) -> Result<Option<Vec<u8>>, ApiError> {
+    let output = run_process(
+        command,
+        None,
+        ProcessLimits::new(GIT_INSPECTION_TIMEOUT).with_max_stdout_bytes(max_stdout_bytes),
+        operation,
+    )
+    .map_err(|error| {
+        if error.is_timeout() || error.is_stdout_limit() {
+            ApiError::bad_request(error.to_string())
+        } else {
+            ApiError::internal_message(error.to_string())
         }
-        if started.elapsed() >= GIT_INSPECTION_TIMEOUT {
-            let _ = Command::new("kill")
-                .args(["-KILL", "--"])
-                .arg(format!("-{}", child.id()))
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(ApiError::bad_request(format!("{operation} timed out")));
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
+    })?;
+    Ok(output.status.success().then_some(output.stdout))
 }
 
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), ApiError> {
@@ -378,7 +354,7 @@ impl TemporarySourceDirectory {
         for _ in 0..8 {
             let path = root.join(format!(
                 "{}.tmp",
-                crate::persistence_ids::generate_prefixed_id("inspect_")?
+                crate::persistence_ids::generate_prefixed_id("inspect")?
             ));
             match fs::DirBuilder::new().mode(0o700).create(&path) {
                 Ok(()) => return Ok(Self { path }),

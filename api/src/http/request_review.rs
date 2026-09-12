@@ -1,7 +1,7 @@
 use crate::{
     error::ApiError,
     git::{
-        import::{run_git_output, run_git_output_bounded},
+        command::{run_git_output, run_git_output_bounded},
         request_refs::with_request_revision_store_repo,
     },
     http::{
@@ -65,7 +65,7 @@ pub(crate) async fn list_request_revisions(
     let (repo, access, viewer_user_id) =
         repo_and_access(&state, &headers, &owner, &repo_name).await?;
     let repo = Arc::new(repo);
-    let request = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         access,
@@ -232,7 +232,7 @@ pub(crate) async fn get_request_revision_commit_file_diff(
     let (repo, access, viewer_user_id) =
         repo_and_access(&state, &headers, &owner, &repo_name).await?;
     let repo = Arc::new(repo);
-    let request = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         access,
@@ -438,9 +438,8 @@ fn request_changes_from_repo_with_visibility(
     access: RepositoryAccess,
     old_head_oid: &str,
     new_head_oid: &str,
-    path: Option<&str>,
 ) -> Result<VisibleRequestChanges, ApiError> {
-    let changes = request_changes(raw_repo, old_head_oid, new_head_oid, path)?;
+    let changes = request_changes(raw_repo, old_head_oid, new_head_oid)?;
 
     let mut fields = changes.split(|byte| *byte == 0);
     let mut files = Vec::new();

@@ -338,15 +338,7 @@ mod tests {
                 RequestQueueSection::YourWork,
                 "v1:work:9223372036854775808:req",
             ),
-            (
-                RequestQueueSection::Open,
-                "v1:open:9223372036854775808:1:1:req",
-            ),
-            (RequestQueueSection::Open, "v1:open:1:2147483648:1:req"),
-            (
-                RequestQueueSection::Open,
-                "v1:open:1:1:9223372036854775808:req",
-            ),
+            (RequestQueueSection::Open, "v1:open:9223372036854775808:req"),
             (
                 RequestQueueSection::Closed,
                 "v1:closed:9223372036854775808:req",

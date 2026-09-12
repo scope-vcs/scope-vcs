@@ -7,29 +7,14 @@
       "reason": "Materialization coordination, leases, pruning, and their concurrency and eviction tests define one cache lifecycle."
     },
     {
-      "path": "api/src/git/import/repo_io.rs",
-      "owner": "Git push repository ingestion",
-      "reason": "Pack production, segment upload state, content fencing, and prepared-push assembly form one bounded ingestion transaction."
-    },
-    {
       "path": "api/src/git/repository_engine.rs",
       "owner": "repository Git materialization engine",
       "reason": "Replica selection, local cache synchronization, cold restoration, and projection materialization coordinate one repository view."
     },
     {
-      "path": "api/src/git/request_ref_public_safety.rs",
-      "owner": "public request-ref safety",
-      "reason": "Commit reachability, path disclosure checks, and adversarial fixtures jointly enforce one public-request invariant."
-    },
-    {
       "path": "api/src/http/request_discussions.rs",
       "owner": "request discussion HTTP delivery",
       "reason": "Discussion queries and mutations share visibility projection, cursor, anchor, and response mapping rules."
-    },
-    {
-      "path": "api/src/http/requests.rs",
-      "owner": "request HTTP delivery",
-      "reason": "Request list, lifecycle, identity, and participant endpoints share request lookup, visibility, and response projection."
     },
     {
       "path": "cache-service/src/handlers.rs",

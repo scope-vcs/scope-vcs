@@ -134,7 +134,6 @@ pub struct RepoSummaryResponse {
     pub change_version: u64,
     pub access: RepositoryAccessResponse,
     pub open_request_count: usize,
-    pub request_permissions: RepoRequestPermissionsResponse,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -154,12 +153,6 @@ pub struct RepositoryAccessResponse {
     pub can_apply_changes: bool,
     pub can_manage_members: bool,
     pub can_delete_repo: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub struct RepoRequestPermissionsResponse {
-    pub can_start_request: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

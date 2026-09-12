@@ -1,5 +1,5 @@
 use super::run_resources::{
-    WORKFLOW, state_with_pushed_workflow_checkout, state_with_pushed_workflow_source,
+    state_with_pushed_workflow_checkout, state_with_pushed_workflow_source,
 };
 use super::*;
 use scope_object_store::{ObjectStore, ObjectStoreError};
@@ -223,13 +223,14 @@ async fn known_manual_source_is_pinned_once_and_replay_survives_catalog_changes(
     .unwrap();
     commit_all(&checkout, "advance accepted source");
     let next = clone_test_repo(&checkout, "manual-next-source", true);
-    let mut update = receive_pack_update_from_staging_repo(
+    let mut update = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &next,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap();

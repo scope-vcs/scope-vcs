@@ -17,20 +17,7 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
     let bare = clone_test_repo(&source, "landing-file-direct-read-bare", true);
     apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
 
-    let rebuilt = state
-        .metadata
-        .jobs()
-        .run_ready_outbox_jobs(
-            "landing-file-test",
-            10,
-            &|| {
-                crate::persistence::unix_now()
-                    .map_err(crate::error::ApiError::into_operator_diagnostic)
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await
-        .unwrap();
+    let rebuilt = drain_outbox(&state, "landing-file-test").await;
     assert_eq!(rebuilt.failed, 0);
 
     let path = ScopePath::parse("/README.html").unwrap();

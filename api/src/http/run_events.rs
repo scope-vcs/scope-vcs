@@ -182,13 +182,7 @@ async fn stream_run_events(
         }
         if last_state != Some(run.state) && (!terminal || !has_full_page) {
             last_state = Some(run.state);
-            let response = match run_response(run, &snapshot.jobs, snapshot.logs_truncated) {
-                Ok(response) => response,
-                Err(error) => {
-                    send_stream_error(&sender, error).await;
-                    return;
-                }
-            };
+            let response = run_response(run, snapshot.logs_truncated);
             let event = match Event::default().event("status").json_data(response) {
                 Ok(event) => event,
                 Err(error) => {

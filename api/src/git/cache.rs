@@ -1,12 +1,16 @@
+#[cfg(test)]
+use crate::git::command::run_git_output;
 use crate::{
-    config::DEFAULT_GIT_BRANCH,
     error::ApiError,
-    git::import::{run_git, run_git_output},
+    git::{
+        command::{git_ref_listing, run_git},
+        storage::{remove_dir_if_exists, repository_storage_key},
+    },
     persistence::ensure_private_dir,
 };
 use scope_domain::repository::RepositoryIncarnation;
+use scope_git::DEFAULT_GIT_BRANCH;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
@@ -68,10 +72,8 @@ impl RepositoryGitCache {
     }
 
     pub(crate) fn path_for(&self, incarnation: &RepositoryIncarnation) -> PathBuf {
-        self.root.join(format!(
-            "repo-{}.git",
-            repository_git_cache_key(incarnation)
-        ))
+        self.root
+            .join(format!("repo-{}.git", repository_storage_key(incarnation)))
     }
 
     pub(crate) fn lease(
@@ -197,24 +199,14 @@ pub(crate) fn sanitize_repository_git_cache_repo(
     repo: &Path,
     expected_head: &str,
 ) -> Result<(), ApiError> {
-    let output = run_git_output(
-        Some(repo),
-        &["for-each-ref", "--format=%(refname)%00%(objectname)"],
+    let refs = git_ref_listing(
+        repo,
+        &[],
         "reading refs before repository Git cache synchronization",
     )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading refs before repository Git cache synchronization: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let refs = String::from_utf8(output.stdout).map_err(ApiError::internal)?;
     let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
     let mut found_main = false;
-    for line in refs.lines() {
-        let (refname, oid) = line.split_once('\0').ok_or_else(|| {
-            ApiError::internal_message("invalid repository Git cache ref listing")
-        })?;
+    for (refname, oid) in refs {
         if refname == main_ref {
             if oid != expected_head {
                 return Err(ApiError::internal_message(
@@ -225,7 +217,7 @@ pub(crate) fn sanitize_repository_git_cache_repo(
         } else {
             run_git(
                 Some(repo),
-                &["update-ref", "-d", refname],
+                &["update-ref", "-d", &refname],
                 "removing non-main ref before repository Git cache synchronization",
             )?;
         }
@@ -309,19 +301,6 @@ impl Drop for RepositoryGitCacheLease {
     }
 }
 
-fn repository_git_cache_key(incarnation: &RepositoryIncarnation) -> String {
-    let mut hasher = Sha256::new();
-    for value in [
-        incarnation.repository_id().as_bytes(),
-        incarnation.incarnation_id().as_bytes(),
-    ] {
-        hasher.update((value.len() as u64).to_be_bytes());
-        hasher.update(value);
-    }
-    let digest = hasher.finalize();
-    hex::encode(&digest[..16])
-}
-
 fn touch_if_materialized(path: &Path) -> Result<(), ApiError> {
     if path.is_dir() {
         let marker = path.join(LAST_USED_FILE);
@@ -396,14 +375,6 @@ fn directory_size(root: &Path) -> Result<u64, ApiError> {
         }
     }
     Ok(total)
-}
-
-fn remove_dir_if_exists(path: &Path) -> Result<(), ApiError> {
-    match fs::remove_dir_all(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(ApiError::internal(error)),
-    }
 }
 
 #[cfg(test)]

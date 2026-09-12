@@ -9,12 +9,12 @@ pub(crate) use requests::*;
 pub(crate) use scope_api_contract::CommitFileResponse;
 use scope_api_contract::{
     DeviceLoginStatus, FileChangeKind, FirstPushTokenResponse, GitOid, GitPushTokenResponse,
-    RepoInitResponse, RepoLifecycleState, RepoRequestPermissionsResponse, RepoSummaryResponse,
-    RepositoryAccessResponse, RequestActorSummaryResponse, SessionIdentity, UserResponse,
-    Visibility,
+    RepoInitResponse, RepoSummaryResponse, RepositoryAccessResponse, RequestActorSummaryResponse,
+    UserResponse, Visibility,
 };
+use scope_git::DEFAULT_GIT_BRANCH;
 
-use crate::{config::DEFAULT_GIT_BRANCH, error::ApiError};
+use crate::error::ApiError;
 use scope_domain::history::{
     HistoryEntry, HistoryEntryFile, HistoryEntryKind as DomainHistoryEntryKind,
     HistoryEntryVisibilityChange, HistoryView,
@@ -84,35 +84,6 @@ pub(crate) fn git_oid_request(label: &str, value: &str) -> Result<String, ApiErr
     GitOid::try_from(value.trim())
         .map(String::from)
         .map_err(|_| ApiError::bad_request(format!("{label} must be a full SHA-1 Git object id")))
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct SessionResponse {
-    pub(crate) identity: Option<SessionIdentity>,
-    pub(crate) repo: SessionRepo,
-    pub(crate) principal_id: String,
-    pub(crate) capabilities: SessionCapabilities,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct SessionRepo {
-    pub(crate) id: String,
-    pub(crate) lifecycle_state: RepoLifecycleState,
-    pub(crate) access: RepositoryAccessResponse,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct SessionCapabilities {
-    pub(crate) read: bool,
-    pub(crate) can_read_private_files: bool,
-    pub(crate) can_push: bool,
-    pub(crate) can_change_file_visibility: bool,
-    pub(crate) can_apply_changes: bool,
-    pub(crate) can_manage_members: bool,
-    pub(crate) can_delete_repo: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -332,16 +303,7 @@ pub(crate) fn repo_summary_for_user(
         change_version: repo_change_version_for_access(repo, access),
         access: repository_access_response(access),
         open_request_count,
-        request_permissions: repo_request_permissions_response(access),
     })
-}
-
-pub(crate) fn repo_request_permissions_response(
-    _access: RepositoryAccess,
-) -> RepoRequestPermissionsResponse {
-    RepoRequestPermissionsResponse {
-        can_start_request: true,
-    }
 }
 
 pub(crate) fn repo_change_version_for_access(repo: &Repository, access: RepositoryAccess) -> u64 {
@@ -355,21 +317,6 @@ pub(crate) fn repo_change_version_for_access(repo: &Repository, access: Reposito
 pub(crate) fn repository_access_response(access: RepositoryAccess) -> RepositoryAccessResponse {
     RepositoryAccessResponse {
         actor: access.actor.into(),
-        can_read_private_files: access.can_read_private_files,
-        can_push: access.can_push,
-        can_change_file_visibility: access.can_change_file_visibility,
-        can_apply_changes: access.can_apply_changes,
-        can_manage_members: access.can_manage_members,
-        can_delete_repo: access.can_delete_repo,
-    }
-}
-
-pub(crate) fn session_capabilities_response(
-    read: bool,
-    access: RepositoryAccess,
-) -> SessionCapabilities {
-    SessionCapabilities {
-        read,
         can_read_private_files: access.can_read_private_files,
         can_push: access.can_push,
         can_change_file_visibility: access.can_change_file_visibility,

@@ -1,7 +1,7 @@
 use crate::{
     auth::{
         scope::{principal_for_user_id, require_scope_user},
-        tokens::{generate_repository_invite_token, repository_invite_token_hash},
+        tokens::{generate_repository_invite_token, token_hash},
     },
     error::ApiError,
     http::{origins::public_app_origin, responses::*},
@@ -201,7 +201,7 @@ pub(crate) async fn get_repository_invite(
     Path(token): Path<String>,
 ) -> Result<Json<RepositoryInviteLookupResponse>, ApiError> {
     let now = unix_now()?;
-    let token_hash = repository_invite_token_hash(&token);
+    let token_hash = token_hash(&token);
     let (repo, invite) = state
         .metadata
         .repositories()
@@ -226,7 +226,7 @@ pub(crate) async fn accept_repository_invite(
     let git_origin = crate::http::origins::public_git_origin(&state).to_string();
     let user = require_scope_user(&state, &headers).await?;
     let now = unix_now()?;
-    let token_hash = repository_invite_token_hash(&token);
+    let token_hash = token_hash(&token);
     let (repo, member) = state
         .metadata
         .repositories()

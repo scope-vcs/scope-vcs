@@ -476,3 +476,9 @@ mod tests {
         assert!(error.retryable);
     }
 }
+
+impl From<anyhow::Error> for ApiError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::internal_message(error.to_string())
+    }
+}

@@ -1,6 +1,6 @@
-use api::test_support::TestApp;
+use super::*;
 use axum::{
-    body::{Body, to_bytes},
+    body::Body,
     http::{
         Request, StatusCode,
         header::{
@@ -10,11 +10,12 @@ use axum::{
         },
     },
 };
+use scope_object_store::{ObjectStore, ObjectStoreError};
 use tower::ServiceExt;
 
 #[tokio::test]
 async fn health_and_readiness_cover_live_and_unavailable_dependencies() {
-    let app = TestApp::new().router();
+    let app = crate::router(AppState::test_state());
     let health = app
         .clone()
         .oneshot(request("GET", "/healthz"))
@@ -40,9 +41,9 @@ async fn health_and_readiness_cover_live_and_unavailable_dependencies() {
         })
     );
 
-    let unavailable = TestApp::new()
-        .with_unavailable_object_store()
-        .router()
+    let mut state = AppState::test_state();
+    state.object_store = Arc::new(UnavailableObjectStore);
+    let unavailable = crate::router(state)
         .oneshot(request("GET", "/readyz"))
         .await
         .unwrap();
@@ -55,8 +56,7 @@ async fn health_and_readiness_cover_live_and_unavailable_dependencies() {
 
 #[tokio::test]
 async fn cors_preflight_explicitly_allows_authorization_get_and_put() {
-    let response = TestApp::new()
-        .router()
+    let response = crate::router(AppState::test_state())
         .oneshot(
             Request::builder()
                 .method("OPTIONS")
@@ -94,7 +94,24 @@ fn request(method: &str, uri: &str) -> Request<Body> {
         .unwrap()
 }
 
-async fn response_json(response: axum::response::Response) -> serde_json::Value {
-    let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
-    serde_json::from_slice(&body).unwrap()
+struct UnavailableObjectStore;
+
+impl ObjectStore for UnavailableObjectStore {
+    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
+        Ok(())
+    }
+
+    fn get(&self, _key: &str) -> Result<Vec<u8>, ObjectStoreError> {
+        Ok(Vec::new())
+    }
+
+    fn delete(&self, _key: &str) -> Result<(), ObjectStoreError> {
+        Ok(())
+    }
+
+    fn readiness_check(&self) -> Result<(), ObjectStoreError> {
+        Err(ObjectStoreError::service_unavailable(
+            "secret internal object-store hostname is unavailable",
+        ))
+    }
 }

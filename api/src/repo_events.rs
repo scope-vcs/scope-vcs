@@ -15,6 +15,7 @@ const REQUEST_SUMMARY_REFRESH_VERSION: u64 = 0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RepoChangeReason {
     Connected,
+    Redacted,
     Lagged,
     RepoDeleted,
     ConfigApplied,
@@ -42,9 +43,10 @@ pub(crate) enum RepoChangeReason {
 }
 
 impl RepoChangeReason {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Connected => "connected",
+            Self::Redacted => "repo-changed",
             Self::Lagged => "lagged",
             Self::RepoDeleted => "repo-deleted",
             Self::ConfigApplied => "config-applied",

@@ -451,16 +451,13 @@ fn issue_cache_grant(
             })
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
-    state
-        .cache_grants
-        .issue(
-            claim.attempt.id.clone(),
-            scope_cache_domain::RepositoryId::parse(claim.run.workflow.repository_id().to_string())
-                .map_err(ApiError::bad_request)?,
-            allowed_caches,
-            claim.attempt.lease_expires_at_unix,
-        )
-        .map_err(|error| ApiError::internal_message(error.to_string()))
+    Ok(state.cache_grants.issue(
+        claim.attempt.id.clone(),
+        scope_cache_domain::RepositoryId::parse(claim.run.workflow.repository_id().to_string())
+            .map_err(ApiError::bad_request)?,
+        allowed_caches,
+        claim.attempt.lease_expires_at_unix,
+    )?)
 }
 
 fn attempt_step_status(step: &RunAttemptStep) -> AttemptStepStatusResponse {

@@ -70,7 +70,7 @@ pub(crate) async fn list_discussions(
 ) -> Result<Json<RequestDiscussionPageResponse>, ApiError> {
     let (repo, access, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let request = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         access,
@@ -354,7 +354,7 @@ pub(crate) async fn changed_discussions(
 ) -> Result<Json<RequestDiscussionChangesResponse>, ApiError> {
     let (repo, access, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let request = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         access,
@@ -402,7 +402,7 @@ pub(crate) async fn activity(
 ) -> Result<Json<RequestActivityPageResponse>, ApiError> {
     let (repo, access, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let request = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         access,
@@ -800,19 +800,5 @@ mod tests {
         let error = discussion_anchor_response(Some(anchor), &BTreeSet::new(), None).unwrap_err();
 
         assert!(format!("{error:?}").contains("unknown revision"));
-    }
-
-    #[test]
-    fn discussion_anchor_hides_commit_only_context_from_public_readers() {
-        let anchor = DomainDiscussionAnchor {
-            revision_id: "revision".to_string(),
-            commit_oid: Some("commit".to_string()),
-            path: None,
-        };
-
-        let public = project_discussion_anchor(anchor, 1, false);
-
-        assert_eq!(public.commit_oid, None);
-        assert_eq!(public.path, None);
     }
 }

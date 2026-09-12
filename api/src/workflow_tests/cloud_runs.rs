@@ -6,21 +6,6 @@ use scope_api_contract::{
 };
 use scope_cache_contract::SignedCacheGrantClaims;
 
-const WORKFLOW: &str = r#"
-name: Cloud protocol
-on:
-  manual: true
-caches: []
-container:
-  image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-timeout: 5m
-jobs:
-  checks:
-    steps:
-      - name: Test
-        run: printf 'hello from Scope Cloud\n'
-"#;
-
 #[tokio::test]
 async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     let state = test_state_with_repo();
@@ -28,7 +13,11 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     let app = router(state.clone());
     let source = temp_git_repo("cloud-runtime-protocol");
     fs::create_dir_all(source.join(".scope/runs")).unwrap();
-    fs::write(source.join(".scope/runs/test.yml"), WORKFLOW).unwrap();
+    fs::write(
+        source.join(".scope/runs/test.yml"),
+        workflow_named("Cloud protocol"),
+    )
+    .unwrap();
     run_git(Some(&source), &["add", "."], "stage cloud run source").unwrap();
     commit_all(&source, "cloud run source");
     let git_oid = git_head_oid(&source);

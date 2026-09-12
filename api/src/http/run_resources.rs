@@ -26,6 +26,7 @@ const MAX_RUN_HISTORY_PAGE_SIZE: usize = 100;
 #[derive(Debug, Deserialize)]
 pub(crate) struct RepositoryRunHistoryQuery {
     workflow: Option<String>,
+    git_oid: Option<String>,
     after: Option<String>,
     limit: Option<usize>,
 }
@@ -77,10 +78,15 @@ pub(crate) async fn get_repository_run_history(
     } else {
         None
     };
+    let git_oid = query
+        .git_oid
+        .as_deref()
+        .map(|value| crate::http::responses::git_oid_request("git_oid", value))
+        .transpose()?;
     let after = query
         .after
         .as_deref()
-        .map(|value| parse_history_cursor(value, workflow))
+        .map(|value| parse_history_cursor(value, workflow, git_oid.as_deref()))
         .transpose()?;
     let limit = query
         .limit
@@ -92,6 +98,7 @@ pub(crate) async fn get_repository_run_history(
         .repository_run_history_page(RunHistoryPageQuery {
             repository_id: &repo.record.id,
             workflow_path: workflow_path.as_deref(),
+            git_oid: git_oid.as_deref(),
             after: after.as_ref(),
             limit: (limit + 1) as u64,
         })
@@ -102,12 +109,12 @@ pub(crate) async fn get_repository_run_history(
         let last = entries
             .last()
             .expect("a run history page with more results is non-empty");
-        encode_history_cursor(last.creation_sequence, workflow)
+        encode_history_cursor(last.creation_sequence, workflow, git_oid.as_deref())
     });
     let runs = entries
         .iter()
         .map(|entry| repository_run_summary(&entry.run, &entry.jobs))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Vec<_>>();
     Ok(Json(RepositoryRunHistoryPageResponse { runs, next_cursor }))
 }
 
@@ -142,28 +149,43 @@ async fn current_workflows(
     scope_run_config::parse_repository_workflow_catalog(&catalog).map_err(ApiError::bad_request)
 }
 
-fn parse_history_cursor(value: &str, workflow: Option<&str>) -> Result<RunHistoryCursor, ApiError> {
-    let mut parts = value.splitn(3, ':');
-    if parts.next() != Some("v2") {
+fn parse_history_cursor(
+    value: &str,
+    workflow: Option<&str>,
+    git_oid: Option<&str>,
+) -> Result<RunHistoryCursor, ApiError> {
+    let mut parts = value.splitn(4, ':');
+    if parts.next() != Some("v3") {
         return Err(ApiError::bad_request("invalid run history cursor"));
     }
     let creation_sequence = parts
         .next()
         .and_then(|value| value.parse().ok())
         .ok_or_else(|| ApiError::bad_request("invalid run history cursor"))?;
+    let cursor_oid = parts
+        .next()
+        .ok_or_else(|| ApiError::bad_request("invalid run history cursor"))?;
     let cursor_workflow = parts
         .next()
         .ok_or_else(|| ApiError::bad_request("invalid run history cursor"))?;
-    if cursor_workflow != workflow.unwrap_or("*") {
+    if cursor_workflow != workflow.unwrap_or("*") || cursor_oid != git_oid.unwrap_or("*") {
         return Err(ApiError::bad_request(
-            "run history cursor does not match the workflow filter",
+            "run history cursor does not match the filters",
         ));
     }
     Ok(RunHistoryCursor { creation_sequence })
 }
 
-fn encode_history_cursor(creation_sequence: u64, workflow: Option<&str>) -> String {
-    format!("v2:{creation_sequence}:{}", workflow.unwrap_or("*"))
+fn encode_history_cursor(
+    creation_sequence: u64,
+    workflow: Option<&str>,
+    git_oid: Option<&str>,
+) -> String {
+    format!(
+        "v3:{creation_sequence}:{}:{}",
+        git_oid.unwrap_or("*"),
+        workflow.unwrap_or("*")
+    )
 }
 
 #[cfg(test)]
@@ -171,16 +193,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn history_cursor_is_bound_to_the_workflow_filter() {
-        let encoded = encode_history_cursor(42, Some("checks"));
+    fn history_cursor_is_bound_to_the_filters() {
+        let oid = "a".repeat(40);
+        let other_oid = "b".repeat(40);
+        let encoded = encode_history_cursor(42, Some("checks"), Some(&oid));
         assert_eq!(
-            parse_history_cursor(&encoded, Some("checks")).unwrap(),
+            parse_history_cursor(&encoded, Some("checks"), Some(&oid)).unwrap(),
             RunHistoryCursor {
-                creation_sequence: 42,
+                creation_sequence: 42
             }
         );
-        assert!(parse_history_cursor(&encoded, None).is_err());
-        assert!(parse_history_cursor("v1:42:checks", Some("checks")).is_err());
-        assert!(parse_history_cursor("v2:42", Some("checks")).is_err());
+        assert!(parse_history_cursor(&encoded, None, Some(&oid)).is_err());
+        assert!(parse_history_cursor(&encoded, Some("checks"), None).is_err());
+        assert!(parse_history_cursor(&encoded, Some("checks"), Some(&other_oid)).is_err());
+        assert!(parse_history_cursor("v3:42", Some("checks"), Some(&oid)).is_err());
+        let unfiltered = encode_history_cursor(42, None, None);
+        assert!(parse_history_cursor(&unfiltered, None, None).is_ok());
+        assert!(parse_history_cursor(&unfiltered, None, Some(&oid)).is_err());
     }
 }

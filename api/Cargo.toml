@@ -10,7 +10,6 @@ repository.workspace = true
 default = []
 local-dev = ["scope_postgres/local-dev"]
 smoke-seed = ["scope_postgres/smoke-seed"]
-test-support = ["scope_postgres/test-support", "scope_object_store/test-support"]
 type-export = ["dep:schemars", "dep:ts-rs", "scope_api_contract/ts"]
 
 [[bin]]
@@ -26,11 +25,6 @@ path = "src/bin/scope_maintenance.rs"
 name = "scope-smoke-seed"
 path = "src/bin/scope_smoke_seed.rs"
 required-features = ["smoke-seed"]
-
-[[test]]
-name = "workflows"
-path = "tests/workflows.rs"
-required-features = ["test-support"]
 
 [dependencies]
 anyhow.workspace = true
