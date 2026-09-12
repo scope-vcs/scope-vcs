@@ -683,7 +683,8 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
       )
       await search.fill('missing request title')
       await page.getByText('No matching requests.', { exact: true }).waitFor()
-      assert.equal(queueRequests.length, 3)
+      // One load per queue section: active, unclaimed, set aside, and done.
+      assert.equal(queueRequests.length, 4)
       const clear = page.getByRole('button', { name: 'Clear request search' })
       await clear.focus()
       assert.equal(
