@@ -18,13 +18,21 @@ impl S3ObjectStoreSettings {
         let read = |suffix| required_env(&format!("{prefix}_{suffix}"));
         let endpoint = read("ENDPOINT")?;
         validate_endpoint(&endpoint)?;
-        Ok(Self::new(
+        let mut settings = Self::new(
             endpoint,
             read("NAME")?,
             read("REGION")?,
             read("ACCESS_KEY_ID")?,
             read("SECRET_ACCESS_KEY")?,
-        ))
+        );
+        settings.force_path_style = nonempty_env(&format!("{prefix}_FORCE_PATH_STYLE"))
+            .is_some_and(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes"
+                )
+            });
+        Ok(settings)
     }
 }
 
@@ -62,6 +70,76 @@ fn decode_encryption_key(name: &str, encoded: &str) -> Result<[u8; 32], ObjectSt
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn prefixed_s3_settings_preserve_addressing() {
+        if let Ok(prefix) = std::env::var("SCOPE_TEST_S3_PREFIX") {
+            let settings = S3ObjectStoreSettings::from_env(&prefix).unwrap();
+            let signed = crate::S3Presigner::new(&settings)
+                .presign("GET", "object", 60)
+                .unwrap();
+            let url = reqwest::Url::parse(&signed).unwrap();
+            let path_style = std::env::var("SCOPE_TEST_PATH_STYLE").unwrap() == "true";
+            assert_eq!(
+                url.host_str(),
+                Some(if path_style {
+                    "storage.example"
+                } else {
+                    "fixture-bucket.storage.example"
+                })
+            );
+            assert_eq!(
+                url.path(),
+                if path_style {
+                    "/fixture-bucket/object"
+                } else {
+                    "/object"
+                }
+            );
+            return;
+        }
+        for prefix in ["SCOPE_BUCKET", "SCOPE_CACHE_BUCKET", "SCOPE_MEDIA_BUCKET"] {
+            for (flag, expected) in [
+                (None, false),
+                (Some("false"), false),
+                (Some("1"), true),
+                (Some("true"), true),
+                (Some("TRUE"), true),
+                (Some("yes"), true),
+                (Some("YES"), true),
+            ] {
+                // A child process isolates environment mutation from parallel tests.
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+                child
+                    .args([
+                        "--exact",
+                        "config::tests::prefixed_s3_settings_preserve_addressing",
+                    ])
+                    .env_clear()
+                    .env("SCOPE_TEST_S3_PREFIX", prefix)
+                    .env("SCOPE_TEST_PATH_STYLE", expected.to_string());
+                for (suffix, value) in [
+                    ("ENDPOINT", "https://storage.example"),
+                    ("NAME", "fixture-bucket"),
+                    ("REGION", "us-east-1"),
+                    ("ACCESS_KEY_ID", "fixture-access-key"),
+                    ("SECRET_ACCESS_KEY", "fixture-secret-key"),
+                ] {
+                    child.env(format!("{prefix}_{suffix}"), value);
+                }
+                if let Some(flag) = flag {
+                    child.env(format!("{prefix}_FORCE_PATH_STYLE"), flag);
+                }
+                let output = child.output().unwrap();
+                assert!(
+                    output.status.success(),
+                    "{prefix} {flag:?}: {}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+    }
+
     #[test]
     fn endpoint_rejects_insecure_remote_and_loopback_lookalikes() {
         for endpoint in [

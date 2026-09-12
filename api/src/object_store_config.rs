@@ -1,6 +1,6 @@
-use crate::config::{
-    SCOPE_BUCKET_FORCE_PATH_STYLE_ENV, SCOPE_OBJECT_ENCRYPTION_KEY_ENV, non_empty_env,
-};
+use crate::config::SCOPE_OBJECT_ENCRYPTION_KEY_ENV;
+#[cfg(feature = "local-dev")]
+use crate::config::non_empty_env;
 #[cfg(feature = "local-dev")]
 use scope_git_storage::FileMultipartStore;
 use scope_git_storage::{
@@ -26,11 +26,7 @@ pub(crate) fn s3_from_env() -> anyhow::Result<S3ObjectStore> {
 }
 
 pub(crate) fn s3_settings_from_env() -> anyhow::Result<S3ObjectStoreSettings> {
-    let mut settings = S3ObjectStoreSettings::from_env("SCOPE_BUCKET")?;
-    settings.force_path_style = non_empty_env(SCOPE_BUCKET_FORCE_PATH_STYLE_ENV)
-        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-        .unwrap_or(false);
-    Ok(settings)
+    S3ObjectStoreSettings::from_env("SCOPE_BUCKET").map_err(anyhow::Error::from)
 }
 
 pub(crate) fn git_segment_store_from_env(

@@ -3,10 +3,9 @@ import test from 'node:test';
 
 import {
   capacityRejectionFields, compactionFields, numericFields, objectStoreFields,
-  gitOperationFields, gitSegmentTelemetryFields, isPushPersistenceMessage, pushPersistenceFields, railwayMetricArgs, stripAnsi,
+  gitOperationFields, gitSegmentTelemetryFields, railwayMetricArgs, stripAnsi,
   summarizeCapacityRejections, summarizeCompactions, summarizeGitOperations,
-  summarizeGitSegmentTelemetry, summarizeMaterializations, summarizeObjectStore, summarizePushPersistence,
-  summarizeSnapshots,
+  summarizeGitSegmentTelemetry, summarizeMaterializations, summarizeObjectStore,
 } from './railway-telemetry.mjs';
 
 test('Git segment telemetry parses ingest, restore, pressure, and cleanup fields', () => {
@@ -53,24 +52,10 @@ test('resource metrics use the exact requested run window', () => {
   );
 });
 
-test('runtime snapshot parsing strips tracing colors and reads numeric fields', () => {
-  const message = '\u001b[32mINFO\u001b[0m runtime process snapshot threads=31 cgroup_pids_current=48';
-  assert.equal(stripAnsi(message), 'INFO runtime process snapshot threads=31 cgroup_pids_current=48');
-  assert.deepEqual(numericFields(message, ['threads', 'cgroup_pids_current']), {
-    threads: 31,
-    cgroup_pids_current: 48,
-  });
-});
-
-test('process summaries retain minimum, maximum, and final values', () => {
-  assert.deepEqual(summarizeSnapshots([
-    { threads: 27, cgroup_pids_current: 30 },
-    { threads: 31, cgroup_pids_current: 52 },
-    { threads: 29, cgroup_pids_current: 34 },
-  ]), {
-    threads: { minimum: 27, maximum: 31, last: 29 },
-    cgroup_pids_current: { minimum: 30, maximum: 52, last: 34 },
-  });
+test('log parsing strips tracing colors and reads numeric fields', () => {
+  const message = '\u001b[32mINFO\u001b[0m object store operation timing bytes=1024 elapsed_us=48';
+  assert.equal(stripAnsi(message), 'INFO object store operation timing bytes=1024 elapsed_us=48');
+  assert.deepEqual(numericFields(message, ['bytes', 'elapsed_us']), { bytes: 1024, elapsed_us: 48 });
 });
 
 test('compaction outcomes are parsed without tracing quotes', () => {
@@ -111,26 +96,6 @@ test('capacity rejection telemetry names each fixed API permit', () => {
     { operation: 'Git upload-pack' },
   );
   assert.equal(capacityRejectionFields('ordinary infrastructure error'), null);
-});
-
-test('push persistence timings retain protocol and lock-held phases', () => {
-  const parsed = pushPersistenceFields('Git push persistence timing repository_id=repo-1 protocol="transaction" config_changed=false changed_file_count=441 live_file_count=500 lock_wait_us=7 domain_apply_us=5 history_rows_us=6 serialized_us=11 body_us=13 commit_us=17 total_us=48');
-  assert.deepEqual(parsed, {
-    repositoryId: 'repo-1', protocol: 'transaction', configChanged: false,
-    changed_file_count: 441, live_file_count: 500, lock_wait_us: 7, domain_apply_us: 5,
-    history_rows_us: 6, serialized_us: 11, body_us: 13, commit_us: 17, total_us: 48,
-  });
-  const summary = summarizePushPersistence([parsed, { ...parsed, lock_wait_us: 9, total_us: 60 }]).transaction;
-  assert.equal(summary.count, 2);
-  assert.equal(summary.configChanges, 0);
-  assert.deepEqual(summary.changedFileCount, { minimum: 441, maximum: 441, last: 441 });
-  assert.deepEqual(summary.lockWaitUs, { minimum: 7, p50: 7, p95: 9, p99: 9, maximum: 9 });
-  assert.deepEqual(summary.domainApplyUs, { minimum: 5, p50: 5, p95: 5, p99: 5, maximum: 5 });
-  assert.deepEqual(summary.historyRowsUs, { minimum: 6, p50: 6, p95: 6, p99: 6, maximum: 6 });
-  assert.deepEqual(summary.totalUs, { minimum: 48, p50: 48, p95: 60, p99: 60, maximum: 60 });
-  assert.equal(summary.cloneUs, null);
-  assert.equal(isPushPersistenceMessage('repository mutation persistence timing protocol=aggregate-mutation'), true);
-  assert.equal(isPushPersistenceMessage('ordinary log'), false);
 });
 
 test('object-store timings report failures and successful service-time byte rate', () => {
