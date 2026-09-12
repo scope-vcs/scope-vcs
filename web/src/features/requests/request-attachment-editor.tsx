@@ -52,6 +52,7 @@ export function RequestAttachmentEditor({
   onSubmit,
   placeholder,
   quote,
+  secondarySubmit,
   submitIcon,
   submitLabel,
   target,
@@ -65,6 +66,11 @@ export function RequestAttachmentEditor({
   onSubmit: (markdown: string, baseText: string | null) => Promise<boolean>
   placeholder: string
   quote?: { author: string; body: string } | null
+  secondarySubmit?: {
+    icon: ReactNode
+    label: string
+    onSubmit: (markdown: string, baseText: string | null) => Promise<boolean>
+  }
   submitIcon: ReactNode
   submitLabel: string
   target: RequestAttachmentDraftTarget
@@ -73,7 +79,7 @@ export function RequestAttachmentEditor({
   const editorId = useId()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [pending, setPending] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'primary' | 'secondary' | null>(null)
   const [dragging, setDragging] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
   const draftKey = requestAttachmentDraftKey({
@@ -111,6 +117,7 @@ export function RequestAttachmentEditor({
     (attachment) => attachment.status === 'failed',
   )
   const attachmentCount = requestAttachmentContentCount(draft.text, draft.attachments)
+  const pending = pendingAction !== null
   const overLimit = limits !== null && attachmentCount > limits.max_attachments_per_content
   const canSubmit = !pending && transfersReady && !overLimit && (
     target === 'description' || Boolean(draft.text.trim()) || readyAttachments.length > 0
@@ -119,9 +126,18 @@ export function RequestAttachmentEditor({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!canSubmit) return
-    setPending(true)
+    const submitter = (event.nativeEvent as SubmitEvent)
+      .submitter as HTMLButtonElement | null
+    const action = submitter?.dataset.submitAction === 'secondary'
+      ? 'secondary'
+      : 'primary'
+    const submitAction = action === 'secondary'
+      ? secondarySubmit?.onSubmit
+      : onSubmit
+    if (!submitAction) return
+    setPendingAction(action)
     try {
-      const posted = await onSubmit(
+      const posted = await submitAction(
         markdownWithAttachments(draft.text, readyAttachments),
         draft.baseText,
       )
@@ -130,7 +146,7 @@ export function RequestAttachmentEditor({
         onCancelQuote?.()
       }
     } finally {
-      setPending(false)
+      setPendingAction(null)
     }
   }
 
@@ -282,8 +298,8 @@ export function RequestAttachmentEditor({
         </div>
       </div>
       {validationError ? <p className="mt-2 text-sm text-destructive" role="alert">{validationError}</p> : null}
-      <div className="mt-2 flex items-center justify-between gap-3">
-        <p aria-live="polite" className="text-xs text-muted-foreground">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <p aria-live="polite" className="min-w-48 flex-1 text-xs text-muted-foreground">
           {limits && attachmentCount > limits.max_attachments_per_content
             ? `You can attach up to ${limits.max_attachments_per_content} files here.`
             : hasFailedTransfer
@@ -294,11 +310,23 @@ export function RequestAttachmentEditor({
                 ? 'Markdown · Shift+Enter for a new line'
                 : 'Markdown · Draft kept while you navigate'}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <Button disabled={pending} onClick={onCancel} size="sm" type="button" variant="ghost">Cancel</Button>
+          {secondarySubmit ? (
+            <Button
+              data-submit-action="secondary"
+              disabled={!canSubmit}
+              size="sm"
+              type="submit"
+              variant="secondary"
+            >
+              {secondarySubmit.icon}
+              {pendingAction === 'secondary' ? 'Saving…' : secondarySubmit.label}
+            </Button>
+          ) : null}
           <Button disabled={!canSubmit} size="sm" type="submit">
             {submitIcon}
-            {pending ? 'Saving…' : submitLabel}
+            {pendingAction === 'primary' ? 'Saving…' : submitLabel}
           </Button>
         </div>
       </div>

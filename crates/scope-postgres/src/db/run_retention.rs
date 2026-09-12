@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{
     GeneratedIdSource, RunStore, cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
     entities, git_segments::release_git_segment_references,
@@ -5,8 +6,8 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::content::SourceBlob;
 use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
-    sea_query::Query,
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    TransactionTrait, sea_query::Query,
 };
 use std::collections::BTreeSet;
 
@@ -18,7 +19,7 @@ impl RunStore {
         limit: u64,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<usize, PostgresError> {
-        let cutoff = entities::u64_to_i64(completed_before_unix, "run retention cutoff")?;
+        let cutoff = integer_columns::u64_to_i64(completed_before_unix, "run retention cutoff")?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let models = entities::run::Entity::find()
             .filter(entities::run::Column::State.is_in([
@@ -77,12 +78,7 @@ impl RunStore {
             .exec(&tx)
             .await
             .map_err(PostgresError::internal)?;
-        entities::object_reference::Entity::delete_many()
-            .filter(entities::object_reference::Column::RefKind.eq("run_source"))
-            .filter(entities::object_reference::Column::RefId.is_in(run_ids.clone()))
-            .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+        delete_run_source_references(&tx, &run_ids).await?;
         for run_id in &run_ids {
             release_git_segment_references(&tx, "run_source", run_id, now_unix).await?;
         }
@@ -91,23 +87,51 @@ impl RunStore {
             .exec(&tx)
             .await
             .map_err(PostgresError::internal)?;
-        entities::workflow_revision::Entity::delete_many()
-            .filter(entities::workflow_revision::Column::Digest.is_in(workflow_digests))
-            .filter(
-                entities::workflow_revision::Column::Digest.not_in_subquery(
-                    Query::select()
-                        .column(entities::run::Column::WorkflowRevisionDigest)
-                        .from(entities::run::Entity)
-                        .to_owned(),
-                ),
-            )
-            .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        queue_pending_source_blob_deletion_rows(&tx, sources.clone(), now_unix, generated_ids)
-            .await?;
+        delete_orphaned_workflow_revisions(&tx, workflow_digests).await?;
+        let queued_blob_count = sources.len();
+        queue_pending_source_blob_deletion_rows(&tx, sources, now_unix, generated_ids).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
 
-        Ok(sources.len())
+        Ok(queued_blob_count)
     }
+}
+
+pub(super) async fn delete_run_source_references<C: ConnectionTrait>(
+    conn: &C,
+    run_ids: &[String],
+) -> Result<(), PostgresError> {
+    if run_ids.is_empty() {
+        return Ok(());
+    }
+    entities::object_reference::Entity::delete_many()
+        .filter(entities::object_reference::Column::RefKind.eq("run_source"))
+        .filter(entities::object_reference::Column::RefId.is_in(run_ids.to_vec()))
+        .exec(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    Ok(())
+}
+
+/// A workflow revision dies with the last run that references it.
+pub(super) async fn delete_orphaned_workflow_revisions<C: ConnectionTrait>(
+    conn: &C,
+    digests: BTreeSet<String>,
+) -> Result<(), PostgresError> {
+    if digests.is_empty() {
+        return Ok(());
+    }
+    entities::workflow_revision::Entity::delete_many()
+        .filter(entities::workflow_revision::Column::Digest.is_in(digests))
+        .filter(
+            entities::workflow_revision::Column::Digest.not_in_subquery(
+                Query::select()
+                    .column(entities::run::Column::WorkflowRevisionDigest)
+                    .from(entities::run::Entity)
+                    .to_owned(),
+            ),
+        )
+        .exec(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    Ok(())
 }

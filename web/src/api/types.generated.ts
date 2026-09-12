@@ -20,13 +20,23 @@ export type RepoLifecycleState = "AwaitingFirstPush" | "Ready";
 
 export type RepoChangeEvent = { repo_id: string, incarnation_id: string, version: number, kind: RepoChangeKind, };
 
+export type RepositoryDependencyCheckStatus = "Pending" | "Ready" | "Updating" | "Failed" | "Unsupported";
+
+export type RepositoryDependencyGapResponse = { path: string, reason: string, };
+
+export type RepositoryDependencyFindingResponse = { source_path: string, target_path: string, };
+
+export type RepositoryDependencyReportResponse = { commit_oid: string, analyzer_version: string, analyzed_file_count: number, unsupported_files: Array<string>, gaps: Array<RepositoryDependencyGapResponse>, findings: Array<RepositoryDependencyFindingResponse>, public_file_count: number, };
+
+export type RepositoryDependencyCheckResponse = { status: RepositoryDependencyCheckStatus, report: RepositoryDependencyReportResponse | null, error: string | null, };
+
 export type FirstPushTokenStatus = "Active" | "Expired" | "Used";
 
 export type FileChangeKind = "Added" | "Modified" | "Deleted";
 
 export type ConfigVisibility = "public" | "private";
 
-export type RepoConfig = { $schema?: string | null, kind: string, version: number, visibility: RepoConfigVisibility, history: RepoConfigHistory, };
+export type RepoConfig = { kind: string, version: number, visibility: RepoConfigVisibility, history: RepoConfigHistory, };
 
 export type RepoConfigVisibility = { default: ConfigVisibility, rules: Array<RepoConfigVisibilityRule>, };
 
@@ -88,9 +98,7 @@ export type CreateRequestAttachmentMediaGrantRequest = { target: RequestAttachme
 
 export type CreateRequestAttachmentMediaGrantResponse = { media_url: string, grant: string, expires_at_unix: number, };
 
-export type RequestAttachmentMediaGrantMethod = "Get";
-
-export type RequestAttachmentMediaGrantClaims = { attachment_id: string, repository_id: string, request_id: string, viewer_user_id: string | null, method: RequestAttachmentMediaGrantMethod, target: RequestAttachmentMediaTarget, expires_at_unix: number, };
+export type RequestAttachmentMediaGrantClaims = { attachment_id: string, repository_id: string, request_id: string, viewer_user_id: string | null, target: RequestAttachmentMediaTarget, expires_at_unix: number, };
 
 export type RequestAttachmentUploadGrantClaims = { attachment_id: string, repository_id: string, request_id: string, uploader_user_id: string, upload_id: string, expires_at_unix: number, };
 
@@ -100,19 +108,11 @@ export type RequestEventKind = "Started" | "Submitted" | "RevisionPushed" | "Mer
 
 export type ProjectionPreviewAudience = "private" | "public";
 
-export type ProjectionPreviewSource = "live";
-
 export type AccountSessionResponse = { identity: SessionIdentity | null, user: UserResponse | null, };
 
 export type UserResponse = { id: string, handle: string, email: string, email_verified: boolean, };
 
-export type SessionResponse = { identity: SessionIdentity | null, repo: SessionRepo, principal_id: string, capabilities: SessionCapabilities, };
-
 export type SessionIdentity = { user_id: string, email: string | null, email_verified: boolean, };
-
-export type SessionRepo = { id: string, lifecycle_state: RepoLifecycleState, access: RepositoryAccessResponse, };
-
-export type SessionCapabilities = { read: boolean, can_read_private_files: boolean, can_push: boolean, can_change_file_visibility: boolean, can_apply_changes: boolean, can_manage_members: boolean, can_delete_repo: boolean, };
 
 export type DeviceLoginStatus = "Pending" | "Complete";
 
@@ -140,11 +140,9 @@ export type CliSessionsResponse = { sessions: Array<CliSessionResponse>, };
 
 export type CliSessionResponse = { id: string, label: string, created_at_unix: number, last_used_at_unix: number | null, expires_at_unix: number, };
 
-export type RepoSummaryResponse = { description: string | null, website_url: string | null, id: string, owner_handle: string, name: string, git_remote_url: string, lifecycle_state: RepoLifecycleState, change_version: number, access: RepositoryAccessResponse, open_request_count: number, request_permissions: RepoRequestPermissionsResponse, };
+export type RepoSummaryResponse = { description: string | null, website_url: string | null, id: string, owner_handle: string, name: string, git_remote_url: string, lifecycle_state: RepoLifecycleState, change_version: number, access: RepositoryAccessResponse, open_request_count: number, };
 
 export type OwnerProfileResponse = { handle: string, repositories: Array<RepoSummaryResponse>, };
-
-export type RepoRequestPermissionsResponse = { can_start_request: boolean, };
 
 export type CreateRepoRequest = { name: string, file_default_visibility: Visibility | null, };
 
@@ -220,9 +218,9 @@ export type HistoryVisibilityChangeResponse = { id: string, file: HistoryEntryFi
 
 export type CommitFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, visibility: Visibility, };
 
-export type ProjectionPreviewRequest = { audience: ProjectionPreviewAudience, source: ProjectionPreviewSource | null, };
+export type ProjectionPreviewRequest = { audience: ProjectionPreviewAudience, };
 
-export type ProjectionPreviewResponse = { audience: ProjectionPreviewAudience, source: ProjectionPreviewSource, repo_id: string, view_key: string, head_oid: string | null, files: Array<ProjectionPreviewFileResponse>, commits: Array<ProjectionPreviewCommitResponse>, summary: ProjectionPreviewSummaryResponse, };
+export type ProjectionPreviewResponse = { audience: ProjectionPreviewAudience, repo_id: string, view_key: string, head_oid: string | null, files: Array<ProjectionPreviewFileResponse>, commits: Array<ProjectionPreviewCommitResponse>, summary: ProjectionPreviewSummaryResponse, };
 
 export type ProjectionPreviewFileResponse = { path: string, oid: string, visibility: Visibility, };
 
@@ -232,7 +230,21 @@ export type ProjectionPreviewCommitVisibilityResponse = "FullyPublic" | "Mixed" 
 
 export type ProjectionPreviewSummaryResponse = { visible_files: number, hidden_files: number, visible_commits: number, hidden_commits: number, };
 
-export type RequestQueueSection = "your_work" | "open" | "closed";
+export type RequestQueueSection = "active" | "unclaimed" | "set_aside" | "done";
+
+export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled";
+
+export type RequestAttentionReason = "authored" | "invited" | "claimed" | "unclaimed" | "claimed_elsewhere" | "new_activity" | "restored" | "snooze_expired" | "waiting" | "snoozed" | "settled" | "open" | "closed" | "merged";
+
+export type RequestAttentionResponse = { state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null, can_claim: boolean, can_set_aside: boolean, can_restore: boolean, can_release: boolean, };
+
+export type RequestAttentionActionRequest = { "action": "claim", expected_activity_version: number, } | { "action": "wait", expected_activity_version: number, } | { "action": "settle", expected_activity_version: number, } | { "action": "snooze", expected_activity_version: number, until_unix: number, } | { "action": "restore", expected_activity_version: number, } | { "action": "release", expected_activity_version: number, };
+
+export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
+
+export type RequestQueueItemResponse = { attention_at_unix: number, request: RequestListItemResponse, author: RequestActorSummaryResponse, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
+
+export type RequestQueuePageResponse = { requests: Array<RequestQueueItemResponse>, next_cursor: string | null, next_attention_at_unix: number | null, };
 
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
@@ -262,7 +274,7 @@ export type RequestInviteeMutationResponse = { request: RequestSummaryResponse, 
 
 export type LeaveRequestResponse = { invitee: RequestInviteeResponse, };
 
-export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
+export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
 
 export type RequestMergeabilityStatus = "Ready" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch";
 
@@ -320,13 +332,11 @@ export type EditRequestIdentityRequest = { title: string | null, description_mar
 
 export type CreateRequestDiscussionRequest = { body_markdown: string, client_discussion_id: string, anchor: RequestDiscussionAnchorInput | null, };
 
-export type CreateRequestDiscussionReplyRequest = { body_markdown: string, client_reply_id: string, reply_to_reply_id: string | null, };
-
-export type ReopenAndReplyRequest = { body_markdown: string, client_reply_id: string, reply_to_reply_id: string | null, };
+export type CreateRequestDiscussionReplyRequest = { body_markdown: string, client_reply_id: string, reply_to_reply_id: string | null, wait_after_reply: boolean, };
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
-export type RepoChangeKind = "Connected" | "Lagged" | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, audience: RequestAudience, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, audience: RequestAudience, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
+export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, audience: RequestAudience, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, audience: RequestAudience, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
 
 export type RunChangeKind = "Created" | "StatusChanged" | "LogsAppended";
 
@@ -334,11 +344,9 @@ export type RunState = "queued" | "dispatching" | "running" | "succeeded" | "fai
 
 export type RunResponse = { id: string, repository_id: string, workflow_name: string, git_oid: string, state: RunState, cancellation_requested: boolean, logs_truncated: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, };
 
-export type RepositoryRunState = "queued" | "dispatching" | "running" | "succeeded" | "failed" | "canceled" | "lost";
-
 export type RepositoryRunTrigger = "manual" | "push-main";
 
-export type RepositoryRunSummaryResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RepositoryRunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, can_cancel: boolean, can_retry: boolean, };
+export type RepositoryRunSummaryResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, can_cancel: boolean, can_retry: boolean, };
 
 export type RepositoryRunJobState = "blocked" | "queued" | "dispatching" | "running" | "succeeded" | "failed" | "skipped" | "canceled" | "lost";
 
@@ -346,27 +354,27 @@ export type RepositoryRunJobResponse = { key: string, needs: Array<string>, pinn
 
 export type RepositoryRunJobDetailResponse = { job: RepositoryRunJobResponse, attempts: Array<RepositoryRunAttemptResponse>, };
 
-export type RepositoryRunAttemptState = "dispatching" | "running" | "succeeded" | "failed" | "canceled" | "lost";
+export type AttemptState = "dispatching" | "running" | "succeeded" | "failed" | "canceled" | "lost";
 
-export type RepositoryRunStepState = "pending" | "running" | "succeeded" | "failed" | "canceled" | "lost" | "skipped";
+export type StepState = "pending" | "running" | "succeeded" | "failed" | "canceled" | "lost" | "skipped";
 
 export type RepositoryRunTerminalReason = { "kind": "step-failed", step_index: number, exit_code: number, } | { "kind": "timed-out", step_index: number | null, } | { "kind": "canceled", step_index: number | null, } | { "kind": "execution-lost", step_index: number | null, } | { "kind": "dispatch-attempts-exhausted" } | { "kind": "runtime-setup-failed", exit_code: number, message: string, };
 
-export type RepositoryRunCacheColdReason = "metadata-missing" | "metadata-invalid" | "metadata-not-ready" | "volume-missing" | "volume-invalid" | "backing-directory-missing";
+export type CacheColdReason = "metadata-missing" | "metadata-invalid" | "metadata-not-ready";
 
-export type RepositoryRunCachePreparation = { "kind": "exact" } | { "kind": "compatible" } | { "kind": "cold", reason: RepositoryRunCacheColdReason, };
+export type CachePreparation = { "kind": "exact" } | { "kind": "compatible" } | { "kind": "cold", reason: CacheColdReason, };
 
-export type RepositoryRunCacheFinalState = "pending" | "ready" | "evicted";
+export type CacheFinalState = "pending" | "ready" | "evicted";
 
-export type RepositoryRunCacheObservationResponse = { workflow_path: string, job_key: string, identity_digest: string, preparation: RepositoryRunCachePreparation, key_ms: number, metadata_ms: number, size_bytes: number, download_verify_ms: number, sync_ms: number, extraction_ms: number, prepare_ms: number, final_state: RepositoryRunCacheFinalState, finalize_ms: number | null, };
+export type RepositoryRunCacheObservationResponse = { workflow_path: string, job_key: string, identity_digest: string, preparation: CachePreparation, key_ms: number, metadata_ms: number, size_bytes: number, download_verify_ms: number, sync_ms: number, extraction_ms: number, prepare_ms: number, final_state: CacheFinalState, finalize_ms: number | null, };
 
 export type RepositoryRunCacheSetupObservationResponse = { authorization_ms: number, wall_ms: number, };
 
 export type RepositoryRunCacheResponse = { name: string, path: string, observation: RepositoryRunCacheObservationResponse | null, };
 
-export type RepositoryRunStepResponse = { index: number, name: string, command: string, state: RepositoryRunStepState, started_at_unix: number | null, completed_at_unix: number | null, exit_code: number | null, };
+export type RepositoryRunStepResponse = { index: number, name: string, command: string, state: StepState, started_at_unix: number | null, completed_at_unix: number | null, exit_code: number | null, };
 
-export type RepositoryRunAttemptResponse = { id: string, number: number, external_run_id: string | null, runtime_version: string, state: RepositoryRunAttemptState, created_at_unix: number, started_at_unix: number | null, completed_at_unix: number | null, terminal_reason: RepositoryRunTerminalReason | null, cache_setup: RepositoryRunCacheSetupObservationResponse | null, caches: Array<RepositoryRunCacheResponse>, steps: Array<RepositoryRunStepResponse>, };
+export type RepositoryRunAttemptResponse = { id: string, number: number, external_run_id: string | null, runtime_version: string, state: AttemptState, created_at_unix: number, started_at_unix: number | null, completed_at_unix: number | null, terminal_reason: RepositoryRunTerminalReason | null, cache_setup: RepositoryRunCacheSetupObservationResponse | null, caches: Array<RepositoryRunCacheResponse>, steps: Array<RepositoryRunStepResponse>, };
 
 export type RepositoryRunWorkflowResponse = { key: string, name: string, path: string, manual: boolean, push_main: boolean, job_count: number, };
 
@@ -392,6 +400,7 @@ export const ApiRouteTemplates = {
   repo: "/v1/repos/{owner}/{repo}",
   repoConfig: "/v1/repos/{owner}/{repo}/config",
   repoMetadata: "/v1/repos/{owner}/{repo}/metadata",
+  repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",
   repoRuns: "/v1/repos/{owner}/{repo}/runs",
   repoRunDetail: "/v1/repos/{owner}/{repo}/runs/{run_id}/detail",
@@ -401,6 +410,7 @@ export const ApiRouteTemplates = {
   repoPushIntents: "/v1/repos/{owner}/{repo}/push-intents",
   repoRequests: "/v1/repos/{owner}/{repo}/requests",
   repoRequestQueue: "/v1/repos/{owner}/{repo}/requests/queue",
+  repoRequestAttention: "/v1/repos/{owner}/{repo}/requests/{request_id}/attention",
   repoRequest: "/v1/repos/{owner}/{repo}/requests/{request_id}",
   repoRequestSubmit: "/v1/repos/{owner}/{repo}/requests/{request_id}/submit",
   repoRequestMerge: "/v1/repos/{owner}/{repo}/requests/{request_id}/merge",
@@ -414,7 +424,6 @@ export const ApiRouteTemplates = {
   repoRequestAttachmentFinish: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/finish",
   repoRequestAttachmentRetry: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/retry",
   repoRequestAttachmentMediaGrant: "/v1/repos/{owner}/{repo}/requests/{request_id}/attachments/{attachment_id}/media-grant",
-  repoSession: "/v1/repos/{owner}/{repo}/session",
   repoFiles: "/v1/repos/{owner}/{repo}/files",
   repoFileContent: "/v1/repos/{owner}/{repo}/files/content",
   repoRequestRevisions: "/v1/repos/{owner}/{repo}/requests/{request_id}/changes",

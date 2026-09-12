@@ -206,6 +206,7 @@ test('failure, retry insertion, and acknowledgment replace one optimistic row', 
   const parent = reply('parent', 1)
   const optimistic = {
     ...referencedReply('client-child', Number.MAX_SAFE_INTEGER, parent),
+    optimistic_wait_after_reply: true,
     pending: 'sending' as const,
   }
   const inserted = insertOptimisticReply(
@@ -223,7 +224,9 @@ test('failure, retry insertion, and acknowledgment replace one optimistic row', 
   )
 
   assert.equal(find(failed, optimistic.id).pending, 'failed')
+  assert.equal(find(failed, optimistic.id).optimistic_wait_after_reply, true)
   assert.equal(find(retried, optimistic.id).pending, 'sending')
+  assert.equal(find(retried, optimistic.id).optimistic_wait_after_reply, true)
   assert.equal(retried.page.error, null)
   assert.equal(find(acknowledged, 'server-child').pending, undefined)
   assert.deepEqual(ids(acknowledged.replies), ['parent', 'server-child'])

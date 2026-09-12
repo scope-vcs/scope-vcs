@@ -9,10 +9,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(unix)]
 const INTERNAL_REAPER_CHILD_ENV: &str = "SCOPE_INTERNAL_REAPER_CHILD";
 
-#[cfg(unix)]
 static PENDING_REAPER_SIGNAL: AtomicI32 = AtomicI32::new(0);
 
 /// When the service itself is PID 1, respawn it behind a minimal init process.
@@ -21,7 +19,6 @@ static PENDING_REAPER_SIGNAL: AtomicI32 = AtomicI32::new(0);
 /// not sufficient. The parent created here owns only the service process and
 /// adopted descendants; the service remains free to wait on its direct Git
 /// children without a competing global `waitpid` loop.
-#[cfg(unix)]
 pub fn install_pid1_reaper_if_needed() -> std::io::Result<()> {
     use std::os::unix::process::CommandExt;
 
@@ -40,12 +37,6 @@ pub fn install_pid1_reaper_if_needed() -> std::io::Result<()> {
     reap_service_process(child.id())
 }
 
-#[cfg(not(unix))]
-pub fn install_pid1_reaper_if_needed() -> std::io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn install_reaper_signal_handlers() -> std::io::Result<()> {
     unsafe extern "C" fn remember_signal(signal: libc::c_int) {
         PENDING_REAPER_SIGNAL.store(signal, Ordering::SeqCst);
@@ -68,7 +59,6 @@ fn install_reaper_signal_handlers() -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn reap_service_process(service_pid: u32) -> std::io::Result<()> {
     let service_pid = i32::try_from(service_pid)
         .map_err(|_| std::io::Error::other("service process id exceeds i32"))?;
@@ -100,7 +90,6 @@ fn reap_service_process(service_pid: u32) -> std::io::Result<()> {
     }
 }
 
-#[cfg(unix)]
 fn forward_pending_signal(service_pid: i32) {
     let signal = PENDING_REAPER_SIGNAL.swap(0, Ordering::SeqCst);
     if signal != 0 {
@@ -111,7 +100,6 @@ fn forward_pending_signal(service_pid: i32) {
     }
 }
 
-#[cfg(unix)]
 fn drain_adopted_descendants() {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -140,7 +128,6 @@ fn drain_adopted_descendants() {
     }
 }
 
-#[cfg(unix)]
 fn reap_exited_descendants() {
     loop {
         let mut status = 0;
@@ -153,7 +140,6 @@ fn reap_exited_descendants() {
     }
 }
 
-#[cfg(unix)]
 pub(crate) fn wait_status_exit_code(status: i32) -> i32 {
     if libc::WIFEXITED(status) {
         libc::WEXITSTATUS(status)
@@ -249,7 +235,7 @@ fn child_process_ids() -> Option<BTreeSet<usize>> {
     Some(children)
 }
 
-fn child_process_state(pid: usize) -> Option<String> {
+pub(crate) fn child_process_state(pid: usize) -> Option<String> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let command_end = stat.rfind(')')?;
     stat.get(command_end + 2..)?
@@ -258,16 +244,11 @@ fn child_process_state(pid: usize) -> Option<String> {
         .map(str::to_string)
 }
 
-#[cfg(unix)]
 pub fn configure_process_group(command: &mut Command) {
     use std::os::unix::process::CommandExt;
     command.process_group(0);
 }
 
-#[cfg(not(unix))]
-pub fn configure_process_group(_command: &mut Command) {}
-
-#[cfg(unix)]
 pub fn kill_process_group(process_id: u32) {
     if let Ok(process_group) = i32::try_from(process_id) {
         // SAFETY: a negative, non-zero pid targets only the process group created for this child.
@@ -277,18 +258,8 @@ pub fn kill_process_group(process_id: u32) {
     }
 }
 
-#[cfg(not(unix))]
-pub fn kill_process_group(_process_id: u32) {}
-
-#[cfg(unix)]
 pub(crate) fn terminate_and_reap(child: &mut Child) {
     kill_process_group(child.id());
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-#[cfg(not(unix))]
-pub(crate) fn terminate_and_reap(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
 }

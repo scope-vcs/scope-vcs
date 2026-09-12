@@ -51,7 +51,7 @@ impl RunStore {
         let (run, job, attempt, steps) =
             super::run_attempt_persistence::locked_attempt_context(&tx, attempt_id).await?;
         attempt
-            .authenticate_access(&job, token_hash, now_unix)
+            .authenticate(&job, token_hash, now_unix)
             .map_err(PostgresError::from)?;
         let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
         tx.commit().await.map_err(PostgresError::internal)?;

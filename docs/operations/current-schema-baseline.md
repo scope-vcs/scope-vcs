@@ -142,9 +142,9 @@ sequence preservation, exact-ledger planning, unknown-state rejection, schema
 drift, rollback after the old ledger has been deleted, repeated application and
 writer-fence enforcement:
 
-Baseline bridge tests load a frozen schema-only snapshot in
-`crates/scope-postgres/src/db/migration_tests/fixtures/original_chain_schema.sql`
-instead of creating the schema through the candidate migration. Preflight tests
+Baseline bridge tests install `crates/scope-postgres/src/migrations/current_schema.sql`
+directly and stamp the 42-entry original ledger, which is the state a database
+that ran the original chain through `m0042_request_media` is in. Preflight tests
 also reproduce the earlier upload CHECK definitions and require rejection with
 unchanged rows and ledger while application writers remain open.
 

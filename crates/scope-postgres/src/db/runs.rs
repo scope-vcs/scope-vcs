@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{
     RunStore, entities,
     git_segments::insert_git_segment_references,
@@ -32,12 +33,7 @@ pub struct DispatchClaim {
     pub workflow_revision: WorkflowRevision,
 }
 
-#[cfg(any(
-    test,
-    feature = "test-support",
-    feature = "local-dev",
-    feature = "smoke-seed"
-))]
+#[cfg(any(test, feature = "seeding"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DispatchOffer {
     pub run: Run,
@@ -45,12 +41,7 @@ pub struct DispatchOffer {
 }
 
 impl RunStore {
-    #[cfg(any(
-        test,
-        feature = "test-support",
-        feature = "local-dev",
-        feature = "smoke-seed"
-    ))]
+    #[cfg(any(test, feature = "seeding"))]
     pub async fn enqueue_run(
         &self,
         run: Run,
@@ -174,7 +165,7 @@ impl RunStore {
         now_unix: u64,
         limit: u64,
     ) -> Result<Vec<String>, PostgresError> {
-        let now_unix = entities::u64_to_i64(now_unix, "attempt recovery time")?;
+        let now_unix = integer_columns::u64_to_i64(now_unix, "attempt recovery time")?;
         let maximum_age_cutoff = now_unix
             .saturating_sub(scope_domain::runs::attempt::MAX_RUN_ATTEMPT_AGE_SECONDS as i64);
         Ok(entities::run_attempt::Entity::find()

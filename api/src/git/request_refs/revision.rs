@@ -1,7 +1,7 @@
 use super::{request_ref_head, request_ref_oid_is_commit};
 use crate::{
     error::ApiError,
-    git::{cache::GitDerivedCacheNamespace, import::run_git},
+    git::{cache::GitDerivedCacheNamespace, command::run_git},
     state::AppState,
 };
 use scope_domain::{
@@ -150,7 +150,7 @@ fn build_revision(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::import::{git_snapshot_from_ref, run_git_output};
+    use crate::git::{command::run_git_output, import::git_snapshot_from_ref};
     use scope_domain::requests::{RequestActorRole, RequestAudience};
     use std::sync::{Arc, atomic::AtomicUsize};
 

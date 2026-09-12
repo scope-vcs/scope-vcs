@@ -14,6 +14,23 @@ permissions:
   contents: read
 
 jobs:
+  dependency-analyzer:
+    name: Check dependency analyzer
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: dependency-analyzer/package-lock.json
+
+      - name: Check dependency analyzer
+        run: ./dev/checks/dependency-analyzer
+
   checks:
     uses: ./.github/workflows/rust-workspace-checks.yml
     with:
@@ -82,6 +99,13 @@ jobs:
       - name: Pack deployment binaries
         run: |
           cp LICENSE NOTICE legal/third-party-rust.txt artifacts/bin/
+          mkdir -p artifacts/bin/dependency-analyzer
+          cp dependency-analyzer/package.json \
+            dependency-analyzer/package-lock.json \
+            dependency-analyzer/analyze.mjs \
+            artifacts/bin/dependency-analyzer/
+          cp -a dependency-analyzer/src artifacts/bin/dependency-analyzer/src
+          cp legal/third-party-dependency-analyzer.txt artifacts/bin/dependency-analyzer/
           tar --create --gzip \
             --file artifacts/backend-release.tar.gz \
             --directory artifacts/bin \

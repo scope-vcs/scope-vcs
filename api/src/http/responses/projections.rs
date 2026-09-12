@@ -1,12 +1,14 @@
 use crate::error::ApiError;
 use scope_api_contract::Visibility;
+pub(crate) use scope_api_contract::{
+    ProjectionPreviewCommitVisibilityResponse, ProjectionPreviewSummaryResponse,
+};
 use scope_domain::{
     policy::ScopePath,
     projection::project_graph,
     projection_views::{
-        ProjectionAudience, ProjectionPreviewCommit, ProjectionPreviewCommitVisibility,
-        ProjectionPreviewFile, ProjectionPreviewSummary, ProjectionViewFile, projection_preview,
-        repo_scope_path as domain_repo_scope_path,
+        ProjectionAudience, ProjectionPreviewCommit, ProjectionPreviewFile, ProjectionViewFile,
+        projection_preview, repo_scope_path as domain_repo_scope_path,
     },
     repository::Repository,
 };
@@ -30,26 +32,16 @@ impl From<ProjectionPreviewAudience> for ProjectionAudience {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "type-export", ts(rename_all = "lowercase"))]
-pub(crate) enum ProjectionPreviewSource {
-    Live,
-}
-
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct ProjectionPreviewRequest {
     pub(crate) audience: ProjectionPreviewAudience,
-    pub(crate) source: Option<ProjectionPreviewSource>,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct ProjectionPreviewResponse {
     pub(crate) audience: ProjectionPreviewAudience,
-    pub(crate) source: ProjectionPreviewSource,
     pub(crate) repo_id: String,
     pub(crate) view_key: String,
     pub(crate) head_oid: Option<String>,
@@ -80,23 +72,6 @@ pub(crate) struct ProjectionPreviewCommitResponse {
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) enum ProjectionPreviewCommitVisibilityResponse {
-    FullyPublic,
-    Mixed,
-    FullyPrivate,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct ProjectionPreviewSummaryResponse {
-    pub(crate) visible_files: usize,
-    pub(crate) hidden_files: usize,
-    pub(crate) visible_commits: usize,
-    pub(crate) hidden_commits: usize,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct RepoFileResponse {
     pub(crate) path: String,
     pub(crate) oid: String,
@@ -117,7 +92,6 @@ pub(crate) struct RepoFileContentResponse {
 pub(crate) fn projection_preview_response(
     repo: &Repository,
     audience: ProjectionPreviewAudience,
-    source: ProjectionPreviewSource,
     include_private_counts: bool,
 ) -> Result<ProjectionPreviewResponse, ApiError> {
     let projection_audience = ProjectionAudience::from(audience);
@@ -136,7 +110,6 @@ pub(crate) fn projection_preview_response(
 
     Ok(ProjectionPreviewResponse {
         audience,
-        source,
         repo_id: preview.repo_id,
         view_key: preview.view_key,
         head_oid,
@@ -150,7 +123,7 @@ pub(crate) fn projection_preview_response(
             .into_iter()
             .map(projection_preview_commit_response)
             .collect(),
-        summary: projection_preview_summary_response(preview.summary),
+        summary: preview.summary.into(),
     })
 }
 
@@ -179,35 +152,8 @@ fn projection_preview_commit_response(
         parent_projected_id: commit.parent_projected_id,
         author: commit.author,
         message: commit.message,
-        visibility: projection_preview_commit_visibility_response(commit.visibility),
+        visibility: commit.visibility.into(),
         change_count: commit.change_count,
-    }
-}
-
-fn projection_preview_commit_visibility_response(
-    visibility: ProjectionPreviewCommitVisibility,
-) -> ProjectionPreviewCommitVisibilityResponse {
-    match visibility {
-        ProjectionPreviewCommitVisibility::FullyPublic => {
-            ProjectionPreviewCommitVisibilityResponse::FullyPublic
-        }
-        ProjectionPreviewCommitVisibility::Mixed => {
-            ProjectionPreviewCommitVisibilityResponse::Mixed
-        }
-        ProjectionPreviewCommitVisibility::FullyPrivate => {
-            ProjectionPreviewCommitVisibilityResponse::FullyPrivate
-        }
-    }
-}
-
-fn projection_preview_summary_response(
-    summary: ProjectionPreviewSummary,
-) -> ProjectionPreviewSummaryResponse {
-    ProjectionPreviewSummaryResponse {
-        visible_files: summary.visible_files,
-        hidden_files: summary.hidden_files,
-        visible_commits: summary.visible_commits,
-        hidden_commits: summary.hidden_commits,
     }
 }
 

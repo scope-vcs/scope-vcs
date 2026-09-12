@@ -4,20 +4,6 @@ use crate::use_cases::request_merge::{
 };
 use std::time::Duration;
 
-const MERGED_WORKFLOW: &str = r#"name: Merged checks
-on:
-  manual: true
-caches: []
-container:
-  image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-timeout: 5m
-jobs:
-  checks:
-    steps:
-      - name: Test
-        run: printf 'merged workflow\n'
-"#;
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn merge_route_persists_git_content_once() {
     let (state, owner_source) = test_state_with_mergeable_request("request-merge-route").await;
@@ -31,7 +17,11 @@ async fn merge_route_persists_git_content_once() {
     );
     fs::write(owner_source.join("README.md"), "upstream public change\n").unwrap();
     fs::create_dir_all(owner_source.join(".scope/runs")).unwrap();
-    fs::write(owner_source.join(".scope/runs/merged.yml"), MERGED_WORKFLOW).unwrap();
+    fs::write(
+        owner_source.join(".scope/runs/merged.yml"),
+        workflow_named("Merged checks"),
+    )
+    .unwrap();
     run_git(
         Some(&owner_source),
         &["add", "."],

@@ -1,4 +1,7 @@
-use crate::{MultipartError, MultipartStore, MultipartUpload, RemoteReader, UploadedPart};
+use crate::{
+    MultipartError, MultipartStore, MultipartUpload, RemoteReader, UploadedPart, is_hex_id_32,
+    random_hex_id, sync_directory,
+};
 use async_trait::async_trait;
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
@@ -78,7 +81,9 @@ impl MultipartStore for FileMultipartStore {
             .await
             .map_err(MultipartError::from)?;
         metadata.sync_all().await.map_err(MultipartError::from)?;
-        sync_directory(directory.clone()).await?;
+        sync_directory(directory.clone())
+            .await
+            .map_err(MultipartError::from)?;
         Ok(MultipartUpload {
             key: key.to_string(),
             upload_id,
@@ -121,7 +126,9 @@ impl MultipartStore for FileMultipartStore {
             fs::rename(&temp_path, &final_path)
                 .await
                 .map_err(MultipartError::from)?;
-            sync_directory(directory).await
+            sync_directory(directory)
+                .await
+                .map_err(MultipartError::from)
         }
         .await;
         if let Err(error) = result {
@@ -191,7 +198,9 @@ impl MultipartStore for FileMultipartStore {
             fs::rename(&temp_path, &final_path)
                 .await
                 .map_err(MultipartError::from)?;
-            sync_directory(parent.to_path_buf()).await?;
+            sync_directory(parent.to_path_buf())
+                .await
+                .map_err(MultipartError::from)?;
             let _ = fs::remove_dir_all(&upload_directory).await;
             Ok(())
         }
@@ -273,11 +282,7 @@ fn validate_key(key: &str) -> Result<Vec<&str>, MultipartError> {
 }
 
 fn validate_upload_id(upload_id: &str) -> Result<(), MultipartError> {
-    if upload_id.len() != 32
-        || !upload_id
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    {
+    if !is_hex_id_32(upload_id) {
         return Err(MultipartError::new(
             "filesystem multipart upload id is invalid",
         ));
@@ -286,15 +291,6 @@ fn validate_upload_id(upload_id: &str) -> Result<(), MultipartError> {
 }
 
 fn random_upload_id() -> Result<String, MultipartError> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes)
-        .map_err(|error| MultipartError::new(format!("creating multipart upload id: {error}")))?;
-    Ok(hex::encode(bytes))
-}
-
-async fn sync_directory(directory: PathBuf) -> Result<(), MultipartError> {
-    tokio::task::spawn_blocking(move || std::fs::File::open(directory)?.sync_all())
-        .await
-        .map_err(|error| MultipartError::new(error.to_string()))?
-        .map_err(MultipartError::from)
+    random_hex_id()
+        .map_err(|error| MultipartError::new(format!("creating multipart upload id: {error}")))
 }

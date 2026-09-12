@@ -13,5 +13,4 @@ storage = ["dep:scope_object_store"]
 hex.workspace = true
 scope_domain.workspace = true
 scope_object_store = { workspace = true, optional = true }
-sha1.workspace = true
 thiserror.workspace = true

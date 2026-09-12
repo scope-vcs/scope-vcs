@@ -5,24 +5,19 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
 use sqlx::{Connection as _, PgConnection};
 use std::future::Future;
 
+/// Session-scoped advisory locks held on a dedicated connection. Dropping the
+/// fence closes that session, which releases every lock it holds.
 pub struct ContentRefFence {
-    connection: Option<PgConnection>,
+    connection: PgConnection,
     keys: Vec<i64>,
 }
 
 impl ContentRefFence {
     pub async fn release(mut self) {
-        if self.connection.is_none() {
-            return;
-        }
         for key in self.keys.iter().rev() {
-            let connection = self
-                .connection
-                .as_mut()
-                .expect("content fence connection is present until release completes");
             if let Err(error) = sqlx::query("SELECT pg_advisory_unlock($1)")
                 .bind(key)
-                .execute(&mut *connection)
+                .execute(&mut self.connection)
                 .await
             {
                 tracing::warn!(
@@ -32,13 +27,6 @@ impl ContentRefFence {
                 return;
             }
         }
-        self.connection.take();
-    }
-}
-
-impl Drop for ContentRefFence {
-    fn drop(&mut self) {
-        self.connection.take();
     }
 }
 
@@ -106,22 +94,13 @@ pub(super) async fn acquire_content_ref_fence(
         })
         .collect::<Vec<_>>();
     let connection = dedicated_fence_connection(postgres_database_url, &schema).await?;
-    let mut fence = ContentRefFence {
-        connection: Some(connection),
-        keys,
-    };
+    let mut fence = ContentRefFence { connection, keys };
     for key in &fence.keys {
-        let connection = fence
-            .connection
-            .as_mut()
-            .expect("content fence connection is present while acquiring locks");
-        if let Err(error) = sqlx::query("SELECT pg_advisory_lock($1)")
+        sqlx::query("SELECT pg_advisory_lock($1)")
             .bind(key)
-            .execute(&mut *connection)
+            .execute(&mut fence.connection)
             .await
-        {
-            return Err(PostgresError::internal(error));
-        }
+            .map_err(PostgresError::internal)?;
     }
     Ok(fence)
 }

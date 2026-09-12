@@ -58,7 +58,9 @@ pub(crate) async fn get_history_page(
         .repository_history_page(scope_postgres::db::RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
-            audience: history_view_key(audience),
+            audience: ProjectionViewKey::from(
+                scope_domain::projection_views::ProjectionAudience::from(audience),
+            ),
             feed: feed.into(),
             before: boundary.as_ref(),
             entry_source_id: None,
@@ -104,7 +106,9 @@ pub(crate) async fn get_history_entry(
         .repository_history_page(scope_postgres::db::RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
-            audience: history_view_key(audience),
+            audience: ProjectionViewKey::from(
+                scope_domain::projection_views::ProjectionAudience::from(audience),
+            ),
             feed: scope_domain::history::HistoryFeed::All,
             before: None,
             entry_source_id: Some(&entry_id),
@@ -139,7 +143,9 @@ pub(crate) async fn get_history_entry_file_diff(
         .repository_history_page(scope_postgres::db::RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
             version: repo.record.change_version,
-            audience: history_view_key(audience),
+            audience: ProjectionViewKey::from(
+                scope_domain::projection_views::ProjectionAudience::from(audience),
+            ),
             feed: scope_domain::history::HistoryFeed::All,
             before: None,
             entry_source_id: Some(&entry_id),
@@ -200,13 +206,6 @@ async fn repo_and_audience(
         return Err(ApiError::forbidden("repo membership required"));
     }
     Ok((repo, audience))
-}
-
-fn history_view_key(audience: ProjectionPreviewAudience) -> ProjectionViewKey {
-    match audience {
-        ProjectionPreviewAudience::Private => ProjectionViewKey::Private,
-        ProjectionPreviewAudience::Public => ProjectionViewKey::Public,
-    }
 }
 
 fn ensure_history_available(available: bool) -> Result<(), ApiError> {

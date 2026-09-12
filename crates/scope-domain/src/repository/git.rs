@@ -97,7 +97,7 @@ pub struct GitSegmentUpload {
 }
 
 impl GitPackSpan {
-    pub fn sequence_count(&self) -> Result<u64, GitPackLayoutError> {
+    fn sequence_count(&self) -> Result<u64, GitPackLayoutError> {
         self.last_sequence
             .checked_sub(self.first_sequence)
             .and_then(|distance| distance.checked_add(1))

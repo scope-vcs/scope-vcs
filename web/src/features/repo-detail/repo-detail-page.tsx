@@ -8,6 +8,7 @@ import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
 import { RepositoryCodeView } from './repository-code-view'
 import { RepositoryContext } from './repository-context'
+import { RepositoryDependencyCheck } from './repository-dependency-check'
 import { RepositoryLatestActivity } from './repository-latest-activity'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
 import { displayRouteFilePath } from '@/lib/route-file'
@@ -64,6 +65,11 @@ export function RepoDetailPage({
           />
         )}
         title="Code"
+      />
+      <RepositoryDependencyCheck
+        onSelectFilePath={selectResource}
+        params={params}
+        repo={repo}
       />
       <RepositoryLatestActivity params={params} repo={repo} />
       <RepositoryCodeView

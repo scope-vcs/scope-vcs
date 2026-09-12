@@ -16,7 +16,6 @@ type Resolver = dyn Fn(Arc<str>) -> ResolveFuture + Send + Sync;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Backend {
-    pub(crate) identity: String,
     pub(crate) address: SocketAddr,
 }
 
@@ -34,7 +33,7 @@ pub(crate) struct DiscoveredBackends {
 }
 
 #[derive(Clone)]
-pub struct BackendDiscovery {
+pub(crate) struct BackendDiscovery {
     authority: Arc<str>,
     refresh_after: Duration,
     max_stale_age: Duration,
@@ -241,10 +240,7 @@ fn normalize(mut addresses: Vec<SocketAddr>) -> Vec<Backend> {
     addresses.dedup();
     addresses
         .into_iter()
-        .map(|address| Backend {
-            identity: address.to_string(),
-            address,
-        })
+        .map(|address| Backend { address })
         .collect()
 }
 
@@ -530,23 +526,11 @@ mod tests {
     }
 
     #[test]
-    fn ipv6_is_the_single_identity_for_dual_stack_replicas() {
+    fn dual_stack_prefers_ipv6_and_ipv4_only_keeps_its_address() {
         let ipv6 = "[::1]:8080".parse().unwrap();
         let ipv4 = "127.0.0.1:8080".parse().unwrap();
+        assert_eq!(normalize(vec![ipv4]), vec![Backend { address: ipv4 }]);
 
-        assert_eq!(
-            normalize(vec![ipv4, ipv6]),
-            vec![Backend {
-                identity: ipv6.to_string(),
-                address: ipv6,
-            }]
-        );
-    }
-
-    #[test]
-    fn ipv4_only_environments_still_work() {
-        let address = "127.0.0.1:8080".parse().unwrap();
-
-        assert_eq!(normalize(vec![address]).len(), 1);
+        assert_eq!(normalize(vec![ipv4, ipv6]), vec![Backend { address: ipv6 }]);
     }
 }

@@ -1,6 +1,5 @@
 use scope_domain::{
     account::SessionIdentity as DomainSessionIdentity,
-    account::UserAccount,
     history::FileChangeKind as DomainFileChangeKind,
     policy::Visibility as DomainVisibility,
     repository::RepoLifecycleState as DomainRepoLifecycleState,
@@ -11,7 +10,10 @@ use scope_domain::{
     },
     repository::credentials::FirstPushTokenStatus as DomainFirstPushTokenStatus,
     requests::{
-        RequestActorRole as DomainRequestActorRole, RequestAudience as DomainRequestAudience,
+        RequestActorRole as DomainRequestActorRole,
+        RequestAttentionReason as DomainRequestAttentionReason,
+        RequestAttentionState as DomainRequestAttentionState,
+        RequestAudience as DomainRequestAudience,
         RequestDiscussionStatus as DomainRequestDiscussionStatus,
         RequestEventKind as DomainRequestEventKind,
         RequestEventPayload as DomainRequestEventPayload,
@@ -75,16 +77,6 @@ impl From<SessionIdentity> for DomainSessionIdentity {
             user_id: value.user_id,
             email: value.email,
             email_verified: value.email_verified,
-        }
-    }
-}
-
-impl From<&UserAccount> for SessionIdentity {
-    fn from(user: &UserAccount) -> Self {
-        Self {
-            user_id: user.id.clone(),
-            email: (!user.email.is_empty()).then(|| user.email.clone()),
-            email_verified: user.email_verified,
         }
     }
 }
@@ -153,7 +145,20 @@ wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
 wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
-    RequestQueueSection => DomainRequestQueueSection { YourWork, Open, Closed }
+    RequestQueueSection => DomainRequestQueueSection { Active, Unclaimed, SetAside, Done }
+);
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestAttentionState => DomainRequestAttentionState { Active, Waiting, Snoozed, Settled }
+);
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestAttentionReason => DomainRequestAttentionReason {
+        Authored, Invited, Claimed, Unclaimed, ClaimedElsewhere, NewActivity, Restored,
+        SnoozeExpired, Waiting, Snoozed, Settled, Open, Closed, Merged
+    }
 );
 wire_enum!(RequestDiscussionStatus => DomainRequestDiscussionStatus { Open, Resolved });
 
@@ -253,6 +258,24 @@ pub struct RepoChangeEvent {
     pub kind: RepoChangeKind,
 }
 
+impl RepoChangeEvent {
+    /// Run changes carry no repository change version; version 0 tells
+    /// subscribers to refresh unconditionally.
+    pub fn run_changed(
+        repo_id: String,
+        incarnation_id: String,
+        run_id: String,
+        change: RunChangeKind,
+    ) -> Self {
+        Self {
+            repo_id,
+            incarnation_id,
+            version: 0,
+            kind: RepoChangeKind::RunChanged { run_id, change },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoChangeNotification {
     pub event: RepoChangeEvent,
@@ -272,6 +295,7 @@ pub enum RunChangeKind {
 pub enum RepoChangeKind {
     Connected,
     Lagged,
+    DependenciesChanged,
     RepositoryChanged {
         reason: String,
     },
@@ -298,15 +322,12 @@ mod tests {
 
     #[test]
     fn run_change_uses_the_repo_event_envelope() {
-        let event = RepoChangeEvent {
-            repo_id: "owner/repo".to_string(),
-            incarnation_id: "inc_1".to_string(),
-            version: 0,
-            kind: RepoChangeKind::RunChanged {
-                run_id: "run_1".to_string(),
-                change: RunChangeKind::Created,
-            },
-        };
+        let event = RepoChangeEvent::run_changed(
+            "owner/repo".to_string(),
+            "inc_1".to_string(),
+            "run_1".to_string(),
+            RunChangeKind::Created,
+        );
 
         assert_eq!(
             serde_json::to_value(event).unwrap(),

@@ -1,7 +1,7 @@
 use super::{DiscussionAnchorInput, MutationContext};
 use crate::{
     error::ApiError,
-    git::{import::run_git_output, request_refs::with_request_revision_store_repo},
+    git::{command::run_git_output, request_refs::with_request_revision_store_repo},
     state::AppState,
     use_cases::request_revision_inspection::{commit_belongs_to_revision, request_changes},
 };
@@ -14,8 +14,6 @@ use std::{collections::BTreeSet, path::Path as FsPath};
 
 pub(super) async fn validate(
     state: &AppState,
-    _owner: &str,
-    _repo_name: &str,
     context: &MutationContext,
     anchor: DiscussionAnchorInput,
 ) -> Result<RequestDiscussionAnchor, ApiError> {
@@ -70,8 +68,6 @@ pub(super) async fn validate(
 
 pub(super) async fn visible_commits(
     state: &AppState,
-    _owner: &str,
-    _repo_name: &str,
     context: &MutationContext,
     anchor: Option<&RequestDiscussionAnchor>,
 ) -> BTreeSet<(String, String)> {
@@ -179,7 +175,7 @@ fn commit_paths(
         .next()
         .map(str::to_string)
         .ok_or_else(|| ApiError::conflict("request revision commit must have a parent"))?;
-    let changes = request_changes(raw_repo, &parent, commit_oid, None)?;
+    let changes = request_changes(raw_repo, &parent, commit_oid)?;
     let mut fields = changes.split(|byte| *byte == 0);
     let mut visible = BTreeSet::new();
     let mut has_hidden = false;

@@ -5,7 +5,14 @@ const LOOPBACK_CALLBACK: &str = "http://127.0.0.1:49152/scope-cli-callback";
 #[tokio::test]
 async fn cli_browser_login_exchanges_local_callback_for_cli_token() {
     let app = router(test_state_with_jwks());
-    let start = send_cli_request(&app, start_browser_login_request(LOOPBACK_CALLBACK)).await;
+    let start = api_request(
+        app.clone(),
+        "POST",
+        "/v1/cli/browser-login",
+        None,
+        Some(&serde_json::json!({"callback_url": LOOPBACK_CALLBACK}).to_string()),
+    )
+    .await;
     assert_eq!(start.status(), StatusCode::OK);
     let start = response_json(start).await;
     let request_id = start["request_id"].as_str().unwrap();
@@ -17,13 +24,12 @@ async fn cli_browser_login_exchanges_local_callback_for_cli_token() {
     assert!(authorization_url.contains(request_id));
     assert!(!authorization_url.contains(request_secret));
 
-    let complete = send_cli_request(
-        &app,
-        cli_auth_request(
-            "POST",
-            &format!("/v1/cli/browser-login/{request_id}/complete"),
-            bearer_header(),
-        ),
+    let complete = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/browser-login/{request_id}/complete"),
+        Some(&bearer_header()),
+        None,
     )
     .await;
     assert_eq!(complete.status(), StatusCode::OK);
@@ -40,9 +46,15 @@ async fn cli_browser_login_exchanges_local_callback_for_cli_token() {
     let callback_code = query.get("code").unwrap();
     assert!(callback_code.starts_with("scope_callback_"));
 
-    let exchanged = send_cli_request(
-        &app,
-        exchange_browser_login_request(request_id, request_secret, callback_code),
+    let exchanged = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/browser-login/{}/exchange", request_id),
+        None,
+        Some(
+            &serde_json::json!({"request_secret": request_secret, "callback_code": callback_code})
+                .to_string(),
+        ),
     )
     .await;
     assert_eq!(exchanged.status(), StatusCode::OK);
@@ -50,24 +62,36 @@ async fn cli_browser_login_exchanges_local_callback_for_cli_token() {
     let cli_token = exchanged["session_token"].as_str().unwrap();
     assert!(cli_token.starts_with(CLI_SESSION_TOKEN_PREFIX));
 
-    let session = send_cli_request(
-        &app,
-        cli_auth_request("GET", "/v1/session", format!("Bearer {cli_token}")),
+    let session = api_request(
+        app.clone(),
+        "GET",
+        "/v1/session",
+        Some(&format!("Bearer {cli_token}")),
+        None,
     )
     .await;
     assert_eq!(session.status(), StatusCode::OK);
     assert_eq!(exchanged["identity"]["user_id"], test_owner_id());
 
-    let consumed = send_cli_request(
-        &app,
-        exchange_browser_login_request(request_id, request_secret, callback_code),
+    let consumed = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/browser-login/{}/exchange", request_id),
+        None,
+        Some(
+            &serde_json::json!({"request_secret": request_secret, "callback_code": callback_code})
+                .to_string(),
+        ),
     )
     .await;
     assert_eq!(consumed.status(), StatusCode::CONFLICT);
 
-    let session = send_cli_request(
-        &app,
-        cli_auth_request("GET", "/v1/session", format!("Bearer {cli_token}")),
+    let session = api_request(
+        app.clone(),
+        "GET",
+        "/v1/session",
+        Some(&format!("Bearer {cli_token}")),
+        None,
     )
     .await;
     assert_eq!(session.status(), StatusCode::OK);
@@ -81,7 +105,14 @@ async fn cli_browser_login_rejects_non_loopback_callbacks() {
         "http://127.0.0.1:49152/other",
         "http://127.0.0.1:49152/scope-cli-callback?next=/other",
     ] {
-        let response = send_cli_request(&app, start_browser_login_request(callback)).await;
+        let response = api_request(
+            app.clone(),
+            "POST",
+            "/v1/cli/browser-login",
+            None,
+            Some(&serde_json::json!({"callback_url": callback}).to_string()),
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
@@ -91,11 +122,25 @@ async fn cli_browser_login_start_is_rate_limited() {
     let app = router(test_state_with_jwks());
 
     for _ in 0..scope_domain::account::cli_auth::MAX_BROWSER_LOGIN_STARTS_PER_WINDOW {
-        let response = send_cli_request(&app, start_browser_login_request(LOOPBACK_CALLBACK)).await;
+        let response = api_request(
+            app.clone(),
+            "POST",
+            "/v1/cli/browser-login",
+            None,
+            Some(&serde_json::json!({"callback_url": LOOPBACK_CALLBACK}).to_string()),
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::OK);
     }
 
-    let response = send_cli_request(&app, start_browser_login_request(LOOPBACK_CALLBACK)).await;
+    let response = api_request(
+        app.clone(),
+        "POST",
+        "/v1/cli/browser-login",
+        None,
+        Some(&serde_json::json!({"callback_url": LOOPBACK_CALLBACK}).to_string()),
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
 }
 
@@ -109,18 +154,35 @@ async fn cli_exchange_grant_is_single_use_and_sessions_are_revocable() {
     let exchange_token = grant["exchange_token"].as_str().unwrap();
     assert!(exchange_token.starts_with("scope_otc_"));
 
-    let exchanged = send_cli_request(&app, exchange_grant_request(exchange_token)).await;
+    let exchanged = api_request(
+        app.clone(),
+        "POST",
+        "/v1/cli/exchange-grants/exchange",
+        None,
+        Some(&serde_json::json!({"exchange_token": exchange_token}).to_string()),
+    )
+    .await;
     assert_eq!(exchanged.status(), StatusCode::OK);
     let exchanged = response_json(exchanged).await;
     let cli_token = exchanged["session_token"].as_str().unwrap();
     assert!(cli_token.starts_with(CLI_SESSION_TOKEN_PREFIX));
 
-    let reused = send_cli_request(&app, exchange_grant_request(exchange_token)).await;
+    let reused = api_request(
+        app.clone(),
+        "POST",
+        "/v1/cli/exchange-grants/exchange",
+        None,
+        Some(&serde_json::json!({"exchange_token": exchange_token}).to_string()),
+    )
+    .await;
     assert_eq!(reused.status(), StatusCode::CONFLICT);
 
-    let sessions = send_cli_request(
-        &app,
-        cli_auth_request("GET", "/v1/cli/sessions", bearer_header()),
+    let sessions = api_request(
+        app.clone(),
+        "GET",
+        "/v1/cli/sessions",
+        Some(&bearer_header()),
+        None,
     )
     .await;
     assert_eq!(sessions.status(), StatusCode::OK);
@@ -131,20 +193,22 @@ async fn cli_exchange_grant_is_single_use_and_sessions_are_revocable() {
         serde_json::Value::Null
     );
 
-    let revoked = send_cli_request(
-        &app,
-        cli_auth_request(
-            "DELETE",
-            &format!("/v1/cli/sessions/{session_id}"),
-            bearer_header(),
-        ),
+    let revoked = api_request(
+        app.clone(),
+        "DELETE",
+        &format!("/v1/cli/sessions/{session_id}"),
+        Some(&bearer_header()),
+        None,
     )
     .await;
     assert_eq!(revoked.status(), StatusCode::NO_CONTENT);
 
-    let session = send_cli_request(
-        &app,
-        cli_auth_request("GET", "/v1/session", format!("Bearer {cli_token}")),
+    let session = api_request(
+        app.clone(),
+        "GET",
+        "/v1/session",
+        Some(&format!("Bearer {cli_token}")),
+        None,
     )
     .await;
     assert_eq!(session.status(), StatusCode::UNAUTHORIZED);
@@ -154,13 +218,15 @@ async fn cli_exchange_grant_is_single_use_and_sessions_are_revocable() {
 async fn list_cli_sessions_does_not_refresh_clerk_user_snapshot() {
     let state = state_with_clerk_snapshot().await;
     let app = router(state.clone());
-    let response = send_cli_request(
-        &app,
-        cli_auth_request(
-            "GET",
-            "/v1/cli/sessions",
-            bearer_header_for(TEST_CLERK_USER_ID, "renamed@example.com"),
-        ),
+    let response = api_request(
+        app.clone(),
+        "GET",
+        "/v1/cli/sessions",
+        Some(&bearer_header_for(
+            TEST_CLERK_USER_ID,
+            "renamed@example.com",
+        )),
+        None,
     )
     .await;
 
@@ -184,15 +250,25 @@ async fn cli_exchange_grant_reconciles_clerk_snapshot_before_minting_session() {
         .unwrap()
         .to_string();
 
-    let exchanged = send_cli_request(&app, exchange_grant_request(&exchange_token)).await;
+    let exchanged = api_request(
+        app.clone(),
+        "POST",
+        "/v1/cli/exchange-grants/exchange",
+        None,
+        Some(&serde_json::json!({"exchange_token": &exchange_token}).to_string()),
+    )
+    .await;
     assert_eq!(exchanged.status(), StatusCode::OK);
     let exchanged = response_json(exchanged).await;
     assert_eq!(exchanged["identity"]["email"], "renamed@example.com");
     let cli_token = exchanged["session_token"].as_str().unwrap();
 
-    let session = send_cli_request(
-        &app,
-        cli_auth_request("GET", "/v1/session", format!("Bearer {cli_token}")),
+    let session = api_request(
+        app.clone(),
+        "GET",
+        "/v1/session",
+        Some(&format!("Bearer {cli_token}")),
+        None,
     )
     .await;
     assert_eq!(session.status(), StatusCode::OK);
@@ -202,57 +278,13 @@ async fn cli_exchange_grant_reconciles_clerk_snapshot_before_minting_session() {
     assert_eq!(stored_email(&state).await, "renamed@example.com");
 }
 
-fn start_browser_login_request(callback_url: &str) -> Request<Body> {
-    json_post(
-        "/v1/cli/browser-login",
-        serde_json::json!({ "callback_url": callback_url }),
-    )
-}
-
-fn exchange_browser_login_request(
-    request_id: &str,
-    request_secret: &str,
-    callback_code: &str,
-) -> Request<Body> {
-    json_post(
-        format!("/v1/cli/browser-login/{request_id}/exchange"),
-        serde_json::json!({ "request_secret": request_secret, "callback_code": callback_code }),
-    )
-}
-
-fn exchange_grant_request(exchange_token: &str) -> Request<Body> {
-    json_post(
-        "/v1/cli/exchange-grants/exchange",
-        serde_json::json!({ "exchange_token": exchange_token }),
-    )
-}
-
-fn json_post(uri: impl AsRef<str>, body: serde_json::Value) -> Request<Body> {
-    Request::builder()
-        .method("POST")
-        .uri(uri.as_ref())
-        .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(body.to_string()))
-        .unwrap()
-}
-
-fn cli_auth_request(method: &str, uri: &str, bearer: String) -> Request<Body> {
-    Request::builder()
-        .method(method)
-        .uri(uri)
-        .header(AUTHORIZATION, bearer)
-        .body(Body::empty())
-        .unwrap()
-}
-
-async fn send_cli_request(app: &axum::Router, request: Request<Body>) -> Response {
-    app.clone().oneshot(request).await.unwrap()
-}
-
 async fn create_exchange_grant(app: &axum::Router, bearer: String) -> Response {
-    send_cli_request(
-        app,
-        cli_auth_request("POST", "/v1/cli/exchange-grants", bearer),
+    api_request(
+        (app).clone(),
+        "POST",
+        "/v1/cli/exchange-grants",
+        Some(&bearer),
+        None,
     )
     .await
 }
@@ -271,7 +303,7 @@ async fn state_with_clerk_snapshot() -> AppState {
     let _ = state
         .metadata
         .auth()
-        .resolve_clerk_user(&test_clerk_identity(), unix_now())
+        .resolve_clerk_user(&test_clerk_identity())
         .await
         .unwrap();
     state

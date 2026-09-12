@@ -1,6 +1,7 @@
 use super::*;
 use scope_domain::requests::{
-    Request, RequestActorRole, RequestAudience, RequestDiscussion, RequestDiscussionAnchor,
+    Request, RequestActorRole, RequestAttention, RequestAttentionReason, RequestAttentionState,
+    RequestAudience, RequestClaim, RequestDiscussion, RequestDiscussionAnchor,
     RequestDiscussionReadState, RequestDiscussionReply, RequestDiscussionStatus, RequestEvent,
     RequestEventKind, RequestEventPayload, RequestInvitee, RequestRating, RequestRevision,
 };
@@ -57,13 +58,13 @@ pub mod request {
                 title: request.title.clone(),
                 description_markdown: request.description_markdown.clone(),
                 activity_version: u64_to_i64(request.activity_version, "request activity version")?,
-                submitted_at_unix: encode_optional_time(
+                submitted_at_unix: optional_u64_to_i64(
                     request.submitted_at_unix,
                     "request submission time",
                 )?,
-                closed_at_unix: encode_optional_time(request.closed_at_unix, "request close time")?,
+                closed_at_unix: optional_u64_to_i64(request.closed_at_unix, "request close time")?,
                 closed_by_user_id: request.closed_by_user_id.clone(),
-                merged_at_unix: encode_optional_time(request.merged_at_unix, "request merge time")?,
+                merged_at_unix: optional_u64_to_i64(request.merged_at_unix, "request merge time")?,
                 merged_by_user_id: request.merged_by_user_id.clone(),
                 merged_head_oid: request.merged_head_oid.clone(),
                 merged_main_oid: request.merged_main_oid.clone(),
@@ -89,13 +90,13 @@ pub mod request {
                 title: self.title,
                 description_markdown: self.description_markdown,
                 activity_version: i64_to_u64(self.activity_version, "request activity version")?,
-                submitted_at_unix: decode_optional_time(
+                submitted_at_unix: optional_i64_to_u64(
                     self.submitted_at_unix,
                     "request submission time",
                 )?,
-                closed_at_unix: decode_optional_time(self.closed_at_unix, "request close time")?,
+                closed_at_unix: optional_i64_to_u64(self.closed_at_unix, "request close time")?,
                 closed_by_user_id: self.closed_by_user_id,
-                merged_at_unix: decode_optional_time(self.merged_at_unix, "request merge time")?,
+                merged_at_unix: optional_i64_to_u64(self.merged_at_unix, "request merge time")?,
                 merged_by_user_id: self.merged_by_user_id,
                 merged_head_oid: self.merged_head_oid,
                 merged_main_oid: self.merged_main_oid,
@@ -106,13 +107,103 @@ pub mod request {
             Ok(request)
         }
     }
+}
 
-    fn encode_optional_time(value: Option<u64>, field: &str) -> Result<Option<i64>, PostgresError> {
-        value.map(|value| u64_to_i64(value, field)).transpose()
+pub mod request_claim {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "scope_request_claims")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub request_id: String,
+        pub claimer_user_id: String,
+        pub claimed_at_unix: i64,
+        pub updated_at_unix: i64,
     }
 
-    fn decode_optional_time(value: Option<i64>, field: &str) -> Result<Option<u64>, PostgresError> {
-        value.map(|value| i64_to_u64(value, field)).transpose()
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+
+    impl Model {
+        pub fn from_domain(value: &RequestClaim) -> Result<Self, PostgresError> {
+            Ok(Self {
+                request_id: value.request_id.clone(),
+                claimer_user_id: value.claimer_user_id.clone(),
+                claimed_at_unix: u64_to_i64(value.claimed_at_unix, "request claim time")?,
+                updated_at_unix: u64_to_i64(value.updated_at_unix, "request claim update time")?,
+            })
+        }
+
+        pub fn try_into_domain(self) -> Result<RequestClaim, PostgresError> {
+            Ok(RequestClaim {
+                request_id: self.request_id,
+                claimer_user_id: self.claimer_user_id,
+                claimed_at_unix: i64_to_u64(self.claimed_at_unix, "request claim time")?,
+                updated_at_unix: i64_to_u64(self.updated_at_unix, "request claim update time")?,
+            })
+        }
+    }
+}
+
+pub mod request_attention_state {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "scope_request_attention_states")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub request_id: String,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub user_id: String,
+        pub state: String,
+        pub reason: String,
+        pub through_activity_version: i64,
+        pub snoozed_until_unix: Option<i64>,
+        pub updated_at_unix: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+
+    impl Model {
+        pub fn from_domain(value: &RequestAttention) -> Result<Self, PostgresError> {
+            Ok(Self {
+                request_id: value.request_id.clone(),
+                user_id: value.user_id.clone(),
+                state: encode_enum(value.state)?,
+                reason: encode_enum(value.reason)?,
+                through_activity_version: u64_to_i64(
+                    value.through_activity_version,
+                    "request attention position",
+                )?,
+                snoozed_until_unix: value
+                    .snoozed_until_unix
+                    .map(|value| u64_to_i64(value, "request snooze time"))
+                    .transpose()?,
+                updated_at_unix: u64_to_i64(value.updated_at_unix, "request attention time")?,
+            })
+        }
+
+        pub fn try_into_domain(self) -> Result<RequestAttention, PostgresError> {
+            Ok(RequestAttention {
+                request_id: self.request_id,
+                user_id: self.user_id,
+                state: decode_enum::<RequestAttentionState>(self.state)?,
+                reason: decode_enum::<RequestAttentionReason>(self.reason)?,
+                through_activity_version: i64_to_u64(
+                    self.through_activity_version,
+                    "request attention position",
+                )?,
+                snoozed_until_unix: self
+                    .snoozed_until_unix
+                    .map(|value| i64_to_u64(value, "request snooze time"))
+                    .transpose()?,
+                updated_at_unix: i64_to_u64(self.updated_at_unix, "request attention time")?,
+            })
+        }
     }
 }
 
@@ -371,10 +462,10 @@ pub mod request_discussion {
                 status: encode_enum(value.status)?,
                 client_discussion_id: value.client_discussion_id.clone(),
                 created_at_unix: u64_to_i64(value.created_at_unix, "discussion creation time")?,
-                resolved_at_unix: value
-                    .resolved_at_unix
-                    .map(|time| u64_to_i64(time, "discussion resolution time"))
-                    .transpose()?,
+                resolved_at_unix: optional_u64_to_i64(
+                    value.resolved_at_unix,
+                    "discussion resolution time",
+                )?,
                 resolved_by_user_id: value.resolved_by_user_id.clone(),
             })
         }
@@ -408,10 +499,10 @@ pub mod request_discussion {
                 status: decode_enum::<RequestDiscussionStatus>(self.status)?,
                 client_discussion_id: self.client_discussion_id,
                 created_at_unix: i64_to_u64(self.created_at_unix, "discussion creation time")?,
-                resolved_at_unix: self
-                    .resolved_at_unix
-                    .map(|time| i64_to_u64(time, "discussion resolution time"))
-                    .transpose()?,
+                resolved_at_unix: optional_i64_to_u64(
+                    self.resolved_at_unix,
+                    "discussion resolution time",
+                )?,
                 resolved_by_user_id: self.resolved_by_user_id,
             })
         }

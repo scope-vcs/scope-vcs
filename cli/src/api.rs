@@ -22,16 +22,6 @@ pub use requests::*;
 pub use runs::*;
 
 const DEFAULT_API_URL: &str = "https://scope-api-production-0251.up.railway.app";
-pub const ACCOUNT_SESSION_PATH: &str = scope_api_contract::routes::ACCOUNT_SESSION;
-pub const CLI_BROWSER_LOGIN_PATH: &str = scope_api_contract::routes::CLI_BROWSER_LOGIN;
-pub const CLI_BROWSER_LOGIN_EXCHANGE_PATH_TEMPLATE: &str =
-    scope_api_contract::routes::CLI_BROWSER_LOGIN_EXCHANGE;
-pub const CLI_DEVICE_LOGIN_PATH: &str = scope_api_contract::routes::CLI_DEVICE_LOGIN;
-pub const CLI_DEVICE_LOGIN_POLL_PATH_TEMPLATE: &str =
-    scope_api_contract::routes::CLI_DEVICE_LOGIN_POLL;
-pub const CLI_EXCHANGE_GRANTS_EXCHANGE_PATH: &str =
-    scope_api_contract::routes::CLI_EXCHANGE_GRANTS_EXCHANGE;
-pub const CLI_SESSION_PATH: &str = scope_api_contract::routes::CLI_SESSION;
 
 pub struct AuthenticatedSession {
     pub token: String,
@@ -201,17 +191,7 @@ fn fallback_error_response(status: StatusCode, context: &str) -> ErrorResponse {
 }
 
 fn terminal_safe(value: &str) -> String {
-    value
-        .trim()
-        .chars()
-        .map(|character| {
-            if character.is_control() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect()
+    crate::display::terminal_text(value.trim())
 }
 
 pub(crate) fn http_client_builder() -> ClientBuilder {
@@ -238,7 +218,7 @@ fn cli_identity_headers() -> HeaderMap {
 
 pub fn validate_session_token(api: ApiSession<'_>) -> anyhow::Result<Option<UserResponse>> {
     let response = api
-        .request(reqwest::Method::GET, ACCOUNT_SESSION_PATH)
+        .request(reqwest::Method::GET, routes::ACCOUNT_SESSION)
         .send()
         .context("validate saved Scope login")?;
     if response.status() == StatusCode::UNAUTHORIZED {
@@ -247,14 +227,12 @@ pub fn validate_session_token(api: ApiSession<'_>) -> anyhow::Result<Option<User
 
     let session: AccountSessionResponse =
         decode_json_response(response, "validate saved Scope login")?;
-    let AccountSessionResponse { identity, user, .. } = session;
-    drop(identity);
-    Ok(user)
+    Ok(session.user)
 }
 
 pub fn revoke_cli_session(api: ApiSession<'_>) -> anyhow::Result<()> {
     let response = api
-        .request(reqwest::Method::DELETE, CLI_SESSION_PATH)
+        .request(reqwest::Method::DELETE, routes::CLI_SESSION)
         .send()
         .context("revoke Scope CLI session")?;
     if response.status() == StatusCode::UNAUTHORIZED {
@@ -271,7 +249,7 @@ pub fn create_repo(api: ApiSession<'_>, name: String) -> anyhow::Result<CreateRe
         file_default_visibility: None,
     };
     let response = api
-        .request(reqwest::Method::POST, scope_api_contract::routes::REPOS)
+        .request(reqwest::Method::POST, routes::REPOS)
         .json(&request)
         .send()
         .context("create Scope repository")?;
@@ -284,10 +262,7 @@ pub fn get_repo(
     repo: &str,
 ) -> anyhow::Result<RepoSummaryResponse> {
     let response = api
-        .request(
-            reqwest::Method::GET,
-            scope_api_contract::routes::repo(owner, repo),
-        )
+        .request(reqwest::Method::GET, routes::repo(owner, repo))
         .send()
         .with_context(|| format!("load Scope repo {owner}/{repo}"))?;
     decode_json_response(response, &format!("load Scope repo {owner}/{repo}"))
@@ -299,10 +274,7 @@ pub fn get_repo_config(
     repo: &str,
 ) -> anyhow::Result<RepoConfigContext> {
     let response = api
-        .request(
-            reqwest::Method::GET,
-            scope_api_contract::routes::repo_config(owner, repo),
-        )
+        .request(reqwest::Method::GET, routes::repo_config(owner, repo))
         .send()
         .with_context(|| format!("get repo config for {owner}/{repo}"))?;
     let response: RepoConfigResponse =
@@ -323,7 +295,7 @@ pub fn create_push_intent(
     let response = api
         .request(
             reqwest::Method::POST,
-            scope_api_contract::routes::repo_push_intents(params.owner, params.repo),
+            routes::repo_push_intents(params.owner, params.repo),
         )
         .json(&CreatePushIntentRequest {
             head_oid: params.head_oid.to_string(),

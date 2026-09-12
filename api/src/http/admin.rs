@@ -20,7 +20,6 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminCleanupStatusResponse {
     pending_cleanup: PendingCleanupResponse,
-    failed_object_deletes: SourceBlobCleanupQueueResponse,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,13 +40,13 @@ struct RepoStorageCleanupResponse {
     repo_name: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Debug, Serialize)]
 struct SourceBlobCleanupQueueResponse {
     count: usize,
     objects: Vec<SourceBlobCleanupResponse>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Debug, Serialize)]
 struct SourceBlobCleanupResponse {
     object_key: String,
     sha256: String,
@@ -135,9 +134,8 @@ async fn cleanup_status(state: &AppState) -> Result<AdminCleanupStatusResponse, 
     Ok(AdminCleanupStatusResponse {
         pending_cleanup: PendingCleanupResponse {
             repo_storage: RepoStorageCleanupQueueResponse::from_cleanups(&status.repo_storage),
-            source_blob_deletes: source_blob_deletes.clone(),
+            source_blob_deletes,
         },
-        failed_object_deletes: source_blob_deletes,
     })
 }
 

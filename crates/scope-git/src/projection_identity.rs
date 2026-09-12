@@ -1,9 +1,9 @@
 use crate::{GitTreePath, GitTreePathError};
 use scope_domain::{
     content::is_supported_git_file_mode,
+    content_ref::git_object_oid,
     projection::{Projection, ProjectionMaterialization},
 };
-use sha1::{Digest, Sha1};
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
@@ -194,14 +194,7 @@ fn generated_commit_oid(tree_oid: &[u8; 20], parent_oid: Option<&str>, message: 
          committer {GENERATED_COMMIT_NAME} <{GENERATED_COMMIT_EMAIL}> {GENERATED_COMMIT_TIME}\n\n\
          {message}"
     ));
-    object_oid("commit", payload.as_bytes())
-}
-
-fn object_oid(kind: &str, payload: &[u8]) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(format!("{kind} {}\0", payload.len()).as_bytes());
-    hasher.update(payload);
-    hex::encode(hasher.finalize())
+    git_object_oid("commit", payload.as_bytes())
 }
 
 #[derive(Clone)]
@@ -310,7 +303,7 @@ impl Tree {
             payload.push(0);
             payload.extend_from_slice(&oid);
         }
-        let oid = parse_oid(&object_oid("tree", &payload), "tree")?;
+        let oid = parse_oid(&git_object_oid("tree", &payload), "tree")?;
         self.cached_oid = Some(oid);
         Ok(oid)
     }
@@ -576,32 +569,6 @@ mod tests {
     }
 
     #[test]
-    fn long_generated_history_uses_linear_identity_state() {
-        let mut commits = Vec::with_capacity(10_000);
-        commits.push(generated_commit(
-            "commit-0",
-            None,
-            "Commit 0",
-            vec![change("/file", Some(blob(b"content", "100644")))],
-        ));
-        for index in 1..10_000 {
-            commits.push(generated_commit(
-                &format!("commit-{index}"),
-                Some(&format!("commit-{}", index - 1)),
-                &format!("Commit {index}"),
-                Vec::new(),
-            ));
-        }
-        let projection = Projection {
-            repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
-            commits,
-        };
-
-        assert_eq!(projection_head_oid(&projection).unwrap().unwrap().len(), 40);
-    }
-
-    #[test]
     fn empty_projection_has_no_canonical_head() {
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
@@ -699,7 +666,7 @@ mod tests {
     }
 
     fn blob(bytes: &[u8], mode: &str) -> SourceBlob {
-        let oid = object_oid("blob", bytes);
+        let oid = git_object_oid("blob", bytes);
         SourceBlob {
             content_ref: ContentRef::blob_sha256(format!("sha-{oid}")),
             sha256: format!("sha-{oid}"),

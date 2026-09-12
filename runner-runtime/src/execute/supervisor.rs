@@ -4,7 +4,9 @@ use super::{
     process::StepProcess,
 };
 use anyhow::Context as _;
-use scope_domain::runs::workflow::definition::WorkflowJob;
+use scope_domain::runs::{
+    exit_code::SIGNAL_TERMINATED_EXIT_CODE, step::StepConclusion, workflow::definition::WorkflowJob,
+};
 use std::{path::Path, sync::Arc, thread, time::Duration, time::Instant};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
@@ -142,10 +144,10 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
                         output = Some(summary);
                     }
                     OutputNotice::Failed(error) => {
-                        return cleanup_after_output_error(
+                        return cleanup_after_error(
                             sink.as_ref(),
                             process.take().expect("step process exists"),
-                            capture.take().expect("output capture exists"),
+                            capture.take(),
                             options.termination_grace,
                             error,
                         );
@@ -224,11 +226,11 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
                 debug_assert_eq!(exit_status, final_status);
                 next_sequence = summary.next_sequence;
                 logs_truncated |= summary.logs_truncated;
-                let exit_code = final_status.code().unwrap_or(128);
+                let exit_code = final_status.code().unwrap_or(SIGNAL_TERMINATED_EXIT_CODE);
                 if let Err(error) = sink.complete_step(index, exit_code, logs_truncated) {
                     return abandon_after_error(sink.as_ref(), error);
                 }
-                if exit_code != 0 {
+                if StepConclusion::from_exit_code(exit_code) != StepConclusion::Succeeded {
                     return Ok(ExecutionOutcome::Terminal);
                 }
                 break;
@@ -305,30 +307,13 @@ fn cleanup_after_error<S: ExecutionSink, T>(
     if let Err(cleanup_error) = process.terminate_and_wait(grace) {
         eprintln!("runtime failed to clean up step process: {cleanup_error:#}");
     }
-    if let Some(capture) = capture.as_ref() {
+    // Join rather than wait: after OutputNotice::Failed the final notice is
+    // already consumed, and stop() lets the workers exit either way.
+    if let Some(capture) = capture {
         capture.stop();
-    }
-    if let Some(capture) = capture
-        && let Err(capture_error) = capture.wait()
-    {
-        eprintln!("runtime failed to finish output capture: {capture_error:#}");
-    }
-    abandon_after_error(sink, error)
-}
-
-fn cleanup_after_output_error<S: ExecutionSink, T>(
-    sink: &S,
-    process: StepProcess,
-    capture: OutputCapture,
-    grace: Duration,
-    error: anyhow::Error,
-) -> anyhow::Result<T> {
-    if let Err(cleanup_error) = process.terminate_and_wait(grace) {
-        eprintln!("runtime failed to clean up step process: {cleanup_error:#}");
-    }
-    capture.stop();
-    if let Err(capture_error) = capture.join() {
-        eprintln!("runtime failed to join output capture: {capture_error:#}");
+        if let Err(capture_error) = capture.join() {
+            eprintln!("runtime failed to join output capture: {capture_error:#}");
+        }
     }
     abandon_after_error(sink, error)
 }

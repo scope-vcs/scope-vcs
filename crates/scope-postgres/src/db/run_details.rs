@@ -37,16 +37,11 @@ impl RunStore {
             .map(entities::run::Model::try_into_domain)
             .transpose()?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            // Early exits drop the read snapshot; only a complete read commits.
             return Ok(None);
         };
         let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
-        let jobs = super::run_attempt_persistence::jobs_for_run(&tx, run_id).await?;
-        if jobs.is_empty() {
-            return Err(PostgresError::internal_message(
-                "run is missing its persisted jobs",
-            ));
-        }
+        let jobs = super::run_operations::required_run_jobs(&tx, run_id).await?;
         let attempts = run_attempt_details_with(&tx, run_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(Some(RunDetail {
@@ -55,13 +50,6 @@ impl RunStore {
             workflow_revision,
             attempts,
         }))
-    }
-
-    pub async fn run_attempt_details(
-        &self,
-        run_id: &str,
-    ) -> Result<Vec<RunAttemptDetail>, PostgresError> {
-        run_attempt_details_with(self.db.as_ref(), run_id).await
     }
 }
 

@@ -6,9 +6,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+scope_service_runtime = { workspace = true, features = ["postgres"] }
 anyhow.workspace = true
 axum.workspace = true
-base64.workspace = true
 bytes.workspace = true
 getrandom.workspace = true
 hex.workspace = true
@@ -23,7 +23,6 @@ tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sig
 tokio-stream = "0.1.17"
 tower-http = { workspace = true, features = ["cors", "trace"] }
 tracing.workspace = true
-tracing-subscriber.workspace = true
 url = "2.5.7"
 
 [dev-dependencies]

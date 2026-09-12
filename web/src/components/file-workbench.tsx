@@ -1,8 +1,14 @@
 import { ChevronDown } from 'lucide-react'
 import { displayRouteFilePath } from '@/lib/route-file'
-import { useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useId, useState, type CSSProperties, type ReactNode } from 'react'
+import { PaneResizeHandle } from './pane-resize-handle'
 import { cn } from '@/lib/utils'
-import { clampFilePaneWidth, filePaneKeyboardWidth } from './file-workbench-width'
+import {
+  clampFilePaneWidth,
+  filePaneKeyboardWidth,
+  FILE_PANE_MIN_WIDTH,
+  FILE_PANE_MAX_WIDTH,
+} from './file-workbench-width'
 
 export function FileWorkbench({
   children,
@@ -19,7 +25,6 @@ export function FileWorkbench({
 }) {
   const [navigator, content] = children
   const [width, setWidth] = useState(250)
-  const drag = useRef<{ x: number; width: number } | null>(null)
   const navigatorId = useId()
   return (
     <div
@@ -53,44 +58,20 @@ export function FileWorkbench({
       >
         {navigator}
       </div>
-      <button
-        type="button"
-        aria-label="File pane width"
-        aria-controls={navigatorId}
-        aria-orientation="vertical"
-        aria-valuemax={360}
-        aria-valuemin={180}
-        aria-valuenow={width}
-        className="relative z-10 m-0 hidden h-auto w-px self-stretch border-0 cursor-col-resize touch-none bg-border before:absolute before:inset-y-0 before:-left-1 before:w-2 hover:bg-brand focus-visible:bg-brand focus-visible:outline-2 focus-visible:outline-ring lg:block"
-        onKeyDown={(event) => {
-          const nextWidth = filePaneKeyboardWidth(width, event.key)
-          if (nextWidth === null) return
-          event.preventDefault()
-          setWidth(nextWidth)
+      <PaneResizeHandle
+        className="hidden lg:block"
+        controls={navigatorId}
+        label="File pane width"
+        max={FILE_PANE_MAX_WIDTH}
+        min={FILE_PANE_MIN_WIDTH}
+        onDrag={(distance) => setWidth(clampFilePaneWidth(width + distance))}
+        onKey={(key) => {
+          const next = filePaneKeyboardWidth(width, key)
+          if (next === null) return false
+          setWidth(next)
+          return true
         }}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return
-          event.preventDefault()
-          event.currentTarget.focus()
-          event.currentTarget.setPointerCapture(event.pointerId)
-          drag.current = { x: event.clientX, width }
-        }}
-        onPointerMove={(event) => {
-          if (drag.current) {
-            setWidth(clampFilePaneWidth(drag.current.width + event.clientX - drag.current.x))
-          }
-        }}
-        onPointerUp={(event) => {
-          drag.current = null
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId)
-          }
-        }}
-        onLostPointerCapture={() => {
-          drag.current = null
-        }}
-        role="separator"
-        tabIndex={0}
+        width={width}
       />
       <div className="min-w-0">{content}</div>
     </div>

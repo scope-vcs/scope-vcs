@@ -1,5 +1,8 @@
-use super::{GitSegmentStore, GitStorageError, MultipartError, StagedGitSegment, valid_segment_id};
-use std::{path::PathBuf, time::Duration};
+use super::{
+    GitSegmentStore, GitStorageError, MultipartError, StagedGitSegment, is_hex_id_32,
+    sync_directory,
+};
+use std::time::Duration;
 use tokio::fs;
 
 pub(crate) const REMOTE_CLEANUP_TIMEOUT: Duration = Duration::from_secs(1);
@@ -57,7 +60,7 @@ impl GitSegmentStore {
         repository_id: &str,
         segment_id: &str,
     ) -> Result<(), GitStorageError> {
-        if repository_id.is_empty() || !valid_segment_id(segment_id) {
+        if repository_id.is_empty() || !is_hex_id_32(segment_id) {
             return Err(GitStorageError::InvalidConfiguration(
                 "repository id or segment id is invalid".into(),
             ));
@@ -77,15 +80,10 @@ impl GitSegmentStore {
             .await
             .map_err(GitStorageError::Local)?
         {
-            sync_directory(directory).await?;
+            sync_directory(directory)
+                .await
+                .map_err(GitStorageError::Local)?;
         }
         Ok(())
     }
-}
-
-pub(super) async fn sync_directory(directory: PathBuf) -> Result<(), GitStorageError> {
-    tokio::task::spawn_blocking(move || std::fs::File::open(directory)?.sync_all())
-        .await
-        .map_err(|error| GitStorageError::Task(error.to_string()))?
-        .map_err(GitStorageError::Local)
 }

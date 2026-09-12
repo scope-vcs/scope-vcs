@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use scope_cache_domain::CacheDomainError;
-use scope_postgres::error::{PostgresError, PostgresErrorKind};
+use scope_postgres::error::PostgresError;
 use serde::Serialize;
 
 #[derive(Debug)]
@@ -81,19 +81,10 @@ impl From<CacheDomainError> for ServiceError {
 
 impl From<PostgresError> for ServiceError {
     fn from(error: PostgresError) -> Self {
-        match error.kind {
-            PostgresErrorKind::InvalidInput => Self::bad_request(error.message),
-            PostgresErrorKind::AttachmentUploadExpired | PostgresErrorKind::Conflict => {
-                Self::conflict(error.message)
-            }
-            PostgresErrorKind::PermissionDenied => Self::forbidden(error.message),
-            PostgresErrorKind::NotFound => Self::new(StatusCode::NOT_FOUND, error.message),
-            PostgresErrorKind::ResourceExhausted => {
-                Self::new(StatusCode::TOO_MANY_REQUESTS, error.message)
-            }
-            PostgresErrorKind::Unauthenticated => Self::unauthorized(error.message),
-            PostgresErrorKind::Unavailable => Self::unavailable(error.message),
-            PostgresErrorKind::Internal => Self::internal(error.message),
+        let status = scope_service_runtime::http::postgres_error_kind(error.kind).status();
+        match status {
+            StatusCode::INTERNAL_SERVER_ERROR => Self::internal(error.message),
+            _ => Self::new(status, error.message),
         }
     }
 }

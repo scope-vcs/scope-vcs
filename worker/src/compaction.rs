@@ -13,8 +13,9 @@ use std::{
 };
 
 use crate::{
-    health::WorkerHealth,
-    settings::{WorkerRole, WorkerSettings},
+    elapsed_ms,
+    health::{WorkerHealth, WorkerLoop},
+    settings::{GIT_COMPACTION_SPANS, GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -40,9 +41,9 @@ pub(crate) async fn run(
             &metadata,
             Arc::clone(&segment_store),
             &settings.worker_id,
-            settings.git_compaction_spans,
+            GIT_COMPACTION_SPANS,
             settings.git_storage_limits,
-            settings.git_compaction_timeout,
+            GIT_COMPACTION_TIMEOUT,
             settings.data_dir.clone(),
         )
         .await
@@ -60,11 +61,11 @@ pub(crate) async fn run(
                 false
             }
         };
-        health.mark_poll_succeeded(WorkerRole::Compaction, super::unix_now()?);
+        health.mark_poll_succeeded(WorkerLoop::Compaction, super::unix_now()?);
         if made_progress {
             continue;
         }
-        if super::wait_or_shutdown(settings.poll_interval).await {
+        if super::wait_or_shutdown(POLL_INTERVAL).await {
             return Ok(());
         }
     }
@@ -298,7 +299,6 @@ pub(crate) async fn compact_one_git_repository(
             &candidate.spans,
             built.replacement,
             persist_now_unix,
-            &crate::generate_persistence_id,
         )
         .await;
     let persist_ms = elapsed_ms(persist_started);
@@ -311,12 +311,13 @@ pub(crate) async fn compact_one_git_repository(
                     &candidate.spans,
                 )
                 .await;
-            } else if let Err(error) = delete_deleting_upload(
+            } else if let Err(error) = discard_upload(
                 metadata,
                 segment_store.as_ref(),
                 &candidate.repo_id,
                 &reservation,
                 super::unix_now()?,
+                true,
             )
             .await
             {
@@ -427,10 +428,8 @@ fn log_compaction_attempt(
     );
 }
 
-fn elapsed_ms(started: Instant) -> u64 {
-    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
-}
-
+/// Records the upload as abandoned, then discards its bytes. Remote bytes are
+/// only touched when the row transition allows it and the caller asks for it.
 async fn abandon_upload(
     metadata: &MetadataStore,
     segment_store: &GitSegmentStore,
@@ -444,88 +443,59 @@ async fn abandon_upload(
         .abandon_git_segment_upload(&reservation.segment_id, now_unix)
         .await
         .map_err(|error| anyhow::anyhow!(error.message))?;
-    let mut cleanup_error = None;
-    let remote_deleted = if can_delete && attempt_remote_cleanup {
-        match segment_store
-            .cleanup_remote_bounded(&reservation.object_key)
-            .await
-        {
-            Ok(()) => true,
-            Err(error) => {
-                cleanup_error = Some(anyhow::Error::new(error));
-                false
-            }
-        }
-    } else {
-        false
-    };
-    let local_deleted = match segment_store
-        .cleanup_local(repository_id, &reservation.segment_id)
-        .await
-    {
-        Ok(()) => true,
-        Err(error) => {
-            if cleanup_error.is_none() {
-                cleanup_error = Some(anyhow::Error::new(error));
-            }
-            false
-        }
-    };
-    if can_delete
-        && attempt_remote_cleanup
-        && remote_deleted
-        && local_deleted
-        && let Err(error) = metadata
-            .repositories()
-            .mark_git_segment_upload_deleted(&reservation.segment_id, now_unix)
-            .await
-        && cleanup_error.is_none()
-    {
-        cleanup_error = Some(anyhow::anyhow!(error.message));
-    }
-    if let Some(error) = cleanup_error {
-        return Err(error);
-    }
-    Ok(())
+    discard_upload(
+        metadata,
+        segment_store,
+        repository_id,
+        reservation,
+        now_unix,
+        can_delete && attempt_remote_cleanup,
+    )
+    .await
 }
 
-async fn delete_deleting_upload(
+/// Deletes a segment upload's remote (when `remote`) and local bytes, marking
+/// the row deleted once both are gone. The first failure is reported after the
+/// remaining steps still ran.
+async fn discard_upload(
     metadata: &MetadataStore,
     segment_store: &GitSegmentStore,
     repository_id: &str,
     reservation: &GitSegmentReservation,
     now_unix: u64,
+    remote: bool,
 ) -> anyhow::Result<()> {
-    let (remote_deleted, mut cleanup_error) = match segment_store
-        .cleanup_remote_bounded(&reservation.object_key)
-        .await
-    {
-        Ok(()) => (true, None),
-        Err(error) => (false, Some(anyhow::Error::new(error))),
-    };
-    let local_deleted = match segment_store
-        .cleanup_local(repository_id, &reservation.segment_id)
-        .await
-    {
+    let mut first_error = None;
+    let mut record = |result: Result<(), anyhow::Error>| match result {
         Ok(()) => true,
         Err(error) => {
-            if cleanup_error.is_none() {
-                cleanup_error = Some(anyhow::Error::new(error));
-            }
+            first_error.get_or_insert(error);
             false
         }
     };
-    if remote_deleted
-        && local_deleted
-        && let Err(error) = metadata
-            .repositories()
-            .mark_git_segment_upload_deleted(&reservation.segment_id, now_unix)
+    let remote_deleted = remote
+        && record(
+            segment_store
+                .cleanup_remote_bounded(&reservation.object_key)
+                .await
+                .map_err(anyhow::Error::new),
+        );
+    let local_deleted = record(
+        segment_store
+            .cleanup_local(repository_id, &reservation.segment_id)
             .await
-        && cleanup_error.is_none()
-    {
-        cleanup_error = Some(anyhow::anyhow!(error.message));
+            .map_err(anyhow::Error::new),
+    );
+    if remote_deleted && local_deleted {
+        record(
+            metadata
+                .repositories()
+                .mark_git_segment_upload_deleted(&reservation.segment_id, now_unix)
+                .await
+                .map_err(|error| anyhow::anyhow!(error.message)),
+        );
     }
-    cleanup_error.map_or(Ok(()), Err)
+    first_error.map_or(Ok(()), Err)
 }
 
 struct BuiltCompaction {

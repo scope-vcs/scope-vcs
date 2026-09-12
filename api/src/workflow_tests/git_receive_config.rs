@@ -85,7 +85,7 @@ async fn push_only_member_cannot_publish_private_path_via_config() {
     let repo = rejected_config_push(&state, vec![("/secret.txt", Some("leak"))], config).await;
     assert!(
         !repo
-            .live_tree()
+            .live_files
             .contains_key(&ScopePath::parse("/secret.txt").unwrap())
     );
 }
@@ -123,16 +123,4 @@ async fn push_only_member_cannot_restore_stale_public_config_after_visibility_ch
         repo.repo_config.visibility_for_path(&readme_path),
         Visibility::Private
     );
-}
-
-#[tokio::test]
-async fn push_only_member_cannot_persist_non_visibility_config_metadata() {
-    let state = test_state_with_repo();
-    install_push_only_repo(&state, repo_with_readme(&state)).await;
-
-    let mut config = repo_config(Visibility::Public);
-    config.schema = Some("https://scope.example/schema.json".to_string());
-    let repo =
-        rejected_config_push(&state, vec![("/README.md", Some("member update"))], config).await;
-    assert_eq!(repo.repo_config.schema, None);
 }

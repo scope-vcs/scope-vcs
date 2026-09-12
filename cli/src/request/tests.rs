@@ -1,33 +1,15 @@
 use super::{
-    ensure_public_request_paths_allowed, new_client_discussion_id, new_client_reply_id,
-    text::{discussion_body_with_stdin, terminal_text},
+    ensure_public_request_paths_allowed, new_client_mutation_id, text::discussion_body_with_stdin,
 };
-use crate::{error::CliError, git_repo::GitRepo, test_support::TestDir};
+use crate::{error::CliError, git_repo::GitRepo, test_support::TempDir};
 use std::{fs, io::Cursor, path::PathBuf};
 
 #[test]
-fn terminal_text_replaces_control_characters() {
-    assert_eq!(terminal_text("ok\u{1b}[31m\nnext\u{7}"), "ok [31m next ");
-}
-
-#[test]
-fn client_discussion_ids_are_opaque_and_unique() {
-    let first = new_client_discussion_id().unwrap();
-    let second = new_client_discussion_id().unwrap();
-
-    assert!(first.starts_with("client_discussion_"));
-    assert!(second.starts_with("client_discussion_"));
-    assert_ne!(first, second);
-}
-
-#[test]
-fn client_reply_ids_are_opaque_and_unique() {
-    let first = new_client_reply_id().unwrap();
-    let second = new_client_reply_id().unwrap();
-
-    assert!(first.starts_with("client_reply_"));
-    assert!(second.starts_with("client_reply_"));
-    assert_ne!(first, second);
+fn client_mutation_ids_are_unique_across_kinds() {
+    let mut ids = std::collections::HashSet::new();
+    for kind in ["discussion", "reply", "discussion", "reply"] {
+        assert!(ids.insert(new_client_mutation_id(kind).unwrap()));
+    }
 }
 
 #[test]
@@ -49,7 +31,7 @@ fn discussion_body_reads_multiline_stdin_for_dash() {
 
 #[test]
 fn discussion_body_reads_files_without_rewriting_content() {
-    let dir = TestDir::new("discussion-body");
+    let dir = TempDir::new("discussion-body");
     let path = dir.path().join("body.md");
     fs::write(&path, "# Question\n\nKeep `\\n` literal.\n").unwrap();
     let mut stdin = Cursor::new(Vec::<u8>::new());
@@ -61,7 +43,7 @@ fn discussion_body_reads_files_without_rewriting_content() {
 
 #[test]
 fn public_request_preflight_rejects_protected_add_edit_delete_and_rename() {
-    let dir = TestDir::git_repo("request-protected-path-operations", "main");
+    let dir = TempDir::git_repo("request-protected-path-operations", "main");
     dir.run_git(["config", "user.email", "scope@example.test"]);
     dir.run_git(["config", "user.name", "Scope Test"]);
     fs::write(dir.path().join("README.md"), "base\n").unwrap();
@@ -109,7 +91,7 @@ fn public_request_preflight_rejects_protected_add_edit_delete_and_rename() {
 
 #[test]
 fn public_request_preflight_excludes_main_only_protected_paths_after_true_divergence() {
-    let dir = TestDir::git_repo("request-current-public-main", "main");
+    let dir = TempDir::git_repo("request-current-public-main", "main");
     dir.run_git(["config", "user.email", "scope@example.test"]);
     dir.run_git(["config", "user.name", "Scope Test"]);
     fs::write(dir.path().join("README.md"), "base\n").unwrap();
@@ -137,7 +119,7 @@ fn public_request_preflight_excludes_main_only_protected_paths_after_true_diverg
     ensure_public_request_paths_allowed(&repo, &detail, &current_main_oid, &head_oid).unwrap();
 }
 
-fn git_oid(dir: &TestDir) -> String {
+fn git_oid(dir: &TempDir) -> String {
     String::from_utf8(dir.run_git(["rev-parse", "HEAD"]).stdout)
         .unwrap()
         .trim()
@@ -156,7 +138,7 @@ fn request_detail(base_oid: &str, head_oid: &str) -> crate::api::RequestDetailRe
             "merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,
             "updated_at_unix":2,"invitees":[],
             "permissions":{"can_view_activity":false,"can_open_discussion":false,
-                "can_reply_to_discussion":false,"can_edit_identity":false,
+                "can_reply_to_discussion":false,"can_wait_after_reply":false,"can_edit_identity":false,
                 "can_pull_branch":false,"can_push_branch":true,"can_submit":false,
                 "can_manage_invitees":false,"can_leave_request":false,
                 "can_close":false,"can_merge":false},

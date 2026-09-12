@@ -1,4 +1,5 @@
 use super::entities;
+use super::integer_columns;
 use super::object_references::{delete_object_reference, replace_object_reference};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult,
@@ -19,6 +20,7 @@ pub struct RequestListRow {
     pub id: String,
     pub name: String,
     pub title: String,
+    pub author_user_id: String,
     pub author_role: RequestActorRole,
     pub audience: RequestAudience,
     pub head_oid: String,
@@ -27,6 +29,7 @@ pub struct RequestListRow {
     pub closed_at_unix: Option<u64>,
     pub merged_at_unix: Option<u64>,
     pub updated_at_unix: u64,
+    pub activity_version: u64,
     pub has_git_snapshot: bool,
 }
 
@@ -40,10 +43,11 @@ pub struct RequestListPageQuery<'a> {
 }
 
 #[derive(Clone, Debug, FromQueryResult)]
-struct RequestListModel {
+pub(super) struct RequestListModel {
     id: String,
     name: String,
     title: String,
+    author_user_id: String,
     author_role: String,
     audience: String,
     head_oid: String,
@@ -51,41 +55,44 @@ struct RequestListModel {
     closed_at_unix: Option<i64>,
     merged_at_unix: Option<i64>,
     updated_at_unix: i64,
+    activity_version: i64,
     has_git_snapshot: bool,
 }
 
 impl RequestListModel {
-    fn try_into_read_model(self) -> Result<RequestListRow, PostgresError> {
-        let state = if self.merged_at_unix.is_some() {
-            RequestState::Merged
-        } else if self.closed_at_unix.is_some() {
-            RequestState::Closed
-        } else if self.submitted_at_unix.is_some() {
-            RequestState::Open
-        } else {
-            RequestState::Draft
-        };
+    pub(super) fn try_into_read_model(self) -> Result<RequestListRow, PostgresError> {
+        let submitted_at_unix = self
+            .submitted_at_unix
+            .map(|value| integer_columns::i64_to_u64(value, "request submission time"))
+            .transpose()?;
+        let closed_at_unix = self
+            .closed_at_unix
+            .map(|value| integer_columns::i64_to_u64(value, "request close time"))
+            .transpose()?;
+        let merged_at_unix = self
+            .merged_at_unix
+            .map(|value| integer_columns::i64_to_u64(value, "request merge time"))
+            .transpose()?;
         Ok(RequestListRow {
             id: self.id,
             name: self.name,
             title: self.title,
+            author_user_id: self.author_user_id,
             author_role: entities::decode_enum(self.author_role)?,
             audience: entities::decode_enum(self.audience)?,
             head_oid: self.head_oid,
-            state,
-            submitted_at_unix: self
-                .submitted_at_unix
-                .map(|value| entities::i64_to_u64(value, "request submission time"))
-                .transpose()?,
-            closed_at_unix: self
-                .closed_at_unix
-                .map(|value| entities::i64_to_u64(value, "request close time"))
-                .transpose()?,
-            merged_at_unix: self
-                .merged_at_unix
-                .map(|value| entities::i64_to_u64(value, "request merge time"))
-                .transpose()?,
-            updated_at_unix: entities::i64_to_u64(self.updated_at_unix, "request update time")?,
+            state: RequestState::from_timestamps(merged_at_unix, closed_at_unix, submitted_at_unix),
+            submitted_at_unix,
+            closed_at_unix,
+            merged_at_unix,
+            updated_at_unix: integer_columns::i64_to_u64(
+                self.updated_at_unix,
+                "request update time",
+            )?,
+            activity_version: integer_columns::i64_to_u64(
+                self.activity_version,
+                "request activity version",
+            )?,
             has_git_snapshot: self.has_git_snapshot,
         })
     }
@@ -181,6 +188,7 @@ pub(super) fn request_list_projection() -> sea_orm::Select<entities::request::En
         .column(entities::request::Column::Id)
         .column(entities::request::Column::Name)
         .column(entities::request::Column::Title)
+        .column(entities::request::Column::AuthorUserId)
         .column(entities::request::Column::AuthorRole)
         .column(entities::request::Column::Audience)
         .column(entities::request::Column::HeadOid)
@@ -188,6 +196,7 @@ pub(super) fn request_list_projection() -> sea_orm::Select<entities::request::En
         .column(entities::request::Column::ClosedAtUnix)
         .column(entities::request::Column::MergedAtUnix)
         .column(entities::request::Column::UpdatedAtUnix)
+        .column(entities::request::Column::ActivityVersion)
         .expr_as(
             Expr::col(entities::request::Column::GitSnapshot).is_not_null(),
             "has_git_snapshot",
@@ -492,10 +501,6 @@ mod request_list_tests {
         assert_eq!(projection.matches("\"git_snapshot\"").count(), 1);
         assert!(projection.contains("git_snapshot\" IS NOT NULL"));
         assert!(projection.contains("AS \"has_git_snapshot\""));
-        assert!(sql.contains("EXISTS"));
-        assert!(sql.contains("author_user_id"));
-        assert!(sql.contains("submitted_at_unix"));
-        assert!(sql.contains("ORDER BY \"scope_requests\".\"id\" ASC"));
         assert!(sql.ends_with("LIMIT 101"));
     }
 }

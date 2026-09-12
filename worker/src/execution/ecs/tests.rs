@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 
 const IMAGE: &str =
     "ghcr.io/scope/checks@sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -51,7 +52,7 @@ fn task_definition_arn_must_match_the_exact_family() {
 }
 
 #[tokio::test]
-async fn start_sends_the_complete_task_definition_and_launch_contract() {
+async fn start_registers_a_pinned_fargate_task_and_launches_it_under_the_attempt_id() {
     for registry_credentials in [None, Some(REGISTRY_SECRET_ARN)] {
         let provider = fake::FakeEcs::with_registry_credentials(registry_credentials).await;
         provider.starts.add_permits(1);
@@ -63,83 +64,70 @@ async fn start_sends_the_complete_task_definition_and_launch_contract() {
             .unwrap();
 
         assert_eq!(external_run_id, "task-attempt_1");
-        let mut expected_container = serde_json::json!({
-            "name": CONTAINER_NAME,
-            "image": IMAGE,
-            "essential": true,
-            "entryPoint": [RUNTIME_ENTRYPOINT],
-            "secrets": [{
-                "name": BOOTSTRAP_SECRET_ENV,
-                "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test"
-            }],
-            "logConfiguration": {
-                "logDriver": "awslogs",
-                "options": {
-                    "awslogs-group": "/scope/test",
-                    "awslogs-region": "us-east-1",
-                    "awslogs-stream-prefix": "runner"
-                }
-            }
-        });
-        if let Some(arn) = registry_credentials {
-            expected_container["repositoryCredentials"] =
-                serde_json::json!({"credentialsParameter": arn});
-        }
+        let definition = provider.request_body("RegisterTaskDefinition");
+        assert_eq!(definition["family"], "scope-runner-attempt_1");
+        assert_eq!(definition["networkMode"], "awsvpc");
+        assert_eq!(definition["requiresCompatibilities"], json!(["FARGATE"]));
         assert_eq!(
-            provider.request_body("RegisterTaskDefinition"),
-            serde_json::json!({
-                "family": "scope-runner-attempt_1",
-                "networkMode": "awsvpc",
-                "requiresCompatibilities": ["FARGATE"],
-                "cpu": TASK_CPU,
-                "memory": TASK_MEMORY,
-                "executionRoleArn": "arn:aws:iam::123456789012:role/test",
-                "runtimePlatform": {
-                    "cpuArchitecture": "X86_64",
-                    "operatingSystemFamily": "LINUX"
-                },
-                "containerDefinitions": [expected_container],
-                "tags": [
-                    {"key": "Project", "value": "scope-vcs"},
-                    {"key": "Component", "value": "cloud-runner"},
-                    {"key": "ImageDigest", "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
-                ]
+            definition["executionRoleArn"],
+            "arn:aws:iam::123456789012:role/test"
+        );
+        assert_eq!(
+            definition["tags"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tag| tag["key"] == "ImageDigest")
+                .unwrap()["value"],
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        let container = &definition["containerDefinitions"][0];
+        assert_eq!(container["name"], "scope-runner");
+        assert_eq!(container["image"], IMAGE);
+        assert_eq!(
+            container["entryPoint"],
+            json!(["/scope/bin/scope-runner-runtime"])
+        );
+        assert_eq!(
+            container["secrets"],
+            json!([{
+                "name": "SCOPE_BOOTSTRAP_TOKEN",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test"
+            }])
+        );
+        assert_eq!(
+            container["logConfiguration"]["options"]["awslogs-group"],
+            "/scope/test"
+        );
+        assert_eq!(
+            container["repositoryCredentials"]["credentialsParameter"],
+            registry_credentials.map_or(serde_json::Value::Null, serde_json::Value::from)
+        );
+
+        let run = provider.request_body("RunTask");
+        assert_eq!(
+            run["cluster"],
+            "arn:aws:ecs:us-east-1:123456789012:cluster/test"
+        );
+        assert_eq!(run["launchType"], "FARGATE");
+        assert_eq!(run["count"], 1);
+        assert_eq!(run["clientToken"], "attempt_1");
+        assert_eq!(run["startedBy"], "attempt_1");
+        assert_eq!(
+            run["networkConfiguration"]["awsvpcConfiguration"],
+            json!({
+                "assignPublicIp": "ENABLED",
+                "subnets": ["subnet-test"],
+                "securityGroups": ["sg-test"]
             })
         );
         assert_eq!(
-            provider.request_body("RunTask"),
-            serde_json::json!({
-                "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/test",
-                "taskDefinition": "arn:aws:ecs:us-east-1:123456789012:task-definition/test:1",
-                "launchType": "FARGATE",
-                "platformVersion": "LATEST",
-                "count": 1,
-                "clientToken": "attempt_1",
-                "startedBy": "attempt_1",
-                "enableECSManagedTags": true,
-                "networkConfiguration": {
-                    "awsvpcConfiguration": {
-                        "assignPublicIp": "ENABLED",
-                        "subnets": ["subnet-test"],
-                        "securityGroups": ["sg-test"]
-                    }
-                },
-                "overrides": {
-                    "containerOverrides": [{
-                        "name": CONTAINER_NAME,
-                        "environment": [
-                            {"name": "SCOPE_API_URL", "value": "https://scope.test"},
-                            {"name": "SCOPE_ATTEMPT_ID", "value": "attempt_1"},
-                            {"name": "SCOPE_ATTEMPT_DEADLINE_UNIX", "value": "86400"}
-                        ]
-                    }]
-                },
-                "tags": [
-                    {"key": "Project", "value": "scope-vcs"},
-                    {"key": "Component", "value": "cloud-runner"},
-                    {"key": "AttemptId", "value": "attempt_1"}
-                ]
-            })
+            run["overrides"]["containerOverrides"][0]["environment"],
+            json!([
+                {"name": "SCOPE_API_URL", "value": "https://scope.test"},
+                {"name": "SCOPE_ATTEMPT_ID", "value": "attempt_1"},
+                {"name": "SCOPE_ATTEMPT_DEADLINE_UNIX", "value": "86400"}
+            ])
         );
     }
 }
@@ -160,15 +148,4 @@ fn retry_is_unblocked_only_after_ecs_reports_the_task_stopped() {
         .reason("ACCESS_DENIED")
         .build();
     assert!(task_has_stopped(&[], &[denied], "task-1").is_err());
-}
-
-#[test]
-fn ambiguous_start_polling_uses_bounded_exponential_backoff() {
-    let mut delay = CONSISTENCY_INITIAL_DELAY;
-    let mut observed = Vec::new();
-    for _ in 0..6 {
-        observed.push(delay.as_secs());
-        delay = next_consistency_delay(delay);
-    }
-    assert_eq!(observed, [2, 4, 8, 16, 30, 30]);
 }

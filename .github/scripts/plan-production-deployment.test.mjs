@@ -52,9 +52,9 @@ test("changes select the required deployment lanes", () => {
     ["documentation-only changes do not deploy", ["docs/cache.md"], {}],
     ["cache service changes run backend only", ["cache-service/src/main.rs"], { cache: true }],
     [
-      "runner changes publish the image before the backend lane",
+      "runner changes publish the checks image and nothing else",
       ["runner-runtime/src/main.rs"],
-      { "checks-image": true, "run-worker": true },
+      { "checks-image": true },
     ],
     [
       "toolchain changes publish the checks image and rebuild Rust services",
@@ -82,6 +82,16 @@ test("changes select the required deployment lanes", () => {
       "backend runtime image selects every backend service",
       ["deploy/railway/prebuilt.Dockerfile"],
       { cache: true, "run-worker": true, "git-router": true, api: true },
+    ],
+    [
+      "dependency analyzer changes rebuild the worker",
+      ["dependency-analyzer/analyze.mjs"],
+      { "run-worker": true },
+    ],
+    [
+      "worker runtime image selects only the worker",
+      ["deploy/railway/worker.Dockerfile"],
+      { "run-worker": true },
     ],
     [
       "web runtime image selects the web service",
@@ -275,7 +285,7 @@ test("deployment manifest is a single coherent production graph", () => {
 test("service config does not override Railway scaling or restart defaults", () => {
   const configs = {
     "api/railway.json": "/readyz",
-    "worker/railway.json": "/healthz",
+    "worker/railway.json": "/readyz",
     "cache-service/railway.json": "/readyz",
     "repo-router/railway.json": "/readyz",
     "media-service/railway.json": "/readyz",

@@ -15,6 +15,7 @@ const REQUEST_SUMMARY_REFRESH_VERSION: u64 = 0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RepoChangeReason {
     Connected,
+    Redacted,
     Lagged,
     RepoDeleted,
     ConfigApplied,
@@ -37,14 +38,16 @@ pub(crate) enum RepoChangeReason {
     RequestRated,
     RequestInviteeAdded,
     RequestInviteeRemoved,
+    RequestAttentionChanged,
     #[cfg(test)]
     VisibilityChanged,
 }
 
 impl RepoChangeReason {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Connected => "connected",
+            Self::Redacted => "repo-changed",
             Self::Lagged => "lagged",
             Self::RepoDeleted => "repo-deleted",
             Self::ConfigApplied => "config-applied",
@@ -67,6 +70,7 @@ impl RepoChangeReason {
             Self::RequestRated => "request-rated",
             Self::RequestInviteeAdded => "request-invitee-added",
             Self::RequestInviteeRemoved => "request-invitee-removed",
+            Self::RequestAttentionChanged => "request-attention-changed",
             #[cfg(test)]
             Self::VisibilityChanged => "visibility-changed",
         }
@@ -199,12 +203,12 @@ pub(crate) fn run_change_event(
     run_id: String,
     change: RunChangeKind,
 ) -> RepoChangeEvent {
-    RepoChangeEvent {
-        repo_id: incarnation.repository_id().to_string(),
-        incarnation_id: incarnation.incarnation_id().to_string(),
-        version: 0,
-        kind: RepoChangeKind::RunChanged { run_id, change },
-    }
+    RepoChangeEvent::run_changed(
+        incarnation.repository_id().to_string(),
+        incarnation.incarnation_id().to_string(),
+        run_id,
+        change,
+    )
 }
 
 impl crate::state::AppState {

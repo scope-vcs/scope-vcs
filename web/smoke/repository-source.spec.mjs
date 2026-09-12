@@ -136,7 +136,7 @@ test('public repository exposes only its projected source', async () => {
       .getByRole('navigation', { name: 'Primary' })
       .getByRole('link', { name: 'Requests', exact: true })
       .click()
-    await assertPageHeading(page, 'Requests')
+    await page.getByRole('complementary', { name: 'Requests workspace' }).waitFor()
     const codeReturnRequests = []
     const recordCodeReturnRequest = (request) => {
       if (request.url().includes('/_serverFn/')) {

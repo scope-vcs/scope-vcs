@@ -1,5 +1,10 @@
 {
   "baseline_ledger.txt": "bc6c83d290056d2e363252ce77c19142ba31fdae6149d243a20eccc7ab81ef74",
   "current_schema.sql": "484e645f83baf35085e574905f7c2812d35ee3510a4709557f1ef60df4551091",
-  "m0043_retire_git_manifests.rs": "1c27f47c783c8d100f44c2a58a961d5b5c738ebb6647a177f9517d63aa26b0d7"
+  "m0043_retire_git_manifests.rs": "1c27f47c783c8d100f44c2a58a961d5b5c738ebb6647a177f9517d63aa26b0d7",
+  "m0044_request_attention.rs": "3b9ecfdedbf75b2ac322962bf2b66000ffa9cdbf6385c4188d73db1fb499d119",
+  "m0045_dependency_analysis.rs": "c343fce0b64b6bd4c3c0613a3862e8b0a29fdb4983e1dc81252fa3512835f6b4",
+  "m0046_drop_attempt_token_expiry.rs": "c05696efc2fbc67c7a7f2596890ba6e6a5edaa0b1b21eac6e58d5e1a22eb535c",
+  "m0047_drop_git_manifest_orphan_jobs.rs": "d9ab14e423d265f669e2cd019140e055f9647bbcb6368f076ceab1b9e0a3fc93",
+  "m0048_run_attempt_active_state_indexes.rs": "a6e7a457bdd34a1e81ddf3fae505af93fcfc0b08b5e3b32200f00ebfe2fca775"
 }

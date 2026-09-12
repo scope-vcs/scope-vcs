@@ -1,8 +1,9 @@
 use crate::{
-    config::{DEFAULT_GIT_BRANCH, EMPTY_GIT_OID},
+    config::EMPTY_GIT_OID,
     error::ApiError,
     git::{
-        import::{git_snapshot_from_ref, run_git, run_git_output, validate_pushed_commit_range},
+        command::{git_is_ancestor, git_ref_listing, run_git, run_git_output},
+        import::{git_snapshot_from_ref, validate_pushed_commit_range},
         request_ref_public_safety::ensure_public_request_ref_is_public_safe,
         storage::{
             receive_pack_staging_repo_path, remove_dir_if_exists, request_ref_store_repo_path,
@@ -16,6 +17,7 @@ use scope_domain::{
     repository::{Repository, RepositoryIncarnation},
     requests::{Request, RequestAudience, canonical_request_ref},
 };
+use scope_git::DEFAULT_GIT_BRANCH;
 use scope_object_store::source_blob_bytes;
 use sha2::{Digest, Sha256};
 use std::{
@@ -34,17 +36,21 @@ pub(crate) use locks::acquire_request_ref_update_lock;
 use locks::git_lock_is_stale;
 pub(crate) use revision::with_request_revision_store_repo;
 
+/// Push rules shared by the request pre-receive hooks and the Rust validators, so the
+/// message a contributor sees is the same whichever layer rejects the push.
+pub(crate) const REQUEST_REF_DELETE_ERROR: &str = "Scope does not accept request branch deletes";
+pub(crate) const REQUEST_REF_SINGLE_UPDATE_ERROR: &str =
+    "Scope accepts exactly one request ref update";
+pub(crate) const REQUEST_REF_COMMIT_ERROR: &str = "Scope request refs must point at commits";
+pub(crate) const REQUEST_REF_FAST_FORWARD_ERROR: &str =
+    "Scope rejects non-fast-forward request pushes";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RequestRefUpdate {
     pub(crate) request_ref: String,
     pub(crate) request_name: String,
     pub(crate) old_head_oid: Option<String>,
     pub(crate) new_head_oid: String,
-}
-
-pub(crate) fn is_request_ref(refname: &str) -> bool {
-    request_name_from_ref(refname)
-        .is_some_and(|name| scope_domain::requests::validate_request_name(name).is_ok())
 }
 
 fn request_name_from_ref(refname: &str) -> Option<&str> {
@@ -57,7 +63,7 @@ fn is_request_ref_candidate(refname: &str) -> bool {
 }
 
 pub(crate) fn receive_pack_refs(staging_repo: &FsPath) -> Result<Vec<(String, String)>, ApiError> {
-    refs_for_prefixes(
+    git_ref_listing(
         staging_repo,
         &["refs/heads", "refs/tags"],
         "reading receive-pack refs",
@@ -82,20 +88,16 @@ pub(crate) fn request_ref_update_from_refs(
             continue;
         }
         let Some(new_head_oid) = new else {
-            return Err(ApiError::bad_request(
-                "Scope does not accept request branch deletes",
-            ));
+            return Err(ApiError::bad_request(REQUEST_REF_DELETE_ERROR));
         };
         let request_name =
             request_name_from_ref(refname).expect("request ref was classified above");
-        if !is_request_ref(refname) {
-            scope_domain::requests::validate_request_name(request_name).map_err(|error| {
-                ApiError::bad_request(format!(
-                    "invalid request branch '{request_name}': {}",
-                    error.message
-                ))
-            })?;
-        }
+        scope_domain::requests::validate_request_name(request_name).map_err(|error| {
+            ApiError::bad_request(format!(
+                "invalid request branch '{request_name}': {}",
+                error.message
+            ))
+        })?;
         changed.push(RequestRefUpdate {
             request_ref: refname.clone(),
             request_name: request_name.to_string(),
@@ -107,9 +109,7 @@ pub(crate) fn request_ref_update_from_refs(
     match changed.len() {
         0 => Ok(None),
         1 => Ok(changed.pop()),
-        _ => Err(ApiError::bad_request(
-            "Scope accepts exactly one request ref update",
-        )),
+        _ => Err(ApiError::bad_request(REQUEST_REF_SINGLE_UPDATE_ERROR)),
     }
 }
 
@@ -157,10 +157,6 @@ pub(crate) fn create_request_receive_pack_staging_repo(
         return Err(error);
     }
     Ok(repo_root)
-}
-
-pub(crate) fn install_request_receive_pack_hook(repo_root: &FsPath) -> Result<(), ApiError> {
-    install_request_pre_receive_hook(repo_root)
 }
 
 /// Adds every already-authorized request snapshot to a disposable upload-pack repository.
@@ -262,41 +258,48 @@ pub(crate) fn delete_request_ref_from_store(
     Ok(())
 }
 
-fn refs_for_prefixes(
-    repo: &FsPath,
-    prefixes: &[&str],
-    action: &str,
-) -> Result<Vec<(String, String)>, ApiError> {
-    let mut args = vec!["for-each-ref", "--format=%(refname)%00%(objectname)"];
-    args.extend(prefixes.iter().copied());
-    let output = run_git_output(Some(repo), &args, action)?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "{action}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let text = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
-    text.lines()
-        .map(|line| {
-            let (refname, oid) = line
-                .split_once('\0')
-                .ok_or_else(|| ApiError::internal_message("invalid git ref listing"))?;
-            Ok((refname.to_string(), oid.to_string()))
-        })
-        .collect()
-}
-
 fn refs_by_name(refs: &[(String, String)]) -> BTreeMap<String, String> {
     refs.iter()
         .map(|(refname, oid)| (refname.clone(), oid.clone()))
         .collect()
 }
 
-fn install_request_pre_receive_hook(repo_root: &FsPath) -> Result<(), ApiError> {
+pub(crate) fn install_request_receive_pack_hook(repo_root: &FsPath) -> Result<(), ApiError> {
     let hook = repo_root.join("hooks").join("pre-receive");
     let script = format!(
-        "#!/bin/sh\ncount=0\nwhile read old new ref; do\n  count=$((count + 1))\n  case \"$ref\" in\n    refs/heads/{DEFAULT_GIT_BRANCH})\n      echo \"Scope contributors cannot update main\" >&2\n      exit 1\n      ;;\n    refs/heads/*) ;;\n    *)\n      echo \"Scope request pushes only accept named request branches\" >&2\n      exit 1\n      ;;\n  esac\n  if [ \"$new\" = \"{EMPTY_GIT_OID}\" ]; then\n    echo \"Scope does not accept request branch deletes\" >&2\n    exit 1\n  fi\n  if [ \"$(git cat-file -t \"$new\" 2>/dev/null)\" != \"commit\" ]; then\n    echo \"Scope request refs must point at commits\" >&2\n    exit 1\n  fi\n  if [ \"$old\" != \"{EMPTY_GIT_OID}\" ] && ! git merge-base --is-ancestor \"$old\" \"$new\"; then\n    echo \"Scope rejects non-fast-forward request pushes\" >&2\n    exit 1\n  fi\ndone\nif [ \"$count\" -ne 1 ]; then\n  echo \"Scope accepts exactly one request ref update\" >&2\n  exit 1\nfi\n"
+        r#"#!/bin/sh
+count=0
+while read old new ref; do
+  count=$((count + 1))
+  case "$ref" in
+    refs/heads/{DEFAULT_GIT_BRANCH})
+      echo "Scope contributors cannot update main" >&2
+      exit 1
+      ;;
+    refs/heads/*) ;;
+    *)
+      echo "Scope request pushes only accept named request branches" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$new" = "{EMPTY_GIT_OID}" ]; then
+    echo "{REQUEST_REF_DELETE_ERROR}" >&2
+    exit 1
+  fi
+  if [ "$(git cat-file -t "$new" 2>/dev/null)" != "commit" ]; then
+    echo "{REQUEST_REF_COMMIT_ERROR}" >&2
+    exit 1
+  fi
+  if [ "$old" != "{EMPTY_GIT_OID}" ] && ! git merge-base --is-ancestor "$old" "$new"; then
+    echo "{REQUEST_REF_FAST_FORWARD_ERROR}" >&2
+    exit 1
+  fi
+done
+if [ "$count" -ne 1 ]; then
+  echo "{REQUEST_REF_SINGLE_UPDATE_ERROR}" >&2
+  exit 1
+fi
+"#
     );
     write_receive_pack_hook(&hook, &script)
 }
@@ -387,12 +390,7 @@ fn ensure_request_ref_descends_from_base(
     base_oid: &str,
     head_oid: &str,
 ) -> Result<(), ApiError> {
-    let output = run_git_output(
-        Some(repo),
-        &["merge-base", "--is-ancestor", base_oid, head_oid],
-        "checking request branch ancestry",
-    )?;
-    if output.status.success() {
+    if git_is_ancestor(repo, base_oid, head_oid, "checking request branch ancestry")? {
         return Ok(());
     }
     Err(ApiError::conflict(
@@ -408,12 +406,12 @@ fn ensure_request_ref_is_fast_forward(
     let Some(old_head_oid) = old_head_oid else {
         return Ok(());
     };
-    let output = run_git_output(
-        Some(repo),
-        &["merge-base", "--is-ancestor", old_head_oid, new_head_oid],
+    if git_is_ancestor(
+        repo,
+        old_head_oid,
+        new_head_oid,
         "checking request branch fast-forward",
-    )?;
-    if output.status.success() {
+    )? {
         return Ok(());
     }
     Err(ApiError::conflict(
@@ -425,9 +423,7 @@ fn ensure_request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<(), ApiE
     if request_ref_oid_is_commit(repo, oid)? {
         return Ok(());
     }
-    Err(ApiError::bad_request(
-        "Scope request refs must point at commits",
-    ))
+    Err(ApiError::bad_request(REQUEST_REF_COMMIT_ERROR))
 }
 
 fn request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<bool, ApiError> {

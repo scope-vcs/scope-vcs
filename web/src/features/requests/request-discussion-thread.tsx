@@ -12,10 +12,7 @@ import { m, useReducedMotion } from 'motion/react'
 import { memo, useEffect, useRef } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
 import { RequestDiscussionAnchor } from './request-discussion-anchor'
-import {
-  RequestDiscussionActorAvatar,
-  RequestDiscussionByline,
-} from './request-discussion-byline'
+import { RequestDiscussionActorAvatar, RequestDiscussionByline } from './request-discussion-byline'
 import { RequestReplyComposer } from './request-discussion-composer'
 import { RequestDiscussionMarkdown } from './request-discussion-markdown'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
@@ -42,6 +39,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   actor,
   canReply,
   canResolve,
+  canWaitAfterReply,
   composerOpen,
   discussion,
   onExpandedChange,
@@ -57,6 +55,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   actor: { handle: string; id: string }
   canReply: boolean
   canResolve: boolean
+  canWaitAfterReply: boolean
   composerOpen: boolean
   discussion: RequestDiscussionView
   onExpandedChange: (discussionId: string, expanded: boolean) => void
@@ -93,6 +92,12 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
     onPatch,
     params,
   })
+
+  async function submitReply(body: string, waitAfterReply = false) {
+    const posted = await postReply(body, { waitAfterReply })
+    if (posted) onCloseComposer()
+    return posted
+  }
 
   const readMarkerRef = useRequestDiscussionReadMarker({
     collapsed,
@@ -183,8 +188,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   }
 
   const rootUnread =
-    discussion.unread_count > 0 &&
-    discussion.opened_position > discussion.read_through_position
+    discussion.unread_count > 0 && discussion.opened_position > discussion.read_through_position
   const replyCount = Math.max(discussion.reply_count, availableReplies.length)
   const hasReplies = replyCount > 0
   const latestReply = availableReplies.at(-1)
@@ -211,28 +215,23 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
           author={discussion.author}
           createdAtUnix={discussion.created_at_unix}
         >
+          {discussion.anchor ? (
+            <RequestDiscussionAnchor anchor={discussion.anchor} params={params} />
+          ) : null}
           {discussion.unread_count > 0 ? (
             <Badge variant="info">{discussion.unread_count} new</Badge>
           ) : null}
           {discussion.status === 'Resolved' ? (
             <Badge variant="success">
               <Check />
-              {discussion.resolved_by
-                ? `Resolved by ${discussion.resolved_by.handle}`
-                : 'Resolved'}
+              {discussion.resolved_by ? `Resolved by ${discussion.resolved_by.handle}` : 'Resolved'}
             </Badge>
           ) : null}
           {discussion.pending === 'sending' ? (
             <span className="text-xs text-muted-foreground">Posting…</span>
           ) : null}
-          {discussion.pending === 'failed' ? (
-            <Badge variant="danger">Failed to post</Badge>
-          ) : null}
+          {discussion.pending === 'failed' ? <Badge variant="danger">Failed to post</Badge> : null}
         </RequestDiscussionByline>
-
-        {discussion.anchor ? (
-          <RequestDiscussionAnchor anchor={discussion.anchor} params={params} />
-        ) : null}
 
         <RequestDiscussionMarkdown
           className={`mt-2 ${REQUEST_DISCUSSION_CONTENT_CLASS}`}
@@ -241,12 +240,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {canPostReply ? (
-            <Button
-              onClick={openComposer}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
+            <Button onClick={openComposer} size="sm" type="button" variant="ghost">
               {discussion.status === 'Resolved' ? (
                 <RotateCcw className="size-3.5" />
               ) : (
@@ -306,8 +300,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
             ) : null}
             {latestReply ? (
               <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:inline">
-                Last reply{' '}
-                <RelativeTimestamp value={latestReply.created_at_unix} />
+                Last reply <RelativeTimestamp value={latestReply.created_at_unix} />
               </span>
             ) : null}
           </button>
@@ -315,9 +308,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
 
         <m.div
           animate={
-            collapsed
-              ? { height: 0, opacity: 0, y: -4 }
-              : { height: 'auto', opacity: 1, y: 0 }
+            collapsed ? { height: 0, opacity: 0, y: -4 } : { height: 'auto', opacity: 1, y: 0 }
           }
           aria-hidden={collapsed}
           className="overflow-hidden [overflow-anchor:none]"
@@ -355,31 +346,25 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                   openComposer()
                 }}
                 onRetry={(failedReply) =>
-                  void postReply(
-                    failedReply.body_markdown,
-                    failedReply.id,
-                    failedReply.reply_to?.id ??
-                      failedReply.optimistic_reply_to_reply_id ??
-                      null,
-                    failedReply.reply_to,
-                  )
+                  void postReply(failedReply.body_markdown, {
+                    clientReplyId: failedReply.id,
+                    replyToReplyId:
+                      failedReply.reply_to?.id ?? failedReply.optimistic_reply_to_reply_id ?? null,
+                    retryReference: failedReply.reply_to,
+                    waitAfterReply: failedReply.optimistic_wait_after_reply,
+                  })
                 }
                 readThroughPosition={discussion.read_through_position}
                 replies={availableReplies}
                 showUnreadBoundary={
-                  discussion.unread_count > 0 &&
-                  !rootUnread &&
-                  unreadContentFullyExposed
+                  discussion.unread_count > 0 && !rootUnread && unreadContentFullyExposed
                 }
               />
             </div>
           ) : null}
 
           {replyError ? (
-            <p
-              className="mt-3 flex items-center gap-2 text-sm text-destructive"
-              role="alert"
-            >
+            <p className="mt-3 flex items-center gap-2 text-sm text-destructive" role="alert">
               <CircleAlert className="size-4" />
               {replyError}
             </p>
@@ -394,11 +379,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                   onCloseComposer()
                 }}
                 onCancelQuote={() => setQuoteId(null)}
-                onSubmit={async (body) => {
-                  const posted = await postReply(body)
-                  if (posted) onCloseComposer()
-                  return posted
-                }}
+                onSubmit={submitReply}
                 quote={
                   quotedReply
                     ? {
@@ -408,6 +389,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                     : null
                 }
                 reopen={discussion.status === 'Resolved'}
+                waitAfterReply={canWaitAfterReply ? (body) => submitReply(body, true) : undefined}
               />
             </div>
           ) : null}
@@ -422,11 +404,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
 function latestParticipantHandles(replies: RequestDiscussionReplyView[]) {
   const handles: string[] = []
   const seen = new Set<string>()
-  for (
-    let index = replies.length - 1;
-    index >= 0 && handles.length < 2;
-    index -= 1
-  ) {
+  for (let index = replies.length - 1; index >= 0 && handles.length < 2; index -= 1) {
     const handle = replies[index]?.author.handle
     if (!handle || seen.has(handle)) continue
     seen.add(handle)

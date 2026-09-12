@@ -29,8 +29,7 @@ export type RequestDiscussionActionInput = RequestParams & {
 }
 
 export type CreateDiscussionInput = RequestParams & CreateRequestDiscussionInput
-export type CreateReplyInput =
-  RequestDiscussionActionInput & CreateRequestDiscussionReplyInput
+export type CreateReplyInput = RequestDiscussionActionInput & CreateRequestDiscussionReplyInput
 export type MarkDiscussionReadInput = RequestDiscussionActionInput & {
   through_position: number
 }
@@ -65,9 +64,7 @@ export async function loadRequestDiscussionsForRequest(
   )
 }
 
-export async function loadRequestDiscussionRepliesForRequest(
-  data: LoadRepliesInput,
-) {
+export async function loadRequestDiscussionRepliesForRequest(data: LoadRepliesInput) {
   return createApiClient().get(
     `${requestDiscussionRoute(ApiRouteTemplates.repoRequestDiscussionReplies, data)}${query({
       before: data.before?.toString(),
@@ -105,9 +102,7 @@ export async function loadRequestActivityForRequest(
   )
 }
 
-export async function createRequestDiscussionForRequest(
-  data: CreateDiscussionInput,
-) {
+export async function createRequestDiscussionForRequest(data: CreateDiscussionInput) {
   return createApiClient().post(
     requestRoute(ApiRouteTemplates.repoRequestDiscussions, data),
     apiValidators.RequestDiscussionMutationResponse,
@@ -122,47 +117,25 @@ export async function createRequestDiscussionForRequest(
   )
 }
 
-export async function createRequestDiscussionReplyForRequest(
-  data: CreateReplyInput,
-) {
-  return createApiClient().post(
-    requestDiscussionRoute(
-      ApiRouteTemplates.repoRequestDiscussionReplies,
-      data,
-    ),
-    apiValidators.RequestDiscussionReplyMutationResponse,
-    {
-      auth: 'required',
-      body: {
-        body_markdown: data.body_markdown,
-        client_reply_id: data.client_reply_id,
-        reply_to_reply_id: data.reply_to_reply_id,
-      },
-    },
-  )
+export async function createRequestDiscussionReplyForRequest(data: CreateReplyInput) {
+  return postRequestDiscussionReply(data, ApiRouteTemplates.repoRequestDiscussionReplies)
 }
 
-export async function resolveRequestDiscussionForRequest(
-  data: RequestDiscussionActionInput,
-) {
+export async function resolveRequestDiscussionForRequest(data: RequestDiscussionActionInput) {
   return createApiClient().post(
-    requestDiscussionRoute(
-      ApiRouteTemplates.repoRequestDiscussionResolve,
-      data,
-    ),
+    requestDiscussionRoute(ApiRouteTemplates.repoRequestDiscussionResolve, data),
     apiValidators.RequestDiscussionMutationResponse,
     { auth: 'required' },
   )
 }
 
-export async function reopenAndReplyToRequestDiscussionForRequest(
-  data: CreateReplyInput,
-) {
+export async function reopenAndReplyToRequestDiscussionForRequest(data: CreateReplyInput) {
+  return postRequestDiscussionReply(data, ApiRouteTemplates.repoRequestDiscussionReopenAndReply)
+}
+
+function postRequestDiscussionReply(data: CreateReplyInput, route: string) {
   return createApiClient().post(
-    requestDiscussionRoute(
-      ApiRouteTemplates.repoRequestDiscussionReopenAndReply,
-      data,
-    ),
+    requestDiscussionRoute(route, data),
     apiValidators.RequestDiscussionReplyMutationResponse,
     {
       auth: 'required',
@@ -170,19 +143,15 @@ export async function reopenAndReplyToRequestDiscussionForRequest(
         body_markdown: data.body_markdown,
         client_reply_id: data.client_reply_id,
         reply_to_reply_id: data.reply_to_reply_id,
+        wait_after_reply: data.wait_after_reply,
       },
     },
   )
 }
 
-export async function markRequestDiscussionReadForRequest(
-  data: MarkDiscussionReadInput,
-) {
+export async function markRequestDiscussionReadForRequest(data: MarkDiscussionReadInput) {
   return createApiClient().put(
-    requestDiscussionRoute(
-      ApiRouteTemplates.repoRequestDiscussionRead,
-      data,
-    ),
+    requestDiscussionRoute(ApiRouteTemplates.repoRequestDiscussionRead, data),
     apiValidators.RequestDiscussionReadResponse,
     {
       auth: 'required',
@@ -191,9 +160,7 @@ export async function markRequestDiscussionReadForRequest(
   )
 }
 
-export async function updateRequestDescriptionForRequest(
-  data: UpdateDescriptionInput,
-) {
+export async function updateRequestDescriptionForRequest(data: UpdateDescriptionInput) {
   return createApiClient().patch(
     requestRoute(ApiRouteTemplates.repoRequest, data),
     apiValidators.RequestMutationResponse,

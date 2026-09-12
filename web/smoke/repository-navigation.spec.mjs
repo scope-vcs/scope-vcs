@@ -204,7 +204,7 @@ test('requests navigation shows a destination skeleton inside the repository she
       await requestsNavigation
     }
 
-    await assertPageHeading(page, 'Requests')
+    await page.getByRole('complementary', { name: 'Requests workspace' }).waitFor()
     await page.locator('#main-content [data-slot="skeleton"]').first().waitFor({
       state: 'detached',
     })

@@ -2,7 +2,7 @@ use super::{
     REQUEST_DESCRIPTION_MAX_BYTES, REQUEST_TITLE_MAX_BYTES, Request, RequestEvent,
     RequestEventKind, RequestEventPayload, RequestIdentityAuditFact, RequestTimelineMutation,
     advance_request_activity, ensure_event_id_available, ensure_request_matches,
-    validate_body_size, validate_required_id,
+    validate_body_size, validate_required,
 };
 use crate::error::DomainError;
 use sha2::{Digest, Sha256};
@@ -24,9 +24,9 @@ pub fn edit_request_identity(
     event_id_exists: bool,
     input: EditRequestIdentityInput,
 ) -> Result<RequestTimelineMutation, DomainError> {
-    validate_required_id("request id", &input.request_id)?;
-    validate_required_id("actor user id", &input.actor_user_id)?;
-    validate_required_id("event id", &input.event_id)?;
+    validate_required("request id", &input.request_id)?;
+    validate_required("actor user id", &input.actor_user_id)?;
+    validate_required("event id", &input.event_id)?;
     ensure_event_id_available(event_id_exists)?;
     if !input.actor_can_edit_identity {
         return Err(DomainError::forbidden("request edit access required"));
@@ -37,7 +37,7 @@ pub fn edit_request_identity(
         ));
     }
     if let Some(title) = &input.title {
-        validate_required_id("request title", title)?;
+        validate_required("request title", title)?;
         validate_body_size("request title", title, REQUEST_TITLE_MAX_BYTES)?;
     }
     if let Some(description) = &input.description_markdown {

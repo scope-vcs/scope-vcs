@@ -1,9 +1,11 @@
 use crate::{
-    config::{DEFAULT_GIT_BRANCH, EMPTY_GIT_OID, RECEIVE_PACK_STAGING_BYTES},
+    config::{EMPTY_GIT_OID, RECEIVE_PACK_STAGING_BYTES},
     error::ApiError,
-    git::import::run_git,
     git::projection_repo::projection_bare_repo_for_state,
-    git::upload::git_command_output_with_timeout,
+    git::{
+        command::{git_command_output_with_timeout, run_git},
+        request_refs::{REQUEST_REF_COMMIT_ERROR, REQUEST_REF_FAST_FORWARD_ERROR},
+    },
     persistence::ensure_private_dir,
     repo_access::find_repo,
     runtime_budgets::RuntimeBudgets,
@@ -16,6 +18,7 @@ use scope_domain::{
     projection::{ProjectionViewKey, project_graph},
     repository::{RepoLifecycleState, RepositoryIncarnation},
 };
+use scope_git::DEFAULT_GIT_BRANCH;
 use sha2::{Digest, Sha256};
 use std::time::Instant;
 use std::{
@@ -249,11 +252,11 @@ while read old new ref; do
   case "$ref" in
     refs/heads/*)
       if ! git cat-file -e "$new^{{commit}}"; then
-        echo "Scope request refs must point at commits" >&2
+        echo "{REQUEST_REF_COMMIT_ERROR}" >&2
         exit 1
       fi
       if [ "$old" != "{EMPTY_GIT_OID}" ] && ! git merge-base --is-ancestor "$old" "$new"; then
-        echo "Scope rejects non-fast-forward request pushes" >&2
+        echo "{REQUEST_REF_FAST_FORWARD_ERROR}" >&2
         exit 1
       fi
       ;;

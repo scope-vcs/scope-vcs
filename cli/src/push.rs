@@ -2,9 +2,8 @@ use crate::api::ApiSession;
 use crate::{
     agent_context::ensure_repo_rules_ready_for_push,
     api::{
-        CreatePushIntentParams, PushTriggerEvaluationResponse, RepoLifecycleState,
-        RepositoryAccessResponse, RepositoryActor, api_url, create_push_intent,
-        get_push_trigger_evaluation, get_repo_config, http_client,
+        CreatePushIntentParams, PushTriggerEvaluationResponse, RepoLifecycleState, api_url,
+        create_push_intent, get_push_trigger_evaluation, get_repo_config, http_client,
     },
     git_repo::{
         GitRepo, changed_paths_since_scope_base_at_commit, ensure_git_repo_ready,
@@ -36,12 +35,6 @@ use std::{
 pub const DEFAULT_SCOPE_BRANCH: &str = "main";
 const PUSH_EVALUATION_MAX_POLLS: usize = 300;
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct ScopePushOutcome {
-    pub owner: String,
-    pub repo: String,
-}
-
 pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow::Result<()> {
     let git_repo = ensure_git_repo_ready("scope push")?;
     let reviewed_head_oid = head_oid(&git_repo)?;
@@ -61,11 +54,32 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     let session = session_from_cache_or_browser(&client, &api_url)?;
     let api = ApiSession::new(&client, &api_url, &session.token);
     let push_context = get_repo_config(api, &target.owner, &target.repo)?;
-    ensure_scope_remote_can_receive_push(
-        &target,
-        push_context.lifecycle_state,
-        &push_context.access,
-    )?;
+    let access = scope_domain::repository::access::RepositoryAccess {
+        actor: push_context.access.actor.into(),
+        can_read_private_files: push_context.access.can_read_private_files,
+        can_push: push_context.access.can_push,
+        can_change_file_visibility: push_context.access.can_change_file_visibility,
+        can_apply_changes: push_context.access.can_apply_changes,
+        can_manage_members: push_context.access.can_manage_members,
+        can_delete_repo: push_context.access.can_delete_repo,
+    };
+    if access.main_push_mode(push_context.lifecycle_state.into())
+        == scope_domain::repository::access::MainPushMode::Denied
+    {
+        let permission = if push_context.lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
+            "owner access to first-push"
+        } else {
+            "write access to"
+        };
+        return Err(CliError::new(ErrorResponse::new(
+            ErrorCode::Forbidden,
+            format!(
+                "you do not have {permission} {}/{}",
+                target.owner, target.repo
+            ),
+        ))
+        .into());
+    }
     if config_created {
         write_worktree_scope_repo_config_with_base(&git_repo.root, &push_context.config)?;
         config = push_context.config.clone();
@@ -157,13 +171,9 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         target.owner, target.repo, DEFAULT_SCOPE_BRANCH, reviewed_head_oid
     );
 
-    let outcome = match push_reviewed_head_with_intent(
-        &session.token,
-        &target,
-        &reviewed_head_oid,
-        &intent.token,
-    ) {
-        Ok(outcome) => outcome,
+    match push_reviewed_head_with_intent(&session.token, &target, &reviewed_head_oid, &intent.token)
+    {
+        Ok(()) => (),
         Err(_) if push_intent_expired(intent.expires_at_unix) => {
             return Err(CliError::new(ErrorResponse::new(
                 ErrorCode::Conflict,
@@ -173,7 +183,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         }
         Err(error) => return Err(error),
     };
-    let mut receipt = json!({"repository": format!("{}/{}", outcome.owner, outcome.repo), "remote": remote, "ref": format!("refs/heads/{DEFAULT_SCOPE_BRANCH}"), "commit": reviewed_head_oid, "applied": true, "tracking_updated": false, "config_synced": false});
+    let mut receipt = json!({"repository": format!("{}/{}", target.owner, target.repo), "remote": remote, "ref": format!("refs/heads/{DEFAULT_SCOPE_BRANCH}"), "commit": reviewed_head_oid, "applied": true, "tracking_updated": false, "config_synced": false});
     mark_scope_remote_pushed(&git_repo, &remote, DEFAULT_SCOPE_BRANCH, &reviewed_head_oid)
         .map_err(|error| applied_push_error(&receipt, format!("Push applied, but local tracking setup failed: {error:#}"), "Keep this commit. Fix the reported local Git error, then run scope pull before publishing again."))?;
     receipt["tracking_updated"] = json!(true);
@@ -194,7 +204,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         &receipt,
         vec![format!(
             "Pushed to Scope: {}/{}\nPush applied by Scope.",
-            outcome.owner, outcome.repo
+            target.owner, target.repo
         )],
     )
 }
@@ -355,84 +365,19 @@ pub fn load_scope_remote(
     Ok(target)
 }
 
-pub fn ensure_scope_remote_can_receive_push(
-    target: &ScopeRemote,
-    lifecycle_state: RepoLifecycleState,
-    access: &RepositoryAccessResponse,
-) -> anyhow::Result<()> {
-    if lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
-        ensure_awaiting_first_push_repo_can_receive_first_push(
-            &target.owner,
-            &target.repo,
-            access.actor,
-        )
-    } else {
-        ensure_ready_repo_can_receive_push(
-            &target.owner,
-            &target.repo,
-            lifecycle_state,
-            access.can_push,
-        )
-    }
-}
-
 pub fn push_reviewed_head_with_intent(
     session_token: &str,
     target: &ScopeRemote,
     reviewed_head_oid: &str,
     push_intent_token: &str,
-) -> anyhow::Result<ScopePushOutcome> {
+) -> anyhow::Result<()> {
     push_head_with_bearer(
         &target.permissioned_url,
         reviewed_head_oid,
         DEFAULT_SCOPE_BRANCH,
         session_token,
         push_intent_token,
-    )?;
-
-    Ok(ScopePushOutcome {
-        owner: target.owner.clone(),
-        repo: target.repo.clone(),
-    })
-}
-
-fn ensure_awaiting_first_push_repo_can_receive_first_push(
-    owner: &str,
-    repo: &str,
-    actor: RepositoryActor,
-) -> anyhow::Result<()> {
-    if actor != RepositoryActor::Owner {
-        return Err(CliError::new(ErrorResponse::new(
-            ErrorCode::Forbidden,
-            format!("you do not have owner access to first-push {owner}/{repo}"),
-        ))
-        .into());
-    }
-    Ok(())
-}
-
-fn ensure_ready_repo_can_receive_push(
-    owner: &str,
-    repo: &str,
-    lifecycle_state: RepoLifecycleState,
-    can_push: bool,
-) -> anyhow::Result<()> {
-    match lifecycle_state {
-        RepoLifecycleState::AwaitingFirstPush => {
-            bail!("repo {owner}/{repo} is waiting for its first push. Run: scope init");
-        }
-        RepoLifecycleState::Ready => {}
-    }
-
-    if !can_push {
-        return Err(CliError::new(ErrorResponse::new(
-            ErrorCode::Forbidden,
-            format!("you do not have write access to {owner}/{repo}"),
-        ))
-        .into());
-    }
-
-    Ok(())
+    )
 }
 
 #[cfg(test)]
@@ -471,35 +416,5 @@ mod tests {
         );
         assert!(ensure_reviewed_base_matches_intent(None, Some("def")).is_err());
         assert!(ensure_reviewed_base_matches_intent(Some("abc"), None).is_err());
-    }
-
-    #[test]
-    fn first_push_requires_owner_access() {
-        ensure_awaiting_first_push_repo_can_receive_first_push(
-            "owner",
-            "repo",
-            RepositoryActor::Owner,
-        )
-        .unwrap();
-        for actor in [RepositoryActor::Member, RepositoryActor::Public] {
-            assert!(
-                ensure_awaiting_first_push_repo_can_receive_first_push("owner", "repo", actor)
-                    .is_err()
-            );
-        }
-    }
-
-    #[test]
-    fn published_push_requires_write_access() {
-        for (state, can_push, allowed) in [
-            (RepoLifecycleState::Ready, true, true),
-            (RepoLifecycleState::Ready, false, false),
-            (RepoLifecycleState::AwaitingFirstPush, true, false),
-        ] {
-            assert_eq!(
-                ensure_ready_repo_can_receive_push("owner", "repo", state, can_push).is_ok(),
-                allowed,
-            );
-        }
     }
 }

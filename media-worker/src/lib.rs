@@ -3,28 +3,14 @@ pub mod codec;
 pub mod config;
 pub mod health;
 pub mod jobs;
+mod lease;
 pub mod process;
 mod runtime;
 pub mod scratch;
 pub mod storage;
 
 pub fn unix_now() -> anyhow::Result<u64> {
-    Ok(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs())
+    Ok(scope_service_runtime::unix_now()?)
 }
 
-pub async fn shutdown_signal() {
-    #[cfg(unix)]
-    {
-        let mut terminate =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("install SIGTERM handler");
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = terminate.recv() => {}
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = tokio::signal::ctrl_c().await;
-}
+pub use scope_service_runtime::shutdown_signal;

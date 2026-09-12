@@ -193,7 +193,10 @@ fn event_for_access(
         return Some(event);
     }
 
-    if matches!(&event.kind, RepoChangeKind::RunChanged { .. }) {
+    if matches!(
+        &event.kind,
+        RepoChangeKind::RunChanged { .. } | RepoChangeKind::DependenciesChanged
+    ) {
         return None;
     }
 
@@ -214,7 +217,7 @@ fn event_for_access(
             RepoChangeKind::Connected => RepoChangeKind::Connected,
             RepoChangeKind::Lagged => RepoChangeKind::Lagged,
             _ => RepoChangeKind::RepositoryChanged {
-                reason: "repo-changed".to_string(),
+                reason: RepoChangeReason::Redacted.as_str().to_string(),
             },
         },
         repo_id: event.repo_id,

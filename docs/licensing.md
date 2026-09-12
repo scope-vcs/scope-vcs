@@ -25,8 +25,9 @@ Each dependency occupies one JSON record line. Generated notices print repeated
 MIT and Apache terms once and reference them from each applicable document.
 Sharing requires identical words and punctuation; differences in whitespace are
 ignored. Copyright notices, additional terms, and distinct wording are retained.
-The inventory covers both Rust lockfiles and the web lockfile, including
-platform-specific and development dependencies. This is a conservative set;
+The inventory covers both Rust lockfiles, the web lockfile, and the dependency
+analyzer npm lockfile, including platform-specific and development dependencies.
+This is a conservative set;
 listing a package does not mean every distribution contains it.
 
 The audit also includes copied shadcn UI source, which is not a package-lockfile
@@ -79,6 +80,7 @@ license and notice. It is a freshness check, not a vulnerability scanner.
 | Web application | Public `/licenses` links to `/LICENSE.txt`, `/NOTICE.txt`, and `/third-party-licenses.txt`; the build includes these assets |
 | Backend release archive | `LICENSE`, `NOTICE`, and `third-party-rust.txt` accompany the binaries |
 | Backend and CLI service deployments | License files accompany the deployed binaries in `bin/` |
+| Dependency worker image | Analyzer notices reside beside the analyzer in `/app/dependency-analyzer/` |
 | Scope runner image | Application license files reside in `/scope/licenses/` |
 
 The web copies of `LICENSE` and `NOTICE` are generated from the root files. Edit

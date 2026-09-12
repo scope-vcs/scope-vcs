@@ -23,7 +23,7 @@ use super::{
     request_rows::save_request_row,
 };
 use sea_orm::TransactionTrait;
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use {
     crate::error::PostgresError,
     scope_domain::account::UserAccount,
@@ -339,17 +339,12 @@ impl RequestStore {
         &self,
         command: CreateRequestDiscussionCommand,
     ) -> Result<CreateRequestDiscussionMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
+        let now_unix = command.now_unix;
         let input = CreateRequestDiscussionInput {
             request_id: command.request_id,
             id: command.id,
@@ -396,15 +391,24 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_discussion(&tx, &mutation.discussion).await?;
         save_read_state(&tx, &mutation.read_state).await?;
+        super::request_attention::reactivate_attention_for_activity(
+            &tx,
+            &mutation.request.id,
+            &mutation.discussion.author_user_id,
+            mutation.request.activity_version,
+            mutation.discussion.created_at_unix,
+        )
+        .await?;
+        let discussion = &mutation.discussion;
         replace_bindings_for_markdown(
             &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
+            &discussion.request_id,
+            &discussion.author_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Discussion {
-                discussion_id: binding_discussion_id,
+                discussion_id: discussion.id.clone(),
             },
-            &binding_markdown,
-            binding_now_unix,
+            &discussion.body_markdown,
+            now_unix,
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -415,90 +419,7 @@ impl RequestStore {
         &self,
         command: CreateRequestDiscussionReplyCommand,
     ) -> Result<CreateRequestDiscussionReplyMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
-        let (repo, request) =
-            lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
-        ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.discussion_id.clone();
-        let binding_reply_id = command.id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
-        let input = CreateRequestDiscussionReplyInput {
-            request_id: command.request_id,
-            discussion_id: command.discussion_id,
-            id: command.id,
-            actor_user_id: command.actor_user_id,
-            actor_can_participate: policy.permissions.can_reply_to_discussion,
-            client_reply_id: command.client_reply_id,
-            body_markdown: command.body_markdown,
-            reply_to_reply_id: command.reply_to_reply_id,
-            now_unix: command.now_unix,
-        };
-        let discussion = discussion_by_id(&tx, &input.discussion_id)
-            .await?
-            .filter(|discussion| discussion.request_id == input.request_id)
-            .ok_or_else(|| PostgresError::not_found("request discussion not found"))?;
-
-        if let Some(reply) = reply_by_client_id(
-            &tx,
-            &input.discussion_id,
-            &input.actor_user_id,
-            &input.client_reply_id,
-        )
-        .await?
-        {
-            let state = monotonic_read_state(
-                &tx,
-                &discussion,
-                &input.actor_user_id,
-                reply.position,
-                input.now_unix,
-            )
-            .await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
-            return Ok(CreateRequestDiscussionReplyMutation {
-                request,
-                discussion,
-                reply,
-                read_state: state,
-                activity_event: None,
-            });
-        }
-
-        let quoted_reply = match input.reply_to_reply_id.as_deref() {
-            Some(quoted_id) => reply_by_id(&tx, quoted_id).await?,
-            None => None,
-        };
-        let reply_id_exists = reply_by_id(&tx, &input.id).await?.is_some();
-        let mutation = create_request_discussion_reply(
-            request,
-            discussion,
-            quoted_reply.as_ref(),
-            reply_id_exists,
-            input,
-        )?;
-        save_request_row(&tx, &mutation.request).await?;
-        save_discussion(&tx, &mutation.discussion).await?;
-        insert_reply(&tx, &mutation.reply).await?;
-        save_read_state(&tx, &mutation.read_state).await?;
-        replace_bindings_for_markdown(
-            &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
-            &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Reply {
-                discussion_id: binding_discussion_id,
-                reply_id: binding_reply_id,
-            },
-            &binding_markdown,
-            binding_now_unix,
-        )
-        .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(mutation)
+        self.persist_request_discussion_reply(command, None).await
     }
 
     pub async fn transition_request_discussion(
@@ -513,8 +434,7 @@ impl RequestStore {
             now_unix,
             transition,
         } = command;
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) = lock_request_repository(&tx, &request_id, &actor_user_id).await?;
         ensure_user_exists(&tx, &actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &actor_user_id).await?;
@@ -573,54 +493,76 @@ impl RequestStore {
         &self,
         command: ReopenAndReplyToRequestDiscussionCommand,
     ) -> Result<CreateRequestDiscussionReplyMutation, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let ReopenAndReplyToRequestDiscussionCommand {
+            request_id,
+            discussion_id,
+            reply_id,
+            actor_user_id,
+            event_id,
+            client_reply_id,
+            body_markdown,
+            reply_to_reply_id,
+            wait_after_reply,
+            now_unix,
+        } = command;
+        self.persist_request_discussion_reply(
+            CreateRequestDiscussionReplyCommand {
+                request_id,
+                discussion_id,
+                id: reply_id,
+                actor_user_id,
+                client_reply_id,
+                body_markdown,
+                reply_to_reply_id,
+                wait_after_reply,
+                now_unix,
+            },
+            Some(event_id),
+        )
+        .await
+    }
+
+    async fn persist_request_discussion_reply(
+        &self,
+        command: CreateRequestDiscussionReplyCommand,
+        reopen_event_id: Option<String>,
+    ) -> Result<CreateRequestDiscussionReplyMutation, PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
         let actor_is_maintainer = repo.access.is_maintainer();
-        let binding_request_id = command.request_id.clone();
-        let binding_discussion_id = command.discussion_id.clone();
-        let binding_reply_id = command.reply_id.clone();
-        let binding_actor_user_id = command.actor_user_id.clone();
-        let binding_markdown = command.body_markdown.clone();
-        let binding_now_unix = command.now_unix;
-        let input = ReopenAndReplyToRequestDiscussionInput {
-            request_id: command.request_id,
-            discussion_id: command.discussion_id,
-            reply_id: command.reply_id,
-            actor_user_id: command.actor_user_id,
-            actor_is_maintainer,
-            actor_can_transition: policy.permissions.can_transition_discussion,
-            actor_can_participate: policy.permissions.can_reply_to_discussion,
-            event_id: command.event_id,
-            client_reply_id: command.client_reply_id,
-            body_markdown: command.body_markdown,
-            reply_to_reply_id: command.reply_to_reply_id,
-            now_unix: command.now_unix,
-        };
-        ensure_request_discussion_transition_allowed(&request, input.actor_can_transition)?;
-        let discussion = discussion_by_id(&tx, &input.discussion_id)
+        let wait_after_reply = command.wait_after_reply;
+        let now_unix = command.now_unix;
+        if reopen_event_id.is_some() {
+            ensure_request_discussion_transition_allowed(
+                &request,
+                policy.permissions.can_transition_discussion,
+            )?;
+        }
+        let discussion = discussion_by_id(&tx, &command.discussion_id)
             .await?
-            .filter(|discussion| discussion.request_id == input.request_id)
+            .filter(|discussion| discussion.request_id == command.request_id)
             .ok_or_else(|| PostgresError::not_found("request discussion not found"))?;
         if let Some(reply) = reply_by_client_id(
             &tx,
-            &input.discussion_id,
-            &input.actor_user_id,
-            &input.client_reply_id,
+            &command.discussion_id,
+            &command.actor_user_id,
+            &command.client_reply_id,
         )
         .await?
         {
             let state = monotonic_read_state(
                 &tx,
                 &discussion,
-                &input.actor_user_id,
+                &command.actor_user_id,
                 reply.position,
-                input.now_unix,
+                command.now_unix,
             )
             .await?;
+            // The original transaction already applied reply attention. A retry
+            // must preserve any later wake-up or explicit attention action.
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(CreateRequestDiscussionReplyMutation {
                 request,
@@ -630,16 +572,51 @@ impl RequestStore {
                 activity_event: None,
             });
         }
-        let quoted_reply = match input.reply_to_reply_id.as_deref() {
+        let quoted_reply = match command.reply_to_reply_id.as_deref() {
             Some(quoted_id) => reply_by_id(&tx, quoted_id).await?,
             None => None,
         };
-        let mutation = reopen_and_reply_to_request_discussion(
-            request,
-            discussion,
-            quoted_reply.as_ref(),
-            input,
-        )?;
+        let mutation = match reopen_event_id {
+            Some(event_id) => reopen_and_reply_to_request_discussion(
+                request,
+                discussion,
+                quoted_reply.as_ref(),
+                ReopenAndReplyToRequestDiscussionInput {
+                    request_id: command.request_id,
+                    discussion_id: command.discussion_id,
+                    reply_id: command.id,
+                    actor_user_id: command.actor_user_id,
+                    actor_is_maintainer,
+                    actor_can_transition: policy.permissions.can_transition_discussion,
+                    actor_can_participate: policy.permissions.can_reply_to_discussion,
+                    event_id,
+                    client_reply_id: command.client_reply_id,
+                    body_markdown: command.body_markdown,
+                    reply_to_reply_id: command.reply_to_reply_id,
+                    now_unix: command.now_unix,
+                },
+            )?,
+            None => {
+                let reply_id_exists = reply_by_id(&tx, &command.id).await?.is_some();
+                create_request_discussion_reply(
+                    request,
+                    discussion,
+                    quoted_reply.as_ref(),
+                    reply_id_exists,
+                    CreateRequestDiscussionReplyInput {
+                        request_id: command.request_id,
+                        discussion_id: command.discussion_id,
+                        id: command.id,
+                        actor_user_id: command.actor_user_id,
+                        actor_can_participate: policy.permissions.can_reply_to_discussion,
+                        client_reply_id: command.client_reply_id,
+                        body_markdown: command.body_markdown,
+                        reply_to_reply_id: command.reply_to_reply_id,
+                        now_unix: command.now_unix,
+                    },
+                )?
+            }
+        };
         save_request_row(&tx, &mutation.request).await?;
         save_discussion(&tx, &mutation.discussion).await?;
         insert_reply(&tx, &mutation.reply).await?;
@@ -647,16 +624,36 @@ impl RequestStore {
         if let Some(event) = &mutation.activity_event {
             insert_request_event_row(&tx, event).await?;
         }
+        super::request_attention::reactivate_attention_for_activity(
+            &tx,
+            &mutation.request.id,
+            &mutation.reply.author_user_id,
+            mutation.request.activity_version,
+            mutation.reply.created_at_unix,
+        )
+        .await?;
+        if wait_after_reply {
+            super::request_attention::wait_after_own_reply(
+                &tx,
+                &mutation.request,
+                &mutation.reply.author_user_id,
+                actor_is_maintainer,
+                mutation.reply.position,
+                mutation.reply.created_at_unix,
+            )
+            .await?;
+        }
+        let reply = &mutation.reply;
         replace_bindings_for_markdown(
             &tx,
-            &binding_request_id,
-            &binding_actor_user_id,
+            &mutation.discussion.request_id,
+            &reply.author_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Reply {
-                discussion_id: binding_discussion_id,
-                reply_id: binding_reply_id,
+                discussion_id: reply.discussion_id.clone(),
+                reply_id: reply.id.clone(),
             },
-            &binding_markdown,
-            binding_now_unix,
+            &reply.body_markdown,
+            now_unix,
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -667,8 +664,7 @@ impl RequestStore {
         &self,
         input: MarkRequestDiscussionReadInput,
     ) -> Result<RequestDiscussionReadState, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         ensure_user_exists(&tx, &input.user_id).await?;
         let discussion = discussion_by_id(&tx, &input.discussion_id)
             .await?

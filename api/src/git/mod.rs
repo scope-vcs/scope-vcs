@@ -1,4 +1,5 @@
 pub(crate) mod cache;
+pub(crate) mod command;
 pub(crate) mod content;
 mod context;
 mod credentials;
@@ -43,7 +44,39 @@ use std::{
     time::Instant,
 };
 
-struct TemporaryRepository(Option<PathBuf>);
+struct TemporaryRepository(PathBuf);
+
+/// Body encodings accepted on Git smart-HTTP requests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GitRequestEncoding {
+    Identity,
+    Gzip,
+}
+
+fn git_request_encoding(headers: &HeaderMap) -> Result<GitRequestEncoding, ApiError> {
+    let mut encodings = headers.get_all(CONTENT_ENCODING).iter();
+    let Some(encoding) = encodings.next() else {
+        return Ok(GitRequestEncoding::Identity);
+    };
+    if encodings.next().is_some() {
+        return Err(ApiError::bad_request(
+            "multiple Git content-encoding headers are unsupported",
+        ));
+    }
+    let encoding = encoding
+        .to_str()
+        .map_err(|_| ApiError::bad_request("invalid Git content-encoding header"))?
+        .trim();
+    if encoding.is_empty() || encoding.eq_ignore_ascii_case("identity") {
+        return Ok(GitRequestEncoding::Identity);
+    }
+    if encoding.eq_ignore_ascii_case("gzip") {
+        return Ok(GitRequestEncoding::Gzip);
+    }
+    Err(ApiError::bad_request(format!(
+        "unsupported Git content-encoding {encoding}"
+    )))
+}
 
 enum ReceivePackBody {
     Buffered(Vec<u8>),
@@ -53,25 +86,17 @@ enum ReceivePackBody {
     },
 }
 
-impl TemporaryRepository {
-    fn new(path: PathBuf) -> Self {
-        Self(Some(path))
-    }
-}
-
 impl Deref for TemporaryRepository {
     type Target = FsPath;
 
     fn deref(&self) -> &Self::Target {
-        self.0.as_deref().expect("temporary repository is present")
+        &self.0
     }
 }
 
 impl Drop for TemporaryRepository {
     fn drop(&mut self) {
-        if let Some(path) = self.0.as_ref() {
-            let _ = fs::remove_dir_all(path);
-        }
+        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
@@ -223,57 +248,36 @@ pub(crate) async fn git_receive_pack(
         .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    let mut encodings = headers.get_all(CONTENT_ENCODING).iter();
-    let encoding = match encodings.next() {
-        Some(value) => match value.to_str() {
-            Ok(value) => Some(value.trim().to_string()),
-            Err(_) => {
-                return git_error_response(ApiError::bad_request(
-                    "invalid Git content-encoding header",
-                ));
-            }
-        },
-        None => None,
+    let encoding = match git_request_encoding(&headers) {
+        Ok(encoding) => encoding,
+        Err(error) => return git_error_response(error),
     };
-    if encodings.next().is_some() {
-        return git_error_response(ApiError::bad_request(
-            "multiple Git content-encoding headers are unsupported",
-        ));
-    }
     let request_body = request.into_body();
-    let body = if encoding
-        .as_deref()
-        .is_some_and(|value| value.eq_ignore_ascii_case("gzip"))
-    {
-        let buffered = match to_bytes(request_body, MAX_RECEIVE_PACK_BYTES).await {
-            Ok(body) => body,
-            Err(error) => {
-                return git_error_response(ApiError::payload_too_large(format!(
-                    "git receive-pack body is too large: {error}"
-                )));
+    let body = match encoding {
+        GitRequestEncoding::Gzip => {
+            let buffered = match to_bytes(request_body, MAX_RECEIVE_PACK_BYTES).await {
+                Ok(body) => body,
+                Err(error) => {
+                    return git_error_response(ApiError::payload_too_large(format!(
+                        "git receive-pack body is too large: {error}"
+                    )));
+                }
+            };
+            match decode_git_request_body(&headers, buffered, MAX_RECEIVE_PACK_BYTES) {
+                Ok(body) => ReceivePackBody::Buffered(body),
+                Err(error) => return git_error_response(error),
             }
-        };
-        match decode_git_request_body(&headers, buffered, MAX_RECEIVE_PACK_BYTES) {
-            Ok(body) => ReceivePackBody::Buffered(body),
-            Err(error) => return git_error_response(error),
         }
-    } else if encoding
-        .as_deref()
-        .is_none_or(|value| value.is_empty() || value.eq_ignore_ascii_case("identity"))
-    {
-        let content_length = headers
-            .get(CONTENT_LENGTH)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok());
-        ReceivePackBody::Streaming {
-            body: request_body,
-            content_length,
+        GitRequestEncoding::Identity => {
+            let content_length = headers
+                .get(CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok());
+            ReceivePackBody::Streaming {
+                body: request_body,
+                content_length,
+            }
         }
-    } else {
-        return git_error_response(ApiError::bad_request(format!(
-            "unsupported Git content-encoding {}",
-            encoding.as_deref().unwrap_or_default()
-        )));
     };
 
     match handle_git_receive_pack_body(&state, &org, &repo, "POST", body, content_type, access)
@@ -341,27 +345,8 @@ pub(crate) fn decode_git_request_body(
     body: Bytes,
     max_bytes: usize,
 ) -> Result<Vec<u8>, ApiError> {
-    let mut encodings = headers.get_all(CONTENT_ENCODING).iter();
-    let Some(encoding) = encodings.next() else {
+    if git_request_encoding(headers)? == GitRequestEncoding::Identity {
         return Ok(body.to_vec());
-    };
-    if encodings.next().is_some() {
-        return Err(ApiError::bad_request(
-            "multiple Git content-encoding headers are unsupported",
-        ));
-    }
-
-    let encoding = encoding
-        .to_str()
-        .map_err(|_| ApiError::bad_request("invalid Git content-encoding header"))?
-        .trim();
-    if encoding.is_empty() || encoding.eq_ignore_ascii_case("identity") {
-        return Ok(body.to_vec());
-    }
-    if !encoding.eq_ignore_ascii_case("gzip") {
-        return Err(ApiError::bad_request(format!(
-            "unsupported Git content-encoding {encoding}"
-        )));
     }
 
     let mut decoded = Vec::new();
@@ -414,7 +399,7 @@ pub(crate) async fn handle_git_receive_pack(
 ) -> Result<Response, ApiError> {
     let preparation = git_receive::prepare(state, owner, repo_name, access, true).await?;
     let remote_user = preparation.access.author_id().to_string();
-    let staging_repo = TemporaryRepository::new(preparation.staging_repo);
+    let staging_repo = TemporaryRepository(preparation.staging_repo);
     let cgi = git_http_backend(
         &staging_repo,
         method,
@@ -438,7 +423,7 @@ async fn handle_git_receive_pack_body(
 ) -> Result<Response, ApiError> {
     let preparation = git_receive::prepare(state, owner, repo_name, access, false).await?;
     let remote_user = preparation.access.author_id().to_string();
-    let staging_repo = TemporaryRepository::new(preparation.staging_repo.clone());
+    let staging_repo = TemporaryRepository(preparation.staging_repo.clone());
     let receive_started_at = Instant::now();
     let cgi = match body {
         ReceivePackBody::Buffered(body) => git_http_backend(

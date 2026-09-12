@@ -41,6 +41,9 @@ routes! {
             => "repoConfig",
             repo_config(owner: &str, repo: &str);
         REPO_METADATA = "/v1/repos/{owner}/{repo}/metadata" => "repoMetadata";
+        REPO_DEPENDENCIES = "/v1/repos/{owner}/{repo}/dependencies"
+            => "repoDependencies",
+            repo_dependencies(owner: &str, repo: &str);
         REPO_RUN_WORKFLOWS = "/v1/repos/{owner}/{repo}/run-workflows"
             => "repoRunWorkflows",
             repo_run_workflows(owner: &str, repo: &str);
@@ -64,6 +67,9 @@ routes! {
             => "repoRequests",
             repo_requests(owner: &str, repo: &str);
         REPO_REQUEST_QUEUE = "/v1/repos/{owner}/{repo}/requests/queue" => "repoRequestQueue";
+        REPO_REQUEST_ATTENTION = "/v1/repos/{owner}/{repo}/requests/{request_id}/attention"
+            => "repoRequestAttention",
+            repo_request_attention(owner: &str, repo: &str, request_id: &str);
         REPO_REQUEST = "/v1/repos/{owner}/{repo}/requests/{request_id}"
             => "repoRequest",
             repo_request(owner: &str, repo: &str, request_id: &str);
@@ -118,7 +124,6 @@ routes! {
                 request_id: &str,
                 attachment_id: &str,
             );
-        REPO_SESSION = "/v1/repos/{owner}/{repo}/session" => "repoSession";
         REPO_FILES = "/v1/repos/{owner}/{repo}/files" => "repoFiles";
         REPO_FILE_CONTENT = "/v1/repos/{owner}/{repo}/files/content" => "repoFileContent";
         REPO_REQUEST_REVISIONS = "/v1/repos/{owner}/{repo}/requests/{request_id}/changes"

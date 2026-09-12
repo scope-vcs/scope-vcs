@@ -86,10 +86,10 @@ pub mod push_trigger_evaluation {
                     evaluation.created_at_unix,
                     "push trigger creation time",
                 )?,
-                completed_at_unix: evaluation
-                    .completed_at_unix
-                    .map(|value| u64_to_i64(value, "push trigger completion time"))
-                    .transpose()?,
+                completed_at_unix: optional_u64_to_i64(
+                    evaluation.completed_at_unix,
+                    "push trigger completion time",
+                )?,
             })
         }
 
@@ -102,10 +102,10 @@ pub mod push_trigger_evaluation {
                 message: self.message,
                 checks: decode_json(self.checks)?,
                 created_at_unix: i64_to_u64(self.created_at_unix, "push trigger creation time")?,
-                completed_at_unix: self
-                    .completed_at_unix
-                    .map(|value| i64_to_u64(value, "push trigger completion time"))
-                    .transpose()?,
+                completed_at_unix: optional_i64_to_u64(
+                    self.completed_at_unix,
+                    "push trigger completion time",
+                )?,
             })
         }
     }
@@ -156,10 +156,10 @@ pub mod run {
                 creation_sequence: NotSet,
                 created_at_unix: Set(u64_to_i64(run.created_at_unix, "run creation time")?),
                 updated_at_unix: Set(u64_to_i64(run.updated_at_unix, "run update time")?),
-                completed_at_unix: Set(run
-                    .completed_at_unix
-                    .map(|value| u64_to_i64(value, "run completion time"))
-                    .transpose()?),
+                completed_at_unix: Set(optional_u64_to_i64(
+                    run.completed_at_unix,
+                    "run completion time",
+                )?),
             })
         }
     }
@@ -183,9 +183,7 @@ pub mod run {
                 self.cancellation_requested,
                 i64_to_u64(self.created_at_unix, "run creation time")?,
                 i64_to_u64(self.updated_at_unix, "run update time")?,
-                self.completed_at_unix
-                    .map(|value| i64_to_u64(value, "run completion time"))
-                    .transpose()?,
+                optional_i64_to_u64(self.completed_at_unix, "run completion time")?,
             )
             .map_err(PostgresError::invalid_input)
         }
@@ -230,10 +228,10 @@ pub mod run_job {
                 current_attempt_id: job.current_attempt_id.clone(),
                 created_at_unix: u64_to_i64(job.created_at_unix, "run job creation time")?,
                 updated_at_unix: u64_to_i64(job.updated_at_unix, "run job update time")?,
-                completed_at_unix: job
-                    .completed_at_unix
-                    .map(|value| u64_to_i64(value, "run job completion time"))
-                    .transpose()?,
+                completed_at_unix: optional_u64_to_i64(
+                    job.completed_at_unix,
+                    "run job completion time",
+                )?,
             })
         }
 
@@ -248,9 +246,7 @@ pub mod run_job {
                 self.current_attempt_id,
                 i64_to_u64(self.created_at_unix, "run job creation time")?,
                 i64_to_u64(self.updated_at_unix, "run job update time")?,
-                self.completed_at_unix
-                    .map(|value| i64_to_u64(value, "run job completion time"))
-                    .transpose()?,
+                optional_i64_to_u64(self.completed_at_unix, "run job completion time")?,
             )
             .map_err(PostgresError::invalid_input)
         }
@@ -272,7 +268,6 @@ pub mod run_attempt {
         pub runtime_version: String,
         #[sea_orm(unique)]
         pub token_hash: String,
-        pub token_expires_at_unix: i64,
         pub state: String,
         pub lease_expires_at_unix: i64,
         pub last_heartbeat_at_unix: i64,
@@ -299,10 +294,6 @@ pub mod run_attempt {
                 external_run_id: attempt.external_run_id.clone(),
                 runtime_version: attempt.runtime_version.clone(),
                 token_hash: attempt.token_hash.clone(),
-                token_expires_at_unix: u64_to_i64(
-                    attempt.token_expires_at_unix,
-                    "attempt token expiry time",
-                )?,
                 state: encode_enum(attempt.state)?,
                 lease_expires_at_unix: u64_to_i64(
                     attempt.lease_expires_at_unix,
@@ -313,24 +304,24 @@ pub mod run_attempt {
                     "attempt heartbeat time",
                 )?,
                 created_at_unix: u64_to_i64(attempt.created_at_unix, "attempt creation time")?,
-                started_at_unix: attempt
-                    .started_at_unix
-                    .map(|value| u64_to_i64(value, "attempt start time"))
-                    .transpose()?,
-                completed_at_unix: attempt
-                    .completed_at_unix
-                    .map(|value| u64_to_i64(value, "attempt completion time"))
-                    .transpose()?,
+                started_at_unix: optional_u64_to_i64(
+                    attempt.started_at_unix,
+                    "attempt start time",
+                )?,
+                completed_at_unix: optional_u64_to_i64(
+                    attempt.completed_at_unix,
+                    "attempt completion time",
+                )?,
                 terminal_reason: attempt
                     .terminal_reason
                     .as_ref()
                     .map(encode_json)
                     .transpose()?,
                 log_bytes: u64_to_i64(attempt.log_bytes, "attempt log byte count")?,
-                first_truncated_step_index: attempt
-                    .first_truncated_step_index
-                    .map(|value| u32_to_i32(value, "first truncated step index"))
-                    .transpose()?,
+                first_truncated_step_index: optional_u32_to_i32(
+                    attempt.first_truncated_step_index,
+                    "first truncated step index",
+                )?,
             })
         }
 
@@ -343,24 +334,20 @@ pub mod run_attempt {
                 self.external_run_id,
                 self.runtime_version,
                 self.token_hash,
-                i64_to_u64(self.token_expires_at_unix, "attempt token expiry time")?,
                 decode_enum::<AttemptState>(self.state)?,
                 i64_to_u64(self.lease_expires_at_unix, "attempt lease expiry time")?,
                 i64_to_u64(self.last_heartbeat_at_unix, "attempt heartbeat time")?,
                 i64_to_u64(self.created_at_unix, "attempt creation time")?,
-                self.started_at_unix
-                    .map(|value| i64_to_u64(value, "attempt start time"))
-                    .transpose()?,
-                self.completed_at_unix
-                    .map(|value| i64_to_u64(value, "attempt completion time"))
-                    .transpose()?,
+                optional_i64_to_u64(self.started_at_unix, "attempt start time")?,
+                optional_i64_to_u64(self.completed_at_unix, "attempt completion time")?,
                 self.terminal_reason
                     .map(decode_json::<AttemptTerminalReason>)
                     .transpose()?,
                 i64_to_u64(self.log_bytes, "attempt log byte count")?,
-                self.first_truncated_step_index
-                    .map(|value| i32_to_u32(value, "first truncated step index"))
-                    .transpose()?,
+                optional_i32_to_u32(
+                    self.first_truncated_step_index,
+                    "first truncated step index",
+                )?,
             )
             .map_err(PostgresError::invalid_input)
         }
@@ -394,14 +381,14 @@ pub mod run_attempt_step {
                 attempt_id: step.attempt_id.clone(),
                 step_index: u32_to_i32(step.step_index, "run attempt step index")?,
                 state: encode_enum(step.state)?,
-                started_at_unix: step
-                    .started_at_unix
-                    .map(|value| u64_to_i64(value, "run attempt step start time"))
-                    .transpose()?,
-                completed_at_unix: step
-                    .completed_at_unix
-                    .map(|value| u64_to_i64(value, "run attempt step completion time"))
-                    .transpose()?,
+                started_at_unix: optional_u64_to_i64(
+                    step.started_at_unix,
+                    "run attempt step start time",
+                )?,
+                completed_at_unix: optional_u64_to_i64(
+                    step.completed_at_unix,
+                    "run attempt step completion time",
+                )?,
                 exit_code: step.exit_code,
             })
         }
@@ -411,12 +398,8 @@ pub mod run_attempt_step {
                 self.attempt_id,
                 i32_to_u32(self.step_index, "run attempt step index")?,
                 decode_enum::<StepState>(self.state)?,
-                self.started_at_unix
-                    .map(|value| i64_to_u64(value, "run attempt step start time"))
-                    .transpose()?,
-                self.completed_at_unix
-                    .map(|value| i64_to_u64(value, "run attempt step completion time"))
-                    .transpose()?,
+                optional_i64_to_u64(self.started_at_unix, "run attempt step start time")?,
+                optional_i64_to_u64(self.completed_at_unix, "run attempt step completion time")?,
                 self.exit_code,
             )
             .map_err(PostgresError::invalid_input)
@@ -472,27 +455,30 @@ pub mod run_attempt_cache {
                 cache_name: observation.cache_name.clone(),
                 preparation,
                 cold_reason,
-                key_ms: u64_to_i64(observation.timing.key_ms, "cache key duration")?,
-                metadata_ms: u64_to_i64(observation.timing.metadata_ms, "cache metadata duration")?,
-                size_bytes: u64_to_i64(observation.timing.size_bytes, "cache compressed size")?,
+                key_ms: u64_to_i64(observation.timing.key_ms(), "cache key duration")?,
+                metadata_ms: u64_to_i64(
+                    observation.timing.metadata_ms(),
+                    "cache metadata duration",
+                )?,
+                size_bytes: u64_to_i64(observation.timing.size_bytes(), "cache compressed size")?,
                 download_verify_ms: u64_to_i64(
-                    observation.timing.download_verify_ms,
+                    observation.timing.download_verify_ms(),
                     "cache download and verification duration",
                 )?,
-                sync_ms: u64_to_i64(observation.timing.sync_ms, "cache sync duration")?,
+                sync_ms: u64_to_i64(observation.timing.sync_ms(), "cache sync duration")?,
                 extraction_ms: u64_to_i64(
-                    observation.timing.extraction_ms,
+                    observation.timing.extraction_ms(),
                     "cache extraction duration",
                 )?,
                 prepare_ms: u64_to_i64(
-                    observation.timing.prepare_ms,
+                    observation.timing.prepare_ms(),
                     "cache preparation duration",
                 )?,
                 final_state: encode_enum(observation.final_state)?,
-                finalize_ms: observation
-                    .finalize_ms
-                    .map(|value| u64_to_i64(value, "cache finalization duration"))
-                    .transpose()?,
+                finalize_ms: optional_u64_to_i64(
+                    observation.finalize_ms,
+                    "cache finalization duration",
+                )?,
             })
         }
 
@@ -530,9 +516,7 @@ pub mod run_attempt_cache {
                 )
                 .map_err(PostgresError::invalid_input)?,
                 decode_enum::<CacheFinalState>(self.final_state)?,
-                self.finalize_ms
-                    .map(|value| i64_to_u64(value, "cache finalization duration"))
-                    .transpose()?,
+                optional_i64_to_u64(self.finalize_ms, "cache finalization duration")?,
             )
             .map_err(PostgresError::invalid_input)
         }

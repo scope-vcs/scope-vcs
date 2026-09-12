@@ -113,12 +113,6 @@ function coldReasonLabel(reason: string) {
       return 'Cache metadata was invalid'
     case 'metadata-not-ready':
       return 'Cached volume was not ready'
-    case 'volume-missing':
-      return 'Cached volume was missing'
-    case 'volume-invalid':
-      return 'Cached volume was invalid'
-    case 'backing-directory-missing':
-      return 'Cache backing directory was missing'
     default:
       return 'Cache was cold'
   }

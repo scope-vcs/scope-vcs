@@ -1,5 +1,9 @@
 use crate::{
-    db::projection_encoding::{LIVE_PROJECTION_SOURCE, ProjectionAudience},
+    db::integer_columns::{
+        i32_to_u32, i64_to_u64, optional_i32_to_u32, optional_i64_to_u64, optional_u32_to_i32,
+        optional_u64_to_i64, u32_to_i32, u64_to_i64, usize_to_i64,
+    },
+    db::projection_encoding::LIVE_PROJECTION_SOURCE,
     db::{decode_json, encode_json},
     error::PostgresError,
 };
@@ -37,6 +41,7 @@ use scope_domain::{
 };
 use scope_domain::{
     policy::{Policy, ScopePath, Visibility},
+    projection::ProjectionViewKey,
     projection_views::{ProjectionViewFile, ProjectionViewFileContent},
 };
 use sea_orm::entity::prelude::*;
@@ -57,34 +62,7 @@ pub(super) fn decode_enum<T: serde::de::DeserializeOwned>(
     serde_json::from_value(serde_json::Value::String(value)).map_err(PostgresError::internal)
 }
 
-pub(super) fn u64_to_i64(value: u64, field: &str) -> Result<i64, PostgresError> {
-    i64::try_from(value).map_err(|_| {
-        PostgresError::internal_message(format!("{field} exceeds PostgreSQL bigint range"))
-    })
-}
-
-pub(super) fn i64_to_u64(value: i64, field: &str) -> Result<u64, PostgresError> {
-    u64::try_from(value)
-        .map_err(|_| PostgresError::internal_message(format!("{field} cannot be negative")))
-}
-
-pub(super) fn u32_to_i32(value: u32, field: &str) -> Result<i32, PostgresError> {
-    i32::try_from(value).map_err(|_| {
-        PostgresError::internal_message(format!("{field} exceeds PostgreSQL integer range"))
-    })
-}
-
-pub(super) fn i32_to_u32(value: i32, field: &str) -> Result<u32, PostgresError> {
-    u32::try_from(value)
-        .map_err(|_| PostgresError::internal_message(format!("{field} cannot be negative")))
-}
-
-fn usize_to_i64(value: usize, field: &str) -> Result<i64, PostgresError> {
-    i64::try_from(value).map_err(|_| {
-        PostgresError::internal_message(format!("{field} exceeds PostgreSQL bigint range"))
-    })
-}
-
+#[derive(Default)]
 pub struct RepositoryFacts {
     pub first_push_token: Option<FirstPushToken>,
     pub git_push_token: Option<GitPushToken>,
@@ -120,8 +98,9 @@ pub use repositories::{
     repository_workflow_file,
 };
 pub use requests::{
-    request, request_discussion, request_discussion_read_state, request_discussion_reply,
-    request_event, request_invitee, request_rating, request_revision,
+    request, request_attention_state, request_claim, request_discussion,
+    request_discussion_read_state, request_discussion_reply, request_event, request_invitee,
+    request_rating, request_revision,
 };
 pub use runs::{
     push_trigger_evaluation, run, run_attempt, run_attempt_cache, run_attempt_cache_setup,
@@ -162,7 +141,7 @@ mod tests {
         let model = projection_file::Model::live(
             "owner/repo",
             1,
-            ProjectionAudience::Public,
+            ProjectionViewKey::Public,
             ProjectionViewFileContent {
                 file: ProjectionViewFile {
                     path: ScopePath::parse(&path).unwrap(),
@@ -199,7 +178,7 @@ mod tests {
         let model = projection_read_model::Model::live(
             "owner/repo",
             7,
-            ProjectionAudience::Public,
+            ProjectionViewKey::Public,
             Some("1111111111111111111111111111111111111111".to_string()),
             10,
             2,
@@ -237,7 +216,7 @@ mod tests {
         let mut untracked = content.clone();
         untracked.file.tracked = false;
         assert!(
-            projection_file::Model::live("owner/repo", 1, ProjectionAudience::Public, untracked,)
+            projection_file::Model::live("owner/repo", 1, ProjectionViewKey::Public, untracked,)
                 .is_err()
         );
 
@@ -247,7 +226,7 @@ mod tests {
             projection_file::Model::live(
                 "owner/repo",
                 1,
-                ProjectionAudience::Public,
+                ProjectionViewKey::Public,
                 mismatched_oid,
             )
             .is_err()
@@ -259,7 +238,7 @@ mod tests {
             projection_file::Model::live(
                 "owner/repo",
                 1,
-                ProjectionAudience::Public,
+                ProjectionViewKey::Public,
                 unsupported_mode,
             )
             .is_err()

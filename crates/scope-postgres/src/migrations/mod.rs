@@ -1,5 +1,10 @@
 mod baseline;
 mod m0043_retire_git_manifests;
+mod m0044_request_attention;
+mod m0045_dependency_analysis;
+mod m0046_drop_attempt_token_expiry;
+mod m0047_drop_git_manifest_orphan_jobs;
+mod m0048_run_attempt_active_state_indexes;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -12,6 +17,8 @@ const MIGRATION_TABLE: &str = "seaql_migrations";
 
 pub struct Migrator;
 
+/// Serialized as `{"name": ...}`: the deployment scripts read the plan with
+/// `jq '.pending[].name'`, so the object shape is part of their contract.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PendingMigration {
     pub name: String,
@@ -30,6 +37,11 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(baseline::Migration),
             Box::new(m0043_retire_git_manifests::Migration),
+            Box::new(m0044_request_attention::Migration),
+            Box::new(m0045_dependency_analysis::Migration),
+            Box::new(m0046_drop_attempt_token_expiry::Migration),
+            Box::new(m0047_drop_git_manifest_orphan_jobs::Migration),
+            Box::new(m0048_run_attempt_active_state_indexes::Migration),
         ]
     }
 }
@@ -161,24 +173,12 @@ pub async fn assert_exact_state<C>(db: &C) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {
-    let table_exists = db
-        .query_one(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT to_regclass(
-                format('%I.%I', current_schema(), $1)
-            ) IS NOT NULL AS exists",
-            [MIGRATION_TABLE.into()],
-        ))
-        .await?
-        .ok_or_else(|| DbErr::Custom("PostgreSQL did not report migration state".to_string()))?
-        .try_get::<bool>("", "exists")?;
-    if !table_exists {
+    let actual = applied_migration_names(db).await?;
+    if actual.is_empty() {
         return Err(DbErr::Custom(
             "Scope metadata migrations have not been applied".to_string(),
         ));
     }
-
-    let actual = applied_migration_names(db).await?;
     let expected = migration_names();
     if actual != expected {
         return Err(DbErr::Custom(format!(

@@ -21,8 +21,8 @@ test(`sign-in keeps Scope navigation when authentication is ${authEnabled ? 'ena
       await page.getByLabel('Password', { exact: true }).waitFor()
       await page.getByRole('link', { name: 'Scope home', exact: true }).click()
     } else {
-      await page.getByText('sign-in is disabled in this preview.', { exact: false }).waitFor()
-      await page.getByRole('link', { name: 'back to scope' }).click()
+      await page.getByText('Sign in is disabled in this preview.', { exact: false }).waitFor()
+      await page.getByRole('link', { name: 'Back to Scope', exact: true }).click()
     }
     await page.waitForURL(`${baseUrl}/`)
   }, { viewport: { width: 390, height: 844 } })
@@ -31,7 +31,7 @@ test(`sign-in keeps Scope navigation when authentication is ${authEnabled ? 'ena
 test('changes retry keeps the document and selected revision', async () => {
   let injected = false
   await withPage(`${requestRepoPath}/requests/req_demo_ready`, async (page) => {
-    const changes = page.locator('#discussion-discussion_demo_revision_jitter').getByRole('link', { name: /Revision/ })
+    const changes = page.locator('#discussion-discussion_demo_revision_jitter').getByRole('link', { name: /View revision/ })
     await waitForClientHydration(changes)
     await changes.click()
     const retry = page.getByRole('button', { name: 'retry changes', exact: true })
@@ -51,7 +51,7 @@ test('changes retry keeps the document and selected revision', async () => {
     const response = page.waitForResponse((response) => response.url().includes('/_serverFn/'))
     await retry.click()
     await response
-    await page.waitForFunction(() => !document.querySelector('button:disabled'))
+    await retry.waitFor({ state: 'detached' })
     assert.equal(new URL(page.url()).pathname, new URL(before).pathname)
     for (const [key, value] of new URL(before).searchParams) {
       assert.equal(new URL(page.url()).searchParams.get(key), value)

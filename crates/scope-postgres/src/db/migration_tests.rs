@@ -15,10 +15,16 @@ mod git_segment_schema;
 mod maintenance_cutover;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
+mod run_attempt_active_indexes;
 
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0042_current_schema_baseline",
     "m0043_retire_git_manifests",
+    "m0044_request_attention",
+    "m0045_dependency_analysis",
+    "m0046_drop_attempt_token_expiry",
+    "m0047_drop_git_manifest_orphan_jobs",
+    "m0048_run_attempt_active_state_indexes",
 ];
 
 pub(super) async fn isolated_database() -> (

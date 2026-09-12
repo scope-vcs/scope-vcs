@@ -10,13 +10,11 @@ pub(crate) mod config;
 pub(crate) mod demo_seed;
 #[cfg(feature = "local-dev")]
 pub mod dev;
+#[cfg(any(feature = "local-dev", feature = "smoke-seed"))]
+mod env_guard;
 pub(crate) mod error;
 pub(crate) mod git;
 pub(crate) mod http;
-mod landing_file_backfill;
-mod retired_git_segments;
-mod retired_git_storage;
-pub use retired_git_storage::scrub_retired_git_storage_for_maintenance;
 pub(crate) mod media_grants;
 pub(crate) mod object_store_config;
 pub(crate) mod persistence;
@@ -31,19 +29,15 @@ pub(crate) mod run_retention;
 pub(crate) mod runtime_budgets;
 #[cfg(feature = "smoke-seed")]
 pub mod smoke_seed;
+mod storage_runtime;
 pub(crate) mod telemetry;
 pub(crate) mod use_cases;
 mod workflow_catalog_backfill;
-
-#[cfg(any(test, feature = "test-support"))]
-pub mod test_support;
 
 #[cfg(test)]
 mod workflow_tests;
 
 pub use app::router;
-pub use landing_file_backfill::backfill_repository_landing_files_for_maintenance;
-pub use retired_git_segments::cleanup_git_segments_v1_for_maintenance;
 pub use state::AppState;
 pub use workflow_catalog_backfill::{
     backfill_repository_workflow_catalogs_for_maintenance,

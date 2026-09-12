@@ -1,13 +1,13 @@
 import type {
-  RepositoryRunState,
+  RunState,
   RepositoryRunTrigger,
 } from '@/api/types.generated'
 import { runCanChange } from './repository-run-detail-model'
 
 export function runDisplayState(run: {
   cancellation_requested: boolean
-  state: RepositoryRunState
-}): RepositoryRunState | 'canceling' {
+  state: RunState
+}): RunState | 'canceling' {
   return run.cancellation_requested && runCanChange(run.state)
     ? 'canceling'
     : run.state

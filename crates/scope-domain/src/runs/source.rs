@@ -1,4 +1,4 @@
-use super::validation::validate_sha256_hash;
+use super::validation::{validate_git_oid, validate_sha256_hash};
 use crate::{
     content::SourceBlob,
     content_ref::ContentRef,
@@ -128,17 +128,6 @@ impl RunSource {
             Self::EphemeralGitBundle { .. } => None,
         }
     }
-
-    pub fn is_private_only(&self) -> bool {
-        matches!(
-            self,
-            Self::EphemeralGitBundle { .. }
-                | Self::AcceptedGitHead {
-                    audience: ProjectionViewKey::Private,
-                    ..
-                }
-        )
-    }
 }
 
 fn validate_source_blob(blob: &SourceBlob, label: &str) -> Result<(), DomainError> {
@@ -149,15 +138,6 @@ fn validate_source_blob(blob: &SourceBlob, label: &str) -> Result<(), DomainErro
         )));
     }
     validate_git_oid(&format!("{label} Git OID"), &blob.git_oid)
-}
-
-fn validate_git_oid(label: &str, git_oid: &str) -> Result<(), DomainError> {
-    if git_oid.len() != 40 || !git_oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(DomainError::invalid_input(format!(
-            "{label} must be a SHA-1 hex digest"
-        )));
-    }
-    Ok(())
 }
 
 #[cfg(test)]

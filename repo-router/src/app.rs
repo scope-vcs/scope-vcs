@@ -1,6 +1,8 @@
 use crate::{
-    BackendDiscovery, RouterConfig, backend_selection::BackendSelector,
-    discovery::DiscoveryFreshness, proxy,
+    RouterConfig,
+    backend_selection::BackendSelector,
+    discovery::{BackendDiscovery, DiscoveryFreshness},
+    proxy,
 };
 use axum::{Router, routing::get};
 use std::sync::Arc;
@@ -58,24 +60,6 @@ async fn ready(
             Err(axum::http::StatusCode::SERVICE_UNAVAILABLE)
         }
     }
-}
-
-#[cfg(test)]
-pub(crate) fn test_router(backends: Vec<std::net::SocketAddr>) -> Router {
-    test_router_with_read_replicas(backends, 1)
-}
-
-#[cfg(test)]
-pub(crate) fn test_router_with_read_replicas(
-    backends: Vec<std::net::SocketAddr>,
-    read_replicas: usize,
-) -> Router {
-    router_with_state(RouterState {
-        discovery: BackendDiscovery::fixed(backends),
-        http: reqwest::Client::new(),
-        selector: BackendSelector::new(read_replicas),
-        upload_pack_replay_max_bytes: 64 * 1024 * 1024,
-    })
 }
 
 #[cfg(test)]

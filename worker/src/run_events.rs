@@ -1,4 +1,4 @@
-use scope_api_contract::{RepoChangeEvent, RepoChangeKind, RepoChangeNotification, RunChangeKind};
+use scope_api_contract::{RepoChangeEvent, RepoChangeNotification, RunChangeKind};
 use scope_postgres::db::MetadataStore;
 
 pub(crate) async fn publish_run_change(
@@ -21,15 +21,12 @@ pub(crate) async fn publish_run_change(
         }
     };
     let payload = match serde_json::to_string(&RepoChangeNotification {
-        event: RepoChangeEvent {
-            repo_id: repo_id.to_string(),
-            incarnation_id: incarnation.incarnation_id().to_string(),
-            version: 0,
-            kind: RepoChangeKind::RunChanged {
-                run_id: run_id.to_string(),
-                change,
-            },
-        },
+        event: RepoChangeEvent::run_changed(
+            repo_id.to_string(),
+            incarnation.incarnation_id().to_string(),
+            run_id.to_string(),
+            change,
+        ),
         origin_id: origin_id.to_string(),
     }) {
         Ok(payload) => payload,

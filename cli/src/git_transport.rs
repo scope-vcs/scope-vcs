@@ -116,7 +116,7 @@ fn redacted_url(url: &Url) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::TestDir;
+    use crate::test_support::TempDir;
 
     #[test]
     fn parses_scope_remote_once_and_derives_both_access_urls() {
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn discovers_scope_remote_by_conventional_name_then_url() {
-        let dir = TestDir::git_repo("scope-remote-discovery", "main");
+        let dir = TempDir::git_repo("scope-remote-discovery", "main");
         dir.run_git([
             "remote",
             "add",
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn explicit_push_remote_uses_push_url() {
-        let dir = TestDir::git_repo("scope-push-remote-discovery", "main");
+        let dir = TempDir::git_repo("scope-push-remote-discovery", "main");
         dir.run_git(["remote", "add", "origin", "https://github.com/adam/repo"]);
         dir.run_git([
             "remote",
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn configured_git_origin_can_differ_from_the_api_origin() {
-        let dir = TestDir::git_repo("separate-scope-git-origin", "main");
+        let dir = TempDir::git_repo("separate-scope-git-origin", "main");
         dir.run_git([
             "remote",
             "add",
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn push_discovery_skips_public_and_mismatched_fetch_remotes() {
-        let dir = TestDir::git_repo("scope-push-safe-discovery", "main");
+        let dir = TempDir::git_repo("scope-push-safe-discovery", "main");
         dir.run_git([
             "remote",
             "add",

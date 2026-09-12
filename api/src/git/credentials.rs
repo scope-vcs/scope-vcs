@@ -1,9 +1,5 @@
 use crate::{
-    auth::{
-        cli::CliAuthService,
-        scope::require_scope_user,
-        tokens::{first_push_token_hash, git_push_token_hash},
-    },
+    auth::{cli::CliAuthService, scope::require_scope_user, tokens::token_hash},
     config::{CLI_SESSION_TOKEN_PREFIX, FIRST_PUSH_TOKEN_PREFIX, GIT_PUSH_TOKEN_PREFIX},
     error::ApiError,
     persistence::unix_now,
@@ -61,7 +57,7 @@ pub(crate) async fn receive_pack_authorization(
     headers: &HeaderMap,
 ) -> Result<ReceivePackAuthorization, ApiError> {
     let Some(value) = headers.get(AUTHORIZATION) else {
-        return Err(git_receive_pack_auth_required());
+        return Err(ApiError::unauthorized("Git push credentials required"));
     };
     let value = value
         .to_str()
@@ -94,10 +90,6 @@ pub(crate) async fn receive_pack_authorization(
     Err(ApiError::unauthorized(
         "expected Authorization: Basic or Bearer Git credentials",
     ))
-}
-
-pub(crate) fn git_receive_pack_auth_required() -> ApiError {
-    ApiError::unauthorized("Git push credentials required")
 }
 
 pub(crate) fn basic_auth_secret(encoded: &str) -> Result<String, ApiError> {
@@ -182,46 +174,31 @@ pub(crate) fn authorize_first_push_token_for_repo(
             "first-push token is expired or used",
         ));
     }
-    if token.token_hash != first_push_token_hash(token_secret) {
+    if token.token_hash != token_hash(token_secret) {
         return Err(ApiError::unauthorized("invalid first-push token"));
     }
 
     Ok(())
 }
 
+/// Authorizes a repository's Git push token and returns the owning user id.
+///
+/// The token is checked before its owner so a stale token never learns whether the
+/// repository changed hands.
 pub(crate) fn authorize_git_push_token_for_repo(
     repo: &Repository,
     secret: &str,
 ) -> Result<String, ApiError> {
     let Some(token) = repo.git_push_token.as_ref() else {
-        return Err(ApiError::unauthorized("Git push token is not configured"));
+        return Err(invalid_git_credentials());
     };
+    if token.token_hash != token_hash(secret) {
+        return Err(invalid_git_credentials());
+    }
     if token.owner_user_id != repo.record.owner_user_id {
         return Err(ApiError::forbidden(
             "Git push token owner does not match repo owner",
         ));
     }
-    if token.token_hash != git_push_token_hash(secret) {
-        return Err(ApiError::unauthorized("invalid Git push token"));
-    }
-
     Ok(token.owner_user_id.clone())
-}
-
-pub(crate) fn authorize_git_write_token_for_repo(
-    repo: &Repository,
-    secret: &str,
-) -> Result<String, ApiError> {
-    if let Some(token) = repo.git_push_token.as_ref()
-        && token.token_hash == git_push_token_hash(secret)
-    {
-        if token.owner_user_id != repo.record.owner_user_id {
-            return Err(ApiError::forbidden(
-                "Git push token owner does not match repo owner",
-            ));
-        }
-        return Ok(token.owner_user_id.clone());
-    }
-
-    Err(ApiError::unauthorized("invalid Git credentials"))
 }

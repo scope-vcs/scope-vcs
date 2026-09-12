@@ -1,17 +1,16 @@
+use crate::env_guard::{require_exact, required};
+use crate::storage_runtime::{StorageRuntime, StorageSource};
 use crate::{
     auth::cli::CliAuthService,
-    config::{data_dir, database_url_from_env, git_repo_root, non_empty_env},
+    config::{database_url_from_env, non_empty_env},
     demo_seed::{DevSeedUser, catalog, seed_request_discussion_gallery, seed_user_account},
-    object_store_config::{encryption_key_from_env, git_segment_store_from_env, s3_from_env},
     persistence::unix_now,
 };
-use scope_object_store::EncryptedObjectStore;
 use scope_postgres::db::MetadataStore;
 use std::{
     fs::{File, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 const OPT_IN_ENV: &str = "SCOPE_ALLOW_STAGING_SMOKE_SEED";
@@ -80,13 +79,13 @@ async fn run_with_snapshot(
     let metadata = connect.await?;
     // Imported releases keep the existing catalog while obtaining a fresh smoke login.
     if !grant_only {
-        let encryption_key = encryption_key_from_env()?;
-        let s3 = tokio::task::spawn_blocking(s3_from_env).await??;
-        let object_store = EncryptedObjectStore::new(Arc::new(s3), encryption_key);
-        let local_root = data_dir(&git_repo_root()).join("git-segments");
-        let git_segment_store = git_segment_store_from_env(local_root, encryption_key)?;
-        let fixture = catalog(&object_store, &git_segment_store, target.seed_user)
-            .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
+        let storage = StorageRuntime::from_env(StorageSource::S3).await?;
+        let fixture = catalog(
+            storage.object_store.as_ref(),
+            storage.git_segment_store.as_ref(),
+            target.seed_user,
+        )
+        .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
         metadata
             .admin()
             .replace_catalog_for_seed(fixture)
@@ -228,20 +227,6 @@ fn write_exchange_token(file: &mut File, token: &str) -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-
-fn required<'a>(name: &str, value: &'a Option<String>) -> anyhow::Result<&'a str> {
-    value
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("{name} is required"))
-}
-
-fn require_exact(name: &str, actual: Option<&str>, expected: &str) -> anyhow::Result<()> {
-    match actual {
-        Some(actual) if actual == expected => Ok(()),
-        Some(_) => anyhow::bail!("{name} does not match the reviewed staging target"),
-        None => anyhow::bail!("{name} is required"),
-    }
 }
 
 #[cfg(test)]

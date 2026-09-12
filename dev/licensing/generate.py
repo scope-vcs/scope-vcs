@@ -17,7 +17,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = Path(tempfile.gettempdir()) / "scope-license-archives"
-LOCKFILES = ["Cargo.lock", "cli/Cargo.lock", "web/pnpm-lock.yaml"]
+LOCKFILES = ["Cargo.lock", "cli/Cargo.lock", "web/pnpm-lock.yaml", "dependency-analyzer/package-lock.json"]
 LICENSE_NAME = re.compile(r"^(licen[cs]e|copying|copyright|notice|ofl|unlicense)([._-].*)?$", re.I)
 SHARED_TERMS = re.compile(
     r"Permission\s+is\s+hereby\s+granted,.*?OTHER\s+DEALINGS\s+IN\s+THE\s+SOFTWARE\."
@@ -59,7 +59,21 @@ def packages():
             url = f"https://registry.npmjs.org/{name}/-/{name.rsplit('/', 1)[-1]}-{version}.tgz"
         result.append(dict(ecosystem="web", name=name, version=package.get("version", version),
             url=url, integrity=resolution["integrity"], lockfiles=["web/pnpm-lock.yaml"]))
+    result.extend(npm_packages("dependency-analyzer/package-lock.json", "dependency-analyzer"))
     return sorted(result, key=lambda item: (item["ecosystem"], item["name"], item["version"]))
+
+
+def npm_packages(lockfile, ecosystem):
+    lock = json.loads((ROOT / lockfile).read_text())
+    result = []
+    for path, package in lock["packages"].items():
+        if not path or "node_modules/" not in path:
+            continue
+        name = path.rsplit("node_modules/", 1)[1]
+        result.append(dict(ecosystem=ecosystem, name=package.get("name", name),
+            version=package["version"], url=package["resolved"], integrity=package["integrity"],
+            lockfiles=[lockfile]))
+    return result
 
 
 def archive(package):
@@ -115,7 +129,13 @@ def supplement(entries):
     by_key = {f"{entry['ecosystem']}:{entry['name']}@{entry['version']}": entry for entry in entries}
     configuration = {}
     for path in ["legal/rust-supplements.json", "legal/web-supplements.json"]:
-        configuration.update(json.loads((ROOT / path).read_text(encoding="utf-8")))
+        document = json.loads((ROOT / path).read_text(encoding="utf-8"))
+        for key, addition in document["packages"].items():
+            if "reason_key" in addition:
+                addition["reason"] = document["reasons"][addition.pop("reason_key")]
+            elif "reason" not in addition:
+                addition["reason"] = document["inherited_reasons"][addition["from_package"]]
+            configuration[key] = addition
     for key, addition in configuration.items():
         if key not in by_key:
             raise ValueError(f"Remove stale license supplement: {key}")
@@ -321,6 +341,7 @@ def main():
         for document in entry["documents"]]} for entry in entries]
     outputs = {
         "legal/third-party-rust.txt": render(entries, "rust"),
+        "legal/third-party-dependency-analyzer.txt": render(entries, "dependency-analyzer"),
         "web/public/third-party-licenses.txt": render(entries, "web"),
         "web/public/LICENSE.txt": (ROOT / "LICENSE").read_text(encoding="utf-8"),
         "web/public/NOTICE.txt": (ROOT / "NOTICE").read_text(encoding="utf-8"),
@@ -383,6 +404,8 @@ def check_first_party():
             raise ValueError(f"First-party license must be Apache-2.0: {member}")
     if json.loads((ROOT / "web/package.json").read_text())["license"] != "Apache-2.0":
         raise ValueError("Web license must be Apache-2.0")
+    if json.loads((ROOT / "dependency-analyzer/package.json").read_text())["license"] != "Apache-2.0":
+        raise ValueError("Dependency analyzer license must be Apache-2.0")
 
 
 if __name__ == "__main__":

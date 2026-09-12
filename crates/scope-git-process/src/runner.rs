@@ -5,7 +5,7 @@ use crate::{
 };
 use std::{
     io::{Read, Write},
-    process::{Command, ExitStatus, Output, Stdio},
+    process::{ChildStdin, Command, ExitStatus, Output, Stdio},
     sync::mpsc,
     thread,
     time::{Duration, Instant},
@@ -20,12 +20,12 @@ pub struct ProcessCancellation {
 }
 
 impl ProcessCancellation {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let (cancelled, _) = watch::channel(false);
         Self { cancelled }
     }
 
-    fn cancel(&self) {
+    pub fn cancel(&self) {
         self.cancelled.send_replace(true);
     }
 
@@ -43,6 +43,12 @@ impl ProcessCancellation {
                 return;
             }
         }
+    }
+}
+
+impl Default for ProcessCancellation {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -90,6 +96,8 @@ pub enum ProcessError {
         timeout_ms: u128,
         diagnostic: String,
     },
+    #[error("{action} was cancelled")]
+    Cancelled { action: String },
     #[error("{action} stdout exceeded {max_stdout_bytes} bytes{diagnostic}")]
     StdoutLimitExceeded {
         action: String,
@@ -129,37 +137,38 @@ pub fn run(
     limits: ProcessLimits,
     action: &str,
 ) -> Result<Output, ProcessError> {
-    if input.is_some() {
-        command.stdin(Stdio::piped());
-    } else {
-        command.stdin(Stdio::null());
-    }
-    configure_process_group(command);
-    let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map(ChildGuard::new)
-        .map_err(|source| ProcessError::Spawn {
+    run_inner(command, input, limits, action, None)
+}
+
+/// Runs a child with the same limits as [`run`] and permits external cancellation.
+///
+/// A cancellation requested before this call returns without spawning the child.
+/// Cancellation after spawn kills and reaps the complete process group before
+/// returning.
+pub fn run_cancellable(
+    command: &mut Command,
+    input: Option<Vec<u8>>,
+    limits: ProcessLimits,
+    action: &str,
+    cancellation: &ProcessCancellation,
+) -> Result<Output, ProcessError> {
+    run_inner(command, input, limits, action, Some(cancellation))
+}
+
+fn run_inner(
+    command: &mut Command,
+    input: Option<Vec<u8>>,
+    limits: ProcessLimits,
+    action: &str,
+    cancellation: Option<&ProcessCancellation>,
+) -> Result<Output, ProcessError> {
+    if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
+        return Err(ProcessError::Cancelled {
             action: action.to_string(),
-            source,
-        })?;
-    let stdin_writer = if let Some(input) = input {
-        let mut child_stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| ProcessError::PipeUnavailable {
-                action: action.to_string(),
-                pipe: "stdin",
-            })?;
-        Some(thread::spawn(move || {
-            child_stdin.write_all(&input)?;
-            child_stdin.flush()
-        }))
-    } else {
-        None
-    };
-    wait_for_output(child, stdin_writer, limits, action)
+        });
+    }
+    let (child, stdin_writer) = spawn_with_stdin(command, StdinSource::from(input), action)?;
+    wait_for_output(child, stdin_writer, limits, action, cancellation)
 }
 
 /// Runs a child while copying a caller-owned reader into stdin incrementally.
@@ -168,36 +177,16 @@ pub fn run(
 /// behavior as [`run`] without requiring the complete input in memory.
 pub fn run_with_stdin_reader<R>(
     command: &mut Command,
-    mut input: R,
+    input: R,
     limits: ProcessLimits,
     action: &str,
 ) -> Result<Output, ProcessError>
 where
     R: Read + Send + 'static,
 {
-    command.stdin(Stdio::piped());
-    configure_process_group(command);
-    let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map(ChildGuard::new)
-        .map_err(|source| ProcessError::Spawn {
-            action: action.to_string(),
-            source,
-        })?;
-    let mut child_stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| ProcessError::PipeUnavailable {
-            action: action.to_string(),
-            pipe: "stdin",
-        })?;
-    let stdin_writer = thread::spawn(move || {
-        std::io::copy(&mut input, &mut child_stdin)?;
-        child_stdin.flush()
-    });
-    wait_for_output(child, Some(stdin_writer), limits, action)
+    let (child, stdin_writer) =
+        spawn_with_stdin(command, StdinSource::Reader(Box::new(input)), action)?;
+    wait_for_output(child, stdin_writer, limits, action, None)
 }
 
 /// Runs a child while a caller-owned consumer drains stdout incrementally.
@@ -222,36 +211,7 @@ where
     E: Send + 'static,
     F: FnOnce(Box<dyn Read + Send>, ProcessCancellation) -> Result<T, E> + Send + 'static,
 {
-    if input.is_some() {
-        command.stdin(Stdio::piped());
-    } else {
-        command.stdin(Stdio::null());
-    }
-    configure_process_group(command);
-    let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map(ChildGuard::new)
-        .map_err(|source| ProcessError::Spawn {
-            action: action.to_string(),
-            source,
-        })?;
-    let stdin_writer = if let Some(input) = input {
-        let mut child_stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| ProcessError::PipeUnavailable {
-                action: action.to_string(),
-                pipe: "stdin",
-            })?;
-        Some(thread::spawn(move || {
-            child_stdin.write_all(&input)?;
-            child_stdin.flush()
-        }))
-    } else {
-        None
-    };
+    let (mut child, stdin_writer) = spawn_with_stdin(command, StdinSource::from(input), action)?;
     let stdout = child
         .stdout
         .take()
@@ -361,11 +321,77 @@ where
     })
 }
 
+enum StdinSource {
+    Null,
+    Bytes(Vec<u8>),
+    Reader(Box<dyn Read + Send>),
+}
+
+impl From<Option<Vec<u8>>> for StdinSource {
+    fn from(input: Option<Vec<u8>>) -> Self {
+        input.map_or(Self::Null, Self::Bytes)
+    }
+}
+
+type StdinWriter = thread::JoinHandle<std::io::Result<()>>;
+
+/// Spawns the child in its own process group with piped stdout and stderr,
+/// feeding stdin from a dedicated thread when there is input to write.
+fn spawn_with_stdin(
+    command: &mut Command,
+    stdin: StdinSource,
+    action: &str,
+) -> Result<(ChildGuard, Option<StdinWriter>), ProcessError> {
+    command.stdin(match stdin {
+        StdinSource::Null => Stdio::null(),
+        StdinSource::Bytes(_) | StdinSource::Reader(_) => Stdio::piped(),
+    });
+    configure_process_group(command);
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map(ChildGuard::new)
+        .map_err(|source| ProcessError::Spawn {
+            action: action.to_string(),
+            source,
+        })?;
+    let stdin_writer = match stdin {
+        StdinSource::Null => None,
+        StdinSource::Bytes(input) => {
+            let mut child_stdin = take_stdin(&mut child, action)?;
+            Some(thread::spawn(move || {
+                child_stdin.write_all(&input)?;
+                child_stdin.flush()
+            }))
+        }
+        StdinSource::Reader(mut input) => {
+            let mut child_stdin = take_stdin(&mut child, action)?;
+            Some(thread::spawn(move || {
+                std::io::copy(&mut input, &mut child_stdin)?;
+                child_stdin.flush()
+            }))
+        }
+    };
+    Ok((child, stdin_writer))
+}
+
+fn take_stdin(child: &mut ChildGuard, action: &str) -> Result<ChildStdin, ProcessError> {
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| ProcessError::PipeUnavailable {
+            action: action.to_string(),
+            pipe: "stdin",
+        })
+}
+
 fn wait_for_output(
     mut child: ChildGuard,
-    stdin_writer: Option<thread::JoinHandle<std::io::Result<()>>>,
+    stdin_writer: Option<StdinWriter>,
     limits: ProcessLimits,
     action: &str,
+    cancellation: Option<&ProcessCancellation>,
 ) -> Result<Output, ProcessError> {
     let stdout = child
         .stdout
@@ -390,6 +416,15 @@ fn wait_for_output(
     let started_at = Instant::now();
     let mut status = None;
     let status = loop {
+        if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
+            child.terminate_and_reap();
+            let _ = join_writer(stdin_writer, action);
+            let _ = join_reader(stdout_reader, action);
+            let _ = join_reader(stderr_reader, action);
+            return Err(ProcessError::Cancelled {
+                action: action.to_string(),
+            });
+        }
         if stdout_limit_receiver.try_recv().is_ok() {
             child.terminate_and_reap();
             let _ = join_writer(stdin_writer, action);

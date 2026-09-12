@@ -3,11 +3,15 @@ use std::{borrow::Borrow, collections::BTreeMap, fmt};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum PolicyError {
+pub enum ScopePathError {
     #[error("path must be absolute and start with /")]
     RelativePath,
     #[error("path cannot contain empty segments, . or ..")]
     InvalidSegment,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum PolicyError {
     #[error("public rule at {child} cannot live under private parent {parent}")]
     PublicIsland { child: ScopePath, parent: ScopePath },
 }
@@ -16,10 +20,10 @@ pub enum PolicyError {
 pub struct ScopePath(String);
 
 impl ScopePath {
-    pub fn parse(input: impl AsRef<str>) -> Result<Self, PolicyError> {
+    pub fn parse(input: impl AsRef<str>) -> Result<Self, ScopePathError> {
         let raw = input.as_ref();
         if !raw.starts_with('/') {
-            return Err(PolicyError::RelativePath);
+            return Err(ScopePathError::RelativePath);
         }
 
         let mut parts = Vec::new();
@@ -28,7 +32,7 @@ impl ScopePath {
                 continue;
             }
             if part == "." || part == ".." {
-                return Err(PolicyError::InvalidSegment);
+                return Err(ScopePathError::InvalidSegment);
             }
             parts.push(part);
         }
@@ -48,7 +52,7 @@ impl ScopePath {
         &self.0
     }
 
-    pub fn is_ancestor_of(&self, other: &ScopePath) -> bool {
+    fn is_ancestor_of(&self, other: &ScopePath) -> bool {
         self.0 == "/"
             || other.0 == self.0
             || other
@@ -73,10 +77,6 @@ impl fmt::Display for ScopePath {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PrincipalKind {
     User,
-    Team,
-    Org,
-    Agent,
-    Ci,
     Public,
 }
 
@@ -182,7 +182,7 @@ impl Policy {
         Ok(())
     }
 
-    pub fn effective_rule(&self, path: &ScopePath) -> Option<&VisibilityRule> {
+    fn effective_rule(&self, path: &ScopePath) -> Option<&VisibilityRule> {
         self.rules
             .iter()
             .filter(|rule| rule.path.is_ancestor_of(path))
@@ -193,10 +193,6 @@ impl Policy {
         self.effective_rule(path)
             .map(|rule| rule.visibility)
             .unwrap_or(self.default_visibility)
-    }
-
-    pub fn set_default_visibility(&mut self, visibility: Visibility) {
-        self.default_visibility = visibility;
     }
 
     pub fn remove_rule(&mut self, path: &ScopePath) {

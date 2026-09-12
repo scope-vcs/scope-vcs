@@ -13,8 +13,23 @@ const CLAUDE_LOCAL_FILE: &str = "CLAUDE.local.md";
 const START_MARKER: &str = "<!-- scope:rules:start -->";
 const END_MARKER: &str = "<!-- scope:rules:end -->";
 
-const CODEX_BLOCK: &str = "<!-- scope:rules:start -->\n## Scope contribution rules\n\nRead and follow `.scope/RULES.md` before\nmaking or submitting changes.\n<!-- scope:rules:end -->";
-const CLAUDE_BLOCK: &str = "<!-- scope:rules:start -->\n@.scope/RULES.md\n<!-- scope:rules:end -->";
+static CODEX_BLOCK: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        "{START_MARKER}
+## Scope contribution rules
+
+Read and follow `.scope/RULES.md` before
+making or submitting changes.
+{END_MARKER}"
+    )
+});
+static CLAUDE_BLOCK: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        "{START_MARKER}
+@.scope/RULES.md
+{END_MARKER}"
+    )
+});
 
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct SyncResult {
@@ -272,7 +287,7 @@ fn adapters_for_paths(paths: &[String]) -> Vec<Adapter> {
     if has_path(CODEX_OVERRIDE_FILE) {
         adapters.push(Adapter {
             path: CODEX_OVERRIDE_FILE,
-            block: CODEX_BLOCK,
+            block: &CODEX_BLOCK,
         });
     } else if has_directory(".codex")
         || has_directory(".agents")
@@ -281,7 +296,7 @@ fn adapters_for_paths(paths: &[String]) -> Vec<Adapter> {
     {
         adapters.push(Adapter {
             path: CODEX_FILE,
-            block: CODEX_BLOCK,
+            block: &CODEX_BLOCK,
         });
     }
     if has_directory(".claude")
@@ -292,7 +307,7 @@ fn adapters_for_paths(paths: &[String]) -> Vec<Adapter> {
     {
         adapters.push(Adapter {
             path: CLAUDE_FILE,
-            block: CLAUDE_BLOCK,
+            block: &CLAUDE_BLOCK,
         });
     }
     adapters
@@ -395,11 +410,11 @@ fn managed_content(current: &str, block: &str) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::TestDir;
+    use crate::test_support::TempDir;
 
     #[test]
     fn no_agent_signal_creates_only_empty_rules() {
-        let repo = TestDir::git_repo("rules-no-agent", "main");
+        let repo = TempDir::git_repo("rules-no-agent", "main");
 
         let result = sync_repo_rules(repo.path()).unwrap();
 
@@ -414,7 +429,7 @@ mod tests {
 
     #[test]
     fn dot_directories_signal_repo_level_adapters_and_sync_is_idempotent() {
-        let repo = TestDir::git_repo("rules-agent-signals", "main");
+        let repo = TempDir::git_repo("rules-agent-signals", "main");
         fs::create_dir(repo.path().join(".codex")).unwrap();
         fs::create_dir(repo.path().join(".claude")).unwrap();
 
@@ -426,12 +441,12 @@ mod tests {
         assert!(
             fs::read_to_string(repo.path().join(CODEX_FILE))
                 .unwrap()
-                .contains(CODEX_BLOCK)
+                .contains(CODEX_BLOCK.as_str())
         );
         assert!(
             fs::read_to_string(repo.path().join(CLAUDE_FILE))
                 .unwrap()
-                .contains(CLAUDE_BLOCK)
+                .contains(CLAUDE_BLOCK.as_str())
         );
         assert!(!repo.path().join(".codex/AGENTS.md").exists());
         assert!(!repo.path().join(".claude/CLAUDE.md").exists());
@@ -439,19 +454,19 @@ mod tests {
 
     #[test]
     fn existing_adapter_content_is_preserved_around_managed_block() {
-        let repo = TestDir::git_repo("rules-existing-adapter", "main");
+        let repo = TempDir::git_repo("rules-existing-adapter", "main");
         fs::write(repo.path().join(CODEX_FILE), "project guidance\n").unwrap();
 
         sync_repo_rules(repo.path()).unwrap();
 
         let content = fs::read_to_string(repo.path().join(CODEX_FILE)).unwrap();
         assert!(content.starts_with("project guidance\n\n"));
-        assert!(content.ends_with(&format!("{CODEX_BLOCK}\n")));
+        assert!(content.ends_with(&format!("{}\n", CODEX_BLOCK.as_str())));
     }
 
     #[test]
     fn codex_override_receives_the_link_instead_of_inactive_agents_file() {
-        let repo = TestDir::git_repo("rules-codex-override", "main");
+        let repo = TempDir::git_repo("rules-codex-override", "main");
         fs::write(repo.path().join(CODEX_FILE), "ordinary guidance\n").unwrap();
         fs::write(repo.path().join(CODEX_OVERRIDE_FILE), "active override\n").unwrap();
 
@@ -464,7 +479,7 @@ mod tests {
         assert!(
             fs::read_to_string(repo.path().join(CODEX_OVERRIDE_FILE))
                 .unwrap()
-                .contains(CODEX_BLOCK)
+                .contains(CODEX_BLOCK.as_str())
         );
         assert!(
             result
@@ -475,7 +490,7 @@ mod tests {
 
     #[test]
     fn nested_and_local_native_contexts_trigger_root_adapters() {
-        let repo = TestDir::git_repo("rules-nested-context", "main");
+        let repo = TempDir::git_repo("rules-nested-context", "main");
         fs::create_dir(repo.path().join("src")).unwrap();
         fs::write(repo.path().join("src/AGENTS.override.md"), "nested\n").unwrap();
         fs::write(repo.path().join(CLAUDE_LOCAL_FILE), "local\n").unwrap();
@@ -486,18 +501,18 @@ mod tests {
         assert!(
             fs::read_to_string(repo.path().join(CODEX_FILE))
                 .unwrap()
-                .contains(CODEX_BLOCK)
+                .contains(CODEX_BLOCK.as_str())
         );
         assert!(
             fs::read_to_string(repo.path().join(CLAUDE_FILE))
                 .unwrap()
-                .contains(CLAUDE_BLOCK)
+                .contains(CLAUDE_BLOCK.as_str())
         );
     }
 
     #[test]
     fn malformed_managed_markers_are_not_overwritten() {
-        let repo = TestDir::git_repo("rules-malformed-adapter", "main");
+        let repo = TempDir::git_repo("rules-malformed-adapter", "main");
         fs::write(repo.path().join(CODEX_FILE), START_MARKER).unwrap();
 
         let error = sync_repo_rules(repo.path()).unwrap_err();
@@ -507,7 +522,7 @@ mod tests {
 
     #[test]
     fn adapter_validation_happens_before_any_files_are_written() {
-        let repo = TestDir::git_repo("rules-prevalidate-adapters", "main");
+        let repo = TempDir::git_repo("rules-prevalidate-adapters", "main");
         fs::create_dir(repo.path().join(".codex")).unwrap();
         fs::write(repo.path().join(CLAUDE_FILE), START_MARKER).unwrap();
 
@@ -525,7 +540,7 @@ mod tests {
     #[test]
     fn ignored_rules_fail_before_any_files_are_written() {
         for existing_rules in [false, true] {
-            let repo = TestDir::git_repo(
+            let repo = TempDir::git_repo(
                 if existing_rules {
                     "rules-existing-ignored"
                 } else {
@@ -555,7 +570,7 @@ mod tests {
 
     #[test]
     fn ignored_required_adapter_fails_before_rules_are_created() {
-        let repo = TestDir::git_repo("rules-adapter-ignored", "main");
+        let repo = TempDir::git_repo("rules-adapter-ignored", "main");
         fs::write(repo.path().join(".gitignore"), "/AGENTS.md\n").unwrap();
         fs::create_dir(repo.path().join(".codex")).unwrap();
         fs::write(repo.path().join(".codex/config.toml"), "model = 'scope'\n").unwrap();
@@ -570,7 +585,7 @@ mod tests {
 
     #[test]
     fn worktree_override_does_not_hide_adapter_required_by_head() {
-        let repo = TestDir::git_repo("rules-local-override", "main");
+        let repo = TempDir::git_repo("rules-local-override", "main");
         fs::create_dir_all(repo.path().join(".scope")).unwrap();
         fs::write(repo.path().join(RULES_RELATIVE_PATH), []).unwrap();
         fs::create_dir(repo.path().join(".codex")).unwrap();
@@ -598,18 +613,18 @@ mod tests {
         assert!(
             fs::read_to_string(repo.path().join(CODEX_FILE))
                 .unwrap()
-                .contains(CODEX_BLOCK)
+                .contains(CODEX_BLOCK.as_str())
         );
         assert!(
             fs::read_to_string(repo.path().join(CODEX_OVERRIDE_FILE))
                 .unwrap()
-                .contains(CODEX_BLOCK)
+                .contains(CODEX_BLOCK.as_str())
         );
     }
 
     #[test]
     fn push_preflight_requires_synced_files_in_the_committed_tree() {
-        let repo = TestDir::git_repo("rules-push-preflight", "main");
+        let repo = TempDir::git_repo("rules-push-preflight", "main");
         fs::create_dir(repo.path().join(".codex")).unwrap();
         sync_repo_rules(repo.path()).unwrap();
 
@@ -640,7 +655,7 @@ mod tests {
 
     #[test]
     fn push_preflight_uses_committed_agent_signals() {
-        let repo = TestDir::git_repo("rules-committed-signal", "main");
+        let repo = TempDir::git_repo("rules-committed-signal", "main");
         fs::create_dir_all(repo.path().join(".scope")).unwrap();
         fs::write(repo.path().join(RULES_RELATIVE_PATH), []).unwrap();
         fs::create_dir(repo.path().join(".codex")).unwrap();
@@ -664,10 +679,14 @@ mod tests {
 
     #[test]
     fn push_preflight_uses_committed_codex_override() {
-        let repo = TestDir::git_repo("rules-committed-override", "main");
+        let repo = TempDir::git_repo("rules-committed-override", "main");
         fs::create_dir_all(repo.path().join(".scope")).unwrap();
         fs::write(repo.path().join(RULES_RELATIVE_PATH), []).unwrap();
-        fs::write(repo.path().join(CODEX_FILE), format!("{CODEX_BLOCK}\n")).unwrap();
+        fs::write(
+            repo.path().join(CODEX_FILE),
+            format!("{}\n", CODEX_BLOCK.as_str()),
+        )
+        .unwrap();
         fs::write(repo.path().join(CODEX_OVERRIDE_FILE), "active override\n").unwrap();
         repo.run_git(["add", RULES_RELATIVE_PATH, CODEX_FILE, CODEX_OVERRIDE_FILE]);
         repo.run_git([
@@ -691,7 +710,7 @@ mod tests {
     fn push_preflight_rejects_symlinked_scope_directory() {
         use std::os::unix::fs::symlink;
 
-        let repo = TestDir::git_repo("rules-symlinked-parent", "main");
+        let repo = TempDir::git_repo("rules-symlinked-parent", "main");
         fs::create_dir(repo.path().join("rules-target")).unwrap();
         fs::write(repo.path().join("rules-target/RULES.md"), []).unwrap();
         symlink("rules-target", repo.path().join(".scope")).unwrap();

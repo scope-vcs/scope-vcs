@@ -14,25 +14,13 @@ pub(crate) struct PreparedCache {
     pub(super) sources: Option<Arc<SourceSnapshot>>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) enum CacheFinalizationOutcome {
     Ready,
-    Unchanged,
-    Skipped {
-        reason: CacheSkipReason,
-        message: String,
-    },
+    Skipped(anyhow::Error),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CacheSkipReason {
-    ArchiveFailed,
-    ServiceUnavailable,
-    UploadFailed,
-    CommitFailed,
-}
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct CacheFinalization {
     pub(crate) identity_digest: String,
     pub(crate) outcome: CacheFinalizationOutcome,

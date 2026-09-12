@@ -1,6 +1,7 @@
 mod access;
 mod bindings;
 mod cleanup;
+mod locks;
 mod persistence;
 mod processing;
 mod processing_support;
@@ -15,7 +16,7 @@ mod tests;
 
 use scope_domain::requests::attachments::{
     RequestAttachment, RequestAttachmentDerivative, RequestAttachmentFailure,
-    RequestAttachmentLimits, RequestAttachmentPartReceipt, RequestAttachmentTarget,
+    RequestAttachmentPartReceipt, RequestAttachmentTarget,
 };
 
 #[derive(Clone, Debug)]
@@ -179,8 +180,4 @@ impl RequestAttachmentCleanupReason {
             Self::RepositoryDeleted => "RepositoryDeleted",
         }
     }
-}
-
-pub(super) fn default_limits() -> RequestAttachmentLimits {
-    RequestAttachmentLimits::default()
 }

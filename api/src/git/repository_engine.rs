@@ -1,7 +1,6 @@
 #[cfg(test)]
-use crate::git::import::run_git_output;
+use crate::git::command::run_git_output;
 use crate::{
-    config::DEFAULT_GIT_BRANCH,
     error::ApiError,
     git::GitContext,
     git::{
@@ -9,7 +8,7 @@ use crate::{
             GitDerivedCacheCoordinator, GitDerivedCacheNamespace, GitRepoHandle,
             RepositoryGitCache, sanitize_repository_git_cache_repo,
         },
-        import::run_git,
+        command::{run_git, truncated_git_stderr},
         restore::{
             index_git_pack, restore_git_pack_spans, run_timed_git_restore_phase,
             run_timed_git_restore_phase_async,
@@ -20,6 +19,7 @@ use scope_domain::repository::{
     RepositoryIncarnation,
     git::{GitHead, GitPackSpan, validate_git_pack_layout},
 };
+use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, run_with_stdin_reader};
 use std::{
     fs,
@@ -279,11 +279,7 @@ impl RepositoryEngine {
         tracing::info!(
             repository_id,
             cache_outcome = materialization_outcome(cache_hit, built.load(Ordering::Relaxed)),
-            materialization_path = materialization_path_name(
-                materialization_path.load(Ordering::Relaxed),
-                cache_hit,
-                built.load(Ordering::Relaxed),
-            ),
+            materialization_path = build_path_name(materialization_path.load(Ordering::Relaxed)),
             elapsed_us = started_at.elapsed().as_micros(),
             requested_sequence = head.push_sequence,
             applied_sequence_before = applied_before,
@@ -419,12 +415,7 @@ impl RepositoryEngine {
         self.materializations
             .materialize_async(
                 GitDerivedCacheNamespace::Repository,
-                format!(
-                    "{}:{}{}",
-                    incarnation.repository_id().len(),
-                    incarnation.repository_id(),
-                    incarnation.incarnation_id()
-                ),
+                repository_coordination_key(incarnation),
                 is_ready,
                 operation,
             )
@@ -439,12 +430,7 @@ impl RepositoryEngine {
     ) -> Result<(), ApiError> {
         self.materializations.materialize(
             GitDerivedCacheNamespace::Repository,
-            format!(
-                "{}:{}{}",
-                incarnation.repository_id().len(),
-                incarnation.repository_id(),
-                incarnation.incarnation_id()
-            ),
+            repository_coordination_key(incarnation),
             is_ready,
             operation,
         )
@@ -537,7 +523,7 @@ fn index_local_pack(repo_root: &Path, local_pack: &Path) -> Result<(), ApiError>
     } else {
         Err(ApiError::infrastructure_unavailable(format!(
             "indexing accepted local Git segment: {}",
-            crate::git::upload::truncated_git_stderr(&output.stderr).trim()
+            truncated_git_stderr(&output.stderr).trim()
         )))
     }
 }
@@ -556,18 +542,22 @@ fn materialization_outcome(cache_hit: bool, built: bool) -> &'static str {
     }
 }
 
-fn materialization_path_name(path: u8, cache_hit: bool, built: bool) -> &'static str {
-    if cache_hit {
-        return "hit";
-    }
-    if !built {
-        return "wait";
-    }
+/// Names how a build brought the replica up to date; `None` when nothing was built.
+fn build_path_name(path: u8) -> Option<&'static str> {
     match path {
-        MATERIALIZATION_PATH_CATCH_UP => "catch_up",
-        MATERIALIZATION_PATH_RESTORE => "restore",
-        _ => "hit",
+        MATERIALIZATION_PATH_CATCH_UP => Some("catch_up"),
+        MATERIALIZATION_PATH_RESTORE => Some("restore"),
+        _ => None,
     }
+}
+
+fn repository_coordination_key(incarnation: &RepositoryIncarnation) -> String {
+    format!(
+        "{}:{}{}",
+        incarnation.repository_id().len(),
+        incarnation.repository_id(),
+        incarnation.incarnation_id()
+    )
 }
 
 #[cfg(test)]
@@ -601,22 +591,18 @@ mod tests {
     }
 
     #[test]
-    fn materialization_path_distinguishes_hits_waits_and_builds() {
+    fn materialization_outcome_distinguishes_hits_waits_and_builds() {
+        assert_eq!(materialization_outcome(true, false), "hit");
+        assert_eq!(materialization_outcome(false, false), "wait");
+        assert_eq!(materialization_outcome(false, true), "build");
+        assert_eq!(build_path_name(MATERIALIZATION_PATH_HIT), None);
         assert_eq!(
-            materialization_path_name(MATERIALIZATION_PATH_HIT, true, false),
-            "hit"
+            build_path_name(MATERIALIZATION_PATH_CATCH_UP),
+            Some("catch_up")
         );
         assert_eq!(
-            materialization_path_name(MATERIALIZATION_PATH_HIT, false, false),
-            "wait"
-        );
-        assert_eq!(
-            materialization_path_name(MATERIALIZATION_PATH_CATCH_UP, false, true),
-            "catch_up"
-        );
-        assert_eq!(
-            materialization_path_name(MATERIALIZATION_PATH_RESTORE, false, true),
-            "restore"
+            build_path_name(MATERIALIZATION_PATH_RESTORE),
+            Some("restore")
         );
     }
 

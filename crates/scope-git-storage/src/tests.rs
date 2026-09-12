@@ -19,7 +19,6 @@ const REPOSITORY_ID: &str = "repository-123";
 
 mod ingest_control;
 mod multipart_backend;
-mod multipart_performance;
 use multipart_backend::{MinimumS3PartStore, TestMultipartStore};
 
 #[tokio::test]
@@ -34,7 +33,7 @@ async fn ingest_writes_both_destinations_and_restore_verifies_the_stream() {
     );
     let staged = fixture
         .store
-        .ingest_reserved(REPOSITORY_ID, reservation, &input[..], u64::MAX)
+        .ingest_reserved(REPOSITORY_ID, reservation, &input[..], u64::MAX, None)
         .await
         .unwrap();
 
@@ -94,6 +93,7 @@ async fn blocking_reader_uses_the_reserved_identity() {
             reservation,
             std::io::Cursor::new(input.clone()),
             u64::MAX,
+            None,
         )
         .await
         .unwrap();
@@ -645,4 +645,23 @@ impl Read for CountingReader {
         output[..size].fill(b'x');
         Ok(size)
     }
+}
+
+#[tokio::test]
+async fn multipart_overlaps_two_parts_and_preserves_completion_order() {
+    let fixture = Fixture::new(32, 128, 1);
+    fixture.backend.part_delay_ms.store(10, Ordering::SeqCst);
+    fixture.backend.reorder_parts.store(true, Ordering::SeqCst);
+    let input = vec![37; 1024];
+    let staged = fixture
+        .store
+        .ingest(REPOSITORY_ID, input.as_slice(), u64::MAX)
+        .await
+        .unwrap();
+    assert_eq!(fixture.backend.peak_parts.load(Ordering::SeqCst), 2);
+    assert_eq!(fixture.backend.active_parts.load(Ordering::SeqCst), 0);
+    let (restored, _) = restore_bytes(&fixture.store, &staged.segment)
+        .await
+        .unwrap();
+    assert_eq!(restored, input);
 }

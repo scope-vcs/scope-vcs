@@ -40,8 +40,14 @@ fn request_commit_is_visible_to(
     commit_oid: &str,
 ) -> Result<bool, ApiError> {
     let identity = request_commit_identity(raw_repo, commit_oid)?;
-    request_commit_changes(raw_repo, policy, access, &identity.parent_oids, commit_oid)
-        .map(|changes| !changes.hidden)
+    request_commit_changes(
+        raw_repo,
+        policy,
+        access,
+        &identity.parent_oids[0],
+        commit_oid,
+    )
+    .map(|changes| !changes.hidden)
 }
 
 pub(crate) struct RequestRevisionCommitVisibility<'a> {
@@ -140,8 +146,13 @@ pub(super) fn inspect_request_commit(
     commit_oid: &str,
 ) -> Result<InspectedRequestCommit, ApiError> {
     let identity = request_commit_identity(raw_repo, commit_oid)?;
-    let changes =
-        request_commit_changes(raw_repo, policy, access, &identity.parent_oids, commit_oid)?;
+    let changes = request_commit_changes(
+        raw_repo,
+        policy,
+        access,
+        &identity.parent_oids[0],
+        commit_oid,
+    )?;
     if changes.hidden {
         return Ok(InspectedRequestCommit {
             commit: None,
@@ -428,15 +439,10 @@ fn request_commit_changes(
     raw_repo: &FsPath,
     policy: &Policy,
     access: RepositoryAccess,
-    parent_oids: &[String],
+    parent: &str,
     commit_oid: &str,
 ) -> Result<VisibleRequestChanges, ApiError> {
-    // Request-ref validation requires every revision head to descend from its recorded base,
-    // so commits introduced by a revision cannot be parentless roots.
-    let parent = parent_oids
-        .first()
-        .ok_or_else(|| ApiError::conflict("request revision commit must have a parent"))?;
-    request_changes_from_repo_with_visibility(raw_repo, policy, access, parent, commit_oid, None)
+    request_changes_from_repo_with_visibility(raw_repo, policy, access, parent, commit_oid)
 }
 
 fn request_commit_display_metadata(

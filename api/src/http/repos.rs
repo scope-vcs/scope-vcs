@@ -5,10 +5,7 @@ use crate::{
     },
     error::ApiError,
     http::responses::*,
-    http::{
-        origins::public_git_origin,
-        projection_preview::{ensure_projection_preview_access, projection_preview_repo},
-    },
+    http::{origins::public_git_origin, projection_preview::ensure_projection_preview_access},
     persistence::unix_now,
     push_intents::repo_config_fingerprint,
     repo_access::find_repo,
@@ -356,18 +353,15 @@ pub(crate) async fn get_projection_preview(
     Query(input): Query<ProjectionPreviewRequest>,
 ) -> Result<Json<ProjectionPreviewResponse>, ApiError> {
     let repo = find_repo(&state, &owner, &repo_name).await?;
-    let source = input.source.unwrap_or(ProjectionPreviewSource::Live);
     let user = optional_scope_user(&state, &headers).await?;
     let requester = principal_for_scope_user(&repo, user.as_ref());
-    ensure_projection_preview_access(&state, &repo, &requester, input.audience, source)?;
+    ensure_projection_preview_access(&state, &repo, &requester, input.audience)?;
     let include_private_counts =
         repo.access_for_principal(&requester).actor != RepositoryActor::Public;
-    let preview_repo = projection_preview_repo(&repo, source)?;
 
     Ok(Json(projection_preview_response(
-        &preview_repo,
+        &repo,
         input.audience,
-        source,
         include_private_counts,
     )?))
 }
@@ -479,7 +473,6 @@ pub(super) fn repo_summary_response(
     state: &AppState,
     summary: RepoSummaryRead,
 ) -> Result<RepoSummaryResponse, ApiError> {
-    let request_permissions = repo_request_permissions_response(summary.access);
     let git_origin = public_git_origin(state);
     Ok(RepoSummaryResponse {
         id: summary.id,
@@ -497,6 +490,5 @@ pub(super) fn repo_summary_response(
         change_version: summary.change_version,
         access: repository_access_response(summary.access),
         open_request_count: summary.open_request_count,
-        request_permissions,
     })
 }

@@ -1,17 +1,12 @@
-use crate::{error::ApiError, git::GitContext, git::import::run_git_output};
+use crate::{error::ApiError, git::GitContext, git::command::run_git_output};
 use scope_domain::{
     content::SourceBlob,
     content_ref::ContentRef,
     repository::RepositoryIncarnation,
     repository::git::{GitHead, GitPackSpan},
 };
-use scope_git::git_blob_reference as segment_git_blob_reference;
 use scope_object_store::source_blob_bytes;
 use std::{path::Path, time::Instant};
-
-pub(crate) fn git_blob_reference(oid: String, mode: String, size_bytes: usize) -> SourceBlob {
-    segment_git_blob_reference(oid, mode, size_bytes as u64)
-}
 
 pub(crate) async fn source_content_bytes<C: GitContext>(
     context: &C,

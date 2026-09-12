@@ -12,6 +12,7 @@ use super::{
 use crate::error::DomainError;
 use crate::visibility_changes::{VisibilityChange, VisibilityChangeSet, visibility_change_set_id};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoStorageCleanup {
@@ -59,14 +60,7 @@ pub struct RepoMutation<T> {
 }
 
 impl<T> RepoMutation<T> {
-    fn new(result: T) -> Self {
-        Self {
-            result,
-            effects: RepoEffects::default(),
-        }
-    }
-
-    fn with_effects(result: T, effects: RepoEffects) -> Self {
+    fn new(result: T, effects: RepoEffects) -> Self {
         Self { result, effects }
     }
 }
@@ -142,12 +136,12 @@ pub fn create_repo(
     first_push_token: FirstPushToken,
     git_push_token: GitPushToken,
     incarnation_id: impl Into<String>,
-) -> Result<RepoMutation<Repository>, DomainError> {
+) -> Result<Repository, DomainError> {
     let mut repo =
         Repository::new(owner, name, default_visibility, incarnation_id).map_err(catalog_error)?;
     repo.first_push_token = Some(secretless_first_push_token(first_push_token));
     repo.git_push_token = Some(git_push_token);
-    Ok(RepoMutation::new(repo))
+    Ok(repo)
 }
 
 pub fn set_visibility(
@@ -156,7 +150,7 @@ pub fn set_visibility(
     update_paths: &[ScopePath],
     visibility: Visibility,
     occurred_at_unix: Option<i64>,
-) -> Result<RepoMutation<()>, DomainError> {
+) -> Result<(), DomainError> {
     if update_paths.is_empty() {
         return Err(DomainError::invalid_input(
             "at least one file path is required",
@@ -165,7 +159,7 @@ pub fn set_visibility(
     ensure_can_change_file_visibility(repo, user_id)?;
     if visibility == Visibility::Public {
         for update_path in update_paths {
-            if !repo.has_file_for_visibility_update(update_path) {
+            if !repo.live_file_exists(update_path) {
                 return Err(DomainError::invalid_input(format!(
                     "file {} must be tracked by Git before it can be made public",
                     update_path.as_str()
@@ -175,10 +169,11 @@ pub fn set_visibility(
     }
 
     let record_visibility_history = repo.record.lifecycle_state == RepoLifecycleState::Ready;
+    let empty_tree = BTreeMap::new();
     let live_tree = if record_visibility_history {
-        repo.live_tree()
+        &repo.live_files
     } else {
-        Default::default()
+        &empty_tree
     };
     let after_commit_id = repo.graph.commits.last().map(|commit| commit.id.clone());
     let mut visibility_changes = Vec::new();
@@ -220,7 +215,7 @@ pub fn set_visibility(
     )
     .map_err(DomainError::invalid_input)?;
     repo.bump_change_version();
-    Ok(RepoMutation::new(()))
+    Ok(())
 }
 
 pub fn delete_repo(
@@ -237,7 +232,7 @@ pub fn delete_repo(
         incarnation: repo.incarnation(),
     });
     effects.delete_source_blobs(repo.source_blobs());
-    Ok(RepoMutation::with_effects(repo.record.id.clone(), effects))
+    Ok(RepoMutation::new(repo.record.id.clone(), effects))
 }
 
 #[cfg(test)]

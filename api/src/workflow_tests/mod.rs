@@ -1,8 +1,9 @@
+mod http_surface;
 use crate::{
     app::router,
     auth::{clerk::*, tokens::*},
     config::*,
-    git::{import::*, projection_repo::*, storage::*, upload::*, *},
+    git::{command::*, import::*, projection_repo::*, storage::*, upload::*, *},
     http::responses::*,
     push_intents::*,
     repo_access::*,
@@ -38,6 +39,7 @@ use scope_domain::{
     repository::credentials::GitPushToken,
     repository::{RepoLifecycleState, RepoRecord, Repository},
 };
+use scope_git::DEFAULT_GIT_BRANCH;
 use scope_object_store::{
     ContentObjectKind, MemoryObjectStore, put_source_blob, source_blob_bytes,
 };
@@ -53,9 +55,11 @@ use tower::ServiceExt;
 
 mod admin;
 mod auth;
+mod auth_fixtures;
 mod cli_auth;
 mod clone_access;
 mod cloud_runs;
+mod dependencies;
 mod device_login;
 mod git_binary;
 mod git_http;
@@ -76,117 +80,19 @@ mod repo_lifecycle;
 mod repo_metadata;
 mod repo_visibility;
 mod request_attachments;
+mod request_attention;
 mod request_discussions;
 mod requests;
 mod run_inspection;
 mod run_resources;
 mod runtime_budgets;
 
+use auth_fixtures::*;
 use http::api_request;
 
-const TEST_CLERK_ISSUER: &str = "https://clerk.test";
-const TEST_CLERK_AUDIENCE: &str = "scope-api";
-const TEST_CLERK_USER_ID: &str = "user_owner";
-const TEST_OWNER_EMAIL: &str = "owner@example.com";
 const TEST_REPO_OWNER: &str = "owner";
 const TEST_REPO_NAME: &str = "repo";
 const TEST_REPO_ID: &str = "owner/repo";
-
-const TEST_PRIVATE_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgj30p9gYDpHRqbshS
-LyBNueRnRb9WS031zFD7yuhqn/ChRANCAAR6wR8PANHsn10BAVi085aM8LBPL3Cj
-kGxvBjzgF9RjXJoldYnFk7mJ5gLANHjaaad3qTQJ8DldKJoSqkEkm5gg
------END PRIVATE KEY-----"#;
-
-const TEST_JWKS: &str = r#"{
-  "keys": [{
-    "kty": "EC",
-    "x": "esEfDwDR7J9dAQFYtPOWjPCwTy9wo5BsbwY84BfUY1w",
-    "y": "miV1icWTuYnmAsA0eNppp3epNAnwOV0omhKqQSSbmCA",
-    "crv": "P-256",
-    "kid": "test-key",
-    "use": "sig",
-    "alg": "ES256"
-  }]
-}"#;
-
-fn test_jwks() -> JwkSet {
-    serde_json::from_str(TEST_JWKS).unwrap()
-}
-
-fn sign_claims(claims: serde_json::Value) -> String {
-    sign_claims_with_kid(claims, "test-key")
-}
-
-fn sign_claims_with_kid(claims: serde_json::Value, kid: &str) -> String {
-    let mut header = Header::new(Algorithm::ES256);
-    header.kid = Some(kid.into());
-    encode(
-        &header,
-        &claims,
-        &EncodingKey::from_ec_pem(TEST_PRIVATE_KEY.as_bytes()).unwrap(),
-    )
-    .unwrap()
-}
-
-fn token(user_id: &str, email_verified: bool) -> String {
-    token_for_claims(
-        user_id,
-        Some(TEST_OWNER_EMAIL.to_string()),
-        email_verified,
-        Some(LOCAL_APP_ORIGIN),
-        None,
-    )
-}
-
-fn token_with_audience(user_id: &str, aud: serde_json::Value) -> String {
-    token_for_claims(
-        user_id,
-        Some(TEST_OWNER_EMAIL.to_string()),
-        true,
-        Some(LOCAL_APP_ORIGIN),
-        Some(aud),
-    )
-}
-
-fn token_for_claims(
-    user_id: &str,
-    email: Option<String>,
-    email_verified: bool,
-    azp: Option<&str>,
-    aud: Option<serde_json::Value>,
-) -> String {
-    let mut claims = serde_json::json!({
-        "iss": TEST_CLERK_ISSUER,
-        "exp": unix_now() + 300,
-        "sub": user_id,
-        "email": email,
-        "email_verified": email_verified,
-    });
-    if let Some(azp) = azp {
-        claims["azp"] = serde_json::json!(azp);
-    }
-    if let Some(aud) = aud {
-        claims["aud"] = aud;
-    }
-
-    sign_claims(claims)
-}
-
-fn test_clerk_policy() -> ClerkTokenPolicy {
-    ClerkTokenPolicy {
-        authorized_parties: vec![LOCAL_APP_ORIGIN.to_string()],
-        audiences: vec![TEST_CLERK_AUDIENCE.to_string()],
-    }
-}
-
-fn token_without_required_claims() -> String {
-    sign_claims(serde_json::json!({
-        "exp": unix_now() + 300,
-        "email": TEST_OWNER_EMAIL,
-        "email_verified": true,
-    }))
-}
 
 fn unix_now() -> u64 {
     SystemTime::now()
@@ -244,7 +150,7 @@ async fn test_state_with_git_push_token(secret: &str) -> AppState {
     let state = test_state_with_repo();
     let mut repo = repo_with_readme(&state);
     repo.git_push_token = Some(GitPushToken {
-        token_hash: git_push_token_hash(secret),
+        token_hash: token_hash(secret),
         owner_user_id: repo.record.owner_user_id.clone(),
         created_at_unix: unix_now(),
     });
@@ -271,28 +177,6 @@ fn test_state_with_jwks() -> AppState {
     let state = AppState::test_state();
     cache_test_jwks(&state);
     state
-}
-
-fn cache_test_jwks(state: &AppState) {
-    state.clerk.cache_jwks_for_tests(test_jwks());
-}
-
-fn bearer_header() -> String {
-    format!("Bearer {}", api_token(TEST_CLERK_USER_ID, TEST_OWNER_EMAIL))
-}
-
-fn bearer_header_for(user_id: &str, email: &str) -> String {
-    format!("Bearer {}", api_token(user_id, email))
-}
-
-fn api_token(user_id: &str, email: &str) -> String {
-    token_for_claims(
-        user_id,
-        Some(email.to_string()),
-        true,
-        Some(LOCAL_APP_ORIGIN),
-        Some(serde_json::json!(TEST_CLERK_AUDIENCE)),
-    )
 }
 
 async fn response_json(response: Response) -> serde_json::Value {
@@ -488,7 +372,7 @@ async fn live_file_content(state: &AppState, path: &str) -> Option<String> {
     let repo = find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
-    match repo.live_tree().get(&ScopePath::parse(path).unwrap()) {
+    match repo.live_files.get(&ScopePath::parse(path).unwrap()) {
         Some(blob) => Some(blob_content(state, blob, &repo).await),
         None => None,
     }
@@ -536,6 +420,7 @@ async fn ready_test_git_segment(
             reservation,
             std::io::Cursor::new(format!("test segment {label}").into_bytes()),
             u64::MAX,
+            None,
         )
         .await
         .unwrap();
@@ -598,6 +483,7 @@ async fn persist_and_promote_test_update(
                     reservation,
                     std::io::Cursor::new(b"test Git pack segment".to_vec()),
                     u64::MAX,
+                    None,
                 )
                 .await
                 .map_err(|error| crate::error::ApiError::internal_message(error.to_string()))?;
@@ -756,6 +642,7 @@ async fn apply_first_push_from_staging_repo(
         staging_repo,
         &test_owner_id(),
         config,
+        ReviewedUpdateMode::FirstPush,
     )
     .await
     .unwrap();
@@ -763,11 +650,7 @@ async fn apply_first_push_from_staging_repo(
 }
 
 fn source_blob(state: &AppState, content: &str) -> scope_domain::content::SourceBlob {
-    source_blob_from_bytes(state, content.as_bytes())
-}
-
-fn source_blob_from_bytes(state: &AppState, bytes: &[u8]) -> scope_domain::content::SourceBlob {
-    put_source_blob(state.object_store.as_ref(), bytes).unwrap()
+    put_source_blob(state.object_store.as_ref(), content.as_bytes()).unwrap()
 }
 
 async fn blob_content(
@@ -821,20 +704,6 @@ fn repo_with_readme(state: &AppState) -> Repository {
     repo
 }
 
-fn populate_test_live_files(repo: &mut Repository) {
-    repo.live_files.clear();
-    for change in repo.graph.commits.iter().flat_map(|commit| &commit.changes) {
-        match &change.new_content {
-            Some(content) => {
-                repo.live_files.insert(change.path.clone(), content.clone());
-            }
-            None => {
-                repo.live_files.remove(&change.path);
-            }
-        }
-    }
-}
-
 fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> ReceivePackUpdate {
     let config = repo_config(Visibility::Public);
     let head_oid = "1111111111111111111111111111111111111111";
@@ -881,4 +750,130 @@ fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> 
 
 fn repo_config(default_visibility: Visibility) -> RepoConfig {
     RepoConfig::with_default_visibility(default_visibility.into())
+}
+
+fn push_intent_request_json(head_oid: &str, config: RepoConfig) -> String {
+    push_intent_request_json_with_base(
+        head_oid,
+        repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap(),
+        config,
+    )
+}
+
+fn push_intent_request_json_with_base(
+    head_oid: &str,
+    base_config_hash: String,
+    config: RepoConfig,
+) -> String {
+    serde_json::json!({
+        "head_oid": head_oid,
+        "base_config_hash": base_config_hash,
+        "config": config,
+    })
+    .to_string()
+}
+
+struct DeleteFailsObjectStore;
+
+impl scope_object_store::ObjectStore for DeleteFailsObjectStore {
+    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), scope_object_store::ObjectStoreError> {
+        Ok(())
+    }
+
+    fn get(&self, _key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
+        Err(scope_object_store::ObjectStoreError::not_found(
+            "object not found",
+        ))
+    }
+
+    fn delete(&self, _key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
+        Err(scope_object_store::ObjectStoreError::service_unavailable(
+            "delete failed",
+        ))
+    }
+}
+
+struct PutFailsObjectStore {
+    readable: Arc<MemoryObjectStore>,
+}
+
+impl scope_object_store::ObjectStore for PutFailsObjectStore {
+    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), scope_object_store::ObjectStoreError> {
+        Err(scope_object_store::ObjectStoreError::service_unavailable(
+            "object PUT failed for test",
+        ))
+    }
+
+    fn get(&self, key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
+        scope_object_store::ObjectStore::get(self.readable.as_ref(), key)
+    }
+
+    fn delete(&self, key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
+        scope_object_store::ObjectStore::delete(self.readable.as_ref(), key)
+    }
+}
+
+const WORKFLOW: &str = r#"
+name: Test
+on:
+  manual: true
+caches: []
+container:
+  image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+timeout: 5m
+jobs:
+  checks:
+    steps:
+      - name: Test
+        run: printf 'hello from runner\n'
+"#;
+
+fn workflow_named(name: &str) -> String {
+    WORKFLOW.replacen("name: Test", &format!("name: {name}"), 1)
+}
+
+fn logical_commit(id: &str, message: &str, changes: Vec<FileChange>) -> LogicalCommit {
+    LogicalCommit {
+        occurred_at_unix: None,
+        id: id.into(),
+        origin: LogicalCommitOrigin::CanonicalPush {
+            source_head_oid: id.to_string(),
+        },
+        author_id: test_owner_id(),
+        message: message.into(),
+        changes,
+    }
+}
+
+fn history_change(
+    path: &str,
+    visibility: Visibility,
+    old: Option<scope_domain::content::SourceBlob>,
+    new: Option<scope_domain::content::SourceBlob>,
+) -> FileChange {
+    FileChange {
+        path: ScopePath::parse(path).unwrap(),
+        visibility,
+        old_content: old,
+        new_content: new,
+    }
+}
+
+async fn drain_outbox(state: &AppState, label: &str) -> scope_postgres::db::OutboxRunSummary {
+    let report = state
+        .metadata
+        .jobs()
+        .run_ready_outbox_jobs(
+            label,
+            10,
+            &|| {
+                crate::persistence::unix_now()
+                    .map_err(crate::error::ApiError::into_operator_diagnostic)
+            },
+            &crate::persistence_ids::generate_persistence_id,
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.failed, 0);
+    report
 }

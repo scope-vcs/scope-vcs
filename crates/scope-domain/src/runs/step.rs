@@ -202,7 +202,6 @@ impl RunAttemptStep {
 }
 
 impl RunAttempt {
-    #[allow(clippy::too_many_arguments)]
     pub fn start_step(
         &mut self,
         run: &Run,
@@ -220,9 +219,8 @@ impl RunAttempt {
         if self.state != AttemptState::Running || job.state != RunJobState::Running {
             return Err(DomainError::conflict("attempt is not running"));
         }
-        self.validate_steps(steps)?;
-        let index = usize::try_from(step_index)
-            .map_err(|_| DomainError::invalid_input("step index is too large"))?;
+        self.validate_execution(steps)?;
+        let index = step_index as usize;
         let Some(step) = steps.get(index) else {
             return Err(DomainError::invalid_input("workflow step does not exist"));
         };
@@ -261,8 +259,7 @@ impl RunAttempt {
         logs_truncated: bool,
         now_unix: u64,
     ) -> Result<(), DomainError> {
-        let index = usize::try_from(step_index)
-            .map_err(|_| DomainError::invalid_input("step index is too large"))?;
+        let index = step_index as usize;
         if self.state.is_terminal() || job.state.is_terminal() {
             self.authenticate_identity(job, token_hash)?;
             return if step_matches_conclusion(steps.get(index), conclusion) {
@@ -274,7 +271,7 @@ impl RunAttempt {
             };
         }
         self.authenticate(job, token_hash, now_unix)?;
-        self.validate_steps(steps)?;
+        self.validate_execution(steps)?;
         let Some(step) = steps.get(index) else {
             return Err(DomainError::invalid_input("workflow step does not exist"));
         };
@@ -332,9 +329,8 @@ impl RunAttempt {
         let mut running_count = 0;
         let mut execution_stopped = false;
         for (index, step) in steps.iter().enumerate() {
-            let expected_index = u32::try_from(index)
-                .map_err(|_| DomainError::invariant_violation("workflow step index overflow"))?;
-            if step.attempt_id != self.id || step.step_index != expected_index {
+            // Step counts are bounded by MAX_WORKFLOW_STEPS at workflow construction.
+            if step.attempt_id != self.id || step.step_index != index as u32 {
                 return Err(DomainError::invariant_violation(
                     "run attempt step identity is inconsistent",
                 ));
@@ -406,10 +402,6 @@ impl RunAttempt {
         }
         Ok(())
     }
-
-    pub(crate) fn validate_steps(&self, steps: &[RunAttemptStep]) -> Result<(), DomainError> {
-        self.validate_execution(steps)
-    }
 }
 
 pub(crate) fn valid_setup_failure_message(message: &str) -> bool {
@@ -436,23 +428,28 @@ pub(crate) fn skip_pending_steps(steps: &mut [RunAttemptStep], now_unix: u64) {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StepInterruption {
+    Canceled,
+    Lost,
+}
+
 pub(crate) fn interrupt_steps(
     steps: &mut [RunAttemptStep],
-    interrupted_state: StepState,
+    interruption: StepInterruption,
     now_unix: u64,
 ) -> Option<u32> {
     let active_index = steps
         .iter()
         .position(|step| step.state == StepState::Running);
     if let Some(index) = active_index {
-        match interrupted_state {
-            StepState::Canceled => steps[index].cancel(now_unix),
-            StepState::Lost => steps[index].lose(now_unix),
-            _ => unreachable!("only interrupted terminal states are supported"),
+        match interruption {
+            StepInterruption::Canceled => steps[index].cancel(now_unix),
+            StepInterruption::Lost => steps[index].lose(now_unix),
         }
     }
     skip_pending_steps(steps, now_unix);
-    active_index.and_then(|index| u32::try_from(index).ok())
+    active_index.map(|index| index as u32)
 }
 
 fn interrupted_step_matches(
@@ -474,9 +471,7 @@ fn terminal_step_matches(
     state: StepState,
     exit_code: Option<i32>,
 ) -> bool {
-    let Ok(index) = usize::try_from(step_index) else {
-        return false;
-    };
+    let index = step_index as usize;
     steps.get(index).is_some_and(|step| {
         step.state == state && exit_code.is_none_or(|code| step.exit_code == Some(code))
     }) && steps[index + 1..]

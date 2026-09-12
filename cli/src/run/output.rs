@@ -1,7 +1,7 @@
+use crate::display::short_oid;
 use scope_api_contract::{
-    RepositoryRunAttemptResponse, RepositoryRunCacheColdReason, RepositoryRunCacheFinalState,
-    RepositoryRunCachePreparation, RepositoryRunCacheResponse, RepositoryRunDetailResponse,
-    RepositoryRunJobState, RepositoryRunState,
+    AttemptState, CacheColdReason, CacheFinalState, CachePreparation, RepositoryRunAttemptResponse,
+    RepositoryRunCacheResponse, RepositoryRunDetailResponse, RepositoryRunJobState, RunState,
 };
 
 pub(super) fn detail_lines(detail: &RepositoryRunDetailResponse) -> Vec<String> {
@@ -44,10 +44,8 @@ fn environment_lines(
     let mut unavailable = 0;
     for cache in &attempt.caches {
         match cache.observation.as_ref().map(|fact| fact.preparation) {
-            Some(
-                RepositoryRunCachePreparation::Exact | RepositoryRunCachePreparation::Compatible,
-            ) => warm += 1,
-            Some(RepositoryRunCachePreparation::Cold { .. }) => cold += 1,
+            Some(CachePreparation::Exact | CachePreparation::Compatible) => warm += 1,
+            Some(CachePreparation::Cold { .. }) => cold += 1,
             None => unavailable += 1,
         }
     }
@@ -81,9 +79,9 @@ fn cache_line(cache: &RepositoryRunCacheResponse) -> String {
         return format!("        {} · not reported", cache.name);
     };
     let preparation = match observation.preparation {
-        RepositoryRunCachePreparation::Exact => "exact".to_string(),
-        RepositoryRunCachePreparation::Compatible => "compatible".to_string(),
-        RepositoryRunCachePreparation::Cold { reason } => {
+        CachePreparation::Exact => "exact".to_string(),
+        CachePreparation::Compatible => "compatible".to_string(),
+        CachePreparation::Cold { reason } => {
             format!("cold · {}", cold_reason_label(reason))
         }
     };
@@ -97,11 +95,11 @@ fn cache_line(cache: &RepositoryRunCacheResponse) -> String {
     )
 }
 
-fn finalization_label(state: RepositoryRunCacheFinalState, finalize_ms: Option<u64>) -> String {
+fn finalization_label(state: CacheFinalState, finalize_ms: Option<u64>) -> String {
     let state = match state {
-        RepositoryRunCacheFinalState::Pending => "pending",
-        RepositoryRunCacheFinalState::Ready => "ready",
-        RepositoryRunCacheFinalState::Evicted => "evicted",
+        CacheFinalState::Pending => "pending",
+        CacheFinalState::Ready => "ready",
+        CacheFinalState::Evicted => "evicted",
     };
     finalize_ms.map_or_else(
         || state.to_string(),
@@ -109,14 +107,11 @@ fn finalization_label(state: RepositoryRunCacheFinalState, finalize_ms: Option<u
     )
 }
 
-fn cold_reason_label(reason: RepositoryRunCacheColdReason) -> &'static str {
+fn cold_reason_label(reason: CacheColdReason) -> &'static str {
     match reason {
-        RepositoryRunCacheColdReason::MetadataMissing => "no reusable entry for this identity",
-        RepositoryRunCacheColdReason::MetadataInvalid => "cache metadata invalid",
-        RepositoryRunCacheColdReason::MetadataNotReady => "cached volume not ready",
-        RepositoryRunCacheColdReason::VolumeMissing => "cached volume missing",
-        RepositoryRunCacheColdReason::VolumeInvalid => "cached volume invalid",
-        RepositoryRunCacheColdReason::BackingDirectoryMissing => "cache backing directory missing",
+        CacheColdReason::MetadataMissing => "no reusable entry for this identity",
+        CacheColdReason::MetadataInvalid => "cache metadata invalid",
+        CacheColdReason::MetadataNotReady => "cached volume not ready",
     }
 }
 
@@ -136,19 +131,15 @@ fn image_label(image: &str) -> String {
     format!("image sha256:{}", digest.get(..12).unwrap_or(digest))
 }
 
-fn short_oid(oid: &str) -> &str {
-    oid.get(..7).unwrap_or(oid)
-}
-
-pub(super) fn run_state_label(state: RepositoryRunState) -> &'static str {
+pub(super) fn run_state_label(state: RunState) -> &'static str {
     match state {
-        RepositoryRunState::Queued => "queued",
-        RepositoryRunState::Dispatching => "dispatching",
-        RepositoryRunState::Running => "running",
-        RepositoryRunState::Succeeded => "succeeded",
-        RepositoryRunState::Failed => "failed",
-        RepositoryRunState::Canceled => "canceled",
-        RepositoryRunState::Lost => "lost",
+        RunState::Queued => "queued",
+        RunState::Dispatching => "dispatching",
+        RunState::Running => "running",
+        RunState::Succeeded => "succeeded",
+        RunState::Failed => "failed",
+        RunState::Canceled => "canceled",
+        RunState::Lost => "lost",
     }
 }
 
@@ -168,12 +159,12 @@ fn job_state_label(state: RepositoryRunJobState) -> &'static str {
 
 fn attempt_state_label(attempt: &RepositoryRunAttemptResponse) -> &'static str {
     match attempt.state {
-        scope_api_contract::RepositoryRunAttemptState::Dispatching => "dispatching",
-        scope_api_contract::RepositoryRunAttemptState::Running => "running",
-        scope_api_contract::RepositoryRunAttemptState::Succeeded => "succeeded",
-        scope_api_contract::RepositoryRunAttemptState::Failed => "failed",
-        scope_api_contract::RepositoryRunAttemptState::Canceled => "canceled",
-        scope_api_contract::RepositoryRunAttemptState::Lost => "lost",
+        AttemptState::Dispatching => "dispatching",
+        AttemptState::Running => "running",
+        AttemptState::Succeeded => "succeeded",
+        AttemptState::Failed => "failed",
+        AttemptState::Canceled => "canceled",
+        AttemptState::Lost => "lost",
     }
 }
 
@@ -181,9 +172,8 @@ fn attempt_state_label(attempt: &RepositoryRunAttemptResponse) -> &'static str {
 mod tests {
     use super::*;
     use scope_api_contract::{
-        RepositoryRunAttemptState, RepositoryRunCacheObservationResponse,
-        RepositoryRunCacheSetupObservationResponse, RepositoryRunStepResponse,
-        RepositoryRunSummaryResponse,
+        RepositoryRunCacheObservationResponse, RepositoryRunCacheSetupObservationResponse,
+        RepositoryRunStepResponse, RepositoryRunSummaryResponse,
     };
 
     #[test]
@@ -194,7 +184,7 @@ mod tests {
                 workflow_name: "checks".to_string(),
                 git_oid: "1234567890".to_string(),
                 trigger: scope_api_contract::RepositoryRunTrigger::PushMain,
-                state: RepositoryRunState::Succeeded,
+                state: RunState::Succeeded,
                 cancellation_requested: false,
                 created_at_unix: 1,
                 updated_at_unix: 2,
@@ -218,7 +208,7 @@ mod tests {
                     number: 1,
                     external_run_id: Some("external-run-1".to_string()),
                     runtime_version: "0.1.0".to_string(),
-                    state: RepositoryRunAttemptState::Succeeded,
+                    state: AttemptState::Succeeded,
                     created_at_unix: 1,
                     started_at_unix: Some(1),
                     completed_at_unix: Some(2),
@@ -235,8 +225,8 @@ mod tests {
                                 workflow_path: "/.scope/runs/checks.yml".to_string(),
                                 job_key: "backend".to_string(),
                                 identity_digest: "b".repeat(64),
-                                preparation: RepositoryRunCachePreparation::Cold {
-                                    reason: RepositoryRunCacheColdReason::MetadataMissing,
+                                preparation: CachePreparation::Cold {
+                                    reason: CacheColdReason::MetadataMissing,
                                 },
                                 key_ms: 2,
                                 metadata_ms: 10,
@@ -245,7 +235,7 @@ mod tests {
                                 sync_ms: 0,
                                 extraction_ms: 0,
                                 prepare_ms: 12,
-                                final_state: RepositoryRunCacheFinalState::Ready,
+                                final_state: CacheFinalState::Ready,
                                 finalize_ms: Some(8),
                             }),
                         },
@@ -261,7 +251,7 @@ mod tests {
                                 workflow_path: "/.scope/runs/checks.yml".to_string(),
                                 job_key: "backend".to_string(),
                                 identity_digest: "c".repeat(64),
-                                preparation: RepositoryRunCachePreparation::Exact,
+                                preparation: CachePreparation::Exact,
                                 key_ms: 3,
                                 metadata_ms: 4,
                                 size_bytes: 12_582_912,
@@ -269,7 +259,7 @@ mod tests {
                                 sync_ms: 5,
                                 extraction_ms: 18,
                                 prepare_ms: 50,
-                                final_state: RepositoryRunCacheFinalState::Ready,
+                                final_state: CacheFinalState::Ready,
                                 finalize_ms: Some(4),
                             }),
                         },

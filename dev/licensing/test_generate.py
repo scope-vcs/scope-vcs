@@ -27,11 +27,31 @@ class LicensingChecks(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(value.encode("utf-8"))
 
+    def write_supplements(self, ecosystem, packages, reasons=None, inherited_reasons=None):
+        self.write(f"legal/{ecosystem}-supplements.json", json.dumps(dict(
+            packages=packages, reasons=reasons or {}, inherited_reasons=inherited_reasons or {})))
+
     def test_tampered_archive_fails_before_license_collection(self):
         self.write("web/vendor/package.tgz", "tampered archive")
         integrity = "sha256-" + base64.b64encode(bytes.fromhex(generate.digest(b"original archive"))).decode()
         with self.assertRaisesRegex(ValueError, "Archive checksum mismatch"):
             generate.archive(dict(name="package", version="1", url="file:vendor/package.tgz", integrity=integrity))
+
+    def test_npm_lock_packages_preserve_nested_names_and_integrity(self):
+        self.write("dependency-analyzer/package-lock.json", json.dumps({"packages": {
+            "": {"name": "first-party"},
+            "node_modules/@scope/one": {"version": "1.0.0", "resolved": "https://example.invalid/one.tgz", "integrity": "sha512-one"},
+            "node_modules/parent/node_modules/two": {"version": "2.0.0", "resolved": "https://example.invalid/two.tgz", "integrity": "sha512-two"},
+        }}))
+
+        self.assertEqual(generate.npm_packages("dependency-analyzer/package-lock.json", "analyzer"), [
+            dict(ecosystem="analyzer", name="@scope/one", version="1.0.0",
+                url="https://example.invalid/one.tgz", integrity="sha512-one",
+                lockfiles=["dependency-analyzer/package-lock.json"]),
+            dict(ecosystem="analyzer", name="two", version="2.0.0",
+                url="https://example.invalid/two.tgz", integrity="sha512-two",
+                lockfiles=["dependency-analyzer/package-lock.json"]),
+        ])
 
     def test_changed_lockfile_or_generator_input_invalidates_notice_check(self):
         files = {"Cargo.lock": "locked packages\n", "dev/licensing/generate.py": "audited generator\n",
@@ -57,8 +77,9 @@ class LicensingChecks(unittest.TestCase):
                     self.write(path, content)
 
     def test_unreviewed_license_expression_fails(self):
-        for name in ["rust-supplements", "web-supplements", "license-selections"]:
-            self.write(f"legal/{name}.json", "{}")
+        for ecosystem in ["rust", "web"]:
+            self.write_supplements(ecosystem, {})
+        self.write("legal/license-selections.json", "{}")
         self.write("legal/copied-sources.json", "[]")
         with self.assertRaisesRegex(ValueError, "Review new license expression"):
             generate.supplement([dict(ecosystem="rust", name="new-package", version="1", license="New-License")])
@@ -80,11 +101,11 @@ class LicensingChecks(unittest.TestCase):
     def test_upstream_license_is_bound_to_the_audited_package(self):
         self.write("legal/upstream/LICENSE", "Upstream license terms")
         self.write("legal/copied-sources.json", "[]")
-        self.write("legal/rust-supplements.json", "{}")
+        self.write_supplements("rust", {})
         self.write("legal/license-selections.json", json.dumps({"Apache-2.0": "Apache-2.0"}))
-        self.write("legal/web-supplements.json", json.dumps({"web:pagent@0.1.0": dict(
+        self.write_supplements("web", {"web:pagent@0.1.0": dict(
             upstream_license="Apache-2.0", archive_sha256="audited-archive-hash", reason="Upstream grant",
-            documents=[dict(path="legal/upstream/LICENSE", sha256=generate.digest(b"Upstream license terms"))])}))
+            documents=[dict(path="legal/upstream/LICENSE", sha256=generate.digest(b"Upstream license terms"))])})
         entry = dict(ecosystem="web", name="pagent", version="0.1.0", archive_sha256="audited-archive-hash", license=None)
         audited = generate.supplement([{**entry, "documents": []}])[0]
         self.assertFalse(generate.missing_coverage(audited))

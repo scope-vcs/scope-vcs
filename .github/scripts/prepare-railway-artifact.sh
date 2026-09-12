@@ -24,7 +24,15 @@ trap 'rm -f "$metadata"; rm -rf "$pull_config"' EXIT
 dockerfile=deploy/railway/prebuilt.Dockerfile
 install_git=0
 case "$component" in
-  api|run-worker) install_git=1 ;;
+  api) install_git=1 ;;
+  run-worker)
+    dockerfile=deploy/railway/worker.Dockerfile
+    test -s "$context_root/dependency-analyzer/package.json"
+    test -s "$context_root/dependency-analyzer/package-lock.json"
+    test -s "$context_root/dependency-analyzer/analyze.mjs"
+    test -d "$context_root/dependency-analyzer/src"
+    test ! -e "$context_root/dependency-analyzer/node_modules"
+    ;;
 esac
 if [[ "$component" == web ]]; then
   dockerfile=deploy/railway/web.Dockerfile

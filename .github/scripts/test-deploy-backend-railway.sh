@@ -120,15 +120,6 @@ case "${1:-}" in
     [[ -f "$FAKE_RAILWAY_STATE/exact" ]]
     echo '{"exact":true}'
     ;;
-  cleanup-git-segments-v1)
-    [[ -f "$FAKE_RAILWAY_STATE/exact" ]]
-    echo '{"legacyGitSegmentObjectsDeleted":1}'
-    ;;
-  backfill-landing-files)
-    [[ -f "$FAKE_RAILWAY_STATE/exact" ]]
-    touch "$FAKE_RAILWAY_STATE/landing-files-backfilled"
-    echo '{"landingFilesBackfilled":1}'
-    ;;
   backfill-workflow-catalogs)
     [[ -f "$FAKE_RAILWAY_STATE/exact" ]]
     touch "$FAKE_RAILWAY_STATE/workflow-catalogs-backfilled"
@@ -356,8 +347,6 @@ assert_in_order "$test_dir/success-trace" \
   "$test_dir/maintenance validate-workflow-catalogs" \
   "$test_dir/maintenance apply" \
   "$test_dir/maintenance verify" \
-  "$test_dir/maintenance cleanup-git-segments-v1" \
-  "$test_dir/maintenance backfill-landing-files" \
   "$test_dir/maintenance backfill-workflow-catalogs" \
   "up $test_dir/cache" \
   "up $test_dir/run-worker" \

@@ -1,42 +1,50 @@
-import { PageContent } from '@/components/page-header'
+import { useState, type ReactNode } from 'react'
 import { PendingSurface } from '@/components/pending-surface'
-import {
-  BlockSkeleton,
-  TextSkeleton,
-  type TextSkeletonLength,
-} from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
+import { RequestWorkspaceListSkeleton } from './request-workspace-list'
+import { RequestWorkspaceShell } from './request-workspace-shell'
 
-const REQUEST_WIDTHS = [
-  { meta: 'xlong', title: 'long' },
-  { meta: 'long', title: 'medium' },
-] satisfies Array<{ meta: TextSkeletonLength; title: TextSkeletonLength }>
-
-export function RequestsPagePending() {
+export function RequestsPagePending({ children }: { children?: ReactNode }) {
+  const [collapsed, setCollapsed] = useState(false)
   return (
     <PendingSurface label="Loading requests">
-      <PageContent className="pb-16">
-        <h1 className="sr-only">Requests</h1>
-        <BlockSkeleton className="h-10 w-full sm:max-w-lg" />
-        <div className="mt-10 grid min-w-0 gap-12">
-          {['open', 'closed'].map((section) => (
-            <section className="min-w-0" key={section}>
-              <div className="flex items-center gap-2">
-                <BlockSkeleton className="size-4" />
-                <span className="text-sm font-semibold">{section}</span>
-                <TextSkeleton length="tiny" size="meta" />
-              </div>
-              <div className="mt-2 min-w-0 divide-y divide-border">
-                {REQUEST_WIDTHS.map(({ meta, title }) => (
-                  <div className="min-w-0 py-3" key={title}>
-                    <TextSkeleton length={title} />
-                    <TextSkeleton className="mt-2" length={meta} size="meta" />
+      <RequestWorkspaceShell
+        collapsed={collapsed}
+        detailOpenOnMobile={Boolean(children)}
+        onCollapsedChange={setCollapsed}
+        sidebar={
+          <aside
+            className={cn(
+              'request-workspace-sidebar',
+              collapsed && 'request-workspace-sidebar--collapsed',
+            )}
+          >
+            {collapsed ? (
+              <BlockSkeleton className="mx-auto mt-4 size-8" />
+            ) : (
+              <>
+                <div className="request-workspace-sidebar-tools">
+                  <BlockSkeleton className="h-8 w-full" />
+                </div>
+                <div className="px-2">
+                  <RequestWorkspaceListSkeleton />
+                </div>
+                {['Unclaimed', 'Set aside'].map((label) => (
+                  <div
+                    className="mx-2 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground"
+                    key={label}
+                  >
+                    {label}
                   </div>
                 ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      </PageContent>
+              </>
+            )}
+          </aside>
+        }
+      >
+        {children}
+      </RequestWorkspaceShell>
     </PendingSurface>
   )
 }

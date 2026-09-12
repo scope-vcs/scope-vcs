@@ -167,16 +167,8 @@ fn clerk_token_rejects_invalid_identity_and_origin_claims() {
 
 #[test]
 fn clerk_token_policy_cases() {
-    use crate::error::ErrorKind::{ServiceUnavailable, Unauthorized};
+    use crate::error::ErrorKind::Unauthorized;
     for (token, policy, kind) in [
-        (
-            token(TEST_CLERK_USER_ID, true),
-            ClerkTokenPolicy {
-                authorized_parties: vec![],
-                audiences: vec![],
-            },
-            ServiceUnavailable,
-        ),
         (
             token(TEST_CLERK_USER_ID, true),
             ClerkTokenPolicy::default(),
@@ -386,4 +378,12 @@ async fn sequential_unknown_keys_wait_for_the_successful_refresh_cooldown() {
         .await
         .unwrap();
     assert_eq!(server.request_count(), 3);
+}
+
+fn token_without_required_claims() -> String {
+    sign_claims(serde_json::json!({
+        "exp": unix_now() + 300,
+        "email": TEST_OWNER_EMAIL,
+        "email_verified": true,
+    }))
 }

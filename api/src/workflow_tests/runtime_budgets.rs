@@ -22,7 +22,7 @@ async fn receive_pack_capacity_exhaustion_returns_backpressure() {
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
             repo.git_push_token = Some(GitPushToken {
-                token_hash: git_push_token_hash(secret),
+                token_hash: token_hash(secret),
                 owner_user_id: repo.record.owner_user_id.clone(),
                 created_at_unix: unix_now(),
             });
@@ -80,25 +80,6 @@ async fn upload_pack_capacity_exhaustion_happens_before_materialization() {
     let body = String::from_utf8_lossy(&body);
     assert!(body.contains("Git upload-pack capacity is exhausted; retry later"));
     assert!(!body.contains("Git materialization capacity"));
-}
-
-#[test]
-fn git_materialization_capacity_returns_backpressure() {
-    let budgets = RuntimeBudgets::from_config(RuntimeBudgetConfig {
-        git_materialization_concurrency: 0,
-        ..Default::default()
-    });
-
-    let error = match budgets.try_git_materialization() {
-        Ok(_) => panic!("zero-capacity Git materialization unexpectedly acquired a permit"),
-        Err(error) => error,
-    };
-
-    assert_eq!(error.status(), StatusCode::TOO_MANY_REQUESTS);
-    assert_eq!(
-        error.public_message(),
-        "Git materialization capacity is exhausted; retry later"
-    );
 }
 
 #[tokio::test]

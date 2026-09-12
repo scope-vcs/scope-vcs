@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { assertNoHorizontalOverflow, baseUrl, repo, repoPath, withPage } from './browser-smoke.mjs'
+import { assertNoHorizontalOverflow, baseUrl, repo, repoPath, waitForClientHydration, withPage } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
 test('latest repository activity survives child navigation without another request or pending state', async () => {
@@ -120,7 +120,9 @@ test('leaving and returning during a file load reuses its pending resource reque
   })
   try {
     await withPage('/', async (page) => {
-      await page.waitForFunction(() => globalThis.__TSR_ROUTER__)
+      // The router exists before React hydrates the landing page. Navigating
+      // imperatively at that point makes it hydrate repository UI over landing HTML.
+      await waitForClientHydration(page.getByRole('button', { name: 'Switch to light mode' }))
       await page.evaluate((to) => { void globalThis.__TSR_ROUTER__.navigate({ to, search: { file: 'src/app.ts' } }) }, repoPath)
       await page.getByRole('tab', { name: 'src/app.ts', exact: true }).waitFor()
       await page.getByRole('link', { name: 'Requests', exact: true }).first().click()

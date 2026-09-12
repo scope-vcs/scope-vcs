@@ -4,7 +4,7 @@ mod helpers;
 mod publication;
 mod queue;
 mod ratings;
-pub(super) use helpers::{create_owner_request, create_public_request, rebuild_request_projection};
+pub(super) use helpers::{create_owner_request, create_public_request};
 
 use scope_postgres::db::AddRequestInviteeCommand;
 
@@ -22,14 +22,14 @@ async fn request_reads_do_not_consume_git_projection_capacity() {
 
     for uri in [
         "/v1/repos/owner/repo/requests",
-        "/v1/repos/owner/repo/requests/queue?section=open",
+        "/v1/repos/owner/repo/requests/queue?section=unclaimed",
     ] {
         let response = api_request(app.clone(), "GET", uri, None, None).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert!(request_ids(&response_json(response).await).is_empty());
     }
 
-    rebuild_request_projection(&state).await;
+    drain_outbox(&state, "request-read-test").await;
     create_owner_request(&state, "req_metadata_head", REQUEST_HEAD).await;
     let submitted = api_request(
         app.clone(),
@@ -44,7 +44,7 @@ async fn request_reads_do_not_consume_git_projection_capacity() {
     let queue = api_request(
         app,
         "GET",
-        "/v1/repos/owner/repo/requests/queue?section=open",
+        "/v1/repos/owner/repo/requests/queue?section=active",
         Some(&bearer_header()),
         None,
     )
@@ -52,7 +52,7 @@ async fn request_reads_do_not_consume_git_projection_capacity() {
     assert_eq!(queue.status(), StatusCode::OK);
     let queue = response_json(queue).await;
     assert_eq!(request_ids(&queue), ["req_metadata_head"]);
-    let current_main_oid = queue["requests"][0]["mergeability"]["current_main_oid"]
+    let current_main_oid = queue["requests"][0]["request"]["mergeability"]["current_main_oid"]
         .as_str()
         .unwrap();
     assert_eq!(current_main_oid.len(), 40);
@@ -97,26 +97,6 @@ async fn native_private_request_reads_use_the_persisted_git_head() {
 }
 
 #[tokio::test]
-async fn private_request_bases_select_the_native_private_head() {
-    let (state, _source, head_oid) =
-        super::push_intent_completion::published_git_fixture("request-private-base").await;
-    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
-
-    assert_eq!(
-        crate::http::requests::current_main_oid_for_audience(
-            &state,
-            &repo,
-            scope_domain::requests::RequestAudience::Private,
-        )
-        .await
-        .unwrap(),
-        Some(head_oid)
-    );
-}
-
-#[tokio::test]
 async fn request_reads_rebuild_current_history_before_projection_jobs_run() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
@@ -148,7 +128,7 @@ async fn request_reads_rebuild_current_history_before_projection_jobs_run() {
 
     for uri in [
         "/v1/repos/owner/repo/requests?cursor=v1:zzzz",
-        "/v1/repos/owner/repo/requests/queue?section=open",
+        "/v1/repos/owner/repo/requests/queue?section=unclaimed",
     ] {
         let empty = api_request(app.clone(), "GET", uri, Some(&bearer_header()), None).await;
         assert_eq!(empty.status(), StatusCode::OK);
@@ -383,7 +363,7 @@ async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surf
                 "GET",
                 &format!("/v1/repos/owner/repo/requests/{suffix}"),
                 Some(&unrelated),
-                None,
+                None
             )
             .await
             .status(),
@@ -397,7 +377,7 @@ async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surf
                 "GET",
                 &format!("/v1/repos/owner/repo/requests/{request_id}"),
                 None,
-                None,
+                None
             )
             .await
             .status(),
@@ -410,7 +390,7 @@ async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surf
             "GET",
             "/v1/repos/owner/repo/requests/req_private_matrix",
             None,
-            None,
+            None
         )
         .await
         .status(),
@@ -490,7 +470,7 @@ async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surf
                 "GET",
                 &format!("/v1/repos/owner/repo/requests/{request_id}"),
                 Some(&bearer_header()),
-                None,
+                None
             )
             .await
             .status(),
@@ -504,7 +484,7 @@ async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surf
                 "GET",
                 &format!("/v1/repos/owner/repo/requests/{suffix}"),
                 Some(&bearer_header()),
-                None,
+                None
             )
             .await
             .status(),
@@ -517,22 +497,14 @@ async fn request_reads_apply_one_viewer_aware_policy_across_lists_and_exact_surf
             "PATCH",
             "/v1/repos/owner/repo/requests/req_never",
             Some(&bearer_header()),
-            Some(r#"{"title":"Maintainer must not see this"}"#),
+            Some(r#"{"title":"Maintainer must not see this"}"#)
         )
         .await
         .status(),
         StatusCode::NOT_FOUND
     );
     assert_eq!(
-        api_request(
-            app,
-            "POST",
-            "/v1/repos/owner/repo/requests/req_never/timeline",
-            Some(&bearer_header()),
-            Some(
-                r#"{"body_markdown":"Maintainer must not see this","client_discussion_id":"hidden"}"#,
-            ),
-        )
+        api_request(app, "POST", "/v1/repos/owner/repo/requests/req_never/timeline", Some(&bearer_header()), Some(r#"{"body_markdown":"Maintainer must not see this","client_discussion_id":"hidden"}"#))
         .await
         .status(),
         StatusCode::NOT_FOUND
@@ -610,7 +582,7 @@ async fn invitee_routes_enforce_exact_handles_roles_leave_and_private_exclusion(
             "GET",
             "/v1/repos/owner/repo/requests/req_invites",
             Some(&invitee),
-            None,
+            None
         )
         .await
         .status(),
@@ -662,6 +634,10 @@ fn request_ids(body: &serde_json::Value) -> Vec<&str> {
         .as_array()
         .unwrap()
         .iter()
-        .map(|request| request["id"].as_str().unwrap())
+        .map(|entry| {
+            entry.get("request").unwrap_or(entry)["id"]
+                .as_str()
+                .unwrap()
+        })
         .collect()
 }

@@ -1,4 +1,5 @@
-use super::entities;
+use super::entities::{self, decode_enum, encode_enum};
+use super::integer_columns::usize_to_i64;
 use super::object_references::insert_object_reference;
 use crate::error::PostgresError;
 use scope_domain::content::SourceBlob;
@@ -377,7 +378,7 @@ where
                 occurred_at_unix: commit.occurred_at_unix,
                 id: commit.id.clone(),
                 repo_id: repo_id.to_string(),
-                ordinal: usize_to_i64(ordinal_offset + offset)?,
+                ordinal: usize_to_i64(ordinal_offset + offset, "history ordinal")?,
                 origin: serde_json::to_value(&commit.origin).map_err(PostgresError::internal)?,
                 author_id: commit.author_id.clone(),
                 message: commit.message.clone(),
@@ -402,11 +403,11 @@ where
                     Ok(entities::file_change::Model {
                         repo_id: repo_id.to_string(),
                         commit_id: commit.id.clone(),
-                        ordinal: usize_to_i64(ordinal)?,
+                        ordinal: usize_to_i64(ordinal, "history ordinal")?,
                         path: change.path.as_str().to_string(),
                         old_content: encode_optional(change.old_content.as_ref())?,
                         new_content: encode_optional(change.new_content.as_ref())?,
-                        visibility: encode_enum(&change.visibility)?,
+                        visibility: encode_enum(change.visibility)?,
                     }
                     .into_active_model())
                 })
@@ -458,7 +459,7 @@ where
             occurred_at_unix: set.occurred_at_unix,
             repo_id: repo_id.to_string(),
             id: set.id.clone(),
-            ordinal: usize_to_i64(ordinal_offset + offset)?,
+            ordinal: usize_to_i64(ordinal_offset + offset, "history ordinal")?,
             anchor_commit_id: set.anchor_commit_id.clone(),
             source_update_id: set.source_update_id.clone(),
             author_id: set.author_id.clone(),
@@ -471,10 +472,10 @@ where
             entities::visibility_change::Model {
                 repo_id: repo_id.to_string(),
                 change_set_id: set.id.clone(),
-                ordinal: usize_to_i64(ordinal)?,
+                ordinal: usize_to_i64(ordinal, "history ordinal")?,
                 path: change.path.as_str().to_string(),
-                old_visibility: encode_enum(&change.old_visibility)?,
-                new_visibility: encode_enum(&change.new_visibility)?,
+                old_visibility: encode_enum(change.old_visibility)?,
+                new_visibility: encode_enum(change.new_visibility)?,
                 current_content: encode_optional(change.current_content.as_ref())?,
             }
             .into_active_model()
@@ -531,20 +532,4 @@ fn decode_optional<T: serde::de::DeserializeOwned>(
     value
         .map(|value| serde_json::from_value(value).map_err(PostgresError::internal))
         .transpose()
-}
-
-fn encode_enum<T: serde::Serialize>(value: &T) -> Result<String, PostgresError> {
-    serde_json::to_value(value)
-        .map_err(PostgresError::internal)?
-        .as_str()
-        .map(str::to_string)
-        .ok_or_else(|| PostgresError::internal_message("enum did not serialize to a string"))
-}
-
-fn decode_enum<T: serde::de::DeserializeOwned>(value: String) -> Result<T, PostgresError> {
-    serde_json::from_value(serde_json::Value::String(value)).map_err(PostgresError::internal)
-}
-
-fn usize_to_i64(value: usize) -> Result<i64, PostgresError> {
-    i64::try_from(value).map_err(|_| PostgresError::internal_message("history ordinal overflow"))
 }

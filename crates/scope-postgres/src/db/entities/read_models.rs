@@ -28,7 +28,7 @@ pub mod projection_read_model {
         pub fn live(
             repo_id: &str,
             repo_version: u64,
-            audience: ProjectionAudience,
+            audience: ProjectionViewKey,
             head_oid: Option<String>,
             rebuilt_at_unix: u64,
             file_count: usize,
@@ -84,7 +84,7 @@ pub mod projection_file {
         pub fn live(
             repo_id: &str,
             repo_version: u64,
-            audience: ProjectionAudience,
+            audience: ProjectionViewKey,
             content: ProjectionViewFileContent,
         ) -> Result<Self, PostgresError> {
             if !content.file.tracked {

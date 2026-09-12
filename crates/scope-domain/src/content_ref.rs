@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha1::{Digest, Sha1};
 
 /// Stable semantic identity for stored content.
 ///
@@ -8,11 +9,7 @@ use serde::{Deserialize, Serialize};
 pub enum ContentRef {
     BlobSha256(String),
     GitBundleSha256(String),
-    /// Retired artifact identity, retained only to drain migration cleanup jobs.
-    GitManifestSha256(String),
-    GitBlob {
-        git_oid: String,
-    },
+    GitBlob { git_oid: String },
 }
 
 impl ContentRef {
@@ -32,10 +29,20 @@ impl ContentRef {
 
     pub fn sha256(&self) -> Option<&str> {
         match self {
-            Self::BlobSha256(sha256)
-            | Self::GitBundleSha256(sha256)
-            | Self::GitManifestSha256(sha256) => Some(sha256),
+            Self::BlobSha256(sha256) | Self::GitBundleSha256(sha256) => Some(sha256),
             Self::GitBlob { .. } => None,
         }
     }
+}
+
+/// The SHA-1 identity Git assigns to a loose object of `kind` with `payload`.
+pub fn git_object_oid(kind: &str, payload: &[u8]) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(format!("{kind} {}\0", payload.len()).as_bytes());
+    hasher.update(payload);
+    hex::encode(hasher.finalize())
+}
+
+pub fn git_blob_oid(bytes: &[u8]) -> String {
+    git_object_oid("blob", bytes)
 }

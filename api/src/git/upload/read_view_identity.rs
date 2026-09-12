@@ -2,7 +2,7 @@ use crate::git::projection_repo::hash_field;
 use scope_domain::{repository::RepositoryIncarnation, requests::Request};
 use sha1::{Digest, Sha1};
 
-const SEMANTICS_VERSION: &str = "named-request-read-view-v3";
+const SEMANTICS_VERSION: &str = "named-request-read-view-v4";
 
 /// Identity of the permitted materialization, after request policy filtering.
 /// Principal and request lifecycle facts belong to authorization, not this cache.
@@ -18,7 +18,6 @@ struct RequestRefIdentity<'a> {
     name: &'a str,
     head: &'a str,
     snapshot: Option<&'a str>,
-    hidden: bool,
 }
 
 impl<'a> GitReadViewIdentity<'a> {
@@ -27,7 +26,6 @@ impl<'a> GitReadViewIdentity<'a> {
         primary_head: &'a [u8],
         public_base_head: Option<&'a [u8]>,
         requests: &'a [Request],
-        hidden_request_refs: &[String],
     ) -> Self {
         let mut refs: Vec<_> = requests
             .iter()
@@ -38,7 +36,6 @@ impl<'a> GitReadViewIdentity<'a> {
                     .git_snapshot
                     .as_ref()
                     .map(|blob| blob.sha256.as_str()),
-                hidden: hidden_request_refs.contains(&request.name),
             })
             .collect();
         refs.sort_unstable();
@@ -72,7 +69,6 @@ impl<'a> GitReadViewIdentity<'a> {
             if let Some(snapshot) = request.snapshot {
                 hash_field(&mut hasher, b"snapshot", snapshot.as_bytes());
             }
-            hash_field(&mut hasher, b"hidden", &[u8::from(request.hidden)]);
         }
         hex::encode(hasher.finalize())
     }
@@ -94,7 +90,6 @@ mod tests {
                 name: "request",
                 head: "tip",
                 snapshot: None,
-                hidden: false,
             }],
         };
         let mut keys = std::collections::HashSet::from([identity.cache_key()]);
@@ -103,8 +98,6 @@ mod tests {
         identity.public_base_head = Some(b"public-second");
         assert!(keys.insert(identity.cache_key()));
         identity.primary_head = b"primary-second";
-        assert!(keys.insert(identity.cache_key()));
-        identity.refs[0].hidden = true;
         assert!(keys.insert(identity.cache_key()));
         identity.refs[0].snapshot = Some("snapshot-content");
         assert!(keys.insert(identity.cache_key()));

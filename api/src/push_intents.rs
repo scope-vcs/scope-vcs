@@ -1,9 +1,4 @@
-use crate::{
-    config::non_empty_env,
-    error::ApiError,
-    persistence::{ensure_private_dir, unix_now},
-    state::AppState,
-};
+use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
 use scope_domain::{
@@ -12,21 +7,17 @@ use scope_domain::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use std::{fs, path::Path, sync::Arc};
+use std::sync::Arc;
 
 const PUSH_INTENT_TTL_SECS: u64 = 10 * 60;
 const PUSH_INTENT_TOKEN_PREFIX: &str = "scope_pi_";
 const PUSH_INTENT_KIND: &str = "scope.push-intent";
-const PUSH_INTENT_VERSION: u8 = 2;
-const PUSH_INTENT_SIGNING_KEY_ENV: &str = "SCOPE_PUSH_INTENT_SIGNING_KEY";
-const PUSH_INTENT_SIGNING_KEY_FILE: &str = "push-intent-signing-key";
 const PUSH_INTENT_KEY_DERIVATION_CONTEXT: &[u8] = b"scope.push-intent.signing-key.v1";
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct PushIntentClaims {
     kind: String,
-    version: u8,
     repo_id: String,
     user_id: String,
     head_oid: String,
@@ -88,7 +79,6 @@ impl AppState {
         let expires_at_unix = unix_now()?.saturating_add(PUSH_INTENT_TTL_SECS);
         let intent = PushIntentClaims {
             kind: PUSH_INTENT_KIND.to_string(),
-            version: PUSH_INTENT_VERSION,
             repo_id: repo_id.to_string(),
             user_id: user_id.to_string(),
             head_oid: head_oid.to_string(),
@@ -108,47 +98,12 @@ impl AppState {
         &self,
         secret: &str,
     ) -> Result<ValidatedPushIntent, ApiError> {
-        decode_push_intent(&self.push_intent_signing_key, secret, true)
+        decode_push_intent(&self.push_intent_signing_key, secret)
             .map(validated_push_intent_from_claims)
     }
 }
 
-pub(crate) fn push_intent_signing_key(
-    data_dir: &Path,
-    shared_root_key: Option<&[u8]>,
-) -> Result<Arc<[u8]>, ApiError> {
-    if let Some(secret) = non_empty_env(PUSH_INTENT_SIGNING_KEY_ENV) {
-        return Ok(Arc::from(secret.into_bytes()));
-    }
-    if let Some(shared_root_key) = shared_root_key {
-        return derive_push_intent_signing_key(shared_root_key);
-    }
-
-    ensure_private_dir(data_dir)?;
-    let key_path = data_dir.join(PUSH_INTENT_SIGNING_KEY_FILE);
-    if key_path.exists() {
-        let secret = fs::read_to_string(&key_path).map_err(ApiError::internal)?;
-        let secret = secret.trim();
-        if secret.is_empty() {
-            return Err(ApiError::internal_message(
-                "push intent signing key file is empty",
-            ));
-        }
-        return Ok(Arc::from(secret.as_bytes()));
-    }
-
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(|error| {
-        ApiError::internal_message(format!(
-            "push intent signing key generation failed: {error}"
-        ))
-    })?;
-    let secret = URL_SAFE_NO_PAD.encode(bytes);
-    fs::write(&key_path, format!("{secret}\n")).map_err(ApiError::internal)?;
-    Ok(Arc::from(secret.into_bytes()))
-}
-
-fn derive_push_intent_signing_key(shared_root_key: &[u8]) -> Result<Arc<[u8]>, ApiError> {
+pub(crate) fn push_intent_signing_key(shared_root_key: &[u8]) -> Result<Arc<[u8]>, ApiError> {
     let mut mac = HmacSha256::new_from_slice(shared_root_key).map_err(ApiError::internal)?;
     mac.update(PUSH_INTENT_KEY_DERIVATION_CONTEXT);
     Ok(Arc::from(mac.finalize().into_bytes().to_vec()))
@@ -180,11 +135,7 @@ fn validated_push_intent_from_claims(intent: PushIntentClaims) -> ValidatedPushI
     }
 }
 
-fn decode_push_intent(
-    signing_key: &[u8],
-    token: &str,
-    enforce_expiry: bool,
-) -> Result<PushIntentClaims, ApiError> {
+fn decode_push_intent(signing_key: &[u8], token: &str) -> Result<PushIntentClaims, ApiError> {
     let Some(token) = token.trim().strip_prefix(PUSH_INTENT_TOKEN_PREFIX) else {
         return Err(ApiError::forbidden("valid Scope push intent required"));
     };
@@ -200,10 +151,10 @@ fn decode_push_intent(
         .map_err(|_| ApiError::forbidden("valid Scope push intent required"))?;
     let intent: PushIntentClaims = serde_json::from_slice(&payload)
         .map_err(|_| ApiError::forbidden("valid Scope push intent required"))?;
-    if intent.kind != PUSH_INTENT_KIND || intent.version != PUSH_INTENT_VERSION {
+    if intent.kind != PUSH_INTENT_KIND {
         return Err(ApiError::forbidden("valid Scope push intent required"));
     }
-    if enforce_expiry && intent.expires_at_unix <= unix_now()? {
+    if intent.expires_at_unix <= unix_now()? {
         return Err(ApiError::forbidden("valid Scope push intent required"));
     }
     Ok(intent)
@@ -239,12 +190,12 @@ mod tests {
         );
         let config = serde_json::to_string(&config).unwrap();
         let payload = format!(
-            r#"{{"kind":"scope.push-intent","version":2,"repo_id":"owner/repo","user_id":"owner","head_oid":"next-head","config":{config},"base_config_hash":"config-hash","base_git_frontier":"{digest}","expires_at_unix":4000000000}}"#
+            r#"{{"kind":"scope.push-intent","repo_id":"owner/repo","user_id":"owner","head_oid":"next-head","config":{config},"base_config_hash":"config-hash","base_git_frontier":"{digest}","expires_at_unix":4000000000}}"#
         );
         let encoded = URL_SAFE_NO_PAD.encode(payload);
         let signature = sign_push_intent(&key, encoded.as_bytes()).unwrap();
         let token = format!("scope_pi_{encoded}.{}", URL_SAFE_NO_PAD.encode(signature));
-        let claims = decode_push_intent(&key, &token, false).unwrap();
+        let claims = decode_push_intent(&key, &token).unwrap();
         assert_eq!(encode_push_intent(&key, &claims).unwrap(), token);
         let validated = validated_push_intent_from_claims(claims);
         assert_eq!(
@@ -255,35 +206,11 @@ mod tests {
     }
 
     #[test]
-    fn obsolete_manifest_shaped_push_intents_are_rejected() {
-        let key = [7_u8; 32];
-        let config = RepoConfig::with_default_visibility(
-            scope_domain::repo_config::ConfigVisibility::Private,
-        );
-        let config = serde_json::to_string(&config).unwrap();
-        for manifest in [
-            "null".to_string(),
-            format!(r#"{{"GitManifestSha256":"{}"}}"#, "b".repeat(64)),
-        ] {
-            let payload = format!(
-                r#"{{"kind":"scope.push-intent","version":1,"repo_id":"owner/repo","user_id":"owner","head_oid":"next-head","config":{config},"base_config_hash":"config-hash","base_git_manifest_ref":{manifest},"expires_at_unix":4000000000}}"#
-            );
-            let encoded = URL_SAFE_NO_PAD.encode(payload);
-            let signature = sign_push_intent(&key, encoded.as_bytes()).unwrap();
-            let token = format!("scope_pi_{encoded}.{}", URL_SAFE_NO_PAD.encode(signature));
-            assert_eq!(
-                decode_push_intent(&key, &token, false).unwrap_err().kind,
-                crate::error::ErrorKind::Forbidden,
-            );
-        }
-    }
-
-    #[test]
     fn shared_root_key_derives_one_domain_separated_signing_key() {
         let root = [7_u8; 32];
-        let first = derive_push_intent_signing_key(&root).unwrap();
-        let second = derive_push_intent_signing_key(&root).unwrap();
-        let other = derive_push_intent_signing_key(&[8_u8; 32]).unwrap();
+        let first = push_intent_signing_key(&root).unwrap();
+        let second = push_intent_signing_key(&root).unwrap();
+        let other = push_intent_signing_key(&[8_u8; 32]).unwrap();
 
         assert_eq!(first.as_ref(), second.as_ref());
         assert_ne!(first.as_ref(), root.as_slice());

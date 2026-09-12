@@ -4,7 +4,7 @@ import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerend
 import type { ReviewFileDiff, RequestParams } from './types'
 import type {
   RequestDetailResponse,
-  RequestListResponse,
+  RequestQueuePageResponse,
   RequestRatingResponse,
   RequestRatingsResponse,
   RequestRevisionListResponse,
@@ -15,11 +15,12 @@ import type { LoadRequestQueueInput } from './request-queue-input'
 
 export async function loadRequestQueueForRequest(
   data: LoadRequestQueueInput,
-): Promise<RequestListResponse> {
+  signal?: AbortSignal,
+): Promise<RequestQueuePageResponse> {
   return createApiClient().get(
     requestQueuePath(data),
-    apiValidators.RequestListResponse,
-    { auth: 'optional' },
+    apiValidators.RequestQueuePageResponse,
+    { auth: 'optional', signal },
   )
 }
 

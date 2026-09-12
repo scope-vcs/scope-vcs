@@ -70,7 +70,7 @@ impl CacheGrantIssuer {
         &self.endpoint
     }
 
-    #[cfg(any(test, feature = "local-dev", feature = "test-support"))]
+    #[cfg(any(test, feature = "local-dev"))]
     pub(crate) fn test() -> Self {
         Self::new(
             "http://127.0.0.1:8082".to_string(),
@@ -88,7 +88,7 @@ fn required_env(name: &str) -> anyhow::Result<String> {
         .ok_or_else(|| anyhow::anyhow!("{name} is required"))
 }
 
-#[cfg(any(test, feature = "local-dev", feature = "test-support"))]
+#[cfg(any(test, feature = "local-dev"))]
 const TEST_PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIGrD/e7uKYqSY4twDEsRfMMuLSrODf14dpTiTK6K1YI0\n-----END PRIVATE KEY-----\n";
 
 #[cfg(test)]

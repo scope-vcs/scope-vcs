@@ -1,7 +1,7 @@
 use crate::{
     execution::CloudExecutionCoordinator,
-    health::WorkerHealth,
-    settings::{WorkerRole, WorkerSettings},
+    health::{WorkerHealth, WorkerLoop},
+    settings::{BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
 };
 use scope_postgres::db::MetadataStore;
 
@@ -29,7 +29,7 @@ pub(crate) async fn run(
             .jobs()
             .run_ready_outbox_jobs(
                 &settings.worker_id,
-                settings.batch_size,
+                BATCH_SIZE,
                 &|| super::unix_now().map_err(|error| error.to_string()),
                 &super::generate_persistence_id,
             )
@@ -37,9 +37,8 @@ pub(crate) async fn run(
         {
             Ok(summary) => summary,
             Err(error) => {
-                health.mark_schema_waiting();
                 tracing::error!(error = %error.message, "control work failed; retrying");
-                if super::wait_or_shutdown(settings.poll_interval).await {
+                if super::wait_or_shutdown(POLL_INTERVAL).await {
                     return Ok(());
                 }
                 continue;
@@ -66,11 +65,11 @@ pub(crate) async fn run(
         if let Some(execution) = &execution {
             cloud_reconciliation.poll(execution);
         }
-        health.mark_poll_succeeded(WorkerRole::Control, super::unix_now()?);
-        if summary.claimed >= settings.batch_size {
+        health.mark_poll_succeeded(WorkerLoop::Control, super::unix_now()?);
+        if summary.claimed >= BATCH_SIZE {
             continue;
         }
-        if super::wait_or_shutdown(settings.poll_interval).await {
+        if super::wait_or_shutdown(POLL_INTERVAL).await {
             return Ok(());
         }
     }

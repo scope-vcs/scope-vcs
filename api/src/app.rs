@@ -118,6 +118,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route(routes::REPO_CONFIG, get(http::repos::get_repo_config))
         .route(
+            routes::REPO_DEPENDENCIES,
+            get(http::dependencies::get_repository_dependencies),
+        )
+        .route(
             routes::REPO_METADATA,
             axum::routing::patch(http::repo_metadata::update_repo_metadata),
         )
@@ -154,7 +158,6 @@ pub fn router(state: AppState) -> Router {
             routes::REPO_PUSH_INTENTS,
             post(http::repos::create_push_intent),
         )
-        .route(routes::REPO_SESSION, get(http::account::get_session))
         .route(routes::REPO_FILES, get(http::repos::get_files))
         .route(
             routes::REPO_FILE_CONTENT,
@@ -167,6 +170,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             routes::REPO_REQUEST_QUEUE,
             get(http::request_queue::request_queue),
+        )
+        .route(
+            routes::REPO_REQUEST_ATTENTION,
+            axum::routing::put(http::request_queue::apply_attention),
         )
         .route(
             routes::REPO_REQUEST,

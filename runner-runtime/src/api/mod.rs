@@ -1,36 +1,21 @@
-use crate::{
-    execute::{AppendLogError, AppendLogOutcome, ExecutionSink},
-    settings::RuntimeSettings,
-};
+pub(crate) mod cache_client;
+mod completion;
+pub(crate) mod control;
+mod logs;
+mod sink;
+mod source;
+
+#[cfg(test)]
+mod tests;
+
+use crate::settings::RuntimeSettings;
 use anyhow::{Context as _, bail};
-use reqwest::{
-    StatusCode,
-    blocking::{Client, Response},
-};
-use scope_api_contract::{
-    AppendAttemptLogRequest, AttemptCacheKeyMaterial, AttemptConclusionRequest,
-    AttemptHeartbeatRequest, AttemptHeartbeatResponse, AttemptStatusResponse, ClaimRuntimeResponse,
-    CompleteAttemptRequest, CompleteAttemptStepRequest, ReportAttemptCacheFinalizationsRequest,
-    ReportAttemptCachePreparationsRequest, StepConclusionRequest,
-};
-use scope_cache_contract::{
-    COMMIT_CACHE_UPLOAD_PATH, CommitCacheUploadRequest, CommitCacheUploadResponse,
-    PREPARE_CACHE_UPLOAD_PATH, PrepareCacheUploadRequest, PrepareCacheUploadResponse,
-    RESTORE_CACHE_PATH, RestoreCacheRequest, RestoreCacheResponse,
-};
-use scope_cache_domain::MAX_CACHE_OBJECT_BYTES;
-use sha2::{Digest as _, Sha256};
-use std::collections::BTreeMap;
+use reqwest::blocking::{Client, Response};
+use scope_api_contract::AttemptCacheKeyMaterial;
+#[cfg(test)]
+use std::sync::mpsc;
 use std::{
-    fs,
-    io::{Read, Write},
-    path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
-    thread,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -152,12 +137,3 @@ fn ensure_success(response: &Response, label: &str) -> anyhow::Result<()> {
     }
     Ok(())
 }
-pub(crate) mod cache_client;
-mod completion;
-pub(crate) mod control;
-mod logs;
-mod sink;
-mod source;
-
-#[cfg(test)]
-mod tests;

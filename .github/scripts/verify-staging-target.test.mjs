@@ -243,7 +243,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       assert.equal(process.env.DATABASE_URL, 'postgres://staging-fixture');
       assert.ok(state.services.filter(s => ['api', 'cache', 'worker', 'media', 'media-worker'].includes(s.id))
         .every(s => s.replicas.running === 0));
-      assert.ok(['plan', 'validate-workflow-catalogs', 'apply', 'backfill-landing-files', 'backfill-workflow-catalogs'].includes(args[0]));
+      assert.ok(['plan', 'validate-workflow-catalogs', 'apply', 'backfill-workflow-catalogs'].includes(args[0]));
       state.maintenance.push(args[0]);
       save();
       if (args[0] === 'plan') console.log(JSON.stringify({ exact: true, applied: ['m0001_initial'], pending: [] }));

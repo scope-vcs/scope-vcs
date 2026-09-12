@@ -1,4 +1,4 @@
-use super::ledger::timestamp;
+use crate::db::integer_columns::u64_to_i64;
 use crate::error::PostgresError;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
@@ -30,7 +30,7 @@ where
                )",
             [
                 segment_id.into(),
-                timestamp(now_unix, "Git segment retirement time")?.into(),
+                u64_to_i64(now_unix, "Git segment retirement time")?.into(),
             ],
         ))
         .await

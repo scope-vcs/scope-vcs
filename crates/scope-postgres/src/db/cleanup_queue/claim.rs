@@ -1,5 +1,4 @@
 use super::{
-    mapping::u64_to_i64,
     revalidation::live_repo_ids_for_cleanups,
     types::{
         LoadedRepoStorageCleanup, LoadedSourceBlobCleanup, RepoStorageCleanupBatch,
@@ -7,7 +6,10 @@ use super::{
     },
 };
 use crate::{
-    db::{CleanupStore, GeneratedIdKind, GeneratedIdSource, entities, generated_ids::generate_id},
+    db::{
+        CleanupStore, GeneratedIdKind, GeneratedIdSource, entities, generated_ids::generate_id,
+        integer_columns::u64_to_i64,
+    },
     error::PostgresError,
 };
 use sea_orm::{
@@ -15,7 +17,6 @@ use sea_orm::{
     IntoActiveModel, QueryFilter, QuerySelect, Set, Statement, TransactionTrait,
     sea_query::LockType,
 };
-use std::sync::Arc;
 
 const CLEANUP_BATCH_SIZE: u64 = 100;
 const CLEANUP_CLAIM_SECONDS: i64 = 300;
@@ -26,8 +27,7 @@ impl CleanupStore {
         now_unix: u64,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<RepoStorageCleanupBatch, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let loaded = claim_pending_repo_storage_cleanup_rows(&tx, now_unix, generated_ids).await?;
         let pending = loaded
             .iter()
@@ -46,8 +46,7 @@ impl CleanupStore {
         now_unix: u64,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<SourceBlobCleanupBatch, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let loaded = claim_pending_source_blob_cleanup_rows(&tx, now_unix, generated_ids).await?;
         let pending = loaded
             .iter()
@@ -66,7 +65,7 @@ async fn claim_pending_repo_storage_cleanup_rows<C>(
 where
     C: ConnectionTrait,
 {
-    let now = u64_to_i64(now_unix)?;
+    let now = u64_to_i64(now_unix, "current time")?;
     let generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
     let claim_until = now
         .checked_add(CLEANUP_CLAIM_SECONDS)
@@ -119,7 +118,7 @@ pub async fn claim_pending_repo_storage_cleanup<C>(
 where
     C: ConnectionTrait,
 {
-    let now_i64 = u64_to_i64(now_unix)?;
+    let now_i64 = u64_to_i64(now_unix, "current time")?;
     let Some(row) =
         entities::repo_storage_cleanup_job::Entity::find_by_id(cleanup_repo_id.to_string())
             .filter(entities::repo_storage_cleanup_job::Column::CompletedAtUnix.is_null())
@@ -159,7 +158,7 @@ async fn claim_pending_source_blob_cleanup_rows<C>(
 where
     C: ConnectionTrait,
 {
-    let now = u64_to_i64(now_unix)?;
+    let now = u64_to_i64(now_unix, "current time")?;
     let generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
     let claim_until = now
         .checked_add(CLEANUP_CLAIM_SECONDS)

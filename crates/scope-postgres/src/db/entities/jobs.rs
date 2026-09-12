@@ -42,10 +42,7 @@ pub mod outbox_job {
             let persisted_repo_version = u64_to_i64(repo_version, "repository change version")?;
             Ok(Self {
                 id,
-                idempotency_key: projection_read_model_rebuild_idempotency_key(
-                    repo_id,
-                    repo_version,
-                ),
+                idempotency_key: format!("projection_read_model_rebuild:{repo_id}:{repo_version}"),
                 kind: "projection_read_model_rebuild".to_string(),
                 repo_id: repo_id.to_string(),
                 repo_version: persisted_repo_version,
@@ -100,13 +97,6 @@ pub mod outbox_job {
                 completed_at_unix: None,
             })
         }
-    }
-
-    pub fn projection_read_model_rebuild_idempotency_key(
-        repo_id: &str,
-        repo_version: u64,
-    ) -> String {
-        format!("projection_read_model_rebuild:{repo_id}:{repo_version}")
     }
 }
 

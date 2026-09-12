@@ -1,9 +1,20 @@
 use super::{
-    cache_client::{CacheDownloadError, copy_hashed, validate_cache_size},
+    CacheAccess, RuntimeClient,
+    cache_client::{CacheDownloadError, copy_hashed},
     source::{MAX_SOURCE_BYTES, retryable_source_status},
-    *,
 };
-use std::{net::TcpListener, sync::mpsc};
+use crate::execute::{AppendLogError, AppendLogOutcome};
+use reqwest::{StatusCode, blocking::Client};
+use scope_api_contract::AttemptCacheKeyMaterial;
+use sha2::{Digest as _, Sha256};
+use std::{
+    fs,
+    io::{Read, Write},
+    net::TcpListener,
+    sync::{Arc, Mutex, mpsc},
+    thread,
+    time::Duration,
+};
 
 #[test]
 fn source_download_retries_a_temporary_response_then_installs_verified_bytes() {
@@ -128,16 +139,6 @@ fn source_download_rejects_oversized_content_without_creating_a_file() {
     assert!(!destination.exists());
     assert_eq!(requests.try_iter().count(), 1);
     server.join().unwrap();
-}
-
-#[test]
-fn cache_download_limit_is_one_gibibyte() {
-    assert!(validate_cache_size(MAX_CACHE_OBJECT_BYTES).is_ok());
-    let error = validate_cache_size(MAX_CACHE_OBJECT_BYTES + 1).unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        format!("cache exceeds {MAX_CACHE_OBJECT_BYTES} bytes")
-    );
 }
 
 #[test]

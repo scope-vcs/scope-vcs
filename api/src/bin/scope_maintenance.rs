@@ -14,10 +14,7 @@ commands:
   drain-writers               terminate sessions holding the shared writer fence
   validate-workflow-catalogs  validate pre-migration workflow inputs
   apply                       apply all pending migrations behind the writer fence
-  cleanup-git-segments-v1     delete retired Git segment objects after the v2 migration
-  backfill-landing-files      idempotently rebuild repository landing-file metadata
   backfill-workflow-catalogs  idempotently rebuild repository workflow catalogs
-  scrub-retired-git-storage   delete retired local Git paths with writers stopped
   help                        show this help
 
 Migration operation limits (positive seconds; independent of downtime warnings):
@@ -45,13 +42,6 @@ async fn main() -> anyhow::Result<()> {
     let database_url = maintenance_database_url()?;
 
     match command.as_str() {
-        "scrub-retired-git-storage" => {
-            tracing_subscriber::fmt()
-                .with_writer(std::io::stderr)
-                .init();
-            let deleted = api::scrub_retired_git_storage_for_maintenance(database_url).await?;
-            println!(r#"{{"retiredGitPathsDeleted":{deleted},"complete":true}}"#);
-        }
         "preflight" => {
             println!(
                 "{}",
@@ -70,16 +60,6 @@ async fn main() -> anyhow::Result<()> {
             apply_maintenance_migrations(database_url.clone(), migration_limits()?).await?;
             verify_schema(database_url).await?;
             println!(r#"{{"exact":true,"migration":"applied"}}"#);
-        }
-        "cleanup-git-segments-v1" => {
-            let deleted = api::cleanup_git_segments_v1_for_maintenance(database_url).await?;
-            println!(r#"{{"legacyGitSegmentObjectsDeleted":{deleted}}}"#);
-        }
-        "backfill-landing-files" => {
-            verify_schema(database_url.clone()).await?;
-            let stored =
-                api::backfill_repository_landing_files_for_maintenance(database_url).await?;
-            println!(r#"{{"landingFilesBackfilled":{stored}}}"#);
         }
         "backfill-workflow-catalogs" => {
             verify_schema(database_url.clone()).await?;
@@ -143,7 +123,5 @@ fn operation_limit(name: &str, default: u32) -> anyhow::Result<u32> {
     };
     value
         .parse::<u32>()
-        .ok()
-        .filter(|value| *value > 0)
-        .ok_or_else(|| anyhow::anyhow!("{name} must be a positive number of seconds"))
+        .map_err(|error| anyhow::anyhow!("{name} must be a number of seconds: {error}"))
 }

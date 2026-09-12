@@ -98,14 +98,14 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
             "DELETE",
             "/v1/repos/owner/repo/requests/req_closed_draft",
             Some(&author),
-            None,
+            None
         )
         .await
         .status(),
         StatusCode::OK
     );
 
-    for section in ["your_work", "open", "closed"] {
+    for section in ["active", "unclaimed", "set_aside", "done"] {
         let response = api_request(
             app.clone(),
             "GET",
@@ -115,7 +115,7 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);
-        if section == "your_work" {
+        if section == "unclaimed" {
             assert!(request_ids(&response_json(response).await).is_empty());
         }
     }
@@ -124,7 +124,7 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
         api_request(
             app.clone(),
             "GET",
-            "/v1/repos/owner/repo/requests/queue?section=your_work",
+            "/v1/repos/owner/repo/requests/queue?section=active",
             Some(&author),
             None,
         )
@@ -137,19 +137,28 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
         api_request(
             app.clone(),
             "GET",
-            "/v1/repos/owner/repo/requests/queue?section=your_work",
+            "/v1/repos/owner/repo/requests/queue?section=active",
             Some(&invitee),
             None,
         )
         .await,
     )
     .await;
-    assert_eq!(request_ids(&invitee_work), ["req_draft_invited"]);
+    assert_eq!(
+        request_ids(&invitee_work),
+        [
+            "req_open_high",
+            "req_open_tie_a",
+            "req_open_tie_b",
+            "req_open_early",
+            "req_draft_invited"
+        ]
+    );
     let maintainer_work = response_json(
         api_request(
             app.clone(),
             "GET",
-            "/v1/repos/owner/repo/requests/queue?section=your_work",
+            "/v1/repos/owner/repo/requests/queue?section=active",
             Some(&bearer_header()),
             None,
         )
@@ -162,14 +171,14 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
         api_request(
             app.clone(),
             "GET",
-            "/v1/repos/owner/repo/requests/queue?section=open&limit=2",
-            None,
+            "/v1/repos/owner/repo/requests/queue?section=unclaimed&limit=2",
+            Some(&bearer_header()),
             None,
         )
         .await,
     )
     .await;
-    assert_eq!(request_ids(&first), ["req_open_early", "req_open_tie_a"]);
+    assert_eq!(request_ids(&first), ["req_open_high", "req_open_tie_a"]);
     let cursor = first["next_cursor"].as_str().unwrap();
     create_public_request(
         &state,
@@ -199,21 +208,23 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
         api_request(
             app.clone(),
             "GET",
-            &format!("/v1/repos/owner/repo/requests/queue?section=open&limit=2&cursor={cursor}"),
-            None,
+            &format!(
+                "/v1/repos/owner/repo/requests/queue?section=unclaimed&limit=2&cursor={cursor}"
+            ),
+            Some(&bearer_header()),
             None,
         )
         .await,
     )
     .await;
-    assert_eq!(request_ids(&second), ["req_open_tie_b", "req_open_high"]);
-    assert!(second["next_cursor"].is_string());
+    assert_eq!(request_ids(&second), ["req_open_tie_b", "req_open_early"]);
+    assert!(second["next_cursor"].is_null());
 
     let closed = response_json(
         api_request(
             app.clone(),
             "GET",
-            "/v1/repos/owner/repo/requests/queue?section=closed",
+            "/v1/repos/owner/repo/requests/queue?section=done",
             None,
             None,
         )
@@ -221,11 +232,30 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
     )
     .await;
     assert_eq!(request_ids(&closed), ["req_closed_new", "req_closed_old"]);
+    for section in ["set_aside", "unclaimed"] {
+        assert!(
+            request_ids(
+                &response_json(
+                    api_request(
+                        app.clone(),
+                        "GET",
+                        &format!("/v1/repos/owner/repo/requests/queue?section={section}"),
+                        None,
+                        None,
+                    )
+                    .await,
+                )
+                .await
+            )
+            .is_empty(),
+            "{section} holds nothing for readers"
+        );
+    }
     let maintainer_closed = response_json(
         api_request(
             app.clone(),
             "GET",
-            "/v1/repos/owner/repo/requests/queue?section=closed",
+            "/v1/repos/owner/repo/requests/queue?section=done",
             Some(&bearer_header()),
             None,
         )
@@ -238,8 +268,8 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
     );
 
     for (section, expected) in [
-        ("open", vec!["req_open_high"]),
-        ("closed", vec!["req_closed_new"]),
+        ("unclaimed", vec!["req_open_high"]),
+        ("done", vec!["req_closed_private", "req_closed_new"]),
     ] {
         let searched = response_json(
             api_request(
@@ -256,13 +286,13 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
     }
 
     for uri in [
-        "/v1/repos/owner/repo/requests/queue?section=closed&cursor=v1:open:1:25:30:req_open_high".to_string(),
-        "/v1/repos/owner/repo/requests/queue?section=open&cursor=v1:open:9223372036854775808:2147483648:1:req".to_string(),
+        "/v1/repos/owner/repo/requests/queue?section=set_aside&cursor=invalid".to_string(),
+        "/v1/repos/owner/repo/requests/queue?section=active&cursor=invalid".to_string(),
         format!(
-            "/v1/repos/owner/repo/requests/queue?section=open&search={}",
+            "/v1/repos/owner/repo/requests/queue?section=active&search={}",
             "a".repeat(201)
         ),
-        "/v1/repos/owner/repo/requests/queue?section=your_work&search=needle".to_string(),
+        "/v1/repos/owner/repo/requests/queue?section=unknown".to_string(),
     ] {
         assert_eq!(
             api_request(app.clone(), "GET", &uri, Some(&bearer_header()), None)
@@ -334,7 +364,7 @@ async fn closed_fixture(
 }
 
 #[tokio::test]
-async fn closed_queue_cursor_keeps_closed_and_merged_timestamp_ties() {
+async fn done_queue_cursor_keeps_closed_and_merged_timestamp_ties() {
     let state = test_state_with_readme().await;
     for (id, time, merged) in [
         ("req_z_new", 40, false),
@@ -363,7 +393,7 @@ async fn closed_queue_cursor_keeps_closed_and_merged_timestamp_ties() {
         }
     }
     let app = router(state);
-    let mut uri = "/v1/repos/owner/repo/requests/queue?section=closed&limit=2".to_string();
+    let mut uri = "/v1/repos/owner/repo/requests/queue?section=done&limit=2".to_string();
     let mut ids = Vec::new();
     loop {
         let response = api_request(app.clone(), "GET", &uri, None, None).await;
@@ -373,7 +403,7 @@ async fn closed_queue_cursor_keeps_closed_and_merged_timestamp_ties() {
         let Some(cursor) = page["next_cursor"].as_str() else {
             break;
         };
-        uri = format!("/v1/repos/owner/repo/requests/queue?section=closed&limit=2&cursor={cursor}");
+        uri = format!("/v1/repos/owner/repo/requests/queue?section=done&limit=2&cursor={cursor}");
     }
     assert_eq!(
         ids,

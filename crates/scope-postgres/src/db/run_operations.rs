@@ -24,11 +24,7 @@ impl RunStore {
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(None);
         };
-        let mut jobs = run_jobs_by_ids(&tx, &[run_id.to_string()]).await?;
-        let jobs = jobs
-            .remove(run_id)
-            .filter(|jobs| !jobs.is_empty())
-            .ok_or_else(|| PostgresError::internal_message("run is missing its persisted jobs"))?;
+        let jobs = required_run_jobs(&tx, run_id).await?;
         let logs_truncated = run_has_truncated_logs_with(&tx, run_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(Some(RunSnapshot {
@@ -39,10 +35,7 @@ impl RunStore {
     }
 
     pub async fn run_jobs(&self, run_id: &str) -> Result<Vec<RunJob>, PostgresError> {
-        let mut jobs = run_jobs_by_ids(self.db.as_ref(), &[run_id.to_string()]).await?;
-        jobs.remove(run_id)
-            .filter(|jobs| !jobs.is_empty())
-            .ok_or_else(|| PostgresError::internal_message("run is missing its persisted jobs"))
+        required_run_jobs(self.db.as_ref(), run_id).await
     }
 
     pub async fn run_jobs_by_ids(
@@ -87,6 +80,27 @@ where
         .await
         .map_err(PostgresError::internal)?
         .is_some())
+}
+
+/// Every persisted run owns at least one job row; a run without jobs is corrupt.
+pub(super) fn require_run_jobs(
+    jobs: &mut BTreeMap<String, Vec<RunJob>>,
+    run_id: &str,
+) -> Result<Vec<RunJob>, PostgresError> {
+    jobs.remove(run_id)
+        .filter(|jobs| !jobs.is_empty())
+        .ok_or_else(|| PostgresError::internal_message("run is missing its persisted jobs"))
+}
+
+pub(super) async fn required_run_jobs<C>(
+    conn: &C,
+    run_id: &str,
+) -> Result<Vec<RunJob>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let mut jobs = run_jobs_by_ids(conn, std::slice::from_ref(&run_id.to_string())).await?;
+    require_run_jobs(&mut jobs, run_id)
 }
 
 pub(super) async fn run_jobs_by_ids<C>(

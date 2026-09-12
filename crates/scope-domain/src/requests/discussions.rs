@@ -1,7 +1,7 @@
 use super::{
     REQUEST_DISCUSSION_BODY_MAX_BYTES, REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES, Request,
-    RequestEvent, RequestEventKind, RequestEventPayload, ensure_request_matches,
-    validate_body_size, validate_required_body, validate_required_id,
+    RequestEvent, RequestEventKind, RequestEventPayload, advance_request_activity,
+    ensure_request_matches, next_request_activity_position, validate_body_size, validate_required,
 };
 use crate::{error::DomainError, policy::ScopePath};
 use serde::{Deserialize, Serialize};
@@ -181,7 +181,8 @@ pub fn create_request_discussion(
         return Err(DomainError::conflict("request discussion already exists"));
     }
     ensure_request_matches(&request, &input.request_id)?;
-    let position = advance_activity(&mut request)?;
+    request.updated_at_unix = input.now_unix;
+    let position = advance_request_activity(&mut request)?;
     let discussion = RequestDiscussion {
         id: input.id,
         request_id: request.id.clone(),
@@ -229,7 +230,7 @@ pub fn create_request_discussion_reply(
         ));
     }
     ensure_request_matches(&request, &input.request_id)?;
-    let position = next_activity_position(&request)?;
+    let position = next_request_activity_position(&request)?;
     validate_reply_target(
         &discussion,
         quoted_reply,
@@ -242,6 +243,7 @@ pub fn create_request_discussion_reply(
         return Err(DomainError::conflict("request discussion is resolved"));
     }
     request.activity_version = position;
+    request.updated_at_unix = input.now_unix;
     discussion.last_activity_position = position;
     let reply = RequestDiscussionReply {
         id: input.id,
@@ -322,10 +324,10 @@ pub fn reopen_and_reply_to_request_discussion(
         &input.client_reply_id,
         &input.body_markdown,
     )?;
-    validate_required_id("event id", &input.event_id)?;
+    validate_required("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
     ensure_request_discussion_transition_allowed(&request, input.actor_can_transition)?;
-    let position = next_activity_position(&request)?;
+    let position = next_request_activity_position(&request)?;
     validate_reply_target(
         &discussion,
         quoted_reply,
@@ -345,6 +347,7 @@ pub fn reopen_and_reply_to_request_discussion(
         return Err(DomainError::conflict("request discussion is already open"));
     }
     request.activity_version = position;
+    request.updated_at_unix = input.now_unix;
     discussion.status = RequestDiscussionStatus::Open;
     discussion.resolved_at_unix = None;
     discussion.resolved_by_user_id = None;
@@ -385,8 +388,8 @@ pub fn mark_request_discussion_read(
     existing_state: Option<RequestDiscussionReadState>,
     input: MarkRequestDiscussionReadInput,
 ) -> Result<RequestDiscussionReadState, DomainError> {
-    validate_required_id("discussion id", &input.discussion_id)?;
-    validate_required_id("user id", &input.user_id)?;
+    validate_required("discussion id", &input.discussion_id)?;
+    validate_required("user id", &input.user_id)?;
     if discussion.id != input.discussion_id {
         return Err(DomainError::not_found("request discussion not found"));
     }
@@ -415,7 +418,7 @@ fn transition_discussion(
     mut discussion: RequestDiscussion,
     input: DiscussionTransitionInput,
 ) -> Result<RequestDiscussionMutation, DomainError> {
-    validate_required_id("event id", &input.event_id)?;
+    validate_required("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
     ensure_request_discussion_transition_allowed(&request, input.actor_can_transition)?;
     let request_author_user_id = request.author_user_id.clone();
@@ -432,7 +435,8 @@ fn transition_discussion(
             RequestDiscussionStatus::Resolved => "request discussion is already resolved",
         }));
     }
-    let position = advance_activity(&mut request)?;
+    request.updated_at_unix = input.now_unix;
+    let position = advance_request_activity(&mut request)?;
     discussion.status = input.target;
     discussion.last_activity_position = position;
     let (kind, payload) = match input.target {
@@ -515,16 +519,16 @@ fn validate_common(
     client_id: &str,
     body: &str,
 ) -> Result<(), DomainError> {
-    validate_required_id("request id", request_id)?;
-    validate_required_id("discussion id", id)?;
-    validate_required_id("actor user id", actor)?;
-    validate_required_id("client discussion id", client_id)?;
+    validate_required("request id", request_id)?;
+    validate_required("discussion id", id)?;
+    validate_required("actor user id", actor)?;
+    validate_required("client discussion id", client_id)?;
     validate_body_size(
         "client discussion id",
         client_id,
         REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES,
     )?;
-    validate_required_body("discussion body", body)?;
+    validate_required("discussion body", body)?;
     validate_body_size("discussion body", body, REQUEST_DISCUSSION_BODY_MAX_BYTES)
 }
 
@@ -532,9 +536,9 @@ fn validate_anchor(anchor: Option<&RequestDiscussionAnchor>) -> Result<(), Domai
     let Some(anchor) = anchor else {
         return Ok(());
     };
-    validate_required_id("revision id", &anchor.revision_id)?;
+    validate_required("revision id", &anchor.revision_id)?;
     if let Some(commit_oid) = anchor.commit_oid.as_deref() {
-        validate_required_id("commit oid", commit_oid)?;
+        validate_required("commit oid", commit_oid)?;
     }
     if anchor.path.is_some() && anchor.commit_oid.is_none() {
         return Err(DomainError::invalid_input(
@@ -552,17 +556,17 @@ fn validate_reply_input(
     client_id: &str,
     body: &str,
 ) -> Result<(), DomainError> {
-    validate_required_id("request id", request_id)?;
-    validate_required_id("discussion id", discussion_id)?;
-    validate_required_id("reply id", id)?;
-    validate_required_id("actor user id", actor)?;
-    validate_required_id("client reply id", client_id)?;
+    validate_required("request id", request_id)?;
+    validate_required("discussion id", discussion_id)?;
+    validate_required("reply id", id)?;
+    validate_required("actor user id", actor)?;
+    validate_required("client reply id", client_id)?;
     validate_body_size(
         "client reply id",
         client_id,
         REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES,
     )?;
-    validate_required_body("reply body", body)?;
+    validate_required("reply body", body)?;
     validate_body_size("reply body", body, REQUEST_DISCUSSION_BODY_MAX_BYTES)
 }
 
@@ -604,18 +608,6 @@ fn ensure_discussion_matches(
     } else {
         Err(DomainError::not_found("request discussion not found"))
     }
-}
-
-fn advance_activity(request: &mut Request) -> Result<u64, DomainError> {
-    request.activity_version = next_activity_position(request)?;
-    Ok(request.activity_version)
-}
-
-fn next_activity_position(request: &Request) -> Result<u64, DomainError> {
-    request
-        .activity_version
-        .checked_add(1)
-        .ok_or_else(|| DomainError::conflict("request activity version overflow"))
 }
 
 fn read_state(

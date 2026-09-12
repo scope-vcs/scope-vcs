@@ -93,7 +93,7 @@ async fn limit_cleanup_is_bounded_when_the_remote_backend_stalls() {
 
     let error = fixture
         .store
-        .ingest_reserved(REPOSITORY_ID, reservation, &b"five!"[..], 4)
+        .ingest_reserved(REPOSITORY_ID, reservation, &b"five!"[..], 4, None)
         .await
         .unwrap_err();
 
@@ -128,12 +128,12 @@ async fn process_timeout_cancels_a_stalled_multipart_ingest_without_detached_wor
             scope_git_process::ProcessLimits::new(Duration::from_millis(100)),
             "stalled Git segment ingest",
             move |stdout, cancellation| {
-                runtime.block_on(store.ingest_reserved_blocking_reader_cancellable(
+                runtime.block_on(store.ingest_reserved_blocking_reader(
                     REPOSITORY_ID,
                     reservation,
                     stdout,
                     1024,
-                    cancellation,
+                    Some(cancellation),
                 ))
             },
         )

@@ -6,22 +6,6 @@ async fn start_login(app: &axum::Router) -> serde_json::Value {
     response_json(response).await
 }
 
-async fn device_post(
-    app: &axum::Router,
-    code: &str,
-    action: &str,
-    auth: Option<String>,
-) -> Response {
-    api_request(
-        app.clone(),
-        "POST",
-        &format!("/v1/cli/device-login/{code}/{action}"),
-        auth.as_deref(),
-        None,
-    )
-    .await
-}
-
 #[tokio::test]
 async fn cli_device_login_exchanges_browser_auth_for_cli_token() {
     let state = test_state_with_jwks();
@@ -37,16 +21,37 @@ async fn cli_device_login_exchanges_browser_auth_for_cli_token() {
         format!("{LOCAL_APP_ORIGIN}/cli-login")
     );
 
-    let pending = device_post(&app, device_code, "poll", None).await;
+    let pending = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/device-login/{}/{}", device_code, "poll"),
+        None,
+        None,
+    )
+    .await;
     assert_eq!(pending.status(), StatusCode::OK);
     let pending = response_json(pending).await;
     assert_eq!(pending["status"], "Pending");
     assert!(pending["session_token"].is_null());
 
-    let complete = device_post(&app, user_code, "complete", Some(bearer_header())).await;
+    let complete = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/device-login/{}/{}", user_code, "complete"),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(complete.status(), StatusCode::OK);
 
-    let authorized = device_post(&app, device_code, "poll", None).await;
+    let authorized = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/device-login/{}/{}", device_code, "poll"),
+        None,
+        None,
+    )
+    .await;
     assert_eq!(authorized.status(), StatusCode::OK);
     let authorized = response_json(authorized).await;
     assert_eq!(authorized["status"], "Complete");
@@ -54,7 +59,14 @@ async fn cli_device_login_exchanges_browser_auth_for_cli_token() {
     let cli_token = authorized["session_token"].as_str().unwrap();
     assert!(cli_token.starts_with(CLI_SESSION_TOKEN_PREFIX));
 
-    let consumed = device_post(&app, device_code, "poll", None).await;
+    let consumed = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/device-login/{}/{}", device_code, "poll"),
+        None,
+        None,
+    )
+    .await;
     assert_eq!(consumed.status(), StatusCode::CONFLICT);
 
     let session = api_request(
@@ -74,18 +86,33 @@ async fn cli_device_login_completion_requires_clerk_auth_and_is_single_use() {
     let start = start_login(&app).await;
     let user_code = start["user_code"].as_str().unwrap().to_string();
 
-    let unauthorized = device_post(
-        &app,
-        &user_code,
-        "complete",
-        Some(format!("Bearer {CLI_SESSION_TOKEN_PREFIX}nope")),
+    let unauthorized = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/device-login/{user_code}/complete"),
+        Some(&format!("Bearer {CLI_SESSION_TOKEN_PREFIX}nope")),
+        None,
     )
     .await;
     assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
 
-    let first = device_post(&app, &user_code, "complete", Some(bearer_header())).await;
+    let first = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/device-login/{user_code}/complete"),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(first.status(), StatusCode::OK);
-    let second = device_post(&app, &user_code, "complete", Some(bearer_header())).await;
+    let second = api_request(
+        app.clone(),
+        "POST",
+        &format!("/v1/cli/device-login/{user_code}/complete"),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
     assert_eq!(second.status(), StatusCode::CONFLICT);
 }
 

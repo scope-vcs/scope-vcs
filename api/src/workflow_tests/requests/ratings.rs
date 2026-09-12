@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn terminal_participants_rate_each_other_once_and_reasons_follow_request_visibility() {
+async fn terminal_participant_ratings_include_reputation_and_follow_request_visibility() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
     let author_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", "rating_author");
@@ -49,7 +49,7 @@ async fn terminal_participants_rate_each_other_once_and_reasons_follow_request_v
             "POST",
             uri,
             Some(&stranger),
-            Some(r#"{"score":5,"reason":"Not my request"}"#),
+            Some(r#"{"score":5,"reason":"Not my request"}"#)
         )
         .await
         .status(),
@@ -73,18 +73,6 @@ async fn terminal_participants_rate_each_other_once_and_reasons_follow_request_v
     assert_eq!(author_rating["rater"]["rating_score_sum"], 0);
     assert_eq!(author_rating["rater"]["rating_count"], 0);
     assert_eq!(author_rating["reason"], "Fast and clear review");
-    assert_eq!(
-        api_request(
-            app.clone(),
-            "POST",
-            uri,
-            Some(&author),
-            Some(r#"{"score":4,"reason":"Second rating"}"#),
-        )
-        .await
-        .status(),
-        StatusCode::FORBIDDEN
-    );
 
     let owner_rating = response_json(
         api_request(

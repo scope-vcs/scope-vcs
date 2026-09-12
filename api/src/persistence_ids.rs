@@ -6,6 +6,7 @@ pub(crate) fn generate_persistence_id(kind: GeneratedIdKind) -> Result<String, S
     let random = hex::encode(bytes);
     Ok(match kind {
         GeneratedIdKind::CleanupGeneration => random,
+        GeneratedIdKind::DependencyAnalysisLease => format!("dependency_{random}"),
         GeneratedIdKind::OutboxJob => format!("outbox_{random}"),
         GeneratedIdKind::RepositoryIncarnation => format!("repoi_{random}"),
     })
@@ -16,5 +17,5 @@ pub(crate) fn generate_prefixed_id(prefix: &str) -> Result<String, crate::error:
     getrandom::fill(&mut bytes).map_err(|error| {
         crate::error::ApiError::internal_message(format!("failed to generate identifier: {error}"))
     })?;
-    Ok(format!("{prefix}{}", hex::encode(bytes)))
+    Ok(format!("{prefix}_{}", hex::encode(bytes)))
 }

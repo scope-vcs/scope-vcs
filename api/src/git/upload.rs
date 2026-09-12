@@ -1,17 +1,17 @@
 use crate::{
     auth::scope::principal_for_user_id,
-    config::{AWAITING_FIRST_PUSH_GIT_ERROR, DEFAULT_GIT_BRANCH, GIT_UPLOAD_PACK},
+    config::{AWAITING_FIRST_PUSH_GIT_ERROR, GIT_UPLOAD_PACK},
     error::ApiError,
     git::{
         GitRemoteMode,
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
+        command::{git_command_output, git_command_output_with_timeout, truncated_git_stderr},
         git_read_scope_user,
-        import::run_git,
         projection_repo::projection_bare_repo_for_state,
         request_refs::attach_visible_request_refs,
     },
     repo_access::{ensure_repo_read, find_repo},
-    runtime_budgets::{RuntimeBudgets, RuntimePermit},
+    runtime_budgets::RuntimePermit,
     state::AppState,
 };
 use axum::{
@@ -23,23 +23,19 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use scope_domain::policy::Principal;
-#[cfg(test)]
-use scope_domain::projection::Projection;
 use scope_domain::{
     projection::{ProjectionViewKey, project_graph},
     repository::access::RepositoryActor,
     repository::{RepoLifecycleState, RepositoryIncarnation},
-    requests::{Request, RequestViewer, canonical_request_ref, request_policy},
+    requests::{Request, RequestViewer, request_policy},
 };
-use scope_git_process::{
-    ProcessLimits, STDERR_DIAGNOSTIC_BYTES, StreamingProcessError, run as run_process,
-    run_with_stdout, truncated_stderr,
-};
+use scope_git::DEFAULT_GIT_BRANCH;
+use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use std::{
     fs,
     io::Read,
     path::Path as FsPath,
-    process::{Command, Output},
+    process::Command,
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
@@ -49,46 +45,29 @@ mod read_view_tests;
 use read_view_identity::GitReadViewIdentity;
 static GIT_READ_VIEW_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 
-#[cfg(test)]
-pub(crate) async fn git_projection_for_request(
+/// Resolves the repository, the caller's access and (when authenticated) the viewer for a
+/// Git read over the given remote mode, refusing unpublished repositories.
+pub(crate) async fn authorized_git_read(
     state: &AppState,
     headers: &HeaderMap,
     owner: &str,
     repo_name: &str,
     mode: GitRemoteMode,
-) -> Result<Projection, ApiError> {
-    let (repo, principal, _) =
-        git_read_principal_for_request(state, headers, owner, repo_name, mode).await?;
-    if repo.record.lifecycle_state != RepoLifecycleState::Ready {
-        return Err(unpublished_git_read_error(
-            &repo, owner, repo_name, &principal,
-        ));
-    }
-
-    ensure_repo_read(state, &repo, &principal)?;
-    let access = repo.access_for_principal(&principal);
-    let view_key = ProjectionViewKey::from_access(access);
-    Ok(project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        view_key,
-    ))
-}
-
-pub(crate) async fn git_upload_pack_repo_for_request(
-    state: &AppState,
-    headers: &HeaderMap,
-    owner: &str,
-    repo_name: &str,
-    mode: GitRemoteMode,
-) -> Result<GitRepoHandle, ApiError> {
+) -> Result<
+    (
+        scope_domain::repository::Repository,
+        scope_domain::repository::access::RepositoryAccess,
+        Option<String>,
+    ),
+    ApiError,
+> {
     let (repo, principal, viewer_user_id) =
         match git_read_principal_for_request(state, headers, owner, repo_name, mode).await {
             Ok(value) => value,
             Err(error)
                 if mode == GitRemoteMode::Public && error.status() == StatusCode::NOT_FOUND =>
             {
-                return Err(git_upload_pack_auth_required());
+                return Err(ApiError::unauthorized("Git credentials required"));
             }
             Err(error) => return Err(error),
         };
@@ -99,6 +78,18 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     }
     ensure_repo_read(state, &repo, &principal)?;
     let access = repo.access_for_principal(&principal);
+    Ok((repo, access, viewer_user_id))
+}
+
+pub(crate) async fn git_upload_pack_repo_for_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    owner: &str,
+    repo_name: &str,
+    mode: GitRemoteMode,
+) -> Result<GitRepoHandle, ApiError> {
+    let (repo, access, viewer_user_id) =
+        authorized_git_read(state, headers, owner, repo_name, mode).await?;
     let private_view = ProjectionViewKey::from_access(access) == ProjectionViewKey::Private;
     let base_repo = if private_view {
         match repo.git_head.as_ref() {
@@ -140,7 +131,6 @@ pub(crate) async fn git_upload_pack_repo_for_request(
         .await?
     };
     let mut requests = Vec::new();
-    let mut hidden_request_refs = Vec::new();
     for request in state
         .metadata
         .requests()
@@ -161,10 +151,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
             &request,
             RequestViewer::new(access, viewer_user_id.as_deref(), is_invitee),
         );
-        if decision.request_ref_readable {
-            if !decision.git_advertised {
-                hidden_request_refs.push(request.name.clone());
-            }
+        if decision.exact_visible {
             requests.push(request);
         }
     }
@@ -198,7 +185,6 @@ pub(crate) async fn git_upload_pack_repo_for_request(
         base_repo,
         public_base_repo,
         &requests,
-        &hidden_request_refs,
     )
     .await
 }
@@ -209,7 +195,6 @@ async fn git_read_view_repo(
     base_repo: GitRepoHandle,
     public_base_repo: Option<GitRepoHandle>,
     requests: &[Request],
-    hidden_request_refs: &[String],
 ) -> Result<GitRepoHandle, ApiError> {
     if requests.is_empty() {
         return Ok(base_repo);
@@ -241,7 +226,6 @@ async fn git_read_view_repo(
         &main_oid,
         public_main_oid.as_deref(),
         requests,
-        hidden_request_refs,
     )
     .cache_key();
     let cache_root = state.repository_engine.cache_root().to_path_buf();
@@ -252,7 +236,6 @@ async fn git_read_view_repo(
     let base_repo_for_build = base_repo;
     let public_base_repo_for_build = public_base_repo;
     let requests_for_build = requests.to_vec();
-    let hidden_request_refs_for_build = hidden_request_refs.to_vec();
     let cache_root_for_build = cache_root.clone();
     let cache_key_for_build = cache_key.clone();
     let repo_path_for_build = repo_path.clone();
@@ -291,25 +274,6 @@ async fn git_read_view_repo(
                         &temp_path,
                         public_base_repo_for_build.as_deref(),
                     )?;
-                    if !hidden_request_refs_for_build.is_empty() {
-                        run_git(
-                            Some(&temp_path),
-                            &["config", "uploadpack.allowTipSHA1InWant", "true"],
-                            "allowing exact request tip fetches",
-                        )?;
-                        for request_name in &hidden_request_refs_for_build {
-                            run_git(
-                                Some(&temp_path),
-                                &[
-                                    "config",
-                                    "--add",
-                                    "transfer.hideRefs",
-                                    &canonical_request_ref(request_name),
-                                ],
-                                "hiding exact-only request ref from advertisement",
-                            )?;
-                        }
-                    }
                     match fs::rename(&temp_path, &repo_path_for_build) {
                         Ok(()) => Ok(()),
                         Err(error) if repo_path_for_build.join("objects").is_dir() => {
@@ -333,11 +297,7 @@ async fn git_read_view_repo(
     .await
 }
 
-pub(crate) fn git_upload_pack_auth_required() -> ApiError {
-    ApiError::unauthorized("Git credentials required")
-}
-
-async fn git_read_principal_for_request(
+pub(crate) async fn git_read_principal_for_request(
     state: &AppState,
     headers: &HeaderMap,
     owner: &str,
@@ -376,73 +336,6 @@ fn unpublished_git_read_error(
     } else {
         ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
     }
-}
-
-pub(crate) fn git_command_output(
-    command: &mut Command,
-    stdin: Option<&[u8]>,
-) -> Result<Vec<u8>, ApiError> {
-    git_command_output_with_timeout(
-        command,
-        stdin.map(Vec::from),
-        RuntimeBudgets::default_git_command_timeout(),
-    )
-}
-
-pub(crate) fn git_command_output_with_timeout(
-    command: &mut Command,
-    stdin: Option<Vec<u8>>,
-    timeout: Duration,
-) -> Result<Vec<u8>, ApiError> {
-    let output = git_process_output_with_timeout(command, stdin, timeout)?;
-    if output.status.success() {
-        return Ok(output.stdout);
-    }
-
-    let stderr = truncated_git_stderr(&output.stderr);
-    Err(ApiError::infrastructure_unavailable(stderr.trim()))
-}
-
-pub(crate) fn git_process_output_with_timeout(
-    command: &mut Command,
-    stdin: Option<Vec<u8>>,
-    timeout: Duration,
-) -> Result<Output, ApiError> {
-    git_process_output(command, stdin, ProcessLimits::new(timeout))
-}
-
-pub(crate) fn git_process_output_with_limits(
-    command: &mut Command,
-    stdin: Option<Vec<u8>>,
-    timeout: Duration,
-    max_stdout_bytes: usize,
-) -> Result<Output, ApiError> {
-    run_process(
-        command,
-        stdin,
-        ProcessLimits::new(timeout).with_max_stdout_bytes(max_stdout_bytes),
-        "Git command",
-    )
-    .map_err(|error| {
-        if error.is_stdout_limit() {
-            ApiError::payload_too_large(error.to_string())
-        } else {
-            ApiError::infrastructure_unavailable(error.to_string())
-        }
-    })
-}
-
-fn git_process_output(
-    command: &mut Command,
-    stdin: Option<Vec<u8>>,
-    limits: ProcessLimits,
-) -> Result<Output, ApiError> {
-    run_process(command, stdin, limits, "Git command")
-        .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))
-}
-
-pub(crate) fn truncated_git_stderr(stderr: &[u8]) -> String {
-    truncated_stderr(stderr, STDERR_DIAGNOSTIC_BYTES)
 }
 
 pub(crate) async fn git_upload_pack_response(
@@ -605,33 +498,6 @@ pub(crate) fn pkt_line(payload: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn stderr_truncation_preserves_utf8_boundaries() {
-        let stderr = "é".repeat(STDERR_DIAGNOSTIC_BYTES);
-
-        let truncated = truncated_git_stderr(stderr.as_bytes());
-
-        assert!(truncated.ends_with("..."));
-        assert!(truncated.is_char_boundary(truncated.len() - 3));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bounded_git_output_maps_size_limit_to_payload_too_large() {
-        let mut command = Command::new("sh");
-        command.arg("-c").arg("printf 12345");
-
-        let error = git_process_output_with_limits(&mut command, None, Duration::from_secs(1), 4)
-            .unwrap_err();
-
-        assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE);
-        assert!(
-            error
-                .operator_diagnostic()
-                .contains("stdout exceeded 4 bytes")
-        );
-    }
 
     #[test]
     fn upload_pack_chunk_send_stops_at_deadline_when_live_receiver_is_full() {

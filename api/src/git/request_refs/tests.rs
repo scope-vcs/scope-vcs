@@ -1,14 +1,18 @@
 use super::*;
 
 #[test]
-fn named_request_refs_are_top_level_branches_other_than_main() {
-    assert!(is_request_ref("refs/heads/railway-upload"));
-    assert!(!is_request_ref("refs/heads/main"));
-    assert!(!is_request_ref("refs/heads/head"));
-    assert!(!is_request_ref("refs/heads/scope"));
-    assert!(!is_request_ref("refs/heads/UPPER-CASE"));
-    assert!(!is_request_ref("refs/heads/requests/nested"));
-    assert!(!is_request_ref("refs/tags/railway-upload"));
+fn request_names_come_from_top_level_branches_other_than_main() {
+    assert_eq!(
+        request_name_from_ref("refs/heads/railway-upload"),
+        Some("railway-upload")
+    );
+    for refname in [
+        "refs/heads/main",
+        "refs/heads/requests/nested",
+        "refs/tags/railway-upload",
+    ] {
+        assert_eq!(request_name_from_ref(refname), None);
+    }
 }
 
 #[test]

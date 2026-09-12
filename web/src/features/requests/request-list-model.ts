@@ -1,177 +1,23 @@
-import type { RequestQueueSection } from '@/api/request-queue-input'
-import type {
-  RequestListResponse,
-  RequestListItemResponse,
-} from '@/api/types.generated'
+import type { RequestQueueItemResponse, RequestQueuePageResponse, RequestQueueSection } from '../../api/types.generated'
 
-export type RequestQueuePages = Record<RequestQueueSection, RequestListResponse>
+export const REQUEST_QUEUE_SECTION_ORDER = ['active', 'unclaimed', 'set_aside', 'done'] as const satisfies readonly RequestQueueSection[]
+export type RequestQueuePages = Record<RequestQueueSection, RequestQueuePageResponse>
+export type RequestQueueViewState = { pages: RequestQueuePages; query: string; requestedQuery: string }
 
-export const REQUEST_QUEUE_SECTION_ORDER = [
-  'open',
-  'your_work',
-  'closed',
-] as const satisfies readonly RequestQueueSection[]
-
-export type RequestQueueSectionErrors = Partial<
-  Record<RequestQueueSection, string>
->
-
-export type RequestQueueViewState = {
-  generation: number
-  pages: RequestQueuePages
-  snapshot: RequestQueuePages
-  loadingSection: RequestQueueSection | null
-  sectionErrors: RequestQueueSectionErrors
-  searchDraft: string
-  searchQuery: string
-  searching: boolean
-  searchError: string | null
+function appendRequestPage(current: RequestQueueItemResponse[], incoming: RequestQueueItemResponse[]) {
+  const rows = new Map(current.map((item) => [item.request.id, item]))
+  for (const item of incoming) rows.set(item.request.id, item)
+  return [...rows.values()]
 }
 
-export type RequestQueueViewAction =
-  | { type: 'loader_snapshot_received'; pages: RequestQueuePages }
-  | {
-      type: 'load_started'
-      generation: number
-      section: RequestQueueSection
-    }
-  | {
-      type: 'load_succeeded'
-      generation: number
-      section: RequestQueueSection
-      page: RequestListResponse
-    }
-  | {
-      type: 'load_failed'
-      generation: number
-      section: RequestQueueSection
-      error: string
-    }
-  | { type: 'search_draft_changed'; value: string }
-  | { type: 'search_started'; generation: number }
-  | {
-      type: 'search_succeeded'
-      generation: number
-      query: string
-      open: RequestListResponse
-      closed: RequestListResponse
-    }
-  | { type: 'search_failed'; generation: number; error: string }
+export function appendQueuePage(current: RequestQueuePageResponse, incoming: RequestQueuePageResponse): RequestQueuePageResponse {
+  return { ...incoming, requests: appendRequestPage(current.requests, incoming.requests) }
+}
 
-export function appendRequestPage(
-  current: RequestListItemResponse[],
-  incoming: RequestListItemResponse[],
-) {
-  const knownIds = new Set(current.map((request) => request.id))
-  const additions = incoming.filter((request) => {
-    if (knownIds.has(request.id)) {
-      return false
-    }
-    knownIds.add(request.id)
-    return true
+export function nextRequestAttentionAt(pages: RequestQueuePages): number | null {
+  const times = REQUEST_QUEUE_SECTION_ORDER.flatMap((section) => {
+    const time = pages[section].next_attention_at_unix
+    return time === null ? [] : [time]
   })
-  return [...current, ...additions]
-}
-
-export function appendQueuePage(
-  current: RequestListResponse,
-  incoming: RequestListResponse,
-): RequestListResponse {
-  return {
-    requests: appendRequestPage(current.requests, incoming.requests),
-    next_cursor: incoming.next_cursor,
-  }
-}
-
-export function requestCountLabel(count: number, hasMore: boolean) {
-  const suffix = count === 1 && !hasMore ? 'request' : 'requests'
-  return `${count}${hasMore ? '+' : ''} ${suffix}`
-}
-
-export function createRequestQueueViewState(
-  pages: RequestQueuePages,
-): RequestQueueViewState {
-  return {
-    generation: 0,
-    pages,
-    snapshot: pages,
-    loadingSection: null,
-    sectionErrors: {},
-    searchDraft: '',
-    searchQuery: '',
-    searching: false,
-    searchError: null,
-  }
-}
-
-export function requestQueueViewReducer(
-  state: RequestQueueViewState,
-  action: RequestQueueViewAction,
-): RequestQueueViewState {
-  switch (action.type) {
-    case 'loader_snapshot_received':
-      if (JSON.stringify(state.snapshot) === JSON.stringify(action.pages)) {
-        return { ...state, snapshot: action.pages }
-      }
-      return {
-        ...createRequestQueueViewState(action.pages),
-        generation: state.generation + 1,
-      }
-    case 'load_started':
-      if (action.generation !== state.generation) return state
-      return {
-        ...state,
-        loadingSection: action.section,
-        sectionErrors: { ...state.sectionErrors, [action.section]: undefined },
-      }
-    case 'load_succeeded':
-      if (action.generation !== state.generation) return state
-      return {
-        ...state,
-        loadingSection: null,
-        pages: {
-          ...state.pages,
-          [action.section]: appendQueuePage(
-            state.pages[action.section],
-            action.page,
-          ),
-        },
-      }
-    case 'load_failed':
-      if (action.generation !== state.generation) return state
-      return {
-        ...state,
-        loadingSection: null,
-        sectionErrors: {
-          ...state.sectionErrors,
-          [action.section]: action.error,
-        },
-      }
-    case 'search_draft_changed':
-      return { ...state, searchDraft: action.value }
-    case 'search_started':
-      if (action.generation !== state.generation) return state
-      return { ...state, searching: true, searchError: null }
-    case 'search_succeeded':
-      if (action.generation !== state.generation) return state
-      return {
-        ...state,
-        pages: {
-          ...state.pages,
-          closed: action.closed,
-          open: action.open,
-        },
-        searchQuery: action.query,
-        searching: false,
-        searchError: null,
-        sectionErrors: {
-          ...state.sectionErrors,
-          closed: undefined,
-          open: undefined,
-        },
-      }
-    case 'search_failed':
-      if (action.generation !== state.generation) return state
-      return { ...state, searching: false, searchError: action.error }
-  }
+  return times.length ? Math.min(...times) : null
 }

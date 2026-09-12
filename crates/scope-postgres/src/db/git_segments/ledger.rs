@@ -1,5 +1,8 @@
 use super::super::{RepositoryStore, entities};
-use crate::error::PostgresError;
+use crate::{
+    db::integer_columns::{u32_to_i32, u64_to_i64},
+    error::PostgresError,
+};
 use scope_domain::repository::git::{GitSegmentRef, GitSegmentUpload};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder,
@@ -37,14 +40,8 @@ impl RepositoryStore {
                     segment_id.into(),
                     repo_id.into(),
                     object_key.into(),
-                    i32::try_from(encoding_version)
-                        .map_err(|_| {
-                            PostgresError::internal_message(
-                                "Git segment encoding version exceeds database integer",
-                            )
-                        })?
-                        .into(),
-                    timestamp(now_unix, "Git segment upload creation time")?.into(),
+                    u32_to_i32(encoding_version, "Git segment encoding version")?.into(),
+                    u64_to_i64(now_unix, "Git segment upload creation time")?.into(),
                 ],
             ))
             .await
@@ -86,16 +83,10 @@ impl RepositoryStore {
                 [
                     segment.segment_id.clone().into(),
                     segment.sha256.clone().into(),
-                    size(segment.plaintext_bytes, "Git segment plaintext size")?.into(),
-                    size(encrypted_bytes, "Git segment encrypted size")?.into(),
-                    timestamp(now_unix, "Git segment ready time")?.into(),
-                    i32::try_from(segment.encoding_version)
-                        .map_err(|_| {
-                            PostgresError::internal_message(
-                                "Git segment encoding version exceeds database integer",
-                            )
-                        })?
-                        .into(),
+                    u64_to_i64(segment.plaintext_bytes, "Git segment plaintext size")?.into(),
+                    u64_to_i64(encrypted_bytes, "Git segment encrypted size")?.into(),
+                    u64_to_i64(now_unix, "Git segment ready time")?.into(),
+                    u32_to_i32(segment.encoding_version, "Git segment encoding version")?.into(),
                 ],
             ))
             .await
@@ -118,7 +109,7 @@ impl RepositoryStore {
                  WHERE segment_id = $1 AND state IN ('uploading', 'ready')",
                 [
                     segment_id.into(),
-                    timestamp(now_unix, "Git segment upload heartbeat time")?.into(),
+                    u64_to_i64(now_unix, "Git segment upload heartbeat time")?.into(),
                 ],
             ))
             .await
@@ -131,26 +122,17 @@ impl RepositoryStore {
         segment_id: &str,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let result = self
-            .db
-            .execute(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "UPDATE scope_git_segment_uploads uploads
-                 SET state = 'published',
-                     updated_at_unix = GREATEST(updated_at_unix, $2)
-                 WHERE uploads.segment_id = $1 AND uploads.state = 'ready'
-                   AND EXISTS (
-                       SELECT 1 FROM scope_git_segments spans
-                       WHERE spans.segment_id = uploads.segment_id
-                   )",
-                [
-                    segment_id.into(),
-                    timestamp(now_unix, "Git segment publication time")?.into(),
-                ],
-            ))
-            .await
-            .map_err(PostgresError::internal)?;
-        require_one_transition(result.rows_affected(), segment_id, "published")
+        transition(
+            self.db.as_ref(),
+            segment_id,
+            "state = 'ready' AND EXISTS (
+                SELECT 1 FROM scope_git_segments spans
+                WHERE spans.segment_id = scope_git_segment_uploads.segment_id
+            )",
+            "published",
+            now_unix,
+        )
+        .await
     }
 
     pub async fn mark_git_segment_upload_deleting(
@@ -179,28 +161,18 @@ impl RepositoryStore {
         segment_id: &str,
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
-        require_text(segment_id, "Git segment id")?;
-        let result = self
-            .db
-            .execute(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "UPDATE scope_git_segment_uploads uploads
-                 SET state = 'deleting',
-                     updated_at_unix = GREATEST(updated_at_unix, $2)
-                 WHERE uploads.segment_id = $1
-                   AND uploads.state IN ('uploading', 'ready')
-                   AND NOT EXISTS (
-                       SELECT 1 FROM scope_git_segments spans
-                       WHERE spans.segment_id = uploads.segment_id
-                   )",
-                [
-                    segment_id.into(),
-                    timestamp(now_unix, "Git segment abandonment time")?.into(),
-                ],
-            ))
-            .await
-            .map_err(PostgresError::internal)?;
-        Ok(result.rows_affected() == 1)
+        let transitioned = transition_rows(
+            self.db.as_ref(),
+            segment_id,
+            "state IN ('uploading', 'ready') AND NOT EXISTS (
+                SELECT 1 FROM scope_git_segments spans
+                WHERE spans.segment_id = scope_git_segment_uploads.segment_id
+            )",
+            "deleting",
+            now_unix,
+        )
+        .await?;
+        Ok(transitioned == 1)
     }
 
     pub async fn mark_git_segment_upload_deleted(
@@ -233,7 +205,7 @@ impl RepositoryStore {
                 "deleting",
             ]))
             .filter(
-                entities::git_segment_upload::Column::UpdatedAtUnix.lte(timestamp(
+                entities::git_segment_upload::Column::UpdatedAtUnix.lte(u64_to_i64(
                     updated_before_unix,
                     "Git segment recovery cutoff",
                 )?),
@@ -260,6 +232,23 @@ async fn transition<C>(
 where
     C: ConnectionTrait,
 {
+    let transitioned = transition_rows(conn, segment_id, from_predicate, to, now_unix).await?;
+    require_one_transition(transitioned, segment_id, to)
+}
+
+/// Moves one upload to `to` when `from_predicate` holds and reports how many
+/// rows changed. `mark_git_segment_upload_ready` is the one transition that
+/// also writes the segment digest and sizes, so it keeps its own statement.
+async fn transition_rows<C>(
+    conn: &C,
+    segment_id: &str,
+    from_predicate: &str,
+    to: &str,
+    now_unix: u64,
+) -> Result<u64, PostgresError>
+where
+    C: ConnectionTrait,
+{
     require_text(segment_id, "Git segment id")?;
     let statement = format!(
         "UPDATE scope_git_segment_uploads
@@ -273,12 +262,12 @@ where
             [
                 segment_id.into(),
                 to.into(),
-                timestamp(now_unix, "Git segment transition time")?.into(),
+                u64_to_i64(now_unix, "Git segment transition time")?.into(),
             ],
         ))
         .await
         .map_err(PostgresError::internal)?;
-    require_one_transition(result.rows_affected(), segment_id, to)
+    Ok(result.rows_affected())
 }
 
 pub(super) fn require_one_transition(
@@ -303,14 +292,4 @@ pub(super) fn require_text(value: &str, field: &str) -> Result<(), PostgresError
     } else {
         Ok(())
     }
-}
-
-pub(super) fn timestamp(value: u64, field: &str) -> Result<i64, PostgresError> {
-    i64::try_from(value)
-        .map_err(|_| PostgresError::internal_message(format!("{field} exceeds database bigint")))
-}
-
-pub(super) fn size(value: u64, field: &str) -> Result<i64, PostgresError> {
-    i64::try_from(value)
-        .map_err(|_| PostgresError::internal_message(format!("{field} exceeds database bigint")))
 }

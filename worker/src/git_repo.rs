@@ -1,7 +1,8 @@
+use crate::{duration_ms, elapsed_ms};
 use scope_git::{DEFAULT_GIT_BRANCH, GitStorageLimits};
 use scope_git_process::{
-    ProcessError, ProcessLimits, StreamingProcessError, configure_process_group,
-    run as run_process, run_with_stdout,
+    ProcessCancellation, ProcessError, ProcessLimits, StreamingProcessError,
+    configure_process_group, run as run_process, run_with_stdout,
 };
 use scope_git_storage::{
     GitSegmentReservation, GitSegmentRestoreSource, GitSegmentRestoreTimings, GitSegmentStore,
@@ -16,6 +17,9 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::io::AsyncReadExt;
+
+#[cfg(all(test, target_os = "linux"))]
+mod cancellation_tests;
 
 pub(crate) struct CompactedPack {
     pub(crate) staged: StagedGitSegment,
@@ -84,6 +88,7 @@ pub(crate) async fn build_compacted_pack(
             &span.segment,
             &repo.path,
             timeout,
+            None,
         )
         .await?;
         match restore.source {
@@ -185,13 +190,22 @@ pub(crate) async fn build_compacted_pack(
     })
 }
 
-async fn index_git_segment(
+pub(crate) async fn index_git_segment(
     segment_store: &GitSegmentStore,
     repository_id: &str,
     segment: &scope_domain::repository::git::GitSegmentRef,
     repo: &Path,
     timeout: Duration,
+    cancellation: Option<&ProcessCancellation>,
 ) -> anyhow::Result<GitSegmentRestoreTimings> {
+    let cancelled = || {
+        anyhow::Error::new(ProcessError::Cancelled {
+            action: "git index-pack --stdin".to_string(),
+        })
+    };
+    if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
+        return Err(cancelled());
+    }
     let mut command = tokio::process::Command::new("git");
     command
         .arg("--git-dir")
@@ -224,19 +238,31 @@ async fn index_git_segment(
         let (restore, status) = tokio::join!(restore, wait);
         Ok::<_, anyhow::Error>((restore?, status?))
     };
-    let (restore, status) = match tokio::time::timeout(timeout, operation).await {
-        Ok(result) => result?,
-        Err(_) => {
-            terminate_git_child(&mut child, process_id).await;
-            return Err(anyhow::Error::new(ProcessError::TimedOut {
+    let result = tokio::select! {
+        biased;
+        _ = async {
+            match cancellation {
+                Some(cancellation) => cancellation.cancelled().await,
+                None => std::future::pending::<()>().await,
+            }
+        } => Err(cancelled()),
+        result = tokio::time::timeout(timeout, operation) => match result {
+            Ok(result) => result,
+            Err(_) => Err(anyhow::Error::new(ProcessError::TimedOut {
                 action: "git index-pack --stdin".to_string(),
                 timeout_ms: timeout.as_millis(),
                 diagnostic: String::new(),
-            }));
-        }
+            })),
+        },
     };
-    let _stdout = stdout_task.await??;
-    let stderr = stderr_task.await??;
+    if result.is_err() {
+        terminate_git_child(&mut child, process_id).await;
+    }
+    let stdout = stdout_task.await;
+    let stderr = stderr_task.await;
+    let (restore, status) = result?;
+    let _stdout = stdout??;
+    let stderr = stderr??;
     if !status.success() {
         anyhow::bail!(
             "git index-pack --stdin failed: {}",
@@ -294,12 +320,12 @@ async fn ingest_compacted_pack(
             ProcessLimits::new(timeout),
             "git pack-objects --revs --stdout",
             move |stdout, cancellation| {
-                runtime.block_on(segment_store.ingest_reserved_blocking_reader_cancellable(
+                runtime.block_on(segment_store.ingest_reserved_blocking_reader(
                     &repository_id,
                     reservation,
                     stdout,
                     max_bytes as u64,
-                    cancellation,
+                    Some(cancellation),
                 ))
             },
         )
@@ -331,14 +357,6 @@ async fn ingest_compacted_pack(
         ));
     }
     Ok(output.value)
-}
-
-fn elapsed_ms(started: Instant) -> u64 {
-    duration_ms(started.elapsed())
-}
-
-fn duration_ms(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 fn run_git(

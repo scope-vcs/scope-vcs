@@ -125,10 +125,7 @@ run_api_maintenance() {
 }
 
 backfill_repository_snapshots() {
-  local backfill_command
-  for backfill_command in backfill-landing-files backfill-workflow-catalogs; do
-    run_api_maintenance "$backfill_command"
-  done
+  run_api_maintenance backfill-workflow-catalogs
 }
 
 wait_for_writer_fence() {
@@ -395,7 +392,6 @@ deploy_and_reopen() {
   cutover_phase verifying
   maintenance_read verify
   cutover_phase backfills
-  run_api_maintenance cleanup-git-segments-v1
   backfill_repository_snapshots
   # Activation can create a live replacement before its response fails. Mark it potentially open
   # first so the failure handler stops whichever deployment the provider currently reports.

@@ -1,10 +1,13 @@
 use super::run_source::operation::{RunSourceOperation, spawn_blocking};
 use crate::{
-    config::DEFAULT_GIT_BRANCH,
     error::ApiError,
-    git::{GitContext, import::run_git, upload::truncated_git_stderr},
+    git::{
+        GitContext,
+        command::{run_git, truncated_git_stderr},
+    },
 };
 use scope_domain::repository::git::{GitHead, GitPackSpan, validate_git_pack_layout};
+use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, run_with_stdin_reader};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;

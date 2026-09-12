@@ -4,11 +4,6 @@ import { displayRouteFilePath } from '@/lib/route-file'
 import type { RequestDiscussion } from './request-discussion-types'
 import { shortOid } from '@/lib/short-oid'
 
-/**
- * Where a discussion was opened. The revision ordinal is the part readers
- * reason about, so it leads and never truncates; the path gives up its
- * leading directories first so the filename survives.
- */
 export function RequestDiscussionAnchor({
   anchor,
   params,
@@ -16,9 +11,12 @@ export function RequestDiscussionAnchor({
   anchor: NonNullable<RequestDiscussion['anchor']>
   params: { owner: string; repo: string; request_id: string }
 }) {
+  const label = requestDiscussionAnchorLabel(anchor)
+
   return (
     <Link
-      className="mt-2 inline-flex max-w-full items-center gap-2 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-muted-foreground hover:border-input hover:text-foreground"
+      aria-label={label}
+      className="inline-grid size-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       params={{
         owner: params.owner,
         repo: params.repo,
@@ -29,20 +27,20 @@ export function RequestDiscussionAnchor({
         path: anchor.path ?? undefined,
         revision: anchor.revision_id,
       }}
+      title={label}
       to="/$owner/$repo/requests/$requestId/changes"
     >
-      <GitCommit className="size-3.5 shrink-0" />
-      <span className="shrink-0 font-semibold text-foreground">
-        Revision {anchor.revision_position}
-      </span>
-      {anchor.commit_oid ? (
-        <span className="shrink-0">{shortOid(anchor.commit_oid)}</span>
-      ) : null}
-      {anchor.path ? (
-        <span className="truncate" dir="rtl">
-          {displayRouteFilePath(anchor.path)}
-        </span>
-      ) : null}
+      <GitCommit aria-hidden="true" className="size-3.5" />
     </Link>
   )
+}
+
+function requestDiscussionAnchorLabel(
+  anchor: NonNullable<RequestDiscussion['anchor']>,
+) {
+  const commit = anchor.commit_oid
+    ? ` at commit ${shortOid(anchor.commit_oid)}`
+    : ''
+  const path = anchor.path ? ` for ${displayRouteFilePath(anchor.path)}` : ''
+  return `View revision ${anchor.revision_position} changes${path}${commit}`
 }

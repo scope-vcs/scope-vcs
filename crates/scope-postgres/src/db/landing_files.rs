@@ -1,30 +1,7 @@
-use super::{RepositoryStore, acquire_aggregate_lock, entities, git_segments::load_git_pack_spans};
+use super::entities;
 use crate::error::PostgresError;
-use scope_domain::{
-    content::SourceBlob,
-    landing_file::{
-        MAX_REPOSITORY_LANDING_FILE_BYTES, REPOSITORY_LANDING_FILE_PATH, RepositoryLandingFile,
-        RepositoryLandingFileMutation,
-    },
-    repository::{
-        RepositoryIncarnation,
-        git::{GitHead, GitPackSpan},
-    },
-};
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, TransactionTrait,
-    sea_query::OnConflict,
-};
-use std::collections::BTreeSet;
-
-#[derive(Clone, Debug)]
-pub struct RepositoryLandingFileBackfillCandidate {
-    pub repo_id: String,
-    pub incarnation: RepositoryIncarnation,
-    pub blob: SourceBlob,
-    pub git_head: Option<GitHead>,
-    pub git_pack_spans: Vec<GitPackSpan>,
-}
+use scope_domain::landing_file::{RepositoryLandingFile, RepositoryLandingFileMutation};
+use sea_orm::{ConnectionTrait, EntityTrait, IntoActiveModel, sea_query::OnConflict};
 
 pub(super) async fn apply_repository_landing_file_mutation<C>(
     conn: &C,
@@ -82,99 +59,5 @@ where
         .transpose()
 }
 
-impl RepositoryStore {
-    #[cfg(feature = "test-support")]
-    pub async fn delete_repository_landing_file_for_tests(
-        &self,
-        repo_id: &str,
-    ) -> Result<(), PostgresError> {
-        entities::repository_landing_file::Entity::delete_by_id(repo_id.to_string())
-            .exec(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
-        Ok(())
-    }
-
-    pub async fn repository_landing_file_backfill_candidates(
-        &self,
-    ) -> Result<Vec<RepositoryLandingFileBackfillCandidate>, PostgresError> {
-        let existing = entities::repository_landing_file::Entity::find()
-            .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .into_iter()
-            .map(|row| row.repo_id)
-            .collect::<BTreeSet<_>>();
-        let rows = entities::live_file::Entity::find()
-            .filter(entities::live_file::Column::Path.eq(REPOSITORY_LANDING_FILE_PATH))
-            .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
-        let mut candidates = Vec::new();
-        for row in rows {
-            if existing.contains(&row.repo_id) {
-                continue;
-            }
-            let blob: SourceBlob =
-                serde_json::from_value(row.content).map_err(PostgresError::internal)?;
-            if blob.size_bytes > MAX_REPOSITORY_LANDING_FILE_BYTES as u64 {
-                continue;
-            }
-            let git_head = entities::git_head::Entity::find_by_id(&row.repo_id)
-                .one(self.db.as_ref())
-                .await
-                .map_err(PostgresError::internal)?
-                .map(entities::git_head::Model::try_into_domain)
-                .transpose()?;
-            let git_pack_spans = load_git_pack_spans(self.db.as_ref(), &row.repo_id).await?;
-            let repository = entities::repository::Entity::find_by_id(&row.repo_id)
-                .one(self.db.as_ref())
-                .await
-                .map_err(PostgresError::internal)?
-                .ok_or_else(|| {
-                    PostgresError::internal_message("landing-file repository is missing")
-                })?;
-            let incarnation = RepositoryIncarnation::new(repository.id, repository.incarnation_id)
-                .map_err(PostgresError::internal)?;
-            candidates.push(RepositoryLandingFileBackfillCandidate {
-                repo_id: row.repo_id,
-                incarnation,
-                blob,
-                git_head,
-                git_pack_spans,
-            });
-        }
-        Ok(candidates)
-    }
-
-    pub async fn store_backfilled_repository_landing_file(
-        &self,
-        repo_id: &str,
-        landing_file: RepositoryLandingFile,
-    ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "repository", repo_id).await?;
-        let live = entities::live_file::Entity::find_by_id((
-            repo_id.to_string(),
-            REPOSITORY_LANDING_FILE_PATH.to_string(),
-        ))
-        .one(&tx)
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| {
-            PostgresError::conflict("repository landing file changed during backfill")
-        })?;
-        let blob: SourceBlob =
-            serde_json::from_value(live.content).map_err(PostgresError::internal)?;
-        landing_file
-            .verify_source(&blob)
-            .map_err(PostgresError::internal)?;
-        apply_repository_landing_file_mutation(
-            &tx,
-            repo_id,
-            RepositoryLandingFileMutation::Upsert(landing_file),
-        )
-        .await?;
-        tx.commit().await.map_err(PostgresError::internal)
-    }
-}
+#[cfg(test)]
+mod tests;

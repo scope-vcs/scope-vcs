@@ -110,6 +110,7 @@ export function RequestDiscussionView({
       permissions={{
         canOpenDiscussion: request.permissions.can_open_discussion,
         canReply: request.permissions.can_reply_to_discussion,
+        canWaitAfterReply: request.permissions.can_wait_after_reply,
       }}
       repoId={repoResourceScope(live.repo, actor.id)}
       request={request}

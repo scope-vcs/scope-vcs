@@ -42,10 +42,10 @@ fn write_git_credential_response_with(
         return Ok(());
     }
 
-    let Some(api_url) = scope_api_url_for_credential_request(&request, configured_api_url) else {
+    if !is_scope_permissioned_credential_request(&request) {
         return Ok(());
-    };
-    let Some(session_token) = read_token(&api_url)? else {
+    }
+    let Some(session_token) = read_token(configured_api_url.trim_end_matches('/'))? else {
         return Ok(());
     };
 
@@ -76,28 +76,30 @@ fn parse_git_credential_request(reader: impl BufRead) -> anyhow::Result<GitCrede
     Ok(request)
 }
 
-fn scope_api_url_for_credential_request(
-    request: &GitCredentialRequest,
-    configured_api_url: &str,
-) -> Option<String> {
-    let protocol = request.protocol.as_deref()?;
-    if protocol != "http" && protocol != "https" {
-        return None;
+fn is_scope_permissioned_credential_request(request: &GitCredentialRequest) -> bool {
+    if !matches!(request.protocol.as_deref(), Some("http" | "https")) {
+        return false;
     }
-    let host = request.host.as_deref()?.trim();
-    if host.is_empty() {
-        return None;
+    if request
+        .host
+        .as_deref()
+        .is_none_or(|host| host.trim().is_empty())
+    {
+        return false;
     }
-    let path = request.path.as_deref()?;
+    let Some(path) = request.path.as_deref() else {
+        return false;
+    };
     let path = format!("/{}", path.trim_start_matches('/'));
-    let marker = "/git/permissioned/";
-    let marker_start = path.find(marker)?;
-    let repo_path = &path[marker_start + marker.len()..];
-    let mut repo_segments = repo_path.split('/').filter(|segment| !segment.is_empty());
-    repo_segments.next()?;
-    repo_segments.next()?;
-
-    Some(configured_api_url.trim_end_matches('/').to_string())
+    let Some((_, repo_path)) = path.split_once("/git/permissioned/") else {
+        return false;
+    };
+    repo_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .take(2)
+        .count()
+        == 2
 }
 
 #[cfg(test)]
@@ -123,21 +125,18 @@ mod tests {
     }
 
     #[test]
-    fn scope_api_url_for_credential_request_uses_configured_api_url() {
+    fn permissioned_credentials_accept_a_separate_git_host() {
         let request = GitCredentialRequest {
             protocol: Some("https".to_string()),
             host: Some("scope.example:8443".to_string()),
             path: Some("api/git/permissioned/adam/repo".to_string()),
         };
 
-        assert_eq!(
-            scope_api_url_for_credential_request(&request, "https://api.scope.example/v1/"),
-            Some("https://api.scope.example/v1".to_string())
-        );
+        assert!(is_scope_permissioned_credential_request(&request));
     }
 
     #[test]
-    fn scope_api_url_for_credential_request_ignores_public_or_incomplete_paths() {
+    fn permissioned_credentials_ignore_public_or_incomplete_paths() {
         for path in [
             "git/public/adam/repo",
             "git/permissioned/adam",
@@ -148,10 +147,7 @@ mod tests {
                 host: Some("scope.example".to_string()),
                 path: Some(path.to_string()),
             };
-            assert_eq!(
-                scope_api_url_for_credential_request(&request, "https://api.scope.example"),
-                None
-            );
+            assert!(!is_scope_permissioned_credential_request(&request));
         }
     }
 
@@ -169,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn get_returns_the_session_for_the_derived_api_url() {
+    fn get_returns_the_session_for_the_configured_api_url() {
         let mut output = Vec::new();
         write_git_credential_response_with(
             "get",
@@ -177,7 +173,7 @@ mod tests {
                 "protocol=https\nhost=git.scope.example\npath=git/permissioned/adam/repo\n\n",
             ),
             &mut output,
-            "https://api.scope.example",
+            "https://api.scope.example/",
             |api_url| {
                 assert_eq!(api_url, "https://api.scope.example");
                 Ok(Some("scope_cli_secret".to_string()))

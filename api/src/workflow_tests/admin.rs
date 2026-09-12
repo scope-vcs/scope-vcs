@@ -3,24 +3,6 @@ use super::*;
 const OPERATOR_TOKEN: &str = "operator-secret";
 const OPERATOR_AUTH: &str = "Bearer operator-secret";
 
-async fn admin_request(
-    state: AppState,
-    method: &str,
-    uri: &str,
-    auth: Option<String>,
-    body: Body,
-) -> Response {
-    let mut request = Request::builder().method(method).uri(uri);
-    if let Some(auth) = auth {
-        request = request.header(AUTHORIZATION, auth);
-    }
-    request = request.header(CONTENT_TYPE, "application/json");
-    router(state)
-        .oneshot(request.body(body).unwrap())
-        .await
-        .unwrap()
-}
-
 async fn queued_blob(state: &AppState, bytes: &[u8]) -> String {
     let blob = put_source_blob(state.object_store.as_ref(), bytes).unwrap();
     let key = scope_object_store::object_key(&blob);
@@ -34,22 +16,13 @@ async fn queued_blob(state: &AppState, bytes: &[u8]) -> String {
         )
         .await
         .unwrap();
+    state
+        .metadata
+        .cleanup()
+        .expire_source_blob_cleanup_grace_for_tests()
+        .await
+        .unwrap();
     key
-}
-
-async fn drain(state: AppState) -> Response {
-    admin_request(
-        state,
-        "POST",
-        "/v1/admin/cleanup/drain",
-        Some(OPERATOR_AUTH.into()),
-        Body::empty(),
-    )
-    .await
-}
-
-async fn cleanup_status(state: AppState, auth: Option<String>) -> Response {
-    admin_request(state, "GET", "/v1/admin/cleanup", auth, Body::empty()).await
 }
 
 #[tokio::test]
@@ -63,11 +36,16 @@ async fn admin_cleanup_requires_configured_operator_token() {
         (operator_state(), None, StatusCode::UNAUTHORIZED),
         (
             operator_state(),
-            Some("Bearer wrong-token".into()),
+            Some("Bearer wrong-token"),
             StatusCode::UNAUTHORIZED,
         ),
     ] {
-        assert_eq!(cleanup_status(state, auth).await.status(), status);
+        assert_eq!(
+            api_request(router(state), "GET", "/v1/admin/cleanup", auth, None)
+                .await
+                .status(),
+            status
+        );
     }
 }
 
@@ -92,19 +70,32 @@ async fn admin_cleanup_status_shows_pending_cleanup_queues() {
         )
         .await
         .unwrap();
-    let response = cleanup_status(state, Some(OPERATOR_AUTH.into())).await;
+    let response = api_request(
+        router(state),
+        "GET",
+        "/v1/admin/cleanup",
+        Some(OPERATOR_AUTH),
+        None,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_json(response).await;
     assert_eq!(body["pending_cleanup"]["repo_storage"]["count"], 1);
     assert_eq!(body["pending_cleanup"]["source_blob_deletes"]["count"], 1);
-    assert!(body.get("metadata_resets").is_none());
 }
 
 #[tokio::test]
 async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
     let state = operator_state();
     let key = queued_blob(&state, b"stale").await;
-    let response = drain(state.clone()).await;
+    let response = api_request(
+        router(state.clone()),
+        "POST",
+        "/v1/admin/cleanup/drain",
+        Some(OPERATOR_AUTH),
+        None,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_json(response).await;
     assert_eq!(body["status"], "drained");
@@ -139,7 +130,20 @@ async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
         )
         .await
         .unwrap();
-    let response = drain(state.clone()).await;
+    state
+        .metadata
+        .cleanup()
+        .expire_source_blob_cleanup_grace_for_tests()
+        .await
+        .unwrap();
+    let response = api_request(
+        router(state.clone()),
+        "POST",
+        "/v1/admin/cleanup/drain",
+        Some(OPERATOR_AUTH),
+        None,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     let body = response_json(response).await;
     assert_eq!(body["status"], "failed");
@@ -160,41 +164,8 @@ async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
     );
 }
 
-#[tokio::test]
-async fn admin_metadata_reset_route_is_absent() {
-    let response = admin_request(
-        operator_state(),
-        "POST",
-        "/v1/admin/metadata/reset",
-        Some(OPERATOR_AUTH.into()),
-        Body::from(r#"{"confirm":"reset-pre-alpha-metadata"}"#),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
 fn operator_state() -> AppState {
     let mut state = test_state_with_repo();
     state.operator_token = Some(Arc::<str>::from(OPERATOR_TOKEN));
     state
-}
-
-struct DeleteFailsObjectStore;
-
-impl scope_object_store::ObjectStore for DeleteFailsObjectStore {
-    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), scope_object_store::ObjectStoreError> {
-        Ok(())
-    }
-
-    fn get(&self, _key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
-        Err(scope_object_store::ObjectStoreError::not_found(
-            "object not found",
-        ))
-    }
-
-    fn delete(&self, _key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
-        Err(scope_object_store::ObjectStoreError::service_unavailable(
-            "delete failed",
-        ))
-    }
 }

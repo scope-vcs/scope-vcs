@@ -7,7 +7,7 @@ pub mod updates;
 use crate::{
     account::UserAccount,
     content::SourceBlob,
-    policy::{Policy, PolicyError, ScopePath, Visibility},
+    policy::{Policy, ScopePath, ScopePathError, Visibility},
     projection::SourceGraph,
     repo_config::{ConfigVisibility, RepoConfig},
     repository::{
@@ -149,16 +149,12 @@ impl Repository {
         self.record.lifecycle_state == RepoLifecycleState::AwaitingFirstPush
     }
 
-    pub fn graph_has_file(&self, path: &ScopePath) -> bool {
+    pub fn live_file_exists(&self, path: &ScopePath) -> bool {
         self.live_files.contains_key(path)
     }
 
     pub fn bump_change_version(&mut self) {
         self.record.change_version = self.record.change_version.saturating_add(1);
-    }
-
-    pub fn live_tree(&self) -> BTreeMap<ScopePath, SourceBlob> {
-        self.live_files.clone()
     }
 
     pub fn source_blobs(&self) -> Vec<SourceBlob> {
@@ -175,10 +171,6 @@ impl Repository {
             blobs.extend(change.current_content.clone());
         }
         blobs
-    }
-
-    pub fn has_file_for_visibility_update(&self, path: &ScopePath) -> bool {
-        self.graph_has_file(path)
     }
 }
 
@@ -199,7 +191,7 @@ pub fn repo_id(owner: &str, name: &str) -> String {
     )
 }
 
-pub fn repo_relative_scope_path(path: &str) -> Result<ScopePath, PolicyError> {
+pub fn repo_relative_scope_path(path: &str) -> Result<ScopePath, ScopePathError> {
     let path = if path.starts_with('/') {
         path.to_string()
     } else {

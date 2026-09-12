@@ -88,7 +88,7 @@ fn render(frame: &mut Frame<'_>, state: &mut ReviewState) {
     let filter = if state.filter().is_empty() {
         "filter: none".to_string()
     } else {
-        format!("filter: {}", terminal_safe(state.filter()))
+        format!("filter: {}", tui_escaped(state.filter()))
     };
     let filter_mode = if state.editing_filter() {
         " editing"
@@ -119,7 +119,7 @@ fn render(frame: &mut Frame<'_>, state: &mut ReviewState) {
     let read_only_lines = state
         .history_rewrite_summaries()
         .into_iter()
-        .map(|line| Line::from(terminal_safe(&line)))
+        .map(|line| Line::from(tui_escaped(&line)))
         .collect::<Vec<_>>();
     let (read_only_height, row_height) = review_body_heights(
         body_height,
@@ -143,7 +143,7 @@ fn render(frame: &mut Frame<'_>, state: &mut ReviewState) {
         .into_iter()
         .map(|hint| Line::from(fit_cell(&hint, width)))
         .collect::<Vec<_>>();
-    footer_lines.push(Line::from(fit_cell(&terminal_safe(state.message()), width)));
+    footer_lines.push(Line::from(fit_cell(&tui_escaped(state.message()), width)));
     frame.render_widget(Paragraph::new(footer_lines), chunks[2]);
 }
 
@@ -169,7 +169,7 @@ fn row_line(row: &ReviewRow, selected: bool, width: usize) -> Line<'static> {
             expanded,
         } => change_section_line(*kind, *count, *expanded, width),
         ReviewRow::ChangePath { kind, path } => Line::from(Span::styled(
-            fit_cell(&format!("    {}", terminal_safe(path)), width),
+            fit_cell(&format!("    {}", tui_escaped(path)), width),
             change_list_style(*kind),
         )),
         ReviewRow::TreeNode {
@@ -189,14 +189,14 @@ fn row_line(row: &ReviewRow, selected: bool, width: usize) -> Line<'static> {
                 super::tree::ReviewNodeKind::Directory if *expanded => "[v]",
                 super::tree::ReviewNodeKind::Directory => "[>]",
             };
-            let path = format!("{}{symbol} {}", "  ".repeat(*depth), terminal_safe(name));
+            let path = format!("{}{symbol} {}", "  ".repeat(*depth), tui_escaped(name));
             let change = change_status
                 .as_deref()
                 .filter(|status| !status.starts_with(['A', 'D']))
-                .map(|status| format!("  {}", terminal_safe(status)))
+                .map(|status| format!("  {}", tui_escaped(status)))
                 .unwrap_or_default();
             let reserved = if *reserved { " reserved" } else { "" };
-            let detail = format!("{}{}{}", terminal_safe(rule), reserved, change);
+            let detail = format!("{}{}{}", tui_escaped(rule), reserved, change);
             tree_line(&path, *visibility, &detail, width)
         }
     };
@@ -359,7 +359,7 @@ fn fit_cell(text: &str, width: usize) -> String {
     clipped
 }
 
-fn terminal_safe(text: &str) -> String {
+fn tui_escaped(text: &str) -> String {
     text.chars().flat_map(char::escape_default).collect()
 }
 

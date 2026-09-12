@@ -41,12 +41,10 @@ export function RelativeTimestamp({
 export function AbsoluteTimestamp({
   className,
   prefix = '',
-  compact = false,
   value,
 }: {
   className?: string
   prefix?: string
-  compact?: boolean
   value: number | null
 }) {
   const hydrated = useHydrated()
@@ -70,9 +68,7 @@ export function AbsoluteTimestamp({
       title={formatExactDate(date, hydrated)}
     >
       {prefix}
-      {compact
-        ? formatCompactDate(date, hydrated)
-        : hydrated ? formatUnixDate(value) : formatUnixDateUtc(value)}
+      {hydrated ? formatUnixDate(value) : formatUnixDateUtc(value)}
     </time>
   )
 }

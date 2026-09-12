@@ -40,6 +40,20 @@ test('pagination and booleans reject coercion, overflow, and invalid bounds', ()
   assert.throws(() => parsers.parseLoadDiscussionsInput({ ...request, cursor: {} }))
 })
 
+test('reply inputs preserve the explicit wait intent without coercion', () => {
+  const input = {
+    ...discussion,
+    body_markdown: 'Please take another look.',
+    client_reply_id: 'reply_1',
+    reply_to_reply_id: null,
+  }
+  assert.equal(parsers.parseCreateReplyInput({ ...input, wait_after_reply: true }).wait_after_reply, true)
+  assert.equal(parsers.parseCreateReplyInput({ ...input, wait_after_reply: false }).wait_after_reply, false)
+  for (const wait_after_reply of [undefined, null, 0, 'false']) {
+    assert.throws(() => parsers.parseCreateReplyInput({ ...input, wait_after_reply }))
+  }
+})
+
 test('request actions validate the action and only require handles for invitee actions', () => {
   for (const action of ['close', 'leave', 'merge', 'submit']) {
     assert.deepEqual(parsers.parseRequestActionInput({ ...request, action }), { ...request, action })
@@ -66,7 +80,13 @@ test('discussion and reply payloads validate identifiers, anchors, and body byte
   }
   const anchored = { ...create, anchor: { revision_id: 'rev', commit_oid: null, path: null } }
   assert.deepEqual(parsers.parseCreateDiscussionInput(anchored), anchored)
-  const reply = { ...discussion, body_markdown: 'reply', client_reply_id: 'client', reply_to_reply_id: null }
+  const reply = {
+    ...discussion,
+    body_markdown: 'reply',
+    client_reply_id: 'client',
+    reply_to_reply_id: null,
+    wait_after_reply: false,
+  }
   assert.deepEqual(parsers.parseCreateReplyInput(reply), reply)
   assert.throws(() => parsers.parseCreateReplyInput({ ...reply, reply_to_reply_id: 1 }))
   assert.equal(parsers.parseUpdateDescriptionInput({ ...request, description_markdown: '', expected_description_markdown: 'old' }).description_markdown, '')

@@ -1,33 +1,14 @@
 use std::{
-    env, fs,
-    path::{Path, PathBuf},
+    fs,
+    path::Path,
     process::{Command, Output},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub struct TempDir(PathBuf);
-
-impl TempDir {
-    pub fn new(label: &str) -> Self {
-        let path = env::temp_dir().join(format!(
-            "scope-cli-{label}-{}-{}",
-            std::process::id(),
-            unix_nanos()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+#[allow(dead_code)]
+#[path = "../../src/test_support.rs"]
+mod temp_dir;
+pub(crate) use temp_dir::TempDir;
 
 pub fn scope_command(cwd: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_scope"));
@@ -141,7 +122,7 @@ impl TestServer {
         let sessions = config.path().join("scope/sessions");
         fs::create_dir_all(&sessions).unwrap();
         fs::write(
-            sessions.join(format!("cli-session-{}", hex::encode(api_url.as_bytes()))),
+            sessions.join(scope_cli::auth::session_storage_key(&api_url)),
             "test-token",
         )
         .unwrap();
@@ -185,3 +166,33 @@ impl Drop for TestServer {
         }
     }
 }
+
+#[allow(dead_code)]
+pub fn assert_success(output: &Output, action: &str) {
+    assert!(
+        output.status.success(),
+        "{action} failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[allow(dead_code)]
+pub fn git_stdout(
+    cwd: &Path,
+    args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+) -> String {
+    let output = Command::new("git")
+        .current_dir(cwd)
+        .args(args)
+        .output()
+        .unwrap();
+    assert_success(&output, "inspect Git checkout");
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
+
+#[allow(dead_code)]
+#[path = "../../src/test_fixtures.rs"]
+mod fixtures;
+#[allow(unused_imports)]
+pub use fixtures::{repository_response, session_response};

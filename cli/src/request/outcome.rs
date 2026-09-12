@@ -4,8 +4,6 @@ use crate::api::{
     RequestInviteeMutationResponse, RequestListItemResponse, RequestMutationResponse,
     RequestRatingResponse, RequestSummaryResponse,
 };
-use anyhow::Context;
-use scope_api_contract::CliSuccessEnvelope;
 use serde::Serialize;
 
 pub struct RequestCommandOutcome {
@@ -27,17 +25,8 @@ impl RequestCommandOutcome {
         }
     }
 
-    pub fn render(self, json: bool) -> anyhow::Result<()> {
-        if json {
-            let envelope = CliSuccessEnvelope::new(self.command, self.result.json_value()?);
-            println!(
-                "{}",
-                serde_json::to_string(&envelope).context("serialize request command result")?
-            );
-        } else if !self.human_lines.is_empty() {
-            println!("{}", self.human_lines.join("\n"));
-        }
-        Ok(())
+    pub fn render(self) -> anyhow::Result<()> {
+        crate::execution::emit(self.command, &self.result, self.human_lines)
     }
 }
 
@@ -50,22 +39,13 @@ pub(super) enum RequestCommandResult {
     Checks(ChecksResult),
     Detail(DetailResult),
     List(ListResult),
-    Mutation(RepoResponse<RequestMutationResponse>),
-    AttachmentMutation(AttachmentMutationResult),
+    Mutation(MutationResult),
     Invitee(RepoResponse<RequestInviteeMutationResponse>),
     Leave(TargetResponse<LeaveRequestResponse>),
     Close(TargetResponse<RequestCloseResponse>),
     Discussion(DiscussionResult),
-    AttachmentDiscussion(AttachmentDiscussionResult),
     DiscussionReply(DiscussionReplyResult),
-    AttachmentDiscussionReply(AttachmentDiscussionReplyResult),
     Rating(TargetResponse<RequestRatingResponse>),
-}
-
-impl RequestCommandResult {
-    fn json_value(&self) -> anyhow::Result<serde_json::Value> {
-        serde_json::to_value(self).context("serialize typed request result")
-    }
 }
 
 #[derive(Serialize)]
@@ -109,6 +89,8 @@ pub(super) struct DiscussionResult {
     pub(super) repo: RepoSummaryResponse,
     pub(super) request_id: String,
     pub(super) discussion: RequestDiscussionSummaryResponse,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
 }
 
 #[derive(Serialize)]
@@ -117,29 +99,15 @@ pub(super) struct DiscussionReplyResult {
     pub(super) request_id: String,
     pub(super) discussion: RequestDiscussionSummaryResponse,
     pub(super) reply: RequestDiscussionReplyResponse,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
 }
 
 #[derive(Serialize)]
-pub(super) struct AttachmentMutationResult {
+pub(super) struct MutationResult {
     pub(super) repo: RepoSummaryResponse,
     pub(super) response: RequestMutationResponse,
-    pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
-}
-
-#[derive(Serialize)]
-pub(super) struct AttachmentDiscussionResult {
-    pub(super) repo: RepoSummaryResponse,
-    pub(super) request_id: String,
-    pub(super) discussion: RequestDiscussionSummaryResponse,
-    pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
-}
-
-#[derive(Serialize)]
-pub(super) struct AttachmentDiscussionReplyResult {
-    pub(super) repo: RepoSummaryResponse,
-    pub(super) request_id: String,
-    pub(super) discussion: RequestDiscussionSummaryResponse,
-    pub(super) reply: RequestDiscussionReplyResponse,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
 }
 

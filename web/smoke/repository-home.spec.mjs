@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { assertMobileFilesCollapsed, baseUrl, repoPath, requestRepoPath, withPage } from './browser-smoke.mjs'
+import { assertMobileFilesCollapsed, baseUrl, repoPath, requestRepoPath, waitForClientHydration, withPage } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
 const viewport = { width: 1280, height: 900 }
@@ -72,32 +72,35 @@ test('README details preserve inspection without exposing repeated navigator met
     assert.equal(await preview.getAttribute('sandbox'), '')
     assert.equal(await page.getByLabel('Repository file navigator').getByText('Tracked', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Sandboxed document', { exact: true }).isVisible(), false)
-    const details = page.getByLabel('File details', { exact: true })
-    const tooltip = page.getByRole('tooltip')
-    await details.hover()
-    await tooltip.getByText(/^Blob:/).waitFor()
-    await tooltip.getByText('Sandboxed document. Repository HTML runs in an isolated preview.', { exact: true }).waitFor()
+    const details = page.getByRole('button', { name: 'File details', exact: true })
+    const detailsPanel = page.getByRole('dialog', { name: 'File details', exact: true })
+    await waitForClientHydration(details)
+    await details.click()
+    await detailsPanel.getByText(/^Blob:/).waitFor()
+    await detailsPanel.getByText('Sandboxed document. Repository HTML runs in an isolated preview.', { exact: true }).waitFor()
     await page.keyboard.press('Escape')
-    assert.equal(await tooltip.isVisible(), false)
+    assert.equal(await detailsPanel.isVisible(), false)
 
     await page.goto(`${baseUrl}${repoPath}?file=src%2Fapp.ts`)
     await page.locator('pre code').waitFor()
     assert.equal(await page.getByText(/^\d+ B · /).count(), 0)
+    await waitForClientHydration(details)
     await details.focus()
-    await tooltip.getByText(/^Blob: [0-9a-f]{40}$/).waitFor()
+    await details.press('Enter')
+    await detailsPanel.getByText(/^Blob: [0-9a-f]{40}$/).waitFor()
     await page.keyboard.press('Escape')
-    assert.equal(await tooltip.isVisible(), false)
+    assert.equal(await detailsPanel.isVisible(), false)
     await page.setViewportSize({ width: 390, height: 844 })
     await details.click()
-    await tooltip.getByText(/^Blob: [0-9a-f]{40}$/).waitFor()
-    const bounds = await tooltip.boundingBox()
+    await detailsPanel.getByText(/^Blob: [0-9a-f]{40}$/).waitFor()
+    const bounds = await detailsPanel.boundingBox()
     assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390)
   }, { viewport })
 })
 
 // Client-side navigation from the already-open home page.
 async function navigateFromHome(page, path) {
-  await page.waitForFunction(() => globalThis.__TSR_ROUTER__)
+  await waitForClientHydration(page.getByRole('button', { name: 'Switch to light mode' }))
   const url = new URL(path, baseUrl)
   await page.evaluate(({ to, search }) => { void globalThis.__TSR_ROUTER__.navigate({ to, search }) }, {
     to: url.pathname,

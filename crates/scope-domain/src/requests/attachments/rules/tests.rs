@@ -1,28 +1,25 @@
 use super::*;
 
 fn prepared() -> RequestAttachment {
-    validate_prepare_attachment(
-        PrepareRequestAttachmentInput {
-            attachment_id: "att_1".into(),
-            repository_id: "repo_1".into(),
-            request_id: "req_1".into(),
-            uploader_user_id: "user_1".into(),
-            upload_id: "upload_1".into(),
-            operation_id: "operation_1".into(),
-            target: RequestAttachmentTarget::Description,
-            filename: "proof.png".into(),
-            declared_media_type: "image/png".into(),
-            size_bytes: 10,
-            sha256: "a".repeat(64),
-            actor_can_write_target: true,
-            request_is_open: true,
-            target_attachment_count: 0,
-            request_source_bytes: 0,
-            repository_reserved_bytes: 0,
-            now_unix: 10,
-        },
-        RequestAttachmentLimits::default(),
-    )
+    validate_prepare_attachment(PrepareRequestAttachmentInput {
+        attachment_id: "att_1".into(),
+        repository_id: "repo_1".into(),
+        request_id: "req_1".into(),
+        uploader_user_id: "user_1".into(),
+        upload_id: "upload_1".into(),
+        operation_id: "operation_1".into(),
+        target: RequestAttachmentTarget::Description,
+        filename: "proof.png".into(),
+        declared_media_type: "image/png".into(),
+        size_bytes: 10,
+        sha256: "a".repeat(64),
+        actor_can_write_target: true,
+        request_is_open: true,
+        target_attachment_count: 0,
+        request_source_bytes: 0,
+        repository_reserved_bytes: 0,
+        now_unix: 10,
+    })
     .unwrap()
     .attachment
 }
@@ -43,7 +40,6 @@ fn uploaded() -> RequestAttachment {
             sha256: "a".repeat(64),
         },
         11,
-        RequestAttachmentLimits::default(),
     )
     .unwrap()
 }
@@ -81,11 +77,11 @@ fn prepare_enforces_media_and_aggregate_limits() {
         repository_reserved_bytes: 0,
         now_unix: 10,
     };
-    assert!(validate_prepare_attachment(input.clone(), Default::default()).is_err());
+    assert!(validate_prepare_attachment(input.clone()).is_err());
     input.size_bytes = 1;
     input.repository_reserved_bytes =
         RequestAttachmentLimits::default().max_repository_storage_bytes;
-    assert!(validate_prepare_attachment(input, Default::default()).is_err());
+    assert!(validate_prepare_attachment(input).is_err());
 }
 
 #[test]
@@ -109,10 +105,10 @@ fn prepare_bounds_untrusted_metadata() {
         repository_reserved_bytes: 0,
         now_unix: 10,
     };
-    assert!(validate_prepare_attachment(input.clone(), Default::default()).is_err());
+    assert!(validate_prepare_attachment(input.clone()).is_err());
     input.operation_id = "operation_1".into();
     input.filename = "folder/proof.png".into();
-    assert!(validate_prepare_attachment(input, Default::default()).is_err());
+    assert!(validate_prepare_attachment(input).is_err());
 }
 
 #[test]
@@ -131,7 +127,6 @@ fn finish_requires_exact_receipts_and_remains_idempotent_after_processing_starts
         }],
         processing.original.clone().unwrap(),
         13,
-        Default::default(),
     )
     .unwrap();
     assert_eq!(repeated, processing);
@@ -145,7 +140,7 @@ fn individual_part_must_match_its_exact_prepared_range() {
         size_bytes: 10,
         sha256: "b".repeat(64),
     };
-    validate_attachment_part(&upload, &exact, Default::default()).unwrap();
+    validate_attachment_part(&upload, &exact).unwrap();
     assert!(
         validate_attachment_part(
             &upload,
@@ -153,7 +148,6 @@ fn individual_part_must_match_its_exact_prepared_range() {
                 part_number: 2,
                 ..exact.clone()
             },
-            Default::default(),
         )
         .is_err()
     );
@@ -164,7 +158,6 @@ fn individual_part_must_match_its_exact_prepared_range() {
                 size_bytes: 9,
                 ..exact
             },
-            Default::default(),
         )
         .is_err()
     );
@@ -182,7 +175,6 @@ fn binding_comes_only_from_markdown_and_cannot_cross_targets() {
         "![proof](/request-attachments/att_1)",
         std::slice::from_ref(&upload),
         &[],
-        Default::default(),
     )
     .unwrap();
     assert!(can_view_request_attachment(
@@ -199,7 +191,6 @@ fn binding_comes_only_from_markdown_and_cannot_cross_targets() {
             "[proof](/request-attachments/att_1)",
             &[upload],
             &bindings,
-            Default::default(),
         )
         .is_err()
     );

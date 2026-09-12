@@ -2,7 +2,9 @@ use super::ecs::{EcsClient, StartError};
 use super::provisioning::Provisioning;
 use crate::settings::CloudExecutionSettings;
 use anyhow::Context as _;
-use scope_domain::runs::{attempt::MAX_RUN_ATTEMPT_AGE_SECONDS, step::AttemptConclusion};
+use scope_domain::runs::{
+    attempt::MAX_RUN_ATTEMPT_AGE_SECONDS, exit_code::SetupFailure, step::AttemptConclusion,
+};
 use scope_postgres::db::MetadataStore;
 use sha2::{Digest as _, Sha256};
 use std::time::Duration;
@@ -38,8 +40,8 @@ impl CloudExecutionCoordinator {
             // Bound each coordinator tick, including exhausted-job repairs and contention.
             for _ in 0..self.settings.max_concurrency.max(1) {
                 starts.wait_for_slot().await?;
-                let attempt_id = random_id("attempt")?;
-                let bootstrap_token = random_token("scope_bootstrap_")?;
+                let attempt_id = crate::random_hex("attempt_", 16)?;
+                let bootstrap_token = crate::random_hex("scope_bootstrap_", 32)?;
                 let bootstrap_hash = hex::encode(Sha256::digest(bootstrap_token.as_bytes()));
                 let claim = match self
                     .metadata
@@ -124,7 +126,7 @@ impl CloudExecutionCoordinator {
                         attempt_id,
                         &bootstrap_hash,
                         AttemptConclusion::SetupFailed {
-                            exit_code: 69,
+                            exit_code: SetupFailure::ProviderRejected.exit_code(),
                             message: format!("provider rejected dispatch: {error}")
                                 .chars()
                                 .take(2048)
@@ -274,18 +276,6 @@ async fn cleanup_terminal_task(
             Ok(false)
         }
     }
-}
-
-fn random_id(prefix: &str) -> anyhow::Result<String> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    Ok(format!("{prefix}_{}", hex::encode(bytes)))
-}
-
-fn random_token(prefix: &str) -> anyhow::Result<String> {
-    let mut bytes = [0_u8; 32];
-    getrandom::fill(&mut bytes).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    Ok(format!("{prefix}{}", hex::encode(bytes)))
 }
 
 fn db_error(error: scope_postgres::error::PostgresError) -> anyhow::Error {

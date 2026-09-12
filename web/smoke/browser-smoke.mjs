@@ -46,7 +46,7 @@ export async function withPage(path, run, { prepare, ...pageOptions } = {}) {
   }, pageOptions)
 }
 
-export async function isClientHydrated(locator) {
+async function isClientHydrated(locator) {
   return locator.evaluate((element) => Object.keys(element).some((key) => key.startsWith('__reactProps$')))
 }
 

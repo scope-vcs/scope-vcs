@@ -3,9 +3,9 @@ use crate::config::{
     LOCAL_APP_ORIGIN, SCOPE_API_PUBLIC_URL_ENV, SCOPE_APP_ORIGIN_ENV, non_empty_env,
 };
 use crate::demo_seed::DevSeedUser;
+use crate::env_guard::{require_exact, required};
 
 pub(super) const SCOPE_ENV_ENV: &str = "SCOPE_ENV";
-const SCOPE_OBJECT_STORE_ENV: &str = "SCOPE_OBJECT_STORE";
 pub(super) const LOCAL_SCOPE_ENV: &str = "local";
 pub(super) const SCOPE_DEV_USER_EMAIL_ENV: &str = "SCOPE_DEV_USER_EMAIL";
 pub(super) const SCOPE_DEV_USER_HANDLE_ENV: &str = "SCOPE_DEV_USER_HANDLE";
@@ -33,7 +33,6 @@ struct DevEnvSnapshot {
     api_public_url: Option<String>,
     clerk_issuer: Option<String>,
     clerk_authorized_parties: Option<String>,
-    object_store: Option<String>,
     railway_environment_name: Option<String>,
     railway_project_id: Option<String>,
     dev_user_email: Option<String>,
@@ -49,7 +48,6 @@ impl DevEnvSnapshot {
             api_public_url: non_empty_env(SCOPE_API_PUBLIC_URL_ENV),
             clerk_issuer: non_empty_env(CLERK_ISSUER_ENV),
             clerk_authorized_parties: non_empty_env(CLERK_AUTHORIZED_PARTIES_ENV),
-            object_store: non_empty_env(SCOPE_OBJECT_STORE_ENV),
             railway_environment_name: non_empty_env("RAILWAY_ENVIRONMENT_NAME"),
             railway_project_id: non_empty_env("RAILWAY_PROJECT_ID"),
             dev_user_email: non_empty_env(SCOPE_DEV_USER_EMAIL_ENV),
@@ -79,21 +77,10 @@ fn validate_snapshot(snapshot: &DevEnvSnapshot) -> anyhow::Result<LocalDevSettin
         anyhow::bail!("{SCOPE_ENV_ENV}=local cannot run with Railway environment variables");
     }
 
-    let object_store = snapshot.object_store.as_deref().unwrap_or("filesystem");
-    if object_store != "filesystem" {
-        anyhow::bail!("{SCOPE_ENV_ENV}=local requires {SCOPE_OBJECT_STORE_ENV}=filesystem");
-    }
-
-    let database_url = snapshot
-        .database_url
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("{DATABASE_URL_ENV} is required in local dev"))?;
+    let database_url = required(DATABASE_URL_ENV, &snapshot.database_url)?;
     validate_local_database_url(database_url)?;
 
-    let clerk_issuer = snapshot
-        .clerk_issuer
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("{CLERK_ISSUER_ENV} is required in local dev"))?;
+    let clerk_issuer = required(CLERK_ISSUER_ENV, &snapshot.clerk_issuer)?;
     validate_local_clerk_issuer(clerk_issuer)?;
 
     if let Some(authorized_parties) = snapshot.clerk_authorized_parties.as_deref()
@@ -106,14 +93,6 @@ fn validate_snapshot(snapshot: &DevEnvSnapshot) -> anyhow::Result<LocalDevSettin
         database_url: database_url.to_string(),
         seed_user: dev_seed_user(snapshot)?,
     })
-}
-
-fn require_exact(name: &str, actual: Option<&str>, expected: &str) -> anyhow::Result<()> {
-    match actual {
-        Some(actual) if actual == expected => Ok(()),
-        Some(actual) => anyhow::bail!("{name} must be {expected} in local dev, got {actual}"),
-        None => anyhow::bail!("{name} must be {expected} in local dev"),
-    }
 }
 
 fn validate_local_clerk_issuer(issuer: &str) -> anyhow::Result<()> {
@@ -377,7 +356,6 @@ mod tests {
             api_public_url: Some(LOCAL_API_ORIGIN.to_string()),
             clerk_issuer: Some("https://scope-dev.clerk.accounts.dev".to_string()),
             clerk_authorized_parties: Some(LOCAL_APP_ORIGIN.to_string()),
-            object_store: Some("filesystem".to_string()),
             database_url: Some("postgres://scope:scope@127.0.0.1:5432/scope_dev".to_string()),
             dev_user_email: Some("dev@example.com".to_string()),
             dev_user_handle: Some("dev".to_string()),
