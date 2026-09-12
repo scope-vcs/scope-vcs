@@ -1,3 +1,4 @@
+#![warn(unreachable_pub)]
 mod lifecycle;
 mod runner;
 mod stdio;

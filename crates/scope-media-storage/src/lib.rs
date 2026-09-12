@@ -1,3 +1,4 @@
+#![warn(unreachable_pub)]
 mod error;
 mod keys;
 mod manifest;

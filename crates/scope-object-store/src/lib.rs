@@ -1,3 +1,4 @@
+#![warn(unreachable_pub)]
 mod encrypted;
 mod error;
 mod filesystem;

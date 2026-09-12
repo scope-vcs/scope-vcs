@@ -1,3 +1,4 @@
+#![warn(unreachable_pub)]
 mod envelope;
 mod error;
 mod file;

@@ -1,5 +1,7 @@
 //! Durable cache-plane rules, independent of HTTP, persistence, and object storage.
 
+#![warn(unreachable_pub)]
+
 mod decisions;
 mod error;
 mod policy;
