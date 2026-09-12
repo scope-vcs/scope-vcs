@@ -1,89 +1,93 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RequestListItem } from '@/api/types'
-import type { RequestQueuePages, RequestQueueViewAction } from './request-list-model'
-import { dispatchRequestQueue, openRequestQueue, requestQueueResource, resetRequestQueueCache } from './request-queue-cache'
+import type { RequestQueueItemResponse, RequestQueuePageResponse } from '../../api/types.generated'
+import { loadMoreRequestQueue, refreshRequestQueue, requestQueueResource, searchRequestQueue, type LoadRequestQueuePage } from './request-queue-cache'
 
-function pages(): RequestQueuePages {
-  return {
-    open: { requests: [{ id: 'first' } as RequestListItem], next_cursor: 'older' },
-    closed: { requests: [], next_cursor: null },
-    your_work: { requests: [], next_cursor: null },
-  }
-}
+const row = (id: string) => ({ request: { id } }) as RequestQueueItemResponse
+const page = (ids: string[], cursor: string | null = null): RequestQueuePageResponse => ({ requests: ids.map(row), next_cursor: cursor, next_attention_at_unix: null })
+const load: LoadRequestQueuePage = async (section, cursor, search) => page([`${section}-${search || 'all'}-${cursor || 'first'}`], cursor ? null : 'second')
+const open = (key: string, version = '1', fetchPage = load) => requestQueueResource.load(key, version, (signal) => refreshRequestQueue(key, fetchPage, signal))
 
-function paginate(key: string) {
-  openRequestQueue(key, pages())
-  dispatch(key, {
-    type: 'load_succeeded', generation: 0, section: 'open',
-    page: { requests: [{ id: 'older' } as RequestListItem], next_cursor: null },
-  })
-}
-
-test('navigation reuses loaded requests across equivalent loader snapshots', () => {
-  resetRequestQueueCache()
-  paginate('repo/viewer/version')
-  const reopened = openRequestQueue('repo/viewer/version', pages())
-  assert.deepEqual(reopened.pages.open.requests.map(({ id }) => id), ['first', 'older'])
-  assert.equal(reopened.pages.open.next_cursor, null)
+test('navigation reuses loaded pages and search in the same viewer/access scope', async () => {
+  requestQueueResource.clear()
+  let calls = 0
+  const counted: LoadRequestQueuePage = (...args) => { calls++; return load(...args) }
+  await open('repo/viewer/access', '1', counted)
+  await loadMoreRequestQueue('repo/viewer/access', 'active', counted)
+  const cached = await open('repo/viewer/access', '1', counted)
+  assert.equal(calls, 5)
+  assert.equal(cached.pages.active.requests.length, 2)
+  await searchRequestQueue('repo/viewer/access', 'needle', counted)
+  const searched = await open('repo/viewer/access', '1', counted)
+  assert.equal(calls, 9)
+  assert.equal(searched.query, 'needle')
+  assert.equal(searched.pages.active.requests[0].request.id, 'active-needle-first')
+  assert.equal((await open('repo/other-viewer/access')).query, '')
 })
 
-test('search operations remain owned by the resource while a page is closed', () => {
-  resetRequestQueueCache()
-  paginate('search')
-  dispatch('search', { type: 'search_draft_changed', value: 'needle' })
-  dispatch('search', { type: 'search_started', generation: 0 })
-  assert.equal(openRequestQueue('search', pages()).searching, true)
-  dispatch('search', {
-    type: 'search_succeeded', generation: 0, query: 'needle',
-    open: { requests: [{ id: 'matching' } as RequestListItem], next_cursor: null },
-    closed: { requests: [], next_cursor: null },
-  })
-  const reopened = openRequestQueue('search', pages())
-  assert.equal(reopened.searchQuery, 'needle')
-  assert.equal(reopened.searchDraft, 'needle')
-  assert.deepEqual(reopened.pages.open.requests.map(({ id }) => id), ['matching'])
-  assert.equal(reopened.searching, false)
+test('invalidation retains visible rows and refills loaded depth for the current search', async () => {
+  requestQueueResource.clear()
+  await open('refresh')
+  await searchRequestQueue('refresh', 'needle', load)
+  await loadMoreRequestQueue('refresh', 'active', load)
+  const previous = requestQueueResource.peek('refresh')
+  requestQueueResource.invalidate('refresh')
+  let complete!: (value: RequestQueuePageResponse) => void
+  const delayed: LoadRequestQueuePage = (section, cursor, query) => section === 'active' && !cursor
+    ? new Promise((resolve) => { complete = resolve }) : load(section, cursor, query)
+  const pending = open('refresh', '2', delayed)
+  await Promise.resolve()
+  assert.equal(requestQueueResource.peek('refresh'), previous)
+  complete(page(['active-needle-new'], 'second'))
+  const updated = await pending
+  assert.equal(updated.query, 'needle')
+  assert.deepEqual(updated.pages.active.requests.map(({ request }) => request.id), ['active-needle-new', 'active-needle-second'])
 })
 
-test('changed snapshots invalidate older operations and scope changes isolate rows', () => {
-  resetRequestQueueCache()
-  paginate('viewer/version1')
-  const changed = pages()
-  changed.open.requests = []
-  openRequestQueue('viewer/version1', changed)
-  dispatch('viewer/version1', {
-    type: 'load_succeeded', generation: 0, section: 'open', page: pages().open,
-  })
-  assert.equal(requestQueueResource.peek('viewer/version1')?.pages.open.requests.length, 0)
-  assert.equal(openRequestQueue('viewer/version2', pages()).pages.open.requests.length, 1)
-  assert.equal(openRequestQueue('other-viewer/version1', pages()).pages.open.requests.length, 1)
+test('a late page cannot replace a newer search or a cleared viewer scope', async () => {
+  requestQueueResource.clear()
+  await open('race')
+  let finish!: (value: RequestQueuePageResponse) => void
+  const pending = loadMoreRequestQueue('race', 'active', () => new Promise((resolve) => { finish = resolve }))
+  await Promise.resolve()
+  await searchRequestQueue('race', 'new', load)
+  finish(page(['obsolete']))
+  await pending
+  assert.equal(requestQueueResource.peek('race')?.query, 'new')
+  const completions: ((value: RequestQueuePageResponse) => void)[] = []
+  const late = searchRequestQueue('race', 'obsolete', () => new Promise((resolve) => { completions.push(resolve) }))
+  await Promise.resolve()
+  requestQueueResource.clear()
+  for (const complete of completions) complete(page(['obsolete']))
+  await late
+  // Clearing detaches all outstanding attempts; no late result can recreate rows.
+  assert.equal(requestQueueResource.peek('race'), null)
 })
 
-test('retention evicts older queues and keeps oversized results only while subscribed', () => {
-  resetRequestQueueCache()
-  for (let index = 0; index < 13; index++) paginate(String(index))
-  assert.equal(openRequestQueue('0', pages()).pages.open.requests.length, 1)
-  assert.equal(openRequestQueue('12', pages()).pages.open.requests.length, 2)
-  const leave = requestQueueResource.subscribe('12', () => {})
-  dispatch('12', { type: 'search_draft_changed', value: 'x'.repeat(3 * 1024 * 1024) })
-  assert.equal(requestQueueResource.peek('12')?.pages.open.requests.length, 2)
-  leave()
-  assert.equal(requestQueueResource.peek('12'), null)
+test('refresh failure leaves valid data available for retry', async () => {
+  requestQueueResource.clear()
+  const previous = await open('error')
+  requestQueueResource.invalidate('error')
+  await assert.rejects(open('error', '2', async () => { throw new Error('offline') }), /offline/)
+  assert.equal(requestQueueResource.peek('error'), previous)
+  assert.match(String(requestQueueResource.getSnapshot('error').error), /offline/)
+  await open('error', '2')
+  assert.equal(requestQueueResource.getSnapshot('error').error, null)
 })
 
-function dispatch(key: string, action: RequestQueueViewAction) {
-  dispatchRequestQueue(key, action, requestQueueResource.peek(key)!.owner)
-}
-
-test('late queue responses cannot update a replacement resource with the same generation', () => {
-  resetRequestQueueCache()
-  const original = openRequestQueue('request', pages())
-  resetRequestQueueCache()
-  openRequestQueue('request', pages())
-  dispatchRequestQueue('request', {
-    type: 'load_succeeded', generation: 0, section: 'open',
-    page: { requests: [{ id: 'late' } as RequestListItem], next_cursor: null },
-  }, original.owner)
-  assert.deepEqual(requestQueueResource.peek('request')?.pages.open.requests.map(({ id }) => id), ['first'])
+test('live invalidation restarts an in-flight search with the requested query', async () => {
+  requestQueueResource.clear()
+  const previous = await open('search-refresh')
+  const completions: ((value: RequestQueuePageResponse) => void)[] = []
+  const pending = searchRequestQueue('search-refresh', 'needle', () => new Promise((resolve) => { completions.push(resolve) }))
+  await Promise.resolve()
+  assert.equal(requestQueueResource.peek('search-refresh')?.pages, previous.pages)
+  assert.equal(requestQueueResource.peek('search-refresh')?.query, '')
+  requestQueueResource.invalidate('search-refresh')
+  const refreshed = await open('search-refresh', '2')
+  assert.equal(refreshed.query, 'needle')
+  assert.equal(refreshed.pages.active.requests[0].request.id, 'active-needle-first')
+  for (const complete of completions) complete(page(['obsolete']))
+  await pending
+  assert.equal(requestQueueResource.peek('search-refresh'), refreshed)
 })

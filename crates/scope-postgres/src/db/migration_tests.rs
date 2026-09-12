@@ -19,6 +19,7 @@ mod repository_workflow_catalogs;
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0042_current_schema_baseline",
     "m0043_retire_git_manifests",
+    "m0044_request_attention",
 ];
 
 pub(super) async fn isolated_database() -> (

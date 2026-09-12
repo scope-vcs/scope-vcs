@@ -24,7 +24,7 @@ export async function assertRequestCrossLinksStayInDocument(page) {
   const anchoredThread = page.locator(
     '#discussion-discussion_demo_revision_jitter',
   )
-  const revisionLink = anchoredThread.getByRole('link', { name: /Revision/ })
+  const revisionLink = anchoredThread.getByRole('link', { name: /View revision/ })
   await waitForClientHydration(page, revisionLink)
   await revisionLink.click()
   await page.waitForURL((url) => (

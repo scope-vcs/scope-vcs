@@ -71,6 +71,8 @@ mod repo_reads;
 mod repository_access;
 mod repository_rows;
 mod request_access;
+mod request_attention;
+pub use request_attention::{ApplyRequestAttentionCommand, RequestAttentionResult};
 mod request_discussion_rows;
 mod request_revision_rows;
 pub use request_discussion_rows::RequestDiscussionReplyReadModel;
@@ -93,7 +95,9 @@ pub use request_lifecycle_commands::{
     SubmitRequestCommand,
 };
 mod request_queue;
-pub use request_queue::{RequestQueueCursor, RequestQueuePageQuery, RequestQueueRow};
+pub use request_queue::{
+    RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,
+};
 mod request_ratings;
 mod request_rows;
 pub use request_rows::{RequestListPageQuery, RequestListRow};

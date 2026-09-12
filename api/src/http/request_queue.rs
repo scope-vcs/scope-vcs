@@ -1,7 +1,9 @@
 use super::{
     requests::{current_main_oid_for_context, repo_metadata_and_access},
-    responses::request_list_item_response,
+    responses::{request_actor_summary_response, request_list_item_response},
 };
+use crate::auth::scope::require_scope_user;
+use crate::repo_events::RepoChangeReason;
 use crate::{error::ApiError, state::AppState};
 use axum::{
     Json,
@@ -13,19 +15,23 @@ use chacha20poly1305::{
     ChaCha20Poly1305, Key, Nonce,
     aead::{Aead, KeyInit, Payload},
 };
-use scope_api_contract::RequestListResponse;
+use scope_api_contract::{
+    RequestAttentionActionRequest, RequestAttentionMutationResponse, RequestAttentionResponse,
+    RequestQueueItemResponse, RequestQueuePageResponse,
+};
 use scope_domain::requests::{
-    REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, RequestQueueSection,
+    REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, RequestQueueClassification,
+    RequestQueueSection,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-const REQUEST_QUEUE_CURSOR_PREFIX: &str = "scope_rq_";
-const REQUEST_QUEUE_CURSOR_NONCE_BYTES: usize = 12;
-const REQUEST_QUEUE_CURSOR_MAX_ENCODED_BYTES: usize = 2_048;
-const REQUEST_QUEUE_CURSOR_KEY_DOMAIN: &[u8] = b"scope.request-queue-cursor.key.v1\0";
-const REQUEST_QUEUE_CURSOR_AAD_DOMAIN: &str = "scope.request-queue-cursor.aad.v1";
-const REQUEST_QUEUE_SEARCH_MAX_CHARS: usize = 200;
+const CURSOR_PREFIX: &str = "scope_rq_";
+const CURSOR_NONCE_BYTES: usize = 12;
+const CURSOR_MAX_ENCODED_BYTES: usize = 2_048;
+const CURSOR_KEY_DOMAIN: &[u8] = b"scope.request-queue-cursor.key.v2\0";
+const CURSOR_AAD_DOMAIN: &str = "scope.request-queue-cursor.aad.v2";
+const SEARCH_MAX_CHARS: usize = 200;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RequestQueueQuery {
@@ -40,14 +46,14 @@ pub(crate) async fn request_queue(
     headers: HeaderMap,
     Path((owner, repo_name)): Path<(String, String)>,
     Query(query): Query<RequestQueueQuery>,
-) -> Result<Json<RequestListResponse>, ApiError> {
+) -> Result<Json<RequestQueuePageResponse>, ApiError> {
     let (repo, access, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let after = query
         .cursor
         .as_deref()
         .map(|cursor| {
-            parse_request_queue_cursor(
+            parse_cursor(
                 state.push_intent_signing_key.as_ref(),
                 &repo.record.id,
                 query.section,
@@ -60,26 +66,15 @@ pub(crate) async fn request_queue(
         .as_deref()
         .map(str::trim)
         .filter(|search| !search.is_empty());
-    if search.is_some_and(|search| search.chars().count() > REQUEST_QUEUE_SEARCH_MAX_CHARS) {
+    if search.is_some_and(|search| search.chars().count() > SEARCH_MAX_CHARS) {
         return Err(ApiError::bad_request("request queue search is too long"));
-    }
-    if query.section == RequestQueueSection::YourWork && search.is_some() {
-        return Err(ApiError::bad_request(
-            "search is only supported for open and closed requests",
-        ));
     }
     let limit = query
         .limit
         .unwrap_or(REQUEST_LIST_DEFAULT_PAGE_SIZE)
         .clamp(1, REQUEST_LIST_MAX_PAGE_SIZE);
-    if query.section == RequestQueueSection::YourWork && viewer_user_id.is_none() {
-        return Ok(Json(RequestListResponse {
-            requests: Vec::new(),
-            next_cursor: None,
-        }));
-    }
-
-    let mut rows = state
+    let now_unix = crate::persistence::unix_now()?;
+    let mut page = state
         .metadata
         .requests()
         .request_queue_page(scope_postgres::db::RequestQueuePageQuery {
@@ -90,14 +85,16 @@ pub(crate) async fn request_queue(
             search,
             after: after.as_ref(),
             limit: (limit + 1) as u64,
+            now_unix,
         })
         .await?;
-    let has_more = rows.len() > limit;
-    rows.truncate(limit);
+    let has_more = page.rows.len() > limit;
+    page.rows.truncate(limit);
     let next_cursor = if has_more {
-        rows.last()
+        page.rows
+            .last()
             .map(|row| {
-                encode_request_queue_cursor(
+                encode_cursor(
                     state.push_intent_signing_key.as_ref(),
                     &repo.record.id,
                     query.section,
@@ -108,54 +105,169 @@ pub(crate) async fn request_queue(
     } else {
         None
     };
-    let current_main_oid = if rows.is_empty() {
+    let current_main_oid = if page.rows.is_empty() {
         None
     } else {
         current_main_oid_for_context(&state, &repo).await?
     };
-    let requests = rows
+    let requests = page
+        .rows
         .into_iter()
-        .map(|row| request_list_item_response(row.request, access, current_main_oid.clone()))
+        .map(|row| {
+            let author = request_actor_summary_response(&row.request.author_user_id, &page.users)?;
+            let claimer = row
+                .claim
+                .as_ref()
+                .map(|claim| request_actor_summary_response(&claim.claimer_user_id, &page.users))
+                .transpose()?;
+            let activity_version = row.request.activity_version;
+            Ok(RequestQueueItemResponse {
+                attention_at_unix: row.cursor.updated_at_unix,
+                request: request_list_item_response(row.request, access, current_main_oid.clone())?,
+                author,
+                attention: attention_response(row.attention, activity_version),
+                claimer,
+            })
+        })
         .collect::<Result<Vec<_>, ApiError>>()?;
-
-    Ok(Json(RequestListResponse {
+    Ok(Json(RequestQueuePageResponse {
         requests,
         next_cursor,
+        next_attention_at_unix: page.next_attention_at_unix,
     }))
 }
 
-fn encode_request_queue_cursor(
+pub(crate) async fn apply_attention(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo_name, request_id)): Path<(String, String, String)>,
+    Json(input): Json<RequestAttentionActionRequest>,
+) -> Result<Json<RequestAttentionMutationResponse>, ApiError> {
+    let user = require_scope_user(&state, &headers).await?;
+    let (repo, _, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+    let (action, expected_activity_version) = match input {
+        RequestAttentionActionRequest::Claim {
+            expected_activity_version,
+        } => (
+            scope_domain::requests::RequestAttentionAction::Claim,
+            expected_activity_version,
+        ),
+        RequestAttentionActionRequest::Wait {
+            expected_activity_version,
+        } => (
+            scope_domain::requests::RequestAttentionAction::Wait,
+            expected_activity_version,
+        ),
+        RequestAttentionActionRequest::Settle {
+            expected_activity_version,
+        } => (
+            scope_domain::requests::RequestAttentionAction::Settle,
+            expected_activity_version,
+        ),
+        RequestAttentionActionRequest::Snooze {
+            expected_activity_version,
+            until_unix,
+        } => (
+            scope_domain::requests::RequestAttentionAction::Snooze { until_unix },
+            expected_activity_version,
+        ),
+        RequestAttentionActionRequest::Restore {
+            expected_activity_version,
+        } => (
+            scope_domain::requests::RequestAttentionAction::Restore,
+            expected_activity_version,
+        ),
+        RequestAttentionActionRequest::Release {
+            expected_activity_version,
+        } => (
+            scope_domain::requests::RequestAttentionAction::Release,
+            expected_activity_version,
+        ),
+    };
+    let result = state
+        .metadata
+        .requests()
+        .apply_request_attention(scope_postgres::db::ApplyRequestAttentionCommand {
+            repo_id: repo.record.id.clone(),
+            request_id,
+            actor_user_id: user.id,
+            expected_activity_version,
+            action,
+            now_unix: crate::persistence::unix_now()?,
+        })
+        .await?;
+    state
+        .publish_request_summary_refresh(
+            &repo.incarnation(),
+            RepoChangeReason::RequestAttentionChanged,
+        )
+        .await;
+    let claimer = if let Some(claim) = &result.claim {
+        let users = state
+            .metadata
+            .auth()
+            .users_by_ids([claim.claimer_user_id.clone()])
+            .await?;
+        Some(request_actor_summary_response(
+            &claim.claimer_user_id,
+            &users,
+        )?)
+    } else {
+        None
+    };
+    Ok(Json(RequestAttentionMutationResponse {
+        attention: attention_response(result.attention, result.activity_version),
+        claimer,
+    }))
+}
+
+pub(crate) fn attention_response(
+    value: RequestQueueClassification,
+    activity_version: u64,
+) -> RequestAttentionResponse {
+    RequestAttentionResponse {
+        state: value.state.into(),
+        reason: value.reason.into(),
+        activity_version,
+        through_activity_version: value.through_activity_version,
+        snoozed_until_unix: value.snoozed_until_unix,
+        can_claim: value.can_claim,
+        can_set_aside: value.can_set_aside,
+        can_restore: value.can_restore,
+        can_release: value.can_release,
+    }
+}
+
+fn encode_cursor(
     signing_key: &[u8],
     repo_id: &str,
     section: RequestQueueSection,
     cursor: &scope_postgres::db::RequestQueueCursor,
 ) -> Result<String, ApiError> {
-    let plaintext = encode_request_queue_cursor_plain(cursor);
-    let mut nonce = [0_u8; REQUEST_QUEUE_CURSOR_NONCE_BYTES];
+    let plaintext = format!("{}:{}", cursor.updated_at_unix, cursor.request_id);
+    let mut nonce = [0_u8; CURSOR_NONCE_BYTES];
     getrandom::fill(&mut nonce).map_err(|error| {
-        ApiError::internal_message(format!("request queue cursor nonce failed: {error}"))
+        ApiError::internal_message(format!("queue cursor nonce failed: {error}"))
     })?;
-    let key = request_queue_cursor_key(signing_key);
-    let aad = request_queue_cursor_aad(repo_id, section);
-    let ciphertext = ChaCha20Poly1305::new(Key::from_slice(&key))
+    let ciphertext = ChaCha20Poly1305::new(Key::from_slice(&cursor_key(signing_key)))
         .encrypt(
             Nonce::from_slice(&nonce),
             Payload {
                 msg: plaintext.as_bytes(),
-                aad: aad.as_bytes(),
+                aad: cursor_aad(repo_id, section).as_bytes(),
             },
         )
-        .map_err(|_| ApiError::internal_message("request queue cursor encryption failed"))?;
+        .map_err(|_| ApiError::internal_message("queue cursor encryption failed"))?;
     let mut envelope = Vec::with_capacity(nonce.len() + ciphertext.len());
     envelope.extend_from_slice(&nonce);
     envelope.extend_from_slice(&ciphertext);
     Ok(format!(
-        "{REQUEST_QUEUE_CURSOR_PREFIX}{}",
+        "{CURSOR_PREFIX}{}",
         URL_SAFE_NO_PAD.encode(envelope)
     ))
 }
 
-fn parse_request_queue_cursor(
+fn parse_cursor(
     signing_key: &[u8],
     repo_id: &str,
     section: RequestQueueSection,
@@ -163,196 +275,64 @@ fn parse_request_queue_cursor(
 ) -> Result<scope_postgres::db::RequestQueueCursor, ApiError> {
     let invalid = || ApiError::bad_request("invalid request queue cursor");
     let encoded = value
-        .strip_prefix(REQUEST_QUEUE_CURSOR_PREFIX)
-        .filter(|encoded| encoded.len() <= REQUEST_QUEUE_CURSOR_MAX_ENCODED_BYTES)
+        .strip_prefix(CURSOR_PREFIX)
+        .filter(|encoded| encoded.len() <= CURSOR_MAX_ENCODED_BYTES)
         .ok_or_else(invalid)?;
     let envelope = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| invalid())?;
-    if envelope.len() <= REQUEST_QUEUE_CURSOR_NONCE_BYTES {
+    if envelope.len() <= CURSOR_NONCE_BYTES {
         return Err(invalid());
     }
-    let (nonce, ciphertext) = envelope.split_at(REQUEST_QUEUE_CURSOR_NONCE_BYTES);
-    let key = request_queue_cursor_key(signing_key);
-    let aad = request_queue_cursor_aad(repo_id, section);
-    let plaintext = ChaCha20Poly1305::new(Key::from_slice(&key))
+    let (nonce, ciphertext) = envelope.split_at(CURSOR_NONCE_BYTES);
+    let plaintext = ChaCha20Poly1305::new(Key::from_slice(&cursor_key(signing_key)))
         .decrypt(
             Nonce::from_slice(nonce),
             Payload {
                 msg: ciphertext,
-                aad: aad.as_bytes(),
+                aad: cursor_aad(repo_id, section).as_bytes(),
             },
         )
         .map_err(|_| invalid())?;
     let plaintext = std::str::from_utf8(&plaintext).map_err(|_| invalid())?;
-    parse_request_queue_cursor_plain(section, plaintext)
+    let (updated, request_id) = plaintext.split_once(':').ok_or_else(invalid)?;
+    let updated_at_unix = updated.parse::<u64>().map_err(|_| invalid())?;
+    i64::try_from(updated_at_unix).map_err(|_| invalid())?;
+    if request_id.is_empty() || request_id.contains(':') {
+        return Err(invalid());
+    }
+    Ok(scope_postgres::db::RequestQueueCursor {
+        updated_at_unix,
+        request_id: request_id.to_string(),
+    })
 }
 
-fn request_queue_cursor_key(signing_key: &[u8]) -> [u8; 32] {
+fn cursor_key(signing_key: &[u8]) -> [u8; 32] {
     let mut digest = Sha256::new();
-    digest.update(REQUEST_QUEUE_CURSOR_KEY_DOMAIN);
+    digest.update(CURSOR_KEY_DOMAIN);
     digest.update(signing_key);
     digest.finalize().into()
 }
 
-fn request_queue_cursor_aad(repo_id: &str, section: RequestQueueSection) -> String {
-    format!(
-        "{REQUEST_QUEUE_CURSOR_AAD_DOMAIN}\0{repo_id}\0{}",
-        request_queue_section_name(section)
-    )
-}
-
-fn request_queue_section_name(section: RequestQueueSection) -> &'static str {
-    match section {
-        RequestQueueSection::YourWork => "your_work",
-        RequestQueueSection::Open => "open",
-        RequestQueueSection::Closed => "closed",
-    }
-}
-fn parse_request_queue_cursor_plain(
-    section: RequestQueueSection,
-    value: &str,
-) -> Result<scope_postgres::db::RequestQueueCursor, ApiError> {
-    use scope_postgres::db::RequestQueueCursor;
-
-    let parts = value.split(':').collect::<Vec<_>>();
-    let invalid = || ApiError::bad_request("invalid request queue cursor");
-    let request_id = |value: &str| {
-        (!value.is_empty() && !value.contains(':'))
-            .then(|| value.to_string())
-            .ok_or_else(invalid)
-    };
-    let pg_u64 = |value: &str| -> Result<u64, ApiError> {
-        let parsed = value.parse::<u64>().map_err(|_| invalid())?;
-        i64::try_from(parsed).map_err(|_| invalid())?;
-        Ok(parsed)
-    };
-    match (section, parts.as_slice()) {
-        (RequestQueueSection::YourWork, ["v1", "work", updated, id]) => {
-            Ok(RequestQueueCursor::YourWork {
-                updated_at_unix: pg_u64(updated)?,
-                request_id: request_id(id)?,
-            })
-        }
-        (RequestQueueSection::Open, ["v1", "open", submitted, id]) => {
-            Ok(RequestQueueCursor::Open {
-                submitted_at_unix: pg_u64(submitted)?,
-                request_id: request_id(id)?,
-            })
-        }
-        (RequestQueueSection::Closed, ["v1", "closed", closed, id]) => {
-            Ok(RequestQueueCursor::Closed {
-                closed_at_unix: pg_u64(closed)?,
-                request_id: request_id(id)?,
-            })
-        }
-        _ => Err(invalid()),
-    }
-}
-
-fn encode_request_queue_cursor_plain(cursor: &scope_postgres::db::RequestQueueCursor) -> String {
-    use scope_postgres::db::RequestQueueCursor;
-
-    match cursor {
-        RequestQueueCursor::YourWork {
-            updated_at_unix,
-            request_id,
-        } => format!("v1:work:{updated_at_unix}:{request_id}"),
-        RequestQueueCursor::Open {
-            submitted_at_unix,
-            request_id,
-        } => format!("v1:open:{submitted_at_unix}:{request_id}"),
-        RequestQueueCursor::Closed {
-            closed_at_unix,
-            request_id,
-        } => format!("v1:closed:{closed_at_unix}:{request_id}"),
-    }
+fn cursor_aad(repo_id: &str, section: RequestQueueSection) -> String {
+    let section = section.as_str();
+    format!("{CURSOR_AAD_DOMAIN}\0{repo_id}\0{section}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scope_postgres::db::RequestQueueCursor;
 
     #[test]
-    fn queue_cursors_are_confidential_bound_and_range_checked() {
-        const SIGNING_KEY: &[u8] = b"request-queue-test-signing-key";
-        const REPO_ID: &str = "repo_test";
-        for (section, cursor) in [
-            (
-                RequestQueueSection::YourWork,
-                RequestQueueCursor::YourWork {
-                    updated_at_unix: 10,
-                    request_id: "req_work".to_string(),
-                },
-            ),
-            (
-                RequestQueueSection::Open,
-                RequestQueueCursor::Open {
-                    submitted_at_unix: 11,
-                    request_id: "req_open".to_string(),
-                },
-            ),
-            (
-                RequestQueueSection::Closed,
-                RequestQueueCursor::Closed {
-                    closed_at_unix: 12,
-                    request_id: "req_closed".to_string(),
-                },
-            ),
-        ] {
-            let encoded =
-                encode_request_queue_cursor(SIGNING_KEY, REPO_ID, section, &cursor).unwrap();
-            let encoded_again =
-                encode_request_queue_cursor(SIGNING_KEY, REPO_ID, section, &cursor).unwrap();
-            assert!(encoded.starts_with(REQUEST_QUEUE_CURSOR_PREFIX));
-            assert!(!encoded.contains("req_"));
-            assert_ne!(encoded, encoded_again);
-            assert_eq!(
-                parse_request_queue_cursor(SIGNING_KEY, REPO_ID, section, &encoded).unwrap(),
-                cursor
-            );
-            assert!(
-                parse_request_queue_cursor(SIGNING_KEY, "repo_other", section, &encoded).is_err()
-            );
-        }
-
-        let open = RequestQueueCursor::Open {
-            submitted_at_unix: 11,
-            request_id: "req_open".to_string(),
+    fn queue_cursor_is_confidential_and_bound_to_section() {
+        let cursor = scope_postgres::db::RequestQueueCursor {
+            updated_at_unix: 12,
+            request_id: "request".into(),
         };
-        let open =
-            encode_request_queue_cursor(SIGNING_KEY, REPO_ID, RequestQueueSection::Open, &open)
-                .unwrap();
-        assert!(
-            parse_request_queue_cursor(SIGNING_KEY, REPO_ID, RequestQueueSection::Closed, &open,)
-                .is_err()
+        let encoded = encode_cursor(b"key", "repo", RequestQueueSection::Active, &cursor).unwrap();
+        assert!(!encoded.contains("request"));
+        assert_eq!(
+            parse_cursor(b"key", "repo", RequestQueueSection::Active, &encoded).unwrap(),
+            cursor
         );
-        assert!(
-            parse_request_queue_cursor_plain(
-                RequestQueueSection::Closed,
-                "v1:open:2:25:11:req_open"
-            )
-            .is_err()
-        );
-        for (section, cursor) in [
-            (
-                RequestQueueSection::YourWork,
-                "v1:work:9223372036854775808:req",
-            ),
-            (
-                RequestQueueSection::Open,
-                "v1:open:9223372036854775808:1:1:req",
-            ),
-            (RequestQueueSection::Open, "v1:open:1:2147483648:1:req"),
-            (
-                RequestQueueSection::Open,
-                "v1:open:1:1:9223372036854775808:req",
-            ),
-            (
-                RequestQueueSection::Closed,
-                "v1:closed:9223372036854775808:req",
-            ),
-        ] {
-            assert!(parse_request_queue_cursor_plain(section, cursor).is_err());
-        }
+        assert!(parse_cursor(b"key", "repo", RequestQueueSection::SetAside, &encoded).is_err());
     }
 }

@@ -19,6 +19,7 @@ pub struct RequestListRow {
     pub id: String,
     pub name: String,
     pub title: String,
+    pub author_user_id: String,
     pub author_role: RequestActorRole,
     pub audience: RequestAudience,
     pub head_oid: String,
@@ -27,6 +28,7 @@ pub struct RequestListRow {
     pub closed_at_unix: Option<u64>,
     pub merged_at_unix: Option<u64>,
     pub updated_at_unix: u64,
+    pub activity_version: u64,
     pub has_git_snapshot: bool,
 }
 
@@ -40,10 +42,11 @@ pub struct RequestListPageQuery<'a> {
 }
 
 #[derive(Clone, Debug, FromQueryResult)]
-struct RequestListModel {
+pub(super) struct RequestListModel {
     id: String,
     name: String,
     title: String,
+    author_user_id: String,
     author_role: String,
     audience: String,
     head_oid: String,
@@ -51,11 +54,12 @@ struct RequestListModel {
     closed_at_unix: Option<i64>,
     merged_at_unix: Option<i64>,
     updated_at_unix: i64,
+    activity_version: i64,
     has_git_snapshot: bool,
 }
 
 impl RequestListModel {
-    fn try_into_read_model(self) -> Result<RequestListRow, PostgresError> {
+    pub(super) fn try_into_read_model(self) -> Result<RequestListRow, PostgresError> {
         let state = if self.merged_at_unix.is_some() {
             RequestState::Merged
         } else if self.closed_at_unix.is_some() {
@@ -69,6 +73,7 @@ impl RequestListModel {
             id: self.id,
             name: self.name,
             title: self.title,
+            author_user_id: self.author_user_id,
             author_role: entities::decode_enum(self.author_role)?,
             audience: entities::decode_enum(self.audience)?,
             head_oid: self.head_oid,
@@ -86,6 +91,10 @@ impl RequestListModel {
                 .map(|value| entities::i64_to_u64(value, "request merge time"))
                 .transpose()?,
             updated_at_unix: entities::i64_to_u64(self.updated_at_unix, "request update time")?,
+            activity_version: entities::i64_to_u64(
+                self.activity_version,
+                "request activity version",
+            )?,
             has_git_snapshot: self.has_git_snapshot,
         })
     }
@@ -181,6 +190,7 @@ pub(super) fn request_list_projection() -> sea_orm::Select<entities::request::En
         .column(entities::request::Column::Id)
         .column(entities::request::Column::Name)
         .column(entities::request::Column::Title)
+        .column(entities::request::Column::AuthorUserId)
         .column(entities::request::Column::AuthorRole)
         .column(entities::request::Column::Audience)
         .column(entities::request::Column::HeadOid)
@@ -188,6 +198,7 @@ pub(super) fn request_list_projection() -> sea_orm::Select<entities::request::En
         .column(entities::request::Column::ClosedAtUnix)
         .column(entities::request::Column::MergedAtUnix)
         .column(entities::request::Column::UpdatedAtUnix)
+        .column(entities::request::Column::ActivityVersion)
         .expr_as(
             Expr::col(entities::request::Column::GitSnapshot).is_not_null(),
             "has_git_snapshot",

@@ -169,6 +169,10 @@ pub fn router(state: AppState) -> Router {
             get(http::request_queue::request_queue),
         )
         .route(
+            routes::REPO_REQUEST_ATTENTION,
+            axum::routing::put(http::request_queue::apply_attention),
+        )
+        .route(
             routes::REPO_REQUEST,
             get(http::requests::get_request)
                 .patch(http::requests::edit_request_identity)

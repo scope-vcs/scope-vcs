@@ -127,7 +127,7 @@ async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts
         "POST",
         &format!("{base}/threads/{discussion_id}/replies"),
         Some(&bearer),
-        Some(r#"{"body_markdown":"The parser module should own it.","client_reply_id":"reply-1","reply_to_reply_id":null}"#),
+        Some(r#"{"body_markdown":"The parser module should own it.","client_reply_id":"reply-1","reply_to_reply_id":null,"wait_after_reply":false}"#),
     )
     .await;
     assert_eq!(reply.status(), StatusCode::OK);
@@ -188,7 +188,7 @@ async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts
         "POST",
         &format!("{base}/threads/{discussion_id}/replies"),
         Some(&bearer),
-        Some(r#"{"body_markdown":"One more point.","client_reply_id":"reply-rejected","reply_to_reply_id":null}"#),
+        Some(r#"{"body_markdown":"One more point.","client_reply_id":"reply-rejected","reply_to_reply_id":null,"wait_after_reply":false}"#),
     )
     .await;
     assert_eq!(rejected_reply.status(), StatusCode::CONFLICT);
@@ -199,7 +199,7 @@ async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts
         &format!("{base}/threads/{discussion_id}/reopen-and-reply"),
         Some(&bearer),
         Some(&format!(
-            r#"{{"body_markdown":"One more point.","client_reply_id":"reply-2","reply_to_reply_id":"{first_reply_id}"}}"#
+            r#"{{"body_markdown":"One more point.","client_reply_id":"reply-2","reply_to_reply_id":"{first_reply_id}","wait_after_reply":false}}"#
         )),
     )
     .await;
@@ -736,7 +736,7 @@ async fn timeline_cursor_is_stable_during_concurrent_thread_creation_and_changes
         &format!("{base}/threads/{oldest_id}/replies"),
         Some(&bearer),
         Some(
-            r#"{"body_markdown":"Concurrent activity","client_reply_id":"concurrent-reply","reply_to_reply_id":null}"#,
+            r#"{"body_markdown":"Concurrent activity","client_reply_id":"concurrent-reply","reply_to_reply_id":null,"wait_after_reply":false}"#,
         ),
     )
     .await;

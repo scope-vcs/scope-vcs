@@ -22,7 +22,7 @@ async fn request_reads_do_not_consume_git_projection_capacity() {
 
     for uri in [
         "/v1/repos/owner/repo/requests",
-        "/v1/repos/owner/repo/requests/queue?section=open",
+        "/v1/repos/owner/repo/requests/queue?section=unclaimed",
     ] {
         let response = api_request(app.clone(), "GET", uri, None, None).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -44,7 +44,7 @@ async fn request_reads_do_not_consume_git_projection_capacity() {
     let queue = api_request(
         app,
         "GET",
-        "/v1/repos/owner/repo/requests/queue?section=open",
+        "/v1/repos/owner/repo/requests/queue?section=active",
         Some(&bearer_header()),
         None,
     )
@@ -52,7 +52,7 @@ async fn request_reads_do_not_consume_git_projection_capacity() {
     assert_eq!(queue.status(), StatusCode::OK);
     let queue = response_json(queue).await;
     assert_eq!(request_ids(&queue), ["req_metadata_head"]);
-    let current_main_oid = queue["requests"][0]["mergeability"]["current_main_oid"]
+    let current_main_oid = queue["requests"][0]["request"]["mergeability"]["current_main_oid"]
         .as_str()
         .unwrap();
     assert_eq!(current_main_oid.len(), 40);
@@ -148,7 +148,7 @@ async fn request_reads_rebuild_current_history_before_projection_jobs_run() {
 
     for uri in [
         "/v1/repos/owner/repo/requests?cursor=v1:zzzz",
-        "/v1/repos/owner/repo/requests/queue?section=open",
+        "/v1/repos/owner/repo/requests/queue?section=unclaimed",
     ] {
         let empty = api_request(app.clone(), "GET", uri, Some(&bearer_header()), None).await;
         assert_eq!(empty.status(), StatusCode::OK);
@@ -662,6 +662,10 @@ fn request_ids(body: &serde_json::Value) -> Vec<&str> {
         .as_array()
         .unwrap()
         .iter()
-        .map(|request| request["id"].as_str().unwrap())
+        .map(|entry| {
+            entry.get("request").unwrap_or(entry)["id"]
+                .as_str()
+                .unwrap()
+        })
         .collect()
 }

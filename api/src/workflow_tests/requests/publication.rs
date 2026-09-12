@@ -76,7 +76,7 @@ async fn public_request_reads_remain_available_before_projection_outbox_catches_
     let app = router(state);
     for uri in [
         "/v1/repos/owner/repo/requests",
-        "/v1/repos/owner/repo/requests/queue?section=open",
+        "/v1/repos/owner/repo/requests/queue?section=active",
         "/v1/repos/owner/repo/requests/req_publication_public",
     ] {
         let response = api_request(app.clone(), "GET", uri, None, None).await;
@@ -84,7 +84,11 @@ async fn public_request_reads_remain_available_before_projection_outbox_catches_
         let body = response_json(response).await;
         let request = if body.get("requests").is_some() {
             assert_eq!(request_ids(&body), ["req_publication_public"]);
-            &body["requests"][0]
+            if uri.ends_with("/requests") {
+                &body["requests"][0]
+            } else {
+                &body["requests"][0]["request"]
+            }
         } else {
             &body["request"]
         };

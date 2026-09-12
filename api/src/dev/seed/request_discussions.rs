@@ -169,6 +169,7 @@ async fn create_retry_cap_conversation(metadata: &MetadataStore) -> Result<(), A
             )
             .to_string(),
             reply_to_reply_id: None,
+            wait_after_reply: false,
             now_unix: 1_800_000_121,
         })
         .await?;
@@ -186,6 +187,7 @@ async fn create_retry_cap_conversation(metadata: &MetadataStore) -> Result<(), A
             )
             .to_string(),
             reply_to_reply_id: Some(RETRY_CAP_MAINTAINER_REPLY_ID.to_string()),
+            wait_after_reply: false,
             now_unix: 1_800_000_122,
         })
         .await?;
@@ -203,6 +205,7 @@ async fn create_retry_cap_conversation(metadata: &MetadataStore) -> Result<(), A
             )
             .to_string(),
             reply_to_reply_id: Some(RETRY_CAP_CONTRIBUTOR_REPLY_ID.to_string()),
+            wait_after_reply: false,
             now_unix: 1_800_000_123,
         })
         .await?;
@@ -240,6 +243,7 @@ async fn create_jitter_conversation(metadata: &MetadataStore) -> Result<(), ApiE
             )
             .to_string(),
             reply_to_reply_id: None,
+            wait_after_reply: false,
             now_unix: 1_800_000_131,
         })
         .await?;
@@ -274,6 +278,7 @@ async fn create_resolved_docs_conversation(metadata: &MetadataStore) -> Result<(
             body_markdown: "The new doc comment now says the returned delay is in milliseconds."
                 .to_string(),
             reply_to_reply_id: None,
+            wait_after_reply: false,
             now_unix: 1_800_000_141,
         })
         .await?;

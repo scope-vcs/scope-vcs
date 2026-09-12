@@ -1,54 +1,14 @@
-import { loadRequestQueueForRequest } from '@/api/repos'
-import {
-  parseLoadRequestQueueInput,
-  type RequestQueueSection,
-} from '@/api/request-queue-input'
-import { RequestsPage } from '@/features/requests/requests-page'
-import { RequestsPagePending } from '@/features/requests/requests-page-pending'
-import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { createFileRoute } from '@tanstack/react-router'
-import { createServerFn } from '@tanstack/react-start'
-import { useCallback } from 'react'
+import { GitPullRequest } from 'lucide-react'
 
-const loadRequestQueuePage = createServerFn({ method: 'GET' })
-  .validator(parseLoadRequestQueueInput)
-  .handler(async ({ data }) => loadRequestQueueForRequest(data))
+export const Route = createFileRoute('/$owner/$repo/requests/')({ component: RequestSelection })
 
-export const Route = createFileRoute('/$owner/$repo/requests/')({
-  loader: async ({ params }) => {
-    const [yourWork, open, closed] = await Promise.all([
-      loadRequestQueuePage({ data: { ...params, section: 'your_work' } }),
-      loadRequestQueuePage({ data: { ...params, section: 'open' } }),
-      loadRequestQueuePage({ data: { ...params, section: 'closed' } }),
-    ])
-    return { closed, open, your_work: yourWork }
-  },
-  pendingComponent: RequestsPagePending,
-  component: RequestsRoute,
-})
-
-function RequestsRoute() {
-  const params = Route.useParams()
-  const { owner, repo } = params
-  const live = useRepoLayout()
-  const initialPages = Route.useLoaderData()
-  const loadPage = useCallback(
-    (
-      section: RequestQueueSection,
-      cursor: string | null,
-      search: string | null,
-    ) =>
-      loadRequestQueuePage({
-        data: { cursor, owner, repo, search, section },
-      }),
-    [owner, repo],
-  )
-
+function RequestSelection() {
   return (
-    <RequestsPage
-      initialPages={initialPages}
-      loadPage={loadPage}
-      params={params}
-    />
+    <div className="flex min-h-80 flex-1 flex-col items-center justify-center px-6 text-center">
+      <GitPullRequest aria-hidden="true" className="size-6 text-muted-foreground" />
+      <h1 className="mt-4 text-lg font-medium">Select a request</h1>
+      <p className="mt-2 text-sm text-muted-foreground">Review the discussion and changes here.</p>
+    </div>
   )
 }

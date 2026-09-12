@@ -1,3 +1,4 @@
+mod attention;
 mod discussion_commands;
 
 use super::super::MetadataStore;
@@ -102,6 +103,7 @@ async fn discussion_transactions_are_idempotent_atomic_and_self_read() {
             client_reply_id: "client_before_retry".to_string(),
             body_markdown: "Maintainer reply".to_string(),
             reply_to_reply_id: None,
+            wait_after_reply: false,
             now_unix: 11,
         })
         .await
@@ -156,6 +158,7 @@ async fn discussion_transactions_are_idempotent_atomic_and_self_read() {
             client_reply_id: "client_rejected".to_string(),
             body_markdown: "One more point".to_string(),
             reply_to_reply_id: None,
+            wait_after_reply: false,
             now_unix: 14,
         })
         .await
@@ -173,6 +176,7 @@ async fn discussion_transactions_are_idempotent_atomic_and_self_read() {
             client_reply_id: "client_reply".to_string(),
             body_markdown: "One more point".to_string(),
             reply_to_reply_id: None,
+            wait_after_reply: false,
             now_unix: 15,
         })
         .await
@@ -258,6 +262,7 @@ async fn completed_private_discussion_transitions_persist_nothing() {
         client_reply_id: "client_retry_reopened".to_string(),
         body_markdown: "Reopen before completion".to_string(),
         reply_to_reply_id: None,
+        wait_after_reply: false,
         now_unix: 6,
     };
     store
@@ -749,6 +754,7 @@ async fn create_test_reply(
             client_reply_id: format!("client_{id}"),
             body_markdown: format!("Reply {id}"),
             reply_to_reply_id: parent_id.map(str::to_string),
+            wait_after_reply: false,
             now_unix,
         })
         .await

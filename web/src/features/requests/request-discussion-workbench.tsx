@@ -40,6 +40,7 @@ export function RequestDiscussionWorkbench({
   permissions: {
     canOpenDiscussion: boolean
     canReply: boolean
+    canWaitAfterReply: boolean
   }
   repoId: string
   request: RequestSummary
@@ -112,6 +113,7 @@ export function RequestDiscussionWorkbench({
                 actor={actor}
                 canReply={permissions.canReply}
                 canResolve={canResolve(discussion)}
+                canWaitAfterReply={permissions.canWaitAfterReply}
                 composerOpen={activeComposer === discussion.id}
                 discussion={discussion}
                 key={`${store.cacheKey}\0${discussion.id}`}

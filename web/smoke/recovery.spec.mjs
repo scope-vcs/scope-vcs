@@ -50,7 +50,7 @@ test('changes retry keeps the document and selected revision', async () => {
       }
     })
     await page.goto(`${baseUrl}/${requestRepo}/requests/req_demo_ready`)
-    const changes = page.locator('#discussion-discussion_demo_revision_jitter').getByRole('link', { name: /Revision/ })
+    const changes = page.locator('#discussion-discussion_demo_revision_jitter').getByRole('link', { name: /View revision/ })
     await waitForClientHydration(page, changes)
     await changes.click()
     const retry = page.getByRole('button', { name: 'retry changes', exact: true })
@@ -70,7 +70,7 @@ test('changes retry keeps the document and selected revision', async () => {
     const response = page.waitForResponse((response) => response.url().includes('/_serverFn/'))
     await retry.click()
     await response
-    await page.waitForFunction(() => !document.querySelector('button:disabled'))
+    await retry.waitFor({ state: 'detached' })
     assert.equal(new URL(page.url()).pathname, new URL(before).pathname)
     for (const [key, value] of new URL(before).searchParams) {
       assert.equal(new URL(page.url()).searchParams.get(key), value)

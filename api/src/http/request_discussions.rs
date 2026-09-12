@@ -258,6 +258,7 @@ pub(crate) async fn create_reply(
             client_reply_id: input.client_reply_id,
             body_markdown: input.body_markdown,
             reply_to_reply_id: input.reply_to_reply_id,
+            wait_after_reply: input.wait_after_reply,
         },
     )
     .await?;
@@ -316,6 +317,7 @@ pub(crate) async fn reopen_and_reply(
             client_reply_id: input.client_reply_id,
             body_markdown: input.body_markdown,
             reply_to_reply_id: input.reply_to_reply_id,
+            wait_after_reply: input.wait_after_reply,
         },
     )
     .await?;

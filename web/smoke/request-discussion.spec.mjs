@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { chromium } from 'playwright'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 import {
   assertFileSelectionSkipsRevisionReload,
   assertRequestCrossLinksStayInDocument,
@@ -59,6 +60,7 @@ test('discussion and reply chronology preserves quote targets', async () => {
 
 test('reply disclosure preserves scroll and remains reversible', async () => {
   await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
+    await page.locator('.request-workspace-sidebar a[href$="/req_demo_ready"]').waitFor()
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
     const hideRetryReplies = retryThread.getByRole('button', {
       name: 'Hide 3 replies',
@@ -227,127 +229,60 @@ async function assertReplyRegion(page, region, expanded) {
   assert.equal(await region.getAttribute('inert'), expanded ? null : '')
 }
 
-test('request details disclose on mobile without replacing discussion or quote targets', async () => {
+test('Details is a separate tab that reuses request data and preserves discussion state', async () => {
   await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
-    await page.setViewportSize({ width: 390, height: 844 })
-    const context = page.locator('.request-context-rail > details')
-    const summary = context.locator(':scope > summary')
-    await summary.waitFor()
-    await waitForClientHydration(page, summary)
-    assert.equal(await context.getAttribute('open'), null)
-    assert.doesNotMatch(await context.ariaSnapshot(), /Public request/)
-    assert.equal(await context.count(), 1)
     const tabs = page.getByRole('navigation', { name: 'Request views' })
+    const details = tabs.getByRole('link', { name: 'Details', exact: true })
     const thread = page.locator('#discussion-discussion_demo_retry_cap')
-    const tabBox = await tabs.boundingBox()
-    const summaryBox = await summary.boundingBox()
-    const threadBox = await thread.boundingBox()
-    assert(tabBox.y + tabBox.height <= summaryBox.y)
-    assert(summaryBox.y + summaryBox.height <= threadBox.y)
-    await summary.click()
+    const collapse = thread.getByRole('button', { name: 'Hide 3 replies' })
+    await waitForClientHydration(page, collapse)
+    await collapse.click()
+    await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
+    const shell = {
+      heading: await page.getByRole('heading', { name: 'Add bounded retry timing', exact: true }).elementHandle(),
+      navigation: await tabs.elementHandle(),
+    }
+    const header = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Add bounded retry timing', exact: true }) })
+    assert.equal(await header.getByText('Open', { exact: true }).getAttribute('data-variant'), 'success')
+    assert.equal(await header.getByText('Open request', { exact: true }).count(), 0)
+    assert.equal(await page.getByRole('navigation', { name: 'Request navigation' }).count(), 0)
+    const requestLoads = []
+    page.on('request', (request) => {
+      if (serverFunctionName(request) === 'loadRequestPage_createServerFn_handler') requestLoads.push(request.url())
+    })
+    await details.click()
+    await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready/details'))
+    const context = page.getByRole('region', { name: 'Request details' })
     await context.getByText('Public request', { exact: true }).waitFor()
-    const invitees = context.locator('details').filter({ has: page.getByRole('heading', { name: 'invitees', exact: true }) })
-    assert.equal(await invitees.getAttribute('open'), null)
-    await invitees.locator('summary').click()
-    await invitees.getByText('No invitees.', { exact: false }).waitFor()
-    await summary.click()
-    await page.setViewportSize({ width: 1440, height: 1000 })
-    await context.getByText('Public request', { exact: true }).waitFor()
-    assert.equal(await context.getAttribute('open'), '')
-    assert.match(await context.ariaSnapshot(), /Public request/)
-    assert.equal(await context.count(), 1)
+    assert.equal(await details.getAttribute('aria-current'), 'page')
+    assert.equal(await page.locator('.request-discussion-thread').count(), 0)
+    await assertRequestShellPreserved(page, shell)
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
-    assert.doesNotMatch(await context.ariaSnapshot(), /Public request/)
-    await page.setViewportSize({ width: 1440, height: 1000 })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false)
+    await tabs.getByRole('link', { name: 'Discussion', exact: true }).click()
+    await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready'))
+    await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
+    await assertRequestShellPreserved(page, shell)
+    assert.deepEqual(requestLoads, [])
+    await thread.getByRole('button', { name: 'Show 3 replies' }).click()
     const quote = page.locator('#reply-discussion_reply_demo_retry_cap_quote a[href^="#discussion="]')
     await quote.click()
     await page.waitForFunction(() => document.activeElement?.id === 'reply-discussion_reply_demo_retry_cap_maintainer')
-    assert.equal(await page.locator('h1').innerText(), 'Add bounded retry timing')
   })
 })
 
-test('details opened before hydration close on the next click and stay closed on mobile', async () => {
+test('Details tab has a working link before hydration and renders directly on mobile', async () => {
   const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
-  let releaseScripts
-  const scriptsHeld = new Promise((resolve) => { releaseScripts = resolve })
+  const page = await browser.newPage({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } })
   try {
-    await page.route('**/*', async (route) => {
-      if (route.request().resourceType() === 'script') await scriptsHeld
-      await route.continue().catch(() => {})
-    })
-    await page.goto(new URL(`/${owner}/update-demo/requests/req_demo_ready`, baseUrl).href, {
-      waitUntil: 'commit',
-    })
-    const context = page.locator('.request-context-rail > details')
-    const summary = context.locator(':scope > summary')
-    await summary.waitFor()
-    assert.equal(await summary.evaluate((element) => Object.keys(element).some((key) => key.startsWith('__reactProps$'))), false)
-    await summary.click()
-    assert.equal(await context.getAttribute('open'), '')
-    releaseScripts()
-    await waitForClientHydration(page, summary)
-    await summary.click()
-    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
-    await page.setViewportSize({ width: 1440, height: 1000 })
-    await context.getByText('Public request', { exact: true }).waitFor()
-    await page.setViewportSize({ width: 390, height: 844 })
-    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
+    await page.goto(new URL(`/${owner}/update-demo/requests/req_demo_ready`, baseUrl).href, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('navigation', { name: 'Request views' }).getByRole('link', { name: 'Details', exact: true }).click()
+    await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready/details'))
+    await page.getByRole('region', { name: 'Request details' }).getByText('Public request', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('heading', { name: 'Add bounded retry timing', exact: true }).count(), 1)
   } finally {
-    releaseScripts()
     await browser.close()
   }
-})
-
-test('mobile details close survives desktop resize before native toggle delivery', async () => {
-  await withPage(`/${owner}/update-demo/requests/req_demo_ready`, async (page) => {
-    await page.setViewportSize({ width: 390, height: 844 })
-    const context = page.locator('.request-context-rail > details')
-    const summary = context.locator(':scope > summary')
-    await waitForClientHydration(page, summary)
-    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
-    await summary.press('Enter')
-    await context.getByText('Public request', { exact: true }).waitFor()
-    const invitees = context.locator('details').filter({ has: page.getByRole('heading', { name: 'invitees', exact: true }) })
-    await invitees.locator('summary').click()
-    await invitees.getByText('No invitees.', { exact: false }).waitFor()
-    const originalContext = await context.elementHandle()
-    const originalInvitees = await invitees.elementHandle()
-
-    await context.evaluate((element) => {
-      window.__scopeHeldContextToggle = null
-      const holdClose = (event) => {
-        if (event.target !== element || event.newState !== 'closed') return
-        event.stopImmediatePropagation()
-        document.removeEventListener('toggle', holdClose, true)
-        window.__scopeHeldContextToggle = { oldState: event.oldState, newState: event.newState }
-      }
-      document.addEventListener('toggle', holdClose, true)
-    })
-    await summary.press('Space')
-    await page.waitForFunction(() => window.__scopeHeldContextToggle !== null)
-    await page.setViewportSize({ width: 1440, height: 1000 })
-    // Deliver the native close event after the desktop media-query render.
-    // This reproduces the browser's deferred toggle ordering without replacing
-    // the application component or reaching into its React state.
-    await page.evaluate(() => new Promise((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(resolve))
-    }))
-    await originalContext.evaluate((element) => {
-      element.dispatchEvent(new ToggleEvent('toggle', window.__scopeHeldContextToggle))
-      delete window.__scopeHeldContextToggle
-    })
-    await context.getByText('Public request', { exact: true }).waitFor({ timeout: 5_000 })
-    assert(await originalContext.evaluate((element) => element === document.querySelector('.request-context-rail > details')))
-    assert(await originalInvitees.evaluate((element) => element.isConnected && element.open))
-
-    await page.setViewportSize({ width: 390, height: 844 })
-    await page.waitForFunction(() => !document.querySelector('.request-context-rail > details').open)
-    await summary.press('Enter')
-    await invitees.getByText('No invitees.', { exact: false }).waitFor()
-    assert(await originalInvitees.evaluate((element) => element.isConnected && element.open))
-  })
 })
 
 async function withPage(path, assertion) {

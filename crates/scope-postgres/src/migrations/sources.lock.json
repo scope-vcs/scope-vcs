@@ -1,5 +1,6 @@
 {
   "baseline_ledger.txt": "bc6c83d290056d2e363252ce77c19142ba31fdae6149d243a20eccc7ab81ef74",
   "current_schema.sql": "484e645f83baf35085e574905f7c2812d35ee3510a4709557f1ef60df4551091",
-  "m0043_retire_git_manifests.rs": "1c27f47c783c8d100f44c2a58a961d5b5c738ebb6647a177f9517d63aa26b0d7"
+  "m0043_retire_git_manifests.rs": "1c27f47c783c8d100f44c2a58a961d5b5c738ebb6647a177f9517d63aa26b0d7",
+  "m0044_request_attention.rs": "3b9ecfdedbf75b2ac322962bf2b66000ffa9cdbf6385c4188d73db1fb499d119"
 }
