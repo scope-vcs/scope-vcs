@@ -1,5 +1,8 @@
 use super::{RequestListRow, RequestStore, auth::load_users_by_ids, entities};
-use crate::error::PostgresError;
+use crate::{
+    db::integer_columns::{i64_to_u64, u64_to_i64},
+    error::PostgresError,
+};
 use scope_domain::{
     account::UserAccount,
     repository::access::RepositoryAccess,
@@ -83,7 +86,7 @@ impl RequestStore {
         let search = input.search.map(escaped_search_pattern);
         let after_time = input
             .after
-            .map(|cursor| entities::u64_to_i64(cursor.updated_at_unix, "queue cursor time"))
+            .map(|cursor| u64_to_i64(cursor.updated_at_unix, "queue cursor time"))
             .transpose()?;
         let after_id = input.after.map(|cursor| cursor.request_id.clone());
         let limit = input.limit.min((REQUEST_LIST_MAX_PAGE_SIZE + 1) as u64);
@@ -97,7 +100,7 @@ impl RequestStore {
                 input.access.is_maintainer().into(),
                 search.into(),
                 input.section.as_str().into(),
-                entities::u64_to_i64(input.now_unix, "queue time")?.into(),
+                u64_to_i64(input.now_unix, "queue time")?.into(),
                 after_time.into(),
                 after_id.into(),
                 i64::try_from(limit)
@@ -148,8 +151,7 @@ impl QueueModel {
             self.closed_at_unix,
             self.merged_at_unix,
         );
-        let activity_version =
-            entities::i64_to_u64(self.activity_version, "request activity version")?;
+        let activity_version = i64_to_u64(self.activity_version, "request activity version")?;
         let attention = self.attention(input.viewer_user_id)?;
         let claim = self.claim()?;
         let classification = classify_request_queue_item(RequestQueueFacts {
@@ -168,13 +170,10 @@ impl QueueModel {
                 "request queue SQL and domain classification disagree",
             ));
         }
-        let updated_at_unix = entities::i64_to_u64(self.updated_at_unix, "request update time")?;
+        let updated_at_unix = i64_to_u64(self.updated_at_unix, "request update time")?;
         Ok(RequestQueueRow {
             cursor: RequestQueueCursor {
-                updated_at_unix: entities::i64_to_u64(
-                    self.attention_at_unix,
-                    "queue attention time",
-                )?,
+                updated_at_unix: i64_to_u64(self.attention_at_unix, "queue attention time")?,
                 request_id: self.id.clone(),
             },
             request: RequestListRow {
@@ -217,14 +216,14 @@ impl QueueModel {
                     PostgresError::internal_message("attention row is missing its reason")
                 })?,
             )?,
-            through_activity_version: entities::i64_to_u64(
+            through_activity_version: i64_to_u64(
                 self.through_activity_version.ok_or_else(|| {
                     PostgresError::internal_message("attention row is missing its checkpoint")
                 })?,
                 "request attention position",
             )?,
             snoozed_until_unix: optional_u64(self.snoozed_until_unix, "request snooze time")?,
-            updated_at_unix: entities::i64_to_u64(
+            updated_at_unix: i64_to_u64(
                 self.attention_updated_at_unix.ok_or_else(|| {
                     PostgresError::internal_message("attention row is missing its update time")
                 })?,
@@ -240,13 +239,13 @@ impl QueueModel {
         Ok(Some(RequestClaim {
             request_id: self.id.clone(),
             claimer_user_id,
-            claimed_at_unix: entities::i64_to_u64(
+            claimed_at_unix: i64_to_u64(
                 self.claimed_at_unix.ok_or_else(|| {
                     PostgresError::internal_message("claim row is missing its claim time")
                 })?,
                 "request claim time",
             )?,
-            updated_at_unix: entities::i64_to_u64(
+            updated_at_unix: i64_to_u64(
                 self.claim_updated_at_unix.ok_or_else(|| {
                     PostgresError::internal_message("claim row is missing its update time")
                 })?,
@@ -273,9 +272,7 @@ fn request_state(
 }
 
 fn optional_u64(value: Option<i64>, field: &str) -> Result<Option<u64>, PostgresError> {
-    value
-        .map(|value| entities::i64_to_u64(value, field))
-        .transpose()
+    value.map(|value| i64_to_u64(value, field)).transpose()
 }
 
 fn escaped_search_pattern(value: &str) -> String {
@@ -400,7 +397,7 @@ async fn next_snooze_expiry<C: ConnectionTrait>(
         [
             repo_id.into(),
             viewer_user_id.into(),
-            entities::u64_to_i64(now_unix, "queue time")?.into(),
+            u64_to_i64(now_unix, "queue time")?.into(),
         ],
     ))
     .one(conn)

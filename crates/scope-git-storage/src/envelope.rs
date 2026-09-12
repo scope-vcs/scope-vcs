@@ -8,13 +8,21 @@ use sha2::Sha256;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 pub const ENCODING_VERSION: u32 = 2;
-const MAGIC: &[u8; 8] = b"SCGSEG02";
+const MAGIC: [u8; 8] = magic(ENCODING_VERSION);
 const TAG_BYTES: usize = 16;
 const FINAL_FLAG: u8 = 1;
 const HEADER_FIXED_BYTES: usize = MAGIC.len() + 4 + 2 + 8 + 4;
 const FRAME_HEADER_BYTES: usize = 4 + 4 + 1;
 const MAX_KEY_ID_BYTES: usize = 1024;
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+
+const fn magic(version: u32) -> [u8; 8] {
+    assert!(version < 100, "envelope magic encodes a two-digit version");
+    let mut magic = *b"SCGSEG00";
+    magic[6] = b'0' + (version / 10) as u8;
+    magic[7] = b'0' + (version % 10) as u8;
+    magic
+}
 
 #[derive(Clone)]
 pub struct SegmentEncryptionKey {
@@ -66,7 +74,7 @@ impl EnvelopeWriter {
             GitStorageError::InvalidConfiguration(format!("creating segment nonce: {error}"))
         })?;
         let mut header = Vec::with_capacity(HEADER_FIXED_BYTES + key_id_bytes.len());
-        header.extend_from_slice(MAGIC);
+        header.extend_from_slice(&MAGIC);
         header.extend_from_slice(&ENCODING_VERSION.to_be_bytes());
         header.extend_from_slice(&key_id_len.to_be_bytes());
         header.extend_from_slice(&nonce_prefix);
@@ -157,7 +165,7 @@ impl EnvelopeReader {
     ) -> Result<Self, GitStorageError> {
         let mut fixed = [0_u8; HEADER_FIXED_BYTES];
         read_exact_envelope(source, &mut fixed).await?;
-        if &fixed[..MAGIC.len()] != MAGIC {
+        if fixed[..MAGIC.len()] != MAGIC {
             return Err(GitStorageError::InvalidEnvelope("wrong magic".into()));
         }
         let version = u32::from_be_bytes(fixed[8..12].try_into().expect("fixed slice"));

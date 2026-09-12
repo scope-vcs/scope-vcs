@@ -1,4 +1,3 @@
-import type { RepoRunAttempt, RepoRunCache } from '@/api/types'
 import {
   cacheExplanation,
   cacheNamespace,
@@ -9,14 +8,18 @@ import {
   cacheTimingLabel,
   pinnedImageLabel,
 } from './run-attempt-environment-model'
+import type {
+  RepositoryRunAttemptResponse,
+  RepositoryRunCacheResponse,
+} from '@/api/types.generated'
 
 export function RunAttemptEnvironment({
   caches,
   cacheSetup,
   pinnedContainerImage,
 }: {
-  caches: readonly RepoRunCache[]
-  cacheSetup: RepoRunAttempt['cache_setup']
+  caches: readonly RepositoryRunCacheResponse[]
+  cacheSetup: RepositoryRunAttemptResponse['cache_setup']
   pinnedContainerImage: string | null
 }) {
   return (

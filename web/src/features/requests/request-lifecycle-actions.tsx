@@ -1,11 +1,12 @@
-import type { RequestSummary } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { shortOid } from '@/lib/short-oid'
 import { cn } from '@/lib/utils'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
-import { RequestSubmitDialog } from './request-submit-dialog'
+import { canMergeRequest, hasRequestLifecycleActions } from './request-lifecycle-model'
 import type { RequestActionController } from './use-request-actions'
+import type { RequestSummaryResponse } from '@/api/types.generated'
 
 type Dialog = 'close' | 'merge' | 'submit' | null
 
@@ -16,18 +17,16 @@ export function RequestLifecycleActions({
 }: {
   actions: RequestActionController
   className?: string
-  request: RequestSummary
+  request: RequestSummaryResponse
 }) {
   const [dialog, setDialog] = useState<Dialog>(null)
   const busy = actions.pending !== null
   const permissions = request.permissions
-  const canMerge = permissions.can_merge && request.mergeability.status === 'Ready'
-  const submitLabel = request.author_role === 'Public' ? 'Request review' : 'Mark ready'
-  const hasActions = permissions.can_submit ||
-    canMerge ||
-    permissions.can_close
+  const canMerge = canMergeRequest(request)
+  const publicRequest = request.author_role === 'Public'
+  const submitLabel = publicRequest ? 'Request review' : 'Mark ready'
 
-  if (!hasActions) return null
+  if (!hasRequestLifecycleActions(request)) return null
 
   return (
     <>
@@ -51,13 +50,20 @@ export function RequestLifecycleActions({
         ) : null}
       </div>
 
-      <RequestSubmitDialog
+      <RequestConfirmDialog
+        confirmLabel={submitLabel}
         onConfirm={() => actions.run({ action: 'submit' })}
         onOpenChange={(open) => setDialog(open ? 'submit' : null)}
         open={dialog === 'submit'}
         pending={actions.pending === 'submit'}
-        request={request}
-      />
+        title={publicRequest ? 'Request maintainer review?' : 'Mark request ready?'}
+      >
+        <p>
+          {publicRequest
+            ? 'Send the current request to the repository maintainers for review. You can keep editing and pushing afterward.'
+            : 'Mark the current maintainer request ready to merge. You can keep editing and pushing afterward.'}
+        </p>
+      </RequestConfirmDialog>
       <RequestConfirmDialog
         confirmLabel="Merge request"
         onConfirm={() => actions.run({ action: 'merge' })}
@@ -68,7 +74,7 @@ export function RequestLifecycleActions({
       >
         <p>This completes “{request.title}” and merges its current head into main.</p>
         <p className="font-mono text-xs">
-          {request.head_oid.slice(0, 12)} → main
+          {shortOid(request.head_oid)} → main
         </p>
       </RequestConfirmDialog>
       <RequestConfirmDialog

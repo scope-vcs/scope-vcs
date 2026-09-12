@@ -1,5 +1,8 @@
 use crate::error::DomainError;
 
+#[cfg(test)]
+pub(crate) mod fixtures;
+
 mod access;
 pub use access::{
     RequestListPredicate, RequestMergeability, RequestMergeabilityStatus, RequestPermissions,
@@ -42,7 +45,7 @@ pub use limits::{
     REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_TIMELINE_BODY_MAX_BYTES,
     REQUEST_TITLE_MAX_BYTES,
 };
-pub(super) use limits::{validate_body_size, validate_required_body};
+pub(super) use limits::{validate_body_size, validate_required};
 mod model;
 pub use model::{
     Request, RequestActorRole, RequestAudience, RequestEvent, RequestEventKind,
@@ -73,18 +76,15 @@ pub fn canonical_request_ref(request_name: &str) -> String {
     format!("{REQUEST_REF_PREFIX}{request_name}")
 }
 
-pub(super) fn validate_required_id(label: &str, value: &str) -> Result<(), DomainError> {
-    if value.trim().is_empty() {
-        return Err(DomainError::invalid_input(format!("{label} is required")));
-    }
-    Ok(())
+pub(super) fn next_request_activity_position(request: &Request) -> Result<u64, DomainError> {
+    request
+        .activity_version
+        .checked_add(1)
+        .ok_or_else(|| DomainError::conflict("request activity version overflow"))
 }
 
 pub(super) fn advance_request_activity(request: &mut Request) -> Result<u64, DomainError> {
-    request.activity_version = request
-        .activity_version
-        .checked_add(1)
-        .ok_or_else(|| DomainError::conflict("request activity version overflow"))?;
+    request.activity_version = next_request_activity_position(request)?;
     Ok(request.activity_version)
 }
 

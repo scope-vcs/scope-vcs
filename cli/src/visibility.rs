@@ -82,22 +82,26 @@ struct PreviewReport {
 }
 
 pub fn run(args: VisibilityArgs) -> Result<()> {
-    if matches!(args.command, VisibilityCommand::Edit) {
-        if execution::json() || !execution::interactive() {
-            return Err(CliError::usage(
-                "scope visibility edit requires an interactive terminal; use scope visibility show, explain, validate, or preview for noninteractive inspection",
-            ).into());
-        }
-        return run_standalone_review(&discover_git_repo("scope visibility edit")?);
-    }
-
-    let repo = discover_git_repo("scope visibility")?;
-    let config = load_config(&repo)?;
     match args.command {
-        VisibilityCommand::Edit => unreachable!(),
-        VisibilityCommand::Show => show(&repo, config),
-        VisibilityCommand::Explain { path } => explain(&repo, &config, &path),
+        VisibilityCommand::Edit => {
+            if execution::json() || !execution::interactive() {
+                return Err(CliError::usage(
+                    "scope visibility edit requires an interactive terminal; use scope visibility show, explain, validate, or preview for noninteractive inspection",
+                ).into());
+            }
+            run_standalone_review(&discover_git_repo("scope visibility edit")?)
+        }
+        VisibilityCommand::Show => {
+            let repo = discover_git_repo("scope visibility")?;
+            show(&repo, load_config(&repo)?)
+        }
+        VisibilityCommand::Explain { path } => {
+            let repo = discover_git_repo("scope visibility")?;
+            explain(&repo, &load_config(&repo)?, &path)
+        }
         VisibilityCommand::Validate => {
+            let repo = discover_git_repo("scope visibility")?;
+            let config = load_config(&repo)?;
             // Loading uses the domain parser, which validates every section of the config.
             execution::emit(
                 "visibility.validate",
@@ -110,7 +114,10 @@ pub fn run(args: VisibilityArgs) -> Result<()> {
                 vec!["Local visibility configuration is valid.".to_string()],
             )
         }
-        VisibilityCommand::Preview { config: candidate } => preview(&repo, &config, candidate),
+        VisibilityCommand::Preview { config: candidate } => {
+            let repo = discover_git_repo("scope visibility")?;
+            preview(&repo, &load_config(&repo)?, candidate)
+        }
     }
 }
 

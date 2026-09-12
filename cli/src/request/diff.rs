@@ -1,4 +1,4 @@
-use super::text::terminal_text;
+use crate::display::terminal_text;
 use scope_api_contract::{ReviewFileContentResponse, ReviewFileDiffResponse};
 
 pub(super) fn file_diff_lines(diff: &ReviewFileDiffResponse) -> Vec<String> {

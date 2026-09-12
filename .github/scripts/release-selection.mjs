@@ -52,7 +52,6 @@ export async function validatePreparedDeployment(
     const run = await cachedRequest(`/actions/runs/${sourceRunId}`);
     if (run.status !== 'completed') throw new Error('Staging resume requires a completed source run');
   }
-  const selection = { backend, ...Object.fromEntries(components.map((component) => [component, selected.includes(component)])) };
 
   let validated = false;
   let staged = false;
@@ -74,26 +73,24 @@ export async function validatePreparedDeployment(
         }
       }
     }
-    if (validated && staged) return { ...proof, selection };
+    if (validated && staged) return proof;
     if (result.jobs.length < 100) break;
   }
   throw new Error("Source run did not pass the production validation gate and staging deployment");
 }
 
-
 function selection(prepared, recoveryId = "", resumeStaging = false) {
   const flags = Object.fromEntries(components.map(component => [component, Boolean(prepared.components[component])]));
   flags.backend = components.some(component => component !== "web" && flags[component]);
   return { sha: prepared.sourceSha, recover_cutover_id: recoveryId,
-    recover_components: flags, reuse_components: flags, prepared_run_id: prepared.preparationRunId,
+    recover_components: flags, prepared_run_id: prepared.preparationRunId,
     resume_staging: resumeStaging, prepared };
 }
 
-export async function selectRelease({ sourceSha, sourceRunId = "", recoveryId = "", resumeStaging = false, repository,
+export async function selectRelease({ sourceSha, sourceRunId = "", resumeStaging = false, repository,
   loadPrepared }, request) {
   if (resumeStaging && !sourceRunId) throw new Error('Staging resume requires its source run ID');
   const journal = await findOpenCutover(request);
-  if (recoveryId && journal?.id !== recoveryId) throw new Error("Requested recovery is not the sole unresolved cutover");
   if (journal) {
     if (resumeStaging) throw new Error('Recover the unresolved production cutover before resuming staging');
     if (sourceRunId && sourceRunId !== journal.prepared.preparationRunId) {
@@ -109,7 +106,7 @@ export async function selectRelease({ sourceSha, sourceRunId = "", recoveryId = 
     return selection(prepared, '', resumeStaging);
   }
   if (!/^[0-9a-f]{40}$/.test(sourceSha ?? "")) throw new Error("Source SHA must be a full commit SHA");
-  return { sha: sourceSha, recover_cutover_id: "", recover_components: {}, reuse_components: {}, prepared_run_id: "", resume_staging: false };
+  return { sha: sourceSha, recover_cutover_id: "", recover_components: {}, prepared_run_id: "", resume_staging: false };
 }
 
 async function downloadPrepared(runId) {
@@ -127,8 +124,7 @@ async function downloadPrepared(runId) {
 
 async function main() {
   const result = await selectRelease({ sourceSha: process.env.SOURCE_SHA || process.env.GITHUB_SHA,
-    sourceRunId: process.env.SOURCE_RUN_ID || "", recoveryId: process.env.RECOVER_CUTOVER_ID || "",
-    resumeStaging: process.env.RESUME_STAGING === 'true',
+    sourceRunId: process.env.SOURCE_RUN_ID || "", resumeStaging: process.env.RESUME_STAGING === 'true',
     repository: process.env.GITHUB_REPOSITORY, loadPrepared: downloadPrepared }, githubRequest);
   const { prepared, ...outputs } = result;
   if (prepared) writeFileSync("selected-release.json", `${JSON.stringify(prepared, null, 2)}\n`);

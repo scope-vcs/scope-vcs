@@ -1,9 +1,9 @@
-use super::{
-    mapping::u64_to_i64,
-    types::{LoadedRepoStorageCleanup, LoadedSourceBlobCleanup},
-};
+use super::types::{LoadedRepoStorageCleanup, LoadedSourceBlobCleanup};
 use crate::{
-    db::{CleanupStore, GeneratedIdKind, GeneratedIdSource, entities, generated_ids::generate_id},
+    db::{
+        CleanupStore, GeneratedIdKind, GeneratedIdSource, entities, generated_ids::generate_id,
+        integer_columns::u64_to_i64,
+    },
     error::PostgresError,
 };
 use scope_domain::{content::SourceBlob, repo_actions::RepoStorageCleanup};
@@ -11,12 +11,10 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
     TransactionTrait, sea_query::OnConflict,
 };
-use std::sync::Arc;
 
-#[cfg(not(feature = "test-support"))]
+/// A source blob stays restorable for this long after it is queued, so a push
+/// that is still referencing it through an in-flight transaction cannot lose it.
 pub(crate) const SOURCE_BLOB_DELETE_GRACE_SECONDS: u64 = 600;
-#[cfg(feature = "test-support")]
-pub(crate) const SOURCE_BLOB_DELETE_GRACE_SECONDS: u64 = 0;
 
 impl CleanupStore {
     pub async fn pending_cleanup_queues(
@@ -38,15 +36,14 @@ impl CleanupStore {
             return Ok(());
         }
 
-        let db = Arc::clone(&self.db);
-        let tx = db.as_ref().begin().await.map_err(PostgresError::internal)?;
-        queue_pending_source_blob_deletion_rows_at(&tx, blobs, now_unix, generated_ids).await?;
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        queue_pending_source_blob_deletion_rows(&tx, blobs, now_unix, generated_ids).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(())
     }
 }
 
-pub async fn queue_pending_repo_storage_cleanup_row<C>(
+pub(crate) async fn queue_pending_repo_storage_cleanup_row<C>(
     conn: &C,
     cleanup: RepoStorageCleanup,
     now_unix: u64,
@@ -55,21 +52,9 @@ pub async fn queue_pending_repo_storage_cleanup_row<C>(
 where
     C: ConnectionTrait,
 {
-    queue_pending_repo_storage_cleanup_row_at(conn, cleanup, now_unix, generated_ids).await
-}
-
-pub(crate) async fn queue_pending_repo_storage_cleanup_row_at<C>(
-    conn: &C,
-    cleanup: RepoStorageCleanup,
-    now: u64,
-    generated_ids: &dyn GeneratedIdSource,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
     let generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
     entities::repo_storage_cleanup_job::Entity::insert(
-        entities::repo_storage_cleanup_job::Model::from_domain(&cleanup, generation, now)?
+        entities::repo_storage_cleanup_job::Model::from_domain(&cleanup, generation, now_unix)?
             .into_active_model(),
     )
     .on_conflict(
@@ -93,7 +78,7 @@ where
     Ok(())
 }
 
-pub async fn queue_pending_source_blob_deletion_rows<C>(
+pub(crate) async fn queue_pending_source_blob_deletion_rows<C>(
     conn: &C,
     blobs: impl IntoIterator<Item = SourceBlob>,
     now_unix: u64,
@@ -102,29 +87,16 @@ pub async fn queue_pending_source_blob_deletion_rows<C>(
 where
     C: ConnectionTrait,
 {
-    queue_pending_source_blob_deletion_rows_at(conn, blobs, now_unix, generated_ids).await
-}
-
-pub(super) async fn queue_pending_source_blob_deletion_rows_at<C>(
-    conn: &C,
-    blobs: impl IntoIterator<Item = SourceBlob>,
-    now: u64,
-    generated_ids: &dyn GeneratedIdSource,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let first_attempt = now
+    let first_attempt = now_unix
         .checked_add(SOURCE_BLOB_DELETE_GRACE_SECONDS)
         .ok_or_else(|| {
             PostgresError::internal_message("source blob cleanup time exceeds u64 range")
         })?;
-    let first_attempt = u64_to_i64(first_attempt)?;
+    let first_attempt = u64_to_i64(first_attempt, "source blob cleanup first attempt")?;
     for blob in blobs {
-        u64_to_i64(blob.size_bytes)?;
         let generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
         let mut cleanup =
-            entities::source_blob_cleanup_job::Model::from_domain(&blob, generation, now)?
+            entities::source_blob_cleanup_job::Model::from_domain(&blob, generation, now_unix)?
                 .into_active_model();
         cleanup.next_run_at_unix = Set(first_attempt);
         entities::source_blob_cleanup_job::Entity::insert(cleanup)
@@ -184,12 +156,7 @@ where
         .collect::<Vec<_>>();
     Ok(pending)
 }
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 pub async fn save_pending_repo_storage_deletions<C>(
     conn: &C,
     pending_repo_storage_deletions: &[RepoStorageCleanup],
@@ -262,12 +229,7 @@ where
         .collect::<Result<Vec<_>, PostgresError>>()?;
     Ok(pending)
 }
-#[cfg(any(
-    test,
-    feature = "local-dev",
-    feature = "smoke-seed",
-    feature = "test-support"
-))]
+#[cfg(any(test, feature = "seeding"))]
 pub async fn save_pending_source_blob_deletions<C>(
     conn: &C,
     pending_source_blob_deletions: &[SourceBlob],

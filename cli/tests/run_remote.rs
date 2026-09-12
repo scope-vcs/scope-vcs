@@ -19,7 +19,16 @@ fn event(name: &str, payload: serde_json::Value) -> String {
 struct Server(TestServer);
 impl Server {
     fn new(router: Router) -> Self {
-        let router = router.route("/v1/session", get(|| async {Json(serde_json::json!({"identity":null,"user":{"id":"user-test","handle":"owner","email":"owner@example.test","email_verified":true}}))}));
+        let router = router.route(
+            "/v1/session",
+            get(|| async {
+                Json(support::session_response(
+                    "user-test",
+                    "owner",
+                    "owner@example.test",
+                ))
+            }),
+        );
         Self(TestServer::new(router))
     }
     fn command(&self, dir: &TempDir) -> std::process::Command {

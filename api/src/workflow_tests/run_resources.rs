@@ -2,25 +2,6 @@ use super::*;
 
 mod read_contract;
 
-pub(super) const WORKFLOW: &str = r#"
-name: Test
-on:
-  manual: true
-caches: []
-container:
-  image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-timeout: 5m
-jobs:
-  checks:
-    steps:
-      - name: Test
-        run: printf 'hello from runner\n'
-"#;
-
-fn workflow_named(name: &str) -> String {
-    WORKFLOW.replacen("name: Test", &format!("name: {name}"), 1)
-}
-
 async fn state_with_pushed_workflow(label: &str) -> AppState {
     state_with_pushed_workflow_source(label, WORKFLOW).await
 }
@@ -355,13 +336,14 @@ async fn direct_push_replaces_the_complete_workflow_catalog() {
     let current = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
-    let mut update = receive_pack_update_from_staging_repo(
+    let mut update = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &second,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap();
@@ -405,13 +387,14 @@ async fn workflow_catalog_failure_rolls_back_the_push_transaction() {
     run_git(Some(&source), &["add", "."], "stage rejected push").unwrap();
     commit_all(&source, "prepare rejected push");
     let second = clone_test_repo(&source, "workflow-catalog-rollback-second", true);
-    let mut update = receive_pack_update_from_staging_repo(
+    let mut update = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &second,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap();

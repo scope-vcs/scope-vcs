@@ -98,7 +98,7 @@ async fn request_queue_enforces_section_visibility_order_search_and_stable_pagin
             "DELETE",
             "/v1/repos/owner/repo/requests/req_closed_draft",
             Some(&author),
-            None,
+            None
         )
         .await
         .status(),

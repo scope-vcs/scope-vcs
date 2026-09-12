@@ -44,15 +44,9 @@ impl DistributionManifest {
     }
 
     pub fn downloadable_file(&self, requested: &str) -> Option<String> {
-        self.targets.iter().find_map(|target| {
-            if requested == target.artifact {
-                Some(target.artifact.clone())
-            } else if requested == target.checksum_artifact() {
-                Some(requested.to_string())
-            } else {
-                None
-            }
-        })
+        self.required_downloads()
+            .any(|file| file == requested)
+            .then(|| requested.to_string())
     }
 
     pub fn required_downloads(&self) -> impl Iterator<Item = String> + '_ {

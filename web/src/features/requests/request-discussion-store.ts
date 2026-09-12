@@ -1,6 +1,7 @@
 import type { RequestParams } from '@/api/types'
 import type { RepoChangeEvent } from '@/api/types.generated'
 import { useRepoChangeSubscription } from '@/features/repo-detail/repo-layout-context'
+import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import {
   useCallback,
   useEffect,
@@ -107,7 +108,7 @@ export function useRequestDiscussionStore({
     try {
       await sync.paginate(cursor, () => actions.load({ ...params, cursor }))
     } catch (requestError) {
-      setError(messageFor(requestError, 'Older discussions could not be loaded.'))
+      setError(resourceErrorMessage(requestError, 'Older discussions could not be loaded.'))
     } finally {
       setLoadingMore(false)
     }
@@ -155,7 +156,7 @@ export function useRequestDiscussionStore({
         return true
       } catch (requestError) {
         updateCollection((current) => markDiscussionFailed(current, clientDiscussionId))
-        setError(messageFor(requestError, 'Discussion could not be posted.'))
+        setError(resourceErrorMessage(requestError, 'Discussion could not be posted.'))
         return false
       }
     },
@@ -223,7 +224,7 @@ export function useRequestDiscussionStore({
         })
         patch(result.discussion)
       } catch (requestError) {
-        setError(messageFor(requestError, 'Discussion could not be resolved.'))
+        setError(resourceErrorMessage(requestError, 'Discussion could not be resolved.'))
       }
     },
     [actions, params, patch, setError],
@@ -290,8 +291,3 @@ function optimisticDiscussion({
   }
 }
 
-function messageFor(error: unknown, fallback: string) {
-  return error instanceof Error && error.message.trim()
-    ? error.message
-    : fallback
-}

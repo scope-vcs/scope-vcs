@@ -11,13 +11,7 @@ const routeAliases: Readonly<Record<string, AnalyticsRoute>> = {
   '/invites/$token': { name: 'invite', path: '/invite' },
   '/sign-in/$': { name: 'sign_in', path: '/sign-in' },
   '/sign-up/$': { name: 'sign_up', path: '/sign-up' },
-  '/$owner': { name: 'owner', path: '/owner' },
   '/$owner/': { name: 'owner', path: '/owner' },
-  '/$owner/$repo': { name: 'repository', path: '/repository' },
-  '/$owner/$repo/_code': {
-    name: 'repository_code',
-    path: '/repository/code',
-  },
   '/$owner/$repo/_code/': {
     name: 'repository_code',
     path: '/repository/code',
@@ -26,17 +20,9 @@ const routeAliases: Readonly<Record<string, AnalyticsRoute>> = {
     name: 'repository_history',
     path: '/repository/history',
   },
-  '/$owner/$repo/requests': {
-    name: 'repository_requests',
-    path: '/repository/requests',
-  },
   '/$owner/$repo/requests/': {
     name: 'repository_requests',
     path: '/repository/requests',
-  },
-  '/$owner/$repo/requests/$requestId': {
-    name: 'request',
-    path: '/repository/request',
   },
   '/$owner/$repo/requests/$requestId/': {
     name: 'request',
@@ -45,10 +31,6 @@ const routeAliases: Readonly<Record<string, AnalyticsRoute>> = {
   '/$owner/$repo/requests/$requestId/changes': {
     name: 'request_changes',
     path: '/repository/request/changes',
-  },
-  '/$owner/$repo/runs': {
-    name: 'repository_runs',
-    path: '/repository/runs',
   },
   '/$owner/$repo/runs/': {
     name: 'repository_runs',

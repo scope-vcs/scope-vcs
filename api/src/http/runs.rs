@@ -50,11 +50,7 @@ pub(crate) async fn create_manual_run(
         .map_err(|error| ApiError::payload_too_large(format!("run bundle is too large: {error}")))?
         .to_vec();
     let inspected = create_manual_run_control(&state, ManualRunCommand { request, bundle }).await?;
-    Ok(Json(run_response(
-        &inspected.run,
-        &inspected.jobs,
-        inspected.logs_truncated,
-    )?))
+    Ok(Json(run_response(&inspected.run, inspected.logs_truncated)))
 }
 
 pub(crate) async fn resolve_manual_run(
@@ -71,7 +67,7 @@ pub(crate) async fn resolve_manual_run(
     )?;
     let response = match resolve_manual_run_control(&state, &request).await? {
         Some(inspected) => ResolveManualRunResponse::Queued {
-            run: run_response(&inspected.run, &inspected.jobs, inspected.logs_truncated)?,
+            run: run_response(&inspected.run, inspected.logs_truncated),
         },
         None => ResolveManualRunResponse::UploadRequired,
     };
@@ -100,11 +96,7 @@ pub(crate) async fn get_run(
 ) -> Result<Json<RunResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let snapshot = inspect_run(&state, &user.id, &owner, &repo_name, &run_id).await?;
-    Ok(Json(run_response(
-        &snapshot.run,
-        &snapshot.jobs,
-        snapshot.logs_truncated,
-    )?))
+    Ok(Json(run_response(&snapshot.run, snapshot.logs_truncated)))
 }
 
 pub(crate) async fn get_repository_run_detail(
@@ -114,7 +106,7 @@ pub(crate) async fn get_repository_run_detail(
 ) -> Result<Json<RepositoryRunDetailResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let detail = inspect_run_detail(&state, &user.id, &owner, &repo_name, &run_id).await?;
-    let run = repository_run_summary(&detail.run, &detail.jobs)?;
+    let run = repository_run_summary(&detail.run, &detail.jobs);
     Ok(Json(build_run_detail_response(detail, run)?))
 }
 
@@ -217,8 +209,7 @@ pub(crate) async fn get_push_trigger_evaluation(
             let run = runs
                 .remove(&check.run_id)
                 .ok_or_else(|| ApiError::internal_message("push trigger check run is missing"))?;
-            let run_jobs = jobs
-                .remove(&run.id)
+            jobs.remove(&run.id)
                 .filter(|jobs| !jobs.is_empty())
                 .ok_or_else(|| {
                     ApiError::internal_message(
@@ -228,27 +219,14 @@ pub(crate) async fn get_push_trigger_evaluation(
             Ok(PushTriggerCheckResponse {
                 workflow_path: check.workflow_path,
                 workflow_name: check.workflow_name,
-                run: run_response(&run, &run_jobs, truncated_run_ids.contains(&run.id))?,
+                run: run_response(&run, truncated_run_ids.contains(&run.id)),
             })
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
     Ok(Json(PushTriggerEvaluationResponse {
         change_version: evaluation.change_version,
         head_oid: evaluation.head_oid,
-        state: match evaluation.state {
-            scope_domain::runs::trigger::PushTriggerEvaluationState::Pending => {
-                scope_api_contract::PushTriggerEvaluationState::Pending
-            }
-            scope_domain::runs::trigger::PushTriggerEvaluationState::Succeeded => {
-                scope_api_contract::PushTriggerEvaluationState::Succeeded
-            }
-            scope_domain::runs::trigger::PushTriggerEvaluationState::ConfigurationError => {
-                scope_api_contract::PushTriggerEvaluationState::ConfigurationError
-            }
-            scope_domain::runs::trigger::PushTriggerEvaluationState::Failed => {
-                scope_api_contract::PushTriggerEvaluationState::Failed
-            }
-        },
+        state: evaluation.state.into(),
         message: evaluation.message,
         checks,
     }))
@@ -261,11 +239,7 @@ pub(crate) async fn cancel_run(
 ) -> Result<Json<RunResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let inspected = cancel_run_control(&state, &user.id, &owner, &repo_name, &run_id).await?;
-    Ok(Json(run_response(
-        &inspected.run,
-        &inspected.jobs,
-        inspected.logs_truncated,
-    )?))
+    Ok(Json(run_response(&inspected.run, inspected.logs_truncated)))
 }
 
 pub(crate) async fn retry_run(
@@ -275,11 +249,7 @@ pub(crate) async fn retry_run(
 ) -> Result<Json<RunResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let inspected = retry_run_control(&state, &user.id, &owner, &repo_name, &run_id).await?;
-    Ok(Json(run_response(
-        &inspected.run,
-        &inspected.jobs,
-        inspected.logs_truncated,
-    )?))
+    Ok(Json(run_response(&inspected.run, inspected.logs_truncated)))
 }
 
 #[cfg(test)]
@@ -304,22 +274,14 @@ mod tests {
     fn run_summary_allows_retry_when_every_job_has_capacity() {
         let run = terminal_run();
         let available = terminal_job(1);
-        assert!(
-            repository_run_summary(&run, &[available])
-                .unwrap()
-                .can_retry
-        );
+        assert!(repository_run_summary(&run, &[available]).can_retry);
     }
 
     #[test]
     fn run_summary_hides_retry_when_any_job_is_exhausted() {
         let run = terminal_run();
         let exhausted = terminal_job(MAX_RUN_ATTEMPTS);
-        assert!(
-            !repository_run_summary(&run, &[exhausted])
-                .unwrap()
-                .can_retry
-        );
+        assert!(!repository_run_summary(&run, &[exhausted]).can_retry);
     }
 
     fn terminal_run() -> Run {

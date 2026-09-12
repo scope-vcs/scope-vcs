@@ -1,15 +1,15 @@
-import type { RepoRunDetail } from '@/api/types'
 import { createCachedResource } from '../../lib/cached-resource'
+import type { RepositoryRunDetailResponse } from '@/api/types.generated'
 
 type RunDetailSnapshot = {
-  detail: RepoRunDetail
+  detail: RepositoryRunDetailResponse
   routeSnapshot: string
   generation: number
 }
 
 export const runDetailResource = createCachedResource<RunDetailSnapshot>({ maxEntries: 16 })
 
-export function initializeRunDetail(key: string, detail: RepoRunDetail) {
+export function initializeRunDetail(key: string, detail: RepositoryRunDetailResponse) {
   const current = runDetailResource.read(key)
   const routeSnapshot = JSON.stringify(detail)
   if (current?.routeSnapshot !== routeSnapshot) {
@@ -19,7 +19,7 @@ export function initializeRunDetail(key: string, detail: RepoRunDetail) {
 
 export async function refreshRunDetail(
   key: string,
-  loadDetail: (signal?: AbortSignal) => Promise<RepoRunDetail>,
+  loadDetail: (signal?: AbortSignal) => Promise<RepositoryRunDetailResponse>,
   forceAfterInFlight = false,
 ) {
   const current = runDetailResource.peek(key)

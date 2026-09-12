@@ -29,16 +29,11 @@ pub fn push_head_to_ref_with_bearer(
     refname: &str,
     bearer_token: &str,
 ) -> anyhow::Result<()> {
-    let plan = git_auth_plan(
-        vec![
-            "-c".to_string(),
-            "push.recurseSubmodules=no".to_string(),
-            "push".to_string(),
-            destination.to_string(),
-            format!("{commit_oid}:{refname}"),
-        ],
+    let plan = git_push_ref_auth_plan(
         destination,
-        &[format!("Authorization: Bearer {bearer_token}")],
+        commit_oid,
+        refname,
+        bearer_token,
         inherited_git_config_count(),
     );
     run_git_plan_output(
@@ -87,6 +82,27 @@ pub fn fetch_scope_remote_with_bearer(
         Some(&repo.root),
         "refresh Scope Git remote before push review",
         "refresh Scope Git remote before push review failed",
+    )
+}
+
+pub fn git_push_ref_auth_plan(
+    destination: &str,
+    commit_oid: &str,
+    refname: &str,
+    bearer_token: &str,
+    inherited_config_count: Option<usize>,
+) -> GitCommandPlan {
+    git_auth_plan(
+        vec![
+            "-c".to_string(),
+            "push.recurseSubmodules=no".to_string(),
+            "push".to_string(),
+            destination.to_string(),
+            format!("{commit_oid}:{refname}"),
+        ],
+        destination,
+        &[format!("Authorization: Bearer {bearer_token}")],
+        inherited_config_count,
     )
 }
 

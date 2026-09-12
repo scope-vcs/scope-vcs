@@ -11,7 +11,7 @@ import {
   verifyReleaseTransition,
 } from "./release-transition.mjs";
 
-test("release browser CLI parses explicit transition controls", () => {
+test("release browser CLI parses explicit transition controls", async () => {
   const options = parseArguments([
     "--base-url", "https://scope.example.test",
     "--repo", "dev/update-demo",
@@ -38,8 +38,8 @@ test("release browser CLI parses explicit transition controls", () => {
     ]),
     /without credentials or a path/,
   );
-  assert.throws(
-    () => parseArguments([
+  await assert.rejects(
+    verifyReleaseTransition(parseArguments([
       "--base-url", "https://scope.example.test",
       "--repo", "dev/update-demo",
       "--activation-file", "/tmp/activation",
@@ -47,7 +47,7 @@ test("release browser CLI parses explicit transition controls", () => {
       "--transition-file", "/tmp/transition",
       "--summary", "/tmp/summary",
       "--expected-activity-file", "/tmp/activity",
-    ]),
+    ])),
     /must be provided together/,
   );
 });
@@ -106,18 +106,15 @@ test("browser refuses a stale teardown signal before opening", async (t) => {
   await writeFile(transitionFile, "stale");
   await assert.rejects(
     verifyReleaseTransition({
-      activityTimeoutMs: 1_000,
       activationFile: join(root, "activation"),
       baseUrl: "https://scope.example.test",
       expectedActivityFile: undefined,
       owner: "dev",
       readyFile: join(root, "ready"),
-      reconnectBoundMs: 1_000,
       repo: "update-demo",
       requireSseReconnect: true,
       summaryFile: join(root, "summary"),
       transitionFile,
-      transitionTimeoutMs: 1_000,
       updateReadyFile: undefined,
     }),
     /must open before activation/,

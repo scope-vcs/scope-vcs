@@ -1,11 +1,12 @@
-import type { RepoParams, RepoRunHistoryPage } from '@/api/types'
+import type { RepoParams } from '@/api/types'
+import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { runDisplayState, runTriggerLabel } from './run-formatting'
 import { runStatus } from './run-status'
 import { RunDuration } from './run-duration'
 import { RunStatusIcon } from './run-status-icon'
-import { RunTimestamp } from './run-timestamp'
+import { RelativeTimestamp } from '@/components/timestamp'
 import {
   RUN_ROW_CLASS,
   RUN_ROW_DURATION_CLASS,
@@ -18,7 +19,7 @@ export function RunRow({
   run,
 }: {
   params: RepoParams
-  run: RepoRunHistoryPage['runs'][number]
+  run: RepositoryRunHistoryPageResponse['runs'][number]
 }) {
   const state = runDisplayState(run)
   const isRunning = runStatus(state).tone === 'running'
@@ -49,7 +50,7 @@ export function RunRow({
         <RunDuration end={run.completed_at_unix} start={run.created_at_unix} />
       </span>
       <span className={`${RUN_ROW_TIMESTAMP_CLASS} text-right text-xs tabular-nums text-muted-foreground`}>
-        <RunTimestamp value={run.updated_at_unix} />
+        <RelativeTimestamp value={run.updated_at_unix} />
       </span>
     </Link>
   )

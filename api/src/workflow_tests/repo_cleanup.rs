@@ -36,11 +36,12 @@ async fn pending_cleanup_count(state: &AppState) -> usize {
 }
 
 async fn delete_repo(state: &AppState) -> Response {
-    request(
-        state.clone(),
+    api_request(
+        router(state.clone()),
         "DELETE",
         "/v1/repos/owner/repo",
-        bearer_header(),
+        Some(&bearer_header()),
+        None,
     )
     .await
 }
@@ -53,20 +54,17 @@ async fn assert_repo_deleted(state: &AppState) {
     );
 }
 
-async fn request(state: AppState, method: &str, uri: &str, authorization: String) -> Response {
-    api_request(router(state), method, uri, Some(&authorization), None).await
-}
-
 #[tokio::test]
 async fn delete_repo_route_requires_owner_and_removes_storage() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     let paths = cleanup_paths(&state, "test");
-    let non_owner = request(
-        state.clone(),
+    let non_owner = api_request(
+        router(state.clone()),
         "DELETE",
         "/v1/repos/owner/repo",
-        bearer_header_for("user_stranger", "stranger@example.com"),
+        Some(&bearer_header_for("user_stranger", "stranger@example.com")),
+        None,
     )
     .await;
     assert_eq!(non_owner.status(), StatusCode::NOT_FOUND);
@@ -204,24 +202,4 @@ async fn delete_repo_route_records_pending_filesystem_cleanup_when_storage_delet
     fs::remove_file(&rx_root).unwrap();
     drain_pending_repo_storage_deletions(&state).await.unwrap();
     assert_eq!(pending_cleanup_count(&state).await, 0);
-}
-
-struct DeleteFailsObjectStore;
-
-impl scope_object_store::ObjectStore for DeleteFailsObjectStore {
-    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), scope_object_store::ObjectStoreError> {
-        Ok(())
-    }
-
-    fn get(&self, key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
-        Err(scope_object_store::ObjectStoreError::not_found(format!(
-            "object {key} not found"
-        )))
-    }
-
-    fn delete(&self, _key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
-        Err(scope_object_store::ObjectStoreError::service_unavailable(
-            "delete failed",
-        ))
-    }
 }

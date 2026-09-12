@@ -1,9 +1,5 @@
-use std::sync::{
-    OnceLock,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::OnceLock;
 
-static REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static REPLICA_ID: OnceLock<String> = OnceLock::new();
 
 pub(crate) fn replica_id() -> &'static str {
@@ -18,9 +14,12 @@ pub(crate) fn replica_id() -> &'static str {
 
 pub(crate) fn request_trace_id() -> String {
     let mut random = [0_u8; 8];
-    if getrandom::fill(&mut random).is_ok() {
-        return hex::encode(random);
+    match getrandom::fill(&mut random) {
+        Ok(()) => hex::encode(random),
+        Err(error) => {
+            static LOGGED: OnceLock<()> = OnceLock::new();
+            LOGGED.get_or_init(|| tracing::warn!(%error, "failed to generate request trace id"));
+            String::new()
+        }
     }
-    let sequence = REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    format!("{}-{sequence}", std::process::id())
 }

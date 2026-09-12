@@ -12,8 +12,6 @@ pub enum ConfigVisibility {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RepoConfig {
-    #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
-    pub schema: Option<String>,
     pub kind: String,
     pub version: u64,
     pub visibility: RepoConfigVisibility,
@@ -99,7 +97,6 @@ impl From<HistoryRewriteAction> for domain::HistoryRewriteAction {
 impl From<domain::RepoConfig> for RepoConfig {
     fn from(value: domain::RepoConfig) -> Self {
         Self {
-            schema: value.schema,
             kind: value.kind,
             version: value.version,
             visibility: value.visibility.into(),
@@ -111,7 +108,6 @@ impl From<domain::RepoConfig> for RepoConfig {
 impl From<RepoConfig> for domain::RepoConfig {
     fn from(value: RepoConfig) -> Self {
         Self {
-            schema: value.schema,
             kind: value.kind,
             version: value.version,
             visibility: value.visibility.into(),
@@ -197,7 +193,6 @@ mod tests {
     #[test]
     fn runtime_wire_config_is_json_identical_to_domain_config() {
         let domain = domain::RepoConfig {
-            schema: Some("https://scope.dev/repo.schema.json".to_string()),
             kind: "scope.repo".to_string(),
             version: 1,
             visibility: domain::RepoConfigVisibility {

@@ -1,12 +1,18 @@
 use anyhow::{Context as _, bail};
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
+
+/// Each task has its own filesystem. A stable path lets build caches reuse
+/// fingerprints that contain absolute source paths across attempts.
+pub const WORK_ROOT: &str = "/scope/work";
 
 pub struct RuntimeSettings {
     pub api_url: String,
     pub attempt_id: String,
     pub bootstrap_token: String,
     pub attempt_deadline_unix: u64,
-    pub work_root: PathBuf,
 }
 
 impl RuntimeSettings {
@@ -23,20 +29,17 @@ impl RuntimeSettings {
             attempt_id: required("SCOPE_ATTEMPT_ID")?,
             bootstrap_token: required("SCOPE_BOOTSTRAP_TOKEN")?,
             attempt_deadline_unix,
-            work_root: env::var_os("SCOPE_WORK_ROOT")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("/scope/work")),
         })
     }
+}
 
-    pub fn prepare_work_directory(&self) -> anyhow::Result<PathBuf> {
-        // Each task has its own filesystem. A stable path lets build caches reuse
-        // fingerprints that contain absolute source paths across attempts.
-        let root = self.work_root.join("job");
-        std::fs::create_dir_all(&self.work_root).context("create runtime work root")?;
-        std::fs::create_dir(&root).context("create fresh attempt work directory")?;
-        std::fs::canonicalize(root).context("resolve attempt work directory")
-    }
+/// Creates the attempt's work directory under `work_root`, refusing to reuse
+/// one left behind by an earlier attempt.
+pub fn prepare_work_directory(work_root: &Path) -> anyhow::Result<PathBuf> {
+    let root = work_root.join("job");
+    std::fs::create_dir_all(work_root).context("create runtime work root")?;
+    std::fs::create_dir(&root).context("create fresh attempt work directory")?;
+    std::fs::canonicalize(root).context("resolve attempt work directory")
 }
 
 fn required(name: &str) -> anyhow::Result<String> {
@@ -53,19 +56,11 @@ mod tests {
     #[test]
     fn isolated_attempts_use_the_same_path_and_refuse_existing_work() {
         let root = tempfile::tempdir().unwrap();
-        let mut settings = RuntimeSettings {
-            api_url: String::new(),
-            attempt_id: "first".to_string(),
-            bootstrap_token: String::new(),
-            attempt_deadline_unix: 0,
-            work_root: root.path().to_owned(),
-        };
-        let first = settings.prepare_work_directory().unwrap();
+        let first = prepare_work_directory(root.path()).unwrap();
         std::fs::write(first.join("sentinel"), "previous attempt").unwrap();
-        settings.attempt_id = "second".to_string();
-        assert!(settings.prepare_work_directory().is_err());
+        assert!(prepare_work_directory(root.path()).is_err());
         assert!(first.join("sentinel").exists());
         std::fs::remove_dir_all(&first).unwrap();
-        assert_eq!(settings.prepare_work_directory().unwrap(), first);
+        assert_eq!(prepare_work_directory(root.path()).unwrap(), first);
     }
 }

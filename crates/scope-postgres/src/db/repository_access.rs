@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{RepositoryStore, begin_metadata_read_snapshot, entities};
 use crate::error::PostgresError;
 use scope_domain::repository::{
@@ -78,74 +79,7 @@ impl RepositoryStore {
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(context)
     }
-}
 
-pub(super) async fn repository_access<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    viewer_user_id: Option<&str>,
-) -> Result<Option<RepositoryAccessContext>, PostgresError> {
-    use entities::repository::{Column, Entity};
-    let Some(row) = Entity::find()
-        .select_only()
-        .columns([
-            Column::Id, Column::IncarnationId, Column::OwnerHandle, Column::Name,
-            Column::OwnerUserId, Column::Description, Column::WebsiteUrl,
-            Column::PublicationState, Column::ChangeVersion,
-        ])
-        .expr_as(sea_orm::sea_query::Expr::cust(
-            "COALESCE(jsonb_path_query_first(policy, '$.rules[*] ? (@.path == \"/\")')->>'visibility', policy->>'default_visibility')"
-        ), "root_visibility")
-        .filter(Column::Id.eq(repo_id))
-        .into_model::<AccessRow>()
-        .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
-    else { return Ok(None); };
-    let record = RepoRecord {
-        id: row.id,
-        incarnation_id: row.incarnation_id,
-        owner_handle: row.owner_handle,
-        name: row.name,
-        owner_user_id: row.owner_user_id,
-        description: row.description,
-        website_url: row.website_url,
-        lifecycle_state: entities::decode_enum(row.publication_state)?,
-        change_version: entities::i64_to_u64(row.change_version, "repository change version")?,
-    };
-    let access = match viewer_user_id {
-        None => RepositoryAccess::public(),
-        Some(user_id) => {
-            let permissions = if user_id == record.owner_user_id {
-                None
-            } else {
-                entities::repository_member::Entity::find_by_id((
-                    repo_id.to_string(),
-                    user_id.to_string(),
-                ))
-                .one(conn)
-                .await
-                .map_err(PostgresError::internal)?
-                .map(entities::repository_member::Model::try_into_domain)
-                .transpose()?
-                .map(|member| member.permissions)
-            };
-            repository_access_for_user_id(
-                &record.owner_user_id,
-                record.lifecycle_state,
-                permissions,
-                user_id,
-            )
-        }
-    };
-    Ok(Some(RepositoryAccessContext {
-        record,
-        access,
-        root_visibility: entities::decode_enum(row.root_visibility)?,
-    }))
-}
-
-impl RepositoryStore {
     pub async fn repository_content_source(
         &self,
         incarnation: &scope_domain::repository::RepositoryIncarnation,
@@ -174,9 +108,7 @@ impl RepositoryStore {
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok((head, spans))
     }
-}
 
-impl RepositoryStore {
     pub async fn repository_policy(
         &self,
         context: &RepositoryAccessContext,
@@ -237,6 +169,74 @@ impl RepositoryStore {
             "repository changed while reading its head; retry",
         ))
     }
+}
+
+pub(super) async fn repository_access<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    viewer_user_id: Option<&str>,
+) -> Result<Option<RepositoryAccessContext>, PostgresError> {
+    use entities::repository::{Column, Entity};
+    let Some(row) = Entity::find()
+        .select_only()
+        .columns([
+            Column::Id, Column::IncarnationId, Column::OwnerHandle, Column::Name,
+            Column::OwnerUserId, Column::Description, Column::WebsiteUrl,
+            Column::PublicationState, Column::ChangeVersion,
+        ])
+        .expr_as(sea_orm::sea_query::Expr::cust(
+            "COALESCE(jsonb_path_query_first(policy, '$.rules[*] ? (@.path == \"/\")')->>'visibility', policy->>'default_visibility')"
+        ), "root_visibility")
+        .filter(Column::Id.eq(repo_id))
+        .into_model::<AccessRow>()
+        .one(conn)
+        .await
+        .map_err(PostgresError::internal)?
+    else { return Ok(None); };
+    let record = RepoRecord {
+        id: row.id,
+        incarnation_id: row.incarnation_id,
+        owner_handle: row.owner_handle,
+        name: row.name,
+        owner_user_id: row.owner_user_id,
+        description: row.description,
+        website_url: row.website_url,
+        lifecycle_state: entities::decode_enum(row.publication_state)?,
+        change_version: integer_columns::i64_to_u64(
+            row.change_version,
+            "repository change version",
+        )?,
+    };
+    let access = match viewer_user_id {
+        None => RepositoryAccess::public(),
+        Some(user_id) => {
+            let permissions = if user_id == record.owner_user_id {
+                None
+            } else {
+                entities::repository_member::Entity::find_by_id((
+                    repo_id.to_string(),
+                    user_id.to_string(),
+                ))
+                .one(conn)
+                .await
+                .map_err(PostgresError::internal)?
+                .map(entities::repository_member::Model::try_into_domain)
+                .transpose()?
+                .map(|member| member.permissions)
+            };
+            repository_access_for_user_id(
+                &record.owner_user_id,
+                record.lifecycle_state,
+                permissions,
+                user_id,
+            )
+        }
+    };
+    Ok(Some(RepositoryAccessContext {
+        record,
+        access,
+        root_visibility: entities::decode_enum(row.root_visibility)?,
+    }))
 }
 
 fn ensure_current_context(

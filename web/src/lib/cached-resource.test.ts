@@ -221,17 +221,6 @@ test('clear notifies subscribers and prevents pending work repopulating cached d
   assert.equal(store.stats().entries, 0)
 })
 
-test('recovery invalidation marks all retained resources stale without dropping their data', () => {
-  const store = resource()
-  store.write('a', value('one'), '1')
-  store.write('b', value('two'), '2')
-  store.invalidateAll()
-  assert.equal(store.getSnapshot('a').stale, true)
-  assert.equal(store.getSnapshot('b').stale, true)
-  assert.deepEqual(store.read('a'), value('one'))
-  assert.deepEqual(store.read('b'), value('two'))
-})
-
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (error: unknown) => void
@@ -241,31 +230,6 @@ function deferred<T>() {
   })
   return { promise, reject, resolve }
 }
-
-test('recovery invalidation also cancels requests whose pending snapshot was evicted', async () => {
-  const store = createCachedResource<Value>({ maxEntries: 1 })
-  const first = deferred<Value>()
-  const second = deferred<Value>()
-  let firstSignal!: AbortSignal
-  let secondSignal!: AbortSignal
-  const firstRequest = store.ensure('a', '1', (signal) => {
-    firstSignal = signal
-    return first.promise
-  })
-  const secondRequest = store.ensure('b', '1', (signal) => {
-    secondSignal = signal
-    return second.promise
-  })
-  await Promise.resolve()
-  store.invalidateAll()
-  first.resolve(value('before recovery'))
-  second.resolve(value('before recovery'))
-  await Promise.all([firstRequest, secondRequest])
-  assert.equal(firstSignal.aborted, true)
-  assert.equal(secondSignal.aborted, true)
-  assert.equal(store.peek('a'), null)
-  assert.equal(store.peek('b'), null)
-})
 
 test('route loaders and mounted views share the same pending request', async () => {
   const store = resource()

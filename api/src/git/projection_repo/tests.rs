@@ -410,7 +410,7 @@ fn projection_tree_path(path: &str) -> GitTreePath {
 }
 
 fn git_object_exists(repo: &FsPath, oid: &str) -> bool {
-    git_process_output_with_timeout(
+    crate::git::command::git_process_output(
         Command::new("git")
             .arg("--git-dir")
             .arg(repo)
@@ -418,7 +418,7 @@ fn git_object_exists(repo: &FsPath, oid: &str) -> bool {
             .arg("-e")
             .arg(format!("{oid}^{{object}}")),
         None,
-        RuntimeBudgets::default_git_command_timeout(),
+        scope_git_process::ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
     )
     .unwrap()
     .status

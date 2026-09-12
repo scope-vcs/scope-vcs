@@ -1,12 +1,19 @@
 use sha2::{Digest, Sha256};
 
-pub fn rank_backends<'a>(repository: &str, backends: &'a [String]) -> Vec<&'a str> {
+pub(crate) fn rank_backends<'a, T>(
+    repository: &str,
+    backends: &'a [T],
+    identity: impl Fn(&T) -> String,
+) -> Vec<&'a T> {
     let mut ranked = backends
         .iter()
-        .map(|backend| (score(repository, backend), backend.as_str()))
+        .map(|backend| {
+            let identity = identity(backend);
+            (score(repository, &identity), identity, backend)
+        })
         .collect::<Vec<_>>();
-    ranked.sort_unstable_by(|left, right| right.cmp(left));
-    ranked.into_iter().map(|(_, backend)| backend).collect()
+    ranked.sort_unstable_by(|left, right| (&right.0, &right.1).cmp(&(&left.0, &left.1)));
+    ranked.into_iter().map(|(_, _, backend)| backend).collect()
 }
 
 fn score(repository: &str, backend: &str) -> [u8; 32] {
@@ -36,8 +43,8 @@ mod tests {
         let second = backends(&["10.0.0.2:8080", "10.0.0.3:8080", "10.0.0.1:8080"]);
 
         assert_eq!(
-            rank_backends("scope/router", &first),
-            rank_backends("scope/router", &second)
+            rank_backends("scope/router", &first, Clone::clone),
+            rank_backends("scope/router", &second, Clone::clone)
         );
     }
 
@@ -48,8 +55,8 @@ mod tests {
 
         for index in 0..10_000 {
             let repository = format!("owner/repo-{index}");
-            let before = rank_backends(&repository, &original)[0];
-            let after = rank_backends(&repository, &expanded)[0];
+            let before = rank_backends(&repository, &original, Clone::clone)[0];
+            let after = rank_backends(&repository, &expanded, Clone::clone)[0];
             assert!(before == after || after == "api-d:8080");
         }
     }
@@ -61,7 +68,7 @@ mod tests {
         for index in 0..3_000 {
             let repository = format!("owner/repo-{index}");
             *counts
-                .entry(rank_backends(&repository, &nodes)[0])
+                .entry(rank_backends(&repository, &nodes, Clone::clone)[0])
                 .or_insert(0_usize) += 1;
         }
 

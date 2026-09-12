@@ -1,14 +1,14 @@
-import type { RepoSummary } from '@/api/types'
+import type { RepoSummaryResponse } from '@/api/types.generated'
 
 export type RepoSettingsPageState = {
   deleteError: string | null
-  deleteTarget: RepoSummary | null
+  deleteTarget: RepoSummaryResponse | null
 }
 
 export type RepoSettingsPageAction =
   | { type: 'deleteFailed'; message: string }
-  | { type: 'deleteStarted'; repo: RepoSummary }
-  | { type: 'deleteTargetChanged'; repo: RepoSummary | null }
+  | { type: 'deleteStarted'; repo: RepoSummaryResponse }
+  | { type: 'deleteTargetChanged'; repo: RepoSummaryResponse | null }
 
 export const initialRepoSettingsPageState: RepoSettingsPageState = {
   deleteError: null,

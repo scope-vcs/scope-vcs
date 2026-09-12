@@ -1,3 +1,4 @@
+use crate::lease::{HeartbeatError, supervise_lease};
 use crate::{
     codec::{
         CodecDerivative, CodecFailure, CodecFailureKind, CodecPipeline, DerivativeKind, MediaKind,
@@ -15,8 +16,8 @@ use scope_domain::requests::attachments::{
     RequestAttachmentFailureCode, RequestAttachmentProcessingLease, RequestAttachmentStoredObject,
 };
 use scope_media_storage::{
-    MAX_CHUNK_BYTES, MediaChunk, MediaObject, MediaStorage, MediaStorageError,
-    MediaStorageErrorKind, StagedMediaPart, WriteAttempt,
+    MAX_CHUNK_BYTES, MediaObject, MediaStorage, MediaStorageError, MediaStorageErrorKind,
+    StagedMediaPart, WriteAttempt,
 };
 use scope_postgres::db::{
     CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
@@ -25,7 +26,7 @@ use scope_postgres::db::{
     ValidatedRequestAttachmentSource,
 };
 use sha2::{Digest, Sha256};
-use std::{future::Future, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 use tokio::io::AsyncReadExt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -99,7 +100,7 @@ async fn process_next_job(
     );
     let _activity = health.processing_activity();
     let work = settle_claim(metadata, storage, pipeline, scratch, settings, &lease);
-    match supervise_processing_claim(work, settings.lease_duration, || async {
+    match supervise_lease(work, settings.lease_duration, || async {
         let now = crate::unix_now()?;
         renew_processing(metadata, &lease, settings.lease_duration, now).await
     })
@@ -486,21 +487,19 @@ fn completed_manifest(id: String, object: &MediaObject) -> CompletedRequestMedia
 fn media_object_from_manifest(
     manifest: &RequestMediaManifest,
 ) -> Result<MediaObject, MediaStorageError> {
-    MediaObject::new(
+    MediaObject::from_chunks(
         &manifest.media_type,
         manifest.size_bytes,
         &manifest.sha256,
-        manifest
-            .chunks
-            .iter()
-            .map(|chunk| MediaChunk {
-                part_number: chunk.index,
-                plaintext_offset: chunk.plaintext_offset,
-                plaintext_bytes: chunk.plaintext_size_bytes,
-                sha256: chunk.sha256.clone(),
-                object_key: chunk.object_key.clone(),
-            })
-            .collect(),
+        manifest.chunks.iter().map(|chunk| {
+            (
+                chunk.index,
+                chunk.plaintext_offset,
+                chunk.plaintext_size_bytes,
+                chunk.sha256.clone(),
+                chunk.object_key.clone(),
+            )
+        }),
     )
 }
 
@@ -541,7 +540,7 @@ async fn mark_source_validated(
             now_unix: crate::unix_now()?,
         })
         .await
-        .map_err(anyhow::Error::new)?;
+        .map_err(db_error)?;
     Ok(matches!(result, MediaLeaseMutation::Applied(_)))
 }
 
@@ -589,46 +588,6 @@ async fn record_processing_failure(
         MediaLeaseMutation::Applied(_) => ProcessingOutcome::Failed,
         MediaLeaseMutation::LeaseLost => ProcessingOutcome::LeaseLost,
     })
-}
-
-#[derive(Debug)]
-enum HeartbeatError {
-    LeaseLost,
-    Database(anyhow::Error),
-}
-
-async fn supervise_processing_claim<T, F, R, RFut>(
-    future: F,
-    lease_duration: Duration,
-    mut renew: R,
-) -> Result<T, HeartbeatError>
-where
-    F: Future<Output = T>,
-    R: FnMut() -> RFut,
-    RFut: Future<Output = anyhow::Result<bool>>,
-{
-    tokio::pin!(future);
-    let mut heartbeat = tokio::time::interval(heartbeat_interval(lease_duration));
-    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    heartbeat.tick().await;
-    loop {
-        tokio::select! {
-            result = &mut future => return Ok(result),
-            _ = heartbeat.tick() => {
-                let renewal = renew();
-                tokio::pin!(renewal);
-                let renewed = tokio::select! {
-                    result = &mut future => return Ok(result),
-                    renewed = &mut renewal => renewed,
-                };
-                match renewed {
-                    Ok(true) => {}
-                    Ok(false) => return Err(HeartbeatError::LeaseLost),
-                    Err(error) => return Err(HeartbeatError::Database(error)),
-                }
-            }
-        }
-    }
 }
 
 async fn renew_processing(
@@ -736,10 +695,6 @@ fn domain_derivative_kind(kind: &DerivativeKind) -> RequestAttachmentDerivativeK
     }
 }
 
-fn heartbeat_interval(lease_duration: Duration) -> Duration {
-    (lease_duration / 3).max(Duration::from_millis(10))
-}
-
 fn io_storage_error(error: std::io::Error) -> UploadError {
     UploadError::Internal(anyhow::Error::new(error).context("reading derivative"))
 }
@@ -800,7 +755,7 @@ mod tests {
         let renewal_expiry = Arc::clone(&expires_at);
         let renewal_count = Arc::clone(&renewals);
 
-        let result = supervise_processing_claim(
+        let result = supervise_lease(
             async {
                 tokio::time::sleep(Duration::from_millis(650)).await;
                 42

@@ -2,6 +2,11 @@ export function displayRouteFilePath(path: string) {
   return path.replace(/^\/+/, '')
 }
 
+/** The last segment of a repository path, without any leading slashes. */
+export function routeFileName(path: string) {
+  return displayRouteFilePath(path).split('/').at(-1) ?? ''
+}
+
 export function parseRouteFileSearch(value: unknown) {
   if (typeof value !== 'string') return undefined
   const path = displayRouteFilePath(value)
@@ -19,4 +24,9 @@ export function selectedRouteFilePath(
     files.find((file) => displayRouteFilePath(file.path) === selected)?.path ??
     null
   )
+}
+
+export function parseRouteFilePathSearch(value: unknown) {
+  const path = parseRouteFileSearch(value)
+  return path ? `/${path}` : undefined
 }

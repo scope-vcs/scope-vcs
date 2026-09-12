@@ -1,10 +1,7 @@
 use crate::{
     content::SourceBlob,
     policy::{ScopePath, Visibility},
-    projection::{
-        LogicalCommit, LogicalCommitOrigin, Projection, ProjectionViewKey, SourceGraph,
-        project_graph,
-    },
+    projection::{LogicalCommit, LogicalCommitOrigin, Projection, ProjectionViewKey, SourceGraph},
     visibility_changes::VisibilityChangeSet,
 };
 use serde::{Deserialize, Serialize};
@@ -78,12 +75,13 @@ pub struct HistoryEntryVisibilityChange {
     pub file: Option<HistoryEntryFile>,
 }
 
-pub fn history_view(
+#[cfg(test)]
+pub(crate) fn history_view(
     graph: &SourceGraph,
     visibility_change_sets: &[VisibilityChangeSet],
     view_key: ProjectionViewKey,
 ) -> HistoryView {
-    let projection = project_graph(graph, visibility_change_sets, view_key);
+    let projection = crate::projection::project_graph(graph, visibility_change_sets, view_key);
     history_view_from_projection(projection, graph, visibility_change_sets)
 }
 

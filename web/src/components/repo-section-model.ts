@@ -1,4 +1,4 @@
-import type { RepositoryActor } from '@/api/types'
+import type { RepositoryActor } from '@/api/types.generated'
 
 export type RepoSection = 'code' | 'history' | 'requests' | 'runs' | 'settings'
 

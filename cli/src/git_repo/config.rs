@@ -96,37 +96,31 @@ fn credential_config_key(remote_url: &str, name: &str) -> anyhow::Result<String>
 }
 
 pub fn git_remote_push_url(repo: &GitRepo, remote: &str) -> anyhow::Result<String> {
-    let output = git_output_in_repo(repo, &["remote", "get-url", "--push", remote])?;
-    if !output.status.success() {
-        return Err(crate::error::CliError::usage(format!(
-            "Scope remote '{remote}' is not configured. Run: scope init"
-        ))
-        .into());
-    }
-
-    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if url.is_empty() {
-        return Err(crate::error::CliError::usage(format!(
-            "Scope remote '{remote}' has an empty push URL"
-        ))
-        .into());
-    }
-    Ok(url)
+    remote_url(repo, remote, true)
 }
 
 pub fn git_remote_fetch_url(repo: &GitRepo, remote: &str) -> anyhow::Result<String> {
-    let output = git_output_in_repo(repo, &["remote", "get-url", remote])?;
+    remote_url(repo, remote, false)
+}
+
+fn remote_url(repo: &GitRepo, remote: &str, push: bool) -> anyhow::Result<String> {
+    let args = if push {
+        vec!["remote", "get-url", "--push", remote]
+    } else {
+        vec!["remote", "get-url", remote]
+    };
+    let output = git_output_in_repo(repo, &args)?;
     if !output.status.success() {
         return Err(crate::error::CliError::usage(format!(
             "Scope remote '{remote}' is not configured. Run: scope init"
         ))
         .into());
     }
-
     let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if url.is_empty() {
+        let direction = if push { "push" } else { "fetch" };
         return Err(crate::error::CliError::usage(format!(
-            "Scope remote '{remote}' has an empty fetch URL"
+            "Scope remote '{remote}' has an empty {direction} URL"
         ))
         .into());
     }

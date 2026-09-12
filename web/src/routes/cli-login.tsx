@@ -198,7 +198,6 @@ function CliLoginRoute() {
                 isSignedIn={isSignedIn}
                 isPending={state.kind === 'pending'}
                 onAuthorize={() => void authorizeBrowserCli()}
-                pendingLabel="Authorizing"
               />
             </div>
           </section>
@@ -238,7 +237,6 @@ function CliLoginRoute() {
                 isLoaded={isLoaded}
                 isPending={state.kind === 'pending'}
                 isSignedIn={isSignedIn}
-                pendingLabel="Authorizing"
               />
             </div>
           </form>
@@ -269,14 +267,12 @@ function CliLoginAction({
   isPending,
   isSignedIn,
   onAuthorize,
-  pendingLabel,
 }: {
   disabled?: boolean
   isLoaded: boolean
   isPending: boolean
   isSignedIn: boolean | undefined
   onAuthorize?: () => void
-  pendingLabel: string
 }) {
   if (!isLoaded) {
     return (
@@ -313,7 +309,7 @@ function CliLoginAction({
       ) : (
         <ShieldCheck className="size-3.5" />
       )}
-      <span>{isPending ? `${pendingLabel}…` : 'Authorize'}</span>
+      <span>{isPending ? 'Authorizing…' : 'Authorize'}</span>
     </Button>
   )
 }

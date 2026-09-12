@@ -156,11 +156,14 @@ async fn manifest_retirement_preserves_frontiers_pins_and_enqueues_shared_object
         "SELECT count(*) AS value FROM scope_object_references WHERE object_key::jsonb ? 'BlobSha256'").await, 1);
     assert_eq!(scalar_i64(db.as_ref(),
         "SELECT count(*) AS value FROM scope_orphan_object_jobs WHERE object_key::jsonb ? 'GitManifestSha256' AND completed_at_unix IS NULL AND size_bytes = 4").await, 1);
+    assert_eq!(scalar_i64(db.as_ref(),
+        "SELECT count(*) AS value FROM scope_orphan_object_jobs WHERE object_key::jsonb ? 'GitManifestSha256'").await, 2);
+    // Later migrations drop the manifest drain jobs the runtime can no longer decode.
     migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap();
     assert_eq!(scalar_i64(db.as_ref(),
-        "SELECT count(*) AS value FROM scope_orphan_object_jobs WHERE object_key::jsonb ? 'GitManifestSha256'").await, 2);
+        "SELECT count(*) AS value FROM scope_orphan_object_jobs WHERE object_key::jsonb ? 'GitManifestSha256'").await, 0);
 }
 
 async fn json_column(db: &DatabaseConnection, sql: &str) -> serde_json::Value {

@@ -17,7 +17,7 @@ async fn permissioned_clone_fetches_named_public_requests_without_joining() {
         .await
         .unwrap();
     insert_public_contributor(&state).await;
-    let checkout = checkout_dir("named-request-clone");
+    let checkout = TempGitRepo(unique_test_path("named-request-clone"));
     clone_with_bearer(
         &permissioned_remote,
         &checkout,
@@ -53,7 +53,7 @@ async fn closed_public_request_remains_fetchable_as_read_only_history() {
         .await
         .unwrap();
     let (origin, _server) = spawn_test_server(&state).await;
-    let checkout = checkout_dir("closed-named-request-clone");
+    let checkout = TempGitRepo(unique_test_path("closed-named-request-clone"));
     let permissioned_remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
     clone_with_bearer(
         &permissioned_remote,
@@ -305,26 +305,6 @@ async fn failed_request_snapshot_put_rolls_back_the_request_ref_cache() {
         .trim(),
         accepted_head
     );
-}
-
-struct PutFailsObjectStore {
-    readable: Arc<MemoryObjectStore>,
-}
-
-impl scope_object_store::ObjectStore for PutFailsObjectStore {
-    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), scope_object_store::ObjectStoreError> {
-        Err(scope_object_store::ObjectStoreError::service_unavailable(
-            "object PUT failed for test",
-        ))
-    }
-
-    fn get(&self, key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
-        scope_object_store::ObjectStore::get(self.readable.as_ref(), key)
-    }
-
-    fn delete(&self, key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
-        scope_object_store::ObjectStore::delete(self.readable.as_ref(), key)
-    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

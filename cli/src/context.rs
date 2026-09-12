@@ -236,10 +236,10 @@ fn target_for_repository(api_url: &str, owner: &str, repo: &str) -> anyhow::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::TestDir;
+    use crate::test_support::TempDir;
 
-    fn checkout(label: &str) -> (TestDir, GitRepo) {
-        let dir = TestDir::git_repo(label, "main");
+    fn checkout(label: &str) -> (TempDir, GitRepo) {
+        let dir = TempDir::git_repo(label, "main");
         let repo = GitRepo {
             root: dir.path().to_path_buf(),
         };

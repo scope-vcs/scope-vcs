@@ -125,7 +125,6 @@ fn is_retryable_get_error(error: &GetObjectSdkError) -> bool {
         SdkError::ServiceError(error) => {
             matches!(error.raw().status().as_u16(), 429 | 500 | 502 | 503 | 504)
         }
-        SdkError::ConstructionFailure(_) => false,
         _ => false,
     }
 }

@@ -1,16 +1,16 @@
 {
   "lockfiles": {
-    "Cargo.lock": "eb305babeba476a39e2b0ab8e7751c0b32971361ce994569be3e7bc43d5da4c1",
+    "Cargo.lock": "513deab1d82ab133944c86e0e616c34194e22d8dd7724c2b0e81a5693dd87062",
     "cli/Cargo.lock": "6daddd70bb0c67db9fed45f10beb272adc51988aa25b22bacf29a2839f6f05e6",
     "web/pnpm-lock.yaml": "2be660784f376524e059efbe5eeba99a98cbf4c23d5d103178fb1c8e139a5bd6",
     "dependency-analyzer/package-lock.json": "f98e78a2cf35128747e37c05f93ff3b4dfd3e4ec05179753343217d34fb20bc9"
   },
   "inputs": {
-    "dev/licensing/generate.py": "8a8a97dbbb0cb7cf000598d391e51cd0e23fb071059fd5b0c9b4cd79d3f010a3",
+    "dev/licensing/generate.py": "0df4f8fc1a699a4c7b73598e8213e6f961895a257f73783bfaed3c6d27ec6a85",
     "dev/licensing/requirements.txt": "0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a",
     "legal/copied-sources.json": "190ff3e7315a2273ed650091869902f07b9fa47b39617029f43aebf1df62b3b8",
     "legal/license-selections.json": "82b2a41a4b78f9972a6ffdebbcde8232862eb4e4b799113ca28ddf55812320e6",
-    "legal/rust-supplements.json": "1b66a6e0128bed354c4281919748abb452c26b3f09e4f38e640b9f01cc3e4c2c",
+    "legal/rust-supplements.json": "30cd8aeef75ac6294f0c14e680865084d24d4aa605f9a1d521a487a9386c2ce3",
     "legal/upstream/1564074e13439397.txt": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f",
     "legal/upstream/353fe762ba595bf1.txt": "353fe762ba595bf1ffe786acf0f5984bb164205901d74f258af195fc8228c67d",
     "legal/upstream/3f1ce66533302df3.txt": "3f1ce66533302df3a32edbfdfc0b78f0dd34659e4c1f5817162e5ea3c2297215",
@@ -55,7 +55,7 @@
     "legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958",
     "legal/upstream/spdx-d46e94e2c78c-MIT.txt": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
     "legal/upstream/tokio-rs-valuable-9efc29b6e58c-LICENSE": "ed60d479b8fd1f64e9cbc3de449a16a53ac1b3d1b6aeb9bf9d190a8e93061b44",
-    "legal/web-supplements.json": "f5aa7e7f57cd66a6b88b7ce332c529f3ad1a1c15a530e2b58886f40494096a9e",
+    "legal/web-supplements.json": "cc011bc00c6838d8eb2dd79087def77e00684ae84b4ffecc4f1bfb6eec0dd983",
     "web/vendor/pagent-v0.1.0-47b796c.tgz": "62792ab450d5a2d8dd29f474b29b705e069c2a120e79e2c807f138657001f618"
   },
   "artifacts": {

@@ -114,7 +114,7 @@ fn fetch_exact_request_tip(
     request_head: &str,
     label: &str,
 ) -> bool {
-    let checkout = checkout_dir(label);
+    let checkout = TempGitRepo(unique_test_path(label));
     run_git(
         None,
         &["init", checkout.to_str().unwrap()],

@@ -24,7 +24,7 @@ database_service="$(jq -er '.railway.databaseServiceId' "$manifest_path")"
 cache_service="$(jq -er '.services.cache.id' "$manifest_path")"
 worker_service="$(jq -er '.services["run-worker"].id' "$manifest_path")"
 api_service="$(jq -er '.services.api.id' "$manifest_path")"
-router_service="$(jq -er '.environments.staging.routerServiceId' "$manifest_path")"
+router_service="$(jq -er '.services["git-router"].id' "$manifest_path")"
 media_service="$(jq -er '.services["media-api"].id' "$manifest_path")"
 media_worker_service="$(jq -er '.services["media-worker"].id' "$manifest_path")"
 if [[ "$staging_environment_id" == "$production_environment_id" ]]; then
@@ -151,7 +151,6 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
     run_maintenance validate-workflow-catalogs
     # Apply the candidate schema without running physical cleanup commands here.
     run_maintenance apply
-    run_maintenance backfill-landing-files
     run_maintenance backfill-workflow-catalogs
   fi
   rm -rf -- "$snapshot_backfill_dir"
@@ -173,14 +172,7 @@ for component in cache run-worker media-api media-worker api git-router web; do
       node .github/scripts/deploy-railway-image.mjs "$service" "$image"
       ;;
     *)
-      case "$component" in
-        cache) root=cache-service ;;
-        git-router) root=repo-router ;;
-        run-worker) root=worker ;;
-        media-api) root=media ;;
-        *) root="$component" ;;
-      esac
-      bash .github/scripts/deploy-railway.sh "$service" "$root"
+      bash .github/scripts/deploy-railway.sh "$service"
       ;;
   esac
 done

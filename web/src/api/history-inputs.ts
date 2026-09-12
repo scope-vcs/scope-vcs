@@ -3,8 +3,8 @@ import type {
   HistoryEntryDetailInput,
   HistoryEntryFileDiffInput,
   HistoryPageInput,
-  ProjectionPreviewAudience,
 } from './types'
+import type { ProjectionPreviewAudience } from './types.generated'
 
 export function parseHistoryPageInput(input: unknown): HistoryPageInput {
   return {

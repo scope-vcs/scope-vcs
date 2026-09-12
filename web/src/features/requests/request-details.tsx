@@ -1,4 +1,6 @@
-import type { RequestParams, RequestRating, RequestRatings, RequestSummary } from '@/api/types'
+import type { RequestParams } from '@/api/types'
+import type { RequestRatingResponse, RequestRatingsResponse, RequestSummaryResponse } from '@/api/types.generated'
+import { shortOid } from '@/lib/short-oid'
 import { GitCommitHorizontal } from 'lucide-react'
 import { createContext, type ReactNode, use } from 'react'
 import { RequestInvitees } from './request-invitees'
@@ -7,17 +9,16 @@ import type { RateRequestInput } from '@/api/requests'
 import {
   requestAudienceLabel,
   requestAuthorRoleLabel,
-  shortOid,
 } from './request-labels'
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import type { RequestActionController } from './use-request-actions'
 
 type RequestDetailsProps = {
   actions: RequestActionController
-  onRate: (input: RateRequestInput) => Promise<RequestRating>
+  onRate: (input: RateRequestInput) => Promise<RequestRatingResponse>
   params: RequestParams
-  ratings: RequestRatings
-  request: RequestSummary
+  ratings: RequestRatingsResponse
+  request: RequestSummaryResponse
 }
 
 const RequestDetailsContext = createContext<RequestDetailsProps | null>(null)

@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { GitCommit } from 'lucide-react'
+import { displayRouteFilePath } from '@/lib/route-file'
 import type { RequestDiscussion } from './request-discussion-types'
-import { shortOid } from './request-labels'
+import { shortOid } from '@/lib/short-oid'
 
 export function RequestDiscussionAnchor({
   anchor,
@@ -40,6 +41,6 @@ function requestDiscussionAnchorLabel(
   const commit = anchor.commit_oid
     ? ` at commit ${shortOid(anchor.commit_oid)}`
     : ''
-  const path = anchor.path ? ` for ${anchor.path.replace(/^\/+/, '')}` : ''
+  const path = anchor.path ? ` for ${displayRouteFilePath(anchor.path)}` : ''
   return `View revision ${anchor.revision_position} changes${path}${commit}`
 }

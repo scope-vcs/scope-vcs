@@ -63,7 +63,7 @@ jobs:
           SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.environments.production.environmentId' "$manifest")"
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
           service_id="$(jq -r '.services.web.id' "$manifest")"
-          bash .github/scripts/deploy-monitored-railway.sh web bash .github/scripts/deploy-railway.sh "$service_id" web
+          bash .github/scripts/deploy-monitored-railway.sh web bash .github/scripts/deploy-railway.sh "$service_id"
 
       - name: Record successful Railway deployment
         if: steps.transition.outcome == 'success'

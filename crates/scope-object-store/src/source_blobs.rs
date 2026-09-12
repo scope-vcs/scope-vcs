@@ -1,11 +1,10 @@
 use super::ObjectStore;
-use sha1::{Digest as _, Sha1};
-use sha2::Sha256;
+use sha2::{Digest as _, Sha256};
 use {
     crate::ObjectStoreError,
     scope_domain::{
         content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-        content_ref::ContentRef,
+        content_ref::{ContentRef, git_blob_oid},
     },
 };
 
@@ -28,11 +27,10 @@ pub fn object_key(blob: &SourceBlob) -> String {
     object_key_for_content_ref(&blob.content_ref)
 }
 
-pub fn object_key_for_content_ref(content_ref: &ContentRef) -> String {
+fn object_key_for_content_ref(content_ref: &ContentRef) -> String {
     match content_ref {
         ContentRef::BlobSha256(sha256) => format!("objects/blobs/{sha256}"),
         ContentRef::GitBundleSha256(sha256) => format!("objects/git-bundles/{sha256}"),
-        ContentRef::GitManifestSha256(sha256) => format!("objects/git-manifests/{sha256}"),
         ContentRef::GitBlob { git_oid } => format!("git-blobs/{git_oid}"),
     }
 }
@@ -107,13 +105,6 @@ pub fn delete_source_blobs<'a>(
         store.delete(&key)?;
     }
     Ok(())
-}
-
-fn git_blob_oid(bytes: &[u8]) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(format!("blob {}\0", bytes.len()).as_bytes());
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]

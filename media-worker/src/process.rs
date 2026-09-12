@@ -8,7 +8,7 @@ use std::{
 use tokio::{io::AsyncReadExt, process::Command};
 
 #[derive(Clone, Debug)]
-pub struct ProcessLimits {
+pub struct CodecProcessLimits {
     pub timeout: Duration,
     pub memory_bytes: u64,
     pub output_file_bytes: u64,
@@ -44,7 +44,7 @@ pub async fn run_bounded(
     program: &Path,
     args: &[OsString],
     cwd: &Path,
-    limits: &ProcessLimits,
+    limits: &CodecProcessLimits,
 ) -> Result<ProcessOutput, ProcessFailure> {
     let program_label = program.display().to_string();
     let mut command = Command::new(program);
@@ -136,7 +136,7 @@ async fn join_output(
     }
 }
 
-fn install_process_limits(command: &mut Command, limits: ProcessLimits) {
+fn install_process_limits(command: &mut Command, limits: CodecProcessLimits) {
     // SAFETY: this closure only invokes async-signal-safe setrlimit calls before exec.
     unsafe {
         command.pre_exec(move || {

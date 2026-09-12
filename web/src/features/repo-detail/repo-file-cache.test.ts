@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RepoFileContent } from '@/api/types'
 import {
   repoFileResource,
   repoFileCacheKey,
 } from './repo-file-cache'
+import type { RepoFileContentResponse } from '@/api/types.generated'
 
-function textFile(path: string, oid: string, text: string): RepoFileContent {
+function textFile(path: string, oid: string, text: string): RepoFileContentResponse {
   return {
     content: { kind: 'text', text },
     oid,

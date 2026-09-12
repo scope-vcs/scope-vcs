@@ -1,6 +1,10 @@
-import type { RepoRunAttempt, RepoRunCache } from '@/api/types'
+import { formatBytes } from '../../lib/format-bytes'
+import type {
+  RepositoryRunAttemptResponse,
+  RepositoryRunCacheResponse,
+} from '@/api/types.generated'
 
-export function summarizeAttemptCaches(caches: readonly RepoRunCache[]) {
+export function summarizeAttemptCaches(caches: readonly RepositoryRunCacheResponse[]) {
   let warm = 0
   let cold = 0
   let unavailable = 0
@@ -17,8 +21,8 @@ export function summarizeAttemptCaches(caches: readonly RepoRunCache[]) {
 }
 
 export function cacheSummaryLabel(
-  caches: readonly RepoRunCache[],
-  cacheSetup: RepoRunAttempt['cache_setup'],
+  caches: readonly RepositoryRunCacheResponse[],
+  cacheSetup: RepositoryRunAttemptResponse['cache_setup'],
 ) {
   if (caches.length === 0) return 'No caches declared'
   const summary = summarizeAttemptCaches(caches)
@@ -34,13 +38,13 @@ export function cacheSummaryLabel(
   return parts.join(' · ')
 }
 
-export function cacheStateLabel(cache: RepoRunCache) {
+export function cacheStateLabel(cache: RepositoryRunCacheResponse) {
   const preparation = cache.observation?.preparation
   if (!preparation) return 'not reported'
   return preparation.kind
 }
 
-export function cacheStateClass(cache: RepoRunCache) {
+export function cacheStateClass(cache: RepositoryRunCacheResponse) {
   switch (cacheStateLabel(cache)) {
     case 'exact':
     case 'compatible':
@@ -52,7 +56,7 @@ export function cacheStateClass(cache: RepoRunCache) {
   }
 }
 
-export function cacheExplanation(cache: RepoRunCache) {
+export function cacheExplanation(cache: RepositoryRunCacheResponse) {
   const observation = cache.observation
   if (!observation) return 'Cache facts were not reported for this attempt.'
   if (observation.preparation.kind === 'exact') {
@@ -64,14 +68,14 @@ export function cacheExplanation(cache: RepoRunCache) {
   return `${coldReasonLabel(observation.preparation.reason)} · ${observation.final_state}`
 }
 
-export function cacheNamespace(cache: RepoRunCache) {
+export function cacheNamespace(cache: RepositoryRunCacheResponse) {
   const observation = cache.observation
   return observation
     ? `${observation.workflow_path} · ${observation.job_key}`
     : cache.path
 }
 
-export function cacheTimingLabel(cache: RepoRunCache) {
+export function cacheTimingLabel(cache: RepositoryRunCacheResponse) {
   const observation = cache.observation
   if (!observation) return 'unavailable'
   const prepare = `total ${formatMilliseconds(observation.prepare_ms)}`
@@ -80,7 +84,7 @@ export function cacheTimingLabel(cache: RepoRunCache) {
     : `${prepare} · finalize ${formatMilliseconds(observation.finalize_ms)}`
 }
 
-export function cachePreparationDetail(cache: RepoRunCache) {
+export function cachePreparationDetail(cache: RepositoryRunCacheResponse) {
   const observation = cache.observation
   if (!observation) return null
   return [
@@ -109,12 +113,6 @@ function coldReasonLabel(reason: string) {
       return 'Cache metadata was invalid'
     case 'metadata-not-ready':
       return 'Cached volume was not ready'
-    case 'volume-missing':
-      return 'Cached volume was missing'
-    case 'volume-invalid':
-      return 'Cached volume was invalid'
-    case 'backing-directory-missing':
-      return 'Cache backing directory was missing'
     default:
       return 'Cache was cold'
   }
@@ -127,11 +125,4 @@ function countLabel(count: number, label: string) {
 function formatMilliseconds(milliseconds: number) {
   if (milliseconds < 1_000) return `${milliseconds}ms`
   return `${(milliseconds / 1_000).toFixed(1)}s`
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1_024) return `${bytes} B`
-  if (bytes < 1_024 ** 2) return `${(bytes / 1_024).toFixed(1)} KiB`
-  if (bytes < 1_024 ** 3) return `${(bytes / 1_024 ** 2).toFixed(1)} MiB`
-  return `${(bytes / 1_024 ** 3).toFixed(2)} GiB`
 }

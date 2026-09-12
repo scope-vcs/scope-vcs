@@ -3,9 +3,13 @@ use super::*;
 const BASELINE: &str = "m0042_current_schema_baseline";
 const ORIGINAL_LEDGER: &str = include_str!("../../migrations/baseline_ledger.txt");
 
+// The m0042 baseline was dumped from the original chain at revision
+// 578bec00, so a database that ran that chain has exactly this schema plus the
+// 42-entry ledger. Installing the baseline SQL directly and stamping the old
+// ledger reproduces that state without the migrations that produced it.
 async fn original_chain_database(db: &DatabaseConnection) {
     migrations::Migrator::install(db).await.unwrap();
-    db.execute_unprepared(include_str!("fixtures/original_chain_schema.sql"))
+    db.execute_unprepared(include_str!("../../migrations/current_schema.sql"))
         .await
         .unwrap();
     stamp_original_ledger(db, 42).await;

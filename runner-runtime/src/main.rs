@@ -17,7 +17,7 @@ fn main() -> anyhow::Result<()> {
     let claim = client.claim(&settings.bootstrap_token)?;
     let job_definition = workflow::domain_workflow_job(&claim.job.definition)?;
     let setup_heartbeat = RuntimeHeartbeat::start(client.clone());
-    let setup_result = setup(&settings, &client, &claim, &job_definition);
+    let setup_result = setup(&client, &claim, &job_definition);
     let setup_heartbeat_result = setup_heartbeat.finish();
     match setup_heartbeat_result {
         Ok(true) => {
@@ -35,22 +35,17 @@ fn main() -> anyhow::Result<()> {
             return Err(error);
         }
     };
-    let execution =
-        execute::run_steps(client.clone(), &job_definition, &workspace).map_err(|error| {
-            eprintln!("runtime execution transport failed: {error:#}");
-            error
-        })?;
+    let execution = execute::run_steps(client.clone(), &job_definition, &workspace)
+        .context("runtime execution transport")?;
     let logs_truncated = match execution {
         execute::ExecutionOutcome::Succeeded { logs_truncated } => logs_truncated,
         execute::ExecutionOutcome::Terminal => return Ok(()),
     };
     let finalization_heartbeat = RuntimeHeartbeat::start(client.clone());
     for finalization in cache::finalize::save_caches(&client, &caches) {
-        if let cache::types::CacheFinalizationOutcome::Skipped { reason, message } =
-            finalization.outcome
-        {
+        if let cache::types::CacheFinalizationOutcome::Skipped(error) = finalization.outcome {
             eprintln!(
-                "runtime cache finalization skipped for {} ({reason:?}): {message}",
+                "runtime cache finalization skipped for {}: {error:#}",
                 finalization.identity_digest
             );
         }
@@ -65,12 +60,11 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn setup(
-    settings: &RuntimeSettings,
     client: &api::RuntimeClient,
     claim: &scope_api_contract::ClaimRuntimeResponse,
     definition: &scope_domain::runs::workflow::definition::WorkflowJob,
 ) -> anyhow::Result<(std::path::PathBuf, Vec<cache::types::PreparedCache>)> {
-    let work = settings.prepare_work_directory()?;
+    let work = settings::prepare_work_directory(std::path::Path::new(settings::WORK_ROOT))?;
     let bundle = work.join("source.bundle");
     client.download_source(&claim.job.source_digest, &bundle)?;
     let workspace = work.join("workspace");

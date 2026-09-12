@@ -1,5 +1,24 @@
 use super::*;
-use scope_domain::requests::{RequestActorRole, RequestAudience, StartRequestInput};
+use crate::error::ApiError;
+use scope_domain::{
+    projection::Projection,
+    requests::{RequestActorRole, RequestAudience, StartRequestInput},
+};
+
+async fn git_projection_for_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    owner: &str,
+    repo_name: &str,
+    mode: GitRemoteMode,
+) -> Result<Projection, ApiError> {
+    let (repo, access, _) = authorized_git_read(state, headers, owner, repo_name, mode).await?;
+    Ok(project_graph(
+        &repo.graph,
+        &repo.visibility_change_sets,
+        ProjectionViewKey::from_access(access),
+    ))
+}
 
 async fn repo_with_secret(state: &AppState, path: &str) {
     let mut repo = repo_with_readme(state);
@@ -13,12 +32,6 @@ async fn repo_with_secret(state: &AppState, path: &str) {
         new_content: Some(source_blob(state, "owner only")),
     });
     replace_test_repo(state, repo).await;
-}
-
-fn auth_headers(value: impl AsRef<str>) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, value.as_ref().parse().unwrap());
-    headers
 }
 
 async fn cli_basic_headers(state: &AppState) -> HeaderMap {
@@ -36,7 +49,7 @@ async fn cli_basic_headers(state: &AppState) -> HeaderMap {
         .await
         .unwrap()
         .session_token;
-    auth_headers(format!("Basic {}", BASE64.encode(format!("scope:{token}"))))
+    authorization_headers(format!("Basic {}", BASE64.encode(format!("scope:{token}"))))
 }
 
 #[tokio::test]
@@ -67,7 +80,7 @@ async fn permissioned_git_projection_serves_public_view_without_target_repo_memb
     let clerk_id = "user_other_owner";
     let projection = git_projection_for_request(
         &state,
-        &auth_headers(bearer_header_for(clerk_id, "other@example.com")),
+        &authorization_headers(bearer_header_for(clerk_id, "other@example.com")),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         GitRemoteMode::Permissioned,
@@ -90,7 +103,7 @@ async fn public_git_projection_ignores_credentials_and_omits_private_files() {
     repo_with_secret(&state, "/owner-secret.txt").await;
     let projection = git_projection_for_request(
         &state,
-        &auth_headers(bearer_header()),
+        &authorization_headers(bearer_header()),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         GitRemoteMode::Public,
@@ -169,7 +182,7 @@ async fn permissioned_public_git_read_view_physically_excludes_private_objects()
         .unwrap();
     let read_view = git_upload_pack_repo_for_request(
         &state,
-        &auth_headers(bearer_header_for("public-reader", "reader@example.com")),
+        &authorization_headers(bearer_header_for("public-reader", "reader@example.com")),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         GitRemoteMode::Permissioned,

@@ -430,12 +430,6 @@ pub struct CreateRequestAttachmentMediaGrantResponse {
     pub expires_at_unix: u64,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub enum RequestAttachmentMediaGrantMethod {
-    Get,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestAttachmentMediaGrantClaims {
@@ -443,7 +437,6 @@ pub struct RequestAttachmentMediaGrantClaims {
     pub repository_id: String,
     pub request_id: String,
     pub viewer_user_id: Option<String>,
-    pub method: RequestAttachmentMediaGrantMethod,
     pub target: RequestAttachmentMediaTarget,
     pub expires_at_unix: u64,
 }
@@ -456,7 +449,6 @@ impl RequestAttachmentMediaGrantClaims {
         now_unix: u64,
     ) -> bool {
         now_unix < self.expires_at_unix
-            && self.method == RequestAttachmentMediaGrantMethod::Get
             && self.attachment_id == attachment_id
             && &self.target == target
     }
@@ -515,7 +507,6 @@ mod tests {
             repository_id: "repo_1".into(),
             request_id: "req_1".into(),
             viewer_user_id: None,
-            method: RequestAttachmentMediaGrantMethod::Get,
             target: target.clone(),
             expires_at_unix: 20,
         };

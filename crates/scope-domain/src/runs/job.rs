@@ -54,7 +54,7 @@ impl RunJob {
         Ok(Self {
             run_id: run.id.clone(),
             key: definition.id().clone(),
-            pinned_container_image: PinnedContainerImage::parse(definition.container().image())?,
+            pinned_container_image: definition.container().pinned_image().clone(),
             state: if definition.needs().is_empty() {
                 RunJobState::Queued
             } else {
@@ -141,7 +141,6 @@ impl RunJob {
             external_run_id: None,
             runtime_version: required("runtime version", runtime_version.into())?,
             token_hash,
-            token_expires_at_unix: lease_expires_at_unix,
             state: super::attempt::AttemptState::Dispatching,
             lease_expires_at_unix,
             last_heartbeat_at_unix: now_unix,

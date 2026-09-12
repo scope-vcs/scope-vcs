@@ -1,39 +1,24 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chromium } from 'playwright'
+import { waitForClientHydration, withPage } from './browser-smoke.mjs'
 
-const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000'
-
-async function withPage(run, hasTouch = false) {
-  const browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext({
+async function withLanding(run, hasTouch = false) {
+  await withPage('/', async (page) => {
+    await page.getByRole('heading', { name: 'One repository. You choose what’s public.' }).waitFor()
+    const themeToggle = page.getByRole('button', { name: 'Switch to light mode' })
+    await waitForClientHydration(themeToggle)
+    await themeToggle.click()
+    await page.getByRole('button', { name: 'Switch to dark mode' }).waitFor()
+    await run(page)
+  }, {
     hasTouch,
     permissions: ['clipboard-read', 'clipboard-write'],
     viewport: { width: 1440, height: 1000 },
   })
-  const page = await context.newPage()
-  const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  try {
-    await page.goto(baseUrl)
-    await page.getByRole('heading', { name: 'One repository. You choose what’s public.' }).waitFor()
-    const themeToggle = page.getByRole('button', { name: 'Switch to light mode' })
-    await themeToggle.waitFor()
-    await page.waitForFunction(
-      (element) => Object.keys(element).some((key) => key.startsWith('__reactProps$')),
-      await themeToggle.elementHandle(),
-    )
-    await themeToggle.click()
-    await page.getByRole('button', { name: 'Switch to dark mode' }).waitFor()
-    await run(page)
-    assert.deepEqual(errors, [])
-  } finally {
-    await browser.close()
-  }
 }
 
 test('landing install controls copy the selected command and keep the theme after reload', async () => {
-  await withPage(async (page) => {
+  await withLanding(async (page) => {
     await page.reload()
     await page.getByRole('button', { name: 'Switch to dark mode' }).waitFor()
     assert.equal(await page.locator('html').getAttribute('class'), '')
@@ -61,7 +46,7 @@ test('landing install controls copy the selected command and keep the theme afte
 })
 
 test('landing visuals stay aligned and loop through public sharing, review and merge', async () => {
-  await withPage(async (page) => {
+  await withLanding(async (page) => {
     await page.waitForFunction(() => [...document.querySelectorAll('.enter')].every((element) => element.getAnimations().every((animation) => animation.playState === 'finished')))
     for (const colorScheme of ['light', 'dark']) {
       if (colorScheme === 'dark') await page.getByRole('button', { name: 'Switch to dark mode' }).click()
@@ -152,7 +137,7 @@ test('landing visuals stay aligned and loop through public sharing, review and m
 
 
 test('install platform controls retain touch-sized targets on tablets', async () => {
-  await withPage(async (page) => {
+  await withLanding(async (page) => {
     await page.setViewportSize({ width: 768, height: 1000 })
     assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), true)
     const controls = page.getByRole('group', { name: 'Operating system' }).getByRole('button')

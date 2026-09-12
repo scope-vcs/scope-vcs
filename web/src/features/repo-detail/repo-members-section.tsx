@@ -1,14 +1,16 @@
 import type {
   CreateRepoInviteInput,
-  CreateRepoInviteResponse,
-  RepoCollaboration,
-  RepoInvite,
-  RepoMember,
-  RepoMemberPermissions,
   RepoParams,
-  RepoSummary,
   UpdateRepoMemberInput,
 } from '@/api/types'
+import type {
+  CreateRepositoryInviteResponse,
+  RepositoryCollaborationResponse,
+  RepositoryInviteResponse,
+  RepositoryMemberResponse,
+  RepositoryMemberPermissions,
+  RepoSummaryResponse,
+} from '@/api/types.generated'
 import { CopyableCodeBlock } from '@/components/copyable-code-block'
 import { DestructiveActionDialog } from '@/components/destructive-action-dialog'
 import { SectionRow, SectionRows } from '@/components/section-rows'
@@ -16,43 +18,39 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import {
   Eye,
   LoaderCircle,
   MailPlus,
-  ShieldCheck,
   Trash2,
   Users,
 } from 'lucide-react'
-import { useReducer, useState, type FormEvent } from 'react'
+import { useReducer, useState, type FormEvent, type ReactNode } from 'react'
 
-const defaultPermissions: RepoMemberPermissions = {
+const defaultPermissions: RepositoryMemberPermissions = {
   can_apply_changes: false,
   can_change_file_visibility: false,
   can_push: false,
 }
 
-const permissionLabels = [
-  {
-    description: 'Allows Git pushes to this repository.',
-    key: 'can_push',
-    label: 'Push changes',
-  },
-] as const
-
-type PermissionKey = (typeof permissionLabels)[number]['key']
+// The API carries three permissions; push is the only one members can hold today.
+const PUSH_PERMISSION = {
+  description: 'Allows Git pushes to this repository.',
+  label: 'Push changes',
+}
 
 type InviteMemberFormState = {
   email: string
   error: string | null
   inviteUrl: string | null
   pending: boolean
-  permissions: RepoMemberPermissions
+  permissions: RepositoryMemberPermissions
 }
 
 type InviteMemberFormAction =
   | { email: string; type: 'emailChanged' }
-  | { permissions: RepoMemberPermissions; type: 'permissionsChanged' }
+  | { permissions: RepositoryMemberPermissions; type: 'permissionsChanged' }
   | { type: 'submitStarted' }
   | { inviteUrl: string; type: 'submitSucceeded' }
   | { message: string; type: 'submitFailed' }
@@ -89,24 +87,22 @@ function inviteMemberFormReducer(
   }
 }
 
-export function MemberAccessSections({
-  repo,
+/** What a member can do: private read is always on, push is the one toggle. */
+export function MemberAccessSummary({
+  permissions,
 }: {
-  repo: RepoSummary
+  permissions: RepositoryMemberPermissions
 }) {
   return (
-    <SectionRows>
-      <SectionRow
-        description="These permissions are assigned by the repository owner."
-        icon={<ShieldCheck className="size-4" />}
-        title="Your access"
-      >
-        <div className="space-y-3 text-sm">
-          <AlwaysOnPrivateRead />
-          <PermissionSummary permissions={repo.access} />
-        </div>
-      </SectionRow>
-    </SectionRows>
+    <div className="space-y-3 text-sm">
+      <AlwaysOnPrivateRead />
+      <div className="flex items-center justify-between gap-3">
+        <span>{PUSH_PERMISSION.label}</span>
+        <Badge variant={permissions.can_push ? 'success' : 'neutral'}>
+          {permissions.can_push ? 'On' : 'Off'}
+        </Badge>
+      </div>
+    </div>
   )
 }
 
@@ -119,15 +115,15 @@ export function RepositoryMembersSection({
   repo,
   updateMember,
 }: {
-  collaboration: RepoCollaboration
+  collaboration: RepositoryCollaborationResponse
   createInvite: (
     input: CreateRepoInviteInput,
-  ) => Promise<CreateRepoInviteResponse>
-  deleteInvite: (inviteId: string) => Promise<RepoInvite>
-  deleteMember: (memberUserId: string) => Promise<RepoMember>
+  ) => Promise<CreateRepositoryInviteResponse>
+  deleteInvite: (inviteId: string) => Promise<RepositoryInviteResponse>
+  deleteMember: (memberUserId: string) => Promise<RepositoryMemberResponse>
   params: RepoParams
-  repo: RepoSummary
-  updateMember: (input: UpdateRepoMemberInput) => Promise<RepoMember>
+  repo: RepoSummaryResponse
+  updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
 }) {
   const canInvite = repo.lifecycle_state === 'Ready'
   const pendingInvites = collaboration.invites.filter(
@@ -190,7 +186,7 @@ function InviteMemberForm({
   canInvite: boolean
   createInvite: (
     input: Omit<CreateRepoInviteInput, 'owner' | 'repo'>,
-  ) => Promise<CreateRepoInviteResponse>
+  ) => Promise<CreateRepositoryInviteResponse>
 }) {
   const [state, dispatch] = useReducer(
     inviteMemberFormReducer,
@@ -212,7 +208,7 @@ function InviteMemberForm({
       dispatch({ inviteUrl: response.invite_url, type: 'submitSucceeded' })
     } catch (error) {
       dispatch({
-        message: error instanceof Error ? error.message : 'invite failed',
+        message: resourceErrorMessage(error, 'Invite could not be created.'),
         type: 'submitFailed',
       })
     }
@@ -249,7 +245,7 @@ function InviteMemberForm({
         repository push access only.
       </div>
 
-      <PermissionEditor
+      <PushPermissionToggle
         disabled={!canInvite || state.pending}
         onChange={(permissions) =>
           dispatch({ permissions, type: 'permissionsChanged' })
@@ -279,15 +275,11 @@ function MemberList({
   params,
   updateMember,
 }: {
-  deleteMember: (memberUserId: string) => Promise<RepoMember>
-  members: RepoMember[]
+  deleteMember: (memberUserId: string) => Promise<RepositoryMemberResponse>
+  members: RepositoryMemberResponse[]
   params: RepoParams
-  updateMember: (input: UpdateRepoMemberInput) => Promise<RepoMember>
+  updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
 }) {
-  const [error, setError] = useState<string | null>(null)
-  const [confirmMember, setConfirmMember] = useState<RepoMember | null>(null)
-  const [pendingKey, setPendingKey] = useState<string | null>(null)
-
   if (members.length === 0) {
     return (
       <p className="text-sm leading-5 text-muted-foreground">
@@ -296,95 +288,46 @@ function MemberList({
     )
   }
 
-  async function update(
-    member: RepoMember,
-    permissions: RepoMemberPermissions,
-  ) {
-    setError(null)
-    setPendingKey(member.user_id)
-    try {
-      await updateMember({
-        ...params,
-        member_user_id: member.user_id,
-        permissions,
-      })
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'member update failed')
-    } finally {
-      setPendingKey(null)
-    }
-  }
-
-  async function remove(member: RepoMember) {
-    setError(null)
-    setPendingKey(member.user_id)
-    try {
-      await deleteMember(member.user_id)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'member removal failed')
-    } finally {
-      setPendingKey(null)
-      setConfirmMember(null)
-    }
-  }
-
   return (
-    <div className="space-y-3">
-      <ul className="divide-y divide-border">
-        {members.map((member) => {
-          const pending = pendingKey === member.user_id
-          return (
-            <li className="space-y-3 py-3 first:pt-0" key={member.user_id}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium leading-5">
-                    @{member.handle}
-                  </div>
-                  <div className="truncate text-sm leading-5 text-muted-foreground">
-                    {member.email}
-                  </div>
-                </div>
-                <Button
-                  disabled={pending}
-                  onClick={() => setConfirmMember(member)}
-                  size="sm"
-                  type="button"
-                  variant="secondary"
-                >
-                  {pending ? (
-                    <LoaderCircle className="size-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-3.5" />
-                  )}
-                  <span>Remove</span>
-                </Button>
+    <RemovableRowList
+      confirm={{
+        confirmLabel: 'Remove member',
+        description: 'This immediately removes repository access for this member.',
+        subject: (member) => `@${member.handle} · ${member.email}`,
+        title: 'Remove repository member?',
+      }}
+      fallbackError="Member update failed."
+      itemId={(member) => member.user_id}
+      items={members}
+      onRemove={(member) => deleteMember(member.user_id)}
+      row={(member, actions) => (
+        <>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium leading-5">
+                @{member.handle}
               </div>
-              <AlwaysOnPrivateRead />
-              <PermissionEditor
-                disabled={pending}
-                onChange={(permissions) => void update(member, permissions)}
-                permissions={member.permissions}
-              />
-            </li>
-          )
-        })}
-      </ul>
-      <DestructiveActionDialog
-        confirmLabel="Remove member"
-        description="This immediately removes repository access for this member."
-        onConfirm={() => {
-          if (confirmMember) void remove(confirmMember)
-        }}
-        onOpenChange={(open) => {
-          if (!open && !pendingKey) setConfirmMember(null)
-        }}
-        open={Boolean(confirmMember)}
-        pending={Boolean(confirmMember && pendingKey === confirmMember.user_id)}
-        subject={confirmMember ? `@${confirmMember.handle} · ${confirmMember.email}` : ''}
-        title="Remove repository member?"
-      />
-      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-    </div>
+              <div className="truncate text-sm leading-5 text-muted-foreground">
+                {member.email}
+              </div>
+            </div>
+            <RemoveButton label="Remove" onClick={actions.remove} pending={actions.pending} />
+          </div>
+          <AlwaysOnPrivateRead />
+          <PushPermissionToggle
+            disabled={actions.pending}
+            onChange={(permissions) =>
+              actions.run(() => updateMember({
+                ...params,
+                member_user_id: member.user_id,
+                permissions,
+              }))}
+            permissions={member.permissions}
+          />
+        </>
+      )}
+      rowClassName="space-y-3 py-3 first:pt-0"
+    />
   )
 }
 
@@ -392,154 +335,185 @@ function InviteList({
   deleteInvite,
   invites,
 }: {
-  deleteInvite: (inviteId: string) => Promise<RepoInvite>
-  invites: RepoInvite[]
+  deleteInvite: (inviteId: string) => Promise<RepositoryInviteResponse>
+  invites: RepositoryInviteResponse[]
+}) {
+  return (
+    <RemovableRowList
+      confirm={{
+        confirmLabel: 'Revoke invite',
+        description: 'The current invite link will stop working immediately.',
+        subject: (invite) => invite.invited_email,
+        title: 'Revoke pending invite?',
+      }}
+      fallbackError="Invite revoke failed."
+      itemId={(invite) => invite.id}
+      items={invites}
+      onRemove={(invite) => deleteInvite(invite.id)}
+      row={(invite, actions) => (
+        <>
+          <div className="min-w-0">
+            <div className="truncate font-medium leading-5">
+              {invite.invited_email}
+            </div>
+            <div className="leading-5 text-muted-foreground">
+              {invite.permissions.can_push ? 'push changes' : 'No extra actions'}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="warning">{invite.state}</Badge>
+            <RemoveButton label="Revoke" onClick={actions.remove} pending={actions.pending} />
+          </div>
+        </>
+      )}
+      rowClassName="flex flex-col gap-2 py-3 text-sm first:pt-0 sm:flex-row sm:items-center sm:justify-between"
+    />
+  )
+}
+
+type RowActions = {
+  pending: boolean
+  remove: () => void
+  run: (action: () => Promise<unknown>) => void
+}
+
+/**
+ * A list whose rows can run one async action at a time and be removed after a
+ * confirmation. Owns the shared pending, error, and confirm-target state so
+ * member and invite rows cannot drift in how they report a failed call.
+ */
+function RemovableRowList<Item>({
+  confirm,
+  fallbackError,
+  itemId,
+  items,
+  onRemove,
+  row,
+  rowClassName,
+}: {
+  confirm: {
+    confirmLabel: string
+    description: string
+    subject: (item: Item) => string
+    title: string
+  }
+  fallbackError: string
+  itemId: (item: Item) => string
+  items: readonly Item[]
+  onRemove: (item: Item) => Promise<unknown>
+  row: (item: Item, actions: RowActions) => ReactNode
+  rowClassName: string
 }) {
   const [error, setError] = useState<string | null>(null)
-  const [confirmInvite, setConfirmInvite] = useState<RepoInvite | null>(null)
+  const [confirmTarget, setConfirmTarget] = useState<Item | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
 
-  async function revoke(invite: RepoInvite) {
+  async function run(item: Item, action: () => Promise<unknown>) {
     setError(null)
-    setPendingId(invite.id)
+    setPendingId(itemId(item))
     try {
-      await deleteInvite(invite.id)
+      await action()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'invite revoke failed')
+      setError(resourceErrorMessage(error, fallbackError))
     } finally {
       setPendingId(null)
-      setConfirmInvite(null)
+    }
+  }
+
+  async function remove(item: Item) {
+    try {
+      await run(item, () => onRemove(item))
+    } finally {
+      setConfirmTarget(null)
     }
   }
 
   return (
     <div className="space-y-3">
       <ul className="divide-y divide-border">
-        {invites.map((invite) => {
-          const pending = pendingId === invite.id
+        {items.map((item) => {
+          const id = itemId(item)
           return (
-            <li
-              className="flex flex-col gap-2 py-3 text-sm first:pt-0 sm:flex-row sm:items-center sm:justify-between"
-              key={invite.id}
-            >
-              <div className="min-w-0">
-                <div className="truncate font-medium leading-5">
-                  {invite.invited_email}
-                </div>
-                <div className="leading-5 text-muted-foreground">
-                  {permissionSummaryText(invite.permissions)}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="warning">{invite.state}</Badge>
-                <Button
-                  disabled={pending}
-                  onClick={() => setConfirmInvite(invite)}
-                  size="sm"
-                  type="button"
-                  variant="secondary"
-                >
-                  {pending ? (
-                    <LoaderCircle className="size-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-3.5" />
-                  )}
-                  <span>Revoke</span>
-                </Button>
-              </div>
+            <li className={rowClassName} key={id}>
+              {row(item, {
+                pending: pendingId === id,
+                remove: () => setConfirmTarget(item),
+                run: (action) => void run(item, action),
+              })}
             </li>
           )
         })}
       </ul>
       <DestructiveActionDialog
-        confirmLabel="Revoke invite"
-        description="The current invite link will stop working immediately."
+        confirmLabel={confirm.confirmLabel}
+        description={confirm.description}
         onConfirm={() => {
-          if (confirmInvite) void revoke(confirmInvite)
+          if (confirmTarget !== null) void remove(confirmTarget)
         }}
         onOpenChange={(open) => {
-          if (!open && !pendingId) setConfirmInvite(null)
+          if (!open && !pendingId) setConfirmTarget(null)
         }}
-        open={Boolean(confirmInvite)}
-        pending={Boolean(confirmInvite && pendingId === confirmInvite.id)}
-        subject={confirmInvite?.invited_email ?? ''}
-        title="Revoke pending invite?"
+        open={confirmTarget !== null}
+        pending={confirmTarget !== null && pendingId === itemId(confirmTarget)}
+        subject={confirmTarget !== null ? confirm.subject(confirmTarget) : ''}
+        title={confirm.title}
       />
       {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
     </div>
   )
 }
 
-function PermissionEditor({
+function RemoveButton({
+  label,
+  onClick,
+  pending,
+}: {
+  label: string
+  onClick: () => void
+  pending: boolean
+}) {
+  return (
+    <Button
+      disabled={pending}
+      onClick={onClick}
+      size="sm"
+      type="button"
+      variant="secondary"
+    >
+      {pending ? (
+        <LoaderCircle className="size-3.5 animate-spin" />
+      ) : (
+        <Trash2 className="size-3.5" />
+      )}
+      <span>{label}</span>
+    </Button>
+  )
+}
+
+function PushPermissionToggle({
   disabled,
   onChange,
   permissions,
 }: {
   disabled?: boolean
-  onChange: (permissions: RepoMemberPermissions) => void
-  permissions: RepoMemberPermissions
+  onChange: (permissions: RepositoryMemberPermissions) => void
+  permissions: RepositoryMemberPermissions
 }) {
   return (
-    <div className="space-y-2">
-      {permissionLabels.map((permission) => (
-        <label
-          className="flex items-start justify-between gap-4 text-sm"
-          key={permission.key}
-        >
-          <span className="min-w-0">
-            <span className="block font-medium leading-5">
-              {permission.label}
-            </span>
-            <span className="block leading-5 text-muted-foreground">
-              {permission.description}
-            </span>
-          </span>
-          <Switch
-            checked={permissions[permission.key]}
-            disabled={disabled}
-            onCheckedChange={(checked) =>
-              onChange({ ...permissions, [permission.key]: checked })
-            }
-            type="button"
-          />
-        </label>
-      ))}
-    </div>
-  )
-}
-
-function PermissionSummary({
-  permissions,
-}: {
-  permissions: RepoMemberPermissions
-}) {
-  return (
-    <div className="space-y-2">
-      {permissionLabels.map((permission) => (
-        <ReadOnlyPermission
-          enabled={permissions[permission.key]}
-          key={permission.key}
-          label={permission.label}
-        />
-      ))}
-    </div>
-  )
-}
-
-function ReadOnlyPermission({
-  enabled,
-  label,
-}: {
-  enabled: boolean
-  label: string
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span>{label}</span>
-      <Badge variant={enabled ? 'success' : 'neutral'}>
-        {enabled ? 'On' : 'Off'}
-      </Badge>
-    </div>
+    <label className="flex items-start justify-between gap-4 text-sm">
+      <span className="min-w-0">
+        <span className="block font-medium leading-5">{PUSH_PERMISSION.label}</span>
+        <span className="block leading-5 text-muted-foreground">
+          {PUSH_PERMISSION.description}
+        </span>
+      </span>
+      <Switch
+        checked={permissions.can_push}
+        disabled={disabled}
+        onCheckedChange={(checked) => onChange({ ...permissions, can_push: checked })}
+        type="button"
+      />
+    </label>
   )
 }
 
@@ -553,15 +527,4 @@ function AlwaysOnPrivateRead() {
       <Badge variant="success">Always on</Badge>
     </div>
   )
-}
-
-function permissionSummaryText(permissions: RepoMemberPermissions) {
-  const enabled = permissionLabels.reduce<string[]>((labels, permission) => {
-    if (permissions[permission.key]) {
-      labels.push(permission.label.toLowerCase())
-    }
-    return labels
-  }, [])
-
-  return enabled.length === 0 ? 'No extra actions' : enabled.join(', ')
 }

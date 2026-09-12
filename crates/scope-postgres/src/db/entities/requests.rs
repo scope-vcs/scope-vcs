@@ -58,13 +58,13 @@ pub mod request {
                 title: request.title.clone(),
                 description_markdown: request.description_markdown.clone(),
                 activity_version: u64_to_i64(request.activity_version, "request activity version")?,
-                submitted_at_unix: encode_optional_time(
+                submitted_at_unix: optional_u64_to_i64(
                     request.submitted_at_unix,
                     "request submission time",
                 )?,
-                closed_at_unix: encode_optional_time(request.closed_at_unix, "request close time")?,
+                closed_at_unix: optional_u64_to_i64(request.closed_at_unix, "request close time")?,
                 closed_by_user_id: request.closed_by_user_id.clone(),
-                merged_at_unix: encode_optional_time(request.merged_at_unix, "request merge time")?,
+                merged_at_unix: optional_u64_to_i64(request.merged_at_unix, "request merge time")?,
                 merged_by_user_id: request.merged_by_user_id.clone(),
                 merged_head_oid: request.merged_head_oid.clone(),
                 merged_main_oid: request.merged_main_oid.clone(),
@@ -90,13 +90,13 @@ pub mod request {
                 title: self.title,
                 description_markdown: self.description_markdown,
                 activity_version: i64_to_u64(self.activity_version, "request activity version")?,
-                submitted_at_unix: decode_optional_time(
+                submitted_at_unix: optional_i64_to_u64(
                     self.submitted_at_unix,
                     "request submission time",
                 )?,
-                closed_at_unix: decode_optional_time(self.closed_at_unix, "request close time")?,
+                closed_at_unix: optional_i64_to_u64(self.closed_at_unix, "request close time")?,
                 closed_by_user_id: self.closed_by_user_id,
-                merged_at_unix: decode_optional_time(self.merged_at_unix, "request merge time")?,
+                merged_at_unix: optional_i64_to_u64(self.merged_at_unix, "request merge time")?,
                 merged_by_user_id: self.merged_by_user_id,
                 merged_head_oid: self.merged_head_oid,
                 merged_main_oid: self.merged_main_oid,
@@ -106,14 +106,6 @@ pub mod request {
             request.validate_facts()?;
             Ok(request)
         }
-    }
-
-    fn encode_optional_time(value: Option<u64>, field: &str) -> Result<Option<i64>, PostgresError> {
-        value.map(|value| u64_to_i64(value, field)).transpose()
-    }
-
-    fn decode_optional_time(value: Option<i64>, field: &str) -> Result<Option<u64>, PostgresError> {
-        value.map(|value| i64_to_u64(value, field)).transpose()
     }
 }
 
@@ -470,10 +462,10 @@ pub mod request_discussion {
                 status: encode_enum(value.status)?,
                 client_discussion_id: value.client_discussion_id.clone(),
                 created_at_unix: u64_to_i64(value.created_at_unix, "discussion creation time")?,
-                resolved_at_unix: value
-                    .resolved_at_unix
-                    .map(|time| u64_to_i64(time, "discussion resolution time"))
-                    .transpose()?,
+                resolved_at_unix: optional_u64_to_i64(
+                    value.resolved_at_unix,
+                    "discussion resolution time",
+                )?,
                 resolved_by_user_id: value.resolved_by_user_id.clone(),
             })
         }
@@ -507,10 +499,10 @@ pub mod request_discussion {
                 status: decode_enum::<RequestDiscussionStatus>(self.status)?,
                 client_discussion_id: self.client_discussion_id,
                 created_at_unix: i64_to_u64(self.created_at_unix, "discussion creation time")?,
-                resolved_at_unix: self
-                    .resolved_at_unix
-                    .map(|time| i64_to_u64(time, "discussion resolution time"))
-                    .transpose()?,
+                resolved_at_unix: optional_i64_to_u64(
+                    self.resolved_at_unix,
+                    "discussion resolution time",
+                )?,
                 resolved_by_user_id: self.resolved_by_user_id,
             })
         }

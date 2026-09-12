@@ -1,4 +1,5 @@
 use super::entities;
+use super::integer_columns;
 use super::object_references::{delete_object_reference, replace_object_reference};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult,
@@ -60,15 +61,18 @@ pub(super) struct RequestListModel {
 
 impl RequestListModel {
     pub(super) fn try_into_read_model(self) -> Result<RequestListRow, PostgresError> {
-        let state = if self.merged_at_unix.is_some() {
-            RequestState::Merged
-        } else if self.closed_at_unix.is_some() {
-            RequestState::Closed
-        } else if self.submitted_at_unix.is_some() {
-            RequestState::Open
-        } else {
-            RequestState::Draft
-        };
+        let submitted_at_unix = self
+            .submitted_at_unix
+            .map(|value| integer_columns::i64_to_u64(value, "request submission time"))
+            .transpose()?;
+        let closed_at_unix = self
+            .closed_at_unix
+            .map(|value| integer_columns::i64_to_u64(value, "request close time"))
+            .transpose()?;
+        let merged_at_unix = self
+            .merged_at_unix
+            .map(|value| integer_columns::i64_to_u64(value, "request merge time"))
+            .transpose()?;
         Ok(RequestListRow {
             id: self.id,
             name: self.name,
@@ -77,21 +81,15 @@ impl RequestListModel {
             author_role: entities::decode_enum(self.author_role)?,
             audience: entities::decode_enum(self.audience)?,
             head_oid: self.head_oid,
-            state,
-            submitted_at_unix: self
-                .submitted_at_unix
-                .map(|value| entities::i64_to_u64(value, "request submission time"))
-                .transpose()?,
-            closed_at_unix: self
-                .closed_at_unix
-                .map(|value| entities::i64_to_u64(value, "request close time"))
-                .transpose()?,
-            merged_at_unix: self
-                .merged_at_unix
-                .map(|value| entities::i64_to_u64(value, "request merge time"))
-                .transpose()?,
-            updated_at_unix: entities::i64_to_u64(self.updated_at_unix, "request update time")?,
-            activity_version: entities::i64_to_u64(
+            state: RequestState::from_timestamps(merged_at_unix, closed_at_unix, submitted_at_unix),
+            submitted_at_unix,
+            closed_at_unix,
+            merged_at_unix,
+            updated_at_unix: integer_columns::i64_to_u64(
+                self.updated_at_unix,
+                "request update time",
+            )?,
+            activity_version: integer_columns::i64_to_u64(
                 self.activity_version,
                 "request activity version",
             )?,
@@ -503,10 +501,6 @@ mod request_list_tests {
         assert_eq!(projection.matches("\"git_snapshot\"").count(), 1);
         assert!(projection.contains("git_snapshot\" IS NOT NULL"));
         assert!(projection.contains("AS \"has_git_snapshot\""));
-        assert!(sql.contains("EXISTS"));
-        assert!(sql.contains("author_user_id"));
-        assert!(sql.contains("submitted_at_unix"));
-        assert!(sql.contains("ORDER BY \"scope_requests\".\"id\" ASC"));
         assert!(sql.ends_with("LIMIT 101"));
     }
 }

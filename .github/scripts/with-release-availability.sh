@@ -35,30 +35,15 @@ for path in "$events_path" "$summary_path" "$ready_path" "$stop_path" "$log_path
   fi
 done
 
-baseline_seconds="${SCOPE_RELEASE_BASELINE_SECONDS:-0}"
 observation_seconds="${SCOPE_RELEASE_OBSERVATION_SECONDS:-60}"
 ready_timeout_seconds="${SCOPE_RELEASE_READY_TIMEOUT_SECONDS:-30}"
-skip_baseline="${SCOPE_RELEASE_SKIP_BASELINE:-0}"
-for setting in baseline_seconds observation_seconds ready_timeout_seconds; do
+for setting in observation_seconds ready_timeout_seconds; do
   value="${!setting}"
   if [[ ! "$value" =~ ^[0-9]+$ ]]; then
     echo "$setting must be a non-negative integer" >&2
     exit 2
   fi
 done
-if [[ "$skip_baseline" != 0 && "$skip_baseline" != 1 ]]; then
-  echo "SCOPE_RELEASE_SKIP_BASELINE must be 0 or 1" >&2
-  exit 2
-fi
-if [[ "$skip_baseline" == 1 ]] && ! node --input-type=module - "$config_path" <<'NODE'
-import { readFileSync } from "node:fs";
-const config = JSON.parse(readFileSync(process.argv[2], "utf8"));
-if (config.mode !== "maintenance") process.exit(1);
-NODE
-then
-  echo "SCOPE_RELEASE_SKIP_BASELINE is only valid for maintenance recovery" >&2
-  exit 2
-fi
 umask 077
 
 monitor_pid=''
@@ -119,26 +104,6 @@ wait_while_monitoring() {
     ((elapsed += 1))
   done
 }
-
-if [[ "$skip_baseline" == 0 ]] && ! wait_while_monitoring "$baseline_seconds"; then
-  echo "availability monitor exited during the baseline" >&2
-  exit 1
-fi
-minimum_samples="$baseline_seconds"
-if ((minimum_samples < 1)); then minimum_samples=1; fi
-if [[ "$skip_baseline" == 0 && "$baseline_seconds" != 0 ]] && ! node --input-type=module - "$events_path" "$minimum_samples" <<'NODE'
-import { readFileSync } from "node:fs";
-const [, , path, minimumText] = process.argv;
-const events = readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
-const samples = new Set(events.map(({ sample }) => sample));
-if (events.some(({ ok }) => !ok)) process.exit(1);
-if (samples.size < Number(minimumText)) process.exit(1);
-NODE
-then
-  echo "availability baseline contained a failed request or too few samples" >&2
-  stop_monitor
-  exit 1
-fi
 
 "$@"
 command_status=$?

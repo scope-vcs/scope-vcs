@@ -1,10 +1,10 @@
 use crate::api::ApiSession;
 mod journal;
-use super::text::terminal_text;
 use crate::api::{
     RequestTarget, finish_request_attachment, get_request_attachment,
     get_request_attachment_limits, prepare_request_attachment, upload_request_attachment_part,
 };
+use crate::display::terminal_text;
 use anyhow::{Context, bail};
 pub(super) use journal::{begin_mutation, complete_mutation, complete_uploads};
 use journal::{fingerprint, rotate_upload_operation, unix_now, upload_operations};
@@ -541,12 +541,8 @@ fn is_processing(attachment: &RequestAttachmentResponse) -> bool {
 }
 
 fn print_progress(filename: &str, uploaded_bytes: u64, total_bytes: u64) {
-    let percent = uploaded_bytes
-        .saturating_mul(100)
-        .checked_div(total_bytes)
-        .unwrap_or(100);
     eprintln!(
-        "Uploading {} · {uploaded_bytes}/{total_bytes} bytes · {percent}%",
+        "Uploading {} · {uploaded_bytes}/{total_bytes} bytes",
         terminal_text(filename)
     );
 }

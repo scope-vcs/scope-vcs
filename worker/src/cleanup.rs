@@ -1,7 +1,8 @@
 use crate::{
-    health::WorkerHealth,
-    settings::{WorkerRole, WorkerSettings},
+    health::{WorkerHealth, WorkerLoop},
+    settings::POLL_INTERVAL,
 };
+use scope_content_lifecycle::SourceBlobCleanupReport;
 use scope_object_store::ObjectStore;
 use scope_postgres::db::MetadataStore;
 use std::sync::Arc;
@@ -9,7 +10,6 @@ use std::sync::Arc;
 pub(crate) async fn run(
     metadata: MetadataStore,
     object_store: Arc<dyn ObjectStore>,
-    settings: WorkerSettings,
     health: WorkerHealth,
 ) -> anyhow::Result<()> {
     loop {
@@ -17,12 +17,12 @@ pub(crate) async fn run(
             return Ok(());
         }
         match drain_orphan_objects(&metadata, object_store.as_ref()).await {
-            Ok(summary) => {
-                if summary.attempted > 0 {
+            Ok(report) => {
+                if report.attempted > 0 {
                     tracing::info!(
-                        attempted = summary.attempted,
-                        deleted = summary.deleted,
-                        retained = summary.retained,
+                        attempted = report.attempted,
+                        deleted = report.deleted,
+                        retained = report.retained,
                         "processed orphan object jobs"
                     );
                 }
@@ -31,24 +31,17 @@ pub(crate) async fn run(
                 tracing::error!(error = %error, "orphan object cleanup failed; retrying");
             }
         }
-        health.mark_poll_succeeded(WorkerRole::Cleanup, super::unix_now()?);
-        if super::wait_or_shutdown(settings.poll_interval).await {
+        health.mark_poll_succeeded(WorkerLoop::Cleanup, super::unix_now()?);
+        if super::wait_or_shutdown(POLL_INTERVAL).await {
             return Ok(());
         }
     }
 }
 
-#[derive(Default)]
-struct OrphanDrainSummary {
-    attempted: usize,
-    deleted: usize,
-    retained: usize,
-}
-
 async fn drain_orphan_objects(
     metadata: &MetadataStore,
     object_store: &dyn ObjectStore,
-) -> anyhow::Result<OrphanDrainSummary> {
+) -> anyhow::Result<SourceBlobCleanupReport> {
     let now_unix = super::unix_now()?;
     let report = scope_content_lifecycle::drain_source_blob_cleanup(
         metadata,
@@ -65,10 +58,5 @@ async fn drain_orphan_objects(
             "failed to delete orphan object"
         );
     }
-    let summary = OrphanDrainSummary {
-        attempted: report.attempted,
-        deleted: report.deleted,
-        retained: report.retained,
-    };
-    Ok(summary)
+    Ok(report)
 }

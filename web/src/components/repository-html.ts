@@ -1,3 +1,4 @@
+import { routeFileName } from '../lib/route-file'
 import type { ThemeType } from '@/lib/use-theme-type'
 
 const HTML_DOCTYPE = /^\s*<!doctype\s+html[^>]*>/i
@@ -19,8 +20,7 @@ export const REPOSITORY_HTML_CONTENT_SECURITY_POLICY = [
 const REPOSITORY_HTML_POLICY = `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${REPOSITORY_HTML_CONTENT_SECURITY_POLICY}"><meta http-equiv="x-dns-prefetch-control" content="off"><base target="_blank">`
 
 export function isRepositoryHtmlPath(path: string) {
-  const fileName = path.replace(/^\/+/, '').split('/').at(-1) ?? ''
-  return /\.html$/i.test(fileName)
+  return /\.html$/i.test(routeFileName(path))
 }
 
 export function repositoryHtmlDocument(source: string, theme: ThemeType) {

@@ -3,7 +3,6 @@
   "build": {
     "watchPatterns": [
       "/worker/**",
-      "/runner-runtime/**",
       "/crates/**",
       "/Cargo.toml",
       "/Cargo.lock",
@@ -12,7 +11,7 @@
   },
   "deploy": {
     "startCommand": "exec ./bin/scope-worker",
-    "healthcheckPath": "/healthz",
+    "healthcheckPath": "/readyz",
     "healthcheckTimeout": 60,
     "overlapSeconds": "30",
     "drainingSeconds": "30"

@@ -75,13 +75,6 @@ pub fn load_worktree_scope_repo_config_base_hash(git_root: &Path) -> anyhow::Res
     Ok(state.base_config_hash)
 }
 
-pub fn config_visibility_label(visibility: ConfigVisibility) -> &'static str {
-    match visibility {
-        ConfigVisibility::Private => "private",
-        ConfigVisibility::Public => "public",
-    }
-}
-
 pub fn repo_config_path(git_root: &Path) -> anyhow::Result<PathBuf> {
     Ok(repo_state_paths(git_root)?.config)
 }

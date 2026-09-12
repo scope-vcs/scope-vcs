@@ -1,4 +1,9 @@
-use super::*;
+use super::RuntimeClient;
+use crate::execute::{AppendLogError, AppendLogOutcome};
+use anyhow::Context as _;
+use reqwest::StatusCode;
+use scope_api_contract::AppendAttemptLogRequest;
+use std::time::Duration;
 
 const LOG_APPEND_TIMEOUT: Duration = Duration::from_secs(5);
 

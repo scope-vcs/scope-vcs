@@ -228,3 +228,13 @@ fn cache_timing_requires_truthful_phase_totals_and_setup_wall_time() {
         }
     );
 }
+
+#[test]
+fn measured_cache_timing_derives_the_total_and_rejects_overflow() {
+    let timing = AttemptCachePreparationTiming::measured(1, 2, 3, 4, 5, 6).unwrap();
+    assert_eq!(
+        timing,
+        AttemptCachePreparationTiming::new(1, 2, 3, 4, 5, 6, 18).unwrap()
+    );
+    assert!(AttemptCachePreparationTiming::measured(u64::MAX, 1, 0, 0, 0, 0).is_err());
+}

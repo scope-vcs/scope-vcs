@@ -1,12 +1,7 @@
 use scope_object_store::S3ObjectStoreSettings;
+use scope_object_store::config::required_env as required;
 
 const DATABASE_URL: &str = "DATABASE_URL";
-const CACHE_BUCKET_ENDPOINT: &str = "SCOPE_CACHE_BUCKET_ENDPOINT";
-const CACHE_BUCKET_NAME: &str = "SCOPE_CACHE_BUCKET_NAME";
-const CACHE_BUCKET_REGION: &str = "SCOPE_CACHE_BUCKET_REGION";
-const CACHE_BUCKET_ACCESS_KEY_ID: &str = "SCOPE_CACHE_BUCKET_ACCESS_KEY_ID";
-const CACHE_BUCKET_SECRET_ACCESS_KEY: &str = "SCOPE_CACHE_BUCKET_SECRET_ACCESS_KEY";
-const CACHE_BUCKET_FORCE_PATH_STYLE: &str = "SCOPE_CACHE_BUCKET_FORCE_PATH_STYLE";
 const CACHE_BACKEND: &str = "SCOPE_CACHE_BACKEND";
 const CACHE_GRANT_PUBLIC_KEY: &str = "SCOPE_CACHE_GRANT_PUBLIC_KEY";
 
@@ -32,19 +27,7 @@ impl Settings {
                 "{CACHE_BACKEND} must contain lowercase letters, digits, or single hyphens"
             );
         }
-        let endpoint = required(CACHE_BUCKET_ENDPOINT)?;
-        if !(endpoint.starts_with("https://") || endpoint.starts_with("http://127.0.0.1")) {
-            anyhow::bail!("{CACHE_BUCKET_ENDPOINT} must use HTTPS outside local development");
-        }
-        let mut object_store = S3ObjectStoreSettings::new(
-            endpoint,
-            required(CACHE_BUCKET_NAME)?,
-            required(CACHE_BUCKET_REGION)?,
-            required(CACHE_BUCKET_ACCESS_KEY_ID)?,
-            required(CACHE_BUCKET_SECRET_ACCESS_KEY)?,
-        );
-        object_store.force_path_style = optional(CACHE_BUCKET_FORCE_PATH_STYLE)
-            .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes"));
+        let object_store = S3ObjectStoreSettings::from_env("SCOPE_CACHE_BUCKET")?;
         Ok(Self {
             database_url: required(DATABASE_URL)?,
             object_store,
@@ -52,14 +35,4 @@ impl Settings {
             grant_public_key_pem: required(CACHE_GRANT_PUBLIC_KEY)?,
         })
     }
-}
-
-fn required(name: &str) -> anyhow::Result<String> {
-    optional(name).ok_or_else(|| anyhow::anyhow!("{name} is required"))
-}
-
-fn optional(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
 }

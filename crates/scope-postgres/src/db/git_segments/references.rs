@@ -1,4 +1,5 @@
-use super::ledger::{require_text, timestamp};
+use super::ledger::require_text;
+use crate::db::integer_columns::u64_to_i64;
 use crate::error::PostgresError;
 use scope_domain::repository::git::GitSegmentRef;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
@@ -66,7 +67,7 @@ where
         [
             ref_kind.into(),
             ref_id.into(),
-            timestamp(now_unix, "Git segment reference release time")?.into(),
+            u64_to_i64(now_unix, "Git segment reference release time")?.into(),
         ],
     ))
     .await

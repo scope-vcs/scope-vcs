@@ -1,5 +1,5 @@
 use super::{
-    policy::{Policy, ScopePath, Visibility},
+    policy::{Policy, ScopePath, ScopePathError, Visibility},
     repo_control::{is_private_control_path, is_repo_control_pattern, is_repo_rules_path},
 };
 use serde::{Deserialize, Serialize};
@@ -56,8 +56,6 @@ impl From<Visibility> for ConfigVisibility {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoConfig {
-    #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
-    pub schema: Option<String>,
     pub kind: String,
     pub version: u64,
     pub visibility: RepoConfigVisibility,
@@ -68,7 +66,6 @@ pub struct RepoConfig {
 impl RepoConfig {
     pub fn with_default_visibility(default: ConfigVisibility) -> Self {
         Self {
-            schema: None,
             kind: REPO_CONFIG_KIND.to_string(),
             version: REPO_CONFIG_VERSION,
             visibility: RepoConfigVisibility {
@@ -215,9 +212,8 @@ impl HistoryRewriteAction {
 
 pub fn validate_config_path(path: &str) -> Result<ScopePath, RepoConfigError> {
     let parsed = ScopePath::parse(path).map_err(|error| match error {
-        super::policy::PolicyError::RelativePath => RepoConfigError::RelativePath,
-        super::policy::PolicyError::InvalidSegment => RepoConfigError::InvalidSegment,
-        super::policy::PolicyError::PublicIsland { .. } => RepoConfigError::InvalidSegment,
+        ScopePathError::RelativePath => RepoConfigError::RelativePath,
+        ScopePathError::InvalidSegment => RepoConfigError::InvalidSegment,
     })?;
     if parsed.as_str() != path || path.trim() != path {
         return Err(RepoConfigError::InvalidSegment);
@@ -264,7 +260,7 @@ fn validate_config_pattern(pattern: &str) -> Result<(), RepoConfigError> {
     Ok(())
 }
 
-fn pattern_matches_path(pattern: &str, path: &str) -> bool {
+pub(crate) fn pattern_matches_path(pattern: &str, path: &str) -> bool {
     if let Some(base) = pattern.strip_suffix("/**") {
         return path == base
             || path
@@ -274,8 +270,12 @@ fn pattern_matches_path(pattern: &str, path: &str) -> bool {
     path == pattern
 }
 
-fn pattern_weight(pattern: &str) -> usize {
-    pattern.strip_suffix("/**").unwrap_or(pattern).len()
+pub(crate) fn pattern_weight(pattern: &str) -> usize {
+    pattern_base_path(pattern).len()
+}
+
+pub(crate) fn pattern_base_path(pattern: &str) -> &str {
+    pattern.strip_suffix("/**").unwrap_or(pattern)
 }
 
 fn default_private_visibility() -> ConfigVisibility {

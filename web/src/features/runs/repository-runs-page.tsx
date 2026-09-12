@@ -1,9 +1,9 @@
+import type { RepoParams, RepoRunHistoryInput } from '@/api/types'
 import type {
-  RepoParams,
-  RepoRunHistoryInput,
-  RepoRunHistoryPage,
-  RepoRunWorkflowList,
-} from '@/api/types'
+  RepositoryRunHistoryPageResponse,
+  RepositoryRunWorkflowListResponse,
+} from '@/api/types.generated'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { PageContent, WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
@@ -24,8 +24,8 @@ import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, runHistory
 const HISTORY_CHANGES = ['Created', 'StatusChanged'] as const
 
 type RunPageResources = {
-  history: RepoRunHistoryPage
-  workflows: RepoRunWorkflowList
+  history: RepositoryRunHistoryPageResponse
+  workflows: RepositoryRunWorkflowListResponse
   workflowsError: string | null
 }
 
@@ -34,7 +34,7 @@ type RepositoryRunsPageProps = {
   loadHistory: (
     input: RepoRunHistoryInput,
     signal?: AbortSignal,
-  ) => Promise<RepoRunHistoryPage | null>
+  ) => Promise<RepositoryRunHistoryPageResponse | null>
   params: RepoParams
   workflow?: string
 }
@@ -63,7 +63,7 @@ function RepositoryRunsPageContent({
     runHistoryResource.getServerSnapshot,
   )
   const history = snapshot.value ? snapshot.value.history : initialResources?.history ?? null
-  const refreshError = snapshot.error === null ? null : snapshot.error instanceof Error ? snapshot.error.message : 'Run operation failed.'
+  const refreshError = snapshot.error === null ? null : resourceErrorMessage(snapshot.error, 'Run operation failed.')
   const loadingMore = snapshot.pending && snapshot.version === 'more'
   const [statusFilter, setStatusFilter] = useState<RunStatusFilter>('any')
   const { owner, repo } = params

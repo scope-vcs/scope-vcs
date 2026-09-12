@@ -1,5 +1,7 @@
-import type { RequestParams, RequestSummary } from '@/api/types'
+import type { RequestParams } from '@/api/types'
+import type { RequestSummaryResponse } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
+import { mainScrollContainer } from '@/components/main-content'
 import { Button } from '@/components/ui/button'
 import { CircleAlert, MessageSquare } from 'lucide-react'
 import { domAnimation, LazyMotion } from 'motion/react'
@@ -17,7 +19,9 @@ import type {
   RequestDiscussion,
   RequestDiscussionPage,
 } from './request-discussion-types'
-import type { RequestDiscussionThreadActions } from './use-request-discussion-replies'
+import type {
+  RequestDiscussionThreadActions,
+} from './use-request-discussion-replies'
 
 export function RequestDiscussionWorkbench({
   actions,
@@ -43,7 +47,7 @@ export function RequestDiscussionWorkbench({
     canWaitAfterReply: boolean
   }
   repoId: string
-  request: RequestSummary
+  request: RequestSummaryResponse
   threadActions: RequestDiscussionThreadActions
 }) {
   const store = useRequestDiscussionStore({
@@ -56,7 +60,7 @@ export function RequestDiscussionWorkbench({
   const [activeComposer, setActiveComposer] = useState<string | null>(null)
 
   useEffect(() => {
-    const scrollContainer = document.querySelector<HTMLElement>('#main-content')
+    const scrollContainer = mainScrollContainer()
     if (!scrollContainer) return
     scrollContainer.scrollTop = readRequestDiscussionScroll(store.cacheKey)
     return () => {

@@ -217,7 +217,7 @@ fn event_for_access(
             RepoChangeKind::Connected => RepoChangeKind::Connected,
             RepoChangeKind::Lagged => RepoChangeKind::Lagged,
             _ => RepoChangeKind::RepositoryChanged {
-                reason: "repo-changed".to_string(),
+                reason: RepoChangeReason::Redacted.as_str().to_string(),
             },
         },
         repo_id: event.repo_id,

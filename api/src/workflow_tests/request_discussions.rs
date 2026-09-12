@@ -4,7 +4,7 @@ use tokio_stream::StreamExt;
 #[tokio::test]
 async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts() {
     let mut state = test_state_with_readme().await;
-    super::requests::rebuild_request_projection(&state).await;
+    drain_outbox(&state, "request-read-test").await;
     cache_test_jwks(&state);
     let (analytics, recording) = crate::product_analytics::ProductAnalytics::recording();
     state.product_analytics = analytics;
@@ -33,13 +33,7 @@ async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts
     .await;
     assert_eq!(anonymous_create.status(), StatusCode::UNAUTHORIZED);
 
-    let identity = api_request(
-        app.clone(),
-        "PATCH",
-        &base,
-        Some(&bearer),
-        Some(r###"{"title":"Fix parser ownership","description_markdown":"## Intent\nFix parser ownership."}"###),
-    )
+    let identity = api_request(app.clone(), "PATCH", &base, Some(&bearer), Some(r###"{"title":"Fix parser ownership","description_markdown":"## Intent\nFix parser ownership."}"###))
     .await;
     assert_eq!(identity.status(), StatusCode::OK);
     let identity = response_json(identity).await;
@@ -367,15 +361,9 @@ async fn completed_private_discussion_transitions_are_read_only_while_public_sta
     for request_id in ["req_completed_private", "req_completed_public"] {
         let base = format!("/v1/repos/owner/repo/requests/{request_id}");
         for id in ["open", "resolved"] {
-            let created = api_request(
-                app.clone(),
-                "POST",
-                &format!("{base}/timeline"),
-                Some(&bearer),
-                Some(&format!(
+            let created = api_request(app.clone(), "POST", &format!("{base}/timeline"), Some(&bearer), Some(&format!(
                     r#"{{"body_markdown":"Review {id}","client_discussion_id":"{request_id}-{id}"}}"#
-                )),
-            )
+                )))
             .await;
             assert_eq!(created.status(), StatusCode::OK);
         }
@@ -654,7 +642,7 @@ async fn request_activity_clamps_latest_and_after_pages_to_fifty_events() {
 #[tokio::test]
 async fn timeline_cursor_is_stable_during_concurrent_thread_creation_and_changes() {
     let state = test_state_with_readme().await;
-    super::requests::rebuild_request_projection(&state).await;
+    drain_outbox(&state, "request-read-test").await;
     cache_test_jwks(&state);
     let app = router(state);
     let bearer = bearer_header();
@@ -793,7 +781,7 @@ async fn timeline_cursor_is_stable_during_concurrent_thread_creation_and_changes
 #[tokio::test]
 async fn discussion_changes_report_complete_pages_without_skipping_the_extra_row() {
     let state = test_state_with_readme().await;
-    super::requests::rebuild_request_projection(&state).await;
+    drain_outbox(&state, "request-read-test").await;
     cache_test_jwks(&state);
     let app = router(state);
     let bearer = bearer_header();

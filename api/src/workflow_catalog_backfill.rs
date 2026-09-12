@@ -41,7 +41,8 @@ fn validate_repository_workflow_catalogs(
 }
 
 impl AppState {
-    pub async fn validate_repository_workflow_catalogs(&self) -> anyhow::Result<usize> {
+    #[cfg(test)]
+    pub(crate) async fn validate_repository_workflow_catalogs(&self) -> anyhow::Result<usize> {
         let catalogs = self
             .metadata
             .repositories()

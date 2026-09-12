@@ -1,6 +1,6 @@
-use super::{
-    requests::*,
-    requests_tests::{open_request, working_request},
+use super::requests::{
+    fixtures::{open_request, working_request},
+    *,
 };
 
 #[test]

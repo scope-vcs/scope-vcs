@@ -215,10 +215,7 @@ pub mod repository_first_push_token {
                     "first-push token creation time",
                 )?,
                 expires_at_unix: u64_to_i64(token.expires_at_unix, "first-push token expiry time")?,
-                used_at_unix: token
-                    .used_at_unix
-                    .map(|value| u64_to_i64(value, "first-push token use time"))
-                    .transpose()?,
+                used_at_unix: optional_u64_to_i64(token.used_at_unix, "first-push token use time")?,
             })
         }
 
@@ -232,10 +229,7 @@ pub mod repository_first_push_token {
                     "first-push token creation time",
                 )?,
                 expires_at_unix: i64_to_u64(self.expires_at_unix, "first-push token expiry time")?,
-                used_at_unix: self
-                    .used_at_unix
-                    .map(|value| i64_to_u64(value, "first-push token use time"))
-                    .transpose()?,
+                used_at_unix: optional_i64_to_u64(self.used_at_unix, "first-push token use time")?,
             })
         }
     }
@@ -408,12 +402,7 @@ pub mod git_segment_upload {
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        #[cfg(any(
-            test,
-            feature = "local-dev",
-            feature = "smoke-seed",
-            feature = "test-support"
-        ))]
+        #[cfg(any(test, feature = "seeding"))]
         pub fn from_domain(upload: &GitSegmentUpload) -> Result<Self, PostgresError> {
             Ok(Self {
                 segment_id: upload.segment_id.clone(),
@@ -421,14 +410,14 @@ pub mod git_segment_upload {
                 object_key: upload.object_key.clone(),
                 state: encode_enum(upload.state)?,
                 sha256: upload.sha256.clone(),
-                plaintext_bytes: upload
-                    .plaintext_bytes
-                    .map(|value| u64_to_i64(value, "Git segment plaintext size"))
-                    .transpose()?,
-                encrypted_bytes: upload
-                    .encrypted_bytes
-                    .map(|value| u64_to_i64(value, "Git segment encrypted size"))
-                    .transpose()?,
+                plaintext_bytes: optional_u64_to_i64(
+                    upload.plaintext_bytes,
+                    "Git segment plaintext size",
+                )?,
+                encrypted_bytes: optional_u64_to_i64(
+                    upload.encrypted_bytes,
+                    "Git segment encrypted size",
+                )?,
                 encoding_version: u32_to_i32(
                     upload.encoding_version,
                     "Git segment encoding version",
@@ -451,14 +440,14 @@ pub mod git_segment_upload {
                 object_key: self.object_key,
                 state: decode_enum(self.state)?,
                 sha256: self.sha256,
-                plaintext_bytes: self
-                    .plaintext_bytes
-                    .map(|value| i64_to_u64(value, "Git segment plaintext size"))
-                    .transpose()?,
-                encrypted_bytes: self
-                    .encrypted_bytes
-                    .map(|value| i64_to_u64(value, "Git segment encrypted size"))
-                    .transpose()?,
+                plaintext_bytes: optional_i64_to_u64(
+                    self.plaintext_bytes,
+                    "Git segment plaintext size",
+                )?,
+                encrypted_bytes: optional_i64_to_u64(
+                    self.encrypted_bytes,
+                    "Git segment encrypted size",
+                )?,
                 encoding_version: i32_to_u32(
                     self.encoding_version,
                     "Git segment encoding version",

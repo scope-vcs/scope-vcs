@@ -1,4 +1,5 @@
-import { createApiClient, noContent } from '@/api/client'
+import { createApiClient } from '@/api/client'
+import { noContent } from '@/api/http'
 import type {
   CompleteBrowserCliLoginInput,
   CompleteCliLoginInput,

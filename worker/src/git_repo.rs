@@ -1,3 +1,4 @@
+use crate::{duration_ms, elapsed_ms};
 use scope_git::{DEFAULT_GIT_BRANCH, GitStorageLimits};
 use scope_git_process::{
     ProcessCancellation, ProcessError, ProcessLimits, StreamingProcessError,
@@ -319,12 +320,12 @@ async fn ingest_compacted_pack(
             ProcessLimits::new(timeout),
             "git pack-objects --revs --stdout",
             move |stdout, cancellation| {
-                runtime.block_on(segment_store.ingest_reserved_blocking_reader_cancellable(
+                runtime.block_on(segment_store.ingest_reserved_blocking_reader(
                     &repository_id,
                     reservation,
                     stdout,
                     max_bytes as u64,
-                    cancellation,
+                    Some(cancellation),
                 ))
             },
         )
@@ -356,14 +357,6 @@ async fn ingest_compacted_pack(
         ));
     }
     Ok(output.value)
-}
-
-fn elapsed_ms(started: Instant) -> u64 {
-    duration_ms(started.elapsed())
-}
-
-fn duration_ms(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 fn run_git(

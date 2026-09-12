@@ -12,7 +12,6 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 filetime.workspace = true
-getrandom.workspace = true
 hex.workspace = true
 libc.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls"] }

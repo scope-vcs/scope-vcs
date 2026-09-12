@@ -5,6 +5,12 @@ import { fileURLToPath } from 'node:url'
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const sourceRoot = path.join(webRoot, 'src')
 const sourceFiles = await collectSourceFiles(sourceRoot)
+// Scope-owned live-refresh modules outside src/api that must not name Pagent.
+const scopeOwnedModules = new Set([
+  'src/features/repo-detail/repo-event-stream.ts',
+  'src/features/repo-detail/repo-live-refresh.ts',
+])
+const missingModules = new Set(scopeOwnedModules)
 const violations = []
 
 for (const file of sourceFiles) {
@@ -14,16 +20,16 @@ for (const file of sourceFiles) {
   if (importsPagent && !relativePath.startsWith('src/server/pagent-')) {
     violations.push(`${relativePath} imports the optional Pagent package`)
   }
+  missingModules.delete(relativePath)
   if (
     /pagent/i.test(source) &&
-    (
-      relativePath.startsWith('src/api/') ||
-      relativePath === 'src/features/repo-detail/repo-event-stream.ts' ||
-      relativePath === 'src/features/repo-detail/repo-live-refresh.ts'
-    )
+    (relativePath.startsWith('src/api/') || scopeOwnedModules.has(relativePath))
   ) {
     violations.push(`${relativePath} names Pagent inside Scope-owned behavior`)
   }
+}
+for (const module of missingModules) {
+  violations.push(`${module} no longer exists; update scopeOwnedModules in scripts/check-observer-boundary.mjs`)
 }
 
 if (violations.length > 0) {

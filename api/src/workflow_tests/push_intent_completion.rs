@@ -1,74 +1,11 @@
 use super::*;
 use scope_domain::repo_config::RepoConfigVisibilityRule;
 
-async fn post(state: AppState, uri: &str, authorization: String, body: String) -> Response {
-    api_request(
-        router(state),
-        "POST",
-        uri,
-        Some(&authorization),
-        Some(&body),
-    )
-    .await
-}
-
-async fn owner_post(state: AppState, uri: &str, body: String) -> Response {
-    post(
-        state,
-        uri,
-        bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL),
-        body,
-    )
-    .await
-}
-
 async fn stored_config(state: &AppState) -> RepoConfig {
     find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap()
         .repo_config
-}
-
-fn bare_clone(source: &FsPath, label: &str) -> TempGitRepo {
-    let bare = TempGitRepo(std::env::temp_dir().join(format!(
-        "scope-vcs-{label}-{}-{}",
-        std::process::id(),
-        unix_now()
-    )));
-    let _ = fs::remove_dir_all(bare.as_ref());
-    run_git(
-        None,
-        &[
-            "clone",
-            "--bare",
-            source.to_str().unwrap(),
-            bare.to_str().unwrap(),
-        ],
-        "clone test bare repository",
-    )
-    .unwrap();
-    bare
-}
-
-fn push_intent_request_json(head_oid: &str, config: RepoConfig) -> String {
-    push_intent_request_json_with_base(
-        head_oid,
-        repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap(),
-        config,
-    )
-}
-
-fn push_intent_request_json_with_base(
-    head_oid: &str,
-    base_config_hash: String,
-    config: RepoConfig,
-) -> String {
-    serde_json::json!({
-        "head_oid": head_oid,
-        "base_config_hash": base_config_hash,
-        "config": config,
-    })
-    .to_string()
 }
 
 fn readme_private_config() -> RepoConfig {
@@ -87,7 +24,7 @@ pub(super) async fn published_git_fixture(label: &str) -> (AppState, TempGitRepo
     fs::write(source.join("README.md"), "hello\n").unwrap();
     run_git(Some(&source), &["add", "README.md"], "add readme").unwrap();
     commit_all(&source, "initial");
-    let bare = bare_clone(&source, &format!("{label}-bare"));
+    let bare = clone_test_repo(&source, &format!("{label}-bare"), true);
     let head = git_head_oid(&bare);
     apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
     (state, source, head)
@@ -107,14 +44,16 @@ async fn create_push_intent_rejects_stale_local_config_base_hash() {
         .await
         .unwrap();
 
-    let response = owner_post(
-        state.clone(),
+    let response = api_request(
+        router(state.clone()),
+        "POST",
         "/v1/repos/owner/repo/push-intents",
-        push_intent_request_json_with_base(
+        Some(&bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL)),
+        Some(&push_intent_request_json_with_base(
             TEST_PUSH_HEAD_OID,
             repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap(),
             readme_private_config(),
-        ),
+        )),
     )
     .await;
 
@@ -142,10 +81,15 @@ async fn create_push_intent_rejects_oversized_config_for_git_header_transport() 
         })
         .collect::<Vec<_>>();
 
-    let response = owner_post(
-        state,
+    let response = api_request(
+        router(state),
+        "POST",
         "/v1/repos/owner/repo/push-intents",
-        push_intent_request_json(TEST_PUSH_HEAD_OID, oversized_config),
+        Some(&bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL)),
+        Some(&push_intent_request_json(
+            TEST_PUSH_HEAD_OID,
+            oversized_config,
+        )),
     )
     .await;
 
@@ -163,10 +107,12 @@ async fn create_push_intent_applies_config_when_reviewed_head_is_current() {
     let (state, _source, head_oid) = published_git_fixture("config-only-intent").await;
     let config = readme_private_config();
     let started_at = unix_now();
-    let response = owner_post(
-        state.clone(),
+    let response = api_request(
+        router(state.clone()),
+        "POST",
         "/v1/repos/owner/repo/push-intents",
-        push_intent_request_json(&head_oid, config.clone()),
+        Some(&bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL)),
+        Some(&push_intent_request_json(&head_oid, config.clone())),
     )
     .await;
 
@@ -190,22 +136,30 @@ async fn create_push_intent_applies_config_when_reviewed_head_is_current() {
 async fn create_push_intent_rejects_stale_config_only_review() {
     let (state, _source, head_oid) = published_git_fixture("stale-config-intent").await;
     let old_base_hash = repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap();
-    let applied = owner_post(
-        state.clone(),
+    let applied = api_request(
+        router(state.clone()),
+        "POST",
         "/v1/repos/owner/repo/push-intents",
-        push_intent_request_json_with_base(
+        Some(&bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL)),
+        Some(&push_intent_request_json_with_base(
             &head_oid,
             old_base_hash.clone(),
             repo_config(Visibility::Private),
-        ),
+        )),
     )
     .await;
     assert_eq!(applied.status(), StatusCode::OK);
 
-    let stale = owner_post(
-        state.clone(),
+    let stale = api_request(
+        router(state.clone()),
+        "POST",
         "/v1/repos/owner/repo/push-intents",
-        push_intent_request_json_with_base(&head_oid, old_base_hash, readme_private_config()),
+        Some(&bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL)),
+        Some(&push_intent_request_json_with_base(
+            &head_oid,
+            old_base_hash,
+            readme_private_config(),
+        )),
     )
     .await;
 
@@ -234,14 +188,15 @@ async fn incremental_git_pack_layout_restores_after_cache_loss() {
     .unwrap();
     commit_all(&source, "incremental update");
     let expected_head = git_head_oid(&source);
-    let bare = bare_clone(&source, "segment-restore-update-bare");
-    let update = receive_pack_update_from_staging_repo(
+    let bare = clone_test_repo(&source, "segment-restore-update-bare", true);
+    let update = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &bare,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap();
@@ -264,11 +219,7 @@ async fn incremental_git_pack_layout_restores_after_cache_loss() {
     assert_eq!(head.head_oid, expected_head);
     assert_eq!(head.push_sequence, first_snapshot.push_sequence + 1);
 
-    let restored = TempGitRepo(std::env::temp_dir().join(format!(
-        "scope-vcs-segment-restore-{}-{}",
-        std::process::id(),
-        unix_now()
-    )));
+    let restored = TempGitRepo(unique_test_path("segment-restore"));
     crate::git::restore::restore_git_pack_spans(
         &state,
         &stored.record.id,
@@ -289,14 +240,15 @@ async fn content_push_rejects_stale_reviewed_config() {
     fs::write(source.join("README.md"), "content from old review\n").unwrap();
     run_git(Some(&source), &["add", "README.md"], "add stale update").unwrap();
     commit_all(&source, "stale content update");
-    let stale_bare = bare_clone(&source, "stale-config-content-update-bare");
-    let update = receive_pack_update_from_staging_repo(
+    let stale_bare = clone_test_repo(&source, "stale-config-content-update-bare", true);
+    let update = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &stale_bare,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap();
@@ -349,14 +301,15 @@ async fn reviewed_push_cannot_cross_repository_recreation() {
     )
     .unwrap();
     commit_all(&source, "predecessor update");
-    let bare = bare_clone(&source, "recreated-repository-push-bare");
-    let update = receive_pack_update_from_staging_repo(
+    let bare = clone_test_repo(&source, "recreated-repository-push-bare", true);
+    let update = reviewed_update_from_staging_repo(
         &state,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &bare,
         &test_owner_id(),
         repo_config(Visibility::Public),
+        ReviewedUpdateMode::ReadyPush,
     )
     .await
     .unwrap();

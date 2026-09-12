@@ -352,30 +352,17 @@ impl ClerkTokenPolicy {
     }
 
     fn validate(&self, claims: &ClerkClaims) -> Result<(), ApiError> {
-        if self.authorized_parties.is_empty() && self.audiences.is_empty() {
-            return Err(ApiError::infrastructure_unavailable(format!(
-                "{CLERK_AUTHORIZED_PARTIES_ENV}, {SCOPE_APP_ORIGIN_ENV}, or {CLERK_AUDIENCE_ENV} is required to validate Clerk tokens"
-            )));
-        }
-
-        let audience_allowed = !self.audiences.is_empty()
-            && claims
-                .aud
-                .as_ref()
-                .is_some_and(|audience| audience.matches_any(&self.audiences));
-        if !self.audiences.is_empty() && !audience_allowed {
+        if !claims
+            .aud
+            .as_ref()
+            .is_some_and(|audience| audience.matches_any(&self.audiences))
+        {
             return Err(ApiError::unauthorized(
                 "Clerk token audience is not allowed",
             ));
         }
-
         let Some(azp) = claims.azp.as_deref().map(normalize_claim_value) else {
-            if audience_allowed {
-                return Ok(());
-            }
-            return Err(ApiError::unauthorized(
-                "Clerk token is missing authorized party",
-            ));
+            return Ok(());
         };
 
         if self.authorized_parties.is_empty() {
@@ -546,4 +533,23 @@ pub fn bearer_token(headers: &HeaderMap) -> Result<Option<&str>, ApiError> {
     }
 
     Ok(Some(token.trim()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bearer_token;
+    use axum::http::{HeaderMap, HeaderValue, header};
+
+    #[test]
+    fn bearer_token_rejects_non_bearer_authorization() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Basic opaque-token"),
+        );
+        assert_eq!(
+            bearer_token(&headers).unwrap_err().kind,
+            crate::error::ErrorKind::Unauthorized
+        );
+    }
 }

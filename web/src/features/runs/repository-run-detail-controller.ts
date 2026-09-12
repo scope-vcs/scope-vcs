@@ -1,14 +1,13 @@
+import type { RunActionInput, RunStepLogsInput } from '@/api/types'
 import type {
-  RepoRunDetail,
-  RepoRunJobDetail,
-  RepoRunStepLogPage,
-  RunActionInput,
-  RunStepLogsInput,
-} from '@/api/types'
+  RepositoryRunDetailResponse,
+  RepositoryRunJobDetailResponse,
+  RepositoryRunStepLogPageResponse,
+} from '@/api/types.generated'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import {
   useCallback,
   useEffect,
-  useReducer,
   useRef,
   useState,
   useSyncExternalStore,
@@ -32,8 +31,8 @@ import {
   runLogsResource,
   refreshRunLogs,
   refreshRunLogsAfterInFlight,
-  runErrorMessage,
   type RunLogMode,
+  type StepLogState,
 } from './run-log-cache'
 
 import { initializeRunDetail, refreshRunDetail, runDetailResource } from './run-detail-resource'
@@ -42,6 +41,15 @@ export type { StepSelection } from './repository-run-detail-model'
 export type { StepLogState } from './run-log-cache'
 
 const DETAIL_CHANGES = ['StatusChanged', 'LogsAppended'] as const
+const RUN_ERROR_FALLBACK = 'Run operation failed.'
+
+/** The selected step's output plus the actions the log view can take on it. */
+export type StepLogs = {
+  earlier: () => void
+  latest: () => void
+  retry: () => void
+  state: StepLogState
+}
 
 type DetailViewState = {
   actionError: string | null
@@ -54,9 +62,7 @@ type DetailViewState = {
   showGraph: boolean
 }
 
-type DetailViewUpdate = (state: DetailViewState) => DetailViewState
-
-function createDetailViewState(detail: RepoRunDetail): DetailViewState {
+function createDetailViewState(detail: RepositoryRunDetailResponse): DetailViewState {
   const initialView = selectInitialView(detail.jobs)
   return {
     actionError: null,
@@ -70,13 +76,6 @@ function createDetailViewState(detail: RepoRunDetail): DetailViewState {
   }
 }
 
-function updateDetailView(
-  state: DetailViewState,
-  update: DetailViewUpdate,
-) {
-  return update(state)
-}
-
 export function useRepositoryRunDetailController({
   cacheKey,
   initialDetail,
@@ -85,12 +84,12 @@ export function useRepositoryRunDetailController({
   params,
 }: {
   cacheKey: string | null
-  initialDetail: RepoRunDetail
-  loadDetail: (signal?: AbortSignal) => Promise<RepoRunDetail>
+  initialDetail: RepositoryRunDetailResponse
+  loadDetail: (signal?: AbortSignal) => Promise<RepositoryRunDetailResponse>
   loadLogs: (
     input: RunStepLogsInput,
     signal?: AbortSignal,
-  ) => Promise<RepoRunStepLogPage>
+  ) => Promise<RepositoryRunStepLogPageResponse>
   params: RunActionInput
 }) {
   const [key] = useState(() => cacheKey ?? crypto.randomUUID())
@@ -109,7 +108,7 @@ export function useRepositoryRunDetailController({
     runLogsResource.getServerSnapshot,
   )
   const detail = detailSnapshot.value?.detail ?? initialDetail
-  const [view, updateView] = useReducer(updateDetailView, detail, createDetailViewState)
+  const [view, updateView] = useState(() => createDetailViewState(detail))
   const selectionRef = useRef(view.selection)
   useEffect(() => { selectionRef.current = view.selection }, [view.selection])
 
@@ -199,7 +198,7 @@ export function useRepositoryRunDetailController({
     } catch (error) {
       updateView((current) => ({
         ...current,
-        actionError: runErrorMessage(error),
+        actionError: resourceErrorMessage(error, RUN_ERROR_FALLBACK),
         pendingAction: null,
       }))
       return
@@ -220,7 +219,7 @@ export function useRepositoryRunDetailController({
 
   // Navigation rules live in the model so `selection` and `selectedJobKey`
   // cannot drift apart here.
-  function toggleJob(jobDetail: RepoRunJobDetail) {
+  function toggleJob(jobDetail: RepositoryRunJobDetailResponse) {
     updateView((current) => selectJob(current, jobDetail.job.key))
   }
 
@@ -236,19 +235,26 @@ export function useRepositoryRunDetailController({
     updateView((current) => ({ ...current, showGraph: !current.showGraph }))
   }
 
-  const selectedLogState = view.selection
-    ? logsSnapshot.value?.[stepKey(view.selection)] ?? EMPTY_LOG_STATE
-    : EMPTY_LOG_STATE
+  const selection = view.selection
+  const stepLogs: StepLogs = {
+    earlier: () => { if (selection) void refreshLogs(selection, 'earlier') },
+    latest: () => { if (selection) void refreshLogs(selection, 'latest') },
+    retry: () => { if (selection) void refreshLogs(selection, 'retry') },
+    state: selection
+      ? logsSnapshot.value?.[stepKey(selection)] ?? EMPTY_LOG_STATE
+      : EMPTY_LOG_STATE,
+  }
 
   return {
     ...view,
     detail,
-    metadataError: detailSnapshot.error === null ? null : runErrorMessage(detailSnapshot.error),
+    metadataError: detailSnapshot.error === null
+      ? null
+      : resourceErrorMessage(detailSnapshot.error, RUN_ERROR_FALLBACK),
     performAction,
     refreshDetail: refreshRun,
-    refreshLogs,
     selectAttempt,
-    selectedLogState,
+    stepLogs,
     toggleGraph,
     toggleJob,
     toggleStep,
@@ -257,7 +263,7 @@ export function useRepositoryRunDetailController({
 
 function selectionExists(
   selection: StepSelection,
-  jobs: readonly RepoRunJobDetail[],
+  jobs: readonly RepositoryRunJobDetailResponse[],
 ) {
   return jobs.some(({ job, attempts }) =>
     job.key === selection.jobKey &&
@@ -268,6 +274,6 @@ function selectionExists(
   )
 }
 
-function jobExists(jobKey: string | null, jobs: readonly RepoRunJobDetail[]) {
+function jobExists(jobKey: string | null, jobs: readonly RepositoryRunJobDetailResponse[]) {
   return jobKey !== null && jobs.some(({ job }) => job.key === jobKey)
 }

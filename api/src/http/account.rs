@@ -1,20 +1,16 @@
 use crate::{
     auth::scope::optional_scope_user,
     error::ApiError,
-    http::responses::{
-        HealthResponse, ReadinessCheckResponse, ReadinessResponse, SessionRepo, SessionResponse,
-        repository_access_response, session_capabilities_response, user_response,
-    },
-    repo_access::find_read_access,
+    http::responses::{HealthResponse, ReadinessCheckResponse, ReadinessResponse, user_response},
     state::AppState,
 };
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::State,
     http::{HeaderMap, StatusCode},
 };
 use scope_api_contract::{AccountSessionResponse, SessionIdentity};
-use scope_domain::{policy::Principal, repository::access::RepositoryActor};
+use scope_domain::account::SessionIdentity as DomainSessionIdentity;
 
 pub(crate) async fn healthz() -> Json<HealthResponse> {
     Json(HealthResponse {
@@ -61,43 +57,9 @@ pub(crate) async fn get_account_session(
 ) -> Result<Json<AccountSessionResponse>, ApiError> {
     let user = optional_scope_user(&state, &headers).await?;
     Ok(Json(AccountSessionResponse {
-        identity: user.as_ref().map(SessionIdentity::from),
+        identity: user
+            .as_ref()
+            .map(|user| SessionIdentity::from(DomainSessionIdentity::from(user))),
         user: user.map(user_response),
-    }))
-}
-
-pub(crate) async fn get_session(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((owner, repo_name)): Path<(String, String)>,
-) -> Result<Json<SessionResponse>, ApiError> {
-    let user = optional_scope_user(&state, &headers).await?;
-    let repo = find_read_access(
-        &state,
-        &owner,
-        &repo_name,
-        user.as_ref().map(|user| user.id.as_str()),
-    )
-    .await?;
-    let access = repo.access;
-    let can_read_root = repo.can_read_root();
-    let principal_id = if access.actor == RepositoryActor::Public {
-        Principal::public().id
-    } else {
-        user.as_ref()
-            .expect("repository member is authenticated")
-            .id
-            .clone()
-    };
-
-    Ok(Json(SessionResponse {
-        identity: user.as_ref().map(SessionIdentity::from),
-        repo: SessionRepo {
-            id: repo.record.id.clone(),
-            lifecycle_state: repo.record.lifecycle_state.into(),
-            access: repository_access_response(access),
-        },
-        capabilities: session_capabilities_response(can_read_root, access),
-        principal_id,
     }))
 }

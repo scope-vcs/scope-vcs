@@ -1,10 +1,11 @@
 use super::{
-    default_limits,
-    persistence::{attachment_by_id, binding_target_parts, bindings_for_attachment},
+    access::cleanup_tombstone_exists,
+    locks::lock_attachment,
+    persistence::{binding_target_parts, bindings_for_attachment},
 };
 use crate::error::PostgresError;
 use scope_domain::requests::attachments::{
-    RequestAttachmentBindingTarget, replace_attachment_bindings,
+    RequestAttachmentBindingTarget, RequestAttachmentLimits, replace_attachment_bindings,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use std::collections::BTreeSet;
@@ -22,7 +23,7 @@ where
 {
     let referenced = scope_domain::requests::attachments::request_attachment_references(markdown)
         .map_err(PostgresError::from)?;
-    let limits = default_limits();
+    let limits = RequestAttachmentLimits::default();
     if referenced.len() > limits.max_attachments_per_content {
         return Err(PostgresError::invalid_input(format!(
             "request content may reference at most {} attachments",
@@ -37,14 +38,7 @@ where
     let mut attachments = Vec::new();
     let mut existing_bindings = Vec::new();
     for attachment_id in &lock_ids {
-        lock_attachment(conn, attachment_id).await?;
-        let attachment = attachment_by_id(conn, attachment_id)
-            .await?
-            .ok_or_else(|| {
-                PostgresError::invalid_input(format!(
-                    "request attachment {attachment_id} was not found"
-                ))
-            })?;
+        let attachment = lock_attachment(conn, attachment_id).await?;
         existing_bindings.extend(bindings_for_attachment(conn, attachment_id).await?);
         attachments.push(attachment);
     }
@@ -57,16 +51,7 @@ where
     }
 
     for attachment_id in &lock_ids {
-        let tombstoned = conn
-            .query_one(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT 1 AS present FROM scope_request_media_cleanup_jobs WHERE attachment_id = $1",
-                [attachment_id.clone().into()],
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-            .is_some();
-        if tombstoned {
+        if cleanup_tombstone_exists(conn, attachment_id).await? {
             return Err(PostgresError::conflict(
                 "request attachment is being deleted",
             ));
@@ -81,7 +66,6 @@ where
         markdown,
         &attachments,
         &existing_bindings,
-        limits,
     )?;
 
     conn.execute(Statement::from_sql_and_values(
@@ -182,20 +166,4 @@ where
             .map_err(PostgresError::internal)
     })
     .collect::<Result<_, _>>()
-}
-
-async fn lock_attachment<C>(conn: &C, attachment_id: &str) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    conn.query_one(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT request_id, uploader_user_id, state
-         FROM scope_request_media_attachments WHERE id = $1 FOR UPDATE",
-        [attachment_id.into()],
-    ))
-    .await
-    .map_err(PostgresError::internal)?
-    .ok_or_else(|| PostgresError::not_found("request attachment not found"))?;
-    Ok(())
 }

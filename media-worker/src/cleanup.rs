@@ -1,3 +1,4 @@
+use crate::lease::{HeartbeatError, supervise_lease};
 use crate::{
     config::WorkerSettings,
     health::WorkerHealth,
@@ -5,10 +6,8 @@ use crate::{
         db_error, dependencies_ready, lease_expiry, random_id, retry_delay, wait_or_shutdown,
     },
 };
-use scope_domain::requests::attachments::RequestAttachmentCleanupLease;
 use scope_media_storage::MediaStorage;
 use scope_postgres::db::{MediaLeaseMutation, MetadataStore};
-use std::{future::Future, time::Duration};
 
 pub async fn run(
     metadata: MetadataStore,
@@ -75,18 +74,32 @@ async fn cleanup_next_job(
     };
     let _activity = health.cleanup_activity();
     for key in &lease.object_keys {
-        match with_heartbeat(
-            metadata,
-            &lease,
-            settings.lease_duration,
-            storage.delete_object_key(key),
-        )
+        let deletion = storage.delete_object_key(key);
+        tokio::pin!(deletion);
+        match supervise_lease(&mut deletion, settings.lease_duration, || async {
+            let now = crate::unix_now()?;
+            metadata
+                .media()
+                .renew_cleanup_lease(
+                    &lease.attachment_id,
+                    &lease.lease_token,
+                    lease.lease_generation,
+                    now,
+                    lease_expiry(now, settings.lease_duration)?,
+                )
+                .await
+                .map_err(db_error)
+        })
         .await
         {
-            Ok(()) => {}
-            Err(StepError::LeaseLost) => return Ok(CleanupOutcome::LeaseLost),
-            Err(StepError::Database(error)) => return Err(error),
-            Err(StepError::Inner(error)) => {
+            Ok(Ok(())) => {}
+            Err(HeartbeatError::LeaseLost) => {
+                // Finish the in-flight delete before abandoning this lease.
+                let _ = deletion.await;
+                return Ok(CleanupOutcome::LeaseLost);
+            }
+            Err(HeartbeatError::Database(error)) => return Err(error),
+            Ok(Err(error)) => {
                 tracing::warn!(
                     attachment_id = %lease.attachment_id,
                     object_key = %key,
@@ -127,50 +140,6 @@ async fn cleanup_next_job(
         MediaLeaseMutation::Applied(()) => CleanupOutcome::Completed,
         MediaLeaseMutation::LeaseLost => CleanupOutcome::LeaseLost,
     })
-}
-
-enum StepError<E> {
-    Inner(E),
-    LeaseLost,
-    Database(anyhow::Error),
-}
-
-async fn with_heartbeat<T, E, F>(
-    metadata: &MetadataStore,
-    lease: &RequestAttachmentCleanupLease,
-    lease_duration: Duration,
-    future: F,
-) -> Result<T, StepError<E>>
-where
-    F: Future<Output = Result<T, E>>,
-{
-    tokio::pin!(future);
-    let mut heartbeat = tokio::time::interval(heartbeat_interval(lease_duration));
-    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    heartbeat.tick().await;
-    loop {
-        tokio::select! {
-            result = &mut future => return result.map_err(StepError::Inner),
-            _ = heartbeat.tick() => {
-                let now = crate::unix_now().map_err(StepError::Database)?;
-                let renewed = metadata.media().renew_cleanup_lease(
-                    &lease.attachment_id,
-                    &lease.lease_token,
-                    lease.lease_generation,
-                    now,
-                    lease_expiry(now, lease_duration).map_err(StepError::Database)?,
-                ).await.map_err(|error| StepError::Database(db_error(error)))?;
-                if !renewed {
-                    let _ = future.await;
-                    return Err(StepError::LeaseLost);
-                }
-            }
-        }
-    }
-}
-
-fn heartbeat_interval(lease_duration: Duration) -> Duration {
-    Duration::from_secs((lease_duration.as_secs() / 3).max(1))
 }
 
 #[cfg(test)]

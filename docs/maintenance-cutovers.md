@@ -93,11 +93,28 @@ Read-only inspection uses the pinned maintenance binary:
 ```text
 scope-maintenance plan
 scope-maintenance verify
-node .github/scripts/production-deployment-progress.mjs cutover-read --id DEPLOYMENT_ID --source-sha FULL_SHA
+node .github/scripts/release-cutover-journal.mjs cutover-read --id DEPLOYMENT_ID --source-sha FULL_SHA
 ```
 
 `plan` emits `exact`, ordered `applied` migration names, and pending names. `verify`
 succeeds only for an exact ledger.
+
+## Resume staging after a smoke failure
+
+When a release completed `Deploy candidate once` but failed a later smoke check,
+run `Release` with its original `source_run_id` and `resume_staging=true`.
+The resume keeps the original application images and maintenance binary. It
+requires successful original validation and image preparation on main, the
+complete staging deployment receipt, matching original and latest Railway image
+digests, and an exact candidate migration ledger with nothing pending.
+
+Cleanup may have removed the staging deployments after the smoke failure. Resume
+reactivates those pinned images with writers closed first, without restoring the
+pre-migration database, applying migrations, or repeating backfills. Browser smoke
+checks come from the current trusted workflow revision so a corrected smoke test
+does not require rebuilding the application images. Production stays blocked
+until the resumed browser, Git, and media smoke checks succeed. An unresolved
+production cutover must recover before a staging resume can run.
 
 ## Staging baseline
 

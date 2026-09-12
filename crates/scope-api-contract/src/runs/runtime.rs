@@ -3,6 +3,7 @@ use scope_domain::runs::{
     attempt::AttemptState as DomainAttemptState,
     cache::observation::{
         CacheColdReason as DomainCacheColdReason, CacheFinalState as DomainCacheFinalState,
+        CachePreparation as DomainCachePreparation,
     },
     step::StepState as DomainStepState,
 };
@@ -11,6 +12,7 @@ use std::collections::BTreeMap;
 
 wire_enum!(
     #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
     AttemptState => DomainAttemptState {
         Dispatching,
         Running,
@@ -23,6 +25,7 @@ wire_enum!(
 
 wire_enum!(
     #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
     StepState => DomainStepState {
         Pending,
         Running,
@@ -36,26 +39,51 @@ wire_enum!(
 
 wire_enum!(
     #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
     CacheColdReason => DomainCacheColdReason {
         MetadataMissing,
         MetadataInvalid,
         MetadataNotReady,
-        VolumeMissing,
-        VolumeInvalid,
-        BackingDirectoryMissing,
     }
 );
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(tag = "kind", rename_all = "kebab-case"))]
 pub enum CachePreparation {
     Exact,
     Compatible,
     Cold { reason: CacheColdReason },
 }
 
+impl From<DomainCachePreparation> for CachePreparation {
+    fn from(value: DomainCachePreparation) -> Self {
+        match value {
+            DomainCachePreparation::Exact => Self::Exact,
+            DomainCachePreparation::Compatible => Self::Compatible,
+            DomainCachePreparation::Cold { reason } => Self::Cold {
+                reason: reason.into(),
+            },
+        }
+    }
+}
+
+impl From<CachePreparation> for DomainCachePreparation {
+    fn from(value: CachePreparation) -> Self {
+        match value {
+            CachePreparation::Exact => Self::Exact,
+            CachePreparation::Compatible => Self::Compatible,
+            CachePreparation::Cold { reason } => Self::Cold {
+                reason: reason.into(),
+            },
+        }
+    }
+}
+
 wire_enum!(
     #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
     CacheFinalState => DomainCacheFinalState {
         Pending,
         Ready,

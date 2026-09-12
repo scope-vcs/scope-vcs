@@ -8,7 +8,7 @@ fn content_push_requires_rules_in_the_resulting_tree() {
         change_version: repo.record.change_version,
         policy: repo.policy.clone(),
         repo_config: config.clone(),
-        live_files: repo.live_tree(),
+        live_files: repo.live_files.clone(),
         git_head: repo.git_head.clone(),
     };
 
@@ -70,7 +70,7 @@ fn request_merge_accepts_unchanged_tree_without_weakening_push_rules() {
         change_version: repo.record.change_version,
         policy: repo.policy.clone(),
         repo_config: config.clone(),
-        live_files: repo.live_tree(),
+        live_files: repo.live_files.clone(),
         git_head: repo.git_head.clone(),
     };
     let update = reviewed_update(
@@ -111,7 +111,6 @@ fn request_merge_accepts_unchanged_tree_without_weakening_push_rules() {
 fn public_projection_always_includes_canonical_rules_changes() {
     let graph = graph(vec![commit(
         "rv1",
-        None,
         "add rules",
         added("/.scope/RULES.md", Visibility::Public, ""),
     )]);

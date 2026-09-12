@@ -1,8 +1,8 @@
 mod snapshot;
 
 use crate::{
-    health::WorkerHealth,
-    settings::{WorkerRole, WorkerSettings},
+    health::{WorkerHealth, WorkerLoop},
+    settings::{BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
 };
 use scope_api_contract::{RepoChangeEvent, RepoChangeKind, RepoChangeNotification};
 use scope_domain::dependency_analysis::{AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION};
@@ -89,7 +89,7 @@ pub(crate) async fn run(
         match result {
             Ok(PollOutcome::Shutdown) => return Ok(()),
             Ok(outcome) => {
-                health.mark_poll_succeeded(WorkerRole::Dependencies, crate::unix_now()?);
+                health.mark_poll_succeeded(WorkerLoop::Dependencies, crate::unix_now()?);
                 if outcome == PollOutcome::Worked {
                     continue;
                 }
@@ -98,7 +98,7 @@ pub(crate) async fn run(
                 tracing::error!(%error, "dependency analysis scheduling failed; retrying");
             }
         }
-        if crate::wait_or_shutdown(settings.poll_interval).await {
+        if crate::wait_or_shutdown(POLL_INTERVAL).await {
             return Ok(());
         }
     }
@@ -137,13 +137,9 @@ async fn process_next(
     if backfill.is_due(started) {
         let enqueued = metadata
             .jobs()
-            .enqueue_dependency_analysis_backfill(
-                DEPENDENCY_ANALYZER_VERSION,
-                now,
-                settings.batch_size,
-            )
+            .enqueue_dependency_analysis_backfill(DEPENDENCY_ANALYZER_VERSION, now, BATCH_SIZE)
             .await?;
-        backfill.record(started, enqueued, settings.batch_size);
+        backfill.record(started, enqueued, BATCH_SIZE);
     }
     let Some(claim) = metadata
         .jobs()
@@ -195,7 +191,7 @@ async fn process_next(
                     tracing::debug!(repo_id = claim.incarnation.repository_id(), "dependency analysis claim superseded");
                     return Ok(PollOutcome::Worked);
                 }
-                health.mark_poll_succeeded(WorkerRole::Dependencies, now);
+                health.mark_poll_succeeded(WorkerLoop::Dependencies, now);
             }
             _ = &mut deadline => {
                 cancel_analysis(&cancellation, task).await;

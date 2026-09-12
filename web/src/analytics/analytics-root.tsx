@@ -3,13 +3,9 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useRouterState } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import posthog, { type PostHog } from 'posthog-js'
-import {
-  type RefObject,
-  useEffect,
-  useRef,
-  useSyncExternalStore,
-} from 'react'
-import { identityTransition, resolveAnalyticsIdentity } from './identity'
+import { useHydrated } from '@/lib/use-hydrated'
+import { type RefObject, useEffect, useRef } from 'react'
+import { identifiedKey, identityTransition, resolveAnalyticsIdentity } from './identity'
 import { createPrivacyBoundary, pageViewProperties } from './privacy'
 import { analyticsRouteForId } from './routes'
 
@@ -25,11 +21,7 @@ const loadAnalyticsIdentity = createServerFn({ method: 'GET' }).handler(
 const analyticsClient = initializeAnalyticsClient()
 
 export function AnalyticsRoot() {
-  const hydrated = useSyncExternalStore(
-    subscribeToHydration,
-    getBrowserSnapshot,
-    getServerSnapshot,
-  )
+  const hydrated = useHydrated()
   return hydrated && analyticsClient
     ? <AnalyticsRuntime client={analyticsClient} />
     : null
@@ -104,10 +96,6 @@ function captureCurrentPage(
   }))
 }
 
-function identifiedKey(clerkUserId: string) {
-  return `identified:${clerkUserId}`
-}
-
 function applyIdentityTransition(client: PostHog, scopeUserId: string | null) {
   const transition = identityTransition({
     currentDistinctId: client.get_distinct_id(),
@@ -158,16 +146,4 @@ function analyticsConfig() {
   const token = import.meta.env.VITE_POSTHOG_PROJECT_TOKEN?.trim()
   const host = import.meta.env.VITE_POSTHOG_HOST?.trim() || defaultPostHogHost
   return token ? { host, token } : null
-}
-
-function subscribeToHydration() {
-  return () => {}
-}
-
-function getBrowserSnapshot() {
-  return true
-}
-
-function getServerSnapshot() {
-  return false
 }

@@ -1,7 +1,4 @@
-use super::{
-    content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-    requests::*,
-};
+use super::requests::{fixtures::source_blob, *};
 
 #[test]
 fn revision_records_snapshot_without_manufacturing_a_discussion() {
@@ -88,15 +85,5 @@ fn revision(id: &str, position: u64) -> RequestRevision {
         new_head_oid: "new".to_string(),
         git_snapshot: source_blob(id),
         created_at_unix: position,
-    }
-}
-
-fn source_blob(git_oid: &str) -> SourceBlob {
-    SourceBlob {
-        content_ref: crate::content_ref::ContentRef::blob_sha256(git_oid),
-        sha256: format!("sha256-{git_oid}"),
-        git_oid: git_oid.to_string(),
-        git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-        size_bytes: 1,
     }
 }

@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict'
-import { setTimeout as delay } from 'node:timers/promises'
+import {
+  assertDocumentPreserved,
+  assertNodesPreserved,
+  captureNodes,
+  markDocument,
+  waitForClientHydration,
+} from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
 const backgroundServerFunctions = new Set([
@@ -8,36 +14,34 @@ const backgroundServerFunctions = new Set([
   'loadAttachmentLimits_createServerFn_handler',
 ])
 
+export function captureRequestShell(page) {
+  return captureNodes(page, ['h1', 'nav[aria-label="Request views"]'])
+}
+
 export async function assertRequestCrossLinksStayInDocument(page) {
-  const requestViews = page.getByRole('navigation', { name: 'Request views' })
-  const heading = await page
-    .getByRole('heading', { level: 1, name: 'Add bounded retry timing' })
-    .elementHandle()
-  const navigation = await requestViews.elementHandle()
-  assert(heading)
-  assert(navigation)
+  await page.getByRole('heading', { level: 1, name: 'Add bounded retry timing' }).waitFor()
+  const shell = await captureRequestShell(page)
   const documentSentinel = 'scope-request-cross-navigation'
-  await page.evaluate((sentinel) => {
-    window.__scopeRequestDocument = sentinel
-  }, documentSentinel)
+  await markDocument(page, documentSentinel)
 
   const anchoredThread = page.locator(
     '#discussion-discussion_demo_revision_jitter',
   )
   const revisionLink = anchoredThread.getByRole('link', { name: /View revision/ })
-  await waitForClientHydration(page, revisionLink)
+  await waitForClientHydration(revisionLink)
   await revisionLink.click()
   await page.waitForURL((url) => (
     url.pathname.endsWith('/requests/req_demo_ready/changes') &&
     url.searchParams.get('revision') === 'event_req_demo_ready_revision_2'
   ))
-  await assertRequestDocumentAndShell(page, { documentSentinel, heading, navigation })
+  await assertDocumentPreserved(page, documentSentinel)
+  await assertNodesPreserved(page, shell)
   assert.equal(await page.getByRole('textbox').count(), 0)
 
   const discussionLink = page.getByRole('link', {
     name: /The bounded jitter looks right/,
   })
-  await waitForClientHydration(page, discussionLink)
+  await waitForClientHydration(discussionLink)
   await discussionLink.click()
   await page.waitForURL((url) => (
     url.pathname.endsWith('/requests/req_demo_ready') &&
@@ -45,31 +49,14 @@ export async function assertRequestCrossLinksStayInDocument(page) {
     url.hash === '#discussion-discussion_demo_revision_jitter'
   ))
   await page.locator('.request-discussion-thread').first().waitFor()
-  await assertRequestDocumentAndShell(page, { documentSentinel, heading, navigation })
-  return { heading, navigation }
-}
-
-export async function waitForClientHydration(page, locator) {
-  const deadline = Date.now() + 30_000
-  // Hydration can replace the server-rendered node, so resolve the locator anew.
-  while (!await locator.evaluate((element) => Object.keys(element).some((key) => key.startsWith('__reactProps$')))) {
-    assert(Date.now() < deadline, 'element did not hydrate within 30 seconds')
-    await delay(50)
-  }
-}
-
-async function assertRequestDocumentAndShell(page, shell) {
-  assert.equal(
-    await page.evaluate(() => window.__scopeRequestDocument),
-    shell.documentSentinel,
-  )
-  await assertRequestShellPreserved(page, shell)
+  await assertDocumentPreserved(page, documentSentinel)
+  await assertNodesPreserved(page, shell)
 }
 
 export async function assertFileSelectionSkipsRevisionReload(page, fileName, path) {
   await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
   const fileNavigator = page.getByLabel('Commit file navigator')
-  await waitForClientHydration(page, fileNavigator)
+  await waitForClientHydration(fileNavigator)
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
@@ -129,16 +116,4 @@ export async function assertUpdateSelectionReloadsSelectedPayload(page) {
     page.off('request', recordServerFunction)
   }
   assert.deepEqual(serverFunctions, ['loadChangesPage_createServerFn_handler'])
-}
-
-export async function assertRequestShellPreserved(page, shell) {
-  assert.equal(
-    await page.evaluate(
-      ({ heading, navigation }) =>
-        heading === document.querySelector('h1') &&
-        navigation === document.querySelector('nav[aria-label="Request views"]'),
-      shell,
-    ),
-    true,
-  )
 }

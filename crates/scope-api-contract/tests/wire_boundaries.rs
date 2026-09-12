@@ -1,7 +1,9 @@
 use scope_api_contract::*;
-use std::any::TypeId;
 
+/// Each body fails to compile if a public payload field leaks a domain type
+/// instead of the owned wire type named here.
 #[test]
+#[allow(dead_code)]
 fn public_payload_fields_are_owned_wire_types() {
     fn session(response: CliSessionTokenResponse) {
         let _: SessionIdentity = response.identity;
@@ -56,56 +58,11 @@ fn public_payload_fields_are_owned_wire_types() {
         cache: RepositoryRunCacheObservationResponse,
     ) {
         let _: RepositoryRunTrigger = summary.trigger;
-        let _: RepositoryRunState = summary.state;
-        let _: RepositoryRunAttemptState = attempt.state;
+        let _: RunState = summary.state;
+        let _: AttemptState = attempt.state;
         let _: Option<RepositoryRunTerminalReason> = attempt.terminal_reason;
-        let _: RepositoryRunStepState = step.state;
-        let _: RepositoryRunCachePreparation = cache.preparation;
-        let _: RepositoryRunCacheFinalState = cache.final_state;
+        let _: StepState = step.state;
+        let _: CachePreparation = cache.preparation;
+        let _: CacheFinalState = cache.final_state;
     }
-
-    let _ = session as fn(CliSessionTokenResponse);
-    let _ = repository
-        as fn(
-            RepoSummaryResponse,
-            RepositoryAccessResponse,
-            FirstPushTokenResponse,
-            RepoConfigResponse,
-        );
-    let _ = request
-        as fn(
-            RequestSummaryResponse,
-            RequestListItemResponse,
-            RequestEventResponse,
-            RequestDiscussionSummaryResponse,
-            CommitFileResponse,
-        );
-    let _ = repository_events as fn(RepoChangeEvent);
-    let _ = runtime
-        as fn(
-            AttemptStatusResponse,
-            AttemptStepStatusResponse,
-            AttemptCachePreparationReport,
-            AttemptCacheFinalizationReport,
-        );
-    let _ = repository_run
-        as fn(
-            RepositoryRunSummaryResponse,
-            RepositoryRunAttemptResponse,
-            RepositoryRunStepResponse,
-            RepositoryRunCacheObservationResponse,
-        );
-
-    assert_ne!(
-        TypeId::of::<RequestState>(),
-        TypeId::of::<scope_domain::requests::RequestState>()
-    );
-    assert_ne!(
-        TypeId::of::<Visibility>(),
-        TypeId::of::<scope_domain::policy::Visibility>()
-    );
-    assert_ne!(
-        TypeId::of::<RepositoryRunState>(),
-        TypeId::of::<scope_domain::runs::run::RunState>(),
-    );
 }

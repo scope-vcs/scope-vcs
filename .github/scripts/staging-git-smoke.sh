@@ -127,21 +127,6 @@ if [[ -n "${SCOPE_MEDIA_SMOKE_SCRIPT:-}" ]]; then
       --file "$SCOPE_MEDIA_SMOKE_MP4" \
       --require-video \
       --receipt "$SCOPE_MEDIA_SMOKE_RECEIPT"
-  if [[ -n "${SCOPE_MEDIA_CAPACITY_SCRIPT:-}" ]]; then
-    : "${SCOPE_MEDIA_CAPACITY_VIDEO:?SCOPE_MEDIA_CAPACITY_VIDEO is required for capacity proof}"
-    : "${SCOPE_MEDIA_CAPACITY_RECEIPT:?SCOPE_MEDIA_CAPACITY_RECEIPT is required for capacity proof}"
-    [[ -f "$SCOPE_MEDIA_CAPACITY_SCRIPT" && -f "$SCOPE_MEDIA_CAPACITY_VIDEO" ]]
-    SCOPE_MEDIA_SMOKE_TOKEN="$(tr -d '\r\n' < "$session_path")" \
-      node "$SCOPE_MEDIA_CAPACITY_SCRIPT" \
-        --api "$SCOPE_API_URL" \
-        --media-origin "$SCOPE_MEDIA_GATEWAY_URL" \
-        --repo dev/update-demo \
-        --source-sha "$SCOPE_MEDIA_SMOKE_SOURCE_SHA" \
-        --large-video "$SCOPE_MEDIA_CAPACITY_VIDEO" \
-        --photo "$SCOPE_MEDIA_SMOKE_PNG" \
-        --small-uploads 4 \
-        --output "$SCOPE_MEDIA_CAPACITY_RECEIPT"
-  fi
 fi
 SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" clone "$repo" "$permissioned_checkout"
 test "$(git -C "$permissioned_checkout" remote get-url origin)" = "$permissioned_url"

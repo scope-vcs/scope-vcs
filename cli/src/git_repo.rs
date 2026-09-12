@@ -12,6 +12,13 @@ pub struct GitRepo {
     pub root: PathBuf,
 }
 
+impl std::ops::Deref for GitRepo {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.root
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct GitCommandPlan {
     pub args: Vec<String>,
@@ -62,15 +69,7 @@ pub fn git_repo_has_head(repo: &GitRepo) -> bool {
 }
 
 pub fn warn_if_dirty_working_tree(repo: &GitRepo) -> anyhow::Result<()> {
-    let output = Command::new("git")
-        .current_dir(&repo.root)
-        .args(["status", "--porcelain", "--untracked-files=all"])
-        .output()
-        .context("inspect Git working tree")?;
-    if !output.status.success() {
-        bail!("git status --porcelain failed");
-    }
-    if has_dirty_paths(&output.stdout) {
+    if dirty_working_tree(repo)? {
         eprintln!("Working tree has uncommitted changes.");
         eprintln!("Only committed HEAD will be pushed to Scope.");
     }
@@ -78,6 +77,16 @@ pub fn warn_if_dirty_working_tree(repo: &GitRepo) -> anyhow::Result<()> {
 }
 
 pub fn ensure_clean_working_tree(repo: &GitRepo, command_name: &str) -> anyhow::Result<()> {
+    if dirty_working_tree(repo)? {
+        return Err(crate::error::CliError::usage(format!(
+            "commit or stash local changes before running {command_name}"
+        ))
+        .into());
+    }
+    Ok(())
+}
+
+fn dirty_working_tree(repo: &GitRepo) -> anyhow::Result<bool> {
     let output = Command::new("git")
         .current_dir(&repo.root)
         .args(["status", "--porcelain", "--untracked-files=all"])
@@ -86,13 +95,7 @@ pub fn ensure_clean_working_tree(repo: &GitRepo, command_name: &str) -> anyhow::
     if !output.status.success() {
         bail!("git status --porcelain failed");
     }
-    if has_dirty_paths(&output.stdout) {
-        return Err(crate::error::CliError::usage(format!(
-            "commit or stash local changes before running {command_name}"
-        ))
-        .into());
-    }
-    Ok(())
+    Ok(has_dirty_paths(&output.stdout))
 }
 
 fn has_dirty_paths(status: &[u8]) -> bool {
@@ -146,7 +149,7 @@ pub fn run_git(args: &[&str]) -> anyhow::Result<()> {
     finish_git_output(output, args)
 }
 
-pub fn run_git_in_repo(repo: &GitRepo, args: &[&str]) -> anyhow::Result<()> {
+pub fn run_git_in_repo(repo: &Path, args: &[&str]) -> anyhow::Result<()> {
     finish_git_output(git_output_in_repo(repo, args)?, args)
 }
 
@@ -160,7 +163,7 @@ fn finish_git_output(output: Output, args: &[&str]) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn try_run_git_in_repo(repo: &GitRepo, args: &[&str]) -> anyhow::Result<bool> {
+pub fn try_run_git_in_repo(repo: &Path, args: &[&str]) -> anyhow::Result<bool> {
     let output = git_output_in_repo(repo, args)?;
     use std::io::Write;
     std::io::stderr().write_all(&output.stdout)?;
@@ -168,7 +171,7 @@ pub fn try_run_git_in_repo(repo: &GitRepo, args: &[&str]) -> anyhow::Result<bool
     Ok(output.status.success())
 }
 
-pub fn git_text_in_repo(repo: &GitRepo, args: &[&str]) -> anyhow::Result<String> {
+pub fn git_text_in_repo(repo: &Path, args: &[&str]) -> anyhow::Result<String> {
     let output = git_output_in_repo(repo, args)?;
     if !output.status.success() {
         bail!("git {} failed", args.join(" "));
@@ -198,17 +201,17 @@ pub fn head_oid(repo: &GitRepo) -> anyhow::Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn git_output_in_repo(repo: &GitRepo, args: &[&str]) -> anyhow::Result<Output> {
+pub(crate) fn git_output_in_repo(repo: &Path, args: &[&str]) -> anyhow::Result<Output> {
     Command::new("git")
-        .current_dir(&repo.root)
+        .current_dir(repo)
         .args(args)
         .output()
         .with_context(|| format!("run git {}", args.join(" ")))
 }
 
-fn git_success_in_repo(repo: &GitRepo, args: &[&str]) -> bool {
+fn git_success_in_repo(repo: &Path, args: &[&str]) -> bool {
     Command::new("git")
-        .current_dir(&repo.root)
+        .current_dir(repo)
         .args(args)
         .output()
         .is_ok_and(|output| output.status.success())

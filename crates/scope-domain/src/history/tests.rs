@@ -1,6 +1,8 @@
 use super::*;
 use crate::{
-    content_ref::ContentRef, projection::FileChange, visibility_changes::VisibilityChange,
+    content_ref::ContentRef,
+    projection::{FileChange, project_graph},
+    visibility_changes::VisibilityChange,
 };
 
 fn blob(value: &str) -> SourceBlob {

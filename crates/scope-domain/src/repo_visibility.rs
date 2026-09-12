@@ -1,6 +1,9 @@
 use super::{
     policy::{ScopePath, Visibility},
-    repo_config::{ConfigVisibility, RepoConfig, RepoConfigVisibilityRule},
+    repo_config::{
+        ConfigVisibility, RepoConfig, RepoConfigVisibilityRule, pattern_base_path,
+        pattern_matches_path, pattern_weight,
+    },
     repo_control::is_repo_control_pattern,
 };
 use std::collections::BTreeMap;
@@ -213,7 +216,7 @@ fn rule_is_redundant(config: &RepoConfig, index: usize, rule: &RepoConfigVisibil
             })
             .unwrap_or(config.visibility.default)
     };
-    let base = rule_base_path(&rule.path);
+    let base = pattern_base_path(&rule.path);
     if without_rule(base) != rule.visibility {
         return false;
     }
@@ -240,7 +243,7 @@ fn effective_visibilities_by_rule_base(config: &RepoConfig) -> BTreeMap<String, 
         .rules
         .iter()
         .map(|rule| {
-            let base = rule_base_path(&rule.path).to_string();
+            let base = pattern_base_path(&rule.path).to_string();
             let visibility = effective_config_visibility_for_path(config, &base);
             (base, visibility)
         })
@@ -263,8 +266,8 @@ fn sort_visibility_rules(
     base_visibilities: &BTreeMap<String, ConfigVisibility>,
 ) {
     config.visibility.rules.sort_by(|left, right| {
-        rule_base_path(&left.path)
-            .cmp(rule_base_path(&right.path))
+        pattern_base_path(&left.path)
+            .cmp(pattern_base_path(&right.path))
             .then_with(|| {
                 semantic_sort_rank(left, base_visibilities)
                     .cmp(&semantic_sort_rank(right, base_visibilities))
@@ -278,7 +281,7 @@ fn semantic_sort_rank(
     rule: &RepoConfigVisibilityRule,
     base_visibilities: &BTreeMap<String, ConfigVisibility>,
 ) -> u8 {
-    let base = rule_base_path(&rule.path);
+    let base = pattern_base_path(&rule.path);
     if base_visibilities.get(base).copied() == Some(rule.visibility) {
         1
     } else {
@@ -383,26 +386,8 @@ fn folder_rule_path(path: &str) -> String {
     format!("{path}/**")
 }
 
-fn pattern_matches_path(pattern: &str, path: &str) -> bool {
-    if let Some(base) = pattern.strip_suffix("/**") {
-        return path == base
-            || path
-                .strip_prefix(base)
-                .is_some_and(|tail| tail.starts_with('/'));
-    }
-    path == pattern
-}
-
-fn pattern_weight(pattern: &str) -> usize {
-    pattern.strip_suffix("/**").unwrap_or(pattern).len()
-}
-
-fn rule_base_path(pattern: &str) -> &str {
-    pattern.strip_suffix("/**").unwrap_or(pattern)
-}
-
 fn pattern_is_inside_subtree(pattern: &str, folder_path: &str) -> bool {
-    let base = pattern.strip_suffix("/**").unwrap_or(pattern);
+    let base = pattern_base_path(pattern);
     base == folder_path
         || base
             .strip_prefix(folder_path)

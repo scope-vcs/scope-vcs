@@ -1,30 +1,21 @@
+use crate::storage_runtime::{StorageRuntime, StorageSource};
 mod env;
 
 use crate::demo_seed as seed;
 use crate::{
     AppState,
     auth::{clerk::ClerkVerifier, cli::CliAuthService},
-    config::{
-        LOCAL_API_ORIGIN, SCOPE_OPERATOR_TOKEN_ENV, data_dir, git_public_url_from_env,
-        git_repo_root, non_empty_env,
-    },
+    config::{LOCAL_API_ORIGIN, SCOPE_OPERATOR_TOKEN_ENV, git_public_url_from_env, non_empty_env},
     error::ApiError,
-    object_store_config::{
-        encryption_key_from_env, file_from_env, git_segment_file_store_from_env,
-    },
-    persistence::{ensure_private_dir, unix_now},
+    persistence::unix_now,
     product_analytics::ProductAnalytics,
-    push_intents::push_intent_signing_key,
     repo_events::RepoChangeBus,
-    runtime_budgets::{BudgetedObjectStore, RuntimeBudgets},
 };
 use axum::{
     Json,
     extract::{Path, State},
 };
 use scope_api_contract::CliSessionTokenResponse;
-use scope_git_storage::{GitSegmentStore, SegmentEncryptionKey};
-use scope_object_store::{EncryptedObjectStore, ObjectStore};
 use scope_postgres::db::MetadataStore;
 use std::sync::Arc;
 
@@ -37,29 +28,11 @@ pub fn local_maintenance_database_url() -> anyhow::Result<String> {
 pub async fn app_state_from_env() -> anyhow::Result<AppState> {
     let settings = env::validate_local_dev_environment()?;
     let git_public_url = git_public_url_from_env(Some(LOCAL_API_ORIGIN))?;
-    let repo_root = git_repo_root();
-    let data_dir = data_dir(&repo_root);
-    ensure_private_dir(&data_dir)
-        .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
-    let git_storage_writer = Arc::new(crate::retired_git_storage::open_writer(&data_dir)?);
-    let object_encryption_key = encryption_key_from_env()?;
-    let push_intent_signing_key = push_intent_signing_key(&data_dir, Some(&object_encryption_key))
-        .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
-
-    let filesystem_root = data_dir.join("objects");
-    let raw_object_store = Arc::new(EncryptedObjectStore::new(
-        Arc::new(file_from_env(&filesystem_root)),
-        object_encryption_key,
-    ));
-    let git_segment_store = Arc::new(GitSegmentStore::new(
-        Arc::new(git_segment_file_store_from_env(&filesystem_root)?),
-        SegmentEncryptionKey::new("primary", object_encryption_key)?,
-        crate::config::git_segment_store_config_from_env(data_dir.join("git-segments"))?,
-    )?);
-    git_segment_store.cleanup_all_local().await?;
+    let storage = StorageRuntime::from_env(StorageSource::Filesystem).await?;
+    storage.git_segment_store.cleanup_all_local().await?;
     let catalog = seed::catalog(
-        raw_object_store.as_ref(),
-        git_segment_store.as_ref(),
+        storage.object_store.as_ref(),
+        storage.git_segment_store.as_ref(),
         settings.seed_user.clone(),
     )
     .map_err(|error| {
@@ -104,39 +77,26 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
         .start_repo_change_listener(move |payload| {
             listener_bus.publish_notification_payload(&payload)
         })?;
-    let runtime_budgets = Arc::new(RuntimeBudgets::from_env()?);
-    let object_store: Arc<dyn ObjectStore> = Arc::new(BudgetedObjectStore::new(
-        raw_object_store,
-        runtime_budgets.clone(),
-    ));
-
-    let repository_engine = crate::git::repository_engine::RepositoryEngine::new(
-        data_dir.join("git-cache"),
-        crate::config::git_cache_max_bytes_from_env()?,
-    )
-    .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
     let state = AppState {
         metadata,
-        data_dir: Arc::new(data_dir),
-        _git_storage_writer: git_storage_writer,
+        data_dir: storage.data_dir,
         clerk: ClerkVerifier::from_env(),
-        object_store,
-        git_segment_store,
+        object_store: storage.object_store,
+        git_segment_store: storage.git_segment_store,
         cache_grants: crate::cache_grants::CacheGrantIssuer::test(),
         media_grants: crate::media_grants::MediaGrantIssuer::local()?,
-        runtime_budgets,
+        runtime_budgets: storage.runtime_budgets,
         operator_token: non_empty_env(SCOPE_OPERATOR_TOKEN_ENV).map(Arc::from),
         product_analytics: ProductAnalytics::disabled(),
         repo_events,
-        push_intent_signing_key,
-        repository_engine: repository_engine.clone(),
+        push_intent_signing_key: storage.push_intent_signing_key,
+        repository_engine: storage.repository_engine,
         git_public_url: Arc::from(git_public_url),
         #[cfg(test)]
         test_object_store: Arc::new(scope_object_store::MemoryObjectStore::new()),
     };
-    state.backfill_repository_landing_files().await?;
     state.backfill_repository_workflow_catalogs().await?;
-    repository_engine.start_reaper();
+    state.repository_engine.start_reaper();
     state.start_run_attempt_recovery();
     state.start_run_retention();
     state.start_git_segment_recovery();

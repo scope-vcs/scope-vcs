@@ -6,19 +6,20 @@ use crate::{
         push_head_to_ref_with_bearer, run_git_in_repo, scope_remote_head_oid,
         set_branch_config_value,
     },
+    git_transport::ScopeRemote,
     push::DEFAULT_SCOPE_BRANCH,
-    request::remote::{REQUEST_REMOTE_KEY, RequestRemoteTarget},
 };
 use anyhow::{Context, bail};
 use scope_api_contract::RequestAudience;
 
+const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
 const REQUEST_ID_KEY: &str = "scopeRequestId";
 const REQUEST_OWNER_KEY: &str = "scopeRequestOwner";
 const REQUEST_REPO_KEY: &str = "scopeRequestRepo";
 const REQUEST_AUDIENCE_KEY: &str = "scopeRequestAudience";
 
 pub(super) struct RequestContext {
-    pub(super) target: RequestRemoteTarget,
+    pub(super) target: ScopeRemote,
     pub(super) repo: RepoSummaryResponse,
 }
 
@@ -45,7 +46,7 @@ pub(super) fn load_context_and_request_id(
 
 pub(super) fn refresh_main_projection(
     git_repo: &GitRepo,
-    target: &RequestRemoteTarget,
+    target: &ScopeRemote,
     audience: RequestAudience,
     session_token: &str,
 ) -> anyhow::Result<String> {
@@ -65,7 +66,7 @@ pub(super) fn refresh_main_projection(
 }
 
 pub(super) fn push_request_head(
-    target: &RequestRemoteTarget,
+    target: &ScopeRemote,
     session_token: &str,
     request_head_oid: &str,
     request_id: &str,
@@ -192,47 +193,28 @@ fn validate_stored_request_target(
     }
 }
 
-pub(super) fn store_branch_context(
-    git_repo: &GitRepo,
-    branch: &str,
-    context: &RequestContext,
-) -> anyhow::Result<()> {
-    set_branch_config_value(git_repo, branch, REQUEST_OWNER_KEY, &context.target.owner)?;
-    set_branch_config_value(git_repo, branch, REQUEST_REPO_KEY, &context.target.repo)?;
-    set_branch_config_value(git_repo, branch, REQUEST_REMOTE_KEY, &context.target.remote)?;
-    Ok(())
-}
-
 pub(super) fn store_request_metadata(
     git_repo: &GitRepo,
     branch: &str,
     context: &RequestContext,
     request: &RequestSummaryResponse,
 ) -> anyhow::Result<()> {
-    store_branch_context(git_repo, branch, context)?;
-    store_request_metadata_fields(git_repo, branch, &request.id, request.audience)
-}
-
-pub(super) fn store_request_metadata_fields(
-    git_repo: &GitRepo,
-    branch: &str,
-    request_id: &str,
-    audience: RequestAudience,
-) -> anyhow::Result<()> {
-    set_branch_config_value(git_repo, branch, REQUEST_ID_KEY, request_id)?;
+    set_branch_config_value(git_repo, branch, REQUEST_OWNER_KEY, &context.target.owner)?;
+    set_branch_config_value(git_repo, branch, REQUEST_REPO_KEY, &context.target.repo)?;
+    set_branch_config_value(git_repo, branch, REQUEST_REMOTE_KEY, &context.target.remote)?;
+    set_branch_config_value(git_repo, branch, REQUEST_ID_KEY, &request.id)?;
     set_branch_config_value(
         git_repo,
         branch,
         REQUEST_AUDIENCE_KEY,
-        audience_config_value(audience),
-    )?;
-    Ok(())
+        audience_config_value(request.audience),
+    )
 }
 
 pub(super) fn track_request_branch_ref(
     git_repo: &GitRepo,
     branch: &str,
-    target: &RequestRemoteTarget,
+    target: &ScopeRemote,
     request_name: &str,
     request_head_oid: &str,
 ) -> anyhow::Result<()> {
@@ -245,13 +227,6 @@ pub(super) fn track_request_branch_ref(
         "merge",
         &format!("refs/heads/{request_name}"),
     )
-}
-
-pub(super) fn projection_label_for_audience(audience: RequestAudience) -> &'static str {
-    match audience {
-        RequestAudience::Public => "public main",
-        RequestAudience::Private => "private main",
-    }
 }
 
 pub(super) fn remote_main_ref(remote: &str) -> String {
@@ -290,7 +265,7 @@ mod tests {
     use crate::{
         git_repo::GitRepo,
         git_transport::{GitAccess, ScopeRemote},
-        test_support::TestDir,
+        test_support::TempDir,
     };
     use scope_api_contract::RequestAudience;
     use std::fs;
@@ -321,7 +296,7 @@ mod tests {
     fn main_projection_refresh_follows_alternating_request_audiences() {
         let (public, public_oid) = repository_with_commit("public-main", "public.txt");
         let (private, private_oid) = repository_with_commit("private-main", "private.txt");
-        let checkout = TestDir::git_repo("alternating-main", "main");
+        let checkout = TempDir::git_repo("alternating-main", "main");
         let repo = GitRepo {
             root: checkout.path().to_path_buf(),
         };
@@ -348,8 +323,8 @@ mod tests {
         );
     }
 
-    fn repository_with_commit(label: &str, file: &str) -> (TestDir, String) {
-        let dir = TestDir::git_repo(label, "main");
+    fn repository_with_commit(label: &str, file: &str) -> (TempDir, String) {
+        let dir = TempDir::git_repo(label, "main");
         dir.run_git(["config", "user.email", "scope@example.test"]);
         dir.run_git(["config", "user.name", "Scope Test"]);
         fs::write(dir.path().join(file), format!("{label}\n")).unwrap();

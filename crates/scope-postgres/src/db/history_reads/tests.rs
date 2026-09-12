@@ -4,12 +4,20 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
-    history::history_view,
     policy::{ScopePath, Visibility},
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
+    projection::{FileChange, LogicalCommit, LogicalCommitOrigin, SourceGraph},
     repository::RepoLifecycleState,
+    visibility_changes::VisibilityChangeSet,
 };
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+fn history_view(
+    graph: &SourceGraph,
+    sets: &[VisibilityChangeSet],
+    view_key: ProjectionViewKey,
+) -> HistoryView {
+    history_view_from_projection(project_graph(graph, sets, view_key), graph, sets)
+}
 
 fn fixture(commits: usize) -> (MetadataStore, Repository) {
     let store =
@@ -68,7 +76,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         .execute_unprepared("DELETE FROM scope_repository_history_views")
         .await
         .unwrap();
-    let baseline = Instant::now();
     let hydrated = store
         .repositories()
         .repository("owner", "history")
@@ -80,8 +87,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         &hydrated.visibility_change_sets,
         ProjectionViewKey::Private,
     );
-    let baseline_elapsed = baseline.elapsed();
-    let cold = Instant::now();
     let first = store
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
@@ -95,7 +100,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         })
         .await
         .unwrap();
-    let cold_elapsed = cold.elapsed();
     assert!(first.next_boundary.is_some());
     assert_eq!(first.view.entries, expected_private.entries[..50]);
     assert_eq!(
@@ -105,7 +109,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
 
     let held = store.db.begin().await.unwrap();
     held.execute_unprepared("LOCK TABLE scope_logical_commits, scope_file_changes, scope_live_files IN ACCESS EXCLUSIVE MODE").await.unwrap();
-    let warm = Instant::now();
     let next = tokio::time::timeout(
         Duration::from_secs(2),
         store
@@ -123,7 +126,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
     .await
     .expect("warm pages must not hydrate source history")
     .unwrap();
-    let warm_elapsed = warm.elapsed();
     assert_eq!(next.view.entries, expected_private.entries[50..100]);
     let public_access = tokio::time::timeout(
         Duration::from_secs(2),
@@ -174,9 +176,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         .unwrap();
     assert_eq!(detail.view.entries, vec![public.view.entries[10].clone()]);
     held.rollback().await.unwrap();
-    eprintln!(
-        "1000 commits/32 paths: baseline hydrate+private projection={baseline_elapsed:?}, cold build both audiences={cold_elapsed:?}, warm 50-entry page={warm_elapsed:?}"
-    );
 }
 
 #[tokio::test]

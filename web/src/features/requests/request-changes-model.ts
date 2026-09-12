@@ -1,4 +1,5 @@
-import type { CommitSummary, RequestRevisions } from '@/api/types'
+import type { CommitSummary } from '@/api/types'
+import type { RequestRevisionListResponse } from '@/api/types.generated'
 import type { RequestDiscussion } from './request-discussion-types'
 
 export type RequestChangeSelection = {
@@ -7,8 +8,8 @@ export type RequestChangeSelection = {
 }
 
 export function requestChangeSelection(
-  revisions: RequestRevisions['revisions'],
-  reviewRevisionId: RequestRevisions['review_revision_id'],
+  revisions: RequestRevisionListResponse['revisions'],
+  reviewRevisionId: RequestRevisionListResponse['review_revision_id'],
   search: RequestChangeSelection,
 ) {
   const selectedRevisionId = search.revision ?? reviewRevisionId
@@ -29,7 +30,7 @@ export function requestChangeSelection(
 }
 
 function selectionError(
-  revision: RequestRevisions['revisions'][number] | null,
+  revision: RequestRevisionListResponse['revisions'][number] | null,
   commit: string | null,
   search: RequestChangeSelection,
   selectedRevisionId: string | null | undefined,
@@ -53,7 +54,7 @@ function selectionError(
 }
 
 export function orderedRequestCommits(
-  revisions: RequestRevisions['revisions'],
+  revisions: RequestRevisionListResponse['revisions'],
 ): CommitSummary[] {
   return [...revisions].reverse().flatMap((revision) =>
     [...revision.commits].reverse().map((commit) => ({
@@ -67,7 +68,7 @@ export function orderedRequestCommits(
 }
 
 export function requestRevisionPin(
-  revision: RequestRevisions['revisions'][number] | null,
+  revision: RequestRevisionListResponse['revisions'][number] | null,
   commit: string | null,
   pinnedRevisionId: string | undefined,
 ): RequestChangeSelection | null {
@@ -83,7 +84,7 @@ export function requestRevisionCommitId(revisionId: string, commitOid: string) {
 }
 
 export function requestCommitForListId(
-  revisions: RequestRevisions['revisions'],
+  revisions: RequestRevisionListResponse['revisions'],
   listId: string,
 ) {
   for (const revision of revisions) {
@@ -95,7 +96,7 @@ export function requestCommitForListId(
 }
 
 export function missingRequestCommitFileError(
-  commit: RequestRevisions['revisions'][number]['commits'][number],
+  commit: RequestRevisionListResponse['revisions'][number]['commits'][number],
 ) {
   return commit.files_truncated
     ? 'This file is outside the bounded file list for the selected commit.'
@@ -104,7 +105,7 @@ export function missingRequestCommitFileError(
 
 export function discussionsForRequestCommit(
   discussions: RequestDiscussion[],
-  revision: RequestRevisions['revisions'][number] | null,
+  revision: RequestRevisionListResponse['revisions'][number] | null,
   commitOid: string | null,
 ) {
   if (!revision || !commitOid) return []

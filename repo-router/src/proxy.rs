@@ -2,7 +2,8 @@ use crate::{
     app::RouterState,
     backend_selection::GitRequestKind,
     discovery::{Backend, DiscoveryFreshness},
-    rank_backends, repository_key,
+    rendezvous::rank_backends,
+    repository_path::repository_key,
 };
 use axum::{
     body::{Body, Bytes, to_bytes},
@@ -22,18 +23,13 @@ struct UpstreamRequest {
 
 struct RouteContext<'a> {
     repository: &'a str,
-    backends: &'a [Backend],
-    ranked: &'a [&'a str],
+    ranked: &'a [&'a Backend],
     freshness: DiscoveryFreshness,
 }
 
 impl RouteContext<'_> {
     fn backend(&self, rank: usize) -> &Backend {
-        let selected = self.ranked[rank];
-        self.backends
-            .iter()
-            .find(|backend| backend.identity == selected)
-            .expect("ranked backend came from discovered backends")
+        self.ranked[rank]
     }
 }
 
@@ -48,13 +44,10 @@ pub(crate) async fn repository_request(
         Ok(discovery) => discovery,
         Err(error) => return upstream_unavailable(&repository, error),
     };
-    let identities = discovery
-        .backends
-        .iter()
-        .map(|backend| backend.identity.clone())
-        .collect::<Vec<_>>();
     let kind = GitRequestKind::classify(request.method(), request.uri());
-    let ranked = rank_backends(&repository, &identities);
+    let ranked = rank_backends(&repository, &discovery.backends, |backend| {
+        backend.address.to_string()
+    });
     let candidate_ranks = state.selector.candidate_indices(kind, ranked.len());
     if candidate_ranks.is_empty() {
         return upstream_unavailable(&repository, "no API replicas are available");
@@ -72,7 +65,6 @@ pub(crate) async fn repository_request(
     };
     let route = RouteContext {
         repository: &repository,
-        backends: &discovery.backends,
         ranked: &ranked,
         freshness: discovery.freshness,
     };
@@ -153,7 +145,7 @@ async fn forward_upload_pack(
                 if attempt_index > 0 {
                     tracing::info!(
                         repository = route.repository,
-                        backend = %backend.identity,
+                        backend = %backend.address,
                         backend_rank = rank + 1,
                         attempt = attempt_index + 1,
                         discovery_state = ?route.freshness,
@@ -165,7 +157,7 @@ async fn forward_upload_pack(
             Err(error) if error.is_connect() && attempt_index + 1 < candidate_ranks.len() => {
                 tracing::warn!(
                     repository = route.repository,
-                    backend = %backend.identity,
+                    backend = %backend.address,
                     backend_rank = rank + 1,
                     attempt = attempt_index + 1,
                     candidate_count = candidate_ranks.len(),
@@ -195,7 +187,7 @@ fn route_telemetry(
 ) {
     tracing::info!(
         repository = route.repository,
-        backend = %backend.identity,
+        backend = %backend.address,
         backend_rank = rank + 1,
         attempt,
         candidate_count,
@@ -266,10 +258,7 @@ fn upstream_unavailable(repository: &str, error: impl std::fmt::Display) -> Resp
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        BackendDiscovery, RouterConfig,
-        app::{test_router, test_router_with_read_replicas, test_router_with_state},
-    };
+    use crate::{RouterConfig, app::test_router_with_state, discovery::BackendDiscovery};
     use axum::http::Method;
     use axum::{Router, routing::any};
     use std::{
@@ -305,8 +294,8 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        let rank_one = rank_backends("scope/router", &identities)[0];
-        let live_listener = if rank_one == first_address.to_string() {
+        let rank_one = rank_backends("scope/router", &identities, Clone::clone)[0];
+        let live_listener = if *rank_one == first_address.to_string() {
             drop(first);
             second
         } else {
@@ -359,7 +348,12 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-        let router = test_router(vec![address]);
+        let router = test_router_with_state(
+            BackendDiscovery::fixed(vec![address]),
+            reqwest::Client::new(),
+            1,
+            64 * 1024 * 1024,
+        );
         let request = Request::builder()
             .method("POST")
             .uri("/git/permissioned/scope/router/git-upload-pack")
@@ -492,7 +486,7 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        let rank_one = rank_backends("scope/router", &identities)[0];
+        let rank_one = rank_backends("scope/router", &identities, Clone::clone)[0];
         let fallback_requests = Arc::new(AtomicUsize::new(0));
         let fallback_counter = Arc::clone(&fallback_requests);
         let fallback = Router::new().fallback(any(move || {
@@ -501,7 +495,7 @@ mod tests {
         }));
         let stalled =
             Router::new().fallback(any(|| async { std::future::pending::<String>().await }));
-        if rank_one == addresses[0].to_string() {
+        if *rank_one == addresses[0].to_string() {
             tokio::spawn(async move { axum::serve(first, stalled).await.unwrap() });
             tokio::spawn(async move { axum::serve(second, fallback).await.unwrap() });
         } else {
@@ -530,15 +524,20 @@ mod tests {
 
     #[tokio::test]
     async fn refuses_non_git_paths() {
-        let response = test_router(Vec::new())
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/repos/scope/router")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = test_router_with_state(
+            BackendDiscovery::fixed(Vec::new()),
+            reqwest::Client::new(),
+            1,
+            64 * 1024 * 1024,
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/v1/repos/scope/router")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
@@ -552,12 +551,17 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        let expected = rank_backends("scope/router", &identities)
+        let expected = rank_backends("scope/router", &identities, Clone::clone)
             .into_iter()
             .take(2)
-            .map(str::to_owned)
+            .cloned()
             .collect::<BTreeSet<_>>();
-        let router = test_router_with_read_replicas(addresses, 2);
+        let router = test_router_with_state(
+            BackendDiscovery::fixed(addresses),
+            reqwest::Client::new(),
+            2,
+            64 * 1024 * 1024,
+        );
 
         let actual = [
             (
@@ -592,8 +596,13 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        let expected = rank_backends("scope/router", &identities)[0];
-        let router = test_router_with_read_replicas(addresses, 3);
+        let expected = rank_backends("scope/router", &identities, Clone::clone)[0];
+        let router = test_router_with_state(
+            BackendDiscovery::fixed(addresses),
+            reqwest::Client::new(),
+            3,
+            64 * 1024 * 1024,
+        );
 
         for (method, uri) in [
             (
@@ -605,7 +614,7 @@ mod tests {
                 "/git/permissioned/scope/router/git-receive-pack",
             ),
         ] {
-            assert_eq!(selected_backend(&router, method, uri).await, expected);
+            assert_eq!(selected_backend(&router, method, uri).await, *expected);
         }
     }
 

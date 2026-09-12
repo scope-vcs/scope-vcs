@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   displayRouteFilePath,
+  parseRouteFilePathSearch,
   parseRouteFileSearch,
   selectedRouteFilePath,
 } from './route-file'
@@ -14,7 +15,13 @@ test('normalizes repository file paths for URLs', () => {
 test('rejects empty, non-string, and traversing route file searches', () => {
   for (const value of ['', null, 42, '.', '..', '../secret', 'src/../secret']) {
     assert.equal(parseRouteFileSearch(value), undefined)
+    assert.equal(parseRouteFilePathSearch(value), undefined)
   }
+})
+
+test('route file path searches are rooted for display', () => {
+  assert.equal(parseRouteFilePathSearch('docs/guide.md'), '/docs/guide.md')
+  assert.equal(parseRouteFilePathSearch('///docs/guide.md'), '/docs/guide.md')
 })
 
 test('resolves a normalized route path against repository files', () => {

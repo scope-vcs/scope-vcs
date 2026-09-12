@@ -48,7 +48,7 @@ pub(super) fn store_seed_git_pack(
             .block_on(store.ingest_blocking_reader(
                 &ingest_repository_id,
                 std::io::Cursor::new(output.stdout),
-                crate::config::default_git_storage_limits().max_object_bytes() as u64,
+                scope_git::GitStorageLimits::default().max_object_bytes() as u64,
             ))
     })
     .join()
@@ -58,7 +58,7 @@ pub(super) fn store_seed_git_pack(
         staged.segment.clone(),
         head_oid,
         None,
-        crate::config::default_git_storage_limits(),
+        scope_git::GitStorageLimits::default(),
     )?;
     let upload = GitSegmentUpload {
         segment_id: staged.segment.segment_id.clone(),

@@ -6,7 +6,7 @@ use crate::{
     config::GIT_PUSH_TOKEN_PREFIX,
     error::ApiError,
     git::{
-        InitialPushCredential, ReceivePackAuthorization, authorize_git_write_token_for_repo,
+        InitialPushCredential, ReceivePackAuthorization, authorize_git_push_token_for_repo,
         authorize_initial_push_for_repo, find_repo_after_git_scope_token, git_credential_error,
         import::PreparedReceivePackUpdate,
         invalid_git_credentials,
@@ -108,7 +108,7 @@ pub(crate) async fn authorize(
                 )),
                 RepoLifecycleState::Ready => match credential {
                     InitialPushCredential::GitPushToken { secret } => {
-                        let author_id = authorize_git_write_token_for_repo(&repo, &secret)
+                        let author_id = authorize_git_push_token_for_repo(&repo, &secret)
                             .map_err(git_credential_error)?;
                         push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
                         Ok(ReceivePackAccess::ReadyMember {
@@ -152,77 +152,45 @@ pub(crate) async fn authorize(
                     push_intent,
                 });
             }
-            if push_policy.mode == MainPushMode::Denied {
-                if repo.record.lifecycle_state == RepoLifecycleState::Ready
-                    && actor_can_receive_request_push(
-                        state,
-                        &repo,
-                        &principal,
-                        &author_id,
-                        push_policy.access,
-                    )
-                    .await?
-                {
-                    return Ok(ReceivePackAccess::RequestContributor {
-                        author_id,
-                        incarnation: repo.incarnation(),
-                    });
+            let rejection = if push_policy.mode == MainPushMode::Denied {
+                ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
+            } else {
+                if repo.record.lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
+                    return Err(ApiError::conflict(
+                        "repo is awaiting its first push and cannot receive another push",
+                    ));
                 }
-                return Err(ApiError::not_found(format!(
-                    "repo {owner}/{repo_name} not found"
-                )));
-            }
-            match repo.record.lifecycle_state {
-                RepoLifecycleState::AwaitingFirstPush => Err(ApiError::conflict(
-                    "repo is awaiting its first push and cannot receive another push",
-                )),
-                RepoLifecycleState::Ready => {
-                    if let Some(secret) = push_intent_secret {
-                        match state.validate_push_intent_secret(secret) {
-                            Ok(push_intent) => {
-                                push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
-                                return Ok(ReceivePackAccess::ReadyMember {
-                                    author_id,
-                                    incarnation: repo.incarnation(),
-                                    push_intent,
-                                });
-                            }
-                            Err(error) => {
-                                if actor_can_receive_request_push(
-                                    state,
-                                    &repo,
-                                    &principal,
-                                    &author_id,
-                                    push_policy.access,
-                                )
-                                .await?
-                                {
-                                    return Ok(ReceivePackAccess::RequestContributor {
-                                        author_id,
-                                        incarnation: repo.incarnation(),
-                                    });
-                                }
-                                return Err(error);
-                            }
+                match push_intent_secret {
+                    Some(secret) => match state.validate_push_intent_secret(secret) {
+                        Ok(push_intent) => {
+                            push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+                            return Ok(ReceivePackAccess::ReadyMember {
+                                author_id,
+                                incarnation: repo.incarnation(),
+                                push_intent,
+                            });
                         }
-                    }
-                    if actor_can_receive_request_push(
-                        state,
-                        &repo,
-                        &principal,
-                        &author_id,
-                        push_policy.access,
-                    )
-                    .await?
-                    {
-                        Ok(ReceivePackAccess::RequestContributor {
-                            author_id,
-                            incarnation: repo.incarnation(),
-                        })
-                    } else {
-                        Err(ApiError::forbidden("valid Scope push intent required"))
-                    }
+                        Err(error) => error,
+                    },
+                    None => ApiError::forbidden("valid Scope push intent required"),
                 }
+            };
+            if repo.record.lifecycle_state == RepoLifecycleState::Ready
+                && actor_can_receive_request_push(
+                    state,
+                    &repo,
+                    &principal,
+                    &author_id,
+                    push_policy.access,
+                )
+                .await?
+            {
+                Ok(ReceivePackAccess::RequestContributor {
+                    author_id,
+                    incarnation: repo.incarnation(),
+                })
+            } else {
+                Err(rejection)
             }
         }
     }

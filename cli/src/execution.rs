@@ -18,12 +18,6 @@ pub struct Options {
 static OPTIONS: OnceLock<Options> = OnceLock::new();
 
 pub fn configure(options: Options) -> anyhow::Result<()> {
-    if let Some(url) = &options.api_url {
-        crate::context::validate_api_url(url)?;
-    }
-    if let Some(repository) = &options.repository {
-        crate::clone::parse_repo_spec(repository)?;
-    }
     OPTIONS
         .set(options)
         .map_err(|_| anyhow::anyhow!("CLI execution options were already configured"))

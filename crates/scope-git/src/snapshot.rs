@@ -1,4 +1,4 @@
-use crate::{GitStorageError, GitStorageLimits};
+use crate::{GitSnapshotError, GitStorageLimits};
 use scope_domain::repository::git::{GitHead, GitPackSpan, GitSegmentRef};
 use scope_object_store::ensure_object_size;
 
@@ -13,7 +13,7 @@ pub fn prepare_git_push(
     head_oid: String,
     previous: Option<&GitHead>,
     storage_limits: GitStorageLimits,
-) -> Result<StoredGitPush, GitStorageError> {
+) -> Result<StoredGitPush, GitSnapshotError> {
     ensure_object_size(
         "write",
         "Git pack",

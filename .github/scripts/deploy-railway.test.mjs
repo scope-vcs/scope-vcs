@@ -67,7 +67,7 @@ function deploy(t, status, predecessors = [], failedPolls = []) {
     } else { process.exit(1); }
   `, { mode: 0o755 });
   writeFileSync(join(bin, "sleep"), "#!/bin/sh\nprintf 'sleep\\n' >> events\n", { mode: 0o755 });
-  const result = spawnSync("bash", [deployScript, "cache-id", root], {
+  const result = spawnSync("bash", [deployScript, "cache-id"], {
     cwd: root,
     encoding: "utf8",
     timeout: 10_000,

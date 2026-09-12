@@ -29,10 +29,32 @@ struct VisibilityState {
     server_changed: Option<bool>,
 }
 
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum DiagnosticState {
+    Ok,
+    Info,
+    Problem,
+    Unavailable,
+    NotChecked,
+}
+
+impl std::fmt::Display for DiagnosticState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Ok => "ok",
+            Self::Info => "info",
+            Self::Problem => "problem",
+            Self::Unavailable => "unavailable",
+            Self::NotChecked => "not_checked",
+        })
+    }
+}
+
 #[derive(Serialize)]
 struct Diagnostic {
     name: &'static str,
-    state: &'static str,
+    state: DiagnosticState,
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     recovery: Option<String>,
@@ -101,7 +123,13 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
     };
     let valid_endpoint = match context::validate_api_url(&endpoint) {
         Ok(()) => {
-            record(&mut report, "endpoint", "ok", endpoint.clone(), None);
+            record(
+                &mut report,
+                "endpoint",
+                DiagnosticState::Ok,
+                endpoint.clone(),
+                None,
+            );
             true
         }
         Err(error) => {
@@ -109,7 +137,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             record(
                 &mut report,
                 "endpoint",
-                "problem",
+                DiagnosticState::Problem,
                 error.to_string(),
                 Some("Set --api-url to a valid Scope HTTP(S) endpoint".into()),
             );
@@ -123,7 +151,11 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             record(
                 &mut report,
                 "git",
-                if supported { "ok" } else { "problem" },
+                if supported {
+                    DiagnosticState::Ok
+                } else {
+                    DiagnosticState::Problem
+                },
                 version,
                 (!supported)
                     .then(|| "Install Git 2.38 or newer for request merge inspection".into()),
@@ -134,7 +166,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             record(
                 &mut report,
                 "git",
-                "problem",
+                DiagnosticState::Problem,
                 "Git is not available on PATH".into(),
                 Some("Install Git 2.38 or newer".into()),
             );
@@ -145,7 +177,13 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
         match context::discover_optional() {
             Ok(repo) => repo,
             Err(error) => {
-                record(&mut report, "checkout", "problem", error.to_string(), None);
+                record(
+                    &mut report,
+                    "checkout",
+                    DiagnosticState::Problem,
+                    error.to_string(),
+                    None,
+                );
                 None
             }
         }
@@ -158,7 +196,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                 record(
                     &mut report,
                     "checkout",
-                    "ok",
+                    DiagnosticState::Ok,
                     local.root.display().to_string(),
                     None,
                 );
@@ -166,22 +204,28 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                     record(
                         &mut report,
                         "commit",
-                        "problem",
+                        DiagnosticState::Problem,
                         "No committed HEAD".into(),
                         Some("Create a Git commit before publishing or running a workflow".into()),
                     );
                 }
                 report.local = Some(local);
             }
-            Err(error) => record(&mut report, "checkout", "problem", error.to_string(), None),
+            Err(error) => record(
+                &mut report,
+                "checkout",
+                DiagnosticState::Problem,
+                error.to_string(),
+                None,
+            ),
         }
         match local_visibility(repo) {
             Ok(visibility) => {
                 let message = if visibility.local_edits == Some(true) { "Local visibility changes have not been published" } else { "Local visibility config is valid" };
-                record(&mut report, "visibility", "ok", message.into(), None);
+                record(&mut report, "visibility", DiagnosticState::Ok, message.into(), None);
                 if let Some(local) = &mut report.local { local.visibility = Some(visibility); }
             }
-            Err(error) => record(&mut report, "visibility", "problem", error.to_string(), Some("Inspect setup with scope visibility show; use scope init for a new repository or repair the retained repository setup".into())),
+            Err(error) => record(&mut report, "visibility", DiagnosticState::Problem, error.to_string(), Some("Inspect setup with scope visibility show; use scope init for a new repository or repair the retained repository setup".into())),
         }
         if let Some(head) = report
             .local
@@ -189,15 +233,15 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             .and_then(|local| local.head_oid.clone())
         {
             match crate::agent_context::ensure_repo_rules_ready_for_push(&repo.root, &head) {
-                Ok(()) => record(&mut report, "rules", "ok", "Contribution rules and agent files are synchronized in the worktree and committed HEAD".into(), None),
-                Err(error) => record(&mut report, "rules", "problem", error.to_string(), Some("Run scope rules sync, then commit the generated files".into())),
+                Ok(()) => record(&mut report, "rules", DiagnosticState::Ok, "Contribution rules and agent files are synchronized in the worktree and committed HEAD".into(), None),
+                Err(error) => record(&mut report, "rules", DiagnosticState::Problem, error.to_string(), Some("Run scope rules sync, then commit the generated files".into())),
             }
         }
     } else {
         record(
             &mut report,
             "checkout",
-            "info",
+            DiagnosticState::Info,
             "No local checkout; remote-only commands can use --repo owner/repo".into(),
             None,
         );
@@ -209,7 +253,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                 record(
                     &mut report,
                     "repository",
-                    "ok",
+                    DiagnosticState::Ok,
                     format!("{}/{}", target.owner, target.repo),
                     None,
                 );
@@ -229,7 +273,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                 Some(target)
             }
             Err(error) => {
-                record(&mut report, "repository", "problem", error.to_string(), Some("Choose --remote NAME or --repo owner/repo; initialize a new Scope repository with scope init --name NAME".into()));
+                record(&mut report, "repository", DiagnosticState::Problem, error.to_string(), Some("Choose --remote NAME or --repo owner/repo; initialize a new Scope repository with scope init --name NAME".into()));
                 None
             }
         }
@@ -240,7 +284,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
         record(
             &mut report,
             "remote",
-            "not_checked",
+            DiagnosticState::NotChecked,
             "Offline mode; account, server visibility, requests, and runs were not queried".into(),
             None,
         );
@@ -283,7 +327,7 @@ fn inspect_remote(
             record(
                 report,
                 "authentication",
-                "problem",
+                DiagnosticState::Problem,
                 "Not signed in".into(),
                 Some("Run scope login, or scope login --exchange-file PATH for automation".into()),
             );
@@ -293,7 +337,7 @@ fn inspect_remote(
             record(
                 report,
                 "authentication",
-                "problem",
+                DiagnosticState::Problem,
                 error.to_string(),
                 Some("Check that the credential store is available".into()),
             );
@@ -306,7 +350,13 @@ fn inspect_remote(
     {
         Ok(client) => client,
         Err(error) => {
-            record(report, "remote", "problem", error.to_string(), None);
+            record(
+                report,
+                "remote",
+                DiagnosticState::Problem,
+                error.to_string(),
+                None,
+            );
             return;
         }
     };
@@ -316,7 +366,7 @@ fn inspect_remote(
             record(
                 report,
                 "authentication",
-                "ok",
+                DiagnosticState::Ok,
                 format!("Signed in as @{}", user.handle),
                 None,
             );
@@ -326,7 +376,7 @@ fn inspect_remote(
             record(
                 report,
                 "authentication",
-                "problem",
+                DiagnosticState::Problem,
                 "Saved session expired or was revoked".into(),
                 Some("Run scope login".into()),
             );
@@ -336,7 +386,7 @@ fn inspect_remote(
             record(
                 report,
                 "remote",
-                "unavailable",
+                DiagnosticState::Unavailable,
                 error.to_string(),
                 Some(
                     "Retry when Scope is reachable; local state remains available with --offline"
@@ -355,7 +405,7 @@ fn inspect_remote(
             record(
                 report,
                 "repository access",
-                "problem",
+                DiagnosticState::Problem,
                 error.to_string(),
                 None,
             );
@@ -376,14 +426,14 @@ fn inspect_remote(
                         .map(|base| base != &server.config_hash);
                     visibility.server_hash = Some(server.config_hash);
                     if visibility.server_changed == Some(true) {
-                        record(report, "visibility drift", "problem", "Server visibility changed since local setup/review".into(), Some("Inspect scope visibility show and resolve local edits before scope push --main".into()));
+                        record(report, "visibility_drift", DiagnosticState::Problem, "Server visibility changed since local setup/review".into(), Some("Inspect scope visibility show and resolve local edits before scope push --main".into()));
                     }
                 }
             }
             Err(error) => record(
                 report,
                 "server visibility",
-                "unavailable",
+                DiagnosticState::Unavailable,
                 error.to_string(),
                 None,
             ),
@@ -397,7 +447,13 @@ fn inspect_remote(
         let remote = (!target.remote.is_empty()).then_some(target.remote.as_str());
         match crate::request::inspect_current_request(checkout, session, remote) {
             Ok(request) => report.request = request,
-            Err(error) => record(report, "request", "unavailable", error.to_string(), None),
+            Err(error) => record(
+                report,
+                "request",
+                DiagnosticState::Unavailable,
+                error.to_string(),
+                None,
+            ),
         }
     }
     if report
@@ -408,13 +464,13 @@ fn inspect_remote(
         record(
             report,
             "runs",
-            "not_checked",
+            DiagnosticState::NotChecked,
             "Workflow runs are available to repository maintainers".into(),
             None,
         );
         return;
     }
-    match api::run_history(session, &target.owner, &target.repo, None, 20, None) {
+    match api::run_history(session, &target.owner, &target.repo, None, None, 20, None) {
         Ok(history) => {
             let head = report
                 .request
@@ -434,7 +490,7 @@ fn inspect_remote(
             record(
                 report,
                 "runs",
-                "ok",
+                DiagnosticState::Ok,
                 format!(
                     "{} matching runs in the 20 most recent repository runs",
                     report.recent_matching_runs.len()
@@ -442,18 +498,27 @@ fn inspect_remote(
                 None,
             );
         }
-        Err(error) => record(report, "runs", "unavailable", error.to_string(), None),
+        Err(error) => record(
+            report,
+            "runs",
+            DiagnosticState::Unavailable,
+            error.to_string(),
+            None,
+        ),
     }
 }
 
 fn record(
     report: &mut Report,
     name: &'static str,
-    state: &'static str,
+    state: DiagnosticState,
     message: String,
     recovery: Option<String>,
 ) {
-    if matches!(state, "problem" | "unavailable") {
+    if matches!(
+        state,
+        DiagnosticState::Problem | DiagnosticState::Unavailable
+    ) {
         report.healthy = false;
     }
     report.diagnostics.push(Diagnostic {
@@ -485,16 +550,16 @@ fn check_fetch_auth(
     if helper.as_deref() == Some("!scope git-credential") {
         record(
             report,
-            "Git authentication",
-            "ok",
+            "git_authentication",
+            DiagnosticState::Ok,
             "Repository credential helper configured".into(),
             None,
         );
     } else {
         record(
             report,
-            "Git authentication",
-            "problem",
+            "git_authentication",
+            DiagnosticState::Problem,
             "Scope credential helper is missing for the permissioned remote".into(),
             Some("Use scope pull to configure permissioned fetch authentication".into()),
         );
@@ -517,7 +582,7 @@ fn status_lines(report: &Report) -> Vec<String> {
             local
                 .head_oid
                 .as_deref()
-                .map(|oid| &oid[..oid.len().min(12)])
+                .map(crate::display::short_oid)
                 .unwrap_or("none"),
             if local.dirty {
                 "uncommitted changes"
@@ -566,7 +631,10 @@ fn status_lines(report: &Report) -> Vec<String> {
         ));
     }
     for check in &report.diagnostics {
-        if matches!(check.state, "problem" | "unavailable" | "not_checked") {
+        if matches!(
+            check.state,
+            DiagnosticState::Problem | DiagnosticState::Unavailable | DiagnosticState::NotChecked
+        ) {
             lines.push(format!("{}: {}", check.name, check.message));
         }
     }

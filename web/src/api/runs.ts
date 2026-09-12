@@ -1,5 +1,7 @@
 import { createApiClient } from '@/api/client'
 import type { ApiClient } from '@/api/client'
+import { repoRoute } from '@/api/paths'
+import { parseRepoParams } from '@/api/repo-params'
 import type {
   RepoParams,
   RepoRunHistoryInput,
@@ -14,7 +16,7 @@ export async function loadRepoRunWorkflowsForRequest(
   api: ApiClient = createApiClient(),
 ) {
   return api.get(
-    repoPath(ApiRouteTemplates.repoRunWorkflows, data),
+    repoRoute(ApiRouteTemplates.repoRunWorkflows, data),
     apiValidators.RepositoryRunWorkflowListResponse,
     { auth: 'optional' },
   )
@@ -30,17 +32,14 @@ export async function loadRepoRunHistoryForRequest(
   if (data.limit !== undefined) query.set('limit', data.limit.toString())
   const suffix = query.size ? `?${query}` : ''
   return api.get(
-    `${repoPath(ApiRouteTemplates.repoRuns, data)}${suffix}`,
+    `${repoRoute(ApiRouteTemplates.repoRuns, data)}${suffix}`,
     apiValidators.RepositoryRunHistoryPageResponse,
     { auth: 'optional' },
   )
 }
 
-export async function loadRepoRunDetailForRequest(
-  data: RunActionInput,
-  api: ApiClient = createApiClient(),
-) {
-  return api.get(
+export async function loadRepoRunDetailForRequest(data: RunActionInput) {
+  return createApiClient().get(
     runPath(ApiRouteTemplates.repoRunDetail, data),
     apiValidators.RepositoryRunDetailResponse,
     { auth: 'required' },
@@ -131,13 +130,6 @@ export function parseRunStepLogsInput(data: RunStepLogsInput): RunStepLogsInput 
   }
 }
 
-function parseRepoParams(data: RepoParams): RepoParams {
-  return {
-    owner: requiredSegment('owner', data.owner),
-    repo: requiredSegment('repo', data.repo),
-  }
-}
-
 function requiredSegment(label: string, value: string) {
   const parsed = value.trim()
   if (!parsed || parsed.includes('/')) {
@@ -150,10 +142,6 @@ function requiredValue(label: string, value: string) {
   const parsed = value.trim()
   if (!parsed) throw new Error(`${label} cannot be empty`)
   return parsed
-}
-
-function repoPath(template: string, data: RepoParams) {
-  return buildApiPath(template, { owner: data.owner, repo: data.repo })
 }
 
 function runPath(template: string, data: RunActionInput) {

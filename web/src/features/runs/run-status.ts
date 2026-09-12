@@ -1,4 +1,4 @@
-import type { RepoRunTerminalReason } from '@/api/types'
+import type { RepositoryRunTerminalReason } from '@/api/types.generated'
 
 /**
  * The single status vocabulary for runs, jobs, attempts and steps. Every runs
@@ -31,7 +31,7 @@ const LABELS: Record<string, string> = {
   dispatching: 'starting',
 }
 
-const TERMINAL_LABELS: Record<RepoRunTerminalReason['kind'], string | null> = {
+const TERMINAL_LABELS: Record<RepositoryRunTerminalReason['kind'], string | null> = {
   'canceled': null,
   'execution-lost': 'execution lost',
   'dispatch-attempts-exhausted': 'dispatch attempts exhausted',
@@ -42,7 +42,7 @@ const TERMINAL_LABELS: Record<RepoRunTerminalReason['kind'], string | null> = {
 
 export function runStatus(
   state: string,
-  terminalReason?: RepoRunTerminalReason | null,
+  terminalReason?: RepositoryRunTerminalReason | null,
 ): RunStatus {
   const tone = TONES[state] ?? 'waiting'
   const reasonLabel = terminalReason

@@ -29,8 +29,18 @@ pub struct EditRequestIdentityCommand {
 
 #[derive(Clone, Debug)]
 pub struct MergeRequestContentCommand {
+    pub owner: String,
+    pub name: String,
     pub request_id: String,
     pub actor_user_id: String,
     pub merged_event_id: String,
+    /// The repository state the merge was prepared against; any drift is a conflict.
+    pub expected_git_frontier: scope_domain::repository::git::GitFrontier,
+    pub expected_repo_change_version: u64,
+    pub expected_request_head_oid: String,
+    pub update: scope_domain::reviewed_updates::content::ReviewedUpdateInput,
+    pub landing_file_mutation: scope_domain::landing_file::RepositoryLandingFileMutation,
+    pub workflow_catalog: scope_domain::runs::catalog::RepositoryWorkflowCatalog,
+    pub origin: scope_domain::repository::updates::RequestMergeOrigin,
     pub now_unix: u64,
 }

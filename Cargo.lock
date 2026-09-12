@@ -84,6 +84,7 @@ dependencies = [
  "scope-object-store",
  "scope-postgres",
  "scope-run-config",
+ "scope-service-runtime",
  "serde",
  "serde_json",
  "sha1 0.10.6",
@@ -95,7 +96,6 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
- "tracing-subscriber",
  "ts-rs",
  "url",
 ]
@@ -3512,6 +3512,7 @@ dependencies = [
  "scope-domain",
  "scope-object-store",
  "scope-postgres",
+ "scope-service-runtime",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3519,7 +3520,6 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3552,7 +3552,6 @@ dependencies = [
  "hex",
  "scope-domain",
  "scope-object-store",
- "sha1 0.10.6",
  "thiserror",
 ]
 
@@ -3591,7 +3590,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
- "base64",
  "bytes",
  "getrandom 0.3.4",
  "hex",
@@ -3601,6 +3599,7 @@ dependencies = [
  "scope-media-storage",
  "scope-object-store",
  "scope-postgres",
+ "scope-service-runtime",
  "serde",
  "sha2 0.10.9",
  "tokio",
@@ -3608,7 +3607,6 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
- "tracing-subscriber",
  "url",
 ]
 
@@ -3633,9 +3631,7 @@ name = "scope-media-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "axum",
- "base64",
  "getrandom 0.3.4",
  "hex",
  "libc",
@@ -3643,6 +3639,7 @@ dependencies = [
  "scope-media-storage",
  "scope-object-store",
  "scope-postgres",
+ "scope-service-runtime",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3650,7 +3647,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3667,7 +3663,6 @@ dependencies = [
  "http 1.4.2",
  "reqwest 0.12.28",
  "scope-domain",
- "sha1 0.10.6",
  "sha2 0.10.9",
  "tokio",
 ]
@@ -3702,11 +3697,11 @@ dependencies = [
  "anyhow",
  "axum",
  "reqwest 0.12.28",
+ "scope-service-runtime",
  "sha2 0.10.9",
  "tokio",
  "tower",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3725,7 +3720,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "filetime",
- "getrandom 0.3.4",
  "hex",
  "libc",
  "reqwest 0.12.28",
@@ -3739,6 +3733,18 @@ dependencies = [
  "tar",
  "tempfile",
  "zstd",
+]
+
+[[package]]
+name = "scope-service-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "scope-postgres",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -5424,7 +5430,6 @@ dependencies = [
  "aws-sdk-ecs",
  "aws-sdk-secretsmanager",
  "axum",
- "base64",
  "getrandom 0.3.4",
  "hex",
  "hmac 0.12.1",
@@ -5436,13 +5441,12 @@ dependencies = [
  "scope-git-storage",
  "scope-object-store",
  "scope-postgres",
- "serde",
+ "scope-service-runtime",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

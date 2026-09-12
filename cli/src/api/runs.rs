@@ -206,12 +206,16 @@ pub fn run_history(
     owner: &str,
     repo: &str,
     workflow: Option<&str>,
+    git_oid: Option<&str>,
     limit: u32,
     after: Option<&str>,
 ) -> anyhow::Result<RepositoryRunHistoryPageResponse> {
     let mut query = vec![("limit", limit.to_string())];
     if let Some(workflow) = workflow {
         query.push(("workflow", workflow.into()));
+    }
+    if let Some(git_oid) = git_oid {
+        query.push(("git_oid", git_oid.into()));
     }
     if let Some(after) = after {
         query.push(("after", after.into()));

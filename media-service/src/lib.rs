@@ -44,7 +44,7 @@ pub struct AppState {
 
 impl AppState {
     pub async fn from_settings(settings: Settings) -> anyhow::Result<Self> {
-        let metadata = MetadataStore::connect_worker(settings.database_url).await?;
+        let metadata = MetadataStore::connect(settings.database_url).await?;
         let raw_store: Arc<dyn ObjectStore> = match settings.object_store {
             MediaObjectStoreSettings::Filesystem(settings) => {
                 Arc::new(FileObjectStore::new(settings))
@@ -68,7 +68,7 @@ impl AppState {
     }
 }
 
-pub fn router(state: AppState, allowed_origin: Option<&str>) -> anyhow::Result<Router> {
+pub fn router(state: AppState, allowed_origin: &str) -> anyhow::Result<Router> {
     let router = Router::new()
         .route("/healthz", get(handlers::healthz))
         .route("/readyz", get(handlers::readyz))
@@ -83,10 +83,7 @@ pub fn router(state: AppState, allowed_origin: Option<&str>) -> anyhow::Result<R
         )
         .layer(middleware::from_fn(redacted_access_log))
         .with_state(state);
-    let Some(origin) = allowed_origin else {
-        return Ok(router);
-    };
-    let origin = HeaderValue::from_str(origin)?;
+    let origin = HeaderValue::from_str(allowed_origin)?;
     Ok(router.layer(
         CorsLayer::new()
             .allow_origin(origin)

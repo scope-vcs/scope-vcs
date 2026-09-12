@@ -14,31 +14,7 @@ use sea_orm::{
     QueryFilter, QueryOrder,
 };
 use std::collections::BTreeMap;
-use {
-    crate::error::PostgresError,
-    scope_domain::repository::Repository,
-    scope_domain::repository::credentials::{FirstPushToken, GitPushToken},
-    scope_domain::repository::git::{GitHead, GitPackSpan},
-};
-
-#[derive(Default)]
-pub struct RepositoryFactRows {
-    pub first_push_token: Option<FirstPushToken>,
-    pub git_push_token: Option<GitPushToken>,
-    pub git_head: Option<GitHead>,
-    pub git_pack_spans: Vec<GitPackSpan>,
-}
-
-impl RepositoryFactRows {
-    pub fn into_facts(self) -> entities::RepositoryFacts {
-        entities::RepositoryFacts {
-            first_push_token: self.first_push_token,
-            git_push_token: self.git_push_token,
-            git_head: self.git_head,
-            git_pack_spans: self.git_pack_spans,
-        }
-    }
-}
+use {crate::error::PostgresError, scope_domain::repository::Repository};
 
 pub async fn insert_repository<C>(
     conn: &C,
@@ -396,17 +372,19 @@ where
 pub async fn load_repository_facts<C>(
     conn: &C,
     repo_ids: &[String],
-) -> Result<BTreeMap<String, RepositoryFactRows>, PostgresError>
+) -> Result<BTreeMap<String, entities::RepositoryFacts>, PostgresError>
 where
     C: ConnectionTrait,
 {
     let mut facts = repo_ids
         .iter()
-        .map(|repo_id| (repo_id.clone(), RepositoryFactRows::default()))
-        .collect::<BTreeMap<_, _>>();
+        .map(|repo_id| (repo_id.clone(), entities::RepositoryFacts::default()))
+        .collect::<BTreeMap<String, entities::RepositoryFacts>>();
     if repo_ids.is_empty() {
         return Ok(facts);
     }
+    // Every query below filters on `repo_ids`, so each returned row keys an
+    // entry seeded above.
 
     let first_push_tokens = entities::repository_first_push_token::Entity::find()
         .filter(entities::repository_first_push_token::Column::RepoId.is_in(repo_ids.to_vec()))
@@ -415,9 +393,8 @@ where
         .await
         .map_err(PostgresError::internal)?;
     for row in first_push_tokens {
-        if let Some(fact) = facts.get_mut(&row.repo_id) {
-            fact.first_push_token = Some(row.try_into_domain()?);
-        }
+        let repo_id = row.repo_id.clone();
+        facts.entry(repo_id).or_default().first_push_token = Some(row.try_into_domain()?);
     }
 
     let git_push_tokens = entities::repository_git_push_token::Entity::find()
@@ -427,9 +404,8 @@ where
         .await
         .map_err(PostgresError::internal)?;
     for row in git_push_tokens {
-        if let Some(fact) = facts.get_mut(&row.repo_id) {
-            fact.git_push_token = Some(row.try_into_domain()?);
-        }
+        let repo_id = row.repo_id.clone();
+        facts.entry(repo_id).or_default().git_push_token = Some(row.try_into_domain()?);
     }
 
     let git_heads = entities::git_head::Entity::find()
@@ -439,14 +415,11 @@ where
         .await
         .map_err(PostgresError::internal)?;
     for row in git_heads {
-        if let Some(fact) = facts.get_mut(&row.repo_id) {
-            fact.git_head = Some(row.try_into_domain()?);
-        }
+        let repo_id = row.repo_id.clone();
+        facts.entry(repo_id).or_default().git_head = Some(row.try_into_domain()?);
     }
-    for repo_id in repo_ids {
-        if let Some(fact) = facts.get_mut(repo_id) {
-            fact.git_pack_spans = load_git_pack_spans(conn, repo_id).await?;
-        }
+    for (repo_id, fact) in facts.iter_mut() {
+        fact.git_pack_spans = load_git_pack_spans(conn, repo_id).await?;
     }
 
     Ok(facts)

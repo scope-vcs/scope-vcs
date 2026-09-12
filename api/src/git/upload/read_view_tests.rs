@@ -1,5 +1,8 @@
 use super::*;
-use crate::git::cache::RepositoryGitCache;
+use crate::git::{
+    cache::RepositoryGitCache,
+    command::{git_command_output, git_process_output, run_git},
+};
 use scope_domain::requests::{RequestActorRole, RequestAudience};
 
 fn base_repo(cache: &std::sync::Arc<RepositoryGitCache>, name: &str) -> GitRepoHandle {
@@ -96,17 +99,10 @@ async fn public_base_head_change_rebuilds_read_view_and_attaches_newly_available
     }];
     let incarnation = RepositoryIncarnation::new("repo", "incarnation").unwrap();
     let primary_path = primary.as_ref().to_path_buf();
-    let first = git_read_view_repo(
-        &state,
-        &incarnation,
-        primary,
-        Some(public_first),
-        &requests,
-        &[],
-    )
-    .await
-    .unwrap();
-    let missing = git_process_output_with_timeout(
+    let first = git_read_view_repo(&state, &incarnation, primary, Some(public_first), &requests)
+        .await
+        .unwrap();
+    let missing = git_process_output(
         Command::new("git")
             .arg("--git-dir")
             .arg(first.as_ref())
@@ -114,7 +110,7 @@ async fn public_base_head_change_rebuilds_read_view_and_attaches_newly_available
             .arg("--verify")
             .arg("refs/heads/topic"),
         None,
-        Duration::from_secs(5),
+        ProcessLimits::new(Duration::from_secs(5)),
     )
     .unwrap();
     assert!(!missing.status.success());
@@ -124,7 +120,6 @@ async fn public_base_head_change_rebuilds_read_view_and_attaches_newly_available
         cache.lease_derived(primary_path).unwrap(),
         Some(public_second),
         &requests,
-        &[],
     )
     .await
     .unwrap();

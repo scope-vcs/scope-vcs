@@ -270,10 +270,7 @@ fn random_upload_id() -> Result<String, ServiceError> {
 }
 
 fn unix_now() -> Result<u64, ServiceError> {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .map_err(|error| ServiceError::internal(error.to_string()))
+    scope_service_runtime::unix_now().map_err(|error| ServiceError::internal(error.to_string()))
 }
 
 fn checked_add(now: u64, seconds: u64) -> Result<u64, ServiceError> {

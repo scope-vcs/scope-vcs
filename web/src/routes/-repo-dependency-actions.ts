@@ -1,4 +1,4 @@
-import { loadRepoDependenciesForRequest } from '@/api/repos'
+import { loadRepoDependenciesForRequest } from '@/api/repo-detail'
 import { parseRepoParams } from '@/api/repo-params'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'

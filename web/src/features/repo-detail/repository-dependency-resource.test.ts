@@ -29,9 +29,6 @@ function repo(actor: RepositoryActor): RepoSummaryResponse {
     name: 'repo',
     open_request_count: 0,
     owner_handle: 'acme',
-    request_permissions: {
-      can_start_request: actor !== 'Public',
-    },
     website_url: null,
   }
 }

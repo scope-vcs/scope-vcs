@@ -1,15 +1,13 @@
 use super::{
-    mapping::{encode_content_ref, u64_to_i64},
-    queue::{
-        queue_pending_repo_storage_cleanup_row_at, queue_pending_source_blob_deletion_rows_at,
-    },
+    mapping::encode_content_ref,
+    queue::{queue_pending_repo_storage_cleanup_row, queue_pending_source_blob_deletion_rows},
     types::{
         LoadedRepoStorageCleanup, LoadedSourceBlobCleanup, RepoStorageCleanupBatch,
         RepoStorageCleanupClaim, SourceBlobCleanupBatch,
     },
 };
 use crate::{
-    db::{CleanupStore, GeneratedIdSource, entities},
+    db::{CleanupStore, GeneratedIdSource, entities, integer_columns::u64_to_i64},
     error::PostgresError,
 };
 use scope_domain::{
@@ -68,7 +66,7 @@ pub async fn complete_claimed_repo_storage_cleanup<C>(
 where
     C: ConnectionTrait,
 {
-    let now = u64_to_i64(now_unix)?;
+    let now = u64_to_i64(now_unix, "current time")?;
     if now >= claim.claim_until {
         return Err(PostgresError::conflict(
             "repository storage cleanup claim expired during creation; retry",
@@ -105,7 +103,7 @@ where
         .iter()
         .map(|cleanup| repo_id(&cleanup.owner_handle, &cleanup.repo_name))
         .collect::<BTreeSet<_>>();
-    let now_i64 = u64_to_i64(now_unix)?;
+    let now_i64 = u64_to_i64(now_unix, "current time")?;
     for loaded_cleanup in loaded {
         let cleanup = &loaded_cleanup.cleanup;
         let cleanup_repo_id = repo_id(&cleanup.owner_handle, &cleanup.repo_name);
@@ -121,7 +119,7 @@ where
             )
             .await?;
         } else {
-            complete_pending_repo_storage_cleanup_at(
+            complete_pending_repo_storage_cleanup(
                 conn,
                 &cleanup_repo_id,
                 &loaded_cleanup.generation,
@@ -135,13 +133,8 @@ where
             repo_id(&loaded.cleanup.owner_handle, &loaded.cleanup.repo_name)
                 == repo_id(&cleanup.owner_handle, &cleanup.repo_name)
         }) {
-            queue_pending_repo_storage_cleanup_row_at(
-                conn,
-                cleanup.clone(),
-                now_unix,
-                generated_ids,
-            )
-            .await?;
+            queue_pending_repo_storage_cleanup_row(conn, cleanup.clone(), now_unix, generated_ids)
+                .await?;
         }
     }
     Ok(())
@@ -161,7 +154,7 @@ where
         .iter()
         .map(|blob| blob.content_ref.clone())
         .collect::<BTreeSet<_>>();
-    let now_i64 = u64_to_i64(now_unix)?;
+    let now_i64 = u64_to_i64(now_unix, "current time")?;
     for loaded_blob in loaded {
         let blob = &loaded_blob.blob;
         if retained_content_refs.contains(&blob.content_ref) {
@@ -173,7 +166,7 @@ where
             )
             .await?;
         } else {
-            complete_pending_source_blob_cleanup_at(
+            complete_pending_source_blob_cleanup(
                 conn,
                 &blob.content_ref,
                 &loaded_blob.generation,
@@ -187,13 +180,8 @@ where
             .iter()
             .any(|loaded| loaded.blob.content_ref == blob.content_ref)
         {
-            queue_pending_source_blob_deletion_rows_at(
-                conn,
-                [blob.clone()],
-                now_unix,
-                generated_ids,
-            )
-            .await?;
+            queue_pending_source_blob_deletion_rows(conn, [blob.clone()], now_unix, generated_ids)
+                .await?;
         }
     }
     Ok(())
@@ -220,18 +208,10 @@ where
     if model.generation != generation || model.completed_at_unix.is_some() {
         return Ok(());
     }
-    let attempts = if last_error.is_some() {
-        model.attempts.checked_add(1).ok_or_else(|| {
-            PostgresError::internal_message("repository cleanup attempt count exceeds i32 range")
-        })?
-    } else {
-        model.attempts
-    };
-    let next_run_at = if last_error.is_some() {
-        next_cleanup_retry_at(now_i64, attempts)?
-    } else {
-        now_i64
-    };
+    let RetainedRetry {
+        attempts,
+        next_run_at,
+    } = retained_retry(model.attempts, last_error.is_some(), now_i64)?;
     entities::repo_storage_cleanup_job::Entity::update_many()
         .filter(entities::repo_storage_cleanup_job::Column::RepoId.eq(cleanup_repo_id.to_string()))
         .filter(entities::repo_storage_cleanup_job::Column::Generation.eq(generation.to_string()))
@@ -279,10 +259,10 @@ where
     if model.generation != generation || model.completed_at_unix.is_some() {
         return Ok(());
     }
-    let attempts = model.attempts.checked_add(1).ok_or_else(|| {
-        PostgresError::internal_message("source blob cleanup attempt count exceeds i32 range")
-    })?;
-    let next_run_at = next_cleanup_retry_at(now_i64, attempts)?;
+    let RetainedRetry {
+        attempts,
+        next_run_at,
+    } = retained_retry(model.attempts, true, now_i64)?;
     entities::source_blob_cleanup_job::Entity::update_many()
         .filter(entities::source_blob_cleanup_job::Column::ObjectKey.eq(encoded_content_ref))
         .filter(entities::source_blob_cleanup_job::Column::Generation.eq(generation.to_string()))
@@ -309,7 +289,7 @@ where
     Ok(())
 }
 
-pub async fn complete_pending_repo_storage_cleanup_at<C>(
+async fn complete_pending_repo_storage_cleanup<C>(
     conn: &C,
     cleanup_repo_id: &str,
     generation: &str,
@@ -359,7 +339,7 @@ where
         .map_err(PostgresError::internal)
 }
 
-pub async fn complete_pending_source_blob_cleanup_at<C>(
+async fn complete_pending_source_blob_cleanup<C>(
     conn: &C,
     content_ref: &ContentRef,
     generation: &str,
@@ -391,6 +371,31 @@ where
     Ok(())
 }
 
+struct RetainedRetry {
+    attempts: i32,
+    next_run_at: i64,
+}
+
+/// Retry accounting shared by both cleanup queues. A retained row that carries
+/// an error counts as a failed attempt and backs off; a row retained without
+/// one (a repository that is still live) keeps its attempt count and is due
+/// again immediately.
+fn retained_retry(attempts: i32, failed: bool, now: i64) -> Result<RetainedRetry, PostgresError> {
+    if !failed {
+        return Ok(RetainedRetry {
+            attempts,
+            next_run_at: now,
+        });
+    }
+    let attempts = attempts.checked_add(1).ok_or_else(|| {
+        PostgresError::internal_message("cleanup attempt count exceeds i32 range")
+    })?;
+    Ok(RetainedRetry {
+        attempts,
+        next_run_at: next_cleanup_retry_at(now, attempts)?,
+    })
+}
+
 fn next_cleanup_retry_at(now: i64, attempts: i32) -> Result<i64, PostgresError> {
     let exponent = attempts
         .checked_sub(2)
@@ -399,13 +404,7 @@ fn next_cleanup_retry_at(now: i64, attempts: i32) -> Result<i64, PostgresError> 
     if exponent == -1 {
         return Ok(now);
     }
-    let exponent = u32::try_from(exponent.min(10)).map_err(|_| {
-        PostgresError::internal_message("cleanup retry exponent cannot be negative")
-    })?;
-    let delay = 5_i64
-        .checked_mul(2_i64.pow(exponent))
-        .unwrap_or(MAX_CLEANUP_RETRY_SECONDS)
-        .min(MAX_CLEANUP_RETRY_SECONDS);
+    let delay = (5_i64 << exponent.min(10)).min(MAX_CLEANUP_RETRY_SECONDS);
     now.checked_add(delay)
         .ok_or_else(|| PostgresError::internal_message("cleanup retry time exceeds i64 range"))
 }
@@ -421,5 +420,13 @@ mod tests {
         assert_eq!(next_cleanup_retry_at(100, 3).unwrap(), 110);
         assert_eq!(next_cleanup_retry_at(100, 20).unwrap(), 3_700);
         assert!(next_cleanup_retry_at(100, 0).is_err());
+    }
+
+    #[test]
+    fn retained_rows_only_back_off_when_they_failed() {
+        let live = retained_retry(3, false, 100).unwrap();
+        assert_eq!((live.attempts, live.next_run_at), (3, 100));
+        let failed = retained_retry(3, true, 100).unwrap();
+        assert_eq!((failed.attempts, failed.next_run_at), (4, 120));
     }
 }

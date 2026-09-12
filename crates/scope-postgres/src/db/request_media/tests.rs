@@ -84,22 +84,19 @@ async fn prepare_attachment(
     fixture
         .store
         .media()
-        .prepare_request_attachment(
-            PrepareRequestAttachmentCommand {
-                attachment_id: attachment_id.to_string(),
-                upload_id: format!("upload_{attachment_id}"),
-                operation_id: format!("operation_{attachment_id}"),
-                request_id: request_id.to_string(),
-                actor_user_id: OWNER_ID.to_string(),
-                target: RequestAttachmentTarget::Description,
-                filename: format!("{attachment_id}.png"),
-                declared_media_type: "image/png".to_string(),
-                size_bytes: 4,
-                sha256: SOURCE_SHA256.to_string(),
-                now_unix,
-            },
-            default_limits(),
-        )
+        .prepare_request_attachment(PrepareRequestAttachmentCommand {
+            attachment_id: attachment_id.to_string(),
+            upload_id: format!("upload_{attachment_id}"),
+            operation_id: format!("operation_{attachment_id}"),
+            request_id: request_id.to_string(),
+            actor_user_id: OWNER_ID.to_string(),
+            target: RequestAttachmentTarget::Description,
+            filename: format!("{attachment_id}.png"),
+            declared_media_type: "image/png".to_string(),
+            size_bytes: 4,
+            sha256: SOURCE_SHA256.to_string(),
+            now_unix,
+        })
         .await
         .unwrap()
 }
@@ -778,7 +775,10 @@ async fn binding_a_ready_attachment_notifies_only_after_the_transaction_commits(
         sqlx::postgres::PgListener::connect_with(fixture.store.db.get_postgres_connection_pool())
             .await
             .unwrap();
-    listener.listen("scope_repo_changes").await.unwrap();
+    listener
+        .listen(crate::db::repo_change_notifications::POSTGRES_REPO_CHANGE_CHANNEL)
+        .await
+        .unwrap();
     let tx = fixture.store.db.begin().await.unwrap();
     replace_bindings_for_markdown(
         &tx,
@@ -843,7 +843,7 @@ async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discov
         let error = fixture
             .store
             .media()
-            .prepare_request_attachment(command("operation_expired_attachment"), default_limits())
+            .prepare_request_attachment(command("operation_expired_attachment"))
             .await
             .unwrap_err();
         assert_eq!(error.kind, PostgresErrorKind::AttachmentUploadExpired);
@@ -851,7 +851,7 @@ async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discov
     let replacement = fixture
         .store
         .media()
-        .prepare_request_attachment(command("replacement_operation"), default_limits())
+        .prepare_request_attachment(command("replacement_operation"))
         .await
         .unwrap();
     assert_ne!(replacement.attachment.id, prepared.attachment.id);

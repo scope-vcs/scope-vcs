@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{RunStore, StoredRunLog, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::log::RunLogChunk;
@@ -24,7 +25,7 @@ impl RunStore {
         let (run, job, mut attempt, steps) =
             super::run_attempt_persistence::locked_attempt_context(&tx, &chunk.attempt_id).await?;
         attempt
-            .authenticate_access(&job, token_hash, now_unix)
+            .authenticate(&job, token_hash, now_unix)
             .map_err(PostgresError::from)?;
         if attempt.first_truncated_step_index.is_some() {
             return Err(PostgresError::resource_exhausted(
@@ -54,7 +55,7 @@ impl RunStore {
                 .await
                 .map_err(PostgresError::internal)?
         {
-            let position = entities::i64_to_u64(existing.position, "run log position")?;
+            let position = integer_columns::i64_to_u64(existing.position, "run log position")?;
             let existing_run_id = existing.run_id.clone();
             let existing_chunk = existing.try_into_domain()?;
             if existing_run_id != run.id
@@ -104,7 +105,7 @@ impl RunStore {
             .map_err(|error| {
                 super::runs::unique_conflict(error, "run log sequence is already in use")
             })?;
-        let position = entities::i64_to_u64(inserted.last_insert_id, "run log position")?;
+        let position = integer_columns::i64_to_u64(inserted.last_insert_id, "run log position")?;
         super::run_attempt_persistence::save_attempt(&tx, &attempt).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(AppendRunLogResult {

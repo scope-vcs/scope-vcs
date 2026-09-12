@@ -1,4 +1,3 @@
-use crate::config::DEFAULT_GIT_BRANCH;
 use scope_domain::landing_file::RepositoryLandingFileMutation;
 use scope_domain::repo_config::RepoConfig;
 use scope_domain::reviewed_updates::content::{
@@ -13,6 +12,7 @@ use scope_domain::{
 use scope_domain::{
     error::DomainError, policy::ScopePath, repo_actions::reviewed_update_domain_error,
 };
+use scope_git::DEFAULT_GIT_BRANCH;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReceivePackFileChange {

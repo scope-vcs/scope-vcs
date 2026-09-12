@@ -7,11 +7,7 @@ async fn permissioned_scope_sessions_share_raw_live_head() {
     let source = temp_git_repo("owner-upload-snapshot");
     fs::write(source.join("README.md"), "raw snapshot").unwrap();
     fs::create_dir_all(source.join(".scope/runs")).unwrap();
-    fs::write(
-        source.join(".scope/runs/test.yml"),
-        "name: Test\non: { manual: true }\ncontainer: { image: rust@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }\ntimeout: 20m\nsteps: [{ name: Test, run: cargo test }]\n",
-    )
-    .unwrap();
+    fs::write(source.join(".scope/runs/test.yml"), workflow_named("Test")).unwrap();
     fs::create_dir_all(source.join(".scope/images/checks")).unwrap();
     fs::write(
         source.join(".scope/images/checks/Dockerfile"),

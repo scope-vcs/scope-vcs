@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react'
+import { displayRouteFilePath } from '@/lib/route-file'
 import { useId, useState, type CSSProperties, type ReactNode } from 'react'
 import { PaneResizeHandle } from './pane-resize-handle'
 import { cn } from '@/lib/utils'
@@ -45,7 +46,7 @@ export function FileWorkbench({
         />
         <span className="shrink-0">files</span>
         <span className="min-w-0 break-all font-mono text-muted-foreground">
-          {selectedPath?.replace(/^\//, '') ?? 'select a file'}
+          {selectedPath ? displayRouteFilePath(selectedPath) : 'select a file'}
         </span>
       </button>
       <div

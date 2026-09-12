@@ -1,7 +1,7 @@
 use super::{
     GitSegmentIngestTimings, GitSegmentReservation, GitSegmentStore, GitStorageError,
     MultipartError, MultipartStore, MultipartUpload, SegmentEncryptionKey, StagedGitSegment,
-    UploadedPart, lifecycle::sync_directory, object_key, valid_segment_id,
+    UploadedPart, is_hex_id_32, object_key, random_hex_id, sync_directory,
 };
 use crate::envelope::EnvelopeWriter;
 use crate::lifecycle::REMOTE_CLEANUP_TIMEOUT;
@@ -35,8 +35,14 @@ impl GitSegmentStore {
         R: AsyncRead + Unpin + Send,
     {
         let reservation = self.reserve(repository_id)?;
-        self.ingest_reserved(repository_id, reservation, source, max_plaintext_bytes)
-            .await
+        self.ingest_reserved(
+            repository_id,
+            reservation,
+            source,
+            max_plaintext_bytes,
+            None,
+        )
+        .await
     }
 
     pub async fn ingest_blocking_reader<R>(
@@ -54,6 +60,7 @@ impl GitSegmentStore {
             reservation,
             source,
             max_plaintext_bytes,
+            None,
         )
         .await
     }
@@ -71,27 +78,7 @@ impl GitSegmentStore {
         })
     }
 
-    pub async fn ingest_reserved<R>(
-        &self,
-        repository_id: &str,
-        reservation: GitSegmentReservation,
-        source: R,
-        max_plaintext_bytes: u64,
-    ) -> Result<StagedGitSegment, GitStorageError>
-    where
-        R: AsyncRead + Unpin + Send,
-    {
-        self.ingest_reserved_controlled(
-            repository_id,
-            reservation,
-            source,
-            max_plaintext_bytes,
-            None,
-        )
-        .await
-    }
-
-    async fn ingest_reserved_controlled<R>(
+    pub(crate) async fn ingest_reserved<R>(
         &self,
         repository_id: &str,
         reservation: GitSegmentReservation,
@@ -102,7 +89,7 @@ impl GitSegmentStore {
     where
         R: AsyncRead + Unpin + Send,
     {
-        if repository_id.is_empty() || !valid_segment_id(&reservation.segment_id) {
+        if repository_id.is_empty() || !is_hex_id_32(&reservation.segment_id) {
             return Err(GitStorageError::InvalidConfiguration(
                 "repository id and a generated segment id are required".into(),
             ));
@@ -258,47 +245,6 @@ impl GitSegmentStore {
         &self,
         repository_id: &str,
         reservation: GitSegmentReservation,
-        source: R,
-        max_plaintext_bytes: u64,
-    ) -> Result<StagedGitSegment, GitStorageError>
-    where
-        R: Read + Send + 'static,
-    {
-        self.ingest_reserved_blocking_reader_controlled(
-            repository_id,
-            reservation,
-            source,
-            max_plaintext_bytes,
-            None,
-        )
-        .await
-    }
-
-    pub async fn ingest_reserved_blocking_reader_cancellable<R>(
-        &self,
-        repository_id: &str,
-        reservation: GitSegmentReservation,
-        source: R,
-        max_plaintext_bytes: u64,
-        cancellation: ProcessCancellation,
-    ) -> Result<StagedGitSegment, GitStorageError>
-    where
-        R: Read + Send + 'static,
-    {
-        self.ingest_reserved_blocking_reader_controlled(
-            repository_id,
-            reservation,
-            source,
-            max_plaintext_bytes,
-            Some(cancellation),
-        )
-        .await
-    }
-
-    async fn ingest_reserved_blocking_reader_controlled<R>(
-        &self,
-        repository_id: &str,
-        reservation: GitSegmentReservation,
         mut source: R,
         max_plaintext_bytes: u64,
         cancellation: Option<ProcessCancellation>,
@@ -340,7 +286,7 @@ impl GitSegmentStore {
             }
         });
         let result = self
-            .ingest_reserved_controlled(
+            .ingest_reserved(
                 repository_id,
                 reservation,
                 BlockingReaderStream::new(receiver),
@@ -455,7 +401,9 @@ async fn write_local(
         fs::rename(&temp_path, &final_path)
             .await
             .map_err(GitStorageError::Local)?;
-        sync_directory(directory.clone()).await?;
+        sync_directory(directory.clone())
+            .await
+            .map_err(GitStorageError::Local)?;
         Ok(LocalOutcome {
             path: final_path,
             elapsed: started.elapsed(),
@@ -676,9 +624,7 @@ async fn multipart_with_cancellation<T>(
 }
 
 fn random_segment_id() -> Result<String, GitStorageError> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| {
+    random_hex_id().map_err(|error| {
         GitStorageError::InvalidConfiguration(format!("creating segment id: {error}"))
-    })?;
-    Ok(hex::encode(bytes))
+    })
 }

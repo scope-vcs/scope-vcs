@@ -1,4 +1,10 @@
-import type { RepoRunLog, RepoRunDetail, RepoRunStepLogPage, RunStepLogsInput, RunActionInput } from '@/api/types'
+import { resourceErrorMessage } from '../../lib/use-cached-resource'
+import type { RunStepLogsInput, RunActionInput } from '@/api/types'
+import type {
+  RepositoryRunLogResponse,
+  RepositoryRunDetailResponse,
+  RepositoryRunStepLogPageResponse,
+} from '@/api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import { mergeStepLogPage, runCanChange, type StepSelection } from './repository-run-detail-model'
 
@@ -7,7 +13,7 @@ const MAX_CACHED_LOG_STEPS = 8
 export type StepLogState = {
   error: string | null
   loading: boolean
-  logs: RepoRunLog[]
+  logs: RepositoryRunLogResponse[]
   logsTruncated: boolean
   nextAfter: number
   initialized: boolean
@@ -65,7 +71,7 @@ export function resetRunLogCache() {
   runLogsResource.clear()
 }
 
-export function completedRunLogVersion(detail: RepoRunDetail) {
+export function completedRunLogVersion(detail: RepositoryRunDetailResponse) {
   if (runCanChange(detail.run.state)) return null
   return JSON.stringify([
     detail.run.state,
@@ -74,7 +80,7 @@ export function completedRunLogVersion(detail: RepoRunDetail) {
   ])
 }
 
-export function canReuseRunLogs(state: StepLogState, detail: RepoRunDetail) {
+export function canReuseRunLogs(state: StepLogState, detail: RepositoryRunDetailResponse) {
   const version = completedRunLogVersion(detail)
   return version !== null && state.completedVersion === version &&
     state.initialized && !state.hasMore && state.error === null
@@ -107,9 +113,9 @@ export type RunLogMode = 'refresh' | 'earlier' | 'latest' | 'retry'
 export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = 'refresh' }: {
   key: string
   target: StepSelection
-  detail: RepoRunDetail
+  detail: RepositoryRunDetailResponse
   params: RunActionInput
-  loadLogs: (input: RunStepLogsInput, signal?: AbortSignal) => Promise<RepoRunStepLogPage>
+  loadLogs: (input: RunStepLogsInput, signal?: AbortSignal) => Promise<RepositoryRunStepLogPageResponse>
   mode?: RunLogMode
 }): Promise<boolean> {
   const step = stepKey(target)
@@ -142,7 +148,7 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
     if (inFlight.get(requestKey) !== request) return false
     writeRunLogCache(key, target, {
       ...(runLogsResource.peek(key)?.[step] ?? current),
-      error: runErrorMessage(error), loading: false, failedPage: { after, before },
+      error: resourceErrorMessage(error, 'Run operation failed.'), loading: false, failedPage: { after, before },
     })
     return false
   }).finally(() => {
@@ -153,7 +159,7 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
 }
 
 export async function refreshRunLogsAfterInFlight(
-  options: Omit<Parameters<typeof refreshRunLogs>[0], 'detail'> & { getDetail: () => RepoRunDetail },
+  options: Omit<Parameters<typeof refreshRunLogs>[0], 'detail'> & { getDetail: () => RepositoryRunDetailResponse },
 ) {
   const step = stepKey(options.target)
   const existing = inFlight.get(JSON.stringify([options.key, step]))
@@ -163,8 +169,4 @@ export async function refreshRunLogsAfterInFlight(
     const state = runLogsResource.peek(options.key)?.[step]
     if (state?.viewingEarlier || !state?.hasMore) return true
   } while (true)
-}
-
-export function runErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Run operation failed.'
 }

@@ -1,9 +1,8 @@
+import type { RepoContent, RepoParams } from '@/api/types'
 import type {
-  RepoContent,
-  RepoFileContent,
-  RepoParams,
-  RepoSummary,
-} from '@/api/types'
+  RepoFileContentResponse,
+  RepoSummaryResponse,
+} from '@/api/types.generated'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
@@ -13,34 +12,21 @@ import { RepositoryDependencyCheck } from './repository-dependency-check'
 import { RepositoryLatestActivity } from './repository-latest-activity'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
 import { displayRouteFilePath } from '@/lib/route-file'
+import type { CachedResource } from '@/lib/use-cached-resource'
 
 export function RepoDetailPage({
   content,
-  contentError,
-  contentLoading,
-  contentRetry,
+  file,
   onSelectFilePath,
   params,
   repo,
-  selectedFile,
-  selectedFileError,
-  selectedFileIdentity,
-  selectedFileLoading,
-  selectedFileRetry,
   selectedPath,
 }: {
-  content: RepoContent | null
-  contentError: string | null
-  contentLoading: boolean
-  contentRetry: () => void
+  content: CachedResource<RepoContent>
+  file: CachedResource<RepoFileContentResponse>
   onSelectFilePath: (path: string) => void
   params: RepoParams
-  repo: RepoSummary
-  selectedFile: RepoFileContent | null
-  selectedFileError: string | null
-  selectedFileIdentity: string | null
-  selectedFileLoading: boolean
-  selectedFileRetry: () => void
+  repo: RepoSummaryResponse
   selectedPath: string | null
 }) {
   const workspaceTabs = useWorkspaceTabs({ activeId: selectedPath })
@@ -56,9 +42,9 @@ export function RepoDetailPage({
         className="items-start border-b border-border"
         actions={(
           <>
-            {content && repo.lifecycle_state === 'Ready' && (
+            {content.value && repo.lifecycle_state === 'Ready' && (
               <RepoCloneDropdown
-                cloneRemoteUrl={content.clone_remote_url}
+                cloneRemoteUrl={content.value.clone_remote_url}
                 repo={repo}
               />
             )}
@@ -72,8 +58,8 @@ export function RepoDetailPage({
         )}
         summary={(
           <RepositoryContext
-            content={content}
-            contentLoading={contentLoading}
+            content={content.value}
+            contentLoading={content.status === 'loading'}
             onSelectFilePath={selectResource}
             repo={repo}
           />
@@ -88,15 +74,9 @@ export function RepoDetailPage({
       <RepositoryLatestActivity params={params} repo={repo} />
       <RepositoryCodeView
         content={content}
-        contentError={contentError}
-        contentRetry={contentRetry}
+        file={file}
         onSelectFilePath={onSelectFilePath}
         params={params}
-        selectedFile={selectedFile}
-        selectedFileError={selectedFileError}
-        selectedFileIdentity={selectedFileIdentity}
-        selectedFileLoading={selectedFileLoading}
-        selectedFileRetry={selectedFileRetry}
         selectedPath={selectedPath}
         workspaceTabs={workspaceTabs}
       />

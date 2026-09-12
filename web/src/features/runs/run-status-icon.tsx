@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 import { Check, Circle, LoaderCircle, Minus, X } from 'lucide-react'
 import { type RunTone, runStatus } from './run-status'
-import type { RepoRunTerminalReason } from '@/api/types'
+import type { RepositoryRunTerminalReason } from '@/api/types.generated'
 
 const TONE_TEXT_CLASS: Record<RunTone, string> = {
   danger: 'text-danger-strong',
@@ -20,13 +20,11 @@ const TONE_ICON: Record<RunTone, typeof Check> = {
 }
 
 export function RunStatusIcon({
-  className,
   state,
   terminalReason,
 }: {
-  className?: string
   state: string
-  terminalReason?: RepoRunTerminalReason | null
+  terminalReason?: RepositoryRunTerminalReason | null
 }) {
   const status = runStatus(state, terminalReason)
   const Icon = TONE_ICON[status.tone]
@@ -37,7 +35,6 @@ export function RunStatusIcon({
         'size-3.5 shrink-0',
         TONE_TEXT_CLASS[status.tone],
         status.animated && 'animate-spin',
-        className,
       )}
     />
   )

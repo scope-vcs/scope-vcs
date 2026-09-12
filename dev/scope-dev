@@ -50,6 +50,7 @@ case "$COMMAND" in
 esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT/dev/dotenv.sh"
 STATE_DIR="$ROOT/.tmp/local-dev"
 DATA_DIR="$ROOT/.scope/dev"
 OBJECT_DIR="$DATA_DIR/objects"
@@ -76,18 +77,6 @@ MEDIA_WORKER_ERR_LOG="$STATE_DIR/media-worker.err.log"
 LOCAL_CARGO_TARGET_DIR=""
 LOCAL_WEB_ORIGIN="http://localhost:3000"
 LOCAL_API_ORIGIN="http://localhost:8080"
-PUBLIC_HOST="${SCOPE_DEV_PUBLIC_HOST:-}"
-
-if [[ -z "$PUBLIC_HOST" ]] && command -v tailscale >/dev/null 2>&1; then
-  PUBLIC_HOST="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
-fi
-PUBLIC_HOST="${PUBLIC_HOST:-localhost}"
-PUBLIC_WEB_ORIGIN="${SCOPE_DEV_PUBLIC_WEB_ORIGIN:-http://$PUBLIC_HOST:3000}"
-PUBLIC_API_ORIGIN="${SCOPE_DEV_PUBLIC_API_ORIGIN:-http://$PUBLIC_HOST:8080}"
-CLERK_AUTHORIZED_PARTIES_VALUE="$LOCAL_WEB_ORIGIN"
-if [[ "$PUBLIC_WEB_ORIGIN" != "$LOCAL_WEB_ORIGIN" ]]; then
-  CLERK_AUTHORIZED_PARTIES_VALUE="$CLERK_AUTHORIZED_PARTIES_VALUE,$PUBLIC_WEB_ORIGIN"
-fi
 
 if [[ -d "$HOME/.local/share/scope-vcs-tools/node-24/bin" ]]; then
   export PATH="$HOME/.local/share/scope-vcs-tools/node-24/bin:$PATH"
@@ -95,37 +84,6 @@ fi
 if [[ -d "$HOME/.cargo/bin" ]]; then
   export PATH="$HOME/.cargo/bin:$PATH"
 fi
-
-ensure_dir() {
-  mkdir -p "$1"
-}
-
-read_dotenv_value() {
-  local path="$1"
-  local key="$2"
-  [[ -f "$path" ]] || return 0
-
-  awk -v key="$key" '
-    /^[[:space:]]*#/ { next }
-    /^[[:space:]]*$/ { next }
-    {
-      split($0, parts, "=")
-      name = parts[1]
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
-      if (name != key) {
-        next
-      }
-      value = substr($0, index($0, "=") + 1)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-      if ((substr(value, 1, 1) == "\"" && substr(value, length(value), 1) == "\"") ||
-          (substr(value, 1, 1) == "'"'"'" && substr(value, length(value), 1) == "'"'"'")) {
-        value = substr(value, 2, length(value) - 2)
-      }
-      print value
-      exit
-    }
-  ' "$path"
-}
 
 get_clerk_issuer() {
   local publishable_key payload mod clerk_host
@@ -185,7 +143,7 @@ local_database_url() {
 }
 
 get_object_key() {
-  ensure_dir "$DATA_DIR"
+  mkdir -p "$DATA_DIR"
   if [[ ! -f "$KEY_FILE" ]]; then
     openssl rand -base64 32 > "$KEY_FILE"
   fi
@@ -193,7 +151,7 @@ get_object_key() {
 }
 
 ensure_media_keys() {
-  ensure_dir "$DATA_DIR"
+  mkdir -p "$DATA_DIR"
   if [[ ! -f "$MEDIA_KEY_FILE" ]]; then
     openssl rand -base64 32 > "$MEDIA_KEY_FILE"
   fi
@@ -256,6 +214,21 @@ stop_owned_processes() {
   stop_pid_file "$WEB_PID_FILE"
 }
 
+write_runner_preamble() {
+  local runner="$1"
+  local workdir="$2"
+  cat > "$runner" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$workdir"
+while IFS='=' read -r name _; do
+  case "\$name" in
+    RAILWAY_*|SCOPE_BUCKET_*|SCOPE_MEDIA_BUCKET_*) unset "\$name" ;;
+  esac
+done < <(env)
+EOF
+}
+
 write_api_runner() {
   local issuer="$1"
   local dev_email="$2"
@@ -270,15 +243,8 @@ write_api_runner() {
     exit 1
   fi
 
-  cat > "$runner" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$ROOT"
-while IFS='=' read -r name _; do
-  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
-  [[ "\$name" == SCOPE_BUCKET_* ]] && unset "\$name"
-  [[ "\$name" == SCOPE_MEDIA_BUCKET_* ]] && unset "\$name"
-done < <(env)
+  write_runner_preamble "$runner" "$ROOT"
+  cat >> "$runner" <<EOF
 export SCOPE_ENV="local"
 export SCOPE_OBJECT_STORE="filesystem"
 export SCOPE_DATA_DIR="$DATA_DIR"
@@ -292,7 +258,7 @@ export SCOPE_MEDIA_PUBLIC_URL="http://localhost:8083"
 export SCOPE_MEDIA_GRANT_PRIVATE_KEY="\$(cat "$MEDIA_PRIVATE_KEY_FILE")"
 export CLERK_ISSUER="$issuer"
 export CLERK_JWKS_URL="$issuer/.well-known/jwks.json"
-export CLERK_AUTHORIZED_PARTIES="$CLERK_AUTHORIZED_PARTIES_VALUE"
+export CLERK_AUTHORIZED_PARTIES="$LOCAL_WEB_ORIGIN"
 export SCOPE_DEV_USER_EMAIL="$dev_email"
 EOF
   printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
@@ -318,15 +284,8 @@ write_media_runner() {
   runner="$STATE_DIR/media.sh"
   [[ -n "$database_url" ]] || { echo "DATABASE_URL is required for the media gateway" >&2; exit 1; }
 
-  cat > "$runner" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$ROOT"
-while IFS='=' read -r name _; do
-  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
-  [[ "\$name" == SCOPE_BUCKET_* ]] && unset "\$name"
-  [[ "\$name" == SCOPE_MEDIA_BUCKET_* ]] && unset "\$name"
-done < <(env)
+  write_runner_preamble "$runner" "$ROOT"
+  cat >> "$runner" <<EOF
 export PORT="8083"
 export SCOPE_MEDIA_OBJECT_STORE="filesystem"
 export SCOPE_MEDIA_OBJECT_STORE_DIR="$MEDIA_OBJECT_DIR"
@@ -345,17 +304,9 @@ write_media_worker_runner() {
   runner="$STATE_DIR/media-worker.sh"
   [[ -n "$database_url" ]] || { echo "DATABASE_URL is required for the media worker" >&2; exit 1; }
 
-  cat > "$runner" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$ROOT"
-while IFS='=' read -r name _; do
-  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
-  [[ "\$name" == SCOPE_BUCKET_* ]] && unset "\$name"
-  [[ "\$name" == SCOPE_MEDIA_BUCKET_* ]] && unset "\$name"
-done < <(env)
+  write_runner_preamble "$runner" "$ROOT"
+  cat >> "$runner" <<EOF
 export PORT="8084"
-export SCOPE_MEDIA_WORKER_ID="local-dev-media-worker"
 export SCOPE_MEDIA_OBJECT_STORE="filesystem"
 export SCOPE_MEDIA_OBJECT_STORE_DIR="$MEDIA_OBJECT_DIR"
 export SCOPE_MEDIA_ENCRYPTION_KEY="\$(tr -d '\\r\\n' < "$MEDIA_KEY_FILE")"
@@ -375,14 +326,8 @@ write_worker_runner() {
     exit 1
   fi
 
-  cat > "$runner" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$ROOT"
-while IFS='=' read -r name _; do
-  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
-  [[ "\$name" == SCOPE_BUCKET_* ]] && unset "\$name"
-done < <(env)
+  write_runner_preamble "$runner" "$ROOT"
+  cat >> "$runner" <<EOF
 export SCOPE_WORKER_ID="local-dev-worker"
 export SCOPE_OBJECT_STORE="filesystem"
 export SCOPE_DATA_DIR="$DATA_DIR"
@@ -398,15 +343,10 @@ EOF
 write_web_runner() {
   local runner="$STATE_DIR/web.sh"
 
-  cat > "$runner" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$ROOT/web"
-while IFS='=' read -r name _; do
-  [[ "\$name" == RAILWAY_* ]] && unset "\$name"
-done < <(env)
+  write_runner_preamble "$runner" "$ROOT/web"
+  cat >> "$runner" <<EOF
 export SCOPE_API_INTERNAL_URL="http://localhost:8080"
-export SCOPE_API_PUBLIC_URL="$PUBLIC_API_ORIGIN"
+export SCOPE_API_PUBLIC_URL="$LOCAL_API_ORIGIN"
 export VITE_SCOPE_WEB_FORCE_SIGNED_OUT="${VITE_SCOPE_WEB_FORCE_SIGNED_OUT:-1}"
 exec pnpm dev --host 0.0.0.0
 EOF
@@ -548,33 +488,12 @@ doctor() {
   echo "seed user: $dev_email"
   echo "api: $LOCAL_API_ORIGIN"
   echo "web: $LOCAL_WEB_ORIGIN"
-  if [[ "$PUBLIC_HOST" != "localhost" ]]; then
-    echo "tailscale api: $PUBLIC_API_ORIGIN"
-    echo "tailscale web: $PUBLIC_WEB_ORIGIN"
-  fi
 }
 
 mint_bench_auth_token() {
   local api_origin="$1"
-  curl -fsS --max-time 3 -X POST "$api_origin/v1/dev/bench/cli-session" \
-    | node -e '
-let input = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  input += chunk;
-});
-process.stdin.on("end", () => {
-  try {
-    const body = JSON.parse(input);
-    if (typeof body.session_token !== "string" || !body.session_token.startsWith("scope_cli_")) {
-      process.exit(1);
-    }
-    process.stdout.write(body.session_token);
-  } catch {
-    process.exit(1);
-  }
-});
-'
+  curl -fsS --max-time 3 -X POST "$api_origin/v1/dev/bench/cli-session" |
+    node -e 'const token = JSON.parse(require("node:fs").readFileSync(0, "utf8")).session_token; if (typeof token !== "string" || !token.startsWith("scope_cli_")) process.exit(1); process.stdout.write(token)'
 }
 
 bench() {
@@ -627,9 +546,7 @@ up() {
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     assert_port_free 3000 "web"
   fi
-  ensure_dir "$STATE_DIR"
-  ensure_dir "$DATA_DIR"
-  ensure_dir "$MEDIA_OBJECT_DIR"
+  mkdir -p "$STATE_DIR" "$DATA_DIR" "$MEDIA_OBJECT_DIR"
   ensure_media_keys
   rm -f "$API_OUT_LOG" "$API_ERR_LOG" "$WEB_OUT_LOG" "$WEB_ERR_LOG"
   rm -f "$WORKER_OUT_LOG" "$WORKER_ERR_LOG"
@@ -669,26 +586,27 @@ status() {
   echo "media process: $(pid_status "$MEDIA_PID_FILE")"
   echo "media worker process: $(pid_status "$MEDIA_WORKER_PID_FILE")"
   echo "web process: $(pid_status "$WEB_PID_FILE")"
-  if body="$(curl -fsS --max-time 3 "http://localhost:8080/readyz" 2>/dev/null)"; then
-    echo "api readyz: $body"
-  else
-    echo "api readyz: unavailable"
+  probe "api readyz" "http://localhost:8080/readyz"
+  probe "media healthz" "http://localhost:8083/healthz"
+  probe "media worker healthz" "http://localhost:8084/healthz"
+  probe "web" "http://localhost:3000" status
+}
+
+probe() {
+  local label="$1"
+  local url="$2"
+  local mode="${3:-body}"
+  local value
+  if [[ "$mode" == "status" ]]; then
+    if value="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "$url" 2>/dev/null)"; then
+      echo "$label: HTTP $value"
+      return
+    fi
+  elif value="$(curl -fsS --max-time 3 "$url" 2>/dev/null)"; then
+    echo "$label: $value"
+    return
   fi
-  if body="$(curl -fsS --max-time 3 "http://localhost:8083/healthz" 2>/dev/null)"; then
-    echo "media healthz: $body"
-  else
-    echo "media healthz: unavailable"
-  fi
-  if body="$(curl -fsS --max-time 3 "http://localhost:8084/healthz" 2>/dev/null)"; then
-    echo "media worker healthz: $body"
-  else
-    echo "media worker healthz: unavailable"
-  fi
-  if code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "http://localhost:3000" 2>/dev/null)"; then
-    echo "web: HTTP $code"
-  else
-    echo "web: unavailable"
-  fi
+  echo "$label: unavailable"
 }
 
 reset() {

@@ -85,7 +85,6 @@ mod tests {
     use super::*;
     use axum::http::HeaderValue;
     use jsonwebtoken::{EncodingKey, Header, encode};
-    use scope_api_contract::RequestAttachmentMediaGrantMethod;
 
     #[test]
     fn ed25519_grants_enforce_expiry_upload_and_media_targets() {
@@ -114,7 +113,6 @@ mod tests {
             repository_id: "repo_1".to_string(),
             request_id: "req_1".to_string(),
             viewer_user_id: Some("user_1".to_string()),
-            method: RequestAttachmentMediaGrantMethod::Get,
             target: target.clone(),
             expires_at_unix: 100,
         };

@@ -1,5 +1,9 @@
-use super::{error::WorkflowError, validation::is_kebab_name};
-use crate::runs::cache::definition::{CacheKeyInputs, WorkflowCache};
+use super::error::WorkflowError;
+use crate::runs::validation::is_kebab_name;
+use crate::runs::{
+    cache::definition::{CacheKeyInputs, WorkflowCache},
+    image::PinnedContainerImage,
+};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -42,30 +46,25 @@ impl WorkflowTriggers {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ContainerSpec {
-    image: String,
+    image: PinnedContainerImage,
 }
 
 impl ContainerSpec {
     pub fn new(image: impl Into<String>) -> Result<Self, WorkflowError> {
         let image = image.into();
-        let Some((repository, digest)) = image.rsplit_once("@sha256:") else {
-            return Err(WorkflowError::InvalidContainerImage);
-        };
-        if repository.is_empty()
-            || image.len() > MAX_CONTAINER_IMAGE_BYTES
-            || repository.contains('@')
-            || image.chars().any(char::is_whitespace)
-            || digest.len() != 64
-            || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-        {
+        if image.len() > MAX_CONTAINER_IMAGE_BYTES {
             return Err(WorkflowError::InvalidContainerImage);
         }
-        Ok(Self {
-            image: format!("{repository}@sha256:{}", digest.to_ascii_lowercase()),
-        })
+        let image =
+            PinnedContainerImage::parse(image).map_err(|_| WorkflowError::InvalidContainerImage)?;
+        Ok(Self { image })
     }
 
     pub fn image(&self) -> &str {
+        self.image.as_str()
+    }
+
+    pub fn pinned_image(&self) -> &PinnedContainerImage {
         &self.image
     }
 }
@@ -131,7 +130,6 @@ pub struct WorkflowJob {
 }
 
 impl WorkflowJob {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: WorkflowJobId,
         mut needs: Vec<WorkflowJobId>,
@@ -304,61 +302,6 @@ struct PersistedCacheKeyInputs {
     files: Vec<String>,
     environment: Vec<String>,
     source: bool,
-}
-
-impl<'de> Deserialize<'de> for WorkflowJob {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let job = PersistedWorkflowJob::deserialize(deserializer)?;
-        let id = WorkflowJobId::parse(job.id).map_err(D::Error::custom)?;
-        let needs = job
-            .needs
-            .into_iter()
-            .map(WorkflowJobId::parse)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(D::Error::custom)?;
-        let container = ContainerSpec::new(job.container.image).map_err(D::Error::custom)?;
-        let caches = job
-            .caches
-            .into_iter()
-            .map(|cache| {
-                WorkflowCache::new(
-                    cache.name,
-                    cache.path,
-                    cache.format,
-                    CacheKeyInputs::new(
-                        cache.compatibility.files,
-                        cache.compatibility.environment,
-                        cache.compatibility.source,
-                    )?,
-                    CacheKeyInputs::new(
-                        cache.exact.files,
-                        cache.exact.environment,
-                        cache.exact.source,
-                    )?,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(D::Error::custom)?;
-        let steps = job
-            .steps
-            .into_iter()
-            .map(|step| WorkflowStep::new(step.name, step.run))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(D::Error::custom)?;
-        WorkflowJob::new(
-            id,
-            needs,
-            container,
-            job.timeout_seconds,
-            caches,
-            job.environment,
-            steps,
-        )
-        .map_err(D::Error::custom)
-    }
 }
 
 #[derive(Deserialize)]

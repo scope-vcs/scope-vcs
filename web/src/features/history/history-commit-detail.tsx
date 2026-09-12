@@ -1,45 +1,24 @@
 import { PanelState } from '@/components/empty-state'
-import { PendingSurface } from '@/components/pending-surface'
-import { Button } from '@/components/ui/button'
 import { historyCommitTitle } from '@/features/history/history-row-labels'
 import type { CommitDetailState } from '@/features/history/history-state'
 import { GitCommit, TriangleAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { ChangedFilesWorkbench, useChangedFileNavigation, type ChangedFilesProps } from './changed-files-workbench'
-import { CommitDetailSkeleton } from './history-commit-detail-skeleton'
 
 type CommitDetailPanelProps = ChangedFilesProps & {
   commitContext?: ReactNode
   commitState: CommitDetailState
-  onRetryCommit?: () => void
 }
 
 export function CommitDetailPanel(props: CommitDetailPanelProps) {
-  const { commitContext, commitState, onCloseDiff, onRetryCommit, selectedFilePath } = props
+  const { commitContext, commitState, onCloseDiff } = props
   const navigation = useChangedFileNavigation(onCloseDiff)
-
-  if (commitState.status === 'loading') {
-    return (
-      <PendingSurface
-        className="min-h-[340px]"
-        delay
-        label="Loading commit details"
-      >
-        <CommitDetailSkeleton showDiff={selectedFilePath !== null} />
-      </PendingSurface>
-    )
-  }
 
   if (commitState.status === 'failed') {
     return (
       <PanelState tone="error">
         <TriangleAlert className="size-5" />
         <span>{commitState.error}</span>
-        {onRetryCommit && (
-          <Button onClick={onRetryCommit} size="sm" type="button" variant="secondary">
-            Retry
-          </Button>
-        )}
       </PanelState>
     )
   }

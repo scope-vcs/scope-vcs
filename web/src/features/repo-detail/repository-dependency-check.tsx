@@ -1,4 +1,5 @@
-import type { RepoParams, RepoSummary } from '@/api/types'
+import type { RepoParams } from '@/api/types'
+import type { RepoSummaryResponse } from '@/api/types.generated'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { loadRepositoryDependencies } from '@/routes/-repo-dependency-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
@@ -17,7 +18,7 @@ export function RepositoryDependencyCheck({
 }: {
   onSelectFilePath: (path: string) => void
   params: RepoParams
-  repo: RepoSummary
+  repo: RepoSummaryResponse
 }) {
   const { isLoaded, userId } = useAuth()
   const { owner, repo: repoName } = params

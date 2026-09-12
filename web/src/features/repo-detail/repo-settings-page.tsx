@@ -1,28 +1,33 @@
 import type {
   CreateRepoInviteInput,
-  CreateRepoInviteResponse,
   DeleteRepoInviteInput,
   DeleteRepoMemberInput,
-  DeleteRepoResponse,
-  RepoCollaboration,
-  RepoInvite,
-  RepoMember,
   RepoParams,
-  RepoSummary,
   UpdateRepoMemberInput,
   UpdateRepoMetadataInput,
 } from '@/api/types'
+import type {
+  CreateRepositoryInviteResponse,
+  DeleteRepoResponse,
+  RepositoryCollaborationResponse,
+  RepositoryInviteResponse,
+  RepositoryMemberResponse,
+  RepoSummaryResponse,
+} from '@/api/types.generated'
 import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
+import { SectionRow, SectionRows } from '@/components/section-rows'
+import { Button } from '@/components/ui/button'
 import { storeHomeFlash } from '@/lib/home-flash'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
+import { ShieldCheck, Trash2 } from 'lucide-react'
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useReducer } from 'react'
 import { DeleteRepositoryDialog } from './delete-repository-dialog'
 import {
-  MemberAccessSections,
+  MemberAccessSummary,
   RepositoryMembersSection,
 } from './repo-members-section'
-import { SettingsSections } from './repo-settings-sections'
 import { RepositoryMetadataForm } from './repository-metadata-form'
 import { useRepoLayout } from './repo-layout-context'
 import {
@@ -34,22 +39,22 @@ export function RepoSettingsPage({
   createInvite,
   deleteInvite,
   deleteMember,
+  collaboration,
   deleteRepo,
-  initialCollaboration,
   params,
   updateMember,
   updateMetadata,
 }: {
   createInvite: (
     input: CreateRepoInviteInput,
-  ) => Promise<CreateRepoInviteResponse>
-  deleteInvite: (input: DeleteRepoInviteInput) => Promise<RepoInvite>
-  deleteMember: (input: DeleteRepoMemberInput) => Promise<RepoMember>
+  ) => Promise<CreateRepositoryInviteResponse>
+  deleteInvite: (input: DeleteRepoInviteInput) => Promise<RepositoryInviteResponse>
+  deleteMember: (input: DeleteRepoMemberInput) => Promise<RepositoryMemberResponse>
+  collaboration: RepositoryCollaborationResponse | null
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
-  initialCollaboration: RepoCollaboration | null
   params: RepoParams
-  updateMember: (input: UpdateRepoMemberInput) => Promise<RepoMember>
-  updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummary>
+  updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
+  updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
 }) {
   const navigate = useNavigate()
   const router = useRouter()
@@ -58,7 +63,6 @@ export function RepoSettingsPage({
     repoSettingsPageReducer,
     initialRepoSettingsPageState,
   )
-  const collaboration = initialCollaboration
   const { deleteError, deleteTarget } = state
 
   async function mutateAndRefresh<T>(mutation: Promise<T>) {
@@ -67,7 +71,7 @@ export function RepoSettingsPage({
     return result
   }
 
-  async function deleteRepository(target: RepoSummary) {
+  async function deleteRepository(target: RepoSummaryResponse) {
     dispatch({ repo: target, type: 'deleteStarted' })
     try {
       await deleteRepo({
@@ -79,8 +83,7 @@ export function RepoSettingsPage({
       void router.invalidate().catch(() => undefined)
     } catch (error) {
       dispatch({
-        message:
-          error instanceof Error ? error.message : 'repository deletion failed',
+        message: resourceErrorMessage(error, 'Repository deletion failed.'),
         type: 'deleteFailed',
       })
       throw error
@@ -130,15 +133,35 @@ export function RepoSettingsPage({
         )}
 
         {repo.access.actor === 'Owner' && (
-          <SettingsSections
-            onDeleteRepository={() =>
-              dispatch({ repo, type: 'deleteTargetChanged' })
-            }
-          />
+          <SectionRows>
+            <SectionRow
+              description="Permanently removes repo metadata and stored Git data from Scope."
+              icon={<Trash2 className="size-4" />}
+              title="Danger zone"
+            >
+              <Button
+                onClick={() => dispatch({ repo, type: 'deleteTargetChanged' })}
+                size="sm"
+                type="button"
+                variant="destructive"
+              >
+                <Trash2 className="size-3.5" />
+                <span>Delete repository</span>
+              </Button>
+            </SectionRow>
+          </SectionRows>
         )}
 
         {repo.access.actor === 'Member' && (
-          <MemberAccessSections repo={repo} />
+          <SectionRows>
+            <SectionRow
+              description="These permissions are assigned by the repository owner."
+              icon={<ShieldCheck className="size-4" />}
+              title="Your access"
+            >
+              <MemberAccessSummary permissions={repo.access} />
+            </SectionRow>
+          </SectionRows>
         )}
 
         {collaboration && (

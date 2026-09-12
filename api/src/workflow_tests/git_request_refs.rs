@@ -257,7 +257,7 @@ async fn request_push_checkout(
     email: &str,
 ) -> (TempGitRepo, String, TestServer) {
     let (origin, server) = spawn_test_server(state).await;
-    let source = checkout_dir(label);
+    let source = TempGitRepo(unique_test_path(label));
     let public_remote = format!("{origin}/git/public/{TEST_REPO_ID}");
     run_git(
         None,
@@ -321,8 +321,4 @@ fn contributor_user_id() -> String {
 
 fn member_user_id() -> String {
     scope_postgres::db::scope_user_id_for_auth_identity("clerk", MEMBER_SUBJECT)
-}
-
-fn checkout_dir(label: &str) -> TempGitRepo {
-    TempGitRepo(unique_test_path(label))
 }

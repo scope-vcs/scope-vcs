@@ -271,40 +271,6 @@ where
         .is_none())
 }
 
-pub(super) async fn lock_attachment_row<C>(
-    conn: &C,
-    attachment_id: &str,
-) -> Result<Option<QueryResult>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    conn.query_one(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT * FROM scope_request_media_attachments WHERE id = $1 FOR UPDATE",
-        [attachment_id.into()],
-    ))
-    .await
-    .map_err(PostgresError::internal)
-}
-
-pub(super) async fn lock_processing_job_if_present<C>(
-    conn: &C,
-    attachment_id: &str,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    conn.query_one(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT attachment_id FROM scope_request_media_processing_jobs
-         WHERE attachment_id = $1 FOR UPDATE",
-        [attachment_id.into()],
-    ))
-    .await
-    .map_err(PostgresError::internal)?;
-    Ok(())
-}
-
 pub(super) async fn cancel_processing_and_orphan_outputs<C>(
     conn: &C,
     attachment_id: &str,

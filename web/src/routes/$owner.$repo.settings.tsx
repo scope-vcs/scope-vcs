@@ -1,19 +1,21 @@
 import {
+  parseCreateRepoInviteInput,
+  parseDeleteRepoInviteInput,
+  parseDeleteRepoMemberInput,
+  parseUpdateRepoMemberInput,
+  parseUpdateRepoMetadataInput,
+} from '@/api/repo-inputs'
+import { parseRepoParams } from '@/api/repo-params'
+import {
   createRepoInviteForRequest,
   deleteRepoInviteForRequest,
   deleteRepoMemberForRequest,
   deleteRepoForRequest,
   loadRepoCollaborationForRequest,
-  parseCreateRepoInviteInput,
-  parseDeleteRepoInviteInput,
-  parseDeleteRepoMemberInput,
-  parseRepoParams,
-  parseUpdateRepoMemberInput,
   updateRepoMemberForRequest,
   updateRepoMetadataForRequest,
-  parseUpdateRepoMetadataInput,
-} from '@/api/repos'
-import { HttpError } from '@/api/client'
+} from '@/api/repo-settings'
+import { loadOptionalResource } from '@/api/http'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
 import { RepoContentError } from '@/components/repo-content-error'
@@ -22,16 +24,7 @@ import { createServerFn } from '@tanstack/react-start'
 
 const loadRepoSettings = createServerFn({ method: 'GET' })
   .validator(parseRepoParams)
-  .handler(async ({ data }) => {
-    try {
-      return await loadRepoCollaborationForRequest(data)
-    } catch (error) {
-      if (error instanceof HttpError && [403, 404].includes(error.status)) {
-        return null
-      }
-      throw error
-    }
-  })
+  .handler(({ data }) => loadOptionalResource(() => loadRepoCollaborationForRequest(data)))
 
 const deleteRepo = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -73,7 +66,7 @@ function RepoSettingsRoute() {
       deleteInvite={(data) => deleteRepoInvite({ data })}
       deleteRepo={(data) => deleteRepo({ data })}
       deleteMember={(data) => deleteRepoMember({ data })}
-      initialCollaboration={collaboration}
+      collaboration={collaboration}
       params={params}
       updateMember={(data) => updateRepoMember({ data })}
       updateMetadata={(data) => updateRepoMetadata({ data })}

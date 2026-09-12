@@ -521,15 +521,6 @@ jobs:
             )) if name == "cargo-target"
         ));
 
-        let old_list = WORKFLOW.replace(
-            "  - name: cargo-target\n    path: /scope/cache/cargo-target\n    format: v1\n    compatibility: { files: [], environment: [], source: false }\n    exact: { files: [Cargo.lock], environment: [RUSTUP_TOOLCHAIN], source: false }\n  - name: cargo\n    path: /scope/cache/cargo\n    format: v1\n    compatibility: { files: [], environment: [], source: false }\n    exact: { files: [Cargo.lock], environment: [RUSTUP_TOOLCHAIN], source: false }",
-            "  - cargo-target\n  - cargo",
-        );
-        assert!(matches!(
-            parse_workflow("/.scope/runs/test.yml", old_list.as_bytes()),
-            Err(RunConfigError::InvalidYaml(_))
-        ));
-
         let overlapping = WORKFLOW.replace(
             "    path: /scope/cache/cargo\n",
             "    path: /scope/cache/cargo-target/registry\n",
@@ -621,7 +612,7 @@ jobs:
     }
 
     #[test]
-    fn rejects_invalid_graphs_and_the_removed_flat_step_schema() {
+    fn rejects_invalid_graphs() {
         let missing =
             WORKFLOW.replace("jobs:\n  checks:", "jobs:\n  checks:\n    needs: [missing]");
         assert!(matches!(
@@ -629,12 +620,6 @@ jobs:
             Err(RunConfigError::InvalidWorkflow(
                 WorkflowError::MissingDependency { .. }
             ))
-        ));
-
-        let flat = WORKFLOW.replace("jobs:\n  checks:\n    ", "");
-        assert!(matches!(
-            parse_workflow("/.scope/runs/test.yml", flat.as_bytes()),
-            Err(RunConfigError::InvalidYaml(_))
         ));
 
         let duplicate_job = format!(

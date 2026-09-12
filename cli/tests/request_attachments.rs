@@ -104,7 +104,11 @@ fn attachment_only_edit_resumes_parts_and_preserves_machine_output() {
     assert_eq!(output["result"]["attachments"][0]["id"], "att_one");
     assert_eq!(output["result"]["attachments"][0]["state"], "Processing");
     let progress = String::from_utf8(second.stderr).unwrap();
-    assert!(progress.contains("100%"), "{progress}");
+    let byte_count = fs::metadata(&file).unwrap().len();
+    assert!(
+        progress.contains(&format!("{byte_count}/{byte_count} bytes")),
+        "{progress}"
+    );
 
     let state = server.state.lock().unwrap();
     assert_eq!(state.prepare_operation_ids.len(), 2);
@@ -567,19 +571,18 @@ impl MediaFixture {
 }
 
 async fn session() -> Json<Value> {
-    Json(
-        json!({"identity":null,"user":{"id":"usr_test","handle":"owner","email":"test@example.test","email_verified":true}}),
-    )
+    Json(support::session_response(
+        "usr_test",
+        "owner",
+        "test@example.test",
+    ))
 }
 
 async fn repository() -> Json<Value> {
-    Json(json!({
-        "id":"repo_one","owner_handle":"owner","name":"repo",
-        "git_remote_url":"https://scope.example/git/public/owner/repo",
-        "lifecycle_state":"Ready","change_version":1,
+    Json(repository_response(json!({
         "access":{"actor":"Owner","can_read_private_files":true,"can_push":true,"can_change_file_visibility":true,"can_apply_changes":true,"can_manage_members":true,"can_delete_repo":true},
-        "open_request_count":1,"request_permissions":{"can_start_request":true}
-    }))
+        "open_request_count":1
+    })))
 }
 
 async fn request_detail(State(state): State<Arc<Mutex<FixtureState>>>) -> Json<Value> {

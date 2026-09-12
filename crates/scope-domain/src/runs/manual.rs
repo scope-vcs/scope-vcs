@@ -2,12 +2,10 @@ use super::{
     catalog::{RepositoryWorkflowCatalog, RepositoryWorkflowFile},
     run::Run,
     source::{RunSource, RunTrigger},
+    validation::validate_git_oid,
     workflow::{identity::WorkflowPath, revision::WorkflowRevision},
 };
-use crate::{
-    error::DomainError,
-    repository::access::{RepositoryAccess, RepositoryActor},
-};
+use crate::{error::DomainError, repository::access::RepositoryAccess};
 
 #[derive(Clone, Debug)]
 pub struct ManualRunRequest {
@@ -36,11 +34,7 @@ impl ManualRunRequest {
                 "request_id must be a 32-character hex string",
             ));
         }
-        if git_oid.len() != 40 || !git_oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(DomainError::invalid_input(
-                "git_oid must be a 40-character hex string",
-            ));
-        }
+        validate_git_oid("git_oid", &git_oid)?;
         WorkflowPath::parse(format!("/.scope/runs/{workflow_name}.yml"))
             .map_err(DomainError::invalid_input)?;
         Ok(Self {
@@ -69,7 +63,7 @@ impl ManualRunRequest {
     }
 
     pub fn require_access(&self, access: RepositoryAccess) -> Result<(), DomainError> {
-        if access.actor == RepositoryActor::Public {
+        if !access.is_maintainer() {
             return Err(DomainError::forbidden("repo membership required"));
         }
         Ok(())

@@ -110,13 +110,13 @@ mod tests {
         repo_config::{
             default_scope_repo_config, load_worktree_scope_repo_config, repo_config_path,
         },
-        test_support::TestDir,
+        test_support::TempDir,
     };
     use std::{fs, process::Command};
 
     #[test]
     fn clone_installs_fetch_auth_and_repo_config() {
-        let dir = TestDir::git_repo("clone-orchestration", "main");
+        let dir = TempDir::git_repo("clone-orchestration", "main");
         fs::write(dir.path().join("README.md"), "initial\n").unwrap();
         dir.run_git(["add", "README.md"]);
         dir.run_git([
@@ -163,7 +163,7 @@ mod tests {
     }
     #[test]
     fn clone_keeps_checkout_and_reports_receipt_when_local_setup_fails() {
-        let dir = TestDir::git_repo("clone-partial", "main");
+        let dir = TempDir::git_repo("clone-partial", "main");
         dir.run_git([
             "-c",
             "user.name=Scope Test",

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const requiredServices = ['cache', 'run-worker', 'media-api', 'media-worker', 'api', 'web']
+const requiredServices = ['cache', 'run-worker', 'git-router', 'media-api', 'media-worker', 'api', 'web']
 
 export function verifyStagingTarget({ manifest, services, status }) {
   const railway = manifest?.railway
@@ -61,10 +61,6 @@ export function verifyStagingTarget({ manifest, services, status }) {
         name: requiredString(service.name, `${key} service name`),
       }
     }),
-    {
-      id: requiredString(manifest.environments.staging.routerServiceId, 'staging router service ID'),
-      name: requiredString(manifest.environments.staging.routerServiceName, 'staging router service name'),
-    },
   ]
 
   assert(Array.isArray(services), 'Railway service state must be an array')
@@ -110,7 +106,7 @@ export function verifyStagingTopology({ manifest, services }) {
   const expected = [
     ['api', manifest.services.api?.id, manifest.environments.staging.apiReplicas],
     ['cache', manifest.services.cache?.id, 1],
-    ['git-router', manifest.environments.staging.routerServiceId, manifest.environments.staging.routerReplicas],
+    ['git-router', manifest.services['git-router']?.id, manifest.environments.staging.routerReplicas],
     ['run-worker', manifest.services['run-worker']?.id, 1],
     ['media-api', manifest.services['media-api']?.id, 1],
     ['media-worker', manifest.services['media-worker']?.id, 1],

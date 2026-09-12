@@ -100,10 +100,8 @@ async fn finish_enqueued_run(
             .runs()
             .run_has_truncated_logs(&run.id)
             .await?;
-    let jobs = state.metadata.runs().run_jobs(&run.id).await?;
     Ok(InspectedRun {
         run,
-        jobs,
         logs_truncated,
     })
 }
@@ -151,10 +149,8 @@ async fn finish_run_control(state: &AppState, run: Run) -> Result<InspectedRun, 
         .runs()
         .run_has_truncated_logs(&run.id)
         .await?;
-    let jobs = state.metadata.runs().run_jobs(&run.id).await?;
     Ok(InspectedRun {
         run,
-        jobs,
         logs_truncated,
     })
 }

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
-  RAILWAY_CONFIG_PATHS,
+  RAILWAY_CONFIG_COMPONENTS,
   RAILWAY_COMPONENTS,
   assertEffectiveRailwayDeployConfig,
   assertHealthyRailwayService,
@@ -187,7 +187,7 @@ test("production verification binds every live service to durable Railway eviden
   const services = [];
   const serviceConfigs = {};
   for (const component of RAILWAY_COMPONENTS) {
-    manifest.services[component] = { id: component };
+    manifest.services[component] = { id: component, sourceDirectory: component };
     deployments[component] = {
       sourceSha: SOURCE_SHA,
       provider: "railway",
@@ -197,7 +197,7 @@ test("production verification binds every live service to durable Railway eviden
     const service = healthyService(component);
     if (component === "cli-downloads") service.effectiveDeploy = undefined;
     services.push(service);
-    if (RAILWAY_CONFIG_PATHS[component]) {
+    if (RAILWAY_CONFIG_COMPONENTS.includes(component)) {
       serviceConfigs[component] = { deploy: expectedDeploy };
     }
   }

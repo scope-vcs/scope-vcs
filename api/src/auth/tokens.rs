@@ -67,18 +67,6 @@ fn generate_machine_token(
     Ok((secret, hash))
 }
 
-pub(crate) fn first_push_token_hash(secret: &str) -> String {
-    token_hash(secret)
-}
-
-pub(crate) fn git_push_token_hash(secret: &str) -> String {
-    token_hash(secret)
-}
-
-pub(crate) fn repository_invite_token_hash(secret: &str) -> String {
-    token_hash(secret)
-}
-
 pub(crate) fn machine_token_hash(secret: &str) -> String {
     format!("{:x}", Sha256::digest(secret.as_bytes()))
 }
@@ -90,7 +78,7 @@ pub(super) fn random_token(prefix: &str, failure_message: &str) -> Result<String
     Ok(format!("{prefix}{}", hex::encode(bytes)))
 }
 
-pub(super) fn token_hash(secret: &str) -> String {
+pub(crate) fn token_hash(secret: &str) -> String {
     let digest = Sha256::digest(secret.as_bytes());
     format!("sha256:{digest:x}")
 }

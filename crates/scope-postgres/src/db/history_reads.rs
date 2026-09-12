@@ -1,3 +1,4 @@
+use super::integer_columns;
 use super::{
     RepositoryStore, acquire_aggregate_lock, begin_metadata_read_snapshot, entities,
     repository_from_model,
@@ -54,7 +55,7 @@ pub(super) async fn history_view_metadata<C: ConnectionTrait>(
 ) -> Result<Option<HistoryViewMetadata>, PostgresError> {
     let row = conn.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "SELECT generation, available, visible_files, head_oid FROM scope_repository_history_views WHERE repo_id=$1 AND repo_version=$2 AND audience=$3 AND identity_version=$4 AND history_version=$5",
-        [repo_id.into(), entities::u64_to_i64(version, "repository version")?.into(), audience.as_str().into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
+        [repo_id.into(), integer_columns::u64_to_i64(version, "repository version")?.into(), audience.as_str().into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
     )).await.map_err(PostgresError::internal)?;
     row.map(|row| {
         Ok(HistoryViewMetadata {
@@ -117,7 +118,7 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
     let view = history_view_from_projection(projection, &repo.graph, &repo.visibility_change_sets);
     conn.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO scope_repository_history_views (repo_id,audience,repo_version,generation,available,visible_files,head_oid,identity_version,history_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-            [repo.record.id.clone().into(), audience.as_str().into(), entities::u64_to_i64(repo.record.change_version,"repository version")?.into(), view.generation.into(), available.into(), visible_files.into(), head_oid.into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
+            [repo.record.id.clone().into(), audience.as_str().into(), integer_columns::u64_to_i64(repo.record.change_version,"repository version")?.into(), view.generation.into(), available.into(), visible_files.into(), head_oid.into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
         )).await.map_err(PostgresError::internal)?;
     for batch in view
         .entries
@@ -179,7 +180,7 @@ impl RepositoryStore {
                 "repository was recreated; retry the read",
             ));
         }
-        let version = entities::i64_to_u64(row.change_version, "repository version")?;
+        let version = integer_columns::i64_to_u64(row.change_version, "repository version")?;
         if history_view_metadata(&tx, &row.id, version, ProjectionViewKey::Private)
             .await?
             .is_none()
@@ -236,7 +237,8 @@ impl RepositoryStore {
                             "history changed; restart pagination",
                         ));
                     }
-                    let position = entities::u64_to_i64(boundary.position, "history position")?;
+                    let position =
+                        integer_columns::u64_to_i64(boundary.position, "history position")?;
                     tx.query_one(Statement::from_sql_and_values(
                         DatabaseBackend::Postgres,
                         "SELECT position FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND position=$3",
@@ -280,7 +282,7 @@ impl RepositoryStore {
             let next_boundary = if rows.len() > limit as usize {
                 Some(RepositoryHistoryBoundary {
                     generation: generation.clone(),
-                    position: entities::i64_to_u64(
+                    position: integer_columns::i64_to_u64(
                         rows[limit as usize - 1]
                             .try_get("", "position")
                             .map_err(PostgresError::internal)?,
