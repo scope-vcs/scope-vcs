@@ -83,6 +83,8 @@ jobs:
           cp -a cli/dist/. .railway-upload/cli/dist/
           cp deploy/railway/prebuilt-cli.railpack.json .railway-upload/cli/railpack.json
           cp cli/railway.json .railway-upload/railway.json
+          printf '#!/bin/sh\nexec ./bin/scope-cli-service\n' > .railway-upload/cli/start.sh
+          chmod 0755 .railway-upload/cli/start.sh
           chmod 0755 .railway-upload/cli/bin/scope-cli-service
           printf '%s\n' "$SOURCE_SHA" > .railway-upload/cli/.scope-deployment-sha
           if [[ "$VERIFIED_SUCCESSFUL_SHA" != "$SOURCE_SHA" ]]; then
