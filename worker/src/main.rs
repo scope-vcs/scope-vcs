@@ -77,6 +77,7 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
     };
     let object_store = object_store_from_env(&settings.data_dir)?;
     let git_segment_store = Arc::new(git_segment_store_from_env(&settings)?);
+    git_segment_store.cleanup_temporary().await?;
     tokio::try_join!(
         control::run(metadata.clone(), settings.clone(), health.clone()),
         compaction::run(

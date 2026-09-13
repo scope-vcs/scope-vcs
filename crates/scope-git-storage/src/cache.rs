@@ -1,7 +1,9 @@
 use crate::{GitSegmentRestoreTimings, GitStorageError};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
+    io::Read,
     ops::Deref,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, Weak},
@@ -42,6 +44,10 @@ impl VerifiedGitPack {
     pub fn timings(&self) -> &GitSegmentRestoreTimings {
         &self.timings
     }
+
+    pub(crate) fn into_publication(self) -> (GitSegmentRestoreTimings, VerifiedPackPin) {
+        (self.timings, self._pin)
+    }
 }
 
 impl std::fmt::Debug for VerifiedGitPack {
@@ -78,6 +84,7 @@ struct CacheState {
     leases: HashMap<PathBuf, usize>,
     last_used: HashMap<PathBuf, SystemTime>,
     flights: HashMap<PathBuf, Weak<VerifiedPackFlight>>,
+    verified_at: HashMap<PathBuf, SystemTime>,
 }
 
 pub(crate) struct VerifiedPackFlight {
@@ -116,28 +123,11 @@ impl VerifiedPackCache {
         self: &Arc<Self>,
         path: &Path,
         expected_bytes: u64,
+        expected_sha256: &str,
         timings: GitSegmentRestoreTimings,
     ) -> Result<Option<VerifiedGitPack>, GitStorageError> {
         let mut state = self.lock_state()?;
-        let metadata = match fs::metadata(path) {
-            Ok(metadata) if metadata.is_file() => metadata,
-            Ok(_) => {
-                return Err(GitStorageError::Local(std::io::Error::other(
-                    "verified Git pack cache path is not a file",
-                )));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(GitStorageError::Local(error)),
-        };
-        if metadata.len() != expected_bytes {
-            if state.leases.get(path).copied().unwrap_or_default() > 0 {
-                return Err(GitStorageError::SizeMismatch {
-                    expected: expected_bytes,
-                    actual: metadata.len(),
-                });
-            }
-            remove_cache_artifacts(path)?;
-            state.last_used.remove(path);
+        if !validate_existing(&mut state, path, expected_bytes, expected_sha256)? {
             return Ok(None);
         }
         let pin = self.pin_locked(&mut state, path.to_path_buf());
@@ -149,6 +139,7 @@ impl VerifiedPackCache {
         source: &Path,
         path: &Path,
         expected_bytes: u64,
+        expected_sha256: &str,
     ) -> Result<VerifiedPackPin, GitStorageError> {
         let source_metadata = fs::metadata(source).map_err(GitStorageError::Local)?;
         if !source_metadata.is_file() {
@@ -164,29 +155,15 @@ impl VerifiedPackCache {
         }
 
         let mut state = self.lock_state()?;
-        match fs::metadata(path) {
-            Ok(metadata) if metadata.is_file() && metadata.len() == expected_bytes => {
-                remove_file_if_exists(source)?;
-            }
-            Ok(metadata) if metadata.is_file() => {
-                if state.leases.get(path).copied().unwrap_or_default() > 0 {
-                    return Err(GitStorageError::SizeMismatch {
-                        expected: expected_bytes,
-                        actual: metadata.len(),
-                    });
-                }
-                remove_cache_artifacts(path)?;
-                fs::rename(source, path).map_err(GitStorageError::Local)?;
-            }
-            Ok(_) => {
-                return Err(GitStorageError::Local(std::io::Error::other(
-                    "verified Git pack cache path is not a file",
-                )));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                fs::rename(source, path).map_err(GitStorageError::Local)?;
-            }
-            Err(error) => return Err(GitStorageError::Local(error)),
+        if validate_existing(&mut state, path, expected_bytes, expected_sha256)? {
+            remove_file_if_exists(source)?;
+        } else {
+            fs::rename(source, path).map_err(GitStorageError::Local)?;
+            // Ingest or remote hydration already authenticated this source.
+            state.verified_at.insert(
+                path.to_path_buf(),
+                source_metadata.modified().map_err(GitStorageError::Local)?,
+            );
         }
         Ok(self.pin_locked(&mut state, path.to_path_buf()))
     }
@@ -252,6 +229,7 @@ impl VerifiedPackCache {
             }
             remove_cache_artifacts(&entry.pack_path)?;
             state.last_used.remove(&entry.pack_path);
+            state.verified_at.remove(&entry.pack_path);
             usage.retained_bytes = usage.retained_bytes.saturating_sub(entry.size_bytes);
             if entry.has_pack {
                 usage.pack_count = usage.pack_count.saturating_sub(1);
@@ -427,6 +405,66 @@ fn usage_for_entries(
         }
     }
     Ok(usage)
+}
+
+// Retained files are rechecked once per process, and again if their modification
+// time changes. Published immutable files can otherwise be leased without I/O
+// proportional to pack size. Callers run this filesystem work off the executor.
+fn validate_existing(
+    state: &mut CacheState,
+    path: &Path,
+    expected_bytes: u64,
+    expected_sha256: &str,
+) -> Result<bool, GitStorageError> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => metadata,
+        Ok(_) => {
+            return Err(GitStorageError::Local(std::io::Error::other(
+                "verified Git pack cache path is not a file",
+            )));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            state.verified_at.remove(path);
+            return Ok(false);
+        }
+        Err(error) => return Err(GitStorageError::Local(error)),
+    };
+    let modified = metadata.modified().map_err(GitStorageError::Local)?;
+    let mismatch = if metadata.len() != expected_bytes {
+        Some(GitStorageError::SizeMismatch {
+            expected: expected_bytes,
+            actual: metadata.len(),
+        })
+    } else if state.verified_at.get(path) != Some(&modified) {
+        let mut file = fs::File::open(path).map_err(GitStorageError::Local)?;
+        let mut digest = Sha256::new();
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let bytes = file.read(&mut buffer).map_err(GitStorageError::Local)?;
+            if bytes == 0 {
+                break;
+            }
+            digest.update(&buffer[..bytes]);
+        }
+        let actual = hex::encode(digest.finalize());
+        (actual != expected_sha256).then(|| GitStorageError::ChecksumMismatch {
+            expected: expected_sha256.to_string(),
+            actual,
+        })
+    } else {
+        None
+    };
+    if let Some(error) = mismatch {
+        state.verified_at.remove(path);
+        if state.leases.get(path).copied().unwrap_or_default() > 0 {
+            return Err(error);
+        }
+        remove_cache_artifacts(path)?;
+        state.last_used.remove(path);
+        return Ok(false);
+    }
+    state.verified_at.insert(path.to_path_buf(), modified);
+    Ok(true)
 }
 
 fn remove_cache_artifacts(pack_path: &Path) -> Result<(), GitStorageError> {

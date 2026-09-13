@@ -6,7 +6,11 @@ use super::{
 use crate::envelope::{DecryptedFrame, EnvelopeReader};
 use scope_domain::repository::{RepositoryIncarnation, git::GitSegmentRef};
 use sha2::{Digest, Sha256};
-use std::{path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Instant,
+};
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -27,9 +31,9 @@ impl GitSegmentStore {
             verified_frames: 0,
             source: GitSegmentRestoreSource::Local,
         };
-        if let Some(pack) =
-            self.verified_cache
-                .lease_existing(&path, segment.plaintext_bytes, local_timings())?
+        if let Some(pack) = self
+            .lease_verified_pack(&path, segment, local_timings())
+            .await?
         {
             return Ok(pack);
         }
@@ -55,6 +59,23 @@ impl GitSegmentStore {
                         )
                     })?;
                     let hydration_started = Instant::now();
+                    // A prior flight may have finished between our first miss
+                    // and registration. Recheck after becoming the leader.
+                    if let Some(pack) = store
+                        .lease_verified_pack(
+                            &path,
+                            &segment,
+                            GitSegmentRestoreTimings {
+                                total: started.elapsed(),
+                                plaintext_bytes,
+                                verified_frames: 0,
+                                source: GitSegmentRestoreSource::Local,
+                            },
+                        )
+                        .await?
+                    {
+                        return Ok(pack.into_publication());
+                    }
                     tracing::info!(
                         repository_id,
                         repository_incarnation_id = incarnation_id,
@@ -92,13 +113,46 @@ impl GitSegmentStore {
             .wait()
             .await
             .map_err(GitStorageError::VerifiedPackHydration)?;
-        self.verified_cache
-            .lease_existing(&path, segment.plaintext_bytes, timings)?
+        self.lease_verified_pack(&path, segment, timings)
+            .await?
             .ok_or_else(|| {
                 GitStorageError::Task(
                     "verified Git pack disappeared while hydration was leased".into(),
                 )
             })
+    }
+
+    async fn lease_verified_pack(
+        &self,
+        path: &Path,
+        segment: &GitSegmentRef,
+        timings: GitSegmentRestoreTimings,
+    ) -> Result<Option<VerifiedGitPack>, GitStorageError> {
+        let cache = Arc::clone(&self.verified_cache);
+        let path = path.to_path_buf();
+        let segment = segment.clone();
+        tokio::task::spawn_blocking(move || {
+            cache.lease_existing(&path, segment.plaintext_bytes, &segment.sha256, timings)
+        })
+        .await
+        .map_err(|error| GitStorageError::Task(format!("leasing verified Git pack: {error}")))?
+    }
+
+    async fn install_verified_pack(
+        &self,
+        source: &Path,
+        path: &Path,
+        segment: &GitSegmentRef,
+    ) -> Result<crate::cache::VerifiedPackPin, GitStorageError> {
+        let cache = Arc::clone(&self.verified_cache);
+        let source = source.to_path_buf();
+        let path = path.to_path_buf();
+        let segment = segment.clone();
+        tokio::task::spawn_blocking(move || {
+            cache.install(&source, &path, segment.plaintext_bytes, &segment.sha256)
+        })
+        .await
+        .map_err(|error| GitStorageError::Task(format!("installing verified Git pack: {error}")))?
     }
 
     pub async fn promote_verified_pack(
@@ -119,11 +173,9 @@ impl GitSegmentStore {
         fs::create_dir_all(&parent)
             .await
             .map_err(GitStorageError::Local)?;
-        let pin = self.verified_cache.install(
-            staged.local_pack_path(),
-            &path,
-            staged.segment.plaintext_bytes,
-        )?;
+        let pin = self
+            .install_verified_pack(staged.local_pack_path(), &path, &staged.segment)
+            .await?;
         sync_directory(parent)
             .await
             .map_err(GitStorageError::Local)?;
@@ -257,8 +309,8 @@ impl GitSegmentStore {
         output.sync_all().await.map_err(GitStorageError::Local)?;
         drop(output);
         let pin = self
-            .verified_cache
-            .install(&temp_path, &path, segment.plaintext_bytes)?;
+            .install_verified_pack(&temp_path, &path, segment)
+            .await?;
         sync_directory(parent)
             .await
             .map_err(GitStorageError::Local)?;

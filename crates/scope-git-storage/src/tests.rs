@@ -417,10 +417,47 @@ async fn startup_cleanup_preserves_verified_packs_and_eviction_respects_their_le
 
     let still_leased = fixture.store.evict_verified_cache(0).unwrap();
     assert_eq!(still_leased.retained_bytes, usage.retained_bytes);
+    let pack_path = pack.path().to_path_buf();
     drop(pack);
-    let evicted = fixture.store.evict_verified_cache(0).unwrap();
-    assert_eq!(evicted, VerifiedPackCacheUsage::default());
+    let reopen = || {
+        GitSegmentStore::new(
+            fixture.backend.clone(),
+            test_key(),
+            fixture.store.config.clone(),
+        )
+        .unwrap()
+    };
+    let restarted = reopen();
+    let retained = restarted
+        .get_verified_pack(&incarnation, &staged.segment)
+        .await
+        .unwrap();
+    assert_eq!(retained.timings().source, GitSegmentRestoreSource::Local);
+    assert_eq!(fixture.backend.reads(), 0);
+    drop(retained);
+    drop(restarted);
+
+    // A same-length corrupt retained file must be repaired from the durable
+    // copy after restart, and its old index must not survive the replacement.
+    tokio::fs::write(&pack_path, vec![0; staged.segment.plaintext_bytes as usize])
+        .await
+        .unwrap();
+    let restarted = reopen();
+    let repaired = restarted
+        .get_verified_pack(&incarnation, &staged.segment)
+        .await
+        .unwrap();
+    assert_eq!(
+        tokio::fs::read(repaired.path()).await.unwrap(),
+        b"published object"
+    );
+    assert_eq!(fixture.backend.reads(), 1);
     assert!(!index_path.exists());
+    assert!(restarted.evict_verified_cache(0).unwrap().leased_bytes > 0);
+    drop(repaired);
+    let evicted = restarted.evict_verified_cache(0).unwrap();
+    assert_eq!(evicted, VerifiedPackCacheUsage::default());
+    assert!(!pack_path.exists());
 }
 
 #[tokio::test]
