@@ -319,9 +319,11 @@ fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         commits: vec![generated, preserved],
     };
 
-    let engine =
-        crate::git::repository_engine::RepositoryEngine::new(cache.clone(), 100 * 1024 * 1024)
-            .unwrap();
+    let engine = crate::git::repository_engine::RepositoryEngine::for_tests(
+        cache.clone(),
+        100 * 1024 * 1024,
+    )
+    .unwrap();
     let incarnation = RepositoryIncarnation::new("repo", "repoi_native").unwrap();
     let repo = projection_bare_repo_with_loader(
         &cache,
@@ -430,7 +432,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     use crate::git::repository_engine::RepositoryEngine;
     use std::cell::Cell;
     let root = tempfile::tempdir().unwrap();
-    let engine = RepositoryEngine::new(root.path().to_path_buf(), 100 * 1024 * 1024).unwrap();
+    let engine = RepositoryEngine::for_tests(root.path().to_path_buf(), 100 * 1024 * 1024).unwrap();
     let incarnation = RepositoryIncarnation::new("owner/repo", "repoi_original").unwrap();
     let mut projection = Projection {
         repo_id: "owner/repo".into(),

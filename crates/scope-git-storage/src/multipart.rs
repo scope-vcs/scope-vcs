@@ -36,6 +36,8 @@ pub trait MultipartStore: Send + Sync + 'static {
         1
     }
 
+    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError>;
+
     async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError>;
 
     async fn upload_part(
@@ -169,6 +171,18 @@ fn remote_read_delay(failed_attempt: usize) -> Duration {
 impl MultipartStore for S3MultipartStore {
     fn minimum_part_bytes(&self) -> usize {
         5 * 1024 * 1024
+    }
+
+    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError> {
+        self.client
+            .put_object()
+            .bucket(self.bucket.as_ref())
+            .key(key)
+            .body(ByteStream::from(bytes))
+            .send()
+            .await
+            .map_err(|error| s3_request_error("put object", key, error))?;
+        Ok(())
     }
 
     async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {

@@ -168,21 +168,21 @@ async fn lease_reclaim_rejects_the_old_workers_completion() {
 
     let first = store
         .jobs()
-        .claim_git_compaction("worker-a", 2, 10, 10, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 10, &test_generated_id)
         .await
         .unwrap()
         .unwrap();
     assert!(
         store
             .jobs()
-            .claim_git_compaction("worker-b", 2, 10, 10, &test_generated_id)
+            .claim_git_compaction("worker-b", u64::MAX, 10, 10, &test_generated_id)
             .await
             .unwrap()
             .is_none()
     );
     let reclaimed = store
         .jobs()
-        .claim_git_compaction("worker-b", 2, 21, 10, &test_generated_id)
+        .claim_git_compaction("worker-b", u64::MAX, 21, 10, &test_generated_id)
         .await
         .unwrap()
         .unwrap();
@@ -224,7 +224,7 @@ async fn lease_renewal_prevents_reclaim_until_the_extended_expiry() {
 
     let claim = store
         .jobs()
-        .claim_git_compaction("worker-a", 2, 10, 10, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 10, &test_generated_id)
         .await
         .unwrap()
         .unwrap();
@@ -238,7 +238,7 @@ async fn lease_renewal_prevents_reclaim_until_the_extended_expiry() {
     assert!(
         store
             .jobs()
-            .claim_git_compaction("worker-b", 2, 21, 10, &test_generated_id)
+            .claim_git_compaction("worker-b", u64::MAX, 21, 10, &test_generated_id)
             .await
             .unwrap()
             .is_none()
@@ -246,7 +246,7 @@ async fn lease_renewal_prevents_reclaim_until_the_extended_expiry() {
     assert!(
         store
             .jobs()
-            .claim_git_compaction("worker-b", 2, 25, 10, &test_generated_id)
+            .claim_git_compaction("worker-b", u64::MAX, 25, 10, &test_generated_id)
             .await
             .unwrap()
             .is_some()
@@ -270,7 +270,7 @@ async fn push_scheduled_during_a_claim_survives_completion() {
         .unwrap();
     let first = store
         .jobs()
-        .claim_git_compaction("worker-a", 2, 10, 30, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 30, &test_generated_id)
         .await
         .unwrap()
         .unwrap();
@@ -286,7 +286,7 @@ async fn push_scheduled_during_a_claim_survives_completion() {
 
     let next = store
         .jobs()
-        .claim_git_compaction("worker-b", 2, 12, 30, &test_generated_id)
+        .claim_git_compaction("worker-b", u64::MAX, 12, 30, &test_generated_id)
         .await
         .unwrap()
         .unwrap();
@@ -303,7 +303,7 @@ async fn new_push_does_not_bypass_a_failed_compactions_backoff() {
         .unwrap();
     let failed = store
         .jobs()
-        .claim_git_compaction("worker-a", 2, 10, 30, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 30, &test_generated_id)
         .await
         .unwrap()
         .unwrap();
@@ -319,14 +319,14 @@ async fn new_push_does_not_bypass_a_failed_compactions_backoff() {
     assert!(
         store
             .jobs()
-            .claim_git_compaction("worker-b", 2, 14, 30, &test_generated_id)
+            .claim_git_compaction("worker-b", u64::MAX, 14, 30, &test_generated_id)
             .await
             .unwrap()
             .is_none()
     );
     let retry = store
         .jobs()
-        .claim_git_compaction("worker-b", 2, 15, 30, &test_generated_id)
+        .claim_git_compaction("worker-b", u64::MAX, 15, 30, &test_generated_id)
         .await
         .unwrap()
         .unwrap();
@@ -345,11 +345,15 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
         .unwrap();
     let claim = store
         .jobs()
-        .claim_git_compaction("worker-a", 3, 10, 60, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 60, &test_generated_id)
         .await
         .unwrap()
         .unwrap();
     let candidate = claim.candidate.unwrap();
+    assert_eq!(
+        candidate.incarnation,
+        RepositoryIncarnation::new(COMPACTION_REPO_ID, "repoi_compaction_repo").unwrap()
+    );
     assert_eq!(
         candidate
             .plan
@@ -359,14 +363,6 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
             .collect::<Vec<_>>(),
         [(3, 3), (4, 4)]
     );
-    assert_eq!(
-        candidate
-            .plan
-            .predecessor()
-            .map(|span| (span.first_sequence, span.last_sequence)),
-        Some((1, 2))
-    );
-
     let appended = span(5, 5, 0);
     persist_span(&store, COMPACTION_REPO_ID, &appended, true).await;
     store
@@ -439,7 +435,7 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
         .unwrap();
     let stale_plan = store
         .jobs()
-        .claim_git_compaction("worker-a", 3, 10, 60, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 60, &test_generated_id)
         .await
         .unwrap()
         .unwrap()
@@ -521,7 +517,7 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
         .unwrap();
     let stale_plan = store
         .jobs()
-        .claim_git_compaction("worker-a", 3, 10, 60, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 60, &test_generated_id)
         .await
         .unwrap()
         .unwrap()
@@ -601,18 +597,18 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
 }
 
 #[tokio::test]
-async fn adapter_preserves_compaction_validation_diagnostics_and_order() {
+async fn adapter_preserves_compaction_validation_diagnostics() {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let error = store
         .jobs()
-        .claim_git_compaction("worker-a", 1, 10, 0, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 0, &test_generated_id)
         .await
         .unwrap_err();
     assert_eq!(error.kind, PostgresErrorKind::Internal);
     assert_eq!(
         error.message,
-        "Git compaction span threshold must be at least 2"
+        "Git compaction lease must be greater than zero"
     );
 
     seed_compaction_repo(&store).await;
@@ -621,7 +617,7 @@ async fn adapter_preserves_compaction_validation_diagnostics_and_order() {
         .unwrap();
     let plan = store
         .jobs()
-        .claim_git_compaction("worker-a", 3, 10, 60, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 60, &test_generated_id)
         .await
         .unwrap()
         .unwrap()

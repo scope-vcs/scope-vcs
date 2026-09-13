@@ -381,7 +381,7 @@ async fn complete_main_push(
         repo_name,
         &author_id,
         &committed_incarnation,
-        persisted.staged_segment.local_pack_path(),
+        &persisted.staged_segment,
         &committed_git_head,
     )
     .await;
@@ -408,9 +408,24 @@ async fn best_effort_sync_cache(
     repo_name: &str,
     author_id: &str,
     committed_incarnation: &RepositoryIncarnation,
-    local_pack: &Path,
+    staged_segment: &scope_git_storage::StagedGitSegment,
     committed_git_head: &scope_domain::repository::git::GitHead,
 ) {
+    let retained_pack = match state
+        .git_segment_store
+        .promote_verified_pack(committed_incarnation, staged_segment)
+        .await
+    {
+        Ok(pack) => Some(pack),
+        Err(error) => {
+            tracing::warn!(error = %error, "push committed but verified pack retention failed");
+            None
+        }
+    };
+    let local_pack = retained_pack
+        .as_ref()
+        .map_or_else(|| staged_segment.local_pack_path(), |pack| pack.path())
+        .to_path_buf();
     match state
         .metadata
         .repositories()
@@ -430,6 +445,7 @@ async fn best_effort_sync_cache(
                 let head_oid = committed_git_head.head_oid.clone();
                 let push_sequence = committed_git_head.push_sequence;
                 tokio::task::spawn_blocking(move || {
+                    let _retained_pack = retained_pack;
                     engine.sync_after_push(&incarnation, &local_pack, &head_oid, push_sequence)
                 })
                 .await

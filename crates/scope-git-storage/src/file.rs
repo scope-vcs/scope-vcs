@@ -60,6 +60,19 @@ impl FileMultipartStore {
 
 #[async_trait]
 impl MultipartStore for FileMultipartStore {
+    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError> {
+        let upload = self.begin(key).await?;
+        let result = async {
+            let part = self.upload_part(&upload, 1, bytes).await?;
+            self.complete(upload.clone(), vec![part]).await
+        }
+        .await;
+        if result.is_err() {
+            let _ = self.abort(upload).await;
+        }
+        result
+    }
+
     async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {
         validate_key(key)?;
         fs::create_dir_all(self.uploads_root())
@@ -167,11 +180,7 @@ impl MultipartStore for FileMultipartStore {
                 "filesystem multipart object already exists",
             ));
         }
-        let file_name = final_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| MultipartError::new("filesystem object name is invalid"))?;
-        let temp_path = parent.join(format!(".{file_name}.{}.tmp", upload.upload_id));
+        let temp_path = upload_directory.join("object.tmp");
         let mut output = OpenOptions::new()
             .create_new(true)
             .write(true)

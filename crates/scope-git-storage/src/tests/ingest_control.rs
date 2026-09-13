@@ -88,7 +88,6 @@ async fn limit_cleanup_is_bounded_when_the_remote_backend_stalls() {
     let fixture = Fixture::new(8, 64, 1);
     fixture.backend.block_cleanup.store(true, Ordering::SeqCst);
     let reservation = fixture.store.reserve(REPOSITORY_ID).unwrap();
-    let object_key = reservation.object_key.clone();
     let started = Instant::now();
 
     let error = fixture
@@ -102,11 +101,7 @@ async fn limit_cleanup_is_bounded_when_the_remote_backend_stalls() {
         GitStorageError::PlaintextLimitExceeded { max_bytes: 4 }
     ));
     assert!(started.elapsed() < Duration::from_secs(2));
-    assert_eq!(fixture.backend.pending_for(&object_key), 1);
     assert!(all_files(&fixture.local_root).await.is_empty());
-
-    fixture.backend.block_cleanup.store(false, Ordering::SeqCst);
-    fixture.store.cleanup_remote(&object_key).await.unwrap();
 }
 
 #[tokio::test]

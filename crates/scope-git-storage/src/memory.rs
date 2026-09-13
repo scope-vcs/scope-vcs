@@ -23,6 +23,15 @@ struct MemoryUpload {
 
 #[async_trait]
 impl MultipartStore for MemoryMultipartStore {
+    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError> {
+        self.state
+            .lock()
+            .expect("memory multipart store lock")
+            .objects
+            .insert(key.to_string(), bytes);
+        Ok(())
+    }
+
     async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {
         let mut state = self.state.lock().expect("memory multipart store lock");
         state.next_upload_id += 1;
