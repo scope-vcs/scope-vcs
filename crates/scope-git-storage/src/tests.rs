@@ -22,7 +22,32 @@ mod multipart_backend;
 use multipart_backend::{MinimumS3PartStore, TestMultipartStore};
 
 #[tokio::test]
-async fn ingest_writes_both_destinations_and_restore_verifies_the_stream() {
+async fn small_ingest_uses_one_put_and_restores_identical_bytes() {
+    let fixture = Fixture::new(4, 1024, 2);
+    let input = b"small immutable pack";
+
+    let staged = fixture
+        .store
+        .ingest(REPOSITORY_ID, &input[..], u64::MAX)
+        .await
+        .unwrap();
+
+    assert_eq!(fixture.backend.puts(), 1);
+    assert_eq!(fixture.backend.completed(), 0);
+    assert_eq!(staged.timings.uploaded_parts, 0);
+    assert!(staged.encrypted_bytes <= 1024);
+    assert_eq!(
+        fixture.backend.object(&staged.object_key).unwrap().len(),
+        staged.encrypted_bytes as usize
+    );
+    let (restored, _) = restore_bytes(&fixture.store, &staged.segment)
+        .await
+        .unwrap();
+    assert_eq!(restored, input);
+}
+
+#[tokio::test]
+async fn large_ingest_streams_bounded_multipart_and_restores_identical_bytes() {
     let fixture = Fixture::new(4, 13, 2);
     let input = b"abcdefghijklmnopqrstuvwxyz";
 
@@ -59,6 +84,7 @@ async fn ingest_writes_both_destinations_and_restore_verifies_the_stream() {
     );
     assert!(part_sizes.last().copied().unwrap() <= 13);
     assert_eq!(fixture.backend.completed(), 1);
+    assert_eq!(fixture.backend.puts(), 0);
     assert_eq!(fixture.backend.aborted(), 0);
 
     let (restored, timings) = restore_bytes(&fixture.store, &staged.segment)
@@ -146,6 +172,63 @@ async fn preferred_restore_uses_remote_only_when_local_pack_is_missing() {
     assert_eq!(restored, input);
     assert_eq!(timings.source, GitSegmentRestoreSource::Remote);
     assert!(timings.verified_frames > 0);
+}
+
+#[tokio::test]
+async fn an_abandoned_verified_pack_miss_does_not_cancel_other_callers() {
+    let fixture = Fixture::new(4, 13, 1);
+    let input = b"one retained immutable pack";
+    let staged = fixture
+        .store
+        .ingest(REPOSITORY_ID, &input[..], u64::MAX)
+        .await
+        .unwrap();
+    fixture.store.delete_local(&staged).await.unwrap();
+    fixture.backend.read_delay_ms.store(50, Ordering::SeqCst);
+    let incarnation = RepositoryIncarnation::new(REPOSITORY_ID, "repoi_first").unwrap();
+
+    let abandoned = {
+        let store = fixture.store.clone();
+        let incarnation = incarnation.clone();
+        let segment = staged.segment.clone();
+        tokio::spawn(async move { store.get_verified_pack(&incarnation, &segment).await })
+    };
+    while fixture.backend.reads() == 0 {
+        tokio::task::yield_now().await;
+    }
+    let survivor = {
+        let store = fixture.store.clone();
+        let incarnation = incarnation.clone();
+        let segment = staged.segment.clone();
+        tokio::spawn(async move { store.get_verified_pack(&incarnation, &segment).await })
+    };
+    tokio::task::yield_now().await;
+    abandoned.abort();
+
+    let first = survivor.await.unwrap().unwrap();
+    assert_eq!(tokio::fs::read(first.path()).await.unwrap(), input);
+    assert_eq!(fixture.backend.reads(), 1);
+    drop(first);
+
+    fixture.backend.delete(&staged.object_key).await.unwrap();
+    let reused = fixture
+        .store
+        .get_verified_pack(&incarnation, &staged.segment)
+        .await
+        .unwrap();
+    assert_eq!(reused.timings().source, GitSegmentRestoreSource::Local);
+    assert_eq!(fixture.backend.reads(), 1);
+    drop(reused);
+
+    let recreated = RepositoryIncarnation::new(REPOSITORY_ID, "repoi_recreated").unwrap();
+    assert!(
+        fixture
+            .store
+            .get_verified_pack(&recreated, &staged.segment)
+            .await
+            .is_err()
+    );
+    assert_eq!(fixture.backend.reads(), 2);
 }
 
 #[tokio::test]
@@ -282,7 +365,7 @@ async fn cleanup_local_removes_exact_temp_and_completed_pack() {
     let fixture = Fixture::new(8, 64, 1);
     let reservation = fixture.store.reserve(REPOSITORY_ID).unwrap();
     let repository_hash = reservation.object_key.split('/').nth(3).unwrap();
-    let directory = fixture.local_root.join(repository_hash);
+    let directory = fixture.local_root.join("staging").join(repository_hash);
     tokio::fs::create_dir_all(&directory).await.unwrap();
     let temp_path = directory.join(format!("{}.pack.tmp", reservation.segment_id));
     let pack_path = directory.join(format!("{}.pack", reservation.segment_id));
@@ -300,18 +383,81 @@ async fn cleanup_local_removes_exact_temp_and_completed_pack() {
 }
 
 #[tokio::test]
-async fn startup_cleanup_removes_only_the_local_staging_root() {
+async fn startup_cleanup_preserves_verified_packs_and_eviction_respects_their_leases() {
     let fixture = Fixture::new(8, 64, 1);
     let staged = fixture
         .store
         .ingest(REPOSITORY_ID, &b"published object"[..], u64::MAX)
         .await
         .unwrap();
+    let incarnation = RepositoryIncarnation::new(REPOSITORY_ID, "repoi_retained").unwrap();
+    let pack = fixture
+        .store
+        .promote_verified_pack(&incarnation, &staged)
+        .await
+        .unwrap();
+    let index_path = pack.path().with_extension("idx");
+    tokio::fs::write(&index_path, b"index").await.unwrap();
+    let abandoned_temp = fixture.local_root.join("verified/.tmp/abandoned.pack.tmp");
+    tokio::fs::create_dir_all(abandoned_temp.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&abandoned_temp, b"partial").await.unwrap();
 
-    fixture.store.cleanup_all_local().await.unwrap();
+    fixture.store.cleanup_temporary().await.unwrap();
 
-    assert!(!fixture.local_root.exists());
+    assert!(!abandoned_temp.exists());
+    assert!(pack.path().is_file());
+    assert!(index_path.is_file());
     assert!(fixture.backend.object(&staged.object_key).is_some());
+    let usage = fixture.store.verified_cache_usage().unwrap();
+    assert_eq!(usage.pack_count, 1);
+    assert_eq!(usage.retained_bytes, b"published object".len() as u64 + 5);
+    assert_eq!(usage.leased_bytes, usage.retained_bytes);
+
+    let still_leased = fixture.store.evict_verified_cache(0).unwrap();
+    assert_eq!(still_leased.retained_bytes, usage.retained_bytes);
+    let pack_path = pack.path().to_path_buf();
+    drop(pack);
+    let reopen = || {
+        GitSegmentStore::new(
+            fixture.backend.clone(),
+            test_key(),
+            fixture.store.config.clone(),
+        )
+        .unwrap()
+    };
+    let restarted = reopen();
+    let retained = restarted
+        .get_verified_pack(&incarnation, &staged.segment)
+        .await
+        .unwrap();
+    assert_eq!(retained.timings().source, GitSegmentRestoreSource::Local);
+    assert_eq!(fixture.backend.reads(), 0);
+    drop(retained);
+    drop(restarted);
+
+    // A same-length corrupt retained file must be repaired from the durable
+    // copy after restart, and its old index must not survive the replacement.
+    tokio::fs::write(&pack_path, vec![0; staged.segment.plaintext_bytes as usize])
+        .await
+        .unwrap();
+    let restarted = reopen();
+    let repaired = restarted
+        .get_verified_pack(&incarnation, &staged.segment)
+        .await
+        .unwrap();
+    assert_eq!(
+        tokio::fs::read(repaired.path()).await.unwrap(),
+        b"published object"
+    );
+    assert_eq!(fixture.backend.reads(), 1);
+    assert!(!index_path.exists());
+    assert!(restarted.evict_verified_cache(0).unwrap().leased_bytes > 0);
+    drop(repaired);
+    let evicted = restarted.evict_verified_cache(0).unwrap();
+    assert_eq!(evicted, VerifiedPackCacheUsage::default());
+    assert!(!pack_path.exists());
 }
 
 #[tokio::test]
@@ -395,12 +541,26 @@ async fn restore_rejects_tampered_ciphertext() {
     object[ranges[0].start + 10] ^= 0x40;
     fixture.backend.replace_object(&staged.object_key, object);
 
+    let incarnation = RepositoryIncarnation::new(REPOSITORY_ID, "repoi_corrupt").unwrap();
     let error = fixture
         .store
-        .restore_to(REPOSITORY_ID, &staged.segment, tokio::io::sink())
+        .get_verified_pack(&incarnation, &staged.segment)
         .await
         .unwrap_err();
-    assert!(matches!(error, GitStorageError::InvalidEnvelope(_)));
+    assert!(matches!(
+        error,
+        GitStorageError::VerifiedPackHydration(error)
+            if matches!(error.as_ref(), GitStorageError::InvalidEnvelope(_))
+    ));
+    assert_eq!(
+        fixture.store.verified_cache_usage().unwrap(),
+        VerifiedPackCacheUsage::default()
+    );
+    assert!(
+        all_files(&fixture.local_root.join("verified/.tmp"))
+            .await
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -603,13 +763,17 @@ async fn restore_preferred_bytes(
 
 async fn all_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
-    let Ok(mut repositories) = tokio::fs::read_dir(root).await else {
-        return files;
-    };
-    while let Some(repository) = repositories.next_entry().await.unwrap() {
-        let mut entries = tokio::fs::read_dir(repository.path()).await.unwrap();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let Ok(mut entries) = tokio::fs::read_dir(directory).await else {
+            continue;
+        };
         while let Some(entry) = entries.next_entry().await.unwrap() {
-            files.push(entry.path());
+            if entry.file_type().await.unwrap().is_dir() {
+                pending.push(entry.path());
+            } else {
+                files.push(entry.path());
+            }
         }
     }
     files

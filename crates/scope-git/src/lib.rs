@@ -17,7 +17,6 @@ use scope_object_store::ObjectStoreError;
 use thiserror::Error;
 
 pub const DEFAULT_GIT_BRANCH: &str = "main";
-pub const DEFAULT_GIT_COMPACTION_SPANS: usize = 32;
 pub const DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

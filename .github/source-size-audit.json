@@ -7,11 +7,6 @@
       "reason": "Materialization coordination, leases, pruning, and their concurrency and eviction tests define one cache lifecycle."
     },
     {
-      "path": "api/src/git/repository_engine.rs",
-      "owner": "repository Git materialization engine",
-      "reason": "Replica selection, local cache synchronization, cold restoration, and projection materialization coordinate one repository view."
-    },
-    {
       "path": "api/src/http/request_discussions.rs",
       "owner": "request discussion HTTP delivery",
       "reason": "Discussion queries and mutations share visibility projection, cursor, anchor, and response mapping rules."

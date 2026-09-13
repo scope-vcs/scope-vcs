@@ -101,13 +101,17 @@ impl StorageRuntime {
             object_store,
             runtime_budgets.clone(),
         ));
-        let repository_engine =
-            RepositoryEngine::new(data_dir.join("git-cache"), git_cache_max_bytes)
-                .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
+        let git_segment_store = Arc::new(git_segment_store);
+        let repository_engine = RepositoryEngine::new(
+            data_dir.join("git-cache"),
+            git_cache_max_bytes,
+            git_segment_store.clone(),
+        )
+        .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
         Ok(Self {
             data_dir: Arc::new(data_dir),
             object_store,
-            git_segment_store: Arc::new(git_segment_store),
+            git_segment_store,
             runtime_budgets,
             repository_engine,
             push_intent_signing_key,

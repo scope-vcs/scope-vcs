@@ -220,11 +220,10 @@ async fn assert_repository_file(
     let repo_root = state.data_dir.join(format!("{label}.git"));
     restore_git_pack_spans(
         state,
-        &repo.record.id,
+        &repo.incarnation(),
         repo.git_head.as_ref().unwrap(),
         &repo.git_pack_spans,
         &repo_root,
-        None,
     )
     .await
     .unwrap();
@@ -247,11 +246,10 @@ async fn assert_repository_manifest(
     let repo_root = state.data_dir.join(format!("{label}.git"));
     restore_git_pack_spans(
         state,
-        &repo.record.id,
+        &repo.incarnation(),
         repo.git_head.as_ref().unwrap(),
         &repo.git_pack_spans,
         &repo_root,
-        None,
     )
     .await
     .unwrap();

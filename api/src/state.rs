@@ -42,7 +42,7 @@ impl AppState {
     pub async fn from_env() -> anyhow::Result<Self> {
         let git_public_url = git_public_url_from_env(None)?;
         let storage = StorageRuntime::from_env(StorageSource::S3).await?;
-        storage.git_segment_store.cleanup_all_local().await?;
+        storage.git_segment_store.cleanup_temporary().await?;
         let metadata = MetadataStore::connect(database_url_from_env()?).await?;
         let repo_events = RepoChangeBus::default();
         let cache_grants = CacheGrantIssuer::from_env()?;

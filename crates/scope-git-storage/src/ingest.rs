@@ -230,7 +230,7 @@ impl GitSegmentStore {
             timings: GitSegmentIngestTimings {
                 total: started.elapsed(),
                 local_write_and_fsync: local.elapsed,
-                remote_multipart_upload: remote.elapsed,
+                remote_upload: remote.elapsed,
                 fanout_blocked,
                 plaintext_bytes,
                 encrypted_bytes: remote.encrypted_bytes,
@@ -442,52 +442,35 @@ async fn upload_remote(
         cancellation,
     } = request;
     let started = Instant::now();
-    let upload =
-        multipart_with_cancellation(cancellation.as_ref(), backend.begin(&object_key)).await?;
-    async {
-        let mut envelope = EnvelopeWriter::new(&key, &repository_id, &segment_id, frame_bytes)?;
-        let mut parts = MultipartAccumulator::new(
-            Arc::clone(&backend),
-            upload.clone(),
-            part_bytes,
-            cancellation.clone(),
-        );
-        parts.push(envelope.header()).await?;
-        loop {
-            match receiver.recv().await {
-                Some(StreamMessage::Chunk(bytes)) => {
-                    let encrypted = envelope.encrypt_data(&bytes)?;
-                    parts.push(&encrypted).await?;
-                }
-                Some(StreamMessage::End) => {
-                    let final_frame = envelope.encrypt_final()?;
-                    parts.push(&final_frame).await?;
-                    break;
-                }
-                None => return Err(GitStorageError::IncompleteIngest),
+    let mut envelope = EnvelopeWriter::new(&key, &repository_id, &segment_id, frame_bytes)?;
+    let mut upload = PackUpload::new(Arc::clone(&backend), object_key, part_bytes, cancellation);
+    upload.push(envelope.header()).await?;
+    loop {
+        match receiver.recv().await {
+            Some(StreamMessage::Chunk(bytes)) => {
+                let encrypted = envelope.encrypt_data(&bytes)?;
+                upload.push(&encrypted).await?;
             }
+            Some(StreamMessage::End) => {
+                let final_frame = envelope.encrypt_final()?;
+                upload.push(&final_frame).await?;
+                break;
+            }
+            None => return Err(GitStorageError::IncompleteIngest),
         }
-        let (completed_parts, encrypted_bytes) = parts.finish().await?;
-        let uploaded_parts = u32::try_from(completed_parts.len()).map_err(|_| {
-            GitStorageError::InvalidEnvelope("multipart part count exceeds u32".into())
-        })?;
-        multipart_with_cancellation(
-            cancellation.as_ref(),
-            backend.complete(upload, completed_parts),
-        )
-        .await?;
-        Ok(RemoteOutcome {
-            encrypted_bytes,
-            uploaded_parts,
-            elapsed: started.elapsed(),
-        })
     }
-    .await
+    let (encrypted_bytes, uploaded_parts) = upload.finish().await?;
+    Ok(RemoteOutcome {
+        encrypted_bytes,
+        uploaded_parts,
+        elapsed: started.elapsed(),
+    })
 }
 
-struct MultipartAccumulator {
+struct PackUpload {
     backend: Arc<dyn MultipartStore>,
-    upload: MultipartUpload,
+    object_key: String,
+    multipart: Option<MultipartUpload>,
     part_bytes: usize,
     buffer: Vec<u8>,
     parts: Vec<UploadedPart>,
@@ -497,16 +480,17 @@ struct MultipartAccumulator {
     cancellation: Option<ProcessCancellation>,
 }
 
-impl MultipartAccumulator {
+impl PackUpload {
     fn new(
         backend: Arc<dyn MultipartStore>,
-        upload: MultipartUpload,
+        object_key: String,
         part_bytes: usize,
         cancellation: Option<ProcessCancellation>,
     ) -> Self {
         Self {
             backend,
-            upload,
+            object_key,
+            multipart: None,
             part_bytes,
             buffer: Vec::new(),
             parts: Vec::new(),
@@ -523,9 +507,11 @@ impl MultipartAccumulator {
             .checked_add(bytes.len() as u64)
             .ok_or_else(|| GitStorageError::InvalidEnvelope("encrypted size overflow".into()))?;
         while !bytes.is_empty() {
+            if self.buffer.len() == self.part_bytes {
+                self.start_multipart().await?;
+                self.flush_part().await?;
+            }
             if self.buffer.capacity() == 0 {
-                // The old uploader held one outgoing part and one assembly buffer.
-                // Keep that same two-part allocation bound while overlapping uploads.
                 if self.pending.len() == 2 {
                     self.finish_part().await?;
                 }
@@ -535,14 +521,28 @@ impl MultipartAccumulator {
             let take = available.min(bytes.len());
             self.buffer.extend_from_slice(&bytes[..take]);
             bytes = &bytes[take..];
-            if self.buffer.len() == self.part_bytes {
+            if self.multipart.is_some() && self.buffer.len() == self.part_bytes {
                 self.flush_part().await?;
             }
         }
         Ok(())
     }
 
-    async fn finish(mut self) -> Result<(Vec<UploadedPart>, u64), GitStorageError> {
+    async fn finish(mut self) -> Result<(u64, u32), GitStorageError> {
+        if self.multipart.is_none() {
+            if self.buffer.is_empty() {
+                return Err(GitStorageError::InvalidEnvelope(
+                    "encrypted segment produced no bytes".into(),
+                ));
+            }
+            let bytes = Bytes::from(std::mem::take(&mut self.buffer));
+            remote_with_cancellation(
+                self.cancellation.as_ref(),
+                self.backend.put(&self.object_key, bytes),
+            )
+            .await?;
+            return Ok((self.encrypted_bytes, 0));
+        }
         if !self.buffer.is_empty() {
             self.flush_part().await?;
         }
@@ -555,7 +555,29 @@ impl MultipartAccumulator {
                 "encrypted segment produced no multipart parts".into(),
             ));
         }
-        Ok((self.parts, self.encrypted_bytes))
+        let uploaded_parts = u32::try_from(self.parts.len()).map_err(|_| {
+            GitStorageError::InvalidEnvelope("multipart part count exceeds u32".into())
+        })?;
+        let multipart = self.multipart.take().expect("multipart upload");
+        remote_with_cancellation(
+            self.cancellation.as_ref(),
+            self.backend.complete(multipart, self.parts),
+        )
+        .await?;
+        Ok((self.encrypted_bytes, uploaded_parts))
+    }
+
+    async fn start_multipart(&mut self) -> Result<(), GitStorageError> {
+        if self.multipart.is_none() {
+            self.multipart = Some(
+                remote_with_cancellation(
+                    self.cancellation.as_ref(),
+                    self.backend.begin(&self.object_key),
+                )
+                .await?,
+            );
+        }
+        Ok(())
     }
 
     async fn flush_part(&mut self) -> Result<(), GitStorageError> {
@@ -565,11 +587,11 @@ impl MultipartAccumulator {
         })?;
         let bytes = Bytes::from(std::mem::take(&mut self.buffer));
         let backend = Arc::clone(&self.backend);
-        let upload = self.upload.clone();
+        let upload = self.multipart.clone().expect("multipart upload");
         let cancellation = self.cancellation.clone();
         self.pending.spawn(async move {
             let operation = backend.upload_part(&upload, part_number, bytes);
-            let part = multipart_with_cancellation(cancellation.as_ref(), operation).await?;
+            let part = remote_with_cancellation(cancellation.as_ref(), operation).await?;
             if part.part_number != part_number {
                 return Err(GitStorageError::Multipart(MultipartError::new(
                     "multipart backend returned the wrong part number",
@@ -607,7 +629,7 @@ async fn cleanup_ingest(
     let _ = tokio::time::timeout(REMOTE_CLEANUP_TIMEOUT, cleanup).await;
 }
 
-async fn multipart_with_cancellation<T>(
+async fn remote_with_cancellation<T>(
     cancellation: Option<&ProcessCancellation>,
     operation: impl std::future::Future<Output = Result<T, MultipartError>>,
 ) -> Result<T, GitStorageError> {

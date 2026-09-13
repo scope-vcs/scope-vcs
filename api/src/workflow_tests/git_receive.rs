@@ -191,7 +191,7 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         .jobs()
         .claim_git_compaction(
             "content-push-test",
-            32,
+            u64::MAX,
             now_unix,
             30,
             &crate::persistence_ids::generate_persistence_id,
@@ -200,7 +200,16 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         .unwrap()
         .expect("accepted pushes schedule durable compaction work");
     assert_eq!(compaction.target_sequence, 3);
-    assert!(compaction.candidate.is_none());
+    let selected = compaction
+        .candidate
+        .as_ref()
+        .expect("an equal-tier pair is eligible after two pushes")
+        .plan
+        .selected_spans();
+    assert_eq!(
+        (selected[0].first_sequence, selected[1].last_sequence),
+        (1, 2)
+    );
     state
         .metadata
         .jobs()
