@@ -250,19 +250,19 @@ async fn known_manual_source_is_pinned_once_and_replay_survives_catalog_changes(
     persist_test_update(&state, update).await.unwrap();
     let next_head = git_head_oid(&checkout);
     assert_ne!(next_head, head.head_oid);
+    let permits_before_read = state.runtime_budgets.available_object_store_permits();
     let bundle =
         crate::git::run_source::materialize_run_source_bundle(&state, &run, 4 * 1024 * 1024)
             .await
             .unwrap();
-    let permits_while_streaming = state.runtime_budgets.available_object_store_permits();
+    assert_eq!(
+        state.runtime_budgets.available_object_store_permits(),
+        permits_before_read,
+        "streaming a cached bundle must not hold an object-store permit"
+    );
     let expected_length = bundle.content_length();
     let bytes = to_bytes(bundle.into_body(), 4 * 1024 * 1024).await.unwrap();
     assert_eq!(bytes.len() as u64, expected_length);
-    assert_eq!(
-        state.runtime_budgets.available_object_store_permits(),
-        permits_while_streaming + 1,
-        "the cache read permit is released with the stream"
-    );
     let temp = tempfile::tempdir().unwrap();
     let bundle_path = temp.path().join("source.bundle");
     fs::write(&bundle_path, &bytes).unwrap();

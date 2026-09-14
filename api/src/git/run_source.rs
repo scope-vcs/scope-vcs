@@ -7,7 +7,6 @@ use crate::{
         command::{git_process_output, truncated_git_stderr},
         repository_engine::GitRevision,
     },
-    runtime_budgets::RuntimePermit,
     state::AppState,
 };
 use axum::body::{Body, Bytes};
@@ -30,6 +29,7 @@ use tokio::io::AsyncReadExt as _;
 
 const GIT_INSPECTION_TIMEOUT: Duration = Duration::from_secs(30);
 const RUN_SOURCE_STREAM_CHUNK_BYTES: usize = 64 * 1024;
+const RUN_SOURCE_DIGEST_BYTES: u64 = 64;
 
 pub(crate) struct MaterializedRunSource {
     pub(crate) sha256: String,
@@ -38,14 +38,14 @@ pub(crate) struct MaterializedRunSource {
 
 enum RunSourceBody {
     Buffered(Vec<u8>),
-    /// Streams the cached bundle from disk. The cache lease and the object-store
-    /// permit live as long as the stream, so eviction and the read budget both
-    /// see the download until its last byte.
+    /// Streams the cached bundle from disk. The cache lease lives as long as the
+    /// stream, so eviction sees the download until its last byte. The object-store
+    /// permit does not: the stream reads a local file, so holding it would let
+    /// slow clients starve real object-store operations.
     Cached {
         file: tokio::fs::File,
         length: u64,
         handle: GitRepoHandle,
-        permit: RuntimePermit,
     },
 }
 
@@ -60,23 +60,17 @@ impl MaterializedRunSource {
     pub(crate) fn into_body(self) -> Body {
         match self.body {
             RunSourceBody::Buffered(bytes) => Body::from(bytes),
-            RunSourceBody::Cached {
-                file,
-                handle,
-                permit,
-                ..
-            } => Body::from_stream(futures_util::stream::try_unfold(
-                (file, handle, permit),
-                |(mut file, handle, permit)| async move {
+            RunSourceBody::Cached { file, handle, .. } => Body::from_stream(
+                futures_util::stream::try_unfold((file, handle), |(mut file, handle)| async move {
                     let mut chunk = vec![0_u8; RUN_SOURCE_STREAM_CHUNK_BYTES];
                     let read = file.read(&mut chunk).await?;
                     if read == 0 {
                         return Ok::<_, std::io::Error>(None);
                     }
                     chunk.truncate(read);
-                    Ok(Some((Bytes::from(chunk), (file, handle, permit))))
-                },
-            )),
+                    Ok(Some((Bytes::from(chunk), (file, handle))))
+                }),
+            ),
         }
     }
 }
@@ -172,7 +166,8 @@ async fn materialize_accepted_git_head_bundle(
             },
         )
         .await?;
-    let permit = state
+    // The permit covers opening the cache entry, not the client's download.
+    let _permit = state
         .runtime_budgets
         .try_object_store("run source cache read")?;
     let file = tokio::fs::File::open(handle.join("source.bundle"))
@@ -184,24 +179,32 @@ async fn materialize_accepted_git_head_bundle(
             "Git command output exceeds {max_bytes} bytes"
         )));
     }
-    let sha256 = tokio::fs::read(handle.join("sha256"))
-        .await
-        .map_err(ApiError::internal)?;
-    if sha256.len() != 64 {
-        return Err(ApiError::internal_message(
-            "run source cache digest is malformed",
-        ));
-    }
-    let sha256 = String::from_utf8(sha256).map_err(ApiError::internal)?;
+    let sha256 = read_cached_digest(&handle.join("sha256")).await?;
     Ok(MaterializedRunSource {
         sha256,
         body: RunSourceBody::Cached {
             file,
             length,
             handle,
-            permit,
         },
     })
+}
+
+async fn read_cached_digest(path: &Path) -> Result<String, ApiError> {
+    let file = tokio::fs::File::open(path)
+        .await
+        .map_err(ApiError::internal)?;
+    if file.metadata().await.map_err(ApiError::internal)?.len() != RUN_SOURCE_DIGEST_BYTES {
+        return Err(ApiError::internal_message(
+            "run source cache digest is malformed",
+        ));
+    }
+    let mut digest = Vec::with_capacity(RUN_SOURCE_DIGEST_BYTES as usize);
+    file.take(RUN_SOURCE_DIGEST_BYTES)
+        .read_to_end(&mut digest)
+        .await
+        .map_err(ApiError::internal)?;
+    String::from_utf8(digest).map_err(ApiError::internal)
 }
 
 async fn build_accepted_source_bundle(
