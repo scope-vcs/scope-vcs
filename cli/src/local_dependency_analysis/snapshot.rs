@@ -1,4 +1,3 @@
-use super::check_cancelled;
 use crate::progress::{CancellationToken, run_cancellable};
 use anyhow::{Context, bail, ensure};
 use std::{collections::BTreeMap, fs, path::Path, process::Command, time::Duration};
@@ -70,7 +69,7 @@ pub(super) fn materialize(
         parse_blobs(&bytes, &expected)?
     };
     for file in files {
-        check_cancelled(cancellation)?;
+        cancellation.check()?;
         let path = directory.path().join(&file.path);
         fs::create_dir_all(path.parent().context("Snapshot path has no parent")?)?;
         // Asset paths participate in resolution without reading their contents.

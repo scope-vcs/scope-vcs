@@ -73,7 +73,6 @@ pub struct PreparationProgress {
     rendered: bool,
     cancellation_supervisor: Option<JoinHandle<()>>,
     cancellation: CancellationToken,
-    registered_for_ctrl_c: bool,
 }
 
 impl PreparationProgress {
@@ -113,15 +112,15 @@ impl PreparationProgress {
             thread::spawn(move || {
                 let mut frame = 1;
                 while !stopped.load(Ordering::Acquire) {
-                    if !paused.load(Ordering::Acquire) {
-                        let stage = stage
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner())
-                            .clone();
+                    {
                         let _guard = render_lock
                             .lock()
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
                         if !paused.load(Ordering::Acquire) {
+                            let stage = stage
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .clone();
                             render_status(&stage, frame, started.elapsed());
                         }
                     }
@@ -178,7 +177,6 @@ impl PreparationProgress {
             rendered: should_render,
             cancellation_supervisor,
             cancellation,
-            registered_for_ctrl_c: true,
         })
     }
 
@@ -211,11 +209,11 @@ impl PreparationProgress {
             .render_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // Clearing under the render lock keeps an in-flight frame from redrawing
+        // over the output that follows the pause.
         if self.rendered {
             clear_status();
         }
-        // Synchronize the last frame, then release the lock so a long browser login
-        // cannot prevent the cancellation supervisor from clearing and exiting.
         ProgressPause { progress: self }
     }
 
@@ -233,9 +231,6 @@ impl PreparationProgress {
     }
 
     fn unregister_ctrl_c(&mut self) {
-        if !self.registered_for_ctrl_c {
-            return;
-        }
         let mut active = ACTIVE_CANCELLATION
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -244,7 +239,6 @@ impl PreparationProgress {
         }) {
             *active = None;
         }
-        self.registered_for_ctrl_c = false;
     }
 }
 

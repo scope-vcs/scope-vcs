@@ -70,6 +70,17 @@ pub struct DependencyReport {
     pub public_file_count: usize,
 }
 
+impl DependencyReport {
+    /// The analyzer saw only source files it cannot read and reported nothing
+    /// else, so the check has nothing to say about this repository yet.
+    pub fn is_unsupported(&self) -> bool {
+        self.analyzed_file_count == 0
+            && !self.unsupported_files.is_empty()
+            && self.findings.is_empty()
+            && self.gaps.is_empty()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DependencyCheckStatus {
@@ -283,6 +294,29 @@ mod tests {
         let report = evaluate_dependency_analysis(&analysis, &config()).unwrap();
         assert_eq!(report.findings.len(), 2);
         assert_eq!(report.public_file_count, 1);
+    }
+
+    #[test]
+    fn unsupported_means_nothing_was_analyzed_and_nothing_was_reported() {
+        let output = |analyzed: Vec<String>, gaps: Vec<DependencyGap>| AnalyzerOutput {
+            analyzer_version: DEPENDENCY_ANALYZER_VERSION.into(),
+            analyzed_files: analyzed,
+            unsupported_files: vec!["src/main.rs".into()],
+            edges: Vec::new(),
+            gaps,
+        };
+        let report = |output| {
+            let analysis = StoredDependencyAnalysis::from_output("a".repeat(40), output).unwrap();
+            evaluate_dependency_analysis(&analysis, &config()).unwrap()
+        };
+
+        assert!(report(output(Vec::new(), Vec::new())).is_unsupported());
+        assert!(!report(output(vec!["public/a.ts".into()], Vec::new())).is_unsupported());
+        let gap = DependencyGap {
+            path: ".".into(),
+            reason: "project configuration unreadable".into(),
+        };
+        assert!(!report(output(Vec::new(), vec![gap])).is_unsupported());
     }
 
     #[test]

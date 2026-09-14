@@ -35,6 +35,11 @@ fn repository() -> (TempDir, String) {
         b"large asset contents are not analyzer inputs",
     )
     .unwrap();
+    let commit = commit_all(&repo, "snapshot");
+    (repo, commit)
+}
+
+fn commit_all(repo: &TempDir, message: &str) -> String {
     repo.run_git(["add", "."]);
     repo.run_git([
         "-c",
@@ -43,13 +48,12 @@ fn repository() -> (TempDir, String) {
         "user.email=scope@example.test",
         "commit",
         "-qm",
-        "snapshot",
+        message,
     ]);
-    let commit = String::from_utf8(repo.run_git(["rev-parse", "HEAD"]).stdout)
+    String::from_utf8(repo.run_git(["rev-parse", "HEAD"]).stdout)
         .unwrap()
         .trim()
-        .to_owned();
-    (repo, commit)
+        .to_owned()
 }
 
 fn output() -> AnalyzerOutput {
@@ -146,20 +150,7 @@ fn new_commit_and_wrong_cached_analyzer_version_require_new_analysis() {
         "export const publicValue = 1;",
     )
     .unwrap();
-    repo.run_git(["add", "."]);
-    repo.run_git([
-        "-c",
-        "user.name=Scope Test",
-        "-c",
-        "user.email=scope@example.test",
-        "commit",
-        "-qm",
-        "change imports",
-    ]);
-    let next = String::from_utf8(repo.run_git(["rev-parse", "HEAD"]).stdout)
-        .unwrap()
-        .trim()
-        .to_owned();
+    let next = commit_all(&repo, "change imports");
     assert_ne!(commit, next);
     let result = analyze_cached(repo.path(), &next, &token, |source, _| {
         calls.fetch_add(1, Ordering::SeqCst);

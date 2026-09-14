@@ -59,19 +59,15 @@ impl DependencyReview {
         result: Result<StoredDependencyAnalysis, String>,
         config: &RepoConfig,
     ) {
-        let Ok(analysis) = result else {
+        let analysis = result.ok().filter(|analysis| {
+            self.expected_commit_oid.as_deref() == Some(analysis.commit_oid.as_str())
+        });
+        let Some(analysis) = analysis else {
             self.analysis = None;
             self.status = DependencyStatus::Unavailable;
             self.expanded = false;
             return;
         };
-        if self.expected_commit_oid.as_deref() != Some(analysis.commit_oid.as_str()) {
-            self.analysis = None;
-            self.status = DependencyStatus::Unavailable;
-            self.expanded = false;
-            return;
-        }
-
         self.analysis = Some(analysis);
         self.reevaluate(config);
     }
@@ -81,12 +77,7 @@ impl DependencyReview {
             return;
         };
         self.status = match evaluate_dependency_analysis(analysis, config) {
-            Ok(report)
-                if report.analyzed_file_count == 0
-                    && !report.unsupported_files.is_empty()
-                    && report.findings.is_empty()
-                    && report.gaps.is_empty() =>
-            {
+            Ok(report) if report.is_unsupported() => {
                 self.expanded = false;
                 DependencyStatus::Unsupported
             }

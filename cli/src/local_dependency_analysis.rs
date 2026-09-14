@@ -83,7 +83,7 @@ fn analyze_cached(
     analyze: impl FnOnce(&Path, &CancellationToken) -> anyhow::Result<AnalyzerOutput>,
 ) -> anyhow::Result<StoredDependencyAnalysis> {
     snapshot::validate_commit(commit)?;
-    check_cancelled(cancellation)?;
+    cancellation.check()?;
     // An unavailable cache never makes the actual check unavailable.
     let cache_path = cache::path(repo, commit, cancellation).ok();
     if let Some(analysis) = cache_path
@@ -93,13 +93,13 @@ fn analyze_cached(
         return Ok(analysis);
     }
     let snapshot = snapshot::materialize(repo, commit, cancellation)?;
-    check_cancelled(cancellation)?;
+    cancellation.check()?;
     let output = analyze(snapshot.path(), cancellation)?;
     if output.analyzer_version != DEPENDENCY_ANALYZER_VERSION {
         bail!("Installed dependency analyzer does not match this CLI; reinstall Scope");
     }
     let analysis = StoredDependencyAnalysis::from_output(commit, output)?;
-    check_cancelled(cancellation)?;
+    cancellation.check()?;
     if let Some(path) = cache_path {
         let _ = cache::write(&path, &analysis);
     }
@@ -158,13 +158,6 @@ fn runtime_directory() -> anyhow::Result<PathBuf> {
         .parent()
         .context("Scope executable has no parent directory")?;
     Ok(parent.join("scope-runtime"))
-}
-
-fn check_cancelled(cancellation: &CancellationToken) -> anyhow::Result<()> {
-    if cancellation.is_cancelled() {
-        bail!("Dependency check canceled");
-    }
-    Ok(())
 }
 
 #[cfg(test)]

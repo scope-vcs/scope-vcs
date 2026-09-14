@@ -91,7 +91,10 @@ impl RepositoryStore {
             } else {
                 DependencyCheckStatus::Pending
             }
-        } else if report.as_ref().is_some_and(report_is_unsupported) {
+        } else if report
+            .as_ref()
+            .is_some_and(DependencyReport::is_unsupported)
+        {
             DependencyCheckStatus::Unsupported
         } else {
             DependencyCheckStatus::Ready
@@ -104,10 +107,4 @@ impl RepositoryStore {
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(Some(check))
     }
-}
-
-fn report_is_unsupported(report: &DependencyReport) -> bool {
-    report.analyzed_file_count == 0
-        && !report.unsupported_files.is_empty()
-        && report.gaps.is_empty()
 }

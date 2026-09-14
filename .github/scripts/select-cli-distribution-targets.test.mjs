@@ -8,34 +8,26 @@ const configuration = JSON.parse(
   readFileSync(new URL("../../cli/distribution/targets.json", import.meta.url), "utf8"),
 );
 
-test("pull requests build every supported distribution target", () => {
-  const plan = selectCliDistributionTargets(configuration, "pull-request");
+test("every configured target builds a bundle with the pinned Node runtime", () => {
+  const plan = selectCliDistributionTargets(configuration);
 
   assert.deepEqual(
     plan.include.map(({ target }) => target),
     configuration.targets.map(({ triple }) => triple),
   );
   assert.equal(plan.include.filter(({ smoke }) => smoke).length, 4);
-});
-
-test("release runs retain every configured native target", () => {
-  const plan = selectCliDistributionTargets(configuration, "release");
-
-  assert.deepEqual(
-    plan.include.map(({ target }) => target),
-    configuration.targets.map(({ triple }) => triple),
-  );
   assert.ok(plan.include.every(({ artifact }) => artifact.endsWith(".tar.gz")));
-  assert.ok(plan.include.every(({ node_archive, node_sha256, node_directory, node_executable }) =>
-    node_archive.startsWith("node-v24.21.0-")
-    && /^[a-f0-9]{64}$/.test(node_sha256)
-    && node_directory.startsWith("node-v24.21.0-")
-    && /^(bin\/node|node\.exe)$/.test(node_executable)));
+  assert.match(configuration.node_version, /^\d+\.\d+\.\d+$/);
+  assert.ok(plan.include.every(({ node_version, node_platform, node_sha256 }) =>
+    node_version === configuration.node_version
+    && /^(linux|darwin|win)-(x64|arm64)$/.test(node_platform)
+    && /^[a-f0-9]{64}$/.test(node_sha256)));
 });
 
-test("unknown modes fail instead of silently dropping release targets", () => {
+test("configurations without targets or a pinned Node version fail", () => {
+  assert.throws(() => selectCliDistributionTargets({ targets: [] }), /non-empty targets/);
   assert.throws(
-    () => selectCliDistributionTargets(configuration, "nightly"),
-    /Unknown CLI distribution mode/,
+    () => selectCliDistributionTargets({ targets: configuration.targets }),
+    /node_version/,
   );
 });

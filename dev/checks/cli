@@ -17,18 +17,11 @@ scope_binary=cli/target/release/scope
 artifact="cli/dist/$(jq -r '.artifact' <<<"$target")"
 SCOPE_BINARY="$scope_binary" \
 SCOPE_ARTIFACT="$artifact" \
-SCOPE_NODE_ARCHIVE="$(jq -r '.node_archive' <<<"$target")" \
+SCOPE_NODE_VERSION="$(jq -r '.node_version' cli/distribution/targets.json)" \
+SCOPE_NODE_PLATFORM="$(jq -r '.node_platform' <<<"$target")" \
 SCOPE_NODE_SHA256="$(jq -r '.node_sha256' <<<"$target")" \
-SCOPE_NODE_DIRECTORY="$(jq -r '.node_directory' <<<"$target")" \
-SCOPE_NODE_EXECUTABLE="$(jq -r '.node_executable' <<<"$target")" \
   bash cli/distribution/package-bundle.sh
 
-runtime_root="$(mktemp -d)"
-trap 'rm -rf "$runtime_root"' EXIT
-tar -xzf "$artifact" -C "$runtime_root"
-SCOPE_CLI_RUNTIME_DIR="$runtime_root/scope-runtime" cargo test \
-  --manifest-path cli/Cargo.toml --locked --lib \
-  local_dependency_analysis::tests::bundled_analyzer_reports_committed_imports \
-  -- --ignored --exact
+SCOPE_ARTIFACT="$artifact" bash cli/distribution/verify-bundled-analyzer.sh
 SCOPE_TEST_BINARY="$scope_binary" SCOPE_TEST_ARTIFACT="$artifact" \
   node --test cli/distribution/install-smoke.test.mjs

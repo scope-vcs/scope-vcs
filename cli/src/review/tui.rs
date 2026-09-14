@@ -1,5 +1,9 @@
-use super::state::{
-    ChangeListKind, ReviewInput, ReviewMode, ReviewRow, ReviewState, ReviewStateAction,
+use super::{
+    dependencies::DependencySummary,
+    state::{
+        ChangeListKind, DependencyPathSide, ReviewInput, ReviewMode, ReviewRow, ReviewState,
+        ReviewStateAction,
+    },
 };
 use crate::local_dependency_analysis::AnalysisJob;
 use anyhow::Context;
@@ -262,10 +266,7 @@ fn row_line(row: &ReviewRow, selected: bool, width: usize) -> Line<'static> {
     }
 }
 
-fn dependency_summary_line(
-    summary: &super::dependencies::DependencySummary,
-    width: usize,
-) -> Line<'static> {
+fn dependency_summary_line(summary: &DependencySummary, width: usize) -> Line<'static> {
     let symbol = if !summary.expandable {
         " • "
     } else if summary.expanded {
@@ -292,7 +293,7 @@ fn dependency_summary_line(
 fn dependency_finding_line(
     source_path: &str,
     target_path: &str,
-    selected_side: super::state::DependencyPathSide,
+    selected_side: DependencyPathSide,
     selected: bool,
     width: usize,
 ) -> Line<'static> {
@@ -302,18 +303,16 @@ fn dependency_finding_line(
     let public_style = Style::new().fg(Color::Green);
     let private_style = Style::new().fg(Color::Red);
     let selected_modifiers = Modifier::BOLD | Modifier::UNDERLINED;
-    let source_style =
-        if selected && selected_side == super::state::DependencyPathSide::PublicSource {
-            public_style.add_modifier(selected_modifiers)
-        } else {
-            public_style
-        };
-    let target_style =
-        if selected && selected_side == super::state::DependencyPathSide::PrivateTarget {
-            private_style.add_modifier(selected_modifiers)
-        } else {
-            private_style
-        };
+    let source_style = if selected && selected_side == DependencyPathSide::PublicSource {
+        public_style.add_modifier(selected_modifiers)
+    } else {
+        public_style
+    };
+    let target_style = if selected && selected_side == DependencyPathSide::PrivateTarget {
+        private_style.add_modifier(selected_modifiers)
+    } else {
+        private_style
+    };
     Line::from(vec![
         Span::styled(
             fit_cell(&format!("public {}", tui_escaped(source_path)), path_width),

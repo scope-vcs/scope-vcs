@@ -31,12 +31,8 @@ jobs:
       - name: Read distribution targets
         id: targets
         shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
         run: |
-          mode=release
-          [[ "$EVENT_NAME" == "pull_request" ]] && mode=pull-request
-          matrix="$(node .github/scripts/select-cli-distribution-targets.mjs --mode "$mode")"
+          matrix="$(node .github/scripts/select-cli-distribution-targets.mjs)"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   checks:
@@ -224,10 +220,9 @@ jobs:
         env:
           SCOPE_BINARY: cli/${{ matrix.binary }}
           SCOPE_ARTIFACT: cli/dist/${{ matrix.artifact }}
-          SCOPE_NODE_ARCHIVE: ${{ matrix.node_archive }}
+          SCOPE_NODE_VERSION: ${{ matrix.node_version }}
+          SCOPE_NODE_PLATFORM: ${{ matrix.node_platform }}
           SCOPE_NODE_SHA256: ${{ matrix.node_sha256 }}
-          SCOPE_NODE_DIRECTORY: ${{ matrix.node_directory }}
-          SCOPE_NODE_EXECUTABLE: ${{ matrix.node_executable }}
         run: bash cli/distribution/package-bundle.sh
 
       - name: Verify Rust integration with packaged analyzer
@@ -235,15 +230,9 @@ jobs:
         shell: bash
         env:
           SCOPE_ARTIFACT: cli/dist/${{ matrix.artifact }}
-        run: |
-          runtime_root="$(mktemp -d)"
-          trap 'rm -rf "$runtime_root"' EXIT
-          tar -xzf "$SCOPE_ARTIFACT" -C "$runtime_root"
-          SCOPE_CLI_RUNTIME_DIR="$runtime_root/scope-runtime" cargo test \
-            --manifest-path cli/Cargo.toml --release --locked \
-            --target "${{ matrix.target }}" --lib \
-            local_dependency_analysis::tests::bundled_analyzer_reports_committed_imports \
-            -- --ignored --exact
+        run: >
+          bash cli/distribution/verify-bundled-analyzer.sh
+          --release --target "${{ matrix.target }}"
 
       - name: Verify native install, update, checksum, and PATH
         if: matrix.smoke
