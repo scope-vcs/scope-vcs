@@ -1,71 +1,95 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "targets": [
     {
       "triple": "x86_64-unknown-linux-gnu",
-      "artifact": "scope-x86_64-unknown-linux-gnu",
+      "artifact": "scope-x86_64-unknown-linux-gnu.tar.gz",
       "os": "linux",
       "arch": "x64",
       "label": "Linux x64",
       "runner": "blacksmith-4vcpu-ubuntu-2404",
       "binary": "target/x86_64-unknown-linux-gnu/release/scope",
       "builder": "cargo",
-      "smoke": true
+      "smoke": true,
+      "node_archive": "node-v24.21.0-linux-x64.tar.xz",
+      "node_sha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6",
+      "node_directory": "node-v24.21.0-linux-x64",
+      "node_executable": "bin/node"
     },
     {
       "triple": "aarch64-unknown-linux-gnu",
-      "artifact": "scope-aarch64-unknown-linux-gnu",
+      "artifact": "scope-aarch64-unknown-linux-gnu.tar.gz",
       "os": "linux",
       "arch": "arm64",
       "label": "Linux ARM64",
       "runner": "blacksmith-4vcpu-ubuntu-2404",
       "binary": "target/aarch64-unknown-linux-gnu/release/scope",
       "builder": "cross",
-      "smoke": false
+      "smoke": false,
+      "node_archive": "node-v24.21.0-linux-arm64.tar.xz",
+      "node_sha256": "6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2",
+      "node_directory": "node-v24.21.0-linux-arm64",
+      "node_executable": "bin/node"
     },
     {
       "triple": "x86_64-apple-darwin",
-      "artifact": "scope-x86_64-apple-darwin",
+      "artifact": "scope-x86_64-apple-darwin.tar.gz",
       "os": "macos",
       "arch": "x64",
       "label": "macOS Intel",
       "runner": "macos-15-intel",
       "binary": "target/x86_64-apple-darwin/release/scope",
       "builder": "cargo",
-      "smoke": true
+      "smoke": true,
+      "node_archive": "node-v24.21.0-darwin-x64.tar.xz",
+      "node_sha256": "0ae5a24c24bb7d015cd816c5036b3f90f2945aa872fcf54e58da054753b3a299",
+      "node_directory": "node-v24.21.0-darwin-x64",
+      "node_executable": "bin/node"
     },
     {
       "triple": "aarch64-apple-darwin",
-      "artifact": "scope-aarch64-apple-darwin",
+      "artifact": "scope-aarch64-apple-darwin.tar.gz",
       "os": "macos",
       "arch": "arm64",
       "label": "macOS Apple Silicon",
       "runner": "blacksmith-6vcpu-macos-15",
       "binary": "target/aarch64-apple-darwin/release/scope",
       "builder": "cargo",
-      "smoke": true
+      "smoke": true,
+      "node_archive": "node-v24.21.0-darwin-arm64.tar.xz",
+      "node_sha256": "6239d4cf92d864487ec8cd3615038f7b67e7f58b77b21cd2f09ea9fbd68065fe",
+      "node_directory": "node-v24.21.0-darwin-arm64",
+      "node_executable": "bin/node"
     },
     {
       "triple": "x86_64-pc-windows-msvc",
-      "artifact": "scope-x86_64-pc-windows-msvc.exe",
+      "artifact": "scope-x86_64-pc-windows-msvc.tar.gz",
       "os": "windows",
       "arch": "x64",
       "label": "Windows x64",
       "runner": "blacksmith-4vcpu-windows-2025",
       "binary": "target/x86_64-pc-windows-msvc/release/scope.exe",
       "builder": "cargo",
-      "smoke": true
+      "smoke": true,
+      "node_archive": "node-v24.21.0-win-x64.zip",
+      "node_sha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541",
+      "node_directory": "node-v24.21.0-win-x64",
+      "node_executable": "node.exe"
     },
     {
       "triple": "aarch64-pc-windows-msvc",
-      "artifact": "scope-aarch64-pc-windows-msvc.exe",
+      "artifact": "scope-aarch64-pc-windows-msvc.tar.gz",
       "os": "windows",
       "arch": "arm64",
       "label": "Windows ARM64",
       "runner": "windows-latest",
       "binary": "target/aarch64-pc-windows-msvc/release/scope.exe",
       "builder": "cargo",
-      "smoke": false
+      "smoke": false,
+      "node_archive": "node-v24.21.0-win-arm64.zip",
+      "node_sha256": "8779b1bde1d39f8d420e3b57aa657b39891af434d3de44a919044cec06785921",
+      "node_directory": "node-v24.21.0-win-arm64",
+      "node_executable": "node.exe"
     }
   ]
 }

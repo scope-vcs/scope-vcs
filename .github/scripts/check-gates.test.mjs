@@ -112,19 +112,28 @@ test('CLI release identity survives subsequent Cargo commands and cross containe
   assert.equal(selected["cli-distribution"], true);
 });
 
-test('artifact staging rejects missing and stale release identities after all builds', () => {
+test('bundle packaging rejects missing and stale release identities after all builds', () => {
   const workflow = read('.github/workflows/scope-cli-build.yml');
-  const stage = workflow.split('      - name: Stage artifact\n')[1].split('      - name: Upload artifact\n')[0];
-  const script = stage.split('        run: |\n')[1].replace(/^          /gm, '');
+  const identityStep = workflow.split('      - name: Verify release identity\n')[1]
+    .split('      - name: Package CLI and managed analyzer runtime\n')[0];
+  const script = identityStep.split('        run: |\n')[1].replace(/^          /gm, '');
+  assert.ok(
+    workflow.indexOf('      - name: Build native installer service\n')
+      < workflow.indexOf('      - name: Verify release identity\n'),
+    'identity must be checked after Cargo finishes building release binaries',
+  );
+  assert.ok(
+    workflow.indexOf('      - name: Verify release identity\n')
+      < workflow.indexOf('      - name: Package CLI and managed analyzer runtime\n'),
+    'identity must be checked before the binary enters the bundle',
+  );
   const sha = '1234567890abcdef1234567890abcdef12345678';
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-release-identity-'));
   try {
     const run = (smoke, output, embedded = output, buildSha = sha) => {
-      rmSync(resolve(dir, 'dist'), { recursive: true, force: true });
       writeFileSync(resolve(dir, 'scope'), `#!/bin/sh\n# ${embedded}\nprintf '%s\\n' '${output}'\n`, { mode: 0o755 });
       return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script
         .replaceAll('${{ matrix.binary }}', 'scope')
-        .replaceAll('${{ matrix.artifact }}', 'scope-release')
         .replaceAll('${{ matrix.smoke }}', String(smoke))], {
         cwd: dir, env: { ...process.env, SCOPE_BUILD_SHA: buildSha }, encoding: 'utf8',
       });
@@ -132,9 +141,7 @@ test('artifact staging rejects missing and stale release identities after all bu
     const current = `scope 0.1.0 (build ${sha}; protocol 1)`;
     for (const smoke of [true, false]) {
       assert.equal(run(smoke, current).status, 0);
-      assert.match(readFileSync(resolve(dir, 'dist/scope-release'), 'utf8'), new RegExp(sha));
       assert.notEqual(run(smoke, 'scope 0.1.0 (build development; protocol 1)').status, 0);
-      assert.throws(() => readFileSync(resolve(dir, 'dist/scope-release')), /ENOENT/);
       assert.notEqual(run(smoke, current, current, '').status, 0);
     }
     assert.notEqual(run(true, 'scope 0.1.0 (build development; protocol 1)', sha).status, 0);

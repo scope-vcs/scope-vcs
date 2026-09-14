@@ -170,6 +170,13 @@ jobs:
           cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib git_credential::tests
           cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib login::tests
 
+      - name: Test native progress and cancellation
+        if: matrix.smoke
+        shell: bash
+        run: >
+          cargo test --manifest-path cli/Cargo.toml --release --locked
+          --target "${{ matrix.target }}" --lib progress::
+
       - name: Test Windows journal replacement and installer quoting
         if: matrix.smoke && runner.os == 'Windows'
         shell: bash
@@ -184,19 +191,16 @@ jobs:
           cargo build --manifest-path cli/Cargo.toml --release --locked
           --target "${{ matrix.target }}" --bin scope-cli-service
 
-      - name: Install Node for installer checks
-        if: matrix.smoke
+      - name: Install Node for analyzer packaging
         uses: actions/setup-node@v6
         with:
           node-version: 24
 
-      - name: Verify native install, update, checksum, and PATH
-        if: matrix.smoke
-        env:
-          SCOPE_TEST_BINARY: cli/${{ matrix.binary }}
-        run: node --test cli/distribution/install-smoke.test.mjs
+      - name: Install trusted analyzer dependencies
+        working-directory: dependency-analyzer
+        run: npm ci --ignore-scripts
 
-      - name: Stage artifact
+      - name: Verify release identity
         working-directory: cli
         shell: bash
         run: |
@@ -214,8 +218,39 @@ jobs:
               exit 1
             }
           fi
-          mkdir -p dist
-          cp "${{ matrix.binary }}" "dist/${{ matrix.artifact }}"
+
+      - name: Package CLI and managed analyzer runtime
+        shell: bash
+        env:
+          SCOPE_BINARY: cli/${{ matrix.binary }}
+          SCOPE_ARTIFACT: cli/dist/${{ matrix.artifact }}
+          SCOPE_NODE_ARCHIVE: ${{ matrix.node_archive }}
+          SCOPE_NODE_SHA256: ${{ matrix.node_sha256 }}
+          SCOPE_NODE_DIRECTORY: ${{ matrix.node_directory }}
+          SCOPE_NODE_EXECUTABLE: ${{ matrix.node_executable }}
+        run: bash cli/distribution/package-bundle.sh
+
+      - name: Verify Rust integration with packaged analyzer
+        if: matrix.smoke
+        shell: bash
+        env:
+          SCOPE_ARTIFACT: cli/dist/${{ matrix.artifact }}
+        run: |
+          runtime_root="$(mktemp -d)"
+          trap 'rm -rf "$runtime_root"' EXIT
+          tar -xzf "$SCOPE_ARTIFACT" -C "$runtime_root"
+          SCOPE_CLI_RUNTIME_DIR="$runtime_root/scope-runtime" cargo test \
+            --manifest-path cli/Cargo.toml --release --locked \
+            --target "${{ matrix.target }}" --lib \
+            local_dependency_analysis::tests::bundled_analyzer_reports_committed_imports \
+            -- --ignored --exact
+
+      - name: Verify native install, update, checksum, and PATH
+        if: matrix.smoke
+        env:
+          SCOPE_TEST_BINARY: cli/${{ matrix.binary }}
+          SCOPE_TEST_ARTIFACT: cli/dist/${{ matrix.artifact }}
+        run: node --test cli/distribution/install-smoke.test.mjs
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

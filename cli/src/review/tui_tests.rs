@@ -1,5 +1,9 @@
-use super::{footer_hints, review_body_heights, row_line};
-use crate::review::state::{ChangeListKind, ReviewMode, ReviewRow};
+use super::{footer_hints, key_to_input, review_body_heights, row_line};
+use crate::review::{
+    dependencies::DependencySummary,
+    state::{ChangeListKind, DependencyPathSide, ReviewMode, ReviewRow},
+};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use scope_domain::repo_visibility::ReviewVisibility;
 use unicode_width::UnicodeWidthStr;
 
@@ -77,6 +81,7 @@ fn narrow_footer_keeps_required_push_actions_visible() {
     for control in [
         "↑↓←→ move",
         "Space toggle",
+        "D dependencies",
         "S save",
         "P push",
         "Q cancel",
@@ -85,4 +90,71 @@ fn narrow_footer_keeps_required_push_actions_visible() {
     ] {
         assert!(text.contains(control), "missing {control}: {hints:?}");
     }
+}
+
+#[test]
+fn dependency_summary_and_pair_fit_narrow_terminals_with_text_labels() {
+    let summary = row_line(
+        &ReviewRow::DependencySummary(DependencySummary {
+            label: "2 public files import private files".into(),
+            meta: Some("Check incomplete".into()),
+            expanded: true,
+            expandable: true,
+            warning: true,
+        }),
+        false,
+        42,
+    )
+    .to_string();
+    let pair = row_line(
+        &ReviewRow::DependencyFinding {
+            source_path: "src/public/long-name.ts".into(),
+            target_path: "src/private/secret.ts".into(),
+            selected_side: DependencyPathSide::PrivateTarget,
+        },
+        true,
+        42,
+    )
+    .to_string();
+
+    assert!(summary.starts_with("[v] 2 public files"), "{summary}");
+    assert!(pair.contains("public"), "{pair}");
+    assert!(pair.contains("private"), "{pair}");
+    assert_eq!(UnicodeWidthStr::width(summary.as_str()), 42);
+    assert_eq!(UnicodeWidthStr::width(pair.as_str()), 42);
+}
+
+#[test]
+fn control_c_cancels_while_editing_or_retaining_a_filter() {
+    let tree = crate::review::tree::ReviewTree::from_paths(&["src/lib.rs".into()], &[]);
+    let mut state = crate::review::state::ReviewState::new(
+        tree,
+        crate::repo_config::default_scope_repo_config(),
+        ReviewMode::Push,
+    );
+    state.handle_input(crate::review::state::ReviewInput::Filter);
+
+    let control_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    let input = key_to_input(&state, control_c).unwrap();
+    assert_eq!(input, crate::review::state::ReviewInput::Cancel);
+    assert_eq!(
+        state.handle_input(input),
+        crate::review::state::ReviewStateAction::Cancel
+    );
+
+    let mut state = crate::review::state::ReviewState::new(
+        crate::review::tree::ReviewTree::from_paths(&["src/lib.rs".into()], &[]),
+        crate::repo_config::default_scope_repo_config(),
+        ReviewMode::Push,
+    );
+    state.handle_input(crate::review::state::ReviewInput::Filter);
+    state.handle_input(crate::review::state::ReviewInput::Char('s'));
+    state.handle_input(crate::review::state::ReviewInput::Escape);
+    assert!(!state.editing_filter());
+    assert_eq!(state.filter(), "s");
+    let input = key_to_input(&state, control_c).unwrap();
+    assert_eq!(
+        state.handle_input(input),
+        crate::review::state::ReviewStateAction::Cancel
+    );
 }

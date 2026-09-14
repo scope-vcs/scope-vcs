@@ -1,6 +1,7 @@
 use super::state::{
     ChangeListKind, ReviewInput, ReviewMode, ReviewRow, ReviewState, ReviewStateAction,
 };
+use crate::local_dependency_analysis::AnalysisJob;
 use anyhow::Context;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -9,7 +10,7 @@ use crossterm::{
 };
 use ratatui::{prelude::*, widgets::Paragraph};
 use scope_domain::repo_config::RepoConfig;
-use std::io;
+use std::{io, time::Duration};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -21,6 +22,7 @@ pub enum TuiOutcome {
 
 pub fn run_review_tui(
     mut state: ReviewState,
+    mut analysis_job: Option<AnalysisJob>,
     mut save_config: impl FnMut(&RepoConfig) -> anyhow::Result<()>,
 ) -> anyhow::Result<TuiOutcome> {
     enable_raw_mode().context("enable terminal raw mode")?;
@@ -30,10 +32,16 @@ pub fn run_review_tui(
     let mut terminal = Terminal::new(backend).context("open terminal UI")?;
 
     loop {
+        if let Some(result) = analysis_job.as_mut().and_then(AnalysisJob::try_result) {
+            state.complete_dependency_analysis(result);
+        }
         terminal
             .draw(|frame| render(frame, &mut state))
             .context("draw Scope review UI")?;
 
+        if !event::poll(Duration::from_millis(100)).context("poll terminal input")? {
+            continue;
+        }
         let Event::Key(key) = event::read().context("read terminal input")? else {
             continue;
         };
@@ -162,16 +170,63 @@ fn review_body_heights(
 }
 
 fn row_line(row: &ReviewRow, selected: bool, width: usize) -> Line<'static> {
-    let line = match row {
+    let (line, select_entire_row) = match row {
+        ReviewRow::DependencySummary(summary) => (dependency_summary_line(summary, width), true),
+        ReviewRow::DependencyFinding {
+            source_path,
+            target_path,
+            selected_side,
+        } => (
+            dependency_finding_line(source_path, target_path, *selected_side, selected, width),
+            false,
+        ),
+        ReviewRow::DependencyGap(gap) => (
+            Line::from(Span::styled(
+                fit_cell(
+                    &format!(
+                        "    gap  {}  {}",
+                        tui_escaped(&gap.path),
+                        tui_escaped(&gap.reason)
+                    ),
+                    width,
+                ),
+                Style::new().fg(Color::Yellow),
+            )),
+            true,
+        ),
+        ReviewRow::DependencyCoverage {
+            analyzed_file_count,
+            unsupported_file_count,
+        } => (
+            Line::from(Span::styled(
+                fit_cell(
+                    &format!(
+                        "    Checked {analyzed_file_count} JS/TS file{}; {unsupported_file_count} other source file{} not checked",
+                        if *analyzed_file_count == 1 { "" } else { "s" },
+                        if *unsupported_file_count == 1 {
+                            ""
+                        } else {
+                            "s"
+                        },
+                    ),
+                    width,
+                ),
+                Style::new().fg(Color::DarkGray),
+            )),
+            true,
+        ),
         ReviewRow::ChangeSection {
             kind,
             count,
             expanded,
-        } => change_section_line(*kind, *count, *expanded, width),
-        ReviewRow::ChangePath { kind, path } => Line::from(Span::styled(
-            fit_cell(&format!("    {}", tui_escaped(path)), width),
-            change_list_style(*kind),
-        )),
+        } => (change_section_line(*kind, *count, *expanded, width), true),
+        ReviewRow::ChangePath { kind, path } => (
+            Line::from(Span::styled(
+                fit_cell(&format!("    {}", tui_escaped(path)), width),
+                change_list_style(*kind),
+            )),
+            true,
+        ),
         ReviewRow::TreeNode {
             depth,
             name,
@@ -197,14 +252,82 @@ fn row_line(row: &ReviewRow, selected: bool, width: usize) -> Line<'static> {
                 .unwrap_or_default();
             let reserved = if *reserved { " reserved" } else { "" };
             let detail = format!("{}{}{}", tui_escaped(rule), reserved, change);
-            tree_line(&path, *visibility, &detail, width)
+            (tree_line(&path, *visibility, &detail, width), true)
         }
     };
-    if selected {
+    if selected && select_entire_row {
         line.style(Style::new().add_modifier(Modifier::REVERSED))
     } else {
         line
     }
+}
+
+fn dependency_summary_line(
+    summary: &super::dependencies::DependencySummary,
+    width: usize,
+) -> Line<'static> {
+    let symbol = if !summary.expandable {
+        " • "
+    } else if summary.expanded {
+        "[v]"
+    } else {
+        "[>]"
+    };
+    let meta = summary
+        .meta
+        .as_deref()
+        .map(|meta| format!("  {meta}"))
+        .unwrap_or_default();
+    let style = if summary.warning {
+        Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+    } else {
+        Style::new().fg(Color::DarkGray)
+    };
+    Line::from(Span::styled(
+        fit_cell(&format!("{symbol} {}{meta}", summary.label), width),
+        style,
+    ))
+}
+
+fn dependency_finding_line(
+    source_path: &str,
+    target_path: &str,
+    selected_side: super::state::DependencyPathSide,
+    selected: bool,
+    width: usize,
+) -> Line<'static> {
+    let arrow_width = 3.min(width);
+    let path_width = width.saturating_sub(arrow_width) / 2;
+    let target_width = width.saturating_sub(arrow_width + path_width);
+    let selected_style = Style::new().add_modifier(Modifier::REVERSED);
+    let public_style = Style::new().fg(Color::Green);
+    let private_style = Style::new().fg(Color::Red);
+    let source_style =
+        if selected && selected_side == super::state::DependencyPathSide::PublicSource {
+            selected_style
+        } else {
+            public_style
+        };
+    let target_style =
+        if selected && selected_side == super::state::DependencyPathSide::PrivateTarget {
+            selected_style
+        } else {
+            private_style
+        };
+    Line::from(vec![
+        Span::styled(
+            fit_cell(&format!("public {}", tui_escaped(source_path)), path_width),
+            source_style,
+        ),
+        Span::raw(fit_cell(" → ", arrow_width)),
+        Span::styled(
+            fit_cell(
+                &format!("private {}", tui_escaped(target_path)),
+                target_width,
+            ),
+            target_style,
+        ),
+    ])
 }
 
 fn review_header_line(filter: &str, width: usize) -> Line<'static> {
@@ -286,7 +409,7 @@ fn row_column_widths(width: usize) -> (usize, usize, usize) {
 fn footer_hints(mode: ReviewMode, width: usize) -> Vec<String> {
     let full = match mode {
         ReviewMode::Push => {
-            "Arrows navigate  Space toggle  S save  P push  Q cancel  / filter  ? help"
+            "Arrows navigate  Space toggle/open  D dependencies  S save  P push  Q cancel  / filter  ? help"
         }
         ReviewMode::Standalone => "Arrows navigate  Space toggle  S save  Q quit  / filter  ? help",
     };
@@ -298,6 +421,7 @@ fn footer_hints(mode: ReviewMode, width: usize) -> Vec<String> {
         ReviewMode::Push => &[
             "↑↓←→ move",
             "Space toggle",
+            "D dependencies",
             "S save",
             "P push",
             "Q cancel",
@@ -365,7 +489,7 @@ fn tui_escaped(text: &str) -> String {
 
 fn key_to_input(state: &ReviewState, key: KeyEvent) -> Option<ReviewInput> {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-        return Some(ReviewInput::Escape);
+        return Some(ReviewInput::Cancel);
     }
     if state.editing_filter() {
         return match key.code {
@@ -387,6 +511,7 @@ fn key_to_input(state: &ReviewState, key: KeyEvent) -> Option<ReviewInput> {
         KeyCode::Char('q') | KeyCode::Char('Q') => Some(ReviewInput::Quit),
         KeyCode::Char('/') => Some(ReviewInput::Filter),
         KeyCode::Char('?') => Some(ReviewInput::Help),
+        KeyCode::Char('d') | KeyCode::Char('D') => Some(ReviewInput::Dependencies),
         KeyCode::Esc => Some(ReviewInput::Escape),
         _ => None,
     }

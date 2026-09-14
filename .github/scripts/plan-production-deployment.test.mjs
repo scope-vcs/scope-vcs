@@ -84,9 +84,9 @@ test("changes select the required deployment lanes", () => {
       { cache: true, "run-worker": true, "git-router": true, api: true },
     ],
     [
-      "dependency analyzer changes rebuild the worker",
+      "dependency analyzer changes rebuild the worker and CLI bundle",
       ["dependency-analyzer/analyze.mjs"],
-      { "run-worker": true },
+      { "run-worker": true, "cli-downloads": true, "cli-distribution": true },
     ],
     [
       "worker runtime image selects only the worker",

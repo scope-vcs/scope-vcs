@@ -3,12 +3,6 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const PULL_REQUEST_TARGETS = new Set([
-  "x86_64-unknown-linux-gnu",
-  "aarch64-apple-darwin",
-  "x86_64-pc-windows-msvc",
-]);
-
 export function selectCliDistributionTargets(configuration, mode) {
   if (!Array.isArray(configuration?.targets)) {
     throw new Error("CLI distribution configuration must contain a targets array");
@@ -17,15 +11,25 @@ export function selectCliDistributionTargets(configuration, mode) {
     throw new Error(`Unknown CLI distribution mode: ${mode}`);
   }
 
-  const targets = mode === "release"
-    ? configuration.targets
-    : configuration.targets.filter(({ triple }) => PULL_REQUEST_TARGETS.has(triple));
+  const targets = configuration.targets;
   if (targets.length === 0) {
     throw new Error(`CLI distribution mode ${mode} selected no targets`);
   }
 
   return {
-    include: targets.map(({ label, runner, triple, artifact, binary, builder, smoke }) => ({
+    include: targets.map(({
+      label,
+      runner,
+      triple,
+      artifact,
+      binary,
+      builder,
+      smoke,
+      node_archive,
+      node_sha256,
+      node_directory,
+      node_executable,
+    }) => ({
       label,
       runner,
       target: triple,
@@ -33,6 +37,10 @@ export function selectCliDistributionTargets(configuration, mode) {
       binary,
       builder,
       smoke,
+      node_archive,
+      node_sha256,
+      node_directory,
+      node_executable,
     })),
   };
 }
