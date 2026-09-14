@@ -359,10 +359,40 @@ pub(crate) async fn get_projection_preview(
     let include_private_counts =
         repo.access_for_principal(&requester).actor != RepositoryActor::Public;
 
+    let projection = scope_domain::projection::project_graph(
+        &repo.graph,
+        &repo.visibility_change_sets,
+        scope_domain::projection_views::ProjectionAudience::from(input.audience).into(),
+    );
+    let commits = projection
+        .commits
+        .iter()
+        .filter_map(|commit| match &commit.materialization {
+            scope_domain::projection::ProjectionMaterialization::PreserveGitCommit {
+                oid,
+                parent_oids,
+                tree_oid,
+            } => Some(scope_domain::projection::NativePublicCommit {
+                oid: oid.clone(),
+                parent_oids: parent_oids.clone(),
+                tree_oid: tree_oid.clone(),
+                changed_paths: Vec::new(),
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let native_details = crate::use_cases::native_commit_details::native_commit_details(
+        &state,
+        &repo.incarnation(),
+        &commits,
+    )
+    .await?;
+
     Ok(Json(projection_preview_response(
         &repo,
         input.audience,
         include_private_counts,
+        &native_details,
     )?))
 }
 

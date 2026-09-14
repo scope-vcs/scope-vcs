@@ -15,7 +15,21 @@ pub fn required_env(name: &str) -> Result<String, ObjectStoreError> {
 
 impl S3ObjectStoreSettings {
     pub fn from_env(prefix: &str) -> Result<Self, ObjectStoreError> {
-        let read = |suffix| required_env(&format!("{prefix}_{suffix}"));
+        Self::from_lookup(prefix, |name| std::env::var(name).ok())
+    }
+
+    pub fn from_lookup(
+        prefix: &str,
+        get: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, ObjectStoreError> {
+        let optional = |suffix: &str| {
+            get(&format!("{prefix}_{suffix}")).filter(|value| !value.trim().is_empty())
+        };
+        let read = |suffix| {
+            optional(suffix).ok_or_else(|| {
+                ObjectStoreError::internal_message(format!("{prefix}_{suffix} is required"))
+            })
+        };
         let endpoint = read("ENDPOINT")?;
         validate_endpoint(&endpoint)?;
         let mut settings = Self::new(
@@ -25,13 +39,12 @@ impl S3ObjectStoreSettings {
             read("ACCESS_KEY_ID")?,
             read("SECRET_ACCESS_KEY")?,
         );
-        settings.force_path_style = nonempty_env(&format!("{prefix}_FORCE_PATH_STYLE"))
-            .is_some_and(|value| {
-                matches!(
-                    value.trim().to_ascii_lowercase().as_str(),
-                    "1" | "true" | "yes"
-                )
-            });
+        settings.force_path_style = optional("FORCE_PATH_STYLE").is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        });
         Ok(settings)
     }
 }
@@ -55,7 +68,17 @@ fn validate_endpoint(value: &str) -> Result<(), ObjectStoreError> {
 }
 
 pub fn encryption_key_from_env(name: &str) -> Result<[u8; 32], ObjectStoreError> {
-    decode_encryption_key(name, &required_env(name)?)
+    encryption_key_from_lookup(name, |name| std::env::var(name).ok())
+}
+
+pub fn encryption_key_from_lookup(
+    name: &str,
+    get: impl Fn(&str) -> Option<String>,
+) -> Result<[u8; 32], ObjectStoreError> {
+    let encoded = get(name)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| ObjectStoreError::internal_message(format!("{name} is required")))?;
+    decode_encryption_key(name, &encoded)
 }
 
 fn decode_encryption_key(name: &str, encoded: &str) -> Result<[u8; 32], ObjectStoreError> {

@@ -40,8 +40,8 @@ impl ObjectStore for RevokeMembershipOnUpload {
         Ok(())
     }
 
-    fn get(&self, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
-        self.inner.get(key)
+    fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
+        self.inner.get_bounded(key, max_bytes)
     }
 
     fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {

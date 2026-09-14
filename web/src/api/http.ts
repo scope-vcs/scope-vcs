@@ -70,6 +70,13 @@ export class InvalidApiResponseError extends Error {
   }
 }
 
+export class ApiResponseTooLargeError extends Error {
+  constructor(readonly limit: number) {
+    super(`API response exceeds the ${limit}-byte limit.`)
+    this.name = 'ApiResponseTooLargeError'
+  }
+}
+
 type InvalidApiResponseObserver = (error: InvalidApiResponseError) => void
 type NoContentValidator = ApiValidator<undefined> & { readonly noContent: true }
 
@@ -123,14 +130,7 @@ export async function loadJson<T>(
     throw invalidResponse(context, 'content-type')
   }
 
-  let payload: unknown
-  try {
-    payload = maxResponseBytes === undefined
-      ? await response.json()
-      : JSON.parse(await readBoundedResponse(response, maxResponseBytes))
-  } catch {
-    throw invalidResponse(context, 'json-syntax')
-  }
+  const payload = await readJsonResponse(response, context, maxResponseBytes)
 
   if (!validator(payload)) {
     throw invalidResponse(
@@ -153,14 +153,7 @@ export async function throwApiResponseError(
     throw invalidResponse(context, 'content-type')
   }
 
-  let payload: unknown
-  try {
-    payload = maxResponseBytes === undefined
-      ? await response.json()
-      : JSON.parse(await readBoundedResponse(response, maxResponseBytes))
-  } catch {
-    throw invalidResponse(context, 'json-syntax')
-  }
+  const payload = await readJsonResponse(response, context, maxResponseBytes)
   if (!apiValidators.ErrorResponse(payload)) {
     throw invalidResponse(
       context,
@@ -169,6 +162,21 @@ export async function throwApiResponseError(
     )
   }
   throw new HttpError(response.status, payload)
+}
+
+async function readJsonResponse(
+  response: Response,
+  context: ReturnType<typeof responseContext>,
+  maxResponseBytes?: number,
+): Promise<unknown> {
+  const text = maxResponseBytes === undefined
+    ? await response.text()
+    : await readBoundedResponse(response, maxResponseBytes)
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw invalidResponse(context, 'json-syntax')
+  }
 }
 
 export function arrayOf<T>(itemValidator: ApiValidator<T>): ApiValidator<T[]> {
@@ -313,11 +321,15 @@ async function readBoundedResponse(response: Response, limit: number): Promise<s
       const { done, value } = await reader.read()
       if (done) return text + decoder.decode()
       bytes += value.byteLength
-      if (bytes > limit) throw new Error('API response exceeds the byte limit.')
+      if (bytes > limit) throw new ApiResponseTooLargeError(limit)
       text += decoder.decode(value, { stream: true })
     }
   } finally {
-    await reader.cancel()
+    try {
+      await reader.cancel()
+    } catch {
+      // Cancellation of an already failed body must not replace its read error.
+    }
     reader.releaseLock()
   }
 }

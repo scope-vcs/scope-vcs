@@ -1,4 +1,5 @@
 import { parseRepoParams } from './repo-params'
+import { parseFilePath } from './file-path-input'
 import type { RequestParams } from './types'
 import type { RequestActionInput } from '../features/requests/request-actions-api'
 import type {
@@ -47,12 +48,6 @@ function position(value: unknown, field: string, min = 0, max = Number.MAX_SAFE_
   return value
 }
 
-function filePath(value: unknown): string {
-  const path = text(value, 'path', 4096)
-  if (path.includes('\0')) throw new Error('path contains a NUL byte.')
-  return path
-}
-
 export function parseRequestParams(input: unknown): RequestParams {
   const data = object(input)
   return { ...parseRepoParams(data), request_id: id(data.request_id, 'request_id') }
@@ -60,7 +55,7 @@ export function parseRequestParams(input: unknown): RequestParams {
 
 export function parseRepoFileInput(input: unknown) {
   const data = object(input)
-  return { ...parseRepoParams(data), path: filePath(data.path) }
+  return { ...parseRepoParams(data), path: parseFilePath(data.path) }
 }
 
 export function parseLoadRequestRevisionsInput(input: unknown) {
@@ -78,7 +73,7 @@ export function parseLoadRequestRevisionDiffInput(input: unknown) {
     ...parseRequestParams(data),
     commit_oid: id(data.commit_oid, 'commit_oid'),
     revision_id: id(data.revision_id, 'revision_id'),
-    path: filePath(data.path),
+    path: parseFilePath(data.path),
   }
 }
 
@@ -130,7 +125,7 @@ export function parseCreateDiscussionInput(input: unknown): CreateDiscussionInpu
     anchor: anchor === null ? null : {
       revision_id: id(anchor.revision_id, 'revision_id'),
       commit_oid: anchor.commit_oid === null ? null : id(anchor.commit_oid, 'commit_oid'),
-      path: anchor.path === null ? null : filePath(anchor.path),
+      path: anchor.path === null ? null : parseFilePath(anchor.path),
     },
   }
 }

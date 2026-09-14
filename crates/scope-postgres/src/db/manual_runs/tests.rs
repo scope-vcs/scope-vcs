@@ -1,14 +1,13 @@
 use super::*;
 use crate::{
-    db::{CatalogFixture, MetadataStore, TestDatabaseTarget, locks::wait_for_transaction_waiter},
+    db::{
+        MetadataStore,
+        locks::wait_for_transaction_waiter,
+        test_support::fixtures::{repository, source_blob, store_with_repositories, user},
+    },
     error::PostgresErrorKind,
 };
-use scope_domain::{
-    account::UserAccount,
-    content_ref::ContentRef,
-    policy::Visibility,
-    repository::{RepoLifecycleState, Repository, collaboration::RepositoryMember},
-};
+use scope_domain::{policy::Visibility, repository::collaboration::RepositoryMember};
 use sea_orm::{ConnectionTrait, DatabaseBackend, PaginatorTrait, Statement};
 
 fn fixture() -> (
@@ -17,37 +16,15 @@ fn fixture() -> (
     WorkflowRevision,
     SourceBlob,
 ) {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
-    let owner = UserAccount {
-        id: "owner".into(),
-        handle: "owner".into(),
-        email: "owner@example.com".into(),
-        email_verified: true,
-    };
-    let member = UserAccount {
-        id: "member".into(),
-        handle: "member".into(),
-        email: "member@example.com".into(),
-        email_verified: true,
-    };
-    let mut repository =
-        Repository::new(&owner, "repo", Visibility::Private, "repoi_test").unwrap();
-    repository.record.lifecycle_state = RepoLifecycleState::Ready;
+    let mut repository = repository(&user("owner", "owner"), "repo", Visibility::Private);
     repository.members.push(RepositoryMember {
         repo_id: "owner/repo".into(),
-        user_id: member.id.clone(),
+        user_id: "member".into(),
         permissions: Default::default(),
         created_at_unix: 1,
         updated_at_unix: 1,
     });
-    let mut catalog = CatalogFixture::default();
-    catalog.users.insert(owner.id.clone(), owner);
-    catalog.users.insert(member.id.clone(), member);
-    catalog
-        .repositories
-        .insert(repository.record.id.clone(), repository);
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
+    let store = store_with_repositories([repository]);
     let request = ManualRunRequest::new(
         "owner/repo".into(),
         "member".into(),
@@ -60,13 +37,7 @@ fn fixture() -> (
         "/.scope/runs/checks.yml",
         format!("name: Checks\non:\n  manual: true\ncontainer: {{ image: rust@sha256:{} }}\ntimeout: 10m\njobs:\n  checks:\n    steps:\n      - {{ name: Test, run: cargo test }}\n", "b".repeat(64)).as_bytes(),
     ).unwrap().into_revision("owner/repo").unwrap();
-    let object = SourceBlob {
-        content_ref: ContentRef::git_bundle_sha256("c".repeat(64)),
-        sha256: "c".repeat(64),
-        git_oid: "a".repeat(40),
-        git_file_mode: "100644".into(),
-        size_bytes: 42,
-    };
+    let object = source_blob(&"a".repeat(40), &"c".repeat(64), 42);
     (store, request, revision, object)
 }
 
@@ -196,7 +167,7 @@ async fn uploaded_enqueue_that_wins_repository_lock_completes_before_real_revoca
         .unwrap()
         .unwrap();
     assert!(enqueued.inserted);
-    assert_eq!(removed.user_id, "member");
+    assert_eq!(removed.value.user_id, "member");
     assert_eq!(
         store.runs().run(&enqueued.run.id).await.unwrap().unwrap(),
         enqueued.run
@@ -214,7 +185,7 @@ async fn uploaded_enqueue_replay_requires_current_membership_and_matching_reques
     assert!(first.inserted);
     let replay = store
         .runs()
-        .enqueue_uploaded_manual_run(&request, object.clone(), revision.clone(), 10)
+        .enqueue_uploaded_manual_run(&request, object.clone(), revision.clone(), 11)
         .await
         .unwrap();
     assert!(!replay.inserted);
@@ -304,4 +275,54 @@ async fn uploaded_enqueue_rejects_mismatched_workflow_without_persisting() {
         PostgresErrorKind::InvalidInput,
     );
     assert_no_enqueue_rows(&store).await;
+}
+
+#[tokio::test]
+async fn uploaded_enqueue_replay_preserves_dispatch_and_terminal_execution() {
+    let (store, request, revision, object) = fixture();
+    let runs = store.runs();
+    let first = runs
+        .enqueue_uploaded_manual_run(&request, object.clone(), revision.clone(), 10)
+        .await
+        .unwrap();
+    let token = "e".repeat(64);
+    runs.dispatch_job(
+        &first.run.id,
+        "checks",
+        "replay-attempt",
+        &token,
+        "runtime",
+        12,
+        100,
+    )
+    .await
+    .unwrap();
+    let dispatched = runs.run_detail(&first.run.id).await.unwrap().unwrap();
+    let replay = runs
+        .enqueue_uploaded_manual_run(&request, object.clone(), revision.clone(), 13)
+        .await
+        .unwrap();
+    assert!(!replay.inserted);
+    assert_eq!(replay.run, dispatched.run);
+    assert_eq!(
+        runs.run_detail(&first.run.id).await.unwrap().unwrap(),
+        dispatched
+    );
+
+    runs.expire_attempt("replay-attempt", 100).await.unwrap();
+    runs.request_run_cancellation("member", "owner/repo", &first.run.id, 101)
+        .await
+        .unwrap();
+    let terminal = runs.run_detail(&first.run.id).await.unwrap().unwrap();
+    assert!(terminal.run.state.is_terminal());
+    let replay = runs
+        .enqueue_uploaded_manual_run(&request, object, revision, 102)
+        .await
+        .unwrap();
+    assert!(!replay.inserted);
+    assert_eq!(replay.run, terminal.run);
+    assert_eq!(
+        runs.run_detail(&first.run.id).await.unwrap().unwrap(),
+        terminal
+    );
 }

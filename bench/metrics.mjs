@@ -69,16 +69,13 @@ function groupedSlope(samples, field, slopeField, divisor = 1) {
   };
 }
 
-export function normalizedRates(samples, elapsedSeconds) {
-  const successful = samples.filter(({ ok }) => ok);
-  const bytes = successful.reduce((total, sample) => total + (sample.bytes || 0), 0);
-  const logicalBytes = successful.reduce((total, sample) => total + (sample.logicalBytes || 0), 0);
+export function normalizedRates({ ok, bytes, logicalBytes }, elapsedSeconds) {
   return {
-    operationsPerSecond: round(successful.length / elapsedSeconds),
+    operationsPerSecond: round(ok / elapsedSeconds),
     observedMiBPerSecond: round(bytes / MIB / elapsedSeconds),
     logicalMiBPerSecond: round(logicalBytes / MIB / elapsedSeconds),
-    observedBytesPerOperation: round(bytes / Math.max(1, successful.length)),
-    logicalBytesPerOperation: round(logicalBytes / Math.max(1, successful.length)),
+    observedBytesPerOperation: round(bytes / Math.max(1, ok)),
+    logicalBytesPerOperation: round(logicalBytes / Math.max(1, ok)),
   };
 }
 

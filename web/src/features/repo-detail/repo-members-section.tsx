@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
+import { usePendingActions } from '@/lib/use-pending-actions'
 import {
   Eye,
   LoaderCircle,
@@ -29,16 +30,22 @@ import {
 import { useReducer, useState, type FormEvent, type ReactNode } from 'react'
 
 const defaultPermissions: RepositoryMemberPermissions = {
-  can_apply_changes: false,
   can_change_file_visibility: false,
   can_push: false,
 }
 
-// The API carries three permissions; push is the only one members can hold today.
-const PUSH_PERMISSION = {
-  description: 'Allows Git pushes to this repository.',
-  label: 'Push changes',
-}
+const permissionLabels = [
+  {
+    description: 'Allows changes to file visibility rules in repository configuration.',
+    key: 'can_change_file_visibility',
+    label: 'Change file visibility',
+  },
+  {
+    description: 'Allows Git pushes to this repository.',
+    key: 'can_push',
+    label: 'Push changes',
+  },
+] as const
 
 type InviteMemberFormState = {
   email: string
@@ -96,12 +103,7 @@ export function MemberAccessSummary({
   return (
     <div className="space-y-3 text-sm">
       <AlwaysOnPrivateRead />
-      <div className="flex items-center justify-between gap-3">
-        <span>{PUSH_PERMISSION.label}</span>
-        <Badge variant={permissions.can_push ? 'success' : 'neutral'}>
-          {permissions.can_push ? 'On' : 'Off'}
-        </Badge>
-      </div>
+      <PermissionSummary permissions={permissions} />
     </div>
   )
 }
@@ -241,11 +243,11 @@ function InviteMemberForm({
       </div>
 
       <div className="rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm leading-5 text-warning-strong">
-        Members always read private files once they accept. This toggle grants
-        repository push access only.
+        Members always read private files once they accept. These toggles grant
+        additional repository actions.
       </div>
 
-      <PushPermissionToggle
+      <PermissionEditor
         disabled={!canInvite || state.pending}
         onChange={(permissions) =>
           dispatch({ permissions, type: 'permissionsChanged' })
@@ -314,7 +316,7 @@ function MemberList({
             <RemoveButton label="Remove" onClick={actions.remove} pending={actions.pending} />
           </div>
           <AlwaysOnPrivateRead />
-          <PushPermissionToggle
+          <PermissionEditor
             disabled={actions.pending}
             onChange={(permissions) =>
               actions.run(() => updateMember({
@@ -357,7 +359,7 @@ function InviteList({
               {invite.invited_email}
             </div>
             <div className="leading-5 text-muted-foreground">
-              {invite.permissions.can_push ? 'push changes' : 'No extra actions'}
+              {permissionSummaryText(invite.permissions)}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -406,18 +408,18 @@ function RemovableRowList<Item>({
 }) {
   const [error, setError] = useState<string | null>(null)
   const [confirmTarget, setConfirmTarget] = useState<Item | null>(null)
-  const [pendingId, setPendingId] = useState<string | null>(null)
+  const { pending, run: runPending } = usePendingActions()
 
   async function run(item: Item, action: () => Promise<unknown>) {
-    setError(null)
-    setPendingId(itemId(item))
-    try {
-      await action()
-    } catch (error) {
-      setError(resourceErrorMessage(error, fallbackError))
-    } finally {
-      setPendingId(null)
-    }
+    const id = itemId(item)
+    await runPending(id, async () => {
+      setError(null)
+      try {
+        await action()
+      } catch (error) {
+        setError(resourceErrorMessage(error, fallbackError))
+      }
+    })
   }
 
   async function remove(item: Item) {
@@ -436,7 +438,7 @@ function RemovableRowList<Item>({
           return (
             <li className={rowClassName} key={id}>
               {row(item, {
-                pending: pendingId === id,
+                pending: pending.has(id),
                 remove: () => setConfirmTarget(item),
                 run: (action) => void run(item, action),
               })}
@@ -451,10 +453,10 @@ function RemovableRowList<Item>({
           if (confirmTarget !== null) void remove(confirmTarget)
         }}
         onOpenChange={(open) => {
-          if (!open && !pendingId) setConfirmTarget(null)
+          if (!open && !(confirmTarget !== null && pending.has(itemId(confirmTarget)))) setConfirmTarget(null)
         }}
         open={confirmTarget !== null}
-        pending={confirmTarget !== null && pendingId === itemId(confirmTarget)}
+        pending={confirmTarget !== null && pending.has(itemId(confirmTarget))}
         subject={confirmTarget !== null ? confirm.subject(confirmTarget) : ''}
         title={confirm.title}
       />
@@ -490,7 +492,7 @@ function RemoveButton({
   )
 }
 
-function PushPermissionToggle({
+function PermissionEditor({
   disabled,
   onChange,
   permissions,
@@ -500,21 +502,44 @@ function PushPermissionToggle({
   permissions: RepositoryMemberPermissions
 }) {
   return (
-    <label className="flex items-start justify-between gap-4 text-sm">
-      <span className="min-w-0">
-        <span className="block font-medium leading-5">{PUSH_PERMISSION.label}</span>
-        <span className="block leading-5 text-muted-foreground">
-          {PUSH_PERMISSION.description}
-        </span>
-      </span>
-      <Switch
-        checked={permissions.can_push}
-        disabled={disabled}
-        onCheckedChange={(checked) => onChange({ ...permissions, can_push: checked })}
-        type="button"
-      />
-    </label>
+    <div className="space-y-2">
+      {permissionLabels.map((permission) => (
+        <label className="flex items-start justify-between gap-4 text-sm" key={permission.key}>
+          <span className="min-w-0">
+            <span className="block font-medium leading-5">{permission.label}</span>
+            <span className="block leading-5 text-muted-foreground">{permission.description}</span>
+          </span>
+          <Switch
+            checked={permissions[permission.key]}
+            disabled={disabled}
+            onCheckedChange={(checked) => onChange({ ...permissions, [permission.key]: checked })}
+            type="button"
+          />
+        </label>
+      ))}
+    </div>
   )
+}
+
+function PermissionSummary({ permissions }: { permissions: RepositoryMemberPermissions }) {
+  return (
+    <div className="space-y-2">
+      {permissionLabels.map((permission) => (
+        <div className="flex items-center justify-between gap-3" key={permission.key}>
+          <span>{permission.label}</span>
+          <Badge variant={permissions[permission.key] ? 'success' : 'neutral'}>
+            {permissions[permission.key] ? 'On' : 'Off'}
+          </Badge>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function permissionSummaryText(permissions: RepositoryMemberPermissions) {
+  const enabled = permissionLabels.flatMap(({ key, label }) =>
+    permissions[key] ? [label.toLowerCase()] : [])
+  return enabled.length === 0 ? 'No extra actions' : enabled.join(', ')
 }
 
 function AlwaysOnPrivateRead() {

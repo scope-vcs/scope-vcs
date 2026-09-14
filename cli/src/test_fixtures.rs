@@ -32,7 +32,6 @@ pub fn repository_response(overrides: Value) -> Value {
             can_read_private_files: false,
             can_push: false,
             can_change_file_visibility: false,
-            can_apply_changes: false,
             can_manage_members: false,
             can_delete_repo: false,
         },

@@ -1,20 +1,16 @@
 use super::*;
 use crate::{
     db::{
-        CatalogFixture, MetadataStore, TestDatabaseTarget, acquire_aggregate_lock,
-        generated_ids::test_generated_id, locks::wait_for_transaction_waiter,
+        MetadataStore, acquire_aggregate_lock,
+        generated_ids::test_generated_id,
+        locks::wait_for_transaction_waiter,
+        test_support::fixtures::{repository, source_blob, store_with_repositories, user},
     },
     error::PostgresErrorKind,
 };
 use scope_domain::{
-    account::UserAccount,
-    content::SourceBlob,
-    content_ref::ContentRef,
     policy::Visibility,
-    repository::{
-        RepoLifecycleState, Repository,
-        collaboration::{RepositoryMember, RepositoryMemberPermissions},
-    },
+    repository::collaboration::{RepositoryMember, RepositoryMemberPermissions},
     runs::{
         job::RunJobState,
         run::RunState,
@@ -62,41 +58,19 @@ impl Command {
 }
 
 async fn fixture(command: Command) -> MetadataStore {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
-    let owner = UserAccount {
-        id: OWNER.into(),
-        handle: "owner".into(),
-        email: "owner@example.com".into(),
-        email_verified: true,
-    };
-    let member = UserAccount {
-        id: MEMBER.into(),
-        handle: "member".into(),
-        email: "member@example.com".into(),
-        email_verified: true,
-    };
-    let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_control").unwrap();
-    repo.record.lifecycle_state = RepoLifecycleState::Ready;
+    let owner = user(OWNER, "owner");
+    let mut repo = repository(&owner, "repo", Visibility::Public);
     repo.members.push(RepositoryMember {
         repo_id: REPO.into(),
         user_id: MEMBER.into(),
         permissions: RepositoryMemberPermissions {
             can_push: false,
             can_change_file_visibility: false,
-            can_apply_changes: false,
         },
         created_at_unix: 1,
         updated_at_unix: 1,
     });
-    let mut other = Repository::new(&owner, "other", Visibility::Public, "repoi_other").unwrap();
-    other.record.lifecycle_state = RepoLifecycleState::Ready;
-    let mut catalog = CatalogFixture::default();
-    catalog.users.insert(owner.id.clone(), owner);
-    catalog.users.insert(member.id.clone(), member);
-    catalog.repositories.insert(REPO.into(), repo);
-    catalog.repositories.insert("owner/other".into(), other);
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
+    let store = store_with_repositories([repo, repository(&owner, "other", Visibility::Public)]);
     let revision = scope_run_config::parse_workflow(
         "/.scope/runs/test.yml",
         br#"
@@ -123,14 +97,7 @@ jobs:
         revision.digest(),
         RunTrigger::Manual,
         Some(OWNER.into()),
-        RunSource::ephemeral_git_bundle(SourceBlob {
-            content_ref: ContentRef::git_bundle_sha256("b".repeat(64)),
-            sha256: "b".repeat(64),
-            git_oid: "c".repeat(40),
-            git_file_mode: "100644".into(),
-            size_bytes: 12,
-        })
-        .unwrap(),
+        RunSource::ephemeral_git_bundle(source_blob(&"c".repeat(40), &"b".repeat(64), 12)).unwrap(),
         10,
     )
     .unwrap();
@@ -267,7 +234,7 @@ async fn run_control_that_wins_repository_lock_completes_before_real_revocation(
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(removed.user_id, MEMBER);
+        assert_eq!(removed.value.user_id, MEMBER);
         assert_success(&store, command, run).await;
         assert_eq!(
             command

@@ -2,6 +2,9 @@ use super::*;
 
 pub(super) struct TestMultipartStore {
     state: Mutex<TestState>,
+    pub(super) minimum_part_bytes: usize,
+    pub(super) fail_begin: AtomicBool,
+    pub(super) begin_failed: Notify,
     pub(super) fail_part: AtomicBool,
     pub(super) fail_complete: AtomicBool,
     pub(super) block_parts: AtomicBool,
@@ -19,6 +22,9 @@ impl Default for TestMultipartStore {
     fn default() -> Self {
         Self {
             state: Mutex::new(TestState::default()),
+            minimum_part_bytes: 1,
+            fail_begin: AtomicBool::new(false),
+            begin_failed: Notify::new(),
             fail_part: AtomicBool::new(false),
             fail_complete: AtomicBool::new(false),
             block_parts: AtomicBool::new(false),
@@ -101,6 +107,10 @@ impl TestMultipartStore {
 
 #[async_trait]
 impl MultipartStore for TestMultipartStore {
+    fn minimum_part_bytes(&self) -> usize {
+        self.minimum_part_bytes
+    }
+
     async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError> {
         let mut state = self.state.lock().unwrap();
         state.objects.insert(key.to_string(), bytes);
@@ -109,6 +119,10 @@ impl MultipartStore for TestMultipartStore {
     }
 
     async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {
+        if self.fail_begin.load(Ordering::SeqCst) {
+            self.begin_failed.notify_one();
+            return Err(MultipartError::new("begin failed"));
+        }
         let mut state = self.state.lock().unwrap();
         state.next_upload += 1;
         let upload_id = state.next_upload.to_string();
@@ -230,55 +244,5 @@ impl MultipartStore for TestMultipartStore {
     async fn delete(&self, key: &str) -> Result<(), MultipartError> {
         self.state.lock().unwrap().objects.remove(key);
         Ok(())
-    }
-}
-
-pub(super) struct MinimumS3PartStore;
-
-#[async_trait]
-impl MultipartStore for MinimumS3PartStore {
-    fn minimum_part_bytes(&self) -> usize {
-        5 * 1024 * 1024
-    }
-
-    async fn put(&self, _key: &str, _bytes: Bytes) -> Result<(), MultipartError> {
-        unreachable!()
-    }
-
-    async fn begin(&self, _key: &str) -> Result<MultipartUpload, MultipartError> {
-        unreachable!()
-    }
-
-    async fn upload_part(
-        &self,
-        _upload: &MultipartUpload,
-        _part_number: i32,
-        _bytes: Bytes,
-    ) -> Result<UploadedPart, MultipartError> {
-        unreachable!()
-    }
-
-    async fn complete(
-        &self,
-        _upload: MultipartUpload,
-        _parts: Vec<UploadedPart>,
-    ) -> Result<(), MultipartError> {
-        unreachable!()
-    }
-
-    async fn abort(&self, _upload: MultipartUpload) -> Result<(), MultipartError> {
-        unreachable!()
-    }
-
-    async fn abort_incomplete(&self, _key: &str) -> Result<(), MultipartError> {
-        unreachable!()
-    }
-
-    async fn read(&self, _key: &str) -> Result<RemoteReader, MultipartError> {
-        unreachable!()
-    }
-
-    async fn delete(&self, _key: &str) -> Result<(), MultipartError> {
-        unreachable!()
     }
 }

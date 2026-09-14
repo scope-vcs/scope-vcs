@@ -126,17 +126,13 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   const hasLifecycleActions = hasRequestLifecycleActions(request)
 
   async function saveDescription(nextDescription: string, expectedDescription: string) {
-    try {
-      await updateDescription({
-        ...requestParams,
-        description_markdown: nextDescription,
-        expected_description_markdown: expectedDescription,
-      })
-      setDescriptionOverride({ server: serverDescription, value: nextDescription })
-      return true
-    } catch {
-      return false
-    }
+    await updateDescription({
+      ...requestParams,
+      description_markdown: nextDescription,
+      expected_description_markdown: expectedDescription,
+    })
+    setDescriptionOverride({ server: serverDescription, value: nextDescription })
+    return true
   }
 
   function requestHeader() {

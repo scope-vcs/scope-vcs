@@ -22,7 +22,7 @@ import { storeHomeFlash } from '@/lib/home-flash'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { ShieldCheck, Trash2 } from 'lucide-react'
 import { useNavigate, useRouter } from '@tanstack/react-router'
-import { useReducer } from 'react'
+import { useReducer, useState } from 'react'
 import { DeleteRepositoryDialog } from './delete-repository-dialog'
 import {
   MemberAccessSummary,
@@ -34,6 +34,7 @@ import {
   initialRepoSettingsPageState,
   repoSettingsPageReducer,
 } from './repo-settings-state'
+import { mutateSettings } from './settings-mutation'
 
 export function RepoSettingsPage({
   createInvite,
@@ -64,11 +65,13 @@ export function RepoSettingsPage({
     initialRepoSettingsPageState,
   )
   const { deleteError, deleteTarget } = state
+  const [refreshError, setRefreshError] = useState<string | null>(null)
 
   async function mutateAndRefresh<T>(mutation: Promise<T>) {
-    const result = await mutation
-    await router.invalidate()
-    return result
+    setRefreshError(null)
+    return mutateSettings(mutation, () => router.invalidate(), () => {
+      setRefreshError('Your change was saved, but the updated settings could not be loaded. Refresh to try again.')
+    })
   }
 
   async function deleteRepository(target: RepoSummaryResponse) {
@@ -112,7 +115,12 @@ export function RepoSettingsPage({
     <>
       <PageContent>
         <h1 className="sr-only">Settings</h1>
-        {deleteError && (
+        {refreshError && (
+          <PageErrorAlert title="Settings refresh failed">
+            {refreshError}
+          </PageErrorAlert>
+        )}
+        {deleteError && !deleteTarget && (
           <PageErrorAlert title="Repository deletion failed">
             {deleteError}
           </PageErrorAlert>
@@ -127,6 +135,7 @@ export function RepoSettingsPage({
 
         {repo.access.actor !== 'Public' && (
           <RepositoryMetadataForm
+            key={repo.id}
             repo={repo}
             save={(metadata) => mutateAndRefresh(updateMetadata({ ...params, ...metadata }))}
           />
@@ -179,6 +188,7 @@ export function RepoSettingsPage({
 
       {deleteTarget && (
         <DeleteRepositoryDialog
+          error={deleteError}
           onCancel={() =>
             dispatch({ repo: null, type: 'deleteTargetChanged' })
           }

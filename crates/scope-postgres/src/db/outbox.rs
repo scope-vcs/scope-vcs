@@ -8,9 +8,10 @@ use super::{
 use crate::error::PostgresError;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait,
+    QuerySelect, TransactionTrait, TryInsertResult,
     sea_query::{Expr, LockBehavior, LockType, OnConflict},
 };
+use std::sync::Arc;
 
 const PROJECTION_READ_MODEL_REBUILD: &str = "projection_read_model_rebuild";
 const JOB_READY: &str = "ready";
@@ -74,32 +75,28 @@ impl JobStore {
         worker_id: &str,
         limit: usize,
         current_time: &dyn Fn() -> Result<u64, String>,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<OutboxRunSummary, PostgresError> {
         if limit == 0 {
             return Ok(OutboxRunSummary::default());
         }
 
+        let db = Arc::clone(&self.db);
         let worker_id = worker_id.to_string();
         let mut summary = OutboxRunSummary::default();
         for _ in 0..limit {
             let (claim_now_unix, claim_now) = outbox_time(current_time)?;
-            let Some(job) = claim_next_ready_job(
-                self.db.as_ref(),
-                &worker_id,
-                DEFAULT_JOB_LEASE_SECS,
-                claim_now,
-            )
-            .await?
+            let Some(job) =
+                claim_next_ready_job(db.as_ref(), &worker_id, DEFAULT_JOB_LEASE_SECS, claim_now)
+                    .await?
             else {
                 break;
             };
             summary.claimed += 1;
 
-            match execute_outbox_job(self.db.as_ref(), &job, claim_now_unix, generated_ids).await {
+            match execute_outbox_job(db.as_ref(), &job, claim_now_unix).await {
                 Ok(created_runs) => {
                     let (_, completion_now) = outbox_time(current_time)?;
-                    complete_outbox_job(self.db.as_ref(), &job, &worker_id, completion_now).await?;
+                    complete_outbox_job(db.as_ref(), &job, &worker_id, completion_now).await?;
                     summary.completed += 1;
                     summary.created_runs.extend(created_runs);
                 }
@@ -127,15 +124,7 @@ impl JobStore {
                             "outbox job failed; scheduling retry"
                         );
                     }
-                    fail_outbox_job(
-                        self.db.as_ref(),
-                        &job,
-                        &worker_id,
-                        message,
-                        completion_now,
-                        generated_ids,
-                    )
-                    .await?;
+                    fail_outbox_job(db.as_ref(), &job, &worker_id, message, completion_now).await?;
                     summary.failed += 1;
                 }
             }
@@ -145,8 +134,9 @@ impl JobStore {
 
     #[cfg(any(test, feature = "test-support"))]
     pub async fn outbox_job_counts_for_tests(&self) -> Result<OutboxJobCounts, PostgresError> {
+        let db = Arc::clone(&self.db);
         let rows = entities::outbox_job::Entity::find()
-            .all(self.db.as_ref())
+            .all(db.as_ref())
             .await
             .map_err(PostgresError::internal)?;
         Ok(outbox_job_counts(rows))
@@ -169,7 +159,7 @@ where
         repo_version,
         now_unix,
     )?;
-    entities::outbox_job::Entity::insert(job.into_active_model())
+    match entities::outbox_job::Entity::insert(job.into_active_model())
         .on_conflict(
             OnConflict::column(entities::outbox_job::Column::IdempotencyKey)
                 .do_nothing()
@@ -178,7 +168,10 @@ where
         .do_nothing()
         .exec(conn)
         .await
-        .map_err(PostgresError::internal)?;
+        .map_err(PostgresError::internal)?
+    {
+        TryInsertResult::Empty | TryInsertResult::Conflicted | TryInsertResult::Inserted(_) => {}
+    }
     Ok(())
 }
 
@@ -262,7 +255,6 @@ async fn execute_outbox_job<C>(
     conn: &C,
     job: &ClaimedOutboxJob,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<Vec<OutboxCreatedRun>, PostgresError>
 where
     C: ConnectionTrait + TransactionTrait,
@@ -273,8 +265,7 @@ where
             Ok(Vec::new())
         }
         super::push_triggers::JOB_KIND => {
-            let run_ids =
-                super::push_triggers::evaluate(conn, job, now_unix, generated_ids).await?;
+            let run_ids = super::push_triggers::evaluate(conn, job, now_unix).await?;
             Ok(run_ids
                 .into_iter()
                 .map(|run_id| OutboxCreatedRun {
@@ -384,7 +375,6 @@ async fn fail_outbox_job<C>(
     worker_id: &str,
     error: String,
     now: i64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait + TransactionTrait,
@@ -449,7 +439,6 @@ where
             persisted_error,
             u64::try_from(now)
                 .map_err(|_| PostgresError::internal_message("outbox failure time is negative"))?,
-            generated_ids,
         )
         .await?;
     }
@@ -527,10 +516,7 @@ fn unix_timestamp_i64(now_unix: u64) -> Result<i64, PostgresError> {
 mod tests {
     use super::*;
     use scope_domain::{account::UserAccount, policy::Visibility};
-    use std::sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    };
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
     fn retry_backoff_is_bounded() {
@@ -570,12 +556,7 @@ mod tests {
         let clock = || Ok(START + elapsed.fetch_add(STEP, Ordering::SeqCst));
         let summary = store
             .jobs()
-            .run_ready_outbox_jobs(
-                "worker",
-                2,
-                &clock,
-                &crate::db::generated_ids::test_generated_id,
-            )
+            .run_ready_outbox_jobs("worker", 2, &clock)
             .await
             .unwrap();
 
@@ -628,13 +609,7 @@ mod tests {
             .expect("the rebuild job should be ready");
             claimed_tx.send(job.id.clone()).unwrap();
             deleted_rx.await.unwrap();
-            execute_outbox_job(
-                worker_store.db.as_ref(),
-                &job,
-                unix_now().unwrap(),
-                &crate::db::generated_ids::test_generated_id,
-            )
-            .await?;
+            execute_outbox_job(worker_store.db.as_ref(), &job, unix_now().unwrap()).await?;
             complete_outbox_job(
                 worker_store.db.as_ref(),
                 &job,
@@ -801,7 +776,6 @@ mod tests {
             "worker",
             "failed".to_string(),
             unix_timestamp_i64(unix_now().unwrap()).unwrap(),
-            &crate::db::generated_ids::test_generated_id,
         )
         .await
         .unwrap();

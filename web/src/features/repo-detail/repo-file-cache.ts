@@ -12,17 +12,19 @@ export const repoFileResource = createCachedResource<RepoFileContentResponse>({
 })
 
 export function repoFileCacheKey({
+  scope,
   audience,
   changeVersion,
   path,
   repoId,
 }: {
+  scope: string
   audience: 'private' | 'public'
   changeVersion: number
   path: string
   repoId: string
 }) {
-  return [repoId, changeVersion, audience, displayRouteFilePath(path)].join('\0')
+  return [scope, repoId, changeVersion, audience, displayRouteFilePath(path)].join('\0')
 }
 
 function approximateFileBytes(file: RepoFileContentResponse) {

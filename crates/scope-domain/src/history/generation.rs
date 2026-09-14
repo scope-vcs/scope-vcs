@@ -38,6 +38,13 @@ pub(super) fn history_generation(
                 .as_deref(),
         );
         hash_field(&mut hasher, b"message", entry.message.as_bytes());
+        for commit in &entry.native_commits {
+            hash_field(&mut hasher, b"native_oid", commit.oid.as_bytes());
+            hash_field(&mut hasher, b"native_tree", commit.tree_oid.as_bytes());
+            for parent in &commit.parent_oids {
+                hash_field(&mut hasher, b"native_parent", parent.as_bytes());
+            }
+        }
         for file in &entry.files {
             hash_field(&mut hasher, b"path", file.path.as_str().as_bytes());
             hash_field(

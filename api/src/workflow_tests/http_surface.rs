@@ -105,6 +105,10 @@ impl ObjectStore for UnavailableObjectStore {
         Ok(Vec::new())
     }
 
+    fn get_bounded(&self, _key: &str, _max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
+        Ok(Vec::new())
+    }
+
     fn delete(&self, _key: &str) -> Result<(), ObjectStoreError> {
         Ok(())
     }

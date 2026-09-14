@@ -77,7 +77,7 @@ export function RequestChangesWorkbench({
   revisions,
   search,
 }: {
-  accessScope: string
+  accessScope: string | null
   audience: ProjectionPreviewAudience
   initialDiscussionReferences: RequestChangesDiscussionReferences
   loadDiff: (
@@ -92,6 +92,7 @@ export function RequestChangesWorkbench({
   search: RequestChangesSearch
 }) {
   const model = useRequestChangesModel({
+    accessScope,
     audience,
     loadDiff,
     onSearchChange,
@@ -163,7 +164,7 @@ function useRequestDiscussionReferences({
   params,
   revision,
 }: {
-  accessScope: string
+  accessScope: string | null
   commitOid: string | null
   initialReferences: RequestChangesDiscussionReferences
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
@@ -173,7 +174,9 @@ function useRequestDiscussionReferences({
   const query = revision && commitOid
     ? discussionReferenceQuery(params, revision, commitOid)
     : null
-  const identity = query ? requestDiscussionReferenceIdentity(accessScope, query.key) : null
+  const identity = query && accessScope
+    ? requestDiscussionReferenceIdentity(accessScope, params.request_id, query.key)
+    : null
   const seed = query && query.key === initialReferences.commitKey ? initialReferences.page : null
   useMemo(() => {
     if (identity && seed) openRequestDiscussionReferences(identity, seed)
@@ -205,15 +208,14 @@ function useRequestDiscussionReferences({
       ? loadMore
       : undefined,
     loading: page.status === 'loading' || page.refreshing,
-    retry: page.status === 'failed'
+    retry: page.status === 'failed' || page.status === 'loaded' && page.error
       ? retry
-      : page.status === 'loaded' && page.error
-        ? loadMore
-        : undefined,
+      : undefined,
   }
 }
 
 function useRequestChangesModel({
+  accessScope,
   audience,
   loadDiff,
   onSearchChange,
@@ -222,6 +224,7 @@ function useRequestChangesModel({
   revisions,
   search,
 }: {
+  accessScope: string | null
   audience: ProjectionPreviewAudience
   loadDiff: (
     input: LoadRequestRevisionCommitInput & { path: string },
@@ -270,8 +273,9 @@ function useRequestChangesModel({
   const selectedFile = selectedCommit?.files.find(
     ({ path }) => path === selectedFilePath,
   ) ?? null
-  const diffIdentity = selectedCommitId && selectedFile && selectedRevision
+  const diffIdentity = accessScope && selectedCommitId && selectedFile && selectedRevision
     ? historyDiffCacheKey({
+        scope: accessScope,
         audience,
         commit: selectedCommitId,
         generation,

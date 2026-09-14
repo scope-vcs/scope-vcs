@@ -19,6 +19,8 @@ use scope_postgres::db::{
 use std::collections::{BTreeMap, BTreeSet};
 
 mod anchor;
+#[cfg(test)]
+mod tests;
 
 pub(crate) struct DiscussionAnchorInput {
     pub(crate) revision_id: String,
@@ -141,10 +143,8 @@ pub(crate) async fn create_discussion(
     }
     let discussion_id = mutation.discussion.id.clone();
     let through_position = mutation.discussion.last_activity_position;
-    let result =
-        load_discussion_result(state, &context, &discussion_id, &command.actor_user_id).await?;
-    publish_timeline_change(state, &context, discussion_id, through_position).await;
-    Ok(result)
+    publish_timeline_change(state, &context, discussion_id.clone(), through_position).await;
+    load_discussion_result(state, &context, &discussion_id, &command.actor_user_id).await
 }
 
 pub(crate) async fn create_reply(
@@ -174,10 +174,11 @@ pub(crate) async fn create_reply(
             now_unix: unix_now()?,
         })
         .await?;
+    let discussion_id = mutation.discussion.id;
     reply_mutation_result(
         state,
         &context,
-        mutation.discussion.id,
+        discussion_id,
         mutation.reply,
         &command.actor_user_id,
     )
@@ -222,15 +223,20 @@ pub(crate) async fn transition_discussion(
             ));
     }
     let through_position = discussion.last_activity_position;
-    let result = load_discussion_result(
+    publish_timeline_change(
+        state,
+        &context,
+        command.discussion_id.clone(),
+        through_position,
+    )
+    .await;
+    load_discussion_result(
         state,
         &context,
         &command.discussion_id,
         &command.actor_user_id,
     )
-    .await?;
-    publish_timeline_change(state, &context, command.discussion_id, through_position).await;
-    Ok(result)
+    .await
 }
 
 pub(crate) async fn reopen_and_reply(
@@ -263,10 +269,11 @@ pub(crate) async fn reopen_and_reply(
             now_unix: unix_now()?,
         })
         .await?;
+    let discussion_id = mutation.discussion.id;
     reply_mutation_result(
         state,
         &context,
-        mutation.discussion.id,
+        discussion_id,
         mutation.reply,
         &command.actor_user_id,
     )
@@ -344,13 +351,13 @@ async fn reply_mutation_result(
     reply: RequestDiscussionReply,
     actor_user_id: &str,
 ) -> Result<ReplyMutationResult, ApiError> {
+    publish_timeline_change(state, context, discussion_id.clone(), reply.position).await;
     let discussion = load_discussion_result(state, context, &discussion_id, actor_user_id).await?;
     let (reply, reply_users) = state
         .metadata
         .requests()
         .request_discussion_reply_read_model(reply)
         .await?;
-    publish_timeline_change(state, context, discussion_id, reply.reply.position).await;
     Ok(ReplyMutationResult {
         discussion,
         reply,

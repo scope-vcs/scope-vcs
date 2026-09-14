@@ -18,7 +18,7 @@ pub struct RepoSpec {
 
 pub fn clone_repo(repository: &str, destination: Option<&Path>) -> anyhow::Result<()> {
     let target = parse_repo_spec(repository)?;
-    let api_url = api_url();
+    let api_url = api_url()?;
     let session_token = read_stored_session_token(&api_url)?
         .ok_or_else(|| CliError::authentication("not signed in; run scope login"))?;
     let client = http_client()?;

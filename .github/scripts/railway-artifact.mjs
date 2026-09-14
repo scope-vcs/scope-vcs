@@ -4,24 +4,14 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { readRailway } from './railway-read.mjs';
+import { APPLICATION_COMPONENTS, RAILWAY_COMPONENTS, deploymentComponent, loadComponentConfig } from './deployment-components.mjs';
 
-// Release image naming is owned here; component layout (source directory and
-// prebuilt binary) is owned by the deployment manifest.
-const componentImageNames = { api: 'api', 'run-worker': 'worker', cache: 'cache', 'git-router': 'router', 'media-api': 'media', 'media-worker': 'mediaWorker', web: 'web' };
 const digestReference = /^[a-z0-9][a-z0-9./_-]*@sha256:[a-f0-9]{64}$/;
 const sourceRevision = /^[a-f0-9]{40}$/;
 
 export function loadDeploymentManifest() {
   const path = process.env.SCOPE_DEPLOYMENT_MANIFEST || new URL('../deployment-services.json', import.meta.url);
   return JSON.parse(readFileSync(path, 'utf8'));
-}
-
-let deploymentServices;
-function deploymentService(component) {
-  deploymentServices ??= loadDeploymentManifest().services;
-  const service = deploymentServices?.[component];
-  if (!service) throw new Error(`Unknown release component ${component}.`);
-  return service;
 }
 
 export function releaseImageRepository(manifest, repository, component) {
@@ -32,8 +22,9 @@ export function releaseImageRepository(manifest, repository, component) {
   if (typeof prefix !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(prefix)) {
     throw new Error('Deployment manifest requires a valid railway.releaseImagePrefix.');
   }
-  if (!Object.hasOwn(componentImageNames, component)) throw new Error(`Unknown release component ${component}.`);
-  return `ghcr.io/${repository.toLowerCase()}/${prefix}-${componentImageNames[component]}`;
+  const { imageName } = deploymentComponent(component).artifact;
+  if (!imageName) throw new Error(`Component ${component} uses a separately prepared image.`);
+  return `ghcr.io/${repository.toLowerCase()}/${prefix}-${imageName}`;
 }
 
 export async function verifyPrivateReleasePackage(manifest, repository, component, { token, fetchImpl = fetch } = {}) {
@@ -76,7 +67,7 @@ export function validatePreparedRelease(release, { sourceSha, components = [], s
     if (!release.components[component]) throw new Error(`Prepared release is missing ${component}.`);
   }
   for (const [component, artifact] of Object.entries(release.components)) {
-    deploymentService(component);
+    if (!RAILWAY_COMPONENTS.includes(component)) throw new Error(`Unknown release component ${component}.`);
     if (!artifact || artifact.sourceSha !== release.sourceSha || !digestReference.test(artifact.image ?? '') ||
         typeof artifact.serviceId !== 'string' || !artifact.serviceId.trim()) {
       throw new Error(`Prepared ${component} must bind its source revision, service ID, and immutable image digest.`);
@@ -118,9 +109,9 @@ export function assertDeploymentArtifact(release, component, deployment, { deplo
 }
 
 export function artifactDeploymentInput(component, artifact, config, { registryCredentials } = {}) {
-  const { binary } = deploymentService(component);
+  const definition = deploymentComponent(component).artifact;
   if (!digestReference.test(artifact.image ?? '')) throw new Error('Invalid immutable Railway artifact.');
-  if (component !== 'web' && !binary) throw new Error(`Release component ${component} has no prebuilt binary to start.`);
+  if (definition.kind !== 'web' && !definition.binary) throw new Error(`Release component ${component} has no prebuilt binary to start.`);
   const deploy = config?.deploy;
   if (!deploy?.healthcheckPath || !Number.isInteger(deploy.healthcheckTimeout)) {
     throw new Error(`Checked-in readiness configuration is missing for ${component}.`);
@@ -128,7 +119,7 @@ export function artifactDeploymentInput(component, artifact, config, { registryC
   const input = {
     source: { image: artifact.image },
     rootDirectory: '/', railwayConfigFile: null, buildCommand: null,
-    startCommand: component === 'web' ? 'node /app/.output/server/index.mjs' : `/app/bin/${binary}`,
+    startCommand: definition.kind === 'web' ? 'node /app/.output/server/index.mjs' : `/app/bin/${definition.binary}`,
     healthcheckPath: deploy.healthcheckPath,
     healthcheckTimeout: deploy.healthcheckTimeout,
     preDeployCommand: [],
@@ -160,7 +151,7 @@ export function configureStagingRegistry(manifest, credentials, railway = runRai
   if (!uuid.test(environmentId ?? '') || !uuid.test(productionId ?? '') || environmentId === productionId) {
     throw new Error('Registry configuration requires a distinct, explicit staging environment.');
   }
-  const serviceIds = ['cache', 'run-worker', 'git-router', 'media-api', 'media-worker', 'api', 'web'].map((component) => {
+  const serviceIds = APPLICATION_COMPONENTS.map((component) => {
     const id = manifest.services?.[component]?.id;
     if (!uuid.test(id ?? '')) throw new Error(`Staging registry configuration is missing ${component} service ID.`);
     return id;
@@ -255,7 +246,7 @@ async function main() {
       console.log(JSON.stringify({ deploymentId, image: release.components[component].image, sourceSha: release.sourceSha }));
     } else if (command === 'activate') {
       const [component, environmentId] = args;
-      const config = JSON.parse(readFileSync(`${deploymentService(component).sourceDirectory}/railway.json`, 'utf8'));
+      const config = loadComponentConfig(component);
       const username = process.env.SCOPE_RAILWAY_REGISTRY_USERNAME;
       const password = process.env.SCOPE_RAILWAY_REGISTRY_PASSWORD;
       const registryCredentials = username || password ? { username, password } : undefined;

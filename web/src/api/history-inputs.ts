@@ -1,4 +1,5 @@
 import { parseRepoParams } from './repo-params'
+import { parseFilePath } from './file-path-input'
 import type {
   HistoryEntryDetailInput,
   HistoryEntryFileDiffInput,
@@ -31,14 +32,9 @@ export function parseHistoryEntryDetailInput(input: unknown): HistoryEntryDetail
 
 export function parseHistoryEntryFileDiffInput(input: unknown): HistoryEntryFileDiffInput {
   const data = input as Partial<HistoryEntryFileDiffInput> | null
-  const path = typeof data?.path === 'string' ? data.path.trim() : ''
-  if (!path) {
-    throw new Error('A file path is required.')
-  }
-
   return {
     ...parseHistoryEntryDetailInput(input),
-    path,
+    path: parseFilePath(data?.path),
     visibility_change: parseVisibilityChange(data?.visibility_change),
   }
 }

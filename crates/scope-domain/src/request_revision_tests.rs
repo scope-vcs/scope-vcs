@@ -1,4 +1,7 @@
-use super::requests::{fixtures::source_blob, *};
+use super::requests::{
+    fixtures::{source_blob, start_input},
+    *,
+};
 
 #[test]
 fn revision_records_snapshot_without_manufacturing_a_discussion() {
@@ -6,15 +9,10 @@ fn revision_records_snapshot_without_manufacturing_a_discussion() {
         StartRequestFacts::default(),
         StartRequestInput {
             id: "request_change".to_string(),
-            repo_id: "owner/repo".to_string(),
             name: "change".to_string(),
-            author_user_id: "author".to_string(),
             title: Some("Change".to_string()),
-            author_role: RequestActorRole::Owner,
             audience: RequestAudience::Private,
-            base_main_oid: "base".to_string(),
-            event_id: "event_started".to_string(),
-            now_unix: 10,
+            ..start_input(RequestActorRole::Owner)
         },
     )
     .unwrap();

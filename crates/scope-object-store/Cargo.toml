@@ -22,3 +22,4 @@ reqwest = { workspace = true, features = ["blocking", "rustls-tls"] }
 scope_domain.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+xmlparser.workspace = true

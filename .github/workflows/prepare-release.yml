@@ -101,13 +101,14 @@ jobs:
           if [[ "$PREPARE_BACKEND" == 1 ]]; then
             mkdir -p artifacts/backend/bin
             python3 .github/scripts/extract-railway-release.py backend artifacts/backend/backend-release.tar.gz artifacts/backend/bin
-            components=(api run-worker cache media-api)
-            [[ "$PREPARE_ROUTER" == 0 ]] || components+=(git-router)
+            component_names="$(node .github/scripts/deployment-components.mjs backend-prebuilt)"
+            mapfile -t components <<< "$component_names"
             for component in "${components[@]}"; do
+              [[ "$component" != git-router || "$PREPARE_ROUTER" == 1 ]] || continue
               root=".railway-prepared/$component"
               mkdir -p "$root/bin"
               cp artifacts/backend/bin/LICENSE artifacts/backend/bin/NOTICE artifacts/backend/bin/third-party-rust.txt "$root/bin/"
-              binary="$(jq -er --arg component "$component" '.services[$component].binary' .github/deployment-services.json)"
+              binary="$(node .github/scripts/deployment-components.mjs field "$component" binary)"
               install -m 0755 "artifacts/backend/bin/$binary" "$root/bin/$binary"
               if [[ "$component" == run-worker ]]; then
                 cp -a artifacts/backend/bin/dependency-analyzer "$root/dependency-analyzer"

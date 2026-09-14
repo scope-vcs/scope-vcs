@@ -59,11 +59,6 @@ MEDIA_KEY_FILE="$DATA_DIR/media-key.txt"
 MEDIA_PRIVATE_KEY_FILE="$DATA_DIR/media-grant-private.pem"
 MEDIA_PUBLIC_KEY_FILE="$DATA_DIR/media-grant-public.pem"
 MEDIA_OBJECT_DIR="$DATA_DIR/media-objects"
-API_PID_FILE="$STATE_DIR/api.pid"
-WEB_PID_FILE="$STATE_DIR/web.pid"
-WORKER_PID_FILE="$STATE_DIR/worker.pid"
-MEDIA_PID_FILE="$STATE_DIR/media.pid"
-MEDIA_WORKER_PID_FILE="$STATE_DIR/media-worker.pid"
 API_OUT_LOG="$STATE_DIR/api.out.log"
 API_ERR_LOG="$STATE_DIR/api.err.log"
 WEB_OUT_LOG="$STATE_DIR/web.out.log"
@@ -188,30 +183,11 @@ assert_port_free() {
   fi
 }
 
-stop_pid_file() {
-  local pid_file="$1"
-  local pid
-  [[ -f "$pid_file" ]] || return 0
-  pid="$(tr -d '[:space:]' < "$pid_file")"
-  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-    for _ in {1..30}; do
-      kill -0 "$pid" 2>/dev/null || break
-      sleep 0.1
-    done
-    if kill -0 "$pid" 2>/dev/null; then
-      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-    fi
-  fi
-  rm -f "$pid_file"
-}
-
 stop_owned_processes() {
-  stop_pid_file "$MEDIA_WORKER_PID_FILE"
-  stop_pid_file "$MEDIA_PID_FILE"
-  stop_pid_file "$WORKER_PID_FILE"
-  stop_pid_file "$API_PID_FILE"
-  stop_pid_file "$WEB_PID_FILE"
+  local service
+  for service in media-worker media worker api web; do
+    python3 "$ROOT/dev/local-process.py" stop "$STATE_DIR/$service.pid"
+  done
 }
 
 write_runner_preamble() {
@@ -356,7 +332,7 @@ EOF
 start_service() {
   local service="$1" readiness="${2:-}" timeout="${3:-}"
   setsid "$STATE_DIR/$service.sh" > "$STATE_DIR/$service.out.log" 2> "$STATE_DIR/$service.err.log" &
-  echo "$!" > "$STATE_DIR/$service.pid"
+  python3 "$ROOT/dev/local-process.py" record "$STATE_DIR/$service.pid" "$!"
   if [[ -n "$readiness" ]] && ! wait_http "$readiness" "$timeout"; then
     echo "${service//-/ } did not become ready; see $STATE_DIR/$service.err.log" >&2
     exit 1
@@ -416,24 +392,9 @@ wait_http() {
   return 1
 }
 
-pid_status() {
-  local pid_file="$1"
-  local pid
-  if [[ ! -f "$pid_file" ]]; then
-    echo "stopped"
-    return
-  fi
-  pid="$(tr -d '[:space:]' < "$pid_file")"
-  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-    echo "running pid $pid"
-    return
-  fi
-  echo "stale"
-}
-
 doctor() {
   local tool
-  for tool in cargo curl git node npm openssl pnpm setsid ss \
+  for tool in cargo curl git node npm openssl pnpm python3 setsid ss \
     "${SCOPE_MEDIA_FFMPEG:-ffmpeg}" "${SCOPE_MEDIA_FFPROBE:-ffprobe}" \
     "${SCOPE_MEDIA_HEIF_CONVERT:-heif-convert}" "${SCOPE_MEDIA_HEIF_INFO:-heif-info}"; do
     assert_command "$tool"
@@ -539,7 +500,7 @@ up() {
 status() {
   local service
   for service in api worker media media-worker web; do
-    echo "${service//-/ } process: $(pid_status "$STATE_DIR/$service.pid")"
+    echo "${service//-/ } process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/$service.pid")"
   done
   probe "api readyz" "http://localhost:8080/readyz"
   probe "media healthz" "http://localhost:8083/healthz"
@@ -565,15 +526,17 @@ probe() {
 }
 
 reset() {
-  stop_owned_processes
-  local resolved_data resolved_root
-  resolved_data="$(realpath -m "$DATA_DIR")"
+  local target resolved_target resolved_root
   resolved_root="$(realpath -m "$ROOT")"
-  if [[ "$resolved_data" != "$resolved_root"/* ]]; then
-    echo "refusing to remove data outside repo: $resolved_data" >&2
-    exit 1
-  fi
-  rm -rf "$DATA_DIR" "$STATE_DIR"
+  for target in "$DATA_DIR" "$STATE_DIR"; do
+    resolved_target="$(realpath -m "$target")"
+    if [[ "$resolved_target" != "$resolved_root"/* ]]; then
+      echo "refusing to remove data outside repo: $resolved_target" >&2
+      exit 1
+    fi
+  done
+  stop_owned_processes
+  rm -rf -- "$DATA_DIR" "$STATE_DIR"
   echo "local dev state reset"
 }
 

@@ -47,7 +47,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         ensure_review_terminal_available("scope push review")?;
     }
 
-    let api_url = api_url();
+    let api_url = api_url()?;
     let remote = select_scope_push_remote(&git_repo, &api_url, explicit_remote)?;
     let target = load_scope_remote(&git_repo, &api_url, &remote)?;
     let client = http_client()?;
@@ -59,7 +59,6 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         can_read_private_files: push_context.access.can_read_private_files,
         can_push: push_context.access.can_push,
         can_change_file_visibility: push_context.access.can_change_file_visibility,
-        can_apply_changes: push_context.access.can_apply_changes,
         can_manage_members: push_context.access.can_manage_members,
         can_delete_repo: push_context.access.can_delete_repo,
     };

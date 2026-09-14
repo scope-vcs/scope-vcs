@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { releaseImageRepository, validatePreparedRelease } from "./railway-artifact.mjs";
+import { BACKEND_COMPONENTS } from "./deployment-components.mjs";
 
 const deploymentManifest = JSON.parse(readFileSync(new URL("../deployment-services.json", import.meta.url), "utf8"));
 
@@ -12,7 +13,7 @@ const shaPattern = /^[0-9a-f]{40}$/;
 // packages. This gate rejects PR/candidate preparation; it is not a signature over a
 // journal written by an actor who already has those production publishing privileges.
 export async function validateRecoveryPreparation(prepared, request, repository, manifest = deploymentManifest,
-  requiredComponents = ["api", "run-worker", "cache", "git-router", "media-api", "media-worker"]) {
+  requiredComponents = BACKEND_COMPONENTS) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? "")) {
     throw new Error("Recovery requires the trusted GITHUB_REPOSITORY");
   }

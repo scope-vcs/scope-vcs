@@ -70,9 +70,23 @@ export function enterGate(gate, { railway, persist, deployments }) {
 export function recloseGate(gate, options) {
   validate(gate);
   if (!gate.previous) throw new Error('Original maintenance snapshot is required for recovery.');
-  const current = options.deployments(gate).filter(value => !['REMOVED', 'FAILED', 'CRASHED'].includes(value.status) && !value.deploymentStopped);
-  const matches = current.filter(value => value.meta?.serviceManifest?.source?.image === gate.image && value.meta?.serviceManifest?.deploy?.startCommand === command);
+  const inventory = options.deployments(gate);
+  if (gate.phase === 'deploying' && !gate.deploymentId) {
+    // Reconcile the persisted attempt before considering a replacement. An empty
+    // inventory is not evidence that an accepted deployment never happened.
+    gate = enterGate(gate, { ...options, deployments: () => inventory });
+  }
+  const stopped = value => ['REMOVED', 'FAILED', 'CRASHED'].includes(value.status) || value.deploymentStopped === true;
+  const current = inventory.filter(value => !stopped(value));
+  const matches = current.filter(value => value.serviceId === gate.serviceId && value.meta?.serviceManifest?.source?.image === gate.image && value.meta?.serviceManifest?.deploy?.startCommand === command);
   if (matches.length > 1) throw new Error('Multiple active maintenance deployments require reconciliation.');
+  if (!matches.length && gate.deploymentId) {
+    const previous = inventory.find(value => value.id === gate.deploymentId)
+      ?? data(options.railway, 'query MaintenancePreviousGate($id:String!){deployment(id:$id){id serviceId status deploymentStopped}}', { id: gate.deploymentId }).deployment;
+    if (previous?.id !== gate.deploymentId || previous.serviceId !== gate.serviceId || !stopped(previous)) {
+      throw new Error('Previous maintenance deployment outcome is unknown; reconcile its exact deployment ID before retrying.');
+    }
+  }
   const predecessorIds = current.filter(value => value.id !== matches[0]?.id).map(value => value.id);
   const reset = { ...gate, predecessorIds, capturedAt: new Date().toISOString(), phase: matches.length ? 'deploying' : 'snapshotted' };
   delete reset.deploymentId;

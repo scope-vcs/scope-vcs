@@ -29,7 +29,7 @@ pub fn login(
     exchange: Option<String>,
     exchange_file: Option<&Path>,
 ) -> anyhow::Result<()> {
-    let api_url = api_url();
+    let api_url = api_url()?;
     let client = http_client()?;
     let exchange_token = match exchange {
         Some(token) => Some(token),
@@ -78,7 +78,7 @@ fn read_private_exchange_token(path: &Path) -> anyhow::Result<String> {
 }
 
 pub fn logout() -> anyhow::Result<()> {
-    let api_url = api_url();
+    let api_url = api_url()?;
     let client = http_client()?;
     let Some(token) = read_stored_session_token(&api_url)? else {
         return crate::execution::emit(
@@ -104,7 +104,7 @@ pub fn logout() -> anyhow::Result<()> {
 }
 
 pub fn whoami() -> anyhow::Result<()> {
-    let api_url = api_url();
+    let api_url = api_url()?;
     let client = http_client()?;
     let Some(session) = cached_cli_session(&client, &api_url)? else {
         return Err(CliError::authentication("not signed in; run scope login").into());

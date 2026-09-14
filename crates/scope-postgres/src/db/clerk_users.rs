@@ -28,6 +28,7 @@ impl AuthStore {
     pub async fn resolve_clerk_user(
         &self,
         identity: &ExternalIdentity,
+        _now_unix: u64,
     ) -> Result<ClerkUserResolution, PostgresError> {
         let verified_email = verified_identity_email(identity)?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
@@ -318,7 +319,10 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             tasks.spawn(async move {
                 barrier.wait().await;
-                store.auth().resolve_clerk_user(&identity).await
+                store
+                    .auth()
+                    .resolve_clerk_user(&identity, 1_700_000_000)
+                    .await
             });
         }
 

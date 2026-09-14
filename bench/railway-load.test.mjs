@@ -179,6 +179,17 @@ test('stage results preserve node labels, byte rate, and errors', () => {
   assert.equal(stage.normalized.operationsPerSecond, 0.5);
 });
 
+test('capacity gate uses the exact failure fraction at the one-percent boundary', () => {
+  for (const failed of [10, 11, 14, 15]) {
+    const samples = Array.from({ length: 1000 }, (_, index) => ({
+      ok: index >= failed, durationMs: 1, bytes: 1,
+    }));
+    const stage = stageResult('repo-read', 1, samples, 1, 'start', 'end');
+    assert.equal(stage.errorRate, failed / 1000);
+    assert.equal(evaluateStage(stage, 1).healthy, failed === 10);
+  }
+});
+
 test('write-size slope separates payload sizes', () => {
   const slope = writeSizeSlope([
     { ok: true, durationMs: 10, ttfbMs: 10, bytes: 1, logicalBytes: 4096, writeDeltaBytes: 4096 },

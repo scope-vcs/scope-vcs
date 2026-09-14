@@ -152,6 +152,8 @@ function releasePath(selected, { reuse = false, resumeStaging = false, failure =
   const jobs = releaseJobs();
   const outputs = Object.fromEntries(['checks_image', 'cache', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
     .map((key) => [key, String(selected.includes(key))]));
+  outputs.backend_selected = String(['cache', 'worker', 'media_worker', 'router', 'media', 'api']
+    .some((key) => outputs[key] === 'true'));
   outputs.prepared_run_id = reuse || resumeStaging ? '123' : '';
   outputs.recover_cutover_id = reuse ? '456' : '';
   outputs.resume_staging = String(resumeStaging);
@@ -248,6 +250,35 @@ test('prepared web and backend jobs cannot build after activation begins', () =>
   const cliDeploy = read('.github/workflows/publish-cli.yml');
   assert.match(cliDeploy, /cp cli\/railway\.json \.railway-upload\/railway\.json/);
   assert.doesNotMatch(cliDeploy, /cargo build/);
+});
+
+test('CLI publication configures the advertised installer origin before deployment', (t) => {
+  const workflow = read('.github/workflows/publish-cli.yml');
+  const block = workflow.match(/      - name: Deploy artifacts to Railway\n[\s\S]*?        run: \|\n((?:          .*\n)+)/)?.[1];
+  assert.ok(block, 'CLI deployment shell step must be present');
+  const dir = mkdtempSync(resolve(tmpdir(), 'scope-cli-publication-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(resolve(dir, '.github/scripts'), { recursive: true });
+  mkdirSync(resolve(dir, 'bin'));
+  writeFileSync(resolve(dir, '.github/deployment-services.json'), JSON.stringify(manifest));
+  writeFileSync(resolve(dir, 'bin/railway'), '#!/bin/sh\nprintf "%s\\n" "$@" >> events\n', { mode: 0o755 });
+  writeFileSync(resolve(dir, '.github/scripts/deploy-railway.sh'), '#!/bin/sh\nprintf "deploy %s %s\\n" "$1" "$2" >> events\n');
+  const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-euo', 'pipefail', '-c', block.replace(/^          /gm, '')], {
+    cwd: dir,
+    encoding: 'utf8',
+    env: { PATH: `${resolve(dir, 'bin')}:${process.env.PATH}` },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const installer = read('crates/scope-api-contract/src/cli_compatibility.rs').match(/https:\/\/[^\s"]+\/install\.sh/)?.[0];
+  assert.ok(installer, 'API upgrade instructions must advertise the installer');
+  const events = readFileSync(resolve(dir, 'events'), 'utf8').trim().split('\n');
+  assert.deepEqual(events, [
+    'variable', 'set', '--project', manifest.railway.projectId,
+    '--environment', manifest.environments.production.environmentId,
+    '--service', manifest.services['cli-downloads'].id, '--skip-deploys',
+    `SCOPE_CLI_PUBLIC_URL=${new URL(installer).origin}`,
+    `deploy ${manifest.services['cli-downloads'].id} .railway-upload`,
+  ]);
 });
 
 test('Node workflows cache pnpm and browser downloads by the web lockfile', () => {

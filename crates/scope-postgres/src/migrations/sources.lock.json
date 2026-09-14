@@ -6,5 +6,10 @@
   "m0045_dependency_analysis.rs": "c343fce0b64b6bd4c3c0613a3862e8b0a29fdb4983e1dc81252fa3512835f6b4",
   "m0046_drop_attempt_token_expiry.rs": "c05696efc2fbc67c7a7f2596890ba6e6a5edaa0b1b21eac6e58d5e1a22eb535c",
   "m0047_drop_git_manifest_orphan_jobs.rs": "d9ab14e423d265f669e2cd019140e055f9647bbcb6368f076ceab1b9e0a3fc93",
-  "m0048_run_attempt_active_state_indexes.rs": "a6e7a457bdd34a1e81ddf3fae505af93fcfc0b08b5e3b32200f00ebfe2fca775"
+  "m0048_run_attempt_active_state_indexes.rs": "a6e7a457bdd34a1e81ddf3fae505af93fcfc0b08b5e3b32200f00ebfe2fca775",
+  "m0049_run_execution_invariants.rs": "ee470d56485b372109459c791f83129a5c5dcb5fb9529963ad4890ae3f678e88",
+  "m0050_cache_upload_cleanup_leases.rs": "f061f561a958d421c0438c588dc51c34e7fbec2a6205dabe427c1187e312a4d5",
+  "m0051_request_media_budget_release.rs": "a23fcff918469128436e39c8127d7acc67a8b19f99d3a5975018b9b0b3f3a448",
+  "m0052_retire_apply_changes_permission.rs": "f205697a66d25a6a49b0c547275acfdb2f1addbb0bc7bbabbb1aed327dedfe35",
+  "m0053_request_ref_cleanup.rs": "3457e3ff117e39f0dbd24df61dedf70258f3c308063ad2b4be6b83e7d2b4eb42"
 }

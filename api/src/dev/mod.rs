@@ -22,7 +22,7 @@ use std::sync::Arc;
 pub use env::is_local_dev_env;
 
 pub fn local_maintenance_database_url() -> anyhow::Result<String> {
-    Ok(env::validate_local_dev_environment()?.database_url)
+    Ok(env::validate_local_dev_environment()?.database.into_url())
 }
 
 pub async fn app_state_from_env() -> anyhow::Result<AppState> {
@@ -41,7 +41,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
             error.into_operator_diagnostic()
         )
     })?;
-    let metadata = MetadataStore::connect(settings.database_url.clone()).await?;
+    let metadata = MetadataStore::connect_local_dev(settings.database).await?;
     metadata
         .admin()
         .replace_catalog_for_seed(catalog)
@@ -99,6 +99,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
     state.repository_engine.start_reaper();
     state.start_run_attempt_recovery();
     state.start_run_retention();
+    state.start_request_ref_cleanup();
     state.start_git_segment_recovery();
     Ok(state)
 }

@@ -169,24 +169,23 @@ test("manual component and all scopes are explicit", () => {
   assert.throws(() => classifyChanges(manifest, [], "database"), /Unknown deployment scope/);
 });
 
-test("planner emits the CLI distribution selection as a snake-case workflow output", () => {
-  const output = execFileSync(process.execPath, [
-    fileURLToPath(new URL("./plan-production-deployment.mjs", import.meta.url)),
-    "--manifest",
-    fileURLToPath(new URL("../deployment-services.json", import.meta.url)),
-    "--scope",
-    "cli-downloads",
-  ], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      GITHUB_OUTPUT: "",
-      GITHUB_STEP_SUMMARY: "",
-    },
-  });
-
-  assert.match(output, /^cli=true$/m);
-  assert.match(output, /^cli_distribution=true$/m);
+test("planner emits backend and CLI distribution workflow outputs", () => {
+  for (const [scope, expected] of [
+    ["cli-downloads", ["cli=true", "cli_distribution=true", "backend_selected=false"]],
+    ["api", ["api=true", "backend_selected=true"]],
+  ]) {
+    const output = execFileSync(process.execPath, [
+      fileURLToPath(new URL("./plan-production-deployment.mjs", import.meta.url)),
+      "--manifest",
+      fileURLToPath(new URL("../deployment-services.json", import.meta.url)),
+      "--scope",
+      scope,
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_OUTPUT: "", GITHUB_STEP_SUMMARY: "" },
+    });
+    for (const line of expected) assert.ok(output.split("\n").includes(line), line);
+  }
 });
 
 test("an unseeded production ledger deploys every component", () => {
@@ -269,8 +268,11 @@ test("manual scopes ignore pending production components", () => {
 });
 
 test("deployment manifest is a single coherent production graph", () => {
-  const serviceIds = Object.values(manifest.services).map((service) => service.id).filter(Boolean);
+  const order = ["cache", "run-worker", "git-router", "media-api", "media-worker", "api", "web", "cli-downloads"];
+  const serviceIds = order.map((service) => manifest.services[service].id).filter(Boolean);
 
+  assert.equal(manifest.deploymentAuthority, "github-actions");
+  assert.equal(manifest.source.nativeAutodeploy, false);
   assert.equal(new Set(serviceIds).size, serviceIds.length);
   assert.match(manifest.services["media-api"].id, /^[0-9a-f-]{36}$/);
   assert.match(manifest.services["media-worker"].id, /^[0-9a-f-]{36}$/);
@@ -280,6 +282,11 @@ test("deployment manifest is a single coherent production graph", () => {
   ));
   for (const domain of mediaDomains) assert.match(domain, /^[a-z0-9-]+\.up\.railway\.app$/);
   assert.equal(new Set(mediaDomains).size, mediaDomains.length);
+  for (const [service, configuration] of Object.entries(manifest.services)) {
+    for (const dependency of configuration.dependsOn) {
+      assert.ok(order.indexOf(dependency) < order.indexOf(service));
+    }
+  }
 });
 
 test("service config does not override Railway scaling or restart defaults", () => {
