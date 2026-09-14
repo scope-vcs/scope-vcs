@@ -299,18 +299,18 @@ fn dependency_finding_line(
     let arrow_width = 3.min(width);
     let path_width = width.saturating_sub(arrow_width) / 2;
     let target_width = width.saturating_sub(arrow_width + path_width);
-    let selected_style = Style::new().add_modifier(Modifier::REVERSED);
     let public_style = Style::new().fg(Color::Green);
     let private_style = Style::new().fg(Color::Red);
+    let selected_modifiers = Modifier::BOLD | Modifier::UNDERLINED;
     let source_style =
         if selected && selected_side == super::state::DependencyPathSide::PublicSource {
-            selected_style
+            public_style.add_modifier(selected_modifiers)
         } else {
             public_style
         };
     let target_style =
         if selected && selected_side == super::state::DependencyPathSide::PrivateTarget {
-            selected_style
+            private_style.add_modifier(selected_modifiers)
         } else {
             private_style
         };
