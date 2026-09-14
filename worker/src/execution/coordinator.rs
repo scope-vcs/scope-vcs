@@ -66,12 +66,11 @@ impl CloudExecutionCoordinator {
                     scope_postgres::db::DispatchAdmission::AtCapacity
                     | scope_postgres::db::DispatchAdmission::Empty => break,
                 };
-                crate::product_analytics::capture_attempt_started(
+                crate::product_analytics::schedule_attempt_started(
                     &self.metadata,
                     &self.product_analytics,
                     &claim,
-                )
-                .await;
+                );
                 self.publish_status_change(&claim).await;
                 let execution = self.clone();
                 starts.spawn(async move {

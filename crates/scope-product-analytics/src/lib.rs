@@ -543,25 +543,39 @@ mod tests {
     }
 
     #[test]
-    fn source_override_and_system_actor_are_explicit() {
-        let (analytics, recording) = ProductAnalytics::recording();
-        analytics.capture(ProductEvent::workflow_attempt_started(
-            ProductActor::System,
-            "repoi_test",
-            "run_test",
-            "attempt_test",
-            2,
-            WorkflowRunTrigger::PushMain,
-        ));
-
-        assert_eq!(
-            recording.property(0, "source"),
-            Some(Value::String("worker".into()))
-        );
-        assert_eq!(
-            recording.property(0, "actor_type"),
-            Some(Value::String("system".into()))
-        );
+    fn workflow_events_keep_the_emitting_service_source() {
+        for source in [EventSource::Api, EventSource::Worker] {
+            let (analytics, recording) = ProductAnalytics::recording_for_source(source);
+            analytics.capture(ProductEvent::workflow_attempt_started(
+                ProductActor::System,
+                "repoi_test",
+                "run_test",
+                "attempt_test",
+                2,
+                WorkflowRunTrigger::PushMain,
+            ));
+            analytics.capture(ProductEvent::workflow_attempt_completed(
+                ProductActor::System,
+                "repoi_test",
+                "run_test",
+                "attempt_test",
+                2,
+                WorkflowRunTrigger::PushMain,
+                WorkflowAttemptResult::Succeeded,
+                Some(WorkflowRunResult::Succeeded),
+                1000,
+            ));
+            for index in [0, 1] {
+                assert_eq!(
+                    recording.property(index, "source"),
+                    Some(Value::String(source.as_str().into()))
+                );
+                assert_eq!(
+                    recording.property(index, "actor_type"),
+                    Some(Value::String("system".into()))
+                );
+            }
+        }
     }
 
     #[test]

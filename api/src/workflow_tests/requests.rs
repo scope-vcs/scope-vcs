@@ -310,7 +310,7 @@ async fn rejected_draft_merge_records_only_a_stable_failure() {
     state.product_analytics = analytics;
 
     let response = api_request(
-        router(state),
+        router(state.clone()),
         "POST",
         "/v1/repos/owner/repo/requests/req_draft_merge/merge",
         Some(&bearer_header()),
@@ -328,6 +328,22 @@ async fn rejected_draft_merge_records_only_a_stable_failure() {
         recording.property(0, "reason"),
         Some(serde_json::Value::String("conflict".into()))
     );
+    assert_eq!(recording.property(0, "request_id"), None);
+
+    let missing = api_request(
+        router(state),
+        "POST",
+        "/v1/repos/owner/repo/requests/private-filename.rs/merge",
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        recording.event_names(),
+        ["operation:failure", "operation:failure"]
+    );
+    assert_eq!(recording.property(1, "request_id"), None);
 }
 
 #[tokio::test]

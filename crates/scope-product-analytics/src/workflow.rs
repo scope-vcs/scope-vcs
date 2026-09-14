@@ -1,4 +1,4 @@
-use super::{EventSource, ProductActor, ProductEvent};
+use super::{ProductActor, ProductEvent};
 use scope_domain::runs::{
     attempt::{AttemptState, RunAttempt},
     run::{Run, RunState},
@@ -103,7 +103,7 @@ impl ProductEvent {
         attempt_number: u32,
         trigger: WorkflowRunTrigger,
     ) -> Self {
-        let mut event = Self::new(name, actor).with_source(EventSource::Worker);
+        let mut event = Self::new(name, actor);
         event.insert_repository_id(repository_id);
         event.insert_string("run_id", run_id);
         event.insert_string("attempt_id", attempt_id);

@@ -1,11 +1,16 @@
 import { createCachedResource } from '../lib/cached-resource'
 import type { PostHog, PostHogConfig } from 'posthog-js'
+import {
+  analyticsEventContext,
+  registerAnalyticsEventContext,
+  type AnalyticsEventContext,
+} from './client-identity'
 import { parseAnalyticsRuntimeConfig } from './config'
 import { createPrivacyBoundary } from './privacy'
 
-type AnalyticsBootstrap = {
-  client: PostHog | null
-}
+type AnalyticsBootstrap =
+  | { client: PostHog; eventContext: AnalyticsEventContext }
+  | { client: null; eventContext: null }
 
 export const analyticsBootstrapResource = createCachedResource<AnalyticsBootstrap>({
   maxEntries: 1,
@@ -13,19 +18,16 @@ export const analyticsBootstrapResource = createCachedResource<AnalyticsBootstra
 
 export async function loadAnalyticsBootstrap(signal: AbortSignal) {
   const config = await fetchAnalyticsRuntimeConfig(signal)
-  if (!config) return { client: null }
+  if (!config) return { client: null, eventContext: null }
 
   const { default: posthog } = await import('posthog-js')
   const client = posthog.init(
     config.token,
     analyticsClientOptions(window.location.origin),
   )
-  client.register({
-    environment: config.environment,
-    release: config.release,
-    source: 'browser',
-  })
-  return { client }
+  const eventContext = analyticsEventContext(config)
+  registerAnalyticsEventContext(client, eventContext)
+  return { client, eventContext }
 }
 
 export async function fetchAnalyticsRuntimeConfig(

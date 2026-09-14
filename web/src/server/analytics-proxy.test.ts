@@ -138,6 +138,37 @@ test('rejects an oversized capture before contacting the upstream', async () => 
   assert.equal(contacted, false)
 })
 
+test('times out and cancels a stalled incoming body before contacting the upstream', async () => {
+  let bodyCanceled = false
+  let contacted = false
+  const stalledBody = new ReadableStream<Uint8Array>({
+    cancel() {
+      bodyCanceled = true
+    },
+  })
+
+  const response = await proxyAnalyticsCapture(new Request(
+    'https://test.scopevcs.com/e/e/',
+    {
+      body: stalledBody,
+      method: 'POST',
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' },
+  ), {
+    fetchUpstream: async () => {
+      contacted = true
+      return new Response(null, { status: 204 })
+    },
+    observeDelivery: ignoreDelivery,
+    timeoutMs: 20,
+  })
+
+  assert.equal(response.status, 408)
+  assert.equal(await response.text(), 'Analytics request timed out.')
+  assert.equal(contacted, false)
+  assert.equal(bodyCanceled, true)
+})
+
 test('keeps the timeout active while reading the upstream response body', async () => {
   await withStubServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' })

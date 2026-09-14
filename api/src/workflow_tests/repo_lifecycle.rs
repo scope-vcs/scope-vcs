@@ -98,13 +98,16 @@ async fn invite_acceptance_returns_member_access() {
     assert_eq!(accept_response.status(), StatusCode::OK);
     let body = response_json(accept_response).await;
     assert_eq!(body["repo"]["access"]["actor"], "Member");
-    assert_eq!(recording.event_names(), ["repository:invite_accept"]);
     assert_eq!(
-        recording.property(0, "repository_id"),
+        recording.event_names(),
+        ["account:user_create", "repository:invite_accept"]
+    );
+    assert_eq!(
+        recording.property(1, "repository_id"),
         Some(serde_json::Value::String("repoi_workflow_test".into()))
     );
     assert_eq!(
-        recording.property(0, "actor_role"),
+        recording.property(1, "actor_role"),
         Some(serde_json::Value::String("member".into()))
     );
 
@@ -117,7 +120,10 @@ async fn invite_acceptance_returns_member_access() {
     )
     .await;
     assert_eq!(repeated.status(), StatusCode::CONFLICT);
-    assert_eq!(recording.event_names(), ["repository:invite_accept"]);
+    assert_eq!(
+        recording.event_names(),
+        ["account:user_create", "repository:invite_accept"]
+    );
 }
 
 #[tokio::test]

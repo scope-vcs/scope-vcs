@@ -1,7 +1,7 @@
 const POSTHOG_CAPTURE_UPSTREAM = 'https://us.i.posthog.com/e/'
 const MAX_REQUEST_BYTES = 1024 * 1024
 const MAX_RESPONSE_BYTES = 64 * 1024
-const UPSTREAM_TIMEOUT_MS = 5_000
+const REQUEST_TIMEOUT_MS = 5_000
 
 export type FetchAnalyticsUpstream = (
   input: string | URL | Request,
@@ -37,38 +37,42 @@ export async function proxyAnalyticsCapture(
     return finish(proxyResponse('Analytics request is too large.', 413))
   }
 
-  let body: Uint8Array<ArrayBuffer> | null
-  try {
-    body = await readBoundedBody(request, MAX_REQUEST_BYTES)
-  } catch {
-    return finish(proxyResponse('Invalid analytics request.', 400))
-  }
-  if (!body) return finish(proxyResponse('Analytics request is too large.', 413))
-
-  const sourceUrl = new URL(request.url)
-  const upstreamUrl = new URL(POSTHOG_CAPTURE_UPSTREAM)
-  upstreamUrl.search = sourceUrl.search
-
   const controller = new AbortController()
   const timeout = setTimeout(
     () => controller.abort(),
-    options.timeoutMs ?? UPSTREAM_TIMEOUT_MS,
+    options.timeoutMs ?? REQUEST_TIMEOUT_MS,
   )
   try {
-    const upstream = await fetchUpstream(upstreamUrl, {
-      body: body.buffer,
-      headers: captureHeaders(request.headers),
-      method: 'POST',
-      redirect: 'manual',
-      signal: controller.signal,
-    })
-    const response = await upstreamResponse(upstream)
-    return finish(response ?? proxyResponse('Analytics upstream response is too large.', 502))
-  } catch {
-    return finish(proxyResponse(
-      controller.signal.aborted ? 'Analytics upstream timed out.' : 'Analytics upstream unavailable.',
-      controller.signal.aborted ? 504 : 502,
-    ))
+    let body: Uint8Array<ArrayBuffer> | null
+    try {
+      body = await readBoundedBody(request, MAX_REQUEST_BYTES, controller.signal)
+    } catch {
+      return finish(controller.signal.aborted
+        ? proxyResponse('Analytics request timed out.', 408)
+        : proxyResponse('Invalid analytics request.', 400))
+    }
+    if (!body) return finish(proxyResponse('Analytics request is too large.', 413))
+
+    const sourceUrl = new URL(request.url)
+    const upstreamUrl = new URL(POSTHOG_CAPTURE_UPSTREAM)
+    upstreamUrl.search = sourceUrl.search
+
+    try {
+      const upstream = await fetchUpstream(upstreamUrl, {
+        body: body.buffer,
+        headers: captureHeaders(request.headers),
+        method: 'POST',
+        redirect: 'manual',
+        signal: controller.signal,
+      })
+      const response = await upstreamResponse(upstream, controller.signal)
+      return finish(response ?? proxyResponse('Analytics upstream response is too large.', 502))
+    } catch {
+      return finish(proxyResponse(
+        controller.signal.aborted ? 'Analytics upstream timed out.' : 'Analytics upstream unavailable.',
+        controller.signal.aborted ? 504 : 502,
+      ))
+    }
   } finally {
     clearTimeout(timeout)
   }
@@ -98,7 +102,7 @@ function captureHeaders(headers: Headers) {
   return forwarded
 }
 
-async function upstreamResponse(upstream: Response) {
+async function upstreamResponse(upstream: Response, signal: AbortSignal) {
   const contentLength = upstream.headers.get('content-length')
   if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_RESPONSE_BYTES) {
     await upstream.body?.cancel()
@@ -106,7 +110,7 @@ async function upstreamResponse(upstream: Response) {
   }
 
   const body = upstream.body
-    ? await readBoundedStream(upstream.body, MAX_RESPONSE_BYTES)
+    ? await readBoundedStream(upstream.body, MAX_RESPONSE_BYTES, signal)
     : new Uint8Array()
   if (!body) return null
 
@@ -136,29 +140,44 @@ function proxyResponse(message: string, status: number) {
 async function readBoundedBody(
   request: Request,
   maximumBytes: number,
+  signal: AbortSignal,
 ): Promise<Uint8Array<ArrayBuffer> | null> {
   return request.body
-    ? readBoundedStream(request.body, maximumBytes)
+    ? readBoundedStream(request.body, maximumBytes, signal)
     : new Uint8Array()
 }
 
 async function readBoundedStream(
   stream: ReadableStream<Uint8Array>,
   maximumBytes: number,
+  signal: AbortSignal,
 ): Promise<Uint8Array<ArrayBuffer> | null> {
   const chunks: Uint8Array[] = []
   const reader = stream.getReader()
   let byteLength = 0
+  const cancelRead = () => {
+    void reader.cancel(signal.reason).catch(() => {})
+  }
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    byteLength += value.byteLength
-    if (byteLength > maximumBytes) {
-      await reader.cancel()
-      return null
+  signal.addEventListener('abort', cancelRead, { once: true })
+  try {
+    if (signal.aborted) cancelRead()
+    signal.throwIfAborted()
+
+    while (true) {
+      const { done, value } = await reader.read()
+      signal.throwIfAborted()
+      if (done) break
+      byteLength += value.byteLength
+      if (byteLength > maximumBytes) {
+        await reader.cancel()
+        return null
+      }
+      chunks.push(value)
     }
-    chunks.push(value)
+  } finally {
+    signal.removeEventListener('abort', cancelRead)
+    reader.releaseLock()
   }
 
   const body = new Uint8Array(byteLength)

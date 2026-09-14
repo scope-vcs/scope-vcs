@@ -1,6 +1,31 @@
 use scope_postgres::db::{AttemptMutation, DispatchClaim, MetadataStore};
 use scope_product_analytics::{ProductAnalytics, ProductEvent};
 
+// Admission and its dispatch lease have committed. Analytics must not delay provisioning.
+pub(crate) fn schedule_attempt_started(
+    metadata: &MetadataStore,
+    analytics: &ProductAnalytics,
+    claim: &DispatchClaim,
+) {
+    if !analytics.is_enabled() {
+        return;
+    }
+    let metadata = metadata.clone();
+    let analytics = analytics.clone();
+    let claim = claim.clone();
+    tokio::spawn(async move {
+        if tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            capture_attempt_started(&metadata, &analytics, &claim),
+        )
+        .await
+        .is_err()
+        {
+            tracing::warn!("workflow start analytics lookup timed out");
+        }
+    });
+}
+
 pub(crate) async fn capture_attempt_started(
     metadata: &MetadataStore,
     analytics: &ProductAnalytics,

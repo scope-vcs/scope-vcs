@@ -59,9 +59,13 @@ test('real browser SDK uses the bounded proxy while analytics domains are blocke
   await page.goto(origin, { waitUntil: 'networkidle' })
   await page.waitForFunction(() => window.analyticsReady)
   assert.equal(await page.evaluate(() => window.analyticsEnabled), true, JSON.stringify(requests))
-  await waitFor(() => deliveries.flatMap(decodeCapture).length >= 3)
+  await waitFor(() => deliveries.flatMap(decodeCapture).length >= 8)
   const events = deliveries.flatMap(decodeCapture)
-  assert.deepEqual(events.map(event => event.event).sort(), ['$identify', '$pageview', 'frontend_error'].sort())
+  assert.deepEqual(events.map(event => event.event).sort(), [
+    '$identify', '$identify', '$identify',
+    '$pageview', '$pageview', '$pageview',
+    'frontend_error', 'frontend_error',
+  ].sort())
   assert.ok(requests.some(url => new URL(url).pathname === '/e/e/'))
   assert.equal(requests.some(url => new URL(url).hostname.endsWith('posthog.com')), false)
   for (const delivery of deliveries) {
@@ -74,11 +78,36 @@ test('real browser SDK uses the bounded proxy while analytics domains are blocke
   for (const event of events) {
     assert.equal(event.properties.environment, 'test')
     assert.equal(event.properties.release, 'fixture-release')
+    assert.equal(event.properties.source, 'browser')
     assert.equal(event.properties.$geoip_disable, true)
     assert.equal(JSON.stringify(event).includes('SECRET'), false)
     assert.equal(JSON.stringify(event).includes('private-repository'), false)
   }
-  assert.equal(events.find(event => event.event === 'frontend_error').properties.distinct_id, 'scope_usr_browser_fixture')
+  const pageViews = events.filter(event => event.event === '$pageview')
+  const identifies = events.filter(event => event.event === '$identify')
+  const diagnostics = events.filter(event => event.event === 'frontend_error')
+  const anonymousPageViews = pageViews.filter(
+    event => !event.properties.distinct_id.startsWith('scope_usr_'),
+  )
+  assert.equal(anonymousPageViews.length, 2)
+  assert.equal(new Set(
+    anonymousPageViews.map(event => event.properties.distinct_id),
+  ).size, 2)
+  assert.equal(pageViews.filter(
+    event => event.properties.distinct_id === 'scope_usr_two',
+  ).length, 1)
+  assert.equal(identifies.filter(
+    event => event.properties.distinct_id === 'scope_usr_one',
+  ).length, 2)
+  assert.equal(identifies.filter(
+    event => event.properties.distinct_id === 'scope_usr_two',
+  ).length, 1)
+  assert.equal(diagnostics.find(
+    event => event.properties.error_origin === 'window',
+  ).properties.distinct_id, 'scope_usr_one')
+  assert.equal(diagnostics.find(
+    event => event.properties.error_origin === 'route',
+  ).properties.distinct_id, 'scope_usr_two')
   const beforeDnt = deliveries.length
   const dntContext = await browser.newContext(browserOptions)
   await dntContext.addInitScript(normalVisitor)

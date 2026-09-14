@@ -44,7 +44,14 @@ async fn attempt_analytics_correlates_admission_and_completion_without_replaying
     else {
         panic!("expected workflow attempt admission");
     };
-    crate::product_analytics::capture_attempt_started(&metadata, &analytics, &claim).await;
+    crate::product_analytics::schedule_attempt_started(&metadata, &analytics, &claim);
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while recording.events().is_empty() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("scheduled start analytics should complete independently");
 
     let conclusion = || AttemptConclusion::SetupFailed {
         exit_code: 69,

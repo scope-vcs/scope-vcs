@@ -10,10 +10,13 @@ import {
   analyticsBootstrapResource,
   loadAnalyticsBootstrap,
 } from './bootstrap'
+import {
+  applyAnalyticsIdentityTransition,
+  type AnalyticsEventContext,
+} from './client-identity'
 import { installBrowserDiagnostics } from './diagnostics'
 import {
   identifiedKey,
-  identityTransition,
   resolveAnalyticsIdentity,
 } from './identity'
 import { pageViewProperties } from './privacy'
@@ -43,11 +46,20 @@ export function AnalyticsRoot() {
   }, [bootstrap.retry, bootstrap.status])
 
   return bootstrap.status === 'loaded' && bootstrap.value.client
-    ? <AnalyticsRuntime client={bootstrap.value.client} />
+    ? <AnalyticsRuntime
+        client={bootstrap.value.client}
+        eventContext={bootstrap.value.eventContext}
+      />
     : null
 }
 
-function AnalyticsRuntime({ client }: { client: PostHog }) {
+function AnalyticsRuntime({
+  client,
+  eventContext,
+}: {
+  client: PostHog
+  eventContext: AnalyticsEventContext
+}) {
   const { isLoaded, isSignedIn, userId } = useAuth()
   const routeId = useRouterState({
     select: (state) => state.matches.at(-1)?.routeId,
@@ -55,7 +67,9 @@ function AnalyticsRuntime({ client }: { client: PostHog }) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
+  const routeName = analyticsRouteForId(routeId)?.name ?? null
   const capturedPage = useRef<string | null>(null)
+  const documentRouteName = useRef(routeName)
   const identityKey = useRef<string | null>(null)
   const expectedIdentityKey = useRef<string | null>(null)
   const currentPage = useRef({ pathname, routeId })
@@ -71,7 +85,7 @@ function AnalyticsRuntime({ client }: { client: PostHog }) {
 
     capturedPage.current = null
     if (!isSignedIn || !userId) {
-      applyIdentityTransition(client, null)
+      safely(() => applyAnalyticsIdentityTransition(client, null, eventContext))
       identityKey.current = 'anonymous'
       captureCurrentPage(client, currentPage.current, capturedPage)
       diagnostics.current?.flushErrors()
@@ -91,7 +105,11 @@ function AnalyticsRuntime({ client }: { client: PostHog }) {
           ),
         )
         if (!active) return
-        applyIdentityTransition(client, identity.scopeUserId)
+        safely(() => applyAnalyticsIdentityTransition(
+          client,
+          identity.scopeUserId,
+          eventContext,
+        ))
         identityKey.current = identity.identityKey
         captureCurrentPage(client, currentPage.current, capturedPage)
         diagnostics.current?.flushErrors()
@@ -112,7 +130,7 @@ function AnalyticsRuntime({ client }: { client: PostHog }) {
       window.removeEventListener('focus', retryUnresolvedIdentity)
       window.removeEventListener('online', retryUnresolvedIdentity)
     }
-  }, [client, isLoaded, isSignedIn, userId])
+  }, [client, eventContext, isLoaded, isSignedIn, userId])
 
   useEffect(() => {
     if (!isLoaded || identityKey.current !== expectedIdentityKey.current) return
@@ -131,7 +149,7 @@ function AnalyticsRuntime({ client }: { client: PostHog }) {
         safely(() => client.capture(event, properties))
         return true
       },
-      routeName: analyticsRouteForId(routeId)?.name ?? null,
+      routeName: documentRouteName.current,
     })
     diagnostics.current = installed
     return () => {
@@ -141,8 +159,8 @@ function AnalyticsRuntime({ client }: { client: PostHog }) {
   }, [client])
 
   useEffect(() => {
-    diagnostics.current?.setRoute(analyticsRouteForId(routeId)?.name ?? null)
-  }, [routeId])
+    diagnostics.current?.setRoute(routeName)
+  }, [routeName])
 
   return null
 }
@@ -164,26 +182,6 @@ function captureCurrentPage(
     referrer: document.referrer,
     search: window.location.search,
   })))
-}
-
-function applyIdentityTransition(client: PostHog, scopeUserId: string | null) {
-  safely(() => {
-    const transition = identityTransition({
-      currentDistinctId: client.get_distinct_id(),
-      isSignedIn: Boolean(scopeUserId),
-      persistedUserId: client.get_property('$user_id'),
-      scopeUserId,
-    })
-
-    if (transition.kind === 'identify') {
-      client.identify(transition.scopeUserId)
-    } else if (transition.kind === 'reset_and_identify') {
-      client.reset()
-      client.identify(transition.scopeUserId)
-    } else if (transition.kind === 'reset') {
-      client.reset()
-    }
-  })
 }
 
 function safely(action: () => void) {

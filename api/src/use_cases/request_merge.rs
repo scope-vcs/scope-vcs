@@ -86,7 +86,8 @@ pub(crate) async fn merge_request(
                 operation: ProductOperation::Merge,
                 source: EventSource::Api,
                 repository_id: None,
-                request_id: Some(&command.request_id),
+                // The URL value is untrusted and the request lookup may have failed.
+                request_id: None,
                 started_at,
             },
             error,
