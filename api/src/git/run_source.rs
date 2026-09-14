@@ -3,12 +3,14 @@ pub(super) mod operation;
 use crate::{
     error::ApiError,
     git::{
-        cache::GitDerivedCacheNamespace,
+        cache::{GitDerivedCacheNamespace, GitRepoHandle},
         command::{git_process_output, truncated_git_stderr},
         repository_engine::GitRevision,
     },
+    runtime_budgets::RuntimePermit,
     state::AppState,
 };
+use axum::body::{Body, Bytes};
 use scope_domain::{
     repository::RepositoryIncarnation,
     runs::{run::Run, source::RunSource, workflow::identity::WorkflowPath},
@@ -19,18 +21,64 @@ use scope_object_store::source_blob_bytes_bounded;
 use sha2::{Digest as _, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::Read as _,
     os::unix::{fs::DirBuilderExt as _, fs::OpenOptionsExt as _},
     path::{Path, PathBuf},
     process::Command,
     time::Duration,
 };
+use tokio::io::AsyncReadExt as _;
 
 const GIT_INSPECTION_TIMEOUT: Duration = Duration::from_secs(30);
+const RUN_SOURCE_STREAM_CHUNK_BYTES: usize = 64 * 1024;
 
 pub(crate) struct MaterializedRunSource {
-    pub(crate) bytes: Vec<u8>,
     pub(crate) sha256: String,
+    body: RunSourceBody,
+}
+
+enum RunSourceBody {
+    Buffered(Vec<u8>),
+    /// Streams the cached bundle from disk. The cache lease and the object-store
+    /// permit live as long as the stream, so eviction and the read budget both
+    /// see the download until its last byte.
+    Cached {
+        file: tokio::fs::File,
+        length: u64,
+        handle: GitRepoHandle,
+        permit: RuntimePermit,
+    },
+}
+
+impl MaterializedRunSource {
+    pub(crate) fn content_length(&self) -> u64 {
+        match &self.body {
+            RunSourceBody::Buffered(bytes) => bytes.len() as u64,
+            RunSourceBody::Cached { length, .. } => *length,
+        }
+    }
+
+    pub(crate) fn into_body(self) -> Body {
+        match self.body {
+            RunSourceBody::Buffered(bytes) => Body::from(bytes),
+            RunSourceBody::Cached {
+                file,
+                handle,
+                permit,
+                ..
+            } => Body::from_stream(futures_util::stream::try_unfold(
+                (file, handle, permit),
+                |(mut file, handle, permit)| async move {
+                    let mut chunk = vec![0_u8; RUN_SOURCE_STREAM_CHUNK_BYTES];
+                    let read = file.read(&mut chunk).await?;
+                    if read == 0 {
+                        return Ok::<_, std::io::Error>(None);
+                    }
+                    chunk.truncate(read);
+                    Ok(Some((Bytes::from(chunk), (file, handle, permit))))
+                },
+            )),
+        }
+    }
 }
 
 pub(crate) async fn materialize_run_source_bundle(
@@ -47,7 +95,7 @@ pub(crate) async fn materialize_run_source_bundle(
                 .map_err(ApiError::from)?;
             Ok(MaterializedRunSource {
                 sha256: hex::encode(Sha256::digest(&bytes)),
-                bytes,
+                body: RunSourceBody::Buffered(bytes),
             })
         })
         .await
@@ -124,20 +172,36 @@ async fn materialize_accepted_git_head_bundle(
             },
         )
         .await?;
-    let read_permit = state
+    let permit = state
         .runtime_budgets
         .try_object_store("run source cache read")?;
-    tokio::task::spawn_blocking(move || {
-        let _read_permit = read_permit;
-        let bytes = read_bounded_file(&handle.join("source.bundle"), max_bytes)?;
-        let sha256 = String::from_utf8(read_bounded_file(&handle.join("sha256"), 64)?)
-            .map_err(ApiError::internal)?;
-        Ok(MaterializedRunSource { bytes, sha256 })
+    let file = tokio::fs::File::open(handle.join("source.bundle"))
+        .await
+        .map_err(ApiError::internal)?;
+    let length = file.metadata().await.map_err(ApiError::internal)?.len();
+    if length > max_bytes as u64 {
+        return Err(ApiError::bad_request(format!(
+            "Git command output exceeds {max_bytes} bytes"
+        )));
+    }
+    let sha256 = tokio::fs::read(handle.join("sha256"))
+        .await
+        .map_err(ApiError::internal)?;
+    if sha256.len() != 64 {
+        return Err(ApiError::internal_message(
+            "run source cache digest is malformed",
+        ));
+    }
+    let sha256 = String::from_utf8(sha256).map_err(ApiError::internal)?;
+    Ok(MaterializedRunSource {
+        sha256,
+        body: RunSourceBody::Cached {
+            file,
+            length,
+            handle,
+            permit,
+        },
     })
-    .await
-    .map_err(|error| {
-        ApiError::internal_message(format!("run source cache read task failed: {error}"))
-    })?
 }
 
 async fn build_accepted_source_bundle(
@@ -378,26 +442,6 @@ fn create_private_file(path: &Path) -> Result<File, ApiError> {
         .mode(0o600)
         .open(path)
         .map_err(ApiError::internal)
-}
-
-fn read_bounded_file(path: &Path, max_bytes: usize) -> Result<Vec<u8>, ApiError> {
-    let file = File::open(path).map_err(ApiError::internal)?;
-    let length = file.metadata().map_err(ApiError::internal)?.len();
-    if length > max_bytes as u64 {
-        return Err(ApiError::bad_request(format!(
-            "Git command output exceeds {max_bytes} bytes"
-        )));
-    }
-    let mut bytes = Vec::with_capacity(length as usize);
-    file.take(max_bytes as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(ApiError::internal)?;
-    if bytes.len() > max_bytes {
-        return Err(ApiError::bad_request(format!(
-            "Git command output exceeds {max_bytes} bytes"
-        )));
-    }
-    Ok(bytes)
 }
 
 struct TemporarySourceDirectory {

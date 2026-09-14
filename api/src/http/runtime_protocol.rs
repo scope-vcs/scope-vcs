@@ -13,7 +13,7 @@ use axum::{
     extract::{Path, State},
     http::{
         HeaderMap, HeaderValue,
-        header::{CONTENT_TYPE, HeaderName},
+        header::{CONTENT_LENGTH, CONTENT_TYPE, HeaderName},
     },
     response::IntoResponse,
 };
@@ -228,7 +228,11 @@ pub(crate) async fn source(
             ApiError::internal_message("source identity is not a valid header value")
         })?,
     );
-    Ok((response_headers, materialized.bytes))
+    response_headers.insert(
+        CONTENT_LENGTH,
+        HeaderValue::from(materialized.content_length()),
+    );
+    Ok((response_headers, materialized.into_body()))
 }
 
 pub(crate) async fn append_log(

@@ -169,8 +169,7 @@ fn write_files(
     objects: &dyn ObjectStore,
     cancellation: &ProcessCancellation,
 ) -> anyhow::Result<()> {
-    check_cancellation(cancellation)?;
-    let git_blobs = read_git_blobs(bare, files, cancellation)?;
+    let mut git_targets: BTreeMap<String, GitBlobTarget> = BTreeMap::new();
     for file in files {
         check_cancellation(cancellation)?;
         let path = source.join(file.path.as_str().trim_start_matches('/'));
@@ -187,13 +186,16 @@ fn write_files(
                 if git_oid != &file.blob.git_oid {
                     anyhow::bail!("dependency source blob identity does not match its Git OID");
                 }
-                let content = git_blobs
-                    .get(git_oid)
-                    .ok_or_else(|| anyhow::anyhow!("missing dependency Git blob"))?;
-                if content.len() as u64 != file.blob.size_bytes {
+                let target = git_targets
+                    .entry(git_oid.clone())
+                    .or_insert_with(|| GitBlobTarget {
+                        size_bytes: file.blob.size_bytes,
+                        paths: Vec::new(),
+                    });
+                if target.size_bytes != file.blob.size_bytes {
                     anyhow::bail!("dependency source blob size does not match metadata");
                 }
-                fs::write(path, content)?;
+                target.paths.push(path);
             }
             _ => fs::write(
                 path,
@@ -201,31 +203,30 @@ fn write_files(
             )?,
         }
     }
-    Ok(())
+    write_git_blobs(bare, &git_targets, cancellation)
 }
 
-fn read_git_blobs(
+struct GitBlobTarget {
+    size_bytes: u64,
+    paths: Vec<PathBuf>,
+}
+
+/// Writes every Git-backed source file straight from one `cat-file --batch`
+/// response, so the captured output is the only copy of the source in memory.
+fn write_git_blobs(
     bare: &Path,
-    files: &[DependencySnapshotFile],
+    targets: &BTreeMap<String, GitBlobTarget>,
     cancellation: &ProcessCancellation,
-) -> anyhow::Result<BTreeMap<String, Vec<u8>>> {
-    let expected: BTreeMap<_, _> = files
-        .iter()
-        .filter(|file| needs_content(file.path.as_str()))
-        .filter_map(|file| match &file.blob.content_ref {
-            ContentRef::GitBlob { git_oid } => Some((git_oid.clone(), file.blob.size_bytes)),
-            _ => None,
-        })
-        .collect();
-    if expected.is_empty() {
-        return Ok(BTreeMap::new());
+) -> anyhow::Result<()> {
+    if targets.is_empty() {
+        return Ok(());
     }
-    for oid in expected.keys() {
+    for oid in targets.keys() {
         if oid.len() != 40 || !oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             anyhow::bail!("dependency source has an invalid Git OID");
         }
     }
-    let input = expected
+    let input = targets
         .keys()
         .map(|oid| format!("{oid}\n"))
         .collect::<String>()
@@ -238,15 +239,26 @@ fn read_git_blobs(
         GIT_TIMEOUT,
         cancellation,
     )?;
-    parse_git_blobs(&output, expected)
+    let expected = targets
+        .iter()
+        .map(|(oid, target)| (oid.as_str(), target.size_bytes));
+    parse_git_blobs(&output, expected, |oid, content| {
+        check_cancellation(cancellation)?;
+        for path in &targets[oid].paths {
+            fs::write(path, content)?;
+        }
+        Ok(())
+    })
 }
 
-fn parse_git_blobs(
+/// Walks a `cat-file --batch` response in the requested order, handing each blob
+/// to `write` without copying it out of the response.
+fn parse_git_blobs<'a>(
     output: &[u8],
-    expected: BTreeMap<String, u64>,
-) -> anyhow::Result<BTreeMap<String, Vec<u8>>> {
+    expected: impl IntoIterator<Item = (&'a str, u64)>,
+    mut write: impl FnMut(&str, &[u8]) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
     let mut remaining = output;
-    let mut blobs = BTreeMap::new();
     for (oid, size) in expected {
         let header_end = remaining
             .iter()
@@ -261,13 +273,13 @@ fn parse_git_blobs(
         if remaining.get(size) != Some(&b'\n') {
             anyhow::bail!("Git blob batch response is truncated");
         }
-        blobs.insert(oid, remaining[..size].to_vec());
+        write(oid, &remaining[..size])?;
         remaining = &remaining[size + 1..];
     }
     if !remaining.is_empty() {
         anyhow::bail!("unexpected trailing Git batch content");
     }
-    Ok(blobs)
+    Ok(())
 }
 
 fn git(
@@ -373,14 +385,22 @@ mod tests {
     #[test]
     fn batch_parser_preserves_embedded_newlines_and_rejects_wrong_identity() {
         let oid = "a".repeat(40);
-        let expected = BTreeMap::from([(oid.clone(), 3)]);
         let bytes = format!("{oid} blob 3\na\nb\n").into_bytes();
-        assert_eq!(
-            parse_git_blobs(&bytes, expected.clone()).unwrap()[&oid],
-            b"a\nb"
+        let mut written = Vec::new();
+        parse_git_blobs(&bytes, [(oid.as_str(), 3)], |oid, content| {
+            written.push((oid.to_string(), content.to_vec()));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(written, vec![(oid.clone(), b"a\nb".to_vec())]);
+
+        let mut ignore = |_: &str, _: &[u8]| -> anyhow::Result<()> { Ok(()) };
+        assert!(
+            parse_git_blobs(b"wrong blob 3\na\nb\n", [(oid.as_str(), 3)], &mut ignore).is_err()
         );
-        assert!(parse_git_blobs(b"wrong blob 3\na\nb\n", expected.clone()).is_err());
-        assert!(parse_git_blobs(&bytes[..bytes.len() - 1], expected).is_err());
+        assert!(
+            parse_git_blobs(&bytes[..bytes.len() - 1], [(oid.as_str(), 3)], &mut ignore).is_err()
+        );
     }
 
     #[test]

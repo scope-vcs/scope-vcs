@@ -1,1 +1,7 @@
-{}
+{
+  "e937d112-68c1-49de-bfd6-4d281cdb70c8": {
+    "owner": "adamblumoff",
+    "purpose": "memory baseline versus PR image for whole-payload buffer removal",
+    "expiresAt": "2026-09-21T00:00:00Z"
+  }
+}

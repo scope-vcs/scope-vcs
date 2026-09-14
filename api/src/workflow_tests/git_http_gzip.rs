@@ -40,7 +40,7 @@ async fn receive_post(
 }
 
 #[tokio::test]
-async fn receive_pack_accepts_gzip_encoded_request_body() {
+async fn receive_pack_rejects_gzip_encoded_request_body() {
     let (state, secret) = test_state_with_first_push_token().await;
     let source = first_push_source("gzip-first-push", b"hello over gzip receive-pack\n");
     let push_intent =
@@ -54,26 +54,16 @@ async fn receive_pack_accepts_gzip_encoded_request_body() {
     )
     .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
-    assert!(
-        body.windows(b"unpack ok".len())
-            .any(|window| window == b"unpack ok")
-    );
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("gzip"));
 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
-    assert_eq!(repo.record.lifecycle_state, RepoLifecycleState::Ready);
-    assert!(repo.first_push_token.is_none());
-    let readme = match repo
-        .live_files
-        .get(&ScopePath::parse("/README.md").unwrap())
-    {
-        Some(blob) => Some(blob_content(&state, blob, &repo).await),
-        None => None,
-    };
-    assert_eq!(readme.as_deref(), Some("hello over gzip receive-pack\n"));
+    assert_ne!(repo.record.lifecycle_state, RepoLifecycleState::Ready);
+    assert!(repo.first_push_token.is_some());
+    assert!(repo.live_files.is_empty());
 }
 
 #[tokio::test]

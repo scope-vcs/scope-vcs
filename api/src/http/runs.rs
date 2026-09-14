@@ -45,10 +45,14 @@ pub(crate) async fn create_manual_run(
     let user = require_scope_user(&state, &headers).await?;
     let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
     let request = manual_run_request(repo.record.id, user.id, query)?;
-    let bundle = to_bytes(body, MAX_MANUAL_BUNDLE_BYTES)
-        .await
-        .map_err(|error| ApiError::payload_too_large(format!("run bundle is too large: {error}")))?
-        .to_vec();
+    // `Vec::from` reuses the collected allocation; `to_vec` would copy the bundle.
+    let bundle = Vec::from(
+        to_bytes(body, MAX_MANUAL_BUNDLE_BYTES)
+            .await
+            .map_err(|error| {
+                ApiError::payload_too_large(format!("run bundle is too large: {error}"))
+            })?,
+    );
     let inspected = create_manual_run_control(&state, ManualRunCommand { request, bundle }).await?;
     Ok(Json(run_response(&inspected.run, inspected.logs_truncated)))
 }

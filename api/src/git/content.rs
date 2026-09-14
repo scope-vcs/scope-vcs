@@ -1,4 +1,4 @@
-use crate::{error::ApiError, git::GitContext, git::command::run_git_output};
+use crate::{error::ApiError, git::GitContext, git::command::run_git_output_bounded};
 use scope_domain::{
     content::SourceBlob,
     content_ref::ContentRef,
@@ -60,10 +60,16 @@ pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
         ApiError::internal_message("Git blob content requires a materialized source repository")
     })?;
     let started_at = Instant::now();
-    let output = run_git_output(
+    // Persisted metadata already knows the size, so an oversized object fails before
+    // it is buffered instead of after.
+    let max_stdout_bytes = usize::try_from(blob.size_bytes)
+        .unwrap_or(usize::MAX)
+        .saturating_add(1);
+    let output = run_git_output_bounded(
         Some(repo),
         &["cat-file", "blob", &blob.git_oid],
         "reading Git blob content",
+        max_stdout_bytes,
     );
     let actual_size_bytes = output.as_ref().map_or(0, |output| output.stdout.len());
     let success = output
@@ -92,4 +98,51 @@ pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
         )));
     }
     Ok(output.stdout)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        git::command::{git_stdout_text, run_git},
+        state::AppState,
+    };
+    use axum::http::StatusCode;
+    use std::fs;
+
+    #[tokio::test]
+    async fn git_blob_reads_stop_at_the_persisted_size() {
+        let state = AppState::test_state();
+        let repo = tempfile::tempdir().unwrap();
+        run_git(
+            None,
+            &["init", "-q", repo.path().to_str().unwrap()],
+            "initializing blob test repository",
+        )
+        .unwrap();
+        fs::write(repo.path().join("file.txt"), b"twelve bytes").unwrap();
+        let git_oid = git_stdout_text(
+            repo.path(),
+            &["hash-object", "-w", "file.txt"],
+            "hashing blob test file",
+        )
+        .unwrap()
+        .trim()
+        .to_string();
+        let blob = |size_bytes| SourceBlob {
+            content_ref: ContentRef::git_blob(git_oid.clone()),
+            sha256: "a".repeat(64),
+            git_oid: git_oid.clone(),
+            git_file_mode: "100644".to_string(),
+            size_bytes,
+        };
+
+        assert_eq!(
+            source_content_bytes_from_repo(&state, &blob(12), Some(repo.path())).unwrap(),
+            b"twelve bytes"
+        );
+        let error =
+            source_content_bytes_from_repo(&state, &blob(5), Some(repo.path())).unwrap_err();
+        assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
 }

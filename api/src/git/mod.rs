@@ -80,14 +80,6 @@ fn git_request_encoding(headers: &HeaderMap) -> Result<GitRequestEncoding, ApiEr
     )))
 }
 
-enum ReceivePackBody {
-    Buffered(Vec<u8>),
-    Streaming {
-        body: Body,
-        content_length: Option<u64>,
-    },
-}
-
 impl Deref for TemporaryRepository {
     type Target = FsPath;
 
@@ -294,41 +286,29 @@ async fn receive_pack_request(
         Ok(encoding) => encoding,
         Err(error) => return git_error_response(error),
     };
-    let request_body = request.into_body();
-    let body = match encoding {
-        GitRequestEncoding::Gzip => {
-            let buffered = match to_bytes(request_body, MAX_RECEIVE_PACK_BYTES).await {
-                Ok(body) => body,
-                Err(error) => {
-                    return git_error_response(ApiError::payload_too_large(format!(
-                        "git receive-pack body is too large: {error}"
-                    )));
-                }
-            };
-            let decode_headers = headers.clone();
-            match blocking::run(move || {
-                decode_git_request_body(&decode_headers, buffered, MAX_RECEIVE_PACK_BYTES)
-            })
-            .await
-            {
-                Ok(body) => ReceivePackBody::Buffered(body),
-                Err(error) => return git_error_response(error),
-            }
-        }
-        GitRequestEncoding::Identity => {
-            let content_length = headers
-                .get(CONTENT_LENGTH)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.parse::<u64>().ok());
-            ReceivePackBody::Streaming {
-                body: request_body,
-                content_length,
-            }
-        }
-    };
+    // Git streams pushes as chunked identity bodies and only gzips upload-pack
+    // requests. Refusing gzip keeps every push on the streaming path instead of
+    // buffering a compressed body and its decoded copy.
+    if encoding == GitRequestEncoding::Gzip {
+        return git_error_response(ApiError::bad_request(
+            "gzip-encoded git receive-pack bodies are unsupported",
+        ));
+    }
+    let content_length = headers
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok());
 
-    match handle_git_receive_pack_body(&state, &org, &repo, "POST", body, content_type, access)
-        .await
+    match handle_git_receive_pack_body(
+        &state,
+        &org,
+        &repo,
+        request.into_body(),
+        content_length,
+        content_type,
+        access,
+    )
+    .await
     {
         Ok(response) => response,
         Err(error) => {
@@ -467,8 +447,8 @@ async fn handle_git_receive_pack_body(
     state: &AppState,
     owner: &str,
     repo_name: &str,
-    method: &str,
-    body: ReceivePackBody,
+    body: Body,
+    content_length: Option<u64>,
     content_type: Option<String>,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
@@ -476,32 +456,16 @@ async fn handle_git_receive_pack_body(
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository(preparation.staging_repo.clone());
     let receive_started_at = Instant::now();
-    let cgi = match body {
-        ReceivePackBody::Buffered(body) => git_http_backend(
-            &staging_repo,
-            method,
-            "git-receive-pack",
-            "",
-            body,
-            content_type,
-            &remote_user,
-        )?,
-        ReceivePackBody::Streaming {
-            body,
-            content_length,
-        } => {
-            git_http_backend_streaming(
-                &staging_repo,
-                "git-receive-pack",
-                body,
-                content_length,
-                MAX_RECEIVE_PACK_BYTES,
-                content_type,
-                &remote_user,
-            )
-            .await?
-        }
-    };
+    let cgi = git_http_backend_streaming(
+        &staging_repo,
+        "git-receive-pack",
+        body,
+        content_length,
+        MAX_RECEIVE_PACK_BYTES,
+        content_type,
+        &remote_user,
+    )
+    .await?;
     let receive_elapsed = receive_started_at.elapsed();
     if cgi.status.is_success()
         && let Err(error) = git_receive::complete(

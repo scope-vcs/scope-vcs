@@ -212,15 +212,17 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     let cold_elapsed = started.elapsed();
     let mut results = results.into_iter();
     let materialized = results.next().unwrap().unwrap();
-    assert!(!materialized.bytes.is_empty());
+    let materialized_sha256 = materialized.sha256.clone();
+    let materialized_bytes = bundle_bytes(materialized).await;
+    assert!(!materialized_bytes.is_empty());
     for concurrent in results {
         let concurrent = concurrent.unwrap();
-        assert_eq!(concurrent.bytes, materialized.bytes);
-        assert_eq!(concurrent.sha256, materialized.sha256);
+        assert_eq!(concurrent.sha256, materialized_sha256);
+        assert_eq!(bundle_bytes(concurrent).await, materialized_bytes);
     }
     assert_eq!(
-        materialized.sha256,
-        hex::encode(Sha256::digest(&materialized.bytes))
+        materialized_sha256,
+        hex::encode(Sha256::digest(&materialized_bytes))
     );
 
     // Warm reads require neither Git admission nor the original remote pack.
@@ -242,14 +244,16 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     let warm = materialize_accepted_git_head_bundle(&state, &incarnation, &source, 4 * 1024 * 1024)
         .await
         .unwrap();
+    let warm_sha256 = warm.sha256.clone();
+    let warm_bytes = bundle_bytes(warm).await;
     eprintln!(
         "run source eight cold followers: {:?}; warm read: {:?}; bundle bytes: {}",
         cold_elapsed,
         started.elapsed(),
-        warm.bytes.len()
+        warm_bytes.len()
     );
-    assert_eq!(warm.bytes, materialized.bytes);
-    assert_eq!(warm.sha256, materialized.sha256);
+    assert_eq!(warm_bytes, materialized_bytes);
+    assert_eq!(warm_sha256, materialized_sha256);
     assert!(
         materialize_accepted_git_head_bundle(&state, &incarnation, &source, 1)
             .await
@@ -263,7 +267,7 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     );
 
     let bundle = repository.path().join("source.bundle");
-    fs::write(&bundle, materialized.bytes).unwrap();
+    fs::write(&bundle, &materialized_bytes).unwrap();
     let output = std::process::Command::new("git")
         .args(["bundle", "list-heads", bundle.to_str().unwrap()])
         .output()
@@ -641,4 +645,11 @@ fn workflow_blob_inspection_distinguishes_absence_invalid_type_oversize_and_read
             .status(),
         axum::http::StatusCode::SERVICE_UNAVAILABLE
     );
+}
+
+async fn bundle_bytes(source: MaterializedRunSource) -> Vec<u8> {
+    axum::body::to_bytes(source.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .to_vec()
 }
