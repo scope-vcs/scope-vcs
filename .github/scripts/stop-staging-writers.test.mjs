@@ -39,6 +39,10 @@ if [[ "$*" == *"deployment list"* ]]; then
     printf '%s\\n' '[]'
     exit 1
   fi
+  if [[ "\${SCOPE_TEST_SCENARIO:-}" == "already-removed" ]]; then
+    printf '%s\\n' '[{"id":"old-deployment","status":"REMOVED"}]'
+    exit 0
+  fi
   if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && -f "$SCOPE_TEST_REMOVALS" && "$*" == *"--service api"* ]]; then
     printf '%s\\n' '[{"id":"api-deployment","status":"REMOVED"}]'
     exit 0
@@ -175,3 +179,23 @@ for (const replicas of [undefined, { running: 0 }, { running: null, crashed: 0 }
     assert.doesNotMatch(result.stdout, /capture-baseline/)
   })
 }
+
+test('already removed staging writers allow baseline capture without another removal', async () => {
+  const { manifest, removals, root } = await fixture()
+  const services = ['api', 'worker', 'cache', 'media', 'media-worker'].map(id => ({
+    id, status: null, deploymentId: null, latestDeployment: null, replicas: null,
+  }))
+  const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-staging-writers.sh && echo capture-baseline'], {
+    encoding: 'utf8', timeout: 15_000,
+    env: { ...process.env, PATH: `${root}:${process.env.PATH}`,
+      RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
+      SCOPE_DEPLOYMENT_MANIFEST: manifest, SCOPE_TEST_REMOVALS: removals,
+      SCOPE_TEST_RAILWAY_READ_HELPER: join(root, 'railway'),
+      SCOPE_TEST_SCENARIO: 'already-removed',
+      SCOPE_TEST_REPLICA_STATE: JSON.stringify(services),
+    },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /capture-baseline/)
+  await assert.rejects(readFile(removals), { code: 'ENOENT' })
+})

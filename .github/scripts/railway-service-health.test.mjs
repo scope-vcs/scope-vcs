@@ -48,6 +48,24 @@ function healthyService(id) {
   };
 }
 
+test("removed staging deployments are stopped without weakening health checks", () => {
+  const service = { id: "worker", status: null, deploymentId: null,
+    latestDeployment: null, replicas: null };
+  assert.equal(railwayServiceIsStopped([service], "worker"), true);
+  assert.throws(() => assertHealthyRailwayService([service], "worker"), /replica evidence/);
+  for (const field of ["status", "deploymentId", "latestDeployment", "replicas"]) {
+    const incomplete = { ...service };
+    delete incomplete[field];
+    assert.throws(() => railwayServiceIsStopped([incomplete], "worker"), /replica evidence/, field);
+  }
+  for (const existing of [
+    { status: "SUCCESS" }, { deploymentId: "deployment" },
+    { latestDeployment: { id: "queued", status: "QUEUED" } },
+  ]) {
+    assert.throws(() => railwayServiceIsStopped([{ ...service, ...existing }], "worker"), /replica evidence/);
+  }
+});
+
 test("accepts the exact active healthy deployment", () => {
   const service = healthyService("api");
   assert.equal(
