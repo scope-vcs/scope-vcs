@@ -225,7 +225,6 @@ impl GitSegmentStore {
             segment,
             object_key,
             encrypted_bytes: remote.encrypted_bytes,
-            key_id: self.encryption_key.key_id().to_string(),
             local_pack_path: local.path,
             timings: GitSegmentIngestTimings {
                 total: started.elapsed(),

@@ -165,7 +165,7 @@ pub(crate) async fn hydrate_git_pack_spans<C: GitContext>(
         let timeout = context.runtime_budgets().git_command_timeout();
         tokio::task::spawn_blocking(move || {
             let started = Instant::now();
-            let result = install_verified_git_pack(&root, pack.as_ref(), timeout);
+            let result = install_verified_git_pack(&root, pack.path(), timeout);
             tracing::info!(
                 repository_id,
                 operation = "index_pack",

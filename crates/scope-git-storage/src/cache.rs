@@ -4,7 +4,6 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs,
     io::Read,
-    ops::Deref,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, Weak},
     time::SystemTime,
@@ -57,20 +56,6 @@ impl std::fmt::Debug for VerifiedGitPack {
             .field("path", &self.path)
             .field("timings", &self.timings)
             .finish_non_exhaustive()
-    }
-}
-
-impl Deref for VerifiedGitPack {
-    type Target = Path;
-
-    fn deref(&self) -> &Self::Target {
-        &self.path
-    }
-}
-
-impl AsRef<Path> for VerifiedGitPack {
-    fn as_ref(&self) -> &Path {
-        &self.path
     }
 }
 
