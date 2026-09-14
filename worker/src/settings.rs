@@ -15,8 +15,6 @@ const DEFAULT_HEALTH_PORT: u16 = 8081;
 pub(crate) const BATCH_SIZE: usize = 10;
 /// Idle wait between polls for every worker loop.
 pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(1_000);
-/// Pack spans a repository accumulates before compaction is scheduled.
-pub(crate) const GIT_COMPACTION_SPANS: usize = scope_git::DEFAULT_GIT_COMPACTION_SPANS;
 /// Bound on one compaction's external git work.
 pub(crate) const GIT_COMPACTION_TIMEOUT: Duration = Duration::from_secs(120);
 /// Cloud run attempts one worker admits concurrently.

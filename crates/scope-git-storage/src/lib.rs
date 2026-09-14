@@ -1,4 +1,5 @@
 #![warn(unreachable_pub)]
+mod cache;
 mod envelope;
 mod error;
 mod file;
@@ -8,6 +9,7 @@ mod memory;
 mod multipart;
 mod restore;
 
+pub use cache::{VerifiedGitPack, VerifiedPackCacheUsage};
 pub use envelope::{ENCODING_VERSION, SegmentEncryptionKey};
 pub use error::{GitStorageError, MultipartError};
 pub use file::FileMultipartStore;
@@ -17,7 +19,8 @@ pub use multipart::{
     UploadedPart,
 };
 
-use scope_domain::repository::git::GitSegmentRef;
+use cache::VerifiedPackCache;
+use scope_domain::repository::{RepositoryIncarnation, git::GitSegmentRef};
 use sha2::{Digest, Sha256};
 use std::{
     path::{Path, PathBuf},
@@ -28,6 +31,7 @@ use std::{
 const DEFAULT_CHUNK_BYTES: usize = 1024 * 1024;
 const DEFAULT_PART_BYTES: usize = 8 * 1024 * 1024;
 const DEFAULT_CHANNEL_CAPACITY: usize = 2;
+const MAX_VERIFIED_PACK_HYDRATIONS: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct GitSegmentStoreConfig {
@@ -76,7 +80,7 @@ impl GitSegmentStoreConfig {
 pub struct GitSegmentIngestTimings {
     pub total: Duration,
     pub local_write_and_fsync: Duration,
-    pub remote_multipart_upload: Duration,
+    pub remote_upload: Duration,
     pub fanout_blocked: Duration,
     pub plaintext_bytes: u64,
     pub encrypted_bytes: u64,
@@ -126,6 +130,8 @@ pub struct GitSegmentStore {
     backend: Arc<dyn MultipartStore>,
     encryption_key: SegmentEncryptionKey,
     config: GitSegmentStoreConfig,
+    verified_cache: Arc<VerifiedPackCache>,
+    hydration_permits: Arc<tokio::sync::Semaphore>,
 }
 
 impl GitSegmentStore {
@@ -135,22 +141,41 @@ impl GitSegmentStore {
         config: GitSegmentStoreConfig,
     ) -> Result<Self, GitStorageError> {
         config.validate(backend.minimum_part_bytes())?;
+        let verified_cache = VerifiedPackCache::new(config.local_root.join("verified"));
         Ok(Self {
             backend,
             encryption_key,
             config,
+            verified_cache,
+            hydration_permits: Arc::new(tokio::sync::Semaphore::new(MAX_VERIFIED_PACK_HYDRATIONS)),
         })
     }
 
     fn local_directory(&self, repository_id: &str) -> PathBuf {
         self.config
             .local_root
+            .join("staging")
             .join(repository_namespace(repository_id))
     }
 
     fn local_pack_path(&self, repository_id: &str, segment_id: &str) -> PathBuf {
         self.local_directory(repository_id)
             .join(format!("{segment_id}.pack"))
+    }
+
+    fn verified_temp_directory(&self) -> PathBuf {
+        self.verified_cache.root().join(".tmp")
+    }
+
+    fn verified_pack_path(
+        &self,
+        incarnation: &RepositoryIncarnation,
+        segment: &GitSegmentRef,
+    ) -> PathBuf {
+        self.verified_cache
+            .root()
+            .join(repository_cache_namespace(incarnation))
+            .join(format!("{}.pack", segment_cache_key(segment)))
     }
 }
 
@@ -161,12 +186,39 @@ pub fn object_key(repository_id: &str, segment_id: &str) -> String {
     )
 }
 
-/// The storage namespace a repository maps to, shared by the local staging
-/// directory and the remote object key.
+/// The storage namespace a repository maps to, shared by local staging and the
+/// remote object key.
 fn repository_namespace(repository_id: &str) -> String {
     let mut repository_hash = hex::encode(Sha256::digest(repository_id.as_bytes()));
     repository_hash.truncate(32);
     repository_hash
+}
+
+fn repository_cache_namespace(incarnation: &RepositoryIncarnation) -> String {
+    digest_identity([
+        incarnation.repository_id().as_bytes(),
+        incarnation.incarnation_id().as_bytes(),
+    ])
+}
+
+fn segment_cache_key(segment: &GitSegmentRef) -> String {
+    let encoding_version = segment.encoding_version.to_be_bytes();
+    let plaintext_bytes = segment.plaintext_bytes.to_be_bytes();
+    digest_identity([
+        encoding_version.as_slice(),
+        segment.segment_id.as_bytes(),
+        segment.sha256.as_bytes(),
+        plaintext_bytes.as_slice(),
+    ])
+}
+
+fn digest_identity<const N: usize>(parts: [&[u8]; N]) -> String {
+    let mut digest = Sha256::new();
+    for part in parts {
+        digest.update((part.len() as u64).to_be_bytes());
+        digest.update(part);
+    }
+    hex::encode(digest.finalize())
 }
 
 /// Segment and multipart upload ids are 16 random bytes, lowercase hex encoded.

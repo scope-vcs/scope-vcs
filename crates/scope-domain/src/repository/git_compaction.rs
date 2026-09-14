@@ -5,58 +5,41 @@ use super::git::{
 
 /// A compaction decision selected from a fully valid Git pack layout.
 ///
-/// The selected run always contains exactly two adjacent equal-tier spans. Its
-/// optional predecessor is the immediately preceding span, so the boundary
-/// accessors are infallible and agree with the validated layout history.
+/// The selected run always contains exactly two adjacent equal-tier spans.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitCompactionPlan {
-    predecessor: Option<GitPackSpan>,
     selected_spans: [GitPackSpan; 2],
 }
 
 impl GitCompactionPlan {
-    /// Validates the complete layout before applying the count threshold and
-    /// selecting its oldest adjacent equal-tier pair.
+    /// Validates the complete layout before selecting its oldest adjacent
+    /// equal-tier pair.
     pub fn select(
         spans: &[GitPackSpan],
-        minimum_spans: u64,
+        max_source_bytes: u64,
     ) -> Result<Option<Self>, GitCompactionError> {
-        validate_minimum_spans(minimum_spans)?;
         validate_git_pack_layout(spans)?;
-        if u64::try_from(spans.len()).unwrap_or(u64::MAX) < minimum_spans {
-            return Ok(None);
-        }
 
         let Some(pair_start) = spans.windows(2).position(|pair| {
             pair[0].geometric_tier == pair[1].geometric_tier
                 && pair[0].last_sequence.checked_add(1) == Some(pair[1].first_sequence)
+                && pair
+                    .iter()
+                    .try_fold(0_u64, |total, span| {
+                        total.checked_add(span.segment.plaintext_bytes)
+                    })
+                    .is_some_and(|total| total <= max_source_bytes)
         }) else {
             return Ok(None);
         };
 
         Ok(Some(Self {
-            predecessor: pair_start
-                .checked_sub(1)
-                .and_then(|index| spans.get(index))
-                .cloned(),
             selected_spans: [spans[pair_start].clone(), spans[pair_start + 1].clone()],
         }))
     }
 
     pub fn selected_spans(&self) -> &[GitPackSpan; 2] {
         &self.selected_spans
-    }
-
-    pub fn predecessor(&self) -> Option<&GitPackSpan> {
-        self.predecessor.as_ref()
-    }
-
-    pub fn base_oid(&self) -> Option<&str> {
-        self.selected_spans[0].base_oid.as_deref()
-    }
-
-    pub fn head_oid(&self) -> &str {
-        &self.selected_spans[1].head_oid
     }
 
     pub fn replacement(&self, segment: GitSegmentRef) -> Result<GitPackSpan, GitCompactionError> {
@@ -104,13 +87,6 @@ impl GitCompactionPlan {
     }
 }
 
-pub fn validate_minimum_spans(minimum_spans: u64) -> Result<(), GitCompactionError> {
-    if minimum_spans < 2 {
-        return Err(GitCompactionError::MinimumSpansTooSmall);
-    }
-    Ok(())
-}
-
 fn validate_git_compaction_replacement(
     selected_spans: &[GitPackSpan],
     replacement: &GitPackSpan,
@@ -140,8 +116,6 @@ fn validate_git_compaction_replacement(
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum GitCompactionError {
-    #[error("Git compaction span threshold must be at least 2")]
-    MinimumSpansTooSmall,
     #[error("Git compaction requires exactly two expected pack spans")]
     InvalidSelectedSpanCount,
     #[error(transparent)]

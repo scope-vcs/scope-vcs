@@ -11,10 +11,7 @@ mod settings;
 
 use crate::{
     health::WorkerHealth,
-    settings::{
-        BATCH_SIZE, GIT_COMPACTION_SPANS, GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings,
-        non_empty_env,
-    },
+    settings::{BATCH_SIZE, GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings, non_empty_env},
 };
 use scope_git_storage::{
     FileMultipartStore, GitSegmentStore, MultipartStore, S3MultipartSettings, S3MultipartStore,
@@ -57,7 +54,6 @@ async fn run() -> anyhow::Result<()> {
         health_port = settings.health_port,
         batch_size = BATCH_SIZE,
         poll_interval_ms = POLL_INTERVAL.as_millis(),
-        git_compaction_spans = GIT_COMPACTION_SPANS,
         git_compaction_timeout_secs = GIT_COMPACTION_TIMEOUT.as_secs(),
         git_object_max_bytes = settings.git_storage_limits.max_object_bytes(),
         git_segment_chunk_bytes = settings.git_segment_store.chunk_bytes,
@@ -83,6 +79,7 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
     let object_store =
         tokio::task::spawn_blocking(move || object_store_from_env(&data_dir)).await??;
     let git_segment_store = Arc::new(git_segment_store_from_env(&settings)?);
+    git_segment_store.cleanup_temporary().await?;
     tokio::try_join!(
         control::run(metadata.clone(), settings.clone(), health.clone()),
         compaction::run(

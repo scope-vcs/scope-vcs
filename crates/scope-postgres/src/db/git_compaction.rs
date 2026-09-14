@@ -13,14 +13,15 @@ use {
         error::PostgresError,
     },
     scope_domain::repository::{
+        RepositoryIncarnation,
         git::{GitPackSpan, validate_git_pack_layout},
-        git_compaction::{GitCompactionPlan, validate_minimum_spans},
+        git_compaction::GitCompactionPlan,
     },
 };
 
 #[derive(Clone, Debug)]
 pub struct GitCompactionCandidate {
-    pub repo_id: String,
+    pub incarnation: RepositoryIncarnation,
     pub owner: String,
     pub name: String,
     pub plan: GitCompactionPlan,
@@ -78,7 +79,7 @@ impl JobStore {
     pub async fn claim_git_compaction(
         &self,
         worker_id: &str,
-        minimum_spans: u64,
+        max_source_bytes: u64,
         now_unix: u64,
         lease_seconds: u64,
         generated_ids: &dyn GeneratedIdSource,
@@ -88,8 +89,6 @@ impl JobStore {
                 "Git compaction worker identity is empty",
             ));
         }
-        validate_minimum_spans(minimum_spans)
-            .map_err(|error| PostgresError::internal_message(error.to_string()))?;
         if lease_seconds == 0 {
             return Err(PostgresError::internal_message(
                 "Git compaction lease must be greater than zero",
@@ -148,10 +147,12 @@ impl JobStore {
                 PostgresError::internal_message("Git compaction job has no repository")
             })?;
         let spans = load_git_pack_spans(&tx, &job.repo_id).await?;
-        let candidate = GitCompactionPlan::select(&spans, minimum_spans)
+        let incarnation = RepositoryIncarnation::new(job.repo_id.clone(), repo.incarnation_id)
+            .map_err(|error| PostgresError::internal_message(error.to_string()))?;
+        let candidate = GitCompactionPlan::select(&spans, max_source_bytes)
             .map_err(|error| PostgresError::internal_message(error.to_string()))?
             .map(|plan| GitCompactionCandidate {
-                repo_id: job.repo_id.clone(),
+                incarnation,
                 owner: repo.owner_handle,
                 name: repo.name,
                 plan,

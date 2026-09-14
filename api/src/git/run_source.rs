@@ -5,7 +5,7 @@ use crate::{
     git::{
         cache::GitDerivedCacheNamespace,
         command::{git_process_output, truncated_git_stderr},
-        restore::restore_git_pack_spans,
+        repository_engine::GitRevision,
     },
     state::AppState,
 };
@@ -68,11 +68,17 @@ fn run_source_cache_key(
     incarnation: &RepositoryIncarnation,
     source: &RunSource,
 ) -> Result<String, ApiError> {
+    let RunSource::AcceptedGitHead { head, audience, .. } = source else {
+        return Err(ApiError::internal_message(
+            "run bundle cache requires an accepted Git head",
+        ));
+    };
     let identity = serde_json::to_vec(&(
-        "run-source-bundle-v1",
+        "run-source-bundle",
         incarnation.repository_id(),
         incarnation.incarnation_id(),
-        source,
+        &head.head_oid,
+        audience,
     ))
     .map_err(ApiError::internal)?;
     Ok(format!(
@@ -96,6 +102,7 @@ async fn materialize_accepted_git_head_bundle(
     let build_path = path.clone();
     let build_state = state.clone();
     let build_source = source.clone();
+    let build_incarnation = incarnation.clone();
     let handle = state
         .repository_engine
         .materialize_derived(
@@ -106,7 +113,15 @@ async fn materialize_accepted_git_head_bundle(
             move || {
                 ready_path.join("source.bundle").is_file() && ready_path.join("sha256").is_file()
             },
-            move || build_accepted_source_bundle(build_state, build_source, build_path, max_bytes),
+            move || {
+                build_accepted_source_bundle(
+                    build_state,
+                    build_incarnation,
+                    build_source,
+                    build_path,
+                    max_bytes,
+                )
+            },
         )
         .await?;
     let read_permit = state
@@ -127,16 +142,24 @@ async fn materialize_accepted_git_head_bundle(
 
 async fn build_accepted_source_bundle(
     state: AppState,
+    incarnation: RepositoryIncarnation,
     source: RunSource,
     path: PathBuf,
     max_bytes: usize,
 ) -> Result<(), ApiError> {
     operation::supervise(async move {
+        let (_, head, pack_spans) = source.logical_git_head().ok_or_else(|| {
+            ApiError::internal_message("run source does not contain a materializable Git head")
+        })?;
+        let revision = state
+            .repository_engine
+            .materialize_revision(&state, &incarnation, head, pack_spans)
+            .await?;
         let owner = operation::RunSourceOperation::new(&state)?;
         let bytes =
-            materialize_owned_git_head_bundle(&state, &source, max_bytes, owner.clone()).await?;
+            materialize_owned_git_head_bundle(&state, revision, max_bytes, owner.clone()).await?;
         let temporary = TemporarySourceDirectory::new(state.repository_engine.cache_root())?;
-        operation::spawn_blocking(Some(&owner), move || {
+        operation::spawn_blocking(&owner, move || {
             write_private_file(&temporary.path.join("source.bundle"), &bytes)?;
             write_private_file(
                 &temporary.path.join("sha256"),
@@ -154,19 +177,24 @@ async fn build_accepted_source_bundle(
 
 async fn materialize_owned_git_head_bundle(
     state: &AppState,
-    source: &RunSource,
+    revision: GitRevision,
     max_bytes: usize,
     owner: std::sync::Arc<operation::RunSourceOperation>,
 ) -> Result<Vec<u8>, ApiError> {
-    let (repository_id, head, pack_spans) = source.logical_git_head().ok_or_else(|| {
-        ApiError::internal_message("run source does not contain a materializable Git head")
-    })?;
     let repo = operation::repository(&owner);
-    restore_git_pack_spans(state, repository_id, head, pack_spans, &repo, Some(&owner)).await?;
+    let revision = operation::spawn_blocking(&owner, move || {
+        revision.create_view(&repo)?;
+        Ok::<_, ApiError>(revision)
+    })
+    .await
+    .map_err(|error| {
+        ApiError::internal_message(format!("run source revision task failed: {error}"))
+    })??;
     let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
-    let repo_path = repo;
+    let repo_path = operation::repository(&owner);
     let timeout = state.runtime_budgets.git_command_timeout();
-    let output = operation::spawn_blocking(Some(&owner), move || {
+    let output = operation::spawn_blocking(&owner, move || {
+        let _revision = revision;
         git_process_output(
             Command::new("git")
                 .arg("--git-dir")

@@ -1,6 +1,6 @@
 use super::{
-    GitSegmentStore, GitStorageError, MultipartError, StagedGitSegment, is_hex_id_32,
-    sync_directory,
+    GitSegmentStore, GitStorageError, MultipartError, StagedGitSegment, VerifiedPackCacheUsage,
+    is_hex_id_32, sync_directory,
 };
 use std::time::Duration;
 use tokio::fs;
@@ -8,14 +8,33 @@ use tokio::fs;
 pub(crate) const REMOTE_CLEANUP_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl GitSegmentStore {
-    /// Removes process-local staging packs left by an earlier process. The
-    /// remote multipart backend remains the durable source of truth.
-    pub async fn cleanup_all_local(&self) -> Result<(), GitStorageError> {
-        match fs::remove_dir_all(&self.config.local_root).await {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(GitStorageError::Local(error)),
+    /// Removes abandoned staging and hydration work while preserving verified
+    /// packs retained across process restarts.
+    pub async fn cleanup_temporary(&self) -> Result<(), GitStorageError> {
+        for path in [
+            self.config.local_root.join("staging"),
+            self.verified_temp_directory(),
+        ] {
+            match fs::remove_dir_all(path).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(GitStorageError::Local(error)),
+            }
         }
+        Ok(())
+    }
+
+    pub fn verified_cache_usage(&self) -> Result<VerifiedPackCacheUsage, GitStorageError> {
+        self.verified_cache.usage()
+    }
+
+    /// Evicts least-recently-used verified packs until retained bytes fit the
+    /// target. Active pack leases and their sibling indexes remain available.
+    pub fn evict_verified_cache(
+        &self,
+        target_bytes: u64,
+    ) -> Result<VerifiedPackCacheUsage, GitStorageError> {
+        self.verified_cache.evict_to(target_bytes)
     }
 
     pub async fn delete_remote(&self, object_key: &str) -> Result<(), GitStorageError> {

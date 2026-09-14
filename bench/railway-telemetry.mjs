@@ -170,15 +170,14 @@ export function compactionFields(message) {
     'scheduler_queue_delay_ms',
     'source_span_count',
     'source_pack_bytes',
-    'predecessor_pack_bytes',
     'compacted_bytes',
     'candidate_query_ms',
     'init_ms',
     'download_ms',
     'index_ms',
-    'update_ref_ms',
-    'connectivity_check_ms',
+    'enumerate_ms',
     'pack_ms',
+    'verify_ms',
     'pack_total_ms',
     'store_ms',
     'persist_ms',
@@ -437,4 +436,3 @@ function telemetryMarkdown(report) {
     )).join('\n') || '| none | none | 0 |';
   return `# Railway Git storage telemetry\n\nGenerated: ${report.generatedAt}\n\nRun label: ${report.runLabel}\n\nEnvironment: ${report.environment}\n\n## Git segment phases\n\n| Service | Kind/phase | Count | Failures | Duration p95 us | Blocked p95 us | Bytes |\n|---|---|---:|---:|---:|---:|---:|\n${segmentRows}\n\n## Git segment pressure and cleanup\n\n| Service | Peak active ingests | Peak buffered bytes | Minimum disk free bytes | Uploading last | Ready last | Published last | Peak orphans |\n|---|---:|---:|---:|---:|---:|---:|---:|\n${segmentPressureRows}\n\n## Git materialization outcomes\n\n| Service | Cache/path | Count | Duration p95 ms |\n|---|---|---:|---:|\n${materializationRows}\n\n## Git materialization phases\n\n| Service | Operation | Count | Failures | Duration p95 ms | Summed service ms | Bytes |\n|---|---|---:|---:|---:|---:|---:|\n${gitOperationRows}\n\n## Compaction scheduler\n\n| Service | Count | Outcomes | Queue delay p95 ms | Max attempts | Total p95 ms |\n|---|---:|---|---:|---:|---:|\n${compactionRows}\n\n## Capacity rejections\n\n| Service | Operation | Count |\n|---|---|---:|\n${rejectionRows}\n\n## Runtime resources\n\n| Service | Peak CPU cores | Peak RSS MiB |\n|---|---:|---:|\n${resourceRows}\n\n## Object storage\n\n| Service | Operation | Count | Failures | Latency p95 us | Bytes | Service-time MiB/s |\n|---|---|---:|---:|---:|---:|---:|\n${objectRows}\n`;
 }
-

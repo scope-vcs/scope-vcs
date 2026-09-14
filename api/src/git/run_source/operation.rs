@@ -38,7 +38,7 @@ pub(super) async fn supervise<T: Send + 'static>(
 }
 
 pub(crate) fn spawn_blocking<F, T>(
-    owner: Option<&Arc<RunSourceOperation>>,
+    owner: &Arc<RunSourceOperation>,
     work: F,
 ) -> tokio::task::JoinHandle<T>
 where
@@ -46,12 +46,12 @@ where
     T: Send + 'static,
 {
     // The child retains the operation even if shutdown or a panic drops its
-    // async supervisor. Other restore callers supply no run-source owner.
-    let owner = owner.cloned();
+    // async supervisor.
+    let owner = owner.clone();
     tokio::task::spawn_blocking(move || {
         let _owner = owner;
         #[cfg(test)]
-        if let Some(hook) = _owner.as_ref().and_then(|owner| owner.hook.as_ref()) {
+        if let Some(hook) = _owner.hook.as_ref() {
             hook();
         }
         work()
@@ -86,7 +86,7 @@ mod tests {
             let (release_tx, release_rx) = mpsc::channel();
             let (panic_tx, panic_rx) = tokio::sync::oneshot::channel::<()>();
             let supervisor = tokio::spawn(async move {
-                let child = spawn_blocking(Some(&owner), move || {
+                let child = spawn_blocking(&owner, move || {
                     started_tx.send(()).unwrap();
                     release_rx.recv().unwrap();
                     assert!(child_path.exists());

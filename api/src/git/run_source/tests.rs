@@ -10,7 +10,7 @@ use scope_domain::{
 use std::time::Instant;
 
 #[tokio::test]
-async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinned_bundle() {
+async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_revision() {
     let mut state = AppState::test_state();
     let owner = UserAccount {
         id: "user-owner".to_string(),
@@ -50,7 +50,7 @@ async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinn
     let content = (0_u64..32_768)
         .flat_map(|index| Sha256::digest(index.to_le_bytes()))
         .collect::<Vec<_>>();
-    fs::write(repository.path().join("README.md"), content).unwrap();
+    fs::write(repository.path().join("README.md"), &content).unwrap();
     run_git(
         Some(repository.path()),
         &["add", "README.md"],
@@ -98,6 +98,112 @@ async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinn
                 ..Default::default()
             },
         ));
+    let blob_oid = String::from_utf8(
+        run_git_output(
+            Some(repository.path()),
+            &["rev-parse", "HEAD:README.md"],
+            "read file object ID",
+        )
+        .unwrap()
+        .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+    let blob = scope_domain::content::SourceBlob {
+        content_ref: scope_domain::content_ref::ContentRef::GitBlob {
+            git_oid: blob_oid.clone(),
+        },
+        sha256: hex::encode(Sha256::digest(&content)),
+        git_oid: blob_oid,
+        git_file_mode: "100644".into(),
+        size_bytes: content.len() as u64,
+    };
+    let spans = vec![pushed.stored.pack_span.clone()];
+    for result in futures_util::future::join_all((0..8).map(|_| {
+        crate::git::content::source_content_bytes(
+            &state,
+            &blob,
+            Some((incarnation.clone(), &pushed.stored.head, &spans)),
+        )
+    }))
+    .await
+    {
+        assert_eq!(result.unwrap(), content);
+    }
+    let retained = state
+        .git_segment_store
+        .get_verified_pack(&incarnation, &pushed.stored.pack_span.segment)
+        .await
+        .unwrap();
+    let index_path = retained.path().with_extension("idx");
+    let indexed_at = fs::metadata(&index_path).unwrap().modified().unwrap();
+    state
+        .git_segment_store
+        .delete_remote(&scope_git_storage::object_key(
+            "owner/repo",
+            &pushed.stored.pack_span.segment.segment_id,
+        ))
+        .await
+        .unwrap();
+    assert!(
+        state
+            .repository_engine
+            .delete_repository_cache(&incarnation)
+            .unwrap()
+    );
+    assert_eq!(
+        crate::git::content::source_content_bytes(
+            &state,
+            &blob,
+            Some((incarnation.clone(), &pushed.stored.head, &spans))
+        )
+        .await
+        .unwrap(),
+        content
+    );
+    assert_eq!(
+        fs::metadata(index_path).unwrap().modified().unwrap(),
+        indexed_at
+    );
+    drop(retained);
+    // Advance the shared replica before bundling the earlier accepted revision.
+    fs::write(repository.path().join("README.md"), "newer content").unwrap();
+    run_git(
+        Some(repository.path()),
+        &["commit", "-am", "advance main"],
+        "advance source",
+    )
+    .unwrap();
+    let newer = git_push_from_repo(
+        &state,
+        "owner/repo",
+        repository.path(),
+        Some(&pushed.stored.head),
+    )
+    .await
+    .unwrap();
+    state
+        .repository_engine
+        .materialize_repository(
+            &state,
+            &incarnation,
+            &newer.stored.head,
+            &[
+                pushed.stored.pack_span.clone(),
+                newer.stored.pack_span.clone(),
+            ],
+        )
+        .await
+        .unwrap();
+    state
+        .git_segment_store
+        .delete_remote(&scope_git_storage::object_key(
+            "owner/repo",
+            &pushed.stored.pack_span.segment.segment_id,
+        ))
+        .await
+        .unwrap();
     let started = Instant::now();
     let results = futures_util::future::join_all((0..8).map(|_| {
         materialize_accepted_git_head_bundle(&state, &incarnation, &source, 4 * 1024 * 1024)
@@ -164,6 +270,29 @@ async fn concurrent_git_head_materializations_share_one_build_and_reuse_the_pinn
         .unwrap();
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains(&pushed.stored.head.head_oid));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(&newer.stored.head.head_oid));
+    let restored = repository.path().join("pinned.git");
+    run_git(
+        None,
+        &[
+            "clone",
+            "--bare",
+            bundle.to_str().unwrap(),
+            restored.to_str().unwrap(),
+        ],
+        "inspect pinned bundle",
+    )
+    .unwrap();
+    assert_eq!(
+        run_git_output(
+            Some(&restored),
+            &["show", "main:README.md"],
+            "read pinned content"
+        )
+        .unwrap()
+        .stdout,
+        content
+    );
 }
 
 async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirectory) {
@@ -240,19 +369,32 @@ async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirect
 }
 
 #[tokio::test]
-async fn cancelled_index_and_bundle_requests_keep_repository_and_capacity_until_exit() {
+async fn cancelled_revision_and_bundle_requests_keep_repository_and_capacity_until_exit() {
     use std::sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
         mpsc,
     };
 
-    // Restore children are cleanup, init, index, update-ref, fsck, symbolic-ref,
-    // followed by bundle creation. Pause inside the selected blocking child.
-    for phase in [3, 7] {
+    // Pause revision setup or bundle creation after shared hydration completes.
+    for phase in [1, 2] {
         for outcome in ["success", "failure", "panic"] {
             let state = AppState::test_state();
             let (source, _fixture) = git_head_fixture(&state).await;
+            let incarnation = state
+                .metadata
+                .repositories()
+                .git_push_context("owner", "repo", "user-owner")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation;
+            let (_, head, spans) = source.logical_git_head().unwrap();
+            let revision = state
+                .repository_engine
+                .materialize_revision(&state, &incarnation, head, spans)
+                .await
+                .unwrap();
             let _other_permit = state.runtime_budgets.try_git_materialization().unwrap();
             let (started_tx, started_rx) = tokio::sync::oneshot::channel();
             let started_tx = Mutex::new(Some(started_tx));
@@ -274,13 +416,8 @@ async fn cancelled_index_and_bundle_requests_keep_repository_and_capacity_until_
                     match outcome {
                         "panic" => panic!("injected blocking child panic"),
                         "failure" => {
-                            if phase == 3 {
-                                for entry in fs::read_dir(&*path).unwrap() {
-                                    let entry = entry.unwrap();
-                                    if entry.file_name().to_string_lossy().ends_with(".pack.tmp") {
-                                        fs::remove_file(entry.path()).unwrap();
-                                    }
-                                }
+                            if phase == 1 {
+                                fs::write(path.join("objects"), "not a directory").unwrap();
                             } else {
                                 fs::remove_file(path.join("refs/heads/main")).unwrap();
                             }
@@ -298,7 +435,7 @@ async fn cancelled_index_and_bundle_requests_keep_repository_and_capacity_until_
                 operation::supervise(async move {
                     let result = materialize_owned_git_head_bundle(
                         &operation_state,
-                        &source,
+                        revision,
                         4 * 1024 * 1024,
                         owner,
                     )

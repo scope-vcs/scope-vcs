@@ -21,7 +21,7 @@ pub(crate) struct RepositoryBackfillContext {
 impl RepositoryBackfillContext {
     pub(crate) async fn from_env(database_url: String) -> anyhow::Result<Self> {
         let storage = StorageRuntime::from_env(StorageSource::S3).await?;
-        storage.git_segment_store.cleanup_all_local().await?;
+        storage.git_segment_store.cleanup_temporary().await?;
         let metadata = MetadataStore::connect(database_url).await?;
         Ok(Self {
             metadata,

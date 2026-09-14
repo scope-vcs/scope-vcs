@@ -35,6 +35,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
 import { GitCommit } from 'lucide-react'
 import { useAuth } from '@clerk/tanstack-react-start'
+import { auth } from '@clerk/tanstack-react-start/server'
 import { useCallback, useEffect, useMemo } from 'react'
 
 const requestRoute = getRouteApi('/$owner/$repo/requests/$requestId')
@@ -42,6 +43,7 @@ const requestRoute = getRouteApi('/$owner/$repo/requests/$requestId')
 const loadChangesPage = createServerFn({ method: 'GET' })
   .validator(parseLoadRequestRevisionsInput)
   .handler(async ({ data }) => {
+    const { userId } = await auth()
     const revisions = await loadRequestRevisionsForRequest(data).catch((error: unknown) => {
       console.error('Loading request revisions failed', error)
       return null
@@ -58,7 +60,7 @@ const loadChangesPage = createServerFn({ method: 'GET' })
       commitKey: query?.key ?? null,
       page,
     }
-    return { discussionReferences, revisions }
+    return { discussionReferences, revisions, viewerId: userId }
   })
 
 const loadRevisionDiff = createServerFn({ method: 'GET' })
@@ -129,7 +131,6 @@ function RequestChangesRoute() {
     access: JSON.stringify(live.repo.access),
     identity,
     initial: changes,
-    initialViewerId: page.account?.user?.id ?? null,
     load,
     viewerId: userId ?? null,
   })

@@ -9,6 +9,7 @@ pub(super) struct TestMultipartStore {
     pub(super) fail_complete: AtomicBool,
     pub(super) block_parts: AtomicBool,
     pub(super) part_delay_ms: AtomicUsize,
+    pub(super) read_delay_ms: AtomicUsize,
     pub(super) reorder_parts: AtomicBool,
     pub(super) active_parts: AtomicUsize,
     pub(super) peak_parts: AtomicUsize,
@@ -28,6 +29,7 @@ impl Default for TestMultipartStore {
             fail_complete: AtomicBool::new(false),
             block_parts: AtomicBool::new(false),
             part_delay_ms: AtomicUsize::new(0),
+            read_delay_ms: AtomicUsize::new(0),
             reorder_parts: AtomicBool::new(false),
             active_parts: AtomicUsize::new(0),
             peak_parts: AtomicUsize::new(0),
@@ -44,6 +46,8 @@ struct TestState {
     uploads: HashMap<String, TestUpload>,
     objects: HashMap<String, Bytes>,
     completed: usize,
+    puts: usize,
+    reads: usize,
     aborted: usize,
     last_part_sizes: Vec<usize>,
 }
@@ -74,6 +78,14 @@ impl TestMultipartStore {
         self.state.lock().unwrap().completed
     }
 
+    pub(super) fn puts(&self) -> usize {
+        self.state.lock().unwrap().puts
+    }
+
+    pub(super) fn reads(&self) -> usize {
+        self.state.lock().unwrap().reads
+    }
+
     pub(super) fn aborted(&self) -> usize {
         self.state.lock().unwrap().aborted
     }
@@ -97,6 +109,13 @@ impl TestMultipartStore {
 impl MultipartStore for TestMultipartStore {
     fn minimum_part_bytes(&self) -> usize {
         self.minimum_part_bytes
+    }
+
+    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError> {
+        let mut state = self.state.lock().unwrap();
+        state.objects.insert(key.to_string(), bytes);
+        state.puts += 1;
+        Ok(())
     }
 
     async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {
@@ -202,15 +221,24 @@ impl MultipartStore for TestMultipartStore {
     }
 
     async fn read(&self, key: &str) -> Result<RemoteReader, MultipartError> {
-        let bytes = self
-            .state
-            .lock()
-            .unwrap()
-            .objects
-            .get(key)
-            .cloned()
-            .ok_or_else(|| MultipartError::new("missing object"))?;
-        Ok(Box::pin(std::io::Cursor::new(bytes)))
+        let bytes = {
+            let mut state = self.state.lock().unwrap();
+            state.reads += 1;
+            state
+                .objects
+                .get(key)
+                .cloned()
+                .ok_or_else(|| MultipartError::new("missing object"))?
+        };
+        let delay = self.read_delay_ms.load(Ordering::SeqCst);
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay as u64)).await;
+        }
+        let (mut writer, reader) = tokio::io::duplex(bytes.len().max(1));
+        tokio::spawn(async move {
+            writer.write_all(&bytes).await.unwrap();
+        });
+        Ok(Box::pin(reader))
     }
 
     async fn delete(&self, key: &str) -> Result<(), MultipartError> {

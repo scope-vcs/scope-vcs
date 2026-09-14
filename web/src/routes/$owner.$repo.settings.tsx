@@ -105,6 +105,7 @@ function RepoSettingsRoute() {
       )}
       {resource.value ? (
         <RepoSettingsPage
+          key={scope}
           createInvite={(data) => retainResult(
             createRepoInvite({ data }),
             ({ invite }) => ({ type: 'inviteUpdated', invite }),

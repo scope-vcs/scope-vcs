@@ -22,6 +22,8 @@ pub enum GitStorageError {
     Multipart(#[from] MultipartError),
     #[error("Git segment output failed: {0}")]
     Output(#[source] io::Error),
+    #[error("verified Git pack hydration failed: {0}")]
+    VerifiedPackHydration(#[source] std::sync::Arc<GitStorageError>),
     #[error("Git segment checksum does not match: expected {expected}, got {actual}")]
     ChecksumMismatch { expected: String, actual: String },
     #[error("Git segment size does not match: expected {expected}, got {actual}")]

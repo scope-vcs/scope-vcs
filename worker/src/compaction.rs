@@ -15,7 +15,7 @@ use std::{
 use crate::{
     elapsed_ms,
     health::{WorkerHealth, WorkerLoop},
-    settings::{GIT_COMPACTION_SPANS, GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings},
+    settings::{GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -83,7 +83,7 @@ pub(crate) async fn compact_one_git_repository(
         .jobs()
         .claim_git_compaction(
             &settings.worker_id,
-            GIT_COMPACTION_SPANS as u64,
+            u64::try_from(settings.git_storage_limits.max_object_bytes()).unwrap_or(u64::MAX),
             claim_now_unix,
             lease_seconds,
             &crate::generate_persistence_id,
@@ -106,14 +106,15 @@ pub(crate) async fn compact_one_git_repository(
             .map_err(|error| anyhow::anyhow!(error.message))?;
         return Ok(CompactionOutcome::Drained);
     };
+    let repository_id = candidate.incarnation.repository_id();
     let candidate_query_ms = elapsed_ms(candidate_started);
     let reservation = segment_store
-        .reserve(&candidate.repo_id)
+        .reserve(repository_id)
         .map_err(anyhow::Error::new)?;
     metadata
         .repositories()
         .begin_git_segment_upload(
-            &candidate.repo_id,
+            repository_id,
             &reservation.segment_id,
             &reservation.object_key,
             ENCODING_VERSION,
@@ -197,7 +198,7 @@ pub(crate) async fn compact_one_git_repository(
             if let Err(cleanup_error) = abandon_upload(
                 metadata,
                 segment_store.as_ref(),
-                &candidate.repo_id,
+                repository_id,
                 &reservation,
                 failure_now_unix,
                 attempt_remote_cleanup,
@@ -235,7 +236,7 @@ pub(crate) async fn compact_one_git_repository(
         if let Err(cleanup_error) = abandon_upload(
             metadata,
             segment_store.as_ref(),
-            &candidate.repo_id,
+            repository_id,
             &reservation,
             cleanup_now_unix,
             true,
@@ -269,7 +270,7 @@ pub(crate) async fn compact_one_git_repository(
         if let Err(cleanup_error) = abandon_upload(
             metadata,
             segment_store.as_ref(),
-            &candidate.repo_id,
+            repository_id,
             &reservation,
             cleanup_now_unix,
             true,
@@ -297,7 +298,7 @@ pub(crate) async fn compact_one_git_repository(
     let persisted = metadata
         .jobs()
         .replace_git_pack_spans_with_compaction(
-            &candidate.repo_id,
+            repository_id,
             &candidate.plan,
             built.replacement,
             persist_now_unix,
@@ -307,16 +308,34 @@ pub(crate) async fn compact_one_git_repository(
     match persisted {
         Ok(applied) => {
             if applied {
+                if let Err(error) = segment_store
+                    .promote_verified_pack(&candidate.incarnation, &built.staged)
+                    .await
+                {
+                    tracing::warn!(
+                        error = %error,
+                        segment_id = built.staged.segment.segment_id,
+                        "failed to promote published Git compaction pack into the verified cache"
+                    );
+                    if let Err(cleanup_error) = segment_store.delete_local(&built.staged).await {
+                        tracing::warn!(
+                            error = %cleanup_error,
+                            segment_id = built.staged.segment.segment_id,
+                            "failed to remove published Git compaction staging pack"
+                        );
+                    }
+                }
+                trim_verified_cache(segment_store.as_ref(), storage_limits);
                 cleanup_retired_local_segments(
                     segment_store.as_ref(),
-                    &candidate.repo_id,
+                    repository_id,
                     candidate.plan.selected_spans(),
                 )
                 .await;
             } else if let Err(error) = discard_upload(
                 metadata,
                 segment_store.as_ref(),
-                &candidate.repo_id,
+                repository_id,
                 &reservation,
                 super::unix_now()?,
                 true,
@@ -360,7 +379,7 @@ pub(crate) async fn compact_one_git_repository(
             if let Err(cleanup_error) = abandon_upload(
                 metadata,
                 segment_store.as_ref(),
-                &candidate.repo_id,
+                repository_id,
                 &reservation,
                 failure_now_unix,
                 true,
@@ -392,7 +411,7 @@ fn log_compaction_attempt(
 ) {
     tracing::info!(
         outcome,
-        repo_id = %candidate.repo_id,
+        repo_id = %candidate.incarnation.repository_id(),
         owner = %candidate.owner,
         repo = %candidate.name,
         target_sequence = claim.target_sequence,
@@ -400,7 +419,6 @@ fn log_compaction_attempt(
         scheduler_queue_delay_ms = claim.queue_delay_ms,
         source_span_count = metrics.pack.source_span_count,
         source_pack_bytes = metrics.pack.source_pack_bytes,
-        predecessor_pack_bytes = metrics.pack.predecessor_pack_bytes,
         compacted_bytes = metrics.pack.compacted_bytes,
         local_restore_count = metrics.pack.local_restore_count,
         remote_restore_count = metrics.pack.remote_restore_count,
@@ -408,17 +426,17 @@ fn log_compaction_attempt(
         init_ms = metrics.pack.init_ms,
         download_ms = metrics.pack.download_ms,
         index_ms = metrics.pack.index_ms,
-        update_ref_ms = metrics.pack.update_ref_ms,
-        connectivity_check_ms = metrics.pack.connectivity_check_ms,
+        enumerate_ms = metrics.pack.enumerate_ms,
         pack_ms = metrics.pack.pack_ms,
+        verify_ms = metrics.pack.verify_ms,
         pack_total_ms = metrics.pack.total_ms,
         local_write_and_fsync_ms = metrics
             .ingest
             .local_write_and_fsync
             .as_millis(),
-        remote_multipart_upload_ms = metrics
+        remote_upload_ms = metrics
             .ingest
-            .remote_multipart_upload
+            .remote_upload
             .as_millis(),
         encrypted_bytes = metrics.ingest.encrypted_bytes,
         uploaded_parts = metrics.ingest.uploaded_parts,
@@ -539,15 +557,17 @@ async fn build_compacted_span(
     data_dir: std::path::PathBuf,
 ) -> anyhow::Result<BuiltCompaction> {
     let pack = build_compacted_pack(
-        segment_store,
-        &candidate.repo_id,
+        Arc::clone(&segment_store),
+        &candidate.incarnation,
         &candidate.plan,
         reservation,
         storage_limits,
         timeout,
         data_dir,
     )
-    .await?;
+    .await;
+    trim_verified_cache(segment_store.as_ref(), storage_limits);
+    let pack = pack?;
     let replacement = candidate.plan.replacement(pack.staged.segment.clone())?;
     Ok(BuiltCompaction {
         replacement,
@@ -557,6 +577,13 @@ async fn build_compacted_span(
         },
         staged: pack.staged,
     })
+}
+
+fn trim_verified_cache(segment_store: &GitSegmentStore, storage_limits: GitStorageLimits) {
+    let target_bytes = u64::try_from(storage_limits.max_object_bytes()).unwrap_or(u64::MAX);
+    if let Err(error) = segment_store.evict_verified_cache(target_bytes) {
+        tracing::warn!(error = %error, "failed to trim the worker verified Git pack cache");
+    }
 }
 
 fn is_bounded_refusal(error: &anyhow::Error) -> bool {

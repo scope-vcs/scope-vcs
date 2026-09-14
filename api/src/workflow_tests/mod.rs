@@ -524,6 +524,11 @@ async fn persist_and_promote_test_update(
     )
     .await?;
     let head = persisted.head;
+    let _verified = state
+        .git_segment_store
+        .promote_verified_pack(&persisted.incarnation, &persisted.staged_segment)
+        .await
+        .map_err(|error| crate::error::ApiError::internal_message(error.to_string()))?;
     state
         .git_segment_store
         .delete_local(&persisted.staged_segment)

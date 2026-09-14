@@ -150,7 +150,18 @@ impl RepositoryGitCache {
         evict_unleased(&path, remove_dir_if_exists)
     }
 
+    pub(crate) fn usage_bytes(&self) -> Result<u64, ApiError> {
+        repository_cache_directories(&self.root)?
+            .iter()
+            .try_fold(0_u64, |total, entry| total.checked_add(entry.size_bytes))
+            .ok_or_else(|| ApiError::internal_message("repository Git cache size overflow"))
+    }
+
     pub(crate) fn prune(&self) -> Result<(), ApiError> {
+        self.prune_to(self.max_bytes as u64)
+    }
+
+    pub(crate) fn prune_to(&self, max_bytes: u64) -> Result<(), ApiError> {
         let mut caches = repository_cache_directories(&self.root)?;
         let now = SystemTime::now();
         prune_stale_materializations(&self.root, now, STALE_MATERIALIZATION_MAX_IDLE)?;
@@ -160,7 +171,6 @@ impl RepositoryGitCache {
             .iter()
             .try_fold(0_u64, |total, entry| total.checked_add(entry.size_bytes))
             .ok_or_else(|| ApiError::internal_message("repository Git cache size overflow"))?;
-        let max_bytes = self.max_bytes as u64;
         let mut evicted_bytes = 0_u64;
         let mut evicted_repositories = 0_u64;
         for entry in caches {

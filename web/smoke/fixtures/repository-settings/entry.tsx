@@ -10,6 +10,7 @@ import { useCachedResource } from '@/lib/use-cached-resource'
 import { repoCollaborationResource, retainCollaborationResult } from '@/features/repo-detail/repo-collaboration-resource'
 import type { RepoSummary, RepoLiveState, RepoMember, CliSession } from '@/api/types'
 import { WorkspaceFixture } from './workspace'
+import { ChangesResourceFixture } from './changes-resource'
 import './styles.css'
 
 const initial = {
@@ -41,10 +42,11 @@ function App() {
       <button onClick={() => setRepo({ ...repo, description: 'Changed elsewhere', website_url: 'https://example.com' })}>Remote metadata update</button>
       <RepoCloneDropdown cloneRemoteUrl="https://example.com/owner/demo.git" repo={repo} />
       <button>After clone</button>
+      <button onClick={() => setRepo({ ...initial, id: 'owner/other', name: 'other', description: 'Other repository description' })}>Other repository settings</button>
     </div>
     <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe}>
       <RepoSettingsPage
-        params={{ owner: 'owner', repo: 'demo' }} collaboration={settings.value?.collaboration ?? null}
+        params={{ owner: repo.owner_handle, repo: repo.name }} collaboration={settings.value?.collaboration ?? null}
         createInvite={async (input) => {
           calls.push(input)
           const invite = { id: 'new-invite', invited_email: input.email, permissions: input.permissions, state: 'Pending' as const, expires_at_unix: 100 }
@@ -61,7 +63,7 @@ function App() {
           retainCollaborationResult(settingsScope, { type: 'memberUpdated', member })
           return member
         }}
-        updateMetadata={async (metadata) => ({ ...repo, ...metadata })}
+        updateMetadata={async (metadata) => { calls.push(metadata); return { ...repo, ...metadata } }}
       />
     </RepoLayoutProvider>
     <h2>CLI sessions</h2>
@@ -69,6 +71,7 @@ function App() {
     <CliSessionList sessions={sessions} pending={pending} formatTime={String}
       revokeSession={(id) => void run(id, () => hold(id))} />
     <WorkspaceFixture />
+    <ChangesResourceFixture />
   </main>
 }
 let loads = 0

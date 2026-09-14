@@ -135,6 +135,7 @@ export function RepoSettingsPage({
 
         {repo.access.actor !== 'Public' && (
           <RepositoryMetadataForm
+            key={repo.id}
             repo={repo}
             save={(metadata) => mutateAndRefresh(updateMetadata({ ...params, ...metadata }))}
           />

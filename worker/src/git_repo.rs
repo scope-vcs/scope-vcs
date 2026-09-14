@@ -1,15 +1,16 @@
 use crate::{duration_ms, elapsed_ms};
-use scope_domain::repository::git_compaction::GitCompactionPlan;
-use scope_git::{DEFAULT_GIT_BRANCH, GitStorageLimits};
+use scope_domain::repository::{RepositoryIncarnation, git_compaction::GitCompactionPlan};
+use scope_git::GitStorageLimits;
 use scope_git_process::{
     ProcessCancellation, ProcessError, ProcessLimits, StreamingProcessError,
-    configure_process_group, run as run_process, run_with_stdout,
+    configure_process_group, run as run_process, run_with_stdin_reader, run_with_stdout,
 };
 use scope_git_storage::{
     GitSegmentReservation, GitSegmentRestoreSource, GitSegmentRestoreTimings, GitSegmentStore,
     StagedGitSegment,
 };
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -17,6 +18,8 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::io::AsyncReadExt;
+
+type ObjectId = [u8; 20];
 
 #[cfg(all(test, target_os = "linux"))]
 mod cancellation_tests;
@@ -29,28 +32,28 @@ pub(crate) struct CompactedPack {
 pub(crate) struct CompactionPackMetrics {
     pub(crate) source_span_count: usize,
     pub(crate) source_pack_bytes: usize,
-    pub(crate) predecessor_pack_bytes: usize,
     pub(crate) compacted_bytes: usize,
     pub(crate) local_restore_count: usize,
     pub(crate) remote_restore_count: usize,
     pub(crate) init_ms: u64,
     pub(crate) download_ms: u64,
     pub(crate) index_ms: u64,
-    pub(crate) update_ref_ms: u64,
-    pub(crate) connectivity_check_ms: u64,
+    pub(crate) enumerate_ms: u64,
     pub(crate) pack_ms: u64,
+    pub(crate) verify_ms: u64,
     pub(crate) total_ms: u64,
 }
 
 pub(crate) async fn build_compacted_pack(
     segment_store: Arc<GitSegmentStore>,
-    repository_id: &str,
+    incarnation: &RepositoryIncarnation,
     plan: &GitCompactionPlan,
     reservation: GitSegmentReservation,
     storage_limits: GitStorageLimits,
     timeout: Duration,
     data_dir: PathBuf,
 ) -> anyhow::Result<CompactedPack> {
+    let repository_id = incarnation.repository_id();
     let total_started = Instant::now();
     let repo = TemporaryGitRepo::new(&data_dir)?;
     let init_started = Instant::now();
@@ -65,15 +68,9 @@ pub(crate) async fn build_compacted_pack(
     let mut download = Duration::ZERO;
     let mut index = Duration::ZERO;
     let mut source_pack_bytes = 0usize;
-    let mut predecessor_pack_bytes = 0usize;
     let mut local_restore_count = 0usize;
     let mut remote_restore_count = 0usize;
-    for (is_predecessor, span) in plan
-        .predecessor()
-        .into_iter()
-        .map(|span| (true, span))
-        .chain(plan.selected_spans().iter().map(|span| (false, span)))
-    {
+    for span in plan.selected_spans() {
         if span.segment.plaintext_bytes
             > u64::try_from(storage_limits.max_object_bytes()).unwrap_or(u64::MAX)
         {
@@ -83,13 +80,12 @@ pub(crate) async fn build_compacted_pack(
             ));
         }
         let index_started = Instant::now();
-        let restore = index_git_segment(
-            segment_store.as_ref(),
-            repository_id,
+        let restore = index_verified_git_segment(
+            Arc::clone(&segment_store),
+            incarnation,
             &span.segment,
             &repo.path,
             timeout,
-            None,
         )
         .await?;
         match restore.source {
@@ -99,77 +95,171 @@ pub(crate) async fn build_compacted_pack(
         download += restore.total;
         index += index_started.elapsed().saturating_sub(restore.total);
         let bytes = usize::try_from(span.segment.plaintext_bytes).unwrap_or(usize::MAX);
-        if is_predecessor {
-            predecessor_pack_bytes = predecessor_pack_bytes.saturating_add(bytes);
-        } else {
-            source_pack_bytes = source_pack_bytes.saturating_add(bytes);
-        }
+        source_pack_bytes = source_pack_bytes.saturating_add(bytes);
     }
-    let compacted_head = plan.head_oid();
-    let compacted_base = plan.base_oid();
-    let update_ref_started = Instant::now();
-    run_git(
-        Some(&repo.path),
-        &[
-            "update-ref",
-            &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
-            compacted_head,
-        ],
-        None,
-        timeout,
-        storage_limits.max_object_bytes(),
-    )?;
-    let update_ref_ms = elapsed_ms(update_ref_started);
-    let revisions = match compacted_base {
-        Some(base_oid) => format!("{compacted_head}\n^{base_oid}\n"),
-        None => format!("{compacted_head}\n"),
-    };
-    let connectivity_started = Instant::now();
-    run_git(
-        Some(&repo.path),
-        &[
-            "rev-list",
-            "--objects",
-            "--missing=error",
-            "--quiet",
-            "--stdin",
-        ],
-        Some(revisions.as_bytes().to_vec()),
-        timeout,
-        storage_limits.max_object_bytes(),
-    )?;
-    let connectivity_check_ms = elapsed_ms(connectivity_started);
+    let enumerate_started = Instant::now();
+    let object_ids = enumerate_object_ids(&repo.path, timeout, storage_limits.max_object_bytes())?;
+    let enumerate_ms = elapsed_ms(enumerate_started);
     let pack_started = Instant::now();
     let staged = ingest_compacted_pack(
         Arc::clone(&segment_store),
         repository_id,
         reservation,
         &repo.path,
-        revisions.into_bytes(),
+        object_id_input(&object_ids),
         timeout,
         storage_limits.max_object_bytes(),
     )
     .await?;
     let pack_ms = elapsed_ms(pack_started);
+    let verify_started = Instant::now();
+    verify_object_set(
+        &data_dir,
+        staged.local_pack_path(),
+        &object_ids,
+        timeout,
+        storage_limits.max_object_bytes(),
+    )?;
+    let verify_ms = elapsed_ms(verify_started);
     let compacted_bytes = usize::try_from(staged.segment.plaintext_bytes).unwrap_or(usize::MAX);
     Ok(CompactedPack {
         metrics: CompactionPackMetrics {
             source_span_count: plan.selected_spans().len(),
             source_pack_bytes,
-            predecessor_pack_bytes,
             compacted_bytes,
             local_restore_count,
             remote_restore_count,
             init_ms,
             download_ms: duration_ms(download),
             index_ms: duration_ms(index),
-            update_ref_ms,
-            connectivity_check_ms,
+            enumerate_ms,
             pack_ms,
+            verify_ms,
             total_ms: elapsed_ms(total_started),
         },
         staged,
     })
+}
+
+async fn index_verified_git_segment(
+    segment_store: Arc<GitSegmentStore>,
+    incarnation: &RepositoryIncarnation,
+    segment: &scope_domain::repository::git::GitSegmentRef,
+    repo: &Path,
+    timeout: Duration,
+) -> anyhow::Result<GitSegmentRestoreTimings> {
+    let pack = segment_store
+        .get_verified_pack(incarnation, segment)
+        .await
+        .map_err(anyhow::Error::new)?;
+    let timings = pack.timings().clone();
+    let repo = repo.to_path_buf();
+    tokio::task::spawn_blocking(move || index_pack_file(&repo, pack.path(), timeout, 64 * 1024))
+        .await
+        .map_err(|error| anyhow::anyhow!("Git index-pack task failed: {error}"))??;
+    Ok(timings)
+}
+
+fn index_pack_file(
+    repo: &Path,
+    pack_path: &Path,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+) -> anyhow::Result<()> {
+    let input = fs::File::open(pack_path)?;
+    let mut command = Command::new("git");
+    command
+        .arg("--git-dir")
+        .arg(repo)
+        .args(["index-pack", "--stdin"]);
+    let output = run_with_stdin_reader(
+        &mut command,
+        input,
+        ProcessLimits::new(timeout).with_max_stdout_bytes(max_stdout_bytes),
+        "git index-pack --stdin",
+    )
+    .map_err(anyhow::Error::new)?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git index-pack --stdin failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+fn enumerate_object_ids(
+    repo: &Path,
+    timeout: Duration,
+    max_bytes: usize,
+) -> anyhow::Result<BTreeSet<ObjectId>> {
+    let output = run_git(
+        Some(repo),
+        &[
+            "cat-file",
+            "--batch-all-objects",
+            "--batch-check=%(objectname)",
+        ],
+        None,
+        timeout,
+        max_bytes,
+    )?;
+    let output = String::from_utf8(output)
+        .map_err(|_| anyhow::anyhow!("Git compaction object enumeration was not UTF-8"))?;
+    let mut object_ids = BTreeSet::new();
+    for object_id in output.lines() {
+        object_ids
+            .insert(parse_object_id(object_id).ok_or_else(|| {
+                anyhow::anyhow!("Git compaction enumerated an invalid object ID")
+            })?);
+    }
+    if object_ids.is_empty() {
+        anyhow::bail!("Git compaction selected packs contain no objects");
+    }
+    Ok(object_ids)
+}
+
+fn parse_object_id(value: &str) -> Option<ObjectId> {
+    let mut object_id = [0_u8; 20];
+    (value.len() == 40 && hex::decode_to_slice(value, &mut object_id).is_ok()).then_some(object_id)
+}
+
+fn object_id_input(object_ids: &BTreeSet<ObjectId>) -> Vec<u8> {
+    let mut input = Vec::with_capacity(object_ids.len().saturating_mul(41));
+    for object_id in object_ids {
+        let start = input.len();
+        input.resize(start + 40, 0);
+        hex::encode_to_slice(object_id, &mut input[start..]).expect("SHA-1 output size is fixed");
+        input.push(b'\n');
+    }
+    input
+}
+
+fn verify_object_set(
+    data_dir: &Path,
+    pack_path: &Path,
+    expected: &BTreeSet<ObjectId>,
+    timeout: Duration,
+    max_bytes: usize,
+) -> anyhow::Result<()> {
+    let repo = TemporaryGitRepo::new(data_dir)?;
+    run_git(
+        None,
+        &["init", "--bare", repo.path.to_string_lossy().as_ref()],
+        None,
+        timeout,
+        max_bytes,
+    )?;
+    index_pack_file(&repo.path, pack_path, timeout, max_bytes)?;
+    let actual = enumerate_object_ids(&repo.path, timeout, max_bytes)?;
+    if &actual != expected {
+        anyhow::bail!(
+            "Git compaction replacement object set differs from its selected packs (expected {}, found {})",
+            expected.len(),
+            actual.len()
+        );
+    }
+    Ok(())
 }
 
 pub(crate) async fn index_git_segment(
@@ -283,7 +373,7 @@ async fn ingest_compacted_pack(
     repository_id: &str,
     reservation: GitSegmentReservation,
     repo: &Path,
-    revisions: Vec<u8>,
+    object_ids: Vec<u8>,
     timeout: Duration,
     max_bytes: usize,
 ) -> anyhow::Result<StagedGitSegment> {
@@ -295,12 +385,12 @@ async fn ingest_compacted_pack(
         command
             .arg("--git-dir")
             .arg(repo)
-            .args(["pack-objects", "--revs", "--stdout"]);
+            .args(["pack-objects", "--stdout"]);
         run_with_stdout(
             &mut command,
-            Some(revisions),
+            Some(object_ids),
             ProcessLimits::new(timeout),
-            "git pack-objects --revs --stdout",
+            "git pack-objects --stdout",
             move |stdout, cancellation| {
                 runtime.block_on(segment_store.ingest_reserved_blocking_reader(
                     &repository_id,
@@ -323,7 +413,7 @@ async fn ingest_compacted_pack(
             scope_git_storage::GitStorageError::PlaintextLimitExceeded { .. },
         )) => {
             return Err(anyhow::Error::new(ProcessError::StdoutLimitExceeded {
-                action: "git pack-objects --revs --stdout".to_string(),
+                action: "git pack-objects --stdout".to_string(),
                 max_stdout_bytes: max_bytes,
                 diagnostic: String::new(),
             }));
@@ -334,7 +424,7 @@ async fn ingest_compacted_pack(
     };
     if !output.status.success() {
         return Err(anyhow::anyhow!(
-            "git pack-objects --revs --stdout failed: {}",
+            "git pack-objects --stdout failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
@@ -397,242 +487,4 @@ impl Drop for TemporaryGitRepo {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use scope_domain::repository::git::GitPackSpan;
-    use scope_git_process::ProcessError;
-    use scope_git_storage::{GitSegmentStoreConfig, MemoryMultipartStore, SegmentEncryptionKey};
-    use std::io::Cursor;
-
-    fn oid(bytes: Vec<u8>) -> String {
-        String::from_utf8(bytes).unwrap().trim().to_string()
-    }
-
-    fn make_commit(repo: &Path, tree: &str, parent: Option<&str>, message: &str) -> String {
-        let mut args = vec![
-            "-c",
-            "user.name=Scope Test",
-            "-c",
-            "user.email=scope@test.invalid",
-            "commit-tree",
-            tree,
-        ];
-        if let Some(parent) = parent {
-            args.extend(["-p", parent]);
-        }
-        oid(run_git(
-            Some(repo),
-            &args,
-            Some(format!("{message}\n").into_bytes()),
-            Duration::from_secs(2),
-            1024,
-        )
-        .unwrap())
-    }
-
-    fn make_pack(repo: &Path, head: &str, base: Option<&str>) -> Vec<u8> {
-        let revisions = match base {
-            Some(base) => format!("{head}\n^{base}\n"),
-            None => format!("{head}\n"),
-        };
-        run_git(
-            Some(repo),
-            &["pack-objects", "--revs", "--stdout"],
-            Some(revisions.into_bytes()),
-            Duration::from_secs(2),
-            1024 * 1024,
-        )
-        .unwrap()
-    }
-
-    async fn span(
-        store: &GitSegmentStore,
-        repository_id: &str,
-        sequences: (u64, u64),
-        tier: u32,
-        boundary: (Option<String>, String),
-        pack: Vec<u8>,
-    ) -> GitPackSpan {
-        let staged = store
-            .ingest_blocking_reader(repository_id, Cursor::new(pack), u64::MAX)
-            .await
-            .unwrap();
-        GitPackSpan {
-            first_sequence: sequences.0,
-            last_sequence: sequences.1,
-            geometric_tier: tier,
-            base_oid: boundary.0,
-            head_oid: boundary.1,
-            segment: staged.segment,
-        }
-    }
-
-    fn segment_store(local_root: &Path) -> Arc<GitSegmentStore> {
-        let mut config = GitSegmentStoreConfig::new(local_root);
-        config.chunk_bytes = 1024;
-        config.multipart_part_bytes = 1024;
-        Arc::new(
-            GitSegmentStore::new(
-                Arc::new(MemoryMultipartStore::default()),
-                SegmentEncryptionKey::new("test", [7_u8; 32]).unwrap(),
-                config,
-            )
-            .unwrap(),
-        )
-    }
-
-    #[test]
-    fn worker_git_output_obeys_exact_byte_limit() {
-        let exact = run_git(
-            None,
-            &["hash-object", "--stdin"],
-            Some(b"content".to_vec()),
-            Duration::from_secs(1),
-            41,
-        )
-        .unwrap();
-        assert_eq!(exact.len(), 41);
-
-        let error = run_git(
-            None,
-            &["hash-object", "--stdin"],
-            Some(b"content".to_vec()),
-            Duration::from_secs(1),
-            40,
-        )
-        .unwrap_err();
-        assert!(
-            error
-                .downcast_ref::<ProcessError>()
-                .is_some_and(ProcessError::is_stdout_limit)
-        );
-    }
-
-    #[tokio::test]
-    async fn interior_compaction_uses_its_predecessor_as_a_history_boundary() {
-        let temp = tempfile::tempdir().unwrap();
-        let source = TemporaryGitRepo::new(temp.path()).unwrap();
-        run_git(
-            None,
-            &["init", "--bare", source.path.to_string_lossy().as_ref()],
-            None,
-            Duration::from_secs(2),
-            1024,
-        )
-        .unwrap();
-        let tree = oid(run_git(
-            Some(&source.path),
-            &["mktree"],
-            Some(Vec::new()),
-            Duration::from_secs(2),
-            1024,
-        )
-        .unwrap());
-        let head_1 = make_commit(&source.path, &tree, None, "one");
-        let head_2 = make_commit(&source.path, &tree, Some(&head_1), "two");
-        let head_3 = make_commit(&source.path, &tree, Some(&head_2), "three");
-        let head_4 = make_commit(&source.path, &tree, Some(&head_3), "four");
-
-        let repository_id = "owner/repo";
-        let store = segment_store(&temp.path().join("segments"));
-        let predecessor = span(
-            store.as_ref(),
-            repository_id,
-            (1, 2),
-            1,
-            (None, head_2.clone()),
-            make_pack(&source.path, &head_2, None),
-        )
-        .await;
-        let selected = vec![
-            span(
-                store.as_ref(),
-                repository_id,
-                (3, 3),
-                0,
-                (Some(head_2.clone()), head_3.clone()),
-                make_pack(&source.path, &head_3, Some(&head_2)),
-            )
-            .await,
-            span(
-                store.as_ref(),
-                repository_id,
-                (4, 4),
-                0,
-                (Some(head_3.clone()), head_4.clone()),
-                make_pack(&source.path, &head_4, Some(&head_3)),
-            )
-            .await,
-        ];
-        for selected_span in &selected {
-            store
-                .cleanup_local(repository_id, &selected_span.segment.segment_id)
-                .await
-                .unwrap();
-        }
-        let mut layout = vec![predecessor];
-        layout.extend(selected);
-        let plan = GitCompactionPlan::select(&layout, 3).unwrap().unwrap();
-
-        let reservation = store.reserve(repository_id).unwrap();
-        let compacted = build_compacted_pack(
-            Arc::clone(&store),
-            repository_id,
-            &plan,
-            reservation,
-            GitStorageLimits::new(1024 * 1024).unwrap(),
-            Duration::from_secs(2),
-            temp.path().to_path_buf(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(compacted.metrics.local_restore_count, 1);
-        assert_eq!(compacted.metrics.remote_restore_count, 2);
-        let compacted_bytes = fs::read(compacted.staged.local_pack_path()).unwrap();
-
-        let result = TemporaryGitRepo::new(temp.path()).unwrap();
-        run_git(
-            None,
-            &["init", "--bare", result.path.to_string_lossy().as_ref()],
-            None,
-            Duration::from_secs(2),
-            1024,
-        )
-        .unwrap();
-        run_git(
-            Some(&result.path),
-            &["index-pack", "--stdin"],
-            Some(compacted_bytes),
-            Duration::from_secs(2),
-            1024,
-        )
-        .unwrap();
-        run_git(
-            Some(&result.path),
-            &["cat-file", "-e", &format!("{head_4}^{{commit}}")],
-            None,
-            Duration::from_secs(2),
-            1,
-        )
-        .unwrap();
-        assert!(
-            run_git(
-                Some(&result.path),
-                &["cat-file", "-e", &head_2],
-                None,
-                Duration::from_secs(2),
-                1,
-            )
-            .is_err(),
-            "the compacted range must not absorb its predecessor"
-        );
-    }
-
-    #[test]
-    fn temporary_git_repositories_stay_under_the_worker_data_directory() {
-        let temp = tempfile::tempdir().unwrap();
-        let repo = TemporaryGitRepo::new(temp.path()).unwrap();
-
-        assert!(repo.path.starts_with(temp.path().join("git-compaction")));
-    }
-}
+mod tests;

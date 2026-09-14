@@ -2,11 +2,6 @@
   "version": 1,
   "production": [
     {
-      "path": "api/src/git/repository_engine.rs",
-      "owner": "repository Git materialization engine",
-      "reason": "Replica selection, local cache synchronization, cold restoration, and projection materialization coordinate one repository view."
-    },
-    {
       "path": "api/src/git/storage.rs",
       "owner": "receive-pack staging and Git HTTP storage",
       "reason": "Staging repository creation, bounded request-body spooling, Git HTTP execution, and hook installation share one receive-pack filesystem lifecycle. Blocking filesystem and Git work is dispatched through the existing blocking-task owner."

@@ -27,6 +27,7 @@ path = "src/bin/scope_smoke_seed.rs"
 required-features = ["smoke-seed"]
 
 [dependencies]
+tempfile.workspace = true
 scope_service_runtime = { workspace = true, features = ["postgres"] }
 anyhow.workspace = true
 axum.workspace = true
@@ -70,5 +71,4 @@ ts-rs = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["test-util"] }
 scope_object_store = { workspace = true, features = ["test-support"] }
 scope_postgres = { workspace = true, features = ["test-support"] }
-tempfile.workspace = true
 tower = { workspace = true, features = ["util"] }

@@ -21,21 +21,12 @@ fn segment(first_sequence: u64, last_sequence: u64) -> GitSegmentRef {
 }
 
 #[test]
-fn minimum_span_threshold_requires_two_spans() {
-    assert_eq!(
-        validate_minimum_spans(1).unwrap_err().to_string(),
-        "Git compaction span threshold must be at least 2"
-    );
-    validate_minimum_spans(2).unwrap();
-}
-
-#[test]
-fn selection_validates_the_layout_before_count_eligibility() {
+fn selection_validates_the_layout_before_looking_for_a_pair() {
     let mut invalid = span(1, 1, 0);
     invalid.geometric_tier = 1;
 
     assert!(matches!(
-        GitCompactionPlan::select(&[invalid], 2),
+        GitCompactionPlan::select(&[invalid], u64::MAX),
         Err(GitCompactionError::InvalidLayout(
             GitPackLayoutError::InvalidGeometricTier { .. }
         ))
@@ -46,7 +37,7 @@ fn selection_validates_the_layout_before_count_eligibility() {
 fn selection_rejects_missing_or_disconnected_predecessor_history() {
     let missing_prefix = [span(2, 2, 0), span(3, 3, 0)];
     assert_eq!(
-        GitCompactionPlan::select(&missing_prefix, 2).unwrap_err(),
+        GitCompactionPlan::select(&missing_prefix, u64::MAX).unwrap_err(),
         GitCompactionError::InvalidLayout(GitPackLayoutError::InvalidStart { first_sequence: 2 })
     );
 
@@ -59,7 +50,7 @@ fn selection_rejects_missing_or_disconnected_predecessor_history() {
         span(4, 4, 0),
     ];
     assert!(matches!(
-        GitCompactionPlan::select(&disconnected, 3),
+        GitCompactionPlan::select(&disconnected, u64::MAX),
         Err(GitCompactionError::InvalidLayout(
             GitPackLayoutError::DisconnectedHistory { .. }
         ))
@@ -71,7 +62,7 @@ fn selection_rejects_a_gap_before_looking_for_a_pair() {
     let spans = [span(1, 1, 0), span(3, 3, 0)];
 
     assert_eq!(
-        GitCompactionPlan::select(&spans, 2).unwrap_err(),
+        GitCompactionPlan::select(&spans, u64::MAX).unwrap_err(),
         GitCompactionError::InvalidLayout(GitPackLayoutError::NonContiguous {
             previous_last_sequence: 1,
             next_first_sequence: 3,
@@ -80,11 +71,12 @@ fn selection_rejects_a_gap_before_looking_for_a_pair() {
 }
 
 #[test]
-fn selection_observes_the_threshold_and_allows_the_newest_span() {
+fn selection_allows_the_newest_pair() {
     let spans = [span(1, 4, 2), span(5, 5, 0), span(6, 6, 0)];
 
-    assert_eq!(GitCompactionPlan::select(&spans, 4).unwrap(), None);
-    let plan = GitCompactionPlan::select(&spans, 3).unwrap().unwrap();
+    let plan = GitCompactionPlan::select(&spans, u64::MAX)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         plan.selected_spans()
             .iter()
@@ -104,34 +96,43 @@ fn selection_chooses_the_oldest_equal_tier_pair() {
         span(10, 10, 0),
     ];
 
-    let plan = GitCompactionPlan::select(&spans, 3).unwrap().unwrap();
+    let plan = GitCompactionPlan::select(&spans, u64::MAX)
+        .unwrap()
+        .unwrap();
     assert_eq!(plan.selected_spans(), &spans[1..3]);
-    assert_eq!(plan.predecessor(), Some(&spans[0]));
-    assert_eq!(plan.base_oid(), Some("head-4"));
-    assert_eq!(plan.head_oid(), "head-8");
+
+    let mut first_pair_over_budget = spans.clone();
+    first_pair_over_budget[1].segment.plaintext_bytes = 6;
+    first_pair_over_budget[2].segment.plaintext_bytes = 5;
+    let plan = GitCompactionPlan::select(&first_pair_over_budget, 10)
+        .unwrap()
+        .unwrap();
+    assert_eq!(plan.selected_spans(), &first_pair_over_budget[3..5]);
 }
 
 #[test]
 fn selection_returns_none_when_no_equal_tier_pair_exists() {
     let spans = [span(1, 4, 2), span(5, 6, 1), span(7, 7, 0)];
 
-    assert_eq!(GitCompactionPlan::select(&spans, 2).unwrap(), None);
+    assert_eq!(GitCompactionPlan::select(&spans, u64::MAX).unwrap(), None);
 }
 
 #[test]
-fn a_prefix_plan_has_no_predecessor_or_base() {
+fn a_prefix_plan_selects_the_pair() {
     let spans = [span(1, 1, 0), span(2, 2, 0)];
 
-    let plan = GitCompactionPlan::select(&spans, 2).unwrap().unwrap();
-    assert_eq!(plan.predecessor(), None);
-    assert_eq!(plan.base_oid(), None);
-    assert_eq!(plan.head_oid(), "head-2");
+    let plan = GitCompactionPlan::select(&spans, u64::MAX)
+        .unwrap()
+        .unwrap();
+    assert_eq!(plan.selected_spans(), &spans);
 }
 
 #[test]
 fn replacement_uses_the_selected_range_and_oid_boundaries() {
     let spans = [span(1, 2, 1), span(3, 3, 0), span(4, 4, 0)];
-    let plan = GitCompactionPlan::select(&spans, 3).unwrap().unwrap();
+    let plan = GitCompactionPlan::select(&spans, u64::MAX)
+        .unwrap()
+        .unwrap();
     let replacement_segment = segment(3, 4);
 
     let replacement = plan.replacement(replacement_segment.clone()).unwrap();
@@ -276,7 +277,7 @@ fn replacement_validation_requires_the_derived_tier() {
 #[test]
 fn resulting_layout_replaces_only_the_selected_pair() {
     let current = [span(1, 2, 1), span(3, 3, 0), span(4, 4, 0), span(5, 5, 0)];
-    let plan = GitCompactionPlan::select(&current[..3], 3)
+    let plan = GitCompactionPlan::select(&current[..3], u64::MAX)
         .unwrap()
         .unwrap();
     let replacement = plan.replacement(segment(3, 4)).unwrap();
@@ -294,15 +295,11 @@ fn resulting_layout_replaces_only_the_selected_pair() {
 }
 
 #[test]
-fn binary_frontier_advances_past_power_of_two_boundaries_with_a_fixed_limit() {
+fn repeatedly_selecting_pairs_settles_a_binary_frontier() {
     let mut spans = Vec::new();
     for sequence in 1..=1_024 {
-        assert!(spans.len() < 64, "push capacity deadlocked at {sequence}");
         spans.push(span(sequence, sequence, 0));
-        if spans.len() >= 32 {
-            let plan = GitCompactionPlan::select(&spans, 32)
-                .unwrap()
-                .expect("a full descending binary frontier has a mergeable pair");
+        while let Some(plan) = GitCompactionPlan::select(&spans, u64::MAX).unwrap() {
             let range_start = spans
                 .iter()
                 .position(|span| span.first_sequence == plan.selected_spans()[0].first_sequence)
