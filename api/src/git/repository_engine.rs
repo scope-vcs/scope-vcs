@@ -13,8 +13,8 @@ use crate::{
         },
         command::run_git,
         restore::{
-            hydrate_git_pack_spans, install_verified_git_pack, restore_git_pack_spans,
-            run_timed_git_restore_phase, run_timed_git_restore_phase_async,
+            advance_head_and_verify, hydrate_git_pack_spans, install_verified_git_pack,
+            restore_git_pack_spans, run_timed_git_restore_phase,
         },
     },
 };
@@ -241,14 +241,9 @@ impl RepositoryEngine {
                         head_for_build.push_sequence,
                     )
                 }
-                Some(applied) if applied == head_for_build.push_sequence
-                    && repository_cache_is_ready(&repo_path_for_build) =>
-                {
-                    Ok(())
-                }
                 // Replicas are monotonic. A reader with an older database
                 // frontier may safely use the newer local object set.
-                Some(applied) if applied > head_for_build.push_sequence
+                Some(applied) if applied >= head_for_build.push_sequence
                     && repository_cache_is_ready(&repo_path_for_build) =>
                 {
                     Ok(())
@@ -523,27 +518,11 @@ impl RepositoryEngine {
             ));
         }
         hydrate_git_pack_spans(context, repo_root, incarnation, &missing).await?;
-        run_timed_git_restore_phase_async(
+        advance_head_and_verify(
             repository_id,
-            "update_ref",
-            Some(repo_root.to_path_buf()),
-            vec![
-                "update-ref".to_string(),
-                format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
-                head.head_oid.clone(),
-            ],
+            repo_root,
+            &head.head_oid,
             "advancing repository Git cache head",
-        )
-        .await?;
-        run_timed_git_restore_phase_async(
-            repository_id,
-            "fsck",
-            Some(repo_root.to_path_buf()),
-            vec![
-                "fsck".to_string(),
-                "--connectivity-only".to_string(),
-                head.head_oid.clone(),
-            ],
             "verifying caught-up repository Git cache",
         )
         .await

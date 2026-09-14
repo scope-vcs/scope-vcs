@@ -90,27 +90,11 @@ async fn restore_git_pack_spans_inner<C: GitContext>(
     )
     .await?;
     hydrate_git_pack_spans(context, repo_root, incarnation, pack_spans).await?;
-    run_timed_git_restore_phase_async(
+    advance_head_and_verify(
         repository_id,
-        "update_ref",
-        Some(repo_root.to_path_buf()),
-        vec![
-            "update-ref".to_string(),
-            format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
-            head.head_oid.clone(),
-        ],
+        repo_root,
+        &head.head_oid,
         "restoring Git pack-layout head",
-    )
-    .await?;
-    run_timed_git_restore_phase_async(
-        repository_id,
-        "fsck",
-        Some(repo_root.to_path_buf()),
-        vec![
-            "fsck".to_string(),
-            "--connectivity-only".to_string(),
-            head.head_oid.clone(),
-        ],
         "verifying restored Git pack layout",
     )
     .await?;
@@ -127,6 +111,41 @@ async fn restore_git_pack_spans_inner<C: GitContext>(
     )
     .await?;
     Ok(())
+}
+
+/// Point the default branch at `head_oid`, then verify the object graph
+/// reachable from it is complete.
+pub(crate) async fn advance_head_and_verify(
+    repository_id: &str,
+    repo_root: &Path,
+    head_oid: &str,
+    update_ref_context: &'static str,
+    fsck_context: &'static str,
+) -> Result<(), ApiError> {
+    run_timed_git_restore_phase_async(
+        repository_id,
+        "update_ref",
+        Some(repo_root.to_path_buf()),
+        vec![
+            "update-ref".to_string(),
+            format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
+            head_oid.to_string(),
+        ],
+        update_ref_context,
+    )
+    .await?;
+    run_timed_git_restore_phase_async(
+        repository_id,
+        "fsck",
+        Some(repo_root.to_path_buf()),
+        vec![
+            "fsck".to_string(),
+            "--connectivity-only".to_string(),
+            head_oid.to_string(),
+        ],
+        fsck_context,
+    )
+    .await
 }
 
 /// Fetch at most four packs ahead, then install them in layout order. The
