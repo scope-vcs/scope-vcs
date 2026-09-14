@@ -82,7 +82,10 @@ async fn cli_device_login_exchanges_browser_auth_for_cli_token() {
 
 #[tokio::test]
 async fn cli_device_login_completion_requires_clerk_auth_and_is_single_use() {
-    let app = router(test_state_with_jwks());
+    let mut state = test_state_with_jwks();
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
+    state.product_analytics = analytics;
+    let app = router(state);
     let start = start_login(&app).await;
     let user_code = start["user_code"].as_str().unwrap().to_string();
 
@@ -114,6 +117,18 @@ async fn cli_device_login_completion_requires_clerk_auth_and_is_single_use() {
     )
     .await;
     assert_eq!(second.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        recording.event_names(),
+        ["account:user_create", "operation:failure"]
+    );
+    assert_eq!(
+        recording.property(1, "operation"),
+        Some(serde_json::Value::String("login".into()))
+    );
+    assert_eq!(
+        recording.property(1, "reason"),
+        Some(serde_json::Value::String("conflict".into()))
+    );
 }
 
 #[tokio::test]

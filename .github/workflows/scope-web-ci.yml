@@ -52,9 +52,6 @@ jobs:
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
       - name: Check scope-web
-        env:
-          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
-          VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.VITE_POSTHOG_PROJECT_TOKEN }}
         run: ../dev/checks/web
 
       - name: Pack validated web runtime

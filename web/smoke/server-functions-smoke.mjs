@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 // Keep the read functions observed by these smoke tests explicit so a moved
 // function or changed compiler ID format fails instead of bypassing interception.
 const sourceFunctions = {
-  'src/analytics/analytics-root.tsx': ['loadAnalyticsIdentity'],
+  'src/routes/-account-session-actions.ts': ['loadAccountSession'],
   'src/routes/index.tsx': ['loadIndex'],
   'src/routes/$owner.$repo.tsx': ['loadRepoLiveState'],
   'src/routes/$owner.$repo._code.index.tsx': ['loadRepoContent', 'loadRepoFile'],

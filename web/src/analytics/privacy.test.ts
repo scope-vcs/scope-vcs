@@ -98,3 +98,70 @@ test('identify keeps identity linkage but drops person and URL properties', () =
     uuid: 'event-id',
   })
 })
+
+test('frontend errors retain only fixed classification and deployment context', () => {
+  const capture: CaptureResult = {
+    event: 'frontend_error',
+    properties: {
+      distinct_id: 'scope_usr_123',
+      environment: 'test',
+      error_kind: 'type_error',
+      error_origin: 'route',
+      exception_message: 'private repository failed at /adam/secret',
+      release: 'web-abc123',
+      route_name: 'request_details',
+      source: 'browser',
+      token: 'phc_project',
+    },
+    uuid: 'event-id',
+  }
+
+  assert.deepEqual(sanitizeCapture(capture, siteOrigin), {
+    event: 'frontend_error',
+    properties: {
+      $geoip_disable: true,
+      distinct_id: 'scope_usr_123',
+      environment: 'test',
+      error_kind: 'type_error',
+      error_origin: 'route',
+      release: 'web-abc123',
+      route_name: 'request_details',
+      source: 'browser',
+      token: 'phc_project',
+    },
+    uuid: 'event-id',
+  })
+})
+
+test('web vitals require a known metric, finite value, and safe route alias', () => {
+  const capture = (properties: CaptureResult['properties']): CaptureResult => ({
+    event: 'web_vital', properties, uuid: 'event-id',
+  })
+
+  assert.deepEqual(sanitizeCapture(capture({
+    distinct_id: 'anonymous-id',
+    metric: 'LCP',
+    route_name: 'request_details',
+    target: '#private-repository-name',
+    value: 1234.5,
+  }), siteOrigin), {
+    event: 'web_vital',
+    properties: {
+      $geoip_disable: true,
+      distinct_id: 'anonymous-id',
+      metric: 'LCP',
+      route_name: 'request_details',
+      value: 1234.5,
+    },
+    uuid: 'event-id',
+  })
+  assert.equal(sanitizeCapture(capture({
+    metric: 'custom', route_name: 'request_details', value: 12,
+  }), siteOrigin), null)
+  assert.equal(sanitizeCapture(capture({
+    metric: 'CLS', route_name: 'request_details', value: Number.NaN,
+  }), siteOrigin), null)
+  assert.equal(sanitizeCapture(capture({
+    metric: 'INP', route_name: 'private-route', value: 42,
+  }), siteOrigin), null)
+})

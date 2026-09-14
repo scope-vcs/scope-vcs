@@ -155,6 +155,8 @@ recovery credential. The API image contains `/app/bin/scope-maintenance`; extrac
 checks its SHA-256 against the prepared manifest without starting the container.
 
 Retain all image digests and their unique tags while a referencing cutover remains
-unresolved. Recovery cannot rebuild or substitute a deleted image. Public analytics
-build configuration comes from the repository variables `VITE_POSTHOG_HOST` and
-`VITE_POSTHOG_PROJECT_TOKEN`.
+unresolved. Recovery cannot rebuild or substitute a deleted image. Product analytics
+uses runtime `SCOPE_ANALYTICS_ENVIRONMENT` and `POSTHOG_PROJECT_TOKEN`; the web
+service also requires `SCOPE_ANALYTICS_ORIGIN`. Prepared web, API and worker images
+carry their source SHA as `SCOPE_ANALYTICS_RELEASE`. See
+[product analytics](product-analytics.md) for configuration and release checks.

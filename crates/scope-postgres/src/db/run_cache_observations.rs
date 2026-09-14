@@ -190,7 +190,9 @@ async fn authenticated_attempt(
         .authenticate_cache_observation_report(&job, token_hash, now_unix)
         .map_err(PostgresError::from)?;
     let workflow_revision = super::runs::workflow_revision_for_run(tx, &run).await?;
+    let repository = super::run_attempt_persistence::run_repository(tx, &run).await?;
     Ok(super::DispatchClaim {
+        repository,
         run,
         job,
         attempt,

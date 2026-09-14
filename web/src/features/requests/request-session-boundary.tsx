@@ -1,5 +1,6 @@
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useEffect } from 'react'
+import { activateAccountSessionViewer } from '../account/account-session-resource'
 import { activateRequestAttachmentDraftViewer } from './request-attachment-drafts'
 import { resetRequestAttachmentMediaGrants } from './request-attachment-media-resource'
 import { resetRequestAttachmentResources } from './request-attachment-resource'
@@ -15,6 +16,7 @@ export function RequestSessionBoundary() {
   useEffect(() => {
     if (!isLoaded) return
     const viewerId = userId ?? 'anonymous'
+    activateAccountSessionViewer(viewerId)
     if (activeViewer !== null && activeViewer !== viewerId) {
       activateRequestAttachmentDraftViewer(viewerId)
       resetRequestAttachmentMediaGrants()

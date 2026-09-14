@@ -1,10 +1,27 @@
 use super::entities;
 use crate::error::PostgresError;
-use scope_domain::runs::{attempt::RunAttempt, job::RunJob, run::Run, step::RunAttemptStep};
+use scope_domain::{
+    repository::RepositoryIncarnation,
+    runs::{attempt::RunAttempt, job::RunJob, run::Run, step::RunAttemptStep},
+};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
     QueryOrder, QuerySelect,
 };
+
+pub(super) async fn run_repository(
+    tx: &DatabaseTransaction,
+    run: &Run,
+) -> Result<RepositoryIncarnation, PostgresError> {
+    entities::repository::Entity::find_by_id(run.workflow.repository_id().to_string())
+        .one(tx)
+        .await
+        .map_err(PostgresError::internal)?
+        .ok_or_else(|| PostgresError::internal_message("run repository is missing"))
+        .and_then(|row| {
+            RepositoryIncarnation::new(row.id, row.incarnation_id).map_err(PostgresError::internal)
+        })
+}
 
 pub(super) async fn locked_run(
     tx: &DatabaseTransaction,

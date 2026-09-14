@@ -4,10 +4,8 @@ import {
   parseRequestActionInput,
   parseRateRequestInput,
 } from '@/api/request-inputs'
-import { createApiClient } from '@/api/client'
 import { loadOptionalResource } from '@/api/http'
-import { ApiRouteTemplates, buildApiPath } from '@/api/types.generated'
-import { apiValidators } from '@/api/validators.generated'
+import { loadAccountSessionForRequest } from '@/api/profile'
 import { loadRequestForRequest } from '@/api/requests'
 import {
   loadRequestRatingsForRequest,
@@ -46,11 +44,7 @@ const loadRequestPage = createServerFn({ method: 'GET' })
     }
     const [detail, account, ratings] = await Promise.all([
       loadOptionalResource(() => loadRequestForRequest(requestParams)),
-      loadOptionalResource(() => createApiClient().get(
-        buildApiPath(ApiRouteTemplates.accountSession),
-        apiValidators.AccountSessionResponse,
-        { auth: 'optional' },
-      )),
+      loadOptionalResource(loadAccountSessionForRequest),
       loadOptionalResource(() => loadRequestRatingsForRequest(requestParams)),
     ])
     return {

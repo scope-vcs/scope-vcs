@@ -18,6 +18,42 @@ async fn published_receive_pack_accepts_git_push_token() {
 }
 
 #[tokio::test]
+async fn no_op_receive_pack_does_not_record_push_success() {
+    let secret = "scope_git_test";
+    let mut state = test_state_with_git_push_token(secret).await;
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
+    state.product_analytics = analytics;
+    let mut headers = git_push_token_headers(secret);
+    insert_push_intent_header(&state, &mut headers, &test_owner_id(), TEST_PUSH_HEAD_OID).await;
+    let access = receive_pack_access(&state, &headers, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    let preparation =
+        git_receive_use_case::prepare(&state, TEST_REPO_OWNER, TEST_REPO_NAME, access, false)
+            .await
+            .unwrap();
+    let staging_repo = preparation.staging_repo.clone();
+
+    let completion = git_receive_use_case::complete(
+        &state,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        &staging_repo,
+        preparation,
+        std::time::Duration::ZERO,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        completion,
+        git_receive_use_case::ReceiveCompletion::NoChange
+    );
+    assert!(recording.events().is_empty());
+    let _ = fs::remove_dir_all(staging_repo);
+}
+
+#[tokio::test]
 async fn push_intent_is_signed_instead_of_process_local() {
     let issuer = test_state_with_repo();
     let verifier = test_state_with_repo();
@@ -356,7 +392,7 @@ async fn first_push_staging_repo_head_points_to_default_branch() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_git_first_push_over_http_applies_immediately() {
-    let (state, source, _server) = first_push_fixture(
+    let (state, source, _server, recording) = first_push_fixture(
         "real-first-http-push",
         "hello over http\n",
         Some(("script.sh", "#!/bin/sh\necho hi\n")),
@@ -374,6 +410,10 @@ async fn real_git_first_push_over_http_applies_immediately() {
         .unwrap();
     assert_eq!(repo.record.lifecycle_state, RepoLifecycleState::Ready);
     assert!(repo.first_push_token.is_none());
+    assert_eq!(
+        recording.event_names(),
+        ["repository:repository_initialize"]
+    );
     let live_tree = &repo.live_files;
     assert_eq!(repo.repo_config, repo_config(Visibility::Public));
     assert_eq!(
@@ -388,7 +428,9 @@ async fn real_git_first_push_over_http_applies_immediately() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn chunked_real_git_published_push_over_http_accepts_image_context() {
     let secret = "scope_git_test";
-    let state = test_state_with_git_push_token(secret).await;
+    let mut state = test_state_with_git_push_token(secret).await;
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
+    state.product_analytics = analytics;
     let (origin, _server) = spawn_test_server(&state).await;
     let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}").replacen(
         "http://",
@@ -434,6 +476,11 @@ async fn chunked_real_git_published_push_over_http_accepts_image_context() {
         "push published update over chunked http",
     )
     .unwrap();
+    assert_eq!(recording.event_names(), ["repository:push_complete"]);
+    assert_eq!(
+        recording.property(0, "repository_id"),
+        Some(serde_json::Value::String("repoi_workflow_test".into()))
+    );
 
     assert_eq!(
         live_file_content(&state, "/README.md").await.as_deref(),
@@ -539,7 +586,7 @@ async fn first_push_accepts_history_from_before_scope_rules_existed() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn first_push_missing_tip_rules_displays_rejection_without_persisting() {
-    let (state, source, _server) =
+    let (state, source, _server, recording) =
         first_push_fixture("missing-tip-rules-http", "hello\n", None).await;
     run_git(
         Some(&source),
@@ -576,14 +623,22 @@ async fn first_push_missing_tip_rules_displays_rejection_without_persisting() {
     assert!(repo.git_head.is_none());
     assert!(repo.first_push_token.is_some());
     assert_eq!(state.test_object_store.object_count(), object_count);
+    assert_eq!(recording.event_names(), ["operation:failure"]);
 }
 
 async fn first_push_fixture(
     label: &str,
     readme: &str,
     executable: Option<(&str, &str)>,
-) -> (AppState, TempGitRepo, TestServer) {
-    let (state, secret) = test_state_with_first_push_token().await;
+) -> (
+    AppState,
+    TempGitRepo,
+    TestServer,
+    scope_product_analytics::RecordingProductAnalytics,
+) {
+    let (mut state, secret) = test_state_with_first_push_token().await;
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
+    state.product_analytics = analytics;
     let (origin, server) = spawn_test_server(&state).await;
     let source = temp_git_repo(label);
     fs::write(source.join("README.md"), readme).unwrap();
@@ -612,5 +667,5 @@ async fn first_push_fixture(
     )
     .unwrap();
     configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
-    (state, source, server)
+    (state, source, server, recording)
 }

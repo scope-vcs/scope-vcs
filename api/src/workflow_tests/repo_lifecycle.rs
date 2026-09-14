@@ -61,8 +61,10 @@ async fn create_repo_route_creates_user_and_lists_repo() {
 
 #[tokio::test]
 async fn invite_acceptance_returns_member_access() {
-    let state = test_state_with_repo();
+    let mut state = test_state_with_repo();
     cache_test_jwks(&state);
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
+    state.product_analytics = analytics;
     let invited_email = "invitee@example.com";
     let create_response = api_request(
         router(state.clone()),
@@ -85,7 +87,7 @@ async fn invite_acceptance_returns_member_access() {
     let token = invite_url.rsplit('/').next().unwrap();
 
     let accept_response = api_request(
-        router(state),
+        router(state.clone()),
         "POST",
         &format!("/v1/repository-invites/{token}/accept"),
         Some(&bearer_header_for("user_invitee", invited_email)),
@@ -96,6 +98,32 @@ async fn invite_acceptance_returns_member_access() {
     assert_eq!(accept_response.status(), StatusCode::OK);
     let body = response_json(accept_response).await;
     assert_eq!(body["repo"]["access"]["actor"], "Member");
+    assert_eq!(
+        recording.event_names(),
+        ["account:user_create", "repository:invite_accept"]
+    );
+    assert_eq!(
+        recording.property(1, "repository_id"),
+        Some(serde_json::Value::String("repoi_workflow_test".into()))
+    );
+    assert_eq!(
+        recording.property(1, "actor_role"),
+        Some(serde_json::Value::String("member".into()))
+    );
+
+    let repeated = api_request(
+        router(state),
+        "POST",
+        &format!("/v1/repository-invites/{token}/accept"),
+        Some(&bearer_header_for("user_invitee", invited_email)),
+        None,
+    )
+    .await;
+    assert_eq!(repeated.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        recording.event_names(),
+        ["account:user_create", "repository:invite_accept"]
+    );
 }
 
 #[tokio::test]

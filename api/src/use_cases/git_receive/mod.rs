@@ -265,6 +265,41 @@ pub(crate) async fn complete(
     preparation: ReceivePreparation,
     receive_elapsed: Duration,
 ) -> Result<ReceiveCompletion, ApiError> {
+    let actor_user_id = preparation.access.author_id().to_string();
+    let repository_id = preparation
+        .access
+        .incarnation()
+        .incarnation_id()
+        .to_string();
+    crate::operation_analytics::ObservedOperation {
+        actor_user_id: &actor_user_id,
+        operation: scope_product_analytics::ProductOperation::Push,
+        source: scope_product_analytics::EventSource::Git,
+        repository_id: Some(&repository_id),
+        request_id: None,
+    }
+    .run(
+        state,
+        complete_inner(
+            state,
+            owner,
+            repo_name,
+            staging_repo,
+            preparation,
+            receive_elapsed,
+        ),
+    )
+    .await
+}
+
+async fn complete_inner(
+    state: &AppState,
+    owner: &str,
+    repo_name: &str,
+    staging_repo: &Path,
+    preparation: ReceivePreparation,
+    receive_elapsed: Duration,
+) -> Result<ReceiveCompletion, ApiError> {
     let path = staging_repo.to_path_buf();
     let refs_after = crate::git::blocking::run(move || receive_pack_refs(&path)).await?;
     let refs_before = preparation
@@ -354,11 +389,20 @@ async fn complete_main_push(
     let committed_incarnation = persisted.incarnation.clone();
     let committed_git_head = persisted.head;
     let event = if first_push {
-        state
-            .product_analytics
-            .capture(crate::product_analytics::ProductEvent::repository_initialized(&author_id));
+        state.product_analytics.capture(
+            scope_product_analytics::ProductEvent::repository_initialized(
+                &author_id,
+                committed_incarnation.incarnation_id(),
+            ),
+        );
         RepoChangeReason::FirstPushApplied
     } else {
+        state
+            .product_analytics
+            .capture(scope_product_analytics::ProductEvent::repository_pushed(
+                &author_id,
+                committed_incarnation.incarnation_id(),
+            ));
         RepoChangeReason::PushReceived
     };
     state

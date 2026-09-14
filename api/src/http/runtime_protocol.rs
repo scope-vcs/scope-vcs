@@ -53,7 +53,7 @@ pub(crate) async fn claim(
             lease_expires_at_unix,
         )
         .await?;
-    publish_claim_status_change(&state, &claim).await;
+    crate::run_attempt_effects::publish_claim_status_change(&state, &claim).await;
     let job_definition = claimed_job_definition(&claim);
     let cache_grant = issue_cache_grant(&state, &claim, &[])?;
     Ok(Json(ClaimRuntimeResponse {
@@ -85,7 +85,7 @@ pub(crate) async fn start_step(
         .runs()
         .start_attempt_step(&attempt_id, &token_hash, step_index, unix_now()?)
         .await?;
-    publish_claim_status_change(&state, &claim).await;
+    crate::run_attempt_effects::publish_claim_status_change(&state, &claim).await;
     Ok(Json(attempt_status(&claim)))
 }
 
@@ -149,7 +149,7 @@ pub(crate) async fn report_cache_preparations(
         )
         .await?;
     if let Some(claim) = changed {
-        publish_claim_status_change(&state, &claim).await;
+        crate::run_attempt_effects::publish_claim_status_change(&state, &claim).await;
     }
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -182,7 +182,7 @@ pub(crate) async fn report_cache_finalizations(
         )
         .await?;
     if let Some(claim) = changed {
-        publish_claim_status_change(&state, &claim).await;
+        crate::run_attempt_effects::publish_claim_status_change(&state, &claim).await;
     }
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -285,7 +285,7 @@ pub(crate) async fn complete_step(
         StepConclusionRequest::Succeeded => StepConclusion::Succeeded,
         StepConclusionRequest::Failed { exit_code } => StepConclusion::Failed { exit_code },
     };
-    let claim = state
+    let mutation = state
         .metadata
         .runs()
         .complete_attempt_step(
@@ -297,8 +297,8 @@ pub(crate) async fn complete_step(
             unix_now()?,
         )
         .await?;
-    publish_claim_status_change(&state, &claim).await;
-    Ok(Json(attempt_status(&claim)))
+    crate::run_attempt_effects::settle_attempt_mutation(&state, &mutation).await;
+    Ok(Json(attempt_status(&mutation.claim)))
 }
 
 pub(crate) async fn complete(
@@ -316,7 +316,7 @@ pub(crate) async fn complete(
         AttemptConclusionRequest::TimedOut => AttemptConclusion::TimedOut,
         AttemptConclusionRequest::Canceled => AttemptConclusion::Canceled,
     };
-    let claim = state
+    let mutation = state
         .metadata
         .runs()
         .complete_attempt(
@@ -327,8 +327,8 @@ pub(crate) async fn complete(
             unix_now()?,
         )
         .await?;
-    publish_claim_status_change(&state, &claim).await;
-    Ok(Json(attempt_status(&claim)))
+    crate::run_attempt_effects::settle_attempt_mutation(&state, &mutation).await;
+    Ok(Json(attempt_status(&mutation.claim)))
 }
 
 pub(crate) async fn abandon(
@@ -337,23 +337,13 @@ pub(crate) async fn abandon(
     Path(attempt_id): Path<String>,
 ) -> Result<Json<AttemptStatusResponse>, ApiError> {
     let token_hash = attempt_token_hash(&headers)?;
-    let claim = state
+    let mutation = state
         .metadata
         .runs()
         .abandon_attempt(&attempt_id, &token_hash, unix_now()?)
         .await?;
-    publish_claim_status_change(&state, &claim).await;
-    Ok(Json(attempt_status(&claim)))
-}
-
-async fn publish_claim_status_change(state: &AppState, claim: &scope_postgres::db::DispatchClaim) {
-    state
-        .publish_run_change(
-            claim.run.workflow.repository_id(),
-            claim.run.id.clone(),
-            RunChangeKind::StatusChanged,
-        )
-        .await;
+    crate::run_attempt_effects::settle_attempt_mutation(&state, &mutation).await;
+    Ok(Json(attempt_status(&mutation.claim)))
 }
 
 fn attempt_status(claim: &scope_postgres::db::DispatchClaim) -> AttemptStatusResponse {

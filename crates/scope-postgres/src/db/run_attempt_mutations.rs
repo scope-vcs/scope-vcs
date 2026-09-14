@@ -31,8 +31,10 @@ impl RunStore {
             .map_err(PostgresError::from)?;
         super::run_attempt_persistence::save_attempt(&tx, &attempt).await?;
         let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
+        let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(DispatchClaim {
+            repository,
             run,
             job,
             attempt,
@@ -54,8 +56,10 @@ impl RunStore {
             .authenticate(&job, token_hash, now_unix)
             .map_err(PostgresError::from)?;
         let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
+        let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(DispatchClaim {
+            repository,
             run,
             job,
             attempt,
@@ -100,12 +104,14 @@ impl RunStore {
         super::run_attempt_persistence::save_attempt_steps(&tx, &steps).await?;
         super::run_attempt_persistence::save_jobs(&tx, &jobs).await?;
         super::run_attempt_persistence::save_run(&tx, &run).await?;
+        let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         let job = jobs
             .into_iter()
             .find(|job| job.key == attempt.job_key)
             .ok_or_else(|| PostgresError::internal_message("run attempt job is missing"))?;
         Ok(DispatchClaim {
+            repository,
             run,
             job,
             attempt,
@@ -140,8 +146,10 @@ impl RunStore {
         reconcile_run(&mut run, &mut jobs, &workflow_revision, job.updated_at_unix)
             .map_err(PostgresError::from)?;
         super::run_attempt_persistence::save_run(&tx, &run).await?;
+        let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(DispatchClaim {
+            repository,
             run,
             job,
             attempt,

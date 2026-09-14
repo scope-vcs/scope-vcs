@@ -1,5 +1,6 @@
 export type IdentityTransition =
   | { kind: 'identify'; scopeUserId: string }
+  | { kind: 'reset_and_identify'; scopeUserId: string }
   | { kind: 'reset' }
   | { kind: 'none' }
 
@@ -10,19 +11,12 @@ export type ResolvedAnalyticsIdentity = {
 
 export async function resolveAnalyticsIdentity(
   clerkUserId: string,
-  loadIdentity: () => Promise<{ scopeUserId: string } | null>,
+  loadAccount: () => Promise<{ user: { id: string } | null } | null>,
 ): Promise<ResolvedAnalyticsIdentity> {
-  try {
-    const identity = await loadIdentity()
-    return {
-      identityKey: identifiedKey(clerkUserId),
-      scopeUserId: identity?.scopeUserId ?? null,
-    }
-  } catch {
-    return {
-      identityKey: identifiedKey(clerkUserId),
-      scopeUserId: null,
-    }
+  const account = await loadAccount()
+  return {
+    identityKey: identifiedKey(clerkUserId),
+    scopeUserId: account?.user?.id ?? null,
   }
 }
 
@@ -42,7 +36,12 @@ export function identityTransition(input: {
     input.scopeUserId
     && input.currentDistinctId !== input.scopeUserId
   ) {
-    return { kind: 'identify', scopeUserId: input.scopeUserId }
+    const replacingScopeIdentity = input.currentDistinctId.startsWith('scope_usr_')
+      || Boolean(input.persistedUserId)
+    return {
+      kind: replacingScopeIdentity ? 'reset_and_identify' : 'identify',
+      scopeUserId: input.scopeUserId,
+    }
   }
 
   return { kind: 'none' }

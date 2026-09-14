@@ -6,7 +6,6 @@ use crate::{
     config::CLI_SESSION_TOKEN_PREFIX,
     error::ApiError,
     persistence::unix_now,
-    product_analytics::ProductEvent,
     state::AppState,
 };
 use axum::http::HeaderMap;
@@ -15,6 +14,7 @@ use scope_domain::{
     policy::{Principal, PrincipalKind},
     repository::Repository,
 };
+use scope_product_analytics::ProductEvent;
 
 pub(crate) async fn optional_scope_user(
     state: &AppState,

@@ -41,7 +41,6 @@ http = "1.4.0"
 jsonwebtoken.workspace = true
 getrandom.workspace = true
 libc.workspace = true
-posthog-rs = { version = "0.24.0", default-features = false, features = ["async-client"] }
 reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls"] }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
@@ -58,6 +57,7 @@ scope_git = { workspace = true, features = ["storage"] }
 scope_git_storage.workspace = true
 scope_run_config.workspace = true
 scope_object_store.workspace = true
+scope_product_analytics.workspace = true
 url = "2.5.7"
 scope_git_process.workspace = true
 time.workspace = true
@@ -68,6 +68,7 @@ tracing.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
+scope_product_analytics = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
 scope_object_store = { workspace = true, features = ["test-support"] }
 scope_postgres = { workspace = true, features = ["test-support"] }

@@ -571,6 +571,7 @@ impl RequestStore {
             // must preserve any later wake-up or explicit attention action.
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(CreateRequestDiscussionReplyMutation {
+                created: false,
                 request,
                 discussion,
                 reply,
