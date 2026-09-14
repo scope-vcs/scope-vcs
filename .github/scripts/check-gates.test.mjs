@@ -252,6 +252,35 @@ test('prepared web and backend jobs cannot build after activation begins', () =>
   assert.doesNotMatch(cliDeploy, /cargo build/);
 });
 
+test('CLI publication configures the advertised installer origin before deployment', (t) => {
+  const workflow = read('.github/workflows/publish-cli.yml');
+  const block = workflow.match(/      - name: Deploy artifacts to Railway\n[\s\S]*?        run: \|\n((?:          .*\n)+)/)?.[1];
+  assert.ok(block, 'CLI deployment shell step must be present');
+  const dir = mkdtempSync(resolve(tmpdir(), 'scope-cli-publication-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(resolve(dir, '.github/scripts'), { recursive: true });
+  mkdirSync(resolve(dir, 'bin'));
+  writeFileSync(resolve(dir, '.github/deployment-services.json'), JSON.stringify(manifest));
+  writeFileSync(resolve(dir, 'bin/railway'), '#!/bin/sh\nprintf "%s\\n" "$@" >> events\n', { mode: 0o755 });
+  writeFileSync(resolve(dir, '.github/scripts/deploy-railway.sh'), '#!/bin/sh\nprintf "deploy %s %s\\n" "$1" "$2" >> events\n');
+  const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-euo', 'pipefail', '-c', block.replace(/^          /gm, '')], {
+    cwd: dir,
+    encoding: 'utf8',
+    env: { PATH: `${resolve(dir, 'bin')}:${process.env.PATH}` },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const installer = read('crates/scope-api-contract/src/cli_compatibility.rs').match(/https:\/\/[^\s"]+\/install\.sh/)?.[0];
+  assert.ok(installer, 'API upgrade instructions must advertise the installer');
+  const events = readFileSync(resolve(dir, 'events'), 'utf8').trim().split('\n');
+  assert.deepEqual(events, [
+    'variable', 'set', '--project', manifest.railway.projectId,
+    '--environment', manifest.environments.production.environmentId,
+    '--service', manifest.services['cli-downloads'].id, '--skip-deploys',
+    `SCOPE_CLI_PUBLIC_URL=${new URL(installer).origin}`,
+    `deploy ${manifest.services['cli-downloads'].id} .railway-upload`,
+  ]);
+});
+
 test('Node workflows cache pnpm and browser downloads by the web lockfile', () => {
   const integrationCi = read('.github/workflows/scope-integration-ci.yml');
   for (const workflow of [integrationCi, read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
