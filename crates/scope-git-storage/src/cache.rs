@@ -5,7 +5,7 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex, MutexGuard, Weak},
     time::SystemTime,
 };
 use tokio::sync::Notify;
@@ -66,10 +66,34 @@ pub(crate) struct VerifiedPackCache {
 
 #[derive(Default)]
 struct CacheState {
-    leases: HashMap<PathBuf, usize>,
-    last_used: HashMap<PathBuf, SystemTime>,
+    entries: HashMap<PathBuf, Entry>,
     flights: HashMap<PathBuf, Weak<VerifiedPackFlight>>,
-    verified_at: HashMap<PathBuf, SystemTime>,
+}
+
+struct Entry {
+    leases: usize,
+    last_used: SystemTime,
+    verified_at: Option<SystemTime>,
+}
+
+impl CacheState {
+    fn is_leased(&self, path: &Path) -> bool {
+        self.entries.get(path).is_some_and(|entry| entry.leases > 0)
+    }
+
+    fn entry_mut(&mut self, path: &Path) -> &mut Entry {
+        self.entries.entry(path.to_path_buf()).or_insert(Entry {
+            leases: 0,
+            last_used: SystemTime::now(),
+            verified_at: None,
+        })
+    }
+
+    fn clear_verified_at(&mut self, path: &Path) {
+        if let Some(entry) = self.entries.get_mut(path) {
+            entry.verified_at = None;
+        }
+    }
 }
 
 pub(crate) struct VerifiedPackFlight {
@@ -111,7 +135,7 @@ impl VerifiedPackCache {
         expected_sha256: &str,
         timings: GitSegmentRestoreTimings,
     ) -> Result<Option<VerifiedGitPack>, GitStorageError> {
-        let mut state = self.lock_state()?;
+        let mut state = self.lock_state();
         if !validate_existing(&mut state, path, expected_bytes, expected_sha256)? {
             return Ok(None);
         }
@@ -139,25 +163,20 @@ impl VerifiedPackCache {
             });
         }
 
-        let mut state = self.lock_state()?;
+        let mut state = self.lock_state();
         if validate_existing(&mut state, path, expected_bytes, expected_sha256)? {
             remove_file_if_exists(source)?;
         } else {
             fs::rename(source, path).map_err(GitStorageError::Local)?;
             // Ingest or remote hydration already authenticated this source.
-            state.verified_at.insert(
-                path.to_path_buf(),
-                source_metadata.modified().map_err(GitStorageError::Local)?,
-            );
+            let modified = source_metadata.modified().map_err(GitStorageError::Local)?;
+            state.entry_mut(path).verified_at = Some(modified);
         }
         Ok(self.pin_locked(&mut state, path.to_path_buf()))
     }
 
     pub(crate) fn begin_flight(self: &Arc<Self>, path: &Path) -> (Arc<VerifiedPackFlight>, bool) {
-        let mut state = match self.state.lock() {
-            Ok(state) => state,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut state = self.lock_state();
         if let Some(flight) = state.flights.get(path).and_then(Weak::upgrade) {
             return (flight, false);
         }
@@ -173,9 +192,7 @@ impl VerifiedPackCache {
     }
 
     pub(crate) fn finish_flight(&self, path: &Path, completed: &Arc<VerifiedPackFlight>) {
-        let Ok(mut state) = self.state.lock() else {
-            return;
-        };
+        let mut state = self.lock_state();
         if state
             .flights
             .get(path)
@@ -187,7 +204,7 @@ impl VerifiedPackCache {
     }
 
     pub(crate) fn usage(&self) -> Result<VerifiedPackCacheUsage, GitStorageError> {
-        let state = self.lock_state()?;
+        let state = self.lock_state();
         usage_for_entries(&cache_entries(&self.root, &state)?, &state)
     }
 
@@ -195,96 +212,78 @@ impl VerifiedPackCache {
         &self,
         target_bytes: u64,
     ) -> Result<VerifiedPackCacheUsage, GitStorageError> {
-        let mut state = self.lock_state()?;
+        let mut state = self.lock_state();
         let mut entries = cache_entries(&self.root, &state)?;
         entries.sort_by_key(|entry| entry.last_used);
+        // Only unleased entries are evicted, so leased_bytes stays exact.
         let mut usage = usage_for_entries(&entries, &state)?;
         for entry in entries {
             if usage.retained_bytes <= target_bytes {
                 break;
             }
-            if state
-                .leases
-                .get(&entry.pack_path)
-                .copied()
-                .unwrap_or_default()
-                > 0
-            {
+            if state.is_leased(&entry.pack_path) {
                 continue;
             }
             remove_cache_artifacts(&entry.pack_path)?;
-            state.last_used.remove(&entry.pack_path);
-            state.verified_at.remove(&entry.pack_path);
+            state.entries.remove(&entry.pack_path);
             usage.retained_bytes = usage.retained_bytes.saturating_sub(entry.size_bytes);
             if entry.has_pack {
                 usage.pack_count = usage.pack_count.saturating_sub(1);
             }
         }
-        usage.leased_bytes = cache_entries(&self.root, &state)?
-            .into_iter()
-            .filter(|entry| {
-                state
-                    .leases
-                    .get(&entry.pack_path)
-                    .copied()
-                    .unwrap_or_default()
-                    > 0
-            })
-            .try_fold(0_u64, |total, entry| total.checked_add(entry.size_bytes))
-            .ok_or_else(cache_size_overflow)?;
         Ok(usage)
     }
 
     fn pin_locked(self: &Arc<Self>, state: &mut CacheState, path: PathBuf) -> VerifiedPackPin {
-        *state.leases.entry(path.clone()).or_default() += 1;
-        state.last_used.insert(path.clone(), SystemTime::now());
+        let entry = state.entry_mut(&path);
+        entry.leases += 1;
+        entry.last_used = SystemTime::now();
         VerifiedPackPin {
             cache: Arc::clone(self),
             path,
         }
     }
 
-    fn lock_state(&self) -> Result<std::sync::MutexGuard<'_, CacheState>, GitStorageError> {
-        self.state
-            .lock()
-            .map_err(|_| GitStorageError::Task("verified Git pack cache lock is poisoned".into()))
+    fn lock_state(&self) -> MutexGuard<'_, CacheState> {
+        lock_recovering(&self.state)
     }
 }
 
+// Cache state is a set of counters and timestamps that stay consistent across
+// a panic in another holder, so recover the guard rather than failing.
+fn lock_recovering<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 impl VerifiedPackFlight {
+    /// Records the outcome and wakes waiters. The first outcome wins; later
+    /// calls are ignored so a panic guard cannot overwrite a real result.
     pub(crate) fn complete(
         &self,
         result: Result<(GitSegmentRestoreTimings, VerifiedPackPin), GitStorageError>,
     ) {
-        let outcome = match result {
+        let mut stored = lock_recovering(&self.outcome);
+        if stored.is_some() {
+            return;
+        }
+        *stored = Some(match result {
             Ok((timings, pin)) => {
-                if let Ok(mut publication_pin) = self.publication_pin.lock() {
-                    *publication_pin = Some(pin);
-                }
+                *lock_recovering(&self.publication_pin) = Some(pin);
                 Ok(timings)
             }
             Err(error) => Err(Arc::new(error)),
-        };
-        if let Ok(mut stored) = self.outcome.lock() {
-            *stored = Some(outcome);
-        }
+        });
+        drop(stored);
         self.completed.notify_waiters();
     }
 
     pub(crate) async fn wait(&self) -> FlightOutcome {
         loop {
             let notified = self.completed.notified();
-            match self.outcome.lock() {
-                Ok(outcome) => {
-                    if let Some(outcome) = outcome.as_ref() {
-                        return outcome.clone();
-                    }
-                }
-                Err(_) => {
-                    return Err(Arc::new(GitStorageError::Task(
-                        "verified Git pack flight lock is poisoned".into(),
-                    )));
-                }
+            if let Some(outcome) = lock_recovering(&self.outcome).as_ref() {
+                return outcome.clone();
             }
             notified.await;
         }
@@ -293,17 +292,12 @@ impl VerifiedPackFlight {
 
 impl Drop for VerifiedPackPin {
     fn drop(&mut self) {
-        let Ok(mut state) = self.cache.state.lock() else {
-            return;
-        };
-        match state.leases.get_mut(&self.path) {
-            Some(count) if *count > 1 => *count -= 1,
-            Some(_) => {
-                state.leases.remove(&self.path);
-            }
-            None => {}
+        let mut state = self.cache.lock_state();
+        // A leased entry is never removed, so it is always present here.
+        if let Some(entry) = state.entries.get_mut(&self.path) {
+            entry.leases = entry.leases.saturating_sub(1);
+            entry.last_used = SystemTime::now();
         }
-        state.last_used.insert(self.path.clone(), SystemTime::now());
     }
 }
 
@@ -338,9 +332,9 @@ fn cache_entries(root: &Path, state: &CacheState) -> Result<Vec<CacheEntry>, Git
                 _ => continue,
             };
             let last_used = state
-                .last_used
+                .entries
                 .get(&pack_path)
-                .copied()
+                .map(|entry| entry.last_used)
                 .or_else(|| metadata.modified().ok())
                 .unwrap_or(SystemTime::UNIX_EPOCH);
             let entry = grouped.entry(pack_path.clone()).or_insert(CacheEntry {
@@ -376,13 +370,7 @@ fn usage_for_entries(
                 .checked_add(1)
                 .ok_or_else(cache_size_overflow)?;
         }
-        if state
-            .leases
-            .get(&entry.pack_path)
-            .copied()
-            .unwrap_or_default()
-            > 0
-        {
+        if state.is_leased(&entry.pack_path) {
             usage.leased_bytes = usage
                 .leased_bytes
                 .checked_add(entry.size_bytes)
@@ -409,7 +397,7 @@ fn validate_existing(
             )));
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            state.verified_at.remove(path);
+            state.clear_verified_at(path);
             return Ok(false);
         }
         Err(error) => return Err(GitStorageError::Local(error)),
@@ -420,7 +408,7 @@ fn validate_existing(
             expected: expected_bytes,
             actual: metadata.len(),
         })
-    } else if state.verified_at.get(path) != Some(&modified) {
+    } else if state.entries.get(path).and_then(|entry| entry.verified_at) != Some(modified) {
         let mut file = fs::File::open(path).map_err(GitStorageError::Local)?;
         let mut digest = Sha256::new();
         let mut buffer = [0_u8; 64 * 1024];
@@ -440,15 +428,15 @@ fn validate_existing(
         None
     };
     if let Some(error) = mismatch {
-        state.verified_at.remove(path);
-        if state.leases.get(path).copied().unwrap_or_default() > 0 {
+        state.clear_verified_at(path);
+        if state.is_leased(path) {
             return Err(error);
         }
         remove_cache_artifacts(path)?;
-        state.last_used.remove(path);
+        state.entries.remove(path);
         return Ok(false);
     }
-    state.verified_at.insert(path.to_path_buf(), modified);
+    state.entry_mut(path).verified_at = Some(modified);
     Ok(true)
 }
 
