@@ -121,7 +121,9 @@ impl PreparationProgress {
                         let _guard = render_lock
                             .lock()
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
-                        render_status(&stage, frame, started.elapsed());
+                        if !paused.load(Ordering::Acquire) {
+                            render_status(&stage, frame, started.elapsed());
+                        }
                     }
                     frame = frame.wrapping_add(1);
                     thread::sleep(Duration::from_millis(100));
@@ -196,24 +198,25 @@ impl PreparationProgress {
                 .render_lock
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            render_status(&stage, 0, self.started.elapsed());
+            if !self.paused.load(Ordering::Acquire) {
+                render_status(&stage, 0, self.started.elapsed());
+            }
         }
         Ok(())
     }
 
     pub fn pause(&self) -> ProgressPause<'_> {
         self.paused.store(true, Ordering::Release);
-        let guard = self
+        let _guard = self
             .render_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if self.rendered {
             clear_status();
         }
-        ProgressPause {
-            progress: self,
-            _guard: guard,
-        }
+        // Synchronize the last frame, then release the lock so a long browser login
+        // cannot prevent the cancellation supervisor from clearing and exiting.
+        ProgressPause { progress: self }
     }
 
     pub fn finish(&mut self) -> anyhow::Result<()> {
@@ -253,7 +256,6 @@ impl Drop for PreparationProgress {
 
 pub struct ProgressPause<'a> {
     progress: &'a PreparationProgress,
-    _guard: std::sync::MutexGuard<'a, ()>,
 }
 
 impl Drop for ProgressPause<'_> {

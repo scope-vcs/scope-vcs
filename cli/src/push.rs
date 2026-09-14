@@ -12,7 +12,7 @@ use crate::{
         scope_git_origin, scope_remote_head_oid, warn_if_dirty_working_tree,
     },
     git_transport::{GitAccess, ScopeRemote, select_scope_push_remote},
-    login::session_from_cache_or_browser,
+    login::session_from_cache_or_browser_with_progress,
     progress::PreparationProgress,
     repo_config::{
         ensure_scope_repo_config_exists, load_worktree_scope_repo_config,
@@ -58,7 +58,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     let remote = select_scope_push_remote(&git_repo, &api_url, explicit_remote)?;
     let target = load_scope_remote(&git_repo, &api_url, &remote)?;
     let client = http_client()?;
-    let session = session_from_cache_or_browser(&client, &api_url)?;
+    let session = session_from_cache_or_browser_with_progress(&client, &api_url, &progress)?;
     progress.set_stage("Loading repository configuration…")?;
     let api = ApiSession::new(&client, &api_url, &session.token);
     let push_context = get_repo_config(api, &target.owner, &target.repo)?;

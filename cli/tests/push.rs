@@ -172,30 +172,7 @@ fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
     let remote = format!("{}/git/permissioned/owner/repo", server.api_url);
     run_git(dir.path(), ["remote", "add", "scope", &remote]);
 
-    let mut master_fd = 0;
-    let mut slave_fd = 0;
-    let terminal_size = libc::winsize {
-        ws_row: 24,
-        ws_col: 80,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-    // SAFETY: openpty initializes both file descriptors, which are immediately owned by File.
-    assert_eq!(
-        unsafe {
-            libc::openpty(
-                &mut master_fd,
-                &mut slave_fd,
-                std::ptr::null_mut(),
-                std::ptr::null(),
-                &terminal_size,
-            )
-        },
-        0
-    );
-    // SAFETY: openpty returned two new, valid, owned descriptors.
-    let mut terminal_output = unsafe { File::from_raw_fd(master_fd) };
-    let terminal = unsafe { File::from_raw_fd(slave_fd) };
+    let (mut terminal_output, terminal) = test_terminal();
     let mut command = server.command(dir.path());
     command
         .args(["push", "--main", "--no-review"])
@@ -244,4 +221,117 @@ fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
         String::from_utf8_lossy(&transcript)
     );
     assert!(transcript.ends_with(b"\r\x1b[2K"), "{transcript:?}");
+}
+
+#[cfg(unix)]
+fn test_terminal() -> (File, File) {
+    let mut master_fd = 0;
+    let mut slave_fd = 0;
+    let terminal_size = libc::winsize {
+        ws_row: 24,
+        ws_col: 80,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    // SAFETY: openpty initializes both file descriptors, which are immediately owned by File.
+    assert_eq!(
+        unsafe {
+            libc::openpty(
+                &mut master_fd,
+                &mut slave_fd,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                &terminal_size,
+            )
+        },
+        0
+    );
+    // SAFETY: openpty returned two new, valid, owned descriptors.
+    let terminal_output = unsafe { File::from_raw_fd(master_fd) };
+    let terminal = unsafe { File::from_raw_fd(slave_fd) };
+    (terminal_output, terminal)
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn browser_login_instructions_remain_readable_and_cancellable() {
+    let dir = configured_repo("push-browser-progress");
+    let login_started = Arc::new(AtomicBool::new(false));
+    let server = TestServer::new(Router::new().route(
+        "/v1/cli/browser-login",
+        axum::routing::post({
+            let login_started = Arc::clone(&login_started);
+            move || {
+                login_started.store(true, Ordering::Release);
+                async {
+                    Json(serde_json::json!({
+                        "request_id": "browser-fixture",
+                        "request_secret": "fixture-only",
+                        "authorization_url": "http://127.0.0.1/sign-in-fixture",
+                        "expires_at_unix": std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 60,
+                    }))
+                }
+            }
+        }),
+    ));
+    let remote = format!("{}/git/permissioned/owner/repo", server.api_url);
+    run_git(dir.path(), ["remote", "add", "scope", &remote]);
+    let config = TempDir::new("push-browser-no-session");
+    let (mut output, terminal) = test_terminal();
+    let mut command = server.command(dir.path());
+    command
+        .args(["push", "--main"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("BROWSER", "/bin/true")
+        .stdin(terminal.try_clone().unwrap())
+        .stdout(terminal.try_clone().unwrap())
+        .stderr(terminal.try_clone().unwrap());
+    let mut child = command.spawn().unwrap();
+    drop(command);
+    drop(terminal);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !login_started.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Leave enough time for multiple animation frames while browser login waits.
+    std::thread::sleep(Duration::from_millis(700));
+    // SAFETY: child.id() is the live CLI subprocess created by this test.
+    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    if child.try_wait().unwrap().is_none() {
+        let _ = child.kill();
+        panic!("browser login pause prevented Ctrl+C cancellation");
+    }
+    assert_eq!(child.wait().unwrap().code(), Some(130));
+    let mut transcript = Vec::new();
+    let mut buffer = [0; 4096];
+    loop {
+        match output.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => transcript.extend_from_slice(&buffer[..count]),
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+            Err(error) => panic!("read terminal: {error}"),
+        }
+    }
+    let text = String::from_utf8_lossy(&transcript);
+    let instructions = text
+        .split("Opening browser to sign in:")
+        .nth(1)
+        .expect(&text);
+    assert!(
+        instructions.contains("http://127.0.0.1/sign-in-fixture\r\n"),
+        "{text}"
+    );
+    assert!(
+        instructions.contains("Waiting for browser confirmation..."),
+        "{text}"
+    );
+    assert!(
+        !instructions.contains("elapsed"),
+        "spinner overwrote login output: {text}"
+    );
 }
