@@ -1,4 +1,9 @@
 use super::*;
+use crate::progress::{CancellationToken, run_cancellable};
+use std::time::Duration;
+
+const GIT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const MAX_GIT_STDOUT_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn push_head_with_bearer(
     destination: &str,
@@ -83,6 +88,33 @@ pub fn fetch_scope_remote_with_bearer(
         "refresh Scope Git remote before push review",
         "refresh Scope Git remote before push review failed",
     )
+}
+
+pub fn fetch_scope_remote_with_bearer_cancellable(
+    repo: &GitRepo,
+    destination: &str,
+    remote: &str,
+    branch: &str,
+    bearer_token: &str,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<()> {
+    let plan = git_fetch_auth_plan(
+        destination,
+        remote,
+        branch,
+        bearer_token,
+        inherited_git_config_count(),
+    );
+    let mut command = git_command(plan, Some(&repo.root));
+    let output = run_cancellable(
+        &mut command,
+        None,
+        cancellation,
+        GIT_OPERATION_TIMEOUT,
+        MAX_GIT_STDOUT_BYTES,
+    )
+    .context("refresh Scope Git remote before push review")?;
+    finish_git_plan_output(output, "refresh Scope Git remote before push review failed")
 }
 
 pub fn git_push_ref_auth_plan(
@@ -218,6 +250,10 @@ fn run_git_plan_output(
     let output = git_command(plan, cwd)
         .output()
         .with_context(|| context.to_string())?;
+    finish_git_plan_output(output, failure)
+}
+
+fn finish_git_plan_output(output: Output, failure: &str) -> anyhow::Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();

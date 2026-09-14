@@ -1,7 +1,15 @@
 use super::*;
 use crate::git_repo::GitChangedPath;
 use crate::repo_config::default_scope_repo_config;
-use scope_domain::repo_config::{HistoryRewriteAction, HistoryRewriteRequest};
+use scope_domain::{
+    dependency_analysis::{
+        AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION, DependencyEdge, DependencyEdgeKind,
+        DependencyGap, StoredDependencyAnalysis,
+    },
+    repo_config::{
+        ConfigVisibility, HistoryRewriteAction, HistoryRewriteRequest, RepoConfigVisibilityRule,
+    },
+};
 
 fn state_with_mode(mode: ReviewMode) -> ReviewState {
     let tree = ReviewTree::from_paths(&["src/lib.rs".to_string(), "README.md".to_string()], &[]);
@@ -34,7 +42,12 @@ fn rename_and_copy_changes_show_destination_and_only_rename_deletes_source() {
 fn tree_path(row: &ReviewRow) -> Option<&str> {
     match row {
         ReviewRow::TreeNode { path, .. } => Some(path),
-        ReviewRow::ChangeSection { .. } | ReviewRow::ChangePath { .. } => None,
+        ReviewRow::DependencySummary(_)
+        | ReviewRow::DependencyFinding { .. }
+        | ReviewRow::DependencyGap(_)
+        | ReviewRow::DependencyCoverage { .. }
+        | ReviewRow::ChangeSection { .. }
+        | ReviewRow::ChangePath { .. } => None,
     }
 }
 
@@ -55,11 +68,12 @@ fn state_with_changes() -> ReviewState {
         &["src/new.rs".to_string(), "README.md".to_string()],
         &changed_paths,
     );
-    ReviewState::new_with_changed_paths(
+    ReviewState::build(
         tree,
         default_scope_repo_config(),
-        ReviewMode::Push,
+        ReviewMode::Standalone,
         &changed_paths,
+        DependencyReview::hidden(),
     )
 }
 
@@ -371,4 +385,221 @@ fn empty_tree_summary_uses_config_default() {
     assert_cached_visibility_matches_domain(&state);
     state.handle_input(ReviewInput::Toggle);
     assert_cached_visibility_matches_domain(&state);
+}
+
+fn dependency_config() -> RepoConfig {
+    let mut config = RepoConfig::with_default_visibility(ConfigVisibility::Public);
+    config.visibility.rules.push(RepoConfigVisibilityRule {
+        path: "/private/**".into(),
+        visibility: ConfigVisibility::Private,
+    });
+    config
+}
+
+fn dependency_analysis(
+    commit_oid: &str,
+    edges: Vec<DependencyEdge>,
+    gaps: Vec<DependencyGap>,
+    analyzed_files: Vec<&str>,
+    unsupported_files: Vec<&str>,
+) -> StoredDependencyAnalysis {
+    StoredDependencyAnalysis::from_output(
+        commit_oid,
+        AnalyzerOutput {
+            analyzer_version: DEPENDENCY_ANALYZER_VERSION.into(),
+            analyzed_files: analyzed_files.into_iter().map(str::to_string).collect(),
+            unsupported_files: unsupported_files.into_iter().map(str::to_string).collect(),
+            edges,
+            gaps,
+        },
+    )
+    .unwrap()
+}
+
+fn dependency_state() -> ReviewState {
+    let paths = ["public/a.ts", "public/b.ts", "private/secret.ts"].map(str::to_string);
+    ReviewState::new_push(
+        ReviewTree::from_paths(&paths, &[]),
+        dependency_config(),
+        &[],
+        "reviewed".into(),
+    )
+}
+
+#[test]
+fn dependency_results_preserve_pending_review_navigation_and_unsaved_config() {
+    let mut state = dependency_state();
+    state.handle_input(ReviewInput::Down);
+    state.handle_input(ReviewInput::Toggle);
+    state.handle_input(ReviewInput::Filter);
+    for character in "public".chars() {
+        state.handle_input(ReviewInput::Char(character));
+    }
+    state.handle_input(ReviewInput::Escape);
+    let cursor = state.cursor();
+    let config = state.config().clone();
+
+    state.complete_dependency_analysis(Ok(dependency_analysis(
+        "reviewed",
+        vec![],
+        vec![],
+        vec!["public/a.ts"],
+        vec![],
+    )));
+
+    assert_eq!(state.cursor(), cursor);
+    assert_eq!(state.filter(), "public");
+    assert_eq!(state.config(), &config);
+    assert!(state.is_dirty());
+}
+
+#[test]
+fn findings_recompute_from_cached_analysis_and_keep_selected_tree_path() {
+    let mut state = dependency_state();
+    state.complete_dependency_analysis(Ok(dependency_analysis(
+        "reviewed",
+        vec![DependencyEdge {
+            source_path: "public/a.ts".into(),
+            target_path: "private/secret.ts".into(),
+            kind: DependencyEdgeKind::Import,
+        }],
+        vec![],
+        vec!["public/a.ts", "private/secret.ts"],
+        vec![],
+    )));
+    state.handle_input(ReviewInput::Dependencies);
+    state.handle_input(ReviewInput::Toggle);
+    assert!(matches!(
+        state.visible_rows(0, usize::MAX)[1],
+        ReviewRow::DependencyFinding { .. }
+    ));
+
+    state.handle_input(ReviewInput::Down);
+    state.handle_input(ReviewInput::Right);
+    state.handle_input(ReviewInput::Toggle);
+    assert_eq!(
+        tree_path(&state.visible_rows(0, usize::MAX)[state.cursor()]),
+        Some("/private/secret.ts")
+    );
+
+    state.handle_input(ReviewInput::Toggle);
+    assert_eq!(
+        tree_path(&state.visible_rows(0, usize::MAX)[state.cursor()]),
+        Some("/private/secret.ts")
+    );
+    assert!(
+        state
+            .visible_rows(0, usize::MAX)
+            .iter()
+            .all(|row| !matches!(row, ReviewRow::DependencyFinding { .. }))
+    );
+    assert!(matches!(
+        &state.visible_rows(0, 1)[0],
+        ReviewRow::DependencySummary(summary)
+            if summary.label == "No public → private imports found"
+    ));
+}
+
+#[test]
+fn incomplete_result_keeps_known_findings_and_coverage_gaps() {
+    let mut state = dependency_state();
+    state.complete_dependency_analysis(Ok(dependency_analysis(
+        "reviewed",
+        vec![DependencyEdge {
+            source_path: "public/a.ts".into(),
+            target_path: "private/secret.ts".into(),
+            kind: DependencyEdgeKind::Import,
+        }],
+        vec![DependencyGap {
+            path: "public/b.ts".into(),
+            reason: "unresolved alias".into(),
+        }],
+        vec!["public/a.ts", "public/b.ts", "private/secret.ts"],
+        vec!["src/main.rs"],
+    )));
+    state.handle_input(ReviewInput::Dependencies);
+    state.handle_input(ReviewInput::Toggle);
+    let rows = state.visible_rows(0, usize::MAX);
+
+    assert!(matches!(
+        &rows[0],
+        ReviewRow::DependencySummary(summary)
+            if summary.label == "1 public file imports private files"
+                && summary.meta.as_deref() == Some("Check incomplete")
+    ));
+    assert!(
+        rows.iter()
+            .any(|row| matches!(row, ReviewRow::DependencyFinding { .. }))
+    );
+    assert!(rows.iter().any(|row| matches!(
+        row,
+        ReviewRow::DependencyGap(gap) if gap.path == "public/b.ts"
+    )));
+    assert!(rows.iter().any(|row| matches!(
+        row,
+        ReviewRow::DependencyCoverage {
+            analyzed_file_count: 3,
+            unsupported_file_count: 1,
+        }
+    )));
+}
+
+#[test]
+fn stale_unavailable_and_unsupported_results_are_explicit_and_advisory() {
+    let mut stale = dependency_state();
+    stale.complete_dependency_analysis(Ok(dependency_analysis(
+        "another-commit",
+        vec![],
+        vec![],
+        vec!["public/a.ts"],
+        vec![],
+    )));
+    assert!(matches!(
+        &stale.visible_rows(0, 1)[0],
+        ReviewRow::DependencySummary(summary)
+            if summary.label == "Dependency check unavailable"
+    ));
+    assert_eq!(
+        stale.handle_input(ReviewInput::ContinuePush),
+        ReviewStateAction::ContinuePush
+    );
+
+    let mut unavailable = dependency_state();
+    unavailable.complete_dependency_analysis(Err("analyzer failed".into()));
+    assert!(matches!(
+        &unavailable.visible_rows(0, 1)[0],
+        ReviewRow::DependencySummary(summary)
+            if summary.label == "Dependency check unavailable"
+    ));
+
+    let mut unsupported = dependency_state();
+    unsupported.complete_dependency_analysis(Ok(dependency_analysis(
+        "reviewed",
+        vec![],
+        vec![],
+        vec![],
+        vec!["src/main.rs"],
+    )));
+    assert!(matches!(
+        &unsupported.visible_rows(0, 1)[0],
+        ReviewRow::DependencySummary(summary)
+            if summary.label.contains("does not support")
+    ));
+
+    let mut unsupported_with_gap = dependency_state();
+    unsupported_with_gap.complete_dependency_analysis(Ok(dependency_analysis(
+        "reviewed",
+        vec![],
+        vec![DependencyGap {
+            path: ".".into(),
+            reason: "analyzer could not read the project configuration".into(),
+        }],
+        vec![],
+        vec!["src/main.rs"],
+    )));
+    assert!(matches!(
+        &unsupported_with_gap.visible_rows(0, 1)[0],
+        ReviewRow::DependencySummary(summary)
+            if summary.label == "Dependency check incomplete"
+    ));
 }

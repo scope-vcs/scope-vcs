@@ -320,6 +320,7 @@
         "Cargo.lock",
         "Cargo.toml",
         "Cross.toml",
+        "legal/third-party-dependency-analyzer.txt",
         "rust-toolchain.toml",
         "web/src/api/types.generated.ts"
       ],
@@ -327,6 +328,7 @@
         "api/",
         "cli/",
         "crates/",
+        "dependency-analyzer/",
         "dev/",
         "worker/"
       ]
@@ -336,13 +338,15 @@
         "cli/Cargo.lock",
         "cli/Cargo.toml",
         "Cross.toml",
+        "legal/third-party-dependency-analyzer.txt",
         "rust-toolchain.toml"
       ],
       "prefixes": [
         "cli/distribution/",
         "cli/src/",
         "crates/scope-api-contract/",
-        "crates/scope-domain/"
+        "crates/scope-domain/",
+        "dependency-analyzer/"
       ]
     }
   },

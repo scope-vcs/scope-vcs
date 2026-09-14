@@ -13,6 +13,7 @@ const execute = promisify(execFile);
 const windows = process.platform === 'win32';
 const executable = windows ? 'scope.exe' : 'scope';
 const binary = resolve(process.env.SCOPE_TEST_BINARY ?? `cli/target/release/${executable}`);
+const artifact = resolve(process.env.SCOPE_TEST_ARTIFACT ?? '');
 const service = join(dirname(binary), windows ? 'scope-cli-service.exe' : 'scope-cli-service');
 const configuration = JSON.parse(await readFile(new URL('./targets.json', import.meta.url), 'utf8'));
 const platform = { linux: 'linux', darwin: 'macos', win32: 'windows' }[process.platform];
@@ -39,7 +40,7 @@ async function waitForService(url, child) {
   throw new Error('installer service did not become ready');
 }
 
-test('native installer installs and updates on PATH, rejects bad checksums, and preserves installed binary', { timeout: 60_000 }, async (t) => {
+test('native installer installs the managed analyzer and preserves the bundle on failed updates', { timeout: 300_000 }, async (t) => {
   assert.ok(target, `No native distribution target for ${process.platform}/${process.arch}`);
   const workspace = await mkdtemp(join(tmpdir(), 'scope installer '));
   t.after(() => rm(workspace, { recursive: true, force: true }));
@@ -47,11 +48,13 @@ test('native installer installs and updates on PATH, rejects bad checksums, and 
   const installDir = join(workspace, 'user bin');
   await mkdir(artifacts);
   await mkdir(installDir);
-  const bytes = await readFile(binary);
-  const checksum = createHash('sha256').update(bytes).digest('hex');
+  assert.ok(process.env.SCOPE_TEST_ARTIFACT, 'SCOPE_TEST_ARTIFACT must name the packaged bundle');
+  const binaryBytes = await readFile(binary);
+  const artifactBytes = await readFile(artifact);
+  const checksum = createHash('sha256').update(artifactBytes).digest('hex');
   // Readiness requires the complete release manifest. Only the native artifact executes.
   for (const item of configuration.targets) {
-    await writeFile(join(artifacts, item.artifact), bytes);
+    await writeFile(join(artifacts, item.artifact), artifactBytes);
     await writeFile(join(artifacts, `${item.artifact}.sha256`), `${checksum}  ${item.artifact}\n`);
   }
   const port = await availablePort();
@@ -83,7 +86,7 @@ test('native installer installs and updates on PATH, rejects bad checksums, and 
   const env = { ...process.env, SCOPE_INSTALL_DIR: installDir };
   if (!windows) env.PATH = `${installDir}${delimiter}${process.env.PATH}`;
   async function install({ processOnly = false, competing = false } = {}) {
-    if (!windows) return execute('sh', [script], { env, timeout: 15_000 });
+    if (!windows) return execute('sh', [script], { env, timeout: 60_000 });
     // Verify the installer changes the current PowerShell PATH, then restore the
     // runner's persisted user PATH even when installation fails.
     return execute('pwsh', ['-NoProfile', '-Command', `
@@ -120,36 +123,66 @@ test('native installer installs and updates on PATH, rejects bad checksums, and 
       } finally {
         [Environment]::SetEnvironmentVariable('Path', $previousUserPath, 'User')
       }
-    `], { env: { ...env, SCOPE_TEST_INSTALL_SCRIPT: script, SCOPE_TEST_PROCESS_ONLY: String(processOnly), SCOPE_TEST_COMPETING: String(competing), SCOPE_TEST_COMPETING_DIR: join(workspace, 'competing bin') }, timeout: 15_000 });
+    `], { env: { ...env, SCOPE_TEST_INSTALL_SCRIPT: script, SCOPE_TEST_PROCESS_ONLY: String(processOnly), SCOPE_TEST_COMPETING: String(competing), SCOPE_TEST_COMPETING_DIR: join(workspace, 'competing bin') }, timeout: 60_000 });
   }
 
   await install();
-  assert.deepEqual(await readFile(destination), bytes);
   assert.match((await execute(destination, ['--version'])).stdout, /^scope .+build .+protocol /);
+  const installedChecksum = createHash('sha256').update(await readFile(destination)).digest('hex');
   if (!windows) {
     const found = await execute('sh', ['-c', 'command -v scope'], { env });
     assert.equal(found.stdout.trim(), destination);
   }
 
+  const runtime = join(installDir, 'scope-runtime');
+  const managedNode = join(runtime, windows ? 'node.exe' : 'node');
+  const analyzer = join(runtime, 'dependency-analyzer', 'analyze.mjs');
+  const fixture = resolve('dependency-analyzer/test/fixtures/static');
+  const analysis = await execute(managedNode, [analyzer, fixture], {
+    env: { ...process.env, PATH: installDir },
+  });
+  const result = JSON.parse(analysis.stdout);
+  assert.equal(result.analyzer_version, 'dependency-cruiser@18.2.0+scope-1');
+  assert.ok(result.edges.some(({ source_path, target_path }) =>
+    source_path === 'src/public/direct.ts' && target_path === 'src/private/pricing.ts'));
+
   if (windows) {
     await install({ processOnly: true });
     await mkdir(join(workspace, 'competing bin'));
-    await writeFile(join(workspace, 'competing bin', executable), bytes);
+    await writeFile(join(workspace, 'competing bin', executable), binaryBytes);
     await install({ competing: true });
   }
 
   // An existing installation must be replaced rather than skipped.
   await writeFile(destination, 'old installed version');
   await install();
-  assert.deepEqual(await readFile(destination), bytes);
+  assert.equal(createHash('sha256').update(await readFile(destination)).digest('hex'), installedChecksum);
 
   await writeFile(join(artifacts, target.artifact), 'corrupted download');
   await assert.rejects(install(), (error) => {
     assert.match(`${error.stdout}\n${error.stderr}`, /checksum verification failed/);
     return true;
   });
-  assert.deepEqual(await readFile(destination), bytes);
+  assert.equal(createHash('sha256').update(await readFile(destination)).digest('hex'), installedChecksum);
   assert.match((await execute(destination, ['--version'])).stdout, /^scope /);
+
+  const incompleteBundle = join(workspace, 'incomplete bundle');
+  await mkdir(incompleteBundle);
+  await writeFile(join(incompleteBundle, executable), binaryBytes);
+  await execute('tar', [
+    '-czf', join(artifacts, target.artifact), '-C', incompleteBundle, '.',
+  ]);
+  const incompleteBytes = await readFile(join(artifacts, target.artifact));
+  await writeFile(
+    join(artifacts, `${target.artifact}.sha256`),
+    `${createHash('sha256').update(incompleteBytes).digest('hex')}  ${target.artifact}\n`,
+  );
+  await assert.rejects(install());
+  assert.equal(createHash('sha256').update(await readFile(destination)).digest('hex'), installedChecksum);
+  assert.equal(
+    (await execute(managedNode, [analyzer, '--version'])).stdout.trim(),
+    'dependency-cruiser@18.2.0+scope-1',
+  );
 
   if (!windows) {
     await assert.rejects(execute('sh', [script], {

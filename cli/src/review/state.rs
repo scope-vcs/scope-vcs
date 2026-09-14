@@ -1,13 +1,17 @@
 use super::{
+    dependencies::{DependencyReview, DependencySummary},
     policy::{rule_label, toggle_node_visibility, tree_visibilities},
     tree::{ReviewNodeKind, ReviewTree},
 };
 use crate::git_repo::GitChangedPath;
 use scope_domain::{
+    dependency_analysis::DependencyGap,
     repo_config::{HistoryRewriteAction, RepoConfig},
     repo_visibility::ReviewVisibility,
 };
 use std::collections::BTreeSet;
+
+mod dependencies;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReviewMode {
@@ -23,6 +27,10 @@ pub enum ChangeListKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ReviewItem {
+    DependencySummary,
+    DependencyFinding(usize),
+    DependencyGap(usize),
+    DependencyCoverage,
     ChangeSection(ChangeListKind),
     ChangePath(ChangeListKind, usize),
     TreeNode(usize),
@@ -45,10 +53,29 @@ pub struct ReviewState {
     editing_filter: bool,
     message: String,
     mode: ReviewMode,
+    dependencies: DependencyReview,
+    dependency_path_side: DependencyPathSide,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DependencyPathSide {
+    PublicSource,
+    PrivateTarget,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReviewRow {
+    DependencySummary(DependencySummary),
+    DependencyFinding {
+        source_path: String,
+        target_path: String,
+        selected_side: DependencyPathSide,
+    },
+    DependencyGap(DependencyGap),
+    DependencyCoverage {
+        analyzed_file_count: usize,
+        unsupported_file_count: usize,
+    },
     ChangeSection {
         kind: ChangeListKind,
         count: usize,
@@ -83,6 +110,8 @@ pub enum ReviewInput {
     Quit,
     Filter,
     Help,
+    Dependencies,
+    Cancel,
     Escape,
     Backspace,
     Char(char),
@@ -99,14 +128,30 @@ pub enum ReviewStateAction {
 
 impl ReviewState {
     pub fn new(tree: ReviewTree, config: RepoConfig, mode: ReviewMode) -> Self {
-        Self::new_with_changed_paths(tree, config, mode, &[])
+        Self::build(tree, config, mode, &[], DependencyReview::hidden())
     }
 
-    pub fn new_with_changed_paths(
+    pub fn new_push(
+        tree: ReviewTree,
+        config: RepoConfig,
+        changed_paths: &[GitChangedPath],
+        reviewed_head_oid: String,
+    ) -> Self {
+        Self::build(
+            tree,
+            config,
+            ReviewMode::Push,
+            changed_paths,
+            DependencyReview::pending(reviewed_head_oid),
+        )
+    }
+
+    fn build(
         tree: ReviewTree,
         config: RepoConfig,
         mode: ReviewMode,
         changed_paths: &[GitChangedPath],
+        dependencies: DependencyReview,
     ) -> Self {
         let mut expanded_tree_nodes = BTreeSet::new();
         expanded_tree_nodes.insert(tree.root_id());
@@ -136,6 +181,8 @@ impl ReviewState {
             editing_filter: false,
             message,
             mode,
+            dependencies,
+            dependency_path_side: DependencyPathSide::PublicSource,
         };
         state.rebuild_visible_items();
         state.move_cursor_to_item(ReviewItem::TreeNode(state.tree.root_id()));
@@ -222,6 +269,9 @@ impl ReviewState {
     }
 
     pub fn handle_input(&mut self, input: ReviewInput) -> ReviewStateAction {
+        if input == ReviewInput::Cancel {
+            return ReviewStateAction::Cancel;
+        }
         if self.editing_filter {
             return self.handle_filter_input(input);
         }
@@ -259,10 +309,17 @@ impl ReviewState {
             }
             ReviewInput::Help => {
                 self.message =
-                    "Arrows navigate/expand. Space toggles visibility or lists. / filters."
+                    "Arrows navigate/expand. Space toggles or opens. D focuses dependencies."
                         .to_string();
             }
-            ReviewInput::ContinuePush | ReviewInput::Backspace | ReviewInput::Char(_) => {}
+            ReviewInput::Dependencies if self.dependencies.is_visible() => {
+                self.move_cursor_to_item(ReviewItem::DependencySummary);
+            }
+            ReviewInput::ContinuePush
+            | ReviewInput::Dependencies
+            | ReviewInput::Cancel
+            | ReviewInput::Backspace
+            | ReviewInput::Char(_) => {}
         }
         ReviewStateAction::None
     }
@@ -305,6 +362,21 @@ impl ReviewState {
             return;
         };
         match item {
+            ReviewItem::DependencySummary => {
+                if self.dependencies.collapse() {
+                    self.rebuild_visible_items();
+                }
+            }
+            ReviewItem::DependencyFinding(_) => {
+                if self.dependency_path_side == DependencyPathSide::PrivateTarget {
+                    self.dependency_path_side = DependencyPathSide::PublicSource;
+                } else {
+                    self.move_cursor_to_item(ReviewItem::DependencySummary);
+                }
+            }
+            ReviewItem::DependencyGap(_) | ReviewItem::DependencyCoverage => {
+                self.move_cursor_to_item(ReviewItem::DependencySummary);
+            }
             ReviewItem::ChangeSection(kind) => {
                 if self.expanded_change_lists.remove(&kind) {
                     self.rebuild_visible_items();
@@ -338,6 +410,25 @@ impl ReviewState {
             return;
         };
         match item {
+            ReviewItem::DependencySummary => {
+                if !self.dependencies.expanded() {
+                    self.dependencies.expand();
+                    self.rebuild_visible_items();
+                } else if matches!(
+                    self.visible_items.get(self.cursor + 1),
+                    Some(
+                        ReviewItem::DependencyFinding(_)
+                            | ReviewItem::DependencyGap(_)
+                            | ReviewItem::DependencyCoverage
+                    )
+                ) {
+                    self.cursor += 1;
+                }
+            }
+            ReviewItem::DependencyFinding(_) => {
+                self.dependency_path_side = DependencyPathSide::PrivateTarget;
+            }
+            ReviewItem::DependencyGap(_) | ReviewItem::DependencyCoverage => {}
             ReviewItem::ChangeSection(kind) => self.expand_change_list_or_move_to_first_path(kind),
             ReviewItem::ChangePath(_, _) => {}
             ReviewItem::TreeNode(id) => self.expand_tree_node_or_move_to_first_child(id),
@@ -375,6 +466,35 @@ impl ReviewState {
             return;
         };
         match item {
+            ReviewItem::DependencySummary => {
+                self.dependencies.toggle_expanded();
+                self.rebuild_visible_items();
+            }
+            ReviewItem::DependencyFinding(index) => {
+                let path = self.dependencies.report().and_then(|report| {
+                    report
+                        .findings
+                        .get(index)
+                        .map(|finding| match self.dependency_path_side {
+                            DependencyPathSide::PublicSource => finding.source_path.clone(),
+                            DependencyPathSide::PrivateTarget => finding.target_path.clone(),
+                        })
+                });
+                if let Some(path) = path {
+                    self.jump_to_path(&path);
+                }
+            }
+            ReviewItem::DependencyGap(index) => {
+                let path = self
+                    .dependencies
+                    .report()
+                    .and_then(|report| report.gaps.get(index))
+                    .map(|gap| gap.path.clone());
+                if let Some(path) = path.filter(|path| path != ".") {
+                    self.jump_to_path(&path);
+                }
+            }
+            ReviewItem::DependencyCoverage => {}
             ReviewItem::ChangeSection(kind) => {
                 if !self.expanded_change_lists.remove(&kind) {
                     self.expanded_change_lists.insert(kind);
@@ -389,6 +509,9 @@ impl ReviewState {
                 let result = toggle_node_visibility(&mut self.config, &self.tree, id);
                 if result.changed {
                     self.visibilities = tree_visibilities(&self.config, &self.tree);
+                    self.dependencies.reevaluate(&self.config);
+                    self.rebuild_visible_items();
+                    self.move_cursor_to_item(ReviewItem::TreeNode(id));
                 }
                 self.message = result.message;
             }
@@ -420,6 +543,7 @@ impl ReviewState {
 
     fn rebuild_visible_items(&mut self) {
         let mut items = Vec::new();
+        self.collect_dependency_items(&mut items);
         self.collect_change_items(ChangeListKind::Added, &mut items);
         self.collect_change_items(ChangeListKind::Deleted, &mut items);
         self.collect_visible_tree_items(self.tree.root_id(), &mut items);
@@ -467,6 +591,40 @@ impl ReviewState {
 
     fn row_for_item(&self, item: ReviewItem) -> ReviewRow {
         match item {
+            ReviewItem::DependencySummary => ReviewRow::DependencySummary(
+                self.dependencies
+                    .summary()
+                    .expect("dependency summary exists for a visible dependency item"),
+            ),
+            ReviewItem::DependencyFinding(index) => {
+                let finding = &self
+                    .dependencies
+                    .report()
+                    .expect("findings only exist for a dependency report")
+                    .findings[index];
+                ReviewRow::DependencyFinding {
+                    source_path: finding.source_path.clone(),
+                    target_path: finding.target_path.clone(),
+                    selected_side: self.dependency_path_side,
+                }
+            }
+            ReviewItem::DependencyGap(index) => ReviewRow::DependencyGap(
+                self.dependencies
+                    .report()
+                    .expect("gaps only exist for a dependency report")
+                    .gaps[index]
+                    .clone(),
+            ),
+            ReviewItem::DependencyCoverage => {
+                let report = self
+                    .dependencies
+                    .report()
+                    .expect("coverage only exists for a dependency report");
+                ReviewRow::DependencyCoverage {
+                    analyzed_file_count: report.analyzed_file_count,
+                    unsupported_file_count: report.unsupported_files.len(),
+                }
+            }
             ReviewItem::ChangeSection(kind) => ReviewRow::ChangeSection {
                 kind,
                 count: self.paths_for(kind).len(),

@@ -7,11 +7,13 @@ use crate::{
     },
     git_repo::{
         GitRepo, changed_paths_since_scope_base_at_commit, ensure_git_repo_ready,
-        fetch_scope_remote_with_bearer, git_remote_push_url, head_oid, mark_scope_remote_pushed,
-        push_head_with_bearer, scope_git_origin, scope_remote_head_oid, warn_if_dirty_working_tree,
+        fetch_scope_remote_with_bearer, fetch_scope_remote_with_bearer_cancellable,
+        git_remote_push_url, head_oid, mark_scope_remote_pushed, push_head_with_bearer,
+        scope_git_origin, scope_remote_head_oid, warn_if_dirty_working_tree,
     },
     git_transport::{GitAccess, ScopeRemote, select_scope_push_remote},
-    login::session_from_cache_or_browser,
+    login::session_from_cache_or_browser_with_progress,
+    progress::PreparationProgress,
     repo_config::{
         ensure_scope_repo_config_exists, load_worktree_scope_repo_config,
         load_worktree_scope_repo_config_base_hash, mark_worktree_scope_repo_config_synced,
@@ -36,24 +38,31 @@ pub const DEFAULT_SCOPE_BRANCH: &str = "main";
 const PUSH_EVALUATION_MAX_POLLS: usize = 300;
 
 pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow::Result<()> {
+    let mut progress = PreparationProgress::start("Checking repository…")?;
     let git_repo = ensure_git_repo_ready("scope push")?;
     let reviewed_head_oid = head_oid(&git_repo)?;
     ensure_repo_rules_ready_for_push(&git_repo.root, &reviewed_head_oid)?;
     let config_created = ensure_scope_repo_config_exists(&git_repo.root)?;
     let config_path = repo_config_path(&git_repo.root)?;
     let mut config = load_worktree_scope_repo_config(&git_repo.root)?;
-    warn_if_dirty_working_tree(&git_repo)?;
+    {
+        let _pause = progress.pause();
+        warn_if_dirty_working_tree(&git_repo)?;
+    }
     if !no_review {
         ensure_review_terminal_available("scope push review")?;
     }
 
+    progress.set_stage("Verifying login…")?;
     let api_url = api_url()?;
     let remote = select_scope_push_remote(&git_repo, &api_url, explicit_remote)?;
     let target = load_scope_remote(&git_repo, &api_url, &remote)?;
     let client = http_client()?;
-    let session = session_from_cache_or_browser(&client, &api_url)?;
+    let session = session_from_cache_or_browser_with_progress(&client, &api_url, &progress)?;
+    progress.set_stage("Loading repository configuration…")?;
     let api = ApiSession::new(&client, &api_url, &session.token);
     let push_context = get_repo_config(api, &target.owner, &target.repo)?;
+    progress.cancellation().check()?;
     let access = scope_domain::repository::access::RepositoryAccess {
         actor: push_context.access.actor.into(),
         can_read_private_files: push_context.access.can_read_private_files,
@@ -82,6 +91,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     if config_created {
         write_worktree_scope_repo_config_with_base(&git_repo.root, &push_context.config)?;
         config = push_context.config.clone();
+        let _pause = progress.pause();
         eprintln!("Created {}", config_path.display());
     } else {
         let local_config_hash = repo_config_fingerprint(&config)?;
@@ -93,6 +103,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
             Ok(hash) if hash == local_config_hash => {
                 write_worktree_scope_repo_config_with_base(&git_repo.root, &push_context.config)?;
                 config = push_context.config.clone();
+                let _pause = progress.pause();
                 eprintln!(
                     "Scope repo config changed; refreshed {}",
                     config_path.display()
@@ -113,14 +124,17 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     if push_context.lifecycle_state == RepoLifecycleState::Ready
         && local_remote_head.as_deref() != push_context.head_oid.as_deref()
     {
-        fetch_scope_remote_with_bearer(
+        progress.set_stage("Refreshing Scope main…")?;
+        fetch_scope_remote_with_bearer_cancellable(
             &git_repo,
             &target.permissioned_url,
             &remote,
             DEFAULT_SCOPE_BRANCH,
             &session.token,
+            &progress.cancellation(),
         )?;
     }
+    progress.set_stage("Preparing review…")?;
     let reviewed_base_oid = if no_review {
         None
     } else if push_context.lifecycle_state == RepoLifecycleState::Ready {
@@ -138,7 +152,9 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
             review_base_oid.as_deref(),
             &reviewed_head_oid,
         )?;
-        config = run_push_review(&git_repo, &reviewed_head_oid, &changed_paths)?;
+        config = run_push_review(&git_repo, &reviewed_head_oid, &changed_paths, &mut progress)?;
+    } else {
+        progress.finish()?;
     }
     let base_config_hash = load_worktree_scope_repo_config_base_hash(&git_repo.root)?;
     let intent = create_push_intent(

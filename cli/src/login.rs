@@ -116,7 +116,19 @@ pub fn session_from_cache_or_browser(
     client: &Client,
     api_url: &str,
 ) -> anyhow::Result<AuthenticatedSession> {
-    session_from_cache_or_login(client, api_url, local_browser_login)
+    session_from_cache_or_login(client, api_url, |client, api_url| {
+        local_browser_login(client, api_url, None)
+    })
+}
+
+pub fn session_from_cache_or_browser_with_progress(
+    client: &Client,
+    api_url: &str,
+    progress: &crate::progress::PreparationProgress,
+) -> anyhow::Result<AuthenticatedSession> {
+    session_from_cache_or_login(client, api_url, |client, api_url| {
+        local_browser_login(client, api_url, Some(progress))
+    })
 }
 
 fn session_from_cache_or_login(
@@ -135,7 +147,11 @@ fn session_from_cache_or_login(
     Ok(session)
 }
 
-fn local_browser_login(client: &Client, api_url: &str) -> anyhow::Result<AuthenticatedSession> {
+fn local_browser_login(
+    client: &Client,
+    api_url: &str,
+    progress: Option<&crate::progress::PreparationProgress>,
+) -> anyhow::Result<AuthenticatedSession> {
     let listener = TcpListener::bind("127.0.0.1:0").context("bind local Scope login callback")?;
     listener
         .set_nonblocking(true)
@@ -152,6 +168,7 @@ fn local_browser_login(client: &Client, api_url: &str) -> anyhow::Result<Authent
         .context("start browser login")?;
     let start: BrowserLoginStartResponse = decode_json_response(response, "start browser login")?;
 
+    let _pause = progress.map(crate::progress::PreparationProgress::pause);
     eprintln!("Opening browser to sign in:");
     eprintln!("{}", start.authorization_url);
     if let Err(error) = webbrowser::open(&start.authorization_url) {
