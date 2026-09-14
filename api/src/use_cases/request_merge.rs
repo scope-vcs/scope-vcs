@@ -161,7 +161,7 @@ async fn merge_request_inner(
         }
     };
     let mutation =
-        persist_prepared_merge(state, &command, merged_event_id, now_unix, prepared).await?;
+        persist_prepared_merge(state, command, merged_event_id, now_unix, prepared).await?;
 
     state.product_analytics.capture(analytics_event);
     state

@@ -48,7 +48,6 @@ pub(crate) async fn complete_cli_device_login(
         .complete_device_login(&user_code, &user, unix_now()?)
         .await
     {
-        let error = ApiError::from(error);
         capture_operation_failure(
             &state,
             OperationFailureContext {

@@ -58,7 +58,6 @@ pub(crate) async fn complete_cli_browser_login(
     {
         Ok(callback_url) => callback_url,
         Err(error) => {
-            let error = ApiError::from(error);
             capture_operation_failure(
                 &state,
                 OperationFailureContext {
