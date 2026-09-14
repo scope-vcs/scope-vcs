@@ -43,11 +43,13 @@ const requestRoute = getRouteApi('/$owner/$repo/requests/$requestId')
 const loadChangesPage = createServerFn({ method: 'GET' })
   .validator(parseLoadRequestRevisionsInput)
   .handler(async ({ data }) => {
-    const { userId } = await auth()
-    const revisions = await loadRequestRevisionsForRequest(data).catch((error: unknown) => {
-      console.error('Loading request revisions failed', error)
-      return null
-    })
+    const [{ userId }, revisions] = await Promise.all([
+      auth(),
+      loadRequestRevisionsForRequest(data).catch((error: unknown) => {
+        console.error('Loading request revisions failed', error)
+        return null
+      }),
+    ])
     const query = revisions ? selectedDiscussionReferenceQuery(data, revisions) : null
     const page = query
       ? await loadDiscussionReferencePage(query.input, loadRequestDiscussionsForRequest)
