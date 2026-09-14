@@ -3,7 +3,10 @@ use super::{
     GitStorageError, MultipartError, StagedGitSegment, VerifiedGitPack, is_hex_id_32, object_key,
     random_hex_id, sync_directory,
 };
-use crate::envelope::{DecryptedFrame, EnvelopeReader};
+use crate::{
+    cache::{VerifiedPackCache, VerifiedPackFlight, VerifiedPackPin},
+    envelope::{DecryptedFrame, EnvelopeReader},
+};
 use scope_domain::repository::{RepositoryIncarnation, git::GitSegmentRef};
 use sha2::{Digest, Sha256};
 use std::{
@@ -25,14 +28,12 @@ impl GitSegmentStore {
         validate_restore_identity(incarnation.repository_id(), segment)?;
         let started = Instant::now();
         let path = self.verified_pack_path(incarnation, segment);
-        let local_timings = || GitSegmentRestoreTimings {
-            total: started.elapsed(),
-            plaintext_bytes: segment.plaintext_bytes,
-            verified_frames: 0,
-            source: GitSegmentRestoreSource::Local,
-        };
         if let Some(pack) = self
-            .lease_verified_pack(&path, segment, local_timings())
+            .lease_verified_pack(
+                &path,
+                segment,
+                local_timings(started, segment.plaintext_bytes),
+            )
             .await?
         {
             return Ok(pack);
@@ -43,69 +44,17 @@ impl GitSegmentStore {
             let store = self.clone();
             let incarnation = incarnation.clone();
             let segment = segment.clone();
-            let path = path.clone();
-            let completing_flight = Arc::clone(&flight);
-            let cache = Arc::clone(&self.verified_cache);
+            let guard = HydrationFlight {
+                cache: Arc::clone(&self.verified_cache),
+                path: path.clone(),
+                flight: Arc::clone(&flight),
+            };
             tokio::spawn(async move {
-                let flight_path = path.clone();
-                let repository_id = incarnation.repository_id().to_string();
-                let incarnation_id = incarnation.incarnation_id().to_string();
-                let segment_id = segment.segment_id.clone();
-                let plaintext_bytes = segment.plaintext_bytes;
-                let hydration = tokio::spawn(async move {
-                    let _permit = store.hydration_permits.acquire().await.map_err(|_| {
-                        GitStorageError::Task(
-                            "verified Git pack hydration limit is unavailable".into(),
-                        )
-                    })?;
-                    let hydration_started = Instant::now();
-                    // A prior flight may have finished between our first miss
-                    // and registration. Recheck after becoming the leader.
-                    if let Some(pack) = store
-                        .lease_verified_pack(
-                            &path,
-                            &segment,
-                            GitSegmentRestoreTimings {
-                                total: started.elapsed(),
-                                plaintext_bytes,
-                                verified_frames: 0,
-                                source: GitSegmentRestoreSource::Local,
-                            },
-                        )
-                        .await?
-                    {
-                        return Ok(pack.into_publication());
-                    }
-                    tracing::info!(
-                        repository_id,
-                        repository_incarnation_id = incarnation_id,
-                        segment_id,
-                        source = ?GitSegmentRestoreSource::Remote,
-                        bytes = plaintext_bytes,
-                        "verified Git pack hydration started"
-                    );
-                    let result = store
-                        .hydrate_verified_pack(&incarnation, &segment, path)
-                        .await;
-                    tracing::info!(
-                        repository_id,
-                        repository_incarnation_id = incarnation_id,
-                        segment_id,
-                        source = ?GitSegmentRestoreSource::Remote,
-                        duration_us = hydration_started.elapsed().as_micros(),
-                        bytes = plaintext_bytes,
-                        success = result.is_ok(),
-                        "verified Git pack hydration completed"
-                    );
-                    result
-                });
-                let result = hydration.await.unwrap_or_else(|error| {
-                    Err(GitStorageError::Task(format!(
-                        "verified Git pack hydration task failed: {error}"
-                    )))
-                });
-                completing_flight.complete(result);
-                cache.finish_flight(&flight_path, &completing_flight);
+                let path = guard.path.clone();
+                let result = store
+                    .lead_hydration(&incarnation, &segment, path, started)
+                    .await;
+                guard.complete(result);
             });
         }
 
@@ -120,6 +69,51 @@ impl GitSegmentStore {
                     "verified Git pack disappeared while hydration was leased".into(),
                 )
             })
+    }
+
+    async fn lead_hydration(
+        &self,
+        incarnation: &RepositoryIncarnation,
+        segment: &GitSegmentRef,
+        path: PathBuf,
+        started: Instant,
+    ) -> Result<(GitSegmentRestoreTimings, VerifiedPackPin), GitStorageError> {
+        let _permit = self.hydration_permits.acquire().await.map_err(|_| {
+            GitStorageError::Task("verified Git pack hydration limit is unavailable".into())
+        })?;
+        let hydration_started = Instant::now();
+        let plaintext_bytes = segment.plaintext_bytes;
+        // A prior flight may have finished between our first miss
+        // and registration. Recheck after becoming the leader.
+        if let Some(pack) = self
+            .lease_verified_pack(&path, segment, local_timings(started, plaintext_bytes))
+            .await?
+        {
+            return Ok(pack.into_publication());
+        }
+        let repository_id = incarnation.repository_id();
+        let incarnation_id = incarnation.incarnation_id();
+        let segment_id = segment.segment_id.as_str();
+        tracing::info!(
+            repository_id,
+            repository_incarnation_id = incarnation_id,
+            segment_id,
+            source = ?GitSegmentRestoreSource::Remote,
+            bytes = plaintext_bytes,
+            "verified Git pack hydration started"
+        );
+        let result = self.hydrate_verified_pack(incarnation, segment, path).await;
+        tracing::info!(
+            repository_id,
+            repository_incarnation_id = incarnation_id,
+            segment_id,
+            source = ?GitSegmentRestoreSource::Remote,
+            duration_us = hydration_started.elapsed().as_micros(),
+            bytes = plaintext_bytes,
+            success = result.is_ok(),
+            "verified Git pack hydration completed"
+        );
+        result
     }
 
     async fn lease_verified_pack(
@@ -143,7 +137,7 @@ impl GitSegmentStore {
         source: &Path,
         path: &Path,
         segment: &GitSegmentRef,
-    ) -> Result<crate::cache::VerifiedPackPin, GitStorageError> {
+    ) -> Result<VerifiedPackPin, GitStorageError> {
         let cache = Arc::clone(&self.verified_cache);
         let source = source.to_path_buf();
         let path = path.to_path_buf();
@@ -181,12 +175,7 @@ impl GitSegmentStore {
             .map_err(GitStorageError::Local)?;
         Ok(VerifiedGitPack::new(
             path,
-            GitSegmentRestoreTimings {
-                total: started.elapsed(),
-                plaintext_bytes: staged.segment.plaintext_bytes,
-                verified_frames: 0,
-                source: GitSegmentRestoreSource::Local,
-            },
+            local_timings(started, staged.segment.plaintext_bytes),
             pin,
         ))
     }
@@ -281,7 +270,7 @@ impl GitSegmentStore {
         incarnation: &RepositoryIncarnation,
         segment: &GitSegmentRef,
         path: PathBuf,
-    ) -> Result<(GitSegmentRestoreTimings, crate::cache::VerifiedPackPin), GitStorageError> {
+    ) -> Result<(GitSegmentRestoreTimings, VerifiedPackPin), GitStorageError> {
         let parent = verified_pack_parent(&path)?;
         let temp_directory = self.verified_temp_directory();
         fs::create_dir_all(&parent)
@@ -315,6 +304,34 @@ impl GitSegmentStore {
             .await
             .map_err(GitStorageError::Local)?;
         Ok((timings, pin))
+    }
+}
+
+/// Owns a hydration flight for the leader task. Dropping without `complete`
+/// (a panic while hydrating) fails the flight so waiters do not hang, and
+/// the flight is always unregistered exactly once.
+struct HydrationFlight {
+    cache: Arc<VerifiedPackCache>,
+    path: PathBuf,
+    flight: Arc<VerifiedPackFlight>,
+}
+
+impl HydrationFlight {
+    fn complete(
+        self,
+        result: Result<(GitSegmentRestoreTimings, VerifiedPackPin), GitStorageError>,
+    ) {
+        self.flight.complete(result);
+    }
+}
+
+impl Drop for HydrationFlight {
+    fn drop(&mut self) {
+        // No-op when `complete` already stored the real result.
+        self.flight.complete(Err(GitStorageError::Task(
+            "verified Git pack hydration task failed".into(),
+        )));
+        self.cache.finish_flight(&self.path, &self.flight);
     }
 }
 
@@ -390,12 +407,16 @@ where
     }
     output.flush().await.map_err(GitStorageError::Output)?;
     verify_plaintext(segment, plaintext_bytes, digest)?;
-    Ok(GitSegmentRestoreTimings {
+    Ok(local_timings(started, plaintext_bytes))
+}
+
+fn local_timings(started: Instant, plaintext_bytes: u64) -> GitSegmentRestoreTimings {
+    GitSegmentRestoreTimings {
         total: started.elapsed(),
         plaintext_bytes,
         verified_frames: 0,
         source: GitSegmentRestoreSource::Local,
-    })
+    }
 }
 
 fn verify_plaintext(

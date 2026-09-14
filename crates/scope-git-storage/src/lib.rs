@@ -108,7 +108,6 @@ pub struct StagedGitSegment {
     pub segment: GitSegmentRef,
     pub object_key: String,
     pub encrypted_bytes: u64,
-    pub key_id: String,
     local_pack_path: PathBuf,
     pub timings: GitSegmentIngestTimings,
 }

@@ -40,10 +40,6 @@ impl SegmentEncryptionKey {
         }
         Ok(Self { key_id, key })
     }
-
-    pub fn key_id(&self) -> &str {
-        &self.key_id
-    }
 }
 
 pub(crate) struct EnvelopeWriter {
