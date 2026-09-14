@@ -343,6 +343,10 @@ async fn rejected_draft_merge_records_only_a_stable_failure() {
         recording.event_names(),
         ["operation:failure", "operation:failure"]
     );
+    assert_eq!(
+        recording.property(1, "reason"),
+        Some(serde_json::Value::String("not_found".into()))
+    );
     assert_eq!(recording.property(1, "request_id"), None);
 }
 

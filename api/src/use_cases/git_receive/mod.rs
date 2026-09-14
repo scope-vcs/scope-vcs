@@ -271,31 +271,25 @@ pub(crate) async fn complete(
         .incarnation()
         .incarnation_id()
         .to_string();
-    let started_at = Instant::now();
-    let result = complete_inner(
-        state,
-        owner,
-        repo_name,
-        staging_repo,
-        preparation,
-        receive_elapsed,
-    )
-    .await;
-    if let Err(error) = &result {
-        crate::operation_analytics::capture_operation_failure(
-            state,
-            crate::operation_analytics::OperationFailureContext {
-                actor_user_id: &actor_user_id,
-                operation: scope_product_analytics::ProductOperation::Push,
-                source: scope_product_analytics::EventSource::Git,
-                repository_id: Some(&repository_id),
-                request_id: None,
-                started_at,
-            },
-            error,
-        );
+    crate::operation_analytics::ObservedOperation {
+        actor_user_id: &actor_user_id,
+        operation: scope_product_analytics::ProductOperation::Push,
+        source: scope_product_analytics::EventSource::Git,
+        repository_id: Some(&repository_id),
+        request_id: None,
     }
-    result
+    .run(
+        state,
+        complete_inner(
+            state,
+            owner,
+            repo_name,
+            staging_repo,
+            preparation,
+            receive_elapsed,
+        ),
+    )
+    .await
 }
 
 async fn complete_inner(

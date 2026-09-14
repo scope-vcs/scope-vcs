@@ -449,6 +449,7 @@ impl ProductOperation {
 pub enum OperationFailureReason {
     AuthenticationRejected,
     PermissionDenied,
+    NotFound,
     InvalidInput,
     Conflict,
     RateLimited,
@@ -461,6 +462,7 @@ impl OperationFailureReason {
         match self {
             Self::AuthenticationRejected => "authentication_rejected",
             Self::PermissionDenied => "permission_denied",
+            Self::NotFound => "not_found",
             Self::InvalidInput => "invalid_input",
             Self::Conflict => "conflict",
             Self::RateLimited => "rate_limited",

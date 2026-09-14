@@ -5,16 +5,19 @@ use super::{
     object_references::insert_object_reference,
     run_attempt_persistence::{
         attempt_run_id, locked_attempt_steps, locked_heartbeat_context, locked_jobs, locked_run,
-        save_attempt, save_attempt_steps, save_jobs, save_run,
+        run_repository, save_attempt, save_attempt_steps, save_jobs, save_run,
     },
 };
 use crate::error::PostgresError;
-use scope_domain::runs::{
-    attempt::RunAttempt,
-    job::{RunJob, create_run_jobs, reconcile_run, request_run_cancellation, retry_run},
-    run::Run,
-    step::{AttemptConclusion, RunAttemptStep},
-    workflow::revision::WorkflowRevision,
+use scope_domain::{
+    repository::RepositoryIncarnation,
+    runs::{
+        attempt::RunAttempt,
+        job::{RunJob, create_run_jobs, reconcile_run, request_run_cancellation, retry_run},
+        run::Run,
+        step::{AttemptConclusion, RunAttemptStep},
+        workflow::revision::WorkflowRevision,
+    },
 };
 use sea_orm::{
     ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
@@ -26,6 +29,7 @@ mod tests;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DispatchClaim {
+    pub repository: RepositoryIncarnation,
     pub run: Run,
     pub job: RunJob,
     pub attempt: RunAttempt,
@@ -37,6 +41,13 @@ pub struct DispatchClaim {
 pub struct AttemptMutation {
     pub claim: DispatchClaim,
     pub transitioned: bool,
+}
+
+impl AttemptMutation {
+    /// The claim after a real state change, or `None` when the mutation was an idempotent replay.
+    pub fn transition(&self) -> Option<&DispatchClaim> {
+        self.transitioned.then_some(&self.claim)
+    }
 }
 
 #[cfg(any(test, feature = "seeding"))]
@@ -149,7 +160,7 @@ impl RunStore {
         &self,
         attempt_id: &str,
         now_unix: u64,
-    ) -> Result<DispatchClaim, PostgresError> {
+    ) -> Result<AttemptMutation, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let guard_run_id = attempt_run_id(&tx, attempt_id).await?;
         let mut jobs = locked_jobs(&tx, &guard_run_id).await?;
@@ -166,6 +177,7 @@ impl RunStore {
             .iter_mut()
             .find(|job| job.key == attempt.job_key)
             .ok_or_else(|| PostgresError::internal_message("run attempt job is missing"))?;
+        let transitioned = !attempt.state.is_terminal();
         attempt
             .expire(&run, job, &mut steps, now_unix)
             .map_err(PostgresError::from)?;
@@ -176,17 +188,22 @@ impl RunStore {
         save_attempt_steps(&tx, &steps).await?;
         save_jobs(&tx, &jobs).await?;
         save_run(&tx, &run).await?;
+        let repository = run_repository(&tx, &run).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         let job = jobs
             .into_iter()
             .find(|job| job.key == attempt.job_key)
             .ok_or_else(|| PostgresError::internal_message("run attempt job is missing"))?;
-        Ok(DispatchClaim {
-            run,
-            job,
-            attempt,
-            steps,
-            workflow_revision,
+        Ok(AttemptMutation {
+            claim: DispatchClaim {
+                repository,
+                run,
+                job,
+                attempt,
+                steps,
+                workflow_revision,
+            },
+            transitioned,
         })
     }
 

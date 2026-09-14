@@ -24,6 +24,7 @@ pub(crate) mod push_intents;
 pub(crate) mod repo_access;
 pub(crate) mod repo_events;
 mod repository_backfill;
+pub(crate) mod run_attempt_effects;
 pub(crate) mod run_recovery;
 pub(crate) mod run_retention;
 pub(crate) mod runtime_budgets;
@@ -32,7 +33,6 @@ pub mod smoke_seed;
 mod storage_runtime;
 pub(crate) mod telemetry;
 pub(crate) mod use_cases;
-pub(crate) mod workflow_analytics;
 mod workflow_catalog_backfill;
 
 #[cfg(test)]

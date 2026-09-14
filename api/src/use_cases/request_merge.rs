@@ -12,7 +12,7 @@ use crate::{
         request_refs::attach_visible_request_refs,
         storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
     },
-    operation_analytics::{OperationFailureContext, capture_operation_failure},
+    operation_analytics::ObservedOperation,
     persistence::{ensure_private_dir, unix_now},
     repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
@@ -76,24 +76,16 @@ pub(crate) async fn merge_request(
     state: &AppState,
     command: MergeRequestCommand,
 ) -> Result<MergeRequestResult, ApiError> {
-    let started_at = std::time::Instant::now();
-    let result = merge_request_inner(state, &command).await;
-    if let Err(error) = &result {
-        capture_operation_failure(
-            state,
-            OperationFailureContext {
-                actor_user_id: &command.actor_user_id,
-                operation: ProductOperation::Merge,
-                source: EventSource::Api,
-                repository_id: None,
-                // The URL value is untrusted and the request lookup may have failed.
-                request_id: None,
-                started_at,
-            },
-            error,
-        );
+    ObservedOperation {
+        actor_user_id: &command.actor_user_id,
+        operation: ProductOperation::Merge,
+        source: EventSource::Api,
+        repository_id: None,
+        // The URL value is untrusted and the request lookup may have failed.
+        request_id: None,
     }
-    result
+    .run(state, merge_request_inner(state, &command))
+    .await
 }
 
 async fn merge_request_inner(

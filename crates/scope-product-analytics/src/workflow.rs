@@ -1,4 +1,4 @@
-use super::{ProductActor, ProductEvent};
+use super::{ProductActor, ProductAnalytics, ProductEvent};
 use scope_domain::runs::{
     attempt::{AttemptState, RunAttempt},
     run::{Run, RunState},
@@ -25,21 +25,6 @@ impl ProductEvent {
         );
         event.insert_string("actor_type", actor.actor_type());
         event
-    }
-
-    pub fn workflow_attempt_started_for(
-        repository_id: &str,
-        run: &Run,
-        attempt: &RunAttempt,
-    ) -> Self {
-        Self::workflow_attempt_started(
-            workflow_actor(run),
-            repository_id,
-            &run.id,
-            &attempt.id,
-            attempt.number,
-            workflow_trigger(run.trigger),
-        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -72,28 +57,6 @@ impl ProductEvent {
         event
     }
 
-    pub fn workflow_attempt_completed_for(
-        repository_id: &str,
-        run: &Run,
-        attempt: &RunAttempt,
-    ) -> Option<Self> {
-        let completed_at_unix = attempt.completed_at_unix?;
-        let attempt_result = workflow_attempt_result(attempt.state)?;
-        Some(Self::workflow_attempt_completed(
-            workflow_actor(run),
-            repository_id,
-            &run.id,
-            &attempt.id,
-            attempt.number,
-            workflow_trigger(run.trigger),
-            attempt_result,
-            workflow_run_result(run.state),
-            completed_at_unix
-                .saturating_sub(attempt.created_at_unix)
-                .saturating_mul(1_000),
-        ))
-    }
-
     fn workflow_attempt_event(
         name: &'static str,
         actor: ProductActor<'_>,
@@ -110,6 +73,63 @@ impl ProductEvent {
         event.insert_number("attempt_number", attempt_number.into());
         event.insert_string("trigger", trigger.as_str());
         event
+    }
+}
+
+impl ProductAnalytics {
+    pub fn capture_workflow_attempt_started(
+        &self,
+        repository_id: &str,
+        run: &Run,
+        attempt: &RunAttempt,
+    ) {
+        if !self.is_enabled() {
+            return;
+        }
+        self.capture(ProductEvent::workflow_attempt_started(
+            workflow_actor(run),
+            repository_id,
+            &run.id,
+            &attempt.id,
+            attempt.number,
+            workflow_trigger(run.trigger),
+        ));
+    }
+
+    /// Records the terminal outcome of an attempt. Callers pass only attempts that just
+    /// transitioned; a non-terminal attempt here means the caller's transition check is wrong.
+    pub fn capture_workflow_attempt_completed(
+        &self,
+        repository_id: &str,
+        run: &Run,
+        attempt: &RunAttempt,
+    ) {
+        if !self.is_enabled() {
+            return;
+        }
+        let (Some(completed_at_unix), Some(attempt_result)) = (
+            attempt.completed_at_unix,
+            workflow_attempt_result(attempt.state),
+        ) else {
+            tracing::warn!(
+                attempt_id = attempt.id,
+                "workflow attempt completion analytics received non-terminal facts"
+            );
+            return;
+        };
+        self.capture(ProductEvent::workflow_attempt_completed(
+            workflow_actor(run),
+            repository_id,
+            &run.id,
+            &attempt.id,
+            attempt.number,
+            workflow_trigger(run.trigger),
+            attempt_result,
+            workflow_run_result(run.state),
+            completed_at_unix
+                .saturating_sub(attempt.created_at_unix)
+                .saturating_mul(1_000),
+        ));
     }
 }
 

@@ -6,7 +6,6 @@ mod dependencies;
 mod execution;
 mod git_repo;
 mod health;
-mod product_analytics;
 mod run_events;
 mod settings;
 

@@ -1,8 +1,5 @@
 use crate::{
-    error::ApiError,
-    operation_analytics::{OperationFailureContext, capture_operation_failure},
-    persistence::unix_now,
-    state::AppState,
+    error::ApiError, operation_analytics::ObservedOperation, persistence::unix_now, state::AppState,
 };
 use scope_domain::{
     repository::access::RepositoryAccessContext,
@@ -10,7 +7,6 @@ use scope_domain::{
 };
 use scope_postgres::db::SubmitRequestCommand;
 use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
-use std::time::Instant;
 
 pub(crate) async fn submit_request(
     state: &AppState,
@@ -18,37 +14,25 @@ pub(crate) async fn submit_request(
     request: &Request,
     actor_user_id: &str,
 ) -> Result<RequestLifecycleMutation, ApiError> {
-    let started_at = Instant::now();
-    let result = persist(state, request, actor_user_id).await;
-    match result {
-        Ok(mutation) => {
-            state
-                .product_analytics
-                .capture(ProductEvent::request_submitted(
-                    actor_user_id,
-                    repo.incarnation().incarnation_id(),
-                    &request.id,
-                    request.audience,
-                    request_actor_role(repo.access),
-                ));
-            Ok(mutation)
-        }
-        Err(error) => {
-            capture_operation_failure(
-                state,
-                OperationFailureContext {
-                    actor_user_id,
-                    operation: ProductOperation::Submit,
-                    source: EventSource::Api,
-                    repository_id: Some(repo.incarnation().incarnation_id()),
-                    request_id: Some(&request.id),
-                    started_at,
-                },
-                &error,
-            );
-            Err(error)
-        }
+    let mutation = ObservedOperation {
+        actor_user_id,
+        operation: ProductOperation::Submit,
+        source: EventSource::Api,
+        repository_id: Some(repo.incarnation().incarnation_id()),
+        request_id: Some(&request.id),
     }
+    .run(state, persist(state, request, actor_user_id))
+    .await?;
+    state
+        .product_analytics
+        .capture(ProductEvent::request_submitted(
+            actor_user_id,
+            repo.incarnation().incarnation_id(),
+            &request.id,
+            request.audience,
+            request_actor_role(repo.access),
+        ));
+    Ok(mutation)
 }
 
 async fn persist(

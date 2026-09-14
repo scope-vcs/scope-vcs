@@ -66,10 +66,10 @@ impl CloudExecutionCoordinator {
                     scope_postgres::db::DispatchAdmission::AtCapacity
                     | scope_postgres::db::DispatchAdmission::Empty => break,
                 };
-                crate::product_analytics::schedule_attempt_started(
-                    &self.metadata,
-                    &self.product_analytics,
-                    &claim,
+                self.product_analytics.capture_workflow_attempt_started(
+                    claim.repository.incarnation_id(),
+                    &claim.run,
+                    &claim.attempt,
                 );
                 self.publish_status_change(&claim).await;
                 let execution = self.clone();
@@ -142,12 +142,7 @@ impl CloudExecutionCoordinator {
                     )
                     .await
                     .map_err(db_error)?;
-                crate::product_analytics::capture_attempt_completed(
-                    &self.metadata,
-                    &self.product_analytics,
-                    &mutation,
-                )
-                .await;
+                capture_attempt_completed(&self.product_analytics, &mutation);
                 self.metadata
                     .runs()
                     .complete_cloud_task_absence(attempt_id, now_unix)
@@ -212,14 +207,27 @@ impl CloudExecutionCoordinator {
     }
 
     async fn publish_status_change(&self, claim: &scope_postgres::db::DispatchClaim) {
-        crate::run_events::publish_run_change(
+        crate::run_events::publish_run_change_for(
             &self.metadata,
             &self.origin_id,
-            claim.run.workflow.repository_id(),
+            &claim.repository,
             &claim.run.id,
             scope_api_contract::RunChangeKind::StatusChanged,
         )
         .await;
+    }
+}
+
+fn capture_attempt_completed(
+    product_analytics: &ProductAnalytics,
+    mutation: &scope_postgres::db::AttemptMutation,
+) {
+    if let Some(claim) = mutation.transition() {
+        product_analytics.capture_workflow_attempt_completed(
+            claim.repository.incarnation_id(),
+            &claim.run,
+            &claim.attempt,
+        );
     }
 }
 
@@ -240,12 +248,7 @@ async fn abort_canceled_attempt(
                 .confirm_provider_cancellation(&attempt.attempt_id, now_unix)
                 .await
                 .map_err(db_error)?;
-            crate::product_analytics::capture_attempt_completed(
-                &metadata,
-                &product_analytics,
-                &mutation,
-            )
-            .await;
+            capture_attempt_completed(&product_analytics, &mutation);
             metadata
                 .runs()
                 .complete_cloud_task_stop(&attempt.attempt_id, now_unix)

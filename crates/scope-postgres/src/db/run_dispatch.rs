@@ -1,7 +1,9 @@
 use super::integer_columns;
 use super::{
     DispatchClaim, RunStore, entities,
-    run_attempt_persistence::{jobs_for_run, locked_job, locked_run, save_job, save_run},
+    run_attempt_persistence::{
+        jobs_for_run, locked_job, locked_run, run_repository, save_job, save_run,
+    },
     runs::{unique_conflict, workflow_revision_for_run},
 };
 use crate::error::PostgresError;
@@ -331,7 +333,9 @@ impl RunStore {
         reconcile_run(&mut run, &mut jobs, &workflow_revision, now_unix)
             .map_err(PostgresError::from)?;
         save_run(tx, &run).await?;
+        let repository = run_repository(tx, &run).await?;
         Ok(DispatchClaim {
+            repository,
             run,
             job,
             attempt,

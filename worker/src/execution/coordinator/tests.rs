@@ -44,14 +44,12 @@ async fn attempt_analytics_correlates_admission_and_completion_without_replaying
     else {
         panic!("expected workflow attempt admission");
     };
-    crate::product_analytics::schedule_attempt_started(&metadata, &analytics, &claim);
-    tokio::time::timeout(Duration::from_secs(10), async {
-        while recording.events().is_empty() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("scheduled start analytics should complete independently");
+    analytics.capture_workflow_attempt_started(
+        claim.repository.incarnation_id(),
+        &claim.run,
+        &claim.attempt,
+    );
+    assert_eq!(recording.event_names(), ["workflow:attempt_start"]);
 
     let conclusion = || AttemptConclusion::SetupFailed {
         exit_code: 69,
@@ -63,7 +61,7 @@ async fn attempt_analytics_correlates_admission_and_completion_without_replaying
         .await
         .unwrap();
     assert!(completed.transitioned);
-    crate::product_analytics::capture_attempt_completed(&metadata, &analytics, &completed).await;
+    capture_attempt_completed(&analytics, &completed);
 
     let replayed = metadata
         .runs()
@@ -71,7 +69,7 @@ async fn attempt_analytics_correlates_admission_and_completion_without_replaying
         .await
         .unwrap();
     assert!(!replayed.transitioned);
-    crate::product_analytics::capture_attempt_completed(&metadata, &analytics, &replayed).await;
+    capture_attempt_completed(&analytics, &replayed);
 
     assert_eq!(
         recording.event_names(),
@@ -156,7 +154,8 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
             .runs()
             .expire_attempt(attempt, expired_at)
             .await
-            .unwrap();
+            .unwrap()
+            .claim;
         assert!(
             bootstrap_hashes.remove(&expired_claim.attempt.token_hash),
             "the dispatched credential hash must match an admitted attempt"
