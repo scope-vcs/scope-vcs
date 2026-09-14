@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { deploymentComponent, loadComponentConfig } from "../../.github/scripts/deployment-components.mjs";
 
 const IMAGE_DIGEST = /^ghcr\.io\/scope-vcs\/scope-media-worker@sha256:[0-9a-f]{64}$/;
 const HOSTNAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
@@ -47,6 +48,18 @@ function serviceVariables(bucketName) {
   };
 }
 
+function mediaRuntimeConfig(component, region) {
+  const { deploy } = loadComponentConfig(component);
+  const { replicas, restartPolicyMaxRetries, restartPolicyType } = deploymentComponent(component).reconcile;
+  return {
+    healthcheckPath: deploy.healthcheckPath,
+    healthcheckTimeout: deploy.healthcheckTimeout,
+    multiRegionConfig: { [region]: { numReplicas: replicas } },
+    restartPolicyMaxRetries,
+    restartPolicyType,
+  };
+}
+
 export function desiredMediaState(manifest, environmentName, image = "") {
   const railway = manifest?.railway;
   const resources = manifest?.mediaResources;
@@ -56,6 +69,7 @@ export function desiredMediaState(manifest, environmentName, image = "") {
     : "";
   requiredString(environmentId, `Railway ${environmentName} environment ID`);
   const bucketName = requiredString(resources.bucket?.name, "media bucket name");
+  const gatewayName = requiredString(manifest.services?.["media-api"]?.name, "media gateway service name");
   const allowedOrigin = environmentName === "production"
     ? requiredString(resources.production?.webOrigin, "production web origin")
     : `https://${requiredString(manifest.environments.staging?.webDomain, "staging web domain")}`;
@@ -81,24 +95,18 @@ export function desiredMediaState(manifest, environmentName, image = "") {
         id: manifest.services?.api?.id ?? null,
         name: requiredString(manifest.services?.api?.name, "API service name"),
         variables: {
-          SCOPE_MEDIA_PUBLIC_URL: "https://${{scope-media-api.RAILWAY_PUBLIC_DOMAIN}}",
+          SCOPE_MEDIA_PUBLIC_URL: `https://\${{${gatewayName}.RAILWAY_PUBLIC_DOMAIN}}`,
         },
       },
       gateway: {
         id: manifest.services?.["media-api"]?.id ?? null,
-        name: requiredString(manifest.services?.["media-api"]?.name, "media gateway service name"),
+        name: gatewayName,
         variables: {
           ...serviceVariables(bucketName),
           SCOPE_MEDIA_GRANT_PUBLIC_KEY: null,
           SCOPE_MEDIA_ALLOWED_ORIGIN: allowedOrigin,
         },
-        config: {
-          healthcheckPath: "/readyz",
-          healthcheckTimeout: 60,
-          multiRegionConfig: { [railway.regionId]: { numReplicas: 1 } },
-          restartPolicyMaxRetries: 10,
-          restartPolicyType: "ON_FAILURE",
-        },
+        config: mediaRuntimeConfig("media-api", railway.regionId),
         publicDomain: true,
       },
       worker: {
@@ -106,11 +114,7 @@ export function desiredMediaState(manifest, environmentName, image = "") {
         name: requiredString(manifest.services?.["media-worker"]?.name, "media worker service name"),
         variables: serviceVariables(bucketName),
         config: {
-          healthcheckPath: "/healthz",
-          healthcheckTimeout: 60,
-          multiRegionConfig: { [railway.regionId]: { numReplicas: 1 } },
-          restartPolicyMaxRetries: 10,
-          restartPolicyType: "ON_FAILURE",
+          ...mediaRuntimeConfig("media-worker", railway.regionId),
           ...(image ? { source: { image } } : {}),
         },
         publicDomain: false,

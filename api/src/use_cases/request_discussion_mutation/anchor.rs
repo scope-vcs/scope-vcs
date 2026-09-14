@@ -4,7 +4,7 @@ use crate::{
     git::{command::run_git_output, request_refs::with_request_revision_store_repo},
     state::AppState,
     use_cases::request_revision_inspection::{
-        commit_belongs_to_revision, inspect_request_paths, request_changes,
+        commit_belongs_to_revision, inspect_request_paths, request_commit_changes,
     },
 };
 use scope_domain::{
@@ -175,9 +175,8 @@ fn commit_paths(
         .map_err(ApiError::bad_request)?
         .split_whitespace()
         .next()
-        .map(str::to_string)
-        .ok_or_else(|| ApiError::conflict("request revision commit must have a parent"))?;
-    let changes = request_changes(raw_repo, &parent, commit_oid)?;
+        .map(str::to_string);
+    let changes = request_commit_changes(raw_repo, parent.as_deref(), commit_oid)?;
 
     inspect_request_paths(&changes, policy, access)
 }

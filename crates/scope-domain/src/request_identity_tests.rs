@@ -12,14 +12,9 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
         request,
         false,
         EditRequestIdentityInput {
-            request_id: "request_1".to_string(),
-            actor_user_id: "author".to_string(),
-            actor_can_edit_identity: true,
-            event_id: "event_title".to_string(),
             title: Some("Focused title".to_string()),
-            description_markdown: None,
-            expected_description_markdown: None,
             now_unix: 20,
+            ..identity_input()
         },
     )
     .unwrap();
@@ -34,14 +29,10 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
         title_only.request,
         false,
         EditRequestIdentityInput {
-            request_id: "request_1".to_string(),
-            actor_user_id: "author".to_string(),
-            actor_can_edit_identity: true,
-            event_id: "event_description".to_string(),
-            title: None,
             description_markdown: Some("Focused description".to_string()),
             expected_description_markdown: Some(original_description.clone()),
             now_unix: 21,
+            ..identity_input()
         },
     )
     .unwrap();
@@ -55,14 +46,8 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
         description_only.request.clone(),
         false,
         EditRequestIdentityInput {
-            request_id: "request_1".to_string(),
-            actor_user_id: "author".to_string(),
-            actor_can_edit_identity: true,
-            event_id: "event_empty".to_string(),
-            title: None,
-            description_markdown: None,
-            expected_description_markdown: None,
             now_unix: 22,
+            ..identity_input()
         },
     )
     .unwrap_err();
@@ -72,14 +57,11 @@ fn identity_edit_supports_each_field_combination_and_rejects_empty_or_unchanged_
         description_only.request,
         false,
         EditRequestIdentityInput {
-            request_id: "request_1".to_string(),
-            actor_user_id: "author".to_string(),
-            actor_can_edit_identity: true,
-            event_id: "event_unchanged".to_string(),
             title: Some("Focused title".to_string()),
             description_markdown: Some("Focused description".to_string()),
             expected_description_markdown: Some("Focused description".to_string()),
             now_unix: 22,
+            ..identity_input()
         },
     )
     .unwrap_err();
@@ -93,14 +75,9 @@ fn open_request_identity_edits_preserve_submission() {
         request.clone(),
         false,
         EditRequestIdentityInput {
-            request_id: "request_1".to_string(),
-            actor_user_id: "author".to_string(),
-            actor_can_edit_identity: true,
-            event_id: "event_identity".to_string(),
-            title: None,
             description_markdown: Some("Changed while open".to_string()),
-            expected_description_markdown: None,
             now_unix: 22,
+            ..identity_input()
         },
     )
     .unwrap();
@@ -110,27 +87,19 @@ fn open_request_identity_edits_preserve_submission() {
 }
 
 #[test]
-fn description_edit_rejects_a_stale_expected_value_without_mutation() {
-    let request = working_request();
-    let original = request.clone();
+fn description_edit_rejects_a_stale_expected_value() {
     let error = edit_request_identity(
-        request.clone(),
+        working_request(),
         false,
         EditRequestIdentityInput {
-            request_id: original.id.clone(),
-            actor_user_id: original.author_user_id.clone(),
-            actor_can_edit_identity: true,
-            event_id: "event_stale_description".to_string(),
-            title: None,
             description_markdown: Some("new description".to_string()),
             expected_description_markdown: Some("stale description".to_string()),
-            now_unix: original.updated_at_unix + 1,
+            now_unix: 11,
+            ..identity_input()
         },
     )
     .unwrap_err();
-
     assert_eq!(error.kind, crate::error::DomainErrorKind::Conflict);
-    assert_eq!(request, original);
 }
 
 #[test]
@@ -139,16 +108,27 @@ fn identity_event_collision_precedes_edit_authorization() {
         working_request(),
         true,
         EditRequestIdentityInput {
-            request_id: "request_1".to_string(),
             actor_user_id: "outsider".to_string(),
             actor_can_edit_identity: false,
             event_id: "existing_event".to_string(),
             title: Some("Changed".to_string()),
-            description_markdown: None,
-            expected_description_markdown: None,
             now_unix: 20,
+            ..identity_input()
         },
     )
     .unwrap_err();
     assert_eq!(error.message, "request event already exists");
+}
+
+fn identity_input() -> EditRequestIdentityInput {
+    EditRequestIdentityInput {
+        request_id: "request_1".to_string(),
+        actor_user_id: "author".to_string(),
+        actor_can_edit_identity: true,
+        event_id: "event_identity".to_string(),
+        title: None,
+        description_markdown: None,
+        expected_description_markdown: None,
+        now_unix: 22,
+    }
 }

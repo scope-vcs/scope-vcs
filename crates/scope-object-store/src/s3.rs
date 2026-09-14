@@ -19,6 +19,7 @@ use std::{
 
 const S3_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const S3_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_S3_ERROR_BODY_BYTES: usize = 64 * 1024;
 
 #[derive(Clone)]
 pub struct S3ObjectStoreSettings {
@@ -292,25 +293,39 @@ impl S3ObjectStore {
         for (name, value) in signed.headers {
             request = request.header(name, value);
         }
-        send_blocking_request(method, key.unwrap_or("bucket"), request, max_bytes)
+        send_blocking_request(method, key, request, max_bytes)
     }
 }
 
 fn send_blocking_request(
     method: &str,
-    key: &str,
+    key: Option<&str>,
     request: reqwest::blocking::RequestBuilder,
     max_bytes: Option<usize>,
 ) -> Result<Vec<u8>, ObjectStoreError> {
     let send = || {
-        let response = request.send().map_err(ObjectStoreError::internal)?;
+        let label = key.unwrap_or("bucket");
+        let response = request.send().map_err(|error| {
+            ObjectStoreError::service_unavailable(format!(
+                "object store {method} failed for {label}: {error}"
+            ))
+        })?;
         let status = response.status();
         if !status.is_success() {
-            return Err(ObjectStoreError::service_unavailable(format!(
-                "object store {method} failed for {key}: {status}"
-            )));
+            let message = format!("object store {method} failed for {label}: {status}");
+            return Err(
+                if key.is_some()
+                    && matches!(method, "GET" | "HEAD")
+                    && status == reqwest::StatusCode::NOT_FOUND
+                    && s3_error_code(response).as_deref() == Some("NoSuchKey")
+                {
+                    ObjectStoreError::not_found(message)
+                } else {
+                    ObjectStoreError::service_unavailable(message)
+                },
+            );
         }
-        read_response_body(response, key, max_bytes)
+        read_response_body(response, label, max_bytes)
     };
 
     if tokio::runtime::Handle::try_current().is_ok() {
@@ -320,6 +335,70 @@ fn send_blocking_request(
     }
 }
 
+fn s3_error_code(response: reqwest::blocking::Response) -> Option<String> {
+    let mut body = Vec::new();
+    response
+        .take((MAX_S3_ERROR_BODY_BYTES as u64).saturating_add(1))
+        .read_to_end(&mut body)
+        .ok()?;
+    if body.len() > MAX_S3_ERROR_BODY_BYTES {
+        return None;
+    }
+
+    let body = std::str::from_utf8(&body).ok()?;
+    let mut pending_element = None;
+    let mut open_elements = Vec::new();
+    let mut code = None;
+    for token in xmlparser::Tokenizer::from(body) {
+        match token.ok()? {
+            xmlparser::Token::ElementStart { prefix, local, .. } => {
+                if pending_element
+                    .replace((prefix.as_str(), local.as_str()))
+                    .is_some()
+                {
+                    return None;
+                }
+            }
+            xmlparser::Token::ElementEnd { end, .. } => match end {
+                xmlparser::ElementEnd::Open => {
+                    let element = pending_element.take()?;
+                    if open_elements.is_empty() && element.1 != "Error" {
+                        return None;
+                    }
+                    open_elements.push(element);
+                }
+                xmlparser::ElementEnd::Empty => {
+                    let element = pending_element.take()?;
+                    if open_elements.is_empty() && element.1 != "Error" {
+                        return None;
+                    }
+                }
+                xmlparser::ElementEnd::Close(prefix, local) => {
+                    let (open_prefix, open_local) = open_elements.pop()?;
+                    if open_prefix != prefix.as_str() || open_local != local.as_str() {
+                        return None;
+                    }
+                }
+            },
+            xmlparser::Token::Text { text }
+                if open_elements.len() == 2
+                    && open_elements[0].1 == "Error"
+                    && open_elements[1].1 == "Code" =>
+            {
+                if code.is_some() {
+                    return None;
+                }
+                code = Some(text.as_str().to_owned());
+            }
+            _ => {}
+        }
+    }
+    if pending_element.is_some() || !open_elements.is_empty() {
+        return None;
+    }
+    code
+}
+
 fn read_response_body(
     mut response: reqwest::blocking::Response,
     key: &str,
@@ -327,9 +406,9 @@ fn read_response_body(
 ) -> Result<Vec<u8>, ObjectStoreError> {
     let Some(max_bytes) = max_bytes else {
         let mut body = Vec::new();
-        response
-            .read_to_end(&mut body)
-            .map_err(ObjectStoreError::internal)?;
+        response.read_to_end(&mut body).map_err(|error| {
+            ObjectStoreError::service_unavailable(format!("reading object {key} failed: {error}"))
+        })?;
         return Ok(body);
     };
 
@@ -348,7 +427,9 @@ fn read_response_body(
     response
         .take((max_bytes as u64).saturating_add(1))
         .read_to_end(&mut body)
-        .map_err(ObjectStoreError::internal)?;
+        .map_err(|error| {
+            ObjectStoreError::service_unavailable(format!("reading object {key} failed: {error}"))
+        })?;
     ensure_object_size("read", key, body.len(), max_bytes)?;
     Ok(body)
 }
@@ -645,22 +726,85 @@ mod tests {
         store.request_timeout = Duration::from_millis(50);
         let started = std::time::Instant::now();
         let error = store.get("stalled").unwrap_err();
-        assert_eq!(error.kind, crate::ObjectStoreErrorKind::Internal);
+        assert_eq!(error.kind, crate::ObjectStoreErrorKind::ServiceUnavailable);
         assert!(started.elapsed() < Duration::from_secs(1));
         server.join().unwrap();
     }
 
     #[test]
-    fn s3_http_errors_preserve_service_unavailable_classification() {
-        for status in ["404 Not Found", "403 Forbidden", "503 Service Unavailable"] {
-            let server = TestS3Server::start_wire_responses(vec![
-                format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-                    .into_bytes(),
-            ]);
+    fn s3_reads_distinguish_missing_objects_from_unavailable_storage() {
+        use crate::ObjectStoreErrorKind::{NotFound, ServiceUnavailable};
+        for (status, body, expected) in [
+            (
+                "404 Not Found",
+                b"<Error><Code>NoSuchKey</Code></Error>".as_slice(),
+                NotFound,
+            ),
+            ("403 Forbidden", b"".as_slice(), ServiceUnavailable),
+            (
+                "503 Service Unavailable",
+                b"".as_slice(),
+                ServiceUnavailable,
+            ),
+        ] {
+            let server = TestS3Server::start_wire_responses(vec![error_response(status, body)]);
             let error = test_s3_store(&server.endpoint).get("missing").unwrap_err();
-            assert_eq!(error.kind, crate::ObjectStoreErrorKind::ServiceUnavailable);
+            assert_eq!(error.kind, expected);
             assert!(error.message.contains(status));
         }
+    }
+
+    #[test]
+    fn ambiguous_not_found_responses_remain_retryable() {
+        use crate::ObjectStoreErrorKind::ServiceUnavailable;
+        for body in [
+            b"<Error><Code>NoSuchBucket</Code></Error>".as_slice(),
+            b"<Error><Message>NoSuchKey</Message></Error>".as_slice(),
+            b"<Error><Code>NoSuchKey".as_slice(),
+            b"garbage<Error><Code>NoSuchKey</Code></Error>".as_slice(),
+            b"<Error><Code>NoSuchKey</Code></Error><Error/>".as_slice(),
+            b"<Error><Code>NoSuchKey</Code></Error>trailing".as_slice(),
+            b"".as_slice(),
+        ] {
+            let server =
+                TestS3Server::start_wire_responses(vec![error_response("404 Not Found", body)]);
+            let error = test_s3_store(&server.endpoint).get("missing").unwrap_err();
+            assert_eq!(error.kind, ServiceUnavailable);
+        }
+    }
+
+    #[test]
+    fn oversized_s3_error_bodies_are_not_used_for_classification() {
+        let mut body = b"<Error><Code>NoSuchKey</Code><Message>".to_vec();
+        body.resize(MAX_S3_ERROR_BODY_BYTES + 1, b'x');
+        body.extend_from_slice(b"</Message></Error>");
+        let server =
+            TestS3Server::start_wire_responses(vec![error_response("404 Not Found", &body)]);
+
+        let error = test_s3_store(&server.endpoint).get("missing").unwrap_err();
+
+        assert_eq!(error.kind, crate::ObjectStoreErrorKind::ServiceUnavailable);
+    }
+
+    #[test]
+    fn missing_bucket_is_an_unavailable_store() {
+        let server = TestS3Server::start_wire_responses(vec![
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+        ]);
+        let error = test_s3_store(&server.endpoint)
+            .readiness_check()
+            .unwrap_err();
+        assert_eq!(error.kind, crate::ObjectStoreErrorKind::ServiceUnavailable);
+    }
+
+    fn error_response(status: &str, body: &[u8]) -> Vec<u8> {
+        let mut response = format!(
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        response.extend_from_slice(body);
+        response
     }
 
     fn test_s3_store(endpoint: &str) -> S3ObjectStore {

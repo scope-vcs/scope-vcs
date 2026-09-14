@@ -16,12 +16,13 @@ import { AccountPagePending } from '@/features/account/account-page-pending'
 import { CliSessionList } from '@/features/account/cli-session-list'
 import { UserButton } from '@clerk/tanstack-react-start'
 import { AbsoluteTimestamp } from '@/components/timestamp'
-import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { KeyRound, LoaderCircle, Monitor, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { CliExchangeGrantResponse } from '@/api/types.generated'
+import { usePendingActions } from '@/lib/use-pending-actions'
 
 const requireAccountAuth = createServerFn({ method: 'GET' }).handler(async () => {
   const { auth } = await import('@clerk/tanstack-react-start/server')
@@ -51,37 +52,35 @@ export const Route = createFileRoute('/account')({
 })
 
 function AccountRoute() {
-  const { sessions } = Route.useLoaderData()
-  const router = useRouter()
+  const loaded = Route.useLoaderData()
+  const [sessions, setSessions] = useState(() => loaded.sessions)
   const [grant, setGrant] = useState<CliExchangeGrantResponse | null>(null)
-  const [pending, setPending] = useState<'grant' | string | null>(null)
+  const { pending, run } = usePendingActions()
   const [error, setError] = useState<string | null>(null)
 
   async function createGrant() {
-    setPending('grant')
-    setError(null)
-    try {
-      setGrant(await createCliExchangeGrant())
-      toast.success('Login command created')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Could not create login command')
-    } finally {
-      setPending(null)
-    }
+    await run('grant', async () => {
+      setError(null)
+      try {
+        setGrant(await createCliExchangeGrant())
+        toast.success('Login command created')
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not create login command')
+      }
+    })
   }
 
   async function revokeSession(sessionId: string) {
-    setPending(sessionId)
-    setError(null)
-    try {
-      await revokeCliSession({ data: { sessionId } })
-      await router.invalidate()
-      toast.success('CLI session revoked')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Could not revoke CLI session')
-    } finally {
-      setPending(null)
-    }
+    await run(sessionId, async () => {
+      setError(null)
+      try {
+        await revokeCliSession({ data: { sessionId } })
+        setSessions((current) => current.filter((session) => session.id !== sessionId))
+        toast.success('CLI session revoked')
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not revoke CLI session')
+      }
+    })
   }
 
   return (
@@ -109,12 +108,12 @@ function AccountRoute() {
           >
             <div className="space-y-3">
               <Button
-                disabled={pending === 'grant'}
+                disabled={pending.has('grant')}
                 onClick={() => void createGrant()}
                 size="sm"
                 type="button"
               >
-                {pending === 'grant' ? (
+                {pending.has('grant') ? (
                   <LoaderCircle className="size-3.5 animate-spin" />
                 ) : (
                   <Plus className="size-3.5" />

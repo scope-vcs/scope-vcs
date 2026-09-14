@@ -93,7 +93,7 @@ function discussionPage(
 }
 
 test('a loader page seeds the resource and only a newer snapshot replaces loaded pages', () => {
-  const identity = requestDiscussionReferenceIdentity('scope', 'revision-1:commit-a')
+  const identity = requestDiscussionReferenceIdentity('scope', 'request-1', 'revision-1:commit-a')
   const first = discussionPage(['first'], 'cursor-1', 7)
   assert.equal(openRequestDiscussionReferences(identity, first), first)
   assert.equal(requestDiscussionReferenceResource.peek(identity), first)
@@ -109,7 +109,7 @@ test('a loader page seeds the resource and only a newer snapshot replaces loaded
 })
 
 test('loading more appends the next page under the loaded snapshot', async () => {
-  const identity = requestDiscussionReferenceIdentity('scope', 'revision-1:commit-b')
+  const identity = requestDiscussionReferenceIdentity('scope', 'request-1', 'revision-1:commit-b')
   openRequestDiscussionReferences(identity, discussionPage(['first'], 'cursor-1', 3))
   const cursors: string[] = []
   await loadMoreRequestDiscussionReferences(identity, async (cursor) => {
@@ -124,7 +124,7 @@ test('loading more appends the next page under the loaded snapshot', async () =>
 })
 
 test('a failed load-more keeps the loaded page and surfaces the error', async () => {
-  const identity = requestDiscussionReferenceIdentity('scope', 'revision-1:commit-c')
+  const identity = requestDiscussionReferenceIdentity('scope', 'request-1', 'revision-1:commit-c')
   const first = discussionPage(['first'], 'cursor-1', 3)
   openRequestDiscussionReferences(identity, first)
   await loadMoreRequestDiscussionReferences(identity, async () => {

@@ -87,3 +87,9 @@ test('count-objects parser converts Git KiB fields into bytes', () => {
     packedBytes: 11264,
   });
 });
+
+test('zero file bytes fail configuration before building a fixture; zero eviction stays valid', () => {
+  assert.throws(() => configuration({ SCOPE_PHYSICS_FILE_BYTES: '0' }), /FILE_BYTES must be positive/);
+  assert.throws(() => configuration({ SCOPE_PHYSICS_FILE_BYTES: '0MiB' }), /FILE_BYTES must be positive/);
+  assert.equal(configuration({ SCOPE_PHYSICS_EVICT_BYTES: '0' }).evictBytes, 0);
+});

@@ -6,13 +6,17 @@ railway_service_health_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Prints the checked-in Railway config path for a manifest component.
 railway_config_path() {
-  local component="$1" manifest directory
+  local component="$1" manifest path
   manifest="${SCOPE_DEPLOYMENT_MANIFEST:-$railway_service_health_scripts/../deployment-services.json}"
-  directory="$(jq -er --arg component "$component" '.services[$component].sourceDirectory' "$manifest")" || {
-    echo "Deployment manifest has no source directory for $component." >&2
+  path="$(jq -er --arg component "$component" '
+    .services[$component].deployment
+    | select(.verifyTransitionConfig == true)
+    | .runtimeConfig
+  ' "$manifest")" || {
+    echo "Deployment manifest has no checked runtime config for $component." >&2
     return 1
   }
-  printf '%s\n' "$directory/railway.json"
+  printf '%s\n' "$path"
 }
 
 # service_is_healthy SERVICE [EXPECTED_DEPLOYMENT_ID] [EXPECTED_CONFIG_PATH]

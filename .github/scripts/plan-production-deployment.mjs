@@ -3,18 +3,9 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { RAILWAY_COMPONENTS, backendSelected } from "./deployment-components.mjs";
 
-export const COMPONENTS = [
-  "checks-image",
-  "cache",
-  "run-worker",
-  "media-worker",
-  "git-router",
-  "media-api",
-  "api",
-  "web",
-  "cli-downloads",
-];
+export const COMPONENTS = ["checks-image", ...RAILWAY_COMPONENTS];
 const SELECTIONS = [...COMPONENTS, "cli-distribution"];
 
 function matchesScope(path, scope) {
@@ -52,8 +43,7 @@ export function classifyChanges(manifest, paths, requestedScope = "changed") {
 // when the deployed API's migration inventory changes. Distribution-only releases
 // remain independent, and an unchanged migration baseline preserves narrow scopes.
 export function includeMigrationParticipants(selection, apiChanges) {
-  const backend = ["cache", "run-worker", "media-worker", "git-router", "media-api", "api"];
-  if (!backend.some((component) => selection[component])) return selection;
+  if (!backendSelected(selection)) return selection;
   if (Array.isArray(apiChanges) && !apiChanges.some((path) => path.startsWith("crates/scope-postgres/src/migrations/"))) return selection;
   return { ...selection, ...Object.fromEntries(SELECTIONS.filter((component) => component !== "checks-image").map((component) => [component, true])) };
 }
@@ -125,6 +115,7 @@ function main() {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
 
   for (const [component, selected] of Object.entries(selection)) {
+    if (!SELECTIONS.includes(component) || typeof selected !== "boolean") throw new Error(`Invalid deployment selection for ${component}`);
     const outputName = {
       "checks-image": "checks_image",
       "run-worker": "worker",
@@ -138,6 +129,9 @@ function main() {
     if (outputPath) appendFileSync(outputPath, line);
     else process.stdout.write(line);
   }
+  const backendLine = `backend_selected=${backendSelected(selection)}\n`;
+  if (outputPath) appendFileSync(outputPath, backendLine);
+  else process.stdout.write(backendLine);
 
   if (summaryPath) {
     const selected = Object.entries(selection)

@@ -1,4 +1,4 @@
-use super::ObjectStore;
+use super::{ObjectStore, ensure_object_size};
 use crate::ObjectStoreError;
 use std::{
     collections::BTreeMap,
@@ -57,13 +57,16 @@ impl ObjectStore for MemoryObjectStore {
         Ok(())
     }
 
-    fn get(&self, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
-        self.objects
+    fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
+        let objects = self
+            .objects
             .lock()
-            .map_err(|_| ObjectStoreError::internal_message("object store lock poisoned"))?
+            .map_err(|_| ObjectStoreError::internal_message("object store lock poisoned"))?;
+        let bytes = objects
             .get(key)
-            .cloned()
-            .ok_or_else(|| ObjectStoreError::not_found(format!("object {key} not found")))
+            .ok_or_else(|| ObjectStoreError::not_found(format!("object {key} not found")))?;
+        ensure_object_size("read", key, bytes.len(), max_bytes)?;
+        Ok(bytes.clone())
     }
 
     fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {

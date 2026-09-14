@@ -17,7 +17,7 @@ use crate::{
     state::AppState,
     use_cases::request_revision_inspection::{
         DiffStatusValidationOrder, InspectedRequestChange, InspectedRequestChanges,
-        commit_belongs_to_revision, inspect_request_changes, request_changes,
+        commit_belongs_to_revision, inspect_request_changes,
     },
 };
 use axum::{
@@ -427,18 +427,6 @@ fn request_revision_commit_oids(
         .filter(|line| !line.trim().is_empty())
         .map(ToString::to_string)
         .collect())
-}
-
-fn request_changes_from_repo_with_visibility(
-    raw_repo: &FsPath,
-    policy: &Policy,
-    access: RepositoryAccess,
-    old_head_oid: &str,
-    new_head_oid: &str,
-) -> Result<InspectedRequestChanges, ApiError> {
-    let changes = request_changes(raw_repo, old_head_oid, new_head_oid)?;
-
-    parse_request_changes_with_visibility(&changes, policy, access)
 }
 
 fn parse_request_changes_with_visibility(

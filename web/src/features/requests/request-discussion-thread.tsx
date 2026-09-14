@@ -93,8 +93,8 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
     params,
   })
 
-  async function submitReply(body: string, waitAfterReply = false) {
-    const posted = await postReply(body, { waitAfterReply })
+  async function submitReply(body: string, submissionId: string, waitAfterReply = false) {
+    const posted = await postReply(body, { submissionId, waitAfterReply })
     if (posted) onCloseComposer()
     return posted
   }
@@ -389,7 +389,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                     : null
                 }
                 reopen={discussion.status === 'Resolved'}
-                waitAfterReply={canWaitAfterReply ? (body) => submitReply(body, true) : undefined}
+                waitAfterReply={canWaitAfterReply ? (body, submissionId) => submitReply(body, submissionId, true) : undefined}
               />
             </div>
           ) : null}

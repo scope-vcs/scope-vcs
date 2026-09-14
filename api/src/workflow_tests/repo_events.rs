@@ -5,6 +5,8 @@ use scope_domain::requests::{RequestActorRole, RequestAudience, StartRequestInpu
 use std::time::Duration;
 use tokio_stream::StreamExt;
 
+mod reconciliation;
+
 async fn events(state: AppState, auth: Option<String>) -> Response {
     api_request(
         router(state),
@@ -192,7 +194,7 @@ async fn repo_events_stream_permission_changes_to_members() {
     repo.members.push(test_repository_member(
         TEST_REPO_ID,
         writer_id.clone(),
-        member_permissions(true, false, false),
+        member_permissions(true, false),
     ));
     replace_test_repo(&state, repo).await;
     let response = events(
@@ -328,7 +330,9 @@ async fn event_streams_isolate_missed_recreation_notifications() {
             RepoChangeReason::VisibilityChanged,
         )
         .await;
-    let update = next_repo_change_event(&mut new_stream, 2).await;
+    let update = next_event(&mut new_stream).await;
+    assert!(update.contains("event: repo-change"), "{update}");
+    assert!(update.contains(r#""version":2"#), "{update}");
     assert!(update.contains(r#""incarnation_id":"repoi_recreated_events""#));
     assert!(!update.contains(r#""version":99"#));
 }

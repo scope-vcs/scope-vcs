@@ -5,7 +5,7 @@ use crate::{
         cache::GitRepoHandle,
         projection_repo::projection_bare_repo_for_state,
         request_refs::{
-            RequestRefUpdate, acquire_request_ref_update_lock, attach_visible_request_refs,
+            RequestRefUpdate, acquire_request_ref_update_lock_async, attach_visible_request_refs,
             create_request_receive_pack_staging_repo, install_request_receive_pack_hook,
             persist_request_ref_to_store, rollback_request_ref,
         },
@@ -34,17 +34,12 @@ pub(super) async fn actor_has_open_editable_request(
     actor_user_id: &str,
     access: RepositoryAccess,
 ) -> Result<bool, ApiError> {
-    for request in state
+    for (request, is_invitee) in state
         .metadata
         .requests()
-        .requests_by_repo_id(repo_id)
+        .requests_with_invitee_status(repo_id, Some(actor_user_id))
         .await?
     {
-        let is_invitee = state
-            .metadata
-            .requests()
-            .request_is_invitee(&request.id, actor_user_id)
-            .await?;
         if request_actor_can_edit_ref(&request, actor_user_id, access, is_invitee) {
             return Ok(true);
         }
@@ -71,8 +66,15 @@ pub(crate) async fn prepare_request_staging_repo(
         )));
     }
     let access = repo.access_for_user_id(actor_user_id);
+    let candidates = state
+        .metadata
+        .requests()
+        .requests_with_invitee_status(&repo.record.id, Some(actor_user_id))
+        .await?;
     if access.actor == RepositoryActor::Public
-        && !actor_has_open_editable_request(state, &repo.record.id, actor_user_id, access).await?
+        && !candidates.iter().any(|(request, is_invitee)| {
+            request_actor_can_edit_ref(request, actor_user_id, access, *is_invitee)
+        })
     {
         return Err(ApiError::not_found(format!(
             "repo {owner}/{repo_name} not found"
@@ -105,15 +107,32 @@ pub(crate) async fn prepare_request_staging_repo(
             }
         }
     };
-    let staging_repo = create_request_receive_pack_staging_repo(state, incarnation, &seed_repo)?;
-    if let Err(error) =
-        seed_editable_request_refs_for_repo(state, &repo, actor_user_id, access, &staging_repo)
-            .await
-            .and_then(|()| install_request_receive_pack_hook(&staging_repo))
-    {
-        let _ = remove_dir_if_exists(&staging_repo);
-        return Err(error);
-    }
+    let staging_repo = {
+        let state = state.clone();
+        let incarnation = incarnation.clone();
+        crate::git::blocking::run(move || {
+            create_request_receive_pack_staging_repo(&state, &incarnation, &seed_repo)
+        })
+        .await?
+    };
+    let seeded = seed_editable_request_refs_for_repo(
+        state,
+        &repo,
+        actor_user_id,
+        access,
+        &staging_repo,
+        candidates,
+    )
+    .await;
+    let path = staging_repo.clone();
+    crate::git::blocking::run(move || {
+        let result = seeded.and_then(|()| install_request_receive_pack_hook(&path));
+        if result.is_err() {
+            let _ = remove_dir_if_exists(&path);
+        }
+        result
+    })
+    .await?;
     Ok(staging_repo)
 }
 
@@ -126,7 +145,20 @@ pub(super) async fn seed_editable_request_refs(
 ) -> Result<(), ApiError> {
     let repo = find_repo(state, owner, repo_name).await?;
     let access = repo.access_for_user_id(actor_user_id);
-    seed_editable_request_refs_for_repo(state, &repo, actor_user_id, access, staging_repo).await
+    let candidates = state
+        .metadata
+        .requests()
+        .requests_with_invitee_status(&repo.record.id, Some(actor_user_id))
+        .await?;
+    seed_editable_request_refs_for_repo(
+        state,
+        &repo,
+        actor_user_id,
+        access,
+        staging_repo,
+        candidates,
+    )
+    .await
 }
 
 async fn seed_editable_request_refs_for_repo(
@@ -135,19 +167,10 @@ async fn seed_editable_request_refs_for_repo(
     actor_user_id: &str,
     access: RepositoryAccess,
     staging_repo: &Path,
+    candidates: Vec<(Request, bool)>,
 ) -> Result<(), ApiError> {
     let mut requests = Vec::new();
-    for request in state
-        .metadata
-        .requests()
-        .requests_by_repo_id(&repo.record.id)
-        .await?
-    {
-        let is_invitee = state
-            .metadata
-            .requests()
-            .request_is_invitee(&request.id, actor_user_id)
-            .await?;
+    for (request, is_invitee) in candidates {
         let decision = request_policy(
             &request,
             RequestViewer::new(access, Some(actor_user_id), is_invitee),
@@ -164,7 +187,17 @@ async fn seed_editable_request_refs_for_repo(
     } else {
         None
     };
-    attach_visible_request_refs(state, &requests, staging_repo, public_base_repo.as_deref())
+    let state = state.clone();
+    let staging_repo = staging_repo.to_path_buf();
+    crate::git::blocking::run(move || {
+        attach_visible_request_refs(
+            &state,
+            &requests,
+            &staging_repo,
+            public_base_repo.as_deref(),
+        )
+    })
+    .await
 }
 
 async fn public_projection_repo(
@@ -209,7 +242,8 @@ pub(super) async fn persist_request_ref_revision(
             "repository changed after receive-pack; retry the push",
         ));
     }
-    let _lock = acquire_request_ref_update_lock(state, &incarnation, &update.request_ref)?;
+    let update_lock =
+        acquire_request_ref_update_lock_async(state, &incarnation, &update.request_ref).await?;
     let request_audience = request.audience;
     let now_unix = unix_now()?;
     let expected_old_head_oid = update
@@ -238,6 +272,7 @@ pub(super) async fn persist_request_ref_revision(
         .await;
     match mutation {
         Ok(_) => {
+            let _update_lock = update_lock;
             state.product_analytics.capture(
                 crate::product_analytics::ProductEvent::request_revised(
                     actor_user_id,
@@ -250,12 +285,20 @@ pub(super) async fn persist_request_ref_revision(
             persisted.fence.release().await;
         }
         Err(error) => {
-            rollback_request_ref(
-                state,
-                &incarnation,
-                &update.request_ref,
-                persisted.previous_head,
-            );
+            let rollback_state = state.clone();
+            let rollback_incarnation = incarnation.clone();
+            let request_ref = update.request_ref.clone();
+            crate::git::blocking::run(move || {
+                let _update_lock = update_lock;
+                rollback_request_ref(
+                    &rollback_state,
+                    &rollback_incarnation,
+                    &request_ref,
+                    persisted.previous_head,
+                );
+                Ok(())
+            })
+            .await?;
             crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
                 state,
                 std::slice::from_ref(&persisted.git_snapshot),

@@ -66,7 +66,7 @@ impl CliError {
                 ExitCategory::StateConflict
             }
             ErrorCode::ServiceUnavailable | ErrorCode::TooManyRequests => ExitCategory::Temporary,
-            ErrorCode::Internal | ErrorCode::NotImplemented => ExitCategory::Unexpected,
+            ErrorCode::Internal => ExitCategory::Unexpected,
         }
     }
 }

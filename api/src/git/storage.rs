@@ -118,7 +118,17 @@ pub(crate) fn remove_dir_if_exists(path: &FsPath) -> Result<(), ApiError> {
     }
 }
 
-pub(crate) fn ensure_first_push_receive_pack_staging_repo(
+pub(crate) async fn ensure_first_push_receive_pack_staging_repo(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+) -> Result<PathBuf, ApiError> {
+    let state = state.clone();
+    let incarnation = incarnation.clone();
+    crate::git::blocking::run(move || initialize_first_push_staging_repo(&state, &incarnation))
+        .await
+}
+
+fn initialize_first_push_staging_repo(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
 ) -> Result<PathBuf, ApiError> {
@@ -170,22 +180,11 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
             "repository was recreated during push preparation",
         ));
     }
-    let repo_root = receive_pack_staging_repo_path(state, incarnation)?;
-    if let Some(parent) = repo_root.parent() {
-        ensure_private_dir(parent)?;
-    }
-    if let Some(head) = repo.git_head.as_ref() {
-        let seed_repo = state
+    let seed_repo = if let Some(head) = repo.git_head.as_ref() {
+        state
             .repository_engine
             .materialize_repository(state, incarnation, head, &repo.git_pack_spans)
-            .await?;
-        let seed = seed_repo.to_string_lossy().to_string();
-        let target = repo_root.to_string_lossy().to_string();
-        run_git(
-            None,
-            &["clone", "--bare", "--local", &seed, &target],
-            "cloning receive-pack staging repo",
-        )?;
+            .await?
     } else {
         let repo = find_repo(state, owner, repo_name).await?;
         let principal = Principal {
@@ -194,29 +193,44 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
         };
         let view_key = ProjectionViewKey::from_access(repo.access_for_principal(&principal));
         let projection = project_graph(&repo.graph, &repo.visibility_change_sets, view_key);
-        let seed_repo = projection_bare_repo_for_state(
+        projection_bare_repo_for_state(
             state,
             incarnation,
             &projection,
             repo.git_head.as_ref(),
             &repo.git_pack_spans,
         )
-        .await?;
-        let seed = seed_repo.to_string_lossy().to_string();
-        let target = repo_root.to_string_lossy().to_string();
+        .await?
+    };
+    let state = state.clone();
+    let incarnation = incarnation.clone();
+    crate::git::blocking::run(move || {
+        let repo_root = receive_pack_staging_repo_path(&state, &incarnation)?;
+        if let Some(parent) = repo_root.parent() {
+            ensure_private_dir(parent)?;
+        }
+        // Local cloning hardlinks/copies objects, so the staging repository does
+        // not retain alternates into a cache that can be evicted after this lease.
         run_git(
             None,
-            &["clone", "--bare", "--shared", &seed, &target],
+            &[
+                "clone",
+                "--bare",
+                "--local",
+                seed_repo.to_string_lossy().as_ref(),
+                repo_root.to_string_lossy().as_ref(),
+            ],
             "cloning receive-pack staging repo",
         )?;
-    }
-    run_git(
-        Some(&repo_root),
-        &["config", "http.receivepack", "true"],
-        "enabling receive-pack",
-    )?;
-    install_ready_pre_receive_hook(&repo_root)?;
-    Ok(repo_root)
+        run_git(
+            Some(&repo_root),
+            &["config", "http.receivepack", "true"],
+            "enabling receive-pack",
+        )?;
+        install_ready_pre_receive_hook(&repo_root)?;
+        Ok(repo_root)
+    })
+    .await
 }
 
 pub(crate) fn install_first_push_pre_receive_hook(repo_root: &FsPath) -> Result<(), ApiError> {

@@ -41,7 +41,6 @@ impl ApiError {
         too_many_requests => TooManyRequests,
         unauthorized => Unauthorized,
         not_found => NotFound,
-        not_implemented => NotImplemented,
     }
 
     pub(crate) fn internal_message(diagnostic: impl Into<String>) -> Self {
@@ -304,7 +303,6 @@ const fn error_code(kind: ErrorKind) -> ErrorCode {
         ErrorKind::Forbidden => ErrorCode::Forbidden,
         ErrorKind::Internal => ErrorCode::Internal,
         ErrorKind::NotFound => ErrorCode::NotFound,
-        ErrorKind::NotImplemented => ErrorCode::NotImplemented,
         ErrorKind::PayloadTooLarge => ErrorCode::PayloadTooLarge,
         ErrorKind::ServiceUnavailable => ErrorCode::ServiceUnavailable,
         ErrorKind::TooManyRequests => ErrorCode::TooManyRequests,

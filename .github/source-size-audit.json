@@ -2,9 +2,9 @@
   "version": 1,
   "production": [
     {
-      "path": "api/src/git/cache.rs",
-      "owner": "repository Git materialization cache",
-      "reason": "Materialization coordination, leases, pruning, and their concurrency and eviction tests define one cache lifecycle."
+      "path": "api/src/git/storage.rs",
+      "owner": "receive-pack staging and Git HTTP storage",
+      "reason": "Staging repository creation, bounded request-body spooling, Git HTTP execution, and hook installation share one receive-pack filesystem lifecycle. Blocking filesystem and Git work is dispatched through the existing blocking-task owner."
     },
     {
       "path": "api/src/http/request_discussions.rs",
@@ -30,11 +30,6 @@
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
       "owner": "request attachment aggregate",
       "reason": "Upload, processing, binding, access, and cleanup transitions share source, derivative, lease, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."
-    },
-    {
-      "path": "crates/scope-domain/src/requests/discussions.rs",
-      "owner": "request discussion aggregate",
-      "reason": "Discussion creation, replies, transitions, read state, validation, and transition tests enforce one aggregate."
     },
     {
       "path": "crates/scope-git/src/projection_identity.rs",

@@ -58,7 +58,6 @@ pub(super) fn add_maintainer(repo: &mut Repository) {
         permissions: RepositoryMemberPermissions {
             can_push: true,
             can_change_file_visibility: true,
-            can_apply_changes: true,
         },
         created_at_unix: 1_800_000_000,
         updated_at_unix: 1_800_000_000,

@@ -8,6 +8,7 @@ import { ReviewDiffTransientError } from './review-file-diff-renderer'
 export function createReviewFileDiffWorkerPool(
   createWorker: () => Worker,
   maxWorkers: number,
+  startupDeadlineMs?: number,
 ) {
   const workers = new Map<Worker, boolean>()
 
@@ -26,6 +27,7 @@ export function createReviewFileDiffWorkerPool(
   ): Promise<ReviewFileDiffWorkerResult> {
     signal?.throwIfAborted()
     let worker = [...workers].find(([, busy]) => !busy)?.[0]
+    const starting = !worker
     if (!worker) {
       if (workers.size >= maxWorkers) throw new ReviewDiffTransientError('busy')
       worker = createWorker()
@@ -37,7 +39,9 @@ export function createReviewFileDiffWorkerPool(
     workers.set(worker, true)
     worker.ref()
     try {
-      const result = await runReviewFileDiffWorker(worker, input, deadlineMs, signal)
+      const result = await runReviewFileDiffWorker(
+        worker, input, deadlineMs, signal, starting ? startupDeadlineMs : undefined,
+      )
       if (result.kind === 'error') await discard(worker).catch(() => {})
       return result
     } catch (error) {
@@ -57,6 +61,7 @@ export function runReviewFileDiffWorker(
   input: ReviewFileDiffWorkerInput,
   deadlineMs: number,
   signal?: AbortSignal,
+  startupDeadlineMs = deadlineMs,
 ): Promise<ReviewFileDiffWorkerResult> {
   signal?.throwIfAborted()
   return new Promise((resolve, reject) => {
@@ -72,13 +77,20 @@ export function runReviewFileDiffWorker(
       if (result) resolve(result)
       else reject(error)
     }
-    const onMessage = (result: ReviewFileDiffWorkerResult) => finish(result)
+    const onMessage = (result: ReviewFileDiffWorkerResult | { kind: 'ready' }) => {
+      if (result.kind === 'ready') {
+        clearTimeout(deadline)
+        deadline = setTimeout(onDeadline, deadlineMs)
+        worker.once('message', onMessage)
+      } else {
+        finish(result)
+      }
+    }
     const onError = () => finish(undefined, new Error('This file diff could not be rendered.'))
     const onExit = () => finish(undefined, new Error('The diff renderer exited before returning a result.'))
     const onAbort = () => finish(undefined, signal?.reason)
-    const deadline = setTimeout(() => {
-      finish(undefined, new ReviewDiffTransientError('deadline'))
-    }, deadlineMs)
+    const onDeadline = () => finish(undefined, new ReviewDiffTransientError('deadline'))
+    let deadline = setTimeout(onDeadline, startupDeadlineMs)
     worker.once('message', onMessage)
     worker.once('error', onError)
     worker.once('exit', onExit)

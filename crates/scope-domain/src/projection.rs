@@ -16,6 +16,17 @@ pub struct NativePublicCommit {
     pub changed_paths: Vec<ScopePath>,
 }
 
+/// Facts read from the immutable Git object after checking its recorded identity.
+/// These are read models; the native Git object remains their source of truth.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativePublicCommitDetails {
+    pub author: String,
+    pub message: String,
+    pub occurred_at_unix: i64,
+    /// Exact changes against the first Git parent, including inherited public files.
+    pub changes: Vec<FileChange>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogicalCommitOrigin {
     CanonicalPush {

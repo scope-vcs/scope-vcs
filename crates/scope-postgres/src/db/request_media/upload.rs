@@ -2,6 +2,7 @@ use super::{
     FinishRequestAttachmentUploadCommand, MediaStore, PrepareRequestAttachmentCommand,
     PreparedRequestAttachment, ReserveUploadPartResult, StorePartResult,
     StoredRequestAttachmentPart,
+    budget::{lock_media_budget, media_usage},
     locks::lock_attachment,
     persistence::{as_i32, as_i64, attachment_by_id, enum_string},
 };
@@ -83,8 +84,7 @@ impl MediaStore {
             &command.target,
         )
         .await?;
-        let request_source_bytes = reserved_request_source_bytes(&tx, &command.request_id).await?;
-        let repository_reserved_bytes = reserved_repository_bytes(&tx, &repo.record.id).await?;
+        let usage = media_usage(&tx, &repo.record.id, Some(&command.request_id), None).await?;
         let decision = validate_prepare_attachment(PrepareRequestAttachmentInput {
             attachment_id: command.attachment_id,
             repository_id: repo.record.id.clone(),
@@ -100,8 +100,8 @@ impl MediaStore {
             actor_can_write_target,
             request_is_open: !request.is_terminal(),
             target_attachment_count,
-            request_source_bytes,
-            repository_reserved_bytes,
+            request_source_bytes: usage.request_source_bytes,
+            repository_reserved_bytes: usage.repository_bytes,
             now_unix: command.now_unix,
         })?;
         insert_prepared_attachment(
@@ -462,80 +462,6 @@ where
         .try_get::<i64>("", "count")
         .map_err(PostgresError::internal)?;
     usize::try_from(count).map_err(PostgresError::internal)
-}
-
-/// Source bytes reserved by one request's attachments that are not yet deleted.
-async fn reserved_request_source_bytes<C>(conn: &C, request_id: &str) -> Result<u64, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    live_attachment_bytes(
-        conn,
-        "SELECT COALESCE(SUM(attachment.reserved_source_bytes), 0)::bigint AS bytes
-         FROM scope_request_media_attachments attachment
-         WHERE attachment.request_id = $1
-           AND NOT EXISTS (
-                SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
-                WHERE cleanup.attachment_id = attachment.id AND cleanup.state = 'Completed'
-           )",
-        request_id,
-    )
-    .await
-}
-
-/// Source plus derivative bytes held by one repository's attachments that are
-/// not yet deleted; reserved derivative bytes stand in until actual bytes are known.
-async fn reserved_repository_bytes<C>(conn: &C, repository_id: &str) -> Result<u64, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    live_attachment_bytes(
-        conn,
-        "SELECT COALESCE(SUM(
-            attachment.reserved_source_bytes
-            + COALESCE(attachment.actual_derivative_bytes, attachment.reserved_derivative_bytes)
-         ), 0)::bigint AS bytes
-         FROM scope_request_media_attachments attachment
-         WHERE attachment.repository_id = $1
-           AND NOT EXISTS (
-                SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
-                WHERE cleanup.attachment_id = attachment.id AND cleanup.state = 'Completed'
-           )",
-        repository_id,
-    )
-    .await
-}
-
-async fn live_attachment_bytes<C>(conn: &C, sql: &str, id: &str) -> Result<u64, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let bytes = conn
-        .query_one(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            sql,
-            [id.into()],
-        ))
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| PostgresError::internal_message("attachment usage missing"))?
-        .try_get::<i64>("", "bytes")
-        .map_err(PostgresError::internal)?;
-    u64::try_from(bytes).map_err(PostgresError::internal)
-}
-
-pub(super) async fn lock_media_budget<C>(conn: &C, repository_id: &str) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    conn.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT pg_advisory_xact_lock(hashtextextended('scope:request-media-budget:' || $1, 0))",
-        [repository_id.into()],
-    ))
-    .await
-    .map_err(PostgresError::internal)?;
-    Ok(())
 }
 
 async fn attachment_for_operation<C>(

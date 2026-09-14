@@ -30,12 +30,12 @@ use {
     scope_domain::requests::{
         CreateRequestDiscussionInput, CreateRequestDiscussionMutation,
         CreateRequestDiscussionReplyInput, CreateRequestDiscussionReplyMutation,
-        MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput,
-        ReopenRequestDiscussionInput, RequestDiscussion, RequestDiscussionReadState,
-        RequestRevision, ResolveRequestDiscussionInput, create_request_discussion,
-        create_request_discussion_reply, ensure_request_discussion_transition_allowed,
-        mark_request_discussion_read, reopen_and_reply_to_request_discussion,
-        reopen_request_discussion, resolve_request_discussion,
+        MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput, RequestDiscussion,
+        RequestDiscussionReadState, RequestDiscussionTransitionInput, RequestRevision,
+        create_request_discussion, create_request_discussion_reply,
+        ensure_request_discussion_transition_allowed, mark_request_discussion_read,
+        reopen_and_reply_to_request_discussion, reopen_request_discussion,
+        resolve_request_discussion,
     },
 };
 
@@ -364,6 +364,9 @@ impl RequestStore {
         )
         .await?
         {
+            if !policy.discussion_visible {
+                return Err(PostgresError::not_found("request discussion not found"));
+            }
             let state = match read_state(&tx, &discussion.id, &input.actor_user_id).await? {
                 Some(state) => state,
                 None => {
@@ -450,7 +453,7 @@ impl RequestStore {
             DiscussionTransition::Resolve => resolve_request_discussion(
                 request,
                 discussion,
-                ResolveRequestDiscussionInput {
+                RequestDiscussionTransitionInput {
                     request_id,
                     discussion_id,
                     actor_user_id,
@@ -463,7 +466,7 @@ impl RequestStore {
             DiscussionTransition::Reopen => reopen_request_discussion(
                 request,
                 discussion,
-                ReopenRequestDiscussionInput {
+                RequestDiscussionTransitionInput {
                     request_id,
                     discussion_id,
                     actor_user_id,
@@ -553,6 +556,9 @@ impl RequestStore {
         )
         .await?
         {
+            if !policy.discussion_visible {
+                return Err(PostgresError::not_found("request discussion not found"));
+            }
             let state = monotonic_read_state(
                 &tx,
                 &discussion,

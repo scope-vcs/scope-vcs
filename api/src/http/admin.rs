@@ -23,6 +23,18 @@ pub(crate) struct AdminCleanupStatusResponse {
 struct PendingCleanupResponse {
     repo_storage: RepoStorageCleanupQueueResponse,
     source_blob_deletes: SourceBlobCleanupQueueResponse,
+    request_refs: Vec<RequestRefCleanupStatusResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct RequestRefCleanupStatusResponse {
+    request_id: String,
+    repo_id: String,
+    incarnation_id: String,
+    request_name: String,
+    attempts: u32,
+    next_run_at_unix: u64,
+    last_error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -93,6 +105,19 @@ async fn cleanup_status(state: &AppState) -> Result<AdminCleanupStatusResponse, 
         pending_cleanup: PendingCleanupResponse {
             repo_storage: RepoStorageCleanupQueueResponse::from_cleanups(&status.repo_storage),
             source_blob_deletes,
+            request_refs: status
+                .request_refs
+                .into_iter()
+                .map(|cleanup| RequestRefCleanupStatusResponse {
+                    request_id: cleanup.request_id,
+                    repo_id: cleanup.incarnation.repository_id().to_string(),
+                    incarnation_id: cleanup.incarnation.incarnation_id().to_string(),
+                    request_name: cleanup.request_name,
+                    attempts: cleanup.attempts,
+                    next_run_at_unix: cleanup.next_run_at_unix,
+                    last_error: cleanup.last_error,
+                })
+                .collect(),
         },
     })
 }

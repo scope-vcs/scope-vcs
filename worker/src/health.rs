@@ -23,7 +23,7 @@ pub(crate) struct WorkerHealth {
 
 struct WorkerHealthState {
     schema_ready: AtomicBool,
-    last_successful_poll_unix: [AtomicU64; 4],
+    valid_until_unix: [AtomicU64; 4],
     stale_after_secs: u64,
 }
 
@@ -33,7 +33,7 @@ impl WorkerHealth {
         Self {
             state: Arc::new(WorkerHealthState {
                 schema_ready: AtomicBool::new(false),
-                last_successful_poll_unix: std::array::from_fn(|_| AtomicU64::new(0)),
+                valid_until_unix: std::array::from_fn(|_| AtomicU64::new(0)),
                 stale_after_secs,
             }),
         }
@@ -48,8 +48,24 @@ impl WorkerHealth {
     }
 
     pub(crate) fn mark_poll_succeeded(&self, worker_loop: WorkerLoop, now_unix: u64) {
-        self.state.last_successful_poll_unix[worker_loop as usize]
-            .store(now_unix, Ordering::Release);
+        self.state.valid_until_unix[worker_loop as usize].store(
+            now_unix.saturating_add(self.state.stale_after_secs),
+            Ordering::Release,
+        );
+    }
+
+    /// A successful durable lease claim/renewal proves the bounded operation is
+    /// being supervised even when it has not reached the next idle poll yet.
+    pub(crate) fn mark_work_progress(
+        &self,
+        worker_loop: WorkerLoop,
+        now_unix: u64,
+        valid_for: Duration,
+    ) {
+        self.state.valid_until_unix[worker_loop as usize].fetch_max(
+            now_unix.saturating_add(valid_for.as_secs()),
+            Ordering::Release,
+        );
     }
 
     pub(crate) async fn serve(self, port: u16) -> anyhow::Result<()> {
@@ -59,15 +75,10 @@ impl WorkerHealth {
 
     fn is_ready_at(&self, now_unix: u64) -> bool {
         self.state.schema_ready.load(Ordering::Acquire)
-            && self
-                .state
-                .last_successful_poll_unix
-                .iter()
-                .all(|last_success| {
-                    let last_success = last_success.load(Ordering::Acquire);
-                    last_success > 0
-                        && now_unix.saturating_sub(last_success) <= self.state.stale_after_secs
-                })
+            && self.state.valid_until_unix.iter().all(|valid_until| {
+                let valid_until = valid_until.load(Ordering::Acquire);
+                valid_until > 0 && now_unix <= valid_until
+            })
     }
 }
 
@@ -81,6 +92,16 @@ async fn readyz(State(health): State<WorkerHealth>) -> StatusCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn refresh_non_compaction_loops(health: &WorkerHealth, now_unix: u64) {
+        for worker_loop in [
+            WorkerLoop::Control,
+            WorkerLoop::Cleanup,
+            WorkerLoop::Dependencies,
+        ] {
+            health.mark_poll_succeeded(worker_loop, now_unix);
+        }
+    }
 
     #[test]
     fn readiness_requires_a_ready_schema_and_a_recent_poll_from_every_loop() {
@@ -118,5 +139,23 @@ mod tests {
         assert!(!health.is_ready_at(111));
         health.mark_poll_succeeded(WorkerLoop::Control, 111);
         assert!(!health.is_ready_at(111));
+    }
+
+    #[test]
+    fn active_compaction_is_ready_until_its_lease_progress_expires() {
+        let health = WorkerHealth::new(Duration::from_secs(1));
+        health.mark_schema_ready();
+        health.mark_work_progress(WorkerLoop::Compaction, 100, Duration::from_secs(150));
+
+        refresh_non_compaction_loops(&health, 111);
+        assert!(health.is_ready_at(111));
+        refresh_non_compaction_loops(&health, 200);
+        assert!(health.is_ready_at(200));
+        refresh_non_compaction_loops(&health, 251);
+        assert!(!health.is_ready_at(251));
+
+        health.mark_work_progress(WorkerLoop::Compaction, 200, Duration::from_secs(150));
+        refresh_non_compaction_loops(&health, 251);
+        assert!(health.is_ready_at(251));
     }
 }

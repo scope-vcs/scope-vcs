@@ -61,6 +61,7 @@ struct FakeState {
     cancel_on_start: bool,
     cancel_on_heartbeat: AtomicBool,
     heartbeat_observed: Mutex<Option<mpsc::Sender<()>>>,
+    heartbeat_gate: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>>,
 }
 
 impl FakeSink {
@@ -72,6 +73,7 @@ impl FakeSink {
                 cancel_on_start: false,
                 cancel_on_heartbeat: AtomicBool::new(false),
                 heartbeat_observed: Mutex::new(None),
+                heartbeat_gate: Mutex::new(None),
             }),
         }
     }
@@ -89,6 +91,16 @@ impl FakeSink {
 
     fn calls(&self) -> Vec<Call> {
         self.state.calls.lock().unwrap().clone()
+    }
+
+    fn run(&self, job: &WorkflowJob, timeout: Duration) -> anyhow::Result<ExecutionOutcome> {
+        let workspace = tempfile::tempdir().unwrap();
+        run_steps_with_options(
+            self.clone(),
+            job,
+            workspace.path(),
+            SupervisorOptions::for_test(timeout),
+        )
     }
 
     fn record(&self, call: Call) {
@@ -139,6 +151,11 @@ impl ExecutionSink for FakeSink {
 
     fn heartbeat(&self) -> anyhow::Result<bool> {
         self.record(Call::Heartbeat);
+        let gate = self.state.heartbeat_gate.lock().unwrap().take();
+        if let Some((entered, release)) = gate {
+            entered.send(()).unwrap();
+            release.recv().unwrap();
+        }
         let cancellation_requested = self.state.cancel_on_heartbeat.load(Ordering::Acquire);
         if cancellation_requested
             && let Some(observed) = self.state.heartbeat_observed.lock().unwrap().as_ref()
@@ -176,19 +193,12 @@ impl ExecutionSink for FakeSink {
 #[test]
 fn successful_steps_upload_bounded_chunks_with_global_sequences() {
     let sink = FakeSink::new([]);
-    let workspace = tempfile::tempdir().unwrap();
     let job = job(&[
         ("first", "printf first; printf err >&2"),
         ("second", "head -c 20000 /dev/zero | tr '\\0' x"),
     ]);
 
-    let outcome = run_steps_with_options(
-        sink.clone(),
-        &job,
-        workspace.path(),
-        SupervisorOptions::for_test(Duration::from_secs(2)),
-    )
-    .unwrap();
+    let outcome = sink.run(&job, Duration::from_secs(2)).unwrap();
 
     assert_eq!(
         outcome,
@@ -233,16 +243,9 @@ fn successful_steps_upload_bounded_chunks_with_global_sequences() {
 #[test]
 fn truncation_stops_uploads_but_completes_the_step_truthfully() {
     let sink = FakeSink::new([AppendAction::Truncated]);
-    let workspace = tempfile::tempdir().unwrap();
     let job = job(&[("logs", "head -c 50000 /dev/zero | tr '\\0' x")]);
 
-    let outcome = run_steps_with_options(
-        sink.clone(),
-        &job,
-        workspace.path(),
-        SupervisorOptions::for_test(Duration::from_secs(2)),
-    )
-    .unwrap();
+    let outcome = sink.run(&job, Duration::from_secs(2)).unwrap();
 
     assert_eq!(
         outcome,
@@ -268,16 +271,9 @@ fn truncation_stops_uploads_but_completes_the_step_truthfully() {
 #[test]
 fn nonzero_exit_drains_logs_before_completing_the_step() {
     let sink = FakeSink::new([]);
-    let workspace = tempfile::tempdir().unwrap();
     let job = job(&[("fail", "printf failure >&2; exit 42")]);
 
-    let outcome = run_steps_with_options(
-        sink.clone(),
-        &job,
-        workspace.path(),
-        SupervisorOptions::for_test(Duration::from_secs(2)),
-    )
-    .unwrap();
+    let outcome = sink.run(&job, Duration::from_secs(2)).unwrap();
 
     assert_eq!(outcome, ExecutionOutcome::Terminal);
     let calls = sink.calls();
@@ -304,16 +300,9 @@ fn nonzero_exit_drains_logs_before_completing_the_step() {
 #[test]
 fn output_can_close_before_the_process_exits() {
     let sink = FakeSink::new([]);
-    let workspace = tempfile::tempdir().unwrap();
     let job = job(&[("close-output", "exec 1>&- 2>&-; sleep 0.15")]);
 
-    let outcome = run_steps_with_options(
-        sink.clone(),
-        &job,
-        workspace.path(),
-        SupervisorOptions::for_test(Duration::from_secs(1)),
-    )
-    .unwrap();
+    let outcome = sink.run(&job, Duration::from_secs(1)).unwrap();
 
     assert_eq!(
         outcome,
@@ -372,17 +361,10 @@ fn escaped_descendant_cannot_hold_output_capture_open() {
 #[test]
 fn timeout_reaps_the_process_group_before_completing() {
     let sink = FakeSink::new([]);
-    let workspace = tempfile::tempdir().unwrap();
     let job = job(&[("timeout", "sleep 30 & wait")]);
     let started = Instant::now();
 
-    let outcome = run_steps_with_options(
-        sink.clone(),
-        &job,
-        workspace.path(),
-        SupervisorOptions::for_test(Duration::from_millis(40)),
-    )
-    .unwrap();
+    let outcome = sink.run(&job, Duration::from_millis(40)).unwrap();
 
     assert_eq!(outcome, ExecutionOutcome::Terminal);
     assert!(started.elapsed() < Duration::from_secs(2));
@@ -471,22 +453,53 @@ fn heartbeat_can_cancel_while_an_append_is_blocked() {
 }
 
 #[test]
+fn a_stalled_heartbeat_cannot_delay_process_timeout() {
+    let (entered, received) = mpsc::channel();
+    let (release, blocked) = mpsc::channel();
+    let sink = FakeSink::new([]);
+    *sink.state.heartbeat_gate.lock().unwrap() = Some((entered, blocked));
+    let workspace = tempfile::tempdir().unwrap();
+    let path = workspace.path().to_owned();
+    let run_sink = sink.clone();
+    let run = thread::spawn(move || {
+        run_steps_with_options(
+            run_sink,
+            &job(&[("deadline", "echo $$ > child.pid; sleep 30 & wait")]),
+            &path,
+            SupervisorOptions::for_test(Duration::from_millis(150)),
+        )
+    });
+    received.recv_timeout(TEST_SYNC_TIMEOUT).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !sink.calls().contains(&Call::CompleteTimeout(false)) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    let completed_while_blocked = sink.calls().contains(&Call::CompleteTimeout(false));
+    let pid: i32 = std::fs::read_to_string(workspace.path().join("child.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let child_still_exists = unsafe { libc::kill(pid, 0) } == 0;
+    release.send(()).unwrap();
+    assert_eq!(run.join().unwrap().unwrap(), ExecutionOutcome::Terminal);
+    assert!(completed_while_blocked, "heartbeat blocked the job timeout");
+    assert!(
+        !child_still_exists,
+        "child must be reaped before heartbeat returns"
+    );
+}
+
+#[test]
 fn retry_reuses_the_exact_request_before_advancing_the_sequence() {
     let sink = FakeSink::new([
         AppendAction::Retryable,
         AppendAction::Accepted,
         AppendAction::Accepted,
     ]);
-    let workspace = tempfile::tempdir().unwrap();
     let job = job(&[("retry", "head -c 100000 /dev/zero | tr '\\0' x")]);
 
-    run_steps_with_options(
-        sink.clone(),
-        &job,
-        workspace.path(),
-        SupervisorOptions::for_test(Duration::from_secs(2)),
-    )
-    .unwrap();
+    sink.run(&job, Duration::from_secs(2)).unwrap();
 
     let appends = sink
         .calls()
@@ -507,17 +520,10 @@ fn retry_reuses_the_exact_request_before_advancing_the_sequence() {
 #[test]
 fn fatal_upload_failure_reaps_the_process_group_then_abandons() {
     let sink = FakeSink::new([AppendAction::Fatal]);
-    let workspace = tempfile::tempdir().unwrap();
     let job = job(&[("fail", "printf log; sleep 30 & wait")]);
     let started = Instant::now();
 
-    let error = run_steps_with_options(
-        sink.clone(),
-        &job,
-        workspace.path(),
-        SupervisorOptions::for_test(Duration::from_secs(2)),
-    )
-    .unwrap_err();
+    let error = sink.run(&job, Duration::from_secs(2)).unwrap_err();
 
     assert_eq!(error.to_string(), "fatal append");
     assert!(started.elapsed() < Duration::from_secs(2));
@@ -586,15 +592,8 @@ fn producer_finishes_while_upload_is_blocked_and_spooled_logs_survive_exit_grace
 #[test]
 fn batched_invalid_utf8_preserves_replacement_text_within_the_chunk_limit() {
     let sink = FakeSink::new([]);
-    let workspace = tempfile::tempdir().unwrap();
     let job = job(&[("bytes", "head -c 70000 /dev/zero | tr '\\0' '\\377'")]);
-    run_steps_with_options(
-        sink.clone(),
-        &job,
-        workspace.path(),
-        SupervisorOptions::for_test(Duration::from_secs(2)),
-    )
-    .unwrap();
+    sink.run(&job, Duration::from_secs(2)).unwrap();
     let chunks = sink
         .calls()
         .into_iter()

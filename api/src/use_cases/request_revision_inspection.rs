@@ -181,22 +181,37 @@ fn git_commit_exists(raw_repo: &FsPath, commit_oid: &str) -> Result<bool, ApiErr
     }
 }
 
-pub(crate) fn request_changes(
+pub(crate) fn request_commit_changes(
     raw_repo: &FsPath,
-    old_head_oid: &str,
-    new_head_oid: &str,
+    parent_oid: Option<&str>,
+    commit_oid: &str,
 ) -> Result<Vec<u8>, ApiError> {
-    let args = [
-        "--literal-pathspecs",
-        "diff",
-        "--raw",
-        "-z",
-        "--no-renames",
-        "--abbrev=64",
-        old_head_oid,
-        new_head_oid,
-        "--",
-    ];
+    let mut args = vec!["--literal-pathspecs"];
+    if let Some(parent_oid) = parent_oid {
+        args.extend([
+            "diff",
+            "--raw",
+            "-z",
+            "--no-renames",
+            "--abbrev=64",
+            parent_oid,
+            commit_oid,
+            "--",
+        ]);
+    } else {
+        args.extend([
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "-r",
+            "--raw",
+            "-z",
+            "--no-renames",
+            "--abbrev=64",
+            commit_oid,
+            "--",
+        ]);
+    }
     let output = run_git_output(Some(raw_repo), &args, "reading request changes")?;
     if !output.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
@@ -204,6 +219,5 @@ pub(crate) fn request_changes(
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
-
     Ok(output.stdout)
 }

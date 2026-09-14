@@ -131,22 +131,12 @@ pub(crate) async fn git_upload_pack_repo_for_request(
         .await?
     };
     let mut requests = Vec::new();
-    for request in state
+    for (request, is_invitee) in state
         .metadata
         .requests()
-        .requests_by_repo_id(&repo.record.id)
+        .requests_with_invitee_status(&repo.record.id, viewer_user_id.as_deref())
         .await?
     {
-        let is_invitee = match viewer_user_id.as_deref() {
-            Some(user_id) => {
-                state
-                    .metadata
-                    .requests()
-                    .request_is_invitee(&request.id, user_id)
-                    .await?
-            }
-            None => false,
-        };
         let decision = request_policy(
             &request,
             RequestViewer::new(access, viewer_user_id.as_deref(), is_invitee),

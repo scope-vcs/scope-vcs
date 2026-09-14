@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 pub struct RepositoryMemberPermissions {
     pub can_push: bool,
     pub can_change_file_visibility: bool,
-    pub can_apply_changes: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

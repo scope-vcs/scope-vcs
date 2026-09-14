@@ -29,6 +29,14 @@ railway_scope=(
   --environment "$staging_environment_id"
 )
 
+read_railway() {
+  if [[ -n "${SCOPE_TEST_RAILWAY_READ_HELPER:-}" ]]; then
+    "$SCOPE_TEST_RAILWAY_READ_HELPER" "$@"
+  else
+    node .github/scripts/railway-read.mjs "$@"
+  fi
+}
+
 remove_deployment() {
   local deployment_id="$1"
   local response
@@ -43,7 +51,7 @@ stop_service() {
   local service="$1"
   local deployments deployment_id
   deployments="$(
-    node .github/scripts/railway-read.mjs deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json
+    read_railway deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json
   )" || return $?
   deployment_id="$(
     jq -er '
@@ -59,7 +67,7 @@ stop_service() {
     local _attempt remaining
     for _attempt in 1 2 3; do
       if remove_deployment "$deployment_id"; then return 0; fi
-      deployments="$(node .github/scripts/railway-read.mjs deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json)" || return $?
+      deployments="$(read_railway deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json)" || return $?
       remaining="$(jq -er --arg id "$deployment_id" 'map(select(.id == $id and .status != "REMOVED")) | length' <<< "$deployments")" || return $?
       [[ "$remaining" == 0 ]] && return 0
       sleep 2
@@ -72,17 +80,14 @@ stop_service() {
 wait_until_stopped() {
   local service="$1"
   local deadline=$((SECONDS + 300))
-  local running crashed
+  local stopped
 
   while [[ "$SECONDS" -lt "$deadline" ]]; do
-    local services replicas
-    services="$(node .github/scripts/railway-read.mjs service list "${railway_scope[@]}" --json)" || return $?
-    replicas="$(jq -er --arg service "$service" '
-      .[] | select(.id == $service) |
-      [(.replicas.running // 0), (.replicas.crashed // 0)] | @tsv
-    ' <<< "$services")" || return $?
-    IFS=$'\t' read -r running crashed <<< "$replicas"
-    if [[ "$running" == "0" && "$crashed" == "0" ]]; then
+    local services
+    services="$(read_railway service list "${railway_scope[@]}" --json)" || return $?
+    stopped="$(SCOPE_RAILWAY_SERVICES_JSON="$services" SCOPE_RAILWAY_SERVICE_ID="$service" \
+      node .github/scripts/railway-service-health.mjs stopped)" || return $?
+    if [[ "$stopped" == "true" ]]; then
       return 0
     fi
     sleep 5

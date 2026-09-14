@@ -151,7 +151,6 @@ pub struct RepositoryAccessResponse {
     pub can_read_private_files: bool,
     pub can_push: bool,
     pub can_change_file_visibility: bool,
-    pub can_apply_changes: bool,
     pub can_manage_members: bool,
     pub can_delete_repo: bool,
 }

@@ -14,7 +14,6 @@ function repo(actor: RepositoryActor): RepoSummaryResponse {
   return {
     access: {
       actor,
-      can_apply_changes: actor !== 'Public',
       can_change_file_visibility: actor !== 'Public',
       can_delete_repo: actor === 'Owner',
       can_manage_members: actor === 'Owner',

@@ -21,6 +21,7 @@ use std::{convert::Infallible, time::Duration};
 use tokio_stream::{Stream, StreamExt, once, wrappers::BroadcastStream};
 
 const CLIENT_RESYNC_VERSION: u64 = 9_007_199_254_740_991;
+const RECONCILIATION_INTERVAL: Duration = Duration::from_secs(30);
 
 pub(crate) async fn repo_events(
     State(state): State<AppState>,
@@ -59,9 +60,11 @@ pub(crate) async fn repo_events(
     let updates = stream::unfold(
         RepoEventStreamState {
             finished: false,
+            headers,
             incarnation,
             owner,
             receiver: BroadcastStream::new(receiver),
+            reconciliation: reconciliation_interval(),
             repo_name,
             state: state.clone(),
             user,
@@ -71,14 +74,21 @@ pub(crate) async fn repo_events(
                 return None;
             }
             loop {
-                let event = stream_state.receiver.next().await?;
-                let event = match event {
-                    Ok(event) => event,
-                    Err(_) => repository_change_event(
-                        &stream_state.incarnation,
-                        CLIENT_RESYNC_VERSION,
-                        RepoChangeReason::Lagged,
-                    ),
+                let event = tokio::select! {
+                    biased;
+                    _ = stream_state.reconciliation.tick() => {
+                        if let Err(error) = stream_state.revalidate_authentication().await {
+                            stream_state.finished = true;
+                            return Some((sse_error_event(error), stream_state));
+                        }
+                        // NOTIFY is only a fast path. Reconcile from committed data even
+                        // when a writer was cancelled after commit or LISTEN missed it.
+                        stream_state.resync_event()
+                    }
+                    event = stream_state.receiver.next() => match event? {
+                        Ok(event) => event,
+                        Err(_) => stream_state.resync_event(),
+                    },
                 };
 
                 match stream_event_for_user(
@@ -113,12 +123,44 @@ pub(crate) async fn repo_events(
 
 struct RepoEventStreamState {
     finished: bool,
+    headers: HeaderMap,
     incarnation: RepositoryIncarnation,
     owner: String,
     receiver: BroadcastStream<RepoChangeEvent>,
+    reconciliation: tokio::time::Interval,
     repo_name: String,
     state: AppState,
     user: Option<UserAccount>,
+}
+
+impl RepoEventStreamState {
+    async fn revalidate_authentication(&mut self) -> Result<(), ApiError> {
+        let current_user = optional_scope_user(&self.state, &self.headers).await?;
+        if current_user.as_ref().map(|user| &user.id) != self.user.as_ref().map(|user| &user.id) {
+            return Err(ApiError::unauthorized(
+                "event stream identity changed; reconnect",
+            ));
+        }
+        self.user = current_user;
+        Ok(())
+    }
+
+    fn resync_event(&self) -> RepoChangeEvent {
+        repository_change_event(
+            &self.incarnation,
+            CLIENT_RESYNC_VERSION,
+            RepoChangeReason::Lagged,
+        )
+    }
+}
+
+fn reconciliation_interval() -> tokio::time::Interval {
+    let mut interval = tokio::time::interval_at(
+        tokio::time::Instant::now() + RECONCILIATION_INTERVAL,
+        RECONCILIATION_INTERVAL,
+    );
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval
 }
 
 async fn stream_event_for_user(

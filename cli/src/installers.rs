@@ -1,7 +1,10 @@
 use crate::distribution::{DistributionManifest, DistributionTarget};
 
 pub fn posix_install_script(base_url: &str, manifest: &DistributionManifest) -> String {
-    let base_url = base_url.trim_end_matches('/');
+    let base_url = format!(
+        "'{}'",
+        base_url.trim_end_matches('/').replace('\'', "'\"'\"'")
+    );
     let cases = manifest
         .targets()
         .iter()
@@ -13,7 +16,7 @@ pub fn posix_install_script(base_url: &str, manifest: &DistributionManifest) -> 
         r#"#!/bin/sh
 set -eu
 
-base_url="{base_url}"
+base_url={base_url}
 target="$(uname -s)-$(uname -m)"
 
 case "$target" in
@@ -148,7 +151,7 @@ echo "scope installed to $install_dir/scope"
 }
 
 pub fn windows_install_script(base_url: &str, manifest: &DistributionManifest) -> String {
-    let base_url = base_url.trim_end_matches('/');
+    let base_url = format!("'{}'", base_url.trim_end_matches('/').replace('\'', "''"));
     let cases = manifest
         .targets()
         .iter()
@@ -159,7 +162,7 @@ pub fn windows_install_script(base_url: &str, manifest: &DistributionManifest) -
     format!(
         r#"$ErrorActionPreference = "Stop"
 
-$baseUrl = "{base_url}"
+$baseUrl = {base_url}
 $installDir = if ($env:SCOPE_INSTALL_DIR) {{ $env:SCOPE_INSTALL_DIR }} else {{ Join-Path $HOME ".local\bin" }}
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 
@@ -217,11 +220,9 @@ try {{
   Move-Item -LiteralPath $tmpPath -Destination $destination -Force
   $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
   $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-  $processPath = [Environment]::GetEnvironmentVariable("Path", "Process")
   if (
     -not (Test-PathListContains $userPath $installDir) -and
-    -not (Test-PathListContains $machinePath $installDir) -and
-    -not (Test-PathListContains $processPath $installDir)
+    -not (Test-PathListContains $machinePath $installDir)
   ) {{
     $separator = [System.IO.Path]::PathSeparator
     $nextUserPath = if ([string]::IsNullOrWhiteSpace($userPath)) {{
@@ -285,5 +286,58 @@ fn windows_case_arm(target: &DistributionTarget) -> Option<String> {
             artifact = target.artifact
         )),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    const ORIGINS: [&str; 4] = [
+        "https://example.test/$(printf injected)",
+        "https://example.test/`printf injected`",
+        "https://example.test/'\"; printf injected; #",
+        "https://example.test/$env:HOME",
+    ];
+
+    #[cfg(unix)]
+    #[test]
+    fn posix_origin_assignment_is_literal_data() {
+        for origin in ORIGINS {
+            let script = posix_install_script(origin, DistributionManifest::bundled());
+            let assignment = script
+                .lines()
+                .find(|line| line.starts_with("base_url="))
+                .unwrap();
+            let output = Command::new("sh")
+                .args(["-c", &format!("{assignment}\nprintf '%s' \"$base_url\"")])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), origin);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_origin_assignment_is_literal_data() {
+        for origin in ORIGINS {
+            let script = windows_install_script(origin, DistributionManifest::bundled());
+            let assignment = script
+                .lines()
+                .find(|line| line.starts_with("$baseUrl ="))
+                .unwrap();
+            let output = Command::new("pwsh")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    &format!("{assignment}; [Console]::Write($baseUrl)"),
+                ])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), origin);
+        }
     }
 }

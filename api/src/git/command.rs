@@ -7,7 +7,7 @@ use scope_git_process::{
 use std::{
     path::Path as FsPath,
     process::{Command, Output},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 /// Runs a prepared command and maps process-level failures (spawn, I/O, timeout, stdout
@@ -78,6 +78,32 @@ pub(crate) fn run_git_output(
         &mut git_repo_command(repo, args),
         None,
         ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
+    )
+    .map_err(|error| {
+        ApiError::infrastructure_unavailable(format!(
+            "failed {action}: {}",
+            error.operator_diagnostic()
+        ))
+    })
+}
+
+pub(crate) fn remaining_git_time(deadline: Instant) -> Result<Duration, ApiError> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| ApiError::infrastructure_unavailable("Git inspection deadline exceeded"))
+}
+
+pub(crate) fn run_git_output_until(
+    repo: Option<&FsPath>,
+    args: &[&str],
+    action: &str,
+    deadline: Instant,
+) -> Result<Output, ApiError> {
+    git_process_output(
+        &mut git_repo_command(repo, args),
+        None,
+        ProcessLimits::new(remaining_git_time(deadline)?),
     )
     .map_err(|error| {
         ApiError::infrastructure_unavailable(format!(
