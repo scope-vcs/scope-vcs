@@ -1,7 +1,20 @@
 mod support;
 
+#[cfg(unix)]
+use axum::{Json, Router, routing::get};
 use scope_cli::repo_config::repo_config_path;
 use std::fs;
+#[cfg(unix)]
+use std::{
+    fs::File,
+    io::Read,
+    os::fd::FromRawFd,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
+    time::{Duration, Instant},
+};
 use support::*;
 
 #[test]
@@ -121,4 +134,204 @@ fn push_requires_explicit_main_before_any_repository_changes() {
             .contains("scope request push")
     );
     assert!(!repo_config_path(dir.path()).unwrap().exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
+    let dir = configured_repo("push-cancel-http");
+    let request_started = Arc::new(AtomicBool::new(false));
+    let publish_requests = Arc::new(AtomicUsize::new(0));
+    let server = TestServer::new(
+        Router::new()
+            .route(
+                "/v1/session",
+                get({
+                    let request_started = Arc::clone(&request_started);
+                    move || {
+                        let request_started = Arc::clone(&request_started);
+                        async move {
+                            request_started.store(true, Ordering::Release);
+                            tokio::time::sleep(Duration::from_secs(10)).await;
+                            Json(session_response("usr_test", "owner", "owner@example.test"))
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/v1/repos/owner/repo/push-intents",
+                axum::routing::post({
+                    let publish_requests = Arc::clone(&publish_requests);
+                    move || {
+                        publish_requests.fetch_add(1, Ordering::AcqRel);
+                        async { Json(serde_json::json!({})) }
+                    }
+                }),
+            ),
+    );
+    let remote = format!("{}/git/permissioned/owner/repo", server.api_url);
+    run_git(dir.path(), ["remote", "add", "scope", &remote]);
+
+    let (mut terminal_output, terminal) = test_terminal();
+    let mut command = server.command(dir.path());
+    command
+        .args(["push", "--main", "--no-review"])
+        .stdin(terminal.try_clone().unwrap())
+        .stdout(terminal.try_clone().unwrap())
+        .stderr(terminal.try_clone().unwrap());
+    let mut child = command.spawn().unwrap();
+    drop(command);
+    drop(terminal);
+    let request_deadline = Instant::now() + Duration::from_secs(2);
+    while !request_started.load(Ordering::Acquire) && Instant::now() < request_deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(request_started.load(Ordering::Acquire));
+
+    let cancelled_at = Instant::now();
+    // SAFETY: child.id() names the live CLI subprocess created above.
+    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);
+    let exit_deadline = Instant::now() + Duration::from_secs(2);
+    while child.try_wait().unwrap().is_none() && Instant::now() < exit_deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    if child.try_wait().unwrap().is_none() {
+        let _ = child.kill();
+        panic!("scope push did not cancel promptly during delayed HTTP");
+    }
+    let status = child.wait().unwrap();
+    assert_eq!(status.code(), Some(130), "{status:?}");
+    assert!(cancelled_at.elapsed() < Duration::from_secs(2));
+    assert_eq!(publish_requests.load(Ordering::Acquire), 0);
+    let mut transcript = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        match terminal_output.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => transcript.extend_from_slice(&buffer[..count]),
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+            Err(error) => panic!("read test terminal: {error}"),
+        }
+    }
+    assert!(
+        transcript
+            .windows("Verifying login…".len())
+            .any(|window| window == "Verifying login…".as_bytes()),
+        "{}",
+        String::from_utf8_lossy(&transcript)
+    );
+    assert!(transcript.ends_with(b"\r\x1b[2K"), "{transcript:?}");
+}
+
+#[cfg(unix)]
+fn test_terminal() -> (File, File) {
+    let mut master_fd = 0;
+    let mut slave_fd = 0;
+    let terminal_size = libc::winsize {
+        ws_row: 24,
+        ws_col: 80,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    // SAFETY: openpty initializes both file descriptors, which are immediately owned by File.
+    assert_eq!(
+        unsafe {
+            libc::openpty(
+                &mut master_fd,
+                &mut slave_fd,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                &terminal_size,
+            )
+        },
+        0
+    );
+    // SAFETY: openpty returned two new, valid, owned descriptors.
+    let terminal_output = unsafe { File::from_raw_fd(master_fd) };
+    let terminal = unsafe { File::from_raw_fd(slave_fd) };
+    (terminal_output, terminal)
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn browser_login_instructions_remain_readable_and_cancellable() {
+    let dir = configured_repo("push-browser-progress");
+    let login_started = Arc::new(AtomicBool::new(false));
+    let server = TestServer::new(Router::new().route(
+        "/v1/cli/browser-login",
+        axum::routing::post({
+            let login_started = Arc::clone(&login_started);
+            move || {
+                login_started.store(true, Ordering::Release);
+                async {
+                    Json(serde_json::json!({
+                        "request_id": "browser-fixture",
+                        "request_secret": "fixture-only",
+                        "authorization_url": "http://127.0.0.1/sign-in-fixture",
+                        "expires_at_unix": std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 60,
+                    }))
+                }
+            }
+        }),
+    ));
+    let remote = format!("{}/git/permissioned/owner/repo", server.api_url);
+    run_git(dir.path(), ["remote", "add", "scope", &remote]);
+    let config = TempDir::new("push-browser-no-session");
+    let (mut output, terminal) = test_terminal();
+    let mut command = server.command(dir.path());
+    command
+        .args(["push", "--main"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("BROWSER", "/bin/true")
+        .stdin(terminal.try_clone().unwrap())
+        .stdout(terminal.try_clone().unwrap())
+        .stderr(terminal.try_clone().unwrap());
+    let mut child = command.spawn().unwrap();
+    drop(command);
+    drop(terminal);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !login_started.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Leave enough time for multiple animation frames while browser login waits.
+    std::thread::sleep(Duration::from_millis(700));
+    // SAFETY: child.id() is the live CLI subprocess created by this test.
+    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    if child.try_wait().unwrap().is_none() {
+        let _ = child.kill();
+        panic!("browser login pause prevented Ctrl+C cancellation");
+    }
+    assert_eq!(child.wait().unwrap().code(), Some(130));
+    let mut transcript = Vec::new();
+    let mut buffer = [0; 4096];
+    loop {
+        match output.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => transcript.extend_from_slice(&buffer[..count]),
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+            Err(error) => panic!("read terminal: {error}"),
+        }
+    }
+    let text = String::from_utf8_lossy(&transcript);
+    let instructions = text
+        .split("Opening browser to sign in:")
+        .nth(1)
+        .expect(&text);
+    assert!(
+        instructions.contains("http://127.0.0.1/sign-in-fixture\r\n"),
+        "{text}"
+    );
+    assert!(
+        instructions.contains("Waiting for browser confirmation..."),
+        "{text}"
+    );
+    assert!(
+        !instructions.contains("elapsed"),
+        "spinner overwrote login output: {text}"
+    );
 }

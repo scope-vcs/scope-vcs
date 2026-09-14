@@ -7,4 +7,21 @@ cargo test --manifest-path cli/Cargo.toml --locked
 node --test .github/scripts/select-cli-distribution-targets.test.mjs
 cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings
 cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service
-node --test cli/distribution/install-smoke.test.mjs
+npm ci --prefix dependency-analyzer --ignore-scripts
+
+host="$(rustc -vV | sed -n 's/^host: //p')"
+target="$(jq -c --arg host "$host" '.targets[] | select(.triple == $host)' cli/distribution/targets.json)"
+test -n "$target"
+scope_binary=cli/target/release/scope
+[[ "$host" == *windows* ]] && scope_binary+=.exe
+artifact="cli/dist/$(jq -r '.artifact' <<<"$target")"
+SCOPE_BINARY="$scope_binary" \
+SCOPE_ARTIFACT="$artifact" \
+SCOPE_NODE_VERSION="$(jq -r '.node_version' cli/distribution/targets.json)" \
+SCOPE_NODE_PLATFORM="$(jq -r '.node_platform' <<<"$target")" \
+SCOPE_NODE_SHA256="$(jq -r '.node_sha256' <<<"$target")" \
+  bash cli/distribution/package-bundle.sh
+
+SCOPE_ARTIFACT="$artifact" bash cli/distribution/verify-bundled-analyzer.sh
+SCOPE_TEST_BINARY="$scope_binary" SCOPE_TEST_ARTIFACT="$artifact" \
+  node --test cli/distribution/install-smoke.test.mjs

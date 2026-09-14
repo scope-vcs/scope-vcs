@@ -1108,6 +1108,17 @@ LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130
 LICENSE-MIT: text dec912e37f888cf7a524f9f132c5bbb07dc13e90b026e0eab25697e74a08ddbb
 
 ==============================================================================
+ctrlc 3.5.2
+Declared license: MIT/Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/ctrlc/ctrlc-3.5.2.crate
+
+Published author metadata: ["Antti Keränen <detegr@gmail.com>"]
+Repository: "https://github.com/Detegr/rust-ctrlc.git"
+LICENSE-APACHE: text fd7d8f1fe049992c00b619e8274cdb3566542bdb45cbf85426790ee1f7c127d8
+LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
+
+==============================================================================
 ctutils 0.4.2
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
@@ -11782,6 +11793,34 @@ The MIT License (MIT)
 Copyright (c) 2016 Jonathan Creekmore
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text fd7d8f1fe049992c00b619e8274cdb3566542bdb45cbf85426790ee1f7c127d8 ---
+[Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
+
+APPENDIX: How to apply the Apache License to your work.
+
+   To apply the Apache License to your work, attach the following
+   boilerplate notice, with the fields enclosed by brackets "[]"
+   replaced with your own identifying information. (Don't include
+   the brackets!)  The text should be enclosed in the appropriate
+   comment syntax for the file format. We also recommend that a
+   file or class name and description of purpose be included on the
+   same "printed page" as the copyright notice for easier
+   identification within third-party archives.
+
+Copyright 2017 CtrlC developers
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
 --- text fdd1c2117bcf8157d1d013d0953c0a7e6e5fab73df9e36773cd77634428568eb ---
 Copyright (c) 2015

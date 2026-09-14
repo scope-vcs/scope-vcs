@@ -33,7 +33,7 @@ impl DistributionManifest {
 
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         let raw: RawManifest = serde_json::from_str(json)?;
-        assert_eq!(raw.schema_version, 1, "unsupported distribution manifest");
+        assert_eq!(raw.schema_version, 2, "unsupported distribution manifest");
         Ok(Self {
             targets: raw.targets,
         })
