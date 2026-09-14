@@ -16,9 +16,10 @@ const gates = ['backend', 'cli', 'web', 'contract', 'policy', 'integration', 'op
 function commands(gate, ...args) {
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-gates-'));
   try {
-    for (const tool of ['cargo', 'npm', 'pnpm', 'node', 'bash', 'python3']) {
+    for (const tool of ['cargo', 'npm', 'pnpm', 'node', 'bash', 'python3', 'tar']) {
       writeFileSync(resolve(dir, tool), '#!/bin/sh\ncase "$1" in *dev/checks/*) exec /bin/bash "$@" ;; esac\nprintf "%s" "$(basename "$0")"\nprintf " %s" "$@"\nprintf "\\n"\n', { mode: 0o755 });
     }
+    writeFileSync(resolve(dir, 'rustc'), '#!/bin/sh\nprintf "host: x86_64-unknown-linux-gnu\\n"\n', { mode: 0o755 });
     return execFileSync('/bin/bash', [resolve(root, `dev/checks/${gate}`), ...args], {
       env: { ...process.env, PATH: `${dir}:${process.env.PATH}` }, encoding: 'utf8',
     }).trim().split('\n');
@@ -42,7 +43,10 @@ test('web gate includes contract, observer, and resource rules; CLI and integrat
   const webChecks = JSON.parse(read('web/package.json')).scripts.check;
   assert.equal(webChecks, 'pnpm typecheck && ../dev/checks/contract && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
-  assert.ok(commands('cli').includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
+  const cliCommands = commands('cli');
+  assert.ok(cliCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
+  assert.ok(cliCommands.includes('bash cli/distribution/package-bundle.sh'));
+  assert.ok(cliCommands.some((command) => command.startsWith('tar -xzf cli/dist/scope-x86_64-unknown-linux-gnu.tar.gz -C ')));
   assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture']);
   assert.deepEqual(commands('integration', 'web'), ['pnpm test:smoke']);
   assert.deepEqual(commands('dependency-analyzer'), [
