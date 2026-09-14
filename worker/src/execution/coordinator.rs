@@ -6,6 +6,7 @@ use scope_domain::runs::{
     attempt::MAX_RUN_ATTEMPT_AGE_SECONDS, exit_code::SetupFailure, step::AttemptConclusion,
 };
 use scope_postgres::db::MetadataStore;
+use scope_product_analytics::ProductAnalytics;
 use sha2::{Digest as _, Sha256};
 use std::time::Duration;
 
@@ -14,6 +15,7 @@ const DISPATCH_LEASE: Duration = Duration::from_secs(15 * 60);
 #[derive(Clone)]
 pub(crate) struct CloudExecutionCoordinator {
     metadata: MetadataStore,
+    product_analytics: ProductAnalytics,
     ecs: EcsClient,
     origin_id: String,
     settings: CloudExecutionSettings,
@@ -22,11 +24,13 @@ pub(crate) struct CloudExecutionCoordinator {
 impl CloudExecutionCoordinator {
     pub(crate) async fn new(
         metadata: MetadataStore,
+        product_analytics: ProductAnalytics,
         settings: CloudExecutionSettings,
         origin_id: String,
     ) -> Self {
         Self {
             metadata,
+            product_analytics,
             ecs: EcsClient::new(settings.clone()).await,
             origin_id,
             settings,
@@ -62,6 +66,12 @@ impl CloudExecutionCoordinator {
                     scope_postgres::db::DispatchAdmission::AtCapacity
                     | scope_postgres::db::DispatchAdmission::Empty => break,
                 };
+                crate::product_analytics::capture_attempt_started(
+                    &self.metadata,
+                    &self.product_analytics,
+                    &claim,
+                )
+                .await;
                 self.publish_status_change(&claim).await;
                 let execution = self.clone();
                 starts.spawn(async move {
@@ -115,7 +125,7 @@ impl CloudExecutionCoordinator {
             }
             Err(StartError::Rejected(error)) => {
                 tracing::error!(attempt_id = %attempt_id, error = %error, "ECS rejected cloud run");
-                let claim = self
+                let mutation = self
                     .metadata
                     .runs()
                     .complete_attempt(
@@ -133,12 +143,18 @@ impl CloudExecutionCoordinator {
                     )
                     .await
                     .map_err(db_error)?;
+                crate::product_analytics::capture_attempt_completed(
+                    &self.metadata,
+                    &self.product_analytics,
+                    &mutation,
+                )
+                .await;
                 self.metadata
                     .runs()
                     .complete_cloud_task_absence(attempt_id, now_unix)
                     .await
                     .map_err(db_error)?;
-                self.publish_status_change(&claim).await;
+                self.publish_status_change(&mutation.claim).await;
             }
             Err(StartError::Ambiguous(error)) => {
                 tracing::warn!(attempt_id = %attempt_id, error = %error, "ECS dispatch outcome is ambiguous; lease recovery and task cleanup own resolution");
@@ -158,9 +174,10 @@ impl CloudExecutionCoordinator {
         for attempt in attempts {
             let metadata = self.metadata.clone();
             let ecs = self.ecs.clone();
-            tasks.spawn(
-                async move { abort_canceled_attempt(metadata, ecs, attempt, now_unix).await },
-            );
+            let product_analytics = self.product_analytics.clone();
+            tasks.spawn(async move {
+                abort_canceled_attempt(metadata, product_analytics, ecs, attempt, now_unix).await
+            });
         }
         let mut aborted = 0;
         while let Some(result) = tasks.join_next().await {
@@ -209,6 +226,7 @@ impl CloudExecutionCoordinator {
 
 async fn abort_canceled_attempt(
     metadata: MetadataStore,
+    product_analytics: ProductAnalytics,
     ecs: EcsClient,
     attempt: scope_postgres::db::CloudTaskStop,
     now_unix: u64,
@@ -218,18 +236,24 @@ async fn abort_canceled_attempt(
         .await
     {
         Ok(()) => {
-            let claim = metadata
+            let mutation = metadata
                 .runs()
                 .confirm_provider_cancellation(&attempt.attempt_id, now_unix)
                 .await
                 .map_err(db_error)?;
+            crate::product_analytics::capture_attempt_completed(
+                &metadata,
+                &product_analytics,
+                &mutation,
+            )
+            .await;
             metadata
                 .runs()
                 .complete_cloud_task_stop(&attempt.attempt_id, now_unix)
                 .await
                 .map_err(db_error)?;
             tracing::info!(attempt_id = %attempt.attempt_id, external_run_id = ?attempt.external_run_id, "aborted canceled cloud run");
-            Ok(Some(claim))
+            Ok(Some(mutation.claim))
         }
         Err(error) => {
             metadata

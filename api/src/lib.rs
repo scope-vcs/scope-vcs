@@ -17,9 +17,9 @@ pub(crate) mod git;
 pub(crate) mod http;
 pub(crate) mod media_grants;
 pub(crate) mod object_store_config;
+pub(crate) mod operation_analytics;
 pub(crate) mod persistence;
 pub(crate) mod persistence_ids;
-pub(crate) mod product_analytics;
 pub(crate) mod push_intents;
 pub(crate) mod repo_access;
 pub(crate) mod repo_events;
@@ -32,6 +32,7 @@ pub mod smoke_seed;
 mod storage_runtime;
 pub(crate) mod telemetry;
 pub(crate) mod use_cases;
+pub(crate) mod workflow_analytics;
 mod workflow_catalog_backfill;
 
 #[cfg(test)]

@@ -1,6 +1,8 @@
 FROM ubuntu:24.04
 ARG INSTALL_GIT=0
 ARG BINARY
+ARG SCOPE_ANALYTICS_RELEASE
+ENV SCOPE_ANALYTICS_RELEASE=$SCOPE_ANALYTICS_RELEASE
 ENV SCOPE_COMPONENT_BINARY=$BINARY
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libssl3t64 \

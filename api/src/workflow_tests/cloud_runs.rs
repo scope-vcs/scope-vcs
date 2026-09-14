@@ -8,7 +8,9 @@ use scope_cache_contract::SignedCacheGrantClaims;
 
 #[tokio::test]
 async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
-    let state = test_state_with_repo();
+    let mut state = test_state_with_repo();
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
+    state.product_analytics = analytics;
     cache_test_jwks(&state);
     let app = router(state.clone());
     let source = temp_git_repo("cloud-runtime-protocol");
@@ -198,22 +200,52 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     assert_eq!(completed_step.status(), StatusCode::OK);
     assert_eq!(response_json(completed_step).await["state"], "running");
 
+    let completion_body = serde_json::to_string(&scope_api_contract::CompleteAttemptRequest {
+        conclusion: scope_api_contract::AttemptConclusionRequest::Succeeded,
+        logs_truncated: false,
+    })
+    .unwrap();
     let completed_attempt = api_request(
         app.clone(),
         "POST",
         &scope_api_contract::routes::attempt_complete(attempt_id),
         Some(&attempt_auth),
-        Some(
-            &serde_json::to_string(&scope_api_contract::CompleteAttemptRequest {
-                conclusion: scope_api_contract::AttemptConclusionRequest::Succeeded,
-                logs_truncated: false,
-            })
-            .unwrap(),
-        ),
+        Some(&completion_body),
     )
     .await;
     assert_eq!(completed_attempt.status(), StatusCode::OK);
     assert_eq!(response_json(completed_attempt).await["state"], "succeeded");
+    let replayed_completion = api_request(
+        app.clone(),
+        "POST",
+        &scope_api_contract::routes::attempt_complete(attempt_id),
+        Some(&attempt_auth),
+        Some(&completion_body),
+    )
+    .await;
+    assert_eq!(replayed_completion.status(), StatusCode::OK);
+    assert_eq!(recording.event_names(), ["workflow:attempt_complete"]);
+    assert_eq!(
+        recording.property(0, "repository_id"),
+        Some(serde_json::Value::String("repoi_workflow_test".into()))
+    );
+    assert_eq!(
+        recording.property(0, "attempt_id"),
+        Some(serde_json::Value::String(attempt_id.into()))
+    );
+    assert_eq!(recording.property(0, "attempt_number"), Some(1.into()));
+    assert_eq!(
+        recording.property(0, "actor_type"),
+        Some(serde_json::Value::String("user".into()))
+    );
+    assert_eq!(
+        recording.property(0, "result"),
+        Some(serde_json::Value::String("succeeded".into()))
+    );
+    assert_eq!(
+        recording.property(0, "run_result"),
+        Some(serde_json::Value::String("succeeded".into()))
+    );
     assert!(
         !state
             .metadata

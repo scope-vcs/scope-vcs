@@ -1,6 +1,5 @@
 use crate::{
-    error::ApiError, persistence::unix_now, product_analytics::ProductEvent,
-    repo_access::find_read_access, state::AppState,
+    error::ApiError, persistence::unix_now, repo_access::find_read_access, state::AppState,
 };
 use scope_domain::{
     account::UserAccount,
@@ -16,6 +15,7 @@ use scope_postgres::db::{
     ReopenAndReplyToRequestDiscussionCommand, RequestDiscussionReadModel,
     RequestDiscussionReplyReadModel, TransitionRequestDiscussionCommand,
 };
+use scope_product_analytics::ProductEvent;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod anchor;
@@ -136,6 +136,9 @@ pub(crate) async fn create_discussion(
             .product_analytics
             .capture(ProductEvent::discussion_created(
                 &command.actor_user_id,
+                context.repo.incarnation().incarnation_id(),
+                &context.request.id,
+                &mutation.discussion.id,
                 context.request.audience,
                 request_actor_role(context.access),
                 mutation.discussion.anchor.is_some(),
@@ -175,6 +178,18 @@ pub(crate) async fn create_reply(
         })
         .await?;
     let discussion_id = mutation.discussion.id;
+    if mutation.created {
+        state
+            .product_analytics
+            .capture(ProductEvent::discussion_reply_created(
+                &command.actor_user_id,
+                context.repo.incarnation().incarnation_id(),
+                &context.request.id,
+                &discussion_id,
+                context.request.audience,
+                request_actor_role(context.access),
+            ));
+    }
     reply_mutation_result(
         state,
         &context,
@@ -218,6 +233,9 @@ pub(crate) async fn transition_discussion(
             .product_analytics
             .capture(ProductEvent::discussion_resolved(
                 &command.actor_user_id,
+                context.repo.incarnation().incarnation_id(),
+                &context.request.id,
+                &command.discussion_id,
                 context.request.audience,
                 request_actor_role(context.access),
             ));
@@ -270,6 +288,18 @@ pub(crate) async fn reopen_and_reply(
         })
         .await?;
     let discussion_id = mutation.discussion.id;
+    if mutation.created {
+        state
+            .product_analytics
+            .capture(ProductEvent::discussion_reply_created(
+                &command.actor_user_id,
+                context.repo.incarnation().incarnation_id(),
+                &context.request.id,
+                &discussion_id,
+                context.request.audience,
+                request_actor_role(context.access),
+            ));
+    }
     reply_mutation_result(
         state,
         &context,

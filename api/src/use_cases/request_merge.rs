@@ -12,8 +12,8 @@ use crate::{
         request_refs::attach_visible_request_refs,
         storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
     },
+    operation_analytics::{OperationFailureContext, capture_operation_failure},
     persistence::{ensure_private_dir, unix_now},
-    product_analytics::ProductEvent,
     repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
@@ -37,6 +37,7 @@ use scope_domain::{
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_storage::StagedGitSegment;
 use scope_postgres::db::{MergeRequestContentCommand, RepositoryGitWriteLease};
+use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
 
 pub(crate) struct MergeRequestCommand {
     pub(crate) owner: String,
@@ -75,6 +76,29 @@ pub(crate) async fn merge_request(
     state: &AppState,
     command: MergeRequestCommand,
 ) -> Result<MergeRequestResult, ApiError> {
+    let started_at = std::time::Instant::now();
+    let result = merge_request_inner(state, &command).await;
+    if let Err(error) = &result {
+        capture_operation_failure(
+            state,
+            OperationFailureContext {
+                actor_user_id: &command.actor_user_id,
+                operation: ProductOperation::Merge,
+                source: EventSource::Api,
+                repository_id: None,
+                request_id: Some(&command.request_id),
+                started_at,
+            },
+            error,
+        );
+    }
+    result
+}
+
+async fn merge_request_inner(
+    state: &AppState,
+    command: &MergeRequestCommand,
+) -> Result<MergeRequestResult, ApiError> {
     let repo = find_repo(state, &command.owner, &command.repo_name).await?;
     let principal = principal_for_user_id(&repo, &command.actor_user_id);
     ensure_repo_read(&repo, &principal)?;
@@ -106,6 +130,8 @@ pub(crate) async fn merge_request(
 
     let analytics_event = ProductEvent::request_merged(
         &command.actor_user_id,
+        &repo.record.incarnation_id,
+        &request.id,
         request.audience,
         request_actor_role(access),
     );
@@ -154,7 +180,7 @@ pub(crate) async fn merge_request(
     Ok(MergeRequestResult {
         repo: committed_repo,
         access,
-        actor_user_id: command.actor_user_id,
+        actor_user_id: command.actor_user_id.clone(),
         request: mutation.request,
     })
 }

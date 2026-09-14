@@ -30,6 +30,12 @@ pub(crate) async fn reconcile_expired_attempts(
             .await
         {
             Ok(claim) => {
+                let mutation = scope_postgres::db::AttemptMutation {
+                    claim,
+                    transitioned: true,
+                };
+                crate::workflow_analytics::capture_attempt_completed(state, &mutation).await;
+                let claim = mutation.claim;
                 state
                     .publish_run_change(
                         claim.run.workflow.repository_id(),

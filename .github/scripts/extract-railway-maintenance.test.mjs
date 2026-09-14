@@ -157,6 +157,8 @@ test('API preparation embeds and binds the original maintenance binary before pu
   const prepared = JSON.parse(readFileSync(f.manifest));
   assert.equal(prepared.maintenanceSha256, f.release.maintenanceSha256);
   assert.equal(prepared.components.api.image, image);
+  const build = commands(f).find(({ args }) => args[0] === 'buildx');
+  assert.ok(build.args.includes(`SCOPE_ANALYTICS_RELEASE=${prepared.sourceSha}`));
   rmSync(original);
   rmSync(context, { recursive: true });
   assert.equal(extract(f).status, 0);

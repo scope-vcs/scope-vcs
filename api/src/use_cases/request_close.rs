@@ -2,7 +2,6 @@ use crate::{
     error::ApiError,
     persistence::unix_now,
     persistence_ids::{generate_persistence_id, generate_prefixed_id},
-    product_analytics::{ProductEvent, RequestCloseOutcome},
     repo_events::RepoChangeReason,
     state::AppState,
 };
@@ -11,6 +10,7 @@ use scope_domain::{
     requests::{CloseRequestMutation, Request, request_actor_role},
 };
 use scope_postgres::db::CloseRequestCommand;
+use scope_product_analytics::{ProductEvent, RequestCloseOutcome};
 
 pub(crate) async fn close_request(
     state: &AppState,
@@ -44,6 +44,8 @@ pub(crate) async fn close_request(
         .product_analytics
         .capture(ProductEvent::request_closed(
             user_id,
+            repo.incarnation().incarnation_id(),
+            &request.id,
             request.audience,
             request_actor_role(repo.access),
             outcome,

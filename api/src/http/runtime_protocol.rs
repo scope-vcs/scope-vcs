@@ -285,7 +285,7 @@ pub(crate) async fn complete_step(
         StepConclusionRequest::Succeeded => StepConclusion::Succeeded,
         StepConclusionRequest::Failed { exit_code } => StepConclusion::Failed { exit_code },
     };
-    let claim = state
+    let mutation = state
         .metadata
         .runs()
         .complete_attempt_step(
@@ -297,8 +297,9 @@ pub(crate) async fn complete_step(
             unix_now()?,
         )
         .await?;
-    publish_claim_status_change(&state, &claim).await;
-    Ok(Json(attempt_status(&claim)))
+    crate::workflow_analytics::capture_attempt_completed(&state, &mutation).await;
+    publish_claim_status_change(&state, &mutation.claim).await;
+    Ok(Json(attempt_status(&mutation.claim)))
 }
 
 pub(crate) async fn complete(
@@ -316,7 +317,7 @@ pub(crate) async fn complete(
         AttemptConclusionRequest::TimedOut => AttemptConclusion::TimedOut,
         AttemptConclusionRequest::Canceled => AttemptConclusion::Canceled,
     };
-    let claim = state
+    let mutation = state
         .metadata
         .runs()
         .complete_attempt(
@@ -327,8 +328,9 @@ pub(crate) async fn complete(
             unix_now()?,
         )
         .await?;
-    publish_claim_status_change(&state, &claim).await;
-    Ok(Json(attempt_status(&claim)))
+    crate::workflow_analytics::capture_attempt_completed(&state, &mutation).await;
+    publish_claim_status_change(&state, &mutation.claim).await;
+    Ok(Json(attempt_status(&mutation.claim)))
 }
 
 pub(crate) async fn abandon(
@@ -337,13 +339,14 @@ pub(crate) async fn abandon(
     Path(attempt_id): Path<String>,
 ) -> Result<Json<AttemptStatusResponse>, ApiError> {
     let token_hash = attempt_token_hash(&headers)?;
-    let claim = state
+    let mutation = state
         .metadata
         .runs()
         .abandon_attempt(&attempt_id, &token_hash, unix_now()?)
         .await?;
-    publish_claim_status_change(&state, &claim).await;
-    Ok(Json(attempt_status(&claim)))
+    crate::workflow_analytics::capture_attempt_completed(&state, &mutation).await;
+    publish_claim_status_change(&state, &mutation.claim).await;
+    Ok(Json(attempt_status(&mutation.claim)))
 }
 
 async fn publish_claim_status_change(state: &AppState, claim: &scope_postgres::db::DispatchClaim) {

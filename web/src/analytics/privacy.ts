@@ -25,6 +25,21 @@ const campaignPropertyNames = [
 ] as const
 
 const campaignValuePattern = /^[a-zA-Z0-9._-]{1,80}$/
+const releaseValuePattern = /^[a-zA-Z0-9._-]{1,120}$/
+const errorKinds = new Set([
+  'abort_error',
+  'aggregate_error',
+  'dom_error',
+  'eval_error',
+  'range_error',
+  'reference_error',
+  'syntax_error',
+  'type_error',
+  'unknown_error',
+  'uri_error',
+])
+const errorOrigins = new Set(['hydration', 'promise', 'route', 'window'])
+const webVitalMetrics = new Set(['CLS', 'INP', 'LCP'])
 
 export type PageViewContext = {
   origin: string
@@ -77,6 +92,14 @@ export function sanitizeCapture(
     )
   }
 
+  if (capture.event === 'frontend_error') {
+    return sanitizeFrontendError(capture)
+  }
+
+  if (capture.event === 'web_vital') {
+    return sanitizeWebVital(capture)
+  }
+
   if (capture.event !== '$pageview') return null
 
   const routeName = capture.properties.route_name
@@ -117,7 +140,69 @@ function transportProperties(properties: Properties) {
     const value = properties[propertyName]
     if (isPostHogProperty(value)) allowed[propertyName] = value
   }
+  if (properties.environment === 'production' || properties.environment === 'test') {
+    allowed.environment = properties.environment
+  }
+  if (properties.release === null) {
+    allowed.release = null
+  } else if (
+    typeof properties.release === 'string'
+    && releaseValuePattern.test(properties.release)
+  ) {
+    allowed.release = properties.release
+  }
+  if (properties.source === 'browser') allowed.source = 'browser'
   return allowed
+}
+
+function sanitizeFrontendError(capture: CaptureResult) {
+  const { error_kind: errorKind, error_origin: errorOrigin } = capture.properties
+  const route = safeRoute(capture.properties.route_name)
+  if (
+    !route
+    || typeof errorKind !== 'string'
+    || !errorKinds.has(errorKind)
+    || typeof errorOrigin !== 'string'
+    || !errorOrigins.has(errorOrigin)
+  ) {
+    return null
+  }
+
+  return withoutPersonMutations(capture, {
+    ...transportProperties(capture.properties),
+    error_kind: errorKind,
+    error_origin: errorOrigin,
+    route_name: route.name,
+  })
+}
+
+function sanitizeWebVital(capture: CaptureResult) {
+  const { metric, value } = capture.properties
+  const route = safeRoute(capture.properties.route_name)
+  if (
+    !route
+    || typeof metric !== 'string'
+    || !webVitalMetrics.has(metric)
+    || typeof value !== 'number'
+    || !Number.isFinite(value)
+    || value < 0
+    || value > (metric === 'CLS' ? 100 : 600_000)
+  ) {
+    return null
+  }
+
+  return withoutPersonMutations(capture, {
+    ...transportProperties(capture.properties),
+    metric,
+    route_name: route.name,
+    value,
+  })
+}
+
+function safeRoute(routeName: Property | undefined) {
+  return typeof routeName === 'string'
+    ? analyticsRouteForName(routeName)
+    : null
 }
 
 function copyCampaignProperties(source: Properties, target: Properties) {

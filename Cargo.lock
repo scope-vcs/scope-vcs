@@ -70,7 +70,6 @@ dependencies = [
  "http 1.4.2",
  "jsonwebtoken",
  "libc",
- "posthog-rs",
  "reqwest 0.12.28",
  "schemars",
  "scope-api-contract",
@@ -83,6 +82,7 @@ dependencies = [
  "scope-git-storage",
  "scope-object-store",
  "scope-postgres",
+ "scope-product-analytics",
  "scope-run-config",
  "scope-service-runtime",
  "serde",
@@ -3695,6 +3695,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "scope-product-analytics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "posthog-rs",
+ "scope-domain",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "scope-repo-router"
 version = "0.1.0"
 dependencies = [
@@ -5450,6 +5461,7 @@ dependencies = [
  "scope-git-storage",
  "scope-object-store",
  "scope-postgres",
+ "scope-product-analytics",
  "scope-service-runtime",
  "serde_json",
  "sha2 0.10.9",

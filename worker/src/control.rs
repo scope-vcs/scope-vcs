@@ -4,19 +4,26 @@ use crate::{
     settings::{BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
 };
 use scope_postgres::db::MetadataStore;
+use scope_product_analytics::ProductAnalytics;
 
 mod reconciliation;
 use reconciliation::CloudReconciliation;
 
 pub(crate) async fn run(
     metadata: MetadataStore,
+    product_analytics: ProductAnalytics,
     settings: WorkerSettings,
     health: WorkerHealth,
 ) -> anyhow::Result<()> {
     let execution = match settings.execution.clone() {
         Some(cloud) => Some(
-            CloudExecutionCoordinator::new(metadata.clone(), cloud, settings.worker_id.clone())
-                .await,
+            CloudExecutionCoordinator::new(
+                metadata.clone(),
+                product_analytics,
+                cloud,
+                settings.worker_id.clone(),
+            )
+            .await,
         ),
         None => None,
     };

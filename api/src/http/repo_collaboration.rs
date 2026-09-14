@@ -9,7 +9,10 @@ use crate::{
     repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::repository_collaboration::{map_committed_mutation, publish_committed_mutation},
+    use_cases::repository_collaboration::{
+        accept_repository_invite as accept_invite, map_committed_mutation,
+        publish_committed_mutation,
+    },
 };
 use axum::{
     Json,
@@ -237,16 +240,7 @@ pub(crate) async fn accept_repository_invite(
     let user = require_scope_user(&state, &headers).await?;
     let now = unix_now()?;
     let token_hash = token_hash(&token);
-    let (repo, member) = state
-        .metadata
-        .repositories()
-        .accept_repository_invite(
-            &token_hash,
-            user.clone(),
-            now,
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await?;
+    let (repo, member) = accept_invite(&state, &token_hash, user.clone(), now).await?;
     state
         .publish_repo_change(
             &repo.incarnation(),

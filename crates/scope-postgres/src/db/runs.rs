@@ -33,6 +33,12 @@ pub struct DispatchClaim {
     pub workflow_revision: WorkflowRevision,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttemptMutation {
+    pub claim: DispatchClaim,
+    pub transitioned: bool,
+}
+
 #[cfg(any(test, feature = "seeding"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DispatchOffer {
@@ -77,19 +83,26 @@ impl RunStore {
         conclusion: AttemptConclusion,
         logs_truncated: bool,
         now_unix: u64,
-    ) -> Result<DispatchClaim, PostgresError> {
-        self.mutate_attempt(attempt_id, |run, job, attempt, steps| {
-            attempt.complete(
-                run,
-                job,
-                steps,
-                token_hash,
-                conclusion,
-                logs_truncated,
-                now_unix,
-            )
+    ) -> Result<AttemptMutation, PostgresError> {
+        let mut transitioned = false;
+        let claim = self
+            .mutate_attempt(attempt_id, |run, job, attempt, steps| {
+                transitioned = !attempt.state.is_terminal();
+                attempt.complete(
+                    run,
+                    job,
+                    steps,
+                    token_hash,
+                    conclusion,
+                    logs_truncated,
+                    now_unix,
+                )
+            })
+            .await?;
+        Ok(AttemptMutation {
+            claim,
+            transitioned,
         })
-        .await
     }
 
     pub async fn abandon_attempt(
@@ -97,22 +110,39 @@ impl RunStore {
         attempt_id: &str,
         token_hash: &str,
         now_unix: u64,
-    ) -> Result<DispatchClaim, PostgresError> {
-        self.mutate_attempt(attempt_id, |run, job, attempt, steps| {
-            attempt.abandon(run, job, steps, token_hash, now_unix)
+    ) -> Result<AttemptMutation, PostgresError> {
+        let mut transitioned = false;
+        let claim = self
+            .mutate_attempt(attempt_id, |run, job, attempt, steps| {
+                transitioned = !attempt.state.is_terminal();
+                attempt.abandon(run, job, steps, token_hash, now_unix)
+            })
+            .await?;
+        Ok(AttemptMutation {
+            claim,
+            transitioned,
         })
-        .await
     }
 
     pub async fn confirm_provider_cancellation(
         &self,
         attempt_id: &str,
         now_unix: u64,
-    ) -> Result<DispatchClaim, PostgresError> {
-        self.mutate_attempt(attempt_id, |run, job, attempt, steps| {
-            attempt.confirm_provider_cancellation(run, job, steps, now_unix)
+    ) -> Result<AttemptMutation, PostgresError> {
+        let mut transitioned = false;
+        let claim = self
+            .mutate_attempt(attempt_id, |run, job, attempt, steps| {
+                transitioned = !(attempt.state
+                    == scope_domain::runs::attempt::AttemptState::Canceled
+                    && job.state == scope_domain::runs::job::RunJobState::Canceled
+                    && job.current_attempt_id.is_none());
+                attempt.confirm_provider_cancellation(run, job, steps, now_unix)
+            })
+            .await?;
+        Ok(AttemptMutation {
+            claim,
+            transitioned,
         })
-        .await
     }
 
     pub async fn expire_attempt(

@@ -128,7 +128,7 @@ pub use run_dispatch::CloudTaskStop;
 pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
 pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
 pub use run_log_writes::AppendRunLogResult;
-pub use runs::{DispatchClaim, EnqueueRunResult};
+pub use runs::{AttemptMutation, DispatchClaim, EnqueueRunResult};
 #[cfg(any(test, feature = "seeding"))]
 mod test_support;
 mod workflow_catalogs;

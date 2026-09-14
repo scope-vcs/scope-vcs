@@ -15,6 +15,7 @@ members = [
     "crates/scope-git",
     "crates/scope-git-storage",
     "crates/scope-object-store",
+    "crates/scope-product-analytics",
     "crates/scope-git-process",
     "crates/scope-run-config",
     "crates/scope-service-runtime",
@@ -79,6 +80,7 @@ scope_git = { package = "scope-git", path = "crates/scope-git", default-features
 scope_git_process = { package = "scope-git-process", path = "crates/scope-git-process" }
 scope_git_storage = { package = "scope-git-storage", path = "crates/scope-git-storage" }
 scope_object_store = { package = "scope-object-store", path = "crates/scope-object-store" }
+scope_product_analytics = { package = "scope-product-analytics", path = "crates/scope-product-analytics" }
 scope_postgres = { package = "scope-postgres", path = "crates/scope-postgres" }
 scope_run_config = { package = "scope-run-config", path = "crates/scope-run-config" }
 

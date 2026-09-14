@@ -6,7 +6,7 @@ async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts
     let mut state = test_state_with_readme().await;
     drain_outbox(&state, "request-read-test").await;
     cache_test_jwks(&state);
-    let (analytics, recording) = crate::product_analytics::ProductAnalytics::recording();
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
     state.product_analytics = analytics;
     let app = router(state.clone());
     let bearer = bearer_header();
@@ -137,6 +137,24 @@ async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts
     assert!(reply["reply"]["reply_to"].is_null());
     assert!(reply["reply"].get("child_reply_count").is_none());
     assert!(reply["reply"].get("can_reply").is_none());
+
+    let retried_reply = api_request(
+        app.clone(),
+        "POST",
+        &format!("{base}/threads/{discussion_id}/replies"),
+        Some(&bearer),
+        Some(r#"{"body_markdown":"The parser module should own it.","client_reply_id":"reply-1","reply_to_reply_id":null,"wait_after_reply":false}"#),
+    )
+    .await;
+    assert_eq!(retried_reply.status(), StatusCode::OK);
+    assert_eq!(
+        recording
+            .event_names()
+            .into_iter()
+            .filter(|name| *name == "discussion:reply_create")
+            .count(),
+        1
+    );
 
     let exact_reply = api_request(
         app.clone(),

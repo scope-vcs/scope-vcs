@@ -7,8 +7,8 @@ use crate::{
     config::CLI_SESSION_TOKEN_PREFIX,
     error::ApiError,
     http::{origins::public_app_origin, responses::DeviceLoginCompleteResponse},
+    operation_analytics::{OperationFailureContext, capture_operation_failure},
     persistence::unix_now,
-    product_analytics::{CliSessionMethod, ProductEvent},
     state::AppState,
 };
 use axum::{
@@ -17,6 +17,8 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use scope_api_contract::{DeviceLoginPollResponse, DeviceLoginStartResponse, DeviceLoginStatus};
+use scope_product_analytics::{CliSessionMethod, EventSource, ProductEvent, ProductOperation};
+use std::time::Instant;
 
 pub(crate) async fn start_cli_device_login(
     State(state): State<AppState>,
@@ -41,9 +43,26 @@ pub(crate) async fn complete_cli_device_login(
     Path(user_code): Path<String>,
 ) -> Result<Json<DeviceLoginCompleteResponse>, ApiError> {
     let user = require_reconciled_clerk_scope_user(&state, &headers).await?;
-    CliAuthService::new(state.metadata.auth())
+    let started_at = Instant::now();
+    if let Err(error) = CliAuthService::new(state.metadata.auth())
         .complete_device_login(&user_code, &user, unix_now()?)
-        .await?;
+        .await
+    {
+        let error = ApiError::from(error);
+        capture_operation_failure(
+            &state,
+            OperationFailureContext {
+                actor_user_id: &user.id,
+                operation: ProductOperation::Login,
+                source: EventSource::Cli,
+                repository_id: None,
+                request_id: None,
+                started_at,
+            },
+            &error,
+        );
+        return Err(error);
+    }
 
     Ok(Json(DeviceLoginCompleteResponse {
         status: DeviceLoginStatus::Complete,

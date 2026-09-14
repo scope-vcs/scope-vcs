@@ -90,6 +90,7 @@ pub struct CreateRequestDiscussionReplyInput {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CreateRequestDiscussionReplyMutation {
+    pub created: bool,
     pub request: Request,
     pub discussion: RequestDiscussion,
     pub reply: RequestDiscussionReply,
@@ -235,6 +236,7 @@ pub fn create_request_discussion_reply(
     };
     let read_state = read_state(&discussion, &input.actor_user_id, position, input.now_unix);
     Ok(CreateRequestDiscussionReplyMutation {
+        created: true,
         request,
         discussion,
         reply,
@@ -332,6 +334,7 @@ pub fn reopen_and_reply_to_request_discussion(
         created_at_unix: input.now_unix,
     };
     Ok(CreateRequestDiscussionReplyMutation {
+        created: true,
         request,
         discussion,
         reply,

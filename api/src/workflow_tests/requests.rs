@@ -256,7 +256,7 @@ async fn request_lifecycle_exposes_one_way_submit_and_merge_actions() {
     let mut state = test_state_with_repo();
     cache_test_jwks(&state);
     create_owner_request(&state, "req_lifecycle", REQUEST_HEAD).await;
-    let (analytics, recording) = crate::product_analytics::ProductAnalytics::recording();
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
     state.product_analytics = analytics;
     let app = router(state);
     let bearer = bearer_header();
@@ -273,6 +273,14 @@ async fn request_lifecycle_exposes_one_way_submit_and_merge_actions() {
     let submitted = response_json(submitted).await;
     assert_eq!(submitted["request"]["state"], "Open");
     assert_eq!(recording.event_names(), ["request:request_submit"]);
+    assert_eq!(
+        recording.property(0, "repository_id"),
+        Some(serde_json::Value::String("repoi_workflow_test".into()))
+    );
+    assert_eq!(
+        recording.property(0, "request_id"),
+        Some(serde_json::Value::String("req_lifecycle".into()))
+    );
 
     let repeated = api_request(
         app.clone(),
@@ -283,7 +291,43 @@ async fn request_lifecycle_exposes_one_way_submit_and_merge_actions() {
     )
     .await;
     assert_eq!(repeated.status(), StatusCode::CONFLICT);
-    assert_eq!(recording.event_names(), ["request:request_submit"]);
+    assert_eq!(
+        recording.event_names(),
+        ["request:request_submit", "operation:failure"]
+    );
+    assert_eq!(
+        recording.property(1, "reason"),
+        Some(serde_json::Value::String("conflict".into()))
+    );
+}
+
+#[tokio::test]
+async fn rejected_draft_merge_records_only_a_stable_failure() {
+    let mut state = test_state_with_repo();
+    cache_test_jwks(&state);
+    create_owner_request(&state, "req_draft_merge", REQUEST_HEAD).await;
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
+    state.product_analytics = analytics;
+
+    let response = api_request(
+        router(state),
+        "POST",
+        "/v1/repos/owner/repo/requests/req_draft_merge/merge",
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(recording.event_names(), ["operation:failure"]);
+    assert_eq!(
+        recording.property(0, "operation"),
+        Some(serde_json::Value::String("merge".into()))
+    );
+    assert_eq!(
+        recording.property(0, "reason"),
+        Some(serde_json::Value::String("conflict".into()))
+    );
 }
 
 #[tokio::test]
