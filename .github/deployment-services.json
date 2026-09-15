@@ -183,32 +183,24 @@
         "LICENSE",
         "NOTICE",
         ".github/deployment-services.json",
-        ".github/source-size-audit.json",
-        ".github/railway-experiments.json",
-        "dev/check",
-        ".scope/runs/checks.yml",
-        "dev/media-smoke.mjs",
-        "dev/run-ci-local-stack",
-        "dev/scope-dev",
-        "deploy/railway/reconcile-media.mjs",
-        "deploy/railway/reconcile-media.test.mjs",
-        "deploy/railway/MEDIA.md"
+        ".github/workflows/ci.yml",
+        ".github/workflows/validate.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/prepare-release.yml",
+        ".github/workflows/deploy-staging.yml"
       ],
       "prefixes": [
-        "legal/",
-        "dev/licensing/",
-        "dev/checks/",
-        "bench/",
-        "deploy/aws/",
-        ".github/scripts/",
-        ".github/workflows/"
+        "legal/"
       ]
     },
     "checks-image": {
       "files": [
         "Cargo.lock",
         "Cargo.toml",
-        "rust-toolchain.toml"
+        "rust-toolchain.toml",
+        ".github/workflows/scope-checks-image.yml",
+        ".github/scripts/publish-soci-image.sh",
+        "dev/checks/runner-runtime-container"
       ],
       "prefixes": [
         ".scope/images/checks/",
@@ -225,7 +217,16 @@
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
-        "deploy/railway/prebuilt.Dockerfile"
+        "deploy/railway/prebuilt.Dockerfile",
+        ".github/workflows/scope-api-ci.yml",
+        ".github/workflows/rust-workspace-checks.yml",
+        ".github/workflows/deploy-backend.yml",
+        "dev/checks/backend",
+        ".github/scripts/deployment-components.mjs",
+        ".github/scripts/prepare-railway-artifact.sh",
+        ".github/scripts/extract-railway-release.py",
+        ".github/scripts/railway-artifact.mjs",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "cache-service/",
@@ -238,7 +239,17 @@
         "Cargo.toml",
         "rust-toolchain.toml",
         "deploy/railway/prebuilt.Dockerfile",
-        "deploy/railway/worker.Dockerfile"
+        "deploy/railway/worker.Dockerfile",
+        ".github/workflows/scope-api-ci.yml",
+        ".github/workflows/rust-workspace-checks.yml",
+        ".github/workflows/deploy-backend.yml",
+        "dev/checks/backend",
+        ".github/scripts/deployment-components.mjs",
+        ".github/scripts/prepare-railway-artifact.sh",
+        ".github/scripts/extract-railway-release.py",
+        ".github/scripts/railway-artifact.mjs",
+        "dev/checks/dependency-analyzer",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "crates/",
@@ -253,7 +264,15 @@
         "media-worker/Dockerfile",
         "Cargo.lock",
         "Cargo.toml",
-        "rust-toolchain.toml"
+        "rust-toolchain.toml",
+        ".github/workflows/scope-media-worker-image.yml",
+        ".github/workflows/deploy-backend.yml",
+        "dev/checks/backend",
+        ".github/scripts/railway-artifact.mjs",
+        "dev/local-process.py",
+        "dev/dotenv.sh",
+        "deploy/railway/reconcile-media.mjs",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "media-worker/",
@@ -271,7 +290,17 @@
         "web/scripts/generate-api-contract.mjs",
         "web/src/api/types.generated.ts",
         "web/src/api/validators.generated.ts",
-        "deploy/railway/prebuilt.Dockerfile"
+        "deploy/railway/prebuilt.Dockerfile",
+        ".github/workflows/scope-api-ci.yml",
+        ".github/workflows/rust-workspace-checks.yml",
+        ".github/workflows/deploy-backend.yml",
+        "dev/checks/backend",
+        ".github/scripts/deployment-components.mjs",
+        ".github/scripts/prepare-railway-artifact.sh",
+        ".github/scripts/extract-railway-release.py",
+        ".github/scripts/railway-artifact.mjs",
+        "dev/checks/contract",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "api/",
@@ -285,7 +314,19 @@
         "dev/scope-dev",
         "Cargo.lock",
         "Cargo.toml",
-        "rust-toolchain.toml"
+        "rust-toolchain.toml",
+        ".github/workflows/scope-api-ci.yml",
+        ".github/workflows/rust-workspace-checks.yml",
+        ".github/workflows/deploy-backend.yml",
+        "dev/checks/backend",
+        ".github/scripts/deployment-components.mjs",
+        ".github/scripts/prepare-railway-artifact.sh",
+        ".github/scripts/extract-railway-release.py",
+        ".github/scripts/railway-artifact.mjs",
+        "deploy/railway/reconcile-media.mjs",
+        "dev/local-process.py",
+        "dev/dotenv.sh",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "media-service/",
@@ -297,7 +338,16 @@
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
-        "deploy/railway/prebuilt.Dockerfile"
+        "deploy/railway/prebuilt.Dockerfile",
+        ".github/workflows/scope-api-ci.yml",
+        ".github/workflows/rust-workspace-checks.yml",
+        ".github/workflows/deploy-backend.yml",
+        "dev/checks/backend",
+        ".github/scripts/deployment-components.mjs",
+        ".github/scripts/prepare-railway-artifact.sh",
+        ".github/scripts/extract-railway-release.py",
+        ".github/scripts/railway-artifact.mjs",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "crates/",
@@ -308,12 +358,26 @@
       "files": [
         "Cargo.lock",
         "Cargo.toml",
-        "deploy/railway/web.Dockerfile"
+        "deploy/railway/web.Dockerfile",
+        ".github/workflows/scope-web-ci.yml",
+        ".github/workflows/deploy-web.yml",
+        ".github/workflows/scope-integration-ci.yml",
+        "dev/checks/web",
+        "dev/checks/integration",
+        ".github/scripts/deploy-railway.sh",
+        ".github/scripts/prepare-railway-artifact.sh",
+        ".github/scripts/extract-railway-release.py",
+        ".github/scripts/railway-artifact.mjs",
+        "dev/scope-dev",
+        "dev/run-ci-local-stack",
+        "dev/local-process.py",
+        "dev/dotenv.sh",
+        ".github/scripts/deploy-monitored-railway.sh",
+        ".github/scripts/deployment-components.mjs"
       ],
       "prefixes": [
         "api/",
         "crates/",
-        "dev/",
         "web/",
         "worker/"
       ]
@@ -326,14 +390,25 @@
         "Cross.toml",
         "legal/third-party-dependency-analyzer.txt",
         "rust-toolchain.toml",
-        "web/src/api/types.generated.ts"
+        "web/src/api/types.generated.ts",
+        ".github/workflows/scope-cli-build.yml",
+        ".github/workflows/publish-cli.yml",
+        ".github/workflows/scope-integration-ci.yml",
+        "dev/checks/cli",
+        "dev/checks/integration",
+        ".github/scripts/select-cli-distribution-targets.mjs",
+        ".github/scripts/deploy-railway.sh",
+        "dev/scope-dev",
+        "dev/run-ci-local-stack",
+        "dev/local-process.py",
+        "dev/dotenv.sh",
+        "dev/checks/dependency-analyzer"
       ],
       "prefixes": [
         "api/",
         "cli/",
         "crates/",
         "dependency-analyzer/",
-        "dev/",
         "worker/"
       ]
     },
@@ -343,7 +418,10 @@
         "cli/Cargo.toml",
         "Cross.toml",
         "legal/third-party-dependency-analyzer.txt",
-        "rust-toolchain.toml"
+        "rust-toolchain.toml",
+        ".github/workflows/scope-cli-build.yml",
+        "dev/checks/cli",
+        ".github/scripts/select-cli-distribution-targets.mjs"
       ],
       "prefixes": [
         "cli/distribution/",
