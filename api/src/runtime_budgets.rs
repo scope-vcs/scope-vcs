@@ -117,6 +117,11 @@ impl RuntimeBudgets {
         self.git_storage_limits
     }
 
+    #[cfg(test)]
+    pub(crate) fn available_object_store_permits(&self) -> usize {
+        self.object_store.available_permits()
+    }
+
     pub(crate) fn default_git_command_timeout() -> Duration {
         static DEFAULT_GIT_COMMAND_TIMEOUT: OnceLock<Duration> = OnceLock::new();
         // Runtime env is boot-time config. Tests that need per-case values should
