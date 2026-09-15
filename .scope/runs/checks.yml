@@ -42,6 +42,20 @@ jobs:
           files: *root-cargo-cache-files
           environment: []
           source: true
+      - name: pnpm-store
+        path: /root/.local/share/pnpm/store
+        format: v1
+        compatibility: &pnpm-cache-compatibility
+          files: []
+          environment: []
+          source: false
+        exact: &pnpm-cache-exact
+          files:
+            - web/package.json
+            - web/pnpm-lock.yaml
+            - web/pnpm-workspace.yaml
+          environment: []
+          source: false
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -55,6 +69,10 @@ jobs:
           su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN CREATEDB PASSWORD 'scope'\""
           su postgres -c "createdb --owner=scope scope_test"
           ./dev/checks/backend with-api
+      - name: Check generated API TypeScript contract
+        run: |
+          (cd web && pnpm install --frozen-lockfile)
+          ./dev/checks/contract
   cli-checks:
     caches:
       - name: cargo
@@ -115,17 +133,8 @@ jobs:
       - name: pnpm-store
         path: /root/.local/share/pnpm/store
         format: v1
-        compatibility: &pnpm-cache-compatibility
-          files: []
-          environment: []
-          source: false
-        exact: &pnpm-cache-exact
-          files:
-            - web/package.json
-            - web/pnpm-lock.yaml
-            - web/pnpm-workspace.yaml
-          environment: []
-          source: false
+        compatibility: *pnpm-cache-compatibility
+        exact: *pnpm-cache-exact
     steps:
       - name: Install dependencies
         run: (cd web && pnpm install --frozen-lockfile)

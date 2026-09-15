@@ -8,7 +8,6 @@ use crate::{
     config::{LOCAL_API_ORIGIN, SCOPE_OPERATOR_TOKEN_ENV, git_public_url_from_env, non_empty_env},
     error::ApiError,
     persistence::unix_now,
-    product_analytics::ProductAnalytics,
     repo_events::RepoChangeBus,
 };
 use axum::{
@@ -17,6 +16,7 @@ use axum::{
 };
 use scope_api_contract::CliSessionTokenResponse;
 use scope_postgres::db::MetadataStore;
+use scope_product_analytics::ProductAnalytics;
 use std::sync::Arc;
 
 pub use env::is_local_dev_env;

@@ -1,7 +1,7 @@
 use super::requests::{repo_metadata_and_access, visible_request};
 use crate::{
     auth::scope::require_scope_user, error::ApiError, persistence::unix_now,
-    product_analytics::ProductEvent, repo_events::RepoChangeReason, state::AppState,
+    repo_events::RepoChangeReason, state::AppState,
 };
 use axum::{
     Json,
@@ -16,6 +16,7 @@ use scope_domain::{
     account::UserAccount,
     requests::{CreateRequestRatingInput, RequestRating, eligible_rating_subject_user_id},
 };
+use scope_product_analytics::ProductEvent;
 use std::collections::BTreeMap;
 
 pub(crate) async fn list_request_ratings(
@@ -60,6 +61,8 @@ pub(crate) async fn create_request_rating(
         .await?;
     state.product_analytics.capture(ProductEvent::request_rated(
         &user.id,
+        &repo.record.incarnation_id,
+        &request.id,
         request.audience,
         rating.score,
     ));

@@ -7,7 +7,6 @@ use crate::{
     },
     git::repository_engine::RepositoryEngine,
     media_grants::MediaGrantIssuer,
-    product_analytics::ProductAnalytics,
     repo_events::RepoChangeBus,
     runtime_budgets::RuntimeBudgets,
     use_cases::content_cleanup::best_effort_drain_pending_repo_storage_deletions,
@@ -16,6 +15,7 @@ use scope_domain::repository::git::GitSegmentUploadState;
 use scope_git_storage::GitSegmentStore;
 use scope_object_store::ObjectStore;
 use scope_postgres::db::MetadataStore;
+use scope_product_analytics::{EventSource, ProductAnalytics};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 #[derive(Clone)]
@@ -53,7 +53,7 @@ impl AppState {
             .start_repo_change_listener(move |payload| {
                 listener_bus.publish_notification_payload(&payload)
             })?;
-        let product_analytics = ProductAnalytics::from_env().await?;
+        let product_analytics = ProductAnalytics::from_env(EventSource::Api).await?;
 
         let state = Self {
             metadata,

@@ -36,21 +36,6 @@ jobs:
     with:
       include_api: true
 
-  deployment-tests:
-    name: Check backend deployment cutover
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Install Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-
-      - name: Check deployment operations
-        run: ./dev/checks/ops
-
   release-artifact:
     name: Build backend deployment binaries
     if: inputs.build_release_artifact

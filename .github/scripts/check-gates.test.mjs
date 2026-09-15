@@ -36,12 +36,12 @@ test('backend variants preserve API feature coverage explicitly', () => {
   assert.equal(spawnSync('dev/checks/backend', ['invalid'], { cwd: root }).status, 2);
 });
 
-test('web gate includes contract, observer, and resource rules; CLI and integration retain their coverage', () => {
+test('web gate includes observer and resource rules; the backend gate owns the contract; CLI and integration retain their coverage', () => {
   assert.deepEqual(commands('web'), [
     'pnpm test', 'pnpm check', 'pnpm build',
   ]);
   const webChecks = JSON.parse(read('web/package.json')).scripts.check;
-  assert.equal(webChecks, 'pnpm typecheck && ../dev/checks/contract && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
+  assert.equal(webChecks, 'pnpm typecheck && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   const cliCommands = commands('cli');
   assert.ok(cliCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
@@ -58,13 +58,13 @@ test('local and both CI callers use the shared inventory', () => {
   const github = ['rust-workspace-checks', 'scope-api-ci', 'scope-cli-build', 'scope-web-ci', 'ci', 'release', 'scope-integration-ci']
     .map((name) => read(`.github/workflows/${name}.yml`)).join('\n');
   const scope = read('.scope/runs/checks.yml');
-  for (const gate of gates.filter((gate) => gate !== 'contract')) {
+  for (const gate of gates) {
     assert.ok(github.includes(`dev/checks/${gate}`), `GitHub: ${gate}`);
     assert.ok(scope.includes(`dev/checks/${gate}`), `Scope: ${gate}`);
   }
-  assert.ok(read('dev/check').includes('dev/checks/policy'));
-  assert.ok(read('web/package.json').includes('dev/checks/contract'));
-  assert.ok(github.includes('dev/checks/contract'));
+  for (const gate of ['policy', 'contract']) assert.ok(read('dev/check').includes(`dev/checks/${gate}`), `local: ${gate}`);
+  assert.doesNotMatch(read('web/package.json'), /dev\/checks\/contract/);
+  assert.doesNotMatch(read('.github/workflows/scope-web-ci.yml'), /rust-toolchain|rust-cache/);
 });
 
 test('every deployment and policy script test is run by a shared gate', () => {
@@ -76,13 +76,54 @@ test('every deployment and policy script test is run by a shared gate', () => {
   }
 });
 
-test('gate inputs select checks through change scopes', () => {
+// The plan job runs the operations and policy gates on every pull request and
+// release, so their inputs need no component lane. Every other gate input must
+// select the lane whose artifact it shapes.
+const alwaysOnGateInputs = [
+  /^bench\//, /^deploy\/aws\//, /^dev\/analytics\//, /^dev\/licensing\//,
+  /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py)$/,
+  /^\.github\/(source-size-audit|railway-experiments)\.json$/, /^\.scope\/runs\/checks\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure|deployment-tests)\.yml$/,
+  /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
+];
+
+// A deployment script is covered by the operations or policy gates when they run
+// it, run its test, or run a script that loads it.
+function scriptsCoveredByAlwaysOnGates() {
+  const commandText = ['ops', 'policy'].flatMap((gate) => commands(gate)).join('\n');
+  const scripts = readdirSync(resolve(root, '.github/scripts'))
+    .filter((name) => !name.endsWith('.test.mjs') && name !== 'fixtures');
+  const covered = new Set(scripts.filter((name) => (
+    commandText.includes(`.github/scripts/${name}`)
+    || commandText.includes(`.github/scripts/${name.replace(/\.(mjs|sh|py)$/, '.test.mjs')}`)
+    || commandText.includes(`.github/scripts/test-${name}`)
+  )));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const name of scripts) {
+      if (covered.has(name)) continue;
+      const loaders = [...covered, ...readdirSync(resolve(root, '.github/scripts')).filter((test) => test.endsWith('.test.mjs'))];
+      if (loaders.some((loader) => read(`.github/scripts/${loader}`).includes(name))) {
+        covered.add(name);
+        grew = true;
+      }
+    }
+  }
+  return new Set([...covered].map((name) => `.github/scripts/${name}`));
+}
+
+test('gate inputs select a lane unless the always-on gates own them', () => {
   const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' }).trim().split('\n');
-  const gateInputs = paths.filter((path) => existsSync(resolve(root, path)) && /^(dev\/|\.github\/scripts\/|bench\/|deploy\/aws\/)/.test(path));
-  gateInputs.push('.scope/runs/checks.yml', '.github/source-size-audit.json');
+  const gateInputs = paths.filter((path) => existsSync(resolve(root, path)) && /^(dev\/|\.github\/(scripts|workflows)\/|bench\/|deploy\/)/.test(path));
+  gateInputs.push('.scope/runs/checks.yml', '.github/source-size-audit.json', '.github/railway-experiments.json');
+  const coveredScripts = scriptsCoveredByAlwaysOnGates();
   for (const path of gateInputs) {
-    const selected = classifyChanges(manifest, [path]);
-    assert.ok(Object.values(selected).some(Boolean), `${path} must select checks`);
+    const selected = Object.values(classifyChanges(manifest, [path])).some(Boolean);
+    const alwaysOn = coveredScripts.has(path) || alwaysOnGateInputs.some((pattern) => pattern.test(path));
+    assert.ok(selected || alwaysOn, `${path} must select a lane or be run, tested, or loaded by the operations or policy gates`);
+  }
+  for (const gate of ['ops', 'policy']) {
+    for (const caller of ['ci', 'release']) assert.ok(read(`.github/workflows/${caller}.yml`).includes(`dev/checks/${gate}`), `${caller} must always run ${gate}`);
   }
 });
 

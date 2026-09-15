@@ -1,4 +1,4 @@
-use super::{DispatchClaim, RunStore};
+use super::{AttemptMutation, DispatchClaim, RunStore};
 use crate::error::PostgresError;
 use scope_domain::runs::step::StepConclusion;
 
@@ -25,33 +25,45 @@ impl RunStore {
         conclusion: StepConclusion,
         logs_truncated: bool,
         now_unix: u64,
-    ) -> Result<DispatchClaim, PostgresError> {
+    ) -> Result<AttemptMutation, PostgresError> {
         if matches!(conclusion, StepConclusion::Failed { .. }) {
-            self.mutate_attempt(attempt_id, |_, job, attempt, steps| {
-                attempt.complete_step(
-                    job,
-                    steps,
-                    token_hash,
-                    step_index,
-                    conclusion,
-                    logs_truncated,
-                    now_unix,
-                )
+            let mut transitioned = false;
+            let claim = self
+                .mutate_attempt(attempt_id, |_, job, attempt, steps| {
+                    transitioned = !attempt.state.is_terminal();
+                    attempt.complete_step(
+                        job,
+                        steps,
+                        token_hash,
+                        step_index,
+                        conclusion,
+                        logs_truncated,
+                        now_unix,
+                    )
+                })
+                .await?;
+            Ok(AttemptMutation {
+                claim,
+                transitioned,
             })
-            .await
         } else {
-            self.mutate_active_attempt(attempt_id, |_, job, attempt, steps| {
-                attempt.complete_step(
-                    job,
-                    steps,
-                    token_hash,
-                    step_index,
-                    conclusion,
-                    logs_truncated,
-                    now_unix,
-                )
+            let claim = self
+                .mutate_active_attempt(attempt_id, |_, job, attempt, steps| {
+                    attempt.complete_step(
+                        job,
+                        steps,
+                        token_hash,
+                        step_index,
+                        conclusion,
+                        logs_truncated,
+                        now_unix,
+                    )
+                })
+                .await?;
+            Ok(AttemptMutation {
+                claim,
+                transitioned: false,
             })
-            .await
         }
     }
 }

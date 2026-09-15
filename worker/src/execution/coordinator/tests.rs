@@ -22,11 +22,89 @@ use scope_domain::{
 use scope_postgres::db::{CatalogFixture, TestDatabaseTarget};
 
 #[tokio::test]
+async fn attempt_analytics_correlates_admission_and_completion_without_replaying_completion() {
+    let metadata = queued_runs(1).await;
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording_for_source(
+        scope_product_analytics::EventSource::Worker,
+    );
+    let now = crate::unix_now().unwrap();
+    let token_hash = "b".repeat(64);
+    let scope_postgres::db::DispatchAdmission::Admitted(claim) = metadata
+        .runs()
+        .admit_next_job(
+            1,
+            "attempt_analytics",
+            &token_hash,
+            "test",
+            now,
+            now + DISPATCH_LEASE.as_secs(),
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("expected workflow attempt admission");
+    };
+    analytics.capture_workflow_attempt_started(
+        claim.repository.incarnation_id(),
+        &claim.run,
+        &claim.attempt,
+    );
+    assert_eq!(recording.event_names(), ["workflow:attempt_start"]);
+
+    let conclusion = || AttemptConclusion::SetupFailed {
+        exit_code: 69,
+        message: "provider rejected dispatch".into(),
+    };
+    let completed = metadata
+        .runs()
+        .complete_attempt(&claim.attempt.id, &token_hash, conclusion(), false, now + 2)
+        .await
+        .unwrap();
+    assert!(completed.transitioned);
+    capture_attempt_completed(&analytics, &completed);
+
+    let replayed = metadata
+        .runs()
+        .complete_attempt(&claim.attempt.id, &token_hash, conclusion(), false, now + 3)
+        .await
+        .unwrap();
+    assert!(!replayed.transitioned);
+    capture_attempt_completed(&analytics, &replayed);
+
+    assert_eq!(
+        recording.event_names(),
+        ["workflow:attempt_start", "workflow:attempt_complete"]
+    );
+    assert_eq!(
+        recording.property(0, "repository_id"),
+        Some(serde_json::Value::String("repoi_worker_test".into()))
+    );
+    assert_eq!(
+        recording.property(0, "run_id"),
+        recording.property(1, "run_id")
+    );
+    assert_eq!(
+        recording.property(0, "attempt_id"),
+        recording.property(1, "attempt_id")
+    );
+    assert_eq!(
+        recording.property(1, "result"),
+        Some(serde_json::Value::String("failed".into()))
+    );
+    assert_eq!(
+        recording.property(1, "run_result"),
+        Some(serde_json::Value::String("failed".into()))
+    );
+    assert_eq!(recording.property(1, "duration_ms"), Some(2_000.into()));
+}
+
+#[tokio::test]
 async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_restart() {
     let metadata = queued_runs(3).await;
     let provider = FakeEcs::new().await;
     let coordinator = CloudExecutionCoordinator {
         metadata: metadata.clone(),
+        product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
         ecs: provider.client.clone(),
         origin_id: "worker-before-restart".into(),
         settings: provider.settings(),
@@ -76,7 +154,8 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
             .runs()
             .expire_attempt(attempt, expired_at)
             .await
-            .unwrap();
+            .unwrap()
+            .claim;
         assert!(
             bootstrap_hashes.remove(&expired_claim.attempt.token_hash),
             "the dispatched credential hash must match an admitted attempt"
@@ -107,6 +186,7 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
 
     let restarted = CloudExecutionCoordinator {
         metadata: metadata.clone(),
+        product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
         ecs: provider.client.clone(),
         origin_id: "worker-after-restart".into(),
         settings: provider.settings(),
@@ -148,6 +228,7 @@ async fn competing_workers_reserve_capacity_before_concurrent_provider_starts() 
         settings.max_concurrency = 3;
         let coordinator = CloudExecutionCoordinator {
             metadata: metadata.clone(),
+            product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
             ecs: provider.client.clone(),
             origin_id: origin.into(),
             settings,
@@ -213,7 +294,7 @@ async fn queued_runs(count: usize) -> MetadataStore {
     let metadata =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let owner = UserAccount {
-        id: "owner".into(),
+        id: "scope_usr_worker_owner".into(),
         handle: "worker-owner".into(),
         email: "owner@example.test".into(),
         email_verified: true,

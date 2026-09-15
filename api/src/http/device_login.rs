@@ -7,8 +7,8 @@ use crate::{
     config::CLI_SESSION_TOKEN_PREFIX,
     error::ApiError,
     http::{origins::public_app_origin, responses::DeviceLoginCompleteResponse},
+    operation_analytics::ObservedOperation,
     persistence::unix_now,
-    product_analytics::{CliSessionMethod, ProductEvent},
     state::AppState,
 };
 use axum::{
@@ -17,6 +17,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use scope_api_contract::{DeviceLoginPollResponse, DeviceLoginStartResponse, DeviceLoginStatus};
+use scope_product_analytics::{CliSessionMethod, EventSource, ProductEvent, ProductOperation};
 
 pub(crate) async fn start_cli_device_login(
     State(state): State<AppState>,
@@ -41,9 +42,22 @@ pub(crate) async fn complete_cli_device_login(
     Path(user_code): Path<String>,
 ) -> Result<Json<DeviceLoginCompleteResponse>, ApiError> {
     let user = require_reconciled_clerk_scope_user(&state, &headers).await?;
-    CliAuthService::new(state.metadata.auth())
-        .complete_device_login(&user_code, &user, unix_now()?)
-        .await?;
+    ObservedOperation {
+        actor_user_id: &user.id,
+        operation: ProductOperation::Login,
+        source: EventSource::Cli,
+        repository_id: None,
+        request_id: None,
+    }
+    .run(
+        &state,
+        CliAuthService::new(state.metadata.auth()).complete_device_login(
+            &user_code,
+            &user,
+            unix_now()?,
+        ),
+    )
+    .await?;
 
     Ok(Json(DeviceLoginCompleteResponse {
         status: DeviceLoginStatus::Complete,

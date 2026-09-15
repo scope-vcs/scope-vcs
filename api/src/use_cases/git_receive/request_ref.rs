@@ -26,6 +26,7 @@ use scope_domain::{
         RecordRequestRevisionInput, Request, RequestAudience, RequestViewer, request_policy,
     },
 };
+use scope_product_analytics::ProductEvent;
 use std::path::{Path, PathBuf};
 
 pub(super) async fn actor_has_open_editable_request(
@@ -257,7 +258,7 @@ pub(super) async fn persist_request_ref_revision(
         .requests()
         .record_request_revision(
             RecordRequestRevisionInput {
-                request_id: request.id,
+                request_id: request.id.clone(),
                 actor_user_id: actor_user_id.to_string(),
                 actor_can_edit: false,
                 expected_old_head_oid,
@@ -273,12 +274,14 @@ pub(super) async fn persist_request_ref_revision(
     match mutation {
         Ok(_) => {
             let _update_lock = update_lock;
-            state.product_analytics.capture(
-                crate::product_analytics::ProductEvent::request_revised(
+            state
+                .product_analytics
+                .capture(ProductEvent::request_revised(
                     actor_user_id,
+                    incarnation.incarnation_id(),
+                    &request.id,
                     request_audience,
-                ),
-            );
+                ));
             state
                 .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised)
                 .await;

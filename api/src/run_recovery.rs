@@ -1,5 +1,4 @@
-use crate::{persistence::unix_now, state::AppState};
-use scope_api_contract::RunChangeKind;
+use crate::{persistence::unix_now, run_attempt_effects::settle_attempt_mutation, state::AppState};
 use scope_postgres::error::PostgresErrorKind;
 use std::time::Duration;
 
@@ -29,15 +28,9 @@ pub(crate) async fn reconcile_expired_attempts(
             .expire_attempt(&attempt_id, now_unix)
             .await
         {
-            Ok(claim) => {
-                state
-                    .publish_run_change(
-                        claim.run.workflow.repository_id(),
-                        claim.run.id.clone(),
-                        RunChangeKind::StatusChanged,
-                    )
-                    .await;
-                if claim.run.state == scope_domain::runs::run::RunState::Queued {
+            Ok(mutation) => {
+                settle_attempt_mutation(state, &mutation).await;
+                if mutation.claim.run.state == scope_domain::runs::run::RunState::Queued {
                     report.requeued += 1;
                 } else {
                     report.lost += 1;

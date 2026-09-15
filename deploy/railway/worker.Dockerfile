@@ -7,6 +7,8 @@ RUN npm ci --ignore-scripts --omit=dev \
     && npm cache clean --force
 
 FROM ubuntu:24.04
+ARG SCOPE_ANALYTICS_RELEASE
+ENV SCOPE_ANALYTICS_RELEASE=$SCOPE_ANALYTICS_RELEASE
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git libssl3t64 \
     && rm -rf /var/lib/apt/lists/*

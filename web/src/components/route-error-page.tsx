@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
+import { useEffect } from 'react'
+import { reportFrontendError } from '@/analytics/diagnostics'
 
 export function RouteErrorPage({
   error,
@@ -29,6 +31,10 @@ export function RouteErrorContent({
   title,
 }: RouteErrorProps) {
   const message = error instanceof Error ? error.message : fallbackMessage
+
+  useEffect(() => {
+    reportFrontendError(error, 'route')
+  }, [error])
 
   return (
     <PageRail className={cn('py-14', className)}>

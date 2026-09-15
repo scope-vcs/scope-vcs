@@ -53,7 +53,8 @@ docker buildx build --platform linux/amd64 --provenance=false --push \
   --file "$dockerfile" --tag "$image_tag" --metadata-file "$metadata" \
   --label "org.opencontainers.image.revision=$source_sha" \
   --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
-  --build-arg "INSTALL_GIT=$install_git" --build-arg "BINARY=$binary" "$context_root"
+  --build-arg "INSTALL_GIT=$install_git" --build-arg "BINARY=$binary" \
+  --build-arg "SCOPE_ANALYTICS_RELEASE=$source_sha" "$context_root"
 digest="$(jq -er '."containerimage.digest"' "$metadata")"
 [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Build did not publish an immutable image digest.' >&2; exit 1; }
 image="$image_repository@$digest"

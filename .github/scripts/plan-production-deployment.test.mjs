@@ -77,6 +77,11 @@ test("changes select the required deployment lanes", () => {
       ["api/src/main.rs"],
       { api: true, web: true, "cli-downloads": true },
     ],
+    [
+      "contract generator inputs and generated artifacts run the backend contract gate",
+      ["web/scripts/generate-api-contract.mjs", "web/pnpm-lock.yaml", "web/src/api/validators.generated.ts"],
+      { api: true, web: true },
+    ],
     ["router changes deploy the Git router", ["repo-router/src/main.rs"], { "git-router": true }],
     [
       "backend runtime image selects every backend service",
@@ -139,14 +144,54 @@ test("changes select the required deployment lanes", () => {
       allLanes,
     ],
     [
-      "workflow changes exercise every lane",
-      [".github/workflows/scope-cli-build.yml"],
+      "orchestration workflow changes exercise every lane",
+      [".github/workflows/validate.yml"],
       allLanes,
     ],
     [
-      "deployment script changes exercise every lane",
+      "component workflow changes exercise only their lane",
+      [".github/workflows/scope-cli-build.yml"],
+      { "cli-downloads": true, "cli-distribution": true },
+    ],
+    [
+      "backend workflow changes rebuild every backend service",
+      [".github/workflows/deploy-backend.yml"],
+      { cache: true, "run-worker": true, "media-worker": true, "git-router": true, "media-api": true, api: true },
+    ],
+    [
+      "artifact-shaping scripts select the lanes they package",
       [".github/scripts/select-cli-distribution-targets.mjs"],
-      allLanes,
+      { "cli-downloads": true, "cli-distribution": true },
+    ],
+    [
+      "release preparation scripts rebuild every prepared image",
+      [".github/scripts/prepare-railway-artifact.sh", ".github/scripts/deployment-components.mjs"],
+      { cache: true, "run-worker": true, "git-router": true, "media-api": true, api: true, web: true },
+    ],
+    [
+      "the production deploy wrapper reruns every service it activates",
+      [".github/scripts/deploy-monitored-railway.sh"],
+      { cache: true, "run-worker": true, "media-worker": true, "git-router": true, "media-api": true, api: true, web: true },
+    ],
+    [
+      "check entrypoints select the lane they gate",
+      ["dev/checks/web"],
+      { web: true },
+    ],
+    [
+      "the contract check belongs to the API lane",
+      ["dev/checks/contract"],
+      { api: true },
+    ],
+    [
+      "local stack tooling reruns the integration consumers",
+      ["dev/scope-dev"],
+      { "media-worker": true, "media-api": true, web: true, "cli-downloads": true },
+    ],
+    [
+      "deploy-time and operations scripts are gated by the always-on operations checks",
+      [".github/scripts/deploy-backend-railway.sh", ".github/scripts/staging-baseline.sh", "bench/railway-load.mjs", "dev/checks/ops", "dev/analytics/reports.mjs"],
+      {},
     ],
   ];
 

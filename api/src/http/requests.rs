@@ -3,11 +3,13 @@ use crate::{
     error::ApiError,
     http::responses::*,
     persistence::unix_now,
-    product_analytics::ProductEvent,
     repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::request_merge::{self, MergeRequestCommand, MergeRequestResult},
+    use_cases::{
+        request_merge::{self, MergeRequestCommand, MergeRequestResult},
+        request_submit,
+    },
 };
 use axum::{
     Json,
@@ -31,7 +33,8 @@ use scope_domain::{
         request_mergeability, request_policy, validate_start_request_audience,
     },
 };
-use scope_postgres::db::{EditRequestIdentityCommand, SubmitRequestCommand};
+use scope_postgres::db::EditRequestIdentityCommand;
+use scope_product_analytics::ProductEvent;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -136,20 +139,8 @@ pub(crate) async fn submit_request(
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let (request, _) =
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
-    let analytics_event =
-        ProductEvent::request_submitted(&user.id, request.audience, request_actor_role(access));
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    let mutation = state
-        .metadata
-        .requests()
-        .submit_request(SubmitRequestCommand {
-            request_id: request.id,
-            actor_user_id: user.id.clone(),
-            event_id: crate::persistence_ids::generate_prefixed_id("event_request_submitted")?,
-            now_unix: unix_now()?,
-        })
-        .await?;
-    state.product_analytics.capture(analytics_event);
+    let mutation = request_submit::submit_request(&state, &repo, &request, &user.id).await?;
     lifecycle_response(
         &state,
         &repo,
@@ -307,6 +298,8 @@ pub(crate) async fn start_request(
         .product_analytics
         .capture(ProductEvent::request_started(
             &user.id,
+            &repo.record.incarnation_id,
+            &mutation.request.id,
             audience,
             request_actor_role(access),
         ));

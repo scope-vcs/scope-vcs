@@ -38,6 +38,7 @@ export default defineConfig(({ mode }) => {
         },
         plugins: [
           './src/server/readiness-endpoint.ts',
+          './src/server/analytics-endpoint.ts',
           './src/server/compress-responses.ts',
           './src/server/pagent-invalid-api-response.ts',
         ],

@@ -10,7 +10,7 @@ import { serverFunctionName } from './server-functions-smoke.mjs'
 
 const backgroundServerFunctions = new Set([
   'listRequestAttachments_createServerFn_handler',
-  'loadAnalyticsIdentity_createServerFn_handler',
+  'loadAccountSession_createServerFn_handler',
   'loadAttachmentLimits_createServerFn_handler',
 ])
 

@@ -24,6 +24,7 @@ scope_content_lifecycle.workspace = true
 scope_git = { workspace = true, features = ["storage"] }
 scope_git_storage.workspace = true
 scope_object_store.workspace = true
+scope_product_analytics.workspace = true
 scope_git_process.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tracing.workspace = true
@@ -31,3 +32,4 @@ tempfile.workspace = true
 
 [dev-dependencies]
 scope_postgres = { workspace = true, features = ["test-support"] }
+scope_product_analytics = { workspace = true, features = ["test-support"] }

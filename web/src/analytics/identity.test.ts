@@ -47,14 +47,35 @@ test('already identified visitors do not emit a duplicate identify', () => {
   }), { kind: 'none' })
 })
 
-test('identity lookup failure keeps signed-in pageviews anonymous', async () => {
-  const identity = await resolveAnalyticsIdentity(
-    'clerk_user_123',
-    () => Promise.reject(new Error('identity unavailable')),
-  )
+test('account switching resets before identifying the next Scope user', () => {
+  assert.deepEqual(identityTransition({
+    currentDistinctId: 'scope_usr_one',
+    isSignedIn: true,
+    persistedUserId: 'scope_usr_one',
+    scopeUserId: 'scope_usr_two',
+  }), {
+    kind: 'reset_and_identify',
+    scopeUserId: 'scope_usr_two',
+  })
+})
+
+test('identity resolves the internal Scope user ID from the shared account', async () => {
+  const identity = await resolveAnalyticsIdentity('clerk_user_123', async () => ({
+    user: { id: 'scope_usr_123' },
+  }))
 
   assert.deepEqual(identity, {
     identityKey: 'identified:clerk_user_123',
-    scopeUserId: null,
+    scopeUserId: 'scope_usr_123',
   })
+})
+
+test('identity lookup failures stay unresolved so the lifecycle can retry', async () => {
+  await assert.rejects(
+    resolveAnalyticsIdentity(
+      'clerk_user_123',
+      () => Promise.reject(new Error('identity unavailable')),
+    ),
+    /identity unavailable/,
+  )
 })

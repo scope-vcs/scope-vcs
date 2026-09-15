@@ -9,11 +9,7 @@ export async function loadOwnerProfileForRequest(
 ): Promise<ProfileState> {
   const api = createApiClient()
   const [account, profile] = await Promise.all([
-    api.get(
-      buildApiPath(ApiRouteTemplates.accountSession),
-      apiValidators.AccountSessionResponse,
-      { auth: 'optional' },
-    ),
+    loadAccountSessionForRequest(),
     api.get(
       buildApiPath(ApiRouteTemplates.ownerRepositories, { handle }),
       apiValidators.OwnerProfileResponse,
@@ -26,6 +22,15 @@ export async function loadOwnerProfileForRequest(
     cliInstallCommands: buildCliInstallCommands(),
     profile,
   }
+}
+
+export async function loadAccountSessionForRequest() {
+  const api = createApiClient()
+  return api.get(
+    buildApiPath(ApiRouteTemplates.accountSession),
+    apiValidators.AccountSessionResponse,
+    { auth: 'optional' },
+  )
 }
 
 export async function loadAuthenticatedAccountForRequest() {

@@ -8,8 +8,8 @@ const configuration = JSON.parse(
   readFileSync(new URL("../../cli/distribution/targets.json", import.meta.url), "utf8"),
 );
 
-test("every configured target builds a bundle with the pinned Node runtime", () => {
-  const plan = selectCliDistributionTargets(configuration);
+test("releases build every configured target with the pinned Node runtime", () => {
+  const plan = selectCliDistributionTargets(configuration, "release");
 
   assert.deepEqual(
     plan.include.map(({ target }) => target),
@@ -24,10 +24,23 @@ test("every configured target builds a bundle with the pinned Node runtime", () 
     && /^[a-f0-9]{64}$/.test(node_sha256)));
 });
 
-test("configurations without targets or a pinned Node version fail", () => {
-  assert.throws(() => selectCliDistributionTargets({ targets: [] }), /non-empty targets/);
+test("pull requests build only the native targets on Blacksmith runners", () => {
+  const plan = selectCliDistributionTargets(configuration, "pull-request");
+
+  assert.deepEqual(
+    plan.include.map(({ target }) => target),
+    ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"],
+  );
+  assert.ok(plan.include.every(({ smoke }) => smoke));
+  assert.ok(plan.include.every(({ runner }) => runner.startsWith("blacksmith-")));
+});
+
+test("configurations without targets, a pinned Node version, or a known mode fail", () => {
+  assert.throws(() => selectCliDistributionTargets({ targets: [] }, "release"), /non-empty targets/);
   assert.throws(
-    () => selectCliDistributionTargets({ targets: configuration.targets }),
+    () => selectCliDistributionTargets({ targets: configuration.targets }, "release"),
     /node_version/,
   );
+  assert.throws(() => selectCliDistributionTargets(configuration, "nightly"), /Unknown CLI distribution mode/);
+  assert.throws(() => selectCliDistributionTargets(configuration), /Unknown CLI distribution mode/);
 });
