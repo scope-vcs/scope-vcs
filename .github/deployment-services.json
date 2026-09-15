@@ -5,6 +5,7 @@
     "projectId": "45dd67fa-6d69-48ad-9680-1313d41b4490",
     "runtimeGroupId": "74120aef-735e-4959-bf8d-5cd36d10cab1",
     "databaseServiceId": "44c41a90-2d1a-4a1b-85c9-6af85d179be3",
+    "maintenanceServiceId": "bd90e5e7-80f3-4082-b0fb-2b4e89efc858",
     "regionId": "us-east4-eqdc4a"
   },
   "deploymentAuthority": "github-actions",

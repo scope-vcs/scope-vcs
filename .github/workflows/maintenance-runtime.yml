@@ -1,0 +1,117 @@
+name: Maintain private database runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      current_api_image:
+        description: Currently deployed production API image, pinned by sha256
+        required: true
+        type: string
+      current_api_source_sha:
+        description: Full source revision of that API image
+        required: true
+        type: string
+      maintenance_sha256:
+        description: Verified scope-maintenance binary SHA-256 from that API image
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: scope-maintenance-runtime
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install Railway CLI
+        run: npm install -g "@railway/cli@$(jq -er '.railway.cliVersion' .github/deployment-services.json)"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish runtime using the current production binary
+        env:
+          CURRENT_API_IMAGE: ${{ inputs.current_api_image }}
+          CURRENT_API_SOURCE_SHA: ${{ inputs.current_api_source_sha }}
+          MAINTENANCE_SHA256: ${{ inputs.maintenance_sha256 }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: bash .github/scripts/publish-maintenance-runtime.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: maintenance-runtime
+          path: maintenance-runtime.json
+          if-no-files-found: error
+          retention-days: 90
+
+  staging:
+    needs: publish
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          name: maintenance-runtime
+      - name: Install Railway CLI
+        run: npm install -g "@railway/cli@$(jq -er '.railway.cliVersion' .github/deployment-services.json)"
+      - name: Deploy and verify staging maintenance
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: |
+          node .github/scripts/deploy-maintenance-runtime.mjs staging maintenance-runtime.json
+          bash .github/scripts/verify-maintenance-runtime.sh staging maintenance-runtime.json
+
+  production:
+    needs: staging
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          name: maintenance-runtime
+      - name: Install Railway CLI
+        run: npm install -g "@railway/cli@$(jq -er '.railway.cliVersion' .github/deployment-services.json)"
+      - name: Deploy and verify production maintenance
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: |
+          node .github/scripts/deploy-maintenance-runtime.mjs production maintenance-runtime.json
+          bash .github/scripts/verify-maintenance-runtime.sh production maintenance-runtime.json

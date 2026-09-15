@@ -1,5 +1,5 @@
 use super::*;
-use crate::execution::fake::{FakeEcs, TEST_IMAGE};
+use crate::execution::fake::FakeEcs;
 use std::{
     sync::{
         Arc,
@@ -17,13 +17,13 @@ async fn provider_bursts_overlap_within_the_start_bound() {
         let client = provider.client.clone();
         starts.spawn(async move {
             client
-                .start(TEST_IMAGE, &format!("attempt_{attempt}"), "token", 86400)
+                .start(&format!("attempt_{attempt}"), "token")
                 .await
                 .map(|_| ())
                 .map_err(|error| anyhow::anyhow!("{error:?}"))
         });
     }
-    provider.wait_for("RunTask", MAX_PROVIDER_STARTS).await;
+    provider.wait_for("start", MAX_PROVIDER_STARTS).await;
     assert_eq!(provider.peak_starts(), MAX_PROVIDER_STARTS);
     assert!(
         tokio::time::timeout(Duration::from_millis(30), starts.wait_for_slot())
@@ -39,12 +39,12 @@ async fn provider_bursts_overlap_within_the_start_bound() {
     let client = provider.client.clone();
     starts.spawn(async move {
         client
-            .start(TEST_IMAGE, "attempt_next", "token", 86400)
+            .start("attempt_next", "token")
             .await
             .map(|_| ())
             .map_err(|error| anyhow::anyhow!("{error:?}"))
     });
-    provider.wait_for("RunTask", MAX_PROVIDER_STARTS + 1).await;
+    provider.wait_for("start", MAX_PROVIDER_STARTS + 1).await;
     assert_eq!(provider.peak_starts(), MAX_PROVIDER_STARTS);
     provider.starts.add_permits(MAX_PROVIDER_STARTS);
     starts.finish().await.unwrap();

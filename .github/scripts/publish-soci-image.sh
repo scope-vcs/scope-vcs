@@ -20,8 +20,8 @@ for required_command in aws jq skopeo soci; do
   }
 done
 
-if [[ "$source_image" != *@* && "$source_image" != *:* ]]; then
-  echo "source image must include a tag or digest" >&2
+if [[ ! "$source_image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+  echo "source image must include the verified immutable digest" >&2
   exit 2
 fi
 if [[ "$raw_image" != *:"$raw_tag" || "$soci_image" != *:"$soci_tag" ]]; then
@@ -64,12 +64,17 @@ soci_digest="$(jq -r '
   if length == 1 then .[0].digest else empty end
 ' <<<"$image_manifest")"
 readonly soci_digest
+[[ "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+[[ "$soci_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
 
 jq -e --arg image_digest "$image_digest" --arg soci_digest "$soci_digest" '
   .mediaType == "application/vnd.oci.image.index.v1+json" and
+  (.manifests | length) == 2 and
   ([.manifests[] |
     select(
       .digest == $image_digest and
+      .mediaType == "application/vnd.oci.image.manifest.v1+json" and
+      .platform.os == "linux" and .platform.architecture == "amd64" and
       .annotations["com.amazon.soci.index-digest"] == $soci_digest
     )
   ] | length) == 1 and
@@ -88,3 +93,9 @@ artifact_media_type="$(aws ecr describe-images \
   --output text)"
 readonly artifact_media_type
 test "$artifact_media_type" = "application/vnd.amazon.soci.index.v2+json"
+
+# Scan the runnable child, not the outer OCI index or the SOCI metadata artifact.
+# Failure leaves staging digests in ECR, but prevents :main and release promotion.
+repo_root="$(cd -- "$(dirname -- "$0")/../.." && pwd)"
+"$repo_root/.scope/images/checks/scan-image.sh" remote \
+  "${soci_image%:*}@$image_digest" checks-image-soci-scan.json

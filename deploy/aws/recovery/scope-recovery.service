@@ -1,0 +1,23 @@
+[Unit]
+Description=Capture Scope database, immutable objects, and encryption key escrow
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=scope-recovery
+Group=scope-recovery
+UMask=0077
+EnvironmentFile=/etc/scope-recovery/capture.env
+WorkingDirectory=/opt/scope-recovery
+ExecStart=/opt/scope-recovery/venv/bin/python /opt/scope-recovery/capture.py
+TimeoutStartSec=2h
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/scope-recovery
+Environment=TMPDIR=/var/lib/scope-recovery
+
+[Install]
+WantedBy=multi-user.target

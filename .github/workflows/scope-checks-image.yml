@@ -48,6 +48,17 @@ jobs:
       - name: Verify runtime process lifecycle
         run: dev/checks/runner-runtime-container --image scope-checks:candidate
 
+      - name: Scan candidate executable image
+        run: .scope/images/checks/scan-image.sh docker scope-checks:candidate checks-image-scan.json
+
+      - name: Retain vulnerability report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: checks-image-scan-candidate
+          path: checks-image-scan.json
+          if-no-files-found: warn
+
   build:
     name: Build checks image
     if: github.event_name != 'pull_request'
@@ -110,9 +121,6 @@ jobs:
           {
             echo "tags<<EOF"
             echo "${GHCR_IMAGE_NAME}:${ghcr_tag}"
-            if [[ "$PUBLISH" == "true" ]]; then
-              echo "${GHCR_IMAGE_NAME}:main"
-            fi
             echo "EOF"
             echo "ghcr_image=${GHCR_IMAGE_NAME}:${ghcr_tag}"
             if [[ "$PUBLISH" == "true" ]]; then
@@ -153,6 +161,11 @@ jobs:
           IMAGE: ${{ steps.tags.outputs.ghcr_image }}
         run: dev/checks/runner-runtime-container --image "$IMAGE"
 
+      - name: Scan verified executable image before publishing
+        env:
+          IMAGE: ${{ steps.tags.outputs.ghcr_image }}
+        run: .scope/images/checks/scan-image.sh docker "$IMAGE" checks-image-scan.json
+
       - name: Publish verified image
         id: image
         if: steps.source.outputs.publish == 'true'
@@ -187,7 +200,7 @@ jobs:
       - name: Publish raw and SOCI v2 variants to Amazon ECR
         if: steps.source.outputs.publish == 'true'
         env:
-          GHCR_IMAGE: ${{ steps.tags.outputs.ghcr_image }}
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE_NAME }}@${{ steps.image.outputs.digest }}
           RAW_IMAGE: ${{ steps.tags.outputs.raw_image }}
           RAW_TAG: ${{ steps.tags.outputs.raw_tag }}
           SOCI_IMAGE: ${{ steps.tags.outputs.soci_image }}
@@ -200,6 +213,24 @@ jobs:
           "$ECR_REPOSITORY"
           "$RAW_TAG"
           "$SOCI_TAG"
+
+      - name: Retain vulnerability reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: checks-image-scans
+          path: |
+            checks-image-scan.json
+            checks-image-soci-scan.json
+          if-no-files-found: warn
+
+      - name: Promote scanned image to main
+        if: steps.source.outputs.publish == 'true'
+        env:
+          IMAGE: ${{ steps.tags.outputs.ghcr_image }}
+        run: |
+          docker tag "$IMAGE" "${GHCR_IMAGE_NAME}:main"
+          docker push "${GHCR_IMAGE_NAME}:main"
 
       - name: Record published digest
         id: published

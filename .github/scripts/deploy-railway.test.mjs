@@ -143,7 +143,7 @@ test("fails after three unsuccessful metadata reads without repeating activation
   assert.match(result.stderr, /Railway read failed after 3 attempts/);
 });
 
-function upload(t, { output, exitCode }) {
+function upload(t, { output, exitCode, stderr = "" }) {
   const root = mkdtempSync(join(tmpdir(), "scope-railway-upload-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const bin = join(root, "bin");
@@ -155,6 +155,7 @@ function upload(t, { output, exitCode }) {
     if (command === "service") console.log(JSON.stringify([{ id: "cli-id" }]));
     else if (command === "up") {
       console.log(${JSON.stringify(output)});
+      console.error(${JSON.stringify(stderr)});
       process.exit(${exitCode});
     } else if (command === "deployment") console.log(JSON.stringify([{ id: "cli-deploy", status: "SUCCESS" }]));
     else process.exit(99);
@@ -172,12 +173,13 @@ function upload(t, { output, exitCode }) {
   return { ...result, events: readFileSync(join(root, "events"), "utf8").trim().split("\n") };
 }
 
-test("failed source upload prints Railway's JSON error and preserves its exit code without retrying", (t) => {
-  const output = JSON.stringify({ error: "Failed to upload code: file too large", code: "UPLOAD_FAILED" });
-  const result = upload(t, { output, exitCode: 42 });
-  assert.equal(result.status, 42);
-  assert.ok(result.stderr.includes(output));
-  assert.match(result.stderr, /Railway upload for cli-id failed with exit code 42/);
+test("source-upload failures retain status diagnostics without leaking signed URLs or retrying", (t) => {
+  const output = JSON.stringify({ statusCode: 502, error: "https://provider.invalid/upload?token=do-not-print" });
+  const result = upload(t, { output, exitCode: 7, stderr: "sensitive stderr token=also-do-not-print" });
+  assert.equal(result.status, 7);
+  assert.match(result.stderr, /source upload failed \(exit 7; HTTP 502\)/);
+  assert.match(result.stderr, /No deployment receipt was returned/);
+  assert.doesNotMatch(result.stdout + result.stderr, /do-not-print|provider\.invalid|sensitive stderr/);
   assert.deepEqual(result.events, ["service", "up"]);
 });
 

@@ -22,6 +22,14 @@ COPY dependency-analyzer/third-party-dependency-analyzer.txt ./
 
 WORKDIR /app
 COPY bin /app/bin
+# Repository restoration and dependency snapshots live below .scope. The
+# worker can write there and in its home, but cannot replace its executable.
+RUN useradd --uid 65532 --user-group --create-home --shell /usr/sbin/nologin scope \
+    && mkdir -p /app/.scope /home/scope/.cache \
+    && chown 65532:65532 /app/.scope /home/scope/.cache
 ENV NODE_VERSION=24.18.0 \
+    HOME=/home/scope \
+    XDG_CACHE_HOME=/home/scope/.cache \
     SCOPE_DEPENDENCY_ANALYZER_PATH=/app/dependency-analyzer/analyze.mjs
+USER 65532:65532
 CMD ["/app/bin/scope-worker"]

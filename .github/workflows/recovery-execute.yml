@@ -1,0 +1,76 @@
+name: Production recovery execution
+
+on:
+  workflow_call:
+    secrets:
+      RAILWAY_TOKEN:
+        required: true
+      SCOPE_RAILWAY_SSH_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  capture:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    env:
+      AWS_REGION: us-east-1
+      SCOPE_RECOVERY_BUCKET: ${{ vars.SCOPE_RECOVERY_BUCKET }}
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Configure recovery upload credentials
+        id: credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ vars.SCOPE_RECOVERY_WRITER_ROLE_ARN }}
+          role-session-name: scope-recovery-${{ github.run_id }}
+          role-duration-seconds: 7200
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Install recovery dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r deploy/aws/recovery/requirements.txt
+          npm install -g "@railway/cli@$(jq -er '.railway.cliVersion' .github/deployment-services.json)"
+      - name: Install verified age binary
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/age-v1.3.2-linux-amd64.tar.gz"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz \
+            --output "$archive"
+          printf '%s  %s\n' cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10 "$archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$RUNNER_TEMP" age/age age/age-keygen
+          echo "$RUNNER_TEMP/age" >> "$GITHUB_PATH"
+      - name: Verify recovery tooling
+        run: |
+          command -v age age-keygen
+          python deploy/aws/recovery/storage.test.py
+          python -m unittest discover -s deploy/aws/recovery/tests -v
+          bash -n deploy/aws/recovery/remote-snapshot.sh
+      - name: Capture complete encrypted recovery set
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
+          SCOPE_RECOVERY_AGE_RECIPIENT: ${{ vars.SCOPE_RECOVERY_AGE_RECIPIENT }}
+          SCOPE_RECOVERY_SOURCE_SHA: ${{ github.sha }}
+        run: python .github/scripts/recovery-run.py
+      - name: Publish failed recovery heartbeat
+        if: ${{ failure() && steps.credentials.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          metric_file="$RUNNER_TEMP/recovery-failed-metric.json"
+          jq -n --arg bucket "$SCOPE_RECOVERY_BUCKET" \
+            '[{MetricName:"RecoverySetComplete",Dimensions:[{Name:"BucketName",Value:$bucket}],Value:0,Unit:"Count"}]' > "$metric_file"
+          aws cloudwatch put-metric-data --namespace Scope/Security/Recovery --metric-data "file://$metric_file"

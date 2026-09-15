@@ -206,15 +206,24 @@ for (const resume of [false, true]) {
 test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness before its Git router and records each participant once`, (t) => {
   const { root, scripts, bin, candidate } = candidateCheckout(t)
   const input = fixture()
+  input.manifest.railway.projectId = '11111111-1111-1111-1111-111111111111'
+  input.manifest.railway.maintenanceServiceId = '22222222-2222-2222-2222-222222222222'
+  input.manifest.environments.staging.environmentId = '33333333-3333-3333-3333-333333333333'
+  input.manifest.environments.production.environmentId = '44444444-4444-4444-4444-444444444444'
+  input.manifest.releasePolicy = { migrationLockTimeoutSeconds: 15, migrationStatementTimeoutSeconds: 120 }
+  input.status.id = input.manifest.railway.projectId
+  input.status.environments.edges[0].node.id = input.manifest.environments.staging.environmentId
   for (const service of input.services.filter(({ id }) => id !== 'database')) {
     service.status = 'STOPPED'
     service.replicas = { configured: service.id === 'api' ? 3 : 1, running: 0, crashed: 0 }
   }
   writeFileSync(join(root, 'provider.json'), JSON.stringify({ ...input, activations: [], maintenance: [] }))
   writeFileSync(join(root, '.github/deployment-services.json'), JSON.stringify(input.manifest))
-  for (const name of ['deploy-staging-railway.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-retry.mjs']) {
+  for (const name of ['deploy-staging-railway.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-retry.mjs', 'railway-private-command.sh', 'railway-private-maintenance.sh']) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
   }
+  mkdirSync(join(root, 'deploy/postgres'), { recursive: true })
+  copyFileSync(new URL('../../deploy/postgres/runtime-roles.mjs', import.meta.url), join(root, 'deploy/postgres/runtime-roles.mjs'))
   // The lower deployment boundary models Railway readiness and immutable receipts.
   // It rejects the real failure: a Git router cannot resolve its stopped API backend.
   writeFileSync(join(root, 'provider.mjs'), `
@@ -229,39 +238,54 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
     if (action === 'read') {
       if (args[0] === 'status') console.log(JSON.stringify(state.status));
       else if (args[0] === 'service') console.log(JSON.stringify(state.services));
-      else if (args[0] === 'variable') console.log(JSON.stringify(serviceId === 'database'
-        ? { DATABASE_PUBLIC_URL: 'postgres://staging-fixture' }
-        : serviceId === 'api' ? {
+      else if (args[0] === 'variable') {
+        assert.notEqual(serviceId, 'database', 'Runner must never fetch database credentials');
+        console.log(JSON.stringify(serviceId === 'api' ? {
           SCOPE_CACHE_URL: 'https://' + state.manifest.environments.staging.cacheDomain,
           SCOPE_GIT_PUBLIC_URL: 'https://' + state.manifest.environments.staging.routerDomain,
         } : { SCOPE_REPO_ROUTER_BACKEND: 'scope-api.railway.internal:8080', SCOPE_REPO_ROUTER_READ_REPLICAS: '3' }));
+      }
       else throw new Error('Unexpected provider read');
     } else if (action === 'railway') {
-      assert.equal(args[args.indexOf('--project') + 1], 'project');
-      assert.equal(args[args.indexOf('--environment') + 1], 'staging');
-      if (args[0] === 'run') {
+      assert.equal(args[args.indexOf('--project') + 1], state.manifest.railway.projectId);
+      assert.equal(args[args.indexOf('--environment') + 1], state.manifest.environments.staging.environmentId);
+      if (args[0] === 'ssh') {
+        assert.equal(serviceId, state.manifest.railway.maintenanceServiceId);
         const command = args.slice(args.indexOf('--') + 1);
-        const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit', env: process.env });
+        const result = spawnSync('sh', ['-c', command[0]], { stdio: 'inherit', env: { ...process.env,
+          DATABASE_URL: 'postgres://scope_migrator@scope-postgres.railway.internal/railway',
+          RAILWAY_PROJECT_ID: state.manifest.railway.projectId,
+          RAILWAY_ENVIRONMENT_ID: state.manifest.environments.staging.environmentId,
+          RAILWAY_SERVICE_ID: state.manifest.railway.maintenanceServiceId,
+        } });
         process.exit(result.status ?? 1);
       }
       assert.equal(args.slice(0, 2).join(' '), 'variable set');
     } else if (action === 'maintenance') {
-      assert.equal(process.env.DATABASE_URL, 'postgres://staging-fixture');
+      assert.equal(process.env.DATABASE_URL, 'postgres://scope_migrator@scope-postgres.railway.internal/railway');
       assert.ok(state.services.filter(s => ['api', 'cache', 'worker', 'media', 'media-worker'].includes(s.id))
         .every(s => s.replicas.running === 0));
       assert.ok(['plan', 'validate-workflow-catalogs', 'apply', 'backfill-workflow-catalogs'].includes(args[0]));
       state.maintenance.push(args[0]);
       save();
       if (args[0] === 'plan') console.log(JSON.stringify({ exact: true, applied: ['m0001_initial'], pending: [] }));
+    } else if (action === 'grants') {
+      assert.equal(process.env.DATABASE_URL, 'postgres://scope_migrator@scope-postgres.railway.internal/railway');
+      assert.ok(state.maintenance.includes('apply'));
+      const sql = readFileSync(0, 'utf8');
+      assert.match(sql, /GRANT CONNECT ON DATABASE/);
+      assert.match(sql, /scope_api/);
+      state.grantsApplied = true;
+      save();
     } else if (action === 'activate') {
       const component = process.env.SCOPE_DEPLOYMENT_COMPONENT;
       const prepared = JSON.parse(readFileSync(process.env.SCOPE_PREPARED_RELEASE_PATH));
       const artifact = prepared.components[component];
       assert.equal(args[0], artifact.serviceId);
       assert.equal(process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, prepared.sourceSha);
-      assert.equal(process.env.SCOPE_RAILWAY_ENVIRONMENT_ID, 'staging');
+      assert.equal(process.env.SCOPE_RAILWAY_ENVIRONMENT_ID, state.manifest.environments.staging.environmentId);
       if (process.env.SCOPE_STAGING_RESUME === '1') assert.deepEqual(state.maintenance, ['plan']);
-      else assert.ok(state.maintenance.includes('apply'));
+      else { assert.ok(state.maintenance.includes('apply')); assert.equal(state.grantsApplied, true); }
       assert.ok(!state.activations.includes(component), 'A participant was activated twice');
       if (component === 'git-router') {
         const api = state.services.find(s => s.id === 'api');
@@ -286,6 +310,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       process.stdout.write(execFileSync(process.execPath, ['provider.mjs', 'read', ...process.argv.slice(2)]));
   `)
   writeFileSync(join(bin, 'railway'), '#!/bin/sh\nexec node provider.mjs railway "$@"\n', { mode: 0o755 })
+  writeFileSync(join(bin, 'psql'), '#!/bin/sh\nexec node provider.mjs grants "$@"\n', { mode: 0o755 })
   const binary = join(bin, 'maintenance')
   writeFileSync(binary, '#!/bin/sh\nexec node provider.mjs maintenance "$@"\n', { mode: 0o755 })
   writeFileSync(join(scripts, 'deploy-railway.sh'), '#!/bin/sh\nexec node provider.mjs activate "$@"\n')
@@ -312,7 +337,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   assert.ok(state.activations.indexOf('api') < state.activations.indexOf('git-router'))
   assert.doesNotThrow(() => verifyStagingTopology(state))
   assert.deepEqual(JSON.parse(readFileSync(join(root, 'evidence.json'))), {
-    commit: candidate, environmentId: 'staging', candidateDeployments: 1,
+    commit: candidate, environmentId: input.manifest.environments.staging.environmentId, candidateDeployments: 1,
     deployments: state.activations.map(component => ({ service: components[component].serviceId,
       deploymentId: 'new-' + components[component].serviceId, status: 'SUCCESS' })),
   })

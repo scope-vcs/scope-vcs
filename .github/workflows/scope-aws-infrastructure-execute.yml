@@ -1,0 +1,64 @@
+name: AWS infrastructure execution
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        required: true
+      code_bucket:
+        type: string
+        required: false
+        default: ''
+      code_key:
+        type: string
+        required: false
+        default: ''
+      code_version:
+        type: string
+        required: false
+        default: ''
+      command:
+        type: string
+        required: true
+      change_set_arn:
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  infrastructure:
+    name: ${{ inputs.command }} AWS ${{ inputs.target }} infrastructure
+    environment: AWS-infrastructure
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ vars.SCOPE_AWS_INFRASTRUCTURE_ROLE_ARN }}
+          role-session-name: scope-aws-infrastructure-${{ github.run_id }}
+
+      - name: Run CloudFormation operation
+        env:
+          CHANGE_SET_ARN: ${{ inputs.change_set_arn }}
+          COMMAND: ${{ inputs.command }}
+          TARGET: ${{ inputs.target }}
+          SCOPE_BROKER_CODE_BUCKET: ${{ inputs.code_bucket }}
+          SCOPE_BROKER_CODE_KEY: ${{ inputs.code_key }}
+          SCOPE_BROKER_CODE_VERSION: ${{ inputs.code_version }}
+          SCOPE_AWS_EXECUTION_ROLE_ARN: ${{ vars.SCOPE_AWS_EXECUTION_ROLE_ARN }}
+          SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN: ${{ vars.SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN }}
+        run: |
+          case "$TARGET" in
+            runner) deploy/aws/apply-cloud-runner.sh "$COMMAND" "$CHANGE_SET_ARN" ;;
+            broker) deploy/aws/apply-dispatch-broker.sh "$COMMAND" "$CHANGE_SET_ARN" ;;
+            *) echo "Unknown infrastructure target" >&2; exit 2 ;;
+          esac

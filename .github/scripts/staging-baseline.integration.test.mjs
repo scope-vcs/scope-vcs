@@ -30,7 +30,14 @@ const m = ${JSON.stringify(manifest)};
 const args = process.argv.slice(2);
 if (args[0] === 'status') console.log(JSON.stringify({id:m.railway.projectId,environments:{edges:[{node:{id:m.environments.staging.environmentId,name:m.environments.staging.environmentName}}]}}));
 else if (args[0] === 'service') console.log(JSON.stringify([...Object.values(m.services),{id:m.railway.databaseServiceId,name:'scope-postgres'}]));
-else if (args[0] === 'variable') console.log(JSON.stringify({DATABASE_PUBLIC_URL:process.env.TEST_DATABASE}));
+else if (args[0] === 'ssh') {
+  const {spawnSync} = require('node:child_process');
+  const result = spawnSync('sh', ['-c', args[args.indexOf('--') + 1]], {stdio:'inherit', env:{...process.env,
+    DATABASE_URL:process.env.TEST_DATABASE, RAILWAY_PROJECT_ID:m.railway.projectId,
+    RAILWAY_ENVIRONMENT_ID:m.environments.staging.environmentId,
+    RAILWAY_SERVICE_ID:process.env.SCOPE_RAILWAY_MAINTENANCE_SERVICE_ID}});
+  process.exit(result.status ?? 1);
+}
 else process.exit(2);
 `);
   executable('maintenance', `#!/usr/bin/env node
@@ -58,9 +65,9 @@ else console.log('true');
   const env = { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, RAILWAY_TOKEN: 'test', RAILWAY_API_TOKEN: '',
     TEST_GH_TRACE: join(root, 'gh-trace'), TEST_DATABASE: database, TEST_ARCHIVE: join(root, 'snapshot.zip'), GITHUB_REPOSITORY: 'scope-vcs/scope-vcs',
     GITHUB_OUTPUT: join(root, 'output'), SCOPE_DEPLOYMENT_MANIFEST: join(root, 'manifest.json'),
-    SCOPE_MAINTENANCE_BINARY: binary, SCOPE_PREPARED_RELEASE_PATH: join(root, 'prepared.json'),
+    SCOPE_RAILWAY_MAINTENANCE_SERVICE_ID: '11111111-1111-1111-1111-111111111111', SCOPE_MAINTENANCE_BINARY: binary, SCOPE_PREPARED_RELEASE_PATH: join(root, 'prepared.json'),
     SCOPE_PRODUCTION_MIGRATION_PLAN: join(root, 'production.json'), SCOPE_STAGING_BASELINE_DIR: join(root, 'baseline') };
-  const run = () => spawnSync('bash', ['.github/scripts/staging-baseline.sh'], { env, encoding: 'utf8', timeout: 20_000 });
+  const run = () => spawnSync('bash', ['.github/scripts/staging-baseline.sh'], { env, encoding: 'utf8', timeout: 60_000 });
   // This repository is public. Matching ledgers with no migrations neither read
   // archive metadata nor require an encryption secret or publish an artifact.
   delete env.SCOPE_STAGING_BASELINE_KEY;

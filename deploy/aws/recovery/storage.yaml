@@ -1,0 +1,233 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Protected recovery archives and separate upload and restore identities
+Parameters:
+  GitHubOidcProviderArn:
+    Type: String
+    AllowedPattern: '^arn:aws(-us-gov|-cn)?:iam::[0-9]{12}:oidc-provider/token.actions.githubusercontent.com$'
+  GitHubRepository:
+    Type: String
+    Default: scope-vcs/scope-vcs
+  GitHubRepositoryId:
+    Type: String
+    Default: '1272896256'
+  GitHubRepositoryOwnerId:
+    Type: String
+    Default: '321219119'
+  ReaderPrincipalArn:
+    Type: String
+    Description: Existing MFA-enrolled scope-operator user in this account
+    AllowedPattern: '^arn:aws(-us-gov|-cn)?:iam::[0-9]{12}:user/scope-operator$'
+  AlertTopicArn:
+    Type: String
+    Description: Security SNS topic permitting CloudWatch alarm notifications
+    AllowedPattern: '^arn:aws(-us-gov|-cn)?:sns:[a-z0-9-]+:[0-9]{12}:[A-Za-z0-9_-]+$'
+Resources:
+  RecoveryBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub scope-recovery-${AWS::AccountId}-${AWS::Region}
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: GOVERNANCE
+            Days: 35
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-recovery-sets
+            Status: Enabled
+            Prefix: sets/
+            ExpirationInDays: 42
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 42
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+  RecoveryWriterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: scope-recovery-writer
+      MaxSessionDuration: 7200
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:repository_id: !Ref GitHubRepositoryId
+                token.actions.githubusercontent.com:ref: refs/heads/main
+                token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepository}/.github/workflows/recovery-execute.yml@refs/heads/main
+                token.actions.githubusercontent.com:sub: !Sub
+                  - repo:${Owner}@${GitHubRepositoryOwnerId}/${Repository}@${GitHubRepositoryId}:ref:refs/heads/main
+                  - Owner: !Select [0, !Split ['/', !Ref GitHubRepository]]
+                    Repository: !Select [1, !Split ['/', !Ref GitHubRepository]]
+      Policies:
+        - PolicyName: upload-recovery-sets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:AbortMultipartUpload
+                  - s3:ListMultipartUploadParts
+                Resource: !Sub ${RecoveryBucket.Arn}/sets/*
+              - Effect: Allow
+                Action: s3:ListBucketMultipartUploads
+                Resource: !GetAtt RecoveryBucket.Arn
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: Scope/Security/Recovery
+  RecoveryReaderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: scope-recovery-reader
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref ReaderPrincipalArn
+            Action: sts:AssumeRole
+            Condition:
+              Bool:
+                aws:MultiFactorAuthPresent: 'true'
+              StringEquals:
+                aws:PrincipalAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: login-to-recovery-session
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [signin:AuthorizeOAuth2Access, signin:CreateOAuth2Token]
+                Resource:
+                  - !Sub arn:${AWS::Partition}:signin:us-east-1:${AWS::AccountId}:oauth2/public-client/localhost
+                  - !Sub arn:${AWS::Partition}:signin:us-east-1:${AWS::AccountId}:oauth2/public-client/remote
+        - PolicyName: read-recovery-sets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                Resource: !GetAtt RecoveryBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix: sets/*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub ${RecoveryBucket.Arn}/sets/*
+  RecoveryBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Bucket: !Ref RecoveryBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt RecoveryBucket.Arn
+              - !Sub ${RecoveryBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: RequireSSES3
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub ${RecoveryBucket.Arn}/*
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: AES256
+          - Sid: RestrictWriterEvenWithAdditionalIdentityGrants
+            Effect: Deny
+            Principal: '*'
+            NotAction:
+              - s3:PutObject
+              - s3:AbortMultipartUpload
+              - s3:ListMultipartUploadParts
+              - s3:ListBucketMultipartUploads
+            Resource:
+              - !GetAtt RecoveryBucket.Arn
+              - !Sub ${RecoveryBucket.Arn}/*
+            Condition:
+              ArnEquals:
+                aws:PrincipalArn: !GetAtt RecoveryWriterRole.Arn
+          - Sid: RestrictReaderEvenWithAdditionalIdentityGrants
+            Effect: Deny
+            Principal: '*'
+            NotAction:
+              - s3:ListBucket
+              - s3:ListBucketVersions
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - !GetAtt RecoveryBucket.Arn
+              - !Sub ${RecoveryBucket.Arn}/*
+            Condition:
+              ArnEquals:
+                aws:PrincipalArn: !GetAtt RecoveryReaderRole.Arn
+  RecoverySetAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: scope-production-recovery-set-health
+      AlarmDescription: Recovery archive creation failed or daily completion stopped. Inspect recovery automation and immutable archive versions.
+      Namespace: Scope/Security/Recovery
+      MetricName: RecoverySetComplete
+      Dimensions:
+        - Name: BucketName
+          Value: !Ref RecoveryBucket
+      Statistic: Minimum
+      Period: 86400
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopicArn]
+      OKActions: [!Ref AlertTopicArn]
+Outputs:
+  RecoveryBucketName:
+    Value: !Ref RecoveryBucket
+  RecoveryBucketArn:
+    Value: !GetAtt RecoveryBucket.Arn
+  RecoveryWriterRoleArn:
+    Value: !GetAtt RecoveryWriterRole.Arn
+  RecoveryReaderRoleArn:
+    Value: !GetAtt RecoveryReaderRole.Arn
+  RecoveryMetricNamespace:
+    Value: Scope/Security/Recovery
+  RecoveryReaderSwitchRoleUrl:
+    Value: !Sub https://signin.aws.amazon.com/switchrole?account=${AWS::AccountId}&roleName=scope-recovery-reader&displayName=ScopeRecovery

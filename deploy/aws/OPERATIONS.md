@@ -129,91 +129,56 @@ gh variable set SCOPE_AWS_INFRASTRUCTURE_ROLE_ARN \
   --body "$infrastructure_role_arn"
 ```
 
-After this one-time bootstrap, use the `Scope AWS Infrastructure` GitHub workflow for persistent, keyless administration. Run `plan`, review its change-set ARN, then run `apply` with that exact ARN. The infrastructure role has administrator permissions because the stack owns IAM, networking, compute, storage, logs, and budgets; its trust policy restricts assumption to the immutable repository ID and this workflow on `main`.
+Complete the [security bootstrap](SECURITY.md) before using the `AWS infrastructure` GitHub workflow. Configure the protected `AWS-infrastructure` environment and set `SCOPE_AWS_EXECUTION_ROLE_ARN` to the constrained CloudFormation execution role. Run `plan`, review its change-set ARN, then run `apply` with that exact ARN.
+
+The GitHub role can manage change sets only for the two production runner and broker stacks and pass the fixed execution role. Its trust requires the immutable repository ID, `main`, the protected environment, and the exact reusable execution workflow. The execution role can update named production resources and bounded runtime roles; it cannot change its own permissions, GitHub trust, or security controls. Network replacement, budgets, and identity bootstrap use temporary non-root administration. Direct pushes to `main` remain independent of infrastructure approval.
+
+## Configure broker dispatch
+
+Follow [the broker deployment and cutover guide](DISPATCH-BROKER.md) before
+releasing the broker-only worker. Deploy the API authorization endpoint and broker,
+pause admission, and drain old attempts through cleanup before changing worker
+permissions. The broker owns task definitions, bootstrap secrets, role passing,
+networking, and cleanup. The worker invokes the exact broker Lambda ARN.
+
+Set `AWS_REGION`, `SCOPE_DISPATCH_BROKER_FUNCTION_ARN`, and invoke-only AWS
+credentials on the worker. The API and broker share the dedicated
+`SCOPE_DISPATCH_BROKER_TOKEN`; the worker must never receive it. Broker infrastructure
+receives the cluster, subnet, security group, execution role, and log group settings.
+Remove the worker's old ECS settings and `SCOPE_ECS_SECRET_NAME_KEY` after cutover.
+
+CloudFormation creates the dispatcher IAM user without creating a permanent access
+key. Create and transfer any required key through a protected shell, then verify
+that it can invoke only the broker and cannot call ECS, Secrets Manager, or
+`iam:PassRole` directly. Do not save key material in command examples or logs.
+
+The API independently validates attempt state and bootstrap identity without
+consuming the runtime credential. The broker selects the durable workflow image
+and fixes all privileged AWS inputs. Tasks have no task IAM role. Arbitrary
+registered task definitions and secret-name obscurity are not security boundaries;
+ECS deregistration can return secret references. That wildcard-only permission now
+belongs to the trusted broker.
 
 ## Configure private registry credentials
 
-Public images need no registry credential. Leave `SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN` unset in both GitHub and Railway to keep `repositoryCredentials` out of the ECS task definition.
-
-Private registries use one Secrets Manager secret with this JSON shape:
+Public images need no registry credential. For a private registry, create an
+AWS Secrets Manager secret in the runner region with this JSON shape:
 
 ```json
 {"username":"registry-user","password":"registry-password-or-token"}
 ```
 
-Create the secret in the runner's AWS region through a secure shell and encrypt it with the AWS-managed `aws/secretsmanager` key. A customer-managed key also requires an exact `kms:Decrypt` grant and is not supported by this stack. Do not put the username, password, token, or JSON document in the repository, a ticket, shell history, or a GitHub variable. Only the secret ARN is configuration.
+Use the AWS-managed `aws/secretsmanager` key. A customer-managed key additionally
+requires an exact `kms:Decrypt` grant, which this stack does not provide. Configure
+the exact ARN in the runner stack's `RegistryCredentialsSecretArn` parameter so
+the execution role can pull from that registry. Supply the same ARN and the exact
+registry hostname as `RegistryCredentialsHost` to the broker stack.
 
-Set the ARN as the repository variable used by the infrastructure workflow:
-
-```bash
-gh variable set SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN \
-  --repo scope-vcs/scope-vcs \
-  --body "$registry_credentials_secret_arn"
-```
-
-Run the `Scope AWS Infrastructure` workflow with `plan`, review the exact change set, then apply it. The task execution role must receive its exact-secret grant before any worker starts emitting task definitions that reference the secret.
-
-After the stack update succeeds, set the same ARN on the Railway worker and deploy the worker:
-
-```bash
-railway variable set \
-  --project "$railway_project_id" \
-  --environment "$railway_environment_id" \
-  --service "$railway_worker_service_id" \
-  "SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN=$registry_credentials_secret_arn"
-```
-
-This is one global worker setting. When set, every task definition receives the credential ARN. It does not select credentials by image host and cannot mix credential-free public pulls with authenticated pulls from one worker. Leave it unset for public-only execution. Supporting mixed registry modes requires an explicit workflow contract and is outside this cutover.
-
-To rotate credentials, write a new secret version under the same ARN, run one private-image canary, then revoke the old registry token. The worker does not need a configuration change when the ARN stays the same.
-
-## Create the dispatcher credentials
-
-CloudFormation creates the least-privilege IAM user but does not create an access key. This keeps the secret out of stack outputs and CloudFormation event history. Create one key through the CLI after the stack succeeds:
-
-```bash
-dispatcher_user="$(aws cloudformation describe-stacks \
-  --region us-east-1 \
-  --stack-name scope-cloud-runner-production \
-  --query "Stacks[0].Outputs[?OutputKey=='RailwayDispatcherUserName'].OutputValue | [0]" \
-  --output text)"
-
-aws iam create-access-key --user-name "$dispatcher_user"
-```
-
-Copy the returned access key ID and secret directly into Railway. Do not save the JSON to the repository or shell history. Generate a separate secret-name key in the secure shell that will update Railway:
-
-```bash
-ecs_secret_name_key="$(openssl rand -hex 32)"
-```
-
-The worker also needs the six non-secret stack outputs:
-
-```text
-AWS_REGION                    <- AwsRegion
-SCOPE_ECS_CLUSTER_ARN         <- RunnerClusterArn
-SCOPE_ECS_SUBNET_IDS          <- RunnerSubnetIds
-SCOPE_ECS_SECURITY_GROUP_ID   <- RunnerSecurityGroupId
-SCOPE_ECS_EXECUTION_ROLE_ARN  <- RunnerExecutionRoleArn
-SCOPE_ECS_LOG_GROUP           <- RunnerLogGroupName
-```
-
-Set them with `railway variable set` in the production worker service. Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `SCOPE_ECS_SECRET_NAME_KEY="$ecs_secret_name_key"` in the same command or through a secure, non-recorded shell session. Do not paste secrets into command examples, tickets, or logs.
-
-The dispatcher's policy permits only these operations:
-
-- register, list, deregister, and tag `scope-runner-attempt_*` task definitions, without permission to inspect their secret references
-- run those task definitions only in this cluster
-- find an ambiguously started task by its Scope attempt ID
-- describe, stop, and tag tasks in this cluster
-- create and delete project-tagged per-attempt bootstrap secrets without permission to read them
-- pass the exact task execution role to ECS
-
-The policy explicitly denies direct `GetSecretValue`, batch get, describe, and list operations. Those denies block the dispatcher from reading the registry credential or any stored bootstrap credential through the Secrets Manager API.
-
-The task execution role can read only secrets under this cluster's per-attempt prefix and the configured registry credential ARN. The ECS agent uses those permissions to inject the bootstrap value and authenticate the image pull. Secret names contain an HMAC suffix derived from `SCOPE_ECS_SECRET_NAME_KEY`; the AWS dispatcher identity can neither list secrets nor inspect registered task definitions, so possession of that access key alone cannot discover another attempt's bootstrap reference. In task definitions generated by this worker, the registry secret is used only as `repositoryCredentials` and is not injected into the container. The tasks receive no task IAM role, and runner code has no AWS credentials.
-
-The direct API deny is not a security boundary against malicious code that holds the dispatcher credentials. That identity can register and run task definitions with the execution role, so it could ask ECS to inject a known secret ARN into a container. Preventing that requires a trusted task-definition registration service or pre-registered definitions. Treat the Railway worker and its dispatcher credentials as trusted production control-plane access.
+The broker supplies `repositoryCredentials` only when the image's registry matches
+that hostname. Other public registries remain credential-free. The registry secret
+is never injected into the container environment or configured on the worker.
+Rotate its value under the same ARN, verify a private-image canary, and revoke the
+old registry token. Never place the secret JSON or token in repository variables.
 
 ## Observe a real run
 
@@ -243,7 +208,7 @@ aws ecs describe-tasks \
 
 Check the task's image digest, exit code, stopped reason, and timestamps. Confirm that aborting a Scope run stops its exact ECS task.
 
-For the public mode proof, leave `SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN` unset, run a digest-pinned public image, and confirm that the task definition has no `repositoryCredentials`. For the private mode proof, apply the exact-secret IAM grant, configure the worker ARN, then run a digest-pinned private image. Confirm that the task reaches `RUNNING`, claims its Scope attempt, and references the exact configured ARN. Do not print or fetch the secret value during either proof.
+For the public mode proof, run a digest-pinned image from a registry without configured credentials and confirm that the task definition has no `repositoryCredentials`. For the private mode proof, apply the exact-secret execution-role grant and configure the broker ARN and registry host, then run a digest-pinned private image. Confirm that the task reaches `RUNNING`, claims its Scope attempt, and references the exact configured ARN. Do not print or fetch the secret value during either proof.
 
 Use IAM simulation after the stack update. The dispatcher must be denied `secretsmanager:GetSecretValue` for both the registry secret and a sample attempt secret. The task execution role must be allowed for the exact registry ARN and the attempt prefix, and denied for an unrelated secret.
 

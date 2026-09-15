@@ -11,7 +11,9 @@ umask 077
 manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 project="$(jq -er '.railway.projectId' "$manifest")"
 environment="$(jq -er '.environments.staging.environmentId' "$manifest")"
-database="$(jq -er '.railway.databaseServiceId' "$manifest")"
+scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$scripts/railway-private-command.sh"
+maintenance() { bash "$scripts/railway-private-maintenance.sh" "$environment" "$@"; }
 [[ "$environment" != "$(jq -er '.environments.production.environmentId' "$manifest")" ]]
 scope=(--project "$project" --environment "$environment")
 SCOPE_DEPLOYMENT_MANIFEST_JSON="$(cat "$manifest")" \
@@ -19,15 +21,7 @@ SCOPE_DEPLOYMENT_MANIFEST_JSON="$(cat "$manifest")" \
   SCOPE_RAILWAY_SERVICES_JSON="$(node .github/scripts/railway-read.mjs service list "${scope[@]}" --json)" \
   node .github/scripts/verify-staging-target.mjs >/dev/null
 # Verify that metadata writers have relinquished the database fence before snapshot/restore.
-variables="$(node .github/scripts/railway-read.mjs variable list "${scope[@]}" --service "$database" --json)"
-export DATABASE_URL
-DATABASE_URL="$(jq -er '.DATABASE_PUBLIC_URL | strings | select(length > 0)' <<< "$variables")"
-node --input-type=module - "$SCOPE_PREPARED_RELEASE_PATH" "$SCOPE_MAINTENANCE_BINARY" <<'NODE'
-import { readFileSync } from 'node:fs';
-import { validateMaintenanceArtifact } from './.github/scripts/railway-artifact.mjs';
-validateMaintenanceArtifact(JSON.parse(readFileSync(process.argv[2])), readFileSync(process.argv[3]));
-NODE
-"$SCOPE_MAINTENANCE_BINARY" fence >/dev/null
+maintenance fence >/dev/null
 mkdir -p "$SCOPE_STAGING_BASELINE_DIR"
 chmod 0700 "$SCOPE_STAGING_BASELINE_DIR"
 # Clear plaintext and extracted artifacts even if authentication or restoration fails.
@@ -38,7 +32,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 key="$(node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
-if ! ("$SCOPE_MAINTENANCE_BINARY" plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
+if ! (maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
   node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null); then
   # Retained artifacts contain authenticated ciphertext, captured with writers stopped.
   : "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to restore a snapshot}"
@@ -64,23 +58,23 @@ if ! ("$SCOPE_MAINTENANCE_BINARY" plan > "$SCOPE_STAGING_BASELINE_DIR/current-pl
   # Recreate the staging schema in one transaction so candidate-only tables cannot survive.
   pg_restore --no-owner --no-privileges --exit-on-error \
     --file="$SCOPE_STAGING_BASELINE_DIR/restore/database.sql" "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump"
-  { printf '%s\n' 'DROP SCHEMA public CASCADE;'; cat "$SCOPE_STAGING_BASELINE_DIR/restore/database.sql"; } | \
-    psql "$DATABASE_URL" -X --single-transaction -v ON_ERROR_STOP=1 >/dev/null
-  "$SCOPE_MAINTENANCE_BINARY" plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json"
+  { printf '%s\n' 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'; cat "$SCOPE_STAGING_BASELINE_DIR/restore/database.sql"; } | \
+    railway_private_command "$environment" sh -c 'exec psql "$DATABASE_URL" -X --single-transaction -v ON_ERROR_STOP=1' >/dev/null
+  maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json"
   node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null
 fi
 # A matching ledger does not prove matching schema. Reject drift before retaining
 # or migrating this staging baseline, including snapshots restored above.
-"$SCOPE_MAINTENANCE_BINARY" preflight >/dev/null
+maintenance preflight >/dev/null
 # Require representative preexisting data; candidate seeding would invalidate the upgrade test.
-[[ "$(psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c 'SELECT count(*) > 0 FROM scope_repositories')" == t ]]
+[[ "$(railway_private_command "$environment" sh -c 'exec psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "$1"' scope-baseline 'SELECT count(*) > 0 FROM scope_repositories')" == t ]]
 # No schema change needs no new baseline dump. Reconciliation above still runs.
 if jq -e '.pending | length == 0' "$SCOPE_PRODUCTION_MIGRATION_PLAN" >/dev/null; then
   exit 0
 fi
 : "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to retain a snapshot}"
 restore_safe="$(jq -r 'if (.metadataRestoreSafe | type) == "boolean" then .metadataRestoreSafe else error("Migration plan must declare metadataRestoreSafe") end' "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
-pg_dump --dbname="$DATABASE_URL" --schema=public --format=custom --no-owner --no-privileges --file="$SCOPE_STAGING_BASELINE_DIR/database.dump"
+railway_private_command "$environment" sh -c 'exec pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-privileges' > "$SCOPE_STAGING_BASELINE_DIR/database.dump"
 jq -n --argjson safe "$restore_safe" --arg environment "$environment" --arg key "$key" \
   '{environmentId: $environment, ledgerHash: $key, metadataRestoreSafe: $safe}' > "$SCOPE_STAGING_BASELINE_DIR/baseline.json"
 node .github/scripts/staging-baseline-crypto.mjs encrypt \

@@ -20,7 +20,6 @@ staging_environment_id="$(jq -er '.environments.staging.environmentId' "$manifes
 staging_api_replicas="$(jq -er '.environments.staging.apiReplicas' "$manifest_path")"
 staging_cache_url="https://$(jq -er '.environments.staging.cacheDomain' "$manifest_path")"
 staging_router_url="https://$(jq -er '.environments.staging.routerDomain' "$manifest_path")"
-database_service="$(jq -er '.railway.databaseServiceId' "$manifest_path")"
 cache_service="$(jq -er '.services.cache.id' "$manifest_path")"
 worker_service="$(jq -er '.services["run-worker"].id' "$manifest_path")"
 api_service="$(jq -er '.services.api.id' "$manifest_path")"
@@ -130,17 +129,9 @@ NODE
 
 if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
   assert_writer_state 0
-  database_variables="$(railway_read variable list "${railway_scope[@]}" --service "$database_service" --json)"
-  export SCOPE_STAGING_DATABASE_PUBLIC_URL
-  SCOPE_STAGING_DATABASE_PUBLIC_URL="$(jq -er '.DATABASE_PUBLIC_URL' <<< "$database_variables")"
-  snapshot_backfill_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/scope-staging-backfill.XXXXXX")"
-  export SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR="$snapshot_backfill_dir"
   run_maintenance() {
-    # Railway supplies these variables to the runner-local command.
-    # shellcheck disable=SC2016
-    railway run "${railway_scope[@]}" --service "$api_service" --no-local -- \
-      sh -c 'DATABASE_URL="$SCOPE_STAGING_DATABASE_PUBLIC_URL" SCOPE_DATA_DIR="$SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR" exec "$@"' \
-      scope-maintenance "$maintenance_binary" "$1"
+    SCOPE_MAINTENANCE_BINARY="$maintenance_binary" \
+      bash .github/scripts/railway-private-maintenance.sh "$staging_environment_id" "$1"
   }
   if [[ "${SCOPE_STAGING_RESUME:-0}" == 1 ]]; then
     # Resume was bound to the original successful deployment and image digests
@@ -153,8 +144,6 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
     run_maintenance apply
     run_maintenance backfill-workflow-catalogs
   fi
-  rm -rf -- "$snapshot_backfill_dir"
-  unset SCOPE_STAGING_DATABASE_PUBLIC_URL SCOPE_STAGING_SNAPSHOT_BACKFILL_DIR
 fi
 
 evidence_lines="$(mktemp)"

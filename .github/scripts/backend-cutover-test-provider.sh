@@ -18,7 +18,7 @@ const instances = states.map(s => {
     instances:[...Array.from({length:s.replicas?.running||0},()=>({status:"RUNNING"})),...Array.from({length:s.replicas?.crashed||0},()=>({status:"CRASHED"}))]};
   return {node:{serviceId:s.id,serviceName:s.name,numReplicas:s.replicas?.configured,latestDeployment:deployment,activeDeployments:s.deploymentId ? [deployment] : []}};
 });
-console.log(JSON.stringify({id:"project-test",environments:{edges:[{node:{id:"production",name:"production",serviceInstances:{edges:instances}}}]},services:{edges:[...Object.entries(paths).map(([id])=>({node:{id,name:({"scope-worker":"scope-run-worker","scope-cache-service":"scope-cache","scope-repo-router":"scope-git-router","scope-media":"scope-media-api"})[id] || id}})),{node:{id:"scope-postgres",name:"scope-postgres"}}]}}));
+console.log(JSON.stringify({id:"11111111-1111-4111-8111-111111111111",environments:{edges:[{node:{id:"22222222-2222-4222-8222-222222222222",name:"production",serviceInstances:{edges:instances}}}]},services:{edges:[...Object.entries(paths).map(([id])=>({node:{id,name:({"scope-worker":"scope-run-worker","scope-cache-service":"scope-cache","scope-repo-router":"scope-git-router","scope-media":"scope-media-api"})[id] || id}})),{node:{id:"scope-postgres",name:"scope-postgres"}}]}}));
 '
   exit 0
 fi
@@ -79,7 +79,7 @@ const variables = JSON.parse(process.env.VARIABLES_JSON || "{}");
 const services = variables.patch?.services || {};
 const ids = Object.keys(services);
 const config = services["scope-repo-router"] || {};
-const validBase = variables.environmentId === "production" && ids.length === 1 &&
+const validBase = variables.environmentId === "22222222-2222-4222-8222-222222222222" && ids.length === 1 &&
   config.groupId === "runtime-group";
 if (validBase && config.isCreated === true) console.log("create-instance");
 else if (validBase && config.deploy?.multiRegionConfig?.["us-east4-eqdc4a"]?.numReplicas === 1) {
@@ -98,27 +98,21 @@ else if (validBase && config.deploy?.multiRegionConfig?.["us-east4-eqdc4a"]?.num
   exit 0
 fi
 
-if [[ "$1" == "run" ]]; then
-  service=""
+if [[ "$1" == "ssh" ]]; then
+  shift
   while [[ "$1" != "--" ]]; do
-    if [[ "$1" == "--service" ]]; then
-      service="$2"
-      shift 2
-    else
-      shift
-    fi
+    case "$1" in
+      --project) export RAILWAY_PROJECT_ID="$2" ;;
+      --environment) export RAILWAY_ENVIRONMENT_ID="$2" ;;
+      --service) export RAILWAY_SERVICE_ID="$2" ;;
+      *) echo "Unexpected SSH option" >&2; exit 2 ;;
+    esac
+    shift 2
   done
   shift
-  if [[ "$service" == "scope-postgres" ]]; then
-    DATABASE_PUBLIC_URL="postgres://public-database.test/scope" "$@"
-  elif [[ "$service" == "scope-api" ]]; then
-    [[ "${SCOPE_MAINTENANCE_DATABASE_URL:-}" == "postgres://public-database.test/scope" ]]
-    [[ -n "${SCOPE_MAINTENANCE_DATA_DIR:-}" ]]
-    "$@"
-  else
-    exit 2
-  fi
-  exit $?
+  [[ "$#" == 1 ]]
+  export DATABASE_URL="postgres://scope-postgres.railway.internal/scope"
+  exec sh -c "$1"
 fi
 
 if [[ "$1 $2" == "domain list" ]]; then
@@ -149,7 +143,8 @@ if [[ "$1 $2" == "variable list" ]]; then
     if [[ "$1" == "--service" ]]; then service="$2"; shift 2; else shift; fi
   done
   if [[ "$service" == "scope-postgres" ]]; then
-    echo '{"DATABASE_PUBLIC_URL":"postgres://public-database.test/scope"}'
+    echo "Database variables must not be exported to the runner" >&2
+    exit 2
   elif [[ "$service" == "scope-api" ]]; then
     if [[ "${FAKE_ROUTER_CONFIGURED:-1}" == "1" || -f "$FAKE_RAILWAY_STATE/api-router-variable" ]]; then
       echo '{"SCOPE_GIT_PUBLIC_URL":"https://scope-repo-router-production.test"}'
@@ -327,6 +322,18 @@ echo "unexpected fake Railway invocation: $*" >&2
 exit 2
 FAKE
 chmod +x "$test_dir/bin/railway"
+
+# Migrations refresh service grants through the same private connection.
+cat > "$test_dir/bin/psql" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == "postgres://scope-postgres.railway.internal/scope" ]]
+[[ "$*" == *"ON_ERROR_STOP=1"* ]]
+sql="$(cat)"
+[[ "$sql" == *"GRANT"* ]]
+printf 'private runtime grants\n' >> "$FAKE_RAILWAY_TRACE"
+FAKE
+chmod +x "$test_dir/bin/psql"
 
 cat > "$test_dir/bin/curl" <<'FAKE'
 #!/usr/bin/env bash

@@ -114,6 +114,7 @@ mod run_cache_authorization;
 mod run_cache_observations;
 mod run_details;
 mod run_dispatch;
+mod run_dispatch_authorization;
 mod run_history;
 mod run_log_reads;
 mod run_log_writes;

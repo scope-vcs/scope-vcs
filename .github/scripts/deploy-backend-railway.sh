@@ -65,8 +65,6 @@ unset RAILWAY_API_TOKEN
 # One release policy owns operation limits. The CLI validates the same bounds.
 policy_manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 web_service="$(jq -er .services.web.id "$policy_manifest")"
-migration_lock_timeout_seconds="$(jq -er '.releasePolicy.migrationLockTimeoutSeconds | select(type == "number" and . > 0 and floor == .)' "$policy_manifest")"
-migration_statement_timeout_seconds="$(jq -er '.releasePolicy.migrationStatementTimeoutSeconds | select(type == "number" and . > 0 and floor == .)' "$policy_manifest")"
 
 railway_scope=(--project "$RAILWAY_PROJECT_ID" --environment "$environment")
 cutover_committed=0
@@ -79,15 +77,8 @@ media_had_history=1
 media_worker_had_history=1
 
 maintenance() {
-  # `railway run` executes on this CI host, so the database service's public proxy is required.
-  # The child shell expands the Railway-injected database URL and command arguments.
-  # shellcheck disable=SC2016
-  railway run "${railway_scope[@]}" --service "$database_service" --no-local -- \
-    sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" exec "$@"' \
-    scope-maintenance env \
-      "SCOPE_MIGRATION_LOCK_TIMEOUT_SECONDS=$migration_lock_timeout_seconds" \
-      "SCOPE_MIGRATION_STATEMENT_TIMEOUT_SECONDS=$migration_statement_timeout_seconds" \
-      "$maintenance_binary" "$1"
+  SCOPE_MAINTENANCE_BINARY="$maintenance_binary" \
+    bash .github/scripts/railway-private-maintenance.sh "$environment" "$1"
 }
 
 maintenance_read() {
@@ -106,26 +97,8 @@ maintenance_read() {
   return 1
 }
 
-run_api_maintenance() {
-  local command="$1"
-  local database_public_url maintenance_data_dir result
-  database_public_url="$(
-    railway variable list "${railway_scope[@]}" --service "$database_service" --json |
-      jq -er '.DATABASE_PUBLIC_URL | strings | select(length > 0)'
-  )"
-  maintenance_data_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/scope-repository-snapshot-backfill.XXXXXX")"
-  result=0
-  SCOPE_MAINTENANCE_DATABASE_URL="$database_public_url" \
-    SCOPE_MAINTENANCE_DATA_DIR="$maintenance_data_dir" \
-    railway run "${railway_scope[@]}" --service "$api_service" --no-local -- \
-      sh -c 'DATABASE_URL="$SCOPE_MAINTENANCE_DATABASE_URL" SCOPE_DATA_DIR="$SCOPE_MAINTENANCE_DATA_DIR" exec "$@"' \
-      scope-maintenance "$maintenance_binary" "$command" || result=$?
-  rm -rf -- "$maintenance_data_dir"
-  return "$result"
-}
-
 backfill_repository_snapshots() {
-  run_api_maintenance backfill-workflow-catalogs
+  maintenance backfill-workflow-catalogs
 }
 
 wait_for_writer_fence() {

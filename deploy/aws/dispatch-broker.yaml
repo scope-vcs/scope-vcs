@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Validated Scope runner dispatch with durable attempt reconciliation
+
+Parameters:
+  Environment:
+    Type: String
+    # The runtime permissions boundary currently covers production resources only.
+    AllowedValues: [production]
+  CodeBucket:
+    Type: String
+  CodeKey:
+    Type: String
+  CodeVersion:
+    Type: String
+    Description: Immutable S3 object version of the reviewed broker ZIP
+  ApiUrl:
+    Type: String
+    AllowedPattern: '^https://[^/?#]+/?$'
+  DispatchAuthorityToken:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Dedicated shared API/broker credential; never set on the worker
+  ClusterArn:
+    Type: String
+  SubnetIds:
+    Type: CommaDelimitedList
+  SecurityGroupId:
+    Type: String
+  ExecutionRoleArn:
+    Type: String
+  RunnerLogGroup:
+    Type: String
+  RegistryCredentialsSecretArn:
+    Type: String
+    Default: ""
+  RegistryCredentialsHost:
+    Type: String
+    Default: ""
+    Description: Exact image registry host for the optional credential, such as registry.example.org
+    AllowedPattern: '^$|^[a-z0-9.-]+(:[0-9]{1,5})?$'
+Resources:
+  Journal:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub scope-cloud-runner-${Environment}-dispatch-journal
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: attempt_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: attempt_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      DeletionProtectionEnabled: true
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+      # No TTL: a deleted terminal record would make an old start replayable.
+
+  BrokerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/scope-cloud-runner-${Environment}-dispatch-broker
+      RetentionInDays: 30
+
+  BrokerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub scope-cloud-runner-${Environment}-dispatch-broker
+      PermissionsBoundary: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/scope-runtime-boundary
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: BoundDispatch
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Journal
+                Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:UpdateItem]
+                Resource: !GetAtt Journal.Arn
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt BrokerLogGroup.Arn
+              - Sid: NeverReadSecretValues
+                Effect: Deny
+                Action: [secretsmanager:GetSecretValue, secretsmanager:BatchGetSecretValue]
+                Resource: "*"
+              - Sid: RegisterAttemptDefinition
+                Effect: Allow
+                Action: ecs:RegisterTaskDefinition
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/Project: scope-vcs
+                    aws:RequestTag/Component: cloud-runner
+                  ForAllValues:StringEquals:
+                    aws:TagKeys: [Project, Component, AttemptId]
+              - Sid: DiscoverDefinitions
+                Effect: Allow
+                Action: ecs:ListTaskDefinitions
+                Resource: "*"
+              - Sid: CleanupDefinitions
+                Effect: Allow
+                Action: ecs:DeregisterTaskDefinition
+                # ECS does not support resource scoping for deregistration. This
+                # authority belongs only to the broker, never the worker.
+                Resource: "*"
+              - Sid: RunAttempt
+                Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/scope-runner-attempt_*:*
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !Ref ClusterArn
+                  StringEquals:
+                    aws:RequestTag/Project: scope-vcs
+                    aws:RequestTag/Component: cloud-runner
+                  ForAllValues:StringEquals:
+                    aws:TagKeys: [Project, Component, AttemptId]
+              - Sid: StopAndInspectAttempts
+                Effect: Allow
+                Action: [ecs:StopTask, ecs:DescribeTasks]
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/scope-vcs-${Environment}-runner/*
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !Ref ClusterArn
+              - Sid: FindAttempts
+                Effect: Allow
+                Action: ecs:ListTasks
+                Resource: "*"
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !Ref ClusterArn
+              - Sid: TagCreatedResources
+                Effect: Allow
+                Action: ecs:TagResource
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/scope-runner-attempt_*:*
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/scope-vcs-${Environment}-runner/*
+                Condition:
+                  StringEquals:
+                    ecs:CreateAction: [RegisterTaskDefinition, RunTask]
+              - Sid: AttemptSecrets
+                Effect: Allow
+                Action: [secretsmanager:CreateSecret, secretsmanager:TagResource, secretsmanager:DescribeSecret, secretsmanager:DeleteSecret]
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:scope-vcs/scope-vcs-${Environment}-runner/attempts/attempt_*
+              - Sid: PassExactExecutionRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Ref ExecutionRoleArn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+
+  Broker:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub scope-cloud-runner-${Environment}-dispatch-broker
+      Description: Independently authorized Scope attempt launch and cleanup
+      Runtime: python3.13
+      Handler: handler.handler
+      Role: !GetAtt BrokerRole.Arn
+      Timeout: 120
+      MemorySize: 256
+      # This account must retain its Lambda pool as unreserved capacity.
+      # Per-attempt journal locks and the hard timeout serialize mutations.
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
+        S3ObjectVersion: !Ref CodeVersion
+      Environment:
+        Variables:
+          SCOPE_PUBLIC_API_URL: !Ref ApiUrl
+          SCOPE_DISPATCH_BROKER_TOKEN: !Ref DispatchAuthorityToken
+          SCOPE_DISPATCH_JOURNAL_TABLE: !Ref Journal
+          SCOPE_ECS_CLUSTER_ARN: !Ref ClusterArn
+          SCOPE_ECS_SUBNET_IDS: !Join [",", !Ref SubnetIds]
+          SCOPE_ECS_SECURITY_GROUP_ID: !Ref SecurityGroupId
+          SCOPE_ECS_EXECUTION_ROLE_ARN: !Ref ExecutionRoleArn
+          SCOPE_ECS_LOG_GROUP: !Ref RunnerLogGroup
+          SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN: !Ref RegistryCredentialsSecretArn
+          SCOPE_REGISTRY_CREDENTIALS_HOST: !Ref RegistryCredentialsHost
+      Tags:
+        - Key: Project
+          Value: scope-vcs
+
+Outputs:
+  BrokerFunctionArn:
+    Value: !GetAtt Broker.Arn
+  JournalTableName:
+    Value: !Ref Journal
+  BrokerRoleArn:
+    Value: !GetAtt BrokerRole.Arn

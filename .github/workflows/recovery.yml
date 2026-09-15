@@ -1,0 +1,22 @@
+name: Production recovery
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-recovery
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/recovery-execute.yml
+    secrets:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}

@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Console-only Scope human identity for MFA enrollment and metadata audit role assumption
+Resources:
+  HumanUser:
+    Type: AWS::IAM::User
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserName: scope-operator
+      # The account owner enables console access in IAM and chooses the password.
+      # No password, login profile, access key or MFA seed is stored in this template.
+      Policies:
+        - PolicyName: enroll-mfa-and-assume-audit
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: EnrollOwnPasskeys
+                Effect: Allow
+                Action:
+                  - iam:EnableMFADevice
+                  - iam:GetUser
+                  - iam:ListMFADevices
+                  - iam:ResyncMFADevice
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/scope-operator
+              - Sid: OwnPasswordAfterMFA
+                Effect: Allow
+                Action: iam:ChangePassword
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/scope-operator
+              - Sid: PasswordRequirements
+                Effect: Allow
+                Action: iam:GetAccountPasswordPolicy
+                Resource: '*'
+              - Sid: AssumeOnlyAudit
+                Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/scope-security-audit
+                Condition:
+                  Bool:
+                    aws:MultiFactorAuthPresent: 'true'
+              - Sid: DenyBeforeMFAExceptEnrollment
+                Effect: Deny
+                NotAction:
+                  - iam:EnableMFADevice
+                  - iam:GetUser
+                  - iam:ListMFADevices
+                  - iam:ResyncMFADevice
+                Resource: '*'
+                Condition:
+                  BoolIfExists:
+                    aws:MultiFactorAuthPresent: 'false'
+              - Sid: NoPermanentProgrammaticCredentialsOrMfaRemoval
+                Effect: Deny
+                Action:
+                  - iam:CreateAccessKey
+                  - iam:CreateServiceSpecificCredential
+                  - iam:UploadSigningCertificate
+                  - iam:UploadSSHPublicKey
+                  - iam:DeactivateMFADevice
+                Resource: '*'
+Outputs:
+  UserArn:
+    Value: !GetAtt HumanUser.Arn
+  UserSecurityCredentialsUrl:
+    Value: https://console.aws.amazon.com/iam/home#/users/details/scope-operator?section=security_credentials
+  OwnSecurityCredentialsUrl:
+    Value: https://console.aws.amazon.com/iam/home#/security_credentials
+  SignInUrl:
+    Value: !Sub https://${AWS::AccountId}.signin.aws.amazon.com/console/
+  AuditSwitchRoleUrl:
+    Value: !Sub https://signin.aws.amazon.com/switchrole?account=${AWS::AccountId}&roleName=scope-security-audit&displayName=ScopeAudit

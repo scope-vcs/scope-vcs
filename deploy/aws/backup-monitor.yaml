@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Railway production backup health and missing-checker alerts
+Parameters:
+  AlertTopicArn:
+    Type: String
+  GitHubOidcProviderArn:
+    Type: String
+  GitHubRepository:
+    Type: String
+    Default: scope-vcs/scope-vcs
+  GitHubRepositoryId:
+    Type: String
+    Default: '1272896256'
+  GitHubRepositoryOwnerId:
+    Type: String
+    Default: '321219119'
+Resources:
+  BackupHealthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: scope-security-backup-monitor
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:repository_id: !Ref GitHubRepositoryId
+                token.actions.githubusercontent.com:ref: refs/heads/main
+                token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepository}/.github/workflows/backup-monitor-execute.yml@refs/heads/main
+                token.actions.githubusercontent.com:sub: !Sub
+                  - repo:${Owner}@${GitHubRepositoryOwnerId}/${Repository}@${GitHubRepositoryId}:ref:refs/heads/main
+                  - Owner: !Select [0, !Split ['/', !Ref GitHubRepository]]
+                    Repository: !Select [1, !Split ['/', !Ref GitHubRepository]]
+      Policies:
+        - PolicyName: publish-backup-health-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: Scope/Security/Backup
+  BackupHealthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: scope-production-backup-health
+      AlarmDescription: Production Railway backup is stale, schedules are missing, or the hourly checker stopped. Inspect GitHub Backup monitor runs and Railway production Postgres backups.
+      Namespace: Scope/Security/Backup
+      MetricName: Healthy
+      Dimensions:
+        - Name: VolumeInstanceId
+          Value: d849de88-290f-4f68-a6bb-33a8bac7c0fd
+      Statistic: Minimum
+      Period: 3600
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopicArn]
+      OKActions: [!Ref AlertTopicArn]
+Outputs:
+  BackupMonitorRoleArn:
+    Value: !GetAtt BackupHealthRole.Arn

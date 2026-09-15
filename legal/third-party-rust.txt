@@ -318,14 +318,15 @@ Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-sdk-ecs 1.140.0
+aws-sdk-lambda 1.142.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-sdk-ecs/aws-sdk-ecs-1.140.0.crate
+Source: https://static.crates.io/crates/aws-sdk-lambda/aws-sdk-lambda-1.142.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
 Repository: "https://github.com/awslabs/aws-sdk-rust"
 LICENSE: text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e
+tests/blns/LICENSE: text 5d4c9a3b2f328ddc76394c48bb0c54d6169480c661778628372f40b582f95943
 
 ==============================================================================
 aws-sdk-s3 1.144.0
@@ -337,16 +338,6 @@ Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russ
 Repository: "https://github.com/awslabs/aws-sdk-rust"
 LICENSE: text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e
 tests/blns/LICENSE: text 5d4c9a3b2f328ddc76394c48bb0c54d6169480c661778628372f40b582f95943
-
-==============================================================================
-aws-sdk-secretsmanager 1.114.0
-Declared license: Apache-2.0
-Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-sdk-secretsmanager/aws-sdk-secretsmanager-1.114.0.crate
-
-Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
-Repository: "https://github.com/awslabs/aws-sdk-rust"
-LICENSE: text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e
 
 ==============================================================================
 aws-sdk-sts 1.113.0

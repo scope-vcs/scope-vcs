@@ -2,9 +2,7 @@ use super::ecs::{EcsClient, StartError};
 use super::provisioning::Provisioning;
 use crate::settings::CloudExecutionSettings;
 use anyhow::Context as _;
-use scope_domain::runs::{
-    attempt::MAX_RUN_ATTEMPT_AGE_SECONDS, exit_code::SetupFailure, step::AttemptConclusion,
-};
+use scope_domain::runs::{exit_code::SetupFailure, step::AttemptConclusion};
 use scope_postgres::db::MetadataStore;
 use scope_product_analytics::ProductAnalytics;
 use sha2::{Digest as _, Sha256};
@@ -98,21 +96,7 @@ impl CloudExecutionCoordinator {
         now_unix: u64,
     ) -> anyhow::Result<()> {
         let attempt_id = &claim.attempt.id;
-        let definition = claim
-            .workflow_revision
-            .definition()
-            .job(&claim.job.key)
-            .ok_or_else(|| anyhow::anyhow!("dispatched workflow job definition is missing"))?;
-        match self
-            .ecs
-            .start(
-                definition.container().image(),
-                attempt_id,
-                &bootstrap_token,
-                now_unix + MAX_RUN_ATTEMPT_AGE_SECONDS,
-            )
-            .await
-        {
+        match self.ecs.start(attempt_id, &bootstrap_token).await {
             Ok(external_run_id) => {
                 self.metadata
                     .runs()
@@ -238,10 +222,7 @@ async fn abort_canceled_attempt(
     attempt: scope_postgres::db::CloudTaskStop,
     now_unix: u64,
 ) -> anyhow::Result<Option<scope_postgres::db::DispatchClaim>> {
-    match ecs
-        .stop_terminal_task(&attempt.attempt_id, attempt.external_run_id.as_deref())
-        .await
-    {
+    match ecs.stop_terminal_task(&attempt.attempt_id).await {
         Ok(()) => {
             let mutation = metadata
                 .runs()
@@ -275,10 +256,7 @@ async fn cleanup_terminal_task(
     task: scope_postgres::db::CloudTaskStop,
     now_unix: u64,
 ) -> anyhow::Result<bool> {
-    match ecs
-        .stop_terminal_task(&task.attempt_id, task.external_run_id.as_deref())
-        .await
-    {
+    match ecs.stop_terminal_task(&task.attempt_id).await {
         Ok(()) => {
             metadata
                 .runs()
