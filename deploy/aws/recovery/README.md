@@ -17,6 +17,9 @@ Railway snapshot schedules remain a separate recovery mechanism.
   never archived. Grant signing keys are optional in manually supplied key bundles;
   the daily workflow captures the two data-encryption keys and does not claim to
   preserve every operational signing credential.
+- Media reference inventory follows the existing cleanup tombstones: deleted
+  attachments retain database metadata but do not require deleted object bytes.
+  Missing media without a tombstone still fails verification.
 - Plaintext checksums checked against the captured database for required content,
   Git segments, media chunks, and whole media manifests. Unknown encryption formats
   or missing key versions fail recovery verification.

@@ -16,10 +16,20 @@ SELECT 'media', 'media', NULL, chunk.object_key, chunk.sha256, NULL, NULL,
        manifest.sha256, manifest.size_bytes
 FROM scope_request_media_manifest_chunks chunk
 JOIN scope_request_media_manifests manifest ON manifest.id = chunk.manifest_id
+-- Cleanup jobs are durable tombstones: domain readers stop exposing the media
+-- as soon as a job exists, while its manifest/part metadata remains after deletion.
+WHERE NOT EXISTS (
+    SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
+    WHERE cleanup.attachment_id = manifest.attachment_id
+)
 UNION ALL
 SELECT 'media', 'media', NULL, object_key, sha256, NULL, NULL,
        plaintext_size_bytes, NULL, NULL, NULL, NULL
-FROM scope_request_media_upload_parts WHERE state = 'Stored'
+FROM scope_request_media_upload_parts part WHERE state = 'Stored'
+AND NOT EXISTS (
+    SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
+    WHERE cleanup.attachment_id = part.attachment_id
+)
 UNION ALL
 SELECT 'cache', 'cache', NULL, object_key, checksum_sha256, NULL, NULL,
        size_bytes, NULL, NULL, NULL, NULL
