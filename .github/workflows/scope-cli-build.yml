@@ -31,8 +31,12 @@ jobs:
       - name: Read distribution targets
         id: targets
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          matrix="$(node .github/scripts/select-cli-distribution-targets.mjs)"
+          mode=release
+          [[ "$EVENT_NAME" == "pull_request" ]] && mode=pull-request
+          matrix="$(node .github/scripts/select-cli-distribution-targets.mjs --mode "$mode")"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   checks:
