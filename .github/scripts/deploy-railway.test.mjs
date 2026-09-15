@@ -142,3 +142,34 @@ test("fails after three unsuccessful metadata reads without repeating activation
   assert.ok(!result.events.includes("verify"));
   assert.match(result.stderr, /Railway read failed after 3 attempts/);
 });
+
+test("source-upload failures retain status diagnostics without leaking signed URLs or retrying", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "scope-upload-failure-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "railway"), `#!/usr/bin/env node
+    const { appendFileSync } = require("node:fs");
+    appendFileSync("calls", process.argv[2] + "\\n");
+    if (process.argv[2] === "service") {
+      console.log(JSON.stringify([{ id: "cli-id" }]));
+    } else if (process.argv[2] === "up") {
+      console.log(JSON.stringify({ statusCode: 502, error: "https://provider.invalid/upload?token=do-not-print" }));
+      console.error("sensitive stderr token=also-do-not-print");
+      process.exit(7);
+    } else process.exit(99);
+  `, { mode: 0o755 });
+  const result = spawnSync("bash", [deployScript, "cli-id", root], {
+    cwd: root, encoding: "utf8", timeout: 10_000,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`,
+      RAILWAY_TOKEN: "test-token", RAILWAY_API_TOKEN: "", RAILWAY_PROJECT_ID: "project-id",
+      SCOPE_RAILWAY_ENVIRONMENT_ID: "production-id", SCOPE_PREPARED_RELEASE_PATH: "",
+      SCOPE_DEFER_SERVICE_HEALTH: "0" },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 7);
+  assert.match(result.stderr, /source upload failed \(exit 7; HTTP 502\)/);
+  assert.match(result.stderr, /No deployment receipt was returned/);
+  assert.doesNotMatch(result.stdout + result.stderr, /do-not-print|provider\.invalid|sensitive stderr/);
+  assert.deepEqual(readFileSync(join(root, "calls"), "utf8").trim().split("\n"), ["service", "up"]);
+});

@@ -55,3 +55,4 @@ python3 -m py_compile .github/scripts/recovery-run.py
 python3 deploy/aws/recovery/storage.test.py
 python3 -m unittest discover -s deploy/aws/recovery/tests -p test_transport.py
 bash -n deploy/aws/recovery/remote-snapshot.sh
+node --test deploy/postgres/prepare-cutover.test.mjs

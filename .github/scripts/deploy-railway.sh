@@ -249,7 +249,7 @@ else
     echo 'usage: deploy-railway.sh <service-name> <upload-root>' >&2
     exit 2
   }
-  deploy_output="$(
+  if deploy_output="$(
     railway up "$upload_root" \
       --path-as-root \
       --no-gitignore \
@@ -258,8 +258,31 @@ else
       --environment "$railway_environment" \
       --message "$deploy_message" \
       --detach \
-      --json
-  )"
+      --json 2>&1
+  )"; then
+    :
+  else
+    upload_status=$?
+    # Report only a provider status code. Upload errors may contain signed URLs.
+    upload_http_status="$(printf '%s' "$deploy_output" | node -e '
+      let body = "";
+      process.stdin.on("data", chunk => body += chunk);
+      process.stdin.on("end", () => {
+        for (const line of body.split("\n")) {
+          try {
+            const value = JSON.parse(line);
+            const status = value.statusCode ?? value.status_code ?? value.status ?? value.error?.status;
+            if (/^[45][0-9]{2}$/.test(String(status))) { console.log(status); return; }
+          } catch {}
+        }
+        const match = body.match(/(?:HTTP(?:\/[0-9.]+)?[ :]+|status(?: code)?[ :=]+)([45][0-9]{2})\b/i)
+          ?? body.match(/\b([45][0-9]{2}) (?:Bad Gateway|Not Found|Unauthorized|Forbidden|Service Unavailable|Gateway Timeout)\b/);
+        if (match) console.log(match[1]);
+      });
+    ')"
+    echo "Railway source upload failed (exit $upload_status${upload_http_status:+; HTTP $upload_http_status}). No deployment receipt was returned; inspect Railway before retrying." >&2
+    exit "$upload_status"
+  fi
 fi
 printf '%s\n' "$deploy_output"
 deployment_id="$(printf '%s\n' "$deploy_output" | jq -er 'select(.deploymentId | type == "string" and length > 0) | .deploymentId' | tail -1)"

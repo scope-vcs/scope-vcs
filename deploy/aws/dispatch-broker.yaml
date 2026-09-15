@@ -4,7 +4,8 @@ Description: Validated Scope runner dispatch with durable attempt reconciliation
 Parameters:
   Environment:
     Type: String
-    AllowedValues: [production, staging]
+    # The runtime permissions boundary currently covers production resources only.
+    AllowedValues: [production]
   CodeBucket:
     Type: String
   CodeKey:
