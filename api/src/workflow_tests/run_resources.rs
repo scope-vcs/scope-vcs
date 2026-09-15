@@ -114,9 +114,8 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
             )
             .await
             .unwrap();
-        assert_eq!(created.status(), StatusCode::OK);
         created_run_ids.push(
-            response_json(created).await["id"]
+            expect_json(created, StatusCode::OK).await["id"]
                 .as_str()
                 .unwrap()
                 .to_string(),

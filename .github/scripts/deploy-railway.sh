@@ -229,7 +229,9 @@ if [[ -n "$prepared_release" ]]; then
     echo 'Prepared artifact service does not match the activation target.' >&2
     exit 2
   }
-  expected_config="$(railway_config_path "$deployment_component")"
+  if [[ "$(node .github/scripts/deployment-components.mjs describe "$deployment_component" | jq -r '.verifyTransitionConfig')" == true ]]; then
+    expected_config="$(railway_config_path "$deployment_component")"
+  fi
   previous_deployment_ids="$(railway_read status \
     --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" --json |
     jq -ce --arg environment "$railway_environment" --arg service "$service_name" '

@@ -154,7 +154,7 @@
         "runtimeConfig": "cli/railway.json",
         "verifyTransitionConfig": false,
         "artifact": {
-          "kind": "upload",
+          "kind": "binary",
           "binary": "scope-cli-service",
           "imageName": "cli",
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
@@ -262,6 +262,7 @@
       "files": [
         "dev/run-ci-local-stack",
         "dev/scope-dev",
+        "dev/cargo-target-dir",
         "media-worker/Dockerfile",
         "Cargo.lock",
         "Cargo.toml",
@@ -313,6 +314,7 @@
         "dev/media-smoke.mjs",
         "dev/run-ci-local-stack",
         "dev/scope-dev",
+        "dev/cargo-target-dir",
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
@@ -370,6 +372,7 @@
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
         "dev/scope-dev",
+        "dev/cargo-target-dir",
         "dev/run-ci-local-stack",
         "dev/local-process.py",
         "dev/dotenv.sh",
@@ -385,7 +388,10 @@
     },
     "cli-downloads": {
       "files": [
-        "deploy/railway/prebuilt-cli.railpack.json",
+        "deploy/railway/prebuilt.Dockerfile",
+        ".github/scripts/prepare-railway-artifact.sh",
+        ".github/scripts/railway-artifact.mjs",
+        ".github/scripts/deployment-components.mjs",
         "Cargo.lock",
         "Cargo.toml",
         "Cross.toml",
@@ -400,6 +406,7 @@
         ".github/scripts/select-cli-distribution-targets.mjs",
         ".github/scripts/deploy-railway.sh",
         "dev/scope-dev",
+        "dev/cargo-target-dir",
         "dev/run-ci-local-stack",
         "dev/local-process.py",
         "dev/dotenv.sh",
@@ -422,6 +429,7 @@
         "rust-toolchain.toml",
         ".github/workflows/scope-cli-build.yml",
         "dev/checks/cli",
+        "dev/cargo-target-dir",
         ".github/scripts/select-cli-distribution-targets.mjs"
       ],
       "prefixes": [

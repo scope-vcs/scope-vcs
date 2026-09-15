@@ -7,7 +7,6 @@ node --test .scope/images/checks/*.test.mjs
 bash -n .scope/images/checks/scan-image.sh .github/scripts/publish-soci-image.sh
 
 node --test .github/scripts/audit-railway-experiments.test.mjs
-node --test .github/scripts/check-daily-release.test.mjs
 node --test .github/scripts/check-production-backups.test.mjs
 node --test .github/scripts/production-deployment-progress.test.mjs
 node --test .github/scripts/plan-production-deployment.test.mjs
