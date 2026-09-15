@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Scope recovery capture
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 UTC
+RandomizedDelaySec=5min
+Persistent=true
+Unit=scope-recovery.service
+
+[Install]
+WantedBy=timers.target

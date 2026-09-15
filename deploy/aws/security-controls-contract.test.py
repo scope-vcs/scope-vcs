@@ -156,6 +156,16 @@ else:
         self.assertEqual(grant['Condition']['ArnEquals']['aws:SourceArn']['Fn::Sub'], 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:scope-security-iam-mutations')
         self.assertEqual(grant['Condition']['StringEquals']['aws:SourceAccount'], {'Ref': 'AWS::AccountId'})
 
+    def testRecoveryAlarmPublishesOnlyFromExactAccountAndAlarm(self):
+        resources = load('security-controls.yaml')['Resources']
+        statements = resources['AlertTopicPolicy']['Properties']['PolicyDocument']['Statement']
+        grant = next(s for s in statements if s['Sid'] == 'AllowRecoverySetHealthAlarm')
+        self.assertEqual(grant['Principal'], {'Service': 'cloudwatch.amazonaws.com'})
+        self.assertEqual(grant['Action'], 'sns:Publish')
+        self.assertEqual(grant['Resource'], {'Ref': 'AlertTopic'})
+        self.assertEqual(grant['Condition']['StringEquals'], {'aws:SourceAccount': {'Ref': 'AWS::AccountId'}})
+        self.assertEqual(grant['Condition']['ArnEquals']['aws:SourceArn']['Fn::Sub'], 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:scope-production-recovery-set-health')
+
     def test_paid_monitoring_is_opt_in_and_audit_never_reads_content(self):
         template = load('security-controls.yaml')
         self.assertEqual(template['Parameters']['EnableGuardDuty']['Default'], 'false')

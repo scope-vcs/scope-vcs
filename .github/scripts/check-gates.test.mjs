@@ -84,7 +84,7 @@ const alwaysOnGateInputs = [
   /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/, /^\.scope\/runs\/checks\.yml$/,
-  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|deployment-tests|maintenance-runtime)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-tests|maintenance-runtime)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 
@@ -380,4 +380,15 @@ test('CI is pull-request-only and Release is scheduled/manual with a shared chec
   assert.match(triggers, /workflow_dispatch:/);
   assert.doesNotMatch(triggers, /pull_request:|push:/);
   for (const caller of [ci, release]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);
+});
+
+
+test('recovery workflow ownership includes executable policy and transport checks', () => {
+  const ops = commands('ops').join('\n');
+  assert.ok(ops.includes('python3 deploy/aws/recovery/storage.test.py'));
+  assert.ok(ops.includes('python3 -m unittest discover -s deploy/aws/recovery/tests -p test_transport.py'));
+  assert.ok(ops.includes('python3 -m py_compile .github/scripts/recovery-run.py'));
+  const contract = read('deploy/aws/recovery/storage.test.py');
+  assert.ok(contract.includes('.github/workflows/recovery.yml'));
+  assert.ok(contract.includes('.github/workflows/recovery-execute.yml'));
 });

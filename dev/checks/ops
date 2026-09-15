@@ -50,3 +50,8 @@ node --test .github/scripts/railway-private-maintenance.test.mjs
 bash -n .github/scripts/railway-private-command.sh .github/scripts/railway-private-maintenance.sh
 node --test .github/scripts/maintenance-runtime.test.mjs .github/scripts/deploy-maintenance-runtime.test.mjs
 bash -n .github/scripts/publish-maintenance-runtime.sh .github/scripts/verify-maintenance-runtime.sh
+
+python3 -m py_compile .github/scripts/recovery-run.py
+python3 deploy/aws/recovery/storage.test.py
+python3 -m unittest discover -s deploy/aws/recovery/tests -p test_transport.py
+bash -n deploy/aws/recovery/remote-snapshot.sh
