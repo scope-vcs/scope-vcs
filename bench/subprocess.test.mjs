@@ -8,7 +8,8 @@ import { execute } from './subprocess.mjs';
 
 async function running(pid) {
   try { return !(await readFile(`/proc/${pid}/stat`, 'utf8')).split(') ')[1].startsWith('Z '); }
-  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  // ENOENT: the entry is gone. ESRCH: the process was reaped between opening and reading it.
+  catch (error) { if (error.code === 'ENOENT' || error.code === 'ESRCH') return false; throw error; }
 }
 
 test('timeout terminates the time wrapper and its child holding inherited pipes', { skip: process.platform !== 'linux' }, async (t) => {
