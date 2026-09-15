@@ -9,8 +9,8 @@ caller's working directory.
 | `backend with-api` | Workspace formatting, tests, API test support, local development helpers, Clippy |
 | `backend without-api` | Workspace formatting, tests and Clippy excluding API |
 | `cli` | Standalone formatting, tests, distribution selector, Clippy, both release binaries, native installer checks |
-| `web` | Tests, types, generated API contract, observer boundary, React health, structure, build |
-| `contract` | Generated API TypeScript and validator comparison |
+| `web` | Tests, types, observer boundary, React health, structure, build |
+| `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |
 | `policy` | License inventory freshness, complete-tree source size, Rust boundaries, toolchain pins, gate inventory |
 | `integration web` | Browser smoke against a running seeded stack |
 | `integration cli` | Opt-in two-actor contribution flow against a running seeded stack |
@@ -18,8 +18,10 @@ caller's working directory.
 
 Callers install Rust, Node and pnpm dependencies, configure databases and secrets,
 and start/stop integration stacks. The contract check needs Rust and web
-dependencies. CLI integration requires `SCOPE_API_URL`. The integration entrypoint
-explicitly runs the contribution test; ordinary CLI test runs report it as ignored.
+dependencies. It runs with the backend checks because the API crate generates
+the contract, so the web gate does not install Rust. CLI integration requires
+`SCOPE_API_URL`. The integration entrypoint explicitly runs the contribution
+test; ordinary CLI test runs report it as ignored.
 GitHub retains native distribution build matrices; these scripts do not select
 platforms or provision credentials. Repository policy always checks the full
 checkout, including source outside `web/`.
