@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Print the Cargo target directory for a manifest. Honors CARGO_TARGET_DIR and
-# .cargo/config overrides, so callers never guess a target/ path.
+# .cargo/config overrides, so callers never guess a target/ path. Parses with
+# node because every caller already requires it; jq is not a scope-dev dependency.
 set -euo pipefail
 manifest="${1:?usage: dev/cargo-target-dir <path/to/Cargo.toml>}"
-cargo metadata --manifest-path "$manifest" --locked --no-deps --format-version 1 | jq -r '.target_directory'
+cargo metadata --manifest-path "$manifest" --locked --no-deps --format-version 1 |
+  node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(0, "utf8")).target_directory)'
