@@ -367,112 +367,16 @@ Resources:
   RailwayDispatcherPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      Description: Dispatch Scope cloud runner tasks from Railway
+      Description: Invoke the validated Scope dispatch broker from Railway
       Users:
         - !Ref RailwayDispatcherUser
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: DenySecretReads
-            Effect: Deny
-            Action:
-              - secretsmanager:BatchGetSecretValue
-              - secretsmanager:DescribeSecret
-              - secretsmanager:GetSecretValue
-              - secretsmanager:ListSecretVersionIds
-              - secretsmanager:ListSecrets
-            Resource: "*"
-          - Sid: ListTaskDefinitions
+          - Sid: InvokeDispatchBroker
             Effect: Allow
-            Action: ecs:ListTaskDefinitions
-            Resource: "*"
-          - Sid: RegisterTaggedTaskDefinitions
-            Effect: Allow
-            Action: ecs:RegisterTaskDefinition
-            Resource: "*"
-            Condition:
-              StringEquals:
-                aws:RequestTag/Project: scope-vcs
-              ForAllValues:StringEquals:
-                aws:TagKeys:
-                  - Project
-                  - Component
-                  - ImageDigest
-          - Sid: DeregisterAttemptTaskDefinitions
-            Effect: Allow
-            Action: ecs:DeregisterTaskDefinition
-            Resource: "*"
-          - Sid: RunScopeTaskDefinitions
-            Effect: Allow
-            Action: ecs:RunTask
-            Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/scope-runner-attempt_*:*
-            Condition:
-              ArnEquals:
-                ecs:cluster: !GetAtt RunnerCluster.Arn
-              StringEquals:
-                aws:RequestTag/Project: scope-vcs
-              ForAllValues:StringEquals:
-                aws:TagKeys:
-                  - Project
-                  - Component
-                  - AttemptId
-          - Sid: ManageScopeRunnerTasks
-            Effect: Allow
-            Action:
-              - ecs:DescribeTasks
-              - ecs:StopTask
-            Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/scope-vcs-${Environment}-runner/*
-            Condition:
-              ArnEquals:
-                ecs:cluster: !GetAtt RunnerCluster.Arn
-          - Sid: DiscoverScopeRunnerTasks
-            Effect: Allow
-            Action: ecs:ListTasks
-            Resource: "*"
-            Condition:
-              ArnEquals:
-                ecs:cluster: !GetAtt RunnerCluster.Arn
-          - Sid: TagScopeRunnerResources
-            Effect: Allow
-            Action: ecs:TagResource
-            Resource:
-              - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/scope-runner-attempt_*:*
-              - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/scope-vcs-${Environment}-runner/*
-            Condition:
-              StringEquals:
-                ecs:CreateAction:
-                  - RegisterTaskDefinition
-                  - RunTask
-          - Sid: CreateAttemptBootstrapSecrets
-            Effect: Allow
-            Action:
-              - secretsmanager:CreateSecret
-              - secretsmanager:TagResource
-            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:scope-vcs/${RunnerCluster}/attempts/*
-            Condition:
-              StringEquals:
-                aws:RequestTag/Project: scope-vcs
-                aws:RequestTag/Component: cloud-runner
-              ForAllValues:StringEquals:
-                aws:TagKeys:
-                  - Project
-                  - Component
-                  - AttemptId
-          - Sid: DeleteAttemptBootstrapSecrets
-            Effect: Allow
-            Action: secretsmanager:DeleteSecret
-            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:scope-vcs/${RunnerCluster}/attempts/*
-            Condition:
-              StringEquals:
-                aws:ResourceTag/Project: scope-vcs
-                aws:ResourceTag/Component: cloud-runner
-          - Sid: PassRunnerExecutionRole
-            Effect: Allow
-            Action: iam:PassRole
-            Resource: !GetAtt RunnerTaskExecutionRole.Arn
-            Condition:
-              StringEquals:
-                iam:PassedToService: ecs-tasks.amazonaws.com
+            Action: lambda:InvokeFunction
+            Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:scope-cloud-runner-${Environment}-dispatch-broker
 
   RunnerBudget:
     Type: AWS::Budgets::Budget

@@ -28,6 +28,8 @@ node --test .github/scripts/railway-service-health.test.mjs
 node --test .github/scripts/deploy-railway.test.mjs
 node --test deploy/aws/cloud-runner-contract.test.mjs
 python3 deploy/aws/security-controls-contract.test.py
+# Broker dispatch authorization, replay, cancellation, and uncertain-launch lifecycle.
+python3 -m unittest discover -s deploy/aws/dispatch-broker/tests -v
 bash -n deploy/aws/apply-cloud-runner.sh deploy/aws/apply-security-controls.sh deploy/railway/test-runtime-containers.sh
 node --test .github/scripts/railway-artifact.test.mjs
 node --test .github/scripts/railway-read.test.mjs

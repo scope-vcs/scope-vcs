@@ -392,3 +392,12 @@ test('recovery workflow ownership includes executable policy and transport check
   assert.ok(contract.includes('.github/workflows/recovery.yml'));
   assert.ok(contract.includes('.github/workflows/recovery-execute.yml'));
 });
+
+
+test('always-on operations gate executes the broker lifecycle suite', () => {
+  const ops = commands('ops');
+  assert.ok(ops.includes('python3 -m unittest discover -s deploy/aws/dispatch-broker/tests -v'));
+  for (const caller of ['ci', 'release']) {
+    assert.ok(read(`.github/workflows/${caller}.yml`).includes('dev/checks/ops'));
+  }
+});

@@ -3,6 +3,23 @@ name: AWS infrastructure
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: Existing production stack to update
+        type: choice
+        default: runner
+        options: [runner, broker]
+      code_bucket:
+        description: Broker plan only; protected artifact bucket
+        type: string
+        required: false
+      code_key:
+        description: Broker plan only; reviewed ZIP object key
+        type: string
+        required: false
+      code_version:
+        description: Broker plan only; immutable S3 object version ID
+        type: string
+        required: false
       command:
         description: CloudFormation operation
         type: choice
@@ -12,7 +29,7 @@ on:
           - plan
           - apply
       change_set_arn:
-        description: Exact change-set ARN to apply; leave empty to create a fresh plan
+        description: Exact reviewed change-set ARN to apply; required for broker apply
         type: string
         required: false
 
@@ -29,5 +46,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/scope-aws-infrastructure-execute.yml
     with:
+      target: ${{ inputs.target }}
+      code_bucket: ${{ inputs.code_bucket }}
+      code_key: ${{ inputs.code_key }}
+      code_version: ${{ inputs.code_version }}
       command: ${{ inputs.command }}
       change_set_arn: ${{ inputs.change_set_arn }}
