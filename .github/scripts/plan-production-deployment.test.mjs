@@ -77,6 +77,11 @@ test("changes select the required deployment lanes", () => {
       ["api/src/main.rs"],
       { api: true, web: true, "cli-downloads": true },
     ],
+    [
+      "contract generator inputs and generated artifacts run the backend contract gate",
+      ["web/scripts/generate-api-contract.mjs", "web/pnpm-lock.yaml", "web/src/api/validators.generated.ts"],
+      { api: true, web: true },
+    ],
     ["router changes deploy the Git router", ["repo-router/src/main.rs"], { "git-router": true }],
     [
       "backend runtime image selects every backend service",

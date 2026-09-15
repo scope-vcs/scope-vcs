@@ -36,12 +36,12 @@ test('backend variants preserve API feature coverage explicitly', () => {
   assert.equal(spawnSync('dev/checks/backend', ['invalid'], { cwd: root }).status, 2);
 });
 
-test('web gate includes contract, observer, and resource rules; CLI and integration retain their coverage', () => {
+test('web gate includes observer and resource rules; the backend gate owns the contract; CLI and integration retain their coverage', () => {
   assert.deepEqual(commands('web'), [
     'pnpm test', 'pnpm check', 'pnpm build',
   ]);
   const webChecks = JSON.parse(read('web/package.json')).scripts.check;
-  assert.equal(webChecks, 'pnpm typecheck && ../dev/checks/contract && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
+  assert.equal(webChecks, 'pnpm typecheck && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   const cliCommands = commands('cli');
   assert.ok(cliCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
@@ -58,13 +58,13 @@ test('local and both CI callers use the shared inventory', () => {
   const github = ['rust-workspace-checks', 'scope-api-ci', 'scope-cli-build', 'scope-web-ci', 'ci', 'release', 'scope-integration-ci']
     .map((name) => read(`.github/workflows/${name}.yml`)).join('\n');
   const scope = read('.scope/runs/checks.yml');
-  for (const gate of gates.filter((gate) => gate !== 'contract')) {
+  for (const gate of gates) {
     assert.ok(github.includes(`dev/checks/${gate}`), `GitHub: ${gate}`);
     assert.ok(scope.includes(`dev/checks/${gate}`), `Scope: ${gate}`);
   }
-  assert.ok(read('dev/check').includes('dev/checks/policy'));
-  assert.ok(read('web/package.json').includes('dev/checks/contract'));
-  assert.ok(github.includes('dev/checks/contract'));
+  for (const gate of ['policy', 'contract']) assert.ok(read('dev/check').includes(`dev/checks/${gate}`), `local: ${gate}`);
+  assert.doesNotMatch(read('web/package.json'), /dev\/checks\/contract/);
+  assert.doesNotMatch(read('.github/workflows/scope-web-ci.yml'), /rust-toolchain|rust-cache/);
 });
 
 test('every deployment and policy script test is run by a shared gate', () => {
