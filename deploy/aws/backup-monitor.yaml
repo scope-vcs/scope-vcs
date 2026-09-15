@@ -65,7 +65,6 @@ Resources:
       ComparisonOperator: LessThanThreshold
       TreatMissingData: breaching
       AlarmActions: [!Ref AlertTopicArn]
-      OKActions: [!Ref AlertTopicArn]
 Outputs:
   BackupMonitorRoleArn:
     Value: !GetAtt BackupHealthRole.Arn

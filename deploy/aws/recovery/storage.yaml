@@ -217,7 +217,6 @@ Resources:
       ComparisonOperator: LessThanThreshold
       TreatMissingData: breaching
       AlarmActions: [!Ref AlertTopicArn]
-      OKActions: [!Ref AlertTopicArn]
 Outputs:
   RecoveryBucketName:
     Value: !Ref RecoveryBucket
