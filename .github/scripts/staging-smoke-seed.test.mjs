@@ -33,13 +33,14 @@ if (args[0] === 'status') {
 } else if (args[0] === 'service' && args[1] === 'list') {
   console.log(JSON.stringify([...Object.values(m.services),
     { id: m.railway.databaseServiceId, name: 'scope-postgres' }]));
-} else if (args[0] === 'variable' && args[1] === 'list') {
-  console.log(JSON.stringify({ DATABASE_PUBLIC_URL: 'postgresql://smoke-db.example.test/scope' }));
-} else if (args[0] === 'run') {
+} else if (args[0] === 'ssh') {
+  if (process.env.FAIL_SSH === '1') { process.stdout.write('partial-secret'); process.exit(1); }
   const command = args.slice(args.indexOf('--') + 1);
-  const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit', env: {
+  const result = spawnSync('sh', ['-c', command[0]], { stdio: 'inherit', env: {
     ...process.env, RAILWAY_PROJECT_ID: project, RAILWAY_ENVIRONMENT_ID: environment,
     RAILWAY_ENVIRONMENT_NAME: m.environments.staging.environmentName,
+    RAILWAY_SERVICE_ID: process.env.SCOPE_RAILWAY_MAINTENANCE_SERVICE_ID,
+    DATABASE_URL: 'postgresql://scope-postgres.railway.internal/scope',
   } });
   process.exit(result.status ?? 1);
 } else process.exit(9);
@@ -54,7 +55,7 @@ assert.equal(e.SCOPE_SMOKE_SEED_ENVIRONMENT_ID, e.RAILWAY_ENVIRONMENT_ID);
 assert.equal(e.SCOPE_SMOKE_SEED_ENVIRONMENT_NAME, e.RAILWAY_ENVIRONMENT_NAME);
 assert.notEqual(e.RAILWAY_ENVIRONMENT_ID, e.SCOPE_PRODUCTION_ENVIRONMENT_ID);
 assert.equal(e.SCOPE_ALLOW_STAGING_SMOKE_SEED, '1');
-assert.equal(e.DATABASE_URL, 'postgresql://smoke-db.example.test/scope');
+assert.equal(e.DATABASE_URL, 'postgresql://scope-postgres.railway.internal/scope');
 writeFileSync(e.SEED_ARGS_PATH, JSON.stringify(process.argv.slice(2)));
 writeFileSync(e.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH, 'scope_otc_test\\n', { mode: 0o600, flag: 'wx' });
 `, { mode: 0o755 });
@@ -65,6 +66,7 @@ writeFileSync(e.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH, 'scope_otc_test\\n', { mod
     RAILWAY_API_TOKEN: '',
     SCOPE_DEPLOYMENT_MANIFEST: manifestPath,
     SCOPE_SMOKE_SEED_BINARY: seedBinary,
+    SCOPE_RAILWAY_MAINTENANCE_SERVICE_ID: '11111111-1111-1111-1111-111111111111',
     SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH: join(root, 'credentials/exchange-token'),
     CALLS_PATH: join(root, 'calls'),
     SEED_ARGS_PATH: join(root, 'seed-args.json'),
@@ -79,7 +81,25 @@ test('grant uses the reviewed non-production identity and keeps the token privat
   assert.deepEqual(JSON.parse(readFileSync(env.SEED_ARGS_PATH)), ['--grant-only']);
   assert.equal(statSync(env.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH).mode & 0o777, 0o600);
   assert.doesNotMatch(result.stdout + result.stderr, /scope_otc_test|postgresql:/);
-  assert.deepEqual(readFileSync(env.CALLS_PATH, 'utf8').trim().split('\n'), ['status', 'service', 'variable', 'run']);
+  assert.deepEqual(readFileSync(env.CALLS_PATH, 'utf8').trim().split('\n'), ['status', 'service', 'ssh']);
+});
+
+test('existing credentials survive a refused overwrite', (t) => {
+  const { env } = fixture(t);
+  writeFileSync(env.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH, 'existing-token', { mode: 0o600 });
+  const result = spawnSync('bash', [seedScript], { env, encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  assert.equal(readFileSync(env.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH, 'utf8'), 'existing-token');
+  assert.doesNotMatch(readFileSync(env.CALLS_PATH, 'utf8'), /ssh/);
+});
+
+test('failed SSH transfer removes partial credentials without logging them', (t) => {
+  const { env } = fixture(t);
+  env.FAIL_SSH = '1';
+  const result = spawnSync('bash', [seedScript], { env, encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  assert.equal(existsSync(env.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH), false);
+  assert.doesNotMatch(result.stdout + result.stderr, /partial-secret/);
 });
 
 test('production aliases and account tokens cannot issue smoke credentials', (t) => {
@@ -93,7 +113,7 @@ test('production aliases and account tokens cannot issue smoke credentials', (t)
     const result = spawnSync('bash', [seedScript], { env, encoding: 'utf8' });
     assert.notEqual(result.status, 0);
     assert.equal(existsSync(env.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH), false);
-    if (existsSync(env.CALLS_PATH)) assert.doesNotMatch(readFileSync(env.CALLS_PATH, 'utf8'), /variable|run/);
+    if (existsSync(env.CALLS_PATH)) assert.doesNotMatch(readFileSync(env.CALLS_PATH, 'utf8'), /variable|run|ssh/);
   }
 });
 

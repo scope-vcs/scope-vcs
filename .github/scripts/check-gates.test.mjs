@@ -80,10 +80,11 @@ test('every deployment and policy script test is run by a shared gate', () => {
 // release, so their inputs need no component lane. Every other gate input must
 // select the lane whose artifact it shapes.
 const alwaysOnGateInputs = [
-  /^bench\//, /^deploy\/aws\//, /^dev\/analytics\//, /^dev\/licensing\//,
+  /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
+  /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/, /^\.scope\/runs\/checks\.yml$/,
-  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure|deployment-tests)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|deployment-tests|maintenance-runtime)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 

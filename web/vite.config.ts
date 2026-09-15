@@ -41,6 +41,7 @@ export default defineConfig(({ mode }) => {
           './src/server/analytics-endpoint.ts',
           './src/server/compress-responses.ts',
           './src/server/pagent-invalid-api-response.ts',
+          './src/server/secure-responses.ts',
         ],
       }),
     ],

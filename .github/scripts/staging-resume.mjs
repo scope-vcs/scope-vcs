@@ -78,11 +78,11 @@ async function main() {
     readRailway(['deployment', 'list', ...scope, '--service', serviceId, '--limit', '100', '--json']),
   ]));
   validateStagingResumeDeployments(prepared, evidence, manifest, histories);
-  const variables = readRailway(['variable', 'list', ...scope, '--service', manifest.railway.databaseServiceId, '--json']);
-  assert(variables.DATABASE_PUBLIC_URL, 'Staging database endpoint is missing');
-  const plan = JSON.parse(execFileSync(binaryPath, ['plan'], {
-    encoding: 'utf8', timeout: 60_000,
-    env: { ...process.env, DATABASE_URL: variables.DATABASE_PUBLIC_URL },
+  const plan = JSON.parse(execFileSync('bash', [
+    '.github/scripts/railway-private-maintenance.sh', manifest.environments.staging.environmentId, 'plan',
+  ], {
+    encoding: 'utf8', timeout: 120_000,
+    env: { ...process.env, SCOPE_PREPARED_RELEASE_PATH: preparedPath, SCOPE_MAINTENANCE_BINARY: binaryPath },
     stdio: ['ignore', 'pipe', 'pipe'],
   }));
   validateStagingResumeSchema(plan);

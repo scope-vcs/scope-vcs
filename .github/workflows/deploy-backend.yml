@@ -84,6 +84,7 @@ jobs:
         id: transition
         shell: bash
         env:
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
           SCOPE_PREPARED_RELEASE_PATH: prepared-release.json
           SCOPE_RELEASE_CUTOVER_ID: ${{ inputs.recover_cutover_id }}

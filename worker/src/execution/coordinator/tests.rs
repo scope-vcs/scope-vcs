@@ -112,10 +112,10 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
     let now = crate::unix_now().unwrap();
     let mut dispatch = tokio::task::JoinSet::new();
     dispatch.spawn(async move { coordinator.dispatch_available(now).await });
-    // Actual coordinator admissions commit before concurrent HTTP RunTask calls.
-    provider.wait_for("RunTask", 3).await;
+    // Actual coordinator admissions commit before concurrent broker start calls.
+    provider.wait_for("start", 3).await;
     let mut bootstrap_hashes = provider
-        .created_secrets()
+        .bootstrap_tokens()
         .into_iter()
         .map(|token| {
             let secret = token
@@ -193,7 +193,7 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
     };
     let mut cleanup = tokio::task::JoinSet::new();
     cleanup.spawn(async move { restarted.cleanup_terminal(expired_at).await });
-    provider.wait_for("ListTasks", 3).await;
+    provider.wait_for("stop", 3).await;
     cleanup.shutdown().await;
     assert!(
         metadata
@@ -240,7 +240,7 @@ async fn competing_workers_reserve_capacity_before_concurrent_provider_starts() 
         });
     }
     barrier.wait().await;
-    provider.wait_for("RunTask", 3).await;
+    provider.wait_for("start", 3).await;
     assert!(
         matches!(
             metadata
@@ -271,7 +271,7 @@ async fn competing_workers_reserve_capacity_before_concurrent_provider_starts() 
     .await
     .expect("both coordinator ticks finish after provider responses");
     assert_eq!(dispatched, 3);
-    assert_eq!(provider.count("RunTask"), 3);
+    assert_eq!(provider.count("start"), 3);
     assert_eq!(provider.peak_starts(), 3);
     let mut admitted_runs = 0;
     for id in 0..12 {

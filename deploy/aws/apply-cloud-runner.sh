@@ -30,6 +30,7 @@ readonly github_repository="${GITHUB_REPOSITORY:-scope-vcs/scope-vcs}"
 readonly github_repository_id="${GITHUB_REPOSITORY_ID:-1272896256}"
 readonly github_repository_owner_id="${GITHUB_REPOSITORY_OWNER_ID:-321219119}"
 readonly existing_github_oidc_provider_arn="${EXISTING_GITHUB_OIDC_PROVIDER_ARN:-}"
+readonly execution_role_arn="${SCOPE_AWS_EXECUTION_ROLE_ARN:-}"
 readonly registry_credentials_secret_arn="${SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN:-}"
 
 aws_command() {
@@ -79,6 +80,11 @@ aws_command cloudformation validate-template \
 
 if [[ "$command_name" == validate ]]; then
   exit 0
+fi
+
+if [[ -z "$execution_role_arn" ]]; then
+  echo "SCOPE_AWS_EXECUTION_ROLE_ARN must name the protected CloudFormation execution role" >&2
+  exit 2
 fi
 
 readonly parameters=(
@@ -148,6 +154,7 @@ else
     --change-set-type "$stack_operation" \
     --template-body "file://$template_file" \
     --capabilities CAPABILITY_NAMED_IAM \
+    --role-arn "$execution_role_arn" \
     --parameters "${parameters[@]}" \
     --tags "${tags[@]}" \
     --description "CLI plan for Scope Fargate runner infrastructure" \

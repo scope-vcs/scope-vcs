@@ -1,0 +1,308 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Account audit logging, security alerts and non-root read-only access
+Parameters:
+  AlertEmail:
+    Type: String
+  AuditPrincipalArn:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^arn:aws:iam::[0-9]{12}:(user|role)/.+$'
+    Description: Existing non-root temporary-access identity trusted to assume the audit role.
+  EnableGuardDuty:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable only after reviewing regional usage and pricing; creates a detector in this region only.
+Conditions:
+  CreateAuditRole: !Not [!Equals [!Ref AuditPrincipalArn, '']]
+  CreateGuardDuty: !Equals [!Ref EnableGuardDuty, 'true']
+Resources:
+  AuditBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub scope-security-audit-${AWS::AccountId}-${AWS::Region}
+      OwnershipControls:
+        Rules: [{ObjectOwnership: BucketOwnerEnforced}]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: RetainOneYear
+            Status: Enabled
+            ExpirationInDays: 365
+            NoncurrentVersionExpiration: {NoncurrentDays: 365}
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 7}
+  AuditBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AuditBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt AuditBucket.Arn, !Sub '${AuditBucket.Arn}/*']
+            Condition:
+              Bool: {aws:SecureTransport: 'false'}
+          - Sid: CloudTrailAclCheck
+            Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt AuditBucket.Arn
+            Condition:
+              StringEquals:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/scope-security-management
+          - Sid: CloudTrailWrite
+            Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: s3:PutObject
+            Resource: !Sub '${AuditBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/scope-security-management
+  ManagementTrail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: AuditBucketPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TrailName: scope-security-management
+      S3BucketName: !Ref AuditBucket
+      IsLogging: true
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      EventSelectors:
+        - IncludeManagementEvents: true
+          ReadWriteType: All
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: scope-security-alerts
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+  AlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlertTopic]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSecurityEventRules
+            Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition:
+              ArnEquals:
+                aws:SourceArn: [!GetAtt RootActivityRule.Arn, !GetAtt GuardDutyFindingRule.Arn]
+          - Sid: AllowBackupHealthAlarm
+            Effect: Allow
+            Principal: {Service: cloudwatch.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnEquals:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:scope-production-backup-health
+          - Sid: AllowIamMutationSummary
+            Effect: Allow
+            Principal: {Service: cloudwatch.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnEquals:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:scope-security-iam-mutations
+  RootActivityRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: scope-security-root-activity
+      State: ENABLED
+      Description: Root authentication only; routine API reads remain in CloudTrail without email.
+      EventPattern:
+        source: [aws.signin]
+        detail-type: ['AWS API Call via CloudTrail', 'AWS Console Sign In via CloudTrail']
+        detail:
+          eventSource: [signin.amazonaws.com]
+          # Authorization is interactive; CreateOAuth2Token also covers recurring refreshes.
+          eventName: [ConsoleLogin, AuthorizeOAuth2Access]
+          userIdentity:
+            type: [Root]
+      Targets: [{Id: SecurityAlerts, Arn: !Ref AlertTopic}]
+  IamMutationRule:
+    Type: AWS::Events::Rule
+    DependsOn: IamMutationLogPolicy
+    Properties:
+      Name: scope-security-iam-mutations
+      State: ENABLED
+      EventPattern:
+        source: [aws.iam]
+        detail-type: ['AWS API Call via CloudTrail']
+        detail:
+          eventSource: [iam.amazonaws.com]
+          readOnly: [false, 'false']
+      Targets:
+        - Id: IamMutationLog
+          Arn: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/scope-security-iam-mutations
+  IamMutationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/events/scope-security-iam-mutations
+      RetentionInDays: 30
+  IamMutationLogPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: scope-security-iam-events
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowIamEventsToLogs
+            Effect: Allow
+            Principal:
+              Service: [events.amazonaws.com, delivery.logs.amazonaws.com]
+            Action: [logs:CreateLogStream, logs:PutLogEvents]
+            Resource: !GetAtt IamMutationLogGroup.Arn
+  IamMutationMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref IamMutationLogGroup
+      # The EventBridge rule admits only IAM writes to this log group.
+      FilterPattern: '{ $.detail.eventSource = "iam.amazonaws.com" }'
+      MetricTransformations:
+        - MetricNamespace: Scope/Security/IAM
+          MetricName: Mutations
+          MetricValue: '1'
+          DefaultValue: 0
+          Unit: Count
+  IamMutationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: scope-security-iam-mutations
+      AlarmDescription: IAM changes detected. Inspect the security IAM log group or CloudTrail. Further changes during this alarm do not send individual emails.
+      Namespace: Scope/Security/IAM
+      MetricName: Mutations
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      # Return to OK silently after a quiet period; notify only the next change burst.
+  GuardDutyFindingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: scope-security-guardduty-findings
+      State: ENABLED
+      EventPattern:
+        source: [aws.guardduty]
+        detail-type: ['GuardDuty Finding']
+      Targets: [{Id: SecurityAlerts, Arn: !Ref AlertTopic}]
+  GuardDutyDetector:
+    Type: AWS::GuardDuty::Detector
+    Condition: CreateGuardDuty
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: FIFTEEN_MINUTES
+  RoutineAuditRole:
+    Type: AWS::IAM::Role
+    Condition: CreateAuditRole
+    Properties:
+      RoleName: scope-security-audit
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {AWS: !Ref AuditPrincipalArn}
+            Action: sts:AssumeRole
+            Condition:
+              Bool:
+                aws:MultiFactorAuthPresent: 'true'
+      Policies:
+        - PolicyName: login-to-audit-session
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [signin:AuthorizeOAuth2Access, signin:CreateOAuth2Token]
+                Resource:
+                  - !Sub arn:${AWS::Partition}:signin:us-east-1:${AWS::AccountId}:oauth2/public-client/localhost
+                  - !Sub arn:${AWS::Partition}:signin:us-east-1:${AWS::AccountId}:oauth2/public-client/remote
+        - PolicyName: metadata-only-audit
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:GetAccountSummary
+                  - iam:GetAccountPasswordPolicy
+                  - iam:GetCredentialReport
+                  - iam:GetUser
+                  - iam:GetLoginProfile
+                  - iam:GetAccessKeyLastUsed
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:GetUserPolicy
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                  - iam:List*
+                  - cloudtrail:DescribeTrails
+                  - cloudtrail:GetTrailStatus
+                  - cloudtrail:GetEventSelectors
+                  - guardduty:ListDetectors
+                  - guardduty:GetDetector
+                  - guardduty:ListFindings
+                  - securityhub:DescribeHub
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeRouteTables
+                  - ec2:DescribeNetworkAcls
+                  - ecr:DescribeRepositories
+                  - ecr:DescribeImages
+                  - ecr:DescribeImageScanFindings
+                  - ecs:ListClusters
+                  - ecs:ListServices
+                  - ecs:ListTasks
+                  - ecs:DescribeClusters
+                  - logs:DescribeLogGroups
+                  - sns:GetTopicAttributes
+                  - sns:ListSubscriptionsByTopic
+                  - events:DescribeRule
+                  - events:ListTargetsByRule
+                Resource: '*'
+              - Effect: Allow
+                Action: [s3:GetBucketVersioning, s3:GetEncryptionConfiguration, s3:GetBucketPublicAccessBlock, s3:GetBucketPolicyStatus, s3:GetLifecycleConfiguration]
+                Resource: !GetAtt AuditBucket.Arn
+              - Sid: DenySecretAndApplicationContent
+                Effect: Deny
+                Action: [secretsmanager:GetSecretValue, secretsmanager:BatchGetSecretValue, ssm:GetParameter*, kms:Decrypt, s3:GetObject*, logs:GetLogEvents, logs:FilterLogEvents, logs:StartQuery, lambda:GetFunction, lambda:GetFunctionConfiguration, ecs:DescribeTaskDefinition, cloudformation:GetTemplate, sts:AssumeRole]
+                Resource: '*'
+Outputs:
+  AuditBucketName:
+    Value: !Ref AuditBucket
+  TrailArn:
+    Value: !GetAtt ManagementTrail.Arn
+  AlertTopicArn:
+    Value: !Ref AlertTopic
+  AuditRoleArn:
+    Condition: CreateAuditRole
+    Value: !GetAtt RoutineAuditRole.Arn

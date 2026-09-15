@@ -11,6 +11,7 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     let mut state = test_state_with_repo();
     let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
     state.product_analytics = analytics;
+    state.dispatch_broker_token = Some(Arc::from("broker-secret"));
     cache_test_jwks(&state);
     let app = router(state.clone());
     let source = temp_git_repo("cloud-runtime-protocol");
@@ -96,6 +97,31 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
         .await
         .unwrap();
 
+    let authorize_request = || {
+        let body = serde_json::json!({
+            "action": "start",
+            "attempt_id": attempt_id,
+            "bootstrap_token": bootstrap_token,
+        });
+        Request::builder()
+            .method("POST")
+            .uri("/internal/cloud-dispatch/authorize")
+            .header(AUTHORIZATION, "Bearer broker-secret")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap()
+    };
+    let authorized = app.clone().oneshot(authorize_request()).await.unwrap();
+    assert_eq!(authorized.status(), StatusCode::OK);
+    let authorized = response_json(authorized).await;
+    assert_eq!(authorized["action"], "start");
+    assert_eq!(authorized["attempt_id"], attempt_id);
+    assert_eq!(
+        authorized["image"],
+        offer.job.pinned_container_image.as_str()
+    );
+    assert!(authorized["deadline_unix"].as_u64().unwrap() > unix_now());
+
     let claim_request = || {
         Request::builder()
             .method("POST")
@@ -108,6 +134,8 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     assert_eq!(claimed.status(), StatusCode::OK);
     let claim: ClaimRuntimeResponse = serde_json::from_value(response_json(claimed).await).unwrap();
     assert!(claim.attempt_token.starts_with("scope_attempt_"));
+    let authorization_replayed = app.clone().oneshot(authorize_request()).await.unwrap();
+    assert_eq!(authorization_replayed.status(), StatusCode::UNAUTHORIZED);
     let cache_claims = cache_grant_claims(&claim.cache_grant);
     assert_eq!(cache_claims.attempt_id, attempt_id);
     assert_eq!(cache_claims.expires_at_unix, claim.lease_expires_at_unix);

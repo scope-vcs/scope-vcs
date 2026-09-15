@@ -1,6 +1,7 @@
 pub mod attempt;
 pub mod cache;
 pub mod catalog;
+pub mod dispatch_authorization;
 pub mod exit_code;
 pub mod image;
 pub mod job;

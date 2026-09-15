@@ -10,4 +10,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . /app/
+# Git materializations and local object storage use .scope by default. Keep
+# release binaries root-owned while allowing the service to write its data.
+RUN useradd --uid 65532 --user-group --create-home --shell /usr/sbin/nologin scope \
+    && mkdir -p /app/.scope /home/scope/.cache \
+    && chown 65532:65532 /app/.scope /home/scope/.cache
+ENV HOME=/home/scope XDG_CACHE_HOME=/home/scope/.cache
+USER 65532:65532
 CMD ["sh", "-c", "exec /app/bin/$SCOPE_COMPONENT_BINARY"]

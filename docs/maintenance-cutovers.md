@@ -160,3 +160,68 @@ uses runtime `SCOPE_ANALYTICS_ENVIRONMENT` and `POSTHOG_PROJECT_TOKEN`; the web
 service also requires `SCOPE_ANALYTICS_ORIGIN`. Prepared web, API and worker images
 carry their source SHA as `SCOPE_ANALYTICS_RELEASE`. See
 [product analytics](product-analytics.md) for configuration and release checks.
+
+## Private database maintenance
+
+Release preflight, migrations, workflow backfills, and staging database operations
+run through `railway-private-maintenance.sh` and `railway-private-command.sh`.
+They use SSH into the dedicated maintenance service. Its `DATABASE_URL` points
+to the private database hostname and uses the migration role. CI does not fetch
+database credentials. SSH remains privileged execution authority and can read the
+maintenance service's environment.
+
+The maintenance service has one replica, no public domain, PostgreSQL 18 clients,
+and the API's object storage and encryption configuration. Build it with
+`deploy/railway/maintenance.Dockerfile` and a release context containing
+`bin/scope-maintenance`. It serves `/readyz` with `scope-maintenance serve`.
+Set `railway.maintenanceServiceId` in the deployment manifest after provisioning
+that service in both environments. A service ID override is available through
+`SCOPE_RAILWAY_MAINTENANCE_SERVICE_ID` for explicit operational use.
+
+Each invocation streams the verified prepared release binary into a private
+temporary directory, checks its SHA-256 again remotely, executes it, and removes
+it. The remote shell checks the Railway project, environment, and service identity
+before running commands. The migration timeouts still come from the release
+policy. Failed or uncertain migrations still use the existing writer fence and
+forward recovery rules.
+
+Register the CI SSH public key with Railway and store its private key in the
+production and staging GitHub environment secret `SCOPE_RAILWAY_SSH_PRIVATE_KEY`.
+Only maintenance steps receive the secret. The helper writes it to a temporary
+0600 file and removes that file on success or failure. Local operators can instead
+set `SCOPE_RAILWAY_SSH_IDENTITY_FILE` to an existing registered key.
+
+Provision roles using `deploy/postgres/runtime-roles.mjs`. Its grants-only mode
+runs after each successful migration, before writers reopen. New tables receive
+no default runtime privileges. A staging baseline restore drops grants, so the
+subsequent candidate migration always reapplies the reviewed grants. Baselines
+include the database extension declarations, including `pg_trgm`. Regenerate
+retained snapshots produced by the old public-schema-only dump before cutover.
+
+Before removing database TCP proxies, verify production preflight, a complete
+staging baseline restore and smoke run, and a production cutover through SSH.
+Confirm runtime roles cannot change schema or access another service's tables.
+Remove the proxies only after these checks pass, then confirm external database
+connections fail while the private operations still work.
+
+### Publishing the maintenance runtime
+
+`maintenance-runtime.yml` rebuilds and publishes the dedicated maintenance image
+without changing application deployments. Dispatch it on `main` with the current
+production API image digest, its full source SHA, and the verified maintenance
+binary SHA-256. The workflow checks those inputs against the active production
+API deployment, extracts the binary with the existing release helper, and checks
+the image's source label.
+
+Publishing uses the workflow's package token. Before deployment, the workflow
+checks private GHCR visibility and pulls the immutable image manifest with the
+durable Railway registry credentials. It retains `maintenance-runtime.json` with
+the image and binary digests. Staging must deploy that image and pass a private
+SSH binary hash, non-root user, and database preflight check before production
+can start. Both environments retain their own database and object-store secrets.
+
+This workflow requires the existing registry secrets, Railway API token, and
+maintenance SSH key in the corresponding GitHub environments. The runtime source
+comes from `deploy/railway/maintenance.Dockerfile`; updates to its base image or
+packages require dispatching this workflow. It uses image deployment rather than
+Railway source upload.

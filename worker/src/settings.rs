@@ -8,7 +8,6 @@ const SCOPE_OBJECT_STORE_MAX_BYTES_ENV: &str = "SCOPE_OBJECT_STORE_MAX_BYTES";
 const SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_CHUNK_BYTES";
 const SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES";
 const SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV: &str = "SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY";
-const SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN_ENV: &str = "SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN";
 const DEFAULT_HEALTH_PORT: u16 = 8081;
 
 /// Outbox jobs claimed per control poll.
@@ -33,15 +32,8 @@ pub(crate) struct WorkerSettings {
 
 #[derive(Clone)]
 pub(crate) struct CloudExecutionSettings {
-    pub(crate) api_url: String,
     pub(crate) aws_region: String,
-    pub(crate) ecs_cluster_arn: String,
-    pub(crate) ecs_subnet_ids: Vec<String>,
-    pub(crate) ecs_security_group_id: String,
-    pub(crate) ecs_execution_role_arn: String,
-    pub(crate) ecs_log_group: String,
-    pub(crate) ecs_secret_name_key: [u8; 32],
-    pub(crate) registry_credentials_secret_arn: Option<String>,
+    pub(crate) dispatch_broker_function_arn: String,
     pub(crate) runtime_version: String,
     pub(crate) max_concurrency: usize,
 }
@@ -94,85 +86,41 @@ fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> 
     if !enabled {
         return Ok(None);
     }
-    let api_url =
-        scope_service_runtime::http::ServiceEndpoint::parse(&required_env("SCOPE_PUBLIC_API_URL")?)
-            .map_err(|error| anyhow::anyhow!("SCOPE_PUBLIC_API_URL: {error}"))?
-            .as_str()
-            .to_string();
     let aws_region = required_env("AWS_REGION")?;
-    let registry_credentials_secret_arn = parse_registry_credentials_secret_arn(
-        non_empty_env(SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN_ENV).as_deref(),
+    let dispatch_broker_function_arn = parse_broker_function_arn(
+        &required_env("SCOPE_DISPATCH_BROKER_FUNCTION_ARN")?,
         &aws_region,
     )?;
     Ok(Some(CloudExecutionSettings {
-        api_url,
         aws_region,
-        ecs_cluster_arn: required_env("SCOPE_ECS_CLUSTER_ARN")?,
-        ecs_subnet_ids: comma_separated_env("SCOPE_ECS_SUBNET_IDS")?,
-        ecs_security_group_id: required_env("SCOPE_ECS_SECURITY_GROUP_ID")?,
-        ecs_execution_role_arn: required_env("SCOPE_ECS_EXECUTION_ROLE_ARN")?,
-        ecs_log_group: required_env("SCOPE_ECS_LOG_GROUP")?,
-        ecs_secret_name_key: secret_name_key_from_env()?,
-        registry_credentials_secret_arn,
+        dispatch_broker_function_arn,
         runtime_version: env!("CARGO_PKG_VERSION").to_string(),
         max_concurrency: CLOUD_RUN_MAX_CONCURRENCY,
     }))
 }
 
-fn parse_registry_credentials_secret_arn(
-    value: Option<&str>,
-    aws_region: &str,
-) -> anyhow::Result<Option<String>> {
-    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
-        return Ok(None);
-    };
-    let fields = value.splitn(7, ':').collect::<Vec<_>>();
-    if fields.len() != 7
+fn parse_broker_function_arn(value: &str, aws_region: &str) -> anyhow::Result<String> {
+    let fields = value.split(':').collect::<Vec<_>>();
+    if !(fields.len() == 7 || fields.len() == 8)
         || fields[0] != "arn"
         || !matches!(fields[1], "aws" | "aws-us-gov" | "aws-cn")
-        || fields[2] != "secretsmanager"
+        || fields[2] != "lambda"
         || fields[3] != aws_region
         || fields[4].len() != 12
         || !fields[4].bytes().all(|byte| byte.is_ascii_digit())
-        || fields[5] != "secret"
-        || fields[6].is_empty()
+        || fields[5] != "function"
+        || fields[6..].iter().any(|field| {
+            field.is_empty()
+                || !field
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        })
     {
         anyhow::bail!(
-            "{SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN_ENV} must be a Secrets Manager ARN in AWS_REGION"
+            "SCOPE_DISPATCH_BROKER_FUNCTION_ARN must be an exact Lambda function ARN in AWS_REGION"
         );
     }
-    Ok(Some(value.to_string()))
-}
-
-fn secret_name_key_from_env() -> anyhow::Result<[u8; 32]> {
-    let encoded = required_env("SCOPE_ECS_SECRET_NAME_KEY")?;
-    parse_secret_name_key(&encoded)
-}
-
-fn parse_secret_name_key(encoded: &str) -> anyhow::Result<[u8; 32]> {
-    let decoded = hex::decode(encoded).map_err(|_| {
-        anyhow::anyhow!("SCOPE_ECS_SECRET_NAME_KEY must be 64 hexadecimal characters")
-    })?;
-    decoded
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("SCOPE_ECS_SECRET_NAME_KEY must be 64 hexadecimal characters"))
-}
-
-fn comma_separated_env(name: &str) -> anyhow::Result<Vec<String>> {
-    parse_comma_separated(name, &required_env(name)?)
-}
-
-fn parse_comma_separated(name: &str, value: &str) -> anyhow::Result<Vec<String>> {
-    let values = value
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    if values.is_empty() {
-        anyhow::bail!("{name} must contain at least one value");
-    }
-    Ok(values)
+    Ok(value.to_owned())
 }
 
 pub(crate) fn required_env(name: &str) -> anyhow::Result<String> {
@@ -212,41 +160,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn comma_separated_settings_ignore_only_empty_segments() {
-        assert_eq!(
-            parse_comma_separated("SUBNETS", " subnet-a,subnet-b ,, ").unwrap(),
-            ["subnet-a", "subnet-b"]
-        );
-        assert!(parse_comma_separated("SUBNETS", " , ").is_err());
-    }
-
-    #[test]
-    fn secret_name_key_requires_exactly_32_hex_encoded_bytes() {
-        assert_eq!(parse_secret_name_key(&"ab".repeat(32)).unwrap(), [0xab; 32]);
-        assert!(parse_secret_name_key(&"ab".repeat(31)).is_err());
-        assert!(parse_secret_name_key(&"xy".repeat(32)).is_err());
-    }
-
-    #[test]
-    fn registry_credentials_are_optional_and_region_bound() {
-        assert_eq!(
-            parse_registry_credentials_secret_arn(None, "us-east-1").unwrap(),
-            None
-        );
-        assert_eq!(
-            parse_registry_credentials_secret_arn(Some("  "), "us-east-1").unwrap(),
-            None
-        );
-
-        let arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:scope-registry-AbCdEf";
-        assert_eq!(
-            parse_registry_credentials_secret_arn(Some(arn), "us-east-1").unwrap(),
-            Some(arn.to_string())
-        );
-        assert!(parse_registry_credentials_secret_arn(Some(arn), "us-west-2").is_err());
-        assert!(
-            parse_registry_credentials_secret_arn(Some("scope-registry-AbCdEf"), "us-east-1")
-                .is_err()
-        );
+    fn broker_function_must_be_exact_and_region_bound() {
+        let arn = "arn:aws:lambda:us-east-1:123456789012:function:scope-dispatch";
+        assert_eq!(parse_broker_function_arn(arn, "us-east-1").unwrap(), arn);
+        assert!(parse_broker_function_arn(&format!("{arn}:live"), "us-east-1").is_ok());
+        for invalid in [
+            "scope-dispatch",
+            "arn:aws:lambda:us-east-1:123456789012:function:*",
+            "arn:aws:lambda:us-east-1:123456789012:function:",
+        ] {
+            assert!(parse_broker_function_arn(invalid, "us-east-1").is_err());
+        }
+        assert!(parse_broker_function_arn(arn, "us-west-2").is_err());
     }
 }

@@ -1,0 +1,36 @@
+name: Backup monitor execution
+
+on:
+  workflow_call:
+    secrets:
+      RAILWAY_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Configure monitoring credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ vars.SCOPE_BACKUP_MONITOR_ROLE_ARN }}
+          role-session-name: scope-backup-monitor-${{ github.run_id }}
+      - name: Check schedules and latest completed production backup
+        id: backup
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          BACKUP_METRIC_FILE: ${{ runner.temp }}/backup-health-metric.json
+        run: node .github/scripts/check-production-backups.mjs
+      - name: Publish backup health heartbeat
+        if: ${{ always() && steps.backup.outcome != 'skipped' }}
+        env:
+          BACKUP_METRIC_FILE: ${{ runner.temp }}/backup-health-metric.json
+        run: aws cloudwatch put-metric-data --namespace Scope/Security/Backup --metric-data "file://$BACKUP_METRIC_FILE"

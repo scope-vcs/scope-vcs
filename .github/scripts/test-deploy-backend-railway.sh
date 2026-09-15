@@ -9,7 +9,7 @@ mkdir -p "$test_dir/bin" "$test_dir/api"
 printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/api/.scope-deployment-sha"
 
 cat > "$test_dir/services.json" <<'JSON'
-{"releasePolicy":{"maintenanceEnabled":true,"writerDrainTimeoutSeconds":120,"migrationLockTimeoutSeconds":120,"migrationStatementTimeoutSeconds":3600},"services":{"api":{"id":"scope-api","deployment":{"runtimeConfig":"api/railway.json","verifyTransitionConfig":true}},"run-worker":{"id":"scope-worker","deployment":{"runtimeConfig":"worker/railway.json","verifyTransitionConfig":true}},"cache":{"id":"scope-cache-service","deployment":{"runtimeConfig":"cache-service/railway.json","verifyTransitionConfig":true}},"git-router":{"id":"scope-repo-router","deployment":{"runtimeConfig":"repo-router/railway.json","verifyTransitionConfig":true}},"media-api":{"id":"scope-media","deployment":{"runtimeConfig":"media-service/railway.json","verifyTransitionConfig":true}},"media-worker":{"id":"scope-media-worker","deployment":{"runtimeConfig":"media-worker/railway.json","verifyTransitionConfig":false}},"web":{"id":"scope-web","deployment":{"runtimeConfig":"web/railway.json","verifyTransitionConfig":true}}}}
+{"railway":{"projectId":"11111111-1111-4111-8111-111111111111","maintenanceServiceId":"33333333-3333-4333-8333-333333333333"},"environments":{"production":{"environmentId":"22222222-2222-4222-8222-222222222222"},"staging":{"environmentId":"44444444-4444-4444-8444-444444444444"}},"releasePolicy":{"maintenanceEnabled":true,"writerDrainTimeoutSeconds":120,"migrationLockTimeoutSeconds":120,"migrationStatementTimeoutSeconds":3600},"services":{"api":{"id":"scope-api","deployment":{"runtimeConfig":"api/railway.json","verifyTransitionConfig":true}},"run-worker":{"id":"scope-worker","deployment":{"runtimeConfig":"worker/railway.json","verifyTransitionConfig":true}},"cache":{"id":"scope-cache-service","deployment":{"runtimeConfig":"cache-service/railway.json","verifyTransitionConfig":true}},"git-router":{"id":"scope-repo-router","deployment":{"runtimeConfig":"repo-router/railway.json","verifyTransitionConfig":true}},"media-api":{"id":"scope-media","deployment":{"runtimeConfig":"media-service/railway.json","verifyTransitionConfig":true}},"media-worker":{"id":"scope-media-worker","deployment":{"runtimeConfig":"media-worker/railway.json","verifyTransitionConfig":false}},"web":{"id":"scope-web","deployment":{"runtimeConfig":"web/railway.json","verifyTransitionConfig":true}}}}
 JSON
 
 # Persist the real journal API requests in fake remote storage across runner invocations.
@@ -60,8 +60,8 @@ FAKE
 cat > "$test_dir/maintenance" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$0 $*" >> "$FAKE_RAILWAY_TRACE"
-[[ "${DATABASE_URL:-}" == "postgres://public-database.test/scope" ]]
+printf '%s\n' "$SCOPE_MAINTENANCE_BINARY $*" >> "$FAKE_RAILWAY_TRACE"
+[[ "${DATABASE_URL:-}" == "postgres://scope-postgres.railway.internal/scope" ]]
 
 case "${1:-}" in
   preflight)
@@ -234,10 +234,11 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     FAKE_ROUTER_DOMAIN_STATE="$router_domain_state" \
     FAKE_ROUTER_INSTANCE_EXISTS="$router_instance_exists" \
     FAKE_DENY_DEPLOYMENT_ACTION_SERVICE="$deny_deployment_action_service" \
-    RAILWAY_PROJECT_ID="project-test" \
+    RAILWAY_PROJECT_ID="11111111-1111-4111-8111-111111111111" \
     RAILWAY_API_TOKEN="token-graphql" \
     RAILWAY_TOKEN="token-project" \
-    SCOPE_RAILWAY_ENVIRONMENT_ID="production" \
+    SCOPE_RAILWAY_ENVIRONMENT_ID="22222222-2222-4222-8222-222222222222" \
+    SCOPE_RAILWAY_DATABASE_SERVICE_ID="scope-postgres" \
     SCOPE_RAILWAY_API_SERVICE_ID="scope-api" \
     SCOPE_RAILWAY_WORKER_SERVICE_ID="scope-worker" \
     SCOPE_RAILWAY_CACHE_SERVICE_ID="scope-cache-service" \
@@ -245,7 +246,6 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     SCOPE_RAILWAY_MEDIA_SERVICE_ID="scope-media" \
     SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID="scope-media-worker" \
     SCOPE_RAILWAY_ROUTER_GROUP_ID="runtime-group" \
-    SCOPE_RAILWAY_DATABASE_SERVICE_ID="scope-postgres" \
     SCOPE_RAILWAY_API_REGION_ID="us-east4-eqdc4a" \
     SCOPE_RAILWAY_WORKER_REGION_ID="us-east4-eqdc4a" \
     SCOPE_RAILWAY_MEDIA_REGION_ID="us-east4-eqdc4a" \
@@ -645,9 +645,9 @@ FAKE_INITIAL_EXACT=1 \
 assert_evidence_components router-bootstrap git-router,api
 assert_in_order "$test_dir/router-bootstrap-trace" \
   "graphql create-instance scope-repo-router" \
-  "domain --project project-test --environment production --service scope-repo-router --port 8080 --json" \
-  "variable set --project project-test --environment production --service scope-api --skip-deploys SCOPE_GIT_PUBLIC_URL=https://scope-repo-router-production.test" \
-  "variable set --project project-test --environment production --service scope-repo-router --skip-deploys SCOPE_REPO_ROUTER_BACKEND=scope-api.railway.internal:8080 SCOPE_REPO_ROUTER_READ_REPLICAS=1" \
+  "domain --project 11111111-1111-4111-8111-111111111111 --environment 22222222-2222-4222-8222-222222222222 --service scope-repo-router --port 8080 --json" \
+  "variable set --project 11111111-1111-4111-8111-111111111111 --environment 22222222-2222-4222-8222-222222222222 --service scope-api --skip-deploys SCOPE_GIT_PUBLIC_URL=https://scope-repo-router-production.test" \
+  "variable set --project 11111111-1111-4111-8111-111111111111 --environment 22222222-2222-4222-8222-222222222222 --service scope-repo-router --skip-deploys SCOPE_REPO_ROUTER_BACKEND=scope-api.railway.internal:8080 SCOPE_REPO_ROUTER_READ_REPLICAS=1" \
   "graphql configure-scale scope-repo-router" \
   "$test_dir/maintenance plan" \
   "up $test_dir/git-router" \
@@ -837,9 +837,9 @@ run_direct_deploy() {
   PATH="$test_dir/bin:$PATH" \
     FAKE_RAILWAY_STATE="$direct_state" \
     FAKE_RAILWAY_TRACE="$direct_trace" \
-    RAILWAY_PROJECT_ID="project-test" \
+    RAILWAY_PROJECT_ID="11111111-1111-4111-8111-111111111111" \
     RAILWAY_TOKEN="token-project" \
-    SCOPE_RAILWAY_ENVIRONMENT_ID="production" \
+    SCOPE_RAILWAY_ENVIRONMENT_ID="22222222-2222-4222-8222-222222222222" \
     SCOPE_DEPLOYMENT_COMPONENT="api" \
     SCOPE_DEPLOYMENT_SOURCE_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
     SCOPE_VERIFIED_SUCCESSFUL_SHA="${1:-}" \

@@ -5,4 +5,6 @@ WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0
 COPY .output /app/.output
 COPY .scope-deployment-sha /app/.scope-deployment-sha
+ENV HOME=/home/node
+USER node
 CMD ["node", "/app/.output/server/index.mjs"]

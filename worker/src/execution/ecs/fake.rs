@@ -1,6 +1,13 @@
 //! An HTTP provider fixture exercising the production AWS client and retry paths.
 use super::*;
-use axum::{Json, Router, body::Bytes, extract::State, http::HeaderMap, routing::post};
+use axum::{
+    Json, Router,
+    body::Bytes,
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::post,
+};
 use serde_json::{Value, json};
 use std::sync::{
     Arc, Mutex,
@@ -23,69 +30,76 @@ struct Requests {
 struct ProviderState {
     requests: Arc<Requests>,
     starts: Arc<Semaphore>,
+    stops: Arc<Semaphore>,
+    reply: Arc<Mutex<Option<(StatusCode, Value, bool)>>>,
 }
 
 pub(crate) struct FakeEcs {
     pub(crate) client: EcsClient,
     pub(crate) starts: Arc<Semaphore>,
+    pub(crate) stops: Arc<Semaphore>,
+    reply: Arc<Mutex<Option<(StatusCode, Value, bool)>>>,
     requests: Arc<Requests>,
     server: tokio::task::JoinHandle<()>,
 }
 
 impl FakeEcs {
     pub(crate) async fn new() -> Self {
-        Self::with_registry_credentials(None).await
+        Self::with_timeout(Duration::from_secs(150)).await
     }
 
-    pub(crate) async fn with_registry_credentials(
-        registry_credentials_secret_arn: Option<&str>,
-    ) -> Self {
+    pub(crate) async fn with_timeout(timeout: Duration) -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let requests = Arc::new(Requests::default());
         let starts = Arc::new(Semaphore::new(0));
+        let stops = Arc::new(Semaphore::new(0));
+        let reply = Arc::new(Mutex::new(None));
         let app = Router::new()
-            .route("/", post(handle))
+            .route("/2015-03-31/functions/{function}/invocations", post(handle))
             .with_state(ProviderState {
                 requests: requests.clone(),
                 starts: starts.clone(),
+                stops: stops.clone(),
+                reply: reply.clone(),
             });
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
         let credentials =
-            aws_sdk_ecs::config::Credentials::new("test", "test", None, None, "fixture");
+            aws_sdk_lambda::config::Credentials::new("test", "test", None, None, "fixture");
         let sdk_config = aws_config::SdkConfig::builder()
             .region(Region::new("us-east-1"))
-            .credentials_provider(aws_sdk_ecs::config::SharedCredentialsProvider::new(
+            .credentials_provider(aws_sdk_lambda::config::SharedCredentialsProvider::new(
                 credentials,
             ))
             .behavior_version(BehaviorVersion::latest())
+            .retry_config(RetryConfig::standard().with_max_attempts(1))
+            .timeout_config(TimeoutConfig::builder().operation_timeout(timeout).build())
             .endpoint_url(endpoint)
             .build();
         let settings = CloudExecutionSettings {
-            api_url: "https://scope.test".into(),
             aws_region: "us-east-1".into(),
-            ecs_cluster_arn: "arn:aws:ecs:us-east-1:123456789012:cluster/test".into(),
-            ecs_subnet_ids: vec!["subnet-test".into()],
-            ecs_security_group_id: "sg-test".into(),
-            ecs_execution_role_arn: "arn:aws:iam::123456789012:role/test".into(),
-            ecs_log_group: "/scope/test".into(),
-            ecs_secret_name_key: [7; 32],
-            registry_credentials_secret_arn: registry_credentials_secret_arn.map(str::to_string),
+            dispatch_broker_function_arn:
+                "arn:aws:lambda:us-east-1:123456789012:function:scope-dispatch".into(),
             runtime_version: "test".into(),
             max_concurrency: 4,
         };
         Self {
             client: EcsClient {
-                client: EcsSdkClient::new(&sdk_config),
-                secrets: SecretsManagerClient::new(&sdk_config),
+                client: LambdaClient::new(&sdk_config),
                 settings,
             },
             starts,
+            stops,
+            reply,
             requests,
             server,
         }
+    }
+
+    pub(crate) fn reply(&self, status: StatusCode, body: Value, function_error: bool) {
+        *self.reply.lock().unwrap() = Some((status, body, function_error));
     }
 
     pub(crate) fn settings(&self) -> CloudExecutionSettings {
@@ -106,14 +120,14 @@ impl FakeEcs {
         self.requests.peak_starts.load(Ordering::SeqCst)
     }
 
-    pub(crate) fn created_secrets(&self) -> Vec<String> {
+    pub(crate) fn bootstrap_tokens(&self) -> Vec<String> {
         self.requests
             .entries
             .lock()
             .unwrap()
             .iter()
-            .filter(|(method, _)| method == "CreateSecret")
-            .map(|(_, body)| body["SecretString"].as_str().unwrap().to_owned())
+            .filter(|(method, _)| method == "start")
+            .map(|(_, body)| body["bootstrap_token"].as_str().unwrap().to_owned())
             .collect()
     }
 
@@ -157,18 +171,10 @@ impl Drop for FakeEcs {
     }
 }
 
-async fn handle(
-    State(state): State<ProviderState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Json<Value> {
+async fn handle(State(state): State<ProviderState>, headers: HeaderMap, body: Bytes) -> Response {
+    assert_eq!(headers["x-amz-invocation-type"], "RequestResponse");
     let body: Value = serde_json::from_slice(&body).unwrap();
-    let method = headers["x-amz-target"]
-        .to_str()
-        .unwrap()
-        .rsplit('.')
-        .next()
-        .unwrap();
+    let method = body["action"].as_str().unwrap();
     state
         .requests
         .entries
@@ -176,29 +182,29 @@ async fn handle(
         .unwrap()
         .push((method.into(), body.clone()));
     state.requests.changed.notify_waiters();
+    if let Some((status, reply, function_error)) = state.reply.lock().unwrap().clone() {
+        let mut response = (status, Json(reply)).into_response();
+        if function_error {
+            response
+                .headers_mut()
+                .insert("x-amz-function-error", "Unhandled".parse().unwrap());
+        }
+        return response;
+    }
     Json(match method {
-        // Empty discovery invokes the actual five-minute ambiguity reconciliation.
-        "ListTasks" => json!({"taskArns": []}),
-        "CreateSecret" => {
-            json!({"ARN": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test"})
-        }
-        "RegisterTaskDefinition" => {
-            json!({"taskDefinition": {"taskDefinitionArn": "arn:aws:ecs:us-east-1:123456789012:task-definition/test:1"}})
-        }
-        "RunTask" => {
+        "start" => {
             let active = state.requests.active_starts.fetch_add(1, Ordering::SeqCst) + 1;
-            state
-                .requests
-                .peak_starts
-                .fetch_max(active, Ordering::SeqCst);
+            state.requests.peak_starts.fetch_max(active, Ordering::SeqCst);
             state.starts.acquire().await.unwrap().forget();
             state.requests.active_starts.fetch_sub(1, Ordering::SeqCst);
-            json!({"tasks": [{"taskArn": format!("task-{}", body["startedBy"].as_str().unwrap())}]})
+            json!({"status": "started", "task_arn": format!("task-{}", body["attempt_id"].as_str().unwrap())})
         }
-        "StopTask" => json!({}),
-        "DescribeTasks" => json!({"tasks": [{"lastStatus": "STOPPED"}]}),
-        "ListTaskDefinitions" => json!({"taskDefinitionArns": []}),
-        "DeleteSecret" => json!({}),
-        method => panic!("unexpected provider method {method}"),
-    })
+        "stop" => {
+            if body["attempt_id"] != "canceled" {
+                state.stops.acquire().await.unwrap().forget();
+            }
+            json!({"status": "stopped"})
+        }
+        method => panic!("unexpected broker action {method}"),
+    }).into_response()
 }

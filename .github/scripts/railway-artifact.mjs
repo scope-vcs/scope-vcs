@@ -29,14 +29,20 @@ export function releaseImageRepository(manifest, repository, component) {
 
 export async function verifyPrivateReleasePackage(manifest, repository, component, { token, fetchImpl = fetch } = {}) {
   const imageRepository = releaseImageRepository(manifest, repository, component);
+  return verifyPrivateImagePackage(imageRepository, repository, { token, fetchImpl });
+}
+
+export async function verifyPrivateImagePackage(imageRepository, repository, { token, fetchImpl = fetch, allowMissing = false } = {}) {
+  if (!imageRepository.startsWith(`ghcr.io/${repository.toLowerCase()}/`)) throw new Error('Private image must belong to the trusted repository.');
   if (!token) throw new Error('GITHUB_TOKEN is required to verify private package visibility.');
   const owner = repository.split('/')[0].toLowerCase();
   const packageName = imageRepository.slice(`ghcr.io/${owner}/`.length);
-  async function metadata(path) {
+  async function metadata(path, missingAllowed = false) {
     const response = await fetchImpl(`https://api.github.com${path}`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
       redirect: 'error', signal: AbortSignal.timeout(15000),
     });
+    if (response.status === 404 && missingAllowed) return null;
     if (!response.ok) throw new Error(`GitHub package metadata request failed with HTTP ${response.status}.`);
     return response.json();
   }
@@ -45,7 +51,8 @@ export async function verifyPrivateReleasePackage(manifest, repository, componen
     throw new Error('GitHub did not confirm the release package owner.');
   }
   const namespace = account.type === 'Organization' ? 'orgs' : 'users';
-  const packageInfo = await metadata(`/${namespace}/${owner}/packages/container/${encodeURIComponent(packageName)}`);
+  const packageInfo = await metadata(`/${namespace}/${owner}/packages/container/${encodeURIComponent(packageName)}`, allowMissing);
+  if (packageInfo === null) return { imageRepository, visibility: 'missing' };
   if (packageInfo.name !== packageName || packageInfo.package_type !== 'container' || packageInfo.owner?.login?.toLowerCase() !== owner) {
     throw new Error('GitHub returned a different release package.');
   }

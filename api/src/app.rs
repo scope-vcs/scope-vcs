@@ -69,6 +69,10 @@ pub fn router(state: AppState) -> Router {
             routes::ACCOUNT_SESSION,
             get(http::account::get_account_session),
         )
+        .route(
+            "/internal/cloud-dispatch/authorize",
+            post(http::dispatch_authorization::authorize),
+        )
         .route(routes::ATTEMPT_CLAIM, post(http::runtime_protocol::claim))
         .route(
             routes::ATTEMPT_HEARTBEAT,

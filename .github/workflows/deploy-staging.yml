@@ -238,6 +238,7 @@ jobs:
       - name: Verify staging resume
         if: inputs.resume_staging
         env:
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ inputs.prepared_run_id }}
         run: >-
@@ -269,6 +270,7 @@ jobs:
         if: steps.release.outputs.has_backend == 'true' && !inputs.resume_staging
         working-directory: candidate
         env:
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           GH_TOKEN: ${{ github.token }}
           SCOPE_MAINTENANCE_BINARY: ./target/release/scope-maintenance
           SCOPE_PRODUCTION_MIGRATION_PLAN: ${{ github.workspace }}/artifacts/production-migration-plan.json
@@ -293,6 +295,7 @@ jobs:
         id: fence
         working-directory: candidate
         env:
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           GITHUB_SHA: ${{ inputs.source_sha }}
           SCOPE_MAINTENANCE_BINARY: ./target/release/scope-maintenance
           SCOPE_STAGING_EVIDENCE_PATH: ${{ github.workspace }}/staging-deployments.json
@@ -319,6 +322,7 @@ jobs:
       - name: Issue smoke login without resetting existing data
         working-directory: candidate
         env:
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           SCOPE_SMOKE_SEED_BINARY: ./target/release/scope-smoke-seed
         run: bash .github/scripts/staging-smoke-seed.sh
 

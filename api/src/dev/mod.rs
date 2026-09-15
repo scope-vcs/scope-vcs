@@ -86,6 +86,8 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
         cache_grants: crate::cache_grants::CacheGrantIssuer::test(),
         media_grants: crate::media_grants::MediaGrantIssuer::local()?,
         runtime_budgets: storage.runtime_budgets,
+        dispatch_broker_token: non_empty_env(crate::config::SCOPE_DISPATCH_BROKER_TOKEN_ENV)
+            .map(Arc::from),
         operator_token: non_empty_env(SCOPE_OPERATOR_TOKEN_ENV).map(Arc::from),
         product_analytics: ProductAnalytics::disabled(),
         repo_events,

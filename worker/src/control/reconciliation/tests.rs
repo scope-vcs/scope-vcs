@@ -1,5 +1,5 @@
 use super::*;
-use crate::execution::fake::{FakeEcs, TEST_IMAGE};
+use crate::execution::fake::FakeEcs;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -13,10 +13,10 @@ async fn ambiguous_cleanup_does_not_block_new_dispatch_or_cancellation_batches()
     let mut phases = CloudReconciliation::default();
     let cleanup = provider.client.clone();
     phases.cleanup.start_if_idle("cleanup", async move {
-        cleanup.stop_terminal_task("uncertain", None).await?;
+        cleanup.stop_terminal_task("uncertain").await?;
         Ok(1)
     });
-    provider.wait_for("ListTasks", 1).await;
+    provider.wait_for("stop", 1).await;
 
     let completed = Arc::new(AtomicUsize::new(0));
     for round in 1..=2 {
@@ -24,7 +24,7 @@ async fn ambiguous_cleanup_does_not_block_new_dispatch_or_cancellation_batches()
         let client = provider.client.clone();
         phases.dispatch.start_if_idle("dispatch", async move {
             client
-                .start(TEST_IMAGE, &format!("attempt_{round}"), "token", 86400)
+                .start(&format!("attempt_{round}"), "token")
                 .await
                 .map_err(|error| anyhow::anyhow!("{error:?}"))?;
             dispatched.fetch_add(1, Ordering::SeqCst);
@@ -35,9 +35,7 @@ async fn ambiguous_cleanup_does_not_block_new_dispatch_or_cancellation_batches()
         phases
             .cancellation
             .start_if_idle("cancellation", async move {
-                client
-                    .stop_terminal_task("canceled", Some("task-canceled"))
-                    .await?;
+                client.stop_terminal_task("canceled").await?;
                 canceled.fetch_add(1, Ordering::SeqCst);
                 Ok(1)
             });
@@ -46,10 +44,10 @@ async fn ambiguous_cleanup_does_not_block_new_dispatch_or_cancellation_batches()
             phases.cancellation.0.join_next().await.unwrap().unwrap();
         })
         .await
-        .expect("healthy phases finish during the five-minute cleanup window");
+        .expect("healthy phases finish while cleanup is pending");
         assert_eq!(completed.load(Ordering::SeqCst), round * 2);
-        assert_eq!(provider.count("RunTask"), round);
-        assert_eq!(provider.count("StopTask"), round);
+        assert_eq!(provider.count("start"), round);
+        assert_eq!(provider.count("stop"), round + 1);
         assert_eq!(phases.cleanup.0.len(), 1);
     }
     // Repeated control polls do not create duplicate cleanup work.
