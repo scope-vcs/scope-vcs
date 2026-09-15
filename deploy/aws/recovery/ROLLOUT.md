@@ -26,7 +26,10 @@ aws cloudformation deploy --region us-east-1 \
 
 4. Read stack outputs. Set `SCOPE_RECOVERY_WRITER_ROLE_ARN`,
    `SCOPE_RECOVERY_BUCKET`, and `SCOPE_RECOVERY_AGE_RECIPIENT` repository variables.
-   Reuse the existing Railway token and private SSH key secrets. Check the
+   Reuse the existing Railway token and the production environment private SSH key
+   secret. Keep the key in that environment; the reusable job selects production.
+   Ensure writer trust uses the production environment subject together with the
+   existing independent main-branch and exact reusable-workflow conditions. Check the
    deployment manifest has the production maintenance and media service IDs.
 5. Dispatch and watch the initial workflow:
 

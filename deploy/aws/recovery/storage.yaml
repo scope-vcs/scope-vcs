@@ -78,7 +78,7 @@ Resources:
                 token.actions.githubusercontent.com:ref: refs/heads/main
                 token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepository}/.github/workflows/recovery-execute.yml@refs/heads/main
                 token.actions.githubusercontent.com:sub: !Sub
-                  - repo:${Owner}@${GitHubRepositoryOwnerId}/${Repository}@${GitHubRepositoryId}:ref:refs/heads/main
+                  - repo:${Owner}@${GitHubRepositoryOwnerId}/${Repository}@${GitHubRepositoryId}:environment:production
                   - Owner: !Select [0, !Split ['/', !Ref GitHubRepository]]
                     Repository: !Select [1, !Split ['/', !Ref GitHubRepository]]
       Policies:

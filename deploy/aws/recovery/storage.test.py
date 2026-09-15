@@ -68,7 +68,7 @@ class RecoveryStorageContracts(unittest.TestCase):
         self.assertEqual(conditions['token.actions.githubusercontent.com:repository_id'], {'Ref': 'GitHubRepositoryId'})
         self.assertEqual(conditions['token.actions.githubusercontent.com:ref'], 'refs/heads/main')
         self.assertEqual(conditions['token.actions.githubusercontent.com:job_workflow_ref'], {'Sub': '${GitHubRepository}/.github/workflows/recovery-execute.yml@refs/heads/main'})
-        self.assertEqual(conditions['token.actions.githubusercontent.com:sub']['Sub'][0], 'repo:${Owner}@${GitHubRepositoryOwnerId}/${Repository}@${GitHubRepositoryId}:ref:refs/heads/main')
+        self.assertEqual(conditions['token.actions.githubusercontent.com:sub']['Sub'][0], 'repo:${Owner}@${GitHubRepositoryOwnerId}/${Repository}@${GitHubRepositoryId}:environment:production')
         self.assertEqual(RESOURCES['RecoveryWriterRole']['Properties']['MaxSessionDuration'], 7200)
 
     def testReaderLoginHasOnlyExactPublicOAuthClients(self):
@@ -87,6 +87,9 @@ class RecoveryStorageContracts(unittest.TestCase):
         self.assertFalse(schedule['concurrency']['cancel-in-progress'])
         job = execute['jobs']['capture']
         self.assertEqual(job['if'], "github.ref == 'refs/heads/main'")
+        self.assertEqual(job['environment'], 'production')
+        self.assertNotIn('SCOPE_RAILWAY_SSH_PRIVATE_KEY', execute[True]['workflow_call']['secrets'])
+        self.assertNotIn('SCOPE_RAILWAY_SSH_PRIVATE_KEY', schedule['jobs']['capture']['secrets'])
         for step in job['steps']:
             if 'uses' in step:
                 self.assertRegex(step['uses'], r'@[a-f0-9]{40}$')

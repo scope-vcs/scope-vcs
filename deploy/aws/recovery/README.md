@@ -70,7 +70,7 @@ authorized administrator. This protects against the backup writer and ordinary
 application credentials; it does not claim immunity from account administration.
 
 The writer assumes `scope-recovery-writer` using GitHub OIDC. Trust binds the
-immutable repository ID, main branch, custom subject, and exact reusable workflow
+immutable repository ID, main branch, production environment subject, and exact reusable workflow
 `.github/workflows/recovery-execute.yml@refs/heads/main`. It may append encrypted
 objects under `sets/*` and emit the recovery metric. It cannot read, delete, change
 retention, or bypass governance. Uploads require `AES256` and checksums. The separate
@@ -96,10 +96,14 @@ been re-encrypted and verified. [age documentation](https://github.com/FiloSotti
 2. Set repository variables `SCOPE_RECOVERY_WRITER_ROLE_ARN`,
    `SCOPE_RECOVERY_BUCKET`, and `SCOPE_RECOVERY_AGE_RECIPIENT` from reviewed outputs
    and the owner's public age recipient.
-3. Reuse the existing protected GitHub secrets `RAILWAY_TOKEN` and
-   `SCOPE_RAILWAY_SSH_PRIVATE_KEY`. The maintenance service must expose its private
+3. Reuse `RAILWAY_TOKEN` and the existing **production environment** secret
+   `SCOPE_RAILWAY_SSH_PRIVATE_KEY`. The reusable capture job selects that environment;
+   the caller must not forward a repository-scoped copy of the SSH key. The maintenance service must expose its private
    `DATABASE_URL`, `SCOPE_BUCKET_*`, and `SCOPE_OBJECT_ENCRYPTION_KEY`; the media API
    owns its `SCOPE_MEDIA_BUCKET_*` and `SCOPE_MEDIA_ENCRYPTION_KEY`.
+   The writer trust requires the matching `:environment:production` subject while
+   independently enforcing `ref: refs/heads/main` and the exact reusable workflow.
+   Apply this trust update before running a newly environment-bound workflow.
 4. Run the `Recovery capture` workflow manually once and verify a completed archive
    and isolated restore before relying on its daily 07:17 UTC schedule.
 

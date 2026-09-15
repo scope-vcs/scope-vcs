@@ -19,4 +19,3 @@ jobs:
     uses: ./.github/workflows/recovery-execute.yml
     secrets:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-      SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
