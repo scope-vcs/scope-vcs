@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { prepareCutover, serviceRoles } from './prepare-cutover.mjs';
+import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
 const manifest = JSON.parse(readFileSync(new URL('../../.github/deployment-services.json',import.meta.url)));
 const fixtureUrl = new URL('postgresql://postgres.railway.internal:5432/scope?sslmode=prefer');
@@ -53,8 +54,8 @@ test('cutover bundles keep credentials private and target only the selected fixe
   assert.throws(()=>prepareCutover(manifest,'other',url,join(root,'bad')),/staging or production/);
 });
 
-test('generated SCRAM verifiers authenticate each new password and reject a wrong password',t=>{
-  const bin=process.env.SCOPE_TEST_POSTGRES_BIN || '/usr/lib/postgresql/16/bin';
+test('generated SCRAM verifiers authenticate each new password and reject a wrong password',{skip:localClusterSkip},t=>{
+  const bin=pgBin;
   const root=mkdtempSync(join(tmpdir(),'scope-cutover-password-'));
   const data=join(root,'data'); let started=false;
   t.after(()=>{

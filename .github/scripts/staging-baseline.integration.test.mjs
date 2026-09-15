@@ -5,10 +5,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { localClusterSkip, pgBin } from '../../deploy/postgres/test-cluster.mjs';
 
-const pgBin = process.env.SCOPE_TEST_POSTGRES_BIN ?? '/usr/lib/postgresql/16/bin';
 test('public repository baselines need no key without migrations, restore authenticated snapshots, and reject unsafe transitions', {
-  skip: !existsSync(join(pgBin, 'initdb')) || process.getuid?.() === 0,
+  skip: localClusterSkip,
 }, (t) => {
   const root = mkdtempSync(join(tmpdir(), 'scope-baseline-test-'));
   const command = (binary, args, options = {}) => execFileSync(binary, args, { encoding: 'utf8', stdio: 'pipe', ...options });

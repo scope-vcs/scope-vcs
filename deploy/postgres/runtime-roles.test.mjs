@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { grants, renderPolicy, tables } from './runtime-roles.mjs';
+import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
 // Always creates its own disposable cluster. Never reads a DATABASE_URL or uses a live server.
-const pgBin = process.env.SCOPE_TEST_POSTGRES_BIN ?? '/usr/lib/postgresql/16/bin';
-test('runtime roles enforce service boundaries on PostgreSQL', async () => {
+test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClusterSkip }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'scope-role-test-'));
   const data = join(dir, 'data');
   let started = false;

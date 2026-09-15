@@ -73,3 +73,4 @@ tokio = { workspace = true, features = ["test-util"] }
 scope_object_store = { workspace = true, features = ["test-support"] }
 scope_postgres = { workspace = true, features = ["test-support"] }
 tower = { workspace = true, features = ["util"] }
+tracing-subscriber.workspace = true
