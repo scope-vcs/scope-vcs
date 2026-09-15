@@ -189,6 +189,7 @@ impl AppState {
 
     #[cfg(test)]
     pub(crate) fn test_state() -> Self {
+        install_test_tracing();
         let test_object_store = Arc::new(scope_object_store::MemoryObjectStore::new());
         let storage = StorageRuntime::for_tests(test_object_store.clone());
         let target = scope_postgres::db::TestDatabaseTarget::required().unwrap();
@@ -220,4 +221,21 @@ impl AppState {
             test_object_store,
         }
     }
+}
+
+/// Routes API error diagnostics into the test's captured output. Internal
+/// errors reach clients as an opaque reference, so without this a failing
+/// test shows a 500 and nothing else.
+#[cfg(test)]
+fn install_test_tracing() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "error".into());
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_ansi(false)
+            .with_test_writer()
+            .init();
+    });
 }
