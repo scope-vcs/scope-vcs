@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+known_hosts="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/ssh_known_hosts"
+# The CLI invokes system ssh. Keep its explicit identity/target arguments, but
+# use the same reviewed server trust on clean CI runners and operator machines.
+exec /usr/bin/ssh -F /dev/null \
+  -o StrictHostKeyChecking=yes \
+  -o "UserKnownHostsFile=$known_hosts" \
+  -o GlobalKnownHostsFile=/dev/null \
+  -o UpdateHostKeys=no "$@"

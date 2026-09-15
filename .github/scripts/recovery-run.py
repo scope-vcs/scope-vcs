@@ -36,6 +36,7 @@ class Railway:
         guard = f'test "$RAILWAY_PROJECT_ID" = {shlex.quote(self.project)} && test "$RAILWAY_ENVIRONMENT_ID" = {shlex.quote(self.environment)} && test "$RAILWAY_SERVICE_ID" = {shlex.quote(service)} || exit 2; exec '
         command = guard + shlex.join(arguments)
         environment = dict(os.environ, RAILWAY_CALLER="skill:use-railway@1.4.0", RAILWAY_AGENT_SESSION="scope-recovery-" + os.environ.get("GITHUB_RUN_ID", "local"))
+        environment["PATH"] = str(ROOT / "deploy/railway/ssh-bin") + os.pathsep + environment.get("PATH", os.defpath)
         environment.pop("SCOPE_RAILWAY_SSH_PRIVATE_KEY", None)
         result = subprocess.run(["railway", "ssh", "--project", self.project, "--environment", self.environment, "--service", service, "--identity-file", str(self.identity), "--", command],
                                 input=incoming, stdout=output if output is not None else subprocess.PIPE, stderr=subprocess.PIPE, env=environment, timeout=2400)

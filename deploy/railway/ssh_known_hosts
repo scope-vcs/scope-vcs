@@ -1,0 +1,3 @@
+# Retained from the operator's established ssh.railway.com trust on 2026-09-15.
+# Verify rotations independently; never replace this pin with an automatic keyscan.
+ssh.railway.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ8X3z81/tuP7CvmK3ZqWgwEvHUR6b04oi2lQJGld2C1

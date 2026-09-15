@@ -48,6 +48,7 @@ node --test .github/scripts/staging-baseline.test.mjs .github/scripts/staging-ba
 node --test .github/scripts/staging-baseline.integration.test.mjs
 node --test deploy/postgres/runtime-roles.test.mjs
 node --test .github/scripts/railway-private-maintenance.test.mjs
+node --test .github/scripts/railway-ssh.test.mjs
 bash -n .github/scripts/railway-private-command.sh .github/scripts/railway-private-maintenance.sh
 node --test .github/scripts/maintenance-runtime.test.mjs .github/scripts/deploy-maintenance-runtime.test.mjs
 bash -n .github/scripts/publish-maintenance-runtime.sh .github/scripts/verify-maintenance-runtime.sh

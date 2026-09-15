@@ -81,6 +81,8 @@ test('every deployment and policy script test is run by a shared gate', () => {
 // select the lane whose artifact it shapes.
 const alwaysOnGateInputs = [
   /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
+  // railway-ssh.test.mjs runs the pinned OpenSSH wrapper in the operations gate.
+  /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
   /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/, /^\.scope\/runs\/checks\.yml$/,

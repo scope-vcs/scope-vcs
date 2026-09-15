@@ -30,5 +30,7 @@ railway_private_command() (
     SCOPE_RAILWAY_SSH_IDENTITY_FILE="$scope_private_key_file"
   fi
   [[ -z "${SCOPE_RAILWAY_SSH_IDENTITY_FILE:-}" ]] || identity=(--identity-file "$SCOPE_RAILWAY_SSH_IDENTITY_FILE")
-  railway ssh --project "$project" --environment "$environment" --service "$service" "${identity[@]}" -- "$remote"
+  local ssh_bin
+  ssh_bin="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../deploy/railway/ssh-bin" && pwd)" || return
+  PATH="$ssh_bin:$PATH" railway ssh --project "$project" --environment "$environment" --service "$service" "${identity[@]}" -- "$remote"
 )
