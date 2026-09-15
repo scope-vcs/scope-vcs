@@ -157,5 +157,5 @@ test('imported releases extract smoke tools and initialize private credentials',
   for (const name of ['Build smoke binaries', 'Upload staging commands', 'Extract candidate commands', 'Initialize smoke credentials directory']) {
     assert.doesNotMatch(workflowStep(name), /\n        if:/);
   }
-  assert.match(workflowStep('Issue smoke login without resetting existing data'), /staging-smoke-seed\.sh\n/);
+  assert.match(workflowStep('Issue smoke login without resetting existing data'), /run: bash \.\.\/\.github\/scripts\/staging-smoke-seed\.sh\n/);
 });

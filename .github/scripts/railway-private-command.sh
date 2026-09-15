@@ -25,7 +25,8 @@ railway_private_command() (
     scope_private_key_file="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-key.XXXXXXXX")" || return
     trap 'rm -f -- "$scope_private_key_file"' EXIT
     chmod 0600 "$scope_private_key_file" || return
-    printf '%s\n' "$SCOPE_RAILWAY_SSH_PRIVATE_KEY" > "$scope_private_key_file"
+    # mktemp already created this private file; callers may enable noclobber.
+    printf '%s\n' "$SCOPE_RAILWAY_SSH_PRIVATE_KEY" >| "$scope_private_key_file" || return
     unset SCOPE_RAILWAY_SSH_PRIVATE_KEY
     SCOPE_RAILWAY_SSH_IDENTITY_FILE="$scope_private_key_file"
   fi

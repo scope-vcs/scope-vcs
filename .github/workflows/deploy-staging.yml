@@ -324,7 +324,7 @@ jobs:
         env:
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           SCOPE_SMOKE_SEED_BINARY: ./target/release/scope-smoke-seed
-        run: bash .github/scripts/staging-smoke-seed.sh
+        run: bash ../.github/scripts/staging-smoke-seed.sh
 
       - name: Exercise optional release transitions
         if: inputs.run_transition_tests

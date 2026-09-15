@@ -126,6 +126,25 @@ test('temporary SSH identity is private and removed after remote failure', t => 
   assert.doesNotMatch(result.stdout + result.stderr, /test-private-key/);
 });
 
+test('temporary SSH identity works under noclobber without changing caller protection', t => {
+  const f = fixture(t);
+  const protectedFile = join(f.dir, 'protected');
+  writeFileSync(protectedFile, 'keep');
+  const result = spawnSync('bash', ['--norc', '-c', `
+    set -euC
+    source "$1"
+    railway_private_command "$2" printf '%s' connected
+    ! printf overwrite > "$3" 2>/dev/null
+  `, 'test', commandHelper, production, protectedFile], {
+    env: { ...f.env, SCOPE_RAILWAY_SSH_PRIVATE_KEY: 'test-private-key' }, encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'connected');
+  assert.equal(readFileSync(protectedFile, 'utf8'), 'keep');
+  assert.equal(existsSync(readFileSync(f.env.TEST_IDENTITY, 'utf8')), false);
+  assert.doesNotMatch(result.stdout + result.stderr, /test-private-key/);
+});
+
 test('apply refreshes runtime grants and surfaces grant failures', t => {
   const f = fixture(t);
   const success = f.run([production, 'apply']);

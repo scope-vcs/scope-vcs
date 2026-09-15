@@ -24,5 +24,5 @@ test('routine staging deploys once and transition tests are opt-in', () => {
   assert.match(workflow, /name: Exercise optional release transitions\n        if: inputs.run_transition_tests/);
   assert.equal((workflow.match(/run: bash \.\.\/\.github\/scripts\/deploy-staging-railway\.sh/g) ?? []).length, 1);
   assert.doesNotMatch(workflow, /cargo build[^\n]+scope-maintenance|pnpm build/);
-  assert.match(workflow, /run: bash \.github\/scripts\/staging-smoke-seed\.sh\n/);
+  assert.match(workflow, /run: bash \.\.\/\.github\/scripts\/staging-smoke-seed\.sh\n/);
 });
