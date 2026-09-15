@@ -2,6 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { assertDeploymentImage } from './railway-artifact.mjs';
 import { readRailway } from './railway-read.mjs';
 import { RAILWAY_MUTATION_TIMEOUT_MS } from './railway-retry.mjs';
 
@@ -49,9 +50,8 @@ export function verifyRuntimeDeployment(target, receipt, deploymentId, deploymen
     throw new Error('The exact maintenance runtime deployment is not ready in the requested service and environment.');
   }
   const manifest = deployment.meta?.serviceManifest;
-  if (manifest?.source?.image !== receipt.image ||
-      (deployment.meta?.imageDigest && deployment.meta.imageDigest !== receipt.image.split('@')[1]) ||
-      manifest?.deploy?.startCommand !== startCommand || manifest?.deploy?.healthcheckPath !== '/readyz') {
+  assertDeploymentImage(receipt.image, deployment);
+  if (manifest?.deploy?.startCommand !== startCommand || manifest?.deploy?.healthcheckPath !== '/readyz') {
     throw new Error('Maintenance runtime deployment image, start command, or health check does not match.');
   }
 }
@@ -67,9 +67,14 @@ export async function deployMaintenanceRuntime({ manifest, environment, receipt,
 
   const updated = request(railway, 'mutation MaintenanceRuntimeConfig($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}', {
     serviceId: target.serviceId, environmentId: target.environmentId,
-    input: { source: { image: receipt.image, repo: null }, rootDirectory: '/', railwayConfigFile: null, buildCommand: null, startCommand, healthcheckPath: '/readyz', healthcheckTimeout: 60, preDeployCommand: [], registryCredentials: credentials },
+    input: { source: { image: receipt.image }, rootDirectory: '/', railwayConfigFile: null, buildCommand: null, startCommand, healthcheckPath: '/readyz', healthcheckTimeout: 60, preDeployCommand: [], registryCredentials: credentials },
   });
   if (updated.serviceInstanceUpdate !== true) throw new Error('Railway did not confirm maintenance runtime configuration.');
+  // Setting repo:null alongside image clears Railway's source selection. Select
+  // only the image, then verify the stored source before starting any deployment.
+  const configured = request(railway, 'query MaintenanceRuntimeSource($environmentId:String!){environment(id:$environmentId){projectId config(decryptVariables:false)}}', { environmentId: target.environmentId }).environment;
+  const source = configured?.config?.services?.[target.serviceId]?.source;
+  if (configured?.projectId !== target.projectId || source?.image !== receipt.image || source?.repo) throw new Error('Railway did not retain the pinned maintenance image source.');
   // Never retry this non-idempotent mutation after an uncertain response.
   const deployed = request(railway, 'mutation MaintenanceRuntimeDeploy($serviceId:String!,$environmentId:String!){serviceInstanceDeployV2(serviceId:$serviceId,environmentId:$environmentId)}', { serviceId: target.serviceId, environmentId: target.environmentId });
   const deploymentId = deployed.serviceInstanceDeployV2;

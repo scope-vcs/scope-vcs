@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { assertDeploymentImage } from './railway-artifact.mjs';
 // Temporary maintenance serving uses the release's API image, never a separate service.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -46,7 +47,7 @@ export function enterGate(gate, { railway, persist, deployments }) {
     const matches = deployments(gate).filter(deployment =>
       Date.parse(deployment.createdAt) >= Date.parse(gate.capturedAt) &&
       deployment.serviceId === gate.serviceId &&
-      deployment.meta?.serviceManifest?.source?.image === gate.image &&
+      matchesImage(gate.image, deployment) &&
       deployment.meta?.serviceManifest?.deploy?.startCommand === command &&
       !['REMOVED', 'FAILED', 'CRASHED'].includes(deployment.status));
     if (matches.length > 1) throw new Error('Multiple maintenance deployments match; reconcile before retrying.');
@@ -78,7 +79,7 @@ export function recloseGate(gate, options) {
   }
   const stopped = value => ['REMOVED', 'FAILED', 'CRASHED'].includes(value.status) || value.deploymentStopped === true;
   const current = inventory.filter(value => !stopped(value));
-  const matches = current.filter(value => value.serviceId === gate.serviceId && value.meta?.serviceManifest?.source?.image === gate.image && value.meta?.serviceManifest?.deploy?.startCommand === command);
+  const matches = current.filter(value => value.serviceId === gate.serviceId && matchesImage(gate.image, value) && value.meta?.serviceManifest?.deploy?.startCommand === command);
   if (matches.length > 1) throw new Error('Multiple active maintenance deployments require reconciliation.');
   if (!matches.length && gate.deploymentId) {
     const previous = inventory.find(value => value.id === gate.deploymentId)
@@ -113,10 +114,13 @@ export function restoreGateConfiguration(gate, { railway, persist }) {
   persist(restored);
   return restored;
 }
+function matchesImage(image, deployment) {
+  try { assertDeploymentImage(image, deployment); return true; } catch { return false; }
+}
 export function verifyGateDeployment(gate, deployment) {
   if (deployment?.id !== gate.deploymentId || deployment.serviceId !== gate.serviceId || deployment.status !== 'SUCCESS') throw new Error('The exact maintenance deployment is not ready.');
   const manifest = deployment.meta?.serviceManifest;
-  if (manifest?.source?.image !== gate.image && deployment.meta?.imageDigest !== gate.image.split('@')[1]) throw new Error('Maintenance deployment image does not match the pinned API image.');
+  assertDeploymentImage(gate.image, deployment);
   if (manifest?.deploy?.startCommand !== command || manifest?.deploy?.healthcheckPath !== '/readyz') throw new Error('Maintenance deployment configuration was not activated.');
 }
 function railway(query, variables) {

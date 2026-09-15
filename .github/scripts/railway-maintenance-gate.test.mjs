@@ -35,8 +35,9 @@ test('restoration removes temporary command and healthcheck without launching ol
 });
 test('readiness requires exact gate identity, image and effective maintenance config', () => {
   const gate = { ...base, deploymentId: 'exact-id' };
-  const deployment = { id: 'exact-id', serviceId: base.serviceId, status: 'SUCCESS', meta: { serviceManifest: { source: { image: base.image }, deploy: { startCommand: '/app/bin/scope-maintenance serve', healthcheckPath: '/readyz' } } } };
+  const deployment = { id: 'exact-id', serviceId: base.serviceId, status: 'SUCCESS', meta: { image: base.image, imageDigest: base.image.split('@')[1], serviceManifest: { deploy: { startCommand: '/app/bin/scope-maintenance serve', healthcheckPath: '/readyz' } } } };
   verifyGateDeployment(gate, deployment);
+  assert.throws(() => verifyGateDeployment(gate, { ...deployment, meta: { ...deployment.meta, image: base.image.replace('a'.repeat(64), 'b'.repeat(64)) } }), /differs/);
   assert.throws(() => verifyGateDeployment(gate, { ...deployment, id: 'other' }), /exact/);
   deployment.meta.serviceManifest.deploy.startCommand = 'normal-server';
   assert.throws(() => verifyGateDeployment(gate, deployment), /configuration/);
@@ -46,7 +47,7 @@ test('snapshot refuses a service from another project', () => {
 });
 test('interrupted activation reconciles a unique exact gate without redeploying', () => {
   const gate = { ...base, previous, phase: 'deploying', capturedAt: '2026-09-09T12:00:00Z' };
-  const candidate = { id: 'reconciled', serviceId: base.serviceId, createdAt: '2026-09-09T12:01:00Z', status: 'SUCCESS', meta: { serviceManifest: { source: { image: base.image }, deploy: { startCommand: '/app/bin/scope-maintenance serve' } } } };
+  const candidate = { id: 'reconciled', serviceId: base.serviceId, createdAt: '2026-09-09T12:01:00Z', status: 'SUCCESS', meta: { image: base.image, imageDigest: base.image.split('@')[1], serviceManifest: { deploy: { startCommand: '/app/bin/scope-maintenance serve' } } } };
   const options = { railway: () => assert.fail('must not deploy'), persist: () => {}, deployments: () => [candidate] };
   assert.equal(enterGate(gate, options).deploymentId, 'reconciled');
   assert.throws(() => enterGate(gate, { ...options, deployments: () => [candidate, { ...candidate, id: 'duplicate' }] }), /Multiple/);
@@ -72,7 +73,7 @@ test('reclose preserves a lost deployment response until the exact attempt appea
   assert.equal(persisted.phase, 'deploying');
   const options = { railway: () => assert.fail('must not mutate'), persist: () => {}, deployments: () => [] };
   assert.throws(() => recloseGate(persisted, options), /outcome is unknown/);
-  const candidate = { id: 'accepted-gate', serviceId: base.serviceId, createdAt: '2026-09-09T12:01:00Z', status: 'SUCCESS', meta: { serviceManifest: { source: { image: base.image }, deploy: { startCommand: '/app/bin/scope-maintenance serve' } } } };
+  const candidate = { id: 'accepted-gate', serviceId: base.serviceId, createdAt: '2026-09-09T12:01:00Z', status: 'SUCCESS', meta: { image: base.image, imageDigest: base.image.split('@')[1], serviceManifest: { deploy: { startCommand: '/app/bin/scope-maintenance serve' } } } };
   assert.equal(recloseGate(persisted, { ...options, deployments: () => [candidate] }).deploymentId, candidate.id);
   assert.throws(() => recloseGate(persisted, { ...options, deployments: () => [candidate, { ...candidate, id: 'duplicate' }] }), /Multiple/);
 });

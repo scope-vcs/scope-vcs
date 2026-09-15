@@ -87,7 +87,7 @@ test('only initial package creation accepts missing metadata', async () => {
   await assert.rejects(verifyPrivateImagePackage(imageRepository, repository, {token:'token',fetchImpl}), /HTTP 404/);
 });
 
-test('SSH canary refuses a changed binary or public database before preflight', t => {
+test('SSH canary verifies the service identity, binary and private database before preflight', t => {
   const root = mkdtempSync(join(tmpdir(), 'scope-maintenance-canary-'));
   t.after(() => rmSync(root, {recursive:true,force:true}));
   mkdirSync(join(root,'bin'));
@@ -100,20 +100,26 @@ test('SSH canary refuses a changed binary or public database before preflight', 
   writeFileSync(join(root,'bin/railway'),`#!/usr/bin/env node
 const {spawnSync}=require('node:child_process');
 const args=process.argv.slice(2); const get=k=>args[args.indexOf(k)+1];
-const command=args.at(-1).replaceAll('/app/bin/scope-maintenance',process.env.TEST_BINARY_PATH);
+const command=args.at(-1).replaceAll('/app/bin/scope-maintenance',process.env.TEST_BINARY_PATH).replaceAll('/proc/1/status',process.env.TEST_PROCESS_STATUS);
 const result=spawnSync('sh',['-c',command],{stdio:'inherit',env:{...process.env,
 RAILWAY_PROJECT_ID:get('--project'),RAILWAY_ENVIRONMENT_ID:get('--environment'),RAILWAY_SERVICE_ID:get('--service')}});
 process.exit(result.status ?? 1);
 `,{mode:0o755});
-  writeFileSync(join(root,'bin/id'),'#!/bin/sh\necho 65532\n',{mode:0o755});
+  writeFileSync(join(root,'bin/id'),'#!/bin/sh\necho 0\n',{mode:0o755});
+  const status = join(root,'process-status');
+  writeFileSync(status,'Uid:\t65532\t65532\t65532\t65532\n');
   const run = database => spawnSync('bash',['.github/scripts/verify-maintenance-runtime.sh','staging',receipt], {
-    env:{...process.env,PATH:`${root}/bin:${process.env.PATH}`,TEST_BINARY_PATH:executable,TEST_PREFLIGHT:preflight,DATABASE_URL:database}, encoding:'utf8',timeout:60000,
+    env:{...process.env,PATH:`${root}/bin:${process.env.PATH}`,TEST_BINARY_PATH:executable,TEST_PROCESS_STATUS:status,TEST_PREFLIGHT:preflight,DATABASE_URL:database}, encoding:'utf8',timeout:60000,
   });
   assert.notEqual(run('postgres://scope@public.example:5432/scope').status,0);
   assert(!existsSync(preflight));
   let result=run('postgres://scope@postgres.railway.internal:5432/scope');
   assert.equal(result.status,0,result.stderr);
   rmSync(preflight);
+  writeFileSync(status,'Uid:\t0\t0\t0\t0\n');
+  assert.notEqual(run('postgres://scope@postgres.railway.internal:5432/scope').status,0);
+  assert(!existsSync(preflight));
+  writeFileSync(status,'Uid:\t65532\t65532\t65532\t65532\n');
   writeFileSync(executable,'#!/bin/sh\ntouch "$TEST_PREFLIGHT"\n# changed\n');
   result=run('postgres://scope@postgres.railway.internal:5432/scope');
   assert.notEqual(result.status,0);

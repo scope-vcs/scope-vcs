@@ -104,12 +104,17 @@ export function assertDeploymentArtifact(release, component, deployment, { deplo
   if (!deploymentId || deployment?.id !== deploymentId) throw new Error('Artifact verification requires the exact activated deployment ID.');
   const artifact = release.components[component];
   if (deployment.serviceId && deployment.serviceId !== artifact.serviceId) throw new Error('Artifact deployment belongs to another service.');
-  const expectedDigest = artifact.image.split('@')[1];
-  const meta = deployment.meta ?? {};
+  return assertDeploymentImage(artifact.image, deployment);
+}
+
+export function assertDeploymentImage(image, deployment) {
+  if (!digestReference.test(image ?? '')) throw new Error('Invalid immutable Railway image.');
+  const expectedDigest = image.split('@')[1];
+  const meta = deployment?.meta ?? {};
   const references = [meta.image, meta.serviceManifest?.source?.image].filter((value) => typeof value === 'string' && value);
-  if (references.some((value) => value !== artifact.image)) throw new Error('Activated deployment image differs from the prepared artifact.');
+  if (references.some((value) => value !== image)) throw new Error('Activated deployment image differs from the prepared artifact.');
   if (meta.imageDigest && meta.imageDigest !== expectedDigest) throw new Error('Activated deployment digest differs from the prepared artifact.');
-  if (meta.imageDigest !== expectedDigest && !references.includes(artifact.image)) {
+  if (meta.imageDigest !== expectedDigest && !references.includes(image)) {
     throw new Error('Activated deployment has no immutable image evidence.');
   }
   return deployment;

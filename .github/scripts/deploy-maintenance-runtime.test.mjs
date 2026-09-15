@@ -19,6 +19,7 @@ function harness({ deployment = ready(), intercept = () => undefined } = {}) {
       const intercepted = intercept(query, variables);
       if (intercepted !== undefined) return intercepted;
       if (query.includes('MaintenanceRuntimeTarget')) return { data: { environment: { projectId: target.projectId, config: { services: { [target.serviceId]: {} } } } } };
+      if (query.includes('MaintenanceRuntimeSource')) return { data: { environment: { projectId: target.projectId, config: { services: { [target.serviceId]: { source: { image: receipt.image } } } } } } };
       if (query.includes('MaintenanceRuntimeConfig')) return { data: { serviceInstanceUpdate: true } };
       if (query.includes('mutation MaintenanceRuntimeDeploy')) return { data: { serviceInstanceDeployV2: id(7) } };
       return { data: { deployment } };
@@ -41,7 +42,7 @@ test('target rejects application/database services, unknown environments and con
   assert.equal(maintenanceTarget(manifest, 'production').environmentId, id(5));
 });
 
-test('deploy config clears repository settings and deploys only the dedicated service without domains', async () => {
+test('deploy selects and verifies the pinned image before starting the dedicated service', async () => {
   const h = harness();
   const result = await deployMaintenanceRuntime(input, h.options);
   assert.equal(result.deploymentId, id(7));
@@ -52,7 +53,7 @@ test('deploy config clears repository settings and deploys only the dedicated se
     assert.equal(mutation.variables.environmentId, target.environmentId);
     assert.doesNotMatch(mutation.query, /domain/i);
   }
-  assert.deepEqual(mutations[0].variables.input, { source: { image: receipt.image, repo: null }, rootDirectory: '/', railwayConfigFile: null, buildCommand: null, startCommand: '/app/bin/scope-maintenance serve', healthcheckPath: '/readyz', healthcheckTimeout: 60, preDeployCommand: [], registryCredentials: input.credentials });
+  assert.deepEqual(mutations[0].variables.input, { source: { image: receipt.image }, rootDirectory: '/', railwayConfigFile: null, buildCommand: null, startCommand: '/app/bin/scope-maintenance serve', healthcheckPath: '/readyz', healthcheckTimeout: 60, preDeployCommand: [], registryCredentials: input.credentials });
   assert.deepEqual(h.reports, [`Maintenance runtime deployment ID: ${id(7)}`]);
 });
 
@@ -92,7 +93,7 @@ test('failure, timeout, mismatched identity and wrong activated configuration fa
   }
   for (const deployment of cases) {
     const h = harness({ deployment });
-    await assert.rejects(deployMaintenanceRuntime(input, h.options), /failed or stopped|another target|timed out|does not match/);
+    await assert.rejects(deployMaintenanceRuntime(input, h.options), /failed or stopped|another target|timed out|does not match|differs/);
     assert.equal(h.calls.filter(call => call.query.includes('mutation MaintenanceRuntimeDeploy')).length, 1);
   }
 });
@@ -111,4 +112,21 @@ test('Railway mutation secrets stay on stdin, account token is isolated, timeout
   });
   assert.throws(() => client('mutation Test{test}', input.credentials), error => /outcome may be unknown/.test(error.message) && !error.message.includes('durable-secret'));
   assert.equal(count, 1);
+});
+
+test('a dropped image or retained repository source cannot start a deployment', async () => {
+  for (const source of [{}, {image: receipt.apiImage}, {image: receipt.image, repo: 'scope-vcs/scope-vcs'}]) {
+    const h = harness({intercept: query => query.includes('MaintenanceRuntimeSource') ? {data: {environment: {projectId: target.projectId, config: {services: {[target.serviceId]: {source}}}}}} : undefined});
+    await assert.rejects(deployMaintenanceRuntime(input, h.options), /did not retain/);
+    assert.equal(h.calls.filter(call => call.query.includes('mutation MaintenanceRuntimeDeploy')).length, 0);
+  }
+});
+
+test('runtime deployment accepts Railway image metadata without a manifest source', async () => {
+  const deployment = ready();
+  deployment.meta.image = receipt.image;
+  delete deployment.meta.serviceManifest.source;
+  assert.equal((await deployMaintenanceRuntime(input, harness({deployment}).options)).deploymentId, id(7));
+  deployment.meta.image = receipt.apiImage;
+  await assert.rejects(deployMaintenanceRuntime(input, harness({deployment}).options), /differs/);
 });
