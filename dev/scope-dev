@@ -350,7 +350,7 @@ prepare_local_schema() {
 }
 
 build_local_services() {
-  LOCAL_CARGO_TARGET_DIR="$("$ROOT/dev/cargo-target-dir" "$ROOT/Cargo.toml")"
+  LOCAL_CARGO_TARGET_DIR="$(cd "$ROOT" && ./dev/cargo-target-dir Cargo.toml)"
   (
     cd "$ROOT"
     cargo build --locked --features api/local-dev \
