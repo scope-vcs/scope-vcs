@@ -40,6 +40,7 @@ RUN sed -i \
         libheif-examples \
         "postgresql-15=${POSTGRES_VERSION}" \
         "postgresql-client-15=${POSTGRES_VERSION}" \
+        time \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \

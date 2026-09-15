@@ -12,7 +12,7 @@ npm ci --prefix dependency-analyzer --ignore-scripts
 host="$(rustc -vV | sed -n 's/^host: //p')"
 target="$(jq -c --arg host "$host" '.targets[] | select(.triple == $host)' cli/distribution/targets.json)"
 test -n "$target"
-scope_binary=cli/target/release/scope
+scope_binary="$(./dev/cargo-target-dir cli/Cargo.toml)/release/scope"
 [[ "$host" == *windows* ]] && scope_binary+=.exe
 artifact="cli/dist/$(jq -r '.artifact' <<<"$target")"
 SCOPE_BINARY="$scope_binary" \

@@ -18,6 +18,7 @@ test('timeout terminates the time wrapper and its child holding inherited pipes'
   const started = Date.now();
   const result = await execute('/usr/bin/time', [process.execPath, '-e',
     "require('fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)", pidPath], { timeoutMs: 500 });
+  assert.equal(result.error, null);
   const pid = Number(await readFile(pidPath, 'utf8'));
   assert.equal(result.timedOut, true);
   assert.notEqual(result.code, 0);
