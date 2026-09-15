@@ -5,6 +5,8 @@ on:
     secrets:
       RAILWAY_TOKEN:
         required: true
+      SCOPE_RAILWAY_SSH_PRIVATE_KEY:
+        required: true
 
 permissions:
   contents: read

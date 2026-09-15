@@ -224,6 +224,10 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   }
   mkdirSync(join(root, 'deploy/postgres'), { recursive: true })
   copyFileSync(new URL('../../deploy/postgres/runtime-roles.mjs', import.meta.url), join(root, 'deploy/postgres/runtime-roles.mjs'))
+  mkdirSync(join(root, 'deploy/railway/ssh-bin'), { recursive: true })
+  for (const name of ['ssh-bin/ssh', 'ssh_known_hosts']) {
+    copyFileSync(new URL(`../../deploy/railway/${name}`, import.meta.url), join(root, 'deploy/railway', name))
+  }
   // The lower deployment boundary models Railway readiness and immutable receipts.
   // It rejects the real failure: a Git router cannot resolve its stopped API backend.
   writeFileSync(join(root, 'provider.mjs'), `

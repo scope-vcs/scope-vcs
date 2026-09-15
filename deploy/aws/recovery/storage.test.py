@@ -88,8 +88,8 @@ class RecoveryStorageContracts(unittest.TestCase):
         job = execute['jobs']['capture']
         self.assertEqual(job['if'], "github.ref == 'refs/heads/main'")
         self.assertEqual(job['environment'], 'production')
-        self.assertNotIn('SCOPE_RAILWAY_SSH_PRIVATE_KEY', execute[True]['workflow_call']['secrets'])
-        self.assertNotIn('SCOPE_RAILWAY_SSH_PRIVATE_KEY', schedule['jobs']['capture']['secrets'])
+        self.assertEqual(execute[True]['workflow_call']['secrets']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], {'required': True})
+        self.assertEqual(schedule['jobs']['capture']['secrets']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], '${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}')
         for step in job['steps']:
             if 'uses' in step:
                 self.assertRegex(step['uses'], r'@[a-f0-9]{40}$')

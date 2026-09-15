@@ -98,7 +98,9 @@ been re-encrypted and verified. [age documentation](https://github.com/FiloSotti
    and the owner's public age recipient.
 3. Reuse `RAILWAY_TOKEN` and the existing **production environment** secret
    `SCOPE_RAILWAY_SSH_PRIVATE_KEY`. The reusable capture job selects that environment;
-   the caller must not forward a repository-scoped copy of the SSH key. The maintenance service must expose its private
+   its explicit named secret declaration and caller mapping enable secret resolution.
+   The production environment supplies the key; do not create a repository-scoped
+   copy or inherit unrelated repository secrets. The maintenance service must expose its private
    `DATABASE_URL`, `SCOPE_BUCKET_*`, and `SCOPE_OBJECT_ENCRYPTION_KEY`; the media API
    owns its `SCOPE_MEDIA_BUCKET_*` and `SCOPE_MEDIA_ENCRYPTION_KEY`.
    The writer trust requires the matching `:environment:production` subject while
