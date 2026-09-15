@@ -225,7 +225,8 @@
         ".github/scripts/deployment-components.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
-        ".github/scripts/railway-artifact.mjs"
+        ".github/scripts/railway-artifact.mjs",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "cache-service/",
@@ -247,7 +248,8 @@
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
-        "dev/checks/dependency-analyzer"
+        "dev/checks/dependency-analyzer",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "crates/",
@@ -269,7 +271,8 @@
         ".github/scripts/railway-artifact.mjs",
         "dev/local-process.py",
         "dev/dotenv.sh",
-        "deploy/railway/reconcile-media.mjs"
+        "deploy/railway/reconcile-media.mjs",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "media-worker/",
@@ -292,7 +295,8 @@
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
-        "dev/checks/contract"
+        "dev/checks/contract",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "api/",
@@ -317,7 +321,8 @@
         ".github/scripts/railway-artifact.mjs",
         "deploy/railway/reconcile-media.mjs",
         "dev/local-process.py",
-        "dev/dotenv.sh"
+        "dev/dotenv.sh",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "media-service/",
@@ -337,7 +342,8 @@
         ".github/scripts/deployment-components.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
-        ".github/scripts/railway-artifact.mjs"
+        ".github/scripts/railway-artifact.mjs",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "crates/",
@@ -361,7 +367,8 @@
         "dev/scope-dev",
         "dev/run-ci-local-stack",
         "dev/local-process.py",
-        "dev/dotenv.sh"
+        "dev/dotenv.sh",
+        ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "api/",

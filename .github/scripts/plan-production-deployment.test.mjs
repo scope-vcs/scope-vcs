@@ -164,6 +164,11 @@ test("changes select the required deployment lanes", () => {
       { cache: true, "run-worker": true, "git-router": true, "media-api": true, api: true, web: true },
     ],
     [
+      "the production deploy wrapper reruns every service it activates",
+      [".github/scripts/deploy-monitored-railway.sh"],
+      { cache: true, "run-worker": true, "media-worker": true, "git-router": true, "media-api": true, api: true, web: true },
+    ],
+    [
       "check entrypoints select the lane they gate",
       ["dev/checks/web"],
       { web: true },
