@@ -76,13 +76,28 @@ test('every deployment and policy script test is run by a shared gate', () => {
   }
 });
 
-test('gate inputs select checks through change scopes', () => {
+// The plan job runs the operations and policy gates on every pull request and
+// release, so their inputs need no component lane. Every other gate input must
+// select the lane whose artifact it shapes.
+const alwaysOnGateInputs = [
+  /^\.github\/scripts\//, /^bench\//, /^deploy\/aws\//, /^dev\/analytics\//, /^dev\/licensing\//,
+  /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py)$/,
+  /^\.github\/(source-size-audit|railway-experiments)\.json$/, /^\.scope\/runs\/checks\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure|deployment-tests)\.yml$/,
+  /\.test\.mjs$/, /\.md$/,
+];
+
+test('gate inputs select a lane unless the always-on gates own them', () => {
   const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' }).trim().split('\n');
-  const gateInputs = paths.filter((path) => existsSync(resolve(root, path)) && /^(dev\/|\.github\/scripts\/|bench\/|deploy\/aws\/)/.test(path));
-  gateInputs.push('.scope/runs/checks.yml', '.github/source-size-audit.json');
+  const gateInputs = paths.filter((path) => existsSync(resolve(root, path)) && /^(dev\/|\.github\/(scripts|workflows)\/|bench\/|deploy\/)/.test(path));
+  gateInputs.push('.scope/runs/checks.yml', '.github/source-size-audit.json', '.github/railway-experiments.json');
   for (const path of gateInputs) {
-    const selected = classifyChanges(manifest, [path]);
-    assert.ok(Object.values(selected).some(Boolean), `${path} must select checks`);
+    const selected = Object.values(classifyChanges(manifest, [path])).some(Boolean);
+    const alwaysOn = alwaysOnGateInputs.some((pattern) => pattern.test(path));
+    assert.ok(selected || alwaysOn, `${path} must select a lane or belong to the operations or policy gates`);
+  }
+  for (const gate of ['ops', 'policy']) {
+    for (const caller of ['ci', 'release']) assert.ok(read(`.github/workflows/${caller}.yml`).includes(`dev/checks/${gate}`), `${caller} must always run ${gate}`);
   }
 });
 
