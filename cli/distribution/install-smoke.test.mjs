@@ -10,10 +10,17 @@ import test from 'node:test';
 import { promisify } from 'node:util';
 
 const execute = promisify(execFile);
+
+function requiredEnv(name) {
+  const value = process.env[name];
+  if (!value) throw new Error(`Set ${name}; the installer check never guesses build output paths`);
+  return value;
+}
+
 const windows = process.platform === 'win32';
 const executable = windows ? 'scope.exe' : 'scope';
-const binary = resolve(process.env.SCOPE_TEST_BINARY ?? `cli/target/release/${executable}`);
-const artifact = resolve(process.env.SCOPE_TEST_ARTIFACT ?? '');
+const binary = resolve(requiredEnv('SCOPE_TEST_BINARY'));
+const artifact = resolve(requiredEnv('SCOPE_TEST_ARTIFACT'));
 const service = join(dirname(binary), windows ? 'scope-cli-service.exe' : 'scope-cli-service');
 const configuration = JSON.parse(await readFile(new URL('./targets.json', import.meta.url), 'utf8'));
 const platform = { linux: 'linux', darwin: 'macos', win32: 'windows' }[process.platform];

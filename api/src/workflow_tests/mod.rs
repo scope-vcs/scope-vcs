@@ -184,6 +184,20 @@ async fn response_json(response: Response) -> serde_json::Value {
     serde_json::from_slice(&body).unwrap()
 }
 
+/// Asserts the status and parses the JSON body. On mismatch the panic carries
+/// the response body, so a server error names its cause in the test log.
+async fn expect_json(response: Response, expected: StatusCode) -> serde_json::Value {
+    let status = response.status();
+    let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    assert_eq!(
+        status,
+        expected,
+        "unexpected status; body: {}",
+        String::from_utf8_lossy(&body)
+    );
+    serde_json::from_slice(&body).unwrap()
+}
+
 fn assert_text_content(value: &serde_json::Value, expected: &str) {
     assert_eq!(value["kind"], "text");
     assert_eq!(value["text"], expected);

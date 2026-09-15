@@ -350,11 +350,7 @@ prepare_local_schema() {
 }
 
 build_local_services() {
-  LOCAL_CARGO_TARGET_DIR="$(
-    cd "$ROOT"
-    cargo metadata --locked --no-deps --format-version 1 |
-      node -e 'const fs = require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(0, "utf8")).target_directory)'
-  )"
+  LOCAL_CARGO_TARGET_DIR="$("$ROOT/dev/cargo-target-dir" "$ROOT/Cargo.toml")"
   (
     cd "$ROOT"
     cargo build --locked --features api/local-dev \

@@ -261,6 +261,7 @@
       "files": [
         "dev/run-ci-local-stack",
         "dev/scope-dev",
+        "dev/cargo-target-dir",
         "media-worker/Dockerfile",
         "Cargo.lock",
         "Cargo.toml",
@@ -312,6 +313,7 @@
         "dev/media-smoke.mjs",
         "dev/run-ci-local-stack",
         "dev/scope-dev",
+        "dev/cargo-target-dir",
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
@@ -369,6 +371,7 @@
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
         "dev/scope-dev",
+        "dev/cargo-target-dir",
         "dev/run-ci-local-stack",
         "dev/local-process.py",
         "dev/dotenv.sh",
@@ -399,6 +402,7 @@
         ".github/scripts/select-cli-distribution-targets.mjs",
         ".github/scripts/deploy-railway.sh",
         "dev/scope-dev",
+        "dev/cargo-target-dir",
         "dev/run-ci-local-stack",
         "dev/local-process.py",
         "dev/dotenv.sh",
@@ -421,6 +425,7 @@
         "rust-toolchain.toml",
         ".github/workflows/scope-cli-build.yml",
         "dev/checks/cli",
+        "dev/cargo-target-dir",
         ".github/scripts/select-cli-distribution-targets.mjs"
       ],
       "prefixes": [

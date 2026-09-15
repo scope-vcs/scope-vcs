@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Print the Cargo target directory for a manifest. Honors CARGO_TARGET_DIR and
+# .cargo/config overrides, so callers never guess a target/ path.
+set -euo pipefail
+manifest="${1:?usage: dev/cargo-target-dir <path/to/Cargo.toml>}"
+cargo metadata --manifest-path "$manifest" --locked --no-deps --format-version 1 | jq -r '.target_directory'
