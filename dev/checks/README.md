@@ -31,9 +31,8 @@ accessing native credential stores. The full
 Rust suite runs on Linux; authentication fixtures currently use its file session
 store. All six targets produce complete CLI and analyzer bundles; ARM64 Linux
 and Windows remain build-only until native runners are available. Pull requests
-build only macOS Apple Silicon and Windows x64, because the `cli` entrypoint
-already builds, packages, and install-tests the native Linux binary on the same
-runner type. Releases build all six targets. Run the
+build only the three native targets on Blacksmith runners; releases build all
+six. Run the
 installer check against an existing native build and matching bundle with
 `SCOPE_TEST_BINARY=/absolute/path/to/scope SCOPE_TEST_ARTIFACT=/absolute/path/to/scope-target.tar.gz node --test cli/distribution/install-smoke.test.mjs`.
 The matching `scope-cli-service` binary must be in the binary's directory.
