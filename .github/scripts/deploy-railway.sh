@@ -229,7 +229,9 @@ if [[ -n "$prepared_release" ]]; then
     echo 'Prepared artifact service does not match the activation target.' >&2
     exit 2
   }
-  expected_config="$(railway_config_path "$deployment_component")"
+  if [[ "$(node .github/scripts/deployment-components.mjs describe "$deployment_component" | jq -r '.verifyTransitionConfig')" == true ]]; then
+    expected_config="$(railway_config_path "$deployment_component")"
+  fi
   previous_deployment_ids="$(railway_read status \
     --project "$RAILWAY_PROJECT_ID" --environment "$railway_environment" --json |
     jq -ce --arg environment "$railway_environment" --arg service "$service_name" '
@@ -249,7 +251,7 @@ else
     echo 'usage: deploy-railway.sh <service-name> <upload-root>' >&2
     exit 2
   }
-  deploy_output="$(
+  if deploy_output="$(
     railway up "$upload_root" \
       --path-as-root \
       --no-gitignore \
@@ -259,7 +261,14 @@ else
       --message "$deploy_message" \
       --detach \
       --json
-  )"
+  )"; then
+    :
+  else
+    deploy_status=$?
+    printf '%s\n' "$deploy_output" >&2
+    echo "Railway upload for $service_name failed with exit code $deploy_status." >&2
+    exit "$deploy_status"
+  fi
 fi
 printf '%s\n' "$deploy_output"
 deployment_id="$(printf '%s\n' "$deploy_output" | jq -er 'select(.deploymentId | type == "string" and length > 0) | .deploymentId' | tail -1)"
