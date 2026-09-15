@@ -85,7 +85,7 @@ export async function deployMaintenanceRuntime({ manifest, environment, receipt,
   while (now() < deadline) {
     const deployment = request(railway, 'query MaintenanceRuntimeDeployment($id:String!){deployment(id:$id){id serviceId environmentId status deploymentStopped meta}}', { id: deploymentId }).deployment;
     if (deployment && (deployment.id !== deploymentId || deployment.serviceId !== target.serviceId || deployment.environmentId !== target.environmentId)) throw new Error('Railway returned a maintenance deployment from another target.');
-    if (['FAILED', 'CRASHED', 'REMOVED', 'SKIPPED'].includes(deployment?.status) || deployment?.deploymentStopped === true) throw new Error('Maintenance runtime deployment failed or stopped.');
+    if (['FAILED', 'CRASHED', 'REMOVED', 'SKIPPED'].includes(deployment?.status) || (deployment?.status === 'SUCCESS' && deployment.deploymentStopped === true)) throw new Error('Maintenance runtime deployment failed or stopped.');
     if (deployment?.status === 'SUCCESS') {
       verifyRuntimeDeployment(target, receipt, deploymentId, deployment);
       return { ...target, ...receipt, deploymentId };

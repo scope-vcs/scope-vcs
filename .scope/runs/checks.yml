@@ -5,7 +5,7 @@ on:
     branches:
       - main
 container:
-  image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:6b07117280a2fdb3d6b0b66fe7304c04eac9b918a13f733da51b10e85f0c3094
+  image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:8f91ef83001c2d5a2b9521d75da620cb7dc15fd4ce0bc80a114bd0e0763c377e
 timeout: 60m
 caches: []
 env:

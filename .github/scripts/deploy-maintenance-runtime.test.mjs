@@ -130,3 +130,14 @@ test('runtime deployment accepts Railway image metadata without a manifest sourc
   deployment.meta.image = receipt.apiImage;
   await assert.rejects(deployMaintenanceRuntime(input, harness({deployment}).options), /differs/);
 });
+
+test('an initializing deployment has not started yet and is polled until activation', async () => {
+  let reads = 0;
+  const h = harness({intercept: query => {
+    if (!query.startsWith('query MaintenanceRuntimeDeployment')) return undefined;
+    return {data: {deployment: ++reads === 1 ? {...ready(), status: 'INITIALIZING', deploymentStopped: true} : ready()}};
+  }});
+  assert.equal((await deployMaintenanceRuntime(input, h.options)).deploymentId, id(7));
+  assert.equal(reads, 2);
+  assert.equal(h.calls.filter(call => call.query.includes('mutation MaintenanceRuntimeDeploy')).length, 1);
+});
