@@ -368,7 +368,8 @@
         "dev/run-ci-local-stack",
         "dev/local-process.py",
         "dev/dotenv.sh",
-        ".github/scripts/deploy-monitored-railway.sh"
+        ".github/scripts/deploy-monitored-railway.sh",
+        ".github/scripts/deployment-components.mjs"
       ],
       "prefixes": [
         "api/",

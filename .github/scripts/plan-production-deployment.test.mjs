@@ -160,7 +160,7 @@ test("changes select the required deployment lanes", () => {
     ],
     [
       "release preparation scripts rebuild every prepared image",
-      [".github/scripts/prepare-railway-artifact.sh"],
+      [".github/scripts/prepare-railway-artifact.sh", ".github/scripts/deployment-components.mjs"],
       { cache: true, "run-worker": true, "git-router": true, "media-api": true, api: true, web: true },
     ],
     [
