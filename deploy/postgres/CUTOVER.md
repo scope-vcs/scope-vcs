@@ -138,7 +138,7 @@ node .github/scripts/staging-baseline-crypto.mjs decrypt \
   "$bundle_dir/staging.dump.enc" "$bundle_dir/staging.dump" "$bundle_dir/baseline.json"
 docker run --rm -i --entrypoint pg_restore \
   postgres:18.6@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 \
-  --no-owner --no-privileges --exit-on-error \
+  --no-owner --no-privileges --exit-on-error --file=- \
   < "$bundle_dir/staging.dump" > "$bundle_dir/staging.sql"
 { printf '%s\n' 'DROP SCHEMA public CASCADE;' 'CREATE SCHEMA public;'; cat "$bundle_dir/staging.sql"; } |
   private_db_tool psql -X -q --single-transaction -v ON_ERROR_STOP=1 >/dev/null
