@@ -1,8 +1,9 @@
 # Releases and maintenance recovery
 
-`release.yml` is the production entry point. It polls at minutes 8 and 38 and
-releases once per Chicago calendar day after 9 AM. Failed runs remain eligible
-for the next poll. Manual dispatch bypasses the daily timing check:
+`release.yml` is the production entry point. It runs once daily at 9:08 AM in
+`America/Chicago`, including daylight saving changes. GitHub may delay the
+scheduled start. A failed run does not trigger another scheduled attempt that
+day. Use manual dispatch for a correction or recovery:
 
 ```sh
 gh workflow run release.yml --ref main
@@ -12,6 +13,15 @@ Both paths pin the main revision before preparation and share the production
 concurrency lock. Later commits wait for another release. Component receipts
 skip unchanged work. `ci.yml` validates pull requests without deploying; it and
 Release call the same reusable validation workflow.
+
+On Surface, `scope-deployment-watcher.timer` checks GitHub every five minutes
+from 9 AM through 11:55 PM Chicago time. Once a release reaches staging, its
+local `deployment_watcher.py` starts a Codex thread in T3 to follow the release
+and handle corrections. The watcher never dispatches the daily release itself.
+Its persisted run and command IDs prevent duplicate threads after retries.
+The shared automation client resolves T3's active native executable from
+`runtime/service-state.json` each time it connects, so nightly updates and
+rollbacks do not pin automation to an obsolete executable.
 
 Preparation publishes private GHCR images and records their immutable digests.
 Staging activates the candidate once and checks browser, Git, and media behavior.

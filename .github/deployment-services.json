@@ -153,7 +153,7 @@
         "runtimeConfig": "cli/railway.json",
         "verifyTransitionConfig": false,
         "artifact": {
-          "kind": "upload",
+          "kind": "binary",
           "binary": "scope-cli-service",
           "imageName": "cli",
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
@@ -384,7 +384,10 @@
     },
     "cli-downloads": {
       "files": [
-        "deploy/railway/prebuilt-cli.railpack.json",
+        "deploy/railway/prebuilt.Dockerfile",
+        ".github/scripts/prepare-railway-artifact.sh",
+        ".github/scripts/railway-artifact.mjs",
+        ".github/scripts/deployment-components.mjs",
         "Cargo.lock",
         "Cargo.toml",
         "Cross.toml",

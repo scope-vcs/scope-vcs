@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, cpSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { activateArtifact, artifactDeploymentInput, assertActivatedArtifact, configureStagingRegistry, releaseImageRepository, validateMaintenanceArtifact, validatePreparedRelease, verifyPrivateReleasePackage } from './railway-artifact.mjs';
@@ -242,4 +242,59 @@ test('registry configuration retries the same service credentials without deploy
   assert.deepEqual(calls[0], calls[1]);
   assert.deepEqual(calls[1], calls[2]);
   assert.ok(calls.every(({ query }) => !query.includes('Deploy')));
+});
+
+test('CLI images start the download service from the image root with its readiness check', () => {
+  const cliConfig = JSON.parse(readFileSync(new URL('../../cli/railway.json', import.meta.url), 'utf8'));
+  const input = artifactDeploymentInput('cli-downloads', release().components.api, cliConfig);
+  assert.equal(input.startCommand, '/app/bin/scope-cli-service');
+  assert.equal(input.rootDirectory, '/');
+  assert.equal(input.railwayConfigFile, null);
+  assert.equal(input.healthcheckPath, '/readyz');
+  assert.equal(input.healthcheckTimeout, 60);
+});
+
+test('CLI image staging preserves all downloads and preparation rejects missing or corrupt bundles before publishing', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'scope-cli-image-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const targets = JSON.parse(readFileSync(new URL('../../cli/distribution/targets.json', import.meta.url), 'utf8'));
+  for (const path of ['cli/dist', 'cli/distribution', 'artifacts', 'service', 'bin']) mkdirSync(join(directory, path), { recursive: true });
+  cpSync(resolve('.github'), join(directory, '.github'), { recursive: true });
+  writeFileSync(join(directory, 'cli/distribution/targets.json'), JSON.stringify(targets));
+  writeFileSync(join(directory, 'service/scope-cli-service'), '#!/bin/sh\nexit 0\n');
+  assert.equal(spawnSync('tar', ['-czf', 'artifacts/scope-cli-service.tar.gz', '-C', 'service', '.'], { cwd: directory }).status, 0);
+  for (const { artifact } of targets.targets) {
+    const bytes = Buffer.from(`bundle ${artifact}`);
+    writeFileSync(join(directory, 'cli/dist', artifact), bytes);
+    writeFileSync(join(directory, 'cli/dist', `${artifact}.sha256`), `${createHash('sha256').update(bytes).digest('hex')}  ${artifact}\n`);
+  }
+  const workflow = readFileSync(new URL('../workflows/publish-cli.yml', import.meta.url), 'utf8');
+  const stage = workflow.match(/      - name: Stage CLI image context\n[\s\S]*?        run: \|\n((?:          .*\n)+)/)?.[1];
+  assert.ok(stage);
+  const staged = spawnSync('bash', ['-euo', 'pipefail', '-c', stage.replace(/^          /gm, '')], { cwd: directory, encoding: 'utf8' });
+  assert.equal(staged.status, 0, staged.stderr);
+  assert.match(readFileSync(join(directory, '.railway-cli/bin/scope-cli-service'), 'utf8'), /exit 0/);
+  const dockerfile = readFileSync(new URL('../../deploy/railway/prebuilt.Dockerfile', import.meta.url), 'utf8');
+  assert.match(dockerfile, /WORKDIR \/app/);
+  assert.match(dockerfile, /COPY \. \/app\//);
+  writeFileSync(join(directory, 'bin/docker'), '#!/bin/sh\nprintf "%s\n" "$@" > docker-args\nexit 17\n', { mode: 0o755 });
+  const prepare = () => spawnSync('bash', [resolve('.github/scripts/prepare-railway-artifact.sh'), 'cli-downloads', '.railway-cli', 'prepared-cli-release.json'], {
+    cwd: directory, encoding: 'utf8', env: {
+      ...process.env, PATH: `${join(directory, 'bin')}:${process.env.PATH}`,
+      SCOPE_DEPLOYMENT_SOURCE_SHA: sourceSha, SCOPE_RAILWAY_REGISTRY_USERNAME: 'test',
+      SCOPE_RAILWAY_REGISTRY_PASSWORD: 'test', GITHUB_TOKEN: 'test', GITHUB_REPOSITORY: 'scope-vcs/scope-vcs',
+    },
+  });
+  const valid = prepare();
+  assert.equal(valid.status, 17, valid.stderr || 'valid context must reach the image builder');
+  const args = readFileSync(join(directory, 'docker-args'), 'utf8');
+  assert.match(args, /BINARY=scope-cli-service/);
+  assert.match(args, /railway-private-cli:cli-downloads-/);
+  rmSync(join(directory, 'docker-args'));
+  const bundle = join(directory, '.railway-cli/dist', targets.targets[0].artifact);
+  writeFileSync(bundle, 'corrupt download');
+  assert.notEqual(prepare().status, 17, 'bad checksum must fail before publishing');
+  rmSync(bundle);
+  assert.notEqual(prepare().status, 17, 'missing download must fail before publishing');
+  assert.throws(() => readFileSync(join(directory, 'docker-args')), { code: 'ENOENT' });
 });

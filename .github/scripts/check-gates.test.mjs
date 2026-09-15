@@ -300,7 +300,8 @@ test('prepared web and backend jobs cannot build after activation begins', () =>
   assert.match(preparation, /selected-release-\$\{\{ inputs\.source_sha \}\}/);
   assert.match(preparation.split('\njobs:')[0], /actions: read/);
   const cliDeploy = read('.github/workflows/publish-cli.yml');
-  assert.match(cliDeploy, /cp cli\/railway\.json \.railway-upload\/railway\.json/);
+  assert.match(cliDeploy, /SCOPE_PREPARED_RELEASE_PATH: prepared-cli-release\.json/);
+  assert.match(cliDeploy, /prepare-railway-artifact\.sh cli-downloads \.railway-cli prepared-cli-release\.json/);
   assert.doesNotMatch(cliDeploy, /cargo build/);
 });
 
@@ -314,7 +315,7 @@ test('CLI publication configures the advertised installer origin before deployme
   mkdirSync(resolve(dir, 'bin'));
   writeFileSync(resolve(dir, '.github/deployment-services.json'), JSON.stringify(manifest));
   writeFileSync(resolve(dir, 'bin/railway'), '#!/bin/sh\nprintf "%s\\n" "$@" >> events\n', { mode: 0o755 });
-  writeFileSync(resolve(dir, '.github/scripts/deploy-railway.sh'), '#!/bin/sh\nprintf "deploy %s %s\\n" "$1" "$2" >> events\n');
+  writeFileSync(resolve(dir, '.github/scripts/deploy-railway.sh'), '#!/bin/sh\nprintf "deploy %s\\n" "$1" >> events\n');
   const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-euo', 'pipefail', '-c', block.replace(/^          /gm, '')], {
     cwd: dir,
     encoding: 'utf8',
@@ -329,7 +330,7 @@ test('CLI publication configures the advertised installer origin before deployme
     '--environment', manifest.environments.production.environmentId,
     '--service', manifest.services['cli-downloads'].id, '--skip-deploys',
     `SCOPE_CLI_PUBLIC_URL=${new URL(installer).origin}`,
-    `deploy ${manifest.services['cli-downloads'].id} .railway-upload`,
+    `deploy ${manifest.services['cli-downloads'].id}`,
   ]);
 });
 
@@ -375,7 +376,8 @@ test('CI is pull-request-only and Release is scheduled/manual with a shared chec
   assert.match(ci, /  pull_request:/);
   assert.doesNotMatch(ci.split('\nconcurrency:')[0], /schedule:|workflow_dispatch:|push:/);
   const triggers = release.split('\nconcurrency:')[0];
-  assert.match(triggers, /cron: "8,38 \* \* \* \*"/);
+  assert.match(triggers, /cron: "8 9 \* \* \*"\n\s+timezone: "America\/Chicago"/);
+  assert.equal((triggers.match(/cron:/g) || []).length, 1);
   assert.match(triggers, /workflow_dispatch:/);
   assert.doesNotMatch(triggers, /pull_request:|push:/);
   for (const caller of [ci, release]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);

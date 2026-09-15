@@ -23,7 +23,7 @@ function providerStatus(activeDeployments) {
   };
 }
 
-function deploy(t, status, predecessors = [], failedPolls = []) {
+function deploy(t, status, predecessors = [], failedPolls = [], component = "cache") {
   const root = mkdtempSync(join(tmpdir(), "scope-railway-teardown-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const scripts = join(root, ".github/scripts");
@@ -34,7 +34,7 @@ function deploy(t, status, predecessors = [], failedPolls = []) {
   writeFileSync(join(root, ".github/deployment-services.json"), readFileSync(new URL("../deployment-services.json", import.meta.url)));
   writeFileSync(join(root, "status.json"), JSON.stringify(status));
   writeFileSync(join(root, "prepared.json"), JSON.stringify({
-    components: { cache: { serviceId: "cache-id" } },
+    components: { [component]: { serviceId: "cache-id" } },
   }));
   writeFileSync(join(scripts, "railway-artifact.mjs"), `
     import { appendFileSync } from "node:fs";
@@ -80,7 +80,7 @@ function deploy(t, status, predecessors = [], failedPolls = []) {
       RAILWAY_TOKEN: "",
       RAILWAY_PROJECT_ID: "test-project",
       SCOPE_RAILWAY_ENVIRONMENT_ID: "staging-id",
-      SCOPE_DEPLOYMENT_COMPONENT: "cache",
+      SCOPE_DEPLOYMENT_COMPONENT: component,
       SCOPE_DEPLOYMENT_SOURCE_SHA: "a".repeat(40),
       SCOPE_PREPARED_RELEASE_PATH: join(root, "prepared.json"),
       SCOPE_DEFER_SERVICE_HEALTH: "1",
@@ -141,4 +141,56 @@ test("fails after three unsuccessful metadata reads without repeating activation
   assert.equal(result.events.filter((event) => event === "activate").length, 1);
   assert.ok(!result.events.includes("verify"));
   assert.match(result.stderr, /Railway read failed after 3 attempts/);
+});
+
+function upload(t, { output, exitCode }) {
+  const root = mkdtempSync(join(tmpdir(), "scope-railway-upload-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "railway"), `#!/usr/bin/env node
+    const { appendFileSync } = require("node:fs");
+    const command = process.argv[2];
+    appendFileSync("events", command + "\\n");
+    if (command === "service") console.log(JSON.stringify([{ id: "cli-id" }]));
+    else if (command === "up") {
+      console.log(${JSON.stringify(output)});
+      process.exit(${exitCode});
+    } else if (command === "deployment") console.log(JSON.stringify([{ id: "cli-deploy", status: "SUCCESS" }]));
+    else process.exit(99);
+  `, { mode: 0o755 });
+  const result = spawnSync("bash", [deployScript, "cli-id", "upload-root"], {
+    cwd: root, encoding: "utf8", timeout: 10_000,
+    env: {
+      ...process.env, PATH: `${bin}:${process.env.PATH}`,
+      RAILWAY_API_TOKEN: "test-token", RAILWAY_TOKEN: "", RAILWAY_PROJECT_ID: "test-project",
+      SCOPE_RAILWAY_ENVIRONMENT_ID: "production-id", SCOPE_PREPARED_RELEASE_PATH: "",
+      SCOPE_DEFER_SERVICE_HEALTH: "1", SCOPE_DEPLOYMENT_EVIDENCE_PATH: "", SCOPE_RELEASE_DEPLOYMENTS_FILE: "",
+    },
+  });
+  assert.ifError(result.error);
+  return { ...result, events: readFileSync(join(root, "events"), "utf8").trim().split("\n") };
+}
+
+test("failed source upload prints Railway's JSON error and preserves its exit code without retrying", (t) => {
+  const output = JSON.stringify({ error: "Failed to upload code: file too large", code: "UPLOAD_FAILED" });
+  const result = upload(t, { output, exitCode: 42 });
+  assert.equal(result.status, 42);
+  assert.ok(result.stderr.includes(output));
+  assert.match(result.stderr, /Railway upload for cli-id failed with exit code 42/);
+  assert.deepEqual(result.events, ["service", "up"]);
+});
+
+test("successful source upload polls the returned deployment ID", (t) => {
+  const result = upload(t, { output: JSON.stringify({ deploymentId: "cli-deploy" }), exitCode: 0 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.events, ["service", "up", "deployment"]);
+});
+
+test("prepared CLI image activates and verifies without requiring backend transition settings", (t) => {
+  const result = deploy(t, providerStatus([]), [], [], "cli-downloads");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.events.filter((event) => event === "activate").length, 1);
+  assert.equal(result.events.filter((event) => event === "verify").length, 1);
+  assert.ok(!result.events.some((event) => event.startsWith("up ")));
 });

@@ -9,7 +9,7 @@ const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', 
 // IDs and environment settings, but preparation and activation use this contract.
 export const RAILWAY_COMPONENTS = Object.keys(manifest.services);
 export const BACKEND_COMPONENTS = RAILWAY_COMPONENTS.filter(component => deploymentComponent(component).backend);
-export const APPLICATION_COMPONENTS = RAILWAY_COMPONENTS.filter(component => deploymentComponent(component).artifact.kind !== 'upload');
+export const APPLICATION_COMPONENTS = RAILWAY_COMPONENTS.filter(component => component !== 'cli-downloads');
 export const RAILWAY_CONFIG_PATHS = Object.fromEntries(RAILWAY_COMPONENTS
   .filter(component => deploymentComponent(component).verifyTransitionConfig)
   .map(component => [component, deploymentComponent(component).runtimeConfig]));

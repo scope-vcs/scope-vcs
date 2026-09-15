@@ -84,9 +84,9 @@ test("changes select the required deployment lanes", () => {
     ],
     ["router changes deploy the Git router", ["repo-router/src/main.rs"], { "git-router": true }],
     [
-      "backend runtime image selects every backend service",
+      "shared runtime image selects backend services and CLI downloads",
       ["deploy/railway/prebuilt.Dockerfile"],
-      { cache: true, "run-worker": true, "git-router": true, api: true },
+      { cache: true, "run-worker": true, "git-router": true, api: true, "cli-downloads": true },
     ],
     [
       "dependency analyzer changes rebuild the worker and CLI bundle",
@@ -104,8 +104,8 @@ test("changes select the required deployment lanes", () => {
       { web: true },
     ],
     [
-      "CLI prebuilt config selects CLI without rebuilding distributions",
-      ["deploy/railway/prebuilt-cli.railpack.json"],
+      "CLI publishing selects CLI without rebuilding distributions",
+      [".github/workflows/publish-cli.yml"],
       { "cli-downloads": true },
     ],
     [
@@ -166,7 +166,7 @@ test("changes select the required deployment lanes", () => {
     [
       "release preparation scripts rebuild every prepared image",
       [".github/scripts/prepare-railway-artifact.sh", ".github/scripts/deployment-components.mjs"],
-      { cache: true, "run-worker": true, "git-router": true, "media-api": true, api: true, web: true },
+      { cache: true, "run-worker": true, "git-router": true, "media-api": true, api: true, web: true, "cli-downloads": true },
     ],
     [
       "the production deploy wrapper reruns every service it activates",
