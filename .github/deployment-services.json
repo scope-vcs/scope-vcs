@@ -265,8 +265,12 @@
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
+        "web/package.json",
+        "web/pnpm-lock.yaml",
         "web/scripts/check-api-contract.mjs",
+        "web/scripts/generate-api-contract.mjs",
         "web/src/api/types.generated.ts",
+        "web/src/api/validators.generated.ts",
         "deploy/railway/prebuilt.Dockerfile"
       ],
       "prefixes": [
