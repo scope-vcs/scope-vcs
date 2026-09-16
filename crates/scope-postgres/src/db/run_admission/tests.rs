@@ -110,9 +110,19 @@ async fn concurrent_admission_obeys_global_capacity() {
             }
         }
         assert_eq!(admitted, limit);
-        let row = store.runs().db.query_one(Statement::from_string(DatabaseBackend::Postgres,
-            "SELECT COUNT(*)::bigint AS active FROM scope_run_attempts WHERE state IN ('dispatching', 'running')"))
-            .await.unwrap().unwrap();
+        let row = store
+            .runs()
+            .db
+            .query_one(Statement::from_string(
+                DatabaseBackend::Postgres,
+                format!(
+                    "SELECT COUNT(*)::bigint AS active FROM scope_run_attempts WHERE state IN ({})",
+                    crate::db::run_state_sql::attempt_active_states()
+                ),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(row.try_get::<i64>("", "active").unwrap(), limit as i64);
     }
 }

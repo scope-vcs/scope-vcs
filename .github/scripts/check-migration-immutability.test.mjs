@@ -9,7 +9,7 @@ import { checkMigrationSources, migrationDigest } from './check-migration-immuta
 
 const name = 'm0043_retire_git_manifests.rs';
 const original = 'CREATE TABLE example (state text);';
-const sources = { [name]: original, 'current_schema.sql': original, 'baseline_ledger.txt': 'm0042\n' };
+const sources = { [name]: original, 'current_schema.sql': original };
 const locked = Object.fromEntries(Object.entries(sources).map(([path, contents]) => [path, migrationDigest(contents)]));
 
 test('unchanged definitions and appended migrations pass', () => {
@@ -41,6 +41,16 @@ test('removing migration sources or both source and checksum fails', () => {
 test('new definitions must be locked and lock entries must identify migration definitions', () => {
   assert.match(checkMigrationSources({ ...sources, 'm0044_next.rs': 'new' }, locked).join('\n'), /new migration needs/);
   assert.match(checkMigrationSources(sources, { ...locked, 'mod.rs': migrationDigest('module') }).join('\n'), /invalid migration lock entry/);
+});
+
+test('only explicitly retired lock entries may disappear from the base lock', () => {
+  const base = { ...locked, 'baseline_ledger.txt': migrationDigest('m0042\n') };
+  assert.deepEqual(checkMigrationSources(sources, locked, base), []);
+  const reappeared = { ...locked, 'baseline_ledger.txt': base['baseline_ledger.txt'] };
+  assert.match(checkMigrationSources(sources, reappeared, base).join('\n'), /retired migration lock entry must not reappear/);
+  const unlisted = { ...locked, 'm0044_request_attention.rs': migrationDigest('ALTER TABLE example ADD attention text;') };
+  assert.match(checkMigrationSources(sources, locked, unlisted).join('\n'), /m0044_request_attention.rs: an existing migration lock cannot change or disappear/);
+  assert.match(checkMigrationSources(sources, locked, { ...locked, 'current_schema.sql': migrationDigest('other') }).join('\n'), /current_schema.sql: an existing migration lock cannot change or disappear/);
 });
 
 test('the CLI reads the PR base lock even when both migration and current checksum change', () => {

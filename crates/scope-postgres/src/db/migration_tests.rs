@@ -17,6 +17,7 @@ mod repository_landing_files;
 mod repository_workflow_catalogs;
 mod run_attempt_active_indexes;
 mod run_execution_invariants;
+mod run_state_constraints;
 
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0042_current_schema_baseline",

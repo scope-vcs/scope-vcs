@@ -186,10 +186,10 @@ uploaded manifest blob; Git segments and retained run spans determine storage
 retention. Cleanup still understands retired manifest references so queued
 objects can be removed.
 
-New databases use the current schema baseline. Existing supported databases
-adopt it through the maintenance process after schema verification under the
-migration lock. The supported starting ledger, writer fence, backup rehearsal,
-and recovery steps are documented in
+Every database starts from the current schema baseline and advances through the
+numbered migrations after it; a ledger outside that prefix is refused. The
+migration inventory, writer fence, schema comparison, and recovery steps are
+documented in
 [the schema baseline runbook](operations/current-schema-baseline.md).
 
 ## Standalone CLI workspace
@@ -239,7 +239,7 @@ The guardrail is enforced in CI and by `./dev/check guardrails`.
 - `docs/licensing.md` documents third-party license inventory generation.
 - `docs/maintenance-cutovers.md` documents releases, migration recovery, and
   the forward-only cutover rule; `docs/operations/current-schema-baseline.md`
-  covers adoption of the current baseline.
+  covers the migration inventory and its schema checks.
 - `docs/railway-experiments.md` documents the owner and expiry policy for
   provider experiments.
 - `deploy/aws/OPERATIONS.md` documents Fargate cloud-run provisioning and

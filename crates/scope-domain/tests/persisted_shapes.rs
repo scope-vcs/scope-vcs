@@ -6,8 +6,11 @@ use scope_domain::{
         collaboration::{RepositoryInvite, RepositoryMemberPermissions},
     },
     runs::{
+        attempt::AttemptState,
+        job::RunJobState,
+        run::RunState,
         source::RunSource,
-        step::AttemptTerminalReason,
+        step::{AttemptTerminalReason, StepState},
         workflow::{
             definition::CompiledWorkflow,
             identity::{WorkflowIdentity, WorkflowPath},
@@ -130,4 +133,31 @@ fn compiled_workflow_persisted_json_and_revision_digest_are_stable() {
         revision.digest(),
         "0740cd8887d731cfb569b266b9228cba9edec98aff5780a0f9ee006815f62699"
     );
+}
+
+/// `as_str` is what SQL predicates and schema constraints are built from, so it
+/// must stay the single persisted spelling of every run state variant.
+#[test]
+fn run_state_names_match_their_persisted_encoding() {
+    fn assert_persisted_names<T: Serialize + Copy>(variants: &[T], names: &[&str]) {
+        let encoded = variants
+            .iter()
+            .map(|variant| match serde_json::to_value(variant).unwrap() {
+                Value::String(value) => value,
+                other => panic!("run state must serialize to a string, found {other}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(encoded, names);
+    }
+
+    assert_persisted_names(&RunState::ALL, &RunState::ALL.map(RunState::as_str));
+    assert_persisted_names(
+        &RunJobState::ALL,
+        &RunJobState::ALL.map(RunJobState::as_str),
+    );
+    assert_persisted_names(
+        &AttemptState::ALL,
+        &AttemptState::ALL.map(AttemptState::as_str),
+    );
+    assert_persisted_names(&StepState::ALL, &StepState::ALL.map(StepState::as_str));
 }

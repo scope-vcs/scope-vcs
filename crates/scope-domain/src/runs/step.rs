@@ -21,6 +21,31 @@ pub enum StepState {
 }
 
 impl StepState {
+    /// Declaration order is the persisted order used to build SQL state sets.
+    pub const ALL: [Self; 7] = [
+        Self::Pending,
+        Self::Running,
+        Self::Succeeded,
+        Self::Failed,
+        Self::Canceled,
+        Self::Lost,
+        Self::Skipped,
+    ];
+
+    /// The persisted representation; `persisted_shapes` keeps it and the
+    /// serde encoding identical.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+            Self::Lost => "lost",
+            Self::Skipped => "skipped",
+        }
+    }
+
     pub fn is_terminal(self) -> bool {
         matches!(
             self,

@@ -1,6 +1,9 @@
 use super::{
     DispatchClaim, RunStore,
     run_attempt_persistence::{locked_jobs, locked_run},
+    run_state_sql::{
+        attempt_active_states, attempt_terminal_states, queued_job_state, run_active_states,
+    },
 };
 use crate::error::PostgresError;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement, TransactionTrait};
@@ -34,9 +37,16 @@ impl RunStore {
     ) -> Result<DispatchAdmission, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         lock_admission(&tx).await?;
-        let row = tx.query_one(Statement::from_string(DatabaseBackend::Postgres,
-            "SELECT COUNT(*)::bigint AS count FROM scope_run_attempts WHERE state IN ('dispatching', 'running')"))
-            .await.map_err(PostgresError::internal)?
+        let row = tx
+            .query_one(Statement::from_string(
+                DatabaseBackend::Postgres,
+                format!(
+                    "SELECT COUNT(*)::bigint AS count FROM scope_run_attempts WHERE state IN ({})",
+                    attempt_active_states()
+                ),
+            ))
+            .await
+            .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::internal_message("active attempt count is missing"))?;
         let active = u64::try_from(
             row.try_get::<i64>("", "count")
@@ -49,19 +59,24 @@ impl RunStore {
         let Some(row) = tx
             .query_one(Statement::from_string(
                 DatabaseBackend::Postgres,
-                "SELECT job.run_id, job.job_key FROM scope_run_jobs job
+                format!(
+                    "SELECT job.run_id, job.job_key FROM scope_run_jobs job
              JOIN scope_runs run ON run.id = job.run_id
-             WHERE job.state = 'queued'
-               AND run.state IN ('queued', 'dispatching', 'running')
+             WHERE job.state = {queued}
+               AND run.state IN ({runs})
                AND run.cancellation_requested = FALSE
                AND NOT EXISTS (
                  SELECT 1 FROM scope_run_attempts previous
                  WHERE previous.run_id = job.run_id AND previous.job_key = job.job_key
-                   AND previous.state IN ('succeeded', 'failed', 'canceled', 'lost')
+                   AND previous.state IN ({attempts})
                    AND previous.runner_stop_completed_at_unix IS NULL
                )
              ORDER BY job.created_at_unix, job.run_id, job.job_key
              LIMIT 1",
+                    queued = queued_job_state(),
+                    runs = run_active_states(),
+                    attempts = attempt_terminal_states(),
+                ),
             ))
             .await
             .map_err(PostgresError::internal)?

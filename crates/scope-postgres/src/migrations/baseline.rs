@@ -3,7 +3,6 @@ use sea_orm_migration::{MigrationName, MigrationTrait, SchemaManager};
 use serde_json::Value;
 
 pub(super) const NAME: &str = "m0042_current_schema_baseline";
-pub(super) const ORIGINAL_CHAIN_REVISION: &str = "578bec00da088598919082b35a7153f62bf0b860";
 const SCHEMA: &str = include_str!("current_schema.sql");
 
 pub struct Migration;
@@ -34,35 +33,9 @@ pub(super) async fn assert_empty_schema<C: ConnectionTrait>(db: &C) -> Result<()
         })
     }) {
         return Err(DbErr::Custom(
-            "the current-schema baseline requires an empty schema; restore retained data with the original-chain maintenance binary before bridging".into(),
+            "the current-schema baseline requires an empty schema; initialize it in a database with no existing objects".into(),
         ));
     }
-    Ok(())
-}
-
-pub(super) fn is_original_chain(actual: &[String]) -> bool {
-    actual
-        .iter()
-        .map(String::as_str)
-        .eq(include_str!("baseline_ledger.txt").lines())
-}
-
-/// Called only inside the maintenance transaction with the migration lock held.
-pub(super) async fn bridge<C: ConnectionTrait>(db: &C) -> Result<(), DbErr> {
-    db.execute_unprepared("LOCK TABLE seaql_migrations IN ACCESS EXCLUSIVE MODE")
-        .await?;
-    if !is_original_chain(&super::applied_migration_names(db).await?) {
-        return Err(DbErr::Custom("the baseline bridge requires the exact original migration ledger through m0042_request_media".into()));
-    }
-    assert_baseline_schema(db).await?;
-    db.execute_unprepared("DELETE FROM seaql_migrations")
-        .await?;
-    db.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "INSERT INTO seaql_migrations (version, applied_at) VALUES ($1, EXTRACT(EPOCH FROM now())::bigint)",
-        [NAME.into()],
-    ))
-    .await?;
     Ok(())
 }
 
@@ -91,7 +64,7 @@ pub(super) async fn assert_baseline_schema<C: ConnectionTrait>(db: &C) -> Result
     if actual != expected {
         let differences = schema_differences(&actual, &expected);
         return Err(DbErr::Custom(format!(
-            "Scope baseline bridge refused schema drift in {}; investigate and repair the schema differences before retrying; original-chain schema reference: {ORIGINAL_CHAIN_REVISION}",
+            "Scope baseline schema check refused schema drift in {}; investigate and repair the schema differences before retrying",
             differences.join("; ")
         )));
     }

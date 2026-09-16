@@ -1,18 +1,11 @@
 use super::*;
 
 const BASELINE: &str = "m0042_current_schema_baseline";
-const ORIGINAL_LEDGER: &str = include_str!("../../migrations/baseline_ledger.txt");
 
-// The m0042 baseline was dumped from the original chain at revision
-// 578bec00, so a database that ran that chain has exactly this schema plus the
-// 42-entry ledger. Installing the baseline SQL directly and stamping the old
-// ledger reproduces that state without the migrations that produced it.
-async fn original_chain_database(db: &DatabaseConnection) {
-    migrations::Migrator::install(db).await.unwrap();
-    db.execute_unprepared(include_str!("../../migrations/current_schema.sql"))
-        .await
-        .unwrap();
-    stamp_original_ledger(db, 42).await;
+/// A database that stopped at the baseline: the current schema plus the single
+/// baseline ledger entry, with representative business rows and sequence state.
+async fn baseline_database(db: &DatabaseConnection) {
+    migrations::Migrator::up(db, Some(1)).await.unwrap();
     db.execute_unprepared(
         "INSERT INTO scope_users (id, handle, email, email_verified)
          VALUES ('retained-user', 'retained', 'retained@scope.test', TRUE);
@@ -31,21 +24,6 @@ async fn original_chain_database(db: &DatabaseConnection) {
     .unwrap();
 }
 
-async fn stamp_original_ledger(db: &DatabaseConnection, count: usize) {
-    db.execute_unprepared("DELETE FROM seaql_migrations")
-        .await
-        .unwrap();
-    for name in ORIGINAL_LEDGER.lines().take(count) {
-        db.execute(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "INSERT INTO seaql_migrations (version, applied_at) VALUES ($1, 1)",
-            [name.into()],
-        ))
-        .await
-        .unwrap();
-    }
-}
-
 async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
     let row = db
         .query_one(Statement::from_string(
@@ -62,186 +40,61 @@ async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
 }
 
 #[tokio::test]
-async fn original_chain_bridge_preserves_rows_sequences_and_is_idempotent() {
-    let (_target, db, _lease) = isolated_database().await;
-    original_chain_database(&db).await;
-    let before = representative_business_snapshot(&db).await;
-    let sequence = sequence_state(&db).await;
-    let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert_eq!(plan.pending[0].name, BASELINE);
-    assert!(!plan.exact);
-    assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
-    assert_eq!(applied_versions(&db).await.len(), 42);
-
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
-    assert_eq!(representative_business_snapshot(&db).await, before);
-    assert_eq!(sequence_state(&db).await, sequence);
-    assert_eq!(applied_versions(&db).await, LATEST_MIGRATIONS);
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
-    assert_eq!(representative_business_snapshot(&db).await, before);
-    assert_eq!(sequence_state(&db).await, sequence);
-}
-
-#[tokio::test]
-async fn baseline_bridge_preserves_visible_public_extension_operator_classes() {
-    let (target, db, _lease) = isolated_database().await;
-    original_chain_database(&db).await;
-    let before = representative_business_snapshot(&db).await;
-    let sequence = sequence_state(&db).await;
-    let mut options = sea_orm::ConnectOptions::new(target.schema_database_url());
-    options.max_connections(1);
-    let visible_public = sea_orm::Database::connect(options).await.unwrap();
-    // Deployment uses public, while isolated tests normally hide it. PostgreSQL
-    // omits the public qualifier on gin_trgm_ops only when public is visible.
-    visible_public
-        .execute_unprepared(
-            "SELECT set_config('search_path', current_setting('search_path') || ', public', false)",
-        )
-        .await
-        .unwrap();
-    let search_path = visible_public
-        .query_one(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SHOW search_path",
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<String>("", "search_path")
-        .unwrap();
-
-    migrations::apply_in_maintenance(&visible_public, Default::default())
-        .await
-        .unwrap();
-
-    migrations::assert_exact_state(&visible_public)
-        .await
-        .unwrap();
-    assert_eq!(representative_business_snapshot(&db).await, before);
-    assert_eq!(sequence_state(&db).await, sequence);
-    let restored_path = visible_public
-        .query_one(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SHOW search_path",
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<String>("", "search_path")
-        .unwrap();
-    assert_eq!(restored_path, search_path);
-    visible_public.close().await.unwrap();
-}
-
-#[tokio::test]
-async fn baseline_bridge_preserves_historical_not_null_constraint_names() {
-    let (_target, db, _lease) = isolated_database().await;
-    original_chain_database(&db).await;
-    // PostgreSQL 18 gives NOT NULL constraints names. Column/table renames in
-    // the original chain retained those names without changing the constraint.
-    let named_constraint = db
-        .query_one(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT c.conname FROM pg_constraint c
-         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
-         WHERE c.conrelid = 'scope_git_segments'::regclass
-           AND c.contype = 'n' AND a.attname = 'first_sequence'",
-        ))
-        .await
-        .unwrap();
-    if let Some(constraint) = &named_constraint {
-        let name = constraint.try_get::<String>("", "conname").unwrap();
-        db.execute_unprepared(&format!(
-            "ALTER TABLE scope_git_segments RENAME CONSTRAINT \"{}\" TO scope_git_segments_sequence_not_null",
-            name.replace('"', "\"\""),
-        )).await.unwrap();
-    }
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
-    migrations::assert_exact_state(db.as_ref()).await.unwrap();
-    if named_constraint.is_some() {
-        let retained = db
-            .query_one(Statement::from_string(
+async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
+    // The pre-baseline chain and any unknown entry are equally unrecognizable:
+    // this binary only advances a database whose ledger is a prefix of its own.
+    for ledger in [
+        vec!["m0001_initial_schema", "m0042_request_media"],
+        vec![BASELINE, "m9999_unknown"],
+        vec!["m0043_retire_git_manifests"],
+    ] {
+        let (_target, db, _lease) = isolated_database().await;
+        baseline_database(&db).await;
+        db.execute_unprepared("DELETE FROM seaql_migrations")
+            .await
+            .unwrap();
+        for name in &ledger {
+            db.execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "SELECT 1 AS found FROM pg_constraint
-             WHERE conrelid = 'scope_git_segments'::regclass
-               AND conname = 'scope_git_segments_sequence_not_null'",
+                "INSERT INTO seaql_migrations (version, applied_at) VALUES ($1, 1)",
+                [(*name).into()],
             ))
             .await
             .unwrap();
-        assert!(
-            retained.is_some(),
-            "bridging must retain the existing constraint name"
-        );
-    }
-}
-
-#[tokio::test]
-async fn failed_baseline_ledger_insert_rolls_back_the_old_ledger_and_data() {
-    let (_target, db, _lease) = isolated_database().await;
-    original_chain_database(&db).await;
-    // This constraint fails after the bridge deletes the old ledger, exercising
-    // rollback at the boundary where an interrupted replacement could lose it.
-    db.execute_unprepared(
-        "ALTER TABLE seaql_migrations ADD CONSTRAINT injected_bridge_failure
-         CHECK (version <> 'm0042_current_schema_baseline')",
-    )
-    .await
-    .unwrap();
-    let before = representative_business_snapshot(&db).await;
-    let ledger = applied_versions(&db).await;
-    let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap_err();
-    assert!(
-        error.to_string().contains("injected_bridge_failure"),
-        "{error}"
-    );
-    assert_eq!(applied_versions(&db).await, ledger);
-    assert_eq!(representative_business_snapshot(&db).await, before);
-    assert_eq!(sequence_state(&db).await, (41, true));
-    db.execute_unprepared("ALTER TABLE seaql_migrations DROP CONSTRAINT injected_bridge_failure")
-        .await
-        .unwrap();
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
-    migrations::assert_exact_state(db.as_ref()).await.unwrap();
-}
-
-#[tokio::test]
-async fn retained_older_unknown_and_incomplete_ledgers_are_rejected_without_changes() {
-    for count in [33, 41, 42] {
-        let (_target, db, _lease) = isolated_database().await;
-        original_chain_database(&db).await;
-        stamp_original_ledger(&db, count).await;
-        if count == 42 {
-            db.execute_unprepared("INSERT INTO seaql_migrations VALUES ('m9999_unknown', 1)")
-                .await
-                .unwrap();
         }
-        let ledger = applied_versions(&db).await;
         let before = representative_business_snapshot(&db).await;
-        let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
-            .await
-            .unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("578bec00da088598919082b35a7153f62bf0b860")
-        );
+        let sequence = sequence_state(&db).await;
+
+        for error in [
+            migrations::plan(db.as_ref()).await.unwrap_err(),
+            migrations::preflight(&db, Default::default())
+                .await
+                .unwrap_err(),
+            migrations::apply_in_maintenance(db.as_ref(), Default::default())
+                .await
+                .unwrap_err(),
+        ] {
+            assert!(
+                error.to_string().contains(
+                    "Scope metadata migration ledger is not a canonical prefix: expected ["
+                ),
+                "{ledger:?}: {error}"
+            );
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("found [{}]", ledger.join(", "))),
+                "{ledger:?}: {error}"
+            );
+        }
         assert_eq!(applied_versions(&db).await, ledger);
         assert_eq!(representative_business_snapshot(&db).await, before);
+        assert_eq!(sequence_state(&db).await, sequence);
     }
 }
 
 #[tokio::test]
-async fn baseline_bridge_refuses_schema_drift_without_replacing_the_ledger() {
+async fn preflight_refuses_baseline_schema_drift_without_changing_the_ledger() {
     for drift in [
         "ALTER TABLE scope_users ALTER COLUMN handle DROP NOT NULL",
         "DROP INDEX idx_scope_runs_history",
@@ -255,13 +108,15 @@ async fn baseline_bridge_refuses_schema_drift_without_replacing_the_ledger() {
         "CREATE FUNCTION unknown_function() RETURNS int LANGUAGE SQL AS 'SELECT 1'",
     ] {
         let (_target, db, _lease) = isolated_database().await;
-        original_chain_database(&db).await;
+        baseline_database(&db).await;
         db.execute_unprepared(drift).await.unwrap();
         let ledger = applied_versions(&db).await;
         let before = representative_business_snapshot(&db).await;
-        let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
+
+        let error = migrations::preflight(&db, Default::default())
             .await
             .unwrap_err();
+
         assert!(
             error.to_string().contains("schema drift"),
             "{drift}: {error}"
@@ -288,9 +143,9 @@ async fn baseline_initialization_refuses_an_untracked_nonempty_schema() {
 }
 
 #[tokio::test]
-async fn preflight_checks_retained_schema_with_writers_online_without_changing_data() {
+async fn preflight_checks_the_baseline_schema_with_writers_online_without_changing_data() {
     let (target, db, _lease) = isolated_database().await;
-    original_chain_database(&db).await;
+    baseline_database(&db).await;
     let database_url = target.schema_database_url();
     let writer = crate::db::connect_writer_database(&database_url, database_url.parse().unwrap())
         .await
@@ -312,9 +167,9 @@ async fn preflight_checks_retained_schema_with_writers_online_without_changing_d
 }
 
 #[tokio::test]
-async fn preflight_rejects_retained_upload_constraint_drift_and_rolls_back_metadata() {
+async fn preflight_rejects_upload_constraint_drift_and_rolls_back_metadata() {
     let (target, db, _lease) = isolated_database().await;
-    original_chain_database(&db).await;
+    baseline_database(&db).await;
     db.execute_unprepared(
         "ALTER TABLE scope_git_segment_uploads
          DROP CONSTRAINT scope_git_segment_upload_state,
@@ -370,4 +225,58 @@ async fn preflight_rejects_retained_upload_constraint_drift_and_rolls_back_metad
     assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), plan);
     assert_eq!(representative_business_snapshot(&db).await, snapshot);
     connection.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn the_visible_public_search_path_survives_the_baseline_schema_check() {
+    let (target, db, _lease) = isolated_database().await;
+    baseline_database(&db).await;
+    let before = representative_business_snapshot(&db).await;
+    let sequence = sequence_state(&db).await;
+    let mut options = sea_orm::ConnectOptions::new(target.schema_database_url());
+    options.max_connections(1);
+    let visible_public = sea_orm::Database::connect(options).await.unwrap();
+    // Deployment uses public, while isolated tests normally hide it. PostgreSQL
+    // omits the public qualifier on gin_trgm_ops only when public is visible.
+    visible_public
+        .execute_unprepared(
+            "SELECT set_config('search_path', current_setting('search_path') || ', public', false)",
+        )
+        .await
+        .unwrap();
+    let search_path = visible_public
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SHOW search_path",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<String>("", "search_path")
+        .unwrap();
+
+    migrations::preflight(&visible_public, Default::default())
+        .await
+        .unwrap();
+    migrations::apply_in_maintenance(&visible_public, Default::default())
+        .await
+        .unwrap();
+
+    migrations::assert_exact_state(&visible_public)
+        .await
+        .unwrap();
+    assert_eq!(representative_business_snapshot(&db).await, before);
+    assert_eq!(sequence_state(&db).await, sequence);
+    let restored_path = visible_public
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SHOW search_path",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<String>("", "search_path")
+        .unwrap();
+    assert_eq!(restored_path, search_path);
+    visible_public.close().await.unwrap();
 }
