@@ -97,7 +97,9 @@ export function RequestWorkspaceSidebar({
         >
           <ChevronRight aria-hidden="true" />
         </Button>
-        <RequestWorkspaceSpine grouped={grouped} params={params} selectedId={selectedId} />
+        {collapsed ? (
+          <RequestWorkspaceSpine grouped={grouped} params={params} selectedId={selectedId} />
+        ) : null}
       </div>
       <div className="request-workspace-expanded-view">
         <div className="request-workspace-sidebar-tools">
@@ -161,7 +163,7 @@ export function RequestWorkspaceSidebar({
                   />
                   <RequestWorkspaceList
                     {...common}
-                    emptyLabel={maintainer ? EMPTY_LABELS.waiting : 'No open requests.'}
+                    emptyLabel={maintainer ? EMPTY_LABELS.waiting : EMPTY_LABELS.needs_you}
                     hasMore={activeHasMore}
                     items={waiting}
                     onLoadMore={() => onLoadMore('active')}
