@@ -45,7 +45,7 @@ export async function loadOptionalResource<T>(load: () => Promise<T>): Promise<T
   }
 }
 
-export type InvalidApiResponseFailure =
+type InvalidApiResponseFailure =
   | 'content-type'
   | 'json-syntax'
   | 'schema'

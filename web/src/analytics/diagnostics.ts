@@ -1,6 +1,6 @@
 import type { Metric } from 'web-vitals'
 
-export type FrontendErrorKind =
+type FrontendErrorKind =
   | 'abort_error'
   | 'aggregate_error'
   | 'dom_error'
@@ -12,13 +12,13 @@ export type FrontendErrorKind =
   | 'unknown_error'
   | 'uri_error'
 
-export type FrontendErrorOrigin =
+type FrontendErrorOrigin =
   | 'hydration'
   | 'promise'
   | 'route'
   | 'window'
 
-export type WebVitalMetric = 'CLS' | 'INP' | 'LCP'
+type WebVitalMetric = 'CLS' | 'INP' | 'LCP'
 
 type FrontendErrorReport = {
   kind: FrontendErrorKind

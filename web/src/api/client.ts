@@ -10,7 +10,7 @@ const clerkApiTokenTemplateEnv = 'SCOPE_CLERK_API_TOKEN_TEMPLATE'
 const nodeEnv = 'NODE_ENV'
 const defaultClerkApiTokenTemplate = 'scope_api'
 
-export type ApiAuthMode = 'none' | 'optional' | 'required'
+type ApiAuthMode = 'none' | 'optional' | 'required'
 
 type ApiRequestOptions = {
   auth?: ApiAuthMode

@@ -1,11 +1,11 @@
 import type { RepoSummaryResponse } from '@/api/types.generated'
 
-export type RepoSettingsPageState = {
+type RepoSettingsPageState = {
   deleteError: string | null
   deleteTarget: RepoSummaryResponse | null
 }
 
-export type RepoSettingsPageAction =
+type RepoSettingsPageAction =
   | { type: 'deleteFailed'; message: string }
   | { type: 'deleteStarted'; repo: RepoSummaryResponse }
   | { type: 'deleteTargetChanged'; repo: RepoSummaryResponse | null }

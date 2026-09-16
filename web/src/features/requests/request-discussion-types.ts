@@ -23,7 +23,7 @@ export type RequestDiscussionMutation = RequestDiscussionMutationResponse
 export type RequestDiscussionReplyMutation = RequestDiscussionReplyMutationResponse
 export type RequestActivityPage = RequestActivityPageResponse
 
-export type DiscussionPendingState = 'failed' | 'sending'
+type DiscussionPendingState = 'failed' | 'sending'
 
 export type RequestDiscussionView = RequestDiscussion & {
   expanded?: boolean

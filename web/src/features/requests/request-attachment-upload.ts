@@ -17,12 +17,12 @@ export type AttachmentUploadParams = {
   request_id: string
 }
 
-export type AttachmentUploadTarget = {
+type AttachmentUploadTarget = {
   discussion_id: string | null
   kind: RequestAttachmentTargetKind
 }
 
-export type AttachmentPartReceipt = {
+type AttachmentPartReceipt = {
   part_number: number
   sha256: string
   size_bytes: number

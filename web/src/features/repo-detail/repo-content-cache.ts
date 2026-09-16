@@ -7,7 +7,7 @@ export const repoContentResource = createCachedResource<RepoContent>({
   weightOf: approximateContentBytes,
 })
 
-export type RepoContentIdentity = {
+type RepoContentIdentity = {
   scope: string
   audience: 'private' | 'public'
   changeVersion: number

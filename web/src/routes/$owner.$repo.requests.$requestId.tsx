@@ -147,7 +147,7 @@ function RequestRoute() {
   )
 }
 
-export type RequestDetailSearch = RequestChangesSearch & {
+type RequestDetailSearch = RequestChangesSearch & {
   discussion?: string
 }
 

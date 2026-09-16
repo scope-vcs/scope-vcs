@@ -13,7 +13,7 @@ export type TopbarItem = {
 }
 
 /** Compact repository facts rendered beside the repo name. */
-export type TopbarFact = {
+type TopbarFact = {
   id: string
   label: ReactNode
   semantic?: 'danger' | 'info' | 'success' | 'warning'

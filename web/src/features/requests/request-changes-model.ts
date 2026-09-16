@@ -2,7 +2,7 @@ import type { CommitSummary } from '@/api/types'
 import type { RequestRevisionListResponse } from '@/api/types.generated'
 import type { RequestDiscussion } from './request-discussion-types'
 
-export type RequestChangeSelection = {
+type RequestChangeSelection = {
   commit?: string
   revision?: string
 }

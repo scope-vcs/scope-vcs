@@ -13,12 +13,12 @@ import { invalidateRepoResources } from './repo-resource-invalidation'
 
 /** A forced refresh ignores versions; a versioned one is dropped once applied. */
 type RepoRefreshRequest = { force: boolean; version: number | null }
-export type RepoChangeListener = (event: RepoChangeEvent) => void
+type RepoChangeListener = (event: RepoChangeEvent) => void
 export type SubscribeToRepoChanges = (
   listener: RepoChangeListener,
 ) => () => void
 
-export type RepoRefreshCoordinator = {
+type RepoRefreshCoordinator = {
   onEvent: (event: RepoChangeEvent) => void
   onStreamInterrupted: () => void
   stop: () => void

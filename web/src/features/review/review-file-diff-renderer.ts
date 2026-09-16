@@ -29,13 +29,13 @@ export class ReviewDiffTransientError extends Error {
   }
 }
 
-export type IsolatedReviewDiffRender = (
+type IsolatedReviewDiffRender = (
   input: ReviewFileDiffWorkerInput,
   deadlineMs: number,
   signal?: AbortSignal,
 ) => Promise<ReviewFileDiffWorkerResult>
 
-export type ReviewDiffAdmissionState = { active: number }
+type ReviewDiffAdmissionState = { active: number }
 
 export function createReviewFileDiffRenderer({
   isolatedRender,

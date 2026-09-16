@@ -3,7 +3,7 @@ export type AnalyticsRoute = {
   path: string
 }
 
-export type AnalyticsRouteDecision =
+type AnalyticsRouteDecision =
   | { kind: 'excluded' }
   | { kind: 'tracked'; route: AnalyticsRoute }
 

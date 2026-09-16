@@ -10,12 +10,12 @@ export const REQUEST_WORKSPACE_COLLAPSED_WIDTH = 54
 const COLLAPSE_DRAG_THRESHOLD = 150
 const REOPEN_DRAG_DISTANCE = 32
 
-export type RequestWorkspaceWidthState = {
+type RequestWorkspaceWidthState = {
   collapsed: boolean
   width: number
 }
 
-export type RequestWorkspaceWidthDrag = {
+type RequestWorkspaceWidthDrag = {
   startedCollapsed: boolean
   width: number
   x: number

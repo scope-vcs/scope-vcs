@@ -3,7 +3,7 @@ export type RequestAttachmentDraftTarget =
   | 'discussion'
   | `reply:${string}`
 
-export type RequestAttachmentDraftScope = {
+type RequestAttachmentDraftScope = {
   accessScope: string
   repoId: string
   requestId: string
@@ -11,7 +11,7 @@ export type RequestAttachmentDraftScope = {
   viewerId: string
 }
 
-export type DraftAttachmentStatus =
+type DraftAttachmentStatus =
   | 'queued'
   | 'uploading'
   | 'uploaded'
@@ -32,7 +32,7 @@ export type DraftAttachment = {
   status: DraftAttachmentStatus
 }
 
-export type RequestAttachmentDraft = {
+type RequestAttachmentDraft = {
   attachments: DraftAttachment[]
   baseText: string | null
   initialized: boolean
