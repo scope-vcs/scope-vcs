@@ -2,17 +2,9 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-variant="${1:?usage: backend with-api|without-api}"
-case "$variant" in
-  with-api) selection=(--workspace) ;;
-  without-api) selection=(--workspace --exclude api) ;;
-  *) echo "unknown backend variant: $variant" >&2; exit 2 ;;
-esac
 cargo fmt --all --check
-cargo test "${selection[@]}" --locked
-if [[ "$variant" == with-api ]]; then
-  cargo test -p api --features local-dev --locked dev::
-  env -u SCOPE_OBJECT_ENCRYPTION_KEY -u SCOPE_BUCKET_ENDPOINT \
-    cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests
-fi
-cargo clippy "${selection[@]}" --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo test -p api --features local-dev --locked dev::
+env -u SCOPE_OBJECT_ENCRYPTION_KEY -u SCOPE_BUCKET_ENDPOINT \
+  cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests
+cargo clippy --workspace --all-targets --locked -- -D warnings

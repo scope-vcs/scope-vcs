@@ -2,11 +2,6 @@ name: Rust Workspace Checks
 
 on:
   workflow_call:
-    inputs:
-      include_api:
-        default: false
-        required: false
-        type: boolean
 
 permissions:
   contents: read
@@ -48,20 +43,18 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           cache-bin: false
-          shared-key: workspace-${{ inputs.include_api && 'with-api' || 'without-api' }}
+          shared-key: workspace
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
       - name: Check Rust workspace
-        run: ./dev/checks/backend ${{ inputs.include_api && 'with-api' || 'without-api' }}
+        run: ./dev/checks/backend
 
       - name: Enable pnpm
-        if: inputs.include_api
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           version: 11.1.0
 
       - name: Install Node
-        if: inputs.include_api
         uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -69,10 +62,8 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install web dependencies
-        if: inputs.include_api
         working-directory: web
         run: pnpm install --frozen-lockfile
 
       - name: Check generated API TypeScript contract
-        if: inputs.include_api
         run: ./dev/checks/contract

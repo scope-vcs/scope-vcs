@@ -22,7 +22,7 @@ EOF
 }
 
 guardrails() { ./dev/checks/policy; }
-rust() { ./dev/checks/backend with-api; }
+rust() { ./dev/checks/backend; }
 contract() { ./dev/checks/contract; }
 cli() { ./dev/checks/cli; }
 web() { ./dev/checks/web; }

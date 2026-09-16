@@ -33,8 +33,6 @@ jobs:
 
   checks:
     uses: ./.github/workflows/rust-workspace-checks.yml
-    with:
-      include_api: true
 
   release-artifact:
     name: Build backend deployment binaries

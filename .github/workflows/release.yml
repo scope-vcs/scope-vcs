@@ -135,12 +135,7 @@ jobs:
     uses: ./.github/workflows/validate.yml
     with:
       checks_image: ${{ needs.plan.outputs.checks_image }}
-      cache: ${{ needs.plan.outputs.cache }}
-      worker: ${{ needs.plan.outputs.worker }}
-      media_worker: ${{ needs.plan.outputs.media_worker }}
-      router: ${{ needs.plan.outputs.router }}
-      media: ${{ needs.plan.outputs.media }}
-      api: ${{ needs.plan.outputs.api }}
+      backend: ${{ needs.plan.outputs.backend_selected }}
       web: ${{ needs.plan.outputs.web }}
       cli: ${{ needs.plan.outputs.cli }}
       cli_distribution: ${{ needs.plan.outputs.cli_distribution }}
