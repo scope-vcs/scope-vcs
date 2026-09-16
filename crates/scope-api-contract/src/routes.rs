@@ -182,6 +182,7 @@ routes! {
             cli_device_login_poll(device_code: &str);
         CLI_EXCHANGE_GRANTS_EXCHANGE = "/v1/cli/exchange-grants/exchange";
         CLI_SESSION = "/v1/cli/session";
+        DISPATCH_AUTHORIZE = "/internal/cloud-dispatch/authorize";
         ATTEMPT_CLAIM = "/v1/runtime-protocol/attempts/{attempt_id}/claim",
             attempt_claim(attempt_id: &str);
         ATTEMPT_HEARTBEAT = "/v1/runtime-protocol/attempts/{attempt_id}/heartbeat",

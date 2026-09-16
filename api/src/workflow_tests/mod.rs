@@ -3,7 +3,7 @@ use crate::{
     app::router,
     auth::{clerk::*, tokens::*},
     config::*,
-    git::{command::*, import::*, projection_repo::*, storage::*, upload::*, *},
+    git::{command::*, import::*, projection_repo::*, staging::*, storage::*, upload::*, *},
     http::responses::*,
     push_intents::*,
     repo_access::*,

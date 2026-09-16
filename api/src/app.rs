@@ -70,7 +70,7 @@ pub fn router(state: AppState) -> Router {
             get(http::account::get_account_session),
         )
         .route(
-            "/internal/cloud-dispatch/authorize",
+            routes::DISPATCH_AUTHORIZE,
             post(http::dispatch_authorization::authorize),
         )
         .route(routes::ATTEMPT_CLAIM, post(http::runtime_protocol::claim))

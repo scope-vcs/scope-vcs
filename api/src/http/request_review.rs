@@ -15,9 +15,12 @@ use crate::{
         },
     },
     state::AppState,
-    use_cases::request_revision_inspection::{
-        DiffStatusValidationOrder, InspectedRequestChange, InspectedRequestChanges,
-        commit_belongs_to_revision, inspect_request_changes,
+    use_cases::{
+        request_revision_inspection::{
+            DiffStatusValidationOrder, InspectedRequestChange, InspectedRequestChanges,
+            commit_belongs_to_revision, inspect_request_changes,
+        },
+        scope_path_input::normalized_scope_path,
     },
 };
 use axum::{
@@ -499,15 +502,6 @@ fn canonical_commit_oid(oid: String) -> Result<String, ApiError> {
     GitOid::try_from(oid)
         .map(String::from)
         .map_err(ApiError::bad_request)
-}
-
-fn normalized_scope_path(path: &str) -> Result<ScopePath, ApiError> {
-    let scope_path = ScopePath::parse(format!("/{}", path.trim_start_matches('/')))
-        .map_err(ApiError::bad_request)?;
-    if scope_path == ScopePath::root() {
-        return Err(ApiError::bad_request("file path is required"));
-    }
-    Ok(scope_path)
 }
 
 #[cfg(test)]

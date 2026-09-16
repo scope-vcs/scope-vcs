@@ -105,7 +105,7 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
         });
         Request::builder()
             .method("POST")
-            .uri("/internal/cloud-dispatch/authorize")
+            .uri(scope_api_contract::routes::DISPATCH_AUTHORIZE)
             .header(AUTHORIZATION, "Bearer broker-secret")
             .header(CONTENT_TYPE, "application/json")
             .body(Body::from(serde_json::to_vec(&body).unwrap()))
