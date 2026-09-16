@@ -103,6 +103,8 @@ jobs:
     steps:
       - name: Check CLI
         run: ./dev/checks/cli
+      - name: Check host bundle and installer
+        run: ./dev/checks/cli-bundle
 
   cli-e2e:
     caches:

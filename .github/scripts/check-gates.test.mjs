@@ -9,7 +9,7 @@ import { classifyChanges } from './plan-production-deployment.mjs';
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const manifest = JSON.parse(read('.github/deployment-services.json'));
-const gates = ['backend', 'cli', 'web', 'contract', 'policy', 'integration', 'ops', 'dependency-analyzer'];
+const gates = ['backend', 'cli', 'cli-bundle', 'web', 'contract', 'policy', 'integration', 'ops', 'dependency-analyzer'];
 
 // Capture the commands actually executed, without requiring installed toolchains,
 // credentials, or a running stack. The scripts remain the command inventory.
@@ -41,9 +41,17 @@ test('web gate includes observer and resource rules; the backend gate owns the c
   assert.equal(webChecks, 'pnpm typecheck && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   const cliCommands = commands('cli');
-  assert.ok(cliCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
-  assert.ok(cliCommands.includes('bash cli/distribution/package-bundle.sh'));
-  assert.ok(cliCommands.includes('bash cli/distribution/verify-bundled-analyzer.sh'));
+  assert.ok(cliCommands.includes('cargo fmt --manifest-path cli/Cargo.toml -- --check'));
+  assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
+  assert.ok(cliCommands.includes('cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings'));
+  // The distribution matrix owns every release build; the CLI gate must not add one.
+  assert.ok(!cliCommands.some((command) => command.includes('--release')), cliCommands.join('\n'));
+  const bundleCommands = commands('cli-bundle');
+  assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
+  assert.ok(bundleCommands.includes('npm ci --prefix dependency-analyzer --ignore-scripts'));
+  assert.ok(bundleCommands.includes('bash cli/distribution/package-bundle.sh'));
+  assert.ok(bundleCommands.includes('bash cli/distribution/verify-bundled-analyzer.sh'));
+  assert.ok(bundleCommands.includes('node --test cli/distribution/install-smoke.test.mjs'));
   assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture']);
   assert.deepEqual(commands('integration', 'web'), ['pnpm test:smoke']);
   assert.deepEqual(commands('dependency-analyzer'), [
@@ -142,6 +150,36 @@ test('policy rejects oversized non-web source in a complete checkout', () => {
     assert.equal(result.status, 1);
     assert.match(result.stderr, /worker\/src\/oversized.rs/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the CLI is built once per target and the matrix owns the deployed service artifact', () => {
+  const workflow = read('.github/workflows/scope-cli-build.yml');
+  const jobsSection = workflow.slice(workflow.indexOf('\njobs:\n'));
+  assert.deepEqual(
+    [...jobsSection.matchAll(/^  ([\w-]+):$/gm)].map(([, name]) => name),
+    ['prepare', 'checks', 'build'],
+  );
+  const checks = jobsSection.slice(jobsSection.indexOf('\n  checks:\n'), jobsSection.indexOf('\n  build:\n'));
+  const build = jobsSection.slice(jobsSection.indexOf('\n  build:\n'));
+  // The always-on gate never release-builds; it defers the host bundle to the matrix.
+  assert.doesNotMatch(checks, /--release/);
+  assert.match(checks, /run: \.\/dev\/checks\/cli\n/);
+  assert.match(checks, /if: \$\{\{ !inputs\.validate_targets \}\}\n\s+run: \.\/dev\/checks\/cli-bundle\n/);
+  assert.match(checks, /if: inputs\.validate_service_release && !inputs\.validate_targets\n/);
+  // Each matrix leg builds its target once; only the native Linux x64 leg ships the service.
+  const serviceGate = "if: inputs.validate_service_release && matrix.target == 'x86_64-unknown-linux-gnu'";
+  assert.equal(build.split(serviceGate).length - 1, 2);
+  const upload = build.slice(build.indexOf('      - name: Upload service'));
+  assert.match(upload, /name: cli-service-release-\$\{\{ github\.sha \}\}/);
+  assert.match(upload, /path: artifacts\/scope-cli-service\.tar\.gz/);
+  const pack = build.slice(build.indexOf('      - name: Pack service'), build.indexOf('      - name: Upload service'));
+  assert.match(pack, /release=cli\/target\/\$\{\{ matrix\.target \}\}\/release/);
+  assert.match(pack, /--file artifacts\/scope-cli-service\.tar\.gz/);
+  assert.match(pack, /--directory "\$release"/);
+  assert.match(pack, /\n\s+scope-cli-service LICENSE NOTICE third-party-rust\.txt\n/);
+  const publish = read('.github/workflows/publish-cli.yml');
+  assert.match(publish, /name: cli-service-release-\$\{\{ inputs\.source_sha \|\| github\.sha \}\}/);
+  assert.match(publish, /--file artifacts\/scope-cli-service\.tar\.gz[\s\\]+--directory \.railway-cli\/bin/);
 });
 
 test('CLI release identity survives subsequent Cargo commands and cross containers', () => {

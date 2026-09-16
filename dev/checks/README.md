@@ -7,7 +7,8 @@ caller's working directory.
 | Entrypoint | Coverage |
 | --- | --- |
 | `backend` | Workspace formatting, tests, API test support, local development helpers, Clippy |
-| `cli` | Standalone formatting, tests, distribution selector, Clippy, both release binaries, native installer checks |
+| `cli` | Standalone formatting, tests, distribution selector, Clippy |
+| `cli-bundle` | Host release binaries, packaged analyzer runtime, native installer check |
 | `web` | Tests, types, observer boundary, React health, structure, build |
 | `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |
 | `policy` | License inventory freshness, complete-tree source size, Rust boundaries, toolchain pins, gate inventory |
@@ -22,8 +23,12 @@ the contract, so the web gate does not install Rust. CLI integration requires
 `SCOPE_API_URL`. The integration entrypoint explicitly runs the contribution
 test; ordinary CLI test runs report it as ignored.
 GitHub retains native distribution build matrices; these scripts do not select
-platforms or provision credentials. Repository policy always checks the full
-checkout, including source outside `web/`.
+platforms or provision credentials. The matrix release-builds, packages, and
+checks the installer for every selected target, so GitHub runs `cli-bundle` only
+when the matrix is not selected; it covers the host so no pull request loses the
+release build or installer check. `dev/check cli` and `.scope/runs/checks.yml`
+always run both. Repository policy always checks the full checkout, including
+source outside `web/`.
 
 The CLI distribution matrix also runs the portable version and license commands
 and the installer check on native Linux, macOS, and Windows runners. It also runs
