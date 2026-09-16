@@ -13,12 +13,6 @@ use std::{collections::BTreeSet, path::Path as FsPath};
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DiffStatusValidationOrder {
-    BeforePath,
-    AfterVisibility,
-}
-
 #[derive(Debug)]
 pub(crate) struct InspectedRequestChange {
     pub(crate) path: String,
@@ -40,14 +34,12 @@ pub(crate) fn inspect_request_changes(
     changes: &[u8],
     policy: &Policy,
     access: RepositoryAccess,
-    status_order: DiffStatusValidationOrder,
 ) -> Result<InspectedRequestChanges, ApiError> {
     let mut files = Vec::new();
     let hidden = visit_request_changes(
         changes,
         policy,
         access,
-        status_order,
         |path, scope_path, kind, columns| {
             files.push(InspectedRequestChange {
                 path,
@@ -70,23 +62,28 @@ pub(crate) fn inspect_request_paths(
     access: RepositoryAccess,
 ) -> Result<(BTreeSet<ScopePath>, bool), ApiError> {
     let mut paths = BTreeSet::new();
-    let hidden = visit_request_changes(
-        changes,
-        policy,
-        access,
-        DiffStatusValidationOrder::BeforePath,
-        |_, scope_path, _, _| {
-            paths.insert(scope_path);
-        },
-    )?;
+    let hidden = visit_request_changes(changes, policy, access, |_, scope_path, _, _| {
+        paths.insert(scope_path);
+    })?;
     Ok((paths, hidden))
+}
+
+/// Reads the first-parent changes of `commit_oid` and reports the paths this
+/// viewer may read plus whether any change was hidden from them.
+pub(crate) fn request_commit_visible_paths(
+    raw_repo: &FsPath,
+    policy: &Policy,
+    access: RepositoryAccess,
+    commit_oid: &str,
+) -> Result<(BTreeSet<ScopePath>, bool), ApiError> {
+    let changes = request_commit_changes(raw_repo, commit_oid)?;
+    inspect_request_paths(&changes, policy, access)
 }
 
 fn visit_request_changes(
     changes: &[u8],
     policy: &Policy,
     access: RepositoryAccess,
-    status_order: DiffStatusValidationOrder,
     mut visit: impl FnMut(String, ScopePath, FileChangeKind, &[&str]),
 ) -> Result<bool, ApiError> {
     let mut fields = changes.split(|byte| *byte == 0);
@@ -103,13 +100,6 @@ fn visit_request_changes(
             )));
         }
         let status = columns[4].as_bytes();
-        // Anchors reject unsupported status before consuming the path. Review skips
-        // hidden paths first, including statuses it would reject on visible paths.
-        let kind = if status_order == DiffStatusValidationOrder::BeforePath {
-            Some(request_change_kind(status)?)
-        } else {
-            None
-        };
         let path = fields
             .next()
             .ok_or_else(|| ApiError::internal_message("request diff is missing a path"))?;
@@ -119,11 +109,10 @@ fn visit_request_changes(
             hidden = true;
             continue;
         }
-        let kind = match kind {
-            Some(kind) => kind,
-            None => request_change_kind(status)?,
-        };
-        visit(path, scope_path, kind, &columns);
+        // Visibility wins over status: a change this viewer may not read is skipped
+        // before its status is validated, so an unsupported status on a hidden path
+        // never surfaces as an error.
+        visit(path, scope_path, request_change_kind(status)?, &columns);
     }
     Ok(hidden)
 }
@@ -181,37 +170,26 @@ fn git_commit_exists(raw_repo: &FsPath, commit_oid: &str) -> Result<bool, ApiErr
     }
 }
 
+/// Reads a commit's raw changes against its first parent, or against the empty
+/// tree for a root commit.
 pub(crate) fn request_commit_changes(
     raw_repo: &FsPath,
-    parent_oid: Option<&str>,
     commit_oid: &str,
 ) -> Result<Vec<u8>, ApiError> {
-    let mut args = vec!["--literal-pathspecs"];
-    if let Some(parent_oid) = parent_oid {
-        args.extend([
-            "diff",
-            "--raw",
-            "-z",
-            "--no-renames",
-            "--abbrev=64",
-            parent_oid,
-            commit_oid,
-            "--",
-        ]);
-    } else {
-        args.extend([
-            "diff-tree",
-            "--root",
-            "--no-commit-id",
-            "-r",
-            "--raw",
-            "-z",
-            "--no-renames",
-            "--abbrev=64",
-            commit_oid,
-            "--",
-        ]);
-    }
+    let args = [
+        "--literal-pathspecs",
+        "diff-tree",
+        "--root",
+        "--no-commit-id",
+        "-r",
+        "--raw",
+        "-z",
+        "--no-renames",
+        "--abbrev=64",
+        "--diff-merges=first-parent",
+        commit_oid,
+        "--",
+    ];
     let output = run_git_output(Some(raw_repo), &args, "reading request changes")?;
     if !output.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(

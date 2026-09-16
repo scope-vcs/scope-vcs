@@ -1,4 +1,4 @@
-use super::inspect_request_paths;
+use crate::use_cases::request_revision_inspection::inspect_request_paths;
 use axum::http::StatusCode;
 use scope_domain::{
     policy::{Policy, ScopePath, Visibility, VisibilityRule},
@@ -9,7 +9,42 @@ const ZERO_OID: &str = "0000000000000000000000000000000000000000";
 const ONE_OID: &str = "1111111111111111111111111111111111111111";
 
 #[test]
-fn anchor_parser_preserves_status_before_path_validation() {
+fn anchor_parser_hides_unreadable_paths_before_validating_change_status() {
+    let mut policy = Policy::new(Visibility::Public);
+    policy
+        .add_rule(VisibilityRule::private(
+            ScopePath::parse("/private.txt").unwrap(),
+        ))
+        .unwrap();
+    let changes = [diff("R100", "private.txt"), diff("M", "visible.txt")].concat();
+
+    let (paths, hidden) =
+        inspect_request_paths(changes.as_bytes(), &policy, RepositoryAccess::public()).unwrap();
+
+    assert!(hidden);
+    assert_eq!(
+        paths.iter().map(ScopePath::as_str).collect::<Vec<_>>(),
+        vec!["/visible.txt"]
+    );
+
+    assert_api_error(
+        inspect_request_paths(
+            changes.as_bytes(),
+            &policy,
+            RepositoryAccess {
+                can_read_private_files: true,
+                ..RepositoryAccess::public()
+            },
+        )
+        .unwrap_err(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Scope hit an internal error.",
+        "unsupported request diff status R100",
+    );
+}
+
+#[test]
+fn anchor_parser_reports_framing_and_path_faults_before_change_status() {
     let mut policy = Policy::new(Visibility::Public);
     policy
         .add_rule(VisibilityRule::private(
@@ -17,38 +52,30 @@ fn anchor_parser_preserves_status_before_path_validation() {
         ))
         .unwrap();
 
-    for changes in [
-        diff("R100", "private.txt"),
-        header("R100"),
-        diff("R100", "../private.txt"),
-    ] {
+    for status in ["A", "R100"] {
         assert_api_error(
-            inspect_request_paths(changes.as_bytes(), &policy, RepositoryAccess::public())
-                .unwrap_err(),
+            inspect_request_paths(
+                header(status).as_bytes(),
+                &policy,
+                RepositoryAccess::public(),
+            )
+            .unwrap_err(),
             StatusCode::INTERNAL_SERVER_ERROR,
             "Scope hit an internal error.",
-            "unsupported request diff status R100",
+            "request diff is missing a path",
+        );
+        assert_api_error(
+            inspect_request_paths(
+                diff(status, "../private.txt").as_bytes(),
+                &policy,
+                RepositoryAccess::public(),
+            )
+            .unwrap_err(),
+            StatusCode::BAD_REQUEST,
+            "path cannot contain empty segments, . or ..",
+            "path cannot contain empty segments, . or ..",
         );
     }
-
-    assert_api_error(
-        inspect_request_paths(header("A").as_bytes(), &policy, RepositoryAccess::public())
-            .unwrap_err(),
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Scope hit an internal error.",
-        "request diff is missing a path",
-    );
-    assert_api_error(
-        inspect_request_paths(
-            diff("A", "../private.txt").as_bytes(),
-            &policy,
-            RepositoryAccess::public(),
-        )
-        .unwrap_err(),
-        StatusCode::BAD_REQUEST,
-        "path cannot contain empty segments, . or ..",
-        "path cannot contain empty segments, . or ..",
-    );
 }
 
 #[test]
