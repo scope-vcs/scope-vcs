@@ -5,51 +5,38 @@
 //! the workflow being persisted.
 
 mod auth;
+mod cache_service;
 #[cfg(any(test, feature = "seeding"))]
 mod catalog_fixture;
-#[cfg(any(test, feature = "seeding"))]
-pub use catalog_fixture::CatalogFixture;
-mod cli_auth_results;
-pub use cli_auth_results::{
-    BrowserLoginCompletion, CliSessionSummary, CreateCliExchangeGrantCommand, DeviceLoginPoll,
-    NewCliSession, StartBrowserLoginCommand, StartDeviceLoginCommand,
-};
-mod cache_service;
 pub mod cleanup_queue;
 #[cfg(test)]
 mod cleanup_queue_tests;
 mod clerk_users;
 mod cli_auth;
+mod cli_auth_results;
 mod cli_sessions;
+mod connection;
 mod content_fences;
 mod content_push_transactions;
 mod dependency_analysis;
-pub use content_fences::ContentRefFence;
 mod entities;
 mod fast_push;
 mod generated_ids;
 mod git_compaction;
+mod git_push_reads;
 mod git_segments;
+mod history_reads;
+mod history_rows;
+mod integer_columns;
+mod json;
+mod landing_files;
+mod locks;
+mod maintenance;
+mod manual_runs;
 #[cfg(test)]
 mod migration_harness_tests;
 #[cfg(test)]
 mod migration_tests;
-pub use cache_service::{
-    CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
-    CacheUploadCleanupClaim, CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
-};
-pub use dependency_analysis::{
-    DependencyAnalysisClaim, DependencyCompletion, DependencySnapshotFile,
-};
-pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
-mod git_push_reads;
-mod history_reads;
-mod history_rows;
-mod integer_columns;
-pub use history_reads::{RepositoryHistoryBoundary, RepositoryHistoryPage, RepositoryHistoryQuery};
-mod landing_files;
-mod locks;
-mod manual_runs;
 mod object_references;
 mod outbox;
 mod projection_encoding;
@@ -65,46 +52,17 @@ mod repository_access;
 mod repository_rows;
 mod request_access;
 mod request_attention;
-pub use request_attention::{ApplyRequestAttentionCommand, RequestAttentionResult};
-mod request_discussion_rows;
-mod request_revision_rows;
-pub use request_discussion_rows::RequestDiscussionReplyReadModel;
 mod request_discussion_commands;
-pub use request_discussion_commands::{
-    CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
-    ReopenAndReplyToRequestDiscussionCommand, TransitionRequestDiscussionCommand,
-};
+mod request_discussion_rows;
 mod request_discussions;
-pub use request_discussions::{
-    RequestDiscussionReadBatch, RequestDiscussionReadModel, RequestDiscussionsPageQuery,
-};
 mod request_invitees;
-pub use request_invitees::{
-    AddRequestInviteeCommand, LeaveRequestCommand, RemoveRequestInviteeCommand, RequestInviteeRead,
-};
 mod request_lifecycle_commands;
-pub use request_lifecycle_commands::{
-    CloseRequestCommand, EditRequestIdentityCommand, MergeRequestContentCommand,
-    SubmitRequestCommand,
-};
-mod request_queue;
-pub use request_queue::{
-    RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,
-};
-mod request_ratings;
-mod request_rows;
-pub use request_rows::{RequestListPageQuery, RequestListRow};
 mod request_media;
 mod request_merge;
-pub use request_media::{
-    CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
-    CompletedRequestMediaManifest, FailRequestAttachmentProcessingCommand,
-    FinishRequestAttachmentUploadCommand, MediaLeaseMutation, PrepareRequestAttachmentCommand,
-    PreparedRequestAttachment, RequestAttachmentCleanupReason, RequestMediaChunk,
-    RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
-    StoredRequestAttachmentPart, ValidateRequestAttachmentSourceCommand,
-    ValidatedRequestAttachmentSource,
-};
+mod request_queue;
+mod request_ratings;
+mod request_revision_rows;
+mod request_rows;
 mod request_submission_transactions;
 mod requests;
 mod run_admission;
@@ -122,31 +80,46 @@ mod run_operations;
 mod run_retention;
 mod run_step_operations;
 mod runs;
-pub use run_admission::DispatchAdmission;
-pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePreparationCommand};
-pub use run_details::{RunAttemptDetail, RunDetail};
-pub use run_dispatch::CloudTaskStop;
-pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
-pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
-pub use run_log_writes::AppendRunLogResult;
-pub use runs::{AttemptMutation, DispatchClaim, EnqueueRunResult};
+mod stores;
 #[cfg(any(test, feature = "seeding"))]
 mod test_support;
 mod workflow_catalogs;
-pub use workflow_catalogs::{
-    CurrentRepositoryWorkflowCatalog, RepositoryWorkflowCatalogBackfillCandidate,
-};
 
-use crate::error::PostgresError;
 pub use crate::migrations::{MigrationLimits, MigrationPlan, PendingMigration};
+pub use cache_service::{
+    CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
+    CacheUploadCleanupClaim, CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
+};
+#[cfg(any(test, feature = "seeding"))]
+pub use catalog_fixture::CatalogFixture;
 #[cfg(any(test, feature = "test-support"))]
 pub use clerk_users::scope_user_id_for_auth_identity;
+pub use cli_auth_results::{
+    BrowserLoginCompletion, CliSessionSummary, CreateCliExchangeGrantCommand, DeviceLoginPoll,
+    NewCliSession, StartBrowserLoginCommand, StartDeviceLoginCommand,
+};
+use connection::begin_metadata_read_snapshot;
+pub use connection::{
+    ExclusiveWriterFence, terminate_metadata_writer_sessions, verify_writer_fence_available,
+};
+#[cfg(test)]
+use connection::{connect_postgres_store, connect_writer_database};
+pub use content_fences::ContentRefFence;
+pub use dependency_analysis::{
+    DependencyAnalysisClaim, DependencyCompletion, DependencySnapshotFile,
+};
 pub use fast_push::ApplyContentOnlyPushCommand;
+pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::GitPushContext;
 pub use git_segments::RepositoryGitWriteLease;
-use history_rows::load_repository_histories;
+pub use history_reads::{RepositoryHistoryBoundary, RepositoryHistoryPage, RepositoryHistoryQuery};
+use json::{decode_json, encode_json};
 use locks::acquire_aggregate_lock;
+pub use maintenance::{
+    apply_maintenance_migrations, migration_plan, migration_preflight,
+    repository_workflow_catalogs_for_maintenance, verify_schema,
+};
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{
     CreateRepositoryInviteMutation, RepositoryCollaborationMutation,
@@ -155,420 +128,50 @@ pub use repo_collaboration::{
 pub use repo_lifecycle::{CreateRepositoryCommand, RepositoryCreationError};
 pub use repo_mutation::{RepositoryMutation, RepositoryMutationError};
 pub use repo_reads::{RepoLiveFileWithLandingContent, RepoSummaryRead};
-use repository_rows::load_repository_facts;
-use scope_domain::content_ref::ContentRef;
-use scope_domain::{
-    repository::collaboration::{RepositoryInvite, RepositoryMember},
-    repository::{Repository, repo_id},
+use repository_rows::repository_from_model;
+pub use request_attention::{ApplyRequestAttentionCommand, RequestAttentionResult};
+pub use request_discussion_commands::{
+    CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
+    ReopenAndReplyToRequestDiscussionCommand, TransitionRequestDiscussionCommand,
 };
-use sea_orm::{
-    AccessMode, ColumnTrait, ConnectOptions, ConnectionTrait, Database, DatabaseConnection,
-    DatabaseTransaction, EntityTrait, IsolationLevel, QueryFilter, QueryOrder,
-    SqlxPostgresConnector, TransactionTrait,
+pub use request_discussion_rows::RequestDiscussionReplyReadModel;
+pub use request_discussions::{
+    RequestDiscussionReadBatch, RequestDiscussionReadModel, RequestDiscussionsPageQuery,
 };
-use serde::{Serialize, de::DeserializeOwned};
-use sqlx::{Connection as _, PgConnection};
-use std::sync::Arc;
+pub use request_invitees::{
+    AddRequestInviteeCommand, LeaveRequestCommand, RemoveRequestInviteeCommand, RequestInviteeRead,
+};
+pub use request_lifecycle_commands::{
+    CloseRequestCommand, EditRequestIdentityCommand, MergeRequestContentCommand,
+    SubmitRequestCommand,
+};
+pub use request_media::{
+    CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
+    CompletedRequestMediaManifest, FailRequestAttachmentProcessingCommand,
+    FinishRequestAttachmentUploadCommand, MediaLeaseMutation, PrepareRequestAttachmentCommand,
+    PreparedRequestAttachment, RequestAttachmentCleanupReason, RequestMediaChunk,
+    RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+    StoredRequestAttachmentPart, ValidateRequestAttachmentSourceCommand,
+    ValidatedRequestAttachmentSource,
+};
+pub use request_queue::{
+    RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,
+};
+pub use request_rows::{RequestListPageQuery, RequestListRow};
+pub use run_admission::DispatchAdmission;
+pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePreparationCommand};
+pub use run_details::{RunAttemptDetail, RunDetail};
+pub use run_dispatch::CloudTaskStop;
+pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
+pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
+pub use run_log_writes::AppendRunLogResult;
+pub use runs::{AttemptMutation, DispatchClaim, EnqueueRunResult};
+pub use stores::{
+    AdminStore, AuthStore, CacheStore, CleanupStore, JobStore, MediaStore, MetadataStore,
+    RepositoryStore, RequestStore, RunStore,
+};
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::TestDatabaseTarget;
-
-#[derive(Clone)]
-pub struct MetadataStore {
-    db: Arc<DatabaseConnection>,
-    postgres_database_url: Option<Arc<str>>,
-    #[cfg(any(test, feature = "test-support"))]
-    _test_schema: Option<Arc<test_support::TestSchemaLease>>,
-}
-
-#[derive(Clone)]
-pub struct JobStore {
-    db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
-pub struct AdminStore {
-    db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
-pub struct AuthStore {
-    db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
-pub struct CleanupStore {
-    db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
-pub struct CacheStore {
-    db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
-pub struct RepositoryStore {
-    db: Arc<DatabaseConnection>,
-    postgres_database_url: Option<Arc<str>>,
-}
-
-#[derive(Clone)]
-pub struct RequestStore {
-    db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
-pub struct MediaStore {
-    db: Arc<DatabaseConnection>,
-}
-
-#[derive(Clone)]
-pub struct RunStore {
-    db: Arc<DatabaseConnection>,
-}
-
-impl MetadataStore {
-    pub async fn acquire_content_ref_fence(
-        &self,
-        content_refs: &[ContentRef],
-    ) -> Result<ContentRefFence, PostgresError> {
-        content_fences::acquire_content_ref_fence(
-            self.db.as_ref(),
-            self.postgres_database_url.as_deref(),
-            content_refs,
-        )
-        .await
-    }
-
-    pub fn admin(&self) -> AdminStore {
-        AdminStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub fn auth(&self) -> AuthStore {
-        AuthStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub fn cleanup(&self) -> CleanupStore {
-        CleanupStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub fn caches(&self) -> CacheStore {
-        CacheStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub fn repositories(&self) -> RepositoryStore {
-        RepositoryStore {
-            db: Arc::clone(&self.db),
-            postgres_database_url: self.postgres_database_url.clone(),
-        }
-    }
-
-    pub fn requests(&self) -> RequestStore {
-        RequestStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub fn media(&self) -> MediaStore {
-        MediaStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub fn jobs(&self) -> JobStore {
-        JobStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub fn runs(&self) -> RunStore {
-        RunStore {
-            db: Arc::clone(&self.db),
-        }
-    }
-
-    pub async fn connect(database_url: String) -> anyhow::Result<Self> {
-        connect_postgres_store(database_url).await
-    }
-
-    #[cfg(feature = "local-dev")]
-    pub async fn connect_local_dev(
-        target: crate::local_dev_database::LocalDevDatabase,
-    ) -> anyhow::Result<Self> {
-        connect_postgres_store_with_options(target.url, target.options).await
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn connect_fresh_for_tests(target: &TestDatabaseTarget) -> anyhow::Result<Self> {
-        test_support::connect_postgres_test_store(target)
-    }
-}
-
-impl RepositoryStore {
-    pub async fn repository(
-        &self,
-        owner: &str,
-        name: &str,
-    ) -> Result<Option<Repository>, PostgresError> {
-        let id = repo_id(owner, name);
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let repo = match entities::repository::Entity::find_by_id(id)
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-        {
-            Some(repo) => Some(repository_from_model(&tx, repo).await?),
-            None => None,
-        };
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(repo)
-    }
-}
-
-impl AdminStore {
-    pub async fn readiness_check(&self) -> Result<(), PostgresError> {
-        crate::migrations::assert_exact_state(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)
-    }
-}
-
-async fn connect_postgres_store(database_url: String) -> anyhow::Result<MetadataStore> {
-    let options = database_url.parse()?;
-    connect_postgres_store_with_options(database_url, options).await
-}
-
-async fn connect_postgres_store_with_options(
-    database_url: String,
-    connection_options: sqlx::postgres::PgConnectOptions,
-) -> anyhow::Result<MetadataStore> {
-    let database_url = Arc::<str>::from(database_url);
-    let db = connect_writer_database(&database_url, connection_options).await?;
-    if let Err(error) = crate::migrations::assert_exact_state(&db).await {
-        // A rejected startup must release its writer fence before maintenance retries.
-        db.close().await?;
-        return Err(error.into());
-    }
-    Ok(MetadataStore {
-        db: Arc::new(db),
-        postgres_database_url: Some(database_url),
-        #[cfg(any(test, feature = "test-support"))]
-        _test_schema: None,
-    })
-}
-
-const WRITER_FENCE_KEY: &str = "scope:metadata-writers";
-
-pub async fn migration_preflight(
-    database_url: String,
-    limits: MigrationLimits,
-) -> anyhow::Result<MigrationPlan> {
-    let db = Database::connect(database_url).await?;
-    Ok(crate::migrations::preflight(&db, limits).await?)
-}
-
-pub async fn migration_plan(database_url: String) -> anyhow::Result<MigrationPlan> {
-    let db = Database::connect(database_url).await?;
-    Ok(crate::migrations::plan(&db).await?)
-}
-
-pub async fn repository_workflow_catalogs_for_maintenance(
-    database_url: String,
-) -> anyhow::Result<Vec<scope_domain::runs::catalog::RepositoryWorkflowCatalog>> {
-    let db = Database::connect(database_url).await?;
-    crate::migrations::plan(&db).await?;
-    let exists = db
-        .query_one(sea_orm::Statement::from_string(
-            db.get_database_backend(),
-            "SELECT to_regclass(format('%I.scope_repository_workflow_catalogs', current_schema())) IS NOT NULL AS exists",
-        ))
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("PostgreSQL did not report workflow catalog schema state"))?
-        .try_get::<bool>("", "exists")?;
-    if !exists {
-        return Ok(Vec::new());
-    }
-    Ok(workflow_catalogs::load_repository_workflow_catalogs(&db).await?)
-}
-
-pub async fn verify_schema(database_url: String) -> anyhow::Result<()> {
-    let db = Database::connect(database_url).await?;
-    crate::migrations::assert_exact_state(&db).await?;
-    Ok(())
-}
-
-pub async fn verify_writer_fence_available(database_url: String) -> anyhow::Result<()> {
-    ExclusiveWriterFence::acquire(&database_url)
-        .await?
-        .release()
-        .await
-}
-
-pub async fn terminate_metadata_writer_sessions(database_url: String) -> anyhow::Result<u64> {
-    let mut connection = PgConnection::connect(&database_url).await?;
-    let terminated: Vec<bool> = sqlx::query_scalar(&format!(
-        "WITH fence AS (
-            SELECT hashtextextended(
-                '{WRITER_FENCE_KEY}:' || current_database() || ':' || current_schema(),
-                0
-            ) AS key
-        )
-        SELECT pg_terminate_backend(locks.pid)
-        FROM pg_locks locks
-        CROSS JOIN fence
-        WHERE locks.locktype = 'advisory'
-            AND locks.mode = 'ShareLock'
-            AND locks.granted
-            AND locks.objsubid = 1
-            AND locks.classid::bigint = ((fence.key >> 32) & 4294967295)
-            AND locks.objid::bigint = (fence.key & 4294967295)
-            AND locks.pid <> pg_backend_pid()"
-    ))
-    .fetch_all(&mut connection)
-    .await?;
-    connection.close().await?;
-    Ok(terminated.into_iter().filter(|value| *value).count() as u64)
-}
-
-pub async fn apply_maintenance_migrations(
-    database_url: String,
-    limits: MigrationLimits,
-) -> anyhow::Result<()> {
-    let fence = ExclusiveWriterFence::acquire(&database_url).await?;
-    let db = Database::connect(database_url).await?;
-    let migration_result = crate::migrations::apply_in_maintenance(&db, limits).await;
-    let release_result = fence.release().await;
-    migration_result?;
-    release_result?;
-    Ok(())
-}
-
-pub struct ExclusiveWriterFence {
-    connection: PgConnection,
-}
-
-impl ExclusiveWriterFence {
-    pub async fn acquire(database_url: &str) -> anyhow::Result<Self> {
-        let mut connection = PgConnection::connect(database_url).await?;
-        let acquired: bool = sqlx::query_scalar(&writer_fence_statement("pg_try_advisory_lock"))
-            .fetch_one(&mut connection)
-            .await?;
-        if !acquired {
-            anyhow::bail!(
-                "maintenance migration refused: a metadata writer still holds the database fence"
-            );
-        }
-        Ok(Self { connection })
-    }
-
-    pub async fn release(mut self) -> anyhow::Result<()> {
-        sqlx::query(&writer_fence_statement("pg_advisory_unlock"))
-            .execute(&mut self.connection)
-            .await?;
-        self.connection.close().await?;
-        Ok(())
-    }
-}
-
-async fn connect_writer_database(
-    database_url: &str,
-    connection_options: sqlx::postgres::PgConnectOptions,
-) -> anyhow::Result<DatabaseConnection> {
-    let mut options = ConnectOptions::new(database_url.to_string());
-    options.min_connections(1);
-    let fence_statement = writer_fence_statement("pg_advisory_lock_shared");
-    let pool = options
-        .sqlx_pool_options()
-        .after_connect(move |connection, _| {
-            let fence_statement = fence_statement.clone();
-            Box::pin(async move {
-                sqlx::query(&fence_statement)
-                    .execute(connection)
-                    .await
-                    .map(|_| ())
-            })
-        })
-        .connect_with(connection_options)
-        .await?;
-    Ok(SqlxPostgresConnector::from_sqlx_postgres_pool(pool))
-}
-
-fn writer_fence_statement(function: &str) -> String {
-    format!(
-        "SELECT {function}(
-            hashtextextended(
-                '{WRITER_FENCE_KEY}:' || current_database() || ':' || current_schema(),
-                0
-            )
-        ) AS acquired"
-    )
-}
-
-pub(super) async fn begin_metadata_read_snapshot(
-    db: &DatabaseConnection,
-) -> Result<DatabaseTransaction, PostgresError> {
-    db.begin_with_config(
-        Some(IsolationLevel::RepeatableRead),
-        Some(AccessMode::ReadOnly),
-    )
-    .await
-    .map_err(PostgresError::internal)
-}
-
-async fn repository_from_model<C>(
-    conn: &C,
-    repository: entities::repository::Model,
-) -> Result<Repository, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let repo_id = repository.id.clone();
-    let repo_ids = [repo_id.clone()];
-    let facts = load_repository_facts(conn, &repo_ids)
-        .await?
-        .remove(&repo_id)
-        .ok_or_else(|| {
-            PostgresError::internal_message(format!("repository facts missing for {repo_id}"))
-        })?;
-    let history = load_repository_histories(conn, &repo_ids)
-        .await?
-        .remove(&repo_id)
-        .ok_or_else(|| {
-            PostgresError::internal_message(format!("repository history missing for {repo_id}"))
-        })?;
-    let members = entities::repository_member::Entity::find()
-        .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
-        .order_by_asc(entities::repository_member::Column::UserId)
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(entities::repository_member::Model::try_into_domain)
-        .collect::<Result<Vec<RepositoryMember>, _>>()?;
-    let invitations = entities::repository_invite::Entity::find()
-        .filter(entities::repository_invite::Column::RepoId.eq(repo_id))
-        .order_by_asc(entities::repository_invite::Column::InvitedEmailNormalized)
-        .order_by_asc(entities::repository_invite::Column::Id)
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(entities::repository_invite::Model::try_into_domain)
-        .collect::<Result<Vec<RepositoryInvite>, _>>()?;
-    repository.try_into_domain(facts, members, invitations, history)
-}
-
-fn encode_json<T: Serialize>(value: &T) -> Result<serde_json::Value, PostgresError> {
-    serde_json::to_value(value).map_err(PostgresError::internal)
-}
-
-fn decode_json<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, PostgresError> {
-    serde_json::from_value(value).map_err(PostgresError::internal)
-}
+pub use workflow_catalogs::{
+    CurrentRepositoryWorkflowCatalog, RepositoryWorkflowCatalogBackfillCandidate,
+};
