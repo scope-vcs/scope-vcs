@@ -1,3 +1,4 @@
+import { unixCalendarDay } from '../../lib/date-format'
 import type { RequestDiscussionReplyView } from './request-discussion-types'
 
 export function replyFragment(discussionId: string, replyId: string) {
@@ -37,12 +38,12 @@ export function shouldGroupReplies(
   )
 }
 
-export function sameUtcDate(leftUnix: number, rightUnix: number) {
-  const left = new Date(leftUnix * 1_000)
-  const right = new Date(rightUnix * 1_000)
-  return (
-    left.getUTCFullYear() === right.getUTCFullYear() &&
-    left.getUTCMonth() === right.getUTCMonth() &&
-    left.getUTCDate() === right.getUTCDate()
-  )
+// Day boundaries follow the same zone as the label above them: UTC through
+// hydration, then the viewer's own calendar.
+export function sameCalendarDate(
+  leftUnix: number,
+  rightUnix: number,
+  hydrated: boolean,
+) {
+  return unixCalendarDay(leftUnix, hydrated) === unixCalendarDay(rightUnix, hydrated)
 }

@@ -2,10 +2,9 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useRouterState } from '@tanstack/react-router'
 import type { PostHog } from 'posthog-js'
 import { useEffect, useRef } from 'react'
-import { loadAccountSessionForViewer } from '@/features/account/account-session-resource'
-import { useCachedResource } from '@/lib/use-cached-resource'
+import { useAccountSession } from '@/features/account/use-account-session'
+import { useCachedResource, useRetryOnReconnect } from '@/lib/use-cached-resource'
 import { useHydrated } from '@/lib/use-hydrated'
-import { loadAccountSession } from '@/routes/-account-session-actions'
 import {
   analyticsBootstrapResource,
   loadAnalyticsBootstrap,
@@ -16,7 +15,7 @@ import {
 } from './client-identity'
 import { installBrowserDiagnostics } from './diagnostics'
 import {
-  identifiedKey,
+  expectedIdentityKey,
   resolveAnalyticsIdentity,
 } from './identity'
 import { pageViewProperties } from './privacy'
@@ -34,16 +33,7 @@ export function AnalyticsRoot() {
     resource: analyticsBootstrapResource,
   })
 
-  useEffect(() => {
-    if (bootstrap.status !== 'failed') return
-    const retry = () => bootstrap.retry()
-    window.addEventListener('focus', retry)
-    window.addEventListener('online', retry)
-    return () => {
-      window.removeEventListener('focus', retry)
-      window.removeEventListener('online', retry)
-    }
-  }, [bootstrap.retry, bootstrap.status])
+  useRetryOnReconnect(bootstrap)
 
   return bootstrap.status === 'loaded' && bootstrap.value.client
     ? <AnalyticsRuntime
@@ -61,6 +51,19 @@ function AnalyticsRuntime({
   eventContext: AnalyticsEventContext
 }) {
   const { isLoaded, isSignedIn, userId } = useAuth()
+  const viewer = {
+    clerkUserId: userId ?? null,
+    isLoaded,
+    isSignedIn: Boolean(isSignedIn),
+  }
+  const session = useAccountSession(
+    isLoaded && isSignedIn && userId ? userId : null,
+  )
+  const identity = resolveAnalyticsIdentity({
+    ...viewer,
+    scopeUserId: session.value?.account?.user?.id ?? null,
+    sessionResolved: session.status === 'loaded',
+  })
   const routeId = useRouterState({
     select: (state) => state.matches.at(-1)?.routeId,
   })
@@ -70,70 +73,36 @@ function AnalyticsRuntime({
   const routeName = analyticsRouteForId(routeId)?.name ?? null
   const capturedPage = useRef<string | null>(null)
   const documentRouteName = useRef(routeName)
-  const identityKey = useRef<string | null>(null)
-  const expectedIdentityKey = useRef<string | null>(null)
+  const appliedKey = useRef<string | null>(null)
+  const expectedKey = useRef<string | null>(null)
   const currentPage = useRef({ pathname, routeId })
   const diagnostics = useRef<ReturnType<typeof installBrowserDiagnostics> | null>(null)
 
   currentPage.current = { pathname, routeId }
-  expectedIdentityKey.current = isLoaded
-    ? isSignedIn && userId ? identifiedKey(userId) : 'anonymous'
-    : null
+  expectedKey.current = expectedIdentityKey(viewer)
 
+  const resolvedIdentityKey = identity?.identityKey ?? null
+  const resolvedScopeUserId = identity?.scopeUserId ?? null
+
+  // The resource resolves the identity; this only applies it and releases the
+  // events that had to wait for an attributable viewer.
   useEffect(() => {
-    if (!isLoaded) return
+    if (resolvedIdentityKey === null) return
 
     capturedPage.current = null
-    if (!isSignedIn || !userId) {
-      safely(() => applyAnalyticsIdentityTransition(client, null, eventContext))
-      identityKey.current = 'anonymous'
-      captureCurrentPage(client, currentPage.current, capturedPage)
-      diagnostics.current?.flushErrors()
-      diagnostics.current?.flushVitals()
-      return
-    }
-
-    identityKey.current = null
-    let active = true
-    const resolveIdentity = async () => {
-      try {
-        const identity = await resolveAnalyticsIdentity(
-          userId,
-          () => loadAccountSessionForViewer(
-            userId,
-            (signal) => loadAccountSession({ signal }),
-          ),
-        )
-        if (!active) return
-        safely(() => applyAnalyticsIdentityTransition(
-          client,
-          identity.scopeUserId,
-          eventContext,
-        ))
-        identityKey.current = identity.identityKey
-        captureCurrentPage(client, currentPage.current, capturedPage)
-        diagnostics.current?.flushErrors()
-        diagnostics.current?.flushVitals()
-      } catch {
-        // A focus or online lifecycle event retries the retained resource.
-      }
-    }
-    const retryUnresolvedIdentity = () => {
-      if (active && identityKey.current === null) void resolveIdentity()
-    }
-    void resolveIdentity()
-    window.addEventListener('focus', retryUnresolvedIdentity)
-    window.addEventListener('online', retryUnresolvedIdentity)
-
-    return () => {
-      active = false
-      window.removeEventListener('focus', retryUnresolvedIdentity)
-      window.removeEventListener('online', retryUnresolvedIdentity)
-    }
-  }, [client, eventContext, isLoaded, isSignedIn, userId])
+    safely(() => applyAnalyticsIdentityTransition(
+      client,
+      resolvedScopeUserId,
+      eventContext,
+    ))
+    appliedKey.current = resolvedIdentityKey
+    captureCurrentPage(client, currentPage.current, capturedPage)
+    diagnostics.current?.flushErrors()
+    diagnostics.current?.flushVitals()
+  }, [client, eventContext, resolvedIdentityKey, resolvedScopeUserId])
 
   useEffect(() => {
-    if (!isLoaded || identityKey.current !== expectedIdentityKey.current) return
+    if (!isLoaded || appliedKey.current !== expectedKey.current) return
     captureCurrentPage(client, { pathname, routeId }, capturedPage)
   }, [client, isLoaded, pathname, routeId])
 
@@ -141,8 +110,8 @@ function AnalyticsRuntime({
     const installed = installBrowserDiagnostics({
       capture: (event, properties) => {
         if (
-          expectedIdentityKey.current === null
-          || identityKey.current !== expectedIdentityKey.current
+          expectedKey.current === null
+          || appliedKey.current !== expectedKey.current
         ) {
           return false
         }

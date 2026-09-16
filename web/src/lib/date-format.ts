@@ -6,15 +6,39 @@ const REQUEST_DATE_FORMAT_OPTIONS = {
   year: 'numeric',
 } satisfies Intl.DateTimeFormatOptions
 
-const REQUEST_DATE_FORMATTER = new Intl.DateTimeFormat(
-  'en-US',
-  REQUEST_DATE_FORMAT_OPTIONS,
-)
+const MONTH_DAY_OPTIONS = {
+  day: 'numeric',
+  month: 'short',
+} satisfies Intl.DateTimeFormatOptions
 
-const REQUEST_UTC_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  ...REQUEST_DATE_FORMAT_OPTIONS,
-  timeZone: 'UTC',
-})
+const DAY_LABEL_OPTIONS = {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+} satisfies Intl.DateTimeFormatOptions
+
+const SNOOZE_UNTIL_OPTIONS = {
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  month: 'short',
+} satisfies Intl.DateTimeFormatOptions
+
+// Server and hydration render UTC so both sides agree; the browser switches to
+// the viewer's zone once it owns the markup.
+function zonedFormatters(options: Intl.DateTimeFormatOptions) {
+  return {
+    local: new Intl.DateTimeFormat('en-US', options),
+    utc: new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' }),
+  }
+}
+
+type ZonedFormatters = ReturnType<typeof zonedFormatters>
+
+const REQUEST_DATE = zonedFormatters(REQUEST_DATE_FORMAT_OPTIONS)
+const MONTH_DAY = zonedFormatters(MONTH_DAY_OPTIONS)
+const DAY_LABEL = zonedFormatters(DAY_LABEL_OPTIONS)
+const SNOOZE_UNTIL = zonedFormatters(SNOOZE_UNTIL_OPTIONS)
 
 const RELATIVE_FORMATTER = new Intl.RelativeTimeFormat('en-US', {
   numeric: 'auto',
@@ -26,11 +50,43 @@ const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR
 export const RELATIVE_HORIZON_SECONDS = 30 * SECONDS_PER_DAY
 
 export function formatUnixDate(unixSeconds: number | null) {
-  return formatUnixDateWith(REQUEST_DATE_FORMATTER, unixSeconds)
+  return formatUnixDateWith(REQUEST_DATE.local, unixSeconds)
 }
 
 export function formatUnixDateUtc(unixSeconds: number | null) {
-  return formatUnixDateWith(REQUEST_UTC_DATE_FORMATTER, unixSeconds)
+  return formatUnixDateWith(REQUEST_DATE.utc, unixSeconds)
+}
+
+/** Compact "Mar 4" for dense lists. */
+export function formatUnixMonthDay(unixSeconds: number, hydrated: boolean) {
+  return formatZoned(MONTH_DAY, unixSeconds, hydrated)
+}
+
+/** Day heading for grouped streams, as in "March 4, 2026". */
+export function formatUnixDayLabel(unixSeconds: number, hydrated: boolean) {
+  return formatZoned(DAY_LABEL, unixSeconds, hydrated)
+}
+
+/** Wording for a snooze that has not expired yet. */
+export function formatUnixSnoozeUntil(unixSeconds: number, hydrated: boolean) {
+  return formatZoned(SNOOZE_UNTIL, unixSeconds, hydrated)
+}
+
+/** The calendar day a timestamp falls on, in the zone the viewer is reading. */
+export function unixCalendarDay(unixSeconds: number, hydrated: boolean) {
+  const date = new Date(unixSeconds * 1_000)
+  return hydrated
+    ? `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+    : `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`
+}
+
+function formatZoned(
+  formatters: ZonedFormatters,
+  unixSeconds: number,
+  hydrated: boolean,
+) {
+  return (hydrated ? formatters.local : formatters.utc)
+    .format(new Date(unixSeconds * 1_000))
 }
 
 function formatUnixDateWith(

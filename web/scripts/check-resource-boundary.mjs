@@ -5,7 +5,7 @@ import { resourceBoundaryViolations } from './resource-boundary.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const violations = []
-for (const directory of ['src/components', 'src/features', 'src/routes']) {
+for (const directory of ['src/analytics', 'src/components', 'src/features', 'src/routes']) {
   for (const file of await readdir(path.join(root, directory), { recursive: true })) {
     if (!/\.[jt]sx?$/.test(file) || /\.test\.[jt]sx?$/.test(file)) continue
     const relative = `${directory}/${file}`

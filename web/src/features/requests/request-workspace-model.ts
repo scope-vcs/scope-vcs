@@ -1,3 +1,4 @@
+import { formatUnixSnoozeUntil } from '../../lib/date-format'
 import type { RequestAttentionReason, RequestQueueItemResponse } from '../../api/types.generated'
 
 const REASONS: Record<RequestAttentionReason, string> = {
@@ -17,12 +18,12 @@ const REASONS: Record<RequestAttentionReason, string> = {
   merged: 'Merged',
 }
 
-export function requestAttentionLabel(item: RequestQueueItemResponse) {
+export function requestAttentionLabel(item: RequestQueueItemResponse, hydrated: boolean) {
   const { attention, claimer } = item
   let reason = REASONS[attention.reason]
   if (attention.reason === 'claimed_elsewhere' && claimer) reason = `Reviewing: ${claimer.handle}`
   if (attention.reason === 'snoozed' && attention.snoozed_until_unix) {
-    reason = `Snoozed until ${new Date(attention.snoozed_until_unix * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+    reason = `Snoozed until ${formatUnixSnoozeUntil(attention.snoozed_until_unix, hydrated)}`
   }
   return reason
 }

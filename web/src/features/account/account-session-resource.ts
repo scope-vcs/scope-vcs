@@ -1,19 +1,23 @@
 import type { AccountSessionResponse } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 
-type AccountSessionResourceValue = {
+export type AccountSessionResourceValue = {
   account: AccountSessionResponse | null
 }
 
-type AccountSessionLoader = (
+export type AccountSessionLoader = (
   signal: AbortSignal,
 ) => Promise<AccountSessionResponse | null>
 
 const retryDelays = [200, 800] as const
 let activeViewerId: string | null = null
 
-const accountSessionResource =
+export const accountSessionResource =
   createCachedResource<AccountSessionResourceValue>({ maxEntries: 1 })
+
+export function accountSessionIdentity(viewerId: string) {
+  return `account-session\0${viewerId}`
+}
 
 export function activateAccountSessionViewer(viewerId: string) {
   if (activeViewerId !== null && activeViewerId !== viewerId) {
@@ -22,39 +26,18 @@ export function activateAccountSessionViewer(viewerId: string) {
   activeViewerId = viewerId
 }
 
-export async function loadAccountSessionForViewer(
-  viewerId: string,
+// The resource owns the read; this only adds the bounded retry a transient
+// failure needs before the snapshot is published as failed.
+export async function loadAccountSessionValue(
   load: AccountSessionLoader,
+  signal: AbortSignal,
   options: {
     retryDelays?: readonly number[]
     wait?: (delay: number, signal: AbortSignal) => Promise<void>
   } = {},
-) {
-  activateAccountSessionViewer(viewerId)
-  const value = await accountSessionResource.load(
-    resourceKey(viewerId),
-    '',
-    (signal) => loadWithRetry(
-      load,
-      signal,
-      options.retryDelays ?? retryDelays,
-      options.wait ?? abortableDelay,
-    ),
-  )
-  return value.account
-}
-
-export function resetAccountSessionResource() {
-  activeViewerId = null
-  accountSessionResource.clear()
-}
-
-async function loadWithRetry(
-  load: AccountSessionLoader,
-  signal: AbortSignal,
-  delays: readonly number[],
-  wait: (delay: number, signal: AbortSignal) => Promise<void>,
-) {
+): Promise<AccountSessionResourceValue> {
+  const delays = options.retryDelays ?? retryDelays
+  const wait = options.wait ?? abortableDelay
   for (let attempt = 0; ; attempt += 1) {
     try {
       return { account: await load(signal) }
@@ -65,8 +48,9 @@ async function loadWithRetry(
   }
 }
 
-function resourceKey(viewerId: string) {
-  return `account-session\0${viewerId}`
+export function resetAccountSessionResource() {
+  activeViewerId = null
+  accountSessionResource.clear()
 }
 
 function abortableDelay(delay: number, signal: AbortSignal) {

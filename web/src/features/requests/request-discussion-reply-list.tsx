@@ -10,18 +10,13 @@ import { RequestDiscussionMarkdown } from './request-discussion-markdown'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
 import {
   replyFragment,
-  sameUtcDate,
+  sameCalendarDate,
   shouldGroupReplies,
 } from './request-discussion-reply-presentation'
 import { RelativeTimestamp } from '@/components/timestamp'
+import { formatUnixDayLabel } from '@/lib/date-format'
+import { useHydrated } from '@/lib/use-hydrated'
 import type { RequestDiscussionReplyView } from './request-discussion-types'
-
-const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  day: 'numeric',
-  month: 'long',
-  timeZone: 'UTC',
-  year: 'numeric',
-})
 
 export function RequestDiscussionReplyList({
   canReply,
@@ -40,6 +35,7 @@ export function RequestDiscussionReplyList({
   replies: RequestDiscussionReplyView[]
   showUnreadBoundary: boolean
 }) {
+  const hydrated = useHydrated()
   let previousCreatedAt = discussionCreatedAtUnix
   let previousReply: RequestDiscussionReplyView | null = null
   let unreadBoundaryRendered = false
@@ -47,9 +43,10 @@ export function RequestDiscussionReplyList({
   return (
     <>
       {replies.map((reply) => {
-        const startsNewDate = !sameUtcDate(
+        const startsNewDate = !sameCalendarDate(
           previousCreatedAt,
           reply.created_at_unix,
+          hydrated,
         )
         const startsUnread =
           showUnreadBoundary &&
@@ -68,7 +65,7 @@ export function RequestDiscussionReplyList({
           <div key={reply.id}>
             {startsNewDate ? (
               <DiscussionBoundary
-                label={DATE_FORMATTER.format(reply.created_at_unix * 1_000)}
+                label={formatUnixDayLabel(reply.created_at_unix, hydrated)}
               />
             ) : null}
             {startsUnread ? <DiscussionBoundary label="New" unread /> : null}
@@ -284,8 +281,9 @@ function DiscussionBoundary({
       <hr
         aria-label={unread ? 'New replies' : `Messages from ${label}`}
         className={cn('h-px flex-1 border-0', unread ? 'bg-brand/60' : 'bg-border')}
+        suppressHydrationWarning
       />
-      <span>{label}</span>
+      <span suppressHydrationWarning>{label}</span>
       <span className={cn('h-px flex-1', unread ? 'bg-brand/60' : 'bg-border')} />
     </div>
   )
