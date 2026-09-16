@@ -28,6 +28,35 @@ pub enum RunJobState {
 }
 
 impl RunJobState {
+    /// Declaration order is the persisted order used to build SQL state sets.
+    pub const ALL: [Self; 9] = [
+        Self::Blocked,
+        Self::Queued,
+        Self::Dispatching,
+        Self::Running,
+        Self::Succeeded,
+        Self::Failed,
+        Self::Skipped,
+        Self::Canceled,
+        Self::Lost,
+    ];
+
+    /// The persisted representation; `persisted_shapes` keeps it and the
+    /// serde encoding identical.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Blocked => "blocked",
+            Self::Queued => "queued",
+            Self::Dispatching => "dispatching",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+            Self::Canceled => "canceled",
+            Self::Lost => "lost",
+        }
+    }
+
     pub fn is_terminal(self) -> bool {
         matches!(
             self,

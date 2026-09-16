@@ -78,6 +78,7 @@ mod run_log_reads;
 mod run_log_writes;
 mod run_operations;
 mod run_retention;
+mod run_state_sql;
 mod run_step_operations;
 mod runs;
 mod stores;

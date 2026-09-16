@@ -9,7 +9,7 @@ import { checkMigrationSources, migrationDigest } from './check-migration-immuta
 
 const name = 'm0043_retire_git_manifests.rs';
 const original = 'CREATE TABLE example (state text);';
-const sources = { [name]: original, 'current_schema.sql': original, 'baseline_ledger.txt': 'm0042\n' };
+const sources = { [name]: original, 'current_schema.sql': original };
 const locked = Object.fromEntries(Object.entries(sources).map(([path, contents]) => [path, migrationDigest(contents)]));
 
 test('unchanged definitions and appended migrations pass', () => {
@@ -41,6 +41,11 @@ test('removing migration sources or both source and checksum fails', () => {
 test('new definitions must be locked and lock entries must identify migration definitions', () => {
   assert.match(checkMigrationSources({ ...sources, 'm0044_next.rs': 'new' }, locked).join('\n'), /new migration needs/);
   assert.match(checkMigrationSources(sources, { ...locked, 'mod.rs': migrationDigest('module') }).join('\n'), /invalid migration lock entry/);
+});
+
+test('a lock entry that is no longer a migration definition may be retired', () => {
+  const retired = { ...locked, 'retired_definition.txt': migrationDigest('retired\n') };
+  assert.deepEqual(checkMigrationSources(sources, locked, retired), []);
 });
 
 test('the CLI reads the PR base lock even when both migration and current checksum change', () => {

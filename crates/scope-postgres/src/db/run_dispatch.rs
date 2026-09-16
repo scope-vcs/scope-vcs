@@ -1,9 +1,12 @@
 use super::integer_columns;
+#[cfg(any(test, feature = "seeding"))]
+use super::run_state_sql::{queued_job_state, run_active_states};
 use super::{
     DispatchClaim, RunStore, entities,
     run_attempt_persistence::{
         jobs_for_run, locked_job, locked_run, run_repository, save_job, save_run,
     },
+    run_state_sql::{attempt_active_states, attempt_terminal_states},
     runs::{unique_conflict, workflow_revision_for_run},
 };
 use crate::error::PostgresError;
@@ -30,15 +33,18 @@ impl RunStore {
         now_unix: u64,
         limit: u64,
     ) -> Result<Vec<CloudTaskStop>, PostgresError> {
+        let active = attempt_active_states();
         self.claim_cloud_task_stops(
-            "SELECT attempt.id FROM scope_run_attempts attempt
+            &format!(
+                "SELECT attempt.id FROM scope_run_attempts attempt
              JOIN scope_runs run ON run.id = attempt.run_id
              WHERE run.cancellation_requested = TRUE
-               AND attempt.state IN ('dispatching', 'running')
+               AND attempt.state IN ({active})
                AND attempt.runner_stop_completed_at_unix IS NULL
                AND (attempt.runner_stop_claimed_at_unix IS NULL
                     OR attempt.runner_stop_claimed_at_unix <= $3)
-             ORDER BY attempt.created_at_unix, attempt.id",
+             ORDER BY attempt.created_at_unix, attempt.id"
+            ),
             now_unix,
             limit,
         )
@@ -50,13 +56,16 @@ impl RunStore {
         now_unix: u64,
         limit: u64,
     ) -> Result<Vec<CloudTaskStop>, PostgresError> {
+        let terminal = attempt_terminal_states();
         self.claim_cloud_task_stops(
-            "SELECT attempt.id FROM scope_run_attempts attempt
-             WHERE attempt.state IN ('succeeded', 'failed', 'canceled', 'lost')
+            &format!(
+                "SELECT attempt.id FROM scope_run_attempts attempt
+             WHERE attempt.state IN ({terminal})
                AND attempt.runner_stop_completed_at_unix IS NULL
                AND (attempt.runner_stop_claimed_at_unix IS NULL
                     OR attempt.runner_stop_claimed_at_unix <= $3)
-             ORDER BY attempt.completed_at_unix, attempt.id",
+             ORDER BY attempt.completed_at_unix, attempt.id"
+            ),
             now_unix,
             limit,
         )
@@ -160,17 +169,20 @@ impl RunStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let now_unix = i64::try_from(now_unix).map_err(PostgresError::internal)?;
+        let terminal = attempt_terminal_states();
         let result = self
             .db
             .execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "UPDATE scope_run_attempts
+                format!(
+                    "UPDATE scope_run_attempts
                  SET runner_stop_claimed_at_unix = $2,
                      runner_stop_completed_at_unix = $2
                  WHERE id = $1
-                   AND state IN ('succeeded', 'failed', 'canceled', 'lost')
+                   AND state IN ({terminal})
                    AND external_run_id IS NULL
-                   AND runner_stop_completed_at_unix IS NULL",
+                   AND runner_stop_completed_at_unix IS NULL"
+                ),
                 [attempt_id.into(), now_unix.into()],
             ))
             .await
@@ -191,21 +203,26 @@ impl RunStore {
             .db
             .query_one(Statement::from_string(
                 DatabaseBackend::Postgres,
-                "SELECT job.run_id, job.job_key
+                format!(
+                    "SELECT job.run_id, job.job_key
                  FROM scope_run_jobs job
                  JOIN scope_runs run ON run.id = job.run_id
-                 WHERE job.state = 'queued'
-                   AND run.state IN ('queued', 'dispatching', 'running')
+                 WHERE job.state = {queued}
+                   AND run.state IN ({runs})
                    AND run.cancellation_requested = FALSE
                    AND NOT EXISTS (
                      SELECT 1 FROM scope_run_attempts previous
                      WHERE previous.run_id = job.run_id
                        AND previous.job_key = job.job_key
-                       AND previous.state IN ('succeeded', 'failed', 'canceled', 'lost')
+                       AND previous.state IN ({attempts})
                        AND previous.runner_stop_completed_at_unix IS NULL
                    )
                  ORDER BY job.created_at_unix, job.run_id, job.job_key
                  LIMIT 1",
+                    queued = queued_job_state(),
+                    runs = run_active_states(),
+                    attempts = attempt_terminal_states(),
+                ),
             ))
             .await
             .map_err(PostgresError::internal)?
