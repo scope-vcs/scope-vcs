@@ -71,7 +71,13 @@ export function useRetryOnReconnect(
 ) {
   useEffect(() => {
     if (status !== 'failed') return
-    const onReconnect = () => retry()
+    // focus and online often arrive together; one retry per failure is enough.
+    let retried = false
+    const onReconnect = () => {
+      if (retried) return
+      retried = true
+      retry()
+    }
     window.addEventListener('focus', onReconnect)
     window.addEventListener('online', onReconnect)
     return () => {
