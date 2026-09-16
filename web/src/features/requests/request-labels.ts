@@ -79,42 +79,36 @@ export function requestMergeabilityTone(request: RequestLabelSource): BadgeVaria
 }
 
 export function requestEventBody(event: RequestEventResponse) {
-  const payload = event.payload as unknown as Record<
-    string,
-    Record<string, unknown>
-  >
-  const value = payload[event.kind]
-  if (!value) return null
-  switch (event.kind) {
-    case 'Started':
-      return 'Initial request identity recorded.'
-    case 'Submitted':
-      return oidText(value.head_oid)
-    case 'RevisionPushed':
-      return [
-        `${oidText(value.old_head_oid)} → ${oidText(value.new_head_oid)}`,
-        stringValue(value.note),
-      ]
-        .filter(Boolean)
-        .join('\n')
-    case 'Closed':
-      return oidText(value.head_oid)
-    case 'Merged':
-      return `${oidText(value.head_oid)} → ${oidText(value.main_oid)}`
-    case 'IdentityEdited':
-      return 'The request title or description was updated.'
-    case 'DiscussionResolved':
-    case 'DiscussionReopened':
-      return value.discussion_id
-        ? `Discussion ${stringValue(value.discussion_id)}`
-        : null
+  const payload = event.payload
+  if ('Started' in payload) return 'Initial request identity recorded.'
+  if ('Submitted' in payload) return shortOid(payload.Submitted.head_oid)
+  if ('RevisionPushed' in payload) {
+    const { old_head_oid, new_head_oid, note } = payload.RevisionPushed
+    return [
+      `${shortOid(old_head_oid)} → ${shortOid(new_head_oid)}`,
+      note?.trim() ? note : null,
+    ]
+      .filter(Boolean)
+      .join('\n')
   }
+  if ('Closed' in payload) return shortOid(payload.Closed.head_oid)
+  if ('Merged' in payload) {
+    return `${shortOid(payload.Merged.head_oid)} → ${shortOid(payload.Merged.main_oid)}`
+  }
+  if ('IdentityEdited' in payload) {
+    return 'The request title or description was updated.'
+  }
+  if ('DiscussionResolved' in payload) {
+    return discussionText(payload.DiscussionResolved.discussion_id)
+  }
+  if ('DiscussionReopened' in payload) {
+    return discussionText(payload.DiscussionReopened.discussion_id)
+  }
+  // Exhaustive: a new payload variant from Rust lands here as a type error.
+  payload satisfies never
+  return null
 }
 
-function oidText(value: unknown) {
-  return typeof value === 'string' ? shortOid(value) : null
-}
-
-function stringValue(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value : null
+function discussionText(discussionId: string) {
+  return discussionId ? `Discussion ${discussionId}` : null
 }

@@ -1,6 +1,6 @@
 import type { RequestDiscussionReplyView } from './request-discussion-types'
 
-export type ReplyPageState = {
+type ReplyPageState = {
   error: string | null
   loaded: boolean
   loading: boolean
@@ -13,7 +13,7 @@ export type DiscussionRepliesState = {
   replies: RequestDiscussionReplyView[]
 }
 
-export type ReplyPage = {
+type ReplyPage = {
   next_before_position: number | null
   replies: RequestDiscussionReplyView[]
 }

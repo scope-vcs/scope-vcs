@@ -4,7 +4,7 @@ import type {
   ProjectionPreviewAudience,
 } from '../../api/types.generated'
 
-export type RepositoryActivity = {
+type RepositoryActivity = {
   audience: ProjectionPreviewAudience
   entry: HistoryEntrySummaryResponse | null
   head_oid: string | null

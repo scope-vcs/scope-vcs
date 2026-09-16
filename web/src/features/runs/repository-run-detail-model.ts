@@ -204,7 +204,7 @@ export function latestAttempt<Attempt extends { number: number }>(
  * must always agree, because refresh reconciliation derives the open job from
  * the selection; letting them drift snaps the page back after every poll.
  */
-export type RunSelectionState = {
+type RunSelectionState = {
   attemptOverrides: Readonly<Record<string, string>>
   manualSelection: boolean
   selectedJobKey: string | null

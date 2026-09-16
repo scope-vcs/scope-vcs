@@ -11,7 +11,7 @@ import {
 } from '@/api/types.generated'
 import { apiValidators } from '@/api/validators.generated'
 
-export type RequestAttachmentActionInput = RequestParams & {
+type RequestAttachmentActionInput = RequestParams & {
   attachment_id: string
 }
 

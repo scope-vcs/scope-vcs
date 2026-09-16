@@ -9,7 +9,7 @@ import type {
   RequestDiscussionPage,
 } from './request-discussion-types'
 
-export type RequestDiscussionSyncOptions = {
+type RequestDiscussionSyncOptions = {
   getCollection: () => DiscussionCollection
   getDataGeneration: () => number
   loadChanges: (after: number) => Promise<RequestDiscussionChanges>

@@ -8,7 +8,7 @@ export type WorkspaceTabItem = {
  * Open tabs plus the single preview slot. A previewed tab is replaced by the
  * next previewed file instead of accumulating, matching editor conventions.
  */
-export type WorkspaceTabState = {
+type WorkspaceTabState = {
   openIds: string[]
   previewId: string | null
 }

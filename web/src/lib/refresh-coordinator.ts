@@ -1,6 +1,6 @@
 export type RefreshScheduler = (callback: () => void, delayMs: number) => () => void
 
-export type RefreshCoordinator<Request> = {
+type RefreshCoordinator<Request> = {
   request: (request: Request) => void
   stop: () => void
 }

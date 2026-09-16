@@ -11,7 +11,7 @@ import { apiValidators } from '../../api/validators.generated'
 const INITIAL_RECONNECT_DELAY_MS = 2_000
 const MAX_RECONNECT_DELAY_MS = 30_000
 
-export type RepoStreamParseOutcome =
+type RepoStreamParseOutcome =
   | { type: 'event'; event: RepoChangeEvent }
   | { type: 'ignored' }
   | { type: 'stream-error'; error: ErrorResponse }
@@ -26,7 +26,7 @@ export type RepoStreamEnd = Exclude<
   { type: 'event' } | { type: 'ignored' }
 > | { type: 'transport' }
 
-export type RepoStreamDiagnostic =
+type RepoStreamDiagnostic =
   | {
       type: 'protocol-error'
       failureClass: 'content-type' | 'json-syntax' | 'schema'

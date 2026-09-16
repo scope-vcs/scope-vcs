@@ -22,7 +22,7 @@ export type RunRefresh = (
   signal: AbortSignal,
 ) => Promise<unknown>
 
-export type RunRefreshCoordinator = {
+type RunRefreshCoordinator = {
   onEvent: (event: RepoChangeEvent) => void
   requestRefresh: (reason?: RunRefreshReason) => void
   stop: () => void

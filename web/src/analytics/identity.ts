@@ -1,10 +1,10 @@
-export type IdentityTransition =
+type IdentityTransition =
   | { kind: 'identify'; scopeUserId: string }
   | { kind: 'reset_and_identify'; scopeUserId: string }
   | { kind: 'reset' }
   | { kind: 'none' }
 
-export type ResolvedAnalyticsIdentity = {
+type ResolvedAnalyticsIdentity = {
   identityKey: string
   scopeUserId: string | null
 }

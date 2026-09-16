@@ -5,7 +5,7 @@ type JobGraphInput = {
   }
 }
 
-export type RunJobGraphNode = {
+type RunJobGraphNode = {
   key: string
   layer: number
   needs: readonly string[]
@@ -13,14 +13,14 @@ export type RunJobGraphNode = {
   y: number
 }
 
-export type RunJobGraphEdge = {
+type RunJobGraphEdge = {
   from: string
   key: string
   path: string
   to: string
 }
 
-export type RunJobGraphLayout = {
+type RunJobGraphLayout = {
   edges: RunJobGraphEdge[]
   height: number
   nodes: RunJobGraphNode[]

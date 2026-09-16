@@ -1,6 +1,6 @@
 import type { RepositoryActor } from '@/api/types.generated'
 
-export type RepoSection = 'code' | 'history' | 'requests' | 'runs' | 'settings'
+type RepoSection = 'code' | 'history' | 'requests' | 'runs' | 'settings'
 
 export const REPO_SECTIONS = [
   { key: 'code', label: 'Code', to: '/$owner/$repo' },

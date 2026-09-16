@@ -3,7 +3,7 @@ const MAX_REQUEST_BYTES = 1024 * 1024
 const MAX_RESPONSE_BYTES = 64 * 1024
 const REQUEST_TIMEOUT_MS = 5_000
 
-export type FetchAnalyticsUpstream = (
+type FetchAnalyticsUpstream = (
   input: string | URL | Request,
   init?: RequestInit,
 ) => Promise<Response>

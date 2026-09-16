@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 
-export type PopoverTriggerProps = {
+type PopoverTriggerProps = {
   'aria-controls': string
   'aria-expanded': boolean
   'aria-haspopup': 'dialog'

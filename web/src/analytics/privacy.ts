@@ -41,7 +41,7 @@ const errorKinds = new Set([
 const errorOrigins = new Set(['hydration', 'promise', 'route', 'window'])
 const webVitalMetrics = new Set(['CLS', 'INP', 'LCP'])
 
-export type PageViewContext = {
+type PageViewContext = {
   origin: string
   referrer: string
   search: string

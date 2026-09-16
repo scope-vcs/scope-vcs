@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react'
 import Markdown from 'react-markdown'
 import { MarkdownLink } from './markdown-link'
 
-export type MarkdownScale = 'compact' | 'document'
+type MarkdownScale = 'compact' | 'document'
 
 type MarkdownComponents = NonNullable<ComponentProps<typeof Markdown>['components']>
 

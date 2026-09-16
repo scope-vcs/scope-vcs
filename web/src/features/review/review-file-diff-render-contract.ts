@@ -37,7 +37,7 @@ export type ReviewFileDiffWorkerResult =
       reason: Extract<ReviewDiffOmittedReason, 'hunks' | 'lines' | 'output'>
     }
 
-export type ReviewFileTextMetrics = {
+type ReviewFileTextMetrics = {
   bytes: number
   lines: number
   maxLineBytes: number
