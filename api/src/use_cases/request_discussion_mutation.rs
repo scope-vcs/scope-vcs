@@ -1,5 +1,6 @@
 use crate::{
     error::ApiError, persistence::unix_now, repo_access::find_read_access, state::AppState,
+    use_cases::request_anchor_visibility,
 };
 use scope_domain::{
     account::UserAccount,
@@ -407,8 +408,13 @@ async fn load_discussion_result(
         .request_discussion(&context.request.id, discussion_id, Some(viewer_user_id))
         .await?
         .ok_or_else(|| ApiError::not_found("request discussion not found"))?;
-    let visible_anchor_commits =
-        anchor::visible_commits(state, context, discussion.discussion.anchor.as_ref()).await;
+    let visible_anchor_commits = request_anchor_visibility::visible_commits(
+        state,
+        &context.repo,
+        &context.request,
+        discussion.discussion.anchor.as_ref(),
+    )
+    .await;
     Ok(DiscussionMutationResult {
         discussion,
         users,

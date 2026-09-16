@@ -1,6 +1,6 @@
 use super::{
     MAX_IMPORTED_REQUEST_REVISIONS, MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES,
-    RequestRevisionListWorkBudget, parse_request_changes_with_visibility, request_file_response,
+    RequestRevisionListWorkBudget, inspect_request_changes, request_file_response,
     request_revision_commits,
 };
 use axum::http::StatusCode;
@@ -31,7 +31,7 @@ fn request_change_parser_preserves_path_before_status_validation() {
         ))
         .unwrap();
 
-    let hidden = parse_request_changes_with_visibility(
+    let hidden = inspect_request_changes(
         diff("R100", "private.txt").as_bytes(),
         &policy,
         RepositoryAccess::public(),
@@ -41,7 +41,7 @@ fn request_change_parser_preserves_path_before_status_validation() {
     assert!(hidden.files.is_empty());
 
     assert_api_error(
-        parse_request_changes_with_visibility(
+        inspect_request_changes(
             header("R100").as_bytes(),
             &policy,
             RepositoryAccess::public(),
@@ -53,7 +53,7 @@ fn request_change_parser_preserves_path_before_status_validation() {
         "request diff is missing a path",
     );
     assert_api_error(
-        parse_request_changes_with_visibility(
+        inspect_request_changes(
             diff("R100", "../private.txt").as_bytes(),
             &policy,
             RepositoryAccess::public(),
@@ -65,7 +65,7 @@ fn request_change_parser_preserves_path_before_status_validation() {
         "path cannot contain empty segments, . or ..",
     );
     assert_api_error(
-        parse_request_changes_with_visibility(
+        inspect_request_changes(
             diff("R100", "public.txt").as_bytes(),
             &policy,
             RepositoryAccess::public(),
@@ -84,13 +84,9 @@ fn request_change_parser_validates_records_after_a_hidden_change() {
     let changes = format!("{}\0private.txt\0malformed\0", header("A"));
 
     assert_api_error(
-        parse_request_changes_with_visibility(
-            changes.as_bytes(),
-            &policy,
-            RepositoryAccess::public(),
-        )
-        .err()
-        .unwrap(),
+        inspect_request_changes(changes.as_bytes(), &policy, RepositoryAccess::public())
+            .err()
+            .unwrap(),
         StatusCode::INTERNAL_SERVER_ERROR,
         "Scope hit an internal error.",
         "invalid request diff header malformed",
@@ -115,8 +111,7 @@ fn request_change_parser_maps_statuses_sorts_and_keeps_raw_paths() {
     ]
     .concat();
 
-    let parsed =
-        parse_request_changes_with_visibility(changes.as_bytes(), &policy, access).unwrap();
+    let parsed = inspect_request_changes(changes.as_bytes(), &policy, access).unwrap();
 
     assert!(!parsed.hidden);
     let files = parsed

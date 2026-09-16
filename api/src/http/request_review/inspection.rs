@@ -1,6 +1,6 @@
 use super::*;
 use crate::runtime_budgets::RuntimeBudgets;
-use scope_domain::{policy::Policy, repository::RepositoryIncarnation};
+use scope_domain::policy::Policy;
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -33,112 +33,6 @@ pub(super) struct InspectedRequestCommitFiles {
     pub(super) commit: RequestRevisionCommitResponse,
 }
 
-fn request_commit_is_visible_to(
-    raw_repo: &FsPath,
-    policy: &Policy,
-    access: RepositoryAccess,
-    commit_oid: &str,
-) -> Result<bool, ApiError> {
-    let identity = request_commit_identity(raw_repo, commit_oid)?;
-    request_commit_changes(
-        raw_repo,
-        policy,
-        access,
-        identity.parent_oids.first().map(String::as_str),
-        commit_oid,
-    )
-    .map(|changes| !changes.hidden)
-}
-
-pub(crate) struct RequestRevisionCommitVisibility<'a> {
-    state: &'a AppState,
-    incarnation: &'a RepositoryIncarnation,
-    policy: &'a Policy,
-    access: RepositoryAccess,
-    request: &'a Request,
-}
-
-impl<'a> RequestRevisionCommitVisibility<'a> {
-    pub(crate) fn new(
-        state: &'a AppState,
-        incarnation: &'a RepositoryIncarnation,
-        policy: &'a Policy,
-        access: RepositoryAccess,
-        request: &'a Request,
-    ) -> Self {
-        Self {
-            state,
-            incarnation,
-            policy,
-            access,
-            request,
-        }
-    }
-
-    pub(crate) async fn visible_commits(
-        &self,
-        commits_by_revision: &BTreeMap<String, BTreeSet<String>>,
-    ) -> BTreeSet<(String, String)> {
-        let mut visible = BTreeSet::new();
-        for (revision_id, commit_oids) in commits_by_revision {
-            let result = self
-                .visible_commits_in_revision(revision_id, commit_oids)
-                .await;
-            match result {
-                Ok(commit_oids) => visible.extend(
-                    commit_oids
-                        .into_iter()
-                        .map(|commit_oid| (revision_id.clone(), commit_oid)),
-                ),
-                Err(error) => tracing::warn!(
-                    request_id = %self.request.id,
-                    revision_id,
-                    error = ?error,
-                    "redacting discussion anchors because request revision inspection failed"
-                ),
-            }
-        }
-        visible
-    }
-
-    async fn visible_commits_in_revision(
-        &self,
-        revision_id: &str,
-        commit_oids: &BTreeSet<String>,
-    ) -> Result<BTreeSet<String>, ApiError> {
-        let Some(revision) = self
-            .state
-            .metadata
-            .requests()
-            .request_revision(&self.request.id, revision_id)
-            .await?
-        else {
-            return Ok(BTreeSet::new());
-        };
-        let policy = self.policy.clone();
-        let access = self.access;
-        let commit_oids = commit_oids.clone();
-        with_request_revision_store_repo(
-            self.state,
-            self.incarnation,
-            self.request,
-            &revision,
-            move |raw_repo, revision| {
-                let mut visible = BTreeSet::new();
-                for commit_oid in &commit_oids {
-                    if commit_belongs_to_revision(raw_repo, revision, commit_oid)?
-                        && request_commit_is_visible_to(raw_repo, &policy, access, commit_oid)?
-                    {
-                        visible.insert(commit_oid.clone());
-                    }
-                }
-                Ok(visible)
-            },
-        )
-        .await
-    }
-}
-
 pub(super) fn inspect_request_commit(
     raw_repo: &FsPath,
     policy: &Policy,
@@ -146,12 +40,10 @@ pub(super) fn inspect_request_commit(
     commit_oid: &str,
 ) -> Result<InspectedRequestCommit, ApiError> {
     let identity = request_commit_identity(raw_repo, commit_oid)?;
-    let changes = request_commit_changes(
-        raw_repo,
+    let changes = inspect_request_changes(
+        &request_commit_changes(raw_repo, commit_oid)?,
         policy,
         access,
-        identity.parent_oids.first().map(String::as_str),
-        commit_oid,
     )?;
     if changes.hidden {
         return Ok(InspectedRequestCommit {
@@ -433,19 +325,6 @@ fn request_commit_identity(
     }
     let identity = parse_request_commit_identity(&output.stdout)?;
     Ok(identity)
-}
-
-fn request_commit_changes(
-    raw_repo: &FsPath,
-    policy: &Policy,
-    access: RepositoryAccess,
-    parent: Option<&str>,
-    commit_oid: &str,
-) -> Result<InspectedRequestChanges, ApiError> {
-    let changes = crate::use_cases::request_revision_inspection::request_commit_changes(
-        raw_repo, parent, commit_oid,
-    )?;
-    parse_request_changes_with_visibility(&changes, policy, access)
 }
 
 fn request_commit_display_metadata(

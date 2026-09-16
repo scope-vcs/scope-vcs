@@ -1,4 +1,4 @@
-use super::{commit_paths, visible_commit_paths};
+use super::{request_commit_visible_paths, visible_commit_paths};
 use axum::http::StatusCode;
 use scope_domain::{
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
@@ -14,7 +14,7 @@ use std::{
 };
 
 #[test]
-fn commit_paths_accepts_large_identity_output_and_uses_the_first_parent() {
+fn commit_paths_use_the_first_parent_of_a_wide_merge() {
     let fixture = fixture();
     let parents = git(
         fixture.directory.path(),
@@ -23,7 +23,7 @@ fn commit_paths_accepts_large_identity_output_and_uses_the_first_parent() {
     );
     assert!(parents.len() > 64 * 1024);
 
-    let (paths, hidden) = commit_paths(
+    let (paths, hidden) = request_commit_visible_paths(
         fixture.directory.path(),
         &Policy::new(Visibility::Public),
         RepositoryAccess::public(),
@@ -42,10 +42,10 @@ fn commit_paths_accepts_large_identity_output_and_uses_the_first_parent() {
 }
 
 #[test]
-fn commit_paths_accepts_a_root_commit() {
+fn commit_paths_accept_a_root_commit() {
     let fixture = fixture();
 
-    let (paths, hidden) = commit_paths(
+    let (paths, hidden) = request_commit_visible_paths(
         fixture.directory.path(),
         &Policy::new(Visibility::Public),
         RepositoryAccess::public(),

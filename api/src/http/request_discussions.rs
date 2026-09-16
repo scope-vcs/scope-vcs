@@ -1,12 +1,15 @@
 use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
-    http::{request_review::RequestRevisionCommitVisibility, requests::*, responses::*},
+    http::{requests::*, responses::*},
     state::AppState,
-    use_cases::request_discussion_mutation::{
-        self, CreateDiscussionCommand, CreateReplyCommand, DiscussionAnchorInput,
-        DiscussionMutationResult, DiscussionTransition, MarkDiscussionReadCommand,
-        ReopenAndReplyCommand, ReplyMutationResult, TransitionDiscussionCommand,
+    use_cases::{
+        request_anchor_visibility,
+        request_discussion_mutation::{
+            self, CreateDiscussionCommand, CreateReplyCommand, DiscussionAnchorInput,
+            DiscussionMutationResult, DiscussionTransition, MarkDiscussionReadCommand,
+            ReopenAndReplyCommand, ReplyMutationResult, TransitionDiscussionCommand,
+        },
     },
 };
 use axum::{
@@ -137,7 +140,6 @@ pub(crate) async fn list_discussions(
         state: &state,
         request: &request,
         repo: &repo,
-        access,
     };
     let discussions = discussion_summaries(&projection, discussions, &batch.users).await?;
     Ok(Json(RequestDiscussionPageResponse {
@@ -386,7 +388,6 @@ pub(crate) async fn changed_discussions(
         state: &state,
         request: &request,
         repo: &repo,
-        access,
     };
     let discussions = discussion_summaries(&projection, batch.discussions, &batch.users).await?;
     Ok(Json(RequestDiscussionChangesResponse {
@@ -571,7 +572,6 @@ struct DiscussionProjection<'a> {
     state: &'a AppState,
     request: &'a scope_domain::requests::Request,
     repo: &'a scope_domain::repository::access::RepositoryAccessContext,
-    access: scope_domain::repository::access::RepositoryAccess,
 }
 
 async fn discussion_summaries(
@@ -579,9 +579,13 @@ async fn discussion_summaries(
     models: Vec<scope_postgres::db::RequestDiscussionReadModel>,
     users: &BTreeMap<String, scope_domain::account::UserAccount>,
 ) -> Result<Vec<RequestDiscussionSummaryResponse>, ApiError> {
-    let visibility = discussion_anchor_visibility(
-        projection,
-        models.iter().map(|model| model.discussion.anchor.as_ref()),
+    let visibility = request_anchor_visibility::visible_commits(
+        projection.state,
+        projection.repo,
+        projection.request,
+        models
+            .iter()
+            .filter_map(|model| model.discussion.anchor.as_ref()),
     )
     .await;
     let mut summaries = Vec::with_capacity(models.len());
@@ -594,56 +598,6 @@ async fn discussion_summaries(
         summaries.push(discussion_summary(model, users, anchor)?);
     }
     Ok(summaries)
-}
-
-async fn discussion_anchor_visibility<'a>(
-    projection: &DiscussionProjection<'_>,
-    anchors: impl Iterator<Item = Option<&'a scope_domain::requests::RequestDiscussionAnchor>>,
-) -> BTreeSet<(String, String)> {
-    let mut commits_by_revision = BTreeMap::<String, BTreeSet<String>>::new();
-    for anchor in anchors.flatten() {
-        if let Some(commit_oid) = &anchor.commit_oid {
-            commits_by_revision
-                .entry(anchor.revision_id.clone())
-                .or_default()
-                .insert(commit_oid.clone());
-        }
-    }
-    if projection.access.can_read_private_files {
-        return commits_by_revision
-            .into_iter()
-            .flat_map(|(revision_id, commit_oids)| {
-                commit_oids
-                    .into_iter()
-                    .map(move |commit_oid| (revision_id.clone(), commit_oid))
-            })
-            .collect();
-    }
-    if commits_by_revision.is_empty() {
-        return BTreeSet::new();
-    }
-    let policy = match projection
-        .state
-        .metadata
-        .repositories()
-        .repository_policy(projection.repo)
-        .await
-    {
-        Ok(policy) => policy,
-        Err(error) => {
-            tracing::warn!(error = ?error, "redacting discussion anchors because repository policy changed");
-            return BTreeSet::new();
-        }
-    };
-    RequestRevisionCommitVisibility::new(
-        projection.state,
-        &projection.repo.incarnation(),
-        &policy,
-        projection.access,
-        projection.request,
-    )
-    .visible_commits(&commits_by_revision)
-    .await
 }
 
 fn discussion_anchor_response(

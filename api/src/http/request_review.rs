@@ -17,8 +17,8 @@ use crate::{
     state::AppState,
     use_cases::{
         request_revision_inspection::{
-            DiffStatusValidationOrder, InspectedRequestChange, InspectedRequestChanges,
-            commit_belongs_to_revision, inspect_request_changes,
+            InspectedRequestChange, commit_belongs_to_revision, inspect_request_changes,
+            request_commit_changes,
         },
         scope_path_input::normalized_scope_path,
     },
@@ -33,17 +33,16 @@ use scope_api_contract::{
     RequestRevisionListResponse, RequestRevisionResponse,
 };
 use scope_domain::{
-    policy::{Policy, ScopePath},
+    policy::ScopePath,
     repository::Repository,
     repository::access::RepositoryAccess,
-    requests::{Request, RequestRevision, select_request_review_revision},
+    requests::{RequestRevision, select_request_review_revision},
 };
 use serde::Deserialize;
 use std::{path::Path as FsPath, sync::Arc};
 
 mod inspection;
 
-pub(crate) use inspection::RequestRevisionCommitVisibility;
 use inspection::{
     inspect_request_commit, inspect_request_commits_identity_only, request_revision_commit_files,
 };
@@ -430,19 +429,6 @@ fn request_revision_commit_oids(
         .filter(|line| !line.trim().is_empty())
         .map(ToString::to_string)
         .collect())
-}
-
-fn parse_request_changes_with_visibility(
-    changes: &[u8],
-    policy: &Policy,
-    access: RepositoryAccess,
-) -> Result<InspectedRequestChanges, ApiError> {
-    inspect_request_changes(
-        changes,
-        policy,
-        access,
-        DiffStatusValidationOrder::AfterVisibility,
-    )
 }
 
 fn request_file_response(file: InspectedRequestChange) -> CommitFileResponse {
