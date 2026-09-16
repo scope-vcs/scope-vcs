@@ -64,6 +64,23 @@ export function useCachedResource<T extends object>({
   }
 }
 
+// A failed resource is retried by the lifecycle that can succeed again, so no
+// subscriber has to own listeners for its own read.
+export function useRetryOnReconnect(
+  { retry, status }: Pick<CachedResource<object>, 'retry' | 'status'>,
+) {
+  useEffect(() => {
+    if (status !== 'failed') return
+    const onReconnect = () => retry()
+    window.addEventListener('focus', onReconnect)
+    window.addEventListener('online', onReconnect)
+    return () => {
+      window.removeEventListener('focus', onReconnect)
+      window.removeEventListener('online', onReconnect)
+    }
+  }, [retry, status])
+}
+
 export function resourceErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim() ? error.message : fallback
 }

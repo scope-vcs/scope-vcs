@@ -2,6 +2,8 @@ import type { RepoParams } from '@/api/types'
 import type { RequestQueueItemResponse, RequestQueueSection } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { BlockSkeleton } from '@/components/ui/skeleton'
+import { formatUnixMonthDay } from '@/lib/date-format'
+import { useHydrated } from '@/lib/use-hydrated'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { Check, LoaderCircle, RefreshCw, UserRound, UserRoundMinus } from 'lucide-react'
@@ -100,6 +102,7 @@ function RequestWorkspaceRow({
   item: RequestQueueItemResponse
   section: RequestQueueSection
 }) {
+  const hydrated = useHydrated()
   const { request, attention, author } = item
   const selected = selectedId === request.id
   const pending = pendingId === request.id
@@ -151,14 +154,17 @@ function RequestWorkspaceRow({
               aria-hidden="true"
               className="size-1.5 shrink-0 rounded-full border border-current"
             />
-            <span className="truncate">{requestAttentionLabel(item)}</span>
+            <span className="truncate" suppressHydrationWarning>
+              {requestAttentionLabel(item, hydrated)}
+            </span>
           </span>
-          <span className="ml-auto shrink-0 text-[10px] whitespace-nowrap">
-            {new Date(item.attention_at_unix * 1000).toLocaleDateString(undefined, {
-              month: 'short',
-              day: 'numeric',
-            })}
-          </span>
+          <time
+            className="ml-auto shrink-0 text-[10px] whitespace-nowrap"
+            dateTime={new Date(item.attention_at_unix * 1_000).toISOString()}
+            suppressHydrationWarning
+          >
+            {formatUnixMonthDay(item.attention_at_unix, hydrated)}
+          </time>
         </span>
         <span
           className="mt-[5px] flex items-center gap-1.5 overflow-hidden text-[11px] whitespace-nowrap text-muted-foreground"

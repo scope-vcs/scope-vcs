@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  expectedIdentityKey,
   identityTransition,
   resolveAnalyticsIdentity,
 } from './identity'
@@ -59,23 +60,61 @@ test('account switching resets before identifying the next Scope user', () => {
   })
 })
 
-test('identity resolves the internal Scope user ID from the shared account', async () => {
-  const identity = await resolveAnalyticsIdentity('clerk_user_123', async () => ({
-    user: { id: 'scope_usr_123' },
-  }))
+const signedIn = {
+  clerkUserId: 'clerk_user_123',
+  isLoaded: true,
+  isSignedIn: true,
+}
 
-  assert.deepEqual(identity, {
+test('identity resolves the internal Scope user ID from the resolved session', () => {
+  assert.deepEqual(resolveAnalyticsIdentity({
+    ...signedIn,
+    scopeUserId: 'scope_usr_123',
+    sessionResolved: true,
+  }), {
     identityKey: 'identified:clerk_user_123',
     scopeUserId: 'scope_usr_123',
   })
 })
 
-test('identity lookup failures stay unresolved so the lifecycle can retry', async () => {
-  await assert.rejects(
-    resolveAnalyticsIdentity(
-      'clerk_user_123',
-      () => Promise.reject(new Error('identity unavailable')),
-    ),
-    /identity unavailable/,
-  )
+test('a signed-in viewer stays unresolved until the session resource publishes', () => {
+  assert.equal(resolveAnalyticsIdentity({
+    ...signedIn,
+    scopeUserId: null,
+    sessionResolved: false,
+  }), null)
+  assert.equal(expectedIdentityKey(signedIn), 'identified:clerk_user_123')
+})
+
+test('a session that resolves without a Scope account identifies nobody', () => {
+  assert.deepEqual(resolveAnalyticsIdentity({
+    ...signedIn,
+    scopeUserId: null,
+    sessionResolved: true,
+  }), {
+    identityKey: 'identified:clerk_user_123',
+    scopeUserId: null,
+  })
+})
+
+test('signed-out viewers resolve anonymously without reading a session', () => {
+  assert.deepEqual(resolveAnalyticsIdentity({
+    clerkUserId: null,
+    isLoaded: true,
+    isSignedIn: false,
+    scopeUserId: null,
+    sessionResolved: false,
+  }), { identityKey: 'anonymous', scopeUserId: null })
+})
+
+test('an unloaded auth state resolves to no identity at all', () => {
+  const pending = {
+    clerkUserId: null,
+    isLoaded: false,
+    isSignedIn: false,
+    scopeUserId: null,
+    sessionResolved: false,
+  }
+  assert.equal(resolveAnalyticsIdentity(pending), null)
+  assert.equal(expectedIdentityKey(pending), null)
 })

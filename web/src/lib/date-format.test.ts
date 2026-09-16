@@ -4,12 +4,23 @@ import {
   formatRelativeUnix,
   formatUnixDate,
   formatUnixDateUtc,
+  formatUnixDayLabel,
+  formatUnixMonthDay,
+  formatUnixSnoozeUntil,
+  unixCalendarDay,
 } from './date-format'
 
 test('dates are stable across server and browser time zones', () => {
   assert.equal(formatUnixDate(0), 'Jan 01, 1970, 12:00 AM')
   assert.equal(formatUnixDateUtc(0), 'Jan 01, 1970, 12:00 AM')
   assert.equal(formatUnixDate(null), 'Not set')
+})
+
+test('unhydrated dates render in UTC so the server and the browser agree', () => {
+  assert.equal(formatUnixMonthDay(0, false), 'Jan 1')
+  assert.equal(formatUnixDayLabel(0, false), 'January 1, 1970')
+  assert.equal(formatUnixSnoozeUntil(0, false), 'Jan 1, 12:00 AM')
+  assert.equal(unixCalendarDay(0, false), '1970-0-1')
 })
 
 const NOW_SECONDS = Date.UTC(2026, 0, 15, 12, 0, 0) / 1_000
