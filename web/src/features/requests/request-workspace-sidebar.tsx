@@ -68,6 +68,8 @@ export function RequestWorkspaceSidebar({
   const grouped = groupRows(REQUEST_QUEUE_SECTION_ORDER.flatMap(rows))
   const nextSection = REQUEST_QUEUE_SECTION_ORDER.find((section) => pages?.[section].next_cursor)
   const activeHasMore = Boolean(pages?.active.next_cursor)
+  // Active rows page, so loaded lengths are floors until the last page is in.
+  const activeCount = (value: number) => `${value}${activeHasMore ? '+' : ''}`
   // Unclaimed and Set aside only ever hold maintainer placements, so readers
   // see just their work and the finished history.
   const disclosures = (
@@ -140,7 +142,7 @@ export function RequestWorkspaceSidebar({
             <>
               {(maintainer || needsYou.length > 0) && (
                 <section>
-                  <RequestWorkspaceGroupLabel count={needsYou.length} group="needs_you" strong />
+                  <RequestWorkspaceGroupLabel count={activeCount(needsYou.length)} group="needs_you" strong />
                   <RequestWorkspaceList
                     {...common}
                     emptyLabel={EMPTY_LABELS.needs_you}
@@ -153,7 +155,7 @@ export function RequestWorkspaceSidebar({
               {(waiting.length > 0 || (!maintainer && needsYou.length === 0)) && (
                 <section>
                   <RequestWorkspaceGroupLabel
-                    count={waiting.length}
+                    count={activeCount(waiting.length)}
                     group="waiting"
                     label={maintainer ? undefined : 'Open'}
                   />
@@ -190,12 +192,12 @@ export function RequestWorkspaceSidebar({
             <p className="request-workspace-footer">
               {maintainer ? (
                 <>
-                  <span className="text-foreground">{summaryCount(needsYou.length, 'need')} you</span>
+                  <span className="text-foreground">{summaryCount(needsYou.length, activeHasMore)} you</span>
                   {' · '}
-                  {waiting.length} waiting
+                  {activeCount(waiting.length)} waiting
                 </>
               ) : (
-                `${waiting.length} open`
+                `${activeCount(needsYou.length + waiting.length)} open`
               )}
             </p>
           )}
@@ -221,7 +223,7 @@ function RequestWorkspaceGroupLabel({
   label = REQUEST_ATTENTION_GROUP_LABELS[group],
   strong = false,
 }: {
-  count: number
+  count: string
   group: RequestAttentionGroup
   label?: string
   strong?: boolean
@@ -331,6 +333,6 @@ function count(page?: RequestQueuePageResponse) {
   return `${page?.requests.length ?? 0}${page?.next_cursor ? '+' : ''}`
 }
 
-function summaryCount(value: number, verb: 'need') {
-  return `${value} ${value === 1 ? `${verb}s` : verb}`
+function summaryCount(value: number, more: boolean) {
+  return `${value}${more ? '+' : ''} ${value === 1 && !more ? 'needs' : 'need'}`
 }
