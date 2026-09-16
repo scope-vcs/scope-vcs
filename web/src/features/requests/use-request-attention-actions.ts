@@ -107,8 +107,10 @@ export function useRequestAttentionActions(
       inFlight.current = false
       setPendingId(null)
     }
+    // A failed restore keeps the strip so the viewer can try again.
+    if (!restored) return
     setUndoable(null)
-    if (restored) await open(requestId)
+    await open(requestId)
   }
 
   return { act, error, pendingId, undo, undoable }

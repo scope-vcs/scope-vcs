@@ -78,14 +78,22 @@ export function RequestWorkspaceSidebar({
   const rows = (section: RequestQueueSection): QueueRow[] =>
     pages?.[section].requests.map((item) => ({ item, section })) ?? []
   const allRows = REQUEST_QUEUE_SECTION_ORDER.flatMap(rows)
-  const grouped = groupRows(allRows, undoable?.item.request.id)
+  // A row being undone has left the queue on the server; the undo strip
+  // stands in for it until the cache catches up.
+  const visibleRows = allRows.filter((row) => row.item.request.id !== undoable?.item.request.id)
+  const grouped = groupRows(visibleRows)
   useRequestKeyboard({
     onAction,
     onCollapseToggle: toggleCollapsed,
     rows: new Map(allRows.map((row) => [row.item.request.id, row])),
     selectedId,
   })
-  const strip = undoable && undoStrip(undoable, grouped, { onUndo: undo, pending: pendingId === undoable.item.request.id })
+  const strip = undoable && {
+    group: requestAttentionGroup('active', undoable.item.attention.reason),
+    node: <RequestUndoStrip label={undoable.label} onUndo={undo} pending={pendingId === undoable.item.request.id} />,
+  }
+  const stripIn = (list: QueueRow[]) =>
+    strip && undoable ? { index: stripIndex(list, undoable.item.attention_at_unix), node: strip.node } : undefined
   const nextSection = REQUEST_QUEUE_SECTION_ORDER.find((section) => pages?.[section].next_cursor)
   const activeHasMore = Boolean(pages?.active.next_cursor)
   // Active rows page, so loaded lengths are floors until the last page is in.
@@ -156,10 +164,11 @@ export function RequestWorkspaceSidebar({
               {...common}
               emptyLabel="No matching requests."
               hasMore={Boolean(nextSection)}
-              items={REQUEST_QUEUE_SECTION_ORDER.flatMap(rows)}
+              items={visibleRows}
               onLoadMore={() => {
                 if (nextSection) onLoadMore(nextSection)
               }}
+              strip={stripIn(visibleRows)}
             />
           ) : (
             <>
@@ -172,7 +181,7 @@ export function RequestWorkspaceSidebar({
                     hasMore={activeHasMore && waiting.length === 0}
                     items={needsYou}
                     onLoadMore={() => onLoadMore('active')}
-                    strip={strip?.group === 'needs_you' ? strip : undefined}
+                    strip={strip?.group === 'needs_you' ? stripIn(needsYou) : undefined}
                   />
                 </section>
               )}
@@ -189,7 +198,7 @@ export function RequestWorkspaceSidebar({
                     hasMore={activeHasMore}
                     items={waiting}
                     onLoadMore={() => onLoadMore('active')}
-                    strip={strip?.group === 'waiting' ? strip : undefined}
+                    strip={strip?.group === 'waiting' ? stripIn(waiting) : undefined}
                   />
                 </section>
               )}
@@ -245,36 +254,26 @@ export function RequestWorkspaceSidebar({
   )
 }
 
-function groupRows(rows: QueueRow[], leavingId?: string) {
+function groupRows(rows: QueueRow[]) {
   const grouped = Object.fromEntries(
     REQUEST_ATTENTION_GROUP_ORDER.map((group) => [group, [] as QueueRow[]]),
   ) as Record<RequestAttentionGroup, QueueRow[]>
   for (const row of rows) {
-    // A row being undone has left the queue on the server; the undo strip
-    // stands in for it until the cache catches up.
-    if (row.item.request.id === leavingId) continue
     grouped[requestAttentionGroup(row.section, row.item.attention.reason)].push(row)
   }
   return grouped
 }
 
 /**
- * Where the undo strip goes: the group the row came from, at the slot its
- * attention time would still hold. Active rows are served newest first.
+ * The slot a settled or snoozed row would still hold among active rows,
+ * which the API serves newest first. Lists that mix sections keep active
+ * rows first, so the strip lands after the last of them at worst.
  */
-function undoStrip(
-  undoable: RequestUndoableAction,
-  grouped: Record<RequestAttentionGroup, QueueRow[]>,
-  { onUndo, pending }: { onUndo: () => void; pending: boolean },
-) {
-  const group = requestAttentionGroup('active', undoable.item.attention.reason)
-  const at = undoable.item.attention_at_unix
-  const index = grouped[group].findIndex((row) => row.item.attention_at_unix < at)
-  return {
-    group,
-    index: index === -1 ? grouped[group].length : index,
-    node: <RequestUndoStrip label={undoable.label} onUndo={onUndo} pending={pending} />,
-  }
+function stripIndex(rows: QueueRow[], attentionAtUnix: number) {
+  const index = rows.findIndex(
+    (row) => row.section === 'active' && row.item.attention_at_unix < attentionAtUnix,
+  )
+  return index === -1 ? rows.filter((row) => row.section === 'active').length : index
 }
 
 function RequestWorkspaceGroupLabel({
