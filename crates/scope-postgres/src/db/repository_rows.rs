@@ -5,7 +5,7 @@ use super::{
     git_segments::{load_git_pack_spans, publish_git_segment, retire_git_segment},
     history_rows::{
         RepositoryHistoryDelta, insert_repository_history, insert_repository_live_files,
-        save_repository_history_delta,
+        load_repository_histories, save_repository_history_delta,
     },
     outbox::enqueue_projection_read_model_rebuild,
 };
@@ -14,7 +14,13 @@ use sea_orm::{
     QueryFilter, QueryOrder,
 };
 use std::collections::BTreeMap;
-use {crate::error::PostgresError, scope_domain::repository::Repository};
+use {
+    crate::error::PostgresError,
+    scope_domain::repository::{
+        Repository,
+        collaboration::{RepositoryInvite, RepositoryMember},
+    },
+};
 
 pub async fn insert_repository<C>(
     conn: &C,
@@ -423,4 +429,47 @@ where
     }
 
     Ok(facts)
+}
+
+pub(super) async fn repository_from_model<C>(
+    conn: &C,
+    repository: entities::repository::Model,
+) -> Result<Repository, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let repo_id = repository.id.clone();
+    let repo_ids = [repo_id.clone()];
+    let facts = load_repository_facts(conn, &repo_ids)
+        .await?
+        .remove(&repo_id)
+        .ok_or_else(|| {
+            PostgresError::internal_message(format!("repository facts missing for {repo_id}"))
+        })?;
+    let history = load_repository_histories(conn, &repo_ids)
+        .await?
+        .remove(&repo_id)
+        .ok_or_else(|| {
+            PostgresError::internal_message(format!("repository history missing for {repo_id}"))
+        })?;
+    let members = entities::repository_member::Entity::find()
+        .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
+        .order_by_asc(entities::repository_member::Column::UserId)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(entities::repository_member::Model::try_into_domain)
+        .collect::<Result<Vec<RepositoryMember>, _>>()?;
+    let invitations = entities::repository_invite::Entity::find()
+        .filter(entities::repository_invite::Column::RepoId.eq(repo_id))
+        .order_by_asc(entities::repository_invite::Column::InvitedEmailNormalized)
+        .order_by_asc(entities::repository_invite::Column::Id)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(entities::repository_invite::Model::try_into_domain)
+        .collect::<Result<Vec<RepositoryInvite>, _>>()?;
+    repository.try_into_domain(facts, members, invitations, history)
 }

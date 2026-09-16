@@ -69,6 +69,25 @@ struct RepoReadRow {
 }
 
 impl RepositoryStore {
+    pub async fn repository(
+        &self,
+        owner: &str,
+        name: &str,
+    ) -> Result<Option<Repository>, PostgresError> {
+        let id = repo_id(owner, name);
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let repo = match entities::repository::Entity::find_by_id(id)
+            .one(&tx)
+            .await
+            .map_err(PostgresError::internal)?
+        {
+            Some(repo) => Some(repository_from_model(&tx, repo).await?),
+            None => None,
+        };
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(repo)
+    }
+
     pub async fn owner_profile(
         &self,
         handle: &str,
