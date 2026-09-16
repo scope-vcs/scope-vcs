@@ -471,7 +471,7 @@ function DraftAttachmentRow({
         {attachment.status === 'uploading' ? (
           <progress
             aria-label={`${attachment.name}: ${Math.round(attachment.progress * 100)}% uploaded`}
-            className="mt-1 block h-1 w-full max-w-60 appearance-none overflow-hidden rounded-full bg-muted [&::-moz-progress-bar]:bg-brand [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-brand"
+            className="mt-1 block h-1 w-full max-w-60 appearance-none overflow-hidden rounded-full bg-muted [&::-moz-progress-bar]:bg-foreground [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-foreground"
             max={1}
             value={attachment.progress}
           />

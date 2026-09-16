@@ -93,20 +93,6 @@ body {
 }
 
 @theme inline {
-  --color-landing-bg: var(--landing-bg);
-  --color-landing-paper: var(--landing-paper);
-  --color-landing-panel: var(--landing-panel);
-  --color-landing-ink: var(--landing-ink);
-  --color-landing-muted: var(--landing-muted);
-  --color-landing-faint: var(--landing-faint);
-  --color-landing-line: var(--landing-line);
-  --color-landing-green: var(--landing-green);
-  --color-landing-green-soft: var(--landing-green-soft);
-  --text-landing-title: var(--landing-figure-title);
-  --text-landing-body: var(--landing-figure-body);
-  --text-landing-meta: var(--landing-figure-meta);
-
-
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -125,8 +111,6 @@ body {
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-brand: var(--brand);
-  --color-brand-foreground: var(--brand-foreground);
 
   --color-success: var(--success);
   --color-success-strong: var(--success-strong);
@@ -152,33 +136,31 @@ body {
 
 /*
  * Neutrals are warm in both themes so surfaces, borders and controls read as
- * one family. `--destructive` is an alias of `--danger`; danger is the source.
+ * one family. There is no accent color: emphasis is ink against grey, and
+ * green, red and amber are reserved for lifecycle and diff meaning.
+ * `--destructive` is an alias of `--danger`; danger is the source.
  */
 :root {
   --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "Commit Mono", "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
 
-  --background: #f4f3ef;
-  --foreground: #1b1a17;
-  --card: #fffefa;
-  --card-foreground: #1b1a17;
-  --popover: #fffefa;
-  --popover-foreground: #1b1a17;
+  --background: #f4f2ec;
+  --foreground: #1c1a16;
+  --card: #fbfaf6;
+  --card-foreground: #1c1a16;
+  --popover: #fbfaf6;
+  --popover-foreground: #1c1a16;
   --primary: #2b2822;
   --primary-foreground: #faf9f5;
   --secondary: #faf9f5;
   --secondary-foreground: #2b2822;
-  --muted: #eae8e2;
-  --muted-foreground: #6d6961;
-  --accent: #eae8e2;
-  --border: #dcd9d1;
-  --border-strong: #bab5a8;
+  --muted: #e9e6de;
+  --muted-foreground: #6f6a60;
+  --accent: #e9e6de;
+  --border: #ddd9cf;
+  --border-strong: #b9b3a5;
   --input: #cbc7bd;
   --ring: #7a746a;
-  --brand: #7a746a;
-  --brand-foreground: #fffefa;
-  --platinum: #7a746a;
-  --platinum-bright: #575249;
   --success: #4f8561;
   --success-strong: #386c4a;
   --success-soft: #e6efe6;
@@ -199,27 +181,23 @@ body {
 }
 
 .dark {
-  --background: #0e0f11;
-  --foreground: #f1f0ec;
-  --card: #131417;
-  --card-foreground: #f1f0ec;
-  --popover: #191a1e;
-  --popover-foreground: #f1f0ec;
+  --background: #141311;
+  --foreground: #f1efe8;
+  --card: #1a1917;
+  --card-foreground: #f1efe8;
+  --popover: #201e1b;
+  --popover-foreground: #f1efe8;
   --primary: #eceae5;
   --primary-foreground: #171613;
-  --secondary: #191a1e;
+  --secondary: #201e1b;
   --secondary-foreground: #dbd9d3;
-  --muted: #1d1f23;
-  --muted-foreground: #a09d96;
-  --accent: #1d1f23;
-  --border: #33363d;
-  --border-strong: #4a4d55;
-  --input: #4a4d55;
+  --muted: #24221e;
+  --muted-foreground: #a49f95;
+  --accent: #24221e;
+  --border: #2f2c27;
+  --border-strong: #4a463f;
+  --input: #4a463f;
   --ring: #c9c6bf;
-  --brand: #b5b1a8;
-  --brand-foreground: #171613;
-  --platinum: #b5b1a8;
-  --platinum-bright: #dbd9d3;
   --success: #6fa27c;
   --success-strong: #83b28e;
   --success-soft: #17211a;
@@ -281,6 +259,15 @@ body {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+}
+
+/* Mono small caps for section headers, stamps and rail labels. */
+@utility label-mono {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .review-diff-viewer diffs-container {

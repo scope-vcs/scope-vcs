@@ -149,7 +149,7 @@ export function WorkspaceTabStrip({
               {active && (
                 <span
                   aria-hidden
-                  className="absolute inset-x-1.5 bottom-0 h-0.5 bg-[var(--platinum-bright)]"
+                  className="absolute inset-x-1.5 bottom-0 h-0.5 bg-foreground"
                 />
               )}
             </div>

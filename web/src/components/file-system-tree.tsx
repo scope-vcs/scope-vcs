@@ -188,7 +188,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
         className={cn(
           'relative grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-[background-color,border-color] hover:bg-accent/50',
           selected &&
-            'border-[var(--border-strong)] bg-muted shadow-[inset_2px_0_0_0_var(--platinum-bright)] hover:bg-muted',
+            'border-[var(--border-strong)] bg-muted shadow-[inset_2px_0_0_0_var(--foreground)] hover:bg-muted',
           columnsClassName,
         )}
       >
@@ -267,9 +267,9 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
             )}
           </Button>
           {isCollapsed ? (
-            <Folder className="size-4 shrink-0 text-[var(--platinum)]" strokeWidth={1.7} />
+            <Folder className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.7} />
           ) : (
-            <FolderOpen className="size-4 shrink-0 text-[var(--platinum)]" strokeWidth={1.7} />
+            <FolderOpen className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.7} />
           )}
           <span className="min-w-0 truncate font-mono text-xs" title={node.path}>
             {node.name}
@@ -330,7 +330,7 @@ function FilePathLabel({ compact, name, path }: { compact: boolean; name: string
   return (
     <>
       {!compact ? <span className="size-6 shrink-0" /> : null}
-      <File className="size-4 shrink-0 text-[var(--platinum)]" strokeWidth={1.7} />
+      <File className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.7} />
       <span className="min-w-0 truncate font-mono text-xs" title={normalizeFilePath(path)}>
         {name}
       </span>
