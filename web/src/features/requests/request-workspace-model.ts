@@ -81,6 +81,18 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 const WEEK = 7 * DAY
 
+/**
+ * How long a row has waited for the viewer, in four steps the sidebar can
+ * tint: under a day, under three, under a week, longer.
+ */
+export function requestAttentionHeat(attentionAtUnix: number, nowUnix: number): 0 | 1 | 2 | 3 {
+  const age = nowUnix - attentionAtUnix
+  if (age < DAY) return 0
+  if (age < 3 * DAY) return 1
+  if (age < WEEK) return 2
+  return 3
+}
+
 /** Compact age for a row: "now", "4h", "2d", "3w", then a short date. */
 export function requestAgeLabel(attentionAtUnix: number, nowUnix: number, hydrated: boolean) {
   const age = Math.max(0, nowUnix - attentionAtUnix)

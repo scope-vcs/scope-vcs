@@ -9,16 +9,21 @@ const ROW = '.request-workspace-row'
 /**
  * Single-key driving for the inbox. j and k move focus between rows; e, s
  * and c act on the focused row, or the open request when nothing in the
- * list has focus. Keys stay out of inputs, editors, dialogs and menus.
+ * list has focus; the bracket collapses the sidebar and f enters focus
+ * mode. Keys stay out of inputs, editors, dialogs and menus.
  */
 export function useRequestKeyboard({
+  focus,
   onAction,
   onCollapseToggle,
+  onFocusToggle,
   rows,
   selectedId,
 }: {
+  focus: boolean
   onAction: (item: RequestQueueItemResponse, command: RequestAttentionCommand) => void
   onCollapseToggle: () => void
+  onFocusToggle: () => void
   rows: Map<string, { item: RequestQueueItemResponse; section: RequestQueueSection }>
   selectedId?: string
 }) {
@@ -55,6 +60,12 @@ export function useRequestKeyboard({
         return
       }
 
+      if (event.key === 'f' || (event.key === 'Escape' && focus)) {
+        event.preventDefault()
+        onFocusToggle()
+        return
+      }
+
       const targetId = focusedRow?.dataset.requestId ?? selectedId
       const row = targetId ? rows.get(targetId) : undefined
       if (!row) return
@@ -77,5 +88,5 @@ export function useRequestKeyboard({
     }
     document.addEventListener('keydown', handle)
     return () => document.removeEventListener('keydown', handle)
-  }, [onAction, onCollapseToggle, rows, selectedId])
+  }, [focus, onAction, onCollapseToggle, onFocusToggle, rows, selectedId])
 }

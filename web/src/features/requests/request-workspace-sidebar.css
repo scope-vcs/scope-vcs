@@ -176,6 +176,19 @@
   background: var(--border-strong);
 }
 
+/* Attention heat: rows that have waited longer for the viewer warm up. */
+.request-workspace-row[data-heat="1"] {
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.request-workspace-row[data-heat="2"] {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.request-workspace-row[data-heat="3"] {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
 /* Actions overlay the age on hover; where they are always visible the
  * meta line leaves room for them. */
 .request-workspace-row-actions {
@@ -301,6 +314,29 @@
 .request-workspace-pip:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
+}
+
+/* Focus mode: no app chrome, the spine, and one reading column. */
+html[data-focus] .application-topbar {
+  display: none;
+}
+
+.request-workspace-shell[data-focus] .request-workspace-detail > * {
+  max-width: 78ch;
+  margin-inline: auto;
+}
+
+.request-workspace-shell[data-focus] .request-workspace-detail aside {
+  display: none;
+}
+
+.request-workspace-focus-hint {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 30;
+  margin: 0;
+  color: var(--muted-foreground);
 }
 
 @media (max-width: 700px) {
