@@ -1,133 +1,79 @@
-use axum::{
-    Json,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
 use scope_media_storage::{MediaStorageError, MediaStorageErrorKind};
-use scope_postgres::error::PostgresError;
-use serde::Serialize;
+use scope_postgres::error::{PostgresError, PostgresErrorKind};
+use scope_service_runtime::http::ServiceError;
 
-#[derive(Debug)]
-pub(crate) struct ServiceError {
-    status: StatusCode,
-    message: String,
-    content_range: Option<String>,
+/// The gateway never confirms which attachments exist: every unreachable
+/// object, whatever the reason, reads the same to a caller.
+pub(crate) fn media_not_found() -> ServiceError {
+    ServiceError::not_found("media object not found")
 }
 
-#[derive(Serialize)]
-struct ErrorBody<'a> {
-    error: &'a str,
+/// The gateway never confirms which attachments exist: a metadata miss reads
+/// the same as any other unreachable object.
+pub(crate) fn media_metadata_error(error: PostgresError) -> ServiceError {
+    if error.kind == PostgresErrorKind::NotFound {
+        media_not_found()
+    } else {
+        ServiceError::from(error)
+    }
 }
 
-impl ServiceError {
-    pub(crate) fn bad_request(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, message)
+pub(crate) fn media_storage_error(error: MediaStorageError) -> ServiceError {
+    match error.kind {
+        MediaStorageErrorKind::CapacityExhausted => ServiceError::too_many_requests(error.message),
+        MediaStorageErrorKind::InvalidInput => ServiceError::bad_request(error.message),
+        MediaStorageErrorKind::NotFound => media_not_found(),
+        MediaStorageErrorKind::ServiceUnavailable => ServiceError::unavailable(error.message),
+        MediaStorageErrorKind::Integrity | MediaStorageErrorKind::Internal => {
+            ServiceError::internal(error.message)
+        }
     }
+}
 
-    pub(crate) fn payload_too_large(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::PAYLOAD_TOO_LARGE, message)
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use scope_service_runtime::http::ErrorKind;
 
-    pub(crate) fn request_timeout(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::REQUEST_TIMEOUT, message)
-    }
+    #[tokio::test]
+    async fn metadata_misses_read_like_every_other_unreachable_object() {
+        use axum::{body::to_bytes, http::StatusCode, response::IntoResponse};
 
-    pub(crate) fn conflict(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::CONFLICT, message)
-    }
-
-    pub(crate) fn forbidden(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::FORBIDDEN, message)
-    }
-
-    pub(crate) fn not_found() -> Self {
-        Self::new(StatusCode::NOT_FOUND, "media object not found")
-    }
-
-    pub(crate) fn unauthorized(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::UNAUTHORIZED, message)
-    }
-
-    pub(crate) fn unavailable(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
-    }
-
-    pub(crate) fn internal(message: impl Into<String>) -> Self {
-        let message = message.into();
-        tracing::error!(error = %message, "media service internal error");
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "media service failed")
-    }
-
-    pub(crate) fn range_not_satisfiable(size_bytes: u64) -> Self {
-        let mut error = Self::new(
-            StatusCode::RANGE_NOT_SATISFIABLE,
-            format!("requested range is outside the {size_bytes} byte media object"),
+        let error = media_metadata_error(PostgresError::not_found(
+            "request attachment 42 is not visible to viewer 7",
+        ));
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        assert_eq!(
+            body,
+            br#"{"code":"not_found","message":"media object not found","retryable":false}"#
+                .as_slice()
         );
-        error.content_range = Some(format!("bytes */{size_bytes}"));
-        error
     }
 
-    #[cfg(test)]
-    pub(crate) fn status(&self) -> StatusCode {
-        self.status
-    }
-
-    fn new(status: StatusCode, message: impl Into<String>) -> Self {
-        Self {
-            status,
-            message: message.into(),
-            content_range: None,
-        }
-    }
-}
-
-impl IntoResponse for ServiceError {
-    fn into_response(self) -> Response {
-        let mut response = (
-            self.status,
-            Json(ErrorBody {
-                error: &self.message,
-            }),
-        )
-            .into_response();
-        if let Some(content_range) = self.content_range {
-            response.headers_mut().insert(
-                axum::http::header::CONTENT_RANGE,
-                content_range.parse().expect("valid content range"),
-            );
-            response.headers_mut().insert(
-                axum::http::header::ACCEPT_RANGES,
-                axum::http::HeaderValue::from_static("bytes"),
-            );
-        }
-        response
-    }
-}
-
-impl From<PostgresError> for ServiceError {
-    fn from(error: PostgresError) -> Self {
-        let status = scope_service_runtime::http::postgres_error_kind(error.kind).status();
-        match status {
-            StatusCode::INTERNAL_SERVER_ERROR => Self::internal(error.message),
-            StatusCode::NOT_FOUND => Self::not_found(),
-            StatusCode::FORBIDDEN => Self::forbidden(error.message),
-            _ => Self::new(status, error.message),
-        }
-    }
-}
-
-impl From<MediaStorageError> for ServiceError {
-    fn from(error: MediaStorageError) -> Self {
-        match error.kind {
-            MediaStorageErrorKind::CapacityExhausted => {
-                Self::new(StatusCode::TOO_MANY_REQUESTS, error.message)
-            }
-            MediaStorageErrorKind::InvalidInput => Self::bad_request(error.message),
-            MediaStorageErrorKind::NotFound => Self::not_found(),
-            MediaStorageErrorKind::ServiceUnavailable => Self::unavailable(error.message),
-            MediaStorageErrorKind::Integrity | MediaStorageErrorKind::Internal => {
-                Self::internal(error.message)
-            }
+    #[test]
+    fn storage_failures_keep_their_caller_visible_kinds() {
+        let kinds = [
+            (
+                MediaStorageErrorKind::CapacityExhausted,
+                ErrorKind::TooManyRequests,
+            ),
+            (MediaStorageErrorKind::InvalidInput, ErrorKind::BadRequest),
+            (MediaStorageErrorKind::NotFound, ErrorKind::NotFound),
+            (
+                MediaStorageErrorKind::ServiceUnavailable,
+                ErrorKind::ServiceUnavailable,
+            ),
+            (MediaStorageErrorKind::Integrity, ErrorKind::Internal),
+            (MediaStorageErrorKind::Internal, ErrorKind::Internal),
+        ];
+        for (storage_kind, expected) in kinds {
+            let error = media_storage_error(MediaStorageError {
+                kind: storage_kind,
+                message: "object key /srv/media/private".to_string(),
+            });
+            assert_eq!(error.kind(), expected, "{storage_kind:?}");
         }
     }
 }

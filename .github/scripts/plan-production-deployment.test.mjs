@@ -341,6 +341,7 @@ test("service config does not override Railway scaling or restart defaults", () 
     "cache-service/railway.json": "/readyz",
     "repo-router/railway.json": "/readyz",
     "media-service/railway.json": "/readyz",
+    "media-worker/railway.json": "/readyz",
     "cli/railway.json": "/readyz",
     "web/railway.json": "/readyz",
   };

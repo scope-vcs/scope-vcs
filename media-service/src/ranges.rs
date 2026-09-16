@@ -1,5 +1,5 @@
-use crate::error::ServiceError;
 use axum::http::{HeaderMap, header::RANGE};
+use scope_service_runtime::http::ServiceError;
 use std::ops::RangeInclusive;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

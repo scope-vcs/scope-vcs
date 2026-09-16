@@ -72,7 +72,7 @@ impl ApiError {
             kind,
             public_message: message.into(),
             operator_diagnostic: None,
-            code: error_code(kind),
+            code: kind.code(),
             paths: Vec::new(),
             instruction: None,
         }
@@ -265,7 +265,7 @@ impl IntoResponse for ApiError {
     }
 }
 
-const INTERNAL_PUBLIC_MESSAGE: &str = "Scope hit an internal error.";
+const INTERNAL_PUBLIC_MESSAGE: &str = scope_service_runtime::http::INTERNAL_MESSAGE;
 const SERVICE_UNAVAILABLE_PUBLIC_MESSAGE: &str =
     "Scope is temporarily unavailable; retry with bounded backoff.";
 const CAPACITY_EXHAUSTED_PUBLIC_MESSAGE: &str =
@@ -294,20 +294,6 @@ fn report_operator_diagnostic(
         "API request failed"
     );
     error_reference
-}
-
-const fn error_code(kind: ErrorKind) -> ErrorCode {
-    match kind {
-        ErrorKind::BadRequest => ErrorCode::BadRequest,
-        ErrorKind::Conflict => ErrorCode::Conflict,
-        ErrorKind::Forbidden => ErrorCode::Forbidden,
-        ErrorKind::Internal => ErrorCode::Internal,
-        ErrorKind::NotFound => ErrorCode::NotFound,
-        ErrorKind::PayloadTooLarge => ErrorCode::PayloadTooLarge,
-        ErrorKind::ServiceUnavailable => ErrorCode::ServiceUnavailable,
-        ErrorKind::TooManyRequests => ErrorCode::TooManyRequests,
-        ErrorKind::Unauthorized => ErrorCode::Unauthorized,
-    }
 }
 
 impl From<anyhow::Error> for ApiError {

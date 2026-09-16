@@ -485,7 +485,7 @@ up() {
   write_media_runner
   start_service media "http://localhost:8083/healthz" 90
   write_media_worker_runner
-  start_service media-worker "http://localhost:8084/healthz" 90
+  start_service media-worker "http://localhost:8084/readyz" 90
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     write_web_runner
     start_service web "http://localhost:3000" 180
@@ -500,7 +500,7 @@ status() {
   done
   probe "api readyz" "http://localhost:8080/readyz"
   probe "media healthz" "http://localhost:8083/healthz"
-  probe "media worker healthz" "http://localhost:8084/healthz"
+  probe "media worker readyz" "http://localhost:8084/readyz"
   probe "web" "http://localhost:3000" status
 }
 

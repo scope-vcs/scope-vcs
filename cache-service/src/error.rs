@@ -1,90 +1,40 @@
-use axum::{
-    Json,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
 use scope_cache_domain::CacheDomainError;
-use scope_postgres::error::PostgresError;
-use serde::Serialize;
+use scope_service_runtime::http::{ErrorKind, ServiceError};
 
-#[derive(Debug)]
-pub(crate) struct ServiceError {
-    status: StatusCode,
-    message: String,
-}
-
-#[derive(Serialize)]
-struct ErrorBody<'a> {
-    error: &'a str,
-}
-
-impl ServiceError {
-    pub(crate) fn bad_request(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, message)
-    }
-
-    pub(crate) fn conflict(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::CONFLICT, message)
-    }
-
-    pub(crate) fn forbidden(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::FORBIDDEN, message)
-    }
-
-    pub(crate) fn unauthorized(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::UNAUTHORIZED, message)
-    }
-
-    pub(crate) fn unavailable(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
-    }
-
-    pub(crate) fn internal(message: impl Into<String>) -> Self {
-        let message = message.into();
-        tracing::error!(error = %message, "cache service internal error");
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "cache service failed")
-    }
-
-    fn new(status: StatusCode, message: impl Into<String>) -> Self {
-        Self {
-            status,
-            message: message.into(),
+/// Cache domain rejections are caller-visible: the runner sent an unusable
+/// digest or lease, or the repository is over its cache budget.
+pub(crate) fn cache_domain_error(error: CacheDomainError) -> ServiceError {
+    let kind = match error {
+        CacheDomainError::RepositoryBudgetExceeded { .. } => ErrorKind::TooManyRequests,
+        CacheDomainError::StaleUploadLease | CacheDomainError::UploadLeaseExpired => {
+            ErrorKind::Conflict
         }
-    }
+        _ => ErrorKind::BadRequest,
+    };
+    ServiceError::new(kind, error.to_string())
 }
 
-impl IntoResponse for ServiceError {
-    fn into_response(self) -> Response {
-        (
-            self.status,
-            Json(ErrorBody {
-                error: &self.message,
-            }),
-        )
-            .into_response()
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl From<CacheDomainError> for ServiceError {
-    fn from(error: CacheDomainError) -> Self {
-        match error {
-            CacheDomainError::RepositoryBudgetExceeded { .. } => {
-                Self::new(StatusCode::TOO_MANY_REQUESTS, error.to_string())
-            }
-            CacheDomainError::StaleUploadLease | CacheDomainError::UploadLeaseExpired => {
-                Self::conflict(error.to_string())
-            }
-            _ => Self::bad_request(error.to_string()),
-        }
-    }
-}
-
-impl From<PostgresError> for ServiceError {
-    fn from(error: PostgresError) -> Self {
-        let status = scope_service_runtime::http::postgres_error_kind(error.kind).status();
-        match status {
-            StatusCode::INTERNAL_SERVER_ERROR => Self::internal(error.message),
-            _ => Self::new(status, error.message),
-        }
+    #[test]
+    fn budget_and_lease_failures_keep_their_distinct_kinds() {
+        assert_eq!(
+            cache_domain_error(CacheDomainError::RepositoryBudgetExceeded {
+                requested_bytes: 2,
+                maximum_bytes: 1,
+            })
+            .kind(),
+            ErrorKind::TooManyRequests
+        );
+        assert_eq!(
+            cache_domain_error(CacheDomainError::StaleUploadLease).kind(),
+            ErrorKind::Conflict
+        );
+        assert_eq!(
+            cache_domain_error(CacheDomainError::InvalidDigest).kind(),
+            ErrorKind::BadRequest
+        );
     }
 }

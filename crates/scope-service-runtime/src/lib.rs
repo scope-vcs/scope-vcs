@@ -1,6 +1,7 @@
 //! Delivery infrastructure shared by the HTTP services and background workers.
 mod bootstrap;
 pub mod http;
+pub mod readiness;
 
 pub use bootstrap::{init_tracing, port_from_env, serve, shutdown_signal};
 
