@@ -4,6 +4,7 @@ pub(crate) mod command;
 pub(crate) mod content;
 mod context;
 mod credentials;
+pub(crate) mod http_backend;
 pub(crate) mod import;
 pub(crate) mod projection_repo;
 pub(crate) mod public_request_commit;
@@ -12,6 +13,7 @@ pub(crate) mod request_ref_public_safety;
 pub(crate) mod request_refs;
 pub(crate) mod restore;
 pub(crate) mod run_source;
+pub(crate) mod staging;
 pub(crate) mod storage;
 pub(crate) mod upload;
 
@@ -22,7 +24,7 @@ pub(crate) use credentials::*;
 use crate::{
     config::*,
     error::ApiError,
-    git::{storage::*, upload::*},
+    git::{http_backend::*, upload::*},
     state::AppState,
     use_cases::git_receive::{self, ReceivePackAccess},
 };

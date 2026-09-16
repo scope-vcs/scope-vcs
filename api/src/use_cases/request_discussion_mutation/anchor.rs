@@ -3,10 +3,14 @@ use crate::{
     error::ApiError,
     git::{command::run_git_output, request_refs::with_request_revision_store_repo},
     state::AppState,
-    use_cases::request_revision_inspection::{
-        commit_belongs_to_revision, inspect_request_paths, request_commit_changes,
+    use_cases::{
+        request_revision_inspection::{
+            commit_belongs_to_revision, inspect_request_paths, request_commit_changes,
+        },
+        scope_path_input::normalized_scope_path,
     },
 };
+use scope_api_contract::GitOid;
 use scope_domain::{
     policy::{Policy, ScopePath},
     repository::access::RepositoryAccess,
@@ -34,7 +38,14 @@ pub(super) async fn validate(
         .path
         .map(|path| normalized_scope_path(&path))
         .transpose()?;
-    let commit_oid = anchor.commit_oid.map(canonical_git_oid).transpose()?;
+    let commit_oid = anchor
+        .commit_oid
+        .map(|oid| {
+            GitOid::try_from(oid)
+                .map(String::from)
+                .map_err(ApiError::bad_request)
+        })
+        .transpose()?;
     if let Some(commit_oid) = commit_oid.as_deref() {
         let policy = state
             .metadata
@@ -179,24 +190,6 @@ fn commit_paths(
     let changes = request_commit_changes(raw_repo, parent.as_deref(), commit_oid)?;
 
     inspect_request_paths(&changes, policy, access)
-}
-
-fn normalized_scope_path(path: &str) -> Result<ScopePath, ApiError> {
-    let path = ScopePath::parse(format!("/{}", path.trim_start_matches('/')))
-        .map_err(ApiError::bad_request)?;
-    if path == ScopePath::root() {
-        return Err(ApiError::bad_request("file path is required"));
-    }
-    Ok(path)
-}
-
-fn canonical_git_oid(oid: String) -> Result<String, ApiError> {
-    if oid.len() != 40 || !oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(ApiError::bad_request(
-            "Git OID must be exactly 40 hexadecimal characters",
-        ));
-    }
-    Ok(oid.to_ascii_lowercase())
 }
 
 #[cfg(test)]

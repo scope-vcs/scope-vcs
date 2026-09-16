@@ -11,7 +11,7 @@ use crate::{
         import::PreparedReceivePackUpdate,
         invalid_git_credentials,
         request_refs::{non_request_refs_changed, receive_pack_refs, request_ref_update_from_refs},
-        storage::{
+        staging::{
             ensure_first_push_receive_pack_staging_repo, ensure_ready_receive_pack_staging_repo,
         },
     },

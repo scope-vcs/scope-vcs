@@ -11,12 +11,11 @@ use crate::{
     runtime_budgets::RuntimeBudgets,
     use_cases::content_cleanup::best_effort_drain_pending_repo_storage_deletions,
 };
-use scope_domain::repository::git::GitSegmentUploadState;
 use scope_git_storage::GitSegmentStore;
 use scope_object_store::ObjectStore;
 use scope_postgres::db::MetadataStore;
 use scope_product_analytics::{EventSource, ProductAnalytics};
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -87,104 +86,6 @@ impl AppState {
 
     pub async fn shutdown_product_analytics(&self) {
         self.product_analytics.shutdown().await;
-    }
-
-    pub(crate) fn start_git_segment_recovery(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(10 * 60));
-            loop {
-                interval.tick().await;
-                if let Err(error) = state.recover_stale_git_segments().await {
-                    tracing::warn!(
-                        error = %error.into_operator_diagnostic(),
-                        "stale Git segment recovery failed"
-                    );
-                }
-            }
-        });
-    }
-
-    async fn recover_stale_git_segments(&self) -> Result<(), crate::error::ApiError> {
-        let started = std::time::Instant::now();
-        let now = crate::persistence::unix_now()?;
-        let cutoff = now.saturating_sub(15 * 60);
-        let uploads = self
-            .metadata
-            .repositories()
-            .load_stale_git_segment_uploads(cutoff, 100)
-            .await?;
-        let candidates = uploads.len();
-        let mut deleted = 0_u64;
-        let mut skipped = 0_u64;
-        let mut failed = 0_u64;
-        for upload in uploads {
-            let may_delete = match upload.state {
-                GitSegmentUploadState::Uploading | GitSegmentUploadState::Ready => {
-                    self.metadata
-                        .repositories()
-                        .abandon_git_segment_upload(&upload.segment_id, now)
-                        .await?
-                }
-                GitSegmentUploadState::Deleting => true,
-                GitSegmentUploadState::Published
-                | GitSegmentUploadState::Retained
-                | GitSegmentUploadState::Deleted => false,
-            };
-            if !may_delete {
-                skipped += 1;
-                continue;
-            }
-            if let Err(error) = self
-                .git_segment_store
-                .cleanup_remote_bounded(&upload.object_key)
-                .await
-            {
-                failed += 1;
-                tracing::warn!(
-                    repository_id = upload.repository_id,
-                    segment_id = upload.segment_id,
-                    error = %error,
-                    "stale Git segment remote cleanup failed"
-                );
-                continue;
-            }
-            let mut local_cleanup_failed = false;
-            if let Err(error) = self
-                .git_segment_store
-                .cleanup_local(&upload.repository_id, &upload.segment_id)
-                .await
-            {
-                local_cleanup_failed = true;
-                failed += 1;
-                tracing::warn!(
-                    repository_id = upload.repository_id,
-                    segment_id = upload.segment_id,
-                    error = %error,
-                    "stale Git segment local cleanup failed"
-                );
-            }
-            self.metadata
-                .repositories()
-                .mark_git_segment_upload_deleted(
-                    &upload.segment_id,
-                    crate::persistence::unix_now()?,
-                )
-                .await?;
-            if !local_cleanup_failed {
-                deleted += 1;
-            }
-        }
-        tracing::info!(
-            success = failed == 0,
-            duration_us = started.elapsed().as_micros(),
-            candidates,
-            deleted,
-            skipped,
-            failed,
-            "stale Git segment recovery sweep completed"
-        );
-        Ok(())
     }
 
     #[cfg(test)]

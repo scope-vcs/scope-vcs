@@ -10,3 +10,4 @@ pub(crate) mod request_revision_inspection;
 pub(crate) mod request_submit;
 pub(crate) mod run_control;
 pub(crate) mod run_inspection;
+pub(crate) mod scope_path_input;

@@ -14,6 +14,7 @@ pub mod dev;
 mod env_guard;
 pub(crate) mod error;
 pub(crate) mod git;
+pub(crate) mod git_segment_recovery;
 pub(crate) mod http;
 pub(crate) mod media_grants;
 pub(crate) mod object_store_config;
