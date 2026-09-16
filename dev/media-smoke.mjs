@@ -29,6 +29,8 @@ assert(files.length > 0 && files.every(Boolean), 'at least one --file is require
 assert(Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 && timeoutSeconds <= 1800,
   '--timeout-seconds must be between 1 and 1800')
 const expectedMediaOrigin = value('--media-origin') ? origin(value('--media-origin'), 'media') : null
+const GATEWAY_ATTEMPTS = 3
+const GATEWAY_STATUSES = new Set([502, 503, 504])
 const repoPath = `/v1/repos/${repository.split('/').map(encodeURIComponent).join('/')}`
 const receipt = {
   version: 2,
@@ -40,6 +42,7 @@ const receipt = {
   request_id: null,
   request_deleted: false,
   attachments: [],
+  gateway_retries: 0,
   passed: false,
 }
 let failure
@@ -226,10 +229,20 @@ async function putPart(transfer, number, bytes) {
   return result
 }
 
-function mediaFetch(url, options = {}) {
-  return fetch(url, { ...options, signal: AbortSignal.timeout(60000) }).catch(() => {
-    throw new Error('media transport failed')
-  })
+// Media reads are idempotent GET/HEAD requests, so a transient gateway failure
+// in front of a healthy media service is retried a bounded number of times.
+async function mediaFetch(url, options = {}) {
+  const method = (options.method ?? 'GET').toUpperCase()
+  assert(['GET', 'HEAD'].includes(method), 'media reads must stay idempotent')
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await fetch(url, { ...options, signal: AbortSignal.timeout(60000) }).catch(() => null)
+    if (response && !GATEWAY_STATUSES.has(response.status)) return response
+    const reason = response ? `HTTP ${response.status}` : 'transport failure'
+    await response?.body?.cancel()
+    if (attempt >= GATEWAY_ATTEMPTS) throw new Error(`media ${method} failed after ${attempt} attempts: ${reason}`)
+    receipt.gateway_retries += 1
+    await delay(500 * attempt)
+  }
 }
 
 function origin(value, label) {
