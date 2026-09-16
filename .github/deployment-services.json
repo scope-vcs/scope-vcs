@@ -402,6 +402,7 @@
         ".github/workflows/publish-cli.yml",
         ".github/workflows/scope-integration-ci.yml",
         "dev/checks/cli",
+        "dev/checks/cli-bundle",
         "dev/checks/integration",
         ".github/scripts/select-cli-distribution-targets.mjs",
         ".github/scripts/deploy-railway.sh",
@@ -429,6 +430,7 @@
         "rust-toolchain.toml",
         ".github/workflows/scope-cli-build.yml",
         "dev/checks/cli",
+        "dev/checks/cli-bundle",
         "dev/cargo-target-dir",
         ".github/scripts/select-cli-distribution-targets.mjs"
       ],
