@@ -2,37 +2,63 @@ use super::*;
 use scope_domain::runs::{attempt::AttemptState, job::RunJobState, run::RunState, step::StepState};
 use std::collections::BTreeSet;
 
-/// Every state string a CHECK definition compares against the `state` column.
-/// PostgreSQL prints either `(state)::text = ANY (ARRAY[...])`, its `<> ALL`
-/// form, or a scalar comparison such as `(state)::text <> 'pending'::text`.
-fn constraint_state_literals(definition: &str) -> BTreeSet<String> {
-    let mut states = BTreeSet::new();
+/// The states a CHECK definition admits for the `state` column, and every
+/// other state it mentions in an invariant. PostgreSQL prints the allowlist
+/// and any `= ANY` implication as `(state)::text = ANY ((ARRAY[...])::text[])`;
+/// other invariants use `<> ALL (ARRAY[...])` or a scalar
+/// `(state)::text <> 'pending'::text`. The allowlist is the `= ANY` set that
+/// contains every other state the definition mentions, so an invariant left
+/// behind for a retired state fails the parity check instead of hiding in it.
+struct ConstraintStates {
+    allowed: BTreeSet<String>,
+    referenced: BTreeSet<String>,
+}
+
+fn constraint_states(definition: &str) -> ConstraintStates {
+    let mut any_sets: Vec<BTreeSet<String>> = Vec::new();
+    let mut referenced = BTreeSet::new();
     for occurrence in definition.split("(state)::text").skip(1) {
-        let comparison = occurrence
-            .trim_start()
-            .trim_start_matches(['=', '<', '>'])
-            .trim_start();
-        let literals = match comparison.split_once("ARRAY[") {
-            Some((operator, array))
-                if operator.starts_with("ANY (") || operator.starts_with("ALL (") =>
-            {
+        let comparison = occurrence.trim_start();
+        let (literals, is_any) = match comparison.split_once("ARRAY[") {
+            Some((operator, array)) => {
                 let end = array.find(']').expect("unterminated state array");
-                quoted_literals(&array[..end])
+                (
+                    quoted_literals(&array[..end]),
+                    operator.trim_start().starts_with("= ANY"),
+                )
             }
-            _ => comparison
-                .split('\'')
-                .nth(1)
-                .map(str::to_string)
-                .into_iter()
-                .collect(),
+            None => (
+                comparison
+                    .split('\'')
+                    .nth(1)
+                    .map(str::to_string)
+                    .into_iter()
+                    .collect(),
+                false,
+            ),
         };
         assert!(
             !literals.is_empty(),
             "unparsed state comparison: {comparison}"
         );
-        states.extend(literals);
+        if is_any {
+            any_sets.push(literals.into_iter().collect());
+        } else {
+            referenced.extend(literals);
+        }
     }
-    states
+    let allowed = any_sets
+        .iter()
+        .max_by_key(|set| set.len())
+        .unwrap_or_else(|| panic!("no state allowlist in: {definition}"))
+        .clone();
+    for set in &any_sets {
+        referenced.extend(set.iter().cloned());
+    }
+    ConstraintStates {
+        allowed,
+        referenced,
+    }
 }
 
 fn quoted_literals(text: &str) -> Vec<String> {
@@ -88,13 +114,18 @@ async fn run_state_check_constraints_allow_exactly_the_domain_states() {
         ),
     ] {
         let definition = constraint_definition(&db, constraint).await;
+        let parsed = constraint_states(&definition);
         assert_eq!(
-            constraint_state_literals(&definition),
+            parsed.allowed,
             states
                 .into_iter()
                 .map(str::to_string)
                 .collect::<BTreeSet<_>>(),
-            "{constraint} does not match the domain states: {definition}"
+            "{constraint} does not admit exactly the domain states: {definition}"
+        );
+        assert!(
+            parsed.referenced.is_subset(&parsed.allowed),
+            "{constraint} invariants mention a state it does not admit: {definition}"
         );
     }
 }

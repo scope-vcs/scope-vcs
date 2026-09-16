@@ -43,9 +43,14 @@ test('new definitions must be locked and lock entries must identify migration de
   assert.match(checkMigrationSources(sources, { ...locked, 'mod.rs': migrationDigest('module') }).join('\n'), /invalid migration lock entry/);
 });
 
-test('a lock entry that is no longer a migration definition may be retired', () => {
-  const retired = { ...locked, 'retired_definition.txt': migrationDigest('retired\n') };
-  assert.deepEqual(checkMigrationSources(sources, locked, retired), []);
+test('only explicitly retired lock entries may disappear from the base lock', () => {
+  const base = { ...locked, 'baseline_ledger.txt': migrationDigest('m0042\n') };
+  assert.deepEqual(checkMigrationSources(sources, locked, base), []);
+  const reappeared = { ...locked, 'baseline_ledger.txt': base['baseline_ledger.txt'] };
+  assert.match(checkMigrationSources(sources, reappeared, base).join('\n'), /retired migration lock entry must not reappear/);
+  const unlisted = { ...locked, 'm0044_request_attention.rs': migrationDigest('ALTER TABLE example ADD attention text;') };
+  assert.match(checkMigrationSources(sources, locked, unlisted).join('\n'), /m0044_request_attention.rs: an existing migration lock cannot change or disappear/);
+  assert.match(checkMigrationSources(sources, locked, { ...locked, 'current_schema.sql': migrationDigest('other') }).join('\n'), /current_schema.sql: an existing migration lock cannot change or disappear/);
 });
 
 test('the CLI reads the PR base lock even when both migration and current checksum change', () => {

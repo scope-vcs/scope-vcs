@@ -7,13 +7,16 @@ const directory = 'crates/scope-postgres/src/migrations';
 const lockPath = `${directory}/sources.lock.json`;
 export const migrationDigest = (contents) => createHash('sha256').update(contents).digest('hex');
 const isDefinition = (name) => /^m\d+_.*\.rs$/.test(name) || name === 'current_schema.sql';
+// Lock entries retired on purpose. Every other name in the base lock must keep
+// its digest, whatever the current classifier says.
+export const retiredLockEntries = new Set(['baseline_ledger.txt']);
 
 export function checkMigrationSources(sources, locked, previous = {}) {
   const errors = [];
   for (const [name, digest] of Object.entries(previous)) {
-    // A name this branch no longer treats as a migration definition is a
-    // reviewed change to the definition set, not a rewritten migration.
-    if (isDefinition(name) && locked[name] !== digest) errors.push(`${name}: an existing migration lock cannot change or disappear; add a new migration`);
+    if (retiredLockEntries.has(name)) {
+      if (name in locked) errors.push(`${name}: retired migration lock entry must not reappear`);
+    } else if (locked[name] !== digest) errors.push(`${name}: an existing migration lock cannot change or disappear; add a new migration`);
   }
   for (const [name, digest] of Object.entries(locked)) {
     if (!isDefinition(name) || !/^[a-f0-9]{64}$/.test(digest)) errors.push(`${name}: invalid migration lock entry`);
