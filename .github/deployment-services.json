@@ -446,7 +446,7 @@
   "releaseAvailability": {
     "production": {
       "webOrigin": "https://scopevcs.com",
-      "apiOrigin": "https://scope-api-production-0251.up.railway.app",
+      "apiOrigin": "https://api.scopevcs.com",
       "fixture": {
         "owner": "adamblumoff",
         "repo": "pagent",
@@ -468,7 +468,7 @@
     "production": {
       "environmentId": "2f21f6b6-6817-4338-9e08-cf18e78b8f46",
       "environmentName": "production",
-      "cliPublicOrigin": "https://scope-cli-production.up.railway.app"
+      "cliPublicOrigin": "https://cli.scopevcs.com"
     },
     "staging": {
       "environmentId": "f6cdb01a-7a42-40ff-b799-bffe254191b2",

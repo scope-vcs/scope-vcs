@@ -360,14 +360,12 @@ test('CLI publication configures the advertised installer origin before deployme
     env: { PATH: `${resolve(dir, 'bin')}:${process.env.PATH}` },
   });
   assert.equal(result.status, 0, result.stderr);
-  const installer = read('crates/scope-api-contract/src/cli_compatibility.rs').match(/https:\/\/[^\s"]+\/install\.sh/)?.[0];
-  assert.ok(installer, 'API upgrade instructions must advertise the installer');
   const events = readFileSync(resolve(dir, 'events'), 'utf8').trim().split('\n');
   assert.deepEqual(events, [
     'variable', 'set', '--project', manifest.railway.projectId,
     '--environment', manifest.environments.production.environmentId,
     '--service', manifest.services['cli-downloads'].id, '--skip-deploys',
-    `SCOPE_CLI_PUBLIC_URL=${new URL(installer).origin}`,
+    `SCOPE_CLI_PUBLIC_URL=${manifest.environments.production.cliPublicOrigin}`,
     `deploy ${manifest.services['cli-downloads'].id}`,
   ]);
 });

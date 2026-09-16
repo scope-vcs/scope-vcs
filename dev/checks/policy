@@ -12,4 +12,6 @@ node --test .github/scripts/check-rust-boundaries.test.mjs
 node .github/scripts/check-rust-boundaries.mjs
 node .github/scripts/check-rust-toolchain-sync.mjs
 node --test .github/scripts/check-rust-toolchain-sync.test.mjs
+node .github/scripts/check-production-origins.mjs
+node --test .github/scripts/check-production-origins.test.mjs
 node --test .github/scripts/check-gates.test.mjs
