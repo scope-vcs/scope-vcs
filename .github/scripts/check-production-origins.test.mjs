@@ -56,3 +56,16 @@ test("a manifest origin carrying a path is rejected before replicas are compared
     `${MANIFEST}: environments.production.cliPublicOrigin must declare the production CLI installer origin as a bare https origin`,
   ]);
 });
+
+test("an http origin is rejected even when the manifest and every replica agree on it", () => {
+  const files = readOriginFiles();
+  const manifest = JSON.parse(files[MANIFEST]);
+  const apiOrigin = manifest.releaseAvailability.production.apiOrigin;
+  manifest.releaseAvailability.production.apiOrigin = "http://api.scopevcs.com";
+  files[MANIFEST] = JSON.stringify(manifest);
+  files["cli/src/api.rs"] = files["cli/src/api.rs"].replace(apiOrigin, "http://api.scopevcs.com");
+
+  assert.deepEqual(validateProductionOrigins(files), [
+    `${MANIFEST}: releaseAvailability.production.apiOrigin must declare the production API origin as a bare https origin`,
+  ]);
+});

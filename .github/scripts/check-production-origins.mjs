@@ -46,7 +46,8 @@ export function readOriginFiles(root = ".") {
 
 function originOf(value) {
   try {
-    return new URL(value).origin;
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.origin : null;
   } catch {
     return null;
   }
