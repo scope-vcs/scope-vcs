@@ -5,11 +5,7 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId/details'
   component: RequestDetailsRoute,
 })
 
-/** From 1400px the detail page renders the rail, so the tab body stands down. */
+/** The tab placement stands down while the page shows the rail. */
 function RequestDetailsRoute() {
-  return (
-    <div className="border-t border-border min-[1400px]:hidden">
-      <RequestDetails />
-    </div>
-  )
+  return <RequestDetails placement="tab" />
 }

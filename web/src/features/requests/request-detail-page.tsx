@@ -21,7 +21,7 @@ import {
   UserRound,
   UserRoundMinus,
 } from 'lucide-react'
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useMemo, useRef, useState } from 'react'
 import { RequestActivityDrawer } from './request-activity-drawer'
 import type {
   RequestActionCommand,
@@ -34,6 +34,7 @@ import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
 import { hasRequestLifecycleActions } from './request-lifecycle-model'
+import { useDetailPaneRail } from './use-detail-pane-rail'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
 import { requestActivityIdentity } from './request-activity-resource'
@@ -118,6 +119,8 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     repo: params.repo,
     request_id: request.id,
   }), [params.owner, params.repo, request.id])
+  const paneRef = useRef<HTMLDivElement>(null)
+  const rail = useDetailPaneRail(paneRef)
   const hasLifecycleActions = hasRequestLifecycleActions(request)
   const canClaim = workspace?.selected?.attention.reason === 'unclaimed' &&
     workspace.selected.attention.can_claim
@@ -143,7 +146,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       viewerId={viewerId}
     >
       <WorkbenchPane className="max-w-none">
-        <div className={cn('w-full', hasLifecycleActions && 'pb-20 min-[701px]:pb-0')}>
+        <div className={cn('w-full', hasLifecycleActions && 'pb-20 min-[701px]:pb-0')} ref={paneRef}>
           <RequestDetailHeader
             actions={request.permissions.can_view_activity ? (
               <Button
@@ -209,10 +212,11 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             actions: requestActions,
             onRate: rateRequest,
             params: requestParams,
+            placement: rail ? 'rail' : 'tab',
             ratings,
             request,
           }}>
-            <div className="min-[1400px]:grid min-[1400px]:grid-cols-[minmax(0,1fr)_300px]">
+            <div className={cn(rail && 'grid grid-cols-[minmax(0,1fr)_300px]')}>
               <div
                 className="request-detail-document pt-4"
                 data-state={request.state}
@@ -222,12 +226,14 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   description={description}
                   onSave={saveDescription}
                 />
-                <RequestViewTabs params={{ ...params, requestId: request.id }} />
+                <RequestViewTabs params={{ ...params, requestId: request.id }} rail={rail} />
                 <div className="min-w-0">{children}</div>
               </div>
-              <aside className="hidden min-w-0 border-l border-border min-[1400px]:block">
-                <RequestDetails />
-              </aside>
+              {rail ? (
+                <aside className="min-w-0 border-l border-border">
+                  <RequestDetails placement="rail" />
+                </aside>
+              ) : null}
             </div>
           </RequestDetailsProvider>
 
@@ -247,8 +253,10 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
 
 function RequestViewTabs({
   params,
+  rail,
 }: {
   params: RepoParams & { requestId: string }
+  rail: boolean
 }) {
   const tabClass = 'inline-flex h-11 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors'
   return (
@@ -282,7 +290,7 @@ function RequestViewTabs({
       </Link>
       <Link
         activeProps={{ className: 'border-foreground text-foreground' }}
-        className={cn(tabClass, 'min-[1400px]:hidden')}
+        className={cn(tabClass, rail && 'hidden')}
         inactiveProps={{ className: 'border-transparent text-muted-foreground hover:text-foreground' }}
         params={params}
         preload="intent"

@@ -1,6 +1,7 @@
 import type { RequestParams } from '@/api/types'
 import type { RequestRatingResponse, RequestRatingsResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { shortOid } from '@/lib/short-oid'
+import { cn } from '@/lib/utils'
 import { createContext, type ReactNode, use } from 'react'
 import { RequestInvitees } from './request-invitees'
 import { RequestRatingsSection } from './request-ratings-section'
@@ -12,10 +13,14 @@ import {
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import type { RequestActionController } from './use-request-actions'
 
+export type RequestDetailsPlacement = 'rail' | 'tab'
+
 type RequestDetailsProps = {
   actions: RequestActionController
   onRate: (input: RateRequestInput) => Promise<RequestRatingResponse>
   params: RequestParams
+  /** Where the page is showing details right now. Only that placement mounts. */
+  placement: RequestDetailsPlacement
   ratings: RequestRatingsResponse
   request: RequestSummaryResponse
 }
@@ -26,12 +31,17 @@ export function RequestDetailsProvider({ children, value }: { children: ReactNod
   return <RequestDetailsContext value={value}>{children}</RequestDetailsContext>
 }
 
-export function RequestDetails() {
+/**
+ * One stateful instance at a time: the rail and the Details tab both ask
+ * for it, and the page decides which one is live from its own width.
+ */
+export function RequestDetails({ placement }: { placement: RequestDetailsPlacement }) {
   const context = use(RequestDetailsContext)
   if (!context) throw new Error('Request details context is unavailable')
+  if (context.placement !== placement) return null
   const { actions, onRate, params, ratings, request } = context
   return (
-    <div className="@container min-w-0">
+    <div className={cn('@container min-w-0', placement === 'tab' && 'border-t border-border')}>
       <section aria-label="Request details" className="min-w-0 px-5 py-6 @md:px-6 @3xl:px-8">
         <div className="grid min-w-0 gap-x-12 gap-y-8 @3xl:grid-cols-2">
           <DetailsSection title="lifecycle">
