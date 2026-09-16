@@ -68,7 +68,7 @@ node deploy/railway/reconcile-media.mjs verify --environment production \
 
 Verification requires the recorded resource IDs and generated gateway domain, exact HTTPS web
 origin, bucket references, one gateway and worker replica in the manifest region, gateway
-`/readyz`, worker `/healthz`, no worker public domain, sealed secret metadata, and the reviewed
+`/readyz`, worker `/readyz`, no worker public domain, sealed secret metadata, and the reviewed
 worker image pinned by digest.
 
 ## Staging proof
@@ -100,7 +100,7 @@ tests. Staging and production have distinct physical bucket instances and keys.
 
 Alert on oldest processing-queue age, expired or repeatedly reclaimed processing leases,
 conversion failures by code, scratch usage, oldest cleanup job, cleanup retries, and gateway
-upload/read bytes. Worker `/healthz` already fails when codecs, schema, storage, or either poll
+upload/read bytes. Worker `/readyz` already fails when codecs, schema, storage, or either poll
 loop is stale; gateway `/readyz` fails when its schema or object store is unavailable. These
 health checks are deployment fences, not substitutes for backlog and capacity alerts.
 
@@ -135,7 +135,7 @@ Restore into an isolated environment with no public gateway domain:
 3. Compare restored object count, bytes, and inventory checksum with the backup manifest. Treat a
    missing referenced object as restore failure; extra objects may be cleanup candidates but must
    be investigated.
-4. Start one worker and one private gateway, verify `/healthz` and `/readyz`, then read sampled
+4. Start one worker and one private gateway, verify both `/readyz` endpoints, then read sampled
    bound originals and derivatives. Include a range crossing an 8 MiB chunk boundary and compare
    plaintext SHA-256 with metadata.
 5. Enable a temporary authenticated endpoint only for the application smoke, confirm anonymous

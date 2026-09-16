@@ -53,7 +53,10 @@ fn failure_reason(kind: ErrorKind) -> OperationFailureReason {
         ErrorKind::Unauthorized => OperationFailureReason::AuthenticationRejected,
         ErrorKind::Forbidden => OperationFailureReason::PermissionDenied,
         ErrorKind::NotFound => OperationFailureReason::NotFound,
-        ErrorKind::BadRequest | ErrorKind::PayloadTooLarge => OperationFailureReason::InvalidInput,
+        ErrorKind::BadRequest
+        | ErrorKind::PayloadTooLarge
+        | ErrorKind::RangeNotSatisfiable
+        | ErrorKind::RequestTimeout => OperationFailureReason::InvalidInput,
         ErrorKind::Conflict => OperationFailureReason::Conflict,
         ErrorKind::TooManyRequests => OperationFailureReason::RateLimited,
         ErrorKind::ServiceUnavailable => OperationFailureReason::Unavailable,

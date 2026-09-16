@@ -1,8 +1,8 @@
-use crate::error::ServiceError;
 use axum::http::{HeaderMap, header::AUTHORIZATION};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use scope_cache_contract::SignedCacheGrantClaims;
 use scope_cache_domain::CacheDigest;
+use scope_service_runtime::http::ServiceError;
 
 pub(crate) struct GrantVerifier {
     key: DecodingKey,

@@ -1,4 +1,4 @@
-use crate::{AppState, auth::require_cache, error::ServiceError};
+use crate::{AppState, auth::require_cache, error::cache_domain_error};
 use axum::{
     Json,
     extract::State,
@@ -11,6 +11,7 @@ use scope_cache_contract::{
 use scope_cache_domain::{CacheDigest, UploadLeaseId};
 use scope_object_store::ObjectStore;
 use scope_postgres::db::{CacheCommitResult, CachePrepareResult};
+use scope_service_runtime::http::ServiceError;
 use std::{collections::BTreeMap, time::Duration};
 
 const SIGNED_URL_TTL_SECONDS: u32 = 15 * 60;
@@ -74,7 +75,8 @@ pub(crate) async fn restore(
                 scope_cache_contract::CacheRestoreSource::Compatible
             }
         },
-        object_digest: CacheDigest::parse(object.object.checksum_sha256)?,
+        object_digest: CacheDigest::parse(object.object.checksum_sha256)
+            .map_err(cache_domain_error)?,
         size_bytes: object.object.size_bytes,
         download_url: url,
         expires_at_unix: checked_add(now, u64::from(signed_url_ttl))?,
@@ -95,7 +97,7 @@ pub(crate) async fn prepare_upload(
         now,
     )?;
     let signed_url_ttl = signed_url_ttl(&claims, now)?;
-    let upload_id = UploadLeaseId::parse(random_upload_id()?)?;
+    let upload_id = UploadLeaseId::parse(random_upload_id()?).map_err(cache_domain_error)?;
     let result = state
         .metadata
         .caches()
@@ -116,7 +118,8 @@ pub(crate) async fn prepare_upload(
             expires_at_unix,
             ..
         } => Ok(Json(PrepareCacheUploadResponse::UseObject {
-            object_digest: CacheDigest::parse(object.checksum_sha256)?,
+            object_digest: CacheDigest::parse(object.checksum_sha256)
+                .map_err(cache_domain_error)?,
             expires_at_unix,
         })),
         CachePrepareResult::Upload(upload) => {
@@ -130,7 +133,7 @@ pub(crate) async fn prepare_upload(
                 )
                 .map_err(|error| ServiceError::internal(error.to_string()))?;
             Ok(Json(PrepareCacheUploadResponse::Upload {
-                lease_id: UploadLeaseId::parse(upload.upload_id)?,
+                lease_id: UploadLeaseId::parse(upload.upload_id).map_err(cache_domain_error)?,
                 upload_url: signed.url,
                 upload_headers: BTreeMap::from_iter(signed.headers),
                 expires_at_unix: upload.expires_at_unix,
@@ -151,8 +154,10 @@ pub(crate) async fn commit_upload(
         .caches()
         .upload(request.lease_id.as_str())
         .await?;
-    let identity = CacheDigest::parse(upload.identity_digest.clone())?;
-    let compatibility_group = CacheDigest::parse(upload.compatibility_group_digest.clone())?;
+    let identity =
+        CacheDigest::parse(upload.identity_digest.clone()).map_err(cache_domain_error)?;
+    let compatibility_group = CacheDigest::parse(upload.compatibility_group_digest.clone())
+        .map_err(cache_domain_error)?;
     require_cache(&claims, &identity, &compatibility_group, now)?;
     if claims.repository_id.as_str() != upload.repository_id
         || upload.storage_backend != state.backend.as_ref()
@@ -186,7 +191,7 @@ pub(crate) async fn commit_upload(
     };
     Ok(Json(CommitCacheUploadResponse {
         exact_identity_digest: identity,
-        object_digest: CacheDigest::parse(object.checksum_sha256)?,
+        object_digest: CacheDigest::parse(object.checksum_sha256).map_err(cache_domain_error)?,
         expires_at_unix,
     }))
 }
@@ -488,6 +493,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+        // The gateway answers with the API's error contract, not a bespoke shape.
+        let rejected = to_bytes(rejected.into_body(), 16 * 1024).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&rejected).unwrap(),
+            serde_json::json!({
+                "code": "unauthorized",
+                "message": "cache grant is no longer attached to an active attempt",
+                "retryable": false,
+            })
+        );
     }
 
     #[derive(Clone, Default)]

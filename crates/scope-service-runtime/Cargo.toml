@@ -11,9 +11,14 @@ postgres = ["dep:scope_postgres"]
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
+scope_api_contract.workspace = true
 scope_postgres = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "signal"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 url = "2.5.8"
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

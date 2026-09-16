@@ -3735,7 +3735,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "scope-api-contract",
  "scope-postgres",
+ "serde_json",
  "thiserror",
  "tokio",
  "tracing",

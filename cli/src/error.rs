@@ -57,7 +57,9 @@ impl CliError {
             return ExitCategory::Temporary;
         }
         match self.response.code {
-            ErrorCode::BadRequest | ErrorCode::PayloadTooLarge => ExitCategory::Usage,
+            ErrorCode::BadRequest | ErrorCode::PayloadTooLarge | ErrorCode::RangeNotSatisfiable => {
+                ExitCategory::Usage
+            }
             ErrorCode::Unauthorized => ExitCategory::Authentication,
             ErrorCode::CliUpgradeRequired | ErrorCode::Forbidden | ErrorCode::ProtectedPath => {
                 ExitCategory::Policy
@@ -65,7 +67,9 @@ impl CliError {
             ErrorCode::AttachmentUploadExpired | ErrorCode::Conflict | ErrorCode::NotFound => {
                 ExitCategory::StateConflict
             }
-            ErrorCode::ServiceUnavailable | ErrorCode::TooManyRequests => ExitCategory::Temporary,
+            ErrorCode::RequestTimeout
+            | ErrorCode::ServiceUnavailable
+            | ErrorCode::TooManyRequests => ExitCategory::Temporary,
             ErrorCode::Internal => ExitCategory::Unexpected,
         }
     }

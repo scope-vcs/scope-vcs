@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    error::ServiceError,
+    error::{media_metadata_error, media_not_found, media_storage_error},
     ranges::{RequestedRange, requested_range},
 };
 use axum::{
@@ -26,6 +26,7 @@ use scope_postgres::db::{
     RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
     StoredRequestAttachmentPart,
 };
+use scope_service_runtime::http::ServiceError;
 use serde::Deserialize;
 use std::{
     pin::Pin,
@@ -47,7 +48,11 @@ pub(crate) async fn healthz() -> StatusCode {
 
 pub(crate) async fn readyz(State(state): State<AppState>) -> Result<StatusCode, ServiceError> {
     state.metadata.admin().readiness_check().await?;
-    state.storage.readiness_check().await?;
+    state
+        .storage
+        .readiness_check()
+        .await
+        .map_err(media_storage_error)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -68,13 +73,14 @@ pub(crate) async fn put_upload_part(
             &claims.attachment_id,
             Some(&claims.uploader_user_id),
         )
-        .await?
+        .await
+        .map_err(media_metadata_error)?
         .filter(|authorized| {
             authorized.repository_id == claims.repository_id
                 && authorized.upload_id == claims.upload_id
                 && authorized.uploader_user_id == claims.uploader_user_id
         })
-        .ok_or_else(ServiceError::not_found)?;
+        .ok_or_else(media_not_found)?;
 
     // Acquire before reading the body so queued uploads cannot each retain an 8 MiB part.
     let (_permit, bytes) = buffer_upload_body(
@@ -85,10 +91,12 @@ pub(crate) async fn put_upload_part(
     .await?;
     let part_bytes = bytes.to_vec();
     drop(bytes);
-    let attempt = WriteAttempt::new(&claims.attachment_id, "original", &claims.upload_id)?;
+    let attempt = WriteAttempt::new(&claims.attachment_id, "original", &claims.upload_id)
+        .map_err(media_storage_error)?;
     let planned = state
         .storage
-        .plan_part(&attempt, part_number, &part_bytes)?;
+        .plan_part(&attempt, part_number, &part_bytes)
+        .map_err(media_storage_error)?;
     let proposed = stored_part(&planned);
     let write_token = random_token("mpw_")?;
     let write_started_at_unix = unix_now()?;
@@ -107,7 +115,8 @@ pub(crate) async fn put_upload_part(
             write_started_at_unix,
             write_expires_at_unix,
         )
-        .await?
+        .await
+        .map_err(media_metadata_error)?
     {
         ReserveUploadPartResult::Write(part) => part,
         ReserveUploadPartResult::Stored(part) => return Ok(Json(part.receipt.into())),
@@ -123,7 +132,11 @@ pub(crate) async fn put_upload_part(
         sha256: reserved.receipt.sha256.clone(),
         object_key: reserved.object_key.clone(),
     };
-    state.storage.write_part(&reserved_part, part_bytes).await?;
+    state
+        .storage
+        .write_part(&reserved_part, part_bytes)
+        .await
+        .map_err(media_storage_error)?;
     let store_result = state
         .metadata
         .media()
@@ -136,21 +149,23 @@ pub(crate) async fn put_upload_part(
             &write_token,
             unix_now()?,
         )
-        .await;
+        .await
+        .map_err(media_metadata_error);
     match store_result {
         Ok(StorePartResult::Recorded | StorePartResult::AlreadyRecorded(_)) => {}
         Ok(StorePartResult::WriteLeaseLost) => {
             state
                 .storage
                 .delete_object_key(&reserved.object_key)
-                .await?;
+                .await
+                .map_err(media_storage_error)?;
             return Err(ServiceError::conflict(
                 "media part write lease was lost; retry the part",
             ));
         }
         // The reservation remains durable on an ambiguous database error. Deleting here could
         // remove an object whose Stored transition committed before the connection failed.
-        Err(error) => return Err(error.into()),
+        Err(error) => return Err(error),
     }
     Ok(Json(reserved.receipt.into()))
 }
@@ -234,9 +249,10 @@ async fn serve_media(
             &attachment_id,
             claims.viewer_user_id.as_deref(),
         )
-        .await?
+        .await
+        .map_err(media_metadata_error)?
         .filter(|authorized| authorized.repository_id == claims.repository_id)
-        .ok_or_else(ServiceError::not_found)?;
+        .ok_or_else(media_not_found)?;
     let original_filename = derivative_id.is_none().then(|| authorized.filename.clone());
     let db_target = match derivative_id.as_deref() {
         Some(id) => RequestMediaObjectTarget::Derivative(id),
@@ -253,8 +269,9 @@ async fn serve_media(
             claims.viewer_user_id.as_deref(),
             db_target,
         )
-        .await?
-        .ok_or_else(ServiceError::not_found)?;
+        .await
+        .map_err(media_metadata_error)?
+        .ok_or_else(media_not_found)?;
     let object = media_object(&manifest)?;
     let range = requested_range(&headers, object.plaintext_bytes)?;
     let permit = if method == Method::GET && object.plaintext_bytes > 0 {
@@ -294,7 +311,7 @@ fn media_object(manifest: &RequestMediaManifest) -> Result<MediaObject, ServiceE
             )
         }),
     )
-    .map_err(Into::into)
+    .map_err(media_storage_error)
 }
 
 async fn media_response(
@@ -320,7 +337,8 @@ async fn media_response(
     } else {
         let stream = storage
             .read_range(object, start..=end.expect("nonempty media range"))
-            .await?;
+            .await
+            .map_err(media_storage_error)?;
         Body::from_stream(PermittedStream::new(
             stream,
             permit.expect("GET read permit"),
@@ -542,15 +560,6 @@ mod tests {
         assert_eq!(response.headers()[CONTENT_RANGE], "bytes 3-6/10");
         assert_eq!(response.headers()[CONTENT_LENGTH], "4");
         assert!(to_bytes(response.into_body(), 1).await.unwrap().is_empty());
-    }
-
-    #[test]
-    fn unsatisfiable_range_response_advertises_object_size() {
-        use axum::response::IntoResponse as _;
-        let response = ServiceError::range_not_satisfiable(10).into_response();
-        assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
-        assert_eq!(response.headers()[CONTENT_RANGE], "bytes */10");
-        assert_eq!(response.headers()[ACCEPT_RANGES], "bytes");
     }
 
     #[tokio::test]
