@@ -1,5 +1,9 @@
-import { formatUnixSnoozeUntil } from '../../lib/date-format'
-import type { RequestAttentionReason, RequestQueueItemResponse } from '../../api/types.generated'
+import { formatUnixMonthDay, formatUnixSnoozeUntil } from '../../lib/date-format'
+import type {
+  RequestAttentionReason,
+  RequestQueueItemResponse,
+  RequestQueueSection,
+} from '../../api/types.generated'
 
 const REASONS: Record<RequestAttentionReason, string> = {
   authored: 'Your request',
@@ -26,6 +30,68 @@ export function requestAttentionLabel(item: RequestQueueItemResponse, hydrated: 
     reason = `Snoozed until ${formatUnixSnoozeUntil(attention.snoozed_until_unix, hydrated)}`
   }
   return reason
+}
+
+/**
+ * Why a row is in the viewer's inbox. The API sorts rows into storage
+ * sections; this is the single owner of how those sections and attention
+ * reasons become the groups a reader scans.
+ */
+export type RequestAttentionGroup = 'needs_you' | 'waiting' | 'unclaimed' | 'set_aside' | 'done'
+
+export const REQUEST_ATTENTION_GROUP_ORDER = [
+  'needs_you',
+  'waiting',
+  'unclaimed',
+  'set_aside',
+  'done',
+] as const satisfies readonly RequestAttentionGroup[]
+
+export const REQUEST_ATTENTION_GROUP_LABELS: Record<RequestAttentionGroup, string> = {
+  needs_you: 'Needs you',
+  waiting: 'Waiting on others',
+  unclaimed: 'Unclaimed',
+  set_aside: 'Set aside',
+  done: 'Done',
+}
+
+const NEEDS_YOU: ReadonlySet<RequestAttentionReason> = new Set([
+  'invited',
+  'claimed',
+  'new_activity',
+  'restored',
+  'snooze_expired',
+])
+
+export function requestAttentionGroup(
+  section: RequestQueueSection,
+  reason: RequestAttentionReason,
+): RequestAttentionGroup {
+  if (section === 'active') return NEEDS_YOU.has(reason) ? 'needs_you' : 'waiting'
+  return section
+}
+
+/** A row with unseen activity reads like unread mail. */
+export function requestHasNewActivity(item: RequestQueueItemResponse) {
+  return item.attention.reason === 'new_activity'
+}
+
+const MINUTE = 60
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+const WEEK = 7 * DAY
+
+/** Compact age for a row: "now", "4h", "2d", "3w", then a short date. */
+export function requestAgeLabel(attentionAtUnix: number, nowUnix: number, hydrated: boolean) {
+  const age = Math.max(0, nowUnix - attentionAtUnix)
+  if (age < MINUTE) return 'now'
+  if (age < HOUR) return `${Math.floor(age / MINUTE)}m`
+  if (age < DAY) return `${Math.floor(age / HOUR)}h`
+  if (age < 4 * WEEK) {
+    const days = Math.floor(age / DAY)
+    return days < 7 ? `${days}d` : `${Math.floor(days / 7)}w`
+  }
+  return formatUnixMonthDay(attentionAtUnix, hydrated)
 }
 
 export const REQUEST_SNOOZE_OPTIONS = [

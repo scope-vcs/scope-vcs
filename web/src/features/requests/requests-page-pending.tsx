@@ -27,17 +27,17 @@ export function RequestsPagePending({ children }: { children?: ReactNode }) {
                 <div className="request-workspace-sidebar-tools">
                   <BlockSkeleton className="h-8 w-full" />
                 </div>
-                <div className="px-2">
-                  <RequestWorkspaceListSkeleton />
+                <h2 className="request-workspace-group-label text-foreground">
+                  <span>Needs you</span>
+                </h2>
+                <RequestWorkspaceListSkeleton />
+                <div className="request-workspace-disclosures">
+                  {['Unclaimed', 'Set aside', 'Done'].map((label) => (
+                    <div className="request-workspace-group-label text-muted-foreground" key={label}>
+                      <span>{label}</span>
+                    </div>
+                  ))}
                 </div>
-                {['Unclaimed', 'Set aside'].map((label) => (
-                  <div
-                    className="mx-2 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground"
-                    key={label}
-                  >
-                    {label}
-                  </div>
-                ))}
               </>
             )}
           </aside>
