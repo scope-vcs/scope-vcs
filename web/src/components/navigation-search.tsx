@@ -1,5 +1,6 @@
 import { LoaderCircle, Search, X } from 'lucide-react'
 import { useEffect, useRef, type KeyboardEventHandler } from 'react'
+import { isTypingTarget } from '@/lib/keyboard-target'
 import { cn } from '@/lib/utils'
 
 export function NavigationSearch({
@@ -35,13 +36,7 @@ export function NavigationSearch({
         event.altKey
       )
         return
-      if (
-        event.target instanceof HTMLElement &&
-        event.target.closest(
-          'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]',
-        )
-      )
-        return
+      if (isTypingTarget(event.target)) return
       if (!inputRef.current) return
       event.preventDefault()
       onOpen()

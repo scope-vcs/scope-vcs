@@ -2,17 +2,26 @@ import type { RepoParams } from '@/api/types'
 import type { RequestQueueItemResponse } from '@/api/types.generated'
 import { updateRequestAttention } from '@/routes/-request-workspace-actions'
 import { useNavigate } from '@tanstack/react-router'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { RequestAttentionCommand } from './request-attention-api'
 import { requestQueueResource } from './request-queue-cache'
 
-const MESSAGES = {
-  claim: 'Request claimed',
-  release: 'Claim released',
-  restore: 'Request restored',
-  settle: 'Request settled',
-  snooze: 'Request snoozed',
+const UNDO_WINDOW_MS = 8_000
+
+/** A settle or snooze the viewer can still take back. */
+export type RequestUndoableAction = {
+  item: RequestQueueItemResponse
+  label: string
+  version: number
+}
+
+function undoLabel(command: RequestAttentionCommand) {
+  if (command.action === 'snooze') {
+    const until = new Date(command.until_unix * 1000)
+    return `Snoozed until ${until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`
+  }
+  return 'Settled for now'
 }
 
 export function useRequestAttentionActions(
@@ -24,6 +33,13 @@ export function useRequestAttentionActions(
   const inFlight = useRef(false)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [undoable, setUndoable] = useState<RequestUndoableAction | null>(null)
+
+  useEffect(() => {
+    if (!undoable) return
+    const timer = setTimeout(() => setUndoable(null), UNDO_WINDOW_MS)
+    return () => clearTimeout(timer)
+  }, [undoable])
 
   function open(requestId?: string) {
     return requestId
@@ -63,24 +79,10 @@ export function useRequestAttentionActions(
     }
     if (!result) return
     const puttingAside = command.action === 'settle' || command.action === 'snooze'
-    toast.success(
-      MESSAGES[command.action],
+    setUndoable(
       puttingAside
-        ? {
-            action: {
-              label: 'Undo',
-              onClick: () => {
-                void mutate(
-                  requestId,
-                  { action: 'restore' },
-                  result.attention.activity_version,
-                ).then((restored) => {
-                  if (restored) void open(requestId)
-                })
-              },
-            },
-          }
-        : undefined,
+        ? { item, label: undoLabel(command), version: result.attention.activity_version }
+        : null,
     )
     if (command.action === 'claim') await open(requestId)
     else if (puttingAside && selectedId === requestId) {
@@ -93,5 +95,21 @@ export function useRequestAttentionActions(
     }
   }
 
-  return { act, error, pendingId }
+  async function undo() {
+    if (!undoable || inFlight.current) return
+    const requestId = undoable.item.request.id
+    inFlight.current = true
+    setPendingId(requestId)
+    let restored
+    try {
+      restored = await mutate(requestId, { action: 'restore' }, undoable.version)
+    } finally {
+      inFlight.current = false
+      setPendingId(null)
+    }
+    setUndoable(null)
+    if (restored) await open(requestId)
+  }
+
+  return { act, error, pendingId, undo, undoable }
 }
