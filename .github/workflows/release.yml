@@ -116,7 +116,6 @@ jobs:
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
           toolchain: 1.98.0
-          components: rustfmt, clippy
 
       - name: Check repository policy
         run: ./dev/checks/policy
@@ -135,12 +134,7 @@ jobs:
     uses: ./.github/workflows/validate.yml
     with:
       checks_image: ${{ needs.plan.outputs.checks_image }}
-      cache: ${{ needs.plan.outputs.cache }}
-      worker: ${{ needs.plan.outputs.worker }}
-      media_worker: ${{ needs.plan.outputs.media_worker }}
-      router: ${{ needs.plan.outputs.router }}
-      media: ${{ needs.plan.outputs.media }}
-      api: ${{ needs.plan.outputs.api }}
+      backend: ${{ needs.plan.outputs.backend_selected }}
       web: ${{ needs.plan.outputs.web }}
       cli: ${{ needs.plan.outputs.cli }}
       cli_distribution: ${{ needs.plan.outputs.cli_distribution }}

@@ -6,8 +6,7 @@ caller's working directory.
 
 | Entrypoint | Coverage |
 | --- | --- |
-| `backend with-api` | Workspace formatting, tests, API test support, local development helpers, Clippy |
-| `backend without-api` | Workspace formatting, tests and Clippy excluding API |
+| `backend` | Workspace formatting, tests, API test support, local development helpers, Clippy |
 | `cli` | Standalone formatting, tests, distribution selector, Clippy, both release binaries, native installer checks |
 | `web` | Tests, types, observer boundary, React health, structure, build |
 | `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |

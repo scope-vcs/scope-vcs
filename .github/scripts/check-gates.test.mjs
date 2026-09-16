@@ -26,14 +26,11 @@ function commands(gate, ...args) {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
-test('backend variants preserve API feature coverage explicitly', () => {
-  const withApi = commands('backend', 'with-api');
-  const withoutApi = commands('backend', 'without-api');
-  assert.ok(withApi.includes('cargo test --workspace --locked'));
-  assert.ok(withApi.includes('cargo test -p api --features local-dev --locked dev::'));
-  assert.ok(withoutApi.includes('cargo test --workspace --exclude api --locked'));
-  assert.ok(withoutApi.every((line) => !line.includes('--features')));
-  assert.equal(spawnSync('dev/checks/backend', ['invalid'], { cwd: root }).status, 2);
+test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
+  const backend = commands('backend');
+  assert.ok(backend.includes('cargo test --workspace --locked'));
+  assert.ok(backend.includes('cargo test -p api --features local-dev --locked dev::'));
+  assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
 });
 
 test('web gate includes observer and resource rules; the backend gate owns the contract; CLI and integration retain their coverage', () => {
