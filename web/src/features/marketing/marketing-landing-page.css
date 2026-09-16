@@ -1,4 +1,19 @@
 @layer base {
+  /* Figure type steps down on narrow screens so the drawn UI keeps its proportions. */
+  .marketing-page {
+    --marketing-figure-title: 13px;
+    --marketing-figure-body: 13px;
+    --marketing-figure-meta: 12px;
+  }
+
+  @media (width <= 520px) {
+    .marketing-page {
+      --marketing-figure-title: 12px;
+      --marketing-figure-body: 12px;
+      --marketing-figure-meta: 11px;
+    }
+  }
+
   :where(.marketing-page .icon) {
     width: 18px;
     height: 18px;
