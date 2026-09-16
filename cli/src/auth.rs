@@ -224,8 +224,8 @@ mod tests {
 
     #[test]
     fn session_storage_key_is_scoped_to_api_url() {
-        let production = session_storage_key("https://scope-api-production.up.railway.app");
-        assert!(production.starts_with("cli-session-"));
-        assert_ne!(production, session_storage_key("http://localhost:8080"));
+        let remote = session_storage_key("https://api.example.test");
+        assert!(remote.starts_with("cli-session-"));
+        assert_ne!(remote, session_storage_key("http://localhost:8080"));
     }
 }

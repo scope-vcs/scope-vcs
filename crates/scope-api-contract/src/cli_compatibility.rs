@@ -4,8 +4,7 @@ pub const CLI_PROTOCOL_VERSION: u32 = 1;
 pub const CLI_PROTOCOL_HEADER: &str = "x-scope-cli-protocol";
 pub const CLI_VERSION_HEADER: &str = "x-scope-cli-version";
 pub const CLI_BUILD_HEADER: &str = "x-scope-cli-build";
-pub const CLI_INSTALL_COMMAND: &str =
-    "curl -fsSL https://scope-cli-production.up.railway.app/install.sh | sh";
+pub const CLI_INSTALL_COMMAND: &str = "curl -fsSL https://cli.scopevcs.com/install.sh | sh";
 
 impl ErrorResponse {
     pub fn cli_upgrade_required(installed_protocol: Option<u32>) -> Self {
@@ -48,9 +47,7 @@ mod tests {
         assert!(error.message.contains("supports protocol 1"));
         assert_eq!(
             error.instruction.as_deref(),
-            Some(
-                "Upgrade with `curl -fsSL https://scope-cli-production.up.railway.app/install.sh | sh`, then retry."
-            )
+            Some("Upgrade with `curl -fsSL https://cli.scopevcs.com/install.sh | sh`, then retry.")
         );
     }
 

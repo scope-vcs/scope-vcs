@@ -498,7 +498,9 @@ mod tests {
     fn request_errors_surface_the_cli_upgrade_instruction() {
         let (api_url, server) = serve_once(
             StatusCode::UPGRADE_REQUIRED,
-            r#"{"code":"cli_upgrade_required","message":"installed Scope CLI protocol 0; this API supports protocol 1","instruction":"Upgrade with `curl -fsSL https://scope-cli-production.up.railway.app/install.sh | sh`, then retry.","fields":{"installed_protocol":0,"supported_protocol":1},"retryable":false}"#,
+            format!(
+                r#"{{"code":"cli_upgrade_required","message":"installed Scope CLI protocol 0; this API supports protocol 1","instruction":"Upgrade with `{CLI_INSTALL_COMMAND}`, then retry.","fields":{{"installed_protocol":0,"supported_protocol":1}},"retryable":false}}"#
+            ),
         );
 
         let error = submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
@@ -694,7 +696,11 @@ mod tests {
         }
     }
 
-    fn serve_once(status: StatusCode, body: &'static str) -> (String, thread::JoinHandle<String>) {
+    fn serve_once(
+        status: StatusCode,
+        body: impl Into<String>,
+    ) -> (String, thread::JoinHandle<String>) {
+        let body = body.into();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {

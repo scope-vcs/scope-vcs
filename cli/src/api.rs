@@ -21,7 +21,7 @@ pub use request_attachments::*;
 pub use requests::*;
 pub use runs::*;
 
-const DEFAULT_API_URL: &str = "https://scope-api-production-0251.up.railway.app";
+const DEFAULT_API_URL: &str = "https://api.scopevcs.com";
 
 pub struct AuthenticatedSession {
     pub token: String,
