@@ -8,7 +8,6 @@ import type {
 import type { RateRequestInput } from '@/api/requests'
 import { EmptyState } from '@/components/empty-state'
 import { PageContent, WorkbenchPane } from '@/components/page-header'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
@@ -28,16 +27,11 @@ import type {
   RequestActionCommand,
   RequestActionResult,
 } from './request-actions-api'
-import { RequestDetailsProvider } from './request-details'
+import { RequestDetailHeader } from './request-detail-header'
+import { RequestDetails, RequestDetailsProvider } from './request-details'
 import type { RequestActivityPage } from './request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
-import {
-  requestMergeabilityLabel,
-  requestMergeabilityTone,
-  requestStatusLabel,
-  requestStatusTone,
-} from './request-labels'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
 import { hasRequestLifecycleActions } from './request-lifecycle-model'
 import { useRequestActions } from './use-request-actions'
@@ -49,6 +43,7 @@ import {
   type RequestAttachmentActions,
 } from './request-attachment-context'
 import { useRequestWorkspace } from './request-workspace-context'
+import './request-detail.css'
 
 export function RequestUnavailablePage({ params }: { params: RepoParams }) {
   return (
@@ -124,6 +119,11 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     request_id: request.id,
   }), [params.owner, params.repo, request.id])
   const hasLifecycleActions = hasRequestLifecycleActions(request)
+  const canClaim = workspace?.selected?.attention.reason === 'unclaimed' &&
+    workspace.selected.attention.can_claim
+  const canRelease = workspace?.selected?.attention.can_release ?? false
+  // Below 701px the bar still carries the back link, so it always renders there.
+  const hasBarActions = canClaim || canRelease || hasLifecycleActions
 
   async function saveDescription(nextDescription: string, expectedDescription: string) {
     await updateDescription({
@@ -135,38 +135,36 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     return true
   }
 
-  function requestHeader() {
-    return (
-      <header className="border-b border-border px-5 pb-5 pt-6 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0">
-            <h1 className="break-words text-[26px] font-medium leading-[1.18] tracking-[-0.025em] sm:text-[29px]">
-              {request.title}
-            </h1>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Badge variant={requestStatusTone(request)}>
-                {requestStatusLabel(request)}
-              </Badge>
-              {request.state === 'Open' ? (
-                <Badge variant={requestMergeabilityTone(request)}>
-                  {requestMergeabilityLabel(request)}
-                </Badge>
-              ) : null}
-              <span className="font-mono text-xs text-muted-foreground">
-                {request.name}
-              </span>
-            </div>
-            {workspace?.selected ? (
-              <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{workspace.selected.author.handle}</span>
-                <span>opened #{workspace.selected.request.id}</span>
-                {workspace.selected.claimer ? (
-                  <><span aria-hidden="true">·</span><span>Reviewing: {workspace.selected.claimer.handle}</span></>
-                ) : null}
-              </p>
+  return (
+    <RequestAttachmentProvider
+      actions={attachmentActions}
+      live={live}
+      requestId={request.id}
+      viewerId={viewerId}
+    >
+      <WorkbenchPane className="max-w-none">
+        <div className={cn('w-full', hasLifecycleActions && 'pb-20 min-[701px]:pb-0')}>
+          <RequestDetailHeader
+            actions={request.permissions.can_view_activity ? (
+              <Button
+                aria-label="View request activity"
+                onClick={history.openHistory}
+                size="icon-sm"
+                title="View request activity"
+                type="button"
+                variant="secondary"
+              >
+                <History />
+              </Button>
             ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            request={request}
+          />
+          <div
+            className={cn(
+              'request-detail-actions flex flex-wrap items-center gap-2 px-5 py-2.5 sm:px-6 lg:px-8',
+              !hasBarActions && 'min-[701px]:hidden',
+            )}
+          >
             <Button
               asChild
               className="min-[701px]:hidden"
@@ -181,79 +179,57 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 <ArrowLeft />
               </Link>
             </Button>
-            {workspace?.selected?.attention.reason === 'unclaimed' &&
-            workspace.selected.attention.can_claim ? (
-              <Button onClick={workspace.claim} size="sm" type="button" variant="secondary">
+            {canClaim ? (
+              <Button onClick={workspace?.claim} size="sm" type="button" variant="secondary">
                 <UserRound />
                 I’ll take this
               </Button>
             ) : null}
-            {workspace?.selected?.attention.can_release ? (
-              <Button onClick={workspace.release} size="sm" type="button" variant="secondary">
+            {canRelease ? (
+              <Button onClick={workspace?.release} size="sm" type="button" variant="secondary">
                 <UserRoundMinus />
                 Release
               </Button>
             ) : null}
             <RequestLifecycleActions
               actions={requestActions}
-              className="fixed inset-x-0 bottom-0 z-30 flex flex-wrap justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
+              className="ml-auto fixed inset-x-0 bottom-0 z-30 flex flex-wrap justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
               request={request}
             />
-            {request.permissions.can_view_activity ? (
-              <Button
-                aria-label="View request activity"
-                onClick={history.openHistory}
-                size="icon-sm"
-                title="View request activity"
-                type="button"
-                variant="secondary"
+          </div>
+          {requestActions.error ? (
+            <p
+              className="border-b border-border px-5 py-2 text-sm text-danger-strong sm:px-6 lg:px-8"
+              role="alert"
+            >
+              {requestActions.error}
+            </p>
+          ) : null}
+          <RequestDetailsProvider value={{
+            actions: requestActions,
+            onRate: rateRequest,
+            params: requestParams,
+            ratings,
+            request,
+          }}>
+            <div className="min-[1400px]:grid min-[1400px]:grid-cols-[minmax(0,1fr)_300px]">
+              <div
+                className="request-detail-document pt-4"
+                data-state={request.state}
               >
-                <History />
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        {requestActions.error ? (
-          <p className="mt-3 text-sm text-danger-strong" role="alert">
-            {requestActions.error}
-          </p>
-        ) : null}
-      </header>
-    )
-  }
-
-  return (
-    <RequestAttachmentProvider
-      actions={attachmentActions}
-      live={live}
-      requestId={request.id}
-      viewerId={viewerId}
-    >
-      <WorkbenchPane className="max-w-none">
-        <div
-          className={cn(
-            'mx-auto w-full max-w-[1180px]',
-            hasLifecycleActions && 'pb-20 min-[701px]:pb-0',
-          )}
-        >
-          {requestHeader()}
-          <div className="min-h-0 pt-4">
-            <RequestDescription
-              canEdit={request.permissions.can_edit_identity}
-              description={description}
-              onSave={saveDescription}
-            />
-            <RequestViewTabs params={{ ...params, requestId: request.id }} />
-            <RequestDetailsProvider value={{
-              actions: requestActions,
-              onRate: rateRequest,
-              params: requestParams,
-              ratings,
-              request,
-            }}>
-              <div className="min-w-0">{children}</div>
-            </RequestDetailsProvider>
-          </div>
+                <RequestDescription
+                  canEdit={request.permissions.can_edit_identity}
+                  description={description}
+                  onSave={saveDescription}
+                />
+                <RequestViewTabs params={{ ...params, requestId: request.id }} />
+                <div className="min-w-0">{children}</div>
+              </div>
+              <aside className="hidden min-w-0 border-l border-border min-[1400px]:block">
+                <RequestDetails />
+              </aside>
+            </div>
+          </RequestDetailsProvider>
 
           <RequestActivityDrawer
             activity={history.activity}
@@ -306,7 +282,7 @@ function RequestViewTabs({
       </Link>
       <Link
         activeProps={{ className: 'border-foreground text-foreground' }}
-        className={tabClass}
+        className={cn(tabClass, 'min-[1400px]:hidden')}
         inactiveProps={{ className: 'border-transparent text-muted-foreground hover:text-foreground' }}
         params={params}
         preload="intent"

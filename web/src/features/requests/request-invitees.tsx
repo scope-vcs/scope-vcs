@@ -40,7 +40,7 @@ export function RequestInvitees({
   return (
     <details open={request.invitees.length > 0 || request.permissions.can_manage_invitees || request.permissions.can_leave_request ? true : undefined}>
       <summary className="cursor-pointer list-item items-center justify-between gap-3">
-        <h2 className="inline text-[13px] font-semibold text-muted-foreground">
+        <h2 className="label-mono inline text-muted-foreground">
           invitees
         </h2>
         <span className="float-right font-mono text-xs text-muted-foreground">

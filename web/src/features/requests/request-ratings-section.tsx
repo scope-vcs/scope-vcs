@@ -6,7 +6,6 @@ import type {
 import type { RateRequestInput } from '@/api/requests'
 import { Button } from '@/components/ui/button'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
-import { Star } from 'lucide-react'
 import { type FormEvent, useReducer } from 'react'
 
 type FormState = {
@@ -72,9 +71,8 @@ export function RequestRatingsSection({
 
   return (
     <details open={ratings.length > 0 || Boolean(eligibleSubject) ? true : undefined}>
-      <summary className="cursor-pointer list-item items-center gap-2 text-[13px] font-semibold text-muted-foreground">
-        <Star className="mr-2 inline size-3.5" />
-        <h2 className="inline">participant ratings</h2>
+      <summary className="cursor-pointer list-item items-center gap-2 text-muted-foreground">
+        <h2 className="label-mono inline">participant ratings</h2>
       </summary>
       {ratings.length ? (
         <div className="mt-3 divide-y divide-border">

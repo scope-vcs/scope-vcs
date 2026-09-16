@@ -1,0 +1,44 @@
+/* Owned by request-detail-page.tsx. */
+
+/*
+ * The action bar pins to the top of #main-content, the app's scrolling region.
+ * Nothing between it and that scroller sets overflow, so plain sticky is enough.
+ */
+.request-detail-actions {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.request-detail-document {
+  position: relative;
+  min-width: 0;
+}
+
+/* Closed and merged requests get a quiet wash behind the top of the document. */
+.request-detail-document::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 auto;
+  height: 90px;
+  content: '';
+  pointer-events: none;
+}
+
+.request-detail-document[data-state='Merged']::before {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--success) 10%, transparent),
+    transparent
+  );
+}
+
+.request-detail-document[data-state='Closed']::before {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--muted-foreground) 10%, transparent),
+    transparent
+  );
+}
