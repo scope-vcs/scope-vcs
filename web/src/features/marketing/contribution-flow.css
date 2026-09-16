@@ -3,61 +3,61 @@
   position: absolute;
   inset: auto 0 -1px;
   height: 2px;
-  background: var(--landing-green);
+  background: var(--success);
   transform: scaleX(0);
   transform-origin: left;
 }
 
 .marketing-page .request-step:nth-child(1)::after {
-  animation: landing-submission-progress var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-submission-progress var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .request-step:nth-child(2)::after {
-  animation: landing-reviewing-progress var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-reviewing-progress var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .request-step:nth-child(3)::after {
-  animation: landing-merging-progress var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-merging-progress var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .submission-scene,
 .marketing-page .state-submitted {
-  animation: landing-submission-scene var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-submission-scene var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .review-scene,
 .marketing-page .state-review {
-  animation: landing-review-scene var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-review-scene var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .merged-scene,
 .marketing-page .state-merged {
-  animation: landing-merged-scene var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-merged-scene var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .submitted-file {
-  animation: landing-submit-file-glow var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-submit-file-glow var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .merged-file {
-  animation: landing-merge-file-glow var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-merge-file-glow var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .added-line::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--landing-green) 22%,transparent),transparent);
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--success) 22%,transparent),transparent);
   transform: translateX(-100%);
-  animation: landing-review-line-scan var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-review-line-scan var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .maintainer-review {
-  animation: landing-review-comment var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-review-comment var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 .marketing-page .review-decision {
-  animation: landing-review-decision var(--landing-request-cycle) ease-in-out infinite;
+  animation: landing-review-decision var(--marketing-request-cycle) ease-in-out infinite;
 }
 
 @keyframes landing-submission-scene {
@@ -202,7 +202,7 @@
 
   6%,
   12% {
-    background: var(--landing-green-soft);
+    background: var(--success-soft);
   }
 }
 
@@ -216,7 +216,7 @@
 
   80%,
   86% {
-    background: var(--landing-green-soft);
+    background: var(--success-soft);
   }
 }
 
@@ -276,7 +276,7 @@
 @media (prefers-reduced-motion: reduce) {
   .marketing-page .contribution-flow *,
   .marketing-page .contribution-flow *::after {
-    animation-duration: var(--landing-request-cycle) !important;
+    animation-duration: var(--marketing-request-cycle) !important;
     animation-iteration-count: infinite !important;
   }
 }

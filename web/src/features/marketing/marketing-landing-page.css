@@ -1,38 +1,4 @@
 @layer base {
-  .marketing-page {
-    --landing-bg: #ffffff;
-    --landing-paper: #ffffff;
-    --landing-panel: #fafafa;
-    --landing-ink: #0a0a0a;
-    --landing-muted: #565656;
-    --landing-faint: #888888;
-    --landing-line: #cccccc;
-    --landing-green: #3f7a50;
-    --landing-green-soft: #e4f0e7;
-    --landing-figure-title: 13px;
-    --landing-figure-body: 13px;
-    --landing-figure-meta: 12px;
-  }
-
-  html.dark .marketing-page {
-    --landing-bg: #050505;
-    --landing-paper: #090909;
-    --landing-panel: #111111;
-    --landing-ink: #ffffff;
-    --landing-muted: #b7b7b7;
-    --landing-line: #333333;
-    --landing-green: #8dc197;
-    --landing-green-soft: #203929;
-  }
-
-  @media (width <= 520px) {
-    .marketing-page {
-      --landing-figure-title: 12px;
-      --landing-figure-body: 12px;
-      --landing-figure-meta: 11px;
-    }
-  }
-
   :where(.marketing-page .icon) {
     width: 18px;
     height: 18px;
@@ -41,7 +7,7 @@
   }
 
   .marketing-page :is(button, a, summary):focus-visible {
-    outline: 2px solid var(--landing-green);
+    outline: 2px solid var(--ring);
     outline-offset: 5px;
   }
 }
