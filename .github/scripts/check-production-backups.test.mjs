@@ -44,7 +44,7 @@ test('scheduled monitor uses the reviewed reusable job and forwards only its pro
   const read = name => readFileSync(new URL(`../workflows/${name}.yml`, import.meta.url), 'utf8')
   const caller = read('backup-monitor')
   const execution = read('backup-monitor-execute')
-  assert.match(caller, /cron: '17 \* \* \* \*'/)
+  assert.match(caller, /cron: '7-57\/10 \* \* \* \*'/)
   assert.match(caller, /if: github.ref == 'refs\/heads\/main'/)
   assert.match(caller, /uses: \.\/\.github\/workflows\/backup-monitor-execute.yml/)
   assert.doesNotMatch(caller, /secrets: inherit/)
