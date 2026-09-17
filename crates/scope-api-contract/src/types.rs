@@ -242,6 +242,8 @@ pub struct RequestAttentionResponse {
     pub activity_version: u64,
     pub through_activity_version: u64,
     pub snoozed_until_unix: Option<u64>,
+    /// Counts the writes to the viewer's attention record; zero without one.
+    pub revision: u64,
     pub can_claim: bool,
     pub can_set_aside: bool,
     pub can_restore: bool,

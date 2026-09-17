@@ -45,6 +45,7 @@ async fn queue_placement_sql_matches_domain_for_fact_combinations() {
                                 through_activity_version: 0,
                                 snoozed_until_unix,
                                 updated_at_unix: 0,
+                                revision: 1,
                             });
                             let claim = claimer.map(|claimer| RequestClaim {
                                 request_id: "request".into(),

@@ -231,6 +231,7 @@ pub(crate) fn attention_response(
         activity_version,
         through_activity_version: value.through_activity_version,
         snoozed_until_unix: value.snoozed_until_unix,
+        revision: value.revision,
         can_claim: value.can_claim,
         can_set_aside: value.can_set_aside,
         can_restore: value.can_restore,

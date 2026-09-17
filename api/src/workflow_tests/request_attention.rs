@@ -15,6 +15,7 @@ async fn maintainer_attention_actions_preserve_claims_and_reject_stale_versions(
 
     let initial = queue_item(&app, "active", "req_attention_actions", Some(&bearer)).await;
     assert_eq!(initial["attention"]["reason"], "authored");
+    assert_eq!(initial["attention"]["revision"], 0);
     let version = activity_version(&initial);
 
     let stale = attention_request(
@@ -31,6 +32,7 @@ async fn maintainer_attention_actions_preserve_claims_and_reject_stale_versions(
     let claimed = attention.apply("claim", version, None).await;
     assert_eq!(claimed["attention"]["state"], "active");
     assert_eq!(claimed["attention"]["reason"], "claimed");
+    assert_eq!(claimed["attention"]["revision"], 1);
     assert_eq!(claimed["claimer"]["id"], test_owner_id());
 
     let settled = attention.apply("settle", version, None).await;
@@ -38,10 +40,18 @@ async fn maintainer_attention_actions_preserve_claims_and_reject_stale_versions(
     assert_eq!(settled["claimer"]["id"], test_owner_id());
     let aside = queue_item(&app, "set_aside", "req_attention_actions", Some(&bearer)).await;
     assert_eq!(aside["attention"]["can_restore"], true);
+    // The queue carries the revision the mutation answered with, so a client
+    // can tell that a loaded queue already reflects its change.
+    assert_eq!(settled["attention"]["revision"], 2);
+    assert_eq!(
+        aside["attention"]["revision"],
+        settled["attention"]["revision"]
+    );
     assert_eq!(aside["claimer"]["id"], test_owner_id());
 
     let restored = attention.apply("restore", version, None).await;
     assert_eq!(restored["attention"]["reason"], "restored");
+    assert_eq!(restored["attention"]["revision"], 3);
 
     let snoozed_until = unix_now() + 600;
     let snoozed = attention

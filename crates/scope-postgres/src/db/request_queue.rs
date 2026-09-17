@@ -72,6 +72,7 @@ struct QueueModel {
     through_activity_version: Option<i64>,
     snoozed_until_unix: Option<i64>,
     attention_updated_at_unix: Option<i64>,
+    attention_revision: Option<i64>,
     claimer_user_id: Option<String>,
     claimed_at_unix: Option<i64>,
     claim_updated_at_unix: Option<i64>,
@@ -228,6 +229,12 @@ impl QueueModel {
                     PostgresError::internal_message("attention row is missing its update time")
                 })?,
                 "request attention time",
+            )?,
+            revision: i64_to_u64(
+                self.attention_revision.ok_or_else(|| {
+                    PostgresError::internal_message("attention row is missing its revision")
+                })?,
+                "request attention revision",
             )?,
         }))
     }
@@ -424,6 +431,7 @@ WITH facts AS (
         a.state AS attention_state, a.reason AS attention_reason,
         a.through_activity_version, a.snoozed_until_unix,
         a.updated_at_unix AS attention_updated_at_unix,
+        a.revision AS attention_revision,
         c.claimer_user_id, c.claimed_at_unix,
         c.updated_at_unix AS claim_updated_at_unix
     FROM scope_requests r
@@ -441,7 +449,8 @@ SELECT id, name, title, author_user_id, author_role, audience, head_oid,
     submitted_at_unix, closed_at_unix, merged_at_unix, updated_at_unix,
     activity_version, attention_at_unix, has_git_snapshot, viewer_is_invitee, attention_state,
     attention_reason, through_activity_version, snoozed_until_unix,
-    attention_updated_at_unix, claimer_user_id, claimed_at_unix, claim_updated_at_unix
+    attention_updated_at_unix, attention_revision, claimer_user_id, claimed_at_unix,
+    claim_updated_at_unix
 FROM classified
 WHERE queue_section = $5
   AND ($7::bigint IS NULL OR attention_at_unix < $7 OR (attention_at_unix = $7 AND id > $8))
