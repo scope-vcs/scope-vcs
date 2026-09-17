@@ -174,8 +174,9 @@ get_tailnet_origin() {
   local name="$1" value
   value="$(read_dotenv_value "$ROOT/.env.local" "$name")"
   value="${value%/}"
-  if [[ -n "$value" && ! "$value" =~ ^https?://[^/]+$ ]]; then
-    echo "$name must be an origin such as https://host.example.ts.net:8443, got $value" >&2
+  # The media gateway only trusts https origins beyond localhost.
+  if [[ -n "$value" && ! "$value" =~ ^https://[^/]+$ ]]; then
+    echo "$name must be an https origin such as https://host.example.ts.net:8443, got $value" >&2
     exit 1
   fi
   printf '%s\n' "$value"

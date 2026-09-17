@@ -28,6 +28,8 @@ export function useRequestAttentionActions(
 ) {
   const navigate = useNavigate()
   const inFlight = useRef(false)
+  const selectedRef = useRef(selectedId)
+  selectedRef.current = selectedId
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [moves, setMoves] = useState<RequestAttentionMove[]>([])
@@ -74,13 +76,17 @@ export function useRequestAttentionActions(
     const loaded = requestQueueResource.peek(identity)?.pages
     const before = loaded ? applyAttentionMoves(loaded, moves).active.requests : []
     setMoves((current) => [...current.filter((entry) => entry.item.request.id !== requestId), move])
+    let movedOnTo: { id: string | undefined } | null = null
     if (command.action !== 'restore' && selectedId === requestId) {
       const index = Math.max(0, before.findIndex((row) => row.request.id === requestId))
       const remaining = before.filter((row) => row.request.id !== requestId)
-      void open(remaining[Math.min(index, remaining.length - 1)]?.request.id)
+      movedOnTo = { id: remaining[Math.min(index, remaining.length - 1)]?.request.id }
+      void open(movedOnTo.id)
     }
     const confirmed = await mutate(requestId, command, item.attention.activity_version)
-    // A refused move puts the row back where the server still has it.
+    // A refused move puts the row back where the server still has it, and the
+    // viewer back on it unless they have gone somewhere else since.
+    if (!confirmed && movedOnTo && selectedRef.current === movedOnTo.id) void open(requestId)
     setMoves((current) =>
       confirmed
         ? current.map((entry) => (entry === move ? { ...move, confirmed } : entry))
