@@ -40,11 +40,22 @@ test('query uses project token and rejects API errors without echoing sensitive 
   await assert.rejects(fetchBackupHealth('', async () => { throw new Error('must not fetch') }), /missing/)
 })
 
-test('scheduled monitor uses the reviewed reusable job and forwards only its project token', () => {
+test('monitor is dispatched hourly by EventBridge, not GitHub cron', () => {
+  const caller = readFileSync(new URL('../workflows/backup-monitor.yml', import.meta.url), 'utf8')
+  const stack = readFileSync(new URL('../../deploy/aws/backup-monitor.yaml', import.meta.url), 'utf8')
+  assert.doesNotMatch(caller, /schedule:/)
+  assert.match(caller, /workflow_dispatch:/)
+  assert.match(stack, /ScheduleExpression: cron\(17 \* \* \* \? \*\)/)
+  assert.match(stack, /actions\/workflows\/backup-monitor\.yml\/dispatches/)
+  assert.match(stack, /Input: '\{"ref":"main"\}'/)
+  assert.match(stack, /Action: events:InvokeApiDestination\n\s+Resource: !GetAtt DispatchDestination\.Arn/)
+  assert.match(stack, /GitHubDispatchToken:\n\s+Type: String\n\s+NoEcho: true/)
+})
+
+test('monitor uses the reviewed reusable job and forwards only its project token', () => {
   const read = name => readFileSync(new URL(`../workflows/${name}.yml`, import.meta.url), 'utf8')
   const caller = read('backup-monitor')
   const execution = read('backup-monitor-execute')
-  assert.match(caller, /cron: '17 \* \* \* \*'/)
   assert.match(caller, /if: github.ref == 'refs\/heads\/main'/)
   assert.match(caller, /uses: \.\/\.github\/workflows\/backup-monitor-execute.yml/)
   assert.doesNotMatch(caller, /secrets: inherit/)

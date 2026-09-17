@@ -14,6 +14,11 @@ Parameters:
   GitHubRepositoryOwnerId:
     Type: String
     Default: '321219119'
+  GitHubDispatchToken:
+    Type: String
+    NoEcho: true
+    MinLength: 40
+    Description: Fine-grained GitHub token limited to this repository with Actions write only
 Resources:
   BackupHealthRole:
     Type: AWS::IAM::Role
@@ -47,11 +52,69 @@ Resources:
                 Condition:
                   StringEquals:
                     cloudwatch:namespace: Scope/Security/Backup
+  DispatchConnection:
+    Type: AWS::Events::Connection
+    Properties:
+      Name: scope-backup-monitor-github
+      AuthorizationType: API_KEY
+      AuthParameters:
+        ApiKeyAuthParameters:
+          ApiKeyName: Authorization
+          ApiKeyValue: !Sub Bearer ${GitHubDispatchToken}
+  DispatchDestination:
+    Type: AWS::Events::ApiDestination
+    Properties:
+      Name: scope-backup-monitor-dispatch
+      ConnectionArn: !GetAtt DispatchConnection.Arn
+      HttpMethod: POST
+      InvocationEndpoint: !Sub https://api.github.com/repos/${GitHubRepository}/actions/workflows/backup-monitor.yml/dispatches
+      InvocationRateLimitPerSecond: 1
+  DispatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: scope-security-backup-monitor-dispatch
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: invoke-backup-monitor-dispatch-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: events:InvokeApiDestination
+                Resource: !GetAtt DispatchDestination.Arn
+  DispatchSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: scope-backup-monitor-hourly
+      Description: Dispatches the GitHub Backup monitor workflow hourly; GitHub cron drops scheduled runs
+      ScheduleExpression: cron(17 * * * ? *)
+      State: ENABLED
+      Targets:
+        - Id: dispatch-backup-monitor
+          Arn: !GetAtt DispatchDestination.Arn
+          RoleArn: !GetAtt DispatchRole.Arn
+          Input: '{"ref":"main"}'
+          HttpParameters:
+            HeaderParameters:
+              Accept: application/vnd.github+json
+              X-GitHub-Api-Version: '2022-11-28'
+          RetryPolicy:
+            MaximumRetryAttempts: 3
+            MaximumEventAgeInSeconds: 900
   BackupHealthAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: scope-production-backup-health
-      AlarmDescription: Production Railway backup is stale, schedules are missing, or the hourly checker stopped. Inspect GitHub Backup monitor runs and Railway production Postgres backups.
+      AlarmDescription: Production Railway backup is stale, schedules are missing, or the hourly checker stopped. Inspect GitHub Backup monitor runs, the scope-backup-monitor-hourly EventBridge rule and Railway production Postgres backups.
       Namespace: Scope/Security/Backup
       MetricName: Healthy
       Dimensions:

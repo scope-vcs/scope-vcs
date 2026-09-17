@@ -1,8 +1,8 @@
 name: Backup monitor
 
+# Dispatched hourly by the scope-backup-monitor-hourly EventBridge rule in
+# deploy/aws/backup-monitor.yaml. GitHub cron drops scheduled runs.
 on:
-  schedule:
-    - cron: '17 * * * *'
   workflow_dispatch:
 
 permissions:
