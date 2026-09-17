@@ -21,6 +21,7 @@ const PRIVATE_REQUEST_REF: &str = "refs/heads/private-request";
 mod cache;
 mod cleanup;
 mod http;
+mod landed;
 mod merge;
 mod policy;
 mod privacy;

@@ -105,8 +105,9 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 
 - `request_merge.rs` for preparing, validating, persisting, publishing, and
   cleaning up a request merge;
-- `git_receive/` for receive authorization and the separate main-push and
-  request-ref completion paths;
+- `git_receive/` for receive authorization, the separate main-push and
+  request-ref completion paths, and completing open requests whose head a
+  committed main push carries;
 - `request_discussion_mutation.rs` for discussion commands, authorization
   context, persistence, result loading, and timeline publication;
 - `request_revision_inspection.rs` for shared Git revision membership checks

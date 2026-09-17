@@ -27,6 +27,17 @@ pub struct EditRequestIdentityCommand {
     pub now_unix: u64,
 }
 
+/// A request whose head a committed main push already carries.
+#[derive(Clone, Debug)]
+pub struct CompleteLandedRequestCommand {
+    pub request_id: String,
+    pub actor_user_id: String,
+    pub merged_event_id: String,
+    pub landed_head_oid: String,
+    pub main_oid: String,
+    pub now_unix: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct MergeRequestContentCommand {
     pub owner: String,

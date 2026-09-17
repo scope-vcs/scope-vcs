@@ -143,8 +143,8 @@ pub use request_invitees::{
     AddRequestInviteeCommand, LeaveRequestCommand, RemoveRequestInviteeCommand, RequestInviteeRead,
 };
 pub use request_lifecycle_commands::{
-    CloseRequestCommand, EditRequestIdentityCommand, MergeRequestContentCommand,
-    SubmitRequestCommand,
+    CloseRequestCommand, CompleteLandedRequestCommand, EditRequestIdentityCommand,
+    MergeRequestContentCommand, SubmitRequestCommand,
 };
 pub use request_media::{
     CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,

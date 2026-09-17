@@ -1,3 +1,4 @@
+mod landed_requests;
 pub(crate) mod main_push;
 pub(crate) mod request_ref;
 
@@ -421,6 +422,17 @@ async fn complete_main_push(
         first_push,
         "git receive-pack main update persisted"
     );
+    if !first_push {
+        landed_requests::best_effort_complete_landed_requests(
+            state,
+            &scope_domain::repository::repo_id(owner, repo_name),
+            &committed_incarnation,
+            staging_repo,
+            &committed_git_head.head_oid,
+            &author_id,
+        )
+        .await;
+    }
     best_effort_sync_cache(
         state,
         owner,

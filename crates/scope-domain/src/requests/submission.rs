@@ -119,6 +119,11 @@ pub fn merge_request(
     })
 }
 
+/// A main push completes a request when main carries its head and the request added commits of its own.
+pub fn lands_with_main(request: &Request) -> bool {
+    request.state() == RequestState::Open && request.head_oid != request.base_main_oid
+}
+
 fn validate_command(request: &Request, request_id: &str, actor: &str) -> Result<(), DomainError> {
     validate_required("request id", request_id)?;
     validate_required("actor user id", actor)?;

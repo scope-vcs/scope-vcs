@@ -70,7 +70,8 @@ pub use ratings::{
 };
 mod submission;
 pub use submission::{
-    MergeRequestInput, RequestLifecycleMutation, SubmitRequestInput, merge_request, submit_request,
+    MergeRequestInput, RequestLifecycleMutation, SubmitRequestInput, lands_with_main,
+    merge_request, submit_request,
 };
 
 pub const REQUEST_REF_PREFIX: &str = "refs/heads/";

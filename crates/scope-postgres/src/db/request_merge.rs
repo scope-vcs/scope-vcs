@@ -1,11 +1,12 @@
 //! Atomic repository content merge plus request completion.
 
 use super::{
-    GeneratedIdSource, MergeRequestContentCommand, RequestStore, acquire_aggregate_lock,
+    CompleteLandedRequestCommand, GeneratedIdSource, MergeRequestContentCommand, RequestStore,
+    acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_request_merge},
     entities,
     repository_access::repository_access,
-    request_access::ensure_user_exists,
+    request_access::{ensure_user_exists, lock_request_repository},
     request_rows::request_by_id,
     request_submission_transactions::persist_lifecycle_mutation,
 };
@@ -15,7 +16,7 @@ use {
     scope_domain::{
         repository::RepoLifecycleState,
         repository::git::GitHead,
-        requests::{MergeRequestInput, RequestLifecycleMutation, merge_request},
+        requests::{MergeRequestInput, RequestLifecycleMutation, lands_with_main, merge_request},
     },
 };
 
@@ -122,6 +123,37 @@ impl RequestStore {
             request: request_mutation,
             git_head,
         })
+    }
+}
+
+impl RequestStore {
+    /// Records the merge of a request whose head a committed main push already carries.
+    /// Returns `None` when the request moved or settled since the push was inspected.
+    pub async fn complete_landed_request(
+        &self,
+        command: CompleteLandedRequestCommand,
+    ) -> Result<Option<RequestLifecycleMutation>, PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let (repo, request) =
+            lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
+        if !lands_with_main(&request) || request.head_oid != command.landed_head_oid {
+            return Ok(None);
+        }
+        let mutation = merge_request(
+            &request,
+            MergeRequestInput {
+                request_id: command.request_id,
+                actor_user_id: command.actor_user_id,
+                actor_is_maintainer: repo.access.is_maintainer(),
+                merged_head_oid: command.landed_head_oid,
+                merged_main_oid: command.main_oid,
+                merged_event_id: command.merged_event_id,
+                now_unix: command.now_unix,
+            },
+        )?;
+        persist_lifecycle_mutation(&tx, &mutation).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(Some(mutation))
     }
 }
 
