@@ -57,6 +57,12 @@ test("activates and verifies the exact deployment returned by Railway", (t) => {
 
   const calls = readFileSync(files.calls, "utf8").trim().split("\n").map(JSON.parse);
   assert.equal(calls.length, 3);
+  const readiness = JSON.parse(readFileSync(new URL("../../media-worker/railway.json", import.meta.url), "utf8")).deploy;
+  assert.deepEqual(JSON.parse(calls[0].input).input, {
+    source: { image: `ghcr.io/scope-vcs/scope-media-worker@${digest}` },
+    healthcheckPath: readiness.healthcheckPath,
+    healthcheckTimeout: readiness.healthcheckTimeout,
+  });
   assert.match(calls[1].args[1], /serviceInstanceDeployV2/);
   assert.ok(calls.slice(0, 2).every(call => call.args.includes("@-") && !call.args.join(" ").includes(digest)));
   assert.ok(calls.every(call => call.apiToken === "account-token" && call.railwayToken === undefined));
