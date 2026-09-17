@@ -1,7 +1,7 @@
 import type { RepoParams } from '@/api/types'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
@@ -14,6 +14,7 @@ import {
 import { RequestWorkspaceSidebar } from './request-workspace-sidebar'
 import { RequestWorkspaceShell } from './request-workspace-shell'
 import { RequestWorkspaceProvider } from './request-workspace-context'
+import { applyAttentionMoves } from './request-attention-moves'
 import { useRequestAttentionActions } from './use-request-attention-actions'
 import { useRequestQueue } from './use-request-queue'
 
@@ -71,9 +72,18 @@ function RequestWorkspaceContent({
     [params.owner, params.repo],
   )
   const queue = useRequestQueue(identity, version, load)
-  const { act, error, pendingId, undo, undoable } = useRequestAttentionActions(identity, params, selectedId)
+  const loadedPages = queue.value?.pages
+  const { act, error, moves, pendingId } = useRequestAttentionActions(
+    identity,
+    params,
+    loadedPages,
+    selectedId,
+  )
   const query = draft ?? queue.value?.requestedQuery ?? ''
-  const pages = queue.value?.pages
+  const pages = useMemo(
+    () => loadedPages && applyAttentionMoves(loadedPages, moves),
+    [loadedPages, moves],
+  )
   const selected =
     REQUEST_QUEUE_SECTION_ORDER.flatMap((section) => pages?.[section].requests ?? []).find(
       (item) => item.request.id === selectedId,
@@ -98,6 +108,9 @@ function RequestWorkspaceContent({
           focus={focus}
           error={queue.error ? 'Could not load requests. Try again.' : null}
           loading={queue.refreshing}
+          // Placeholders stand in only while there is nothing true to show:
+          // the first load, or a search whose results have not arrived.
+          skeleton={!queue.value || (queue.refreshing && queue.value.query !== queue.value.requestedQuery)}
           maintainer={maintainer}
           onAction={(item, command) => void act(item, command)}
           onCollapsedChange={changeCollapsed}
@@ -116,8 +129,6 @@ function RequestWorkspaceContent({
           pendingId={pendingId}
           query={query}
           selectedId={selectedId}
-          undo={undo}
-          undoable={undoable}
         />
       }
     >

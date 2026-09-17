@@ -22,15 +22,22 @@ const ACTIVE_REASONS: Record<RequestAttentionReason, 'needs_you' | 'waiting'> = 
 
 test('every active reason lands in needs-you or waiting', () => {
   for (const [reason, group] of Object.entries(ACTIVE_REASONS)) {
-    assert.equal(requestAttentionGroup('active', reason as RequestAttentionReason), group, reason)
+    assert.equal(requestAttentionGroup('active', reason as RequestAttentionReason, false), group, reason)
   }
 })
 
+test('a maintainer’s own request needs them, a contributor’s waits', () => {
+  assert.equal(requestAttentionGroup('active', 'authored', true), 'needs_you')
+  assert.equal(requestAttentionGroup('active', 'authored', false), 'waiting')
+  assert.equal(requestAttentionGroup('active', 'waiting', true), 'waiting')
+  assert.equal(requestAttentionGroup('active', 'invited', true), 'needs_you')
+})
+
 test('storage sections outside active map straight to their group', () => {
-  assert.equal(requestAttentionGroup('unclaimed', 'unclaimed'), 'unclaimed')
-  assert.equal(requestAttentionGroup('set_aside', 'snoozed'), 'set_aside')
-  assert.equal(requestAttentionGroup('set_aside', 'settled'), 'set_aside')
-  assert.equal(requestAttentionGroup('done', 'merged'), 'done')
+  assert.equal(requestAttentionGroup('unclaimed', 'unclaimed', true), 'unclaimed')
+  assert.equal(requestAttentionGroup('set_aside', 'snoozed', true), 'set_aside')
+  assert.equal(requestAttentionGroup('set_aside', 'settled', true), 'set_aside')
+  assert.equal(requestAttentionGroup('done', 'merged', true), 'done')
 })
 
 test('row age reads as a compact unit', () => {

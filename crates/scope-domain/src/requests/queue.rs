@@ -54,6 +54,16 @@ pub struct RequestAttention {
     pub through_activity_version: u64,
     pub snoozed_until_unix: Option<u64>,
     pub updated_at_unix: u64,
+    /// Counts the writes to this viewer's record, so a client can tell whether
+    /// a queue it loaded already reflects a change it made.
+    pub revision: u64,
+}
+
+impl RequestAttention {
+    /// The revision the next write for this viewer carries.
+    pub fn next_revision(existing: Option<&Self>) -> u64 {
+        existing.map_or(1, |attention| attention.revision + 1)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,6 +124,8 @@ pub struct RequestQueueClassification {
     pub reason: RequestAttentionReason,
     pub through_activity_version: u64,
     pub snoozed_until_unix: Option<u64>,
+    /// Zero while the viewer has no attention record.
+    pub revision: u64,
     pub can_claim: bool,
     pub can_set_aside: bool,
     pub can_restore: bool,
@@ -232,6 +244,7 @@ pub fn apply_request_attention_action(
             through_activity_version: input.request.activity_version,
             snoozed_until_unix,
             updated_at_unix: input.now_unix,
+            revision: RequestAttention::next_revision(input.existing_attention),
         }),
         claim,
     })
@@ -239,6 +252,7 @@ pub fn apply_request_attention_action(
 
 pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueueClassification {
     let request_version = facts.request_activity_version;
+    let revision = facts.attention.map_or(0, |attention| attention.revision);
     let rule = REQUEST_QUEUE_RULES
         .iter()
         .copied()
@@ -264,6 +278,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             },
             through_activity_version: request_version,
             snoozed_until_unix: None,
+            revision,
             can_claim: false,
             can_set_aside: false,
             can_restore: false,
@@ -279,6 +294,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
                 reason: attention.reason,
                 through_activity_version: attention.through_activity_version,
                 snoozed_until_unix: attention.snoozed_until_unix,
+                revision,
                 can_claim: false,
                 can_set_aside: false,
                 can_restore: true,
@@ -291,6 +307,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             reason: RequestAttentionReason::ClaimedElsewhere,
             through_activity_version: request_version,
             snoozed_until_unix: None,
+            revision,
             can_claim: false,
             can_set_aside: false,
             can_restore: false,
@@ -324,6 +341,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
                     .attention
                     .map_or(request_version, |state| state.through_activity_version),
                 snoozed_until_unix: None,
+                revision,
                 can_claim: actionable && facts.claim.is_none(),
                 can_set_aside: actionable,
                 can_restore: false,
@@ -336,6 +354,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             reason: RequestAttentionReason::Unclaimed,
             through_activity_version: request_version,
             snoozed_until_unix: None,
+            revision,
             can_claim: actionable,
             can_set_aside: actionable,
             can_restore: false,
@@ -366,6 +385,7 @@ pub fn reactivate_request_attention(
             through_activity_version: new_activity_version,
             snoozed_until_unix: None,
             updated_at_unix: now_unix,
+            revision: RequestAttention::next_revision(Some(attention)),
         })
 }
 
@@ -547,6 +567,33 @@ mod tests {
     }
 
     #[test]
+    fn every_attention_write_advances_the_revision() {
+        let request = open_request();
+        let settle = |existing: Option<&RequestAttention>| {
+            apply_request_attention_action(ApplyRequestAttentionInput {
+                request: &request,
+                actor_user_id: "maintainer",
+                actor_is_maintainer: true,
+                expected_activity_version: request.activity_version,
+                existing_attention: existing,
+                existing_claim: None,
+                action: RequestAttentionAction::Settle,
+                now_unix: 10,
+            })
+            .unwrap()
+            .attention
+            .unwrap()
+        };
+        let first = settle(None);
+        assert_eq!(first.revision, 1);
+        let reactivated =
+            reactivate_request_attention(&first, "someone-else", request.activity_version + 1, 11)
+                .unwrap();
+        assert_eq!(reactivated.revision, 2);
+        assert_eq!(settle(Some(&reactivated)).revision, 3);
+    }
+
+    #[test]
     fn reply_wait_capability_requires_a_maintainer_and_an_open_request() {
         use crate::repository::access::{RepositoryAccess, RepositoryActor};
         use crate::requests::{RequestViewer, request_policy};
@@ -588,6 +635,7 @@ mod tests {
             through_activity_version: request.activity_version,
             snoozed_until_unix: None,
             updated_at_unix: 1,
+            revision: 1,
         }
     }
 

@@ -213,6 +213,7 @@ async fn save_attention<C: ConnectionTrait>(
             entities::request_attention_state::Column::ThroughActivityVersion,
             entities::request_attention_state::Column::SnoozedUntilUnix,
             entities::request_attention_state::Column::UpdatedAtUnix,
+            entities::request_attention_state::Column::Revision,
         ])
         .to_owned(),
     )

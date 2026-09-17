@@ -238,7 +238,11 @@ export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled"
 
 export type RequestAttentionReason = "authored" | "invited" | "claimed" | "unclaimed" | "claimed_elsewhere" | "new_activity" | "restored" | "snooze_expired" | "waiting" | "snoozed" | "settled" | "open" | "closed" | "merged";
 
-export type RequestAttentionResponse = { state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null, can_claim: boolean, can_set_aside: boolean, can_restore: boolean, can_release: boolean, };
+export type RequestAttentionResponse = { state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null, 
+/**
+ * Counts the writes to the viewer's attention record; zero without one.
+ */
+revision: number, can_claim: boolean, can_set_aside: boolean, can_restore: boolean, can_release: boolean, };
 
 export type RequestAttentionActionRequest = { "action": "claim", expected_activity_version: number, } | { "action": "wait", expected_activity_version: number, } | { "action": "settle", expected_activity_version: number, } | { "action": "snooze", expected_activity_version: number, until_unix: number, } | { "action": "restore", expected_activity_version: number, } | { "action": "release", expected_activity_version: number, };
 

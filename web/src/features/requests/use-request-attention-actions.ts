@@ -5,41 +5,41 @@ import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { RequestAttentionCommand } from './request-attention-api'
+import {
+  applyAttentionMoves,
+  isInstantCommand,
+  queueReflectsMove,
+  type RequestAttentionMove,
+  type RequestInstantCommand,
+} from './request-attention-moves'
+import type { RequestQueuePages } from './request-list-model'
 import { requestQueueResource } from './request-queue-cache'
 
-const UNDO_WINDOW_MS = 8_000
-
-/** A settle or snooze the viewer can still take back. */
-export type RequestUndoableAction = {
-  item: RequestQueueItemResponse
-  label: string
-  version: number
-}
-
-function undoLabel(command: RequestAttentionCommand) {
-  if (command.action === 'snooze') {
-    const until = new Date(command.until_unix * 1000)
-    return `Snoozed until ${until.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`
-  }
-  return 'Settled for now'
-}
-
+/**
+ * Settle, snooze and restore move the row in the browser at once and tell the
+ * server afterwards. Claim and release wait for the server, since they change
+ * who owns the review.
+ */
 export function useRequestAttentionActions(
   identity: string | null,
   params: RepoParams,
+  loadedPages: RequestQueuePages | undefined,
   selectedId?: string,
 ) {
   const navigate = useNavigate()
   const inFlight = useRef(false)
+  const selectedRef = useRef(selectedId)
+  selectedRef.current = selectedId
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [undoable, setUndoable] = useState<RequestUndoableAction | null>(null)
+  const [moves, setMoves] = useState<RequestAttentionMove[]>([])
 
+  // A move is already ignored once the loaded queue reflects it; this only
+  // stops finished moves from piling up.
   useEffect(() => {
-    if (!undoable) return
-    const timer = setTimeout(() => setUndoable(null), UNDO_WINDOW_MS)
-    return () => clearTimeout(timer)
-  }, [undoable])
+    if (!loadedPages || !moves.some((move) => queueReflectsMove(loadedPages, move))) return
+    setMoves((current) => current.filter((move) => !queueReflectsMove(loadedPages, move)))
+  }, [loadedPages, moves])
 
   function open(requestId?: string) {
     return requestId
@@ -64,10 +64,42 @@ export function useRequestAttentionActions(
     }
   }
 
+  async function moveNow(item: RequestQueueItemResponse, command: RequestInstantCommand) {
+    const requestId = item.request.id
+    if (!identity || moves.some((move) => move.item.request.id === requestId && !move.confirmed)) return
+    const move: RequestAttentionMove = {
+      item,
+      command,
+      atUnix: Math.floor(Date.now() / 1_000),
+      confirmed: null,
+    }
+    const loaded = requestQueueResource.peek(identity)?.pages
+    const before = loaded ? applyAttentionMoves(loaded, moves).active.requests : []
+    setMoves((current) => [...current.filter((entry) => entry.item.request.id !== requestId), move])
+    let movedOnTo: { id: string | undefined } | null = null
+    if (command.action !== 'restore' && selectedId === requestId) {
+      const index = Math.max(0, before.findIndex((row) => row.request.id === requestId))
+      const remaining = before.filter((row) => row.request.id !== requestId)
+      movedOnTo = { id: remaining[Math.min(index, remaining.length - 1)]?.request.id }
+      void open(movedOnTo.id)
+    }
+    const confirmed = await mutate(requestId, command, item.attention.activity_version)
+    // A refused move puts the row back where the server still has it, and the
+    // viewer back on it unless they have gone somewhere else since.
+    if (!confirmed && movedOnTo && selectedRef.current === movedOnTo.id) void open(requestId)
+    setMoves((current) =>
+      confirmed
+        ? current.map((entry) => (entry === move ? { ...move, confirmed } : entry))
+        : current.filter((entry) => entry !== move),
+    )
+  }
+
   async function act(item: RequestQueueItemResponse, command: RequestAttentionCommand) {
+    if (isInstantCommand(command)) return moveNow(item, command)
     if (!identity || inFlight.current) return
     const requestId = item.request.id
-    const active = requestQueueResource.peek(identity)?.pages.active.requests ?? []
+    // Claim and release can remove the record a move is waiting on.
+    setMoves((current) => current.filter((move) => move.item.request.id !== requestId))
     inFlight.current = true
     setPendingId(requestId)
     let result
@@ -77,41 +109,8 @@ export function useRequestAttentionActions(
       inFlight.current = false
       setPendingId(null)
     }
-    if (!result) return
-    const puttingAside = command.action === 'settle' || command.action === 'snooze'
-    setUndoable(
-      puttingAside
-        ? { item, label: undoLabel(command), version: result.attention.activity_version }
-        : null,
-    )
-    if (command.action === 'claim') await open(requestId)
-    else if (puttingAside && selectedId === requestId) {
-      const index = Math.max(
-        0,
-        active.findIndex((row) => row.request.id === requestId),
-      )
-      const remaining = active.filter((row) => row.request.id !== requestId)
-      await open(remaining[Math.min(index, remaining.length - 1)]?.request.id)
-    }
+    if (result && command.action === 'claim') await open(requestId)
   }
 
-  async function undo() {
-    if (!undoable || inFlight.current) return
-    const requestId = undoable.item.request.id
-    inFlight.current = true
-    setPendingId(requestId)
-    let restored
-    try {
-      restored = await mutate(requestId, { action: 'restore' }, undoable.version)
-    } finally {
-      inFlight.current = false
-      setPendingId(null)
-    }
-    // A failed restore keeps the strip so the viewer can try again.
-    if (!restored) return
-    setUndoable(null)
-    await open(requestId)
-  }
-
-  return { act, error, pendingId, undo, undoable }
+  return { act, error, moves, pendingId }
 }

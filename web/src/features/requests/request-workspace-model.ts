@@ -63,12 +63,18 @@ const NEEDS_YOU: ReadonlySet<RequestAttentionReason> = new Set([
   'snooze_expired',
 ])
 
+/**
+ * A maintainer's own request needs them, since merging or closing it is theirs
+ * to do. A contributor's own request waits on a maintainer.
+ */
 export function requestAttentionGroup(
   section: RequestQueueSection,
   reason: RequestAttentionReason,
+  maintainer: boolean,
 ): RequestAttentionGroup {
-  if (section === 'active') return NEEDS_YOU.has(reason) ? 'needs_you' : 'waiting'
-  return section
+  if (section !== 'active') return section
+  if (reason === 'authored') return maintainer ? 'needs_you' : 'waiting'
+  return NEEDS_YOU.has(reason) ? 'needs_you' : 'waiting'
 }
 
 /** A row with unseen activity reads like unread mail. */

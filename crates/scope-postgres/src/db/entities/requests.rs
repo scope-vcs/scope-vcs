@@ -162,6 +162,7 @@ pub mod request_attention_state {
         pub through_activity_version: i64,
         pub snoozed_until_unix: Option<i64>,
         pub updated_at_unix: i64,
+        pub revision: i64,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -184,6 +185,7 @@ pub mod request_attention_state {
                     .map(|value| u64_to_i64(value, "request snooze time"))
                     .transpose()?,
                 updated_at_unix: u64_to_i64(value.updated_at_unix, "request attention time")?,
+                revision: u64_to_i64(value.revision, "request attention revision")?,
             })
         }
 
@@ -202,6 +204,7 @@ pub mod request_attention_state {
                     .map(|value| i64_to_u64(value, "request snooze time"))
                     .transpose()?,
                 updated_at_unix: i64_to_u64(self.updated_at_unix, "request attention time")?,
+                revision: i64_to_u64(self.revision, "request attention revision")?,
             })
         }
     }

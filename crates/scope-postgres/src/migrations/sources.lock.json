@@ -10,5 +10,6 @@
   "m0050_cache_upload_cleanup_leases.rs": "f061f561a958d421c0438c588dc51c34e7fbec2a6205dabe427c1187e312a4d5",
   "m0051_request_media_budget_release.rs": "a23fcff918469128436e39c8127d7acc67a8b19f99d3a5975018b9b0b3f3a448",
   "m0052_retire_apply_changes_permission.rs": "f205697a66d25a6a49b0c547275acfdb2f1addbb0bc7bbabbb1aed327dedfe35",
-  "m0053_request_ref_cleanup.rs": "3457e3ff117e39f0dbd24df61dedf70258f3c308063ad2b4be6b83e7d2b4eb42"
+  "m0053_request_ref_cleanup.rs": "3457e3ff117e39f0dbd24df61dedf70258f3c308063ad2b4be6b83e7d2b4eb42",
+  "m0054_request_attention_revision.rs": "1b52a9a59cfef8fce52f49c55cc4abe29a440e36782a30b2fe54862158f4e61e"
 }
