@@ -15,6 +15,7 @@ import { RequestSnoozeMenu } from './request-snooze-menu'
 import {
   requestAgeLabel,
   requestAttentionGroup,
+  requestAttentionHeat,
   requestAttentionLabel,
   requestHasNewActivity,
 } from './request-workspace-model'
@@ -149,6 +150,7 @@ function RequestWorkspaceRow({
     <m.article
       className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
       data-group={group}
+      data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
       data-request-id={request.id}
       exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
       style={{ '--row-actions': `${actionCount * 30 + 6}px` } as CSSProperties}

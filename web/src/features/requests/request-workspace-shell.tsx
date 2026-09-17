@@ -12,6 +12,7 @@ type RequestWorkspaceShellProps = {
   children: ReactNode
   collapsed: boolean
   detailOpenOnMobile: boolean
+  focus?: boolean
   onCollapsedChange: (collapsed: boolean) => void
   sidebar: ReactNode
 }
@@ -20,6 +21,7 @@ export function RequestWorkspaceShell({
   children,
   collapsed,
   detailOpenOnMobile,
+  focus = false,
   onCollapsedChange,
   sidebar,
 }: RequestWorkspaceShellProps) {
@@ -31,6 +33,7 @@ export function RequestWorkspaceShell({
       className="request-workspace-shell"
       data-collapsed={collapsed || undefined}
       data-detail-open={detailOpenOnMobile || undefined}
+      data-focus={focus || undefined}
       style={{ '--request-workspace-sidebar-width': `${width}px` } as CSSProperties}
     >
       <div className="request-workspace-sidebar-container" id={sidebarId}>
@@ -62,6 +65,9 @@ export function RequestWorkspaceShell({
         width={collapsed ? REQUEST_WORKSPACE_COLLAPSED_WIDTH : width}
       />
       <section className="request-workspace-detail">{children}</section>
+      {focus ? (
+        <p className="request-workspace-focus-hint label-mono">focus · f or esc to leave</p>
+      ) : null}
     </div>
   )
 }

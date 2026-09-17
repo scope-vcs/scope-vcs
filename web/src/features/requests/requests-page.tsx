@@ -1,7 +1,7 @@
 import type { RepoParams } from '@/api/types'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
-import { useCallback, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
@@ -49,7 +49,19 @@ function RequestWorkspaceContent({
 }) {
   const selectedId = useParams({ strict: false, select: (value) => value.requestId })
   const [collapsed, setCollapsed] = useState(false)
+  const [focus, setFocus] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
+  // Focus mode hides the app chrome, which lives above this page, so the
+  // page announces it on the document and leaves when it unmounts.
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-focus', focus)
+    return () => document.documentElement.removeAttribute('data-focus')
+  }, [focus])
+  const toggleFocus = useCallback(() => setFocus((value) => !value), [])
+  const changeCollapsed = useCallback((value: boolean) => {
+    setCollapsed(value)
+    if (!value) setFocus(false)
+  }, [])
   const load = useCallback<LoadRequestQueuePage>(
     (section, cursor, search, signal) =>
       loadRequestQueuePage({
@@ -75,18 +87,21 @@ function RequestWorkspaceContent({
 
   return (
     <RequestWorkspaceShell
-      collapsed={collapsed}
+      collapsed={collapsed || focus}
       detailOpenOnMobile={Boolean(selectedId)}
-      onCollapsedChange={setCollapsed}
+      focus={focus}
+      onCollapsedChange={changeCollapsed}
       sidebar={
         <RequestWorkspaceSidebar
           actionError={error}
-          collapsed={collapsed}
+          collapsed={collapsed || focus}
+          focus={focus}
           error={queue.error ? 'Could not load requests. Try again.' : null}
           loading={queue.refreshing}
           maintainer={maintainer}
           onAction={(item, command) => void act(item, command)}
-          onCollapsedChange={setCollapsed}
+          onCollapsedChange={changeCollapsed}
+          onFocusToggle={toggleFocus}
           onLoadMore={(section) => {
             if (identity) void loadMoreRequestQueue(identity, section, load)
           }}

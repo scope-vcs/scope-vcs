@@ -36,7 +36,7 @@ export function ApplicationTopbar({
   repository?: { owner: string; repo: string }
 }) {
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-card">
+    <header className="application-topbar sticky top-0 z-40 border-b border-border bg-card">
       <PageRail className="flex min-h-14 flex-wrap items-center gap-x-3 md:flex-nowrap md:gap-x-6">
         <Link
           aria-label="Scope home"

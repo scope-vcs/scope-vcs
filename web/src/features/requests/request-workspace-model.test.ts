@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestAttentionReason } from '../../api/types.generated'
-import { requestAgeLabel, requestAttentionGroup } from './request-workspace-model'
+import { requestAgeLabel, requestAttentionGroup, requestAttentionHeat } from './request-workspace-model'
 
 const ACTIVE_REASONS: Record<RequestAttentionReason, 'needs_you' | 'waiting'> = {
   invited: 'needs_you',
@@ -43,4 +43,13 @@ test('row age reads as a compact unit', () => {
   assert.equal(requestAgeLabel(now + 500, now, true), 'now')
   assert.match(requestAgeLabel(now - 90 * 86400, now, true), /^[A-Z][a-z]{2} \d{1,2}$/)
   assert.match(requestAgeLabel(now - 90 * 86400, now, false), /^[A-Z][a-z]{2} \d{1,2}$/)
+})
+
+test('attention heat steps up with the wait', () => {
+  const now = 1_800_000_000
+  assert.equal(requestAttentionHeat(now + 60, now), 0)
+  assert.equal(requestAttentionHeat(now - 3600, now), 0)
+  assert.equal(requestAttentionHeat(now - 2 * 86400, now), 1)
+  assert.equal(requestAttentionHeat(now - 5 * 86400, now), 2)
+  assert.equal(requestAttentionHeat(now - 30 * 86400, now), 3)
 })

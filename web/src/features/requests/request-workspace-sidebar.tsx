@@ -52,12 +52,16 @@ export function RequestWorkspaceSidebar({
   selectedId,
   undo,
   undoable,
+  focus,
+  onFocusToggle,
 }: Pick<
   RequestWorkspaceListProps,
   'loading' | 'error' | 'onRetry' | 'onAction' | 'pendingId' | 'selectedId'
 > & {
   undo: () => void
   undoable: RequestUndoableAction | null
+  focus: boolean
+  onFocusToggle: () => void
   pages: RequestQueuePages | undefined
   collapsed: boolean
   onCollapsedChange: (collapsed: boolean) => void
@@ -83,8 +87,10 @@ export function RequestWorkspaceSidebar({
   const visibleRows = allRows.filter((row) => row.item.request.id !== undoable?.item.request.id)
   const grouped = groupRows(visibleRows)
   useRequestKeyboard({
+    focus,
     onAction,
     onCollapseToggle: toggleCollapsed,
+    onFocusToggle,
     rows: new Map(allRows.map((row) => [row.item.request.id, row])),
     selectedId,
   })
@@ -244,6 +250,8 @@ export function RequestWorkspaceSidebar({
                     <kbd>s</kbd> snooze
                   </>
                 )}
+                {' · '}
+                <kbd>f</kbd> focus
               </p>
             </div>
           )}
