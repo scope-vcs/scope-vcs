@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { domAnimation, LazyMotion } from 'motion/react'
 import { useCallback, useId, useState, type ReactNode } from 'react'
 import { REQUEST_QUEUE_SECTION_ORDER, type RequestQueuePages } from './request-list-model'
+import { RequestUndoStrip } from './request-undo-strip'
 import { RequestWorkspaceList, type RequestWorkspaceListProps } from './request-workspace-list'
 import {
   REQUEST_ATTENTION_GROUP_LABELS,
@@ -18,6 +20,8 @@ import {
   requestAttentionGroup,
   type RequestAttentionGroup,
 } from './request-workspace-model'
+import type { RequestUndoableAction } from './use-request-attention-actions'
+import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
 
 type QueueRow = { item: RequestQueueItemResponse; section: RequestQueueSection }
@@ -46,10 +50,14 @@ export function RequestWorkspaceSidebar({
   params,
   pendingId,
   selectedId,
+  undo,
+  undoable,
 }: Pick<
   RequestWorkspaceListProps,
   'loading' | 'error' | 'onRetry' | 'onAction' | 'pendingId' | 'selectedId'
 > & {
+  undo: () => void
+  undoable: RequestUndoableAction | null
   pages: RequestQueuePages | undefined
   collapsed: boolean
   onCollapsedChange: (collapsed: boolean) => void
@@ -61,11 +69,31 @@ export function RequestWorkspaceSidebar({
   params: RepoParams
 }) {
   const openSearch = useCallback(() => onCollapsedChange(false), [onCollapsedChange])
+  const toggleCollapsed = useCallback(
+    () => onCollapsedChange(!collapsed),
+    [collapsed, onCollapsedChange],
+  )
   const searching = query.trim().length > 0
   const common = { loading, error, onRetry, onAction, params, pendingId, selectedId }
   const rows = (section: RequestQueueSection): QueueRow[] =>
     pages?.[section].requests.map((item) => ({ item, section })) ?? []
-  const grouped = groupRows(REQUEST_QUEUE_SECTION_ORDER.flatMap(rows))
+  const allRows = REQUEST_QUEUE_SECTION_ORDER.flatMap(rows)
+  // A row being undone has left the queue on the server; the undo strip
+  // stands in for it until the cache catches up.
+  const visibleRows = allRows.filter((row) => row.item.request.id !== undoable?.item.request.id)
+  const grouped = groupRows(visibleRows)
+  useRequestKeyboard({
+    onAction,
+    onCollapseToggle: toggleCollapsed,
+    rows: new Map(allRows.map((row) => [row.item.request.id, row])),
+    selectedId,
+  })
+  const strip = undoable && {
+    group: requestAttentionGroup('active', undoable.item.attention.reason),
+    node: <RequestUndoStrip label={undoable.label} onUndo={undo} pending={pendingId === undoable.item.request.id} />,
+  }
+  const stripIn = (list: QueueRow[]) =>
+    strip && undoable ? { index: stripIndex(list, undoable.item.attention_at_unix), node: strip.node } : undefined
   const nextSection = REQUEST_QUEUE_SECTION_ORDER.find((section) => pages?.[section].next_cursor)
   const activeHasMore = Boolean(pages?.active.next_cursor)
   // Active rows page, so loaded lengths are floors until the last page is in.
@@ -129,20 +157,22 @@ export function RequestWorkspaceSidebar({
             {actionError}
           </p>
         )}
+        <LazyMotion features={domAnimation}>
         <div aria-busy={loading} className="request-workspace-scroll">
           {searching ? (
             <RequestWorkspaceList
               {...common}
               emptyLabel="No matching requests."
               hasMore={Boolean(nextSection)}
-              items={REQUEST_QUEUE_SECTION_ORDER.flatMap(rows)}
+              items={visibleRows}
               onLoadMore={() => {
                 if (nextSection) onLoadMore(nextSection)
               }}
+              strip={stripIn(visibleRows)}
             />
           ) : (
             <>
-              {(maintainer || needsYou.length > 0) && (
+              {(maintainer || needsYou.length > 0 || strip?.group === 'needs_you') && (
                 <section>
                   <RequestWorkspaceGroupLabel count={activeCount(needsYou.length)} group="needs_you" strong />
                   <RequestWorkspaceList
@@ -151,10 +181,11 @@ export function RequestWorkspaceSidebar({
                     hasMore={activeHasMore && waiting.length === 0}
                     items={needsYou}
                     onLoadMore={() => onLoadMore('active')}
+                    strip={strip?.group === 'needs_you' ? stripIn(needsYou) : undefined}
                   />
                 </section>
               )}
-              {(waiting.length > 0 || (!maintainer && needsYou.length === 0)) && (
+              {(waiting.length > 0 || strip?.group === 'waiting' || (!maintainer && needsYou.length === 0)) && (
                 <section>
                   <RequestWorkspaceGroupLabel
                     count={activeCount(waiting.length)}
@@ -167,6 +198,7 @@ export function RequestWorkspaceSidebar({
                     hasMore={activeHasMore}
                     items={waiting}
                     onLoadMore={() => onLoadMore('active')}
+                    strip={strip?.group === 'waiting' ? stripIn(waiting) : undefined}
                   />
                 </section>
               )}
@@ -191,19 +223,32 @@ export function RequestWorkspaceSidebar({
             </>
           )}
           {pages && (
-            <p className="request-workspace-footer">
-              {maintainer ? (
-                <>
-                  <span className="text-foreground">{summaryCount(needsYou.length, activeHasMore)} you</span>
-                  {' · '}
-                  {activeCount(waiting.length)} waiting
-                </>
-              ) : (
-                `${activeCount(needsYou.length + waiting.length)} open`
-              )}
-            </p>
+            <div className="request-workspace-footer">
+              <p>
+                {maintainer ? (
+                  <>
+                    <span className="text-foreground">{summaryCount(needsYou.length, activeHasMore)} you</span>
+                    {' · '}
+                    {activeCount(waiting.length)} waiting
+                  </>
+                ) : (
+                  `${activeCount(needsYou.length + waiting.length)} open`
+                )}
+              </p>
+              <p aria-label="Keyboard shortcuts">
+                <kbd>j</kbd> <kbd>k</kbd> move
+                {maintainer && (
+                  <>
+                    {' · '}
+                    <kbd>e</kbd> settle{' · '}
+                    <kbd>s</kbd> snooze
+                  </>
+                )}
+              </p>
+            </div>
           )}
         </div>
+        </LazyMotion>
       </div>
     </aside>
   )
@@ -217,6 +262,18 @@ function groupRows(rows: QueueRow[]) {
     grouped[requestAttentionGroup(row.section, row.item.attention.reason)].push(row)
   }
   return grouped
+}
+
+/**
+ * The slot a settled or snoozed row would still hold among active rows,
+ * which the API serves newest first. Lists that mix sections keep active
+ * rows first, so the strip lands after the last of them at worst.
+ */
+function stripIndex(rows: QueueRow[], attentionAtUnix: number) {
+  const index = rows.findIndex(
+    (row) => row.section === 'active' && row.item.attention_at_unix < attentionAtUnix,
+  )
+  return index === -1 ? rows.filter((row) => row.section === 'active').length : index
 }
 
 function RequestWorkspaceGroupLabel({

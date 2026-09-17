@@ -59,7 +59,7 @@ function RequestWorkspaceContent({
     [params.owner, params.repo],
   )
   const queue = useRequestQueue(identity, version, load)
-  const { act, error, pendingId } = useRequestAttentionActions(identity, params, selectedId)
+  const { act, error, pendingId, undo, undoable } = useRequestAttentionActions(identity, params, selectedId)
   const query = draft ?? queue.value?.requestedQuery ?? ''
   const pages = queue.value?.pages
   const selected =
@@ -101,6 +101,8 @@ function RequestWorkspaceContent({
           pendingId={pendingId}
           query={query}
           selectedId={selectedId}
+          undo={undo}
+          undoable={undoable}
         />
       }
     >

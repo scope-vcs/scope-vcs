@@ -7,7 +7,8 @@ import { useUnixClock } from '@/lib/use-unix-clock'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { Check, LoaderCircle, RefreshCw, UserRound, UserRoundMinus } from 'lucide-react'
-import type { CSSProperties } from 'react'
+import { AnimatePresence, m, useReducedMotion } from 'motion/react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { RequestAttentionCommand } from './request-attention-api'
 import { RequestDiscussionActorAvatar } from './request-discussion-byline'
 import { RequestSnoozeMenu } from './request-snooze-menu'
@@ -21,6 +22,8 @@ import {
 export type RequestWorkspaceListProps = {
   items: { item: RequestQueueItemResponse; section: RequestQueueSection }[]
   emptyLabel: string
+  /** Something standing in for a row that just left, at the row's old index. */
+  strip?: { index: number; node: ReactNode }
   loading: boolean
   error: string | null
   hasMore: boolean
@@ -40,15 +43,18 @@ export function RequestWorkspaceList({
   hasMore,
   onRetry,
   onLoadMore,
+  strip,
   ...rowProps
 }: RequestWorkspaceListProps) {
   if (!items.length && loading) return <RequestWorkspaceListSkeleton />
+  const rows = items.map(({ item, section }) => (
+    <RequestWorkspaceRow item={item} key={item.request.id} section={section} {...rowProps} />
+  ))
+  if (strip) rows.splice(Math.min(strip.index, rows.length), 0, <div key="strip">{strip.node}</div>)
   return (
     <div className="request-workspace-rows">
-      {items.map(({ item, section }) => (
-        <RequestWorkspaceRow item={item} key={item.request.id} section={section} {...rowProps} />
-      ))}
-      {!items.length && !error && (
+      <AnimatePresence initial={false}>{rows}</AnimatePresence>
+      {!items.length && !error && !strip && (
         <p className="px-4 py-3 text-[11px] text-muted-foreground">{emptyLabel}</p>
       )}
       {error && (
@@ -115,6 +121,7 @@ function RequestWorkspaceRow({
   const hydrated = useHydrated()
   const { request, attention, author } = item
   const nowUnix = useUnixClock()
+  const reducedMotion = useReducedMotion()
   const selected = selectedId === request.id
   const pending = pendingId === request.id
   const group = requestAttentionGroup(section, attention.reason)
@@ -139,10 +146,13 @@ function RequestWorkspaceRow({
   ] as const
   const actionCount = actions.filter(({ visible }) => visible).length + Number(canSetAside)
   return (
-    <article
+    <m.article
       className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
       data-group={group}
+      data-request-id={request.id}
+      exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
       style={{ '--row-actions': `${actionCount * 30 + 6}px` } as CSSProperties}
+      transition={{ duration: reducedMotion ? 0 : 0.18, ease: 'easeOut' }}
     >
       <Link
         aria-current={selected ? 'page' : undefined}
@@ -219,6 +229,6 @@ function RequestWorkspaceRow({
           )}
         </fieldset>
       )}
-    </article>
+    </m.article>
   )
 }
