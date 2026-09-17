@@ -1,10 +1,10 @@
 name: Backup monitor
 
 # GitHub drops most scheduled runs. The alarm needs one heartbeat per hour, so
-# attempt every ten minutes and avoid the congested top of the hour.
+# attempt every fifteen minutes and avoid the congested top of the hour.
 on:
   schedule:
-    - cron: '7-57/10 * * * *'
+    - cron: '7-52/15 * * * *'
   workflow_dispatch:
 
 permissions:
