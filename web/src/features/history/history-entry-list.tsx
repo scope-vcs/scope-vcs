@@ -35,7 +35,7 @@ export function HistoryEntryList({
               'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-5 py-2.5 text-left text-sm sm:px-6 lg:px-8',
               'transition-colors',
               selected
-                ? 'bg-accent shadow-[inset_2px_0_0_0_var(--brand)]'
+                ? 'bg-accent shadow-[inset_2px_0_0_0_var(--foreground)]'
                 : 'hover:bg-accent/50',
             )}
             key={entry.id}

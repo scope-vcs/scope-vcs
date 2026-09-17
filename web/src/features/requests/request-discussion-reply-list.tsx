@@ -275,16 +275,16 @@ function DiscussionBoundary({
     <div
       className={cn(
         'my-3 flex items-center gap-3 text-[11px] font-semibold',
-        unread ? 'text-brand' : 'text-muted-foreground',
+        unread ? 'text-foreground' : 'text-muted-foreground',
       )}
     >
       <hr
         aria-label={unread ? 'New replies' : `Messages from ${label}`}
-        className={cn('h-px flex-1 border-0', unread ? 'bg-brand/60' : 'bg-border')}
+        className={cn('h-px flex-1 border-0', unread ? 'bg-foreground/60' : 'bg-border')}
         suppressHydrationWarning
       />
       <span suppressHydrationWarning>{label}</span>
-      <span className={cn('h-px flex-1', unread ? 'bg-brand/60' : 'bg-border')} />
+      <span className={cn('h-px flex-1', unread ? 'bg-foreground/60' : 'bg-border')} />
     </div>
   )
 }

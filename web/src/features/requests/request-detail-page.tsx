@@ -279,7 +279,7 @@ function RequestViewTabs({
     <nav aria-label="Request views" className="flex gap-5 px-5 lg:gap-6 lg:px-7">
       <Link
         activeOptions={{ exact: true }}
-        activeProps={{ className: 'border-brand text-foreground' }}
+        activeProps={{ className: 'border-foreground text-foreground' }}
         className={tabClass}
         inactiveProps={{ className: 'border-transparent text-muted-foreground hover:text-foreground' }}
         params={params}
@@ -292,7 +292,7 @@ function RequestViewTabs({
         Discussion
       </Link>
       <Link
-        activeProps={{ className: 'border-brand text-foreground' }}
+        activeProps={{ className: 'border-foreground text-foreground' }}
         className={tabClass}
         inactiveProps={{ className: 'border-transparent text-muted-foreground hover:text-foreground' }}
         params={params}
@@ -305,7 +305,7 @@ function RequestViewTabs({
         Changes
       </Link>
       <Link
-        activeProps={{ className: 'border-brand text-foreground' }}
+        activeProps={{ className: 'border-foreground text-foreground' }}
         className={tabClass}
         inactiveProps={{ className: 'border-transparent text-muted-foreground hover:text-foreground' }}
         params={params}

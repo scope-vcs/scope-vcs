@@ -408,7 +408,7 @@ function RequestCommitContext({
         >
           {discussions.map((discussion) => (
             <Link
-              className="flex min-w-0 items-center gap-2 text-foreground hover:text-brand"
+              className="flex min-w-0 items-center gap-2 text-foreground underline-offset-4 hover:underline"
               hash={`discussion-${discussion.id}`}
               key={discussion.id}
               params={{
@@ -452,7 +452,7 @@ function RequestCommitContext({
         <div className="mt-3 flex items-center gap-2">
           <span>{discussionReferences.error}</span>
           <button
-            className="font-medium text-foreground hover:text-brand"
+            className="font-medium text-foreground underline-offset-4 hover:underline"
             onClick={discussionReferences.retry}
             type="button"
           >
@@ -465,7 +465,7 @@ function RequestCommitContext({
           <span>More discussions available</span>
           {discussionReferences.loadMore ? (
             <button
-              className="font-medium text-foreground hover:text-brand"
+              className="font-medium text-foreground underline-offset-4 hover:underline"
               onClick={discussionReferences.loadMore}
               type="button"
             >

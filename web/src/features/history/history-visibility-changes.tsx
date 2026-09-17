@@ -23,7 +23,7 @@ export function VisibilityChanges({
           {change.file ? (
             <button
               aria-pressed={selectedId === change.id}
-              className="min-w-0 flex-1 break-all text-left font-mono text-xs text-brand underline-offset-4 hover:underline"
+              className="min-w-0 flex-1 break-all text-left font-mono text-xs text-foreground underline-offset-4 hover:underline"
               onClick={() => onSelect(change)}
               type="button"
             >
