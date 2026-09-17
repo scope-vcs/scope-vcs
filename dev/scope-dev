@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: ./dev/scope-dev [command]
+usage: ./dev/scope-dev [command] [options]
 
 Supported local-development entrypoint.
 
@@ -16,10 +16,24 @@ commands:
   bench   run the short deployed-system benchmark against the running local API
   help    show this help
 
+options for up and doctor:
+  --signed-in  serve the web app with Clerk sign-in instead of forcing the
+               anonymous viewer, so you can sign in as the seed user who owns
+               the seeded repositories
+  --no-media   skip the media gateway and media worker, and the ffmpeg and
+               HEIF tools they need
+
 required configuration:
   .env.local       DATABASE_URL, SCOPE_DEV_USER_EMAIL, optional SCOPE_DEV_USER_HANDLE
   web/.env.local   VITE_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY using matching
                    Clerk development keys
+
+optional configuration in .env.local, for reaching the stack from another
+device through a proxy such as `tailscale serve`:
+  SCOPE_DEV_TAILNET_WEB_ORIGIN    origin that proxies to http://localhost:3000
+  SCOPE_DEV_TAILNET_API_ORIGIN    origin that proxies to http://localhost:8080
+  SCOPE_DEV_TAILNET_MEDIA_ORIGIN  origin that proxies to http://localhost:8083
+The web dev server accepts the web origin's host automatically.
 
 local services:
   web  http://localhost:3000
@@ -31,12 +45,30 @@ The local API uses filesystem object storage under .scope/dev. Startup strips
 inherited Railway and bucket variables and rejects production-looking Clerk or
 database settings. reset refuses to remove data outside this repository.
 
-After `up`, run `./dev/check smoke` for the anonymous browser smoke suite. See
+After a plain `up`, run `./dev/check smoke` for the anonymous browser smoke
+suite; it expects the default signed-out web app. See
 bench/README.md for benchmark controls beyond the short local defaults.
 EOF
 }
 
 COMMAND="${1:-status}"
+shift || true
+SIGNED_IN=0
+WITH_MEDIA=1
+for option in "$@"; do
+  case "$option" in
+    --signed-in) SIGNED_IN=1 ;;
+    --no-media) WITH_MEDIA=0 ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+if (( $# > 0 )) && [[ "$COMMAND" != "up" && "$COMMAND" != "doctor" ]]; then
+  usage >&2
+  exit 2
+fi
 case "$COMMAND" in
   bench|doctor|up|down|status|reset) ;;
   help|-h|--help)
@@ -137,6 +169,18 @@ local_database_url() {
   printf '%s\n' "$value"
 }
 
+# An origin another device uses to reach a local service, or empty.
+get_tailnet_origin() {
+  local name="$1" value
+  value="$(read_dotenv_value "$ROOT/.env.local" "$name")"
+  value="${value%/}"
+  if [[ -n "$value" && ! "$value" =~ ^https?://[^/]+$ ]]; then
+    echo "$name must be an origin such as https://host.example.ts.net:8443, got $value" >&2
+    exit 1
+  fi
+  printf '%s\n' "$value"
+}
+
 get_object_key() {
   mkdir -p "$DATA_DIR"
   if [[ ! -f "$KEY_FILE" ]]; then
@@ -210,8 +254,10 @@ write_api_runner() {
   local dev_email="$2"
   local dev_handle="$3"
   local object_key="$4"
-  local database_url
+  local database_url tailnet_web_origin tailnet_media_origin
   database_url="$(local_database_url)"
+  tailnet_web_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_WEB_ORIGIN)"
+  tailnet_media_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_MEDIA_ORIGIN)"
   local runner="$STATE_DIR/api.sh"
 
   if [[ -z "$database_url" ]]; then
@@ -230,11 +276,11 @@ export PORT="8080"
 export SCOPE_APP_ORIGIN="$LOCAL_WEB_ORIGIN"
 export SCOPE_API_PUBLIC_URL="$LOCAL_API_ORIGIN"
 export SCOPE_GIT_PUBLIC_URL="$LOCAL_API_ORIGIN"
-export SCOPE_MEDIA_PUBLIC_URL="http://localhost:8083"
+export SCOPE_MEDIA_PUBLIC_URL="${tailnet_media_origin:-http://localhost:8083}"
 export SCOPE_MEDIA_GRANT_PRIVATE_KEY="\$(cat "$MEDIA_PRIVATE_KEY_FILE")"
 export CLERK_ISSUER="$issuer"
 export CLERK_JWKS_URL="$issuer/.well-known/jwks.json"
-export CLERK_AUTHORIZED_PARTIES="$LOCAL_WEB_ORIGIN"
+export CLERK_AUTHORIZED_PARTIES="$LOCAL_WEB_ORIGIN${tailnet_web_origin:+,$tailnet_web_origin}"
 export SCOPE_DEV_USER_EMAIL="$dev_email"
 EOF
   printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
@@ -255,8 +301,9 @@ EOF
 }
 
 write_media_runner() {
-  local database_url runner
+  local database_url runner tailnet_web_origin
   database_url="$(local_database_url)"
+  tailnet_web_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_WEB_ORIGIN)"
   runner="$STATE_DIR/media.sh"
   [[ -n "$database_url" ]] || { echo "DATABASE_URL is required for the media gateway" >&2; exit 1; }
 
@@ -267,7 +314,7 @@ export SCOPE_MEDIA_OBJECT_STORE="filesystem"
 export SCOPE_MEDIA_OBJECT_STORE_DIR="$MEDIA_OBJECT_DIR"
 export SCOPE_MEDIA_ENCRYPTION_KEY="\$(tr -d '\\r\\n' < "$MEDIA_KEY_FILE")"
 export SCOPE_MEDIA_GRANT_PUBLIC_KEY="\$(cat "$MEDIA_PUBLIC_KEY_FILE")"
-export SCOPE_MEDIA_ALLOWED_ORIGIN="$LOCAL_WEB_ORIGIN"
+export SCOPE_MEDIA_ALLOWED_ORIGIN="${tailnet_web_origin:-$LOCAL_WEB_ORIGIN}"
 EOF
   printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
   printf 'exec %q\n' "$LOCAL_CARGO_TARGET_DIR/debug/scope-media-service" >> "$runner"
@@ -317,13 +364,18 @@ EOF
 }
 
 write_web_runner() {
-  local runner="$STATE_DIR/web.sh"
+  local runner="$STATE_DIR/web.sh" tailnet_api_origin tailnet_web_origin tailnet_web_host
+  tailnet_api_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_API_ORIGIN)"
+  tailnet_web_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_WEB_ORIGIN)"
+  tailnet_web_host="${tailnet_web_origin#*://}"
+  tailnet_web_host="${tailnet_web_host%%:*}"
 
   write_runner_preamble "$runner" "$ROOT/web"
   cat >> "$runner" <<EOF
 export SCOPE_API_INTERNAL_URL="http://localhost:8080"
-export SCOPE_API_PUBLIC_URL="$LOCAL_API_ORIGIN"
-export VITE_SCOPE_WEB_FORCE_SIGNED_OUT="${VITE_SCOPE_WEB_FORCE_SIGNED_OUT:-1}"
+export SCOPE_API_PUBLIC_URL="${tailnet_api_origin:-$LOCAL_API_ORIGIN}"
+export VITE_SCOPE_WEB_FORCE_SIGNED_OUT="$((1 - SIGNED_IN))"
+${tailnet_web_host:+export SCOPE_WEB_ALLOWED_HOST="$tailnet_web_host"}
 exec pnpm dev --host 0.0.0.0
 EOF
   chmod +x "$runner"
@@ -350,17 +402,18 @@ prepare_local_schema() {
 }
 
 build_local_services() {
+  local packages=(-p api -p worker) binaries=(api scope-maintenance worker)
+  if (( WITH_MEDIA )); then
+    packages+=(-p scope-media-service -p scope-media-worker)
+    binaries+=(scope-media-service scope-media-worker)
+  fi
   LOCAL_CARGO_TARGET_DIR="$(cd "$ROOT" && ./dev/cargo-target-dir Cargo.toml)"
   (
     cd "$ROOT"
-    cargo build --locked --features api/local-dev \
-      -p api \
-      -p worker \
-      -p scope-media-service \
-      -p scope-media-worker
+    cargo build --locked --features api/local-dev "${packages[@]}"
   )
   local binary
-  for binary in api scope-maintenance worker scope-media-service scope-media-worker; do
+  for binary in "${binaries[@]}"; do
     if [[ ! -x "$LOCAL_CARGO_TARGET_DIR/debug/$binary" ]]; then
       echo "local build did not produce $LOCAL_CARGO_TARGET_DIR/debug/$binary" >&2
       exit 1
@@ -390,11 +443,15 @@ wait_http() {
 
 doctor() {
   local tool
-  for tool in cargo curl git node npm openssl pnpm python3 setsid ss \
-    "${SCOPE_MEDIA_FFMPEG:-ffmpeg}" "${SCOPE_MEDIA_FFPROBE:-ffprobe}" \
-    "${SCOPE_MEDIA_HEIF_CONVERT:-heif-convert}" "${SCOPE_MEDIA_HEIF_INFO:-heif-info}"; do
+  for tool in cargo curl git node npm openssl pnpm python3 setsid ss; do
     assert_command "$tool"
   done
+  if (( WITH_MEDIA )); then
+    for tool in "${SCOPE_MEDIA_FFMPEG:-ffmpeg}" "${SCOPE_MEDIA_FFPROBE:-ffprobe}" \
+      "${SCOPE_MEDIA_HEIF_CONVERT:-heif-convert}" "${SCOPE_MEDIA_HEIF_INFO:-heif-info}"; do
+      assert_command "$tool"
+    done
+  fi
 
   local issuer dev_email secret_key
   issuer="$(get_clerk_issuer)"
@@ -413,6 +470,11 @@ doctor() {
   echo "seed user: $dev_email"
   echo "api: $LOCAL_API_ORIGIN"
   echo "web: $LOCAL_WEB_ORIGIN"
+  local tailnet_web_origin
+  tailnet_web_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_WEB_ORIGIN)"
+  if [[ -n "$tailnet_web_origin" ]]; then
+    echo "tailnet web: $tailnet_web_origin"
+  fi
 }
 
 mint_bench_auth_token() {
@@ -466,8 +528,10 @@ up() {
   doctor >/dev/null
   stop_owned_processes
   assert_port_free 8080 "api"
-  assert_port_free 8083 "media gateway"
-  assert_port_free 8084 "media worker health"
+  if (( WITH_MEDIA )); then
+    assert_port_free 8083 "media gateway"
+    assert_port_free 8084 "media worker health"
+  fi
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     assert_port_free 3000 "web"
   fi
@@ -482,15 +546,20 @@ up() {
   start_service api "http://localhost:8080/readyz" 45
   write_worker_runner
   start_service worker
-  write_media_runner
-  start_service media "http://localhost:8083/healthz" 90
-  write_media_worker_runner
-  start_service media-worker "http://localhost:8084/readyz" 90
+  if (( WITH_MEDIA )); then
+    write_media_runner
+    start_service media "http://localhost:8083/healthz" 90
+    write_media_worker_runner
+    start_service media-worker "http://localhost:8084/readyz" 90
+  fi
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     write_web_runner
     start_service web "http://localhost:3000" 180
   fi
   status
+  if (( SIGNED_IN )); then
+    echo "sign in as $(get_dev_user_email) to own the seeded repositories"
+  fi
 }
 
 status() {
