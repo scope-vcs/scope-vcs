@@ -72,6 +72,17 @@ impl ScopeRemote {
     }
 }
 
+/// The origin of a remote whose path names a Scope repository, whichever host serves it.
+pub fn scope_path_origin(remote_url: &str) -> Option<String> {
+    let remote = Url::parse(remote_url).ok()?;
+    let segments = remote.path_segments()?.collect::<Vec<_>>();
+    (segments.len() == 4
+        && segments[0] == "git"
+        && matches!(segments[1], "public" | "permissioned")
+        && remote.has_host())
+    .then(|| remote.origin().ascii_serialization())
+}
+
 pub fn select_scope_fetch_remote(
     repo: &GitRepo,
     api_url: &str,

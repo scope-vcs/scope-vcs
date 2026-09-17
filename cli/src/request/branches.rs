@@ -10,35 +10,42 @@ pub(super) fn start_request_branch(
     local::require_git_remote(&context)?;
     let audience = start_audience(context.repo.access.actor, args.audience)?;
     let base_oid = refresh_main_projection(git_repo, &context.target, audience, api.token)?;
-    let branch = args.name.trim().to_string();
-    scope_domain::requests::validate_request_name(&branch)
-        .map_err(|error| anyhow::anyhow!(error.message))?;
-    let local_ref = format!("refs/heads/{branch}");
-    if try_run_git_in_repo(git_repo, &["show-ref", "--verify", "--quiet", &local_ref])? {
-        bail!("local branch '{branch}' already exists");
-    }
+    let name = args.name.trim().to_string();
+    scope_domain::requests::validate_request_name(&name)
+        .map_err(|error| crate::error::CliError::usage(error.message))?;
+    let branch = if args.current_branch {
+        local::adoptable_current_branch(git_repo, &base_oid)?
+    } else {
+        let local_ref = format!("refs/heads/{name}");
+        if try_run_git_in_repo(git_repo, &["show-ref", "--verify", "--quiet", &local_ref])? {
+            bail!("local branch '{name}' already exists");
+        }
+        name.clone()
+    };
     let remote_main = remote_main_ref(&context.target.remote);
     let response = api_start_request(
         api,
         StartRequestParams {
             owner: &context.target.owner,
             repo: &context.target.repo,
-            name: branch.clone(),
+            name,
             title: args.title,
             audience,
         },
     )?;
-    if let Err(switch_error) = run_git_in_repo(
-        git_repo,
-        &[
-            "switch",
-            "--quiet",
-            "--no-track",
-            "-c",
-            &branch,
-            &remote_main,
-        ],
-    ) {
+    if !args.current_branch
+        && let Err(switch_error) = run_git_in_repo(
+            git_repo,
+            &[
+                "switch",
+                "--quiet",
+                "--no-track",
+                "-c",
+                &branch,
+                &remote_main,
+            ],
+        )
+    {
         let cleanup = api_close_request(
             api,
             &context.target.owner,

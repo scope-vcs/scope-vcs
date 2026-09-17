@@ -48,12 +48,19 @@ pub(super) enum RequestCommand {
 
 #[derive(Parser)]
 pub(super) struct RequestStartArgs {
-    #[arg(help = "Stable kebab-case request name used as the Git branch")]
+    #[arg(
+        help = "Stable kebab-case request name, also the Git branch unless --current-branch is set"
+    )]
     pub(super) name: String,
     #[arg(long, help = "Scope Git remote for the target repository")]
     pub(super) remote: Option<String>,
     #[arg(long, help = "Display title (defaults to the request name)")]
     pub(super) title: Option<String>,
+    #[arg(
+        long,
+        help = "Attach the request to the current branch and its commits instead of creating a branch from main"
+    )]
+    pub(super) current_branch: bool,
     #[arg(
         long,
         value_enum,

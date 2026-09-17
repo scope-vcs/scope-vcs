@@ -5,7 +5,7 @@ use crate::{
         GitRepo, branch_config_value, current_branch, git_remote_fetch_url, git_remote_names,
         git_remote_push_url, scope_api_url_from_git_config, scope_git_origin,
     },
-    git_transport::{DEFAULT_SCOPE_REMOTE, GitAccess, ScopeRemote},
+    git_transport::{DEFAULT_SCOPE_REMOTE, GitAccess, ScopeRemote, scope_path_origin},
 };
 use anyhow::Context;
 use std::{env, path::PathBuf, process::Command};
@@ -202,6 +202,14 @@ fn resolve(
         {
             return target_for_repository(api_url, &selected.owner, &selected.repo);
         }
+        for name in git_remote_names(repo)? {
+            if let Some(found) = scope_path_origin(&git_remote_fetch_url(repo, &name)?) {
+                return Err(CliError::usage(format!(
+                    "remote {name} is a Scope remote at {found}, but this CLI is using {origin}. If Scope moved, run git remote set-url {name} with the new address, then scope login. To keep using {found}, run git config scope.apiUrl {found}"
+                ))
+                .into());
+            }
+        }
         return Err(CliError::usage(
             "no Scope Git remote found; pass --remote <name> or run scope init",
         )
@@ -311,6 +319,29 @@ mod tests {
             assert!(error.to_string().contains("multiple Scope repositories"));
             assert_eq!(crate::error::exit_code(&error), 2);
         }
+    }
+
+    #[test]
+    fn a_scope_remote_at_another_origin_is_named_with_both_recoveries() {
+        let (dir, repo) = checkout("context-moved-origin");
+        dir.run_git([
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/owner/repo.git",
+        ]);
+        dir.run_git([
+            "remote",
+            "add",
+            "scope",
+            "https://token@old.scope.example/git/permissioned/owner/repo",
+        ]);
+        let error = resolve(Some(&repo), "https://api.scope.example", None, None, false)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("remote scope is a Scope remote at https://old.scope.example"));
+        assert!(error.contains("git config scope.apiUrl https://old.scope.example"));
+        assert!(!error.contains("token"));
     }
 
     #[test]

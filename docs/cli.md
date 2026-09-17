@@ -67,6 +67,12 @@ scope request submit --yes
 scope request checks
 ```
 
+`scope request start` creates a branch from main named after the request. To
+turn a branch that already holds commits into a request, run it with
+`--current-branch`: the branch keeps its name and its upstream, and must already
+contain Scope's main. When a push to main carries an open request's head, Scope
+records that request as merged.
+
 Maintainers can inspect requests and their checks from any directory by naming
 the repository explicitly. Checkout requires a local Git repository:
 
@@ -162,7 +168,10 @@ Endpoint selection takes the first available value in this order:
    `SCOPE_API_PUBLIC_URL`, or Scope's production default when neither was embedded.
 
 Repository operations reject an endpoint that conflicts with the checkout's
-stored `scope.apiUrl`. `scope status` and `scope doctor` report the selected
+stored `scope.apiUrl`. A checkout without that value whose Scope remote lives at
+another origin than the selected endpoint is reported with both recoveries:
+re-point the remote and sign in again, or store the remote's origin as
+`scope.apiUrl`. `scope status` and `scope doctor` report the selected
 endpoint; use `--offline` to inspect local state without contacting Scope. Both
 commands return exit code 0 when they successfully emit a report, even when
 `result.healthy` is false. Automation must inspect `healthy` and `diagnostics`.

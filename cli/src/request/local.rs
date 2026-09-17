@@ -1,10 +1,11 @@
 use crate::api::ApiSession;
+use crate::display::short_oid;
 use crate::{
     api::{RepoSummaryResponse, RequestSummaryResponse, get_repo, list_requests},
     git_repo::{
         GitRepo, branch_config_value, current_branch, fetch_scope_remote_with_bearer,
         push_head_to_ref_with_bearer, run_git_in_repo, scope_remote_head_oid,
-        set_branch_config_value,
+        set_branch_config_value, try_run_git_in_repo,
     },
     git_transport::ScopeRemote,
     push::DEFAULT_SCOPE_BRANCH,
@@ -211,6 +212,34 @@ pub(super) fn store_request_metadata(
     )
 }
 
+/// The current branch, when a new request can take it and its commits as they are.
+pub(super) fn adoptable_current_branch(
+    git_repo: &GitRepo,
+    base_oid: &str,
+) -> anyhow::Result<String> {
+    let branch = current_branch(git_repo)?;
+    if branch == DEFAULT_SCOPE_BRANCH {
+        return Err(crate::error::CliError::usage(
+            "main cannot become a request branch; switch to the branch that holds the work",
+        )
+        .into());
+    }
+    if let Some(request_id) = branch_config_value(git_repo, &branch, REQUEST_ID_KEY)? {
+        return Err(crate::error::CliError::usage(format!(
+            "branch '{branch}' already belongs to request {request_id}"
+        ))
+        .into());
+    }
+    if !try_run_git_in_repo(git_repo, &["merge-base", "--is-ancestor", base_oid, "HEAD"])? {
+        return Err(crate::error::CliError::usage(format!(
+            "branch '{branch}' does not contain Scope main at {}; merge or rebase onto it, then retry",
+            short_oid(base_oid)
+        ))
+        .into());
+    }
+    Ok(branch)
+}
+
 pub(super) fn track_request_branch_ref(
     git_repo: &GitRepo,
     branch: &str,
@@ -220,6 +249,12 @@ pub(super) fn track_request_branch_ref(
 ) -> anyhow::Result<()> {
     let remote_ref = request_remote_ref(&target.remote, request_name);
     run_git_in_repo(git_repo, &["update-ref", &remote_ref, request_head_oid])?;
+    // A branch attached with --current-branch may track another host; its request keys identify it.
+    if branch_config_value(git_repo, branch, "remote")?
+        .is_some_and(|remote| remote != target.remote)
+    {
+        return Ok(());
+    }
     set_branch_config_value(git_repo, branch, "remote", &target.remote)?;
     set_branch_config_value(
         git_repo,

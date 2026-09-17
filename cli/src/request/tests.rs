@@ -119,6 +119,74 @@ fn public_request_preflight_excludes_main_only_protected_paths_after_true_diverg
     ensure_public_request_paths_allowed(&repo, &detail, &current_main_oid, &head_oid).unwrap();
 }
 
+#[test]
+fn a_new_request_takes_the_current_branch_only_when_it_holds_scope_main() {
+    let dir = TempDir::git_repo("request-current-branch", "main");
+    dir.run_git(["config", "user.email", "scope@example.test"]);
+    dir.run_git(["config", "user.name", "Scope Test"]);
+    dir.run_git(["commit", "--allow-empty", "-m", "base"]);
+    let old_main = git_oid(&dir);
+    dir.run_git(["switch", "-c", "docs/rules"]);
+    dir.run_git(["commit", "--allow-empty", "-m", "work"]);
+    dir.run_git(["switch", "main"]);
+    dir.run_git(["commit", "--allow-empty", "-m", "main moved"]);
+    let new_main = git_oid(&dir);
+    let repo = GitRepo {
+        root: dir.path().to_path_buf(),
+    };
+    let refusal = |base: &str| {
+        let error = super::local::adoptable_current_branch(&repo, base).unwrap_err();
+        assert_eq!(crate::error::exit_code(&error), 2);
+        error.to_string()
+    };
+
+    assert!(refusal(&new_main).contains("main cannot become a request branch"));
+    dir.run_git(["switch", "docs/rules"]);
+    assert!(refusal(&new_main).contains("does not contain Scope main"));
+    assert_eq!(
+        super::local::adoptable_current_branch(&repo, &old_main).unwrap(),
+        "docs/rules"
+    );
+    dir.run_git(["config", "branch.docs/rules.scopeRequestId", "req_taken"]);
+    assert!(refusal(&old_main).contains("already belongs to request req_taken"));
+}
+
+#[test]
+fn tracking_a_request_keeps_an_upstream_on_another_remote() {
+    let dir = TempDir::git_repo("request-keeps-upstream", "main");
+    dir.run_git(["config", "user.email", "scope@example.test"]);
+    dir.run_git(["config", "user.name", "Scope Test"]);
+    dir.run_git(["commit", "--allow-empty", "-m", "base"]);
+    let head = git_oid(&dir);
+    dir.run_git(["config", "branch.main.remote", "origin"]);
+    dir.run_git(["config", "branch.main.merge", "refs/heads/docs/rules"]);
+    let repo = GitRepo {
+        root: dir.path().to_path_buf(),
+    };
+    let target = crate::git_transport::ScopeRemote::parse(
+        "https://scope.example",
+        "scope",
+        "https://scope.example/git/permissioned/owner/repo",
+    )
+    .unwrap();
+    let config = |key: &str| {
+        String::from_utf8(dir.run_git(["config", "--get", key]).stdout)
+            .unwrap()
+            .trim()
+            .to_string()
+    };
+
+    super::local::track_request_branch_ref(&repo, "main", &target, "rules", &head).unwrap();
+    assert_eq!(config("branch.main.remote"), "origin");
+    assert_eq!(config("branch.main.merge"), "refs/heads/docs/rules");
+    dir.run_git(["rev-parse", "--verify", "refs/remotes/scope/rules"]);
+
+    dir.run_git(["config", "--unset", "branch.main.remote"]);
+    super::local::track_request_branch_ref(&repo, "main", &target, "rules", &head).unwrap();
+    assert_eq!(config("branch.main.remote"), "scope");
+    assert_eq!(config("branch.main.merge"), "refs/heads/rules");
+}
+
 fn git_oid(dir: &TempDir) -> String {
     String::from_utf8(dir.run_git(["rev-parse", "HEAD"]).stdout)
         .unwrap()
