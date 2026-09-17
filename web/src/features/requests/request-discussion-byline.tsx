@@ -45,8 +45,8 @@ export function RequestDiscussionActorAvatar({
     <div
       aria-hidden="true"
       className={cn(
-        'grid shrink-0 place-items-center rounded-full border border-border bg-muted font-mono font-semibold uppercase text-muted-foreground',
-        small ? 'size-5 text-[9px]' : 'size-8 text-[10px]',
+        'grid shrink-0 place-items-center rounded-full bg-muted font-medium uppercase text-muted-foreground',
+        small ? 'size-5 text-[9px]' : 'size-8 text-[11px]',
       )}
     >
       {handle.slice(0, 2)}
