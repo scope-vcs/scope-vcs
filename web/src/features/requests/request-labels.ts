@@ -34,7 +34,7 @@ const MERGEABILITY = {
   Draft: { label: 'Draft', tone: 'neutral' },
   Closed: { label: 'Closed', tone: 'neutral' },
   Merged: { label: 'Merged', tone: 'success' },
-  NotMaintainer: { label: 'Maintainer required', tone: 'neutral' },
+  NotMaintainer: { label: 'Maintainer merges', tone: 'outline' },
   MissingRequestBranch: { label: 'Branch missing', tone: 'warning' },
 } as const satisfies Record<
   RequestSummaryResponse['mergeability']['status'],
