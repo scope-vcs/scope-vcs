@@ -1,8 +1,11 @@
 name: Backup monitor
 
+# GitHub drops most scheduled runs and the alarm pages after three hours without
+# a heartbeat, so attempt every fifteen minutes and avoid the congested top of
+# the hour.
 on:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '7-52/15 * * * *'
   workflow_dispatch:
 
 permissions:
