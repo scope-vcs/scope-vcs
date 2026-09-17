@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { loadComponentConfig } from "./deployment-components.mjs";
+import { runtimeDeploySettings } from "./railway-artifact.mjs";
 import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from "./railway-retry.mjs";
 import { readRailway } from "./railway-read.mjs";
 import { execFileSync } from "node:child_process";
@@ -76,23 +77,16 @@ if (!serviceId || third || !projectId || !environmentId || !component || !source
   throw new Error("Digest-pinned Railway image deployment requires service, project, environment, component, source SHA, evidence path, API token, and reviewed GHCR digest");
 }
 
-// Railway keeps the probe on the service instance, so the image alone would
-// activate against whatever path an earlier release left behind.
-const readiness = loadComponentConfig(component).deploy;
-if (!readiness?.healthcheckPath || !Number.isInteger(readiness.healthcheckTimeout)) {
-  throw new Error(`Checked-in readiness configuration is missing for ${component}.`);
-}
+// Railway keeps these settings on the service instance, so the image alone
+// would activate against whatever an earlier release left behind.
+const settings = runtimeDeploySettings(component, loadComponentConfig(component));
 
 const updated = graphql(
   "mutation SelectPinnedImage($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}",
   {
     serviceId,
     environmentId,
-    input: {
-      source: { image },
-      healthcheckPath: readiness.healthcheckPath,
-      healthcheckTimeout: readiness.healthcheckTimeout,
-    },
+    input: { source: { image }, ...settings },
   },
 );
 if (updated?.serviceInstanceUpdate !== true) throw new Error("Railway rejected pinned media worker image");

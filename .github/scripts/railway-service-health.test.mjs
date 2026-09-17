@@ -269,7 +269,7 @@ test("production CLI verifies canonical receipts against the checked-in manifest
   const configPaths = {
     cache: "cache-service/railway.json", "run-worker": "worker/railway.json",
     "git-router": "repo-router/railway.json", "media-api": "media-service/railway.json",
-    api: "api/railway.json", web: "web/railway.json",
+    "media-worker": "media-worker/railway.json", api: "api/railway.json", web: "web/railway.json",
   };
   const deployments = Object.fromEntries(Object.keys(manifest.services).map(component => [component, {
     sourceSha: SOURCE_SHA, provider: "railway", evidenceId: `live-${component}`,

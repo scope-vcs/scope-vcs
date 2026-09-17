@@ -62,6 +62,8 @@ test("activates and verifies the exact deployment returned by Railway", (t) => {
     source: { image: `ghcr.io/scope-vcs/scope-media-worker@${digest}` },
     healthcheckPath: readiness.healthcheckPath,
     healthcheckTimeout: readiness.healthcheckTimeout,
+    overlapSeconds: Number(readiness.overlapSeconds),
+    drainingSeconds: Number(readiness.drainingSeconds),
   });
   assert.match(calls[1].args[1], /serviceInstanceDeployV2/);
   assert.ok(calls.slice(0, 2).every(call => call.args.includes("@-") && !call.args.join(" ").includes(digest)));

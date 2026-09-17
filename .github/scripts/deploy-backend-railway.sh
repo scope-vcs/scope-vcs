@@ -320,7 +320,7 @@ activate_image_release() {
     echo "Pinned image deployment produced no Railway evidence for $component." >&2
     return 1
   }
-  wait_for_service_health "$service_name" "$expected_deployment_id"
+  wait_for_service_health "$service_name" "$expected_deployment_id" "$(railway_config_path "$component")"
 }
 
 promote_pending_evidence() {

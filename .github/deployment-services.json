@@ -99,7 +99,7 @@
       "deployment": {
         "backend": true,
         "runtimeConfig": "media-worker/railway.json",
-        "verifyTransitionConfig": false,
+        "verifyTransitionConfig": true,
         "artifact": {
           "kind": "external-image",
           "binary": "scope-media-worker"

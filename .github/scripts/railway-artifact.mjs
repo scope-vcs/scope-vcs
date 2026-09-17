@@ -120,22 +120,14 @@ export function assertDeploymentImage(image, deployment) {
   return deployment;
 }
 
-export function artifactDeploymentInput(component, artifact, config, { registryCredentials } = {}) {
-  const definition = deploymentComponent(component).artifact;
-  if (!digestReference.test(artifact.image ?? '')) throw new Error('Invalid immutable Railway artifact.');
-  if (definition.kind !== 'web' && !definition.binary) throw new Error(`Release component ${component} has no prebuilt binary to start.`);
+// The checked-in runtime config owns these settings for every activation path;
+// Railway otherwise keeps whatever an earlier release left on the instance.
+export function runtimeDeploySettings(component, config) {
   const deploy = config?.deploy;
   if (!deploy?.healthcheckPath || !Number.isInteger(deploy.healthcheckTimeout)) {
     throw new Error(`Checked-in readiness configuration is missing for ${component}.`);
   }
-  const input = {
-    source: { image: artifact.image },
-    rootDirectory: '/', railwayConfigFile: null, buildCommand: null,
-    startCommand: definition.kind === 'web' ? 'node /app/.output/server/index.mjs' : `/app/bin/${definition.binary}`,
-    healthcheckPath: deploy.healthcheckPath,
-    healthcheckTimeout: deploy.healthcheckTimeout,
-    preDeployCommand: [],
-  };
+  const settings = { healthcheckPath: deploy.healthcheckPath, healthcheckTimeout: deploy.healthcheckTimeout };
   // Replica topology belongs to the target environment, not the artifact.
   for (const field of ['overlapSeconds', 'drainingSeconds', 'restartPolicyMaxRetries']) {
     if (deploy[field] === undefined) continue;
@@ -144,9 +136,23 @@ export function artifactDeploymentInput(component, artifact, config, { registryC
         !Number.isInteger(Number(value)) || Number(value) < 0 || Number(value) > 2147483647) {
       throw new Error(`Checked-in deploy.${field} must be a nonnegative GraphQL Int.`);
     }
-    input[field] = Number(value);
+    settings[field] = Number(value);
   }
-  if (deploy.restartPolicyType !== undefined) input.restartPolicyType = deploy.restartPolicyType;
+  if (deploy.restartPolicyType !== undefined) settings.restartPolicyType = deploy.restartPolicyType;
+  return settings;
+}
+
+export function artifactDeploymentInput(component, artifact, config, { registryCredentials } = {}) {
+  const definition = deploymentComponent(component).artifact;
+  if (!digestReference.test(artifact.image ?? '')) throw new Error('Invalid immutable Railway artifact.');
+  if (definition.kind !== 'web' && !definition.binary) throw new Error(`Release component ${component} has no prebuilt binary to start.`);
+  const input = {
+    source: { image: artifact.image },
+    rootDirectory: '/', railwayConfigFile: null, buildCommand: null,
+    startCommand: definition.kind === 'web' ? 'node /app/.output/server/index.mjs' : `/app/bin/${definition.binary}`,
+    ...runtimeDeploySettings(component, config),
+    preDeployCommand: [],
+  };
   if (registryCredentials) {
     if (!registryCredentials.username || !registryCredentials.password) throw new Error('Both registry username and password are required.');
     input.registryCredentials = registryCredentials;
