@@ -298,24 +298,22 @@ export function RequestAttachmentEditor({
             ref={fileInputRef}
             type="file"
           />
-          <Button disabled={!limits || pending} onClick={() => fileInputRef.current?.click()} size="sm" type="button" variant="ghost">
-            <Paperclip className="size-3.5" />
-            Attach files
+          <Button
+            aria-label="Attach files"
+            disabled={!limits || pending}
+            onClick={() => fileInputRef.current?.click()}
+            size="icon-sm"
+            title="Attach files"
+            type="button"
+            variant="ghost"
+          >
+            <Paperclip />
           </Button>
           <span className="text-xs text-muted-foreground">Drop files or paste an image</span>
         </div>
       </div>
-      {target === 'description' ? (
-        <DescriptionDraftRecovery
-          currentDescription={initialText}
-          disabled={pending}
-          onDiscard={() => {
-            clearRequestAttachmentDraft(draftKey)
-            seedRequestAttachmentDraft(draftKey, initialText)
-            setValidationError(null)
-          }}
-          stale={staleDescription}
-        />
+      {target === 'description' && staleDescription ? (
+        <StaleDescriptionNotice currentDescription={initialText} />
       ) : null}
       {validationError ? <p className="mt-2 text-sm text-destructive" role="alert">{validationError}</p> : null}
       <EditorActions
@@ -325,6 +323,13 @@ export function RequestAttachmentEditor({
         enterSubmits={enterSubmits}
         hasFailedTransfer={hasFailedTransfer}
         onCancel={onCancel}
+        onDiscardDraft={target === 'description'
+          ? () => {
+              clearRequestAttachmentDraft(draftKey)
+              seedRequestAttachmentDraft(draftKey, initialText)
+              setValidationError(null)
+            }
+          : undefined}
         pending={pending}
         pendingAction={pendingAction}
         secondarySubmit={secondarySubmit}
@@ -343,6 +348,7 @@ function EditorActions({
   enterSubmits,
   hasFailedTransfer,
   onCancel,
+  onDiscardDraft,
   pending,
   pendingAction,
   secondarySubmit,
@@ -356,6 +362,8 @@ function EditorActions({
   enterSubmits: boolean
   hasFailedTransfer: boolean
   onCancel: () => void
+  /** Present where a kept draft can be swapped for the saved text. */
+  onDiscardDraft?: () => void
   pending: boolean
   pendingAction: 'primary' | 'secondary' | null
   secondarySubmit?: { icon: ReactNode; label: string }
@@ -368,14 +376,26 @@ function EditorActions({
     : hasFailedTransfer
       ? 'Remove or retry failed files before saving.'
       : transferPending
-        ? 'Uploading files… Draft kept while you navigate.'
+        ? 'Uploading files…'
         : enterSubmits
-          ? 'Markdown · Shift+Enter for a new line'
-          : 'Markdown · Draft kept while you navigate'
+          ? 'Shift+Enter for a new line'
+          : ''
   return (
     <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-      <p aria-live="polite" className="min-w-48 flex-1 text-xs text-muted-foreground">{status}</p>
+      <p aria-live="polite" className="min-w-0 flex-1 text-xs text-muted-foreground">{status}</p>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        {onDiscardDraft ? (
+          <Button
+            disabled={pending}
+            onClick={onDiscardDraft}
+            size="sm"
+            title="Discard this draft and load the current description"
+            type="button"
+            variant="ghost"
+          >
+            Discard draft
+          </Button>
+        ) : null}
         <Button disabled={pending} onClick={onCancel} size="sm" type="button" variant="ghost">Cancel</Button>
         {secondarySubmit ? (
           <Button
@@ -398,40 +418,16 @@ function EditorActions({
   )
 }
 
-function DescriptionDraftRecovery({
-  currentDescription,
-  disabled,
-  onDiscard,
-  stale,
-}: {
-  currentDescription: string
-  disabled: boolean
-  onDiscard: () => void
-  stale: boolean
-}) {
+function StaleDescriptionNotice({ currentDescription }: { currentDescription: string }) {
   return (
     <div className="mt-2 space-y-2 text-sm">
-      {stale ? (
-        <>
-          <p role="alert">The description changed while you were editing. Your draft is kept.</p>
-          <details>
-            <summary className="cursor-pointer">Current description</summary>
-            <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
-              {currentDescription || 'No description.'}
-            </pre>
-          </details>
-        </>
-      ) : null}
-      <Button
-        className="h-auto whitespace-normal text-left"
-        disabled={disabled}
-        onClick={onDiscard}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        Discard draft and load current description
-      </Button>
+      <p role="alert">The description changed while you were editing. Your draft is kept.</p>
+      <details>
+        <summary className="cursor-pointer">Current description</summary>
+        <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
+          {currentDescription || 'No description.'}
+        </pre>
+      </details>
     </div>
   )
 }

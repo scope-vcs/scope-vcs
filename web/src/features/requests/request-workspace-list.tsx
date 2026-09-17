@@ -6,9 +6,8 @@ import { useHydrated } from '@/lib/use-hydrated'
 import { useUnixClock } from '@/lib/use-unix-clock'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
-import { Check, LoaderCircle, RefreshCw, UserRound, UserRoundMinus } from 'lucide-react'
-import { AnimatePresence, m, useReducedMotion } from 'motion/react'
-import type { CSSProperties, ReactNode } from 'react'
+import { Check, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'lucide-react'
+import type { CSSProperties } from 'react'
 import type { RequestAttentionCommand } from './request-attention-api'
 import { RequestDiscussionActorAvatar } from './request-discussion-byline'
 import { RequestSnoozeMenu } from './request-snooze-menu'
@@ -23,14 +22,15 @@ import {
 export type RequestWorkspaceListProps = {
   items: { item: RequestQueueItemResponse; section: RequestQueueSection }[]
   emptyLabel: string
-  /** Something standing in for a row that just left, at the row's old index. */
-  strip?: { index: number; node: ReactNode }
   loading: boolean
+  /** First load only; a background refresh never swaps rows for placeholders. */
+  skeleton: boolean
   error: string | null
   hasMore: boolean
   onRetry: () => void
   onLoadMore: () => void
   onAction: (item: RequestQueueItemResponse, command: RequestAttentionCommand) => void
+  maintainer: boolean
   params: RepoParams
   pendingId: string | null
   selectedId?: string
@@ -40,22 +40,21 @@ export function RequestWorkspaceList({
   items,
   emptyLabel,
   loading,
+  skeleton,
   error,
   hasMore,
   onRetry,
   onLoadMore,
-  strip,
   ...rowProps
 }: RequestWorkspaceListProps) {
-  if (!items.length && loading) return <RequestWorkspaceListSkeleton />
+  if (!items.length && skeleton) return <RequestWorkspaceListSkeleton />
   const rows = items.map(({ item, section }) => (
     <RequestWorkspaceRow item={item} key={item.request.id} section={section} {...rowProps} />
   ))
-  if (strip) rows.splice(Math.min(strip.index, rows.length), 0, <div key="strip">{strip.node}</div>)
   return (
     <div className="request-workspace-rows">
-      <AnimatePresence initial={false}>{rows}</AnimatePresence>
-      {!items.length && !error && !strip && (
+      {rows}
+      {!items.length && !error && (
         <p className="px-4 py-3 text-[11px] text-muted-foreground">{emptyLabel}</p>
       )}
       {error && (
@@ -111,21 +110,21 @@ export function RequestWorkspaceListSkeleton() {
 function RequestWorkspaceRow({
   item,
   section,
+  maintainer,
   onAction,
   params,
   pendingId,
   selectedId,
-}: Pick<RequestWorkspaceListProps, 'onAction' | 'params' | 'pendingId' | 'selectedId'> & {
+}: Pick<RequestWorkspaceListProps, 'maintainer' | 'onAction' | 'params' | 'pendingId' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
 }) {
   const hydrated = useHydrated()
   const { request, attention, author } = item
   const nowUnix = useUnixClock()
-  const reducedMotion = useReducedMotion()
   const selected = selectedId === request.id
   const pending = pendingId === request.id
-  const group = requestAttentionGroup(section, attention.reason)
+  const group = requestAttentionGroup(section, attention.reason, maintainer)
   const hot = group === 'needs_you'
   const unread = requestHasNewActivity(item)
   const canSetAside = section === 'active' && attention.can_set_aside
@@ -140,21 +139,19 @@ function RequestWorkspaceRow({
     {
       action: 'restore',
       label: 'Restore',
-      icon: RefreshCw,
+      icon: Undo2,
       visible: section === 'set_aside' && attention.can_restore,
     },
     { action: 'release', label: 'Release', icon: UserRoundMinus, visible: attention.can_release },
   ] as const
   const actionCount = actions.filter(({ visible }) => visible).length + Number(canSetAside)
   return (
-    <m.article
+    <article
       className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
       data-group={group}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
       data-request-id={request.id}
-      exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
       style={{ '--row-actions': `${actionCount * 30 + 6}px` } as CSSProperties}
-      transition={{ duration: reducedMotion ? 0 : 0.18, ease: 'easeOut' }}
     >
       <Link
         aria-current={selected ? 'page' : undefined}
@@ -231,6 +228,6 @@ function RequestWorkspaceRow({
           )}
         </fieldset>
       )}
-    </m.article>
+    </article>
   )
 }

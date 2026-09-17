@@ -1,8 +1,9 @@
 /* Owned by request-detail-page.tsx. */
 
 /*
- * The action bar pins to the top of #main-content, the app's scrolling region.
- * Nothing between it and that scroller sets overflow, so plain sticky is enough.
+ * Phones only: the back link pins to the top of #main-content, the app's
+ * scrolling region. Nothing between it and that scroller sets overflow, so
+ * plain sticky is enough. Wider screens carry every action in the header.
  */
 .request-detail-actions {
   position: sticky;

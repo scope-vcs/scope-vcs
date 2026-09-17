@@ -125,8 +125,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   const canClaim = workspace?.selected?.attention.reason === 'unclaimed' &&
     workspace.selected.attention.can_claim
   const canRelease = workspace?.selected?.attention.can_release ?? false
-  // Below 701px the bar still carries the back link, so it always renders there.
-  const hasBarActions = canClaim || canRelease || hasLifecycleActions
 
   async function saveDescription(nextDescription: string, expectedDescription: string) {
     await updateDescription({
@@ -148,32 +146,43 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       <WorkbenchPane className="max-w-none">
         <div className={cn('w-full', hasLifecycleActions && 'pb-20 min-[701px]:pb-0')} ref={paneRef}>
           <RequestDetailHeader
-            actions={request.permissions.can_view_activity ? (
-              <Button
-                aria-label="View request activity"
-                onClick={history.openHistory}
-                size="icon-sm"
-                title="View request activity"
-                type="button"
-                variant="secondary"
-              >
-                <History />
-              </Button>
-            ) : null}
+            actions={
+              <>
+                {canClaim ? (
+                  <Button onClick={workspace?.claim} size="sm" type="button" variant="secondary">
+                    <UserRound />
+                    I’ll take this
+                  </Button>
+                ) : null}
+                {canRelease ? (
+                  <Button onClick={workspace?.release} size="sm" type="button" variant="secondary">
+                    <UserRoundMinus />
+                    Release
+                  </Button>
+                ) : null}
+                <RequestLifecycleActions
+                  actions={requestActions}
+                  className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
+                  request={request}
+                />
+                {request.permissions.can_view_activity ? (
+                  <Button
+                    aria-label="View request activity"
+                    onClick={history.openHistory}
+                    size="icon-sm"
+                    title="View request activity"
+                    type="button"
+                    variant="secondary"
+                  >
+                    <History />
+                  </Button>
+                ) : null}
+              </>
+            }
             request={request}
           />
-          <div
-            className={cn(
-              'request-detail-actions flex flex-wrap items-center gap-2 px-5 py-2.5 sm:px-6 lg:px-8',
-              !hasBarActions && 'min-[701px]:hidden',
-            )}
-          >
-            <Button
-              asChild
-              className="min-[701px]:hidden"
-              size="icon-sm"
-              variant="secondary"
-            >
+          <div className="request-detail-actions px-5 py-2.5 min-[701px]:hidden">
+            <Button asChild size="icon-sm" variant="secondary">
               <Link
                 aria-label="Back to requests"
                 params={params}
@@ -182,23 +191,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 <ArrowLeft />
               </Link>
             </Button>
-            {canClaim ? (
-              <Button onClick={workspace?.claim} size="sm" type="button" variant="secondary">
-                <UserRound />
-                I’ll take this
-              </Button>
-            ) : null}
-            {canRelease ? (
-              <Button onClick={workspace?.release} size="sm" type="button" variant="secondary">
-                <UserRoundMinus />
-                Release
-              </Button>
-            ) : null}
-            <RequestLifecycleActions
-              actions={requestActions}
-              className="ml-auto fixed inset-x-0 bottom-0 z-30 flex flex-wrap justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
-              request={request}
-            />
           </div>
           {requestActions.error ? (
             <p
