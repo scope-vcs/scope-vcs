@@ -282,9 +282,15 @@ export type LeaveRequestResponse = { invitee: RequestInviteeResponse, };
 
 export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
 
-export type RequestMergeabilityStatus = "Ready" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch";
+export type RequestMergeabilityStatus = "Ready" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError";
 
 export type RequestMergeabilityResponse = { status: RequestMergeabilityStatus, current_main_oid: GitOid | null, request_head_oid: GitOid, reason: string | null, };
+
+export type RequestCheckEvaluationState = "no-checks" | "awaiting-approval" | "started" | "configuration-error";
+
+export type RequestCheckResponse = { workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, };
+
+export type RequestChecksResponse = { request_id: string, head_oid: GitOid, state: RequestCheckEvaluationState, message: string | null, checks: Array<RequestCheckResponse>, can_approve: boolean, mergeability: RequestMergeabilityResponse, };
 
 export type RequestEventResponse = { id: string, position: number, actor: RequestActorSummaryResponse, kind: RequestEventKind, payload: RequestEventPayload, created_at_unix: number, };
 
@@ -350,7 +356,7 @@ export type RunState = "queued" | "dispatching" | "running" | "succeeded" | "fai
 
 export type RunResponse = { id: string, repository_id: string, workflow_name: string, git_oid: string, state: RunState, cancellation_requested: boolean, logs_truncated: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, };
 
-export type RepositoryRunTrigger = "manual" | "push-main";
+export type RepositoryRunTrigger = "manual" | "push-main" | "request";
 
 export type RepositoryRunSummaryResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, can_cancel: boolean, can_retry: boolean, };
 
@@ -420,6 +426,8 @@ export const ApiRouteTemplates = {
   repoRequest: "/v1/repos/{owner}/{repo}/requests/{request_id}",
   repoRequestSubmit: "/v1/repos/{owner}/{repo}/requests/{request_id}/submit",
   repoRequestMerge: "/v1/repos/{owner}/{repo}/requests/{request_id}/merge",
+  repoRequestChecks: "/v1/repos/{owner}/{repo}/requests/{request_id}/checks",
+  repoRequestChecksApprove: "/v1/repos/{owner}/{repo}/requests/{request_id}/checks/approve",
   repoRequestRatings: "/v1/repos/{owner}/{repo}/requests/{request_id}/ratings",
   repoRequestInvitees: "/v1/repos/{owner}/{repo}/requests/{request_id}/invitees",
   repoRequestInviteesMe: "/v1/repos/{owner}/{repo}/requests/{request_id}/invitees/me",

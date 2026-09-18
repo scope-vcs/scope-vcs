@@ -137,6 +137,7 @@ impl ProductAnalytics {
 pub enum WorkflowRunTrigger {
     Manual,
     PushMain,
+    Request,
 }
 
 impl WorkflowRunTrigger {
@@ -144,6 +145,7 @@ impl WorkflowRunTrigger {
         match self {
             Self::Manual => "manual",
             Self::PushMain => "push_main",
+            Self::Request => "request",
         }
     }
 }
@@ -197,6 +199,7 @@ fn workflow_trigger(trigger: RunTrigger) -> WorkflowRunTrigger {
     match trigger {
         RunTrigger::Manual => WorkflowRunTrigger::Manual,
         RunTrigger::PushMain => WorkflowRunTrigger::PushMain,
+        RunTrigger::Request => WorkflowRunTrigger::Request,
     }
 }
 

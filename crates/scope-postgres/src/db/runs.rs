@@ -378,7 +378,7 @@ pub(super) async fn enqueue_run_in_transaction(
     })
 }
 
-async fn save_workflow_revision(
+pub(super) async fn save_workflow_revision(
     tx: &DatabaseTransaction,
     revision: &WorkflowRevision,
     created_at_unix: u64,

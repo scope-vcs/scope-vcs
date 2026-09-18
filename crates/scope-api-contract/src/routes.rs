@@ -79,6 +79,12 @@ routes! {
         REPO_REQUEST_MERGE = "/v1/repos/{owner}/{repo}/requests/{request_id}/merge"
             => "repoRequestMerge",
             repo_request_merge(owner: &str, repo: &str, request_id: &str);
+        REPO_REQUEST_CHECKS = "/v1/repos/{owner}/{repo}/requests/{request_id}/checks"
+            => "repoRequestChecks",
+            repo_request_checks(owner: &str, repo: &str, request_id: &str);
+        REPO_REQUEST_CHECKS_APPROVE = "/v1/repos/{owner}/{repo}/requests/{request_id}/checks/approve"
+            => "repoRequestChecksApprove",
+            repo_request_checks_approve(owner: &str, repo: &str, request_id: &str);
         REPO_REQUEST_RATINGS = "/v1/repos/{owner}/{repo}/requests/{request_id}/ratings"
             => "repoRequestRatings",
             repo_request_ratings(owner: &str, repo: &str, request_id: &str);

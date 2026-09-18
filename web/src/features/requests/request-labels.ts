@@ -36,6 +36,10 @@ const MERGEABILITY = {
   Merged: { label: 'Merged', tone: 'success' },
   NotMaintainer: { label: 'Maintainer merges', tone: 'outline' },
   MissingRequestBranch: { label: 'Branch missing', tone: 'warning' },
+  ChecksAwaitingApproval: { label: 'Checks need approval', tone: 'warning' },
+  ChecksPending: { label: 'Checks running', tone: 'neutral' },
+  ChecksFailed: { label: 'Checks failed', tone: 'danger' },
+  ChecksConfigurationError: { label: 'Workflow invalid', tone: 'danger' },
 } as const satisfies Record<
   RequestSummaryResponse['mergeability']['status'],
   { label: string; tone: BadgeVariant }

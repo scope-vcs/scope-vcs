@@ -14,6 +14,7 @@ use scope_domain::{
         RequestAttentionReason as DomainRequestAttentionReason,
         RequestAttentionState as DomainRequestAttentionState,
         RequestAudience as DomainRequestAudience,
+        RequestCheckEvaluationState as DomainRequestCheckEvaluationState,
         RequestDiscussionStatus as DomainRequestDiscussionStatus,
         RequestEventKind as DomainRequestEventKind,
         RequestEventPayload as DomainRequestEventPayload,
@@ -138,7 +139,21 @@ wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
     Merged,
     NotMaintainer,
     MissingRequestBranch,
+    ChecksAwaitingApproval,
+    ChecksPending,
+    ChecksFailed,
+    ChecksConfigurationError,
 });
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RequestCheckEvaluationState => DomainRequestCheckEvaluationState {
+        NoChecks,
+        AwaitingApproval,
+        Started,
+        ConfigurationError,
+    }
+);
 wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]

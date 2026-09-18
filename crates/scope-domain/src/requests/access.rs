@@ -1,4 +1,6 @@
-use super::{Request, RequestActorRole, RequestAudience, RequestState};
+use super::{
+    Request, RequestActorRole, RequestAudience, RequestState, checks::RequestChecksOutcome,
+};
 use crate::repository::access::{RepositoryAccess, RepositoryActor};
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +56,10 @@ pub enum RequestMergeabilityStatus {
     Merged,
     NotMaintainer,
     MissingRequestBranch,
+    ChecksAwaitingApproval,
+    ChecksPending,
+    ChecksFailed,
+    ChecksConfigurationError,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -184,6 +190,7 @@ pub fn request_list_mergeability(
     state: RequestState,
     has_git_snapshot: bool,
     access: RepositoryAccess,
+    checks: RequestChecksOutcome,
 ) -> RequestMergeability {
     let (status, reason) = match state {
         RequestState::Closed => (RequestMergeabilityStatus::Closed, Some("request is closed")),
@@ -207,11 +214,38 @@ pub fn request_list_mergeability(
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),
         ),
-        RequestState::Open => (RequestMergeabilityStatus::Ready, None),
+        RequestState::Open => match checks {
+            RequestChecksOutcome::Clear => (RequestMergeabilityStatus::Ready, None),
+            RequestChecksOutcome::AwaitingApproval => (
+                RequestMergeabilityStatus::ChecksAwaitingApproval,
+                Some("checks are waiting for a maintainer to start them"),
+            ),
+            RequestChecksOutcome::Pending => (
+                RequestMergeabilityStatus::ChecksPending,
+                Some("checks have not finished"),
+            ),
+            RequestChecksOutcome::Failed => (
+                RequestMergeabilityStatus::ChecksFailed,
+                Some("a check did not succeed"),
+            ),
+            RequestChecksOutcome::ConfigurationError => (
+                RequestMergeabilityStatus::ChecksConfigurationError,
+                Some("the request head's workflow configuration is invalid"),
+            ),
+        },
     };
     RequestMergeability { status, reason }
 }
 
-pub fn request_mergeability(request: &Request, access: RepositoryAccess) -> RequestMergeability {
-    request_list_mergeability(request.state(), request.git_snapshot.is_some(), access)
+pub fn request_mergeability(
+    request: &Request,
+    access: RepositoryAccess,
+    checks: RequestChecksOutcome,
+) -> RequestMergeability {
+    request_list_mergeability(
+        request.state(),
+        request.git_snapshot.is_some(),
+        access,
+        checks,
+    )
 }

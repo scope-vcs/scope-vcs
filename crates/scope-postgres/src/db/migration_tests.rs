@@ -33,6 +33,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0052_retire_apply_changes_permission",
     "m0053_request_ref_cleanup",
     "m0054_request_attention_revision",
+    "m0055_request_checks",
 ];
 
 pub(super) async fn isolated_database() -> (

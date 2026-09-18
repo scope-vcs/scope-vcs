@@ -56,6 +56,7 @@ wire_enum!(
     RepositoryRunTrigger => DomainRunTrigger {
         Manual,
         PushMain,
+        Request,
     }
 );
 

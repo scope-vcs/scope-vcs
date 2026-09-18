@@ -110,6 +110,12 @@ pub(crate) async fn request_queue(
     } else {
         current_main_oid_for_context(&state, &repo).await?
     };
+    let rows = page
+        .rows
+        .iter()
+        .map(|row| row.request.clone())
+        .collect::<Vec<_>>();
+    let checks = crate::use_cases::request_checks::checks_outcomes(&state, &rows).await?;
     let requests = page
         .rows
         .into_iter()
@@ -121,9 +127,18 @@ pub(crate) async fn request_queue(
                 .map(|claim| request_actor_summary_response(&claim.claimer_user_id, &page.users))
                 .transpose()?;
             let activity_version = row.request.activity_version;
+            let request_id = row.request.id.clone();
             Ok(RequestQueueItemResponse {
                 attention_at_unix: row.cursor.updated_at_unix,
-                request: request_list_item_response(row.request, access, current_main_oid.clone())?,
+                request: request_list_item_response(
+                    row.request,
+                    access,
+                    current_main_oid.clone(),
+                    checks
+                        .get(&request_id)
+                        .copied()
+                        .unwrap_or(scope_domain::requests::RequestChecksOutcome::Clear),
+                )?,
                 author,
                 attention: attention_response(row.attention, activity_version),
                 claimer,

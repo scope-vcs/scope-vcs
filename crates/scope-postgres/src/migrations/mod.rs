@@ -11,6 +11,7 @@ mod m0051_request_media_budget_release;
 mod m0052_retire_apply_changes_permission;
 mod m0053_request_ref_cleanup;
 mod m0054_request_attention_revision;
+mod m0055_request_checks;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -106,6 +107,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0054_request_attention_revision::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0055_request_checks::Migration),
             metadata_restore_safe: true,
         },
     ]

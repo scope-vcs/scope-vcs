@@ -40,7 +40,7 @@ fn workflow() -> WorkflowRevision {
         identity,
         CompiledWorkflow::new(
             "Test",
-            WorkflowTriggers::new(true, false).unwrap(),
+            WorkflowTriggers::new(true, false, false).unwrap(),
             vec![job],
         )
         .unwrap(),

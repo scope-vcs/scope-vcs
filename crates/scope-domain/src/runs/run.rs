@@ -192,6 +192,7 @@ impl Run {
         let enabled = match self.trigger {
             RunTrigger::Manual => triggers.manual(),
             RunTrigger::PushMain => triggers.push_main(),
+            RunTrigger::Request => triggers.request(),
         };
         if !enabled {
             return Err(DomainError::invalid_input(

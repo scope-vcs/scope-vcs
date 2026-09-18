@@ -1,8 +1,8 @@
 use crate::{
     FileChangeKind, FirstPushTokenStatus, GitOid, RepoConfig, RepoLifecycleState, RepositoryActor,
     RequestActorRole, RequestAttentionReason, RequestAttentionState, RequestAudience,
-    RequestDiscussionStatus, RequestEventKind, RequestEventPayload, RequestMergeabilityStatus,
-    RequestState, SessionIdentity, Visibility,
+    RequestCheckEvaluationState, RequestDiscussionStatus, RequestEventKind, RequestEventPayload,
+    RequestMergeabilityStatus, RequestState, RunState, SessionIdentity, Visibility,
 };
 use serde::{Deserialize, Serialize};
 
@@ -437,6 +437,29 @@ pub struct RequestMergeabilityResponse {
     pub current_main_oid: Option<GitOid>,
     pub request_head_oid: GitOid,
     pub reason: Option<String>,
+}
+
+/// One workflow the request head asks for, and the run that answers it.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestCheckResponse {
+    pub workflow_path: String,
+    pub workflow_name: String,
+    pub run_id: Option<String>,
+    pub run_state: Option<RunState>,
+}
+
+/// The checks recorded for the request's current head.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestChecksResponse {
+    pub request_id: String,
+    pub head_oid: GitOid,
+    pub state: RequestCheckEvaluationState,
+    pub message: Option<String>,
+    pub checks: Vec<RequestCheckResponse>,
+    pub can_approve: bool,
+    pub mergeability: RequestMergeabilityResponse,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

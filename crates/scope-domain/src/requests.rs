@@ -12,6 +12,11 @@ pub use access::{
     request_list_predicate, request_mergeability, request_policy,
 };
 pub mod attachments;
+mod checks;
+pub use checks::{
+    RequestCheck, RequestCheckEvaluation, RequestCheckEvaluationState, RequestChecksOutcome,
+    request_checks_outcome, request_checks_start_immediately,
+};
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};
 mod identity;

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 pub enum RunTrigger {
     Manual,
     PushMain,
+    Request,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

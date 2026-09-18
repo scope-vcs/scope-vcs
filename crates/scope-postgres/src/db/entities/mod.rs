@@ -99,7 +99,7 @@ pub use repositories::{
     repository_workflow_file,
 };
 pub use requests::{
-    request, request_attention_state, request_claim, request_discussion,
+    request, request_attention_state, request_check_evaluation, request_claim, request_discussion,
     request_discussion_read_state, request_discussion_reply, request_event, request_invitee,
     request_rating, request_revision,
 };

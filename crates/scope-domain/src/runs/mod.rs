@@ -11,5 +11,5 @@ pub mod run;
 pub mod source;
 pub mod step;
 pub mod trigger;
-mod validation;
+pub(crate) mod validation;
 pub mod workflow;

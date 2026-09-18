@@ -46,5 +46,12 @@ export function elapsedDuration(
 
 /** How a run started, in the words a reader would use. */
 export function runTriggerLabel(trigger: RepositoryRunTrigger) {
-  return trigger === 'push-main' ? 'push' : 'manual'
+  switch (trigger) {
+    case 'push-main':
+      return 'push'
+    case 'request':
+      return 'request'
+    default:
+      return 'manual'
+  }
 }

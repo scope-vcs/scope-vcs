@@ -38,7 +38,7 @@ pub(super) fn checks_workflow_revision(repo_id: &str) -> Result<WorkflowRevision
     .map_err(ApiError::internal)?;
     let definition = CompiledWorkflow::new(
         "Checks",
-        WorkflowTriggers::new(true, true).map_err(ApiError::internal)?,
+        WorkflowTriggers::new(true, true, false).map_err(ApiError::internal)?,
         vec![build, test, deploy],
     )
     .map_err(ApiError::internal)?;
@@ -58,7 +58,7 @@ pub(super) fn lint_workflow_revision(repo_id: &str) -> Result<WorkflowRevision, 
     .map_err(ApiError::internal)?;
     let definition = CompiledWorkflow::new(
         "Lint",
-        WorkflowTriggers::new(true, true).map_err(ApiError::internal)?,
+        WorkflowTriggers::new(true, true, false).map_err(ApiError::internal)?,
         vec![lint],
     )
     .map_err(ApiError::internal)?;

@@ -5,7 +5,7 @@ use scope_api_contract::{
 };
 use scope_domain::{
     repository::access::RepositoryAccess,
-    requests::{Request, RequestEvent, request_list_mergeability},
+    requests::{Request, RequestChecksOutcome, RequestEvent, request_list_mergeability},
 };
 use scope_postgres::db::RequestListRow;
 
@@ -53,8 +53,10 @@ pub(crate) fn request_list_item_response(
     request: RequestListRow,
     access: RepositoryAccess,
     current_main_oid: Option<String>,
+    checks: RequestChecksOutcome,
 ) -> Result<RequestListItemResponse, crate::error::ApiError> {
-    let decision = request_list_mergeability(request.state, request.has_git_snapshot, access);
+    let decision =
+        request_list_mergeability(request.state, request.has_git_snapshot, access, checks);
     let request_head_oid = super::git_oid_response(request.head_oid)?;
     Ok(RequestListItemResponse {
         id: request.id,

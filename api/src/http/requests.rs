@@ -29,8 +29,8 @@ use scope_domain::{
     repository::access::{RepositoryAccess, RepositoryAccessContext, RepositoryActor},
     requests::{
         CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
-        RequestAudience, RequestViewer, StartRequestInput, request_actor_role,
-        request_mergeability, request_policy, validate_start_request_audience,
+        RequestAudience, RequestChecksOutcome, RequestViewer, StartRequestInput,
+        request_actor_role, request_mergeability, request_policy, validate_start_request_audience,
     },
 };
 use scope_postgres::db::EditRequestIdentityCommand;
@@ -85,9 +85,16 @@ pub(crate) async fn list_requests(
     } else {
         current_main_oid_for_context(&state, &repo).await?
     };
+    let checks = crate::use_cases::request_checks::checks_outcomes(&state, &requests).await?;
     let requests = requests
         .into_iter()
-        .map(|request| request_list_item_response(request, access, current_main_oid.clone()))
+        .map(|request| {
+            let checks = checks
+                .get(&request.id)
+                .copied()
+                .unwrap_or(RequestChecksOutcome::Clear);
+            request_list_item_response(request, access, current_main_oid.clone(), checks)
+        })
         .collect::<Result<Vec<_>, ApiError>>()?;
 
     Ok(Json(RequestListResponse {
@@ -533,7 +540,8 @@ async fn request_response_for_viewer(
         can_close: decision.can_close,
         can_merge: decision.can_merge,
     };
-    let decision = request_mergeability(&request, viewer.access);
+    let checks = crate::use_cases::request_checks::checks_outcome(state, &request).await?;
+    let decision = request_mergeability(&request, viewer.access, checks);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
         current_main_oid: current_main_oid.map(git_oid_response).transpose()?,

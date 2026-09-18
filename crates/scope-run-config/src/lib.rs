@@ -79,7 +79,7 @@ pub fn parse_workflow(path: &str, bytes: &[u8]) -> Result<ParsedWorkflow, RunCon
             return Err(RunConfigError::UnsupportedPushBranches);
         }
     };
-    let triggers = WorkflowTriggers::new(manual, push_main)?;
+    let triggers = WorkflowTriggers::new(manual, push_main, raw.on.request)?;
     let container = ContainerSpec::new(raw.container.image)?;
     let timeout_seconds = parse_timeout_seconds(&raw.timeout)?;
     let caches = raw
@@ -250,6 +250,8 @@ struct RawTriggers {
     manual: bool,
     #[serde(default)]
     push: Option<RawPushTrigger>,
+    #[serde(default)]
+    request: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -374,6 +376,10 @@ jobs:
         assert_eq!(definition.name(), "Test");
         assert!(definition.triggers().manual());
         assert!(definition.triggers().push_main());
+        assert!(!definition.triggers().request());
+        let on_request = WORKFLOW.replace("manual: true", "manual: true\n  request: true");
+        let parsed = parse_workflow("/.scope/runs/test.yml", on_request.as_bytes()).unwrap();
+        assert!(parsed.definition().triggers().request());
         let job = definition.only_job().unwrap();
         assert_eq!(job.id().as_str(), "checks");
         assert_eq!(job.timeout_seconds(), 20 * 60);

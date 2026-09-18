@@ -1,0 +1,221 @@
+//! The checks recorded for request heads, and the transactions that start them.
+
+use super::{
+    RequestStore, entities,
+    request_access::{ensure_user_exists, lock_request_repository},
+    runs::{enqueue_run_in_transaction, save_workflow_revision},
+};
+use crate::error::PostgresError;
+use scope_domain::{
+    requests::{RequestCheckEvaluation, RequestCheckEvaluationState},
+    runs::{
+        run::Run,
+        workflow::{identity::WorkflowIdentity, revision::WorkflowRevision},
+    },
+};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
+    TransactionTrait, sea_query::OnConflict,
+};
+
+/// A head's evaluation together with the runs it starts now and the revisions
+/// it may start later.
+#[derive(Clone, Debug)]
+pub struct RecordRequestChecksCommand {
+    pub evaluation: RequestCheckEvaluation,
+    pub revisions: Vec<WorkflowRevision>,
+    pub runs: Vec<Run>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ApproveRequestChecksCommand {
+    pub request_id: String,
+    pub actor_user_id: String,
+    pub now_unix: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestChecksMutation {
+    pub evaluation: RequestCheckEvaluation,
+    /// Runs this transaction created; a repeated evaluation creates none.
+    pub created_runs: Vec<Run>,
+}
+
+impl RequestStore {
+    pub async fn record_request_checks(
+        &self,
+        command: RecordRequestChecksCommand,
+    ) -> Result<RequestChecksMutation, PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let created_runs = start_runs(
+            &tx,
+            &command.revisions,
+            command.runs,
+            command.evaluation.updated_at_unix,
+        )
+        .await?;
+        for revision in &command.revisions {
+            save_workflow_revision(&tx, revision, command.evaluation.updated_at_unix).await?;
+        }
+        save_evaluation(&tx, &command.evaluation).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(RequestChecksMutation {
+            evaluation: command.evaluation,
+            created_runs,
+        })
+    }
+
+    /// A maintainer starts the checks recorded for the request's current head.
+    pub async fn approve_request_checks(
+        &self,
+        command: ApproveRequestChecksCommand,
+    ) -> Result<RequestChecksMutation, PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let (repo, request) =
+            lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
+        ensure_user_exists(&tx, &command.actor_user_id).await?;
+        if !repo.access.is_maintainer() {
+            return Err(PostgresError::permission_denied("repo maintainer required"));
+        }
+        let mut evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("request head has no recorded checks"))?;
+        if evaluation.state != RequestCheckEvaluationState::AwaitingApproval {
+            return Err(PostgresError::conflict(
+                "request checks are not awaiting approval",
+            ));
+        }
+        let mut revisions = Vec::with_capacity(evaluation.checks.len());
+        let mut runs = Vec::with_capacity(evaluation.checks.len());
+        for check in &evaluation.checks {
+            let identity = WorkflowIdentity::new(
+                &request.repo_id,
+                scope_domain::runs::workflow::identity::WorkflowPath::parse(
+                    check.workflow_path.clone(),
+                )
+                .map_err(PostgresError::invalid_input)?,
+            )
+            .map_err(PostgresError::invalid_input)?;
+            let revision = entities::workflow_revision::Entity::find_by_id(
+                check.workflow_revision_digest.clone(),
+            )
+            .one(&tx)
+            .await
+            .map_err(PostgresError::internal)?
+            .ok_or_else(|| PostgresError::internal_message("recorded check revision is missing"))?
+            .try_into_domain(identity)?;
+            runs.push(check.run(
+                &request,
+                &revision,
+                &command.actor_user_id,
+                command.now_unix,
+            )?);
+            revisions.push(revision);
+        }
+        let run_ids = runs.iter().map(|run| run.id.clone()).collect();
+        let created_runs = start_runs(&tx, &revisions, runs, command.now_unix).await?;
+        evaluation.approve(run_ids, command.now_unix)?;
+        save_evaluation(&tx, &evaluation).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(RequestChecksMutation {
+            evaluation,
+            created_runs,
+        })
+    }
+
+    pub async fn request_check_evaluation(
+        &self,
+        request_id: &str,
+        head_oid: &str,
+    ) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
+        evaluation_for_head(self.db.as_ref(), request_id, head_oid).await
+    }
+
+    /// The evaluation for each `(request id, head oid)` pair that has one.
+    pub async fn request_check_evaluations(
+        &self,
+        heads: &[(String, String)],
+    ) -> Result<Vec<RequestCheckEvaluation>, PostgresError> {
+        if heads.is_empty() {
+            return Ok(Vec::new());
+        }
+        let request_ids = heads.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        entities::request_check_evaluation::Entity::find()
+            .filter(entities::request_check_evaluation::Column::RequestId.is_in(request_ids))
+            .all(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)?
+            .into_iter()
+            .filter(|model| {
+                heads
+                    .iter()
+                    .any(|(id, head)| id == &model.request_id && head == &model.head_oid)
+            })
+            .map(entities::request_check_evaluation::Model::try_into_domain)
+            .collect()
+    }
+}
+
+async fn start_runs(
+    tx: &DatabaseTransaction,
+    revisions: &[WorkflowRevision],
+    runs: Vec<Run>,
+    _now_unix: u64,
+) -> Result<Vec<Run>, PostgresError> {
+    let mut created = Vec::new();
+    for run in runs {
+        let revision = revisions
+            .iter()
+            .find(|revision| revision.digest() == run.workflow_revision_digest)
+            .cloned()
+            .ok_or_else(|| {
+                PostgresError::invalid_input("request check run has no workflow revision")
+            })?;
+        let stored = enqueue_run_in_transaction(tx, run, revision).await?;
+        if stored.inserted {
+            created.push(stored.run);
+        }
+    }
+    Ok(created)
+}
+
+async fn evaluation_for_head<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+    head_oid: &str,
+) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
+    entities::request_check_evaluation::Entity::find_by_id((
+        request_id.to_string(),
+        head_oid.to_string(),
+    ))
+    .one(conn)
+    .await
+    .map_err(PostgresError::internal)?
+    .map(entities::request_check_evaluation::Model::try_into_domain)
+    .transpose()
+}
+
+async fn save_evaluation(
+    tx: &DatabaseTransaction,
+    evaluation: &RequestCheckEvaluation,
+) -> Result<(), PostgresError> {
+    let model = entities::request_check_evaluation::Model::from_domain(evaluation)?;
+    entities::request_check_evaluation::Entity::insert(model.into_active_model())
+        .on_conflict(
+            OnConflict::columns([
+                entities::request_check_evaluation::Column::RequestId,
+                entities::request_check_evaluation::Column::HeadOid,
+            ])
+            .update_columns([
+                entities::request_check_evaluation::Column::State,
+                entities::request_check_evaluation::Column::Message,
+                entities::request_check_evaluation::Column::Checks,
+                entities::request_check_evaluation::Column::UpdatedAtUnix,
+            ])
+            .to_owned(),
+        )
+        .exec(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    Ok(())
+}

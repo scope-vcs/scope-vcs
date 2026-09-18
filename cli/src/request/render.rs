@@ -326,6 +326,14 @@ fn mergeability_label(request: &RequestSummaryResponse) -> String {
             .reason
             .clone()
             .unwrap_or_else(|| "request branch has not been pushed".to_string()),
+        RequestMergeabilityStatus::ChecksAwaitingApproval
+        | RequestMergeabilityStatus::ChecksPending
+        | RequestMergeabilityStatus::ChecksFailed
+        | RequestMergeabilityStatus::ChecksConfigurationError => request
+            .mergeability
+            .reason
+            .clone()
+            .unwrap_or_else(|| "checks have not passed".to_string()),
     }
 }
 

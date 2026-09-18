@@ -25,14 +25,26 @@ pub const MAX_WORKFLOW_TIMEOUT_SECONDS: u64 = 24 * 60 * 60;
 pub struct WorkflowTriggers {
     manual: bool,
     push_main: bool,
+    // Absent when false, so definitions written before request triggers keep their digest.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    request: bool,
 }
 
 impl WorkflowTriggers {
-    pub fn new(manual: bool, push_main: bool) -> Result<Self, WorkflowError> {
-        if !manual && !push_main {
+    pub fn new(manual: bool, push_main: bool, request: bool) -> Result<Self, WorkflowError> {
+        if !manual && !push_main && !request {
             return Err(WorkflowError::MissingTrigger);
         }
-        Ok(Self { manual, push_main })
+        Ok(Self {
+            manual,
+            push_main,
+            request,
+        })
+    }
+
+    /// Runs on every push to an open or draft request; a merge waits for it.
+    pub fn request(&self) -> bool {
+        self.request
     }
 
     pub fn manual(&self) -> bool {
@@ -266,6 +278,9 @@ struct PersistedCompiledWorkflow {
 struct PersistedWorkflowTriggers {
     manual: bool,
     push_main: bool,
+    // Revisions persisted before request triggers existed carry no field.
+    #[serde(default)]
+    request: bool,
 }
 
 #[derive(Deserialize)]
@@ -317,9 +332,12 @@ impl<'de> Deserialize<'de> for CompiledWorkflow {
         D: Deserializer<'de>,
     {
         let persisted = PersistedCompiledWorkflow::deserialize(deserializer)?;
-        let triggers =
-            WorkflowTriggers::new(persisted.triggers.manual, persisted.triggers.push_main)
-                .map_err(D::Error::custom)?;
+        let triggers = WorkflowTriggers::new(
+            persisted.triggers.manual,
+            persisted.triggers.push_main,
+            persisted.triggers.request,
+        )
+        .map_err(D::Error::custom)?;
         let jobs = persisted
             .jobs
             .into_iter()
@@ -562,7 +580,7 @@ mod tests {
         .unwrap();
         let workflow = CompiledWorkflow::new(
             "Checks",
-            WorkflowTriggers::new(true, true).unwrap(),
+            WorkflowTriggers::new(true, true, false).unwrap(),
             vec![test, build],
         )
         .unwrap();

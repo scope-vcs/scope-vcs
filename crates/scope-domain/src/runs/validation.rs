@@ -4,7 +4,7 @@ pub(super) fn is_git_oid(value: &str) -> bool {
     value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-pub(super) fn validate_git_oid(label: &str, value: &str) -> Result<(), DomainError> {
+pub(crate) fn validate_git_oid(label: &str, value: &str) -> Result<(), DomainError> {
     if !is_git_oid(value) {
         return Err(DomainError::invalid_input(format!(
             "{label} must be a SHA-1 hex digest"
@@ -13,7 +13,7 @@ pub(super) fn validate_git_oid(label: &str, value: &str) -> Result<(), DomainErr
     Ok(())
 }
 
-pub(super) fn validate_sha256_hash(label: &str, value: &str) -> Result<(), DomainError> {
+pub(crate) fn validate_sha256_hash(label: &str, value: &str) -> Result<(), DomainError> {
     if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(DomainError::invalid_input(format!(
             "{label} must be a SHA-256 hex digest"

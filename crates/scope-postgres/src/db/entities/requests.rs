@@ -1,9 +1,10 @@
 use super::*;
 use scope_domain::requests::{
     Request, RequestActorRole, RequestAttention, RequestAttentionReason, RequestAttentionState,
-    RequestAudience, RequestClaim, RequestDiscussion, RequestDiscussionAnchor,
-    RequestDiscussionReadState, RequestDiscussionReply, RequestDiscussionStatus, RequestEvent,
-    RequestEventKind, RequestEventPayload, RequestInvitee, RequestRating, RequestRevision,
+    RequestAudience, RequestCheckEvaluation, RequestClaim, RequestDiscussion,
+    RequestDiscussionAnchor, RequestDiscussionReadState, RequestDiscussionReply,
+    RequestDiscussionStatus, RequestEvent, RequestEventKind, RequestEventPayload, RequestInvitee,
+    RequestRating, RequestRevision,
 };
 use scope_domain::{content::SourceBlob, policy::ScopePath};
 
@@ -610,6 +611,54 @@ pub mod request_discussion_read_state {
                     "discussion read position",
                 )?,
                 updated_at_unix: i64_to_u64(self.updated_at_unix, "discussion read time")?,
+            })
+        }
+    }
+}
+
+pub mod request_check_evaluation {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "scope_request_check_evaluations")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub request_id: String,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub head_oid: String,
+        pub state: String,
+        pub message: Option<String>,
+        pub checks: Json,
+        pub created_at_unix: i64,
+        pub updated_at_unix: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+
+    impl Model {
+        pub fn from_domain(value: &RequestCheckEvaluation) -> Result<Self, PostgresError> {
+            Ok(Self {
+                request_id: value.request_id.clone(),
+                head_oid: value.head_oid.clone(),
+                state: encode_enum(value.state)?,
+                message: value.message.clone(),
+                checks: encode_json(&value.checks)?,
+                created_at_unix: u64_to_i64(value.created_at_unix, "request check creation time")?,
+                updated_at_unix: u64_to_i64(value.updated_at_unix, "request check update time")?,
+            })
+        }
+
+        pub fn try_into_domain(self) -> Result<RequestCheckEvaluation, PostgresError> {
+            Ok(RequestCheckEvaluation {
+                request_id: self.request_id,
+                head_oid: self.head_oid,
+                state: decode_enum(self.state)?,
+                message: self.message,
+                checks: decode_json(self.checks)?,
+                created_at_unix: i64_to_u64(self.created_at_unix, "request check creation time")?,
+                updated_at_unix: i64_to_u64(self.updated_at_unix, "request check update time")?,
             })
         }
     }
