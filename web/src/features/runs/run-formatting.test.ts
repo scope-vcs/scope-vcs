@@ -4,6 +4,7 @@ import {
   elapsedDuration,
   formatDuration,
   runDisplayState,
+  runTriggerLabel,
 } from './run-formatting'
 
 describe('run formatting', () => {
@@ -26,6 +27,12 @@ describe('run formatting', () => {
     assert.equal(elapsedDuration(100, null, 145), '45s')
     assert.equal(elapsedDuration(100, 130, 999), '30s')
     assert.equal(elapsedDuration(null, null, 145), null)
+  })
+
+  it('names how each run started in a reader’s words', () => {
+    assert.equal(runTriggerLabel('push-main'), 'push')
+    assert.equal(runTriggerLabel('request'), 'request')
+    assert.equal(runTriggerLabel('manual'), 'manual')
   })
 
   it('formats durations for scanning', () => {

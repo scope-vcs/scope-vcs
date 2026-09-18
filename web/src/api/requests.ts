@@ -3,6 +3,7 @@ import { requestRoute } from './paths'
 import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
 import type { ReviewFileDiff, RequestParams } from './types'
 import type {
+  RequestChecksResponse,
   RequestDetailResponse,
   RequestQueuePageResponse,
   RequestRatingResponse,
@@ -31,6 +32,27 @@ export async function loadRequestForRequest(
     requestPath(data),
     apiValidators.RequestDetailResponse,
     { auth: 'optional' },
+  )
+}
+
+export async function getRequestChecks(
+  data: RequestParams,
+  signal?: AbortSignal,
+): Promise<RequestChecksResponse> {
+  return createApiClient().get(
+    requestRoute(ApiRouteTemplates.repoRequestChecks, data),
+    apiValidators.RequestChecksResponse,
+    { auth: 'optional', signal },
+  )
+}
+
+export async function approveRequestChecks(
+  data: RequestParams,
+): Promise<RequestChecksResponse> {
+  return createApiClient().post(
+    requestRoute(ApiRouteTemplates.repoRequestChecksApprove, data),
+    apiValidators.RequestChecksResponse,
+    { auth: 'required' },
   )
 }
 

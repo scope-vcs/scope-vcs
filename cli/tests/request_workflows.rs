@@ -6,7 +6,7 @@ mod support;
 use axum::{
     Json, Router,
     extract::{OriginalUri, Query},
-    routing::get,
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use std::{
@@ -223,8 +223,8 @@ fn request_diff_defaults_to_visible_text_changes() {
 }
 
 #[test]
-fn contributor_request_checks_use_server_visibility() {
-    let dir = TempDir::new("request-contributor-checks");
+fn request_checks_read_the_server_evaluation_for_the_head() {
+    let dir = TempDir::new("request-checks");
     let server = FixtureServer::start();
     let output = server
         .command(dir.path())
@@ -240,19 +240,31 @@ fn contributor_request_checks_use_server_visibility() {
         .output()
         .unwrap();
     let result = success(output);
-    assert_eq!(result["result"]["head_oid"], OID);
-    assert_eq!(result["result"]["mergeability"]["status"], "Draft");
-    assert_eq!(result["result"]["workflow_runs_available"], false);
-    assert_eq!(result["result"]["runs"], json!([]));
-    assert_eq!(server.seen.lock().unwrap().len(), 1);
+    assert_eq!(result["result"]["checks"]["head_oid"], OID);
+    assert_eq!(result["result"]["checks"]["state"], "awaiting-approval");
+    assert_eq!(
+        result["result"]["checks"]["checks"][0]["run_id"],
+        Value::Null
+    );
+    assert_eq!(
+        result["result"]["checks"]["mergeability"]["status"],
+        "ChecksAwaitingApproval"
+    );
+    let seen = server.seen.lock().unwrap();
+    assert_eq!(
+        seen.iter()
+            .filter(|uri| uri.contains("/requests/req_one/checks"))
+            .count(),
+        1,
+        "{seen:?}"
+    );
+    assert!(!seen.iter().any(|uri| uri.contains("/runs")), "{seen:?}");
 }
 
 #[test]
-fn maintainer_request_checks_filter_exact_head_across_run_history_pages() {
-    let dir = TempDir::new("request-maintainer-checks");
-    let mut repo = repository();
-    repo["access"]["actor"] = "Member".into();
-    let server = FixtureServer::with_repository(request(), repo);
+fn approving_request_checks_starts_them_and_prints_the_refreshed_evaluation() {
+    let dir = TempDir::new("request-checks-approve");
+    let server = FixtureServer::start();
     let output = server
         .command(dir.path())
         .args([
@@ -263,20 +275,23 @@ fn maintainer_request_checks_filter_exact_head_across_run_history_pages() {
             "checks",
             "--request",
             "req_one",
+            "--approve",
         ])
         .output()
         .unwrap();
     let result = success(output);
-    assert_eq!(result["result"]["workflow_runs_available"], true);
-    assert_eq!(result["result"]["runs"].as_array().unwrap().len(), 2);
-    assert_eq!(result["result"]["runs"][0]["id"], "run_current");
+    assert_eq!(result["result"]["checks"]["state"], "started");
+    assert_eq!(result["result"]["checks"]["checks"][0]["run_id"], "run_one");
+    assert_eq!(
+        result["result"]["checks"]["checks"][0]["run_state"],
+        "queued"
+    );
+    assert_eq!(result["result"]["checks"]["can_approve"], false);
+    let seen = server.seen.lock().unwrap();
     assert!(
-        server
-            .seen
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|uri| uri.contains("after=next-page"))
+        seen.iter()
+            .any(|uri| uri.contains("/requests/req_one/checks/approve")),
+        "{seen:?}"
     );
 }
 
@@ -496,27 +511,25 @@ impl FixtureServer {
         let captured = edited.clone();
         let revisions_seen = inspected.clone();
         let started = inspected.clone();
-        let run_seen = inspected.clone();
+        let checks_seen = inspected.clone();
+        let approval_seen = inspected.clone();
         let start_detail = detail.clone();
         let show_detail = detail.clone();
-        let runs_visible = repo["access"]["actor"] != "Public";
         let app = Router::new()
                     .route("/v1/session", get(|| async { Json(support::session_response("usr_test", "owner", "test@example.test")) }))
                     .route("/v1/repos/owner/repo", get(move || { let repo=repo.clone(); async move { Json(repo) } }))
-                    .route("/v1/repos/owner/repo/runs", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| {
-                        let seen = run_seen.clone();
+                    .route("/v1/repos/owner/repo/requests/req_one/checks", get(move |OriginalUri(uri): OriginalUri| {
+                        let seen = checks_seen.clone();
                         async move {
                             seen.lock().unwrap().push(uri.to_string());
-                            assert_eq!(query.get("git_oid").map(String::as_str), Some(OID));
-                            if !runs_visible {
-                                return (axum::http::StatusCode::FORBIDDEN, Json(json!({"code":"forbidden", "message":"repository membership required", "retryable":false})));
-                            }
-                            let body = if query.contains_key("after") {
-                                json!({"runs":[run_summary("run_current_older", OID)], "next_cursor":null})
-                            } else {
-                                json!({"runs":[run_summary("run_current", OID)], "next_cursor":"next-page"})
-                            };
-                            (axum::http::StatusCode::OK, Json(body))
+                            Json(checks_evaluation("awaiting-approval", None))
+                        }
+                    }))
+                    .route("/v1/repos/owner/repo/requests/req_one/checks/approve", post(move |OriginalUri(uri): OriginalUri| {
+                        let seen = approval_seen.clone();
+                        async move {
+                            seen.lock().unwrap().push(uri.to_string());
+                            Json(checks_evaluation("started", Some(("run_one", "queued"))))
                         }
                     }))
                     .route("/v1/repos/owner/repo/requests", get(|| async { Json(json!({"requests":[list_item("req_one", "fix-one", "Open"), list_item("req_two", "fix-two", "Closed"), list_item("req_three", "fix-three", "Open")], "next_cursor":null})) }).post(move || { let started=started.clone(); let detail=start_detail.clone(); async move { started.lock().unwrap().push("POST request".to_string()); Json(json!({"request":detail})) } }))
@@ -544,6 +557,21 @@ fn request() -> Value {
     json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_test","author_role":"Public","audience":"Public","base_main_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,"submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,"can_wait_after_reply":false,"can_edit_identity":true,"can_pull_branch":false,"can_push_branch":true,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":false,"can_merge":false},"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
 }
 
-fn run_summary(id: &str, oid: &str) -> Value {
-    json!({"id":id,"workflow_name":"Checks","git_oid":oid,"trigger":"manual","state":"succeeded","cancellation_requested":false,"created_at_unix":1,"updated_at_unix":2,"completed_at_unix":2,"can_cancel":false,"can_retry":false})
+fn checks_evaluation(state: &str, run: Option<(&str, &str)>) -> Value {
+    let awaiting = state == "awaiting-approval";
+    json!({
+        "request_id":"req_one","head_oid":OID,"state":state,"message":null,
+        "checks":[{"workflow_path":"/.scope/runs/checks.yml","workflow_name":"Checks",
+            "run_id":run.map(|(id, _)| id),"run_state":run.map(|(_, state)| state)}],
+        "can_approve":awaiting,
+        "mergeability":{
+            "status": if awaiting { "ChecksAwaitingApproval" } else { "ChecksPending" },
+            "current_main_oid":OID,"request_head_oid":OID,
+            "reason": if awaiting {
+                "checks are waiting for a maintainer to start them"
+            } else {
+                "checks have not finished"
+            }
+        }
+    })
 }

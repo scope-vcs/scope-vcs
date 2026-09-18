@@ -7,7 +7,7 @@ use crate::{
         branch_config_value, fetch_scope_remote_with_bearer, run_git_in_repo, scope_remote_head_oid,
     },
 };
-use args::{RequestCheckoutArgs, RequestDiffArgs};
+use args::{RequestCheckoutArgs, RequestChecksArgs, RequestDiffArgs};
 use scope_api_contract::RequestRevisionInspectionState;
 
 pub(super) fn checkout_request(
@@ -228,72 +228,23 @@ pub(super) fn diff_request(
 pub(super) fn request_checks(
     git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
-    target: RequestTargetArgs,
+    args: RequestChecksArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, detail) = load_exact_request(git_repo, api, target)?;
-    let mut workflow_runs_available = true;
-    let mut runs = Vec::new();
-    let mut cursor = None;
-    loop {
-        let page = match crate::api::run_history(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            None,
-            Some(detail.request.head_oid.as_str()),
-            100,
-            cursor.as_deref(),
-        ) {
-            Ok(page) => page,
-            Err(error)
-                if error
-                    .downcast_ref::<crate::error::CliError>()
-                    .is_some_and(|error| error.response().code == ErrorCode::Forbidden) =>
-            {
-                workflow_runs_available = false;
-                runs.clear();
-                break;
-            }
-            Err(error) => return Err(error),
-        };
-        runs.extend(page.runs);
-        let Some(next) = page.next_cursor else {
-            break;
-        };
-        cursor = Some(next);
-    }
-    let mut lines = vec![
-        format!(
-            "Request {request_id}, head {}",
-            short_oid(detail.request.head_oid.as_str())
-        ),
-        format!("Mergeability: {:?}", detail.request.mergeability.status),
-    ];
-    if let Some(reason) = &detail.request.mergeability.reason {
-        lines.push(terminal_text(reason));
-    }
-    for run in &runs {
-        lines.push(format!(
-            "{}: {:?} ({})",
-            terminal_text(&run.workflow_name),
-            run.state,
-            terminal_text(&run.id)
-        ));
-    }
-    if !workflow_runs_available {
-        lines.push("Workflow runs are visible to repository maintainers.".to_string());
-    } else if runs.is_empty() {
-        lines.push("No workflow runs for this request head. Request pushes do not automatically start workflows.".to_string());
-    }
+    let (context, request_id) =
+        load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
+    let target = api_target(&context, &request_id);
+    // Approval answers with the refreshed evaluation, so one call reports both.
+    let checks = if args.approve {
+        crate::api::approve_request_checks(api, target)?
+    } else {
+        crate::api::request_checks(api, target)?
+    };
+    let lines = super::render::request_checks_lines(&checks);
     Ok(RequestCommandOutcome::new(
         "request.checks",
         RequestCommandResult::Checks(ChecksResult {
             repo: context.repo,
-            request_id,
-            head_oid: detail.request.head_oid.to_string(),
-            mergeability: detail.request.mergeability,
-            workflow_runs_available,
-            runs,
+            checks,
         }),
         lines,
     ))

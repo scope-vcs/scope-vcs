@@ -85,6 +85,12 @@ scope request checkout --request fix-parser
 scope request merge --request fix-parser --yes
 ```
 
+Every push to a request evaluates the workflows its head asks for. A maintainer's
+push starts those checks at once; an outside contributor's push records them until a
+maintainer runs `scope request checks --approve`. `scope request checks` shows the
+evaluation, each workflow's run and state, and what merging still waits on: an open
+request merges only after every check succeeds.
+
 Request targets accept a name or a `req_` ID. Inside a request checkout, commands
 can infer the current request. List also supports `--audience public|private`
 and `--search TEXT`. Diff prints text hunks for server-visible files in the server-selected review revision. Use
@@ -114,7 +120,8 @@ scope run cancel RUN_ID
 scope run retry RUN_ID --no-watch
 ```
 
-Start uses a committed workflow and local Git source. Discovery, inspection,
+Start uses a committed workflow and local Git source. Runs that a request started
+carry the `request` trigger and list alongside the rest. Discovery, inspection,
 logs, cancellation, and retry support `--repo owner/repository` without a checkout.
 List supports `--after CURSOR` for the next page. Watching defaults to 1,800
 seconds, bounds reconnect attempts, and ignores duplicate log positions.

@@ -317,6 +317,7 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         RepositoryRunStepLogPageResponse,
         RepositoryRunWorkflowListResponse,
         RequestActivityPageResponse,
+        RequestChecksResponse,
         RequestCloseResponse,
         RequestDetailResponse,
         RequestDiscussionChangesResponse,
