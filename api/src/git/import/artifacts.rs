@@ -247,45 +247,36 @@ fn repository_landing_file_mutation(
         .map_err(ApiError::from)
 }
 
-fn capture_repository_workflow_catalog(
+/// The workflow definitions a head carries, or why they cannot be used.
+pub(crate) enum ReadWorkflowFiles {
+    Files(Vec<RepositoryWorkflowFile>),
+    Rejected(String),
+}
+
+/// The only reader of `.scope/runs` at a head, so its limits live in one place.
+pub(crate) fn read_repository_workflow_files(
     staging_repo: &FsPath,
-    repository_id: &str,
     head_oid: &str,
-    change_version: u64,
-) -> Result<RepositoryWorkflowCatalog, ApiError> {
+) -> Result<ReadWorkflowFiles, ApiError> {
     let workflow_entries = git_tree_entries_under(staging_repo, head_oid, ".scope/runs")?;
     if workflow_entries.len() > MAX_REPOSITORY_WORKFLOW_FILES {
-        return RepositoryWorkflowCatalog::rejected(
-            repository_id,
-            head_oid,
-            change_version,
-            format!(
-                "repository contains more than {MAX_REPOSITORY_WORKFLOW_FILES} workflow definitions"
-            ),
-        )
-        .map_err(ApiError::internal);
+        return Ok(ReadWorkflowFiles::Rejected(format!(
+            "repository contains more than {MAX_REPOSITORY_WORKFLOW_FILES} workflow definitions"
+        )));
     }
 
     let mut workflows = Vec::with_capacity(workflow_entries.len());
     for entry in workflow_entries {
         let path = format!("/{}", entry.path);
         if WorkflowPath::parse(path.clone()).is_err() {
-            return RepositoryWorkflowCatalog::rejected(
-                repository_id,
-                head_oid,
-                change_version,
-                format!("invalid workflow path {path}"),
-            )
-            .map_err(ApiError::internal);
+            return Ok(ReadWorkflowFiles::Rejected(format!(
+                "invalid workflow path {path}"
+            )));
         }
         if entry.size_bytes > MAX_WORKFLOW_DEFINITION_BYTES as u64 {
-            return RepositoryWorkflowCatalog::rejected(
-                repository_id,
-                head_oid,
-                change_version,
-                format!("workflow {path} exceeds {MAX_WORKFLOW_DEFINITION_BYTES} bytes"),
-            )
-            .map_err(ApiError::internal);
+            return Ok(ReadWorkflowFiles::Rejected(format!(
+                "workflow {path} exceeds {MAX_WORKFLOW_DEFINITION_BYTES} bytes"
+            )));
         }
         let source = git_blob_reference(entry.oid.clone(), entry.mode, entry.size_bytes);
         let output = run_git_output_bounded(
@@ -304,8 +295,24 @@ fn capture_repository_workflow_catalog(
                 .map_err(ApiError::internal)?,
         );
     }
-    RepositoryWorkflowCatalog::captured(repository_id, head_oid, change_version, workflows)
-        .map_err(ApiError::internal)
+    Ok(ReadWorkflowFiles::Files(workflows))
+}
+
+fn capture_repository_workflow_catalog(
+    staging_repo: &FsPath,
+    repository_id: &str,
+    head_oid: &str,
+    change_version: u64,
+) -> Result<RepositoryWorkflowCatalog, ApiError> {
+    match read_repository_workflow_files(staging_repo, head_oid)? {
+        ReadWorkflowFiles::Files(workflows) => {
+            RepositoryWorkflowCatalog::captured(repository_id, head_oid, change_version, workflows)
+        }
+        ReadWorkflowFiles::Rejected(message) => {
+            RepositoryWorkflowCatalog::rejected(repository_id, head_oid, change_version, message)
+        }
+    }
+    .map_err(ApiError::internal)
 }
 
 #[cfg(test)]

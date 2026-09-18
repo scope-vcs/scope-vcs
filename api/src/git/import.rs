@@ -4,7 +4,8 @@ mod segment_upload;
 mod staging;
 
 pub(crate) use self::artifacts::{
-    PreparedReceivePackUpdate, ReviewedUpdateMode, reviewed_update_from_staging_repo,
+    PreparedReceivePackUpdate, ReadWorkflowFiles, ReviewedUpdateMode,
+    read_repository_workflow_files, reviewed_update_from_staging_repo,
 };
 pub(crate) use self::repo_io::{
     git_changed_tree_entries_until, git_snapshot_from_ref, validate_pushed_commit_range,

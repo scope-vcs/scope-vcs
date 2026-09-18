@@ -28,8 +28,8 @@ use scope_domain::{
         access::{RepositoryAccess, RepositoryActor},
     },
     requests::{
-        Request, RequestAudience, RequestViewer, canonical_request_ref, request_actor_role,
-        request_policy,
+        Request, RequestAudience, RequestChecksOutcome, RequestViewer, canonical_request_ref,
+        request_actor_role, request_mergeability, request_policy,
     },
     reviewed_updates::content::apply_request_merge_to_repo,
     runs::catalog::RepositoryWorkflowCatalog,
@@ -119,6 +119,14 @@ async fn merge_request_inner(
             return Err(ApiError::forbidden("repo maintainer required"));
         }
         return Err(ApiError::conflict("request cannot be merged"));
+    }
+    // The gate is separate from permission: the head's checks must have cleared.
+    let checks = crate::use_cases::request_checks::checks_outcome(state, &request).await?;
+    if checks != RequestChecksOutcome::Clear {
+        let decision = request_mergeability(&request, access, checks);
+        return Err(ApiError::conflict(
+            decision.reason.unwrap_or("request checks have not cleared"),
+        ));
     }
 
     let analytics_event = ProductEvent::request_merged(

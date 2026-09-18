@@ -272,7 +272,7 @@ pub(super) async fn persist_request_ref_revision(
         )
         .await;
     match mutation {
-        Ok(_) => {
+        Ok(mutation) => {
             let _update_lock = update_lock;
             state
                 .product_analytics
@@ -286,6 +286,15 @@ pub(super) async fn persist_request_ref_revision(
                 .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised)
                 .await;
             persisted.fence.release().await;
+            crate::use_cases::request_checks::best_effort_evaluate_request_checks(
+                state,
+                &incarnation,
+                &mutation.request,
+                actor_user_id,
+                repo.access_for_user_id(actor_user_id).is_maintainer(),
+                staging_repo,
+            )
+            .await;
         }
         Err(error) => {
             let rollback_state = state.clone();
