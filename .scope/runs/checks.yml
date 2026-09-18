@@ -1,6 +1,7 @@
 name: Scope checks
 on:
   manual: true
+  request: true
   push:
     branches:
       - main
