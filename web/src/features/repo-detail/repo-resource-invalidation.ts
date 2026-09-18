@@ -1,5 +1,6 @@
 import { requestQueueResource } from '../requests/request-queue-cache'
 import { requestChangesResource } from '../requests/request-changes-resource'
+import { requestChecksResource } from '../requests/request-checks-resource'
 import { requestDiscussionReferenceResource } from '../requests/request-changes-discussion-references'
 import type { RepoChangeEvent } from '../../api/types.generated'
 import { requestActivityIdentity, requestActivityResource } from '../requests/request-activity-resource'
@@ -22,6 +23,7 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent) 
     repositoryActivityResource.invalidate(scope)
     repositoryDependencyResource.invalidate(scope)
     requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+    requestChecksResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
   } else if (event.kind === 'DependenciesChanged') {
     repositoryDependencyResource.invalidate(scope)
   } else if (typeof event.kind === 'object' && 'RequestTimelineChanged' in event.kind) {
@@ -31,6 +33,10 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent) 
     requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0${timeline.request_id}\0`))
     requestActivityResource.invalidate(requestActivityIdentity(scope, timeline.request_id))
     requestAttachmentResource.invalidate(requestAttachmentResourceIdentity(scope, timeline.request_id))
+  } else if (typeof event.kind === 'object' && 'RunChanged' in event.kind) {
+    // A run change can only move a check the viewer already has, so refresh the
+    // evaluations in this scope instead of resolving the run back to its request.
+    requestChecksResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
   } else if (typeof event.kind === 'object' && 'RequestAttachmentChanged' in event.kind) {
     requestAttachmentResource.invalidate(requestAttachmentResourceIdentity(scope, event.kind.RequestAttachmentChanged.request_id))
   }

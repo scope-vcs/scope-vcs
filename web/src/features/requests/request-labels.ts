@@ -1,6 +1,8 @@
 import type { BadgeVariant } from '@/components/ui/badge'
 import { shortOid } from '../../lib/short-oid'
 import type {
+  RequestCheckEvaluationState,
+  RequestChecksResponse,
   RequestEventResponse,
   RequestListItemResponse,
   RequestSummaryResponse,
@@ -36,14 +38,22 @@ const MERGEABILITY = {
   Merged: { label: 'Merged', tone: 'success' },
   NotMaintainer: { label: 'Maintainer merges', tone: 'outline' },
   MissingRequestBranch: { label: 'Branch missing', tone: 'warning' },
-  ChecksAwaitingApproval: { label: 'Checks need approval', tone: 'warning' },
-  ChecksPending: { label: 'Checks running', tone: 'neutral' },
+  ChecksAwaitingApproval: { label: 'Checks await approval', tone: 'warning' },
+  ChecksPending: { label: 'Checks running', tone: 'info' },
   ChecksFailed: { label: 'Checks failed', tone: 'danger' },
-  ChecksConfigurationError: { label: 'Workflow invalid', tone: 'danger' },
+  ChecksConfigurationError: { label: 'Checks misconfigured', tone: 'danger' },
 } as const satisfies Record<
   RequestSummaryResponse['mergeability']['status'],
   { label: string; tone: BadgeVariant }
 >
+
+// What the evaluation itself says, when it is not simply the runs and their states.
+const CHECK_EVALUATION_NOTES = {
+  'no-checks': 'This head asks for no checks.',
+  'awaiting-approval': 'These checks wait for a maintainer to start them.',
+  'started': null,
+  'configuration-error': null,
+} as const satisfies Record<RequestCheckEvaluationState, string | null>
 
 type RequestLabelSource = RequestSummaryResponse | RequestListItemResponse
 
@@ -80,6 +90,13 @@ export function requestMergeabilityLabel(request: RequestLabelSource) {
 
 export function requestMergeabilityTone(request: RequestLabelSource): BadgeVariant {
   return MERGEABILITY[request.mergeability.status].tone
+}
+
+export function requestCheckEvaluationNote(checks: RequestChecksResponse) {
+  if (checks.state === 'configuration-error') {
+    return checks.message ?? 'This head’s workflow configuration is invalid.'
+  }
+  return CHECK_EVALUATION_NOTES[checks.state]
 }
 
 export function requestEventBody(event: RequestEventResponse) {

@@ -8,7 +8,7 @@ use crate::{
 };
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use output::run_state_label as state_label;
+pub(crate) use output::run_state_label;
 use reqwest::blocking::Client;
 use scope_api_contract::{CreateManualRunQuery, ResolveManualRunResponse, RunResponse, RunState};
 use std::time::Duration;
@@ -182,7 +182,7 @@ pub fn run_command(args: RunArgs) -> anyhow::Result<()> {
                 vec![format!(
                     "Cancellation requested for {} · {}",
                     run.id,
-                    state_label(run.state)
+                    run_state_label(run.state)
                 )],
             )
         }

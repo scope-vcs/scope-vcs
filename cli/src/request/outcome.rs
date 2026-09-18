@@ -136,9 +136,5 @@ pub(super) struct InspectedFile {
 #[derive(Serialize)]
 pub(super) struct ChecksResult {
     pub(super) repo: RepoSummaryResponse,
-    pub(super) request_id: String,
-    pub(super) head_oid: String,
-    pub(super) mergeability: scope_api_contract::RequestMergeabilityResponse,
-    pub(super) workflow_runs_available: bool,
-    pub(super) runs: Vec<scope_api_contract::RepositoryRunSummaryResponse>,
+    pub(super) checks: scope_api_contract::RequestChecksResponse,
 }

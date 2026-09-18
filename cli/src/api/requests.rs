@@ -128,6 +128,38 @@ pub fn request_file_diff(
     )
 }
 
+pub fn request_checks(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+) -> anyhow::Result<RequestChecksResponse> {
+    execute(
+        api.request(
+            reqwest::Method::GET,
+            routes::repo_request_checks(target.owner, target.repo, target.request_id),
+        ),
+        format!(
+            "load request checks {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
+    )
+}
+
+pub fn approve_request_checks(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+) -> anyhow::Result<RequestChecksResponse> {
+    execute(
+        api.request(
+            reqwest::Method::POST,
+            routes::repo_request_checks_approve(target.owner, target.repo, target.request_id),
+        ),
+        format!(
+            "approve request checks {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
+    )
+}
+
 pub fn close_request(
     api: ApiSession<'_>,
     owner: &str,
@@ -686,6 +718,35 @@ mod tests {
             "POST /v1/repos/owner/repo/requests/req_one/threads/dsc_one/reopen-and-reply HTTP/1.1"
         ));
         assert!(request.contains(r#""body_markdown":"New evidence""#));
+    }
+
+    #[test]
+    fn checks_wrappers_read_and_approve_the_head_evaluation() {
+        let body = format!(
+            r#"{{"request_id":"req_one","head_oid":"{oid}","state":"awaiting-approval","message":null,"checks":[{{"workflow_path":"/.scope/runs/checks.yml","workflow_name":"checks","run_id":null,"run_state":null}}],"can_approve":true,"mergeability":{{"status":"ChecksAwaitingApproval","current_main_oid":null,"request_head_oid":"{oid}","reason":"checks are waiting for a maintainer to start them"}}}}"#,
+            oid = "b".repeat(40),
+        );
+
+        let (api_url, read_server) = serve_once(StatusCode::OK, body.clone());
+        let checks =
+            request_checks(ApiSession::new(&Client::new(), &api_url, "token"), target()).unwrap();
+        assert!(checks.can_approve);
+        assert_eq!(checks.checks.len(), 1);
+        let request = read_server.join().unwrap();
+        assert!(
+            request.starts_with("GET /v1/repos/owner/repo/requests/req_one/checks HTTP/1.1"),
+            "{request}"
+        );
+
+        let (api_url, approve_server) = serve_once(StatusCode::OK, body);
+        approve_request_checks(ApiSession::new(&Client::new(), &api_url, "token"), target())
+            .unwrap();
+        let request = approve_server.join().unwrap();
+        assert!(
+            request
+                .starts_with("POST /v1/repos/owner/repo/requests/req_one/checks/approve HTTP/1.1"),
+            "{request}"
+        );
     }
 
     fn target() -> RequestTarget<'static> {

@@ -51,7 +51,7 @@ export function runTriggerLabel(trigger: RepositoryRunTrigger) {
       return 'push'
     case 'request':
       return 'request'
-    default:
+    case 'manual':
       return 'manual'
   }
 }

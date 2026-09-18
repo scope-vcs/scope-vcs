@@ -1,9 +1,10 @@
 use crate::api::{
     LeaveRequestResponse, RepoSummaryResponse, RepositoryActor, RequestActivityPageResponse,
-    RequestAudience, RequestCloseResponse, RequestDiscussionMutationResponse,
+    RequestAudience, RequestCheckEvaluationState, RequestCheckResponse, RequestChecksResponse,
+    RequestCloseResponse, RequestDiscussionMutationResponse,
     RequestDiscussionReplyMutationResponse, RequestEventPayload, RequestInviteeMutationResponse,
-    RequestListItemResponse, RequestMergeabilityStatus, RequestMutationResponse,
-    RequestPermissionsResponse, RequestState, RequestSummaryResponse,
+    RequestListItemResponse, RequestMergeabilityResponse, RequestMergeabilityStatus,
+    RequestMutationResponse, RequestPermissionsResponse, RequestState, RequestSummaryResponse,
 };
 use crate::display::{short_oid, terminal_text};
 
@@ -203,7 +204,10 @@ pub(super) fn request_detail_lines(request: &RequestSummaryResponse) -> Vec<Stri
         "  capabilities: {}",
         capabilities_label(&request.permissions)
     ));
-    lines.push(format!("  mergeability: {}", mergeability_label(request)));
+    lines.push(format!(
+        "  mergeability: {}",
+        mergeability_label(&request.mergeability)
+    ));
     if let Some(merged_at) = request.merged_at_unix {
         lines.push(format!(
             "  merge: {} → {} · at {merged_at}",
@@ -310,27 +314,78 @@ fn capabilities_label(permissions: &RequestPermissionsResponse) -> String {
     }
 }
 
-fn mergeability_label(request: &RequestSummaryResponse) -> String {
-    match request.mergeability.status {
+/// The checks the request head asks for, and what merging still waits on.
+pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String> {
+    let mut lines = vec![
+        format!(
+            "Request {}, head {}",
+            terminal_text(&checks.request_id),
+            short_oid(checks.head_oid.as_str())
+        ),
+        format!("Checks: {}", evaluation_state_label(checks.state)),
+    ];
+    if let Some(message) = &checks.message {
+        lines.push(format!("  {}", terminal_text(message)));
+    }
+    if matches!(checks.state, RequestCheckEvaluationState::NoChecks) {
+        lines.push("  This head asks for no checks.".to_string());
+    }
+    for check in &checks.checks {
+        lines.push(format!(
+            "  {} · {}",
+            terminal_text(&check.workflow_name),
+            check_run_label(check)
+        ));
+    }
+    lines.push(format!(
+        "Mergeability: {}",
+        mergeability_label(&checks.mergeability)
+    ));
+    if checks.can_approve {
+        lines.push("Start these checks with `scope request checks --approve`.".to_string());
+    }
+    lines
+}
+
+fn evaluation_state_label(state: RequestCheckEvaluationState) -> &'static str {
+    match state {
+        RequestCheckEvaluationState::NoChecks => "none asked for",
+        RequestCheckEvaluationState::AwaitingApproval => "waiting for maintainer approval",
+        RequestCheckEvaluationState::Started => "started",
+        RequestCheckEvaluationState::ConfigurationError => "workflow configuration error",
+    }
+}
+
+fn check_run_label(check: &RequestCheckResponse) -> String {
+    match (&check.run_id, check.run_state) {
+        (Some(run_id), Some(state)) => format!(
+            "{} ({})",
+            crate::run::run_state_label(state),
+            terminal_text(run_id)
+        ),
+        (Some(run_id), None) => format!("run is gone ({})", terminal_text(run_id)),
+        (None, _) => "not started".to_string(),
+    }
+}
+
+fn mergeability_label(mergeability: &RequestMergeabilityResponse) -> String {
+    match mergeability.status {
         RequestMergeabilityStatus::Ready => "ready".to_string(),
         RequestMergeabilityStatus::Closed => "closed".to_string(),
         RequestMergeabilityStatus::Merged => "merged".to_string(),
         RequestMergeabilityStatus::Draft => "draft".to_string(),
-        RequestMergeabilityStatus::NotMaintainer => request
-            .mergeability
+        RequestMergeabilityStatus::NotMaintainer => mergeability
             .reason
             .clone()
             .unwrap_or_else(|| "repo maintainer required".to_string()),
-        RequestMergeabilityStatus::MissingRequestBranch => request
-            .mergeability
+        RequestMergeabilityStatus::MissingRequestBranch => mergeability
             .reason
             .clone()
             .unwrap_or_else(|| "request branch has not been pushed".to_string()),
         RequestMergeabilityStatus::ChecksAwaitingApproval
         | RequestMergeabilityStatus::ChecksPending
         | RequestMergeabilityStatus::ChecksFailed
-        | RequestMergeabilityStatus::ChecksConfigurationError => request
-            .mergeability
+        | RequestMergeabilityStatus::ChecksConfigurationError => mergeability
             .reason
             .clone()
             .unwrap_or_else(|| "checks have not passed".to_string()),
@@ -451,6 +506,123 @@ mod tests {
         assert_eq!(wait_label(Some(3_590), 3_600), "<1m");
         assert_eq!(wait_label(Some(0), 3_600), "1h");
         assert_eq!(wait_label(Some(4_000), 3_600), "<1m");
+    }
+
+    #[test]
+    fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
+        let checks: RequestChecksResponse = serde_json::from_value(json!({
+            "request_id": "req_one", "head_oid": oid('b'), "state": "awaiting-approval",
+            "message": null, "can_approve": true,
+            "checks": [
+                {"workflow_path": "/.scope/runs/checks.yml", "workflow_name": "checks\u{001b}[31m",
+                    "run_id": null, "run_state": null},
+                {"workflow_path": "/.scope/runs/lint.yml", "workflow_name": "lint",
+                    "run_id": null, "run_state": null}
+            ],
+            "mergeability": {
+                "status": "ChecksAwaitingApproval", "current_main_oid": oid('a'),
+                "request_head_oid": oid('b'),
+                "reason": "checks are waiting for a maintainer to start them"
+            }
+        }))
+        .unwrap();
+
+        let rendered = request_checks_lines(&checks).join("\n");
+
+        assert!(rendered.contains("head bbbbbbb"), "{rendered}");
+        assert!(
+            rendered.contains("waiting for maintainer approval"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("checks [31m · not started"), "{rendered}");
+        assert!(rendered.contains("lint · not started"), "{rendered}");
+        assert!(
+            rendered.contains("Mergeability: checks are waiting for a maintainer to start them"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("scope request checks --approve"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains('\u{1b}'), "{rendered:?}");
+    }
+
+    #[test]
+    fn started_checks_report_each_run_state_and_a_missing_run() {
+        let checks: RequestChecksResponse = serde_json::from_value(json!({
+            "request_id": "req_one", "head_oid": oid('b'), "state": "started",
+            "message": null, "can_approve": false,
+            "checks": [
+                {"workflow_path": "/.scope/runs/checks.yml", "workflow_name": "checks",
+                    "run_id": "run_a", "run_state": "succeeded"},
+                {"workflow_path": "/.scope/runs/lint.yml", "workflow_name": "lint",
+                    "run_id": "run_b", "run_state": "running"},
+                {"workflow_path": "/.scope/runs/docs.yml", "workflow_name": "docs",
+                    "run_id": "run_c", "run_state": null}
+            ],
+            "mergeability": {
+                "status": "ChecksPending", "current_main_oid": oid('a'),
+                "request_head_oid": oid('b'), "reason": "checks have not finished"
+            }
+        }))
+        .unwrap();
+
+        let rendered = request_checks_lines(&checks).join("\n");
+
+        assert!(rendered.contains("Checks: started"), "{rendered}");
+        assert!(
+            rendered.contains("checks · succeeded (run_a)"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("lint · running (run_b)"), "{rendered}");
+        assert!(
+            rendered.contains("docs · run is gone (run_c)"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("Mergeability: checks have not finished"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("--approve"), "{rendered}");
+    }
+
+    #[test]
+    fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
+        let no_checks: RequestChecksResponse = serde_json::from_value(json!({
+            "request_id": "req_one", "head_oid": oid('b'), "state": "no-checks",
+            "message": null, "can_approve": false, "checks": [],
+            "mergeability": {
+                "status": "Ready", "current_main_oid": oid('a'),
+                "request_head_oid": oid('b'), "reason": null
+            }
+        }))
+        .unwrap();
+        let broken: RequestChecksResponse = serde_json::from_value(json!({
+            "request_id": "req_one", "head_oid": oid('b'), "state": "configuration-error",
+            "message": "checks.yml: unknown key 'runs-on'", "can_approve": false, "checks": [],
+            "mergeability": {
+                "status": "ChecksConfigurationError", "current_main_oid": oid('a'),
+                "request_head_oid": oid('b'),
+                "reason": "the request head\u{2019}s workflow configuration is invalid"
+            }
+        }))
+        .unwrap();
+
+        let rendered = request_checks_lines(&no_checks).join("\n");
+        assert!(rendered.contains("Checks: none asked for"), "{rendered}");
+        assert!(rendered.contains("asks for no checks"), "{rendered}");
+        assert!(rendered.contains("Mergeability: ready"), "{rendered}");
+
+        let rendered = request_checks_lines(&broken).join("\n");
+        assert!(
+            rendered.contains("workflow configuration error"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("unknown key 'runs-on'"), "{rendered}");
+        assert!(
+            rendered.contains("workflow configuration is invalid"),
+            "{rendered}"
+        );
     }
 
     fn summary() -> RequestSummaryResponse {

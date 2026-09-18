@@ -42,8 +42,8 @@ pub(super) enum RequestCommand {
     Checkout(RequestCheckoutArgs),
     #[command(about = "Inspect the server-visible changes in a request revision")]
     Diff(RequestDiffArgs),
-    #[command(about = "Show request mergeability and visible workflow runs for its head")]
-    Checks(RequestTargetArgs),
+    #[command(about = "Show the checks the request head asks for and whether it can merge")]
+    Checks(RequestChecksArgs),
 }
 
 #[derive(Parser)]
@@ -275,6 +275,17 @@ pub(super) struct RequestCheckoutArgs {
     pub(super) target: RequestTargetArgs,
     #[arg(long, help = "Local branch name (defaults to the request name)")]
     pub(super) branch: Option<String>,
+}
+
+#[derive(Parser)]
+pub(super) struct RequestChecksArgs {
+    #[command(flatten)]
+    pub(super) target: RequestTargetArgs,
+    #[arg(
+        long,
+        help = "Start the checks this head is waiting on, then show them (maintainers)"
+    )]
+    pub(super) approve: bool,
 }
 
 #[derive(Parser)]

@@ -131,7 +131,7 @@ fn image_label(image: &str) -> String {
     format!("image sha256:{}", digest.get(..12).unwrap_or(digest))
 }
 
-pub(super) fn run_state_label(state: RunState) -> &'static str {
+pub(crate) fn run_state_label(state: RunState) -> &'static str {
     match state {
         RunState::Queued => "queued",
         RunState::Dispatching => "dispatching",

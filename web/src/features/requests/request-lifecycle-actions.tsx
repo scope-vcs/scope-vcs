@@ -4,7 +4,12 @@ import { cn } from '@/lib/utils'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
-import { canMergeRequest, hasRequestLifecycleActions } from './request-lifecycle-model'
+import {
+  canMergeRequest,
+  checksHoldRequestMerge,
+  hasRequestLifecycleActions,
+} from './request-lifecycle-model'
+import { requestMergeabilityLabel } from './request-labels'
 import type { RequestActionController } from './use-request-actions'
 import type { RequestSummaryResponse } from '@/api/types.generated'
 
@@ -23,6 +28,7 @@ export function RequestLifecycleActions({
   const busy = actions.pending !== null
   const permissions = request.permissions
   const canMerge = canMergeRequest(request)
+  const checksHoldMerge = checksHoldRequestMerge(request)
   const publicRequest = request.author_role === 'Public'
   const submitLabel = publicRequest ? 'Request review' : 'Mark ready'
 
@@ -41,6 +47,16 @@ export function RequestLifecycleActions({
           <Button disabled={busy} onClick={() => setDialog('merge')} size="sm" type="button" variant="success">
             Merge
           </Button>
+        ) : null}
+        {checksHoldMerge ? (
+          <span className="flex min-w-0 items-center gap-2">
+            <Button disabled size="sm" type="button" variant="success">
+              Merge
+            </Button>
+            <span className="min-w-0 text-xs text-muted-foreground">
+              {request.mergeability.reason ?? requestMergeabilityLabel(request)}
+            </span>
+          </span>
         ) : null}
         {permissions.can_close ? (
           <Button disabled={busy} onClick={() => setDialog('close')} size="sm" type="button" variant="destructive">

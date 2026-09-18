@@ -1,5 +1,6 @@
 import type { RepoLiveState, RepoParams } from '@/api/types'
 import type {
+  RequestChecksResponse,
   RequestDetailResponse,
   RequestMutationResponse,
   RequestRatingResponse,
@@ -13,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
+  CirclePlay,
   GitCommit,
   History,
   MessageSquare,
@@ -27,6 +29,8 @@ import type {
   RequestActionCommand,
   RequestActionResult,
 } from './request-actions-api'
+import { RequestChecksSection } from './request-checks-section'
+import { requestChecksIdentity } from './request-checks-resource'
 import { RequestDetailHeader } from './request-detail-header'
 import { RequestDetails, RequestDetailsProvider } from './request-details'
 import type { RequestActivityPage } from './request-discussion-types'
@@ -37,6 +41,7 @@ import { hasRequestLifecycleActions } from './request-lifecycle-model'
 import { useDetailPaneRail } from './use-detail-pane-rail'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
+import { useRequestChecks } from './use-request-checks'
 import { requestActivityIdentity } from './request-activity-resource'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import {
@@ -66,11 +71,13 @@ export function RequestUnavailablePage({ params }: { params: RepoParams }) {
 }
 
 type RequestDetailPageProps = {
+  approveChecks: () => Promise<RequestChecksResponse>
   attachmentActions: RequestAttachmentActions
   children: ReactNode
   detail: RequestDetailResponse
   live: RepoLiveState
   loadActivity: (signal: AbortSignal) => Promise<RequestActivityPage>
+  loadChecks: (signal: AbortSignal) => Promise<RequestChecksResponse>
   params: RepoParams
   performAction: (command: RequestActionCommand) => Promise<RequestActionResult>
   ratings: RequestRatingsResponse
@@ -81,11 +88,13 @@ type RequestDetailPageProps = {
 
 export function RequestDetailPage(props: RequestDetailPageProps) {
   const {
+    approveChecks,
     children,
     attachmentActions,
     detail,
     live,
     loadActivity,
+    loadChecks,
     params,
     performAction,
     ratings,
@@ -95,15 +104,21 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   } = props
   const { request } = detail
   const serverDescription = request.description_markdown
+  const scope = repoResourceScope(
+    live.repo,
+    viewerId === 'anonymous' ? null : viewerId,
+  )
   const history = useRequestActivityHistory({
     identity: request.permissions.can_view_activity
-      ? requestActivityIdentity(
-          repoResourceScope(live.repo, viewerId === 'anonymous' ? null : viewerId),
-          request.id,
-        )
+      ? requestActivityIdentity(scope, request.id)
       : null,
     load: loadActivity,
     version: String(request.activity_version),
+  })
+  const checks = useRequestChecks({
+    approve: approveChecks,
+    identity: requestChecksIdentity(scope, request.id),
+    load: loadChecks,
   })
   const requestActions = useRequestActions(performAction)
   const workspace = useRequestWorkspace()
@@ -154,6 +169,18 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                     I’ll take this
                   </Button>
                 ) : null}
+                {checks.checks?.can_approve ? (
+                  <Button
+                    disabled={checks.approving}
+                    onClick={() => void checks.approve()}
+                    size="sm"
+                    type="button"
+                    variant="secondary"
+                  >
+                    <CirclePlay />
+                    Approve checks
+                  </Button>
+                ) : null}
                 {canRelease ? (
                   <Button onClick={workspace?.release} size="sm" type="button" variant="secondary">
                     <UserRoundMinus />
@@ -200,6 +227,11 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               {requestActions.error}
             </p>
           ) : null}
+          <RequestChecksSection
+            checks={checks.checks}
+            error={checks.error}
+            params={params}
+          />
           <RequestDetailsProvider value={{
             actions: requestActions,
             onRate: rateRequest,

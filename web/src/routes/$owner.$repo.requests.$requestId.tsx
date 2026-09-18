@@ -6,8 +6,10 @@ import {
 } from '@/api/request-inputs'
 import { loadOptionalResource } from '@/api/http'
 import { loadAccountSessionForRequest } from '@/api/profile'
-import { loadRequestForRequest } from '@/api/requests'
 import {
+  approveRequestChecks,
+  getRequestChecks,
+  loadRequestForRequest,
   loadRequestRatingsForRequest,
   rateRequestForRequest,
   type RateRequestInput,
@@ -57,6 +59,14 @@ const loadRequestPage = createServerFn({ method: 'GET' })
 const loadActivity = createServerFn({ method: 'GET' })
   .validator(parseRequestParams)
   .handler(({ data }) => loadRequestActivityForRequest(data))
+
+const loadChecks = createServerFn({ method: 'GET' })
+  .validator(parseRequestParams)
+  .handler(({ data }) => getRequestChecks(data))
+
+const approveChecks = createServerFn({ method: 'POST' })
+  .validator(parseRequestParams)
+  .handler(({ data }) => approveRequestChecks(data))
 
 const updateDescription = createServerFn({ method: 'POST' })
   .validator(parseUpdateDescriptionInput)
@@ -123,10 +133,12 @@ function RequestRoute() {
 
   return (
     <RequestDetailPage
+      approveChecks={() => approveChecks({ data: requestParams })}
       attachmentActions={requestAttachmentActions}
       detail={page.detail}
       live={live}
       loadActivity={(signal) => loadActivity({ data: requestParams, signal })}
+      loadChecks={(signal) => loadChecks({ data: requestParams, signal })}
       params={repoParams}
       performAction={performAction}
       ratings={page.ratings}
