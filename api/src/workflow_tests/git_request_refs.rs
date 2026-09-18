@@ -19,6 +19,7 @@ const PRIVATE_REQUEST_ID: &str = "req_private";
 const PRIVATE_REQUEST_REF: &str = "refs/heads/private-request";
 
 mod cache;
+mod checks;
 mod cleanup;
 mod http;
 mod landed;

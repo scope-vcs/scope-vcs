@@ -194,6 +194,14 @@ pub fn router(state: AppState) -> Router {
             post(http::requests::merge_request),
         )
         .route(
+            routes::REPO_REQUEST_CHECKS,
+            get(http::request_checks::get_request_checks),
+        )
+        .route(
+            routes::REPO_REQUEST_CHECKS_APPROVE,
+            post(http::request_checks::approve_request_checks),
+        )
+        .route(
             routes::REPO_REQUEST_RATINGS,
             get(http::request_ratings::list_request_ratings)
                 .post(http::request_ratings::create_request_rating),
