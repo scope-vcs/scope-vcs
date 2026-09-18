@@ -675,7 +675,7 @@ mod tests {
         .unwrap();
         let definition = CompiledWorkflow::new(
             "Cache service",
-            WorkflowTriggers::new(true, false).unwrap(),
+            WorkflowTriggers::new(true, false, false).unwrap(),
             vec![
                 WorkflowJob::new(
                     WorkflowJobId::parse("checks").unwrap(),

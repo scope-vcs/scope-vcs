@@ -331,7 +331,7 @@ async fn queued_runs(count: usize) -> MetadataStore {
         identity,
         CompiledWorkflow::new(
             "Test",
-            WorkflowTriggers::new(true, false).unwrap(),
+            WorkflowTriggers::new(true, false, false).unwrap(),
             vec![job],
         )
         .unwrap(),
