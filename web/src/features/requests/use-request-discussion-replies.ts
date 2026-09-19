@@ -5,7 +5,11 @@ import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { requestQueueResource } from './request-queue-cache'
 import { runRequestContentSubmission } from './request-attachment-drafts'
-import { openRequestDiscussionReplies, requestDiscussionRepliesResource } from './request-discussion-replies-resource'
+import {
+  createRequestDiscussionReplyReads,
+  openRequestDiscussionReplies,
+  requestDiscussionRepliesResource,
+} from './request-discussion-replies-resource'
 import type {
   CreateReplyInput,
   LoadRepliesInput,
@@ -13,13 +17,10 @@ import type {
 } from './request-discussion-api'
 import {
   acknowledgeReply,
-  beforePositionForNextReplyPage,
   hasLoadedAllUnreadContent,
   insertOptimisticReply,
   markReplyFailed,
   mergeDiscussionReplies,
-  mergeReplyPage,
-  mergeReplyTarget,
   updateReplyPage,
 } from './request-discussion-replies-model'
 import type {
@@ -82,93 +83,12 @@ export function useRequestDiscussionReplies({
     0,
   )
   const hasOlderReplies = olderReplyCount > 0
-
-  async function loadReplyPage(before: number | undefined) {
-    setReplyState((current) =>
-      updateReplyPage(current, {
-        error: null,
-        loading: true,
-      }),
-    )
-    try {
-      const page = await actions.loadReplies({
-        ...params,
-        before,
-        discussion_id: discussion.id,
-      })
-      setReplyState((current) =>
-        mergeReplyPage(
-          current,
-          page,
-          discussion.latest_replies,
-          before === undefined,
-        ),
-      )
-    } catch (error) {
-      setReplyState((current) =>
-        updateReplyPage(current, {
-          error: resourceErrorMessage(error, 'Earlier replies could not be loaded.'),
-          loading: false,
-        }),
-      )
-    }
-  }
-
-  function loadOlderReplies() {
-    if (!hasOlderReplies || read().page.loading) return
-    return loadReplyPage(
-      beforePositionForNextReplyPage(
-        read(),
-        discussion.latest_replies,
-      ),
-    )
-  }
-
-  function loadReplyTarget(replyId: string): Promise<boolean> {
-    if (mergeDiscussionReplies(read().replies, discussion.latest_replies).some((reply) => reply.id === replyId)) {
-      return Promise.resolve(true)
-    }
-    const target = read().target
-    if (target) {
-      if (target.replyId === replyId) return target.promise
-      return target.promise.then(() => loadReplyTarget(replyId))
-    }
-
-    setReplyState((current) =>
-      updateReplyPage(current, { error: null, loading: true }),
-    )
-    const operation = (async () => {
-      try {
-        const page = await actions.loadReplies({
-          ...params,
-          discussion_id: discussion.id,
-          reply: replyId,
-        })
-        setReplyState((current) =>
-          mergeReplyTarget(
-            current,
-            page,
-            discussion.latest_replies,
-          ),
-        )
-        return page.replies.some((reply) => reply.id === replyId)
-      } catch (error) {
-        setReplyState((current) =>
-          updateReplyPage(current, {
-            error: resourceErrorMessage(error, 'Linked reply could not be loaded.'),
-            loading: false,
-          }),
-        )
-        return false
-      }
-    })()
-    setReplyState((current) => ({ ...current, target: { promise: operation, replyId } }))
-    void operation.finally(() => {
-      setReplyState((current) => current.target?.promise === operation
-        ? { ...current, target: null } : current)
-    })
-    return operation
-  }
+  const { loadOlderReplies, loadReplyTarget } = createRequestDiscussionReplyReads(
+    session,
+    (page) => actions.loadReplies({ ...params, discussion_id: discussion.id, ...page }),
+    discussion.latest_replies,
+    hasOlderReplies,
+  )
 
   async function postReply(
     body: string,
