@@ -12,8 +12,8 @@ use crate::error::PostgresError;
 use scope_domain::{
     requests::{
         AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
-        RequestAutoMergeMutation, RequestAutoMergeStopReason, StopRequestAutoMergeInput,
-        authorize_request_auto_merge, cancel_request_auto_merge, stop_request_auto_merge,
+        RequestAutoMergeMutation, RequestAutoMergeStopReason, authorize_request_auto_merge,
+        cancel_request_auto_merge, stop_request_auto_merge,
     },
     runs::run::RunState,
 };
@@ -50,8 +50,6 @@ pub struct ClaimDueRequestAutoMergesCommand {
     pub now_unix: u64,
     pub lease_expires_at_unix: u64,
     pub limit: u64,
-    /// Restricts an immediate reconciliation without bypassing due-time or lease fencing.
-    pub request_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -100,7 +98,7 @@ impl RequestStore {
         let revision = latest_revision_for_request(&tx, &request.id)
             .await?
             .ok_or_else(|| PostgresError::conflict("request has no recorded revision"))?;
-        let current = active_intent_for_request(&tx, &request.id, true).await?;
+        let current = lock_active_intent_for_request(&tx, &request.id).await?;
         let mutation = authorize_request_auto_merge(
             &request,
             &revision,
@@ -132,7 +130,7 @@ impl RequestStore {
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
-        let current = active_intent_for_request(&tx, &request.id, true)
+        let current = lock_active_intent_for_request(&tx, &request.id)
             .await?
             .ok_or_else(|| PostgresError::conflict("auto-merge is not active"))?;
         let mutation = cancel_request_auto_merge(
@@ -191,7 +189,7 @@ impl RequestStore {
         let now = u64_to_i64(command.now_unix, "auto-merge claim time")?;
         let lease_expires = u64_to_i64(command.lease_expires_at_unix, "auto-merge claim expiry")?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let mut query = entities::request_auto_merge_intent::Entity::find()
+        let query = entities::request_auto_merge_intent::Entity::find()
             .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
             .filter(entities::request_auto_merge_intent::Column::NextAttemptAtUnix.lte(now))
             .filter(
@@ -199,10 +197,6 @@ impl RequestStore {
                     .is_null()
                     .or(entities::request_auto_merge_intent::Column::ClaimExpiresAtUnix.lte(now)),
             );
-        if let Some(request_id) = command.request_id {
-            query =
-                query.filter(entities::request_auto_merge_intent::Column::RequestId.eq(request_id));
-        }
         let rows = query
             .order_by_asc(entities::request_auto_merge_intent::Column::NextAttemptAtUnix)
             .order_by_asc(entities::request_auto_merge_intent::Column::CreatedAtUnix)
@@ -324,13 +318,9 @@ impl RequestStore {
         let mutation = stop_request_auto_merge(
             &request,
             &intent,
-            StopRequestAutoMergeInput {
-                request_id: request.id.clone(),
-                expected_intent_id: intent.id.clone(),
-                reason: command.reason,
-                event_id: command.event_id,
-                now_unix: command.now_unix,
-            },
+            command.reason,
+            command.event_id,
+            command.now_unix,
         )?;
         persist_existing_auto_merge_mutation(&tx, row, &mutation).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -338,76 +328,56 @@ impl RequestStore {
     }
 }
 
-struct StoredIntent {
-    model: entities::request_auto_merge_intent::Model,
-    intent: RequestAutoMergeIntent,
+pub(super) struct StoredIntent {
+    pub model: entities::request_auto_merge_intent::Model,
+    pub intent: RequestAutoMergeIntent,
 }
 
-async fn active_intent_for_request(
+impl StoredIntent {
+    pub(super) fn from_model(
+        model: entities::request_auto_merge_intent::Model,
+    ) -> Result<Self, PostgresError> {
+        Ok(Self {
+            intent: model.try_into_domain()?,
+            model,
+        })
+    }
+}
+
+pub(super) async fn lock_active_intent_for_request(
     tx: &DatabaseTransaction,
     request_id: &str,
-    lock: bool,
 ) -> Result<Option<StoredIntent>, PostgresError> {
-    let mut query = entities::request_auto_merge_intent::Entity::find()
+    entities::request_auto_merge_intent::Entity::find()
         .filter(entities::request_auto_merge_intent::Column::RequestId.eq(request_id))
-        .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"));
-    if lock {
-        query = query.lock_exclusive();
-    }
-    query
+        .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
+        .lock_exclusive()
         .one(tx)
         .await
         .map_err(PostgresError::internal)?
-        .map(|model| {
-            Ok(StoredIntent {
-                intent: model.try_into_domain()?,
-                model,
-            })
-        })
+        .map(StoredIntent::from_model)
         .transpose()
-}
-
-pub(super) async fn locked_active_intent_for_request(
-    tx: &DatabaseTransaction,
-    request_id: &str,
-) -> Result<
-    Option<(
-        entities::request_auto_merge_intent::Model,
-        RequestAutoMergeIntent,
-    )>,
-    PostgresError,
-> {
-    Ok(active_intent_for_request(tx, request_id, true)
-        .await?
-        .map(|stored| (stored.model, stored.intent)))
 }
 
 pub(super) async fn lock_active_auto_merge_for_run(
     tx: &DatabaseTransaction,
     run_id: &str,
-) -> Result<
-    Option<(
-        entities::request_auto_merge_intent::Model,
-        RequestAutoMergeIntent,
-    )>,
-    PostgresError,
-> {
+) -> Result<Option<StoredIntent>, PostgresError> {
     let Some(request_id) = request_id_for_check_run(tx, run_id).await? else {
         return Ok(None);
     };
     acquire_aggregate_lock(tx, "request", &request_id).await?;
-    let active = locked_active_intent_for_request(tx, &request_id).await?;
-    let Some((model, intent)) = active else {
+    let Some(stored) = lock_active_intent_for_request(tx, &request_id).await? else {
         return Ok(None);
     };
-    let state = request_auto_merge_check_state(tx, &intent).await?;
+    let state = request_auto_merge_check_state(tx, &stored.intent).await?;
     if state
         .evaluation
         .iter()
         .flat_map(|evaluation| &evaluation.checks)
         .any(|check| check.run_id.as_deref() == Some(run_id))
     {
-        Ok(Some((model, intent)))
+        Ok(Some(stored))
     } else {
         Ok(None)
     }
@@ -476,10 +446,7 @@ async fn lock_request_check_evidence(
 
 pub(super) async fn stop_auto_merge_for_terminal_run(
     tx: &DatabaseTransaction,
-    active: Option<(
-        entities::request_auto_merge_intent::Model,
-        RequestAutoMergeIntent,
-    )>,
+    active: Option<StoredIntent>,
     run: &scope_domain::runs::run::Run,
 ) -> Result<(), PostgresError> {
     if !matches!(
@@ -488,7 +455,7 @@ pub(super) async fn stop_auto_merge_for_terminal_run(
     ) {
         return Ok(());
     }
-    let Some((stored, intent)) = active else {
+    let Some(StoredIntent { model, intent }) = active else {
         return Ok(());
     };
     let request = request_by_id(tx, &intent.request_id)
@@ -502,15 +469,11 @@ pub(super) async fn stop_auto_merge_for_terminal_run(
     let mutation = stop_request_auto_merge(
         &request,
         &intent,
-        StopRequestAutoMergeInput {
-            request_id: request.id.clone(),
-            expected_intent_id: intent.id.clone(),
-            reason: RequestAutoMergeStopReason::ChecksFailed,
-            event_id: automatic_event_id("stopped", &intent.id),
-            now_unix,
-        },
+        RequestAutoMergeStopReason::ChecksFailed,
+        automatic_event_id("stopped", &intent.id),
+        now_unix,
     )?;
-    persist_existing_auto_merge_mutation(tx, stored, &mutation).await
+    persist_existing_auto_merge_mutation(tx, model, &mutation).await
 }
 
 pub(super) async fn stop_auto_merges_for_revoked_actor(
@@ -548,13 +511,9 @@ pub(super) async fn stop_auto_merges_for_revoked_actor(
         let mutation = stop_request_auto_merge(
             &request,
             &intent,
-            StopRequestAutoMergeInput {
-                request_id: request.id.clone(),
-                expected_intent_id: intent.id.clone(),
-                reason: RequestAutoMergeStopReason::AccessRevoked,
-                event_id: automatic_event_id("stopped", &intent.id),
-                now_unix: transition_time,
-            },
+            RequestAutoMergeStopReason::AccessRevoked,
+            automatic_event_id("stopped", &intent.id),
+            transition_time,
         )?;
         persist_existing_auto_merge_mutation(tx, stored, &mutation).await?;
     }
@@ -585,21 +544,11 @@ pub(super) async fn persist_existing_auto_merge_mutation(
 ) -> Result<(), PostgresError> {
     save_request_row(tx, &mutation.request).await?;
     insert_request_event_row(tx, &mutation.event).await?;
-    let mut update = stored.into_active_model();
-    update.status = Set(super::entities::encode_enum(mutation.intent.status)?);
-    update.reason = Set(mutation
-        .intent
-        .reason
-        .map(super::entities::encode_enum)
-        .transpose()?);
-    update.claim_token = Set(None);
-    update.claim_expires_at_unix = Set(None);
-    update.last_error = Set(None);
-    update.updated_at_unix = Set(u64_to_i64(
-        mutation.intent.updated_at_unix,
-        "auto-merge update time",
-    )?);
-    update.update(tx).await.map_err(PostgresError::internal)?;
+    stored
+        .with_transition(&mutation.intent)?
+        .update(tx)
+        .await
+        .map_err(PostgresError::internal)?;
     Ok(())
 }
 

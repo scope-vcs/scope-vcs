@@ -42,8 +42,8 @@ test('an action receipt replaces cached status without a follow-up read', async 
     return status()
   })
 
-  const generation = requestAutoMergeResource.invalidationGeneration(identity)
-  assert.equal(requestAutoMergeResource.writeIfNotInvalidated(identity, generation, {
+  const snapshot = requestAutoMergeResource.getSnapshot(identity)
+  assert.equal(requestAutoMergeResource.writeIfUnchanged(identity, snapshot, {
     ...status(),
     can_cancel: false,
     intent: { ...status().intent!, status: 'Cancelled' },
@@ -146,7 +146,7 @@ test('a run-driven refresh retains active status until it publishes the stop', a
 test('an action receipt cannot replace a newer event-triggered refresh', async () => {
   const identity = requestAutoMergeIdentity('viewer-access', 'request')
   requestAutoMergeResource.write(identity, status())
-  const mutationGeneration = requestAutoMergeResource.invalidationGeneration(identity)
+  const mutationSnapshot = requestAutoMergeResource.getSnapshot(identity)
   invalidateRepoResources('viewer-access', {
     incarnation_id: 'incarnation',
     kind: { RepositoryChanged: { reason: 'request-auto-merge-updated' } },
@@ -164,9 +164,9 @@ test('an action receipt cannot replace a newer event-triggered refresh', async (
   })
   await Promise.resolve()
 
-  assert.equal(requestAutoMergeResource.writeIfNotInvalidated(
+  assert.equal(requestAutoMergeResource.writeIfUnchanged(
     identity,
-    mutationGeneration,
+    mutationSnapshot,
     status(),
   ), false)
   assert.equal(refreshSignal.aborted, false)
@@ -178,9 +178,9 @@ test('an action receipt cannot replace a newer event-triggered refresh', async (
   finish(fulfilled)
   await refresh
 
-  assert.equal(requestAutoMergeResource.writeIfNotInvalidated(
+  assert.equal(requestAutoMergeResource.writeIfUnchanged(
     identity,
-    mutationGeneration,
+    mutationSnapshot,
     status(),
   ), false)
   assert.equal(requestAutoMergeResource.peek(identity)?.intent?.status, 'Fulfilled')

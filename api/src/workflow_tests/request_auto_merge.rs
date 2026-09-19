@@ -56,17 +56,8 @@ async fn open_request_with_revision(
         })
         .await
         .unwrap();
-    let revision_id = format!("event_{request_id}_revision_1");
-    record_revision(
-        &state,
-        request_id,
-        &author_user_id,
-        None,
-        SECOND_HEAD,
-        &revision_id,
-        3,
-    )
-    .await;
+    let revision_id =
+        record_revision(&state, request_id, &author_user_id, None, SECOND_HEAD, 1, 3).await;
     state
         .metadata
         .requests()
@@ -81,15 +72,26 @@ async fn open_request_with_revision(
     (state, revision_id)
 }
 
+async fn open_owner_request(request_id: &str) -> (AppState, String) {
+    open_request_with_revision(
+        request_id,
+        test_owner_id(),
+        RequestActorRole::Owner,
+        RequestAudience::Private,
+    )
+    .await
+}
+
 async fn record_revision(
     state: &AppState,
     request_id: &str,
     actor_user_id: &str,
     expected_old_head_oid: Option<&str>,
     new_head_oid: &str,
-    event_id: &str,
+    position: u8,
     now_unix: u64,
-) {
+) -> String {
+    let event_id = format!("event_{request_id}_revision_{position}");
     let mut git_snapshot = scope_object_store::put_content_object(
         state.object_store.as_ref(),
         ContentObjectKind::GitBundle,
@@ -108,7 +110,7 @@ async fn record_revision(
                 expected_old_head_oid: expected_old_head_oid.map(str::to_string),
                 new_head_oid: new_head_oid.to_string(),
                 git_snapshot,
-                event_id: event_id.to_string(),
+                event_id: event_id.clone(),
                 body: None,
                 now_unix,
             },
@@ -116,6 +118,7 @@ async fn record_revision(
         )
         .await
         .unwrap();
+    event_id
 }
 
 async fn record_queued_request_check(state: &AppState, request_id: &str) -> String {
@@ -161,16 +164,16 @@ async fn auto_merge_json(
     app: axum::Router,
     method: &str,
     request_id: &str,
-    bearer: &str,
     body: Option<&str>,
     expected: StatusCode,
 ) -> serde_json::Value {
+    let bearer = bearer_header();
     expect_json(
         api_request(
             app,
             method,
             &auto_merge_route(request_id),
-            Some(bearer),
+            Some(&bearer),
             body,
         )
         .await,
@@ -184,13 +187,11 @@ async fn authorize(
     request_id: &str,
     revision_id: &str,
     head_oid: &str,
-    bearer: &str,
 ) -> serde_json::Value {
     auto_merge_json(
         app,
         "POST",
         request_id,
-        bearer,
         Some(
             &serde_json::json!({
                 "expected_revision_id": revision_id,
@@ -203,13 +204,64 @@ async fn authorize(
     .await
 }
 
+async fn current_authorization(
+    app: axum::Router,
+    request_id: &str,
+    head_oid: &str,
+) -> (serde_json::Value, serde_json::Value) {
+    let ready = auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
+    let revision_id = ready["revision_id"].as_str().unwrap();
+    let active = authorize(app, request_id, revision_id, head_oid).await;
+    (ready, active)
+}
+
+async fn reconcile(state: &AppState, now_unix: u64) -> usize {
+    crate::use_cases::request_auto_merge::reconcile_once(state, now_unix)
+        .await
+        .unwrap()
+}
+
+fn assert_stopped(response: &serde_json::Value, reason: &str) {
+    assert_eq!(response["intent"]["status"], "Stopped");
+    assert_eq!(response["intent"]["reason"], reason);
+}
+
+fn commit_file(repo: &FsPath, path: &str, content: &str, message: &str) {
+    fs::write(repo.join(path), content).unwrap();
+    run_git(Some(repo), &["add", path], "stage test file").unwrap();
+    commit_all(repo, message);
+}
+
+fn configure_git_header(repo: &FsPath, remote: &str, value: &str) {
+    run_git(
+        Some(repo),
+        &[
+            "config",
+            "--add",
+            &format!("http.{remote}.extraHeader"),
+            value,
+        ],
+        "configure Git HTTP header",
+    )
+    .unwrap();
+}
+
+fn push_head(repo: &FsPath, remote: &str, branch: &str, label: &str) {
+    run_git(
+        Some(repo),
+        &["push", remote, &format!("HEAD:refs/heads/{branch}")],
+        label,
+    )
+    .unwrap();
+}
+
 async fn native_open_request(
     label: &str,
-    audience: &str,
+    audience: RequestAudience,
 ) -> (AppState, TempGitRepo, String, String, String, TestServer) {
     let (state, source, _main_head) =
         super::push_intent_completion::published_git_fixture(label).await;
-    if audience == "Public" {
+    if audience == RequestAudience::Public {
         drain_outbox(&state, &format!("{label}-initial-public-projection")).await;
     }
     let app = router(state.clone());
@@ -235,7 +287,7 @@ async fn native_open_request(
     let request_id = started["request"]["id"].as_str().unwrap().to_string();
     let (origin, server) = spawn_test_server(&state).await;
     let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
-    let public_request_source = if audience == "Public" {
+    let public_request_source = if audience == RequestAudience::Public {
         let request_source = TempGitRepo(unique_test_path(&format!("{label}-public-request")));
         let public_remote = format!("{origin}/git/public/{TEST_REPO_ID}");
         run_git(
@@ -249,34 +301,19 @@ async fn native_open_request(
         None
     };
     let request_source = public_request_source.as_deref().unwrap_or(source.as_ref());
-    run_git(
-        Some(request_source),
-        &[
-            "config",
-            &format!("http.{remote}.extraHeader"),
-            &format!("Authorization: {bearer}"),
-        ],
-        "configure request auto merge bearer",
-    )
-    .unwrap();
-    fs::write(request_source.join("auto-merge.txt"), "merge this head\n").unwrap();
-    run_git(
-        Some(request_source),
-        &["add", "auto-merge.txt"],
-        "stage auto merge request",
-    )
-    .unwrap();
-    commit_all(request_source, "auto merge request");
-    run_git(
-        Some(request_source),
-        &[
-            "push",
-            &remote,
-            &format!("HEAD:refs/heads/{AUTO_REQUEST_NAME}"),
-        ],
+    configure_git_header(request_source, &remote, &format!("Authorization: {bearer}"));
+    commit_file(
+        request_source,
+        "auto-merge.txt",
+        "merge this head\n",
+        "auto merge request",
+    );
+    push_head(
+        request_source,
+        &remote,
+        AUTO_REQUEST_NAME,
         "push auto merge request",
-    )
-    .unwrap();
+    );
     let request_head = git_head_oid(request_source);
     let submitted = api_request(
         app,
@@ -292,25 +329,11 @@ async fn native_open_request(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn authorization_is_bound_to_the_exact_revision_and_only_the_current_intent_cancels() {
-    let (state, revision_id) = open_request_with_revision(
-        AUTO_REQUEST_ID,
-        test_owner_id(),
-        RequestActorRole::Owner,
-        RequestAudience::Private,
-    )
-    .await;
+    let (state, revision_id) = open_owner_request(AUTO_REQUEST_ID).await;
     let app = router(state);
     let bearer = bearer_header();
 
-    let initial = auto_merge_json(
-        app.clone(),
-        "GET",
-        AUTO_REQUEST_ID,
-        &bearer,
-        None,
-        StatusCode::OK,
-    )
-    .await;
+    let initial = auto_merge_json(app.clone(), "GET", AUTO_REQUEST_ID, None, StatusCode::OK).await;
     assert_eq!(initial["revision_id"], revision_id);
     assert_eq!(initial["head_oid"], SECOND_HEAD);
     assert!(initial["intent"].is_null());
@@ -337,14 +360,7 @@ async fn authorization_is_bound_to_the_exact_revision_and_only_the_current_inten
         assert_eq!(stale.status(), StatusCode::CONFLICT);
     }
 
-    let authorized = authorize(
-        app.clone(),
-        AUTO_REQUEST_ID,
-        &revision_id,
-        SECOND_HEAD,
-        &bearer,
-    )
-    .await;
+    let authorized = authorize(app.clone(), AUTO_REQUEST_ID, &revision_id, SECOND_HEAD).await;
     assert_eq!(authorized["intent"]["status"], "Active");
     assert_eq!(authorized["intent"]["revision_id"], revision_id);
     assert_eq!(authorized["intent"]["head_oid"], SECOND_HEAD);
@@ -366,7 +382,6 @@ async fn authorization_is_bound_to_the_exact_revision_and_only_the_current_inten
         app,
         "DELETE",
         AUTO_REQUEST_ID,
-        &bearer,
         Some(&serde_json::json!({ "expected_intent_id": intent_id }).to_string()),
         StatusCode::OK,
     )
@@ -406,53 +421,29 @@ async fn public_authors_cannot_authorize_auto_merge() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn active_authorization_reports_pending_checks_and_stops_after_a_new_push() {
-    let (state, revision_id) = open_request_with_revision(
-        "req_auto_merge_pending",
-        test_owner_id(),
-        RequestActorRole::Owner,
-        RequestAudience::Private,
-    )
-    .await;
-    record_queued_request_check(&state, "req_auto_merge_pending").await;
+    let request_id = "req_auto_merge_pending";
+    let (state, revision_id) = open_owner_request(request_id).await;
+    record_queued_request_check(&state, request_id).await;
     let app = router(state.clone());
-    let bearer = bearer_header();
 
-    let pending = authorize(
-        app.clone(),
-        "req_auto_merge_pending",
-        &revision_id,
-        SECOND_HEAD,
-        &bearer,
-    )
-    .await;
+    let pending = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD).await;
     assert_eq!(pending["intent"]["status"], "Active");
     assert_eq!(pending["waiting_reason"], "Waiting for checks to finish");
 
     record_revision(
         &state,
-        "req_auto_merge_pending",
+        request_id,
         &test_owner_id(),
         Some(SECOND_HEAD),
         THIRD_HEAD,
-        "event_req_auto_merge_pending_revision_2",
+        2,
         unix_now(),
     )
     .await;
-    crate::use_cases::request_auto_merge::reconcile_once(&state, unix_now() + 10)
-        .await
-        .unwrap();
+    reconcile(&state, unix_now() + 10).await;
 
-    let stopped = auto_merge_json(
-        app,
-        "GET",
-        "req_auto_merge_pending",
-        &bearer,
-        None,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(stopped["intent"]["status"], "Stopped");
-    assert_eq!(stopped["intent"]["reason"], "RequestChanged");
+    let stopped = auto_merge_json(app, "GET", request_id, None, StatusCode::OK).await;
+    assert_stopped(&stopped, "RequestChanged");
     assert_eq!(
         stopped["revision_id"],
         "event_req_auto_merge_pending_revision_2"
@@ -461,41 +452,24 @@ async fn active_authorization_reports_pending_checks_and_stops_after_a_new_push(
 
     record_revision(
         &state,
-        "req_auto_merge_pending",
+        request_id,
         &test_owner_id(),
         Some(THIRD_HEAD),
         SECOND_HEAD,
-        "event_req_auto_merge_pending_revision_3",
+        3,
         unix_now(),
     )
     .await;
-    let returned_to_authorized_head = auto_merge_json(
-        router(state),
-        "GET",
-        "req_auto_merge_pending",
-        &bearer,
-        None,
-        StatusCode::OK,
-    )
-    .await;
+    let returned_to_authorized_head =
+        auto_merge_json(router(state), "GET", request_id, None, StatusCode::OK).await;
     assert_eq!(returned_to_authorized_head["head_oid"], SECOND_HEAD);
-    assert_eq!(returned_to_authorized_head["intent"]["status"], "Stopped");
-    assert_eq!(
-        returned_to_authorized_head["intent"]["reason"],
-        "RequestChanged"
-    );
+    assert_stopped(&returned_to_authorized_head, "RequestChanged");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
     let request_id = "req_auto_merge_failed_checks";
-    let (state, revision_id) = open_request_with_revision(
-        request_id,
-        test_owner_id(),
-        RequestActorRole::Owner,
-        RequestAudience::Private,
-    )
-    .await;
+    let (state, revision_id) = open_owner_request(request_id).await;
     state
         .metadata
         .requests()
@@ -513,28 +487,13 @@ async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
         .await
         .unwrap();
     let app = router(state.clone());
-    let bearer = bearer_header();
-    let active = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD, &bearer).await;
+    let active = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD).await;
     assert_eq!(active["intent"]["status"], "Active");
 
     let attempt_time = unix_now() + 1;
-    assert_eq!(
-        crate::use_cases::request_auto_merge::reconcile_once(&state, attempt_time)
-            .await
-            .unwrap(),
-        1
-    );
-    let stopped = auto_merge_json(
-        app.clone(),
-        "GET",
-        request_id,
-        &bearer,
-        None,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(stopped["intent"]["status"], "Stopped");
-    assert_eq!(stopped["intent"]["reason"], "ChecksConfigurationError");
+    assert_eq!(reconcile(&state, attempt_time).await, 1);
+    let stopped = auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
+    assert_stopped(&stopped, "ChecksConfigurationError");
 
     state
         .metadata
@@ -551,35 +510,18 @@ async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
         })
         .await
         .unwrap();
-    assert_eq!(
-        crate::use_cases::request_auto_merge::reconcile_once(&state, attempt_time + 2)
-            .await
-            .unwrap(),
-        0
-    );
-    let still_stopped =
-        auto_merge_json(app, "GET", request_id, &bearer, None, StatusCode::OK).await;
-    assert_eq!(still_stopped["intent"]["status"], "Stopped");
-    assert_eq!(
-        still_stopped["intent"]["reason"],
-        "ChecksConfigurationError"
-    );
+    assert_eq!(reconcile(&state, attempt_time + 2).await, 0);
+    let still_stopped = auto_merge_json(app, "GET", request_id, None, StatusCode::OK).await;
+    assert_stopped(&still_stopped, "ChecksConfigurationError");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn terminal_run_failure_stays_stopped_after_retry() {
     let request_id = "req_auto_merge_run_retry";
-    let (state, revision_id) = open_request_with_revision(
-        request_id,
-        test_owner_id(),
-        RequestActorRole::Owner,
-        RequestAudience::Private,
-    )
-    .await;
+    let (state, revision_id) = open_owner_request(request_id).await;
     let run_id = record_queued_request_check(&state, request_id).await;
     let app = router(state.clone());
-    let bearer = bearer_header();
-    let active = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD, &bearer).await;
+    let active = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD).await;
     assert_eq!(active["intent"]["status"], "Active");
     assert_eq!(active["waiting_reason"], "Waiting for checks to finish");
 
@@ -591,17 +533,8 @@ async fn terminal_run_failure_stays_stopped_after_retry() {
         .await
         .unwrap();
     assert_eq!(canceled.state, RunState::Canceled);
-    let stopped = auto_merge_json(
-        app.clone(),
-        "GET",
-        request_id,
-        &bearer,
-        None,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(stopped["intent"]["status"], "Stopped");
-    assert_eq!(stopped["intent"]["reason"], "ChecksFailed");
+    let stopped = auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
+    assert_stopped(&stopped, "ChecksFailed");
 
     let retried = state
         .metadata
@@ -615,42 +548,18 @@ async fn terminal_run_failure_stays_stopped_after_retry() {
         .await
         .unwrap();
     assert_eq!(retried.state, RunState::Queued);
-    let still_stopped =
-        auto_merge_json(app, "GET", request_id, &bearer, None, StatusCode::OK).await;
-    assert_eq!(still_stopped["intent"]["status"], "Stopped");
-    assert_eq!(still_stopped["intent"]["reason"], "ChecksFailed");
-    assert_eq!(
-        crate::use_cases::request_auto_merge::reconcile_once(&state, cancellation_time + 2)
-            .await
-            .unwrap(),
-        0
-    );
+    let still_stopped = auto_merge_json(app, "GET", request_id, None, StatusCode::OK).await;
+    assert_stopped(&still_stopped, "ChecksFailed");
+    assert_eq!(reconcile(&state, cancellation_time + 2).await, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn manual_merge_fulfills_an_active_authorization() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-manual", "Private").await;
+        native_open_request("request-auto-merge-manual", RequestAudience::Private).await;
     let app = router(state);
     let bearer = bearer_header();
-    let ready = auto_merge_json(
-        app.clone(),
-        "GET",
-        &request_id,
-        &bearer,
-        None,
-        StatusCode::OK,
-    )
-    .await;
-    let revision_id = ready["revision_id"].as_str().unwrap();
-    let active = authorize(
-        app.clone(),
-        &request_id,
-        revision_id,
-        &request_head,
-        &bearer,
-    )
-    .await;
+    let (_, active) = current_authorization(app.clone(), &request_id, &request_head).await;
     assert_eq!(active["intent"]["status"], "Active");
 
     let merged = api_request(
@@ -667,7 +576,7 @@ async fn manual_merge_fulfills_an_active_authorization() {
     .await;
     assert_eq!(merged.status(), StatusCode::OK);
 
-    let fulfilled = auto_merge_json(app, "GET", &request_id, &bearer, None, StatusCode::OK).await;
+    let fulfilled = auto_merge_json(app, "GET", &request_id, None, StatusCode::OK).await;
     assert_eq!(fulfilled["intent"]["status"], "Fulfilled");
     assert_eq!(fulfilled["intent"]["head_oid"], request_head);
 }
@@ -675,21 +584,11 @@ async fn manual_merge_fulfills_an_active_authorization() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn successful_reconciliation_merges_the_authorized_head_once() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-native", "Private").await;
+        native_open_request("request-auto-merge-native", RequestAudience::Private).await;
     let app = router(state.clone());
-    let bearer = bearer_header();
-    let ready = auto_merge_json(
-        app.clone(),
-        "GET",
-        &request_id,
-        &bearer,
-        None,
-        StatusCode::OK,
-    )
-    .await;
+    let (ready, scheduled) = current_authorization(app.clone(), &request_id, &request_head).await;
     assert_eq!(ready["head_oid"], request_head);
     assert_eq!(ready["waiting_reason"], serde_json::Value::Null);
-    let revision_id = ready["revision_id"].as_str().unwrap();
     let commit_count_before = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap()
@@ -697,25 +596,12 @@ async fn successful_reconciliation_merges_the_authorized_head_once() {
         .commits
         .len();
 
-    let scheduled = authorize(
-        app.clone(),
-        &request_id,
-        revision_id,
-        &request_head,
-        &bearer,
-    )
-    .await;
     assert_eq!(scheduled["intent"]["status"], "Active");
     assert_eq!(scheduled["intent"]["head_oid"], request_head);
     assert_eq!(scheduled["can_cancel"], true);
 
-    assert_eq!(
-        crate::use_cases::request_auto_merge::reconcile_once(&state, unix_now())
-            .await
-            .unwrap(),
-        1
-    );
-    let fulfilled = auto_merge_json(app, "GET", &request_id, &bearer, None, StatusCode::OK).await;
+    assert_eq!(reconcile(&state, unix_now()).await, 1);
+    let fulfilled = auto_merge_json(app, "GET", &request_id, None, StatusCode::OK).await;
     assert_eq!(fulfilled["intent"]["status"], "Fulfilled");
     assert_eq!(fulfilled["intent"]["head_oid"], request_head);
     assert_eq!(fulfilled["can_cancel"], false);
@@ -735,12 +621,7 @@ async fn successful_reconciliation_merges_the_authorized_head_once() {
         commit_count_before + 1
     );
 
-    assert_eq!(
-        crate::use_cases::request_auto_merge::reconcile_once(&state, unix_now())
-            .await
-            .unwrap(),
-        0
-    );
+    assert_eq!(reconcile(&state, unix_now()).await, 0);
     assert_eq!(
         find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await
@@ -754,82 +635,38 @@ async fn successful_reconciliation_merges_the_authorized_head_once() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn public_main_advance_stops_authorization_as_merge_conflict() {
-    let (state, source, remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-public-main-advance", "Public").await;
+    let (state, source, remote, request_id, request_head, _server) = native_open_request(
+        "request-auto-merge-public-main-advance",
+        RequestAudience::Public,
+    )
+    .await;
     drain_outbox(&state, "request-auto-merge-public-ready").await;
     let app = router(state.clone());
     let bearer = bearer_header();
-    let ready = auto_merge_json(
-        app.clone(),
-        "GET",
-        &request_id,
-        &bearer,
-        None,
-        StatusCode::OK,
-    )
-    .await;
+    let (ready, active) = current_authorization(app.clone(), &request_id, &request_head).await;
     assert_eq!(ready["waiting_reason"], serde_json::Value::Null);
-    let revision_id = ready["revision_id"].as_str().unwrap();
-    let active = authorize(
-        app.clone(),
-        &request_id,
-        revision_id,
-        &request_head,
-        &bearer,
-    )
-    .await;
     assert_eq!(active["intent"]["status"], "Active");
 
-    fs::write(source.join("public-main.txt"), "public main advanced\n").unwrap();
-    run_git(
-        Some(&source),
-        &["add", "public-main.txt"],
-        "stage public main advance",
-    )
-    .unwrap();
-    commit_all(
+    commit_file(
         &source,
+        "public-main.txt",
+        "public main advanced\n",
         "advance public main after auto merge authorization",
     );
-    run_git(
-        Some(&source),
-        &[
-            "config",
-            "--add",
-            &format!("http.{remote}.extraHeader"),
-            &format!("Authorization: {bearer}"),
-        ],
-        "configure public main advance bearer",
-    )
-    .unwrap();
+    configure_git_header(&source, &remote, &format!("Authorization: {bearer}"));
     configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
-    run_git(
-        Some(&source),
-        &[
-            "push",
-            &remote,
-            &format!("HEAD:refs/heads/{DEFAULT_GIT_BRANCH}"),
-        ],
+    push_head(
+        &source,
+        &remote,
+        DEFAULT_GIT_BRANCH,
         "advance public main after auto merge authorization",
-    )
-    .unwrap();
+    );
     drain_outbox(&state, "request-auto-merge-public-main-advanced").await;
 
     let attempt_time = unix_now();
-    assert_eq!(
-        crate::use_cases::request_auto_merge::reconcile_once(&state, attempt_time)
-            .await
-            .unwrap(),
-        1
-    );
-    let stopped = auto_merge_json(app, "GET", &request_id, &bearer, None, StatusCode::OK).await;
-    assert_eq!(stopped["intent"]["status"], "Stopped");
-    assert_eq!(stopped["intent"]["reason"], "MergeConflict");
-    assert_eq!(
-        crate::use_cases::request_auto_merge::reconcile_once(&state, attempt_time + 1)
-            .await
-            .unwrap(),
-        0
-    );
+    assert_eq!(reconcile(&state, attempt_time).await, 1);
+    let stopped = auto_merge_json(app, "GET", &request_id, None, StatusCode::OK).await;
+    assert_stopped(&stopped, "MergeConflict");
+    assert_eq!(reconcile(&state, attempt_time + 1).await, 0);
     assert_eq!(live_file_content(&state, "/auto-merge.txt").await, None);
 }

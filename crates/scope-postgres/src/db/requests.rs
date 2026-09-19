@@ -8,7 +8,7 @@ use super::{
         request_policy_for_user,
     },
     request_auto_merge::{
-        automatic_event_id, locked_active_intent_for_request, persist_existing_auto_merge_mutation,
+        automatic_event_id, lock_active_intent_for_request, persist_existing_auto_merge_mutation,
     },
     request_invitees::delete_request_invitees,
     request_media::{replace_bindings_for_markdown, tombstone_request_attachments},
@@ -27,10 +27,9 @@ use {
         CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
         RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request,
         RequestAutoMergeStopReason, RequestEvent, RequestRevisionMutation, RequestTimelineMutation,
-        StartRequestFacts, StartRequestInput, StartRequestMutation, StopRequestAutoMergeInput,
-        WorkingRequestUploadMutation, close_request, edit_request_identity,
-        record_request_revision, record_working_request_upload, start_request,
-        stop_request_auto_merge,
+        StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
+        close_request, edit_request_identity, record_request_revision,
+        record_working_request_upload, start_request, stop_request_auto_merge,
     },
 };
 
@@ -171,24 +170,20 @@ impl RequestStore {
             .await?
             .branch_mutable;
         let event_id_exists = request_event_by_id(&tx, &input.event_id).await?.is_some();
-        let active_auto_merge = locked_active_intent_for_request(&tx, &request.id).await?;
+        let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
         let mutation = record_request_revision(request, event_id_exists, input)?;
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
-        let mutation = if let Some((stored, intent)) = active_auto_merge {
+        let mutation = if let Some(stored) = active_auto_merge {
             let stopped = stop_request_auto_merge(
                 &mutation.request,
-                &intent,
-                StopRequestAutoMergeInput {
-                    request_id: mutation.request.id.clone(),
-                    expected_intent_id: intent.id.clone(),
-                    reason: RequestAutoMergeStopReason::RequestChanged,
-                    event_id: automatic_event_id("stopped", &intent.id),
-                    now_unix,
-                },
+                &stored.intent,
+                RequestAutoMergeStopReason::RequestChanged,
+                automatic_event_id("stopped", &stored.intent.id),
+                now_unix,
             )?;
-            persist_existing_auto_merge_mutation(&tx, stored, &stopped).await?;
+            persist_existing_auto_merge_mutation(&tx, stored.model, &stopped).await?;
             RequestRevisionMutation {
                 request: stopped.request,
                 ..mutation
@@ -280,7 +275,7 @@ impl RequestStore {
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let events = request_events_by_request_id(&tx, &request.id).await?;
         let revisions = revisions_for_request_ids(&tx, std::slice::from_ref(&request.id)).await?;
-        let active_auto_merge = locked_active_intent_for_request(&tx, &request.id).await?;
+        let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
         let input = CloseRequestInput {
             request_id: command.request_id,
             actor_is_author: request.author_user_id == command.actor_user_id,
@@ -322,19 +317,15 @@ impl RequestStore {
                 save_request_row(&tx, request).await?;
                 delete_request_invitees(&tx, &request.id).await?;
                 insert_request_event_row(&tx, event).await?;
-                if let Some((stored, intent)) = active_auto_merge {
+                if let Some(stored) = active_auto_merge {
                     let stopped = stop_request_auto_merge(
                         request,
-                        &intent,
-                        StopRequestAutoMergeInput {
-                            request_id: request.id.clone(),
-                            expected_intent_id: intent.id.clone(),
-                            reason: RequestAutoMergeStopReason::RequestClosed,
-                            event_id: automatic_event_id("stopped", &intent.id),
-                            now_unix,
-                        },
+                        &stored.intent,
+                        RequestAutoMergeStopReason::RequestClosed,
+                        automatic_event_id("stopped", &stored.intent.id),
+                        now_unix,
                     )?;
-                    persist_existing_auto_merge_mutation(&tx, stored, &stopped).await?;
+                    persist_existing_auto_merge_mutation(&tx, stored.model, &stopped).await?;
                     *request = stopped.request;
                 }
             }

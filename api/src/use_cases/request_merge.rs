@@ -161,19 +161,19 @@ pub(crate) async fn merge_request_inner(
         Ok(event_id) => event_id,
         Err(error) => {
             cleanup_prepared_merge(state, prepared).await;
-            return Err(RequestMergeFailure::Retryable(error));
+            return Err(RequestMergeFailure::Other(error));
         }
     };
     let now_unix = match unix_now() {
         Ok(now_unix) => now_unix,
         Err(error) => {
             cleanup_prepared_merge(state, prepared).await;
-            return Err(RequestMergeFailure::Retryable(error));
+            return Err(RequestMergeFailure::Other(error));
         }
     };
     let mutation = persist_prepared_merge(state, command, merged_event_id, now_unix, prepared)
         .await
-        .map_err(RequestMergeFailure::Retryable)?;
+        .map_err(RequestMergeFailure::Other)?;
 
     state.product_analytics.capture(analytics_event);
     state
@@ -296,7 +296,7 @@ async fn prepare_request_merge_for_execution(
     request: &Request,
 ) -> Result<PreparedRequestMerge, RequestMergeFailure> {
     let current = repo.git_head.as_ref().ok_or_else(|| {
-        RequestMergeFailure::Rejected(ApiError::conflict("repo has no accepted Git head"))
+        RequestMergeFailure::Other(ApiError::conflict("repo has no accepted Git head"))
     })?;
     let base_repo = state
         .repository_engine

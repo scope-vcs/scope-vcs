@@ -2,6 +2,7 @@ use super::*;
 use scope_domain::requests::{
     RequestAutoMergeIntent, RequestAutoMergeIntentStatus, RequestAutoMergeStopReason,
 };
+use sea_orm::{IntoActiveModel, Set};
 
 pub mod request_auto_merge_intent {
     use super::*;
@@ -83,6 +84,22 @@ pub mod request_auto_merge_intent {
             };
             value.validate_facts()?;
             Ok(value)
+        }
+
+        pub fn with_transition(
+            self,
+            value: &RequestAutoMergeIntent,
+        ) -> Result<ActiveModel, PostgresError> {
+            value.validate_facts()?;
+            let mut update = self.into_active_model();
+            update.status = Set(encode_enum(value.status)?);
+            update.reason = Set(value.reason.map(encode_enum).transpose()?);
+            update.claim_token = Set(None);
+            update.claim_expires_at_unix = Set(None);
+            update.last_error = Set(None);
+            update.updated_at_unix =
+                Set(u64_to_i64(value.updated_at_unix, "auto-merge update time")?);
+            Ok(update)
         }
     }
 }

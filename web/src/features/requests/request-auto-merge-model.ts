@@ -10,38 +10,22 @@ export function autoMergeAuthorizer(
   return actor.id === viewerId ? 'Authorized by you' : `Authorized by ${actor.handle}`
 }
 
-export function autoMergeIntentTitle(status: RequestAutoMergeIntentStatus) {
-  switch (status) {
-    case 'Active':
-      return 'Will merge when checks pass'
-    case 'Cancelled':
-      return 'Auto-merge canceled'
-    case 'Stopped':
-      return 'Auto-merge stopped'
-    case 'Fulfilled':
-      return 'Merged automatically'
-  }
-  status satisfies never
-  return 'Auto-merge'
+const titles: Record<RequestAutoMergeIntentStatus, string> = {
+  Active: 'Will merge when checks pass',
+  Cancelled: 'Auto-merge canceled',
+  Stopped: 'Auto-merge stopped',
+  Fulfilled: 'Merged automatically',
 }
 
-export function autoMergeStopReasonText(reason: RequestAutoMergeStopReason) {
-  switch (reason) {
-    case 'RequestChanged':
-      return 'the request changed'
-    case 'RequestClosed':
-      return 'the request closed'
-    case 'AccessRevoked':
-      return 'the authorizer no longer has access'
-    case 'ChecksFailed':
-      return 'checks failed'
-    case 'ChecksConfigurationError':
-      return 'the checks configuration is invalid'
-    case 'MergeConflict':
-      return 'the request conflicts with main'
-    case 'RequestBranchMissing':
-      return 'the request branch is missing'
-  }
-  reason satisfies never
-  return 'auto-merge stopped'
+const reasons: Record<RequestAutoMergeStopReason, string> = {
+  RequestChanged: 'the request changed',
+  RequestClosed: 'the request closed',
+  AccessRevoked: 'the authorizer no longer has access',
+  ChecksFailed: 'checks failed',
+  ChecksConfigurationError: 'the checks configuration is invalid',
+  MergeConflict: 'the request conflicts with main',
+  RequestBranchMissing: 'the request branch is missing',
 }
+
+export const autoMergeIntentTitle = (status: RequestAutoMergeIntentStatus) => titles[status] ?? 'Auto-merge'
+export const autoMergeStopReasonText = (reason: RequestAutoMergeStopReason) => reasons[reason] ?? 'auto-merge stopped'

@@ -36,7 +36,6 @@ async fn latest_same_second_intent_and_expired_claims_remain_fenced() {
                 now_unix: 7,
                 lease_expires_at_unix: 10,
                 limit: 1,
-                request_id: Some("req_1".into()),
             },
             &test_generated_id,
         )
@@ -53,7 +52,6 @@ async fn latest_same_second_intent_and_expired_claims_remain_fenced() {
                 now_unix: 11,
                 lease_expires_at_unix: 20,
                 limit: 1,
-                request_id: Some("req_1".into()),
             },
             &test_generated_id,
         )
@@ -131,7 +129,6 @@ async fn lease_bookkeeping_does_not_advance_the_domain_transition_clock() {
                 now_unix: 20,
                 lease_expires_at_unix: 30,
                 limit: 1,
-                request_id: Some("req_1".into()),
             },
             &test_generated_id,
         )

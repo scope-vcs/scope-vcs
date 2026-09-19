@@ -135,21 +135,30 @@ fn cancellation_is_fenced_and_terminal() {
 fn fulfillment_requires_the_authorized_merge_to_be_committed() {
     let mut request = open_request();
     let intent = active_intent();
-    let input = FulfillRequestAutoMergeInput {
-        request_id: request.id.clone(),
-        expected_intent_id: intent.id.clone(),
-        main_oid: OTHER_HEAD.into(),
-        event_id: "event_fulfilled".into(),
-        now_unix: 4,
-    };
-    assert!(fulfill_request_auto_merge(&request, &intent, input.clone()).is_err());
+    assert!(
+        fulfill_request_auto_merge(
+            &request,
+            &intent,
+            OTHER_HEAD.into(),
+            "event_fulfilled".into(),
+            4,
+        )
+        .is_err()
+    );
 
     request.merged_at_unix = Some(4);
     request.merged_by_user_id = Some(intent.actor_user_id.clone());
     request.merged_head_oid = Some(intent.head_oid.clone());
     request.merged_main_oid = Some(OTHER_HEAD.into());
     request.updated_at_unix = 4;
-    let fulfilled = fulfill_request_auto_merge(&request, &intent, input).unwrap();
+    let fulfilled = fulfill_request_auto_merge(
+        &request,
+        &intent,
+        OTHER_HEAD.into(),
+        "event_fulfilled".into(),
+        4,
+    )
+    .unwrap();
     assert_eq!(
         fulfilled.intent.status,
         RequestAutoMergeIntentStatus::Fulfilled
@@ -165,13 +174,9 @@ fn a_terminal_check_result_stops_the_intent_permanently() {
     let stopped = stop_request_auto_merge(
         &request,
         &intent,
-        StopRequestAutoMergeInput {
-            request_id: request.id.clone(),
-            expected_intent_id: intent.id.clone(),
-            reason: RequestAutoMergeStopReason::ChecksFailed,
-            event_id: "event_stop".into(),
-            now_unix: 4,
-        },
+        RequestAutoMergeStopReason::ChecksFailed,
+        "event_stop".into(),
+        4,
     )
     .unwrap();
     assert_eq!(stopped.intent.status, RequestAutoMergeIntentStatus::Stopped);
@@ -184,13 +189,9 @@ fn a_terminal_check_result_stops_the_intent_permanently() {
         stop_request_auto_merge(
             &stopped.request,
             &stopped.intent,
-            StopRequestAutoMergeInput {
-                request_id: request.id,
-                expected_intent_id: intent.id,
-                reason: RequestAutoMergeStopReason::ChecksFailed,
-                event_id: "event_retry_stop".into(),
-                now_unix: 5,
-            },
+            RequestAutoMergeStopReason::ChecksFailed,
+            "event_retry_stop".into(),
+            5,
         )
         .is_err()
     );

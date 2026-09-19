@@ -127,7 +127,6 @@ pub(crate) async fn reconcile_once(state: &AppState, now_unix: u64) -> Result<us
                 now_unix,
                 lease_expires_at_unix: now_unix.saturating_add(CLAIM_SECONDS),
                 limit: BATCH_SIZE,
-                request_id: None,
             },
             &generate_persistence_id,
         )

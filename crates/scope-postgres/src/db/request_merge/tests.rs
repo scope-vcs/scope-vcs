@@ -120,7 +120,6 @@ async fn cancellation_after_preparation_fences_the_final_content_commit() {
                 now_unix: 7,
                 lease_expires_at_unix: 100,
                 limit: 1,
-                request_id: Some("req_1".into()),
             },
             &super::super::generated_ids::test_generated_id,
         )

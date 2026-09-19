@@ -9,7 +9,7 @@ use crate::error::PostgresError;
 use scope_domain::{
     requests::{
         RequestAutoMergeStopReason, RequestCheckEvaluation, RequestCheckEvaluationState,
-        StopRequestAutoMergeInput, stop_request_auto_merge,
+        stop_request_auto_merge,
     },
     runs::{
         run::Run,
@@ -52,7 +52,7 @@ impl RequestStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         super::acquire_aggregate_lock(&tx, "request", &command.evaluation.request_id).await?;
         super::run_retention::lock_run_evidence_retention(&tx).await?;
-        let active_auto_merge = super::request_auto_merge::locked_active_intent_for_request(
+        let active_auto_merge = super::request_auto_merge::lock_active_intent_for_request(
             &tx,
             &command.evaluation.request_id,
         )
@@ -69,30 +69,30 @@ impl RequestStore {
         }
         save_evaluation(&tx, &command.evaluation).await?;
         if command.evaluation.state == RequestCheckEvaluationState::ConfigurationError
-            && let Some((stored, intent)) = active_auto_merge
-            && intent.head_oid == command.evaluation.head_oid
+            && let Some(stored) = active_auto_merge
+            && stored.intent.head_oid == command.evaluation.head_oid
         {
-            let request = super::request_rows::request_by_id(&tx, &intent.request_id)
+            let request = super::request_rows::request_by_id(&tx, &stored.intent.request_id)
                 .await?
                 .ok_or_else(|| PostgresError::internal_message("auto-merge request is missing"))?;
             let now_unix = command
                 .evaluation
                 .updated_at_unix
                 .max(request.updated_at_unix)
-                .max(intent.updated_at_unix);
+                .max(stored.intent.updated_at_unix);
             let stopped = stop_request_auto_merge(
                 &request,
-                &intent,
-                StopRequestAutoMergeInput {
-                    request_id: request.id.clone(),
-                    expected_intent_id: intent.id.clone(),
-                    reason: RequestAutoMergeStopReason::ChecksConfigurationError,
-                    event_id: super::request_auto_merge::automatic_event_id("stopped", &intent.id),
-                    now_unix,
-                },
+                &stored.intent,
+                RequestAutoMergeStopReason::ChecksConfigurationError,
+                super::request_auto_merge::automatic_event_id("stopped", &stored.intent.id),
+                now_unix,
             )?;
-            super::request_auto_merge::persist_existing_auto_merge_mutation(&tx, stored, &stopped)
-                .await?;
+            super::request_auto_merge::persist_existing_auto_merge_mutation(
+                &tx,
+                stored.model,
+                &stopped,
+            )
+            .await?;
         }
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RequestChecksMutation {

@@ -8,7 +8,8 @@ use super::{
     repository_access::repository_access,
     request_access::{ensure_user_exists, lock_request_repository},
     request_auto_merge::{
-        automatic_event_id, persist_existing_auto_merge_mutation, request_auto_merge_check_state,
+        StoredIntent, automatic_event_id, lock_active_intent_for_request,
+        persist_existing_auto_merge_mutation, request_auto_merge_check_state,
     },
     request_revision_rows::latest_revision_for_request,
     request_rows::request_by_id,
@@ -21,9 +22,8 @@ use {
         repository::RepoLifecycleState,
         repository::git::GitHead,
         requests::{
-            FulfillRequestAutoMergeInput, MergeRequestInput, RequestAutoMergeReadiness,
-            RequestAutoMergeStopReason, RequestLifecycleMutation, StopRequestAutoMergeInput,
-            fulfill_request_auto_merge, lands_with_main, merge_request,
+            MergeRequestInput, RequestAutoMergeReadiness, RequestAutoMergeStopReason,
+            RequestLifecycleMutation, fulfill_request_auto_merge, lands_with_main, merge_request,
             request_auto_merge_readiness, stop_request_auto_merge,
         },
     },
@@ -84,8 +84,7 @@ impl RequestStore {
                             .is_some_and(|expires| expires >= now_unix as i64)
                 })
                 .ok_or_else(|| PostgresError::conflict("auto-merge claim is no longer current"))?;
-            let intent = row.try_into_domain()?;
-            Some(LockedAutoMerge { model: row, intent })
+            Some(StoredIntent::from_model(row)?)
         } else {
             entities::request_auto_merge_intent::Entity::find()
                 .filter(entities::request_auto_merge_intent::Column::RequestId.eq(&request.id))
@@ -94,10 +93,7 @@ impl RequestStore {
                 .one(&tx)
                 .await
                 .map_err(PostgresError::internal)?
-                .map(|row| {
-                    let intent = row.try_into_domain()?;
-                    Ok::<_, PostgresError>(LockedAutoMerge { model: row, intent })
-                })
+                .map(StoredIntent::from_model)
                 .transpose()?
         };
         let latest_revision = latest_revision_for_request(&tx, &request.id).await?;
@@ -117,13 +113,9 @@ impl RequestStore {
                 let mutation = stop_request_auto_merge(
                     &request,
                     &locked.intent,
-                    StopRequestAutoMergeInput {
-                        request_id: request.id.clone(),
-                        expected_intent_id: locked.intent.id.clone(),
-                        reason: RequestAutoMergeStopReason::RequestChanged,
-                        event_id: automatic_event_id("stopped", &locked.intent.id),
-                        now_unix,
-                    },
+                    RequestAutoMergeStopReason::RequestChanged,
+                    automatic_event_id("stopped", &locked.intent.id),
+                    now_unix,
                 )?;
                 persist_existing_auto_merge_mutation(&tx, locked.model, &mutation).await?;
                 tx.commit().await.map_err(PostgresError::internal)?;
@@ -161,13 +153,9 @@ impl RequestStore {
                 let mutation = stop_request_auto_merge(
                     &request,
                     &locked.intent,
-                    StopRequestAutoMergeInput {
-                        request_id: request.id.clone(),
-                        expected_intent_id: locked.intent.id.clone(),
-                        reason: RequestAutoMergeStopReason::AccessRevoked,
-                        event_id: automatic_event_id("stopped", &locked.intent.id),
-                        now_unix,
-                    },
+                    RequestAutoMergeStopReason::AccessRevoked,
+                    automatic_event_id("stopped", &locked.intent.id),
+                    now_unix,
                 )?;
                 persist_existing_auto_merge_mutation(&tx, locked.model.clone(), &mutation).await?;
                 tx.commit().await.map_err(PostgresError::internal)?;
@@ -188,13 +176,9 @@ impl RequestStore {
                     let mutation = stop_request_auto_merge(
                         &request,
                         &locked.intent,
-                        StopRequestAutoMergeInput {
-                            request_id: request.id.clone(),
-                            expected_intent_id: locked.intent.id.clone(),
-                            reason,
-                            event_id: automatic_event_id("stopped", &locked.intent.id),
-                            now_unix,
-                        },
+                        reason,
+                        automatic_event_id("stopped", &locked.intent.id),
+                        now_unix,
                     )?;
                     persist_existing_auto_merge_mutation(&tx, locked.model.clone(), &mutation)
                         .await?;
@@ -258,13 +242,9 @@ impl RequestStore {
             let fulfilled = fulfill_request_auto_merge(
                 &request_mutation.request,
                 &locked.intent,
-                FulfillRequestAutoMergeInput {
-                    request_id: request_mutation.request.id.clone(),
-                    expected_intent_id: locked.intent.id.clone(),
-                    main_oid: git_head.head_oid.clone(),
-                    event_id: fulfilled_event_id,
-                    now_unix,
-                },
+                git_head.head_oid.clone(),
+                fulfilled_event_id,
+                now_unix,
             )?;
             persist_existing_auto_merge_mutation(&tx, locked.model, &fulfilled).await?;
             RequestLifecycleMutation {
@@ -289,12 +269,6 @@ impl RequestStore {
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone)]
-struct LockedAutoMerge {
-    model: entities::request_auto_merge_intent::Model,
-    intent: scope_domain::requests::RequestAutoMergeIntent,
-}
-
 impl RequestStore {
     /// Records the merge of a request whose head a committed main push already carries.
     /// Returns `None` when the request moved or settled since the push was inspected.
@@ -305,8 +279,7 @@ impl RequestStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
-        let active_auto_merge =
-            super::request_auto_merge::locked_active_intent_for_request(&tx, &request.id).await?;
+        let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
         if !lands_with_main(&request) || request.head_oid != command.landed_head_oid {
             return Ok(None);
         }
@@ -323,19 +296,15 @@ impl RequestStore {
             },
         )?;
         persist_lifecycle_mutation(&tx, &mutation).await?;
-        if let Some((stored, intent)) = active_auto_merge {
+        if let Some(stored) = active_auto_merge {
             let fulfilled = fulfill_request_auto_merge(
                 &mutation.request,
-                &intent,
-                FulfillRequestAutoMergeInput {
-                    request_id: mutation.request.id.clone(),
-                    expected_intent_id: intent.id.clone(),
-                    main_oid: command.main_oid,
-                    event_id: automatic_event_id("fulfilled", &intent.id),
-                    now_unix: command.now_unix,
-                },
+                &stored.intent,
+                command.main_oid,
+                automatic_event_id("fulfilled", &stored.intent.id),
+                command.now_unix,
             )?;
-            persist_existing_auto_merge_mutation(&tx, stored, &fulfilled).await?;
+            persist_existing_auto_merge_mutation(&tx, stored.model, &fulfilled).await?;
             mutation.request = fulfilled.request;
             mutation.events.push(fulfilled.event);
         }

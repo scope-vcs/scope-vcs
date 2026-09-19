@@ -198,24 +198,6 @@ pub struct CancelRequestAutoMergeInput {
     pub now_unix: u64,
 }
 
-#[derive(Clone, Debug)]
-pub struct StopRequestAutoMergeInput {
-    pub request_id: String,
-    pub expected_intent_id: String,
-    pub reason: RequestAutoMergeStopReason,
-    pub event_id: String,
-    pub now_unix: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct FulfillRequestAutoMergeInput {
-    pub request_id: String,
-    pub expected_intent_id: String,
-    pub main_oid: String,
-    pub event_id: String,
-    pub now_unix: u64,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestAutoMergeMutation {
     pub request: Request,
@@ -304,11 +286,11 @@ pub fn authorize_request_auto_merge(
     intent.validate_facts()?;
     transition(
         request,
-        intent,
+        &intent,
         input.actor_user_id,
         input.event_id,
         input.now_unix,
-        |intent| RequestEventPayload::AutoMergeEnabled {
+        RequestEventPayload::AutoMergeEnabled {
             intent_id: intent.id.clone(),
             revision_id: intent.revision_id.clone(),
             head_oid: intent.head_oid.clone(),
@@ -338,17 +320,13 @@ pub fn cancel_request_auto_merge(
             "auto-merge cannot be cancelled after the request became terminal",
         ));
     }
-    let mut next = intent.clone();
-    next.status = RequestAutoMergeIntentStatus::Cancelled;
-    next.updated_at_unix = input.now_unix;
-    next.validate_facts()?;
     transition(
         request,
-        next,
+        intent,
         input.actor_user_id,
         input.event_id,
         input.now_unix,
-        |intent| RequestEventPayload::AutoMergeCancelled {
+        RequestEventPayload::AutoMergeCancelled {
             intent_id: intent.id.clone(),
             revision_id: intent.revision_id.clone(),
             head_oid: intent.head_oid.clone(),
@@ -359,32 +337,22 @@ pub fn cancel_request_auto_merge(
 pub fn stop_request_auto_merge(
     request: &Request,
     intent: &RequestAutoMergeIntent,
-    input: StopRequestAutoMergeInput,
+    reason: RequestAutoMergeStopReason,
+    event_id: String,
+    now_unix: u64,
 ) -> Result<RequestAutoMergeMutation, DomainError> {
-    validate_transition_input(
-        request,
-        intent,
-        &input.request_id,
-        &input.expected_intent_id,
-        &input.event_id,
-        input.now_unix,
-    )?;
-    let mut next = intent.clone();
-    next.status = RequestAutoMergeIntentStatus::Stopped;
-    next.reason = Some(input.reason);
-    next.updated_at_unix = input.now_unix;
-    next.validate_facts()?;
+    validate_active_transition(request, intent, &event_id, now_unix)?;
     transition(
         request,
-        next,
+        intent,
         intent.actor_user_id.clone(),
-        input.event_id,
-        input.now_unix,
-        |intent| RequestEventPayload::AutoMergeStopped {
+        event_id,
+        now_unix,
+        RequestEventPayload::AutoMergeStopped {
             intent_id: intent.id.clone(),
             revision_id: intent.revision_id.clone(),
             head_oid: intent.head_oid.clone(),
-            reason: intent.reason.expect("stopped intent has a reason"),
+            reason,
         },
     )
 }
@@ -392,40 +360,31 @@ pub fn stop_request_auto_merge(
 pub fn fulfill_request_auto_merge(
     request: &Request,
     intent: &RequestAutoMergeIntent,
-    input: FulfillRequestAutoMergeInput,
+    main_oid: String,
+    event_id: String,
+    now_unix: u64,
 ) -> Result<RequestAutoMergeMutation, DomainError> {
-    validate_transition_input(
-        request,
-        intent,
-        &input.request_id,
-        &input.expected_intent_id,
-        &input.event_id,
-        input.now_unix,
-    )?;
-    validate_required("merged main oid", &input.main_oid)?;
+    validate_active_transition(request, intent, &event_id, now_unix)?;
+    validate_required("merged main oid", &main_oid)?;
     if request.state() != RequestState::Merged
         || request.merged_head_oid.as_deref() != Some(intent.head_oid.as_str())
-        || request.merged_main_oid.as_deref() != Some(input.main_oid.as_str())
+        || request.merged_main_oid.as_deref() != Some(main_oid.as_str())
     {
         return Err(DomainError::conflict(
             "auto-merge can only be fulfilled by its committed request merge",
         ));
     }
-    let mut next = intent.clone();
-    next.status = RequestAutoMergeIntentStatus::Fulfilled;
-    next.updated_at_unix = input.now_unix;
-    next.validate_facts()?;
     transition(
         request,
-        next,
+        intent,
         intent.actor_user_id.clone(),
-        input.event_id,
-        input.now_unix,
-        |intent| RequestEventPayload::AutoMergeFulfilled {
+        event_id,
+        now_unix,
+        RequestEventPayload::AutoMergeFulfilled {
             intent_id: intent.id.clone(),
             revision_id: intent.revision_id.clone(),
             head_oid: intent.head_oid.clone(),
-            main_oid: input.main_oid,
+            main_oid,
         },
     )
 }
@@ -473,7 +432,6 @@ fn validate_transition_input(
 ) -> Result<(), DomainError> {
     validate_required("request id", request_id)?;
     validate_required("expected auto-merge intent id", expected_intent_id)?;
-    validate_required("auto-merge event id", event_id)?;
     if request.id != request_id || intent.request_id != request_id {
         return Err(DomainError::not_found(
             "request auto-merge intent not found",
@@ -481,6 +439,21 @@ fn validate_transition_input(
     }
     if intent.id != expected_intent_id {
         return Err(DomainError::conflict("auto-merge authorization changed"));
+    }
+    validate_active_transition(request, intent, event_id, now_unix)
+}
+
+fn validate_active_transition(
+    request: &Request,
+    intent: &RequestAutoMergeIntent,
+    event_id: &str,
+    now_unix: u64,
+) -> Result<(), DomainError> {
+    validate_required("auto-merge event id", event_id)?;
+    if intent.request_id != request.id {
+        return Err(DomainError::not_found(
+            "request auto-merge intent not found",
+        ));
     }
     if !intent.is_active() {
         return Err(DomainError::conflict("auto-merge is no longer active"));
@@ -495,23 +468,44 @@ fn validate_transition_input(
 
 fn transition(
     request: &Request,
-    intent: RequestAutoMergeIntent,
+    intent: &RequestAutoMergeIntent,
     event_actor_user_id: String,
     event_id: String,
     now_unix: u64,
-    payload: impl FnOnce(&RequestAutoMergeIntent) -> RequestEventPayload,
+    payload: RequestEventPayload,
 ) -> Result<RequestAutoMergeMutation, DomainError> {
+    let mut intent = intent.clone();
+    let (status, reason, kind) = match &payload {
+        RequestEventPayload::AutoMergeEnabled { .. } => (
+            RequestAutoMergeIntentStatus::Active,
+            None,
+            RequestEventKind::AutoMergeEnabled,
+        ),
+        RequestEventPayload::AutoMergeCancelled { .. } => (
+            RequestAutoMergeIntentStatus::Cancelled,
+            None,
+            RequestEventKind::AutoMergeCancelled,
+        ),
+        RequestEventPayload::AutoMergeStopped { reason, .. } => (
+            RequestAutoMergeIntentStatus::Stopped,
+            Some(*reason),
+            RequestEventKind::AutoMergeStopped,
+        ),
+        RequestEventPayload::AutoMergeFulfilled { .. } => (
+            RequestAutoMergeIntentStatus::Fulfilled,
+            None,
+            RequestEventKind::AutoMergeFulfilled,
+        ),
+        _ => unreachable!("auto-merge transition creates only auto-merge events"),
+    };
+    intent.status = status;
+    intent.reason = reason;
+    intent.updated_at_unix = now_unix;
+    intent.validate_facts()?;
+
     let mut request = request.clone();
     request.updated_at_unix = request.updated_at_unix.max(now_unix);
     let position = advance_request_activity(&mut request)?;
-    let payload = payload(&intent);
-    let kind = match payload {
-        RequestEventPayload::AutoMergeEnabled { .. } => RequestEventKind::AutoMergeEnabled,
-        RequestEventPayload::AutoMergeCancelled { .. } => RequestEventKind::AutoMergeCancelled,
-        RequestEventPayload::AutoMergeStopped { .. } => RequestEventKind::AutoMergeStopped,
-        RequestEventPayload::AutoMergeFulfilled { .. } => RequestEventKind::AutoMergeFulfilled,
-        _ => unreachable!("auto-merge transition creates only auto-merge events"),
-    };
     let event = RequestEvent {
         id: event_id,
         request_id: request.id.clone(),

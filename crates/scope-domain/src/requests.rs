@@ -13,12 +13,11 @@ pub use access::{
 };
 mod auto_merge;
 pub use auto_merge::{
-    AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, FulfillRequestAutoMergeInput,
-    RequestAutoMergeIntent, RequestAutoMergeIntentStatus, RequestAutoMergeMutation,
-    RequestAutoMergeReadiness, RequestAutoMergeStopReason, RequestAutoMergeWaitingReason,
-    StopRequestAutoMergeInput, authorize_request_auto_merge, cancel_request_auto_merge,
-    fulfill_request_auto_merge, request_auto_merge_can_cancel, request_auto_merge_can_enable,
-    request_auto_merge_readiness, stop_request_auto_merge,
+    AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
+    RequestAutoMergeIntentStatus, RequestAutoMergeMutation, RequestAutoMergeReadiness,
+    RequestAutoMergeStopReason, RequestAutoMergeWaitingReason, authorize_request_auto_merge,
+    cancel_request_auto_merge, fulfill_request_auto_merge, request_auto_merge_can_cancel,
+    request_auto_merge_can_enable, request_auto_merge_readiness, stop_request_auto_merge,
 };
 pub mod attachments;
 mod checks;
