@@ -144,10 +144,13 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
     );
     let checks = maintainer.json(["request", "checks", "--request", request_id.as_str()]);
     assert_command(&checks, "request.checks");
-    assert_eq!(string_at(&checks, "/result/request_id"), request_id);
+    assert_eq!(string_at(&checks, "/result/checks/request_id"), request_id);
     let public_checks = contributor.json(["request", "checks"]);
     assert_command(&public_checks, "request.checks");
-    assert_eq!(string_at(&public_checks, "/result/request_id"), request_id);
+    assert_eq!(
+        string_at(&public_checks, "/result/checks/request_id"),
+        request_id
+    );
 
     let discussion = contributor.json([
         "request",

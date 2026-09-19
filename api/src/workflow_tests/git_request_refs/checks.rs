@@ -119,6 +119,63 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
     assert_eq!(run.trigger, RunTrigger::Request);
     assert_eq!(run.source.git_oid(), checks["head_oid"].as_str().unwrap());
     assert_eq!(run.requested_by_user_id.as_deref(), Some(&*test_owner_id()));
+
+    state
+        .metadata
+        .requests()
+        .record_request_checks(RecordRequestChecksCommand {
+            evaluation: RequestCheckEvaluation::configuration_error(
+                &request_id,
+                "ffffffffffffffffffffffffffffffffffffffff",
+                "stale head configuration error",
+                unix_now(),
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+        })
+        .await
+        .unwrap();
+    let app = router(state);
+    let list = expect_json(
+        api_request(
+            app.clone(),
+            "GET",
+            &format!("/v1/repos/{TEST_REPO_ID}/requests"),
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let listed = list["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["id"] == request_id)
+        .unwrap();
+    assert_eq!(listed["mergeability"]["status"], "ChecksPending");
+
+    let queue = expect_json(
+        api_request(
+            app,
+            "GET",
+            &format!("/v1/repos/{TEST_REPO_ID}/requests/queue?section=active"),
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let queued = queue["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["request"]["id"] == request_id)
+        .unwrap();
+    assert_eq!(queued["request"]["mergeability"]["status"], "ChecksPending");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
