@@ -8,6 +8,7 @@ import { RequestAutoMergeActions } from './request-auto-merge-actions'
 import {
   canMergeRequest,
   checksHoldRequestMerge,
+  hasRequestAutoMergeActions,
   hasRequestLifecycleActions,
 } from './request-lifecycle-model'
 import { requestMergeabilityLabel } from './request-labels'
@@ -39,8 +40,10 @@ export function RequestLifecycleActions({
   const publicRequest = request.author_role === 'Public'
   const submitLabel = publicRequest ? 'Request review' : 'Mark ready'
 
-  const hasAutoMergeAction = autoMerge.status?.can_enable === true ||
-    autoMerge.status?.intent !== null || autoMergeDialogOpen
+  const hasAutoMergeAction = hasRequestAutoMergeActions(
+    autoMerge.status,
+    autoMergeDialogOpen,
+  )
 
   if (!hasRequestLifecycleActions(request) && !hasAutoMergeAction) return null
 

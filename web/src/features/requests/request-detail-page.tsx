@@ -43,7 +43,10 @@ import type { RequestActivityPage } from './request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
-import { hasRequestLifecycleActions } from './request-lifecycle-model'
+import {
+  hasRequestAutoMergeActions,
+  hasRequestLifecycleActions,
+} from './request-lifecycle-model'
 import { useDetailPaneRail } from './use-detail-pane-rail'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
@@ -162,8 +165,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   const paneRef = useRef<HTMLDivElement>(null)
   const rail = useDetailPaneRail(paneRef)
   const hasLifecycleActions = hasRequestLifecycleActions(request) ||
-    autoMerge.status?.can_enable === true ||
-    autoMerge.status?.intent !== null
+    hasRequestAutoMergeActions(autoMerge.status)
   const actionClearance = hasLifecycleActions
     ? autoMerge.status?.intent
       ? 'pb-28 min-[701px]:pb-0'

@@ -42,12 +42,13 @@ test('an action receipt replaces cached status without a follow-up read', async 
     return status()
   })
 
-  requestAutoMergeResource.write(identity, {
+  const generation = requestAutoMergeResource.invalidationGeneration(identity)
+  assert.equal(requestAutoMergeResource.writeIfNotInvalidated(identity, generation, {
     ...status(),
     can_cancel: false,
     intent: { ...status().intent!, status: 'Cancelled' },
     waiting_reason: null,
-  })
+  }), true)
   await requestAutoMergeResource.ensure(identity, '', async () => {
     calls++
     return status()
@@ -140,6 +141,49 @@ test('a run-driven refresh retains active status until it publishes the stop', a
 
   assert.equal(requestAutoMergeResource.peek(identity)?.intent?.status, 'Stopped')
   assert.equal(requestAutoMergeResource.peek(identity)?.intent?.reason, 'ChecksFailed')
+})
+
+test('an action receipt cannot replace a newer event-triggered refresh', async () => {
+  const identity = requestAutoMergeIdentity('viewer-access', 'request')
+  requestAutoMergeResource.write(identity, status())
+  const mutationGeneration = requestAutoMergeResource.invalidationGeneration(identity)
+  invalidateRepoResources('viewer-access', {
+    incarnation_id: 'incarnation',
+    kind: { RepositoryChanged: { reason: 'request-auto-merge-updated' } },
+    repo_id: 'repo',
+    version: 2,
+  })
+
+  let finish!: (value: RequestAutoMergeResponse) => void
+  let refreshSignal!: AbortSignal
+  const refresh = requestAutoMergeResource.ensure(identity, '2', (signal) => {
+    refreshSignal = signal
+    return new Promise<RequestAutoMergeResponse>((resolve) => {
+      finish = resolve
+    })
+  })
+  await Promise.resolve()
+
+  assert.equal(requestAutoMergeResource.writeIfNotInvalidated(
+    identity,
+    mutationGeneration,
+    status(),
+  ), false)
+  assert.equal(refreshSignal.aborted, false)
+
+  const fulfilled = status()
+  fulfilled.can_cancel = false
+  fulfilled.intent = { ...fulfilled.intent!, status: 'Fulfilled' }
+  fulfilled.waiting_reason = null
+  finish(fulfilled)
+  await refresh
+
+  assert.equal(requestAutoMergeResource.writeIfNotInvalidated(
+    identity,
+    mutationGeneration,
+    status(),
+  ), false)
+  assert.equal(requestAutoMergeResource.peek(identity)?.intent?.status, 'Fulfilled')
 })
 
 function status(): RequestAutoMergeResponse {

@@ -118,6 +118,7 @@ impl RequestStore {
                 now_unix: command.now_unix,
             },
         )?;
+        lock_request_check_evidence(&tx, &request.id, &revision.new_head_oid).await?;
         persist_new_auto_merge_mutation(&tx, &mutation).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)
@@ -231,7 +232,6 @@ impl RequestStore {
             update.claim_token = Set(Some(claim_token.clone()));
             update.claim_expires_at_unix = Set(Some(lease_expires));
             update.attempt = Set(i32::try_from(attempt).map_err(PostgresError::internal)?);
-            update.updated_at_unix = Set(now);
             update.update(&tx).await.map_err(PostgresError::internal)?;
             claimed.push(ClaimedRequestAutoMerge {
                 intent,
@@ -250,7 +250,11 @@ impl RequestStore {
         &self,
         command: ReleaseRequestAutoMergeClaimCommand,
     ) -> Result<bool, PostgresError> {
-        let now = u64_to_i64(command.now_unix, "auto-merge release time")?;
+        if command.next_attempt_at_unix < command.now_unix {
+            return Err(PostgresError::invalid_input(
+                "auto-merge next attempt cannot predate release",
+            ));
+        }
         let next = u64_to_i64(command.next_attempt_at_unix, "auto-merge next attempt time")?;
         let reset_attempt = command.last_error.is_none();
         let mut update = entities::request_auto_merge_intent::Entity::update_many()
@@ -269,10 +273,6 @@ impl RequestStore {
             .col_expr(
                 entities::request_auto_merge_intent::Column::LastError,
                 sea_orm::sea_query::Expr::value(command.last_error),
-            )
-            .col_expr(
-                entities::request_auto_merge_intent::Column::UpdatedAtUnix,
-                sea_orm::sea_query::Expr::value(now),
             );
         if reset_attempt {
             update = update.col_expr(
@@ -392,26 +392,9 @@ pub(super) async fn lock_active_auto_merge_for_run(
     )>,
     PostgresError,
 > {
-    let Some(row) = tx
-        .query_one(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-            SELECT evaluation.request_id
-              FROM scope_request_check_evaluations evaluation
-             WHERE evaluation.checks @>
-                   jsonb_build_array(jsonb_build_object('run_id', $1::text))
-             LIMIT 1
-            "#,
-            [run_id.into()],
-        ))
-        .await
-        .map_err(PostgresError::internal)?
-    else {
+    let Some(request_id) = request_id_for_check_run(tx, run_id).await? else {
         return Ok(None);
     };
-    let request_id = row
-        .try_get::<String>("", "request_id")
-        .map_err(PostgresError::internal)?;
     acquire_aggregate_lock(tx, "request", &request_id).await?;
     let active = locked_active_intent_for_request(tx, &request_id).await?;
     let Some((model, intent)) = active else {
@@ -428,6 +411,67 @@ pub(super) async fn lock_active_auto_merge_for_run(
     } else {
         Ok(None)
     }
+}
+
+pub(super) async fn request_id_for_check_run<C: ConnectionTrait>(
+    conn: &C,
+    run_id: &str,
+) -> Result<Option<String>, PostgresError> {
+    let row = conn
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            SELECT evaluation.request_id
+              FROM scope_request_check_evaluations evaluation
+             WHERE evaluation.checks @>
+                   jsonb_build_array(jsonb_build_object('run_id', $1::text))
+             LIMIT 1
+            "#,
+            [run_id.into()],
+        ))
+        .await
+        .map_err(PostgresError::internal)?;
+    row.map(|row| {
+        row.try_get::<String>("", "request_id")
+            .map_err(PostgresError::internal)
+    })
+    .transpose()
+}
+
+async fn lock_request_check_evidence(
+    tx: &DatabaseTransaction,
+    request_id: &str,
+    head_oid: &str,
+) -> Result<(), PostgresError> {
+    let evaluation = entities::request_check_evaluation::Entity::find_by_id((
+        request_id.to_string(),
+        head_oid.to_string(),
+    ))
+    .one(tx)
+    .await
+    .map_err(PostgresError::internal)?
+    .map(entities::request_check_evaluation::Model::try_into_domain)
+    .transpose()?;
+    let Some(evaluation) = evaluation else {
+        return Ok(());
+    };
+    let mut run_ids = evaluation.run_ids().map(str::to_string).collect::<Vec<_>>();
+    run_ids.sort_unstable();
+    run_ids.dedup();
+    for run_id in run_ids {
+        let exists = entities::run::Entity::find_by_id(&run_id)
+            .lock_exclusive()
+            .one(tx)
+            .await
+            .map_err(PostgresError::internal)?
+            .is_some();
+        if !exists {
+            return Err(PostgresError::conflict(
+                "request check evidence is no longer available",
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub(super) async fn stop_auto_merge_for_terminal_run(

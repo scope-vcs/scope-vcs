@@ -48,10 +48,15 @@ export function useRequestAutoMerge({
     action: 'authorize' | 'cancel',
     mutate: () => Promise<RequestAutoMergeResponse>,
   ) => {
+    const generation = requestAutoMergeResource.invalidationGeneration(identity)
     setPending(action)
     setMutationError(null)
     try {
-      requestAutoMergeResource.write(identity, await mutate())
+      requestAutoMergeResource.writeIfNotInvalidated(
+        identity,
+        generation,
+        await mutate(),
+      )
       return true
     } catch (cause) {
       setMutationError(resourceErrorMessage(

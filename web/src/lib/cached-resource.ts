@@ -4,6 +4,7 @@ type ResourceSnapshot<T> = {
   value: T | null
   error: unknown
   version: string | null
+  invalidationGeneration: number
   stale: boolean
   pending: boolean
 }
@@ -15,7 +16,8 @@ type ResourceAttempt<T> = {
 }
 
 const emptySnapshot: ResourceSnapshot<never> = {
-  value: null, error: null, version: null, stale: true, pending: false,
+  value: null, error: null, version: null, invalidationGeneration: 0,
+  stale: true, pending: false,
 }
 
 export type CachedResourceStore<T extends object> = ReturnType<typeof createCachedResource<T>>
@@ -23,6 +25,7 @@ export type CachedResourceStore<T extends object> = ReturnType<typeof createCach
 // Requests belong to the resource, so leaving a page does not discard work
 // another visit or subscriber can reuse.
 export function createCachedResource<T extends object>(options: BoundedCacheOptions<T>) {
+  let nextInvalidationGeneration = 1
   const entries = createBoundedCache<string, ResourceSnapshot<T>>({
     ...options,
     weightOf: (snapshot) => snapshot.value === null ? 0 : options.weightOf?.(snapshot.value) ?? 0,
@@ -54,7 +57,13 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
   function invalidate(identity: string) {
     const current = getSnapshot(identity)
     cancel(identity)
-    if (current !== emptySnapshot) publish(identity, { ...current, error: null, stale: true, pending: false })
+    if (current !== emptySnapshot) publish(identity, {
+      ...current,
+      error: null,
+      invalidationGeneration: nextInvalidationGeneration++,
+      stale: true,
+      pending: false,
+    })
   }
 
   function ensure(identity: string, version: string, load: (signal: AbortSignal) => Promise<T>) {
@@ -66,12 +75,27 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
     cancel(identity)
     const controller = new AbortController()
     const attempt: ResourceAttempt<T> = { controller, promise: Promise.resolve(null), version }
+    const invalidationGeneration = snapshot.invalidationGeneration || nextInvalidationGeneration++
     attempts.set(identity, attempt)
-    publish(identity, { ...snapshot, error: null, version, stale: false, pending: true })
+    publish(identity, {
+      ...snapshot,
+      error: null,
+      invalidationGeneration,
+      version,
+      stale: false,
+      pending: true,
+    })
     attempt.promise = Promise.resolve().then(() => load(controller.signal)).then(
       (value) => {
         if (attempts.get(identity) !== attempt) return null
-        publish(identity, { value, error: null, version, stale: false, pending: false })
+        publish(identity, {
+          value,
+          error: null,
+          invalidationGeneration,
+          version,
+          stale: false,
+          pending: false,
+        })
         return value
       },
       (error: unknown) => {
@@ -106,12 +130,49 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
     peek: (identity: string) => getSnapshot(identity).value,
     read: (identity: string) => entries.get(identity)?.value ?? null,
     seed(identity: string, value: T, version = '') {
-      if (getSnapshot(identity).version !== null) return
-      publish(identity, { value, version, error: null, stale: false, pending: false })
+      const current = getSnapshot(identity)
+      if (current.version !== null) return
+      publish(identity, {
+        value,
+        version,
+        error: null,
+        invalidationGeneration: current.invalidationGeneration || nextInvalidationGeneration++,
+        stale: false,
+        pending: false,
+      })
     },
     write(identity: string, value: T, version = '') {
+      const current = getSnapshot(identity)
       cancel(identity)
-      publish(identity, { value, version, error: null, stale: false, pending: false })
+      publish(identity, {
+        value,
+        version,
+        error: null,
+        invalidationGeneration: current.invalidationGeneration || nextInvalidationGeneration++,
+        stale: false,
+        pending: false,
+      })
+    },
+    invalidationGeneration(identity: string) {
+      return getSnapshot(identity).invalidationGeneration
+    },
+    writeIfNotInvalidated(
+      identity: string,
+      generation: number,
+      value: T,
+      version = '',
+    ) {
+      if (getSnapshot(identity).invalidationGeneration !== generation) return false
+      cancel(identity)
+      publish(identity, {
+        value,
+        version,
+        error: null,
+        invalidationGeneration: generation || nextInvalidationGeneration++,
+        stale: false,
+        pending: false,
+      })
+      return true
     },
     subscribe(identity: string, listener: () => void) {
       let subscribers = listeners.get(identity)

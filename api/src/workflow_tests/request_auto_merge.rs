@@ -203,9 +203,15 @@ async fn authorize(
     .await
 }
 
-async fn native_open_request(label: &str) -> (AppState, String, String, TestServer) {
+async fn native_open_request(
+    label: &str,
+    audience: &str,
+) -> (AppState, TempGitRepo, String, String, String, TestServer) {
     let (state, source, _main_head) =
         super::push_intent_completion::published_git_fixture(label).await;
+    if audience == "Public" {
+        drain_outbox(&state, &format!("{label}-initial-public-projection")).await;
+    }
     let app = router(state.clone());
     let bearer = bearer_header();
     let started = expect_json(
@@ -217,7 +223,7 @@ async fn native_open_request(label: &str) -> (AppState, String, String, TestServ
             Some(
                 &serde_json::json!({
                     "name": AUTO_REQUEST_NAME,
-                    "audience": "Private",
+                    "audience": audience,
                 })
                 .to_string(),
             ),
@@ -229,8 +235,22 @@ async fn native_open_request(label: &str) -> (AppState, String, String, TestServ
     let request_id = started["request"]["id"].as_str().unwrap().to_string();
     let (origin, server) = spawn_test_server(&state).await;
     let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let public_request_source = if audience == "Public" {
+        let request_source = TempGitRepo(unique_test_path(&format!("{label}-public-request")));
+        let public_remote = format!("{origin}/git/public/{TEST_REPO_ID}");
+        run_git(
+            None,
+            &["clone", &public_remote, request_source.to_str().unwrap()],
+            "clone public main for auto merge request",
+        )
+        .unwrap();
+        Some(request_source)
+    } else {
+        None
+    };
+    let request_source = public_request_source.as_deref().unwrap_or(source.as_ref());
     run_git(
-        Some(&source),
+        Some(request_source),
         &[
             "config",
             &format!("http.{remote}.extraHeader"),
@@ -239,16 +259,16 @@ async fn native_open_request(label: &str) -> (AppState, String, String, TestServ
         "configure request auto merge bearer",
     )
     .unwrap();
-    fs::write(source.join("auto-merge.txt"), "merge this head\n").unwrap();
+    fs::write(request_source.join("auto-merge.txt"), "merge this head\n").unwrap();
     run_git(
-        Some(&source),
+        Some(request_source),
         &["add", "auto-merge.txt"],
         "stage auto merge request",
     )
     .unwrap();
-    commit_all(&source, "auto merge request");
+    commit_all(request_source, "auto merge request");
     run_git(
-        Some(&source),
+        Some(request_source),
         &[
             "push",
             &remote,
@@ -257,7 +277,7 @@ async fn native_open_request(label: &str) -> (AppState, String, String, TestServ
         "push auto merge request",
     )
     .unwrap();
-    let request_head = git_head_oid(&source);
+    let request_head = git_head_oid(request_source);
     let submitted = api_request(
         app,
         "POST",
@@ -267,7 +287,7 @@ async fn native_open_request(label: &str) -> (AppState, String, String, TestServ
     )
     .await;
     assert_eq!(submitted.status(), StatusCode::OK);
-    (state, request_id, request_head, server)
+    (state, source, remote, request_id, request_head, server)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -609,8 +629,8 @@ async fn terminal_run_failure_stays_stopped_after_retry() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn manual_merge_fulfills_an_active_authorization() {
-    let (state, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-manual").await;
+    let (state, _source, _remote, request_id, request_head, _server) =
+        native_open_request("request-auto-merge-manual", "Private").await;
     let app = router(state);
     let bearer = bearer_header();
     let ready = auto_merge_json(
@@ -654,8 +674,8 @@ async fn manual_merge_fulfills_an_active_authorization() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn successful_reconciliation_merges_the_authorized_head_once() {
-    let (state, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-native").await;
+    let (state, _source, _remote, request_id, request_head, _server) =
+        native_open_request("request-auto-merge-native", "Private").await;
     let app = router(state.clone());
     let bearer = bearer_header();
     let ready = auto_merge_json(
@@ -730,4 +750,86 @@ async fn successful_reconciliation_merges_the_authorized_head_once() {
             .len(),
         commit_count_before + 1
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn public_main_advance_stops_authorization_as_merge_conflict() {
+    let (state, source, remote, request_id, request_head, _server) =
+        native_open_request("request-auto-merge-public-main-advance", "Public").await;
+    drain_outbox(&state, "request-auto-merge-public-ready").await;
+    let app = router(state.clone());
+    let bearer = bearer_header();
+    let ready = auto_merge_json(
+        app.clone(),
+        "GET",
+        &request_id,
+        &bearer,
+        None,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(ready["waiting_reason"], serde_json::Value::Null);
+    let revision_id = ready["revision_id"].as_str().unwrap();
+    let active = authorize(
+        app.clone(),
+        &request_id,
+        revision_id,
+        &request_head,
+        &bearer,
+    )
+    .await;
+    assert_eq!(active["intent"]["status"], "Active");
+
+    fs::write(source.join("public-main.txt"), "public main advanced\n").unwrap();
+    run_git(
+        Some(&source),
+        &["add", "public-main.txt"],
+        "stage public main advance",
+    )
+    .unwrap();
+    commit_all(
+        &source,
+        "advance public main after auto merge authorization",
+    );
+    run_git(
+        Some(&source),
+        &[
+            "config",
+            "--add",
+            &format!("http.{remote}.extraHeader"),
+            &format!("Authorization: {bearer}"),
+        ],
+        "configure public main advance bearer",
+    )
+    .unwrap();
+    configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
+    run_git(
+        Some(&source),
+        &[
+            "push",
+            &remote,
+            &format!("HEAD:refs/heads/{DEFAULT_GIT_BRANCH}"),
+        ],
+        "advance public main after auto merge authorization",
+    )
+    .unwrap();
+    drain_outbox(&state, "request-auto-merge-public-main-advanced").await;
+
+    let attempt_time = unix_now();
+    assert_eq!(
+        crate::use_cases::request_auto_merge::reconcile_once(&state, attempt_time)
+            .await
+            .unwrap(),
+        1
+    );
+    let stopped = auto_merge_json(app, "GET", &request_id, &bearer, None, StatusCode::OK).await;
+    assert_eq!(stopped["intent"]["status"], "Stopped");
+    assert_eq!(stopped["intent"]["reason"], "MergeConflict");
+    assert_eq!(
+        crate::use_cases::request_auto_merge::reconcile_once(&state, attempt_time + 1)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(live_file_content(&state, "/auto-merge.txt").await, None);
 }

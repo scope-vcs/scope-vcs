@@ -10,6 +10,16 @@ pub(crate) enum RequestMergeFailure {
 }
 
 impl RequestMergeFailure {
+    pub(super) fn public_range(error: ApiError) -> Self {
+        // These conflicts require a new request push. Retrying the authorized
+        // revision cannot repair its ancestry or public path restrictions.
+        if error.kind == ErrorKind::Conflict {
+            Self::MergeConflict(error)
+        } else {
+            Self::classify(error)
+        }
+    }
+
     pub(crate) fn error(&self) -> &ApiError {
         match self {
             Self::Rejected(error)
@@ -49,5 +59,33 @@ impl From<ApiError> for RequestMergeFailure {
 impl From<scope_postgres::error::PostgresError> for RequestMergeFailure {
     fn from(error: scope_postgres::error::PostgresError) -> Self {
         Self::classify(error.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_range_conflicts_stop_but_infrastructure_failures_retry() {
+        for error in [
+            ApiError::conflict("public main advanced"),
+            ApiError::protected_paths(vec![".scope/RULES.md".to_string()]),
+        ] {
+            assert!(matches!(
+                RequestMergeFailure::public_range(error),
+                RequestMergeFailure::MergeConflict(_)
+            ));
+        }
+        for error in [
+            ApiError::internal_message("git process failed"),
+            ApiError::infrastructure_unavailable("object storage unavailable"),
+            ApiError::too_many_requests("storage throttled"),
+        ] {
+            assert!(matches!(
+                RequestMergeFailure::public_range(error),
+                RequestMergeFailure::Retryable(_)
+            ));
+        }
     }
 }

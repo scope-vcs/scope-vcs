@@ -336,7 +336,7 @@ async fn prepare_request_merge_for_execution(
                     &request.head_oid,
                 )
                 .await
-                .map_err(RequestMergeFailure::from)?;
+                .map_err(RequestMergeFailure::public_range)?;
                 let merge_base_oid = validated.public_base_oid.clone();
                 (
                     RequestMergeOrigin::Public {

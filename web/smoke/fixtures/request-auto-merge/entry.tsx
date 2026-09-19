@@ -36,7 +36,8 @@ const requestActions: RequestActionController = {
 }
 
 function App() {
-  const [status, setStatus] = useState<RequestAutoMergeResponse>({
+  const [loadingOnly, setLoadingOnly] = useState(false)
+  const [status, setStatus] = useState<RequestAutoMergeResponse | null>({
     can_cancel: false,
     can_enable: true,
     head_oid: headOid,
@@ -46,7 +47,7 @@ function App() {
     waiting_reason: 'Checks are still running.',
   })
   Object.assign(window, {
-    refreshAutoMerge: () => setStatus((current) => ({
+    refreshAutoMerge: () => setStatus((current) => current && ({
       ...current,
       can_enable: false,
       head_oid: 'b'.repeat(40),
@@ -60,7 +61,7 @@ function App() {
     })),
     setAutoMergeIntentStatus: (
       intentStatus: 'Cancelled' | 'Stopped' | 'Fulfilled',
-    ) => setStatus((current) => ({
+    ) => setStatus((current) => current && ({
       ...current,
       can_cancel: false,
       can_enable: intentStatus !== 'Fulfilled',
@@ -71,12 +72,16 @@ function App() {
       },
       waiting_reason: null,
     })),
+    showAutoMergeLoading: () => {
+      setLoadingOnly(true)
+      setStatus(null)
+    },
   })
   const autoMerge: RequestAutoMergeController = {
     authorize: async (input) => {
       calls.push(input)
       setStatus({
-        ...status,
+        ...status!,
         can_cancel: true,
         can_enable: false,
         intent: {
@@ -96,10 +101,10 @@ function App() {
     cancel: async (input) => {
       calls.push(input)
       setStatus({
-        ...status,
+        ...status!,
         can_cancel: false,
         can_enable: true,
-        intent: status.intent && { ...status.intent, status: 'Cancelled' },
+        intent: status!.intent && { ...status!.intent, status: 'Cancelled' },
         waiting_reason: null,
       })
       return true
@@ -117,7 +122,10 @@ function App() {
         actions={requestActions}
         autoMerge={autoMerge}
         className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:mt-6 min-[701px]:justify-start min-[701px]:border-0 min-[701px]:p-0"
-        request={request}
+        request={loadingOnly ? {
+          ...request,
+          permissions: { ...request.permissions, can_merge: false },
+        } : request}
         viewerId="viewer"
       />
     </main>

@@ -92,6 +92,14 @@ test('auto-merge confirms one revision and stays usable on desktop and mobile', 
     }
     await page.evaluate(() => window.setAutoMergeIntentStatus('Fulfilled'))
     await page.getByText('Merged automatically', { exact: true }).waitFor()
+    await page.evaluate(() => window.showAutoMergeLoading())
+    assert.equal(await page.locator('main > div.fixed').count(), 0)
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await page.screenshot({
+        path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.loading.png`,
+        fullPage: true,
+      })
+    }
     assert.deepEqual(errors, [])
   } finally {
     await browser.close()

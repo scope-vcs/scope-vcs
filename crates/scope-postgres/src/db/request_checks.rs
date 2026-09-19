@@ -51,6 +51,7 @@ impl RequestStore {
     ) -> Result<RequestChecksMutation, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         super::acquire_aggregate_lock(&tx, "request", &command.evaluation.request_id).await?;
+        super::run_retention::lock_run_evidence_retention(&tx).await?;
         let active_auto_merge = super::request_auto_merge::locked_active_intent_for_request(
             &tx,
             &command.evaluation.request_id,
@@ -108,6 +109,7 @@ impl RequestStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
+        super::run_retention::lock_run_evidence_retention(&tx).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         if !repo.access.is_maintainer() {
             return Err(PostgresError::permission_denied("repo maintainer required"));
