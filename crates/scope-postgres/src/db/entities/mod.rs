@@ -76,6 +76,7 @@ mod history;
 mod jobs;
 mod read_models;
 mod repositories;
+mod request_auto_merge;
 pub mod request_ref_cleanup_job;
 mod requests;
 mod runs;
@@ -98,6 +99,7 @@ pub use repositories::{
     repository_git_push_token, repository_landing_file, repository_workflow_catalog,
     repository_workflow_file,
 };
+pub use request_auto_merge::request_auto_merge_intent;
 pub use requests::{
     request, request_attention_state, request_check_evaluation, request_claim, request_discussion,
     request_discussion_read_state, request_discussion_reply, request_event, request_invitee,

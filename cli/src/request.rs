@@ -2,12 +2,12 @@ use crate::api::ApiSession;
 use crate::{
     api::{
         CreateRequestDiscussionParams, CreateRequestDiscussionReplyParams, RequestActivityParams,
-        RequestTarget, StartRequestParams, add_request_invitee, close_request as api_close_request,
-        create_request_discussion, create_request_discussion_reply, edit_request_identity,
-        get_request, get_request_activity, leave_request, list_requests, merge_request,
-        rate_request, remove_request_invitee, reopen_and_reply_to_request_discussion,
-        resolve_request_discussion, start_request as api_start_request,
-        submit_request as api_submit_request,
+        RequestTarget, StartRequestParams, add_request_invitee, authorize_request_auto_merge,
+        cancel_request_auto_merge, close_request as api_close_request, create_request_discussion,
+        create_request_discussion_reply, edit_request_identity, get_request, get_request_activity,
+        get_request_auto_merge, leave_request, list_requests, merge_request, rate_request,
+        remove_request_invitee, reopen_and_reply_to_request_discussion, resolve_request_discussion,
+        start_request as api_start_request, submit_request as api_submit_request,
     },
     git_repo::{
         GitRepo, current_branch, ensure_clean_working_tree, ensure_git_repo_ready, head_oid,
@@ -57,10 +57,11 @@ use local::{
 use outcome::*;
 use render::audience_label;
 use render::{
-    close_receipt, discussion_reopened_receipt, discussion_replied_receipt,
-    discussion_resolved_receipt, discussion_started_receipt, invitee_added_receipt,
-    invitee_removed_receipt, leave_receipt, repo_access_lines, request_activity_lines_for_response,
-    request_detail_lines, request_list_line, request_mutation_receipt_lines,
+    auto_merge_receipt_lines, auto_merge_status_lines, close_receipt, discussion_reopened_receipt,
+    discussion_replied_receipt, discussion_resolved_receipt, discussion_started_receipt,
+    invitee_added_receipt, invitee_removed_receipt, leave_receipt, repo_access_lines,
+    request_activity_lines_for_response, request_detail_lines, request_list_line,
+    request_mutation_receipt_lines,
 };
 use text::discussion_body;
 
@@ -128,7 +129,7 @@ pub fn run_request_command(
             invite_request(git_repo, api, args.target, args.handle, false)
         }
         RequestCommand::Leave(args) => leave_invited_request(git_repo, api, args),
-        RequestCommand::Merge(args) => merge_request_command(git_repo, api, args.target, args.yes),
+        RequestCommand::Merge(args) => merge_request_command(git_repo, api, args),
         RequestCommand::Rate(args) => {
             rate_request_command(git_repo, api, args.target, args.score, args.reason)
         }
@@ -168,6 +169,7 @@ fn show_request_status(
                 repo: context.repo,
                 request: detail.request,
                 activity: None,
+                auto_merge: None,
             }),
             human_lines,
         ));

@@ -81,6 +81,7 @@ mod repo_metadata;
 mod repo_visibility;
 mod request_attachments;
 mod request_attention;
+mod request_auto_merge;
 mod request_discussions;
 mod requests;
 mod run_inspection;

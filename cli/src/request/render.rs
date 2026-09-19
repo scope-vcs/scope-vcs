@@ -8,6 +8,12 @@ use crate::api::{
 };
 use crate::display::{short_oid, terminal_text};
 
+mod auto_merge;
+use auto_merge::activity_line as auto_merge_activity_line;
+pub(super) use auto_merge::{
+    receipt_lines as auto_merge_receipt_lines, status_lines as auto_merge_status_lines,
+};
+
 pub(super) fn repo_access_lines(repo: &RepoSummaryResponse) -> Vec<String> {
     vec![
         format!("Scope repo: {}/{}", repo.owner_handle, repo.name),
@@ -266,6 +272,10 @@ fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String>
             RequestEventPayload::DiscussionReopened { discussion_id } => {
                 format!("Reopened discussion {}", terminal_text(discussion_id))
             }
+            payload @ (RequestEventPayload::AutoMergeEnabled { .. }
+            | RequestEventPayload::AutoMergeCancelled { .. }
+            | RequestEventPayload::AutoMergeStopped { .. }
+            | RequestEventPayload::AutoMergeFulfilled { .. }) => auto_merge_activity_line(payload),
         };
         lines.push(format!("{action} · at {}", event.created_at_unix));
     }
@@ -475,13 +485,17 @@ mod tests {
             json!({"IdentityEdited": {"before": identity.clone(), "after": identity}}),
             json!({"DiscussionResolved": {"discussion_id": "discussion\nresolved"}}),
             json!({"DiscussionReopened": {"discussion_id": "discussion\treopened"}}),
+            json!({"AutoMergeEnabled": {"intent_id": "ami_one", "revision_id": "rev_one", "head_oid": oid('b')}}),
+            json!({"AutoMergeCancelled": {"intent_id": "ami_one", "revision_id": "rev_one", "head_oid": oid('b')}}),
+            json!({"AutoMergeStopped": {"intent_id": "ami_two", "revision_id": "rev_one", "head_oid": oid('b'), "reason": "ChecksFailed"}}),
+            json!({"AutoMergeFulfilled": {"intent_id": "ami_three", "revision_id": "rev_one", "head_oid": oid('b'), "main_oid": oid('c')}}),
         ];
         let activity: RequestActivityPageResponse = serde_json::from_value(json!({
             "events": payloads.into_iter().enumerate().rev().map(|(i, payload)| event(i as u64 + 1, payload)).collect::<Vec<_>>(),
-            "through_position": 8
+            "through_position": 12
         })).unwrap();
         let lines = request_activity_lines(&activity);
-        assert_eq!(lines.len(), 8);
+        assert_eq!(lines.len(), 12);
         for (line, label) in lines.iter().zip([
             "Started request",
             "Submitted",
@@ -491,6 +505,10 @@ mod tests {
             "Edited title or description",
             "Resolved discussion",
             "Reopened discussion",
+            "Enabled auto-merge",
+            "Canceled auto-merge",
+            "Stopped auto-merge",
+            "Fulfilled auto-merge",
         ]) {
             assert!(line.starts_with(label), "{line}");
             assert!(!line.chars().any(char::is_control), "{line:?}");
@@ -498,6 +516,7 @@ mod tests {
         assert!(lines[2].contains("note  [31m"), "{}", lines[2]);
         let main_oid = oid('c');
         assert!(lines[3].contains(short_oid(&main_oid)));
+        assert!(lines[10].contains("checks failed"), "{}", lines[10]);
     }
 
     #[test]

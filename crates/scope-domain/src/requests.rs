@@ -11,6 +11,14 @@ pub use access::{
     RequestPolicyDecision, RequestViewer, request_actor_role, request_list_mergeability,
     request_list_predicate, request_mergeability, request_policy,
 };
+mod auto_merge;
+pub use auto_merge::{
+    AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
+    RequestAutoMergeIntentStatus, RequestAutoMergeMutation, RequestAutoMergeReadiness,
+    RequestAutoMergeStopReason, RequestAutoMergeWaitingReason, authorize_request_auto_merge,
+    cancel_request_auto_merge, fulfill_request_auto_merge, request_auto_merge_can_cancel,
+    request_auto_merge_can_enable, request_auto_merge_readiness, stop_request_auto_merge,
+};
 pub mod attachments;
 mod checks;
 pub use checks::{

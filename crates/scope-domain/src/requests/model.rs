@@ -106,6 +106,10 @@ pub enum RequestEventKind {
     IdentityEdited,
     DiscussionResolved,
     DiscussionReopened,
+    AutoMergeEnabled,
+    AutoMergeCancelled,
+    AutoMergeStopped,
+    AutoMergeFulfilled,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -145,6 +149,28 @@ pub enum RequestEventPayload {
     },
     DiscussionReopened {
         discussion_id: String,
+    },
+    AutoMergeEnabled {
+        intent_id: String,
+        revision_id: String,
+        head_oid: String,
+    },
+    AutoMergeCancelled {
+        intent_id: String,
+        revision_id: String,
+        head_oid: String,
+    },
+    AutoMergeStopped {
+        intent_id: String,
+        revision_id: String,
+        head_oid: String,
+        reason: super::RequestAutoMergeStopReason,
+    },
+    AutoMergeFulfilled {
+        intent_id: String,
+        revision_id: String,
+        head_oid: String,
+        main_oid: String,
     },
 }
 

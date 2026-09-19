@@ -6,6 +6,7 @@ pub enum GeneratedIdKind {
     DependencyAnalysisLease,
     OutboxJob,
     RepositoryIncarnation,
+    RequestAutoMergeClaim,
 }
 
 pub trait GeneratedIdSource: Send + Sync {
@@ -43,5 +44,6 @@ pub(crate) fn test_generated_id(kind: GeneratedIdKind) -> Result<String, String>
         }
         GeneratedIdKind::OutboxJob => format!("outbox_test_{sequence:016x}"),
         GeneratedIdKind::RepositoryIncarnation => format!("repoi_test_{sequence:016x}"),
+        GeneratedIdKind::RequestAutoMergeClaim => format!("auto_merge_claim_{sequence:016x}"),
     })
 }

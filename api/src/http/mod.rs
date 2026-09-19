@@ -14,6 +14,7 @@ pub(crate) mod repo_events;
 pub(crate) mod repo_metadata;
 pub(crate) mod repos;
 pub(crate) mod request_attachments;
+pub(crate) mod request_auto_merge;
 pub(crate) mod request_checks;
 pub(crate) mod request_discussions;
 pub(crate) mod request_queue;

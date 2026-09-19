@@ -79,6 +79,9 @@ routes! {
         REPO_REQUEST_MERGE = "/v1/repos/{owner}/{repo}/requests/{request_id}/merge"
             => "repoRequestMerge",
             repo_request_merge(owner: &str, repo: &str, request_id: &str);
+        REPO_REQUEST_AUTO_MERGE = "/v1/repos/{owner}/{repo}/requests/{request_id}/auto-merge"
+            => "repoRequestAutoMerge",
+            repo_request_auto_merge(owner: &str, repo: &str, request_id: &str);
         REPO_REQUEST_CHECKS = "/v1/repos/{owner}/{repo}/requests/{request_id}/checks"
             => "repoRequestChecks",
             repo_request_checks(owner: &str, repo: &str, request_id: &str);
@@ -315,6 +318,10 @@ mod tests {
             (
                 repo_request_merge("an owner", "r/name", "request?#1"),
                 "/v1/repos/an%20owner/r%2Fname/requests/request%3F%231/merge",
+            ),
+            (
+                repo_request_auto_merge("an owner", "r/name", "request?#1"),
+                "/v1/repos/an%20owner/r%2Fname/requests/request%3F%231/auto-merge",
             ),
             (
                 repo_request_discussion_action(

@@ -200,6 +200,7 @@ fn generate_persistence_id(kind: GeneratedIdKind) -> Result<String, String> {
         GeneratedIdKind::DependencyAnalysisLease => "dependency_",
         GeneratedIdKind::OutboxJob => "outbox_",
         GeneratedIdKind::RepositoryIncarnation => "repoi_",
+        GeneratedIdKind::RequestAutoMergeClaim => "auto_merge_claim_",
     };
     random_hex(prefix, 16).map_err(|error| error.to_string())
 }

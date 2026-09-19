@@ -52,6 +52,7 @@ mod repository_access;
 mod repository_rows;
 mod request_access;
 mod request_attention;
+mod request_auto_merge;
 mod request_checks;
 mod request_discussion_commands;
 mod request_discussion_rows;
@@ -132,6 +133,11 @@ pub use repo_mutation::{RepositoryMutation, RepositoryMutationError};
 pub use repo_reads::{RepoLiveFileWithLandingContent, RepoSummaryRead};
 use repository_rows::repository_from_model;
 pub use request_attention::{ApplyRequestAttentionCommand, RequestAttentionResult};
+pub use request_auto_merge::{
+    AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand,
+    ClaimDueRequestAutoMergesCommand, ClaimedRequestAutoMerge, ReleaseRequestAutoMergeClaimCommand,
+    RequestAutoMergeCheckState, StopClaimedRequestAutoMergeCommand,
+};
 pub use request_checks::{
     ApproveRequestChecksCommand, RecordRequestChecksCommand, RequestChecksMutation,
 };
@@ -148,7 +154,7 @@ pub use request_invitees::{
 };
 pub use request_lifecycle_commands::{
     CloseRequestCommand, CompleteLandedRequestCommand, EditRequestIdentityCommand,
-    MergeRequestContentCommand, SubmitRequestCommand,
+    ExpectedRequestAutoMerge, MergeRequestContentCommand, SubmitRequestCommand,
 };
 pub use request_media::{
     CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,

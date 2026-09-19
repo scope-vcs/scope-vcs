@@ -173,6 +173,7 @@ pub(crate) async fn merge_request(
             repo_name,
             request_id,
             actor_user_id: user.id,
+            expected_auto_merge: None,
         },
     )
     .await?;

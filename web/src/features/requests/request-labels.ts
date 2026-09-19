@@ -9,6 +9,7 @@ import type {
   RequestEventKind,
   RequestState,
 } from '@/api/types.generated'
+import { autoMergeStopReasonText } from './request-auto-merge-model'
 
 const REQUEST_STATES = {
   Draft: { label: 'Draft', tone: 'neutral' },
@@ -29,6 +30,10 @@ const EVENT_LABELS = {
   IdentityEdited: 'Request edited',
   DiscussionResolved: 'Discussion resolved',
   DiscussionReopened: 'Discussion reopened',
+  AutoMergeEnabled: 'Auto-merge enabled',
+  AutoMergeCancelled: 'Auto-merge canceled',
+  AutoMergeStopped: 'Auto-merge stopped',
+  AutoMergeFulfilled: 'Merged automatically',
 } as const satisfies Record<RequestEventKind, string>
 
 const MERGEABILITY = {
@@ -124,6 +129,20 @@ export function requestEventBody(event: RequestEventResponse) {
   }
   if ('DiscussionReopened' in payload) {
     return discussionText(payload.DiscussionReopened.discussion_id)
+  }
+  if ('AutoMergeEnabled' in payload) {
+    return `Will merge ${shortOid(payload.AutoMergeEnabled.head_oid)} when checks pass.`
+  }
+  if ('AutoMergeCancelled' in payload) {
+    return `Canceled auto-merge for ${shortOid(payload.AutoMergeCancelled.head_oid)}.`
+  }
+  if ('AutoMergeStopped' in payload) {
+    const { head_oid, reason } = payload.AutoMergeStopped
+    return `Auto-merge stopped for ${shortOid(head_oid)}: ${autoMergeStopReasonText(reason)}.`
+  }
+  if ('AutoMergeFulfilled' in payload) {
+    const { head_oid, main_oid } = payload.AutoMergeFulfilled
+    return `${shortOid(head_oid)} → ${shortOid(main_oid)}`
   }
   // Exhaustive: a new payload variant from Rust lands here as a type error.
   payload satisfies never

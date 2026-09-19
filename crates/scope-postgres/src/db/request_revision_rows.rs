@@ -25,6 +25,24 @@ where
         .transpose()
 }
 
+pub async fn latest_revision_for_request<C>(
+    conn: &C,
+    request_id: &str,
+) -> Result<Option<RequestRevision>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    entities::request_revision::Entity::find()
+        .filter(entities::request_revision::Column::RequestId.eq(request_id))
+        .order_by_desc(entities::request_revision::Column::Position)
+        .order_by_desc(entities::request_revision::Column::Id)
+        .one(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .map(entities::request_revision::Model::try_into_domain)
+        .transpose()
+}
+
 pub async fn revisions_for_request_ids<C>(
     conn: &C,
     request_ids: &[String],

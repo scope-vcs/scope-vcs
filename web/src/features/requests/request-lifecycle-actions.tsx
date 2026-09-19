@@ -4,35 +4,48 @@ import { cn } from '@/lib/utils'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
+import { RequestAutoMergeActions } from './request-auto-merge-actions'
 import {
   canMergeRequest,
   checksHoldRequestMerge,
+  hasRequestAutoMergeActions,
   hasRequestLifecycleActions,
 } from './request-lifecycle-model'
 import { requestMergeabilityLabel } from './request-labels'
 import type { RequestActionController } from './use-request-actions'
+import type { RequestAutoMergeController } from './use-request-auto-merge'
 import type { RequestSummaryResponse } from '@/api/types.generated'
 
 type Dialog = 'close' | 'merge' | 'submit' | null
 
 export function RequestLifecycleActions({
   actions,
+  autoMerge,
   className,
   request,
+  viewerId,
 }: {
   actions: RequestActionController
+  autoMerge: RequestAutoMergeController
   className?: string
   request: RequestSummaryResponse
+  viewerId: string
 }) {
   const [dialog, setDialog] = useState<Dialog>(null)
-  const busy = actions.pending !== null
+  const [autoMergeDialogOpen, setAutoMergeDialogOpen] = useState(false)
+  const busy = actions.pending !== null || autoMerge.pending !== null
   const permissions = request.permissions
   const canMerge = canMergeRequest(request)
   const checksHoldMerge = checksHoldRequestMerge(request)
   const publicRequest = request.author_role === 'Public'
   const submitLabel = publicRequest ? 'Request review' : 'Mark ready'
 
-  if (!hasRequestLifecycleActions(request)) return null
+  const hasAutoMergeAction = hasRequestAutoMergeActions(
+    autoMerge.status,
+    autoMergeDialogOpen,
+  )
+
+  if (!hasRequestLifecycleActions(request) && !hasAutoMergeAction) return null
 
   return (
     <>
@@ -48,7 +61,15 @@ export function RequestLifecycleActions({
             Merge
           </Button>
         ) : null}
-        {checksHoldMerge ? (
+        <RequestAutoMergeActions
+          autoMerge={autoMerge}
+          disabled={busy}
+          onDialogOpenChange={setAutoMergeDialogOpen}
+          request={request}
+          viewerId={viewerId}
+        />
+        {checksHoldMerge && !autoMerge.status?.can_enable &&
+          autoMerge.status?.intent?.status !== 'Active' ? (
           <span className="flex min-w-0 items-center gap-2">
             <Button disabled size="sm" type="button" variant="success">
               Merge

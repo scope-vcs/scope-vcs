@@ -1,4 +1,7 @@
-import type { RequestSummaryResponse } from '@/api/types.generated'
+import type {
+  RequestAutoMergeResponse,
+  RequestSummaryResponse,
+} from '@/api/types.generated'
 
 export function canMergeRequest(request: RequestSummaryResponse) {
   return request.permissions.can_merge && request.mergeability.status === 'Ready'
@@ -19,4 +22,13 @@ export function hasRequestLifecycleActions(request: RequestSummaryResponse) {
   const { permissions } = request
   return permissions.can_submit || canMergeRequest(request) ||
     checksHoldRequestMerge(request) || permissions.can_close
+}
+
+export function hasRequestAutoMergeActions(
+  status: Pick<RequestAutoMergeResponse, 'can_enable' | 'intent'> | null,
+  dialogOpen = false,
+) {
+  return dialogOpen || (
+    status !== null && (status.can_enable || status.intent !== null)
+  )
 }

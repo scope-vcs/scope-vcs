@@ -163,6 +163,8 @@ impl RunStore {
     ) -> Result<AttemptMutation, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let guard_run_id = attempt_run_id(&tx, attempt_id).await?;
+        let active_auto_merge =
+            super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;
         let mut jobs = locked_jobs(&tx, &guard_run_id).await?;
         let mut run = locked_run(&tx, &guard_run_id).await?;
         let mut attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
@@ -188,6 +190,8 @@ impl RunStore {
         save_attempt_steps(&tx, &steps).await?;
         save_jobs(&tx, &jobs).await?;
         save_run(&tx, &run).await?;
+        super::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
+            .await?;
         let repository = run_repository(&tx, &run).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         let job = jobs
@@ -245,12 +249,16 @@ impl RunStore {
     ) -> Result<Run, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         authorize_run_control(&tx, actor_user_id, repository_id).await?;
+        let active_auto_merge =
+            super::request_auto_merge::lock_active_auto_merge_for_run(&tx, run_id).await?;
         let mut jobs = locked_jobs(&tx, run_id).await?;
         let mut run = locked_run(&tx, run_id).await?;
         require_run_repository(&run, repository_id)?;
         request_run_cancellation(&mut run, &mut jobs, now_unix).map_err(PostgresError::from)?;
         save_jobs(&tx, &jobs).await?;
         save_run(&tx, &run).await?;
+        super::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
+            .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(run)
     }
@@ -264,6 +272,8 @@ impl RunStore {
     ) -> Result<Run, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         authorize_run_control(&tx, actor_user_id, repository_id).await?;
+        let _active_auto_merge =
+            super::request_auto_merge::lock_active_auto_merge_for_run(&tx, run_id).await?;
         let mut jobs = locked_jobs(&tx, run_id).await?;
         let mut run = locked_run(&tx, run_id).await?;
         require_run_repository(&run, repository_id)?;
