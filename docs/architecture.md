@@ -105,6 +105,10 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 
 - `request_merge.rs` for preparing, validating, persisting, publishing, and
   cleaning up a request merge;
+- `request_auto_merge.rs` for reconciling durable authorization for one request
+  revision through the existing merge use case. `request_auto_merge_runtime.rs`
+  supervises polling in the API process; database leases allow multiple API
+  processes to share the work and recover abandoned attempts;
 - `git_receive/` for receive authorization, the separate main-push and
   request-ref completion paths, and completing open requests whose head a
   committed main push carries;
@@ -168,6 +172,11 @@ Follow these paths from application coordination to durable rules and storage:
 - `repo_mutation.rs` owns the reviewed main-push transaction.
 - `request_merge.rs` owns the merge transaction, combining accepted content
   with the request lifecycle mutation.
+- `request_auto_merge.rs` owns authorization, cancellation, claims, and terminal
+  intent transitions. Request, membership, check, and run transactions stop
+  affected intents atomically. The final merge transaction revalidates the
+  claim, exact revision and head, maintainer access, and check evidence before
+  committing content and fulfilling the intent together.
 - `request_submission_transactions.rs` owns one-way request submission.
 - `request_discussions.rs` owns discussion, reply, transition, and read-state
   transactions.

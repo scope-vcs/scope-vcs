@@ -7,16 +7,25 @@ use super::{
     entities,
     repository_access::repository_access,
     request_access::{ensure_user_exists, lock_request_repository},
+    request_auto_merge::{
+        automatic_event_id, persist_existing_auto_merge_mutation, request_auto_merge_check_state,
+    },
+    request_revision_rows::latest_revision_for_request,
     request_rows::request_by_id,
     request_submission_transactions::persist_lifecycle_mutation,
 };
-use sea_orm::{EntityTrait, TransactionTrait};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait};
 use {
     crate::error::PostgresError,
     scope_domain::{
         repository::RepoLifecycleState,
         repository::git::GitHead,
-        requests::{MergeRequestInput, RequestLifecycleMutation, lands_with_main, merge_request},
+        requests::{
+            FulfillRequestAutoMergeInput, MergeRequestInput, RequestAutoMergeReadiness,
+            RequestAutoMergeStopReason, RequestLifecycleMutation, StopRequestAutoMergeInput,
+            fulfill_request_auto_merge, lands_with_main, merge_request,
+            request_auto_merge_readiness, stop_request_auto_merge,
+        },
     },
 };
 
@@ -41,6 +50,7 @@ impl RequestStore {
             expected_git_frontier,
             expected_repo_change_version,
             expected_request_head_oid,
+            expected_auto_merge,
             update,
             landing_file_mutation,
             workflow_catalog,
@@ -56,7 +66,68 @@ impl RequestStore {
             .await?
             .filter(|request| request.repo_id == repo_id)
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
-        if request.head_oid != expected_request_head_oid {
+        let locked_auto_merge = if let Some(expected) = &expected_auto_merge {
+            let row = entities::request_auto_merge_intent::Entity::find_by_id(&expected.intent_id)
+                .lock_exclusive()
+                .one(&tx)
+                .await
+                .map_err(PostgresError::internal)?
+                .filter(|row| {
+                    row.status == "Active"
+                        && row.request_id == request.id
+                        && row.repo_id == repo_id
+                        && row.revision_id == expected.revision_id
+                        && row.head_oid == expected.head_oid
+                        && row.claim_token.as_deref() == Some(expected.claim_token.as_str())
+                        && row
+                            .claim_expires_at_unix
+                            .is_some_and(|expires| expires >= now_unix as i64)
+                })
+                .ok_or_else(|| PostgresError::conflict("auto-merge claim is no longer current"))?;
+            let intent = row.try_into_domain()?;
+            Some(LockedAutoMerge { model: row, intent })
+        } else {
+            entities::request_auto_merge_intent::Entity::find()
+                .filter(entities::request_auto_merge_intent::Column::RequestId.eq(&request.id))
+                .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
+                .lock_exclusive()
+                .one(&tx)
+                .await
+                .map_err(PostgresError::internal)?
+                .map(|row| {
+                    let intent = row.try_into_domain()?;
+                    Ok::<_, PostgresError>(LockedAutoMerge { model: row, intent })
+                })
+                .transpose()?
+        };
+        let latest_revision = latest_revision_for_request(&tx, &request.id).await?;
+        let authorized_revision_is_current = locked_auto_merge.as_ref().is_none_or(|locked| {
+            latest_revision.as_ref().is_some_and(|revision| {
+                revision.id == locked.intent.revision_id
+                    && revision.new_head_oid == locked.intent.head_oid
+                    && request.head_oid == locked.intent.head_oid
+            })
+        });
+        if request.head_oid != expected_request_head_oid || !authorized_revision_is_current {
+            let should_stop_auto_merge = expected_auto_merge.is_some()
+                || locked_auto_merge
+                    .as_ref()
+                    .is_some_and(|_| !authorized_revision_is_current);
+            if should_stop_auto_merge && let Some(locked) = locked_auto_merge {
+                let mutation = stop_request_auto_merge(
+                    &request,
+                    &locked.intent,
+                    StopRequestAutoMergeInput {
+                        request_id: request.id.clone(),
+                        expected_intent_id: locked.intent.id.clone(),
+                        reason: RequestAutoMergeStopReason::RequestChanged,
+                        event_id: automatic_event_id("stopped", &locked.intent.id),
+                        now_unix,
+                    },
+                )?;
+                persist_existing_auto_merge_mutation(&tx, locked.model, &mutation).await?;
+                tx.commit().await.map_err(PostgresError::internal)?;
+            }
             return Err(PostgresError::conflict(
                 "request changed since merge was prepared; retry merge",
             ));
@@ -68,9 +139,70 @@ impl RequestStore {
             .await
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
+        if locked_auto_merge.as_ref().is_some_and(|locked| {
+            locked.intent.repository_incarnation_id != repo_row.incarnation_id
+        }) {
+            return Err(PostgresError::conflict(
+                "auto-merge repository incarnation changed",
+            ));
+        }
         let context = repository_access(&tx, &repo_id, Some(&actor_user_id))
             .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
+        if expected_auto_merge.is_some()
+            && let Some(locked) = &locked_auto_merge
+        {
+            if locked.intent.actor_user_id != actor_user_id {
+                return Err(PostgresError::conflict(
+                    "auto-merge actor does not match the authorization",
+                ));
+            }
+            if !context.access.is_maintainer() {
+                let mutation = stop_request_auto_merge(
+                    &request,
+                    &locked.intent,
+                    StopRequestAutoMergeInput {
+                        request_id: request.id.clone(),
+                        expected_intent_id: locked.intent.id.clone(),
+                        reason: RequestAutoMergeStopReason::AccessRevoked,
+                        event_id: automatic_event_id("stopped", &locked.intent.id),
+                        now_unix,
+                    },
+                )?;
+                persist_existing_auto_merge_mutation(&tx, locked.model.clone(), &mutation).await?;
+                tx.commit().await.map_err(PostgresError::internal)?;
+                return Err(PostgresError::permission_denied("repo maintainer required"));
+            }
+            let checks = request_auto_merge_check_state(&tx, &locked.intent).await?;
+            match request_auto_merge_readiness(
+                &request.id,
+                &request.head_oid,
+                checks.evaluation.as_ref(),
+                &checks.run_states,
+            ) {
+                RequestAutoMergeReadiness::Ready => {}
+                RequestAutoMergeReadiness::Waiting(_) => {
+                    return Err(PostgresError::conflict("auto-merge checks are not ready"));
+                }
+                RequestAutoMergeReadiness::Stop(reason) => {
+                    let mutation = stop_request_auto_merge(
+                        &request,
+                        &locked.intent,
+                        StopRequestAutoMergeInput {
+                            request_id: request.id.clone(),
+                            expected_intent_id: locked.intent.id.clone(),
+                            reason,
+                            event_id: automatic_event_id("stopped", &locked.intent.id),
+                            now_unix,
+                        },
+                    )?;
+                    persist_existing_auto_merge_mutation(&tx, locked.model.clone(), &mutation)
+                        .await?;
+                    tx.commit().await.map_err(PostgresError::internal)?;
+                    return Err(PostgresError::conflict(reason.message()));
+                }
+            }
+        }
         if context.record.change_version != expected_repo_change_version {
             return Err(PostgresError::conflict(
                 "repo changed since merge was prepared; retry merge",
@@ -118,12 +250,49 @@ impl RequestStore {
         .await?;
 
         persist_lifecycle_mutation(&tx, &request_mutation).await?;
+        let request_mutation = if let Some(locked) = locked_auto_merge {
+            let fulfilled_event_id = expected_auto_merge
+                .as_ref()
+                .map(|expected| expected.fulfilled_event_id.clone())
+                .unwrap_or_else(|| automatic_event_id("fulfilled", &locked.intent.id));
+            let fulfilled = fulfill_request_auto_merge(
+                &request_mutation.request,
+                &locked.intent,
+                FulfillRequestAutoMergeInput {
+                    request_id: request_mutation.request.id.clone(),
+                    expected_intent_id: locked.intent.id.clone(),
+                    main_oid: git_head.head_oid.clone(),
+                    event_id: fulfilled_event_id,
+                    now_unix,
+                },
+            )?;
+            persist_existing_auto_merge_mutation(&tx, locked.model, &fulfilled).await?;
+            RequestLifecycleMutation {
+                request: fulfilled.request,
+                events: request_mutation
+                    .events
+                    .into_iter()
+                    .chain(std::iter::once(fulfilled.event))
+                    .collect(),
+            }
+        } else {
+            request_mutation
+        };
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(MergeRequestContentMutation {
             request: request_mutation,
             git_head,
         })
     }
+}
+
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone)]
+struct LockedAutoMerge {
+    model: entities::request_auto_merge_intent::Model,
+    intent: scope_domain::requests::RequestAutoMergeIntent,
 }
 
 impl RequestStore {
@@ -136,282 +305,41 @@ impl RequestStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
+        let active_auto_merge =
+            super::request_auto_merge::locked_active_intent_for_request(&tx, &request.id).await?;
         if !lands_with_main(&request) || request.head_oid != command.landed_head_oid {
             return Ok(None);
         }
-        let mutation = merge_request(
+        let mut mutation = merge_request(
             &request,
             MergeRequestInput {
                 request_id: command.request_id,
                 actor_user_id: command.actor_user_id,
                 actor_is_maintainer: repo.access.is_maintainer(),
                 merged_head_oid: command.landed_head_oid,
-                merged_main_oid: command.main_oid,
+                merged_main_oid: command.main_oid.clone(),
                 merged_event_id: command.merged_event_id,
                 now_unix: command.now_unix,
             },
         )?;
         persist_lifecycle_mutation(&tx, &mutation).await?;
+        if let Some((stored, intent)) = active_auto_merge {
+            let fulfilled = fulfill_request_auto_merge(
+                &mutation.request,
+                &intent,
+                FulfillRequestAutoMergeInput {
+                    request_id: mutation.request.id.clone(),
+                    expected_intent_id: intent.id.clone(),
+                    main_oid: command.main_oid,
+                    event_id: automatic_event_id("fulfilled", &intent.id),
+                    now_unix: command.now_unix,
+                },
+            )?;
+            persist_existing_auto_merge_mutation(&tx, stored, &fulfilled).await?;
+            mutation.request = fulfilled.request;
+            mutation.events.push(fulfilled.event);
+        }
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(Some(mutation))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::db::{
-        MergeRequestContentCommand,
-        requests::tests::{postgres_store, start_public_request},
-    };
-    use scope_domain::{
-        content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-        content_ref::ContentRef,
-        landing_file::RepositoryLandingFileMutation,
-        policy::ScopePath,
-        repository::{
-            git::{GitHead, GitPackSpan},
-            updates::RequestMergeOrigin,
-        },
-        requests::RequestState,
-        reviewed_updates::content::{
-            ReviewedContentChange, ReviewedUpdateInput, apply_reviewed_update_to_repo,
-        },
-        runs::catalog::RepositoryWorkflowCatalog,
-    };
-
-    const BASE_HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const MERGED_HEAD: &str = "cccccccccccccccccccccccccccccccccccccccc";
-
-    #[tokio::test]
-    async fn locked_merge_derives_maintainer_authorization_before_content_persistence() {
-        let store = merge_store().await;
-        let prepared = merge_preparation(&store).await;
-
-        let error = store
-            .requests()
-            .merge_request_content(
-                merge_command("user_public", prepared),
-                &super::super::generated_ids::test_generated_id,
-            )
-            .await
-            .unwrap_err();
-
-        assert_eq!(
-            error.kind,
-            crate::error::PostgresErrorKind::PermissionDenied
-        );
-        assert_eq!(error.message, "repo maintainer required");
-        let repo = store
-            .repositories()
-            .repository_for_tests("owner/repo")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(repo.git_head.unwrap().head_oid, BASE_HEAD);
-        assert_eq!(
-            store
-                .requests()
-                .request_for_tests("req_1")
-                .await
-                .unwrap()
-                .unwrap()
-                .state(),
-            RequestState::Open
-        );
-    }
-
-    #[tokio::test]
-    async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
-        let store = merge_store().await;
-        let prepared = merge_preparation(&store).await;
-
-        let mutation = store
-            .requests()
-            .merge_request_content(
-                merge_command("user_owner", prepared),
-                &super::super::generated_ids::test_generated_id,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(mutation.request.request.state(), RequestState::Merged);
-        assert_eq!(mutation.git_head.head_oid, MERGED_HEAD);
-        let repo = store
-            .repositories()
-            .repository_for_tests("owner/repo")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(repo.git_head.unwrap().head_oid, MERGED_HEAD);
-        assert_eq!(repo.graph.commits.len(), 2);
-    }
-
-    struct MergePreparation {
-        expected_git_frontier: scope_domain::repository::git::GitFrontier,
-        expected_repo_change_version: u64,
-        update: ReviewedUpdateInput,
-        workflow_catalog: RepositoryWorkflowCatalog,
-    }
-
-    async fn merge_store() -> super::super::MetadataStore {
-        let store = postgres_store();
-        let mut repo = store
-            .repositories()
-            .repository_for_tests("owner/repo")
-            .await
-            .unwrap()
-            .unwrap();
-        let initial_update = reviewed_update(
-            &repo,
-            BASE_HEAD,
-            1,
-            None,
-            "/.scope/RULES.md",
-            source_blob("rules-content"),
-        );
-        stage_segment(&store, &initial_update.git_pack_span.segment).await;
-        apply_reviewed_update_to_repo(&mut repo, initial_update).unwrap();
-        store
-            .repositories()
-            .replace_repository_for_tests(repo)
-            .await
-            .unwrap();
-        start_public_request(&store).await;
-        store
-            .requests()
-            .mutate_request_for_tests("req_1", |request| {
-                request.submitted_at_unix = Some(4);
-                request.updated_at_unix = 4;
-            })
-            .await
-            .unwrap();
-        store
-    }
-
-    async fn merge_preparation(store: &super::super::MetadataStore) -> MergePreparation {
-        let repo = store
-            .repositories()
-            .repository_for_tests("owner/repo")
-            .await
-            .unwrap()
-            .unwrap();
-        let update = reviewed_update(
-            &repo,
-            MERGED_HEAD,
-            2,
-            Some(BASE_HEAD),
-            "/README.md",
-            source_blob("merged-content"),
-        );
-        stage_segment(store, &update.git_pack_span.segment).await;
-        let workflow_catalog = RepositoryWorkflowCatalog::captured(
-            "owner/repo",
-            MERGED_HEAD,
-            repo.record.change_version + 1,
-            Vec::new(),
-        )
-        .unwrap();
-        MergePreparation {
-            expected_git_frontier: repo.git_head.as_ref().unwrap().frontier(),
-            expected_repo_change_version: repo.record.change_version,
-            update,
-            workflow_catalog,
-        }
-    }
-
-    async fn stage_segment(
-        store: &super::super::MetadataStore,
-        segment: &scope_domain::repository::git::GitSegmentRef,
-    ) {
-        let repositories = store.repositories();
-        repositories
-            .begin_git_segment_upload(
-                "owner/repo",
-                &segment.segment_id,
-                &format!("git/segments/v2/owner/repo/{}", segment.segment_id),
-                segment.encoding_version,
-                1,
-            )
-            .await
-            .unwrap();
-        repositories
-            .mark_git_segment_upload_ready(segment, 2, 2)
-            .await
-            .unwrap();
-    }
-
-    fn reviewed_update(
-        repo: &scope_domain::repository::Repository,
-        head_oid: &str,
-        sequence: u64,
-        base_oid: Option<&str>,
-        path: &str,
-        content: SourceBlob,
-    ) -> ReviewedUpdateInput {
-        let segment = scope_domain::repository::git::GitSegmentRef {
-            segment_id: format!("segment-{head_oid}"),
-            sha256: "c".repeat(64),
-            plaintext_bytes: 1,
-            encoding_version: 2,
-        };
-        ReviewedUpdateInput {
-            occurred_at_unix: None,
-            branch: "refs/heads/main".to_string(),
-            author_id: "user_owner".to_string(),
-            message: format!("update {head_oid}"),
-            git_head: GitHead::new(
-                head_oid.to_string(),
-                sequence,
-                repo.record.change_version + 1,
-            ),
-            git_pack_span: GitPackSpan {
-                first_sequence: sequence,
-                last_sequence: sequence,
-                geometric_tier: 0,
-                base_oid: base_oid.map(str::to_string),
-                head_oid: head_oid.to_string(),
-                segment,
-            },
-            changes: vec![ReviewedContentChange {
-                path: ScopePath::parse(path).unwrap(),
-                content: Some(content),
-            }],
-            previous_config: Some(repo.repo_config.clone()),
-            config: repo.repo_config.clone(),
-        }
-    }
-
-    fn source_blob(label: &str) -> SourceBlob {
-        SourceBlob {
-            content_ref: ContentRef::git_bundle_sha256(format!("sha256-{label}")),
-            sha256: format!("sha256-{label}"),
-            git_oid: label.to_string(),
-            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            size_bytes: 1,
-        }
-    }
-
-    fn merge_command(
-        actor_user_id: &str,
-        prepared: MergePreparation,
-    ) -> MergeRequestContentCommand {
-        MergeRequestContentCommand {
-            owner: "owner".to_string(),
-            name: "repo".to_string(),
-            request_id: "req_1".to_string(),
-            actor_user_id: actor_user_id.to_string(),
-            merged_event_id: format!("event_merged_{actor_user_id}"),
-            expected_git_frontier: prepared.expected_git_frontier,
-            expected_repo_change_version: prepared.expected_repo_change_version,
-            expected_request_head_oid: "head".to_string(),
-            update: prepared.update,
-            landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
-            workflow_catalog: prepared.workflow_catalog,
-            origin: RequestMergeOrigin::Private {
-                request_id: "req_1".to_string(),
-                request_head_oid: "head".to_string(),
-            },
-            now_unix: 5,
-        }
     }
 }

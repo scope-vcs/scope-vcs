@@ -192,13 +192,22 @@ pub(super) fn leave_invited_request(
 pub(super) fn merge_request_command(
     git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
-    target: RequestTargetArgs,
-    yes: bool,
+    args: args::RequestMergeArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let (context, request_id, before) = load_exact_request(git_repo, api, target)?;
+    let (context, request_id, before) = load_exact_request(git_repo, api, args.target)?;
+    if args.auto || args.cancel_auto {
+        return update_request_auto_merge(
+            api,
+            context,
+            request_id,
+            before.request.name,
+            args.auto,
+            args.yes,
+        );
+    }
     require_confirmation(
         &format!("Merge request {} into main", before.request.name),
-        yes,
+        args.yes,
     )?;
     let response = merge_request(api, api_target(&context, &request_id))?;
     let human_lines = request_mutation_receipt_lines("Merged", &response);
@@ -208,6 +217,66 @@ pub(super) fn merge_request_command(
             repo: context.repo,
             response,
             attachments: Vec::new(),
+        }),
+        human_lines,
+    ))
+}
+
+fn update_request_auto_merge(
+    api: ApiSession<'_>,
+    context: local::RequestContext,
+    request_id: String,
+    request_name: String,
+    authorize: bool,
+    yes: bool,
+) -> anyhow::Result<RequestCommandOutcome> {
+    let target = api_target(&context, &request_id);
+    let current = get_request_auto_merge(api, target)?;
+    let (command, response, action) = if authorize {
+        let revision_id = current.revision_id.clone().ok_or_else(|| {
+            anyhow::anyhow!("Scope did not identify a current revision for request {request_name}")
+        })?;
+        require_confirmation(
+            &format!(
+                "Merge request {request_name} when checks pass for head {}",
+                short_oid(current.head_oid.as_str())
+            ),
+            yes,
+        )?;
+        (
+            "request.merge.auto",
+            authorize_request_auto_merge(api, target, revision_id, current.head_oid)?,
+            "Automatic merge authorization saved",
+        )
+    } else {
+        if !current.can_cancel {
+            bail!("request {request_name} has no active auto-merge authorization to cancel");
+        }
+        let intent_id = current
+            .intent
+            .as_ref()
+            .map(|intent| intent.id.clone())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Scope did not identify the active auto-merge intent for request {request_name}"
+                )
+            })?;
+        require_confirmation(
+            &format!("Cancel auto-merge for request {request_name}"),
+            yes,
+        )?;
+        (
+            "request.merge.cancel-auto",
+            cancel_request_auto_merge(api, target, intent_id)?,
+            "Automatic merge authorization canceled",
+        )
+    };
+    let human_lines = auto_merge_receipt_lines(action, &response);
+    Ok(RequestCommandOutcome::new(
+        command,
+        RequestCommandResult::AutoMerge(RepoResponse {
+            repo: context.repo,
+            response,
         }),
         human_lines,
     ))
@@ -296,7 +365,9 @@ pub(super) fn show_one_request(
         0,
         detail.request.activity_version,
     )?;
+    let auto_merge = get_request_auto_merge(api, api_target(&context, &request_id))?;
     let mut human_lines = request_detail_lines(&detail.request);
+    human_lines.extend(auto_merge_status_lines(&auto_merge));
     human_lines.extend(request_activity_lines_for_response(&activity));
     Ok(RequestCommandOutcome::new(
         "request.show",
@@ -304,6 +375,7 @@ pub(super) fn show_one_request(
             repo: context.repo,
             request: detail.request,
             activity: Some(activity),
+            auto_merge: Some(auto_merge),
         }),
         human_lines,
     ))

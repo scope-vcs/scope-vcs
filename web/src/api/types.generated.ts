@@ -104,7 +104,7 @@ export type RequestAttachmentUploadGrantClaims = { attachment_id: string, reposi
 
 export type GitOid = string;
 
-export type RequestEventKind = "Started" | "Submitted" | "RevisionPushed" | "Merged" | "Closed" | "IdentityEdited" | "DiscussionResolved" | "DiscussionReopened";
+export type RequestEventKind = "Started" | "Submitted" | "RevisionPushed" | "Merged" | "Closed" | "IdentityEdited" | "DiscussionResolved" | "DiscussionReopened" | "AutoMergeEnabled" | "AutoMergeCancelled" | "AutoMergeStopped" | "AutoMergeFulfilled";
 
 export type ProjectionPreviewAudience = "private" | "public";
 
@@ -288,13 +288,25 @@ export type RequestMergeabilityResponse = { status: RequestMergeabilityStatus, c
 
 export type RequestCheckEvaluationState = "no-checks" | "awaiting-approval" | "started" | "configuration-error";
 
+export type RequestAutoMergeIntentStatus = "Active" | "Cancelled" | "Stopped" | "Fulfilled";
+
+export type RequestAutoMergeStopReason = "RequestChanged" | "RequestClosed" | "AccessRevoked" | "ChecksFailed" | "ChecksConfigurationError" | "MergeConflict" | "RequestBranchMissing";
+
+export type AuthorizeRequestAutoMergeRequest = { expected_revision_id: string, expected_head_oid: GitOid, };
+
+export type CancelRequestAutoMergeRequest = { expected_intent_id: string, };
+
+export type RequestAutoMergeIntentResponse = { id: string, revision_id: string, head_oid: GitOid, actor: RequestActorSummaryResponse, status: RequestAutoMergeIntentStatus, reason: RequestAutoMergeStopReason | null, created_at_unix: number, updated_at_unix: number, };
+
+export type RequestAutoMergeResponse = { request_id: string, revision_id: string | null, head_oid: GitOid, intent: RequestAutoMergeIntentResponse | null, waiting_reason: string | null, can_enable: boolean, can_cancel: boolean, };
+
 export type RequestCheckResponse = { workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, };
 
 export type RequestChecksResponse = { request_id: string, head_oid: GitOid, state: RequestCheckEvaluationState, message: string | null, checks: Array<RequestCheckResponse>, can_approve: boolean, mergeability: RequestMergeabilityResponse, };
 
 export type RequestEventResponse = { id: string, position: number, actor: RequestActorSummaryResponse, kind: RequestEventKind, payload: RequestEventPayload, created_at_unix: number, };
 
-export type RequestEventPayload = { "Started": { identity: RequestIdentityAuditFact, } } | { "Submitted": { head_oid: string, } } | { "RevisionPushed": { old_head_oid: string, new_head_oid: string, note: string | null, } } | { "Merged": { head_oid: string, main_oid: string, } } | { "Closed": { head_oid: string, } } | { "IdentityEdited": { before: RequestIdentityAuditFact, after: RequestIdentityAuditFact, } } | { "DiscussionResolved": { discussion_id: string, } } | { "DiscussionReopened": { discussion_id: string, } };
+export type RequestEventPayload = { "Started": { identity: RequestIdentityAuditFact, } } | { "Submitted": { head_oid: string, } } | { "RevisionPushed": { old_head_oid: string, new_head_oid: string, note: string | null, } } | { "Merged": { head_oid: string, main_oid: string, } } | { "Closed": { head_oid: string, } } | { "IdentityEdited": { before: RequestIdentityAuditFact, after: RequestIdentityAuditFact, } } | { "DiscussionResolved": { discussion_id: string, } } | { "DiscussionReopened": { discussion_id: string, } } | { "AutoMergeEnabled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeCancelled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeStopped": { intent_id: string, revision_id: string, head_oid: string, reason: RequestAutoMergeStopReason, } } | { "AutoMergeFulfilled": { intent_id: string, revision_id: string, head_oid: string, main_oid: string, } };
 
 export type RequestIdentityAuditFact = { title_sha256: string, title_byte_count: number, description_sha256: string, description_byte_count: number, };
 
@@ -426,6 +438,7 @@ export const ApiRouteTemplates = {
   repoRequest: "/v1/repos/{owner}/{repo}/requests/{request_id}",
   repoRequestSubmit: "/v1/repos/{owner}/{repo}/requests/{request_id}/submit",
   repoRequestMerge: "/v1/repos/{owner}/{repo}/requests/{request_id}/merge",
+  repoRequestAutoMerge: "/v1/repos/{owner}/{repo}/requests/{request_id}/auto-merge",
   repoRequestChecks: "/v1/repos/{owner}/{repo}/requests/{request_id}/checks",
   repoRequestChecksApprove: "/v1/repos/{owner}/{repo}/requests/{request_id}/checks/approve",
   repoRequestRatings: "/v1/repos/{owner}/{repo}/requests/{request_id}/ratings",

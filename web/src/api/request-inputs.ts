@@ -3,6 +3,10 @@ import { parseFilePath } from './file-path-input'
 import type { RequestParams } from './types'
 import type { RequestActionInput } from '../features/requests/request-actions-api'
 import type {
+  AuthorizeRequestAutoMergeInput,
+  CancelRequestAutoMergeInput,
+} from '../features/requests/request-auto-merge-api'
+import type {
   CreateDiscussionInput, CreateReplyInput, LoadDiscussionsInput, LoadRepliesInput,
   MarkDiscussionReadInput, RequestDiscussionActionInput, UpdateDescriptionInput,
 } from '../features/requests/request-discussion-api'
@@ -225,4 +229,31 @@ export function parseRequestActionInput(input: unknown): RequestActionInput {
     default:
       throw new Error('Unsupported request action.')
   }
+}
+
+export function parseAuthorizeRequestAutoMergeInput(
+  input: unknown,
+): AuthorizeRequestAutoMergeInput {
+  const data = object(input)
+  const body = validated(
+    'auto-merge authorization',
+    apiValidators.AuthorizeRequestAutoMergeRequest,
+    {
+      expected_head_oid: id(data.expected_head_oid, 'expected_head_oid'),
+      expected_revision_id: id(data.expected_revision_id, 'expected_revision_id'),
+    },
+  )
+  return { ...parseRequestParams(data), ...body }
+}
+
+export function parseCancelRequestAutoMergeInput(
+  input: unknown,
+): CancelRequestAutoMergeInput {
+  const data = object(input)
+  const body = validated(
+    'auto-merge cancellation',
+    apiValidators.CancelRequestAutoMergeRequest,
+    { expected_intent_id: id(data.expected_intent_id, 'expected_intent_id') },
+  )
+  return { ...parseRequestParams(data), ...body }
 }

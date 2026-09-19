@@ -132,6 +132,73 @@ fn explicit_request_base_merges_non_overlapping_file_edits() {
     let _ = fs::remove_dir_all(repo);
 }
 
+#[test]
+fn content_conflict_is_the_only_typed_merge_conflict() {
+    let repo = temp_repo_path("typed-content-conflict");
+    run_git(
+        None,
+        &[
+            "init",
+            "--initial-branch=main",
+            repo.to_string_lossy().as_ref(),
+        ],
+        "initializing merge test repository",
+    )
+    .unwrap();
+    run_git(
+        Some(&repo),
+        &["config", "user.name", "Test"],
+        "configuring test name",
+    )
+    .unwrap();
+    run_git(
+        Some(&repo),
+        &["config", "user.email", "test@scope.local"],
+        "configuring test email",
+    )
+    .unwrap();
+
+    fs::write(repo.join("shared.txt"), "base\n").unwrap();
+    commit_all(&repo, "shared base");
+    let request_base = oid(&repo, "HEAD");
+
+    fs::write(repo.join("shared.txt"), "main\n").unwrap();
+    commit_all(&repo, "main edit");
+    let current_main = oid(&repo, "HEAD");
+
+    run_git(
+        Some(&repo),
+        &["switch", "--create", "request", &request_base],
+        "creating request branch",
+    )
+    .unwrap();
+    fs::write(repo.join("shared.txt"), "request\n").unwrap();
+    commit_all(&repo, "request edit");
+    let request_head = oid(&repo, "HEAD");
+
+    let failure = merge_main_oid_for_execution(
+        &repo,
+        &request_base,
+        &current_main,
+        &request_head,
+        "content-conflict",
+    )
+    .unwrap_err();
+    assert!(matches!(failure, MergeMainFailure::Conflict(_)));
+
+    let non_conflict_failure = merge_main_oid_for_execution(
+        &repo,
+        "ffffffffffffffffffffffffffffffffffffffff",
+        &current_main,
+        &request_head,
+        "missing-base",
+    )
+    .unwrap_err();
+    assert!(matches!(non_conflict_failure, MergeMainFailure::Other(_)));
+
+    let _ = fs::remove_dir_all(repo);
+}
+
 fn commit_all(repo: &Path, message: &str) {
     run_git(Some(repo), &["add", "."], "staging merge test files").unwrap();
     run_git(

@@ -65,6 +65,49 @@ test('request actions validate the action and only require handles for invitee a
   assert.throws(() => parsers.parseRequestActionInput({ ...request, action: 'delete' }))
 })
 
+test('auto-merge actions preserve exact optimistic concurrency identifiers', () => {
+  assert.deepEqual(
+    parsers.parseAuthorizeRequestAutoMergeInput({
+      ...request,
+      expected_head_oid: 'a'.repeat(40),
+      expected_revision_id: 'revision',
+      extra: 'discard',
+    }),
+    {
+      ...request,
+      expected_head_oid: 'a'.repeat(40),
+      expected_revision_id: 'revision',
+    },
+  )
+  assert.deepEqual(
+    parsers.parseCancelRequestAutoMergeInput({
+      ...request,
+      expected_intent_id: 'intent',
+      extra: 'discard',
+    }),
+    { ...request, expected_intent_id: 'intent' },
+  )
+  for (const patch of [
+    { expected_head_oid: '' },
+    { expected_head_oid: null },
+    { expected_revision_id: '' },
+    { expected_revision_id: null },
+  ]) {
+    assert.throws(() => parsers.parseAuthorizeRequestAutoMergeInput({
+      ...request,
+      expected_head_oid: 'a'.repeat(40),
+      expected_revision_id: 'revision',
+      ...patch,
+    }))
+  }
+  for (const expected_intent_id of ['', null, undefined]) {
+    assert.throws(() => parsers.parseCancelRequestAutoMergeInput({
+      ...request,
+      expected_intent_id,
+    }))
+  }
+})
+
 test('ratings enforce integer scores and UTF-8 reason limits', () => {
   for (const score of [0, 6, 1.5, '5', NaN]) assert.throws(() => parsers.parseRateRequestInput({ ...request, score, reason: 'Good' }))
   assert.equal(parsers.parseRateRequestInput({ ...request, score: 5, reason: 'é'.repeat(512) }).score, 5)

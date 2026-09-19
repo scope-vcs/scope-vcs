@@ -39,16 +39,21 @@ async fn app_state_from_env() -> anyhow::Result<AppState> {
 
 async fn serve(addr: SocketAddr, state: AppState) -> anyhow::Result<()> {
     let shutdown_state = state.clone();
-    let app = router(state);
-    tracing::info!(%addr, "starting api");
-
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding server on {addr}"))?;
+    let auto_merge = state.start_request_auto_merge_runtime();
+    let stop_auto_merge = auto_merge.stop_signal();
+    let app = router(state);
+    tracing::info!(%addr, "starting api");
     let result = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            let _ = stop_auto_merge.send(true);
+        })
         .await
         .context("serving api");
+    auto_merge.shutdown().await;
     shutdown_state.shutdown_product_analytics().await;
 
     result

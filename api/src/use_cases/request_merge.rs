@@ -36,14 +36,20 @@ use scope_domain::{
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_storage::StagedGitSegment;
-use scope_postgres::db::{MergeRequestContentCommand, RepositoryGitWriteLease};
+use scope_postgres::db::{
+    ExpectedRequestAutoMerge, MergeRequestContentCommand, RepositoryGitWriteLease,
+};
 use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
+
+mod failures;
+pub(crate) use failures::RequestMergeFailure;
 
 pub(crate) struct MergeRequestCommand {
     pub(crate) owner: String,
     pub(crate) repo_name: String,
     pub(crate) request_id: String,
     pub(crate) actor_user_id: String,
+    pub(crate) expected_auto_merge: Option<ExpectedRequestAutoMerge>,
 }
 
 pub(crate) struct MergeRequestResult {
@@ -84,14 +90,18 @@ pub(crate) async fn merge_request(
         // The URL value is untrusted and the request lookup may have failed.
         request_id: None,
     }
-    .run(state, merge_request_inner(state, &command))
+    .run(state, async {
+        merge_request_inner(state, &command)
+            .await
+            .map_err(RequestMergeFailure::into_api_error)
+    })
     .await
 }
 
-async fn merge_request_inner(
+pub(crate) async fn merge_request_inner(
     state: &AppState,
     command: &MergeRequestCommand,
-) -> Result<MergeRequestResult, ApiError> {
+) -> Result<MergeRequestResult, RequestMergeFailure> {
     let repo = find_repo(state, &command.owner, &command.repo_name).await?;
     let principal = principal_for_user_id(&repo, &command.actor_user_id);
     ensure_repo_read(&repo, &principal)?;
@@ -112,13 +122,13 @@ async fn merge_request_inner(
         RequestViewer::new(access, Some(&command.actor_user_id), is_invitee),
     );
     if request.repo_id != repo.record.id || !policy.exact_visible {
-        return Err(ApiError::not_found("request not found"));
+        return Err(ApiError::not_found("request not found").into());
     }
     if !policy.permissions.can_merge {
         if matches!(access.actor, RepositoryActor::Public) {
-            return Err(ApiError::forbidden("repo maintainer required"));
+            return Err(ApiError::forbidden("repo maintainer required").into());
         }
-        return Err(ApiError::conflict("request cannot be merged"));
+        return Err(ApiError::conflict("request cannot be merged").into());
     }
     // The gate is separate from permission: the head's checks must have cleared.
     let checks = crate::use_cases::request_checks::checks_outcome(state, &request).await?;
@@ -126,7 +136,8 @@ async fn merge_request_inner(
         let decision = request_mergeability(&request, access, checks);
         return Err(ApiError::conflict(
             decision.reason.unwrap_or("request checks have not cleared"),
-        ));
+        )
+        .into());
     }
 
     let analytics_event = ProductEvent::request_merged(
@@ -136,7 +147,7 @@ async fn merge_request_inner(
         request.audience,
         request_actor_role(access),
     );
-    let prepared = prepare_request_merge(
+    let prepared = prepare_request_merge_for_execution(
         state,
         &command.owner,
         &command.repo_name,
@@ -150,18 +161,19 @@ async fn merge_request_inner(
         Ok(event_id) => event_id,
         Err(error) => {
             cleanup_prepared_merge(state, prepared).await;
-            return Err(error);
+            return Err(RequestMergeFailure::Retryable(error));
         }
     };
     let now_unix = match unix_now() {
         Ok(now_unix) => now_unix,
         Err(error) => {
             cleanup_prepared_merge(state, prepared).await;
-            return Err(error);
+            return Err(RequestMergeFailure::Retryable(error));
         }
     };
-    let mutation =
-        persist_prepared_merge(state, command, merged_event_id, now_unix, prepared).await?;
+    let mutation = persist_prepared_merge(state, command, merged_event_id, now_unix, prepared)
+        .await
+        .map_err(RequestMergeFailure::Retryable)?;
 
     state.product_analytics.capture(analytics_event);
     state
@@ -206,6 +218,7 @@ async fn persist_prepared_merge(
                 name: command.repo_name.clone(),
                 request_id: command.request_id.clone(),
                 actor_user_id: command.actor_user_id.clone(),
+                expected_auto_merge: command.expected_auto_merge.clone(),
                 merged_event_id,
                 expected_git_frontier: prepared.expected_git_frontier,
                 expected_repo_change_version: prepared.expected_repo_change_version,
@@ -260,6 +273,7 @@ async fn persist_prepared_merge(
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn prepare_request_merge(
     state: &AppState,
     owner: &str,
@@ -268,10 +282,22 @@ pub(crate) async fn prepare_request_merge(
     repo: &Repository,
     request: &Request,
 ) -> Result<PreparedRequestMerge, ApiError> {
-    let current = repo
-        .git_head
-        .as_ref()
-        .ok_or_else(|| ApiError::conflict("repo has no accepted Git head"))?;
+    prepare_request_merge_for_execution(state, owner, repo_name, actor_user_id, repo, request)
+        .await
+        .map_err(RequestMergeFailure::into_api_error)
+}
+
+async fn prepare_request_merge_for_execution(
+    state: &AppState,
+    owner: &str,
+    repo_name: &str,
+    actor_user_id: &str,
+    repo: &Repository,
+    request: &Request,
+) -> Result<PreparedRequestMerge, RequestMergeFailure> {
+    let current = repo.git_head.as_ref().ok_or_else(|| {
+        RequestMergeFailure::Rejected(ApiError::conflict("repo has no accepted Git head"))
+    })?;
     let base_repo = state
         .repository_engine
         .materialize_repository(state, &repo.incarnation(), current, &repo.git_pack_spans)
@@ -292,7 +318,14 @@ pub(crate) async fn prepare_request_merge(
         "preparing request merge repository",
     )?;
     let prepared = async {
-        attach_visible_request_refs(state, std::slice::from_ref(request), &staging_repo, None)?;
+        attach_visible_request_refs(state, std::slice::from_ref(request), &staging_repo, None)
+            .map_err(|error| {
+                if error.kind == crate::error::ErrorKind::NotFound {
+                    RequestMergeFailure::RequestBranchMissing(error)
+                } else {
+                    RequestMergeFailure::from(error)
+                }
+            })?;
         let request_ref = canonical_request_ref(&request.name);
         let (origin, merge_base_oid) = match request.audience {
             RequestAudience::Public => {
@@ -302,7 +335,8 @@ pub(crate) async fn prepare_request_merge(
                     &staging_repo,
                     &request.head_oid,
                 )
-                .await?;
+                .await
+                .map_err(RequestMergeFailure::from)?;
                 let merge_base_oid = validated.public_base_oid.clone();
                 (
                     RequestMergeOrigin::Public {
@@ -323,13 +357,17 @@ pub(crate) async fn prepare_request_merge(
                 request.base_main_oid.clone(),
             ),
         };
-        let merged_main_oid = merge_main_oid(
+        let merged_main_oid = merge_main_oid_for_execution(
             &staging_repo,
             &merge_base_oid,
             &current.head_oid,
             &request.head_oid,
             &request.name,
-        )?;
+        )
+        .map_err(|failure| match failure {
+            MergeMainFailure::Conflict(error) => RequestMergeFailure::MergeConflict(error),
+            MergeMainFailure::Other(error) => RequestMergeFailure::from(error),
+        })?;
         let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
         run_git(
             Some(&staging_repo),
@@ -355,7 +393,8 @@ pub(crate) async fn prepare_request_merge(
             repo.repo_config.clone(),
             ReviewedUpdateMode::RequestMerge,
         )
-        .await?;
+        .await
+        .map_err(RequestMergeFailure::from)?;
         let preflight = (|| -> Result<(), ApiError> {
             let mut proposed_repo = repo.clone();
             apply_request_merge_to_repo(
@@ -380,7 +419,7 @@ pub(crate) async fn prepare_request_merge(
             )
             .await;
             write_lease.release().await;
-            return Err(error);
+            return Err(RequestMergeFailure::from(error));
         }
         Ok(PreparedRequestMerge {
             repository_id: repo.record.id.clone(),
@@ -409,7 +448,7 @@ pub(crate) async fn prepare_request_merge(
             )
             .await;
             value.write_lease.release().await;
-            Err(error)
+            Err(error.into())
         }
     }
 }
@@ -438,6 +477,7 @@ pub(crate) async fn persist_prepared_merge_for_tests(
         repo_name: repo_name.to_string(),
         request_id: request_id.to_string(),
         actor_user_id: actor_user_id.to_string(),
+        expected_auto_merge: None,
     };
     persist_prepared_merge(
         state,
@@ -450,6 +490,7 @@ pub(crate) async fn persist_prepared_merge_for_tests(
     .map(|mutation| mutation.request)
 }
 
+#[cfg(test)]
 fn merge_main_oid(
     repo: &std::path::Path,
     request_base_oid: &str,
@@ -457,6 +498,43 @@ fn merge_main_oid(
     request_head_oid: &str,
     request_name: &str,
 ) -> Result<String, ApiError> {
+    merge_main_oid_for_execution(
+        repo,
+        request_base_oid,
+        current_main_oid,
+        request_head_oid,
+        request_name,
+    )
+    .map_err(MergeMainFailure::into_api_error)
+}
+
+enum MergeMainFailure {
+    Conflict(ApiError),
+    Other(ApiError),
+}
+
+impl MergeMainFailure {
+    #[cfg(test)]
+    fn into_api_error(self) -> ApiError {
+        match self {
+            Self::Conflict(error) | Self::Other(error) => error,
+        }
+    }
+}
+
+impl From<ApiError> for MergeMainFailure {
+    fn from(error: ApiError) -> Self {
+        Self::Other(error)
+    }
+}
+
+fn merge_main_oid_for_execution(
+    repo: &std::path::Path,
+    request_base_oid: &str,
+    current_main_oid: &str,
+    request_head_oid: &str,
+    request_name: &str,
+) -> Result<String, MergeMainFailure> {
     run_git(
         Some(repo),
         &["config", "user.name", "Scope"],
@@ -492,10 +570,20 @@ fn merge_main_oid(
         "merging request trees",
     )?;
     if !merge_tree.status.success() {
-        return Err(ApiError::conflict(format!(
-            "request cannot merge cleanly: {}",
-            String::from_utf8_lossy(&merge_tree.stderr).trim()
-        )));
+        let diagnostic = String::from_utf8_lossy(&merge_tree.stderr);
+        if merge_tree.status.code() == Some(1) {
+            return Err(MergeMainFailure::Conflict(ApiError::conflict(format!(
+                "request cannot merge cleanly: {}",
+                diagnostic.trim()
+            ))));
+        }
+        return Err(MergeMainFailure::Other(
+            ApiError::infrastructure_unavailable(format!(
+                "git merge-tree exited with {}: {}",
+                merge_tree.status,
+                diagnostic.trim()
+            )),
+        ));
     }
     let tree_oid = String::from_utf8(merge_tree.stdout)
         .map_err(ApiError::internal)?
@@ -524,11 +612,12 @@ fn merge_main_oid(
         return Err(ApiError::infrastructure_unavailable(format!(
             "creating request merge commit: {}",
             String::from_utf8_lossy(&commit.stderr).trim()
-        )));
+        ))
+        .into());
     }
-    String::from_utf8(commit.stdout)
+    Ok(String::from_utf8(commit.stdout)
         .map_err(ApiError::internal)
-        .map(|value| value.trim().to_string())
+        .map(|value| value.trim().to_string())?)
 }
 
 fn synthetic_merge_commit(

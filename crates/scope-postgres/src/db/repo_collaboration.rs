@@ -219,6 +219,13 @@ impl RepositoryStore {
         )
         .await?;
         super::request_attention::remove_member_attention(&tx, &repo_id, member_user_id).await?;
+        super::request_auto_merge::stop_auto_merges_for_revoked_actor(
+            &tx,
+            &repo_id,
+            member_user_id,
+            now_unix,
+        )
+        .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RepositoryCollaborationMutation::committed(&repo, removed))
     }

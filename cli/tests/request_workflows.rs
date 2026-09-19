@@ -57,7 +57,145 @@ fn request_reads_work_outside_a_checkout_with_explicit_repository() {
         ])
         .output()
         .unwrap();
-    assert_eq!(success(output)["result"]["request"]["id"], "req_one");
+    let value = success(output);
+    assert_eq!(value["result"]["request"]["id"], "req_one");
+    assert_eq!(value["result"]["auto_merge"]["request_id"], "req_one");
+}
+
+#[test]
+fn request_auto_merge_saves_exact_revision_and_returns_a_pending_receipt() {
+    let dir = TempDir::new("request-auto-merge");
+    let server = FixtureServer::start();
+    let output = server
+        .command(dir.path())
+        .args([
+            "--json",
+            "--repo",
+            "owner/repo",
+            "request",
+            "merge",
+            "--request",
+            "req_one",
+            "--auto",
+            "--yes",
+        ])
+        .output()
+        .unwrap();
+    let value = success(output);
+    assert_eq!(value["command"], "request.merge.auto");
+    assert_eq!(value["result"]["response"]["intent"]["status"], "Active");
+    let seen = server.seen.lock().unwrap();
+    let post = seen
+        .iter()
+        .find(|entry| entry.starts_with("POST /v1/repos/owner/repo/requests/req_one/auto-merge"))
+        .unwrap();
+    assert!(
+        post.contains("\"expected_revision_id\":\"rev_current\""),
+        "{post}"
+    );
+    assert!(
+        post.contains(&format!("\"expected_head_oid\":\"{OID}\"")),
+        "{post}"
+    );
+    drop(seen);
+
+    let output = server
+        .command(dir.path())
+        .args([
+            "--repo",
+            "owner/repo",
+            "request",
+            "merge",
+            "--request",
+            "req_one",
+            "--auto",
+            "--yes",
+        ])
+        .output()
+        .unwrap();
+    assert_success(&output, "schedule auto-merge receipt");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("authorization saved"), "{stdout}");
+    assert!(stdout.contains("has not merged yet"), "{stdout}");
+}
+
+#[test]
+fn request_show_and_cancel_auto_merge_use_the_active_server_intent() {
+    let dir = TempDir::new("request-cancel-auto-merge");
+    let server = FixtureServer::start();
+    *server.auto_merge.lock().unwrap() = auto_merge_response(Some("Active"));
+
+    let shown = server
+        .command(dir.path())
+        .args([
+            "--repo",
+            "owner/repo",
+            "request",
+            "show",
+            "--request",
+            "req_one",
+        ])
+        .output()
+        .unwrap();
+    assert_success(&shown, "show request auto-merge");
+    let stdout = String::from_utf8(shown.stdout).unwrap();
+    assert!(stdout.contains("auto-merge: Active"), "{stdout}");
+    assert!(stdout.contains("authorized by @owner"), "{stdout}");
+    assert!(stdout.contains("head aaaaaaa"), "{stdout}");
+    assert!(stdout.contains("checks have not finished"), "{stdout}");
+
+    let canceled = server
+        .command(dir.path())
+        .args([
+            "--json",
+            "--repo",
+            "owner/repo",
+            "request",
+            "merge",
+            "--request",
+            "req_one",
+            "--cancel-auto",
+            "--yes",
+        ])
+        .output()
+        .unwrap();
+    let value = success(canceled);
+    assert_eq!(value["command"], "request.merge.cancel-auto");
+    assert_eq!(value["result"]["response"]["intent"]["status"], "Cancelled");
+    let seen = server.seen.lock().unwrap();
+    let delete = seen
+        .iter()
+        .find(|entry| entry.starts_with("DELETE /v1/repos/owner/repo/requests/req_one/auto-merge"))
+        .unwrap();
+    assert!(
+        delete.contains("\"expected_intent_id\":\"ami_one\""),
+        "{delete}"
+    );
+}
+
+#[test]
+fn request_merge_auto_modes_are_mutually_exclusive() {
+    let dir = TempDir::new("request-auto-merge-exclusive");
+    let output = scope_command(dir.path())
+        .args([
+            "--json",
+            "--repo",
+            "owner/repo",
+            "request",
+            "merge",
+            "--auto",
+            "--cancel-auto",
+            "--yes",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
+    assert!(
+        error.message.contains("cannot be used with"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]
@@ -493,6 +631,7 @@ struct FixtureServer {
     server: TestServer,
     seen: Arc<Mutex<Vec<String>>>,
     edited: Arc<Mutex<Value>>,
+    auto_merge: Arc<Mutex<Value>>,
 }
 
 impl FixtureServer {
@@ -513,6 +652,13 @@ impl FixtureServer {
         let started = inspected.clone();
         let checks_seen = inspected.clone();
         let approval_seen = inspected.clone();
+        let auto_merge = Arc::new(Mutex::new(auto_merge_response(None)));
+        let auto_merge_get = auto_merge.clone();
+        let auto_merge_post = auto_merge.clone();
+        let auto_merge_delete = auto_merge.clone();
+        let auto_merge_seen_get = inspected.clone();
+        let auto_merge_seen_post = inspected.clone();
+        let auto_merge_seen_delete = inspected.clone();
         let start_detail = detail.clone();
         let show_detail = detail.clone();
         let app = Router::new()
@@ -532,6 +678,32 @@ impl FixtureServer {
                             Json(checks_evaluation("started", Some(("run_one", "queued"))))
                         }
                     }))
+                    .route("/v1/repos/owner/repo/requests/req_one/auto-merge", get(move |OriginalUri(uri): OriginalUri| {
+                        let state = auto_merge_get.clone();
+                        let seen = auto_merge_seen_get.clone();
+                        async move {
+                            seen.lock().unwrap().push(format!("GET {}", uri));
+                            Json(state.lock().unwrap().clone())
+                        }
+                    }).post(move |OriginalUri(uri): OriginalUri, Json(body): Json<Value>| {
+                        let state = auto_merge_post.clone();
+                        let seen = auto_merge_seen_post.clone();
+                        async move {
+                            seen.lock().unwrap().push(format!("POST {} {}", uri, body));
+                            let response = auto_merge_response(Some("Active"));
+                            *state.lock().unwrap() = response.clone();
+                            Json(response)
+                        }
+                    }).delete(move |OriginalUri(uri): OriginalUri, Json(body): Json<Value>| {
+                        let state = auto_merge_delete.clone();
+                        let seen = auto_merge_seen_delete.clone();
+                        async move {
+                            seen.lock().unwrap().push(format!("DELETE {} {}", uri, body));
+                            let response = auto_merge_response(Some("Cancelled"));
+                            *state.lock().unwrap() = response.clone();
+                            Json(response)
+                        }
+                    }))
                     .route("/v1/repos/owner/repo/requests", get(|| async { Json(json!({"requests":[list_item("req_one", "fix-one", "Open"), list_item("req_two", "fix-two", "Closed"), list_item("req_three", "fix-three", "Open")], "next_cursor":null})) }).post(move || { let started=started.clone(); let detail=start_detail.clone(); async move { started.lock().unwrap().push("POST request".to_string()); Json(json!({"request":detail})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one", get(move || { let detail=show_detail.clone(); async move { Json(json!({"request":detail})) } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { *captured.lock().unwrap()=body; Json(json!({"request":request()})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one/changes", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=revisions_seen.clone(); async move { inspected.lock().unwrap().push(uri.to_string()); Json(json!({"review_revision_id":query.get("revision").map(String::as_str).unwrap_or("rev_old"), "revisions":[{"id":"rev_old","position":1,"actor":{"id":"usr_test","handle":"owner"},"old_head_oid":null,"new_head_oid":OID,"commits":[{"oid":OID,"parent_oids":[],"author":"owner","authored_at_unix":1,"message":"Old revision","change_count":1,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"visibility":"Public"}],"files_truncated":false}],"inspection":"Complete","created_at_unix":1}],"has_earlier_revisions":false})) } }))
@@ -540,6 +712,7 @@ impl FixtureServer {
             server: TestServer::new(app),
             seen,
             edited,
+            auto_merge,
         }
     }
     fn command(&self, cwd: &std::path::Path) -> Command {
@@ -555,6 +728,27 @@ fn list_item(id: &str, name: &str, state: &str) -> Value {
 }
 fn request() -> Value {
     json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_test","author_role":"Public","audience":"Public","base_main_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,"submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,"can_wait_after_reply":false,"can_edit_identity":true,"can_pull_branch":false,"can_push_branch":true,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":false,"can_merge":false},"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
+}
+
+fn auto_merge_response(status: Option<&str>) -> Value {
+    json!({
+        "request_id": "req_one",
+        "revision_id": "rev_current",
+        "head_oid": OID,
+        "intent": status.map(|status| json!({
+            "id": "ami_one",
+            "revision_id": "rev_current",
+            "head_oid": OID,
+            "actor": {"id": "usr_test", "handle": "owner"},
+            "status": status,
+            "reason": null,
+            "created_at_unix": 10,
+            "updated_at_unix": 11
+        })),
+        "waiting_reason": status.filter(|status| *status == "Active").map(|_| "checks have not finished"),
+        "can_enable": status.is_none(),
+        "can_cancel": status == Some("Active")
+    })
 }
 
 fn checks_evaluation(state: &str, run: Option<(&str, &str)>) -> Value {

@@ -40,6 +40,7 @@ pub(super) enum RequestCommandResult {
     Detail(DetailResult),
     List(ListResult),
     Mutation(MutationResult),
+    AutoMerge(RepoResponse<crate::api::RequestAutoMergeResponse>),
     Invitee(RepoResponse<RequestInviteeMutationResponse>),
     Leave(TargetResponse<LeaveRequestResponse>),
     Close(TargetResponse<RequestCloseResponse>),
@@ -63,6 +64,8 @@ pub(super) struct DetailResult {
     pub(super) request: RequestSummaryResponse,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) activity: Option<RequestActivityPageResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) auto_merge: Option<crate::api::RequestAutoMergeResponse>,
 }
 
 #[derive(Serialize)]

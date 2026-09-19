@@ -3,6 +3,7 @@ import type {
   RequestChecksResponse,
   RequestDetailResponse,
   RequestMutationResponse,
+  RequestAutoMergeResponse,
   RequestRatingResponse,
   RequestRatingsResponse,
 } from '@/api/types.generated'
@@ -29,8 +30,13 @@ import type {
   RequestActionCommand,
   RequestActionResult,
 } from './request-actions-api'
+import type {
+  AuthorizeRequestAutoMergeInput,
+  CancelRequestAutoMergeInput,
+} from './request-auto-merge-api'
 import { RequestChecksSection } from './request-checks-section'
 import { requestChecksIdentity } from './request-checks-resource'
+import { requestAutoMergeIdentity } from './request-auto-merge-resource'
 import { RequestDetailHeader } from './request-detail-header'
 import { RequestDetails, RequestDetailsProvider } from './request-details'
 import type { RequestActivityPage } from './request-discussion-types'
@@ -42,6 +48,7 @@ import { useDetailPaneRail } from './use-detail-pane-rail'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
 import { useRequestChecks } from './use-request-checks'
+import { useRequestAutoMerge } from './use-request-auto-merge'
 import { requestActivityIdentity } from './request-activity-resource'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import {
@@ -72,14 +79,23 @@ export function RequestUnavailablePage({ params }: { params: RepoParams }) {
 
 type RequestDetailPageProps = {
   approveChecks: () => Promise<RequestChecksResponse>
+  authorizeAutoMerge: (input: Pick<
+    AuthorizeRequestAutoMergeInput,
+    'expected_head_oid' | 'expected_revision_id'
+  >) => Promise<RequestAutoMergeResponse>
   attachmentActions: RequestAttachmentActions
   children: ReactNode
   detail: RequestDetailResponse
   live: RepoLiveState
   loadActivity: (signal: AbortSignal) => Promise<RequestActivityPage>
   loadChecks: (signal: AbortSignal) => Promise<RequestChecksResponse>
+  loadAutoMerge: (signal: AbortSignal) => Promise<RequestAutoMergeResponse>
   params: RepoParams
   performAction: (command: RequestActionCommand) => Promise<RequestActionResult>
+  cancelAutoMerge: (input: Pick<
+    CancelRequestAutoMergeInput,
+    'expected_intent_id'
+  >) => Promise<RequestAutoMergeResponse>
   ratings: RequestRatingsResponse
   rateRequest: (input: RateRequestInput) => Promise<RequestRatingResponse>
   updateDescription: (input: UpdateDescriptionInput) => Promise<RequestMutationResponse>
@@ -89,12 +105,15 @@ type RequestDetailPageProps = {
 export function RequestDetailPage(props: RequestDetailPageProps) {
   const {
     approveChecks,
+    authorizeAutoMerge,
+    cancelAutoMerge,
     children,
     attachmentActions,
     detail,
     live,
     loadActivity,
     loadChecks,
+    loadAutoMerge,
     params,
     performAction,
     ratings,
@@ -120,6 +139,12 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     identity: requestChecksIdentity(scope, request.id),
     load: loadChecks,
   })
+  const autoMerge = useRequestAutoMerge({
+    authorize: authorizeAutoMerge,
+    cancel: cancelAutoMerge,
+    identity: requestAutoMergeIdentity(scope, request.id),
+    load: loadAutoMerge,
+  })
   const requestActions = useRequestActions(performAction)
   const workspace = useRequestWorkspace()
   const [descriptionOverride, setDescriptionOverride] = useState<{
@@ -136,7 +161,14 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   }), [params.owner, params.repo, request.id])
   const paneRef = useRef<HTMLDivElement>(null)
   const rail = useDetailPaneRail(paneRef)
-  const hasLifecycleActions = hasRequestLifecycleActions(request)
+  const hasLifecycleActions = hasRequestLifecycleActions(request) ||
+    autoMerge.status?.can_enable === true ||
+    autoMerge.status?.intent !== null
+  const actionClearance = hasLifecycleActions
+    ? autoMerge.status?.intent
+      ? 'pb-28 min-[701px]:pb-0'
+      : 'pb-20 min-[701px]:pb-0'
+    : null
   const canClaim = workspace?.selected?.attention.reason === 'unclaimed' &&
     workspace.selected.attention.can_claim
   const canRelease = workspace?.selected?.attention.can_release ?? false
@@ -159,7 +191,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       viewerId={viewerId}
     >
       <WorkbenchPane className="max-w-none">
-        <div className={cn('w-full', hasLifecycleActions && 'pb-20 min-[701px]:pb-0')} ref={paneRef}>
+        <div className={cn('w-full', actionClearance)} ref={paneRef}>
           <RequestDetailHeader
             actions={
               <>
@@ -189,8 +221,10 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 ) : null}
                 <RequestLifecycleActions
                   actions={requestActions}
+                  autoMerge={autoMerge}
                   className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
                   request={request}
+                  viewerId={viewerId}
                 />
                 {request.permissions.can_view_activity ? (
                   <Button
@@ -219,12 +253,12 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               </Link>
             </Button>
           </div>
-          {requestActions.error ? (
+          {requestActions.error || autoMerge.error ? (
             <p
               className="border-b border-border px-5 py-2 text-sm text-danger-strong sm:px-6 lg:px-8"
               role="alert"
             >
-              {requestActions.error}
+              {requestActions.error ?? autoMerge.error}
             </p>
           ) : null}
           <RequestChecksSection

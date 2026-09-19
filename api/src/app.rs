@@ -198,6 +198,12 @@ pub fn router(state: AppState) -> Router {
             get(http::request_checks::get_request_checks),
         )
         .route(
+            routes::REPO_REQUEST_AUTO_MERGE,
+            get(http::request_auto_merge::get)
+                .post(http::request_auto_merge::authorize)
+                .delete(http::request_auto_merge::cancel),
+        )
+        .route(
             routes::REPO_REQUEST_CHECKS_APPROVE,
             post(http::request_checks::approve_request_checks),
         )

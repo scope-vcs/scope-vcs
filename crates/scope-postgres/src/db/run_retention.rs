@@ -7,7 +7,8 @@ use crate::error::PostgresError;
 use scope_domain::content::SourceBlob;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-    TransactionTrait, sea_query::Query,
+    TransactionTrait,
+    sea_query::{Expr, Query},
 };
 use std::collections::BTreeSet;
 
@@ -29,6 +30,21 @@ impl RunStore {
                 "lost".to_string(),
             ]))
             .filter(entities::run::Column::CompletedAtUnix.lte(cutoff))
+            // Active auto-merge decisions retain the exact run evidence they were authorized
+            // against. Terminal intents release it to the ordinary age policy.
+            .filter(Expr::cust(
+                "NOT EXISTS (
+                    SELECT 1
+                      FROM scope_request_auto_merge_intents intent
+                      JOIN scope_request_check_evaluations evaluation
+                        ON evaluation.request_id = intent.request_id
+                       AND evaluation.head_oid = intent.head_oid
+                     WHERE intent.status = 'Active'
+                       AND evaluation.checks @> jsonb_build_array(
+                           jsonb_build_object('run_id', scope_runs.id)
+                       )
+                )",
+            ))
             .order_by_asc(entities::run::Column::CompletedAtUnix)
             .order_by_asc(entities::run::Column::Id)
             .limit(limit)
