@@ -1,15 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type {
-  LoadRepliesInput,
-  RequestDiscussionRepliesPage,
-} from './request-discussion-api'
+import type { RequestDiscussionRepliesPage } from './request-discussion-api'
 import {
-  loadLinkedRequestDiscussionReply,
-  loadOlderRequestDiscussionReplies,
+  createRequestDiscussionReplyReads,
   openRequestDiscussionReplies,
   requestDiscussionRepliesResource,
-  type RequestDiscussionRepliesReadContext,
 } from './request-discussion-replies-resource'
 import {
   acknowledgeReply,
@@ -18,166 +13,81 @@ import {
 } from './request-discussion-replies-model'
 import { reply } from './request-discussion-test-fixtures'
 
-test('same linked targets join pending work after reopening and distinct targets serialize', async () => {
-  requestDiscussionRepliesResource.clear()
-  const first = deferred<RequestDiscussionRepliesPage>()
-  const second = deferred<RequestDiscussionRepliesPage>()
-  const calls: LoadRepliesInput[] = []
-  const pending = [first, second]
-  const context = readContext((input) => {
-    calls.push(input)
-    return pending.shift()!.promise
-  })
-  const session = openRequestDiscussionReplies('viewer/access/request/thread')
+type LatestReplies = Parameters<typeof createRequestDiscussionReplyReads>[2]
+type LoadReplies = Parameters<typeof createRequestDiscussionReplyReads>[1]
+type LoadRepliesInput = Parameters<LoadReplies>[0]
 
-  const firstLoad = loadLinkedRequestDiscussionReply(
-    session,
-    context,
-    'target-one',
-  )
-  const reopened = openRequestDiscussionReplies(
-    'viewer/access/request/thread',
-  )
-  const joinedLoad = loadLinkedRequestDiscussionReply(
-    reopened,
-    context,
-    'target-one',
-  )
-  const serializedLoad = loadLinkedRequestDiscussionReply(
-    reopened,
-    context,
-    'target-two',
-  )
+test.beforeEach(() => requestDiscussionRepliesResource.clear())
+
+test('same linked targets join pending work after reopening and distinct targets serialize', async () => {
+  const fixture = replyReads('viewer/access/request/thread')
+
+  const firstLoad = fixture.loadReplyTarget('target-one')
+  const reopened = openRequestDiscussionReplies(fixture.key)
+  const reopenedReads = fixture.reads(reopened)
+  const joinedLoad = reopenedReads.loadReplyTarget('target-one')
+  const serializedLoad = reopenedReads.loadReplyTarget('target-two')
 
   assert.equal(joinedLoad, firstLoad)
   assert.equal(reopened.target?.promise, firstLoad)
-  assert.deepEqual(calls.map(({ reply: target }) => target), ['target-one'])
+  assert.deepEqual(fixture.calls, [{ reply: 'target-one' }])
 
-  first.resolve(replyPage([reply('target-one', 1)], null))
+  fixture.requests[0]!.resolve(page([reply('target-one', 1)], null))
   assert.equal(await firstLoad, true)
   assert.equal(await joinedLoad, true)
   await Promise.resolve()
-  assert.deepEqual(calls.map(({ reply: target }) => target), [
-    'target-one',
-    'target-two',
+  assert.deepEqual(fixture.calls, [
+    { reply: 'target-one' },
+    { reply: 'target-two' },
   ])
 
-  second.resolve(replyPage([reply('target-two', 2)], null))
+  fixture.requests[1]!.resolve(page([reply('target-two', 2)], null))
   assert.equal(await serializedLoad, true)
-  assert.deepEqual(
-    openRequestDiscussionReplies(
-      'viewer/access/request/thread',
-    ).replies.map(({ id }) => id),
-    ['target-one', 'target-two'],
-  )
+  assert.deepEqual(currentIds(fixture.key), ['target-one', 'target-two'])
 })
 
 test('linked target loading preserves the older-page cursor', async () => {
-  requestDiscussionRepliesResource.clear()
-  const newestPage = deferred<RequestDiscussionRepliesPage>()
-  const targetPage = deferred<RequestDiscussionRepliesPage>()
-  const pending = [newestPage, targetPage]
-  const calls: LoadRepliesInput[] = []
-  const context = readContext((input) => {
-    calls.push(input)
-    return pending.shift()!.promise
-  })
-  const session = openRequestDiscussionReplies('request')
+  const fixture = replyReads()
 
-  const newestLoad = loadOlderRequestDiscussionReplies(
-    session,
-    context,
-    true,
-  )!
-  assert.equal(
-    loadOlderRequestDiscussionReplies(session, context, true),
-    undefined,
-  )
-  assert.equal(calls.length, 1)
-  newestPage.resolve(replyPage([reply('new', 10)], 10))
+  const newestLoad = fixture.loadOlderReplies()!
+  assert.equal(fixture.loadOlderReplies(), undefined)
+  assert.deepEqual(fixture.calls, [{ before: undefined }])
+  fixture.requests[0]!.resolve(page([reply('new', 10)], 10))
   await newestLoad
 
-  const targetLoad = loadLinkedRequestDiscussionReply(
-    session,
-    context,
-    'target',
-  )
-  targetPage.resolve(replyPage([reply('target', 2)], 2))
+  const targetLoad = fixture.loadReplyTarget('target')
+  fixture.requests[1]!.resolve(page([reply('target', 2)], 2))
   assert.equal(await targetLoad, true)
 
-  assert.deepEqual(calls, [
-    {
-      before: undefined,
-      discussion_id: 'one',
-      owner: 'scope',
-      repo: 'scope',
-      request_id: 'request-1',
-    },
-    {
-      discussion_id: 'one',
-      owner: 'scope',
-      repo: 'scope',
-      reply: 'target',
-      request_id: 'request-1',
-    },
+  assert.deepEqual(fixture.calls, [
+    { before: undefined },
+    { reply: 'target' },
   ])
-  assert.equal(
-    openRequestDiscussionReplies('request').page.nextBeforePosition,
-    10,
-  )
+  assert.equal(openRequestDiscussionReplies(fixture.key).page.nextBeforePosition, 10)
 })
 
 test('a newer preview reloads the newest page before advancing its older cursor', async () => {
-  requestDiscussionRepliesResource.clear()
-  const initial = deferred<RequestDiscussionRepliesPage>()
-  const refreshed = deferred<RequestDiscussionRepliesPage>()
-  const older = deferred<RequestDiscussionRepliesPage>()
-  const pending = [initial, refreshed, older]
-  const calls: LoadRepliesInput[] = []
-  const loadReplies = (input: LoadRepliesInput) => {
-    calls.push(input)
-    return pending.shift()!.promise
-  }
-  const session = openRequestDiscussionReplies('request')
+  const fixture = replyReads()
+  const initial = fixture.reads(undefined, [reply('one-hundred', 100)])
 
-  const initialLoad = loadOlderRequestDiscussionReplies(
-    session,
-    readContext(loadReplies, [reply('one-hundred', 100)]),
-    true,
-  )!
-  initial.resolve(
-    replyPage(
-      [reply('fifty-one', 51), reply('one-hundred', 100)],
-      51,
-    ),
+  const initialLoad = initial.loadOlderReplies()!
+  fixture.requests[0]!.resolve(
+    page([reply('fifty-one', 51), reply('one-hundred', 100)], 51),
   )
   await initialLoad
 
-  const advancedContext = readContext(loadReplies, [
-    reply('one-hundred-four', 104),
-  ])
-  const refreshLoad = loadOlderRequestDiscussionReplies(
-    session,
-    advancedContext,
-    true,
-  )!
-  refreshed.resolve(
-    replyPage(
-      [reply('fifty-five', 55), reply('one-hundred-four', 104)],
-      55,
-    ),
+  const advanced = fixture.reads(undefined, [reply('one-hundred-four', 104)])
+  const refreshLoad = advanced.loadOlderReplies()!
+  fixture.requests[1]!.resolve(
+    page([reply('fifty-five', 55), reply('one-hundred-four', 104)], 55),
   )
   await refreshLoad
 
-  const olderLoad = loadOlderRequestDiscussionReplies(
-    session,
-    advancedContext,
-    true,
-  )!
-  older.resolve(replyPage([reply('one', 1)], null))
+  const olderLoad = advanced.loadOlderReplies()!
+  fixture.requests[2]!.resolve(page([reply('one', 1)], null))
   await olderLoad
 
-  assert.deepEqual(calls.map(({ before }) => before), [
+  assert.deepEqual(fixture.calls.map(({ before }) => before), [
     undefined,
     undefined,
     55,
@@ -185,156 +95,84 @@ test('a newer preview reloads the newest page before advancing its older cursor'
 })
 
 test('failed page loads retain replies and can be retried through the session owner', async () => {
-  requestDiscussionRepliesResource.clear()
-  const initial = deferred<RequestDiscussionRepliesPage>()
-  const failed = deferred<RequestDiscussionRepliesPage>()
-  const retried = deferred<RequestDiscussionRepliesPage>()
-  const pending = [initial, failed, retried]
-  const context = readContext(() => pending.shift()!.promise)
-  const session = openRequestDiscussionReplies('request')
+  const fixture = replyReads()
 
-  const initialLoad = loadOlderRequestDiscussionReplies(
-    session,
-    context,
-    true,
-  )!
-  initial.resolve(replyPage([reply('visible', 10)], 10))
+  const initialLoad = fixture.loadOlderReplies()!
+  fixture.requests[0]!.resolve(page([reply('visible', 10)], 10))
   await initialLoad
 
-  const failedLoad = loadOlderRequestDiscussionReplies(
-    session,
-    context,
-    true,
-  )!
-  failed.reject({})
+  const failedLoad = fixture.loadOlderReplies()!
+  fixture.requests[1]!.reject({})
   await failedLoad
-  const failedState = openRequestDiscussionReplies('request')
-  assert.deepEqual(failedState.replies.map(({ id }) => id), ['visible'])
-  assert.equal(failedState.page.loading, false)
-  assert.equal(
-    failedState.page.error,
-    'Earlier replies could not be loaded.',
-  )
+  const failed = openRequestDiscussionReplies(fixture.key)
+  assert.deepEqual(failed.replies.map(({ id }) => id), ['visible'])
+  assert.equal(failed.page.loading, false)
+  assert.equal(failed.page.error, 'Earlier replies could not be loaded.')
 
-  const retry = loadOlderRequestDiscussionReplies(
-    session,
-    context,
-    true,
-  )!
-  assert.equal(openRequestDiscussionReplies('request').page.error, null)
-  retried.resolve(replyPage([reply('older', 2)], null))
+  const retry = fixture.loadOlderReplies()!
+  assert.equal(openRequestDiscussionReplies(fixture.key).page.error, null)
+  fixture.requests[2]!.resolve(page([reply('older', 2)], null))
   await retry
-  const recovered = openRequestDiscussionReplies('request')
-  assert.deepEqual(recovered.replies.map(({ id }) => id), [
-    'older',
-    'visible',
-  ])
+  const recovered = openRequestDiscussionReplies(fixture.key)
+  assert.deepEqual(recovered.replies.map(({ id }) => id), ['older', 'visible'])
   assert.equal(recovered.page.error, null)
 })
 
 test('failed linked targets settle, clear their operation, and retry', async () => {
-  requestDiscussionRepliesResource.clear()
-  const failed = deferred<RequestDiscussionRepliesPage>()
-  const retried = deferred<RequestDiscussionRepliesPage>()
-  const pending = [failed, retried]
-  const context = readContext(() => pending.shift()!.promise)
-  const session = openRequestDiscussionReplies('request')
+  const fixture = replyReads()
 
-  const firstLoad = loadLinkedRequestDiscussionReply(
-    session,
-    context,
-    'target',
-  )
-  failed.reject({})
+  const firstLoad = fixture.loadReplyTarget('target')
+  fixture.requests[0]!.reject({})
   assert.equal(await firstLoad, false)
   await Promise.resolve()
-  const failedState = openRequestDiscussionReplies('request')
-  assert.equal(failedState.target, null)
-  assert.equal(failedState.page.loading, false)
-  assert.equal(
-    failedState.page.error,
-    'Linked reply could not be loaded.',
-  )
+  const failed = openRequestDiscussionReplies(fixture.key)
+  assert.equal(failed.target, null)
+  assert.equal(failed.page.loading, false)
+  assert.equal(failed.page.error, 'Linked reply could not be loaded.')
 
-  const retry = loadLinkedRequestDiscussionReply(
-    session,
-    context,
-    'target',
-  )
-  assert.equal(openRequestDiscussionReplies('request').page.error, null)
-  retried.resolve(replyPage([reply('target', 1)], null))
+  const retry = fixture.loadReplyTarget('target')
+  assert.equal(openRequestDiscussionReplies(fixture.key).page.error, null)
+  fixture.requests[1]!.resolve(page([reply('target', 1)], null))
   assert.equal(await retry, true)
-  assert.equal(openRequestDiscussionReplies('request').page.error, null)
+  assert.equal(openRequestDiscussionReplies(fixture.key).page.error, null)
 })
 
 test('clearing and replacing a session rejects late target and page writes', async () => {
-  requestDiscussionRepliesResource.clear()
-  const pendingTarget = deferred<RequestDiscussionRepliesPage>()
-  const targetContext = readContext(() => pendingTarget.promise)
-  const old = openRequestDiscussionReplies('request')
-  const targetLoad = loadLinkedRequestDiscussionReply(
-    old,
-    targetContext,
-    'late-target',
-  )
+  const targetFixture = replyReads()
+  const targetLoad = targetFixture.loadReplyTarget('late-target')
 
   requestDiscussionRepliesResource.clear()
-  openRequestDiscussionReplies('request')
-  pendingTarget.resolve(replyPage([reply('late-target', 1)], null))
+  openRequestDiscussionReplies(targetFixture.key)
+  targetFixture.requests[0]!.resolve(page([reply('late-target', 1)], null))
   assert.equal(await targetLoad, true)
-  assert.deepEqual(openRequestDiscussionReplies('request').replies, [])
+  assert.deepEqual(currentIds(targetFixture.key), [])
 
-  const pendingPage = deferred<RequestDiscussionRepliesPage>()
-  const pageContext = readContext(() => pendingPage.promise)
-  const replaced = openRequestDiscussionReplies('page-request')
-  const pageLoad = loadOlderRequestDiscussionReplies(
-    replaced,
-    pageContext,
-    true,
-  )!
-
+  const pageFixture = replyReads('page-request')
+  const pageLoad = pageFixture.loadOlderReplies()!
   requestDiscussionRepliesResource.clear()
-  const replacement = openRequestDiscussionReplies('page-request')
-  pendingPage.resolve(replyPage([reply('late-page', 2)], null))
+  const replacement = openRequestDiscussionReplies(pageFixture.key)
+  pageFixture.requests[0]!.resolve(page([reply('late-page', 2)], null))
   await pageLoad
+
   assert.equal(replacement.read(), replacement)
-  assert.deepEqual(openRequestDiscussionReplies('page-request').replies, [])
-  assert.equal(
-    openRequestDiscussionReplies('page-request').page.loading,
-    false,
-  )
+  assert.deepEqual(currentIds(pageFixture.key), [])
+  assert.equal(openRequestDiscussionReplies(pageFixture.key).page.loading, false)
 })
 
 test('viewer and access scopes retain separate reply sessions', async () => {
-  requestDiscussionRepliesResource.clear()
-  const viewerSession = openRequestDiscussionReplies(
-    'viewer/access/request/thread',
-  )
-  const context = readContext(async () =>
-    replyPage([reply('viewer-reply', 1)], null),
-  )
+  const fixture = replyReads('viewer/access/request/thread')
+  const load = fixture.loadOlderReplies()!
+  fixture.requests[0]!.resolve(page([reply('viewer-reply', 1)], null))
+  await load
 
-  await loadOlderRequestDiscussionReplies(viewerSession, context, true)
-
-  assert.deepEqual(viewerSession.read()?.replies.map(({ id }) => id), [
+  assert.deepEqual(fixture.session.read()?.replies.map(({ id }) => id), [
     'viewer-reply',
   ])
-  assert.deepEqual(
-    openRequestDiscussionReplies(
-      'other-viewer/access/request/thread',
-    ).replies,
-    [],
-  )
-  assert.deepEqual(
-    openRequestDiscussionReplies(
-      'viewer/other-access/request/thread',
-    ).replies,
-    [],
-  )
+  assert.deepEqual(currentIds('other-viewer/access/request/thread'), [])
+  assert.deepEqual(currentIds('viewer/other-access/request/thread'), [])
 })
 
 test('optimistic failure, retry and acknowledgment update the persistent reply owner', () => {
-  requestDiscussionRepliesResource.clear()
   const session = openRequestDiscussionReplies('request')
   session.update((current) =>
     insertOptimisticReply(
@@ -351,9 +189,7 @@ test('optimistic failure, retry and acknowledgment update the persistent reply o
       reply('client', Number.MAX_SAFE_INTEGER, { pending: 'sending' }),
     ),
   )
-  session.update((current) =>
-    acknowledgeReply(current, 'client', reply('server', 4)),
-  )
+  session.update((current) => acknowledgeReply(current, 'client', reply('server', 4)))
   assert.deepEqual(
     openRequestDiscussionReplies('request').replies.map(({ id, pending }) => ({
       id,
@@ -363,30 +199,40 @@ test('optimistic failure, retry and acknowledgment update the persistent reply o
   )
 })
 
-function readContext(
-  loadReplies: RequestDiscussionRepliesReadContext['loadReplies'],
-  latestReplies: RequestDiscussionRepliesReadContext['latestReplies'] = [],
-): RequestDiscussionRepliesReadContext {
-  return {
-    discussionId: 'one',
-    latestReplies,
-    loadReplies,
-    params: {
-      owner: 'scope',
-      repo: 'scope',
-      request_id: 'request-1',
-    },
+function replyReads(key = 'request') {
+  const calls: LoadRepliesInput[] = []
+  const requests: ReturnType<typeof deferred<RequestDiscussionRepliesPage>>[] = []
+  const session = openRequestDiscussionReplies(key)
+  const loadReplies: LoadReplies = (input) => {
+    calls.push(input)
+    const request = deferred<RequestDiscussionRepliesPage>()
+    requests.push(request)
+    return request.promise
   }
+  const reads = (
+    owner = session,
+    latestReplies: LatestReplies = [],
+    hasOlderReplies = true,
+  ) =>
+    createRequestDiscussionReplyReads(
+      owner,
+      loadReplies,
+      latestReplies,
+      hasOlderReplies,
+    )
+
+  return { calls, key, requests, session, reads, ...reads() }
 }
 
-function replyPage(
+function currentIds(key: string) {
+  return openRequestDiscussionReplies(key).replies.map(({ id }) => id)
+}
+
+function page(
   replies: RequestDiscussionRepliesPage['replies'],
   nextBeforePosition: number | null,
 ): RequestDiscussionRepliesPage {
-  return {
-    next_before_position: nextBeforePosition,
-    replies,
-  }
+  return { next_before_position: nextBeforePosition, replies }
 }
 
 function deferred<T>() {

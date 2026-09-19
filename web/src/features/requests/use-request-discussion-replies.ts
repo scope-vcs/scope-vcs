@@ -6,8 +6,7 @@ import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { requestQueueResource } from './request-queue-cache'
 import { runRequestContentSubmission } from './request-attachment-drafts'
 import {
-  loadLinkedRequestDiscussionReply,
-  loadOlderRequestDiscussionReplies,
+  createRequestDiscussionReplyReads,
   openRequestDiscussionReplies,
   requestDiscussionRepliesResource,
 } from './request-discussion-replies-resource'
@@ -84,28 +83,12 @@ export function useRequestDiscussionReplies({
     0,
   )
   const hasOlderReplies = olderReplyCount > 0
-  const readContext = {
-    discussionId: discussion.id,
-    latestReplies: discussion.latest_replies,
-    loadReplies: actions.loadReplies,
-    params,
-  }
-
-  function loadOlderReplies() {
-    return loadOlderRequestDiscussionReplies(
-      session,
-      readContext,
-      hasOlderReplies,
-    )
-  }
-
-  function loadReplyTarget(replyId: string): Promise<boolean> {
-    return loadLinkedRequestDiscussionReply(
-      session,
-      readContext,
-      replyId,
-    )
-  }
+  const { loadOlderReplies, loadReplyTarget } = createRequestDiscussionReplyReads(
+    session,
+    (page) => actions.loadReplies({ ...params, discussion_id: discussion.id, ...page }),
+    discussion.latest_replies,
+    hasOlderReplies,
+  )
 
   async function postReply(
     body: string,
