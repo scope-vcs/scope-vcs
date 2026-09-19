@@ -9,6 +9,7 @@ pub(crate) fn generate_persistence_id(kind: GeneratedIdKind) -> Result<String, S
         GeneratedIdKind::DependencyAnalysisLease => format!("dependency_{random}"),
         GeneratedIdKind::OutboxJob => format!("outbox_{random}"),
         GeneratedIdKind::RepositoryIncarnation => format!("repoi_{random}"),
+        GeneratedIdKind::RequestAutoMergeClaim => format!("auto_merge_claim_{random}"),
     })
 }
 

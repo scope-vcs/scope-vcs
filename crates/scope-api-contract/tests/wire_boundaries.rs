@@ -37,6 +37,13 @@ fn public_payload_fields_are_owned_wire_types() {
         let _: FileChangeKind = file.kind;
         let _: Visibility = file.visibility;
     }
+    fn request_auto_merge(response: RequestAutoMergeResponse) {
+        if let Some(intent) = response.intent {
+            let _: RequestActorSummaryResponse = intent.actor;
+            let _: RequestAutoMergeIntentStatus = intent.status;
+            let _: Option<RequestAutoMergeStopReason> = intent.reason;
+        }
+    }
     fn repository_events(event: RepoChangeEvent) {
         let _: RepoChangeKind = event.kind;
     }

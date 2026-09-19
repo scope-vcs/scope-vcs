@@ -113,6 +113,11 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
       cancel(identity)
       publish(identity, { value, version, error: null, stale: false, pending: false })
     },
+    writeIfUnchanged(identity: string, snapshot: ResourceSnapshot<T>, value: T, version = '') {
+      if (getSnapshot(identity) !== snapshot) return false
+      this.write(identity, value, version)
+      return true
+    },
     subscribe(identity: string, listener: () => void) {
       let subscribers = listeners.get(identity)
       if (!subscribers) listeners.set(identity, subscribers = new Set())

@@ -136,11 +136,20 @@ pub(super) struct RequestUninviteArgs {
 }
 
 #[derive(Parser)]
+#[command(group(
+    ArgGroup::new("request_merge_mode")
+        .multiple(false)
+        .args(["auto", "cancel_auto"])
+))]
 pub(super) struct RequestMergeArgs {
     #[command(flatten)]
     pub(super) target: RequestTargetArgs,
     #[arg(long, help = "Confirm the merge")]
     pub(super) yes: bool,
+    #[arg(long, help = "Merge the current request revision when its checks pass")]
+    pub(super) auto: bool,
+    #[arg(long, help = "Cancel the active automatic merge authorization")]
+    pub(super) cancel_auto: bool,
 }
 
 #[derive(Parser)]

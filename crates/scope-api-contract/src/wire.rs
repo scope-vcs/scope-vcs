@@ -131,6 +131,10 @@ wire_enum!(RequestEventKind => DomainRequestEventKind {
     IdentityEdited,
     DiscussionResolved,
     DiscussionReopened,
+    AutoMergeEnabled,
+    AutoMergeCancelled,
+    AutoMergeStopped,
+    AutoMergeFulfilled,
 });
 wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
     Ready,
@@ -225,6 +229,28 @@ pub enum RequestEventPayload {
     DiscussionReopened {
         discussion_id: String,
     },
+    AutoMergeEnabled {
+        intent_id: String,
+        revision_id: String,
+        head_oid: String,
+    },
+    AutoMergeCancelled {
+        intent_id: String,
+        revision_id: String,
+        head_oid: String,
+    },
+    AutoMergeStopped {
+        intent_id: String,
+        revision_id: String,
+        head_oid: String,
+        reason: crate::RequestAutoMergeStopReason,
+    },
+    AutoMergeFulfilled {
+        intent_id: String,
+        revision_id: String,
+        head_oid: String,
+        main_oid: String,
+    },
 }
 
 impl From<DomainRequestEventPayload> for RequestEventPayload {
@@ -257,6 +283,46 @@ impl From<DomainRequestEventPayload> for RequestEventPayload {
             DomainRequestEventPayload::DiscussionReopened { discussion_id } => {
                 Self::DiscussionReopened { discussion_id }
             }
+            DomainRequestEventPayload::AutoMergeEnabled {
+                intent_id,
+                revision_id,
+                head_oid,
+            } => Self::AutoMergeEnabled {
+                intent_id,
+                revision_id,
+                head_oid,
+            },
+            DomainRequestEventPayload::AutoMergeCancelled {
+                intent_id,
+                revision_id,
+                head_oid,
+            } => Self::AutoMergeCancelled {
+                intent_id,
+                revision_id,
+                head_oid,
+            },
+            DomainRequestEventPayload::AutoMergeStopped {
+                intent_id,
+                revision_id,
+                head_oid,
+                reason,
+            } => Self::AutoMergeStopped {
+                intent_id,
+                revision_id,
+                head_oid,
+                reason: reason.into(),
+            },
+            DomainRequestEventPayload::AutoMergeFulfilled {
+                intent_id,
+                revision_id,
+                head_oid,
+                main_oid,
+            } => Self::AutoMergeFulfilled {
+                intent_id,
+                revision_id,
+                head_oid,
+                main_oid,
+            },
         }
     }
 }

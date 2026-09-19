@@ -1,5 +1,7 @@
 import {
   parseRequestParams,
+  parseAuthorizeRequestAutoMergeInput,
+  parseCancelRequestAutoMergeInput,
   parseUpdateDescriptionInput,
   parseRequestActionInput,
   parseRateRequestInput,
@@ -14,6 +16,11 @@ import {
   rateRequestForRequest,
   type RateRequestInput,
 } from '@/api/requests'
+import {
+  authorizeRequestAutoMergeForRequest,
+  cancelRequestAutoMergeForRequest,
+  loadRequestAutoMergeForRequest,
+} from '@/features/requests/request-auto-merge-api'
 import {
   type RequestActionCommand,
   performRequestActionForRequest,
@@ -67,6 +74,18 @@ const loadChecks = createServerFn({ method: 'GET' })
 const approveChecks = createServerFn({ method: 'POST' })
   .validator(parseRequestParams)
   .handler(({ data }) => approveRequestChecks(data))
+
+const loadAutoMerge = createServerFn({ method: 'GET' })
+  .validator(parseRequestParams)
+  .handler(({ data }) => loadRequestAutoMergeForRequest(data))
+
+const authorizeAutoMerge = createServerFn({ method: 'POST' })
+  .validator(parseAuthorizeRequestAutoMergeInput)
+  .handler(({ data }) => authorizeRequestAutoMergeForRequest(data))
+
+const cancelAutoMerge = createServerFn({ method: 'POST' })
+  .validator(parseCancelRequestAutoMergeInput)
+  .handler(({ data }) => cancelRequestAutoMergeForRequest(data))
 
 const updateDescription = createServerFn({ method: 'POST' })
   .validator(parseUpdateDescriptionInput)
@@ -134,11 +153,19 @@ function RequestRoute() {
   return (
     <RequestDetailPage
       approveChecks={() => approveChecks({ data: requestParams })}
+      authorizeAutoMerge={(input) =>
+        authorizeAutoMerge({
+          data: { ...requestParams, ...input },
+        })}
       attachmentActions={requestAttachmentActions}
+      cancelAutoMerge={(input) => cancelAutoMerge({
+        data: { ...requestParams, ...input },
+      })}
       detail={page.detail}
       live={live}
       loadActivity={(signal) => loadActivity({ data: requestParams, signal })}
       loadChecks={(signal) => loadChecks({ data: requestParams, signal })}
+      loadAutoMerge={(signal) => loadAutoMerge({ data: requestParams, signal })}
       params={repoParams}
       performAction={performAction}
       ratings={page.ratings}

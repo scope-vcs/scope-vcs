@@ -80,6 +80,10 @@ impl RunStore {
     ) -> Result<DispatchClaim, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let guard_run_id = super::run_attempt_persistence::attempt_run_id(&tx, attempt_id).await?;
+        // Auto-merge finalization takes request -> intent -> run state. Every run writer that
+        // can settle a request check follows the same request-before-run order.
+        let active_auto_merge =
+            super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;
         let mut jobs = super::run_attempt_persistence::locked_jobs(&tx, &guard_run_id).await?;
         let mut run = super::run_attempt_persistence::locked_run(&tx, &guard_run_id).await?;
         let mut attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
@@ -104,6 +108,8 @@ impl RunStore {
         super::run_attempt_persistence::save_attempt_steps(&tx, &steps).await?;
         super::run_attempt_persistence::save_jobs(&tx, &jobs).await?;
         super::run_attempt_persistence::save_run(&tx, &run).await?;
+        super::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
+            .await?;
         let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         let job = jobs
@@ -131,6 +137,9 @@ impl RunStore {
         ) -> Result<(), scope_domain::error::DomainError>,
     ) -> Result<DispatchClaim, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let guard_run_id = super::run_attempt_persistence::attempt_run_id(&tx, attempt_id).await?;
+        let active_auto_merge =
+            super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;
         let (run_snapshot, mut job, mut attempt, mut steps) =
             super::run_attempt_persistence::locked_attempt_context(&tx, attempt_id).await?;
         let mut run = super::run_attempt_persistence::locked_run(&tx, &run_snapshot.id).await?;
@@ -146,6 +155,8 @@ impl RunStore {
         reconcile_run(&mut run, &mut jobs, &workflow_revision, job.updated_at_unix)
             .map_err(PostgresError::from)?;
         super::run_attempt_persistence::save_run(&tx, &run).await?;
+        super::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
+            .await?;
         let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(DispatchClaim {

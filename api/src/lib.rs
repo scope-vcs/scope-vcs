@@ -25,6 +25,7 @@ pub(crate) mod push_intents;
 pub(crate) mod repo_access;
 pub(crate) mod repo_events;
 mod repository_backfill;
+mod request_auto_merge_runtime;
 pub(crate) mod run_attempt_effects;
 pub(crate) mod run_recovery;
 pub(crate) mod run_retention;
@@ -40,6 +41,7 @@ mod workflow_catalog_backfill;
 mod workflow_tests;
 
 pub use app::router;
+pub use request_auto_merge_runtime::RequestAutoMergeRuntime;
 pub use state::AppState;
 pub use workflow_catalog_backfill::{
     backfill_repository_workflow_catalogs_for_maintenance,

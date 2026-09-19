@@ -34,6 +34,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0053_request_ref_cleanup",
     "m0054_request_attention_revision",
     "m0055_request_checks",
+    "m0056_request_auto_merge",
 ];
 
 pub(super) async fn isolated_database() -> (

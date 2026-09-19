@@ -78,6 +78,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
             listener_bus.publish_notification_payload(&payload)
         })?;
     let state = AppState {
+        auto_merge_wakeup: Arc::new(tokio::sync::Notify::new()),
         metadata,
         data_dir: storage.data_dir,
         clerk: ClerkVerifier::from_env(),

@@ -1,13 +1,15 @@
 use super::integer_columns;
 use super::{
-    GeneratedIdSource, RunStore, cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
-    entities, git_segments::release_git_segment_references,
+    GeneratedIdSource, RunStore, acquire_aggregate_lock,
+    cleanup_queue::queue::queue_pending_source_blob_deletion_rows, entities,
+    git_segments::release_git_segment_references, request_auto_merge::request_id_for_check_run,
 };
 use crate::error::PostgresError;
 use scope_domain::content::SourceBlob;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-    TransactionTrait, sea_query::Query,
+    TransactionTrait,
+    sea_query::{Expr, Query},
 };
 use std::collections::BTreeSet;
 
@@ -21,7 +23,7 @@ impl RunStore {
     ) -> Result<usize, PostgresError> {
         let cutoff = integer_columns::u64_to_i64(completed_before_unix, "run retention cutoff")?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let models = entities::run::Entity::find()
+        let candidates = entities::run::Entity::find()
             .filter(entities::run::Column::State.is_in([
                 "succeeded".to_string(),
                 "failed".to_string(),
@@ -29,10 +31,59 @@ impl RunStore {
                 "lost".to_string(),
             ]))
             .filter(entities::run::Column::CompletedAtUnix.lte(cutoff))
+            // Active auto-merge decisions retain the exact run evidence they were authorized
+            // against. Terminal intents release it to the ordinary age policy.
+            .filter(active_auto_merge_evidence_is_absent())
             .order_by_asc(entities::run::Column::CompletedAtUnix)
             .order_by_asc(entities::run::Column::Id)
             .limit(limit)
-            .lock_exclusive()
+            .all(&tx)
+            .await
+            .map_err(PostgresError::internal)?;
+        let candidate_ids = candidates.into_iter().map(|run| run.id).collect::<Vec<_>>();
+        if candidate_ids.is_empty() {
+            tx.commit().await.map_err(PostgresError::internal)?;
+            return Ok(0);
+        }
+
+        // Every writer that attaches a run to request-check evidence holds the request
+        // lock, then this retention lock, before touching runs. Taking those locks in the
+        // same order lets authorization fence deletion with request -> run locking.
+        let mut request_ids = Vec::new();
+        for run_id in &candidate_ids {
+            if let Some(request_id) = request_id_for_check_run(&tx, run_id).await? {
+                request_ids.push(request_id);
+            }
+        }
+        request_ids.sort_unstable();
+        request_ids.dedup();
+        for request_id in request_ids {
+            acquire_aggregate_lock(&tx, "request", &request_id).await?;
+        }
+        lock_run_evidence_retention(&tx).await?;
+
+        let mut lock_ids = candidate_ids.clone();
+        lock_ids.sort_unstable();
+        for run_id in lock_ids {
+            entities::run::Entity::find_by_id(run_id)
+                .lock_exclusive()
+                .one(&tx)
+                .await
+                .map_err(PostgresError::internal)?;
+        }
+
+        // Re-evaluate after every candidate run is locked. Authorization either committed
+        // first and is visible here, or waits for deletion and then rejects missing evidence.
+        let models = entities::run::Entity::find()
+            .filter(entities::run::Column::Id.is_in(candidate_ids))
+            .filter(entities::run::Column::State.is_in([
+                "succeeded".to_string(),
+                "failed".to_string(),
+                "canceled".to_string(),
+                "lost".to_string(),
+            ]))
+            .filter(entities::run::Column::CompletedAtUnix.lte(cutoff))
+            .filter(active_auto_merge_evidence_is_absent())
             .all(&tx)
             .await
             .map_err(PostgresError::internal)?;
@@ -94,6 +145,28 @@ impl RunStore {
 
         Ok(queued_blob_count)
     }
+}
+
+pub(super) async fn lock_run_evidence_retention<C: ConnectionTrait>(
+    conn: &C,
+) -> Result<(), PostgresError> {
+    acquire_aggregate_lock(conn, "run-retention", "request-check-evidence").await
+}
+
+fn active_auto_merge_evidence_is_absent() -> sea_orm::sea_query::SimpleExpr {
+    Expr::cust(
+        "NOT EXISTS (
+            SELECT 1
+              FROM scope_request_auto_merge_intents intent
+              JOIN scope_request_check_evaluations evaluation
+                ON evaluation.request_id = intent.request_id
+               AND evaluation.head_oid = intent.head_oid
+             WHERE intent.status = 'Active'
+               AND evaluation.checks @> jsonb_build_array(
+                   jsonb_build_object('run_id', scope_runs.id)
+               )
+        )",
+    )
 }
 
 pub(super) async fn delete_run_source_references<C: ConnectionTrait>(

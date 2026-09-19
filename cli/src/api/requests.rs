@@ -224,6 +224,62 @@ pub fn merge_request(
     )
 }
 
+pub fn get_request_auto_merge(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+) -> anyhow::Result<RequestAutoMergeResponse> {
+    execute(
+        api.request(
+            reqwest::Method::GET,
+            routes::repo_request_auto_merge(target.owner, target.repo, target.request_id),
+        ),
+        format!(
+            "load automatic merge status for request {} in {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
+    )
+}
+
+pub fn authorize_request_auto_merge(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+    expected_revision_id: String,
+    expected_head_oid: GitOid,
+) -> anyhow::Result<RequestAutoMergeResponse> {
+    execute(
+        api.request(
+            reqwest::Method::POST,
+            routes::repo_request_auto_merge(target.owner, target.repo, target.request_id),
+        )
+        .json(&AuthorizeRequestAutoMergeRequest {
+            expected_revision_id,
+            expected_head_oid,
+        }),
+        format!(
+            "authorize automatic merge for request {} in {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
+    )
+}
+
+pub fn cancel_request_auto_merge(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+    expected_intent_id: String,
+) -> anyhow::Result<RequestAutoMergeResponse> {
+    execute(
+        api.request(
+            reqwest::Method::DELETE,
+            routes::repo_request_auto_merge(target.owner, target.repo, target.request_id),
+        )
+        .json(&CancelRequestAutoMergeRequest { expected_intent_id }),
+        format!(
+            "cancel automatic merge for request {} in {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
+    )
+}
+
 pub fn rate_request(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,

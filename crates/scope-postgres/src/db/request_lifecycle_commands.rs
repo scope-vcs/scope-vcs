@@ -39,6 +39,15 @@ pub struct CompleteLandedRequestCommand {
 }
 
 #[derive(Clone, Debug)]
+pub struct ExpectedRequestAutoMerge {
+    pub intent_id: String,
+    pub revision_id: String,
+    pub head_oid: String,
+    pub claim_token: String,
+    pub fulfilled_event_id: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct MergeRequestContentCommand {
     pub owner: String,
     pub name: String,
@@ -49,6 +58,7 @@ pub struct MergeRequestContentCommand {
     pub expected_git_frontier: scope_domain::repository::git::GitFrontier,
     pub expected_repo_change_version: u64,
     pub expected_request_head_oid: String,
+    pub expected_auto_merge: Option<ExpectedRequestAutoMerge>,
     pub update: scope_domain::reviewed_updates::content::ReviewedUpdateInput,
     pub landing_file_mutation: scope_domain::landing_file::RepositoryLandingFileMutation,
     pub workflow_catalog: scope_domain::runs::catalog::RepositoryWorkflowCatalog,

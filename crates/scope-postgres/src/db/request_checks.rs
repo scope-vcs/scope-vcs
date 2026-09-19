@@ -7,7 +7,10 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::{
-    requests::{RequestCheckEvaluation, RequestCheckEvaluationState},
+    requests::{
+        RequestAutoMergeStopReason, RequestCheckEvaluation, RequestCheckEvaluationState,
+        stop_request_auto_merge,
+    },
     runs::{
         run::Run,
         workflow::{identity::WorkflowIdentity, revision::WorkflowRevision},
@@ -47,6 +50,13 @@ impl RequestStore {
         command: RecordRequestChecksCommand,
     ) -> Result<RequestChecksMutation, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        super::acquire_aggregate_lock(&tx, "request", &command.evaluation.request_id).await?;
+        super::run_retention::lock_run_evidence_retention(&tx).await?;
+        let active_auto_merge = super::request_auto_merge::lock_active_intent_for_request(
+            &tx,
+            &command.evaluation.request_id,
+        )
+        .await?;
         let created_runs = start_runs(
             &tx,
             &command.revisions,
@@ -58,6 +68,32 @@ impl RequestStore {
             save_workflow_revision(&tx, revision, command.evaluation.updated_at_unix).await?;
         }
         save_evaluation(&tx, &command.evaluation).await?;
+        if command.evaluation.state == RequestCheckEvaluationState::ConfigurationError
+            && let Some(stored) = active_auto_merge
+            && stored.intent.head_oid == command.evaluation.head_oid
+        {
+            let request = super::request_rows::request_by_id(&tx, &stored.intent.request_id)
+                .await?
+                .ok_or_else(|| PostgresError::internal_message("auto-merge request is missing"))?;
+            let now_unix = command
+                .evaluation
+                .updated_at_unix
+                .max(request.updated_at_unix)
+                .max(stored.intent.updated_at_unix);
+            let stopped = stop_request_auto_merge(
+                &request,
+                &stored.intent,
+                RequestAutoMergeStopReason::ChecksConfigurationError,
+                super::request_auto_merge::automatic_event_id("stopped", &stored.intent.id),
+                now_unix,
+            )?;
+            super::request_auto_merge::persist_existing_auto_merge_mutation(
+                &tx,
+                stored.model,
+                &stopped,
+            )
+            .await?;
+        }
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RequestChecksMutation {
             evaluation: command.evaluation,
@@ -73,6 +109,7 @@ impl RequestStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
+        super::run_retention::lock_run_evidence_retention(&tx).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         if !repo.access.is_maintainer() {
             return Err(PostgresError::permission_denied("repo maintainer required"));

@@ -209,6 +209,7 @@ pub(super) fn push_request_branch(
         repo: context.repo,
         request: detail.request,
         activity: None,
+        auto_merge: None,
     };
     Ok(RequestCommandOutcome::new(
         "request.push",

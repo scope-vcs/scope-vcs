@@ -83,6 +83,7 @@ scope --repo owner/repository request diff --request fix-parser
 scope --repo owner/repository request checks --request fix-parser
 scope request checkout --request fix-parser
 scope request merge --request fix-parser --yes
+scope request merge --request fix-parser --auto --yes
 ```
 
 Every push to a request evaluates the workflows its head asks for. A maintainer's
@@ -90,6 +91,16 @@ push starts those checks at once; an outside contributor's push records them unt
 maintainer runs `scope request checks --approve`. `scope request checks` shows the
 evaluation, each workflow's run and state, and what merging still waits on: an open
 request merges only after every check succeeds.
+
+When checks are still running, a maintainer can authorize the current request
+revision to merge later with `scope request merge --auto --yes`. The command
+returns after the server saves the authorization; a successful exit does not by
+itself mean the request has merged. `scope request show` reports the authorizer,
+authorized head, state, and what auto-merge is waiting for. A new request push
+ends that authorization. Cancel an active authorization with
+`scope request merge --cancel-auto --yes`; `--auto` and `--cancel-auto` cannot be
+used together. Existing request targeting and `--json` output work for both
+operations.
 
 Request targets accept a name or a `req_` ID. Inside a request checkout, commands
 can infer the current request. List also supports `--audience public|private`

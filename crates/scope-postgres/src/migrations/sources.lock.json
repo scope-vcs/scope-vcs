@@ -12,5 +12,6 @@
   "m0052_retire_apply_changes_permission.rs": "f205697a66d25a6a49b0c547275acfdb2f1addbb0bc7bbabbb1aed327dedfe35",
   "m0053_request_ref_cleanup.rs": "3457e3ff117e39f0dbd24df61dedf70258f3c308063ad2b4be6b83e7d2b4eb42",
   "m0054_request_attention_revision.rs": "1b52a9a59cfef8fce52f49c55cc4abe29a440e36782a30b2fe54862158f4e61e",
-  "m0055_request_checks.rs": "a6c8ce6a3b3bc51808bc57753cc35fd34b8fa5f47c18cc43e7ca7687ec23d851"
+  "m0055_request_checks.rs": "a6c8ce6a3b3bc51808bc57753cc35fd34b8fa5f47c18cc43e7ca7687ec23d851",
+  "m0056_request_auto_merge.rs": "2d4ae687e2d3a5aa19bab62be1905f61e1790748009bcdf21afca3e41d793323"
 }

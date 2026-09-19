@@ -19,6 +19,7 @@ use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone)]
 pub struct AppState {
+    pub(crate) auto_merge_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) metadata: MetadataStore,
     pub(crate) data_dir: Arc<PathBuf>,
     pub(crate) clerk: ClerkVerifier,
@@ -56,6 +57,7 @@ impl AppState {
         let product_analytics = ProductAnalytics::from_env(EventSource::Api).await?;
 
         let state = Self {
+            auto_merge_wakeup: Arc::new(tokio::sync::Notify::new()),
             metadata,
             data_dir: storage.data_dir,
             clerk: ClerkVerifier::from_env(),
@@ -96,6 +98,7 @@ impl AppState {
         let target = scope_postgres::db::TestDatabaseTarget::required().unwrap();
         let metadata = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         Self {
+            auto_merge_wakeup: Arc::new(tokio::sync::Notify::new()),
             metadata,
             data_dir: storage.data_dir,
             clerk: ClerkVerifier::new_with_policy(
