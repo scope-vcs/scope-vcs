@@ -14,8 +14,8 @@ use scope_domain::{
     },
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
-    TransactionTrait, sea_query::OnConflict,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait, IntoActiveModel,
+    QueryFilter, TransactionTrait, sea_query::OnConflict,
 };
 
 /// A head's evaluation together with the runs it starts now and the revisions
@@ -139,21 +139,30 @@ impl RequestStore {
         if heads.is_empty() {
             return Ok(Vec::new());
         }
-        let request_ids = heads.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
         entities::request_check_evaluation::Entity::find()
-            .filter(entities::request_check_evaluation::Column::RequestId.is_in(request_ids))
+            .filter(head_pairs_condition(heads))
             .all(self.db.as_ref())
             .await
             .map_err(PostgresError::internal)?
             .into_iter()
-            .filter(|model| {
-                heads
-                    .iter()
-                    .any(|(id, head)| id == &model.request_id && head == &model.head_oid)
-            })
             .map(entities::request_check_evaluation::Model::try_into_domain)
             .collect()
     }
+}
+
+fn head_pairs_condition(heads: &[(String, String)]) -> Condition {
+    heads
+        .iter()
+        .fold(Condition::any(), |condition, (request_id, head_oid)| {
+            condition.add(
+                Condition::all()
+                    .add(
+                        entities::request_check_evaluation::Column::RequestId
+                            .eq(request_id.clone()),
+                    )
+                    .add(entities::request_check_evaluation::Column::HeadOid.eq(head_oid.clone())),
+            )
+        })
 }
 
 async fn start_runs(
@@ -219,3 +228,6 @@ async fn save_evaluation(
         .map_err(PostgresError::internal)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
