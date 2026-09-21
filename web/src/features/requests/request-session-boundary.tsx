@@ -5,6 +5,7 @@ import { activateRequestAttachmentDraftViewer } from './request-attachment-draft
 import { resetRequestAttachmentMediaGrants } from './request-attachment-media-resource'
 import { resetRequestAttachmentResources } from './request-attachment-resource'
 import { resetRequestDiscussionCache } from './request-discussion-cache'
+import { resetRequestMermaidResource } from './request-mermaid-resource'
 import { requestQueueResource } from './request-queue-cache'
 
 let activeViewer: string | null = null
@@ -22,6 +23,7 @@ export function RequestSessionBoundary() {
       resetRequestAttachmentMediaGrants()
       resetRequestAttachmentResources()
       resetRequestDiscussionCache()
+      resetRequestMermaidResource()
       requestQueueResource.clear()
     }
     activeViewer = viewerId
