@@ -23,7 +23,7 @@ export function trackRepositoryRefresh(page) {
   return async () => {
     const deadline = Date.now() + 30_000
     while (!summaries || pending.size || Date.now() - lastActivity < 200) {
-      assert(Date.now() < deadline, 'initial repository reconciliation did not settle')
+      assert(Date.now() < deadline, `initial repository reconciliation did not settle: ${summaries} summaries, pending ${[...pending].map(serverFunctionName).join(', ')}`)
       await delay(50)
     }
     await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')

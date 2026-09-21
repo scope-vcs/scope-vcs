@@ -10,6 +10,7 @@ import {
   within,
   withPage,
 } from './browser-smoke.mjs'
+import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 
 test('repository shell renders before the initial file is ready', async () => {
   for (const scenario of [
@@ -73,6 +74,7 @@ test('public direct Runs access is explicit and exposes no operations', async ()
 
 async function assertShellBeforeFileReady({ content, path, requestPath }) {
   let fileRequests = 0
+  let settled
   let releaseFileRequest = () => undefined
   let markFileRequestStarted = () => undefined
   const fileRequestStarted = new Promise((resolve) => {
@@ -102,23 +104,33 @@ async function assertShellBeforeFileReady({ content, path, requestPath }) {
 
         releaseFileRequest()
         await content(page).waitFor()
-        assert.equal(fileRequests, 1)
+        await settled()
+        assert.equal(fileRequests, 2) // Initial file and connection catch-up.
       },
       {
-        prepare: (page) => page.route('**/_serverFn/**', async (route) => {
-          const request = route.request()
-          if (
-            request.method() !== 'GET' ||
-            !decodeURIComponent(request.url()).includes(requestPath)
-          ) {
+        prepare: async (page) => {
+          settled = trackRepositoryRefresh(page)
+          // Ensure the initial file read precedes Connected so this startup
+          // test has a deterministic catch-up budget while the file is held.
+          await page.route('**/events', async route => {
+            await fileRequestStarted
             await route.continue()
-            return
-          }
-          fileRequests += 1
-          markFileRequestStarted()
-          await fileRequestReleased
-          await route.continue()
-        }),
+          })
+          await page.route('**/_serverFn/**', async (route) => {
+            const request = route.request()
+            if (
+              request.method() !== 'GET' ||
+              !decodeURIComponent(request.url()).includes(requestPath)
+            ) {
+              await route.continue()
+              return
+            }
+            fileRequests += 1
+            markFileRequestStarted()
+            await fileRequestReleased
+            await route.continue()
+          })
+        },
       },
     )
   } finally {
