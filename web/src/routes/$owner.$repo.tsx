@@ -38,6 +38,9 @@ const loadRepoLiveState = createServerFn({ method: 'GET' })
   })
 
 export const Route = createFileRoute('/$owner/$repo')({
+  // Child navigation reuses this summary. Live events and explicit router
+  // invalidation still reload it, including unversioned request changes.
+  staleTime: Infinity,
   loader: ({ params, cause, abortController }) => loadRepoRouteState({
     load: () => loadRepoLiveState({
       data: params,
@@ -67,8 +70,10 @@ function RepoLayoutRoute() {
   const live = Route.useLoaderData()
   const params = Route.useParams()
   const router = useRouter()
-  const invalidate = useCallback(() => router.invalidate(), [router])
-  const subscribe = useRepoLiveRefresh(live, invalidate)
+  // Keep the coordinator busy until the loaders finish, including retries.
+  // A background invalidation resolves early and lets reconnects abort recovery.
+  const invalidate = useCallback(() => router.invalidate({ sync: true }), [router])
+  const subscribe = useRepoLiveRefresh(live, invalidate, live.refreshId)
   return (
     <RepoLayoutProvider live={live} subscribe={subscribe}>
       <RepositoryHtmlPreviewProvider>

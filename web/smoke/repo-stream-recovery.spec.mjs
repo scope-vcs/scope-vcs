@@ -2,12 +2,15 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { repo, repoPath, withPage } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
+import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 
 test('an interrupted stream recovers through failed reloads without replacing repository data', async () => {
   let interrupted = false
   let failedReloads = 0
   let streamRequests = 0
+  let settled
   const prepare = async (page) => {
+    settled = trackRepositoryRefresh(page)
     page.on('request', (request) => {
       if (new URL(request.url()).pathname.endsWith(`/v1/repos/${repo}/events`)) streamRequests += 1
     })
@@ -31,6 +34,7 @@ test('an interrupted stream recovers through failed reloads without replacing re
     })
   }
   await withPage(repoPath, async (page) => {
+    await settled()
     const activity = page.getByLabel('Latest repository change', { exact: true })
     const navigator = page.getByLabel('Repository file navigator', { exact: true })
     await activity.waitFor()

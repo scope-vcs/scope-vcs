@@ -7,6 +7,7 @@ import {
   withPage,
 } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
+import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 import {
   assertFileSelectionSkipsRevisionReload,
   assertRequestCrossLinksStayInDocument,
@@ -139,7 +140,9 @@ test('revision and discussion links retain the document and request shell', asyn
 })
 
 test('changes navigation preserves the request shell and collapsed replies', async () => {
+  let settled
   await withPage(requestPath, async (page) => {
+    await settled()
     const shell = await captureRequestShell(page)
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
     const disclosure = retryThread.getByRole('button', { name: 'Hide 3 replies' })
@@ -181,15 +184,17 @@ test('changes navigation preserves the request shell and collapsed replies', asy
     await restoredRetryThread.getByRole('button', { name: 'Show 3 replies' }).click()
     await assertReplyRegion(page, restoredRetryReplies, true)
     await assertNodesPreserved(page, shell)
-  })
+  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
 })
 
 test('file and update selection reload only the selected changes payload', async () => {
+  let settled
   await withPage(`${requestPath}/changes`, async (page) => {
+    await settled()
     await page.getByLabel('Commit file navigator').waitFor()
     await assertFileSelectionSkipsRevisionReload(page, 'retry.ts', '/src/retry.ts')
     await assertUpdateSelectionReloadsSelectedPayload(page)
-  })
+  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
 })
 
 async function assertBefore(first, second) {

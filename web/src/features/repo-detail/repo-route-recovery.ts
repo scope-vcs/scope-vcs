@@ -1,6 +1,8 @@
 import { HttpError, InvalidApiResponseError } from '../../api/http'
 import type { RepoLiveState } from '../../api/types'
 
+export type RepoRouteState = RepoLiveState & { refreshId: string }
+
 export type RepoRouteLoadResult = { live: RepoLiveState } | { unavailable: string }
 
 class RepoRouteUnavailable extends Error {}
@@ -32,12 +34,17 @@ export async function loadRepoRouteState({
   refresh: boolean
   signal: AbortSignal
   wait?: (signal: AbortSignal) => Promise<void>
-}): Promise<RepoLiveState> {
+}): Promise<RepoRouteState> {
   for (;;) {
     signal.throwIfAborted()
     try {
       const result = await load()
-      if ('live' in result) return result.live
+      if ('live' in result) {
+        signal.throwIfAborted()
+        // A successful read can change requests without advancing the repository
+        // version. Cached navigation keeps this identity; another read replaces it.
+        return { ...result.live, refreshId: crypto.randomUUID() }
+      }
       throw new RepoRouteUnavailable(result.unavailable)
     } catch (error) {
       if (!refresh || !isRetryableRepoLoadError(error)) throw error

@@ -246,6 +246,35 @@ test('stream recovery follows retryable, protocol, and terminal outcomes', async
   ])
 })
 
+test('an expired stream token reconnects with a fresh token', async () => {
+  const controller = new AbortController()
+  const tokens: Array<string | null> = []
+  let tokenReads = 0
+  const waits: number[] = []
+  globalThis.fetch = async (_input, init) => {
+    tokens.push(new Headers(init?.headers).get('authorization'))
+    const message = tokens.length === 1
+      ? 'event: error\ndata: {"code":"unauthorized","message":"token expired","retryable":false}\n\n'
+      : `event: repo-change\ndata: ${JSON.stringify(event(2))}\n\n`
+    return new Response(message, { headers: { 'content-type': 'text/event-stream' } })
+  }
+  await runRepoEventStream({
+    connect: (deliver, signal) => streamRepoEvents(
+      { event_stream_url: 'https://scope.test/events', clerk_token_template: 'scope' },
+      async () => `test-token-${++tokenReads}`,
+      deliver,
+      signal,
+    ),
+    onEvent: () => controller.abort(),
+    onInterrupted: () => {},
+    signal: controller.signal,
+    random: () => 0,
+    wait: async milliseconds => { waits.push(milliseconds) },
+  })
+  assert.deepEqual(tokens, ['Bearer test-token-1', 'Bearer test-token-2'])
+  assert.deepEqual(waits, [2_000])
+})
+
 test('third transport failure records once and a healthy event resets the run', async () => {
   const outcomes: RepoStreamEnd[] = [
     { type: 'transport' },

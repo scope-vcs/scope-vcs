@@ -9,7 +9,7 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useCallback, useEffect, useRef } from 'react'
 import { runRepoEventStream, streamRepoEvents } from './repo-event-stream'
 import { repoResourceScope } from './repo-resource-scope'
-import { invalidateRepoResources } from './repo-resource-invalidation'
+import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-resource-invalidation'
 
 /** A forced refresh ignores versions; a versioned one is dropped once applied. */
 type RepoRefreshRequest = { force: boolean; version: number | null }
@@ -19,17 +19,25 @@ export type SubscribeToRepoChanges = (
 ) => () => void
 
 type RepoRefreshCoordinator = {
-  onEvent: (event: RepoChangeEvent) => void
+  onEvent: (event: RepoChangeEvent) => boolean
   onStreamInterrupted: () => void
+  onSummary: (refreshId: string, version: number) => void
   stop: () => void
 }
 
 export function useRepoLiveRefresh(
   live: RepoLiveState | null,
   invalidate: () => Promise<unknown>,
+  refreshId: string,
 ) {
   const { getToken, isLoaded, userId } = useAuth()
   const scope = live && isLoaded ? repoResourceScope(live.repo, userId ?? null) : null
+  const repoId = live?.repo.id
+  const version = live?.repo.change_version ?? 0
+  const versioned = live?.repo.access.actor !== 'Public'
+  const eventStreamUrl = live?.event_stream_url
+  const tokenTemplate = live?.clerk_token_template
+  const coordinatorRef = useRef<RepoRefreshCoordinator | null>(null)
   const listenersRef = useRef(new Set<RepoChangeListener>())
   const subscribe = useCallback<SubscribeToRepoChanges>((listener) => {
     listenersRef.current.add(listener)
@@ -43,18 +51,20 @@ export function useRepoLiveRefresh(
   }, [scope])
 
   useEffect(() => {
-    if (!live || !isLoaded) {
+    if (!repoId || !scope || !eventStreamUrl || !tokenTemplate) {
       return
     }
 
     const controller = new AbortController()
     const coordinator = createRepoRefreshCoordinator({
-      initialVersion: live.repo.change_version,
+      initialVersion: 0,
       invalidate,
-      repoId: live.repo.id,
+      repoId,
       schedule: browserScheduler,
-      versioned: usesVersionedRepoChangeEvents(live),
+      versioned,
+      onSummaryRefresh: () => invalidateRepoSummaryResources(scope),
     })
+    coordinatorRef.current = coordinator
     const notifyListeners = (event: RepoChangeEvent) => {
       for (const listener of listenersRef.current) {
         try {
@@ -65,17 +75,20 @@ export function useRepoLiveRefresh(
       }
     }
     const onEvent = (event: RepoChangeEvent) => {
-      if (scope && event.repo_id === live.repo.id) invalidateRepoResources(scope, event)
-      coordinator.onEvent(event)
+      const summaryPending = coordinator.onEvent(event)
+      if (event.repo_id === repoId) {
+        // Connected also covers changes committed after an interruption refresh.
+        invalidateRepoResources(scope, event, summaryPending)
+      }
       notifyListeners(event)
     }
     const onStreamInterrupted = () => {
-      if (scope) invalidateRepoResources(scope)
+      invalidateRepoResources(scope, undefined, true)
       coordinator.onStreamInterrupted()
       const event: RepoChangeEvent = {
         incarnation_id: 'local-stream-interruption',
         kind: 'Lagged',
-        repo_id: live.repo.id,
+        repo_id: repoId,
         version: 0,
       }
       notifyListeners(event)
@@ -83,16 +96,21 @@ export function useRepoLiveRefresh(
 
     void runRepoEventStream({
       connect: (deliver, signal) =>
-        streamRepoEvents(live, getToken, deliver, signal),
+        streamRepoEvents({ event_stream_url: eventStreamUrl, clerk_token_template: tokenTemplate }, getToken, deliver, signal),
       onEvent,
       onInterrupted: onStreamInterrupted,
       signal: controller.signal,
     })
     return () => {
+      coordinatorRef.current = null
       coordinator.stop()
       controller.abort()
     }
-  }, [getToken, invalidate, isLoaded, live, scope])
+  }, [getToken, invalidate, repoId, scope, eventStreamUrl, tokenTemplate, versioned])
+
+  useEffect(() => {
+    coordinatorRef.current?.onSummary(refreshId, version)
+  }, [refreshId, version, scope, getToken, invalidate, repoId, eventStreamUrl, tokenTemplate, versioned])
 
   return subscribe
 }
@@ -103,14 +121,18 @@ export function createRepoRefreshCoordinator({
   repoId,
   schedule,
   versioned,
+  onSummaryRefresh = () => {},
 }: {
   initialVersion: number
   invalidate: () => Promise<unknown>
   repoId: string
   schedule: RefreshScheduler
   versioned: boolean
+  onSummaryRefresh?: () => void
 }): RepoRefreshCoordinator {
   let highestAppliedVersion = initialVersion
+  let lastSummaryId: string | null = null
+  let lastSummaryVersion: number | null = null
   const coordinator = createRefreshCoordinator<RepoRefreshRequest>({
     merge: (pending, next) => ({
       force: pending.force || next.force,
@@ -135,23 +157,31 @@ export function createRepoRefreshCoordinator({
     onEvent(event) {
       if (
         event.repo_id !== repoId ||
-        event.kind === 'Connected' ||
         typeof event.kind === 'object' &&
           ('RequestTimelineChanged' in event.kind || 'RunChanged' in event.kind)
       ) {
-        return
+        return false
       }
-      if (event.kind === 'Lagged' || !versioned || event.version === 0) {
+      if (event.kind === 'Connected' || event.kind === 'Lagged' || !versioned || event.version === 0) {
         requestRefresh(null)
       } else if (event.version > highestAppliedVersion) {
         requestRefresh(event.version)
+      } else {
+        return false
       }
+      return true
+    },
+    onSummary(refreshId, version) {
+      highestAppliedVersion = Math.max(highestAppliedVersion, version)
+      if (lastSummaryId === refreshId) return
+      const unchangedVersion = lastSummaryVersion === version
+      lastSummaryId = refreshId
+      lastSummaryVersion = version
+      // The queue cache already reloads on a version change. Only summaries
+      // without that change need explicit invalidation of the retained queue.
+      if (unchangedVersion) onSummaryRefresh()
     },
     onStreamInterrupted: () => requestRefresh(null),
     stop: coordinator.stop,
   }
-}
-
-function usesVersionedRepoChangeEvents(live: RepoLiveState) {
-  return live.repo.access.actor !== 'Public'
 }
