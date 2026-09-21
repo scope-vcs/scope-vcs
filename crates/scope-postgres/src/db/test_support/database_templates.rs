@@ -7,7 +7,10 @@ use std::{
 };
 
 const TEMPLATE_SCHEMA: &str = "scope_test_template";
-const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// A `DROP DATABASE` cannot finish before a full checkpoint does. While migration
+/// tests are creating hundreds of relation files, a checkpoint has been measured
+/// at up to 48 seconds, so a shorter wait abandons drops that were about to succeed.
+const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(90);
 
 type ProcessDatabases = Mutex<HashMap<String, HashSet<String>>>;
 static PROCESS_DATABASES: OnceLock<ProcessDatabases> = OnceLock::new();
@@ -198,6 +201,12 @@ fn cleanup_process_databases() {
     if databases.is_empty() {
         return;
     }
+    let mut servers = databases
+        .iter()
+        .map(|(admin_url, _)| admin_url.clone())
+        .collect::<Vec<_>>();
+    servers.sort_unstable();
+    servers.dedup();
 
     let completed = run_test_future(async move {
         tokio::time::timeout(EXIT_CLEANUP_TIMEOUT, async move {
@@ -220,11 +229,21 @@ fn cleanup_process_databases() {
             .collect::<Vec<_>>()
             .join(", ");
         eprintln!(
-            "PostgreSQL test database cleanup exceeded {} seconds with {} process-owned databases still registered: {names}. Drops waiting for a cleanup permit or a backlogged or unreachable server may require manual cleanup",
+            "PostgreSQL test database cleanup exceeded {} seconds with {} process-owned databases still registered: {names}. A later test process sweeps them once they are an hour old",
             EXIT_CLEANUP_TIMEOUT.as_secs(),
             remaining.len()
         );
+        return;
     }
+    // This process's own state is gone, so nothing here competes with it.
+    run_test_future(async move {
+        let deadline = tokio::time::Instant::now() + stale_cleanup::SWEEP_BUDGET;
+        for admin_url in servers {
+            if let Err(error) = stale_cleanup::sweep(&admin_url, deadline).await {
+                eprintln!("sweeping abandoned PostgreSQL test state failed: {error}");
+            }
+        }
+    });
 }
 
 fn registered_process_databases() -> Vec<(String, String)> {

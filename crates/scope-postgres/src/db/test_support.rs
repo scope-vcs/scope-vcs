@@ -53,6 +53,9 @@ pub(super) mod fixtures;
 mod database_templates;
 
 #[cfg(any(test, feature = "test-support"))]
+mod stale_cleanup;
+
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Debug)]
 pub struct TestDatabaseTarget {
     database_url: String,
@@ -100,19 +103,23 @@ impl Drop for TestSchemaLease {
                     database_url,
                     schema_name,
                 } => {
-                    let Ok(db) = Database::connect(database_url).await else {
-                        return;
-                    };
-                    let _ = db
-                        .execute(Statement::from_string(
-                            db.get_database_backend(),
-                            format!(
+                    // A failure here is not lost: the next test process sweeps
+                    // what this one leaves behind.
+                    let dropped = async {
+                        let db = Database::connect(database_url).await?;
+                        let dropped = db
+                            .execute_unprepared(&format!(
                                 "DROP SCHEMA IF EXISTS {} CASCADE",
                                 quote_pg_ident(&schema_name)
-                            ),
-                        ))
-                        .await;
-                    let _ = db.close().await;
+                            ))
+                            .await;
+                        db.close().await?;
+                        dropped.map(|_| ())
+                    }
+                    .await;
+                    if let Err(error) = dropped {
+                        eprintln!("test schema cleanup failed for {schema_name}: {error}");
+                    }
                 }
             }
         });
