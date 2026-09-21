@@ -124,3 +124,76 @@ async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &st
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn the_first_evaluation_of_a_head_stands() {
+    let store = postgres_store();
+    start_request(&store, "request-a", "request-a-event").await;
+    record_no_checks(&store, "request-a", HEAD_A_CURRENT, 10).await;
+
+    let replayed = store
+        .requests()
+        .record_request_checks(RecordRequestChecksCommand {
+            evaluation: RequestCheckEvaluation::configuration_error(
+                "request-a",
+                HEAD_A_CURRENT,
+                "a later evaluation of the same head",
+                11,
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        replayed.evaluation.state,
+        RequestCheckEvaluationState::NoChecks
+    );
+    assert!(replayed.created_runs.is_empty());
+    let stored = store
+        .requests()
+        .request_check_evaluation("request-a", HEAD_A_CURRENT)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.state, RequestCheckEvaluationState::NoChecks);
+    assert_eq!(stored.updated_at_unix, 10);
+}
+
+#[tokio::test]
+async fn a_request_that_can_no_longer_merge_records_no_evaluation() {
+    let store = postgres_store();
+    start_request(&store, "request-a", "request-a-event").await;
+    store
+        .requests()
+        .mutate_request_for_tests("request-a", |request| {
+            request.submitted_at_unix = Some(4);
+            request.closed_at_unix = Some(5);
+            request.closed_by_user_id = Some("user_public".into());
+            request.updated_at_unix = 5;
+        })
+        .await
+        .unwrap();
+
+    let refused = store
+        .requests()
+        .record_request_checks(RecordRequestChecksCommand {
+            evaluation: RequestCheckEvaluation::no_checks("request-a", HEAD_A_CURRENT, 10).unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(refused.kind, crate::error::PostgresErrorKind::Conflict);
+    assert!(
+        store
+            .requests()
+            .request_check_evaluation("request-a", HEAD_A_CURRENT)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

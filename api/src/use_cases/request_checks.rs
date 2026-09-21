@@ -32,9 +32,10 @@ pub(crate) struct RequestChecksView {
     pub(crate) outcome: RequestChecksOutcome,
 }
 
-/// The view for someone looking at one request. A head with no evaluation is
+/// The view for a command acting on one request. A head with no evaluation is
 /// evaluated now, from its saved revision, so a failed evaluation cannot hold the
-/// merge for longer than it takes to look.
+/// merge for longer than it takes to act. A failure to evaluate is the command's
+/// failure: the caller hears the real reason, not a claim about missing checks.
 pub(crate) async fn checks_view(
     state: &AppState,
     repo: &RepoRecord,
@@ -44,15 +45,27 @@ pub(crate) async fn checks_view(
     if !request_head_awaits_evaluation(request, view.outcome) {
         return Ok(view);
     }
-    match evaluate_saved_head(state, repo, request).await {
-        Ok(Some(mutation)) => {
+    match evaluate_saved_head(state, repo, request).await? {
+        Some(mutation) => {
             publish_request_checks_change(state, &repo.incarnation(), &mutation).await;
             recorded_checks_view(state, request).await
         }
-        Ok(None) => Ok(view),
+        None => Ok(view),
+    }
+}
+
+/// The view for someone reading a request's checks. Evaluating the head is still
+/// attempted, but a read describes what is recorded even when that attempt fails.
+pub(crate) async fn readable_checks_view(
+    state: &AppState,
+    repo: &RepoRecord,
+    request: &Request,
+) -> Result<RequestChecksView, ApiError> {
+    match checks_view(state, repo, request).await {
+        Ok(view) => Ok(view),
         Err(error) => {
             warn_evaluation_failed(request, &error);
-            Ok(view)
+            recorded_checks_view(state, request).await
         }
     }
 }

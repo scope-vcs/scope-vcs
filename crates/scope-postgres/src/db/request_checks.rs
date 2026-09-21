@@ -57,6 +57,16 @@ impl RequestStore {
             &command.evaluation.request_id,
         )
         .await?;
+        // Evaluating reads the head outside this lock, so the request may have been
+        // closed or merged since. A request that can no longer merge starts nothing.
+        let request = super::request_rows::request_by_id(&tx, &command.evaluation.request_id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("request not found"))?;
+        if request.is_terminal() {
+            return Err(PostgresError::conflict(
+                "request can no longer merge, so its checks are not evaluated",
+            ));
+        }
         // The first evaluation of a head stands. A later one, from someone looking at
         // a request while its push was still evaluating, must not undo an approval.
         if let Some(evaluation) = evaluation_for_head(

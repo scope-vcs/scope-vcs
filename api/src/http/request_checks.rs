@@ -83,7 +83,7 @@ async fn checks_response(
         evaluation,
         run_states,
         outcome,
-    } = request_checks::checks_view(state, repo, request).await?;
+    } = request_checks::readable_checks_view(state, repo, request).await?;
     let decision = request_mergeability(request, access, outcome);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),

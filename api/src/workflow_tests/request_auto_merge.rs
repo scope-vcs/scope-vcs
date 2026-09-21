@@ -582,6 +582,34 @@ async fn manual_merge_fulfills_an_active_authorization() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn authorizing_evaluates_a_head_whose_push_could_not() {
+    let (state, _source, _remote, request_id, request_head, _server) =
+        native_open_request("request-auto-merge-unevaluated", RequestAudience::Private).await;
+    state
+        .metadata
+        .requests()
+        .forget_request_check_evaluations_for_tests(&request_id)
+        .await
+        .unwrap();
+
+    let (_, authorized) =
+        current_authorization(router(state.clone()), &request_id, &request_head).await;
+
+    // Nobody looks at a request left to merge by itself, so authorizing is the look.
+    assert_eq!(authorized["intent"]["status"], "Active");
+    assert_eq!(authorized["waiting_reason"], serde_json::Value::Null);
+    assert!(
+        state
+            .metadata
+            .requests()
+            .request_check_evaluation(&request_id, &request_head)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn successful_reconciliation_merges_the_authorized_head_once() {
     let (state, _source, _remote, request_id, request_head, _server) =
         native_open_request("request-auto-merge-native", RequestAudience::Private).await;
