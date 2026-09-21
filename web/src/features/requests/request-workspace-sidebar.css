@@ -189,9 +189,10 @@
   background: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
-/* Actions overlay the age on hover; where they are always visible the
- * meta line leaves room for them. */
+/* Actions overlay the age on hover and stay inside the meta line, clear of
+ * the title; where they are always visible the meta line leaves room for them. */
 .request-workspace-row-actions {
+  bottom: 6px;
   opacity: 0;
   pointer-events: none;
 }
@@ -205,8 +206,8 @@
 
 .request-workspace-row-action {
   display: grid;
-  height: 27px;
-  width: 27px;
+  height: 22px;
+  width: 22px;
   place-items: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -229,8 +230,8 @@
 }
 
 .request-workspace-row-action svg {
-  height: 15px;
-  width: 15px;
+  height: 13px;
+  width: 13px;
 }
 
 /* The spine: one pip per loaded request. */
@@ -360,7 +361,13 @@ html[data-focus] .application-topbar {
 }
 
 @media (hover: none), (pointer: coarse), (max-width: 700px) {
+  /* Touch-sized actions are taller than the meta line, so the row grows under it. */
+  .request-workspace-row-link {
+    padding-bottom: 18px;
+  }
+
   .request-workspace-row-actions {
+    bottom: 4px;
     opacity: 1;
     pointer-events: auto;
   }
@@ -372,6 +379,11 @@ html[data-focus] .application-topbar {
   .request-workspace-row-action {
     height: 32px;
     width: 32px;
+  }
+
+  .request-workspace-row-action svg {
+    height: 15px;
+    width: 15px;
   }
 }
 
