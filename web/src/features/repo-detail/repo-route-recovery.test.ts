@@ -39,7 +39,9 @@ test('background reload remains pending through transport and API outages', asyn
     },
     wait: async () => { waits += 1 },
   })
-  assert.equal(result, live)
+  const { refreshId, ...loaded } = result
+  assert.deepEqual(loaded, live)
+  assert.ok(refreshId)
   assert.equal(calls, 3)
   assert.equal(waits, 2)
 })
@@ -83,4 +85,22 @@ test('proxy failures are retryable while access responses retain their status', 
   assert.equal((await fetchRepoRouteState('https://scope.test/_serverFn/id')).status, 403)
   assert.equal(isRetryableRepoLoadError(new InvalidApiResponseError('GET', '/repo', 502, 'text/html', 'content-type')), true)
   assert.equal(isRetryableRepoLoadError(new InvalidApiResponseError('GET', '/repo', 403, 'text/html', 'content-type')), false)
+})
+
+test('successful network reads retain distinct identities even when the summary is unchanged', async () => {
+  const read = () => loadRepoRouteState({
+    load: async () => ({ live }), refresh: true, signal: new AbortController().signal,
+  })
+  const first = await read()
+  const second = await read()
+  assert.notEqual(first.refreshId, second.refreshId)
+  assert.deepEqual(first.repo, second.repo)
+})
+
+test('a summary arriving after navigation cancels its loader is not accepted', async () => {
+  const controller = new AbortController()
+  await assert.rejects(loadRepoRouteState({
+    load: async () => { controller.abort(); return { live } },
+    refresh: true, signal: controller.signal,
+  }), { name: 'AbortError' })
 })

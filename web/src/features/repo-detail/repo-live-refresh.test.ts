@@ -48,16 +48,10 @@ const runEvent = (version: number) =>
   }) satisfies RepoChangeEvent
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
-test('coordinator ignores stale, connected, and wrong-repo events', async () => {
+test('coordinator ignores stale and wrong-repo events', async () => {
   let refreshes = 0
   const coordinator = coordinatorFor(async () => { refreshes += 1 }, 2)
   coordinator.onEvent(event(2))
-  coordinator.onEvent({
-    incarnation_id: TEST_INCARNATION_ID,
-    kind: 'Connected',
-    repo_id: 'owner/repo',
-    version: 3,
-  })
   coordinator.onEvent(discussionEvent(3))
   coordinator.onEvent(runEvent(3))
   coordinator.onEvent(event(3, 'changed', 'other/repo'))
@@ -98,8 +92,9 @@ test('coordinator coalesces versions received during refresh', async () => {
   assert.equal(refreshes, 2)
 })
 
-test('lagged, unversioned, version-zero, and interrupted streams force refresh', async () => {
+test('connected, lagged, unversioned, version-zero, and interrupted streams force refresh', async () => {
   for (const trigger of [
+    (value: ReturnType<typeof coordinatorFor>) => value.onEvent({ ...event(5), kind: 'Connected' }),
     (value: ReturnType<typeof coordinatorFor>) => value.onEvent(laggedEvent()),
     (value: ReturnType<typeof coordinatorFor>) => value.onEvent(event(0)),
     (value: ReturnType<typeof coordinatorFor>) => value.onStreamInterrupted(),
@@ -186,4 +181,31 @@ test('completed stream reconnect delays release abort listeners before reconnect
     if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
     else Reflect.deleteProperty(globalThis, 'window')
   }
+})
+
+test('accepted summary reads reconcile once even at the same version and advance the event checkpoint', async () => {
+  let summaries = 0
+  let refreshes = 0
+  const coordinator = createRepoRefreshCoordinator({
+    initialVersion: 1,
+    invalidate: async () => { refreshes++ },
+    onSummaryRefresh: () => { summaries++ },
+    repoId: 'owner/repo',
+    schedule: () => () => {},
+    versioned: true,
+  })
+  coordinator.onSummary('initial', 1)
+  coordinator.onSummary('initial', 1)
+  assert.equal(summaries, 0)
+  coordinator.onSummary('fresh-read', 1)
+  coordinator.onSummary('fresh-read', 1)
+  assert.equal(summaries, 1)
+  coordinator.onSummary('new-version', 5)
+  coordinator.onEvent(event(5))
+  await tick()
+  assert.equal(refreshes, 0)
+  coordinator.onEvent(event(6))
+  await tick()
+  assert.equal(refreshes, 1)
+  coordinator.stop()
 })

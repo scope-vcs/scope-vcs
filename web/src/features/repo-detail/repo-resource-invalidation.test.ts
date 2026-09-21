@@ -57,8 +57,6 @@ test('dependency completion invalidates only the retained dependency report', ()
 
 test('run changes refresh request-owned state without invalidating repository resources', () => {
   seed()
-  invalidateRepoResources('viewer-a', event('Connected'))
-  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, false)
   invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'LogsAppended' } }))
   assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, false)
   invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'StatusChanged' } }))
@@ -75,11 +73,15 @@ test('run changes refresh request-owned state without invalidating repository re
   assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
 })
 
-test('lag recovery invalidates repository resources', () => {
-  seed()
-  invalidateRepoResources('viewer-a', event('Lagged'))
-  assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, true)
-  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
+test('connection and lag recovery invalidate retained resources only in their scope', () => {
+  for (const kind of ['Connected', 'Lagged'] as const) {
+    seed()
+    invalidateRepoResources('viewer-a', event(kind))
+    assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, true)
+    assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, true)
+    assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
+    assert.equal(requestQueueResource.getSnapshot('viewer-b').stale, false)
+  }
 })
 
 test('public code with unchanged version refreshes retained tree and file on repository changes', async () => {

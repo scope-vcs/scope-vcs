@@ -68,7 +68,7 @@ function RepoLayoutRoute() {
   const params = Route.useParams()
   const router = useRouter()
   const invalidate = useCallback(() => router.invalidate(), [router])
-  const subscribe = useRepoLiveRefresh(live, invalidate)
+  const subscribe = useRepoLiveRefresh(live, invalidate, live.refreshId)
   return (
     <RepoLayoutProvider live={live} subscribe={subscribe}>
       <RepositoryHtmlPreviewProvider>

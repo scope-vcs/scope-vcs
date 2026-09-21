@@ -12,8 +12,13 @@ import { repoCollaborationResource } from './repo-collaboration-resource'
 import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
 
+// Repository summaries include request state that has no repository version.
+export function invalidateRepoSummaryResources(scope: string) {
+  requestQueueResource.invalidate(scope)
+}
+
 export function invalidateRepoResources(scope: string, event?: RepoChangeEvent) {
-  if (!event || event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
+  if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
     requestQueueResource.invalidate(scope)
     repoCollaborationResource.invalidate(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
