@@ -68,10 +68,12 @@ pub fn sync_repo_rules(git_root: &Path) -> anyhow::Result<SyncResult> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(error) => return Err(error).with_context(|| format!("read {}", path.display())),
         };
-        let desired = managed_content(&current, adapter.block)
-            .with_context(|| format!("update {}", path.display()))?;
-        if desired != current {
-            adapter_updates.push((adapter.path, path, desired));
+        if !has_current_block(&current, adapter.block)
+            .with_context(|| format!("update {}", path.display()))?
+        {
+            let desired = managed_content(&current, adapter.block)
+                .with_context(|| format!("update {}", path.display()))?;
+            adapter_updates.push((adapter.path, path, with_line_endings_of(&current, desired)));
         }
     }
 
@@ -127,7 +129,7 @@ fn ensure_worktree_is_synced(git_root: &Path) -> anyhow::Result<()> {
         reject_symlink(&path)?;
         let current =
             fs::read_to_string(&path).with_context(|| format!("{} is required", path.display()))?;
-        if managed_content(&current, adapter.block)? != current {
+        if !has_current_block(&current, adapter.block)? {
             bail!(
                 "{} does not contain the current Scope rules link",
                 path.display()
@@ -195,7 +197,7 @@ fn ensure_head_file(
     if let Some(block) = managed_block {
         let current = String::from_utf8(output.stdout)
             .with_context(|| format!("committed {relative_path} is not UTF-8"))?;
-        if managed_content(&current, block)? != current {
+        if !has_current_block(&current, block)? {
             bail!("committed {relative_path} does not contain the current Scope rules link");
         }
     }
@@ -372,6 +374,21 @@ fn git_list_paths(git_root: &Path, args: &[&str]) -> Vec<String> {
 
 fn path_basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
+}
+
+/// Git may check a file out with CRLF line endings, so the block is compared
+/// without them.
+fn has_current_block(current: &str, block: &str) -> anyhow::Result<bool> {
+    let current = current.replace("\r\n", "\n");
+    Ok(managed_content(&current, block)? == current)
+}
+
+fn with_line_endings_of(current: &str, desired: String) -> String {
+    if current.contains("\r\n") {
+        desired.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        desired
+    }
 }
 
 fn managed_content(current: &str, block: &str) -> anyhow::Result<String> {
@@ -651,6 +668,45 @@ mod tests {
             .to_string();
 
         ensure_repo_rules_ready_for_push(repo.path(), &head).unwrap();
+    }
+
+    #[test]
+    fn a_crlf_checkout_of_synced_files_stays_synced() {
+        let repo = TempDir::git_repo("rules-crlf-checkout", "main");
+        fs::write(repo.path().join("AGENTS.md"), "# Project\n").unwrap();
+        sync_repo_rules(repo.path()).unwrap();
+        repo.run_git(["add", ".scope/RULES.md", "AGENTS.md"]);
+        repo.run_git([
+            "-c",
+            "user.email=scope@example.test",
+            "-c",
+            "user.name=Scope Test",
+            "commit",
+            "-m",
+            "add rules context",
+        ]);
+        let agents_path = repo.path().join("AGENTS.md");
+        let checked_out = fs::read_to_string(&agents_path)
+            .unwrap()
+            .replace('\n', "\r\n");
+        fs::write(&agents_path, &checked_out).unwrap();
+
+        ensure_repo_rules_ready_for_push(repo.path(), "HEAD").unwrap();
+        assert_eq!(sync_repo_rules(repo.path()).unwrap(), SyncResult::default());
+        assert_eq!(fs::read_to_string(&agents_path).unwrap(), checked_out);
+    }
+
+    #[test]
+    fn sync_keeps_the_line_endings_of_a_crlf_file() {
+        let repo = TempDir::git_repo("rules-crlf-sync", "main");
+        let agents_path = repo.path().join("AGENTS.md");
+        fs::write(&agents_path, "# Project\r\n").unwrap();
+
+        sync_repo_rules(repo.path()).unwrap();
+
+        let synced = fs::read_to_string(&agents_path).unwrap();
+        assert!(synced.contains(START_MARKER));
+        assert!(!synced.replace("\r\n", "").contains('\n'));
     }
 
     #[test]
