@@ -119,7 +119,6 @@
 
 .request-workspace-disclosures {
   margin-top: 6px;
-  border-top: 1px solid var(--border);
   padding-top: 4px;
 }
 
@@ -189,8 +188,16 @@
   background: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
-/* Actions overlay the age on hover and stay inside the meta line, clear of
- * the title; where they are always visible the meta line leaves room for them. */
+/* Reserve the action space so neither the label nor the row moves on hover. */
+.request-workspace-row-meta > span {
+  max-width: calc(100% - var(--row-actions, 0px));
+}
+
+.request-workspace-row-age,
+.request-workspace-row-actions {
+  transition: opacity 150ms ease;
+}
+
 .request-workspace-row-actions {
   bottom: 6px;
   opacity: 0;
@@ -198,10 +205,14 @@
 }
 
 .request-workspace-row:hover .request-workspace-row-actions,
-.request-workspace-row:focus-within .request-workspace-row-actions,
+.request-workspace-row:has(:focus-visible) .request-workspace-row-actions,
 .request-workspace-row-actions:has(:popover-open) {
   opacity: 1;
   pointer-events: auto;
+}
+
+.request-workspace-row:has(.request-workspace-row-actions):is(:hover, :has(:focus-visible), :has(:popover-open)) .request-workspace-row-age {
+  opacity: 0;
 }
 
 .request-workspace-row-action {
@@ -372,8 +383,8 @@ html[data-focus] .application-topbar {
     pointer-events: auto;
   }
 
-  .request-workspace-row-meta {
-    padding-right: var(--row-actions, 0px);
+  .request-workspace-row:has(.request-workspace-row-actions) .request-workspace-row-age {
+    opacity: 0;
   }
 
   .request-workspace-row-action {
@@ -389,6 +400,8 @@ html[data-focus] .application-topbar {
 
 @media (prefers-reduced-motion: reduce) {
   .request-workspace-row,
+  .request-workspace-row-age,
+  .request-workspace-row-actions,
   .request-workspace-pip,
   .request-workspace-group-toggle {
     transition: none;
