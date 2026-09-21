@@ -1,20 +1,26 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { assertNoHorizontalOverflow, baseUrl, repo, repoPath, waitForClientHydration, withPage } from './browser-smoke.mjs'
+import { assertNoHorizontalOverflow, baseUrl, repo, repoPath, requestRepoPath, waitForClientHydration, withPage } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
+import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 
 test('latest repository activity survives child navigation without another request or pending state', async () => {
   let requests = 0
-  const countActivityRequests = (page) => page.route('**/_serverFn/**', (route) => {
-    if (serverFunctionName(route.request()) === 'loadRepositoryLatestActivity_createServerFn_handler') requests += 1
-    return route.continue()
-  })
+  let settled
+  const countActivityRequests = (page) => {
+    settled = trackRepositoryRefresh(page)
+    return page.route('**/_serverFn/**', (route) => {
+      if (serverFunctionName(route.request()) === 'loadRepositoryLatestActivity_createServerFn_handler') requests += 1
+      return route.continue()
+    })
+  }
   await withPage(repoPath, async (page) => {
+    await settled()
     const activity = page.getByLabel('Latest repository change', { exact: true })
     await activity.waitFor()
     const original = await activity.innerText()
     const firstRequests = requests
-    assert.equal(firstRequests, 1)
+    assert.equal(firstRequests, 2) // Initial read and connection catch-up.
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 844 })
       await page.getByRole('link', { name: 'Requests', exact: true }).first().click()
@@ -28,6 +34,25 @@ test('latest repository activity survives child navigation without another reque
       await assertNoHorizontalOverflow(page)
     }
   }, { prepare: countActivityRequests, viewport: { width: 1280, height: 900 } })
+})
+
+test('request queue and summary are reused across actual child-route navigation', async () => {
+  let settled
+  await withPage(`${requestRepoPath}/requests`, async page => {
+    await settled()
+    const reads = []
+    page.on('request', request => {
+      const name = serverFunctionName(request)
+      if (['loadRepoLiveState_createServerFn_handler', 'loadRequestQueuePage_createServerFn_handler'].includes(name)) reads.push(name)
+    })
+    await page.getByRole('link', { name: 'Code', exact: true }).first().click()
+    await page.waitForURL(`${baseUrl}${requestRepoPath}`)
+    await page.getByRole('link', { name: 'Requests', exact: true }).first().click()
+    await page.waitForURL(`${baseUrl}${requestRepoPath}/requests`)
+    await page.getByRole('link', { name: /Add bounded retry timing/ }).waitFor()
+    await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
+    assert.deepEqual(reads, [])
+  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
 })
 
 test('repository events received off-page refresh retained activity without blanking it', async () => {
@@ -109,19 +134,24 @@ test('repository events received off-page refresh retained activity without blan
 
 test('leaving and returning during a file load reuses its pending resource request', async () => {
   let requests = 0
+  let settled
+  let holdRequestedFile = false
   let release
   const held = new Promise((resolve) => { release = resolve })
-  const holdFile = (page) => page.route('**/_serverFn/**', async (route) => {
-    if (serverFunctionName(route.request()) === 'loadRepoFile_createServerFn_handler') {
-      requests += 1
-      await held
-    }
-    await route.continue()
-  })
+  const holdFile = (page) => {
+    settled = trackRepositoryRefresh(page)
+    return page.route('**/_serverFn/**', async (route) => {
+      if (holdRequestedFile && serverFunctionName(route.request()) === 'loadRepoFile_createServerFn_handler') {
+        requests += 1
+        await held
+      }
+      await route.continue()
+    })
+  }
   try {
-    await withPage('/', async (page) => {
-      // The router exists before React hydrates the landing page. Navigating
-      // imperatively at that point makes it hydrate repository UI over landing HTML.
+    await withPage(repoPath, async (page) => {
+      await settled()
+      holdRequestedFile = true
       await waitForClientHydration(page.getByRole('button', { name: 'Switch to light mode' }))
       await page.evaluate((to) => { void globalThis.__TSR_ROUTER__.navigate({ to, search: { file: 'src/app.ts' } }) }, repoPath)
       await page.getByRole('tab', { name: 'src/app.ts', exact: true }).waitFor()

@@ -201,6 +201,7 @@ test('accepted summary reads reconcile once even at the same version and advance
   coordinator.onSummary('fresh-read', 1)
   assert.equal(summaries, 1)
   coordinator.onSummary('new-version', 5)
+  assert.equal(summaries, 1)
   coordinator.onEvent(event(5))
   await tick()
   assert.equal(refreshes, 0)

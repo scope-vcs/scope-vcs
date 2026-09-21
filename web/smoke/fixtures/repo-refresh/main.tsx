@@ -44,7 +44,9 @@ function App({ initial }: { initial: Awaited<ReturnType<typeof summary>> }) {
     server, refresh: invalidate,
     navigate: () => setVisible(value => !value),
     submit: (ids: string[]) => { server.ids = ids },
+    advanceVersion: () => { repo.change_version++ },
     interrupt: () => { for (const stream of server.streams) stream.close(); server.streams.clear() },
+    lag: () => { for (const stream of server.streams) stream.enqueue(new TextEncoder().encode(`event: repo-change\ndata: ${JSON.stringify({ repo_id: repo.id, incarnation_id: 'repo-i', kind: 'Lagged', version: 0 })}\n\n`)) },
   } })
   return <main><h1>Requests <span data-count>{current.repo.open_request_count}</span></h1><button onClick={() => setVisible(value => !value)}>Navigate</button>{visible && <Queue current={current} />}</main>
 }

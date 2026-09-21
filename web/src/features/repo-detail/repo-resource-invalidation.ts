@@ -17,9 +17,11 @@ export function invalidateRepoSummaryResources(scope: string) {
   requestQueueResource.invalidate(scope)
 }
 
-export function invalidateRepoResources(scope: string, event?: RepoChangeEvent) {
+export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, summaryPending = false) {
   if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
-    requestQueueResource.invalidate(scope)
+    // A pending summary reconciles the queue on acceptance. Invalidating here
+    // as well would cancel and restart that same four-section refresh.
+    if (!summaryPending) requestQueueResource.invalidate(scope)
     repoCollaborationResource.invalidate(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))

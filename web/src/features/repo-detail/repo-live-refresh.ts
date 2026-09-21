@@ -19,7 +19,7 @@ export type SubscribeToRepoChanges = (
 ) => () => void
 
 type RepoRefreshCoordinator = {
-  onEvent: (event: RepoChangeEvent) => void
+  onEvent: (event: RepoChangeEvent) => boolean
   onStreamInterrupted: () => void
   onSummary: (refreshId: string, version: number) => void
   stop: () => void
@@ -75,15 +75,15 @@ export function useRepoLiveRefresh(
       }
     }
     const onEvent = (event: RepoChangeEvent) => {
+      const summaryPending = coordinator.onEvent(event)
       if (event.repo_id === repoId) {
         // Connected also covers changes committed after an interruption refresh.
-        invalidateRepoResources(scope, event)
+        invalidateRepoResources(scope, event, summaryPending)
       }
-      coordinator.onEvent(event)
       notifyListeners(event)
     }
     const onStreamInterrupted = () => {
-      invalidateRepoResources(scope)
+      invalidateRepoResources(scope, undefined, true)
       coordinator.onStreamInterrupted()
       const event: RepoChangeEvent = {
         incarnation_id: 'local-stream-interruption',
@@ -132,6 +132,7 @@ export function createRepoRefreshCoordinator({
 }): RepoRefreshCoordinator {
   let highestAppliedVersion = initialVersion
   let lastSummaryId: string | null = null
+  let lastSummaryVersion: number | null = null
   const coordinator = createRefreshCoordinator<RepoRefreshRequest>({
     merge: (pending, next) => ({
       force: pending.force || next.force,
@@ -159,20 +160,26 @@ export function createRepoRefreshCoordinator({
         typeof event.kind === 'object' &&
           ('RequestTimelineChanged' in event.kind || 'RunChanged' in event.kind)
       ) {
-        return
+        return false
       }
       if (event.kind === 'Connected' || event.kind === 'Lagged' || !versioned || event.version === 0) {
         requestRefresh(null)
       } else if (event.version > highestAppliedVersion) {
         requestRefresh(event.version)
+      } else {
+        return false
       }
+      return true
     },
     onSummary(refreshId, version) {
       highestAppliedVersion = Math.max(highestAppliedVersion, version)
       if (lastSummaryId === refreshId) return
-      const hadSummary = lastSummaryId !== null
+      const unchangedVersion = lastSummaryVersion === version
       lastSummaryId = refreshId
-      if (hadSummary) onSummaryRefresh()
+      lastSummaryVersion = version
+      // The queue cache already reloads on a version change. Only summaries
+      // without that change need explicit invalidation of the retained queue.
+      if (unchangedVersion) onSummaryRefresh()
     },
     onStreamInterrupted: () => requestRefresh(null),
     stop: coordinator.stop,

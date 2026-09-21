@@ -52,6 +52,18 @@ test('accepted summaries and reconnects reconcile the retained request queue wit
   assert.equal(await page.getByText('new-request', { exact: true }).count(), 0)
   assert.equal(await page.evaluate(() => window.fixture.server.connections), 1)
 
+  // Periodic reconciliation refreshes the four sections once, after the
+  // summary is accepted, without an earlier refresh being canceled/repeated.
+  const beforeLag = await page.evaluate(() => window.fixture.server.queueReads)
+  await page.evaluate(() => { window.fixture.submit(['after-lag']); window.fixture.lag() })
+  await page.getByRole('listitem').filter({ hasText: 'after-lag' }).waitFor()
+  assert.equal(await page.evaluate(() => window.fixture.server.queueReads), beforeLag + 4)
+
+  const beforeVersion = await page.evaluate(() => window.fixture.server.queueReads)
+  await page.evaluate(async () => { window.fixture.advanceVersion(); window.fixture.submit(['new-version']); await window.fixture.refresh() })
+  await page.getByRole('listitem').filter({ hasText: 'new-version' }).waitFor()
+  assert.equal(await page.evaluate(() => window.fixture.server.queueReads), beforeVersion + 4)
+
   await page.evaluate(() => window.fixture.interrupt())
   await page.waitForFunction(() => window.fixture.server.streams.size === 0)
   // Change committed during the reconnect delay, after the interruption refresh.
