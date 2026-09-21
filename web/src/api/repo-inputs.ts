@@ -1,6 +1,6 @@
 import type {
   CreateRepoInviteInput,
-  DeleteRepoInviteInput,
+  RepoInviteInput,
   DeleteRepoMemberInput,
   RepoInviteTokenInput,
   UpdateRepoMemberInput,
@@ -50,9 +50,9 @@ export function parseDeleteRepoMemberInput(input: unknown): DeleteRepoMemberInpu
   }
 }
 
-export function parseDeleteRepoInviteInput(input: unknown): DeleteRepoInviteInput {
+export function parseRepoInviteInput(input: unknown): RepoInviteInput {
   const params = parseRepoParams(input)
-  const data = input as Partial<DeleteRepoInviteInput>
+  const data = input as Partial<RepoInviteInput>
   return {
     ...params,
     invite_id: requiredId(data.invite_id, 'Repository invite route is incomplete.'),

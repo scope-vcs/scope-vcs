@@ -1,6 +1,6 @@
 use crate::{
     auth::{
-        scope::{principal_for_user_id, require_scope_user},
+        scope::{optional_scope_user, principal_for_user_id, require_scope_user},
         tokens::{generate_repository_invite_token, token_hash},
     },
     error::ApiError,
@@ -21,9 +21,9 @@ use axum::{
 };
 use scope_domain::{
     account::UserAccount,
+    repo_collaboration::{AcceptRepositoryInviteOutcome, repository_invite_landing},
     repository::Repository,
     repository::access::RepositoryAccess,
-    repository::collaboration::{RepositoryInvite, RepositoryInviteState},
     requests::{Request, RequestViewer, request_policy},
 };
 use scope_postgres::db::RepositoryCollaborationMutation;
@@ -43,7 +43,11 @@ pub(crate) async fn list_repository_collaboration(
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
 
-    Ok(Json(repository_collaboration_response(&repo, &users)))
+    Ok(Json(repository_collaboration_response(
+        &repo,
+        &users,
+        unix_now()?,
+    )))
 }
 
 pub(crate) async fn create_repository_invite(
@@ -62,10 +66,10 @@ pub(crate) async fn create_repository_invite(
         &repo_name,
         RepoChangeReason::InviteUpdated,
         |user| async move {
-            let app_origin = public_app_origin("building repository invite URL")?;
-            let (secret, token_hash) = generate_repository_invite_token()?;
+            let (secret, link_hash) = generate_repository_invite_token()?;
+            let invite_url = repository_invite_url(&secret)?;
             let now = unix_now()?;
-            let invite_id = format!("repo_invite_{}", token_hash.replace([':', '/'], "_"));
+            let invite_id = format!("repo_invite_{}", link_hash.replace([':', '/'], "_"));
             let invite = metadata
                 .repositories()
                 .create_repository_invite(
@@ -76,7 +80,7 @@ pub(crate) async fn create_repository_invite(
                         invited_email: input.email,
                         permissions: input.permissions.into(),
                         invite_id,
-                        token_hash,
+                        link_hash,
                         now_unix: now,
                     },
                     &crate::persistence_ids::generate_persistence_id,
@@ -84,9 +88,50 @@ pub(crate) async fn create_repository_invite(
                 .await?;
             Ok(map_committed_mutation(invite, |invite| {
                 CreateRepositoryInviteResponse {
-                    invite: repository_invite_response(&invite),
-                    invite_url: format!("{}/invites/{}", app_origin.trim_end_matches('/'), secret),
+                    invite: repository_invite_response(&invite, now),
+                    invite_url,
                 }
+            }))
+        },
+    )
+    .await?;
+
+    Ok(Json(response))
+}
+
+pub(crate) async fn create_repository_invite_link(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo_name, invite_id)): Path<(String, String, String)>,
+) -> Result<Json<RepositoryInviteLinkResponse>, ApiError> {
+    let metadata = state.metadata.clone();
+    let mutation_owner = owner.clone();
+    let mutation_repo_name = repo_name.clone();
+    let response = mutate_owned_collaboration(
+        &state,
+        &headers,
+        &owner,
+        &repo_name,
+        RepoChangeReason::InviteUpdated,
+        |user| async move {
+            let (secret, link_hash) = generate_repository_invite_token()?;
+            let invite_url = repository_invite_url(&secret)?;
+            let mutation = metadata
+                .repositories()
+                .issue_repository_invite_link(
+                    scope_postgres::db::IssueRepositoryInviteLinkCommand {
+                        owner: mutation_owner,
+                        name: mutation_repo_name,
+                        owner_user_id: user.id,
+                        invite_id,
+                        link_hash,
+                        now_unix: unix_now()?,
+                    },
+                    &crate::persistence_ids::generate_persistence_id,
+                )
+                .await?;
+            Ok(map_committed_mutation(mutation, |_| {
+                RepositoryInviteLinkResponse { invite_url }
             }))
         },
     )
@@ -152,23 +197,26 @@ pub(crate) async fn delete_repository_invite(
         &repo_name,
         RepoChangeReason::InviteRevoked,
         |user| async move {
-            metadata
+            let now = unix_now()?;
+            let mutation = metadata
                 .repositories()
                 .revoke_repository_invite(
                     &mutation_owner,
                     &mutation_repo_name,
                     &user.id,
                     &invite_id,
-                    unix_now()?,
+                    now,
                     &crate::persistence_ids::generate_persistence_id,
                 )
-                .await
-                .map_err(Into::into)
+                .await?;
+            Ok(map_committed_mutation(mutation, |invite| {
+                repository_invite_response(&invite, now)
+            }))
         },
     )
     .await?;
 
-    Ok(Json(repository_invite_response(&invite)))
+    Ok(Json(invite))
 }
 
 pub(crate) async fn delete_repository_member(
@@ -211,24 +259,25 @@ pub(crate) async fn delete_repository_member(
 
 pub(crate) async fn get_repository_invite(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(token): Path<String>,
-) -> Result<Json<RepositoryInviteLookupResponse>, ApiError> {
-    let now = unix_now()?;
-    let token_hash = token_hash(&token);
-    let (repo, invite) = state
+) -> Result<Json<RepositoryInviteLandingResponse>, ApiError> {
+    let viewer = optional_scope_user(&state, &headers).await?;
+    let Some((repo, invite)) = state
         .metadata
         .repositories()
-        .repository_invite_by_token_hash(&token_hash)
-        .await?;
-    ensure_invite_can_be_used(&invite, now)?;
-    Ok(Json(RepositoryInviteLookupResponse {
-        repo_id: repo.record.id,
-        owner_handle: repo.record.owner_handle,
-        repo_name: repo.record.name,
-        invited_email: invite.invited_email,
-        permissions: invite.permissions.into(),
-        expires_at_unix: invite.expires_at_unix,
-    }))
+        .repository_invite_by_link_hash(&token_hash(&token))
+        .await?
+    else {
+        return Ok(Json(RepositoryInviteLandingResponse::Invalid));
+    };
+    let landing = repository_invite_landing(&repo, &invite, viewer.as_ref(), unix_now()?);
+    Ok(Json(repository_invite_landing_response(
+        landing,
+        &repo,
+        &invite,
+        viewer.as_ref(),
+    )))
 }
 
 pub(crate) async fn accept_repository_invite(
@@ -240,14 +289,20 @@ pub(crate) async fn accept_repository_invite(
     let user = require_scope_user(&state, &headers).await?;
     let now = unix_now()?;
     let token_hash = token_hash(&token);
-    let (repo, member) = accept_invite(&state, &token_hash, user.clone(), now).await?;
-    state
-        .publish_repo_change(
-            &repo.incarnation(),
-            repo.record.change_version,
-            RepoChangeReason::MemberAdded,
-        )
-        .await;
+    let (repo, outcome) = accept_invite(&state, &token_hash, user.clone(), now).await?;
+    let member = match outcome {
+        AcceptRepositoryInviteOutcome::Accepted(member) => {
+            state
+                .publish_repo_change(
+                    &repo.incarnation(),
+                    repo.record.change_version,
+                    RepoChangeReason::MemberAdded,
+                )
+                .await;
+            member
+        }
+        AcceptRepositoryInviteOutcome::AlreadyAccepted(member) => member,
+    };
     let open_request_count =
         open_request_count_for_access(&state, &repo, repo.access_for_user_id(&user.id)).await?;
     let summary = repo_summary_for_user(&repo, &user.id, open_request_count, &git_origin)
@@ -287,14 +342,12 @@ fn ensure_collaboration_owner_access(repo: &Repository, user_id: &str) -> Result
     }
 }
 
-fn ensure_invite_can_be_used(invite: &RepositoryInvite, now_unix: u64) -> Result<(), ApiError> {
-    if invite.state != RepositoryInviteState::Pending {
-        return Err(ApiError::conflict("repository invite is no longer pending"));
-    }
-    if now_unix >= invite.expires_at_unix {
-        return Err(ApiError::conflict("repository invite expired"));
-    }
-    Ok(())
+fn repository_invite_url(secret: &str) -> Result<String, ApiError> {
+    let app_origin = public_app_origin("building repository invite URL")?;
+    Ok(format!(
+        "{}/invites/{secret}",
+        app_origin.trim_end_matches('/')
+    ))
 }
 
 async fn open_request_count_for_access(

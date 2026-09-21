@@ -1,6 +1,6 @@
 import type {
   CreateRepoInviteInput,
-  DeleteRepoInviteInput,
+  RepoInviteInput,
   DeleteRepoMemberInput,
   RepoParams,
   UpdateRepoMemberInput,
@@ -10,6 +10,7 @@ import type {
   CreateRepositoryInviteResponse,
   DeleteRepoResponse,
   RepositoryCollaborationResponse,
+  RepositoryInviteLinkResponse,
   RepositoryInviteResponse,
   RepositoryMemberResponse,
   RepoSummaryResponse,
@@ -38,6 +39,7 @@ import { mutateSettings } from './settings-mutation'
 
 export function RepoSettingsPage({
   createInvite,
+  createInviteLink,
   deleteInvite,
   deleteMember,
   collaboration,
@@ -49,7 +51,8 @@ export function RepoSettingsPage({
   createInvite: (
     input: CreateRepoInviteInput,
   ) => Promise<CreateRepositoryInviteResponse>
-  deleteInvite: (input: DeleteRepoInviteInput) => Promise<RepositoryInviteResponse>
+  createInviteLink: (input: RepoInviteInput) => Promise<RepositoryInviteLinkResponse>
+  deleteInvite: (input: RepoInviteInput) => Promise<RepositoryInviteResponse>
   deleteMember: (input: DeleteRepoMemberInput) => Promise<RepositoryMemberResponse>
   collaboration: RepositoryCollaborationResponse | null
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
@@ -177,6 +180,8 @@ export function RepoSettingsPage({
           <RepositoryMembersSection
             collaboration={collaboration}
             createInvite={createMemberInvite}
+            createInviteLink={(inviteId) =>
+              createInviteLink({ ...params, invite_id: inviteId })}
             deleteInvite={removeRepositoryInvite}
             deleteMember={removeRepositoryMember}
             params={params}

@@ -13,5 +13,6 @@
   "m0053_request_ref_cleanup.rs": "3457e3ff117e39f0dbd24df61dedf70258f3c308063ad2b4be6b83e7d2b4eb42",
   "m0054_request_attention_revision.rs": "1b52a9a59cfef8fce52f49c55cc4abe29a440e36782a30b2fe54862158f4e61e",
   "m0055_request_checks.rs": "a6c8ce6a3b3bc51808bc57753cc35fd34b8fa5f47c18cc43e7ca7687ec23d851",
-  "m0056_request_auto_merge.rs": "2d4ae687e2d3a5aa19bab62be1905f61e1790748009bcdf21afca3e41d793323"
+  "m0056_request_auto_merge.rs": "2d4ae687e2d3a5aa19bab62be1905f61e1790748009bcdf21afca3e41d793323",
+  "m0057_repository_invite_links.rs": "700cbfa7ecf1e8aed56e44ea8f0458b26c68a3e3c345714596513949163da5b3"
 }

@@ -184,7 +184,11 @@ export type CreateRepositoryInviteResponse = { invite: RepositoryInviteResponse,
 
 export type UpdateRepositoryMemberRequest = { permissions: RepositoryMemberPermissions, };
 
-export type RepositoryInviteLookupResponse = { repo_id: string, owner_handle: string, repo_name: string, invited_email: string, permissions: RepositoryMemberPermissions, expires_at_unix: number, };
+export type RepositoryInviteLinkResponse = { invite_url: string, };
+
+export type RepositoryInviteLandingResponse = { "status": "open", viewer: RepositoryInviteViewerResponse, viewer_email: string | null, owner_handle: string, repo_name: string, invited_email: string, permissions: RepositoryMemberPermissions, expires_at_unix: number, } | { "status": "member", owner_handle: string, repo_name: string, } | { "status": "expired", owner_handle: string, repo_name: string, } | { "status": "revoked" } | { "status": "access_removed" } | { "status": "used" } | { "status": "invalid" };
+
+export type RepositoryInviteViewerResponse = "ready" | "signed_out" | "wrong_account" | "email_unverified";
 
 export type AcceptRepositoryInviteResponse = { repo: RepoSummaryResponse, member: RepositoryMemberResponse, };
 
@@ -470,6 +474,7 @@ export const ApiRouteTemplates = {
   repoMembers: "/v1/repos/{owner}/{repo}/members",
   repoInvites: "/v1/repos/{owner}/{repo}/invites",
   repoInvite: "/v1/repos/{owner}/{repo}/invites/{invite_id}",
+  repoInviteLinks: "/v1/repos/{owner}/{repo}/invites/{invite_id}/links",
   repoMember: "/v1/repos/{owner}/{repo}/members/{member_user_id}",
   repositoryInvite: "/v1/repository-invites/{token}",
   repositoryInviteAccept: "/v1/repository-invites/{token}/accept",

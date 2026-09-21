@@ -277,13 +277,37 @@ where
     }
 
     for invite in &repo.invitations {
-        entities::repository_invite::Model::from_domain(invite)?
-            .into_active_model()
-            .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+        insert_repository_invite(conn, invite).await?;
     }
 
+    Ok(())
+}
+
+async fn insert_repository_invite<C>(
+    conn: &C,
+    invite: &RepositoryInvite,
+) -> Result<(), PostgresError>
+where
+    C: ConnectionTrait,
+{
+    entities::repository_invite::Model::from_domain(invite)?
+        .into_active_model()
+        .insert(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    if invite.link_hashes.is_empty() {
+        return Ok(());
+    }
+    entities::repository_invite_link::Entity::insert_many(invite.link_hashes.iter().map(|hash| {
+        entities::repository_invite_link::Model {
+            token_hash: hash.clone(),
+            invite_id: invite.id.clone(),
+        }
+        .into_active_model()
+    }))
+    .exec(conn)
+    .await
+    .map_err(PostgresError::internal)?;
     Ok(())
 }
 
@@ -362,15 +386,12 @@ where
         {
             continue;
         }
+        // Deleting the invite cascades to its links.
         entities::repository_invite::Entity::delete_by_id(invite_id.to_string())
             .exec(conn)
             .await
             .map_err(PostgresError::internal)?;
-        entities::repository_invite::Model::from_domain(invite)?
-            .into_active_model()
-            .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+        insert_repository_invite(conn, invite).await?;
     }
     Ok(())
 }
@@ -461,15 +482,37 @@ where
         .into_iter()
         .map(entities::repository_member::Model::try_into_domain)
         .collect::<Result<Vec<RepositoryMember>, _>>()?;
-    let invitations = entities::repository_invite::Entity::find()
+    let invite_rows = entities::repository_invite::Entity::find()
         .filter(entities::repository_invite::Column::RepoId.eq(repo_id))
         .order_by_asc(entities::repository_invite::Column::InvitedEmailNormalized)
         .order_by_asc(entities::repository_invite::Column::Id)
         .all(conn)
         .await
-        .map_err(PostgresError::internal)?
+        .map_err(PostgresError::internal)?;
+    let mut link_hashes = BTreeMap::<String, Vec<String>>::new();
+    if !invite_rows.is_empty() {
+        let links = entities::repository_invite_link::Entity::find()
+            .filter(
+                entities::repository_invite_link::Column::InviteId
+                    .is_in(invite_rows.iter().map(|invite| invite.id.clone())),
+            )
+            .order_by_asc(entities::repository_invite_link::Column::TokenHash)
+            .all(conn)
+            .await
+            .map_err(PostgresError::internal)?;
+        for link in links {
+            link_hashes
+                .entry(link.invite_id)
+                .or_default()
+                .push(link.token_hash);
+        }
+    }
+    let invitations = invite_rows
         .into_iter()
-        .map(entities::repository_invite::Model::try_into_domain)
+        .map(|invite| {
+            let hashes = link_hashes.remove(&invite.id).unwrap_or_default();
+            invite.try_into_domain(hashes)
+        })
         .collect::<Result<Vec<RepositoryInvite>, _>>()?;
     repository.try_into_domain(facts, members, invitations, history)
 }

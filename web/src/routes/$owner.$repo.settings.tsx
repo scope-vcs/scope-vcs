@@ -1,6 +1,6 @@
 import {
   parseCreateRepoInviteInput,
-  parseDeleteRepoInviteInput,
+  parseRepoInviteInput,
   parseDeleteRepoMemberInput,
   parseUpdateRepoMemberInput,
   parseUpdateRepoMetadataInput,
@@ -8,6 +8,7 @@ import {
 import { parseRepoParams } from '@/api/repo-params'
 import {
   createRepoInviteForRequest,
+  createRepoInviteLinkForRequest,
   deleteRepoInviteForRequest,
   deleteRepoMemberForRequest,
   deleteRepoForRequest,
@@ -60,8 +61,12 @@ const deleteRepoMember = createServerFn({ method: 'POST' })
   .validator(parseDeleteRepoMemberInput)
   .handler(({ data }) => deleteRepoMemberForRequest(data))
 
+const createRepoInviteLink = createServerFn({ method: 'POST' })
+  .validator(parseRepoInviteInput)
+  .handler(({ data }) => createRepoInviteLinkForRequest(data))
+
 const deleteRepoInvite = createServerFn({ method: 'POST' })
-  .validator(parseDeleteRepoInviteInput)
+  .validator(parseRepoInviteInput)
   .handler(({ data }) => deleteRepoInviteForRequest(data))
 
 export const Route = createFileRoute('/$owner/$repo/settings')({
@@ -110,6 +115,7 @@ function RepoSettingsRoute() {
             createRepoInvite({ data }),
             ({ invite }) => ({ type: 'inviteUpdated', invite }),
           )}
+          createInviteLink={(data) => createRepoInviteLink({ data })}
           deleteInvite={(data) => retainResult(
             deleteRepoInvite({ data }),
             (invite) => ({ type: 'inviteUpdated', invite }),

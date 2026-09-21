@@ -7,8 +7,8 @@ use scope_domain::{
     account::UserAccount,
     repo_collaboration::{
         AcceptRepositoryInviteOutcome, CreateRepositoryInviteCommand, accept_repository_invite,
-        create_or_refresh_repository_invite, remove_repository_member, revoke_repository_invite,
-        update_repository_member_permissions,
+        create_repository_invite, issue_repository_invite_link, remove_repository_member,
+        revoke_repository_invite, update_repository_member_permissions,
     },
     repository::collaboration::{
         RepositoryInvite, RepositoryMember, RepositoryMemberPermissions,
@@ -42,7 +42,16 @@ pub struct CreateRepositoryInviteMutation {
     pub invited_email: String,
     pub permissions: RepositoryMemberPermissions,
     pub invite_id: String,
-    pub token_hash: String,
+    pub link_hash: String,
+    pub now_unix: u64,
+}
+
+pub struct IssueRepositoryInviteLinkCommand {
+    pub owner: String,
+    pub name: String,
+    pub owner_user_id: String,
+    pub invite_id: String,
+    pub link_hash: String,
     pub now_unix: u64,
 }
 
@@ -117,7 +126,7 @@ impl RepositoryStore {
         let mut repo = repository_from_model(&tx, row).await?;
         let before = repo.clone();
         let invitee = user_by_normalized_email(&tx, &command.invited_email).await?;
-        let mutation = create_or_refresh_repository_invite(
+        let mutation = create_repository_invite(
             &mut repo,
             CreateRepositoryInviteCommand {
                 id: command.invite_id,
@@ -125,7 +134,7 @@ impl RepositoryStore {
                 invited_email: command.invited_email,
                 invitee: invitee.as_ref(),
                 permissions: command.permissions,
-                token_hash: command.token_hash,
+                link_hash: command.link_hash,
                 now_unix: command.now_unix,
             },
         )?;
@@ -140,6 +149,26 @@ impl RepositoryStore {
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RepositoryCollaborationMutation::committed(&repo, mutation))
+    }
+
+    pub async fn issue_repository_invite_link(
+        &self,
+        command: IssueRepositoryInviteLinkCommand,
+        generated_ids: &dyn GeneratedIdSource,
+    ) -> Result<RepositoryCollaborationMutation<RepositoryInvite>, PostgresError> {
+        let IssueRepositoryInviteLinkCommand {
+            owner,
+            name,
+            owner_user_id,
+            invite_id,
+            link_hash,
+            now_unix,
+        } = command;
+        mutate_repository_collaboration(self, &owner, &name, now_unix, generated_ids, move |repo| {
+            issue_repository_invite_link(repo, &owner_user_id, &invite_id, link_hash, now_unix)
+                .map_err(PostgresError::from)
+        })
+        .await
     }
 
     pub async fn update_repository_member_permissions(
@@ -230,70 +259,88 @@ impl RepositoryStore {
         Ok(RepositoryCollaborationMutation::committed(&repo, removed))
     }
 
-    pub async fn repository_invite_by_token_hash(
+    /// `None` when no invite owns the link, which the landing page reports as
+    /// a link that does not work rather than as an error.
+    pub async fn repository_invite_by_link_hash(
         &self,
-        token_hash: &str,
-    ) -> Result<(scope_domain::repository::Repository, RepositoryInvite), PostgresError> {
-        let invite = entities::repository_invite::Entity::find()
-            .filter(entities::repository_invite::Column::TokenHash.eq(token_hash.to_string()))
-            .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("repository invite not found"))?;
-        let repo_row = entities::repository::Entity::find_by_id(invite.repo_id.clone())
+        link_hash: &str,
+    ) -> Result<Option<(Repository, RepositoryInvite)>, PostgresError> {
+        let Some(repo_id) = repo_id_for_invite_link(self.db.as_ref(), link_hash).await? else {
+            return Ok(None);
+        };
+        let repo_row = entities::repository::Entity::find_by_id(repo_id)
             .one(self.db.as_ref())
             .await
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::internal_message("repository invite repo is missing"))?;
-        Ok((
-            repository_from_model(self.db.as_ref(), repo_row).await?,
-            invite.try_into_domain()?,
-        ))
+        let repo = repository_from_model(self.db.as_ref(), repo_row).await?;
+        let invite = repo
+            .invitations
+            .iter()
+            .find(|invite| invite.link_hashes.iter().any(|hash| hash == link_hash))
+            .cloned();
+        Ok(invite.map(|invite| (repo, invite)))
     }
 
     pub async fn accept_repository_invite(
         &self,
-        token_hash: &str,
+        link_hash: &str,
         user: UserAccount,
         now_unix: u64,
         generated_ids: &dyn GeneratedIdSource,
-    ) -> Result<(scope_domain::repository::Repository, RepositoryMember), PostgresError> {
-        let token_hash = token_hash.to_string();
+    ) -> Result<(Repository, AcceptRepositoryInviteOutcome), PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "repository-invite-token", &token_hash).await?;
-        let invite = entities::repository_invite::Entity::find()
-            .filter(entities::repository_invite::Column::TokenHash.eq(token_hash.clone()))
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+        let repo_id = repo_id_for_invite_link(&tx, link_hash)
+            .await?
             .ok_or_else(|| PostgresError::not_found("repository invite not found"))?;
-        acquire_aggregate_lock(&tx, "repository", &invite.repo_id).await?;
-        let row = entities::repository::Entity::find_by_id(invite.repo_id)
+        // The repository lock orders acceptance against revocation, member
+        // removal, and a second acceptance of the same invite.
+        acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
+        let row = entities::repository::Entity::find_by_id(repo_id)
             .one(&tx)
             .await
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::not_found("repository invite not found"))?;
         let mut repo = repository_from_model(&tx, row).await?;
         let before = repo.clone();
-        let outcome = accept_repository_invite(&mut repo, &user, &token_hash, now_unix)?;
-        save_repo_mutation(
-            &tx,
-            &before,
-            &repo,
-            &mutation_effects_none(),
-            now_unix,
-            generated_ids,
-        )
-        .await?;
-        let result = match outcome {
-            AcceptRepositoryInviteOutcome::Accepted(member) => Ok((repo, member)),
-            AcceptRepositoryInviteOutcome::Expired => {
-                Err(PostgresError::conflict("repository invite expired"))
-            }
-        };
+        let outcome = accept_repository_invite(&mut repo, &user, link_hash, now_unix)?;
+        if matches!(outcome, AcceptRepositoryInviteOutcome::Accepted(_)) {
+            save_repo_mutation(
+                &tx,
+                &before,
+                &repo,
+                &mutation_effects_none(),
+                now_unix,
+                generated_ids,
+            )
+            .await?;
+        }
         tx.commit().await.map_err(PostgresError::internal)?;
-        result
+        Ok((repo, outcome))
     }
+}
+
+async fn repo_id_for_invite_link<C>(
+    conn: &C,
+    link_hash: &str,
+) -> Result<Option<String>, PostgresError>
+where
+    C: sea_orm::ConnectionTrait,
+{
+    let Some(link) = entities::repository_invite_link::Entity::find_by_id(link_hash.to_string())
+        .one(conn)
+        .await
+        .map_err(PostgresError::internal)?
+    else {
+        return Ok(None);
+    };
+    Ok(
+        entities::repository_invite::Entity::find_by_id(link.invite_id)
+            .one(conn)
+            .await
+            .map_err(PostgresError::internal)?
+            .map(|invite| invite.repo_id),
+    )
 }
 
 async fn mutate_repository_collaboration<T, F>(

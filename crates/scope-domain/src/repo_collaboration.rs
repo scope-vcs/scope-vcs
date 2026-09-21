@@ -10,9 +10,34 @@ use crate::error::DomainError;
 
 pub const REPOSITORY_INVITE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 
+/// What the person opening an invite link should be shown, and therefore what
+/// they are allowed to do with it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepositoryInviteLanding {
+    Open(RepositoryInviteViewer),
+    /// The viewer already has access, through this invite or another way.
+    Member,
+    Expired,
+    Revoked,
+    /// The viewer accepted this invite and was later removed.
+    AccessRemoved,
+    /// Someone other than the viewer accepted this invite.
+    Used,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepositoryInviteViewer {
+    Ready,
+    SignedOut,
+    WrongAccount,
+    EmailUnverified,
+}
+
 pub enum AcceptRepositoryInviteOutcome {
     Accepted(RepositoryMember),
-    Expired,
+    /// A repeat of an acceptance that already succeeded, such as a double
+    /// click or a retry after a lost response.
+    AlreadyAccepted(RepositoryMember),
 }
 
 pub struct CreateRepositoryInviteCommand<'a> {
@@ -21,11 +46,11 @@ pub struct CreateRepositoryInviteCommand<'a> {
     pub invited_email: String,
     pub invitee: Option<&'a UserAccount>,
     pub permissions: RepositoryMemberPermissions,
-    pub token_hash: String,
+    pub link_hash: String,
     pub now_unix: u64,
 }
 
-pub fn create_or_refresh_repository_invite(
+pub fn create_repository_invite(
     repo: &mut Repository,
     command: CreateRepositoryInviteCommand<'_>,
 ) -> Result<RepositoryInvite, DomainError> {
@@ -39,21 +64,13 @@ pub fn create_or_refresh_repository_invite(
     {
         return Err(DomainError::conflict("user is already a repository member"));
     }
-
-    if let Some(index) = repo.invitations.iter().position(|invite| {
-        invite.state == RepositoryInviteState::Pending
-            && invite.invited_email_normalized == normalized
+    if repo.invitations.iter().any(|invite| {
+        invite.invited_email_normalized == normalized
+            && invite.state(command.now_unix) == RepositoryInviteState::Pending
     }) {
-        let existing = &mut repo.invitations[index];
-        existing.invited_email = command.invited_email.trim().to_string();
-        existing.permissions = command.permissions;
-        existing.invited_by_user_id = command.owner.id.clone();
-        existing.token_hash = command.token_hash;
-        existing.updated_at_unix = command.now_unix;
-        existing.expires_at_unix = command.now_unix + REPOSITORY_INVITE_TTL_SECS;
-        let refreshed = existing.clone();
-        repo.bump_change_version();
-        return Ok(refreshed);
+        return Err(DomainError::conflict(
+            "this email already has a pending invite; copy a new link or revoke it",
+        ));
     }
 
     let invite = RepositoryInvite {
@@ -63,8 +80,7 @@ pub fn create_or_refresh_repository_invite(
         invited_email_normalized: normalized,
         permissions: command.permissions,
         invited_by_user_id: command.owner.id.clone(),
-        state: RepositoryInviteState::Pending,
-        token_hash: command.token_hash,
+        link_hashes: vec![command.link_hash],
         created_at_unix: command.now_unix,
         updated_at_unix: command.now_unix,
         expires_at_unix: command.now_unix + REPOSITORY_INVITE_TTL_SECS,
@@ -78,38 +94,104 @@ pub fn create_or_refresh_repository_invite(
     Ok(invite)
 }
 
+/// Adds one more working link. Earlier links and the expiry stay as they are.
+pub fn issue_repository_invite_link(
+    repo: &mut Repository,
+    owner_user_id: &str,
+    invite_id: &str,
+    link_hash: String,
+    now_unix: u64,
+) -> Result<RepositoryInvite, DomainError> {
+    ensure_can_manage_members(repo, owner_user_id)?;
+    let invite = pending_invite_mut(repo, invite_id, now_unix)?;
+    invite.link_hashes.push(link_hash);
+    invite.updated_at_unix = now_unix;
+    let invite = invite.clone();
+    repo.bump_change_version();
+    Ok(invite)
+}
+
+pub fn repository_invite_landing(
+    repo: &Repository,
+    invite: &RepositoryInvite,
+    viewer: Option<&UserAccount>,
+    now_unix: u64,
+) -> RepositoryInviteLanding {
+    let viewer_has_access = viewer.is_some_and(|viewer| {
+        repo.is_owner_user(&viewer.id) || repo.member_for_user(&viewer.id).is_some()
+    });
+    match invite.state(now_unix) {
+        RepositoryInviteState::Revoked => RepositoryInviteLanding::Revoked,
+        RepositoryInviteState::Expired => RepositoryInviteLanding::Expired,
+        RepositoryInviteState::Accepted => {
+            let accepted_by_viewer = viewer
+                .is_some_and(|viewer| invite.accepted_by_user_id.as_deref() == Some(&viewer.id));
+            match (accepted_by_viewer, viewer_has_access) {
+                (true, true) => RepositoryInviteLanding::Member,
+                (true, false) => RepositoryInviteLanding::AccessRemoved,
+                (false, _) => RepositoryInviteLanding::Used,
+            }
+        }
+        RepositoryInviteState::Pending if viewer_has_access => RepositoryInviteLanding::Member,
+        RepositoryInviteState::Pending => RepositoryInviteLanding::Open(match viewer {
+            None => RepositoryInviteViewer::SignedOut,
+            Some(viewer)
+                if normalize_repository_invite_email(&viewer.email)
+                    != invite.invited_email_normalized =>
+            {
+                RepositoryInviteViewer::WrongAccount
+            }
+            Some(viewer) if !viewer.email_verified => RepositoryInviteViewer::EmailUnverified,
+            Some(_) => RepositoryInviteViewer::Ready,
+        }),
+    }
+}
+
 pub fn accept_repository_invite(
     repo: &mut Repository,
     user: &UserAccount,
-    token_hash: &str,
+    link_hash: &str,
     now_unix: u64,
 ) -> Result<AcceptRepositoryInviteOutcome, DomainError> {
-    let normalized_user_email = normalize_repository_invite_email(&user.email);
-    if repo.is_owner_user(&user.id) || repo.member_for_user(&user.id).is_some() {
-        return Err(DomainError::conflict("user is already a repository member"));
-    }
-    let invite = repo
+    let index = repo
         .invitations
-        .iter_mut()
-        .find(|invite| invite.token_hash == token_hash)
+        .iter()
+        .position(|invite| invite.link_hashes.iter().any(|hash| hash == link_hash))
         .ok_or_else(|| DomainError::not_found("repository invite not found"))?;
-    if invite.state != RepositoryInviteState::Pending {
-        return Err(DomainError::conflict(
-            "repository invite is no longer pending",
-        ));
+    match repository_invite_landing(repo, &repo.invitations[index], Some(user), now_unix) {
+        RepositoryInviteLanding::Open(RepositoryInviteViewer::Ready) => {}
+        RepositoryInviteLanding::Open(_) => {
+            return Err(DomainError::forbidden(
+                "sign in with the verified invited email to accept this invite",
+            ));
+        }
+        RepositoryInviteLanding::Member => {
+            let accepted_here =
+                repo.invitations[index].accepted_by_user_id.as_deref() == Some(&user.id);
+            return match repo.member_for_user(&user.id) {
+                Some(member) if accepted_here => Ok(
+                    AcceptRepositoryInviteOutcome::AlreadyAccepted(member.clone()),
+                ),
+                _ => Err(DomainError::conflict("user is already a repository member")),
+            };
+        }
+        RepositoryInviteLanding::Expired => {
+            return Err(DomainError::conflict("repository invite expired"));
+        }
+        RepositoryInviteLanding::Revoked => {
+            return Err(DomainError::conflict("repository invite was revoked"));
+        }
+        RepositoryInviteLanding::Used => {
+            return Err(DomainError::conflict("repository invite was already used"));
+        }
+        RepositoryInviteLanding::AccessRemoved => {
+            return Err(DomainError::forbidden(
+                "repository access was removed; ask the owner for a new invite",
+            ));
+        }
     }
-    if now_unix >= invite.expires_at_unix {
-        invite.state = RepositoryInviteState::Expired;
-        invite.updated_at_unix = now_unix;
-        repo.bump_change_version();
-        return Ok(AcceptRepositoryInviteOutcome::Expired);
-    }
-    if !user.email_verified || normalized_user_email != invite.invited_email_normalized {
-        return Err(DomainError::forbidden(
-            "sign in with the verified invited email to accept this invite",
-        ));
-    }
-    invite.state = RepositoryInviteState::Accepted;
+
+    let invite = &mut repo.invitations[index];
     invite.accepted_by_user_id = Some(user.id.clone());
     invite.accepted_at_unix = Some(now_unix);
     invite.updated_at_unix = now_unix;
@@ -133,22 +215,29 @@ pub fn revoke_repository_invite(
     now_unix: u64,
 ) -> Result<RepositoryInvite, DomainError> {
     ensure_can_manage_members(repo, owner_user_id)?;
+    let invite = pending_invite_mut(repo, invite_id, now_unix)?;
+    invite.revoked_at_unix = Some(now_unix);
+    invite.updated_at_unix = now_unix;
+    let invite = invite.clone();
+    repo.bump_change_version();
+    Ok(invite)
+}
+
+fn pending_invite_mut<'a>(
+    repo: &'a mut Repository,
+    invite_id: &str,
+    now_unix: u64,
+) -> Result<&'a mut RepositoryInvite, DomainError> {
     let invite = repo
         .invitations
         .iter_mut()
         .find(|invite| invite.id == invite_id)
         .ok_or_else(|| DomainError::not_found("repository invite not found"))?;
-    if invite.state != RepositoryInviteState::Pending {
+    if invite.state(now_unix) != RepositoryInviteState::Pending {
         return Err(DomainError::conflict(
             "repository invite is no longer pending",
         ));
     }
-
-    invite.state = RepositoryInviteState::Revoked;
-    invite.revoked_at_unix = Some(now_unix);
-    invite.updated_at_unix = now_unix;
-    let invite = invite.clone();
-    repo.bump_change_version();
     Ok(invite)
 }
 

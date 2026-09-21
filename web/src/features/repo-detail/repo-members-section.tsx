@@ -6,6 +6,7 @@ import type {
 import type {
   CreateRepositoryInviteResponse,
   RepositoryCollaborationResponse,
+  RepositoryInviteLinkResponse,
   RepositoryInviteResponse,
   RepositoryMemberResponse,
   RepositoryMemberPermissions,
@@ -22,12 +23,14 @@ import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { usePendingActions } from '@/lib/use-pending-actions'
 import {
   Eye,
+  Link2,
   LoaderCircle,
   MailPlus,
   Trash2,
   Users,
 } from 'lucide-react'
 import { useReducer, useState, type FormEvent, type ReactNode } from 'react'
+import { toast } from 'sonner'
 
 const defaultPermissions: RepositoryMemberPermissions = {
   can_change_file_visibility: false,
@@ -111,6 +114,7 @@ export function MemberAccessSummary({
 export function RepositoryMembersSection({
   collaboration,
   createInvite,
+  createInviteLink,
   deleteInvite,
   deleteMember,
   params,
@@ -121,6 +125,7 @@ export function RepositoryMembersSection({
   createInvite: (
     input: CreateRepoInviteInput,
   ) => Promise<CreateRepositoryInviteResponse>
+  createInviteLink: (inviteId: string) => Promise<RepositoryInviteLinkResponse>
   deleteInvite: (inviteId: string) => Promise<RepositoryInviteResponse>
   deleteMember: (memberUserId: string) => Promise<RepositoryMemberResponse>
   params: RepoParams
@@ -170,11 +175,15 @@ export function RepositoryMembersSection({
 
       {pendingInvites.length > 0 && (
         <SectionRow
-          description="Pending email invites are unique per repository and email."
+          description="Each email has one pending invite. Every link copied for it works until the invite expires or is revoked."
           icon={<MailPlus className="size-4" />}
           title="Pending invites"
         >
-          <InviteList deleteInvite={deleteInvite} invites={pendingInvites} />
+          <InviteList
+            createInviteLink={createInviteLink}
+            deleteInvite={deleteInvite}
+            invites={pendingInvites}
+          />
         </SectionRow>
       )}
     </SectionRows>
@@ -259,7 +268,7 @@ function InviteMemberForm({
       {state.inviteUrl && (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            Invite created. Share this link with the invitee.
+            Invite created. Share this link with the invitee. You can copy another link from the pending invite at any time.
           </p>
           <CopyableCodeBlock
             copyLabel="Copy invite link"
@@ -334,42 +343,78 @@ function MemberList({
 }
 
 function InviteList({
+  createInviteLink,
   deleteInvite,
   invites,
 }: {
+  createInviteLink: (inviteId: string) => Promise<RepositoryInviteLinkResponse>
   deleteInvite: (inviteId: string) => Promise<RepositoryInviteResponse>
   invites: RepositoryInviteResponse[]
 }) {
+  // Holds a link only when the clipboard refused it, so it can be copied by hand.
+  const [uncopiedLink, setUncopiedLink] = useState<string | null>(null)
+
+  async function copyNewLink(inviteId: string) {
+    setUncopiedLink(null)
+    const { invite_url } = await createInviteLink(inviteId)
+    try {
+      await navigator.clipboard.writeText(invite_url)
+      toast.success('New link copied. Earlier links still work.')
+    } catch {
+      setUncopiedLink(invite_url)
+    }
+  }
+
   return (
-    <RemovableRowList
-      confirm={{
-        confirmLabel: 'Revoke invite',
-        description: 'The current invite link will stop working immediately.',
-        subject: (invite) => invite.invited_email,
-        title: 'Revoke pending invite?',
-      }}
-      fallbackError="Invite revoke failed."
-      itemId={(invite) => invite.id}
-      items={invites}
-      onRemove={(invite) => deleteInvite(invite.id)}
-      row={(invite, actions) => (
-        <>
-          <div className="min-w-0">
-            <div className="truncate font-medium leading-5">
-              {invite.invited_email}
+    <>
+      <RemovableRowList
+        confirm={{
+          confirmLabel: 'Revoke invite',
+          description: 'Every link for this invite will stop working immediately.',
+          subject: (invite) => invite.invited_email,
+          title: 'Revoke pending invite?',
+        }}
+        fallbackError="Invite update failed."
+        itemId={(invite) => invite.id}
+        items={invites}
+        onRemove={(invite) => deleteInvite(invite.id)}
+        row={(invite, actions) => (
+          <>
+            <div className="min-w-0">
+              <div className="truncate font-medium leading-5">
+                {invite.invited_email}
+              </div>
+              <div className="leading-5 text-muted-foreground">
+                {permissionSummaryText(invite.permissions)}
+              </div>
             </div>
-            <div className="leading-5 text-muted-foreground">
-              {permissionSummaryText(invite.permissions)}
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="warning">{invite.state}</Badge>
+              <Button
+                disabled={actions.pending}
+                onClick={() => actions.run(() => copyNewLink(invite.id))}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                <Link2 className="size-3.5" />
+                <span>Copy link</span>
+              </Button>
+              <RemoveButton label="Revoke" onClick={actions.remove} pending={actions.pending} />
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="warning">{invite.state}</Badge>
-            <RemoveButton label="Revoke" onClick={actions.remove} pending={actions.pending} />
-          </div>
-        </>
+          </>
+        )}
+        rowClassName="flex flex-col gap-2 py-3 text-sm first:pt-0 sm:flex-row sm:items-center sm:justify-between"
+      />
+      {uncopiedLink && (
+        <div className="mt-3 space-y-2">
+          <p className="text-sm text-muted-foreground">
+            The browser blocked the clipboard. Copy the new link from here.
+          </p>
+          <CopyableCodeBlock copyLabel="Copy invite link" value={uncopiedLink} />
+        </div>
       )}
-      rowClassName="flex flex-col gap-2 py-3 text-sm first:pt-0 sm:flex-row sm:items-center sm:justify-between"
-    />
+    </>
   )
 }
 

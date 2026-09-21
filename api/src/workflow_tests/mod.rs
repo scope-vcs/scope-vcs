@@ -33,9 +33,7 @@ use scope_domain::{
     projection::LogicalCommitOrigin,
     repo_actions::RepoStorageCleanup,
     repo_config::{ConfigVisibility, RepoConfig},
-    repository::collaboration::{
-        RepositoryInvite, RepositoryInviteState, RepositoryMember, RepositoryMemberPermissions,
-    },
+    repository::collaboration::{RepositoryInvite, RepositoryMember, RepositoryMemberPermissions},
     repository::credentials::GitPushToken,
     repository::{RepoLifecycleState, RepoRecord, Repository},
 };
@@ -76,6 +74,7 @@ mod manual_runs;
 mod push_intent_completion;
 mod repo_cleanup;
 mod repo_events;
+mod repo_invites;
 mod repo_lifecycle;
 mod repo_metadata;
 mod repo_visibility;

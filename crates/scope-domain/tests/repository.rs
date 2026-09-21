@@ -4,7 +4,7 @@ use scope_domain::{
         Principal, PrincipalKind, ScopePath, Visibility,
         Visibility::{Private, Public},
     },
-    repo_collaboration::{CreateRepositoryInviteCommand, create_or_refresh_repository_invite},
+    repo_collaboration::{CreateRepositoryInviteCommand, create_repository_invite},
     repo_config::ConfigVisibility,
     repository::{
         RepoLifecycleState::{AwaitingFirstPush, Ready},
@@ -142,7 +142,7 @@ fn unpublished_repo_is_owner_only_even_with_reader_membership() {
 fn pending_invite_does_not_grant_private_access() {
     let mut repo = test_repo(Private);
     let private_path = ScopePath::parse("/private.txt").unwrap();
-    create_or_refresh_repository_invite(
+    create_repository_invite(
         &mut repo,
         CreateRepositoryInviteCommand {
             id: "invite_pending".to_string(),
@@ -150,7 +150,7 @@ fn pending_invite_does_not_grant_private_access() {
             invitee: None,
             owner: &test_owner(),
             permissions: RepositoryMemberPermissions::default(),
-            token_hash: "sha256:invite".to_string(),
+            link_hash: "sha256:invite".to_string(),
             now_unix: 1,
         },
     )

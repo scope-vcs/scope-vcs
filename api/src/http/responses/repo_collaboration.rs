@@ -2,6 +2,7 @@ use super::RepoSummaryResponse;
 use scope_api_contract::{RepositoryInviteState, RepositoryMemberPermissions};
 use scope_domain::{
     account::UserAccount,
+    repo_collaboration::{RepositoryInviteLanding, RepositoryInviteViewer},
     repository::Repository,
     repository::collaboration::{RepositoryInvite, RepositoryMember},
 };
@@ -57,13 +58,51 @@ pub(crate) struct UpdateRepositoryMemberRequest {
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct RepositoryInviteLookupResponse {
-    pub(crate) repo_id: String,
-    pub(crate) owner_handle: String,
-    pub(crate) repo_name: String,
-    pub(crate) invited_email: String,
-    pub(crate) permissions: RepositoryMemberPermissions,
-    pub(crate) expires_at_unix: u64,
+pub(crate) struct RepositoryInviteLinkResponse {
+    pub(crate) invite_url: String,
+}
+
+/// What an invite link shows its viewer. Only the repository owner can invite,
+/// so `owner_handle` is also the inviter. Only an open link names the invited
+/// email; a link someone else used, a revoked link, and an unknown link name
+/// nothing.
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "type-export", ts(tag = "status", rename_all = "snake_case"))]
+pub(crate) enum RepositoryInviteLandingResponse {
+    Open {
+        viewer: RepositoryInviteViewerResponse,
+        viewer_email: Option<String>,
+        owner_handle: String,
+        repo_name: String,
+        invited_email: String,
+        permissions: RepositoryMemberPermissions,
+        expires_at_unix: u64,
+    },
+    Member {
+        owner_handle: String,
+        repo_name: String,
+    },
+    Expired {
+        owner_handle: String,
+        repo_name: String,
+    },
+    Revoked,
+    AccessRemoved,
+    Used,
+    Invalid,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
+pub(crate) enum RepositoryInviteViewerResponse {
+    Ready,
+    SignedOut,
+    WrongAccount,
+    EmailUnverified,
 }
 
 #[derive(Debug, Serialize)]
@@ -76,6 +115,7 @@ pub(crate) struct AcceptRepositoryInviteResponse {
 pub(crate) fn repository_collaboration_response(
     repo: &Repository,
     users: &std::collections::BTreeMap<String, UserAccount>,
+    now_unix: u64,
 ) -> RepositoryCollaborationResponse {
     let mut members = repo
         .members
@@ -95,7 +135,7 @@ pub(crate) fn repository_collaboration_response(
     let mut invites = repo
         .invitations
         .iter()
-        .map(repository_invite_response)
+        .map(|invite| repository_invite_response(invite, now_unix))
         .collect::<Vec<_>>();
     invites.sort_by(|left, right| {
         left.invited_email
@@ -120,12 +160,56 @@ pub(crate) fn repository_member_response(
     }
 }
 
-pub(crate) fn repository_invite_response(invite: &RepositoryInvite) -> RepositoryInviteResponse {
+pub(crate) fn repository_invite_response(
+    invite: &RepositoryInvite,
+    now_unix: u64,
+) -> RepositoryInviteResponse {
     RepositoryInviteResponse {
         id: invite.id.clone(),
         invited_email: invite.invited_email.clone(),
         permissions: invite.permissions.into(),
-        state: invite.state.into(),
+        state: invite.state(now_unix).into(),
         expires_at_unix: invite.expires_at_unix,
+    }
+}
+
+pub(crate) fn repository_invite_landing_response(
+    landing: RepositoryInviteLanding,
+    repo: &Repository,
+    invite: &RepositoryInvite,
+    viewer: Option<&UserAccount>,
+) -> RepositoryInviteLandingResponse {
+    let owner_handle = repo.record.owner_handle.clone();
+    let repo_name = repo.record.name.clone();
+    match landing {
+        RepositoryInviteLanding::Open(viewer_state) => RepositoryInviteLandingResponse::Open {
+            viewer: match viewer_state {
+                RepositoryInviteViewer::Ready => RepositoryInviteViewerResponse::Ready,
+                RepositoryInviteViewer::SignedOut => RepositoryInviteViewerResponse::SignedOut,
+                RepositoryInviteViewer::WrongAccount => {
+                    RepositoryInviteViewerResponse::WrongAccount
+                }
+                RepositoryInviteViewer::EmailUnverified => {
+                    RepositoryInviteViewerResponse::EmailUnverified
+                }
+            },
+            viewer_email: viewer.map(|viewer| viewer.email.clone()),
+            owner_handle,
+            repo_name,
+            invited_email: invite.invited_email.clone(),
+            permissions: invite.permissions.into(),
+            expires_at_unix: invite.expires_at_unix,
+        },
+        RepositoryInviteLanding::Member => RepositoryInviteLandingResponse::Member {
+            owner_handle,
+            repo_name,
+        },
+        RepositoryInviteLanding::Expired => RepositoryInviteLandingResponse::Expired {
+            owner_handle,
+            repo_name,
+        },
+        RepositoryInviteLanding::Revoked => RepositoryInviteLandingResponse::Revoked,
+        RepositoryInviteLanding::AccessRemoved => RepositoryInviteLandingResponse::AccessRemoved,
+        RepositoryInviteLanding::Used => RepositoryInviteLandingResponse::Used,
     }
 }

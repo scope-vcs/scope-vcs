@@ -30,9 +30,7 @@ use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob, is_supported_git_file_mode},
     repo_actions::RepoStorageCleanup,
-    repository::collaboration::{
-        RepositoryInvite, RepositoryInviteState, RepositoryMember, RepositoryMemberPermissions,
-    },
+    repository::collaboration::{RepositoryInvite, RepositoryMember, RepositoryMemberPermissions},
     repository::credentials::{FirstPushToken, GitPushToken},
     repository::git::{
         GitHead, GitPackSpan, GitSegmentRef, GitSegmentUpload, GitSegmentUploadState,
@@ -84,7 +82,7 @@ mod runs;
 pub use auth::{
     auth_identity, cli_browser_login, cli_device_login, cli_exchange_grant, cli_session, user,
 };
-pub use collaboration::{repository_invite, repository_member};
+pub use collaboration::{repository_invite, repository_invite_link, repository_member};
 pub use history::{
     file_change, live_file, logical_commit, object_reference, visibility_change,
     visibility_change_set,
