@@ -84,14 +84,15 @@ test('runs one render at a time, yields between renders, and prioritizes visible
       yields++
       return yields === 1 ? yieldGate.promise : Promise.resolve()
     },
-    maxQueued: 1,
   })
   const releases = [
     manager.acquire(input('blocker'), 1),
     manager.acquire(input('nearby'), 1),
     manager.acquire(input('visible'), 0),
   ]
+  await flush()
   assert.deepEqual(calls, ['blocker'])
+  assert.equal(manager.resource.stats().entries, 1, 'waiting diagrams do not allocate pending cache entries')
 
   blocker.resolve(result('<svg>blocker</svg>'))
   await flush()
@@ -108,7 +109,7 @@ test('runs one render at a time, yields between renders, and prioritizes visible
   for (const release of releases) release()
 })
 
-test('canceling the final lease removes queued work before it can render', async () => {
+test('canceling the final lease removes waiting work before it can render', async () => {
   const blocker = deferred<RequestMermaidResult>()
   const calls: string[] = []
   const manager = createRequestMermaidResourceManager({
@@ -152,6 +153,7 @@ test('access changes discard old-scope work and suppress its late result', async
 
   manager.activateScope(previousScope)
   manager.acquire(previous, 0)
+  await flush()
   manager.activateScope(nextScope)
   const releaseNext = manager.acquire(next, 0)
   oldRender.resolve(result('<svg>obsolete</svg>'))
@@ -161,6 +163,35 @@ test('access changes discard old-scope work and suppress its late result', async
   assert.equal(manager.resource.peek(requestMermaidIdentity(previous)), null)
   assert.equal(manager.resource.peek(requestMermaidIdentity(next))?.svg, '<svg>new</svg>')
   releaseNext()
+})
+
+test('reset discards waiting work and late results without overlapping renders', async () => {
+  const obsolete = deferred<RequestMermaidResult>()
+  const calls: string[] = []
+  const current = input('reopened')
+  const manager = createRequestMermaidResourceManager({
+    render: async ({ source }) => {
+      calls.push(source)
+      return calls.length === 1 ? obsolete.promise : result('<svg>fresh</svg>')
+    },
+    yieldToBrowser: async () => {},
+  })
+  const releaseOld = manager.acquire(current, 0)
+  manager.acquire(input('discard waiting'), 0)
+  await flush()
+  manager.reset()
+  const releaseNew = manager.acquire(current, 0)
+  releaseOld()
+  releaseOld()
+  await flush()
+  assert.deepEqual(calls, ['reopened'], 'reset keeps the active renderer occupied')
+  assert.equal(manager.resource.peek(requestMermaidIdentity(current)), null)
+
+  obsolete.resolve(result('<svg>obsolete</svg>'))
+  await completed(manager, current)
+  assert.deepEqual(calls, ['reopened', 'reopened'])
+  assert.equal(manager.resource.peek(requestMermaidIdentity(current))?.svg, '<svg>fresh</svg>')
+  releaseNew()
 })
 
 test('reopening refreshes retention recency and accounts for source plus SVG weight', async () => {
@@ -257,6 +288,7 @@ test('retrying a started render suppresses its late result and queues one replac
     yieldToBrowser: async () => {},
   })
   const release = manager.acquire(current, 0)
+  await flush()
   manager.retry(current, 0)
   first.resolve(result('<svg>obsolete</svg>'))
 
