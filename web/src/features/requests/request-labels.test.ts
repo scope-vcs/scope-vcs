@@ -1,7 +1,27 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { eventKindLabel, requestEventBody } from './request-labels'
-import type { RequestEventResponse } from '@/api/types.generated'
+import {
+  eventKindLabel,
+  requestCheckEvaluationNote,
+  requestEventBody,
+} from './request-labels'
+import type {
+  RequestChecksResponse,
+  RequestEventResponse,
+} from '@/api/types.generated'
+
+test('a head nobody evaluated says so instead of claiming it asks for no checks', () => {
+  const checks = (state: RequestChecksResponse['state']) =>
+    ({ state, message: null }) as RequestChecksResponse
+  assert.equal(
+    requestCheckEvaluationNote(checks(null)),
+    'The checks for this commit have not been worked out yet.',
+  )
+  assert.equal(
+    requestCheckEvaluationNote(checks('no-checks')),
+    'This head asks for no checks.',
+  )
+})
 
 test('activity describes submission', () => {
   assert.equal(

@@ -419,6 +419,20 @@ impl RequestStore {
         insert_request_row(self.db.as_ref(), &request).await
     }
 
+    /// Leaves the request as a push whose evaluation failed would: every head unevaluated.
+    pub async fn forget_request_check_evaluations_for_tests(
+        &self,
+        request_id: &str,
+    ) -> Result<(), PostgresError> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        super::entities::request_check_evaluation::Entity::delete_many()
+            .filter(super::entities::request_check_evaluation::Column::RequestId.eq(request_id))
+            .exec(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(())
+    }
+
     pub async fn mutate_request_for_tests(
         &self,
         request_id: &str,

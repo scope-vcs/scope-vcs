@@ -137,7 +137,7 @@ pub(crate) async fn request_queue(
                     checks
                         .get(&request_id)
                         .copied()
-                        .unwrap_or(scope_domain::requests::RequestChecksOutcome::Clear),
+                        .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated),
                 )?,
                 author,
                 attention: attention_response(row.attention, activity_version),

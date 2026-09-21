@@ -19,7 +19,8 @@ pub struct RequestCheckResponse {
 pub struct RequestChecksResponse {
     pub request_id: String,
     pub head_oid: GitOid,
-    pub state: RequestCheckEvaluationState,
+    /// `None` while the head has no evaluation: nothing is known about its checks yet.
+    pub state: Option<RequestCheckEvaluationState>,
     pub message: Option<String>,
     pub checks: Vec<RequestCheckResponse>,
     pub can_approve: bool,

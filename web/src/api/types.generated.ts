@@ -282,7 +282,7 @@ export type LeaveRequestResponse = { invitee: RequestInviteeResponse, };
 
 export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
 
-export type RequestMergeabilityStatus = "Ready" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError";
+export type RequestMergeabilityStatus = "Ready" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError";
 
 export type RequestMergeabilityResponse = { status: RequestMergeabilityStatus, current_main_oid: GitOid | null, request_head_oid: GitOid, reason: string | null, };
 
@@ -302,7 +302,11 @@ export type RequestAutoMergeResponse = { request_id: string, revision_id: string
 
 export type RequestCheckResponse = { workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, };
 
-export type RequestChecksResponse = { request_id: string, head_oid: GitOid, state: RequestCheckEvaluationState, message: string | null, checks: Array<RequestCheckResponse>, can_approve: boolean, mergeability: RequestMergeabilityResponse, };
+export type RequestChecksResponse = { request_id: string, head_oid: GitOid, 
+/**
+ * `None` while the head has no evaluation: nothing is known about its checks yet.
+ */
+state: RequestCheckEvaluationState | null, message: string | null, checks: Array<RequestCheckResponse>, can_approve: boolean, mergeability: RequestMergeabilityResponse, };
 
 export type RequestEventResponse = { id: string, position: number, actor: RequestActorSummaryResponse, kind: RequestEventKind, payload: RequestEventPayload, created_at_unix: number, };
 

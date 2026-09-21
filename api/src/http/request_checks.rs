@@ -19,7 +19,7 @@ use scope_api_contract::{
     RequestMergeabilityResponse,
 };
 use scope_domain::{
-    repository::access::RepositoryAccess,
+    repository::{RepoRecord, access::RepositoryAccess},
     requests::{Request, request_mergeability},
 };
 use scope_postgres::db::ApproveRequestChecksCommand;
@@ -40,7 +40,7 @@ pub(crate) async fn get_request_checks(
     )
     .await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    checks_response(&state, &request, access, current_main_oid)
+    checks_response(&state, &repo.record, &request, access, current_main_oid)
         .await
         .map(Json)
 }
@@ -54,6 +54,8 @@ pub(crate) async fn approve_request_checks(
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let (request, _) =
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    // Approving is a look too: a head nobody evaluated is evaluated before approval.
+    request_checks::checks_view(&state, &repo.record, &request).await?;
     let mutation = state
         .metadata
         .requests()
@@ -65,13 +67,14 @@ pub(crate) async fn approve_request_checks(
         .await?;
     request_checks::publish_request_checks_change(&state, &repo.incarnation(), &mutation).await;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    checks_response(&state, &request, access, current_main_oid)
+    checks_response(&state, &repo.record, &request, access, current_main_oid)
         .await
         .map(Json)
 }
 
 async fn checks_response(
     state: &AppState,
+    repo: &RepoRecord,
     request: &Request,
     access: RepositoryAccess,
     current_main_oid: Option<String>,
@@ -80,7 +83,7 @@ async fn checks_response(
         evaluation,
         run_states,
         outcome,
-    } = request_checks::checks_view(state, request).await?;
+    } = request_checks::checks_view(state, repo, request).await?;
     let decision = request_mergeability(request, access, outcome);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
@@ -88,10 +91,9 @@ async fn checks_response(
         request_head_oid: git_oid_response(request.head_oid.clone())?,
         reason: decision.reason.map(str::to_string),
     };
-    // A head nobody has evaluated yet owes nothing, which is what a viewer sees.
     let (evaluation_state, message, checks) = match evaluation {
         Some(evaluation) => (
-            evaluation.state.into(),
+            Some(evaluation.state.into()),
             evaluation.message,
             evaluation
                 .checks
@@ -109,7 +111,7 @@ async fn checks_response(
                 })
                 .collect(),
         ),
-        None => (RequestCheckEvaluationState::NoChecks, None, Vec::new()),
+        None => (None, None, Vec::new()),
     };
     Ok(RequestChecksResponse {
         request_id: request.id.clone(),
@@ -117,7 +119,7 @@ async fn checks_response(
         state: evaluation_state,
         message,
         checks,
-        can_approve: evaluation_state == RequestCheckEvaluationState::AwaitingApproval
+        can_approve: evaluation_state == Some(RequestCheckEvaluationState::AwaitingApproval)
             && access.is_maintainer(),
         mergeability,
     })

@@ -1,19 +1,23 @@
 //! What a request's checks say about merging it, and the evaluation every push
-//! to a request head records.
+//! to a request head records. A head whose evaluation failed holds the merge and
+//! is evaluated again when someone looks at the request.
 
 use crate::{
     error::ApiError,
-    git::import::{ReadWorkflowFiles, read_repository_workflow_files},
+    git::{
+        import::{ReadWorkflowFiles, read_repository_workflow_files},
+        request_refs::with_request_revision_store_repo,
+    },
     persistence::unix_now,
     repo_events::RepoChangeReason,
     state::AppState,
 };
 use scope_api_contract::RunChangeKind;
 use scope_domain::{
-    repository::RepositoryIncarnation,
+    repository::{RepoRecord, RepositoryIncarnation},
     requests::{
         Request, RequestCheck, RequestCheckEvaluation, RequestChecksOutcome,
-        request_checks_outcome, request_checks_start_immediately,
+        request_checks_outcome, request_checks_start_immediately, request_head_awaits_evaluation,
     },
     runs::{run::RunState, workflow::revision::WorkflowRevision},
 };
@@ -28,7 +32,32 @@ pub(crate) struct RequestChecksView {
     pub(crate) outcome: RequestChecksOutcome,
 }
 
+/// The view for someone looking at one request. A head with no evaluation is
+/// evaluated now, from its saved revision, so a failed evaluation cannot hold the
+/// merge for longer than it takes to look.
 pub(crate) async fn checks_view(
+    state: &AppState,
+    repo: &RepoRecord,
+    request: &Request,
+) -> Result<RequestChecksView, ApiError> {
+    let view = recorded_checks_view(state, request).await?;
+    if !request_head_awaits_evaluation(request, view.outcome) {
+        return Ok(view);
+    }
+    match evaluate_saved_head(state, repo, request).await {
+        Ok(Some(mutation)) => {
+            publish_request_checks_change(state, &repo.incarnation(), &mutation).await;
+            recorded_checks_view(state, request).await
+        }
+        Ok(None) => Ok(view),
+        Err(error) => {
+            warn_evaluation_failed(request, &error);
+            Ok(view)
+        }
+    }
+}
+
+pub(crate) async fn recorded_checks_view(
     state: &AppState,
     request: &Request,
 ) -> Result<RequestChecksView, ApiError> {
@@ -53,9 +82,57 @@ pub(crate) async fn checks_view(
 
 pub(crate) async fn checks_outcome(
     state: &AppState,
+    repo: &RepoRecord,
     request: &Request,
 ) -> Result<RequestChecksOutcome, ApiError> {
-    Ok(checks_view(state, request).await?.outcome)
+    Ok(checks_view(state, repo, request).await?.outcome)
+}
+
+/// Evaluates the head from the revision its push saved. The pusher decides whether
+/// runs start or wait for approval, never the person who happens to be looking.
+/// `None` means the saved revision is not the request's head, which a push in
+/// flight will evaluate itself.
+async fn evaluate_saved_head(
+    state: &AppState,
+    repo: &RepoRecord,
+    request: &Request,
+) -> Result<Option<RequestChecksMutation>, ApiError> {
+    let Some(revision) = state
+        .metadata
+        .requests()
+        .latest_request_revision(&request.id)
+        .await?
+        .filter(|revision| revision.new_head_oid == request.head_oid)
+    else {
+        return Ok(None);
+    };
+    let files = with_request_revision_store_repo(
+        state,
+        &repo.incarnation(),
+        request,
+        &revision,
+        |path, revision| read_repository_workflow_files(path, &revision.new_head_oid),
+    )
+    .await?;
+    let pusher_is_maintainer = state
+        .metadata
+        .repositories()
+        .repository_read_access(
+            &repo.owner_handle,
+            &repo.name,
+            Some(&revision.actor_user_id),
+        )
+        .await?
+        .is_some_and(|pusher| pusher.access.is_maintainer());
+    evaluate_request_checks(
+        state,
+        request,
+        &revision.actor_user_id,
+        pusher_is_maintainer,
+        files,
+    )
+    .await
+    .map(Some)
 }
 
 /// The outcome for every listed request, keyed by request id, loaded in two queries.
@@ -113,23 +190,28 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     actor_is_maintainer: bool,
     staging_repo: &Path,
 ) {
-    match evaluate_request_checks(
-        state,
-        request,
-        actor_user_id,
-        actor_is_maintainer,
-        staging_repo,
-    )
-    .await
-    {
-        Ok(mutation) => publish_request_checks_change(state, incarnation, &mutation).await,
-        Err(error) => tracing::warn!(
-            request_id = request.id,
-            head_oid = request.head_oid,
-            error = %error.operator_diagnostic(),
-            "evaluating the checks for a pushed request head failed"
-        ),
+    let path = staging_repo.to_path_buf();
+    let head_oid = request.head_oid.clone();
+    let evaluated = async {
+        let files =
+            crate::git::blocking::run(move || read_repository_workflow_files(&path, &head_oid))
+                .await?;
+        evaluate_request_checks(state, request, actor_user_id, actor_is_maintainer, files).await
     }
+    .await;
+    match evaluated {
+        Ok(mutation) => publish_request_checks_change(state, incarnation, &mutation).await,
+        Err(error) => warn_evaluation_failed(request, &error),
+    }
+}
+
+fn warn_evaluation_failed(request: &Request, error: &ApiError) {
+    tracing::warn!(
+        request_id = request.id,
+        head_oid = request.head_oid,
+        error = %error.operator_diagnostic(),
+        "evaluating the checks for a request head failed"
+    );
 }
 
 async fn evaluate_request_checks(
@@ -137,10 +219,10 @@ async fn evaluate_request_checks(
     request: &Request,
     actor_user_id: &str,
     actor_is_maintainer: bool,
-    staging_repo: &Path,
+    files: ReadWorkflowFiles,
 ) -> Result<RequestChecksMutation, ApiError> {
     let now_unix = unix_now()?;
-    let revisions = match request_workflow_revisions(request, staging_repo).await? {
+    let revisions = match request_workflow_revisions(request, files) {
         Ok(revisions) => revisions,
         Err(message) => {
             return record_checks(
@@ -216,19 +298,14 @@ async fn evaluate_request_checks(
 }
 
 /// The request-triggered workflows at the head, or the configuration error that
-/// rejects them. Reading the head itself can only fail infrastructurally, which
-/// is not the pusher's misconfiguration and so stays an error.
-async fn request_workflow_revisions(
+/// rejects them.
+fn request_workflow_revisions(
     request: &Request,
-    staging_repo: &Path,
-) -> Result<Result<Vec<WorkflowRevision>, String>, ApiError> {
-    let path = staging_repo.to_path_buf();
-    let head_oid = request.head_oid.clone();
-    let files =
-        crate::git::blocking::run(move || read_repository_workflow_files(&path, &head_oid)).await?;
+    files: ReadWorkflowFiles,
+) -> Result<Vec<WorkflowRevision>, String> {
     let files = match files {
         ReadWorkflowFiles::Files(files) => files,
-        ReadWorkflowFiles::Rejected(message) => return Ok(Err(message)),
+        ReadWorkflowFiles::Rejected(message) => return Err(message),
     };
     let revisions = scope_run_config::parse_workflow_set(
         &request.repo_id,
@@ -236,13 +313,13 @@ async fn request_workflow_revisions(
             .iter()
             .map(|file| (file.path().as_str(), file.content_bytes())),
     );
-    Ok(match revisions {
+    match revisions {
         Ok(revisions) => Ok(revisions
             .into_iter()
             .filter(|revision| revision.definition().triggers().request())
             .collect()),
         Err(error) => Err(error.to_string()),
-    })
+    }
 }
 
 async fn record_checks(
