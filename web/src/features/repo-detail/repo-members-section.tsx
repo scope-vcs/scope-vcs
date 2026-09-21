@@ -4,113 +4,23 @@ import type {
   UpdateRepoMemberInput,
 } from '@/api/types'
 import type {
-  CreateRepositoryInviteResponse,
   RepositoryCollaborationResponse,
   RepositoryInviteLinkResponse,
   RepositoryInviteResponse,
   RepositoryMemberResponse,
-  RepositoryMemberPermissions,
   RepoSummaryResponse,
 } from '@/api/types.generated'
-import { CopyableCodeBlock } from '@/components/copyable-code-block'
-import { DestructiveActionDialog } from '@/components/destructive-action-dialog'
 import { SectionRow, SectionRows } from '@/components/section-rows'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-import { resourceErrorMessage } from '@/lib/use-cached-resource'
-import { usePendingActions } from '@/lib/use-pending-actions'
-import {
-  Eye,
-  Link2,
-  LoaderCircle,
-  MailPlus,
-  Trash2,
-  Users,
-} from 'lucide-react'
-import { useReducer, useState, type FormEvent, type ReactNode } from 'react'
-import { toast } from 'sonner'
+import { MailPlus, Users } from 'lucide-react'
+import { useState } from 'react'
+import { RemovableRowList, RemoveButton } from './removable-row-list'
+import { InviteMemberDialog } from './repo-invite-dialog'
+import { InvitationList } from './repo-invite-list'
+import { visibleInvitations } from './repo-invite-model'
+import { AlwaysOnPrivateRead, PermissionEditor } from './repo-member-permissions'
 
-const defaultPermissions: RepositoryMemberPermissions = {
-  can_change_file_visibility: false,
-  can_push: false,
-}
-
-const permissionLabels = [
-  {
-    description: 'Allows changes to file visibility rules in repository configuration.',
-    key: 'can_change_file_visibility',
-    label: 'Change file visibility',
-  },
-  {
-    description: 'Allows Git pushes to this repository.',
-    key: 'can_push',
-    label: 'Push changes',
-  },
-] as const
-
-type InviteMemberFormState = {
-  email: string
-  error: string | null
-  inviteUrl: string | null
-  pending: boolean
-  permissions: RepositoryMemberPermissions
-}
-
-type InviteMemberFormAction =
-  | { email: string; type: 'emailChanged' }
-  | { permissions: RepositoryMemberPermissions; type: 'permissionsChanged' }
-  | { type: 'submitStarted' }
-  | { inviteUrl: string; type: 'submitSucceeded' }
-  | { message: string; type: 'submitFailed' }
-
-const initialInviteMemberFormState: InviteMemberFormState = {
-  email: '',
-  error: null,
-  inviteUrl: null,
-  pending: false,
-  permissions: defaultPermissions,
-}
-
-function inviteMemberFormReducer(
-  state: InviteMemberFormState,
-  action: InviteMemberFormAction,
-): InviteMemberFormState {
-  switch (action.type) {
-    case 'emailChanged':
-      return { ...state, email: action.email }
-    case 'permissionsChanged':
-      return { ...state, permissions: action.permissions }
-    case 'submitStarted':
-      return { ...state, error: null, inviteUrl: null, pending: true }
-    case 'submitSucceeded':
-      return {
-        ...state,
-        email: '',
-        inviteUrl: action.inviteUrl,
-        pending: false,
-        permissions: defaultPermissions,
-      }
-    case 'submitFailed':
-      return { ...state, error: action.message, pending: false }
-  }
-}
-
-/** What a member can do: private read is always on, push is the one toggle. */
-export function MemberAccessSummary({
-  permissions,
-}: {
-  permissions: RepositoryMemberPermissions
-}) {
-  return (
-    <div className="space-y-3 text-sm">
-      <AlwaysOnPrivateRead />
-      <PermissionSummary permissions={permissions} />
-    </div>
-  )
-}
-
+/** One list for everyone with access or an invitation to it. */
 export function RepositoryMembersSection({
   collaboration,
   createInvite,
@@ -119,164 +29,85 @@ export function RepositoryMembersSection({
   deleteMember,
   params,
   repo,
+  sendInviteEmail,
   updateMember,
 }: {
   collaboration: RepositoryCollaborationResponse
   createInvite: (
     input: CreateRepoInviteInput,
-  ) => Promise<CreateRepositoryInviteResponse>
+  ) => Promise<RepositoryInviteResponse>
   createInviteLink: (inviteId: string) => Promise<RepositoryInviteLinkResponse>
   deleteInvite: (inviteId: string) => Promise<RepositoryInviteResponse>
   deleteMember: (memberUserId: string) => Promise<RepositoryMemberResponse>
   params: RepoParams
   repo: RepoSummaryResponse
+  sendInviteEmail: (inviteId: string) => Promise<RepositoryInviteResponse>
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
 }) {
+  const [inviting, setInviting] = useState(false)
   const canInvite = repo.lifecycle_state === 'Ready'
-  const pendingInvites = collaboration.invites.filter(
-    (invite) => invite.state === 'Pending',
+  const invitations = visibleInvitations(
+    collaboration.invites,
+    collaboration.members.map((member) => member.email),
   )
+  const invite = (input: Omit<CreateRepoInviteInput, 'owner' | 'repo'>) =>
+    createInvite({ ...input, owner: params.owner, repo: params.repo })
 
   return (
     <SectionRows>
       <SectionRow
         description={
           canInvite
-            ? 'Invite members by email and assign only the extra actions they need.'
+            ? 'Members can read private files and take part in maintainer reviews. Only the owner manages membership.'
             : 'Members can be invited after the first Scope push is applied.'
         }
-        icon={<MailPlus className="size-4" />}
-        title="Invite member"
-      >
-        <InviteMemberForm
-          canInvite={canInvite}
-          createInvite={(input) =>
-            createInvite({
-              ...input,
-              owner: params.owner,
-              repo: params.repo,
-            })
-          }
-        />
-      </SectionRow>
-
-      <SectionRow
-        description="Members always read private files. Toggles only control repository actions."
         icon={<Users className="size-4" />}
-        title="Members"
+        title="Access"
       >
-        <MemberList
-          deleteMember={deleteMember}
-          members={collaboration.members}
-          params={params}
-          updateMember={updateMember}
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <div className="min-w-0">
+              <div className="truncate font-medium leading-5">@{repo.owner_handle}</div>
+              <div className="leading-5 text-muted-foreground">Owner · Full access</div>
+            </div>
+            <Button disabled={!canInvite} onClick={() => setInviting(true)} size="sm" type="button">
+              <MailPlus className="size-3.5" />
+              <span>Invite member</span>
+            </Button>
+          </div>
+
+          {collaboration.members.length > 0 && (
+            <div className="border-t border-border pt-4">
+              <MemberList
+                deleteMember={deleteMember}
+                members={collaboration.members}
+                params={params}
+                updateMember={updateMember}
+              />
+            </div>
+          )}
+
+          {invitations.length > 0 && (
+            <div className="border-t border-border pt-4">
+              <InvitationList
+                createInviteLink={createInviteLink}
+                deleteInvite={deleteInvite}
+                invites={invitations}
+                sendInviteEmail={sendInviteEmail}
+                sendNewInvitation={invite}
+              />
+            </div>
+          )}
+        </div>
+
+        <InviteMemberDialog
+          createInvite={invite}
+          onOpenChange={setInviting}
+          open={inviting}
+          repoLabel={`${params.owner}/${params.repo}`}
         />
       </SectionRow>
-
-      {pendingInvites.length > 0 && (
-        <SectionRow
-          description="Each email has one pending invite. Every link copied for it works until the invite expires or is revoked."
-          icon={<MailPlus className="size-4" />}
-          title="Pending invites"
-        >
-          <InviteList
-            createInviteLink={createInviteLink}
-            deleteInvite={deleteInvite}
-            invites={pendingInvites}
-          />
-        </SectionRow>
-      )}
     </SectionRows>
-  )
-}
-
-function InviteMemberForm({
-  canInvite,
-  createInvite,
-}: {
-  canInvite: boolean
-  createInvite: (
-    input: Omit<CreateRepoInviteInput, 'owner' | 'repo'>,
-  ) => Promise<CreateRepositoryInviteResponse>
-}) {
-  const [state, dispatch] = useReducer(
-    inviteMemberFormReducer,
-    initialInviteMemberFormState,
-  )
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!canInvite || state.pending) {
-      return
-    }
-
-    dispatch({ type: 'submitStarted' })
-    try {
-      const response = await createInvite({
-        email: state.email,
-        permissions: state.permissions,
-      })
-      dispatch({ inviteUrl: response.invite_url, type: 'submitSucceeded' })
-    } catch (error) {
-      dispatch({
-        message: resourceErrorMessage(error, 'Invite could not be created.'),
-        type: 'submitFailed',
-      })
-    }
-  }
-
-  return (
-    <form className="space-y-4" onSubmit={(event) => void submit(event)}>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Input
-          aria-label="Member email"
-          disabled={!canInvite || state.pending}
-          onChange={(event) =>
-            dispatch({ email: event.target.value, type: 'emailChanged' })
-          }
-          placeholder="teammate@example.com"
-          type="email"
-          value={state.email}
-        />
-        <Button
-          disabled={!canInvite || state.pending || !state.email.trim()}
-          type="submit"
-        >
-          {state.pending ? (
-            <LoaderCircle className="size-3.5 animate-spin" />
-          ) : (
-            <MailPlus className="size-3.5" />
-          )}
-          <span>Invite</span>
-        </Button>
-      </div>
-
-      <div className="rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm leading-5 text-warning-strong">
-        Members always read private files once they accept. These toggles grant
-        additional repository actions.
-      </div>
-
-      <PermissionEditor
-        disabled={!canInvite || state.pending}
-        onChange={(permissions) =>
-          dispatch({ permissions, type: 'permissionsChanged' })
-        }
-        permissions={state.permissions}
-      />
-
-      {state.error && <p className="text-sm text-destructive" role="alert">{state.error}</p>}
-      {state.inviteUrl && (
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Invite created. Share this link with the invitee. You can copy another link from the pending invite at any time.
-          </p>
-          <CopyableCodeBlock
-            copyLabel="Copy invite link"
-            value={state.inviteUrl}
-          />
-        </div>
-      )}
-    </form>
   )
 }
 
@@ -291,14 +122,6 @@ function MemberList({
   params: RepoParams
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
 }) {
-  if (members.length === 0) {
-    return (
-      <p className="text-sm leading-5 text-muted-foreground">
-        No members have accepted an invite yet.
-      </p>
-    )
-  }
-
   return (
     <RemovableRowList
       confirm={{
@@ -339,262 +162,5 @@ function MemberList({
       )}
       rowClassName="space-y-3 py-3 first:pt-0"
     />
-  )
-}
-
-function InviteList({
-  createInviteLink,
-  deleteInvite,
-  invites,
-}: {
-  createInviteLink: (inviteId: string) => Promise<RepositoryInviteLinkResponse>
-  deleteInvite: (inviteId: string) => Promise<RepositoryInviteResponse>
-  invites: RepositoryInviteResponse[]
-}) {
-  // Holds a link only when the clipboard refused it, so it can be copied by hand.
-  const [uncopiedLink, setUncopiedLink] = useState<string | null>(null)
-
-  async function copyNewLink(inviteId: string) {
-    setUncopiedLink(null)
-    const { invite_url } = await createInviteLink(inviteId)
-    try {
-      await navigator.clipboard.writeText(invite_url)
-      toast.success('New link copied. Earlier links still work.')
-    } catch {
-      setUncopiedLink(invite_url)
-    }
-  }
-
-  return (
-    <>
-      <RemovableRowList
-        confirm={{
-          confirmLabel: 'Revoke invite',
-          description: 'Every link for this invite will stop working immediately.',
-          subject: (invite) => invite.invited_email,
-          title: 'Revoke pending invite?',
-        }}
-        fallbackError="Invite update failed."
-        itemId={(invite) => invite.id}
-        items={invites}
-        onRemove={(invite) => deleteInvite(invite.id)}
-        row={(invite, actions) => (
-          <>
-            <div className="min-w-0">
-              <div className="truncate font-medium leading-5">
-                {invite.invited_email}
-              </div>
-              <div className="leading-5 text-muted-foreground">
-                {permissionSummaryText(invite.permissions)}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="warning">{invite.state}</Badge>
-              <Button
-                disabled={actions.pending}
-                onClick={() => actions.run(() => copyNewLink(invite.id))}
-                size="sm"
-                type="button"
-                variant="secondary"
-              >
-                <Link2 className="size-3.5" />
-                <span>Copy link</span>
-              </Button>
-              <RemoveButton label="Revoke" onClick={actions.remove} pending={actions.pending} />
-            </div>
-          </>
-        )}
-        rowClassName="flex flex-col gap-2 py-3 text-sm first:pt-0 sm:flex-row sm:items-center sm:justify-between"
-      />
-      {uncopiedLink && (
-        <div className="mt-3 space-y-2">
-          <p className="text-sm text-muted-foreground">
-            The browser blocked the clipboard. Copy the new link from here.
-          </p>
-          <CopyableCodeBlock copyLabel="Copy invite link" value={uncopiedLink} />
-        </div>
-      )}
-    </>
-  )
-}
-
-type RowActions = {
-  pending: boolean
-  remove: () => void
-  run: (action: () => Promise<unknown>) => void
-}
-
-/**
- * A list whose rows can run one async action at a time and be removed after a
- * confirmation. Owns the shared pending, error, and confirm-target state so
- * member and invite rows cannot drift in how they report a failed call.
- */
-function RemovableRowList<Item>({
-  confirm,
-  fallbackError,
-  itemId,
-  items,
-  onRemove,
-  row,
-  rowClassName,
-}: {
-  confirm: {
-    confirmLabel: string
-    description: string
-    subject: (item: Item) => string
-    title: string
-  }
-  fallbackError: string
-  itemId: (item: Item) => string
-  items: readonly Item[]
-  onRemove: (item: Item) => Promise<unknown>
-  row: (item: Item, actions: RowActions) => ReactNode
-  rowClassName: string
-}) {
-  const [error, setError] = useState<string | null>(null)
-  const [confirmTarget, setConfirmTarget] = useState<Item | null>(null)
-  const { pending, run: runPending } = usePendingActions()
-
-  async function run(item: Item, action: () => Promise<unknown>) {
-    const id = itemId(item)
-    await runPending(id, async () => {
-      setError(null)
-      try {
-        await action()
-      } catch (error) {
-        setError(resourceErrorMessage(error, fallbackError))
-      }
-    })
-  }
-
-  async function remove(item: Item) {
-    try {
-      await run(item, () => onRemove(item))
-    } finally {
-      setConfirmTarget(null)
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      <ul className="divide-y divide-border">
-        {items.map((item) => {
-          const id = itemId(item)
-          return (
-            <li className={rowClassName} key={id}>
-              {row(item, {
-                pending: pending.has(id),
-                remove: () => setConfirmTarget(item),
-                run: (action) => void run(item, action),
-              })}
-            </li>
-          )
-        })}
-      </ul>
-      <DestructiveActionDialog
-        confirmLabel={confirm.confirmLabel}
-        description={confirm.description}
-        onConfirm={() => {
-          if (confirmTarget !== null) void remove(confirmTarget)
-        }}
-        onOpenChange={(open) => {
-          if (!open && !(confirmTarget !== null && pending.has(itemId(confirmTarget)))) setConfirmTarget(null)
-        }}
-        open={confirmTarget !== null}
-        pending={confirmTarget !== null && pending.has(itemId(confirmTarget))}
-        subject={confirmTarget !== null ? confirm.subject(confirmTarget) : ''}
-        title={confirm.title}
-      />
-      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-    </div>
-  )
-}
-
-function RemoveButton({
-  label,
-  onClick,
-  pending,
-}: {
-  label: string
-  onClick: () => void
-  pending: boolean
-}) {
-  return (
-    <Button
-      disabled={pending}
-      onClick={onClick}
-      size="sm"
-      type="button"
-      variant="secondary"
-    >
-      {pending ? (
-        <LoaderCircle className="size-3.5 animate-spin" />
-      ) : (
-        <Trash2 className="size-3.5" />
-      )}
-      <span>{label}</span>
-    </Button>
-  )
-}
-
-function PermissionEditor({
-  disabled,
-  onChange,
-  permissions,
-}: {
-  disabled?: boolean
-  onChange: (permissions: RepositoryMemberPermissions) => void
-  permissions: RepositoryMemberPermissions
-}) {
-  return (
-    <div className="space-y-2">
-      {permissionLabels.map((permission) => (
-        <label className="flex items-start justify-between gap-4 text-sm" key={permission.key}>
-          <span className="min-w-0">
-            <span className="block font-medium leading-5">{permission.label}</span>
-            <span className="block leading-5 text-muted-foreground">{permission.description}</span>
-          </span>
-          <Switch
-            checked={permissions[permission.key]}
-            disabled={disabled}
-            onCheckedChange={(checked) => onChange({ ...permissions, [permission.key]: checked })}
-            type="button"
-          />
-        </label>
-      ))}
-    </div>
-  )
-}
-
-function PermissionSummary({ permissions }: { permissions: RepositoryMemberPermissions }) {
-  return (
-    <div className="space-y-2">
-      {permissionLabels.map((permission) => (
-        <div className="flex items-center justify-between gap-3" key={permission.key}>
-          <span>{permission.label}</span>
-          <Badge variant={permissions[permission.key] ? 'success' : 'neutral'}>
-            {permissions[permission.key] ? 'On' : 'Off'}
-          </Badge>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function permissionSummaryText(permissions: RepositoryMemberPermissions) {
-  const enabled = permissionLabels.flatMap(({ key, label }) =>
-    permissions[key] ? [label.toLowerCase()] : [])
-  return enabled.length === 0 ? 'No extra actions' : enabled.join(', ')
-}
-
-function AlwaysOnPrivateRead() {
-  return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="inline-flex items-center gap-2">
-        <Eye className="size-3.5 text-muted-foreground" />
-        <span>Read private files</span>
-      </span>
-      <Badge variant="success">Always on</Badge>
-    </div>
   )
 }

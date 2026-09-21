@@ -18,7 +18,11 @@ const SEED: &str = r#"
 #[tokio::test]
 async fn existing_invites_keep_their_link_and_their_state() {
     let (_target, db, _lease) = isolated_database().await;
-    let before_invite_links = u32::try_from(LATEST_MIGRATIONS.len() - 1).unwrap();
+    let before_invite_links = LATEST_MIGRATIONS
+        .iter()
+        .position(|name| *name == "m0057_repository_invite_links")
+        .and_then(|index| u32::try_from(index).ok())
+        .unwrap();
     migrations::Migrator::up(db.as_ref(), Some(before_invite_links))
         .await
         .unwrap();

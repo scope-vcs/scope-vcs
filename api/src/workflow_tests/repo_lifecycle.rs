@@ -77,7 +77,6 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
         .unwrap()
         .record
         .change_version;
-    let (secret, link_hash) = crate::auth::tokens::generate_repository_invite_token().unwrap();
     let invite = state
         .metadata
         .repositories()
@@ -89,7 +88,7 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
                 invited_email: "later@example.com".to_string(),
                 permissions: Default::default(),
                 invite_id: "invite_version".to_string(),
-                link_hash,
+                email_id: "email_version".to_string(),
                 now_unix: unix_now(),
             },
             &crate::persistence_ids::generate_persistence_id,
@@ -107,19 +106,19 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
             "owner",
             "repo",
             &test_owner_id(),
-            &invite.value.id,
+            &invite.value.0.id,
             unix_now(),
             &crate::persistence_ids::generate_persistence_id,
         )
         .await
         .unwrap();
     assert!(revoked.change_version > committed_version);
-    let expected_url = format!("https://app.example.com/invites/{secret}");
+    let expected_url = "https://app.example.com/invites/secret".to_string();
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
     let response = crate::use_cases::repository_collaboration::publish_committed_mutation(
         &state,
         crate::use_cases::repository_collaboration::map_committed_mutation(invite, |invite| {
-            (invite.id, expected_url.clone())
+            (invite.0.id, expected_url.clone())
         }),
         RepoChangeReason::InviteUpdated,
     )

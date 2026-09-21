@@ -3,6 +3,7 @@ use scope_api_contract::{RepositoryInviteState, RepositoryMemberPermissions};
 use scope_domain::{
     account::UserAccount,
     repo_collaboration::{RepositoryInviteLanding, RepositoryInviteViewer},
+    repo_invite_email::{RepositoryInviteEmail, RepositoryInviteEmailState},
     repository::Repository,
     repository::collaboration::{RepositoryInvite, RepositoryMember},
 };
@@ -34,6 +35,26 @@ pub(crate) struct RepositoryInviteResponse {
     pub(crate) permissions: RepositoryMemberPermissions,
     pub(crate) state: RepositoryInviteState,
     pub(crate) expires_at_unix: u64,
+    /// The newest email for this invite. `None` when it was never emailed.
+    pub(crate) email: Option<RepositoryInviteEmailResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct RepositoryInviteEmailResponse {
+    pub(crate) state: RepositoryInviteEmailStateResponse,
+    pub(crate) requested_at_unix: u64,
+}
+
+/// `sent` means the provider accepted the email, not that it reached an inbox.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
+pub(crate) enum RepositoryInviteEmailStateResponse {
+    Queued,
+    Sent,
+    Failed,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,13 +62,6 @@ pub(crate) struct RepositoryInviteResponse {
 pub(crate) struct CreateRepositoryInviteRequest {
     pub(crate) email: String,
     pub(crate) permissions: RepositoryMemberPermissions,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct CreateRepositoryInviteResponse {
-    pub(crate) invite: RepositoryInviteResponse,
-    pub(crate) invite_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,6 +129,7 @@ pub(crate) struct AcceptRepositoryInviteResponse {
 pub(crate) fn repository_collaboration_response(
     repo: &Repository,
     users: &std::collections::BTreeMap<String, UserAccount>,
+    emails: &std::collections::BTreeMap<String, RepositoryInviteEmail>,
     now_unix: u64,
 ) -> RepositoryCollaborationResponse {
     let mut members = repo
@@ -135,7 +150,7 @@ pub(crate) fn repository_collaboration_response(
     let mut invites = repo
         .invitations
         .iter()
-        .map(|invite| repository_invite_response(invite, now_unix))
+        .map(|invite| repository_invite_response(invite, emails.get(&invite.id), now_unix))
         .collect::<Vec<_>>();
     invites.sort_by(|left, right| {
         left.invited_email
@@ -162,6 +177,7 @@ pub(crate) fn repository_member_response(
 
 pub(crate) fn repository_invite_response(
     invite: &RepositoryInvite,
+    email: Option<&RepositoryInviteEmail>,
     now_unix: u64,
 ) -> RepositoryInviteResponse {
     RepositoryInviteResponse {
@@ -170,6 +186,14 @@ pub(crate) fn repository_invite_response(
         permissions: invite.permissions.into(),
         state: invite.state(now_unix).into(),
         expires_at_unix: invite.expires_at_unix,
+        email: email.map(|email| RepositoryInviteEmailResponse {
+            state: match email.state {
+                RepositoryInviteEmailState::Queued => RepositoryInviteEmailStateResponse::Queued,
+                RepositoryInviteEmailState::Sent => RepositoryInviteEmailStateResponse::Sent,
+                RepositoryInviteEmailState::Failed => RepositoryInviteEmailStateResponse::Failed,
+            },
+            requested_at_unix: email.created_at_unix,
+        }),
     }
 }
 

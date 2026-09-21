@@ -10,7 +10,6 @@ import type {
 } from './types'
 import type {
   AcceptRepositoryInviteResponse,
-  CreateRepositoryInviteResponse,
   RepositoryCollaborationResponse,
   RepositoryInviteResponse,
   RepositoryInviteLandingResponse,
@@ -56,10 +55,10 @@ export async function loadRepoCollaborationForRequest(
 
 export async function createRepoInviteForRequest(
   data: CreateRepoInviteInput,
-): Promise<CreateRepositoryInviteResponse> {
+): Promise<RepositoryInviteResponse> {
   return createApiClient().post(
     repoRoute(ApiRouteTemplates.repoInvites, data),
-    apiValidators.CreateRepositoryInviteResponse,
+    apiValidators.RepositoryInviteResponse,
     {
       auth: 'required',
       body: {
@@ -127,6 +126,20 @@ export async function createRepoInviteLinkForRequest(
       invite_id: data.invite_id,
     }),
     apiValidators.RepositoryInviteLinkResponse,
+    { auth: 'required' },
+  )
+}
+
+export async function sendRepoInviteEmailForRequest(
+  data: RepoInviteInput,
+): Promise<RepositoryInviteResponse> {
+  return createApiClient().post(
+    buildApiPath(ApiRouteTemplates.repoInviteEmails, {
+      owner: data.owner,
+      repo: data.repo,
+      invite_id: data.invite_id,
+    }),
+    apiValidators.RepositoryInviteResponse,
     { auth: 'required' },
   )
 }

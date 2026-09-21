@@ -98,10 +98,18 @@ test('repository components retain drafts, previews and pending actions across r
     assert.equal(await page.getByRole('button', { name: 'Revoke session-b', exact: true }).isDisabled(), true)
     await page.evaluate(() => window.finishAction('session-b'))
 
-    await page.getByLabel('Member email').fill('new@example.com')
-    await page.getByRole('button', { name: 'Invite', exact: true }).click()
+    await page.getByRole('button', { name: 'Invite member', exact: true }).click()
+    await page.getByLabel('Email address').fill('new@example.com')
+    await page.getByRole('button', { name: 'Send invitation', exact: true }).click()
+    await page.getByRole('dialog').waitFor({ state: 'detached' })
+    const invitation = page.locator('main li', { hasText: 'new@example.com' })
+    await invitation.getByText(/^Email sent · Expires /).waitFor()
+    assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), {
+      email: 'new@example.com', owner: 'owner', repo: 'demo',
+      permissions: { can_push: false, can_change_file_visibility: false },
+    })
+    await invitation.getByRole('button', { name: 'Copy link', exact: true }).click()
     await page.getByText('https://example.com/invites/new-token', { exact: true }).waitFor()
-    assert.equal(await page.getByLabel('Member email').isEnabled(), true)
     await page.setViewportSize({ width: 390, height: 844 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: process.env.SCOPE_COMPONENT_SCREENSHOT, fullPage: true })

@@ -82,7 +82,9 @@ mod runs;
 pub use auth::{
     auth_identity, cli_browser_login, cli_device_login, cli_exchange_grant, cli_session, user,
 };
-pub use collaboration::{repository_invite, repository_invite_link, repository_member};
+pub use collaboration::{
+    repository_invite, repository_invite_email, repository_invite_link, repository_member,
+};
 pub use history::{
     file_change, live_file, logical_commit, object_reference, visibility_change,
     visibility_change_set,

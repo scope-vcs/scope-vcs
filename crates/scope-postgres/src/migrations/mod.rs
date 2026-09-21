@@ -14,6 +14,7 @@ mod m0054_request_attention_revision;
 mod m0055_request_checks;
 mod m0056_request_auto_merge;
 mod m0057_repository_invite_links;
+mod m0058_repository_invite_emails;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -121,6 +122,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0057_repository_invite_links::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0058_repository_invite_emails::Migration),
             metadata_restore_safe: true,
         },
     ]

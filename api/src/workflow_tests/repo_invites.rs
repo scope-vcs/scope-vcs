@@ -19,7 +19,7 @@ async fn json_request(
     (status, response_json(response).await)
 }
 
-/// Creates an invite through the API and returns its id and first link token.
+/// Creates an invite through the API and returns its id and a copied link token.
 async fn create_invite(state: &AppState) -> (String, String) {
     let (status, body) = json_request(
         state,
@@ -33,15 +33,49 @@ async fn create_invite(state: &AppState) -> (String, String) {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    (
-        body["invite"]["id"].as_str().unwrap().to_string(),
-        link_token(&body),
+    // Creating an invite queues its email and hands back no link.
+    assert_eq!(body["email"]["state"], "queued");
+    assert!(body.get("invite_url").is_none());
+    let invite_id = body["id"].as_str().unwrap().to_string();
+    let token = copy_link(state, &invite_id).await;
+    (invite_id, token)
+}
+
+async fn copy_link(state: &AppState, invite_id: &str) -> String {
+    let (status, body) = json_request(
+        state,
+        "POST",
+        &format!("/v1/repos/owner/repo/invites/{invite_id}/links"),
+        Some(&bearer_header()),
+        None,
     )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    link_token(&body)
 }
 
 fn link_token(body: &serde_json::Value) -> String {
     let invite_url = body["invite_url"].as_str().unwrap();
     invite_url.rsplit('/').next().unwrap().to_string()
+}
+
+fn mailer(state: &AppState) -> std::sync::Arc<crate::invite_mailer::RecordingMailer> {
+    match &state.invite_mailer {
+        crate::invite_mailer::InviteMailer::Recording(mailer) => mailer.clone(),
+        _ => panic!("tests record invite emails"),
+    }
+}
+
+async fn invite_email_state(state: &AppState) -> serde_json::Value {
+    let (_, members) = json_request(
+        state,
+        "GET",
+        "/v1/repos/owner/repo/members",
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    members["invites"][0]["email"]["state"].clone()
 }
 
 async fn landing(state: &AppState, token: &str, bearer: Option<&str>) -> serde_json::Value {
@@ -282,5 +316,168 @@ async fn an_unknown_link_lands_as_invalid() {
     assert_eq!(
         landing(&state, "scope_invite_unknown", None).await,
         serde_json::json!({ "status": "invalid" })
+    );
+}
+
+use crate::use_cases::invite_email_delivery::deliver_due_invite_emails;
+use scope_domain::repo_invite_email::InviteEmailAttempt;
+
+/// The link inside a recorded email's text body.
+fn emailed_token(text: &str) -> String {
+    let link = text
+        .split_whitespace()
+        .find(|word| word.contains("/invites/"))
+        .unwrap();
+    link.rsplit('/').next().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn a_new_invite_is_emailed_with_a_link_that_was_never_stored() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let (invite_id, copied) = create_invite(&state).await;
+    assert_eq!(invite_email_state(&state).await, "queued");
+    let mut events = state.repo_events.subscribe(TEST_REPO_ID);
+
+    assert_eq!(
+        deliver_due_invite_emails(&state, unix_now()).await.unwrap(),
+        1
+    );
+
+    let sent = mailer(&state).sent.lock().unwrap().clone();
+    let [(to, reply_to, text)] = sent.as_slice() else {
+        panic!("one email should have been sent, got {}", sent.len());
+    };
+    assert_eq!(to, INVITED_EMAIL);
+    assert_eq!(reply_to, TEST_OWNER_EMAIL);
+    assert!(text.contains("owner/repo"));
+    // The members list hears about the link and then about the delivery.
+    assert!(events.recv().await.unwrap().version < events.recv().await.unwrap().version);
+    assert_eq!(invite_email_state(&state).await, "sent");
+
+    // The emailed link is its own link, and the copied one still works.
+    let emailed = emailed_token(text);
+    assert_ne!(emailed, copied);
+    for token in [&emailed, &copied] {
+        assert_eq!(landing(&state, token, None).await["status"], "open");
+    }
+    // Only hashes are stored: the plain token appears in no invite row.
+    let (repo, _) = state
+        .metadata
+        .repositories()
+        .repository_collaboration("owner", "repo")
+        .await
+        .unwrap()
+        .unwrap();
+    let invite = repo.invitations.iter().find(|i| i.id == invite_id).unwrap();
+    assert_eq!(invite.link_hashes.len(), 2);
+    assert!(
+        invite
+            .link_hashes
+            .iter()
+            .all(|hash| !hash.contains(&emailed))
+    );
+
+    // Nothing is due any more, and a second email inside a minute is refused.
+    assert_eq!(
+        deliver_due_invite_emails(&state, unix_now()).await.unwrap(),
+        0
+    );
+    let (status, body) = json_request(
+        &state,
+        "POST",
+        &format!("/v1/repos/owner/repo/invites/{invite_id}/emails"),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(
+        body["message"]
+            .as_str()
+            .unwrap()
+            .contains("less than a minute")
+    );
+}
+
+#[tokio::test]
+async fn an_outage_is_retried_and_a_refusal_leaves_a_retryable_invite() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let (invite_id, _) = create_invite(&state).await;
+    mailer(&state).scripted.lock().unwrap().extend([
+        InviteEmailAttempt::Retryable("Resend answered 503".into()),
+        InviteEmailAttempt::Refused("Resend answered 422".into()),
+    ]);
+    let now = unix_now();
+
+    // The outage keeps the email queued, and it is not due again straight away.
+    assert_eq!(deliver_due_invite_emails(&state, now).await.unwrap(), 1);
+    assert_eq!(invite_email_state(&state).await, "queued");
+    assert_eq!(deliver_due_invite_emails(&state, now).await.unwrap(), 0);
+
+    // The refusal settles it as failed without sending anything.
+    assert_eq!(
+        deliver_due_invite_emails(&state, now + 3_600)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(invite_email_state(&state).await, "failed");
+    assert!(mailer(&state).sent.lock().unwrap().is_empty());
+
+    // The same invite can be emailed again: no second invite is needed.
+    let retried = state
+        .metadata
+        .repositories()
+        .request_repository_invite_email(
+            scope_postgres::db::RequestRepositoryInviteEmailCommand {
+                owner: "owner".into(),
+                name: "repo".into(),
+                owner_user_id: test_owner_id(),
+                invite_id,
+                email_id: "invite_email_retry".into(),
+                now_unix: now + 3_700,
+            },
+            &crate::persistence_ids::generate_persistence_id,
+        )
+        .await
+        .unwrap();
+    assert_eq!(retried.value.id, "invite_email_retry");
+    assert_eq!(
+        deliver_due_invite_emails(&state, now + 3_700)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(mailer(&state).sent.lock().unwrap().len(), 1);
+    assert_eq!(invite_email_state(&state).await, "sent");
+}
+
+#[tokio::test]
+async fn a_queued_email_for_a_revoked_invite_is_never_sent() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let (invite_id, _) = create_invite(&state).await;
+    let (status, _) = json_request(
+        &state,
+        "DELETE",
+        &format!("/v1/repos/owner/repo/invites/{invite_id}"),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert_eq!(
+        deliver_due_invite_emails(&state, unix_now()).await.unwrap(),
+        1
+    );
+
+    assert!(mailer(&state).sent.lock().unwrap().is_empty());
+    assert_eq!(invite_email_state(&state).await, "failed");
+    assert_eq!(
+        deliver_due_invite_emails(&state, unix_now()).await.unwrap(),
+        0
     );
 }

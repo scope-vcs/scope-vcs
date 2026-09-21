@@ -28,11 +28,11 @@ export function refreshWhenNextInviteExpires(
   scope: string,
   collaboration: RepositoryCollaborationResponse | null,
 ) {
-  const expiries = (collaboration?.invites ?? [])
-    .filter((invite) => invite.state === 'Pending')
-    .map((invite) => invite.expires_at_unix)
-  if (expiries.length === 0) return
-  const next = Math.min(...expiries)
+  let next = Infinity
+  for (const invite of collaboration?.invites ?? []) {
+    if (invite.state === 'Pending') next = Math.min(next, invite.expires_at_unix)
+  }
+  if (next === Infinity) return
   if (refreshedForExpiry.get(scope) === next) return
   const timer = setTimeout(() => {
     refreshedForExpiry.set(scope, next)

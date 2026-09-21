@@ -318,6 +318,10 @@ pub fn router(state: AppState) -> Router {
             post(http::repo_collaboration::create_repository_invite_link),
         )
         .route(
+            routes::REPO_INVITE_EMAILS,
+            post(http::repo_collaboration::create_repository_invite_email),
+        )
+        .route(
             routes::REPO_MEMBER,
             patch(http::repo_collaboration::update_repository_member)
                 .delete(http::repo_collaboration::delete_repository_member),

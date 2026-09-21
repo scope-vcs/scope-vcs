@@ -45,6 +45,7 @@ mod push_triggers;
 mod repo_change_notifications;
 mod repo_collaboration;
 mod repo_effects;
+mod repo_invite_emails;
 mod repo_lifecycle;
 mod repo_mutation;
 mod repo_reads;
@@ -128,6 +129,7 @@ pub use repo_collaboration::{
     CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
     RepositoryCollaborationMutation, UpdateRepositoryMemberPermissionsCommand,
 };
+pub use repo_invite_emails::{RepositoryInviteEmailDelivery, RequestRepositoryInviteEmailCommand};
 pub use repo_lifecycle::{CreateRepositoryCommand, RepositoryCreationError};
 pub use repo_mutation::{RepositoryMutation, RepositoryMutationError};
 pub use repo_reads::{RepoLiveFileWithLandingContent, RepoSummaryRead};

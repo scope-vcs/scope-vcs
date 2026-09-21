@@ -13,6 +13,7 @@ import {
   deleteRepoMemberForRequest,
   deleteRepoForRequest,
   loadRepoCollaborationForRequest,
+  sendRepoInviteEmailForRequest,
   updateRepoMemberForRequest,
   updateRepoMetadataForRequest,
 } from '@/api/repo-settings'
@@ -65,6 +66,10 @@ const deleteRepoMember = createServerFn({ method: 'POST' })
 const createRepoInviteLink = createServerFn({ method: 'POST' })
   .validator(parseRepoInviteInput)
   .handler(({ data }) => createRepoInviteLinkForRequest(data))
+
+const sendRepoInviteEmail = createServerFn({ method: 'POST' })
+  .validator(parseRepoInviteInput)
+  .handler(({ data }) => sendRepoInviteEmailForRequest(data))
 
 const deleteRepoInvite = createServerFn({ method: 'POST' })
   .validator(parseRepoInviteInput)
@@ -120,9 +125,13 @@ function RepoSettingsRoute() {
           key={scope}
           createInvite={(data) => retainResult(
             createRepoInvite({ data }),
-            ({ invite }) => ({ type: 'inviteUpdated', invite }),
+            (invite) => ({ type: 'inviteUpdated', invite }),
           )}
           createInviteLink={(data) => createRepoInviteLink({ data })}
+          sendInviteEmail={(data) => retainResult(
+            sendRepoInviteEmail({ data }),
+            (invite) => ({ type: 'inviteUpdated', invite }),
+          )}
           deleteInvite={(data) => retainResult(
             deleteRepoInvite({ data }),
             (invite) => ({ type: 'inviteUpdated', invite }),

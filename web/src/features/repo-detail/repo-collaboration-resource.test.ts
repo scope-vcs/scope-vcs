@@ -32,7 +32,7 @@ test('a retained snapshot refreshes once when its earliest pending invite expire
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 })
   repoCollaborationResource.clear()
   const invite = (id: string, state: RepositoryInviteResponse['state'], expires_at_unix: number): RepositoryInviteResponse =>
-    ({ id, invited_email: `${id}@example.com`, permissions: member.permissions, state, expires_at_unix })
+    ({ id, invited_email: `${id}@example.com`, permissions: member.permissions, state, expires_at_unix, email: null })
   const collaboration = { members: [], invites: [invite('later', 'Pending', 1_900), invite('soon', 'Pending', 1_060), invite('revoked', 'Revoked', 1_010)] }
   await repoCollaborationResource.load('expiry-scope', '', async () => ({ collaboration }))
 

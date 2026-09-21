@@ -295,13 +295,24 @@ where
         .insert(conn)
         .await
         .map_err(PostgresError::internal)?;
-    if invite.link_hashes.is_empty() {
+    insert_repository_invite_links(conn, &invite.id, &invite.link_hashes).await
+}
+
+async fn insert_repository_invite_links<C>(
+    conn: &C,
+    invite_id: &str,
+    link_hashes: &[String],
+) -> Result<(), PostgresError>
+where
+    C: ConnectionTrait,
+{
+    if link_hashes.is_empty() {
         return Ok(());
     }
-    entities::repository_invite_link::Entity::insert_many(invite.link_hashes.iter().map(|hash| {
+    entities::repository_invite_link::Entity::insert_many(link_hashes.iter().map(|hash| {
         entities::repository_invite_link::Model {
             token_hash: hash.clone(),
-            invite_id: invite.id.clone(),
+            invite_id: invite_id.to_string(),
         }
         .into_active_model()
     }))
@@ -380,18 +391,29 @@ where
         }
     }
     for (invite_id, invite) in after_invites {
-        if before_invites
-            .get(invite_id)
-            .is_some_and(|old| *old == invite)
-        {
+        let Some(old) = before_invites.get(invite_id) else {
+            insert_repository_invite(conn, invite).await?;
+            continue;
+        };
+        if *old == invite {
             continue;
         }
-        // Deleting the invite cascades to its links.
-        entities::repository_invite::Entity::delete_by_id(invite_id.to_string())
-            .exec(conn)
+        // Update in place. Deleting the row would cascade to the invite's
+        // emails, which live outside the repository aggregate.
+        entities::repository_invite::Model::from_domain(invite)?
+            .into_active_model()
+            .reset_all()
+            .update(conn)
             .await
             .map_err(PostgresError::internal)?;
-        insert_repository_invite(conn, invite).await?;
+        // Links are only ever added.
+        let new_links = invite
+            .link_hashes
+            .iter()
+            .filter(|hash| !old.link_hashes.contains(hash))
+            .cloned()
+            .collect::<Vec<_>>();
+        insert_repository_invite_links(conn, &invite.id, &new_links).await?;
     }
     Ok(())
 }

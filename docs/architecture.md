@@ -109,6 +109,12 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   revision through the existing merge use case. `request_auto_merge_runtime.rs`
   supervises polling in the API process; database leases allow multiple API
   processes to share the work and recover abandoned attempts;
+- `invite_email_delivery.rs` for sending queued repository invite emails. It
+  creates the invite link at send time, so only the link's hash is ever stored,
+  sends through `invite_mailer.rs` (Resend, keyed per email so a repeated
+  attempt cannot send twice), and records the attempt. The API process polls
+  for due emails. `SCOPE_RESEND_API_KEY` enables delivery; without it emails
+  fail at once and owners copy links instead;
 - `git_receive/` for receive authorization, the separate main-push and
   request-ref completion paths, and completing open requests whose head a
   committed main push carries;
