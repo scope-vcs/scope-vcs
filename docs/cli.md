@@ -90,7 +90,9 @@ Every push to a request evaluates the workflows its head asks for. A maintainer'
 push starts those checks at once; an outside contributor's push records them until a
 maintainer runs `scope request checks --approve`. `scope request checks` shows the
 evaluation, each workflow's run and state, and what merging still waits on: an open
-request merges only after every check succeeds.
+request merges only after every check succeeds. If evaluating a push failed, the
+request cannot merge until its checks are worked out; `scope request checks` and
+`scope request merge` both work them out again.
 
 When checks are still running, a maintainer can authorize the current request
 revision to merge later with `scope request merge --auto --yes`. The command

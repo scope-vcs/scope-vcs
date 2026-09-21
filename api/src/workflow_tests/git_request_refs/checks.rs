@@ -206,10 +206,117 @@ async fn a_head_whose_workflows_never_ask_for_requests_owes_no_checks() {
     assert_eq!(checks["mergeability"]["reason"], serde_json::Value::Null);
 }
 
+/// What a push leaves behind when evaluating its head failed: nothing.
+async fn forget_evaluations(state: &AppState, request_id: &str) {
+    state
+        .metadata
+        .requests()
+        .forget_request_check_evaluations_for_tests(request_id)
+        .await
+        .unwrap();
+}
+
+async fn checks(state: &AppState, request_id: &str, bearer: &str) -> serde_json::Value {
+    expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            &checks_route(request_id),
+            Some(bearer),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await
+}
+
+async fn listed_status(state: &AppState, request_id: &str) -> serde_json::Value {
+    let list = expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            &format!("/v1/repos/{TEST_REPO_ID}/requests"),
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    list["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["id"] == request_id)
+        .unwrap()["mergeability"]["status"]
+        .clone()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_head_whose_evaluation_failed_is_held_until_someone_looks() {
+    let (state, request_id, _server) = owner_request_push(
+        "request-checks-unevaluated",
+        &[(".scope/runs/checks.yml", request_workflow())],
+    )
+    .await;
+    forget_evaluations(&state, &request_id).await;
+    insert_member_user(&state).await;
+    let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
+
+    // A list describes the hold without evaluating anything.
+    assert_eq!(
+        listed_status(&state, &request_id).await,
+        "ChecksNotEvaluated"
+    );
+    assert_eq!(
+        listed_status(&state, &request_id).await,
+        "ChecksNotEvaluated"
+    );
+
+    let looked = checks(&state, &request_id, &member).await;
+    assert_eq!(looked["state"], "started");
+    assert_eq!(looked["mergeability"]["status"], "ChecksPending");
+    let run_id = looked["checks"][0]["run_id"].as_str().unwrap().to_string();
+    // The evaluation belongs to the push, so the run is the pusher's, not the viewer's.
+    let run = state.metadata.runs().run(&run_id).await.unwrap().unwrap();
+    assert_eq!(run.requested_by_user_id.as_deref(), Some(&*test_owner_id()));
+
+    let again = checks(&state, &request_id, &member).await;
+    assert_eq!(again["checks"][0]["run_id"], run_id.as_str());
+    assert_eq!(again["checks"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn merging_an_unevaluated_head_evaluates_it_instead() {
+    let (state, request_id, _server) = owner_request_push(
+        "request-checks-unevaluated-merge",
+        &[(".scope/runs/checks.yml", request_workflow())],
+    )
+    .await;
+    forget_evaluations(&state, &request_id).await;
+
+    let merge = api_request(
+        router(state.clone()),
+        "POST",
+        &merge_route(&request_id),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        expect_json(merge, StatusCode::CONFLICT).await["message"],
+        "checks have not finished"
+    );
+    assert_eq!(listed_status(&state, &request_id).await, "ChecksPending");
+}
+
 /// The evaluation a non-maintainer's push records for the request's current head.
 /// Seeded here because `.scope/` is private, so nothing a public contributor can
 /// see or push carries a workflow for their own head to ask for.
 async fn record_awaiting_approval(state: &AppState, request_id: &str) {
+    forget_evaluations(state, request_id).await;
     let request = stored_request(state, request_id).await;
     let workflow = request_workflow();
     let revisions = scope_run_config::parse_workflow_set(

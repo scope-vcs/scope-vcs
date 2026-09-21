@@ -58,6 +58,10 @@ pub(crate) async fn authorize(
         input.expected_head_oid.as_str().to_string(),
     )
     .await?;
+    // Nothing else looks at the checks of a request left to merge by itself, so a
+    // head nobody evaluated is evaluated now or the authorization would wait forever.
+    // The authorization is already saved, so a failure here is logged, not returned.
+    crate::use_cases::request_checks::readable_checks_view(&state, &repo.record, &request).await?;
     // The receipt says what is persisted now. Execution survives this HTTP request.
     response(&state, &request, access).await.map(Json)
 }

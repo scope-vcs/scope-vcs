@@ -56,6 +56,7 @@ pub enum RequestMergeabilityStatus {
     Merged,
     NotMaintainer,
     MissingRequestBranch,
+    ChecksNotEvaluated,
     ChecksAwaitingApproval,
     ChecksPending,
     ChecksFailed,
@@ -216,6 +217,10 @@ pub fn request_list_mergeability(
         ),
         RequestState::Open => match checks {
             RequestChecksOutcome::Clear => (RequestMergeabilityStatus::Ready, None),
+            RequestChecksOutcome::NotEvaluated => (
+                RequestMergeabilityStatus::ChecksNotEvaluated,
+                Some("checks have not been worked out for this commit yet"),
+            ),
             RequestChecksOutcome::AwaitingApproval => (
                 RequestMergeabilityStatus::ChecksAwaitingApproval,
                 Some("checks are waiting for a maintainer to start them"),

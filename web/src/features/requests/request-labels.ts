@@ -43,6 +43,7 @@ const MERGEABILITY = {
   Merged: { label: 'Merged', tone: 'success' },
   NotMaintainer: { label: 'Maintainer merges', tone: 'outline' },
   MissingRequestBranch: { label: 'Branch missing', tone: 'warning' },
+  ChecksNotEvaluated: { label: 'Checks not worked out', tone: 'warning' },
   ChecksAwaitingApproval: { label: 'Checks await approval', tone: 'warning' },
   ChecksPending: { label: 'Checks running', tone: 'info' },
   ChecksFailed: { label: 'Checks failed', tone: 'danger' },
@@ -100,6 +101,9 @@ export function requestMergeabilityTone(request: RequestLabelSource): BadgeVaria
 export function requestCheckEvaluationNote(checks: RequestChecksResponse) {
   if (checks.state === 'configuration-error') {
     return checks.message ?? 'This head’s workflow configuration is invalid.'
+  }
+  if (checks.state === null) {
+    return 'The checks for this commit have not been worked out yet.'
   }
   return CHECK_EVALUATION_NOTES[checks.state]
 }

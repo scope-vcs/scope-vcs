@@ -13,6 +13,7 @@ test('only a ready request merges, and checks hold the merge instead of hiding i
   assert.equal(canMergeRequest(request('ChecksPending')), false)
   assert.equal(checksHoldRequestMerge(request('ChecksPending')), true)
   assert.equal(checksHoldRequestMerge(request('ChecksAwaitingApproval')), true)
+  assert.equal(checksHoldRequestMerge(request('ChecksNotEvaluated')), true)
   assert.equal(checksHoldRequestMerge(request('Ready')), false)
   // A viewer who cannot merge never sees the held merge.
   assert.equal(checksHoldRequestMerge(request('ChecksFailed', false)), false)
