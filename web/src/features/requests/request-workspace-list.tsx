@@ -201,7 +201,7 @@ function RequestWorkspaceRow({
         </span>
       </Link>
       {actionCount > 0 && (
-        <fieldset className="request-workspace-row-actions absolute right-2 bottom-2 flex gap-[3px] border-0 p-0">
+        <fieldset className="request-workspace-row-actions absolute right-2 flex gap-[3px] border-0 p-0">
           <legend className="sr-only">Request {request.id} actions</legend>
           {canSetAside && (
             <RequestSnoozeMenu

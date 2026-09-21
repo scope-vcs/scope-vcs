@@ -7,10 +7,7 @@ import {
   type LineSkeletonLength,
   type TextSkeletonLength,
 } from '@/components/ui/skeleton'
-import {
-  REQUEST_DESCRIPTION_CONTENT_CLASS,
-  REQUEST_DISCUSSION_CONTENT_CLASS,
-} from './request-content-layout'
+import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
 
 const PENDING_THREADS: { id: string; length: LineSkeletonLength }[] = [
   { id: 'first', length: 'long' },
@@ -35,7 +32,7 @@ const PENDING_DIFF_LINES: { id: string; length: LineSkeletonLength }[] = [
 export function RequestDetailPagePending() {
   return (
     <PendingSurface label="Loading request">
-      <WorkbenchPane className="max-w-none">
+      <WorkbenchPane>
         <header className="border-b border-border px-5 pb-4 pt-6 sm:px-6 lg:px-8">
           <TextSkeleton length="xlong" size="heading" />
           <div className="mt-3 flex items-center gap-3">
@@ -44,15 +41,14 @@ export function RequestDetailPagePending() {
             <TextSkeleton length="short" />
           </div>
         </header>
-        <div className="flex items-center gap-2 border-b border-border px-5 py-2.5 sm:px-6 lg:px-8">
-          <BlockSkeleton className="ml-auto h-8 w-24" />
+        <div className="border-b border-border px-5 py-2.5 min-[701px]:hidden">
           <BlockSkeleton className="h-8 w-8" />
         </div>
         <div className="min-h-0">
           <div className="min-w-0">
             <div className="px-5 py-5 lg:px-7">
               <TextSkeleton length="short" />
-              <div className={`mt-4 space-y-2 ${REQUEST_DESCRIPTION_CONTENT_CLASS}`}>
+              <div className="mt-4 space-y-2">
                 <LineSkeleton length="full" />
                 <LineSkeleton length="long" />
                 <LineSkeleton length="medium" />
