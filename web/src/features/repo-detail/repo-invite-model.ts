@@ -17,12 +17,21 @@ export function visibleInvitations(
 ): RepositoryInviteResponse[] {
   const members = new Set(memberEmails.map((email) => email.toLowerCase()))
   // An invitation expires seven days after it is created, so the latest
-  // expiry is the newest invitation.
+  // expiry is the newest invitation. Two created within the same second tie;
+  // a pending one wins then, because only it can still be acted on.
   const newest = new Map<string, RepositoryInviteResponse>()
   for (const invite of invites) {
     const email = invite.invited_email.toLowerCase()
     const current = newest.get(email)
-    if (!current || invite.expires_at_unix > current.expires_at_unix) newest.set(email, invite)
+    if (
+      !current ||
+      invite.expires_at_unix > current.expires_at_unix ||
+      (invite.expires_at_unix === current.expires_at_unix &&
+        invite.state === 'Pending' &&
+        current.state !== 'Pending')
+    ) {
+      newest.set(email, invite)
+    }
   }
   const visible: RepositoryInviteResponse[] = []
   for (const [email, invite] of newest) {

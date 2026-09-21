@@ -40,6 +40,14 @@ test('a replacement hides the expired invitation for good, whatever happens to t
   }
 })
 
+test('a pending invitation wins a tie with one revoked in the same second, whichever comes first', () => {
+  const revoked = invite('revoked', 'a@example.com', 'Revoked', 200)
+  const pending = invite('pending', 'a@example.com', 'Pending', 200)
+  for (const order of [[revoked, pending], [pending, revoked]]) {
+    assert.deepEqual(visibleInvitations(order, []).map((item) => item.id), ['pending'])
+  }
+})
+
 test('delivery wording never claims more than the provider accepted', () => {
   const sent = { state: 'sent', requested_at_unix: 1 } as const
   assert.match(invitationDetail(invite('a', 'a@example.com', 'Pending', 1_790_000_000, sent)), /^Email sent · Expires /)
