@@ -9,6 +9,8 @@ import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import * as Dialog from '@radix-ui/react-dialog'
 import { LoaderCircle, Send } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { toast } from 'sonner'
+import { notEmailedNotice } from './repo-invite-model'
 import { defaultPermissions } from './repo-member-permission-model'
 import { PermissionEditor } from './repo-member-permissions'
 
@@ -48,7 +50,8 @@ export function InviteMemberDialog({
     setError(null)
     setPending(true)
     try {
-      await createInvite({ email, permissions })
+      const created = await createInvite({ email, permissions })
+      if (!created.email) toast.warning(notEmailedNotice)
       setPending(false)
       changeOpen(false)
     } catch (error) {

@@ -1,7 +1,7 @@
 //! Sends queued repository invite emails and records what happened.
 
 use crate::{
-    auth::tokens::generate_repository_invite_token,
+    auth::tokens::{generate_repository_invite_token, random_token},
     error::ApiError,
     http::origins::public_app_origin,
     invite_mailer::{InviteEmailMessage, InviteEmailOutcome},
@@ -20,69 +20,63 @@ use std::time::Duration;
 const POLL_INTERVAL: Duration = Duration::from_secs(15);
 const BATCH_SIZE: u64 = 20;
 
+/// How long one sender may hold an email. Longer than a send can take, so a
+/// live sender is never raced, and short enough that a dead one is replaced.
+const CLAIM_LEASE_SECS: u64 = 120;
+
+type Clock<'a> = &'a (dyn Fn() -> Result<u64, ApiError> + Sync);
+
+/// Sends every due email this process can claim. Returns how many it claimed.
 pub(crate) async fn deliver_due_invite_emails(
     state: &AppState,
-    now: u64,
+    current_time: Clock<'_>,
 ) -> Result<usize, ApiError> {
-    let due = state
+    let claim_token = random_token("invite_email_claim_", "failed to generate claim token")?;
+    let now = current_time()?;
+    let claimed = state
         .metadata
         .repositories()
-        .due_repository_invite_email_ids(now, BATCH_SIZE)
+        .claim_due_repository_invite_emails(&claim_token, now, now + CLAIM_LEASE_SECS, BATCH_SIZE)
         .await?;
-    for email_id in &due {
-        if let Err(error) = deliver_invite_email(state, email_id, now).await {
+    for email_id in &claimed {
+        if let Err(error) = deliver_invite_email(state, email_id, &claim_token, current_time).await
+        {
             tracing::warn!(
                 %email_id,
                 error = %error.operator_diagnostic(),
-                "invite email delivery failed; it stays queued"
+                "invite email attempt could not be recorded; its claim will lapse"
             );
         }
     }
-    Ok(due.len())
+    Ok(claimed.len())
 }
 
-async fn deliver_invite_email(state: &AppState, email_id: &str, now: u64) -> Result<(), ApiError> {
-    let repositories = state.metadata.repositories();
-    // The link is created here and never stored; the invite keeps its hash.
-    let (secret, link_hash) = generate_repository_invite_token()?;
-    let outcome = match repositories
-        .issue_repository_invite_email_link(
-            email_id,
-            link_hash,
-            now,
-            &crate::persistence_ids::generate_persistence_id,
-        )
-        .await
-    {
-        Ok(issued) => {
-            let delivery =
-                publish_committed_mutation(state, issued, RepoChangeReason::InviteUpdated).await;
-            let inviter = repositories
-                .user(&delivery.invite.invited_by_user_id)
-                .await?;
-            let message = invite_email_message(
-                email_id,
-                &delivery.repo,
-                &delivery.invite,
-                &inviter.email,
-                &secret,
-                now,
-            )?;
-            state.invite_mailer.send(&message).await
-        }
-        // The invite was revoked, accepted, or expired while this was queued.
-        Err(error) if error.kind == PostgresErrorKind::Conflict => InviteEmailOutcome {
-            attempt: InviteEmailAttempt::Refused(error.message),
+async fn deliver_invite_email(
+    state: &AppState,
+    email_id: &str,
+    claim_token: &str,
+    current_time: Clock<'_>,
+) -> Result<(), ApiError> {
+    // Anything that goes wrong once the email is claimed counts as an attempt,
+    // so a persistent fault runs out of retries instead of looping forever.
+    let outcome = match send_invite_email(state, email_id, claim_token, current_time).await {
+        Ok(Some(outcome)) => outcome,
+        // Another sender holds the email now.
+        Ok(None) => return Ok(()),
+        Err(error) => InviteEmailOutcome {
+            attempt: InviteEmailAttempt::Retryable(error.into_operator_diagnostic()),
             provider_message_id: None,
         },
-        Err(error) => return Err(error.into()),
     };
-    if let Some(settled) = repositories
+    if let Some(settled) = state
+        .metadata
+        .repositories()
         .record_repository_invite_email_attempt(
             email_id,
+            claim_token,
             outcome.attempt,
             outcome.provider_message_id,
-            now,
+            current_time()?,
             &crate::persistence_ids::generate_persistence_id,
         )
         .await?
@@ -90,6 +84,54 @@ async fn deliver_invite_email(state: &AppState, email_id: &str, now: u64) -> Res
         publish_committed_mutation(state, settled, RepoChangeReason::InviteUpdated).await;
     }
     Ok(())
+}
+
+async fn send_invite_email(
+    state: &AppState,
+    email_id: &str,
+    claim_token: &str,
+    current_time: Clock<'_>,
+) -> Result<Option<InviteEmailOutcome>, ApiError> {
+    let repositories = state.metadata.repositories();
+    // Read the clock per email: a slow batch must not send an invite that
+    // expired while earlier emails were going out.
+    let now = current_time()?;
+    // The link is created here and never stored; the invite keeps its hash.
+    let (secret, link_hash) = generate_repository_invite_token()?;
+    let issued = match repositories
+        .issue_repository_invite_email_link(
+            email_id,
+            claim_token,
+            link_hash,
+            now,
+            &crate::persistence_ids::generate_persistence_id,
+        )
+        .await
+    {
+        Ok(Some(issued)) => issued,
+        Ok(None) => return Ok(None),
+        // The invite was revoked, accepted, or expired while this was queued.
+        Err(error) if error.kind == PostgresErrorKind::Conflict => {
+            return Ok(Some(InviteEmailOutcome {
+                attempt: InviteEmailAttempt::Refused(error.message),
+                provider_message_id: None,
+            }));
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let delivery = publish_committed_mutation(state, issued, RepoChangeReason::InviteUpdated).await;
+    let inviter = repositories
+        .user(&delivery.invite.invited_by_user_id)
+        .await?;
+    let message = invite_email_message(
+        email_id,
+        &delivery.repo,
+        &delivery.invite,
+        &inviter.email,
+        &secret,
+        now,
+    )?;
+    Ok(Some(state.invite_mailer.send(&message).await))
 }
 
 fn invite_email_message(
@@ -160,7 +202,7 @@ impl AppState {
             loop {
                 let pass = async {
                     state.metadata.admin().readiness_check().await?;
-                    deliver_due_invite_emails(&state, unix_now()?).await
+                    deliver_due_invite_emails(&state, &unix_now).await
                 };
                 if let Err(error) = pass.await {
                     tracing::warn!(

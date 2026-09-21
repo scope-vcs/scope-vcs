@@ -2,7 +2,7 @@ use super::{
     GeneratedIdSource, RepositoryStore, acquire_aggregate_lock, auth::load_user_by_id, entities,
     repo_effects::save_repo_mutation, repository_from_model,
 };
-use crate::error::PostgresError;
+use crate::error::{PostgresError, PostgresErrorKind};
 use scope_domain::{
     account::UserAccount,
     repo_collaboration::{
@@ -111,7 +111,7 @@ impl RepositoryStore {
         command: CreateRepositoryInviteMutation,
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<
-        RepositoryCollaborationMutation<(RepositoryInvite, RepositoryInviteEmail)>,
+        RepositoryCollaborationMutation<(RepositoryInvite, Option<RepositoryInviteEmail>)>,
         PostgresError,
     > {
         let now_unix = command.now_unix;
@@ -151,8 +151,9 @@ impl RepositoryStore {
         )
         .await?;
         // The invite and its first email commit together, so an invite is
-        // never saved with a forgotten email.
-        let email = super::repo_invite_emails::queue_invite_email(
+        // never saved with a forgotten email. An owner who has used up the
+        // daily email allowance still gets the invite, and can copy a link.
+        let email = match super::repo_invite_emails::queue_invite_email(
             &tx,
             &repo,
             &command.owner_user.id,
@@ -160,7 +161,12 @@ impl RepositoryStore {
             command.email_id,
             now_unix,
         )
-        .await?;
+        .await
+        {
+            Ok(email) => Some(email),
+            Err(error) if error.kind == PostgresErrorKind::ResourceExhausted => None,
+            Err(error) => return Err(error),
+        };
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RepositoryCollaborationMutation::committed(
             &repo,

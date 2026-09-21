@@ -90,7 +90,7 @@ pub(crate) async fn create_repository_invite(
                 )
                 .await?;
             Ok(map_committed_mutation(invite, |(invite, email)| {
-                repository_invite_response(&invite, Some(&email), now)
+                repository_invite_response(&invite, email.as_ref(), now)
             }))
         },
     )

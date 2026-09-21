@@ -322,6 +322,10 @@ async fn an_unknown_link_lands_as_invalid() {
 use crate::use_cases::invite_email_delivery::deliver_due_invite_emails;
 use scope_domain::repo_invite_email::InviteEmailAttempt;
 
+async fn deliver_at(state: &AppState, now: u64) -> Result<usize, crate::error::ApiError> {
+    deliver_due_invite_emails(state, &move || Ok(now)).await
+}
+
 /// The link inside a recorded email's text body.
 fn emailed_token(text: &str) -> String {
     let link = text
@@ -339,10 +343,7 @@ async fn a_new_invite_is_emailed_with_a_link_that_was_never_stored() {
     assert_eq!(invite_email_state(&state).await, "queued");
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 
-    assert_eq!(
-        deliver_due_invite_emails(&state, unix_now()).await.unwrap(),
-        1
-    );
+    assert_eq!(deliver_at(&state, unix_now()).await.unwrap(), 1);
 
     let sent = mailer(&state).sent.lock().unwrap().clone();
     let [(to, reply_to, text)] = sent.as_slice() else {
@@ -379,10 +380,7 @@ async fn a_new_invite_is_emailed_with_a_link_that_was_never_stored() {
     );
 
     // Nothing is due any more, and a second email inside a minute is refused.
-    assert_eq!(
-        deliver_due_invite_emails(&state, unix_now()).await.unwrap(),
-        0
-    );
+    assert_eq!(deliver_at(&state, unix_now()).await.unwrap(), 0);
     let (status, body) = json_request(
         &state,
         "POST",
@@ -412,17 +410,12 @@ async fn an_outage_is_retried_and_a_refusal_leaves_a_retryable_invite() {
     let now = unix_now();
 
     // The outage keeps the email queued, and it is not due again straight away.
-    assert_eq!(deliver_due_invite_emails(&state, now).await.unwrap(), 1);
+    assert_eq!(deliver_at(&state, now).await.unwrap(), 1);
     assert_eq!(invite_email_state(&state).await, "queued");
-    assert_eq!(deliver_due_invite_emails(&state, now).await.unwrap(), 0);
+    assert_eq!(deliver_at(&state, now).await.unwrap(), 0);
 
     // The refusal settles it as failed without sending anything.
-    assert_eq!(
-        deliver_due_invite_emails(&state, now + 3_600)
-            .await
-            .unwrap(),
-        1
-    );
+    assert_eq!(deliver_at(&state, now + 3_600).await.unwrap(), 1);
     assert_eq!(invite_email_state(&state).await, "failed");
     assert!(mailer(&state).sent.lock().unwrap().is_empty());
 
@@ -444,12 +437,7 @@ async fn an_outage_is_retried_and_a_refusal_leaves_a_retryable_invite() {
         .await
         .unwrap();
     assert_eq!(retried.value.id, "invite_email_retry");
-    assert_eq!(
-        deliver_due_invite_emails(&state, now + 3_700)
-            .await
-            .unwrap(),
-        1
-    );
+    assert_eq!(deliver_at(&state, now + 3_700).await.unwrap(), 1);
     assert_eq!(mailer(&state).sent.lock().unwrap().len(), 1);
     assert_eq!(invite_email_state(&state).await, "sent");
 }
@@ -469,15 +457,98 @@ async fn a_queued_email_for_a_revoked_invite_is_never_sent() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    assert_eq!(
-        deliver_due_invite_emails(&state, unix_now()).await.unwrap(),
-        1
-    );
+    assert_eq!(deliver_at(&state, unix_now()).await.unwrap(), 1);
 
     assert!(mailer(&state).sent.lock().unwrap().is_empty());
     assert_eq!(invite_email_state(&state).await, "failed");
-    assert_eq!(
-        deliver_due_invite_emails(&state, unix_now()).await.unwrap(),
-        0
+    assert_eq!(deliver_at(&state, unix_now()).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn one_sender_holds_an_email_until_its_claim_lapses() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    create_invite(&state).await;
+    let repositories = state.metadata.repositories();
+    let now = unix_now();
+
+    // A second API process finds nothing while the first holds the claim.
+    let first = repositories
+        .claim_due_repository_invite_emails("claim_first", now, now + 120, 20)
+        .await
+        .unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(deliver_at(&state, now).await.unwrap(), 0);
+
+    // The first process dies. Once its claim lapses another takes over, and
+    // whatever the first one reports afterwards is ignored.
+    assert_eq!(deliver_at(&state, now + 121).await.unwrap(), 1);
+    assert_eq!(invite_email_state(&state).await, "sent");
+    let late = repositories
+        .record_repository_invite_email_attempt(
+            &first[0],
+            "claim_first",
+            InviteEmailAttempt::Refused("stale sender".into()),
+            None,
+            now + 122,
+            &crate::persistence_ids::generate_persistence_id,
+        )
+        .await
+        .unwrap();
+    assert!(late.is_none());
+    assert_eq!(invite_email_state(&state).await, "sent");
+    assert_eq!(mailer(&state).sent.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn an_owner_out_of_daily_emails_still_gets_an_invite_to_copy() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let invite = |email: String| {
+        let state = state.clone();
+        async move {
+            json_request(
+                &state,
+                "POST",
+                "/v1/repos/owner/repo/invites",
+                Some(&bearer_header()),
+                Some(serde_json::json!({
+                    "email": email,
+                    "permissions": RepositoryMemberPermissions::default(),
+                })),
+            )
+            .await
+        }
+    };
+    for n in 0..scope_domain::repo_invite_email::INVITE_EMAIL_MAX_PER_OWNER_PER_DAY {
+        let (status, body) = invite(format!("person{n}@example.com")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["email"]["state"], "queued");
+    }
+
+    let (status, body) = invite("one-too-many@example.com".into()).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["email"].is_null());
+    let token = copy_link(&state, body["id"].as_str().unwrap()).await;
+    assert_eq!(landing(&state, &token, None).await["status"], "open");
+    // Asking for the email says why it cannot go out yet.
+    let (status, refused) = json_request(
+        &state,
+        "POST",
+        &format!(
+            "/v1/repos/owner/repo/invites/{}/emails",
+            body["id"].as_str().unwrap()
+        ),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("in the last day")
     );
 }

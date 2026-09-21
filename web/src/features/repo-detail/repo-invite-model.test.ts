@@ -29,6 +29,17 @@ test('the list keeps pending invitations and only the expired ones nothing has r
   assert.deepEqual(visible.map((item) => item.id), ['pending', 'newer'])
 })
 
+test('a replacement hides the expired invitation for good, whatever happens to the replacement', () => {
+  const expired = invite('expired', 'a@example.com', 'Expired', 100)
+  for (const replacementState of ['Revoked', 'Accepted'] as const) {
+    const visible = visibleInvitations(
+      [expired, invite('replacement', 'a@example.com', replacementState, 200)],
+      [],
+    )
+    assert.deepEqual(visible, [], replacementState)
+  }
+})
+
 test('delivery wording never claims more than the provider accepted', () => {
   const sent = { state: 'sent', requested_at_unix: 1 } as const
   assert.match(invitationDetail(invite('a', 'a@example.com', 'Pending', 1_790_000_000, sent)), /^Email sent · Expires /)

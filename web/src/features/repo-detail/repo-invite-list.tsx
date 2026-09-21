@@ -10,7 +10,7 @@ import { Link2, LoaderCircle, Send } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { RemovableRowList, RemoveButton, type RowActions } from './removable-row-list'
-import { emailActionLabel, invitationDetail } from './repo-invite-model'
+import { emailActionLabel, invitationDetail, notEmailedNotice } from './repo-invite-model'
 import { permissionSummaryText } from './repo-member-permission-model'
 
 export function InvitationList({
@@ -45,15 +45,20 @@ export function InvitationList({
 
   async function sendEmail(invite: RepositoryInviteResponse) {
     await sendInviteEmail(invite.id)
-    toast.success(`Invitation emailed to ${invite.invited_email}. Earlier links still work.`)
+    // The request only queues the email; the row reports what happens to it.
+    toast.success(`Sending the invitation to ${invite.invited_email} again. Earlier links still work.`)
   }
 
   async function sendNew(invite: RepositoryInviteResponse) {
-    await sendNewInvitation({
+    const created = await sendNewInvitation({
       email: invite.invited_email,
       permissions: invite.permissions,
     })
-    toast.success(`New invitation sent to ${invite.invited_email}. The expired link stays inactive.`)
+    if (created.email) {
+      toast.success(`Sending a new invitation to ${invite.invited_email}. The expired link stays inactive.`)
+    } else {
+      toast.warning(notEmailedNotice)
+    }
   }
 
   return (

@@ -166,11 +166,13 @@ pub mod repository_invite_email {
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
-        pub invite_id: String,
+        pub invite_id: Option<String>,
         pub requested_by_user_id: String,
         pub state: String,
         pub attempts: i32,
         pub next_attempt_at_unix: i64,
+        pub claim_token: Option<String>,
+        pub claim_expires_at_unix: Option<i64>,
         pub provider_message_id: Option<String>,
         pub last_error: Option<String>,
         pub created_at_unix: i64,
@@ -204,7 +206,11 @@ pub mod repository_invite_email {
             };
             Ok(RepositoryInviteEmail {
                 id: self.id,
-                invite_id: self.invite_id,
+                // Only rows kept for the owner's allowance lose their invite,
+                // and nothing loads those as emails.
+                invite_id: self
+                    .invite_id
+                    .ok_or_else(|| PostgresError::internal_message("invite email has no invite"))?,
                 requested_by_user_id: self.requested_by_user_id,
                 state,
                 attempts: u32::try_from(self.attempts).map_err(PostgresError::internal)?,

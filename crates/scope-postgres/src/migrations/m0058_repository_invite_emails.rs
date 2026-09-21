@@ -18,13 +18,18 @@ impl MigrationTrait for Migration {
                 r#"
                 CREATE TABLE scope_repository_invite_emails (
                     id varchar PRIMARY KEY,
-                    invite_id varchar NOT NULL
-                        REFERENCES scope_repository_invites(id) ON DELETE CASCADE,
+                    -- Cleared, not cascaded, when the invite's repository is
+                    -- deleted: the row still counts toward the owner's daily
+                    -- allowance until it ages out.
+                    invite_id varchar
+                        REFERENCES scope_repository_invites(id) ON DELETE SET NULL,
                     requested_by_user_id varchar NOT NULL
                         REFERENCES scope_users(id) ON DELETE CASCADE,
                     state varchar NOT NULL,
                     attempts integer NOT NULL DEFAULT 0,
                     next_attempt_at_unix bigint NOT NULL,
+                    claim_token varchar,
+                    claim_expires_at_unix bigint,
                     provider_message_id varchar,
                     last_error text,
                     created_at_unix bigint NOT NULL,
@@ -33,6 +38,8 @@ impl MigrationTrait for Migration {
                         length(btrim(id)) > 0 AND
                         state IN ('Queued', 'Sent', 'Failed') AND
                         attempts >= 0 AND next_attempt_at_unix >= 0 AND
+                        ((claim_token IS NULL) = (claim_expires_at_unix IS NULL)) AND
+                        (state = 'Queued' OR claim_token IS NULL) AND
                         (last_error IS NULL OR octet_length(last_error) BETWEEN 1 AND 8192) AND
                         created_at_unix >= 0 AND updated_at_unix >= created_at_unix
                     )
