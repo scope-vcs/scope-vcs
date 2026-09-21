@@ -115,6 +115,16 @@ test('request rows exchange age and actions and restore the selected view across
   await page.goForward()
   await page.getByText('Discussion content', { exact: true }).waitFor()
 
+  // The active Requests tab still clears the selection, and Back restores it.
+  assert.equal(await requestsLink.getAttribute('href'), requestsPath)
+  await requestsLink.click()
+  await page.getByText('Select a request', { exact: true }).waitFor()
+  await primary.getByRole('link', { name: 'Runs', exact: true }).click()
+  assert.equal(await requestsLink.getAttribute('href'), requestsPath)
+  await page.goBack()
+  await page.goBack()
+  await page.getByText('Discussion content', { exact: true }).waitFor()
+
   // Access and viewer changes on Runs must discard the previous request link.
   for (const [setter, value] of [['setActor', 'Member'], ['setViewer', 'another-viewer']]) {
     await primary.getByRole('link', { name: 'Runs', exact: true }).click()

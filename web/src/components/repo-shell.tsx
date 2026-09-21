@@ -35,6 +35,7 @@ export function RepoShell({
     const target = router.buildLocation({ params, to }).pathname
     return pathname === target || pathname.startsWith(`${target}/`)
   })
+  const returnToRequest = active === 'requests' ? null : requestLocation
   const items = sections.map<TopbarItem>(
     (section) => ({
       active: active === section.key,
@@ -47,9 +48,9 @@ export function RepoShell({
             aria-describedby={section.key === 'requests' && repo.open_request_count > 0 ? 'repo-open-requests' : undefined}
             className="flex h-full items-center gap-1.5 px-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:px-3"
             params={params}
-            to={section.key === 'requests' && requestLocation ? requestLocation.pathname : section.to}
-            search={section.key === 'requests' && requestLocation ? requestLocation.search : {}}
-            hash={section.key === 'requests' && requestLocation ? requestLocation.hash : ''}
+            to={section.key === 'requests' && returnToRequest ? returnToRequest.pathname : section.to}
+            search={section.key === 'requests' && returnToRequest ? returnToRequest.search : {}}
+            hash={section.key === 'requests' && returnToRequest ? returnToRequest.hash : ''}
           >
             {section.label}
             {section.key === 'requests' && repo.open_request_count > 0 && (
