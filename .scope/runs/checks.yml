@@ -68,6 +68,10 @@ jobs:
         run: |
           service postgresql start
           su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"ALTER SYSTEM SET max_connections = 400\""
+          # This server lives for one job. Without fsync a checkpoint is instant, and
+          # every test database the suite drops has to wait for one.
+          su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"ALTER SYSTEM SET fsync = off\""
+          su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"ALTER SYSTEM SET synchronous_commit = off\""
           service postgresql restart
           su postgres -c "psql --set=ON_ERROR_STOP=1 --command=\"CREATE ROLE scope LOGIN CREATEDB PASSWORD 'scope'\""
           su postgres -c "createdb --owner=scope scope_test"

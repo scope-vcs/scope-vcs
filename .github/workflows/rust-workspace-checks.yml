@@ -46,6 +46,16 @@ jobs:
           shared-key: workspace
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
+      # This server lives for one job. Without fsync a checkpoint is instant, and
+      # every test database the suite drops has to wait for one.
+      - name: Trade Postgres durability for speed
+        run: |
+          docker exec "${{ job.services.postgres.id }}" psql --username=scope --dbname=scope_test \
+            --set=ON_ERROR_STOP=1 \
+            --command="ALTER SYSTEM SET fsync = off" \
+            --command="ALTER SYSTEM SET synchronous_commit = off" \
+            --command="SELECT pg_reload_conf()"
+
       - name: Check Rust workspace
         run: ./dev/checks/backend
 
