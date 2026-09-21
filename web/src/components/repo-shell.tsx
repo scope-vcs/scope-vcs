@@ -9,7 +9,9 @@ import {
   repoSectionsForActor,
 } from '@/components/repo-section-model'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
-import { UserButton } from '@clerk/tanstack-react-start'
+import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import { useRequestReturnLocation } from '@/features/requests/use-request-return-location'
+import { UserButton, useAuth } from '@clerk/tanstack-react-start'
 import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
@@ -22,12 +24,18 @@ export function RepoShell({
 }) {
   const { repo } = useRepoLayout()
   const router = useRouter()
+  const { isLoaded, userId } = useAuth()
+  const requestLocation = useRequestReturnLocation(
+    isLoaded ? repoResourceScope(repo, userId ?? null) : null,
+    router.buildLocation({ params, to: '/$owner/$repo/requests' }).pathname,
+  )
   const pathname = useLocation({ select: (location) => location.pathname })
   const sections = repoSectionsForActor(repo.access.actor)
   const active = activeRepoSection((to) => {
     const target = router.buildLocation({ params, to }).pathname
     return pathname === target || pathname.startsWith(`${target}/`)
   })
+  const returnToRequest = active === 'requests' ? null : requestLocation
   const items = sections.map<TopbarItem>(
     (section) => ({
       active: active === section.key,
@@ -40,7 +48,9 @@ export function RepoShell({
             aria-describedby={section.key === 'requests' && repo.open_request_count > 0 ? 'repo-open-requests' : undefined}
             className="flex h-full items-center gap-1.5 px-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:px-3"
             params={params}
-            to={section.to}
+            to={section.key === 'requests' && returnToRequest ? returnToRequest.pathname : section.to}
+            search={section.key === 'requests' && returnToRequest ? returnToRequest.search : {}}
+            hash={section.key === 'requests' && returnToRequest ? returnToRequest.hash : ''}
           >
             {section.label}
             {section.key === 'requests' && repo.open_request_count > 0 && (

@@ -151,7 +151,7 @@ function RequestWorkspaceRow({
       data-group={group}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
       data-request-id={request.id}
-      style={{ '--row-actions': `${actionCount * 30 + 6}px` } as CSSProperties}
+      style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px` } as CSSProperties}
     >
       <Link
         aria-current={selected ? 'page' : undefined}
@@ -165,10 +165,11 @@ function RequestWorkspaceRow({
         <span className="min-w-0">
           <span
             className={cn(
-              'block text-[13px] leading-[1.35] tracking-[-0.01em]',
+              'block truncate text-[13px] leading-[1.35] tracking-[-0.01em]',
               hot || selected ? 'font-medium text-foreground' : 'text-muted-foreground',
               unread && 'font-semibold',
             )}
+            title={request.title}
           >
             {request.title}
           </span>
@@ -191,7 +192,7 @@ function RequestWorkspaceRow({
               </span>
             </span>
             <time
-              className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground/80"
+              className="request-workspace-row-age ml-auto shrink-0 font-mono text-[10px] text-muted-foreground/80"
               dateTime={new Date(item.attention_at_unix * 1_000).toISOString()}
               suppressHydrationWarning
             >
