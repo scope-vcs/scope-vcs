@@ -514,6 +514,18 @@
           "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
         }
       ]
+    },
+    "web:khroma@2.1.0": {
+      "reason": "The published archive omits a license declaration and license file. Preserve the MIT license from the upstream repository at the published npm gitHead 4968165afb0d3d09be66497e7985a34f7bfe6d42, also tagged v2.1.0, for this checksum-verified archive.",
+      "upstream_license": "MIT",
+      "archive_sha256": "8963d209f3a682374d7f7e45e5fa361a58fc060c8528df6656fae0fc7c508110",
+      "documents": [
+        {
+          "path": "legal/upstream/khroma-4968165afb0d-license",
+          "url": "https://raw.githubusercontent.com/fabiospampinato/khroma/4968165afb0d3d09be66497e7985a34f7bfe6d42/license",
+          "sha256": "66b333b0f66759a0b710459e03f7029abe17f4358114a128d2c972e642961b49"
+        }
+      ]
     }
   }
 }

@@ -3,12 +3,23 @@ import { SafeMarkdown } from '@/components/safe-markdown'
 import { cn } from '@/lib/utils'
 import type { ComponentProps, ReactNode } from 'react'
 import { RequestAttachmentMedia } from './request-attachment-media'
+import type { ExtraProps } from 'react-markdown'
+import { RequestMermaidBlock } from './request-mermaid-block'
 import { requestAttachmentIdFromUrl } from './request-attachment-reference'
 
 const compactMarkdownComponents = markdownComponents('compact')
 
 const requestMarkdownComponents = {
   ...compactMarkdownComponents,
+  pre: ({ node, ...props }: ComponentProps<'pre'> & ExtraProps) => {
+    const code = node?.children[0]
+    if (code?.type === 'element' && code.tagName === 'code' &&
+      Array.isArray(code.properties.className) && code.properties.className.includes('language-mermaid')) {
+      const source = code.children.map((child) => child.type === 'text' ? child.value : '').join('')
+      return <RequestMermaidBlock source={source} />
+    }
+    return compactMarkdownComponents.pre(props)
+  },
   a: ({ children, href, ...props }: ComponentProps<'a'>) => {
     const attachmentId = requestAttachmentIdFromUrl(href)
     return attachmentId

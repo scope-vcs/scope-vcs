@@ -9,6 +9,16 @@ complete text at the end of this document; package-specific notices remain
 with each license document.
 
 ==============================================================================
+@antfu/install-pkg 2.0.1
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@antfu/install-pkg/-/install-pkg-2.0.1.tgz
+
+Published author metadata: "Anthony Fu <anthonyfu117@hotmail.com>"
+Repository: {"type": "git", "url": "git+https://github.com/antfu-collective/install-pkg.git"}
+LICENSE: text 665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc
+
+==============================================================================
 @apm-js-collab/code-transformer 0.15.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
@@ -208,6 +218,62 @@ Source: https://registry.npmjs.org/@babel/types/-/types-7.29.7.tgz
 Published author metadata: "The Babel Team (https://babel.dev/team)"
 Repository: {"type": "git", "url": "https://github.com/babel/babel.git", "directory": "packages/babel-types"}
 LICENSE: text 8f08c824b2bb54eda2b6ee6053d2eeed46877b3b7b2ef3f60fc2b9fa580f54b2
+
+==============================================================================
+@braintree/sanitize-url 7.1.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@braintree/sanitize-url/-/sanitize-url-7.1.2.tgz
+
+Repository: {"type": "git", "url": "git+https://github.com/braintree/sanitize-url.git"}
+LICENSE: text 0bc46fcdad091a1d914ff9f7981f467faa976fa7a998796afc512f5b6e13287f
+
+==============================================================================
+@chevrotain/cst-dts-gen 11.1.2
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://registry.npmjs.org/@chevrotain/cst-dts-gen/-/cst-dts-gen-11.1.2.tgz
+
+Repository: {"type": "git", "url": "git://github.com/Chevrotain/chevrotain.git"}
+LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
+@chevrotain/gast 11.1.2
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://registry.npmjs.org/@chevrotain/gast/-/gast-11.1.2.tgz
+
+Repository: {"type": "git", "url": "git://github.com/Chevrotain/chevrotain.git"}
+LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
+@chevrotain/regexp-to-ast 11.1.2
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://registry.npmjs.org/@chevrotain/regexp-to-ast/-/regexp-to-ast-11.1.2.tgz
+
+Repository: {"type": "git", "url": "git://github.com/Chevrotain/chevrotain.git"}
+LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
+@chevrotain/types 11.1.2
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://registry.npmjs.org/@chevrotain/types/-/types-11.1.2.tgz
+
+Published author metadata: {"name": "Shahar Soel"}
+Repository: {"type": "git", "url": "git://github.com/Chevrotain/chevrotain.git"}
+LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
+@chevrotain/utils 11.1.2
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://registry.npmjs.org/@chevrotain/utils/-/utils-11.1.2.tgz
+
+Published author metadata: {"name": "Shahar Soel"}
+Repository: {"type": "git", "url": "git://github.com/Chevrotain/chevrotain.git"}
+LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
 @clerk/backend 3.8.0
@@ -500,6 +566,26 @@ Repository: {"type": "git", "url": "git+https://github.com/iarna/iarna-toml.git"
 LICENSE: text ab6e4a6aba0aa7fe676183468c2a732ca1d21687be4aa56eb04f94d8830c16be
 
 ==============================================================================
+@iconify/types 2.0.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@iconify/types/-/types-2.0.0.tgz
+
+Published author metadata: "Vjacheslav Trushkin"
+Repository: {"type": "git", "url": "https://github.com/iconify/iconify.git", "directory": "packages/types"}
+license.txt: text 045ce74712fc613fdd74d1c55f5140a08d623836ff2aca44132b38d68fbc67ad
+
+==============================================================================
+@iconify/utils 3.1.7
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@iconify/utils/-/utils-3.1.7.tgz
+
+Published author metadata: "Vjacheslav Trushkin"
+Repository: {"type": "git", "url": "https://github.com/iconify/iconify.git", "directory": "packages/utils"}
+license.txt: text a86793ac023162ce98b91899601c15f6712f44943163c4f92a0a4bf89152b3bf
+
+==============================================================================
 @jridgewell/gen-mapping 0.3.13
 Declared license: MIT
 Selected license: MIT
@@ -557,6 +643,16 @@ Source: https://registry.npmjs.org/@konsistent/convention/-/convention-1.0.0-bet
 
 Repository: {"type": "git", "url": "https://github.com/vercel-labs/konsistent", "directory": "packages/convention"}
 LICENSE: text 5c67ad692a469fa14d325db4c1e392f9343a77b9ac82ae87f70cfb47b2387c22
+
+==============================================================================
+@mermaid-js/parser 2.0.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@mermaid-js/parser/-/parser-2.0.0.tgz
+
+Published author metadata: "Yokozuna59"
+Repository: {"type": "git", "url": "https://github.com/mermaid-js/mermaid.git", "directory": "packages/parser"}
+LICENSE: text d872b89e34b794519bb00f82dbad5710435fe5eb37a0a80ed0b72a92db47ced5
 
 ==============================================================================
 @napi-rs/wasm-runtime 1.1.5
@@ -2848,6 +2944,285 @@ legal/upstream/nodejs-node-9774069718d9-path-LICENSE.txt: text 9ed580a09fdd2e561
 Published package license and author metadata: text 9842b144f0515ea5ebc0583a7766ff1ca7e37ab1e9edacb2ac1865841956ae56
 
 ==============================================================================
+@types/d3 7.4.3
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3/-/d3-7.4.3.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-array 3.2.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-array/-/d3-array-3.2.2.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-array"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-axis 3.0.6
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-axis/-/d3-axis-3.0.6.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-axis"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-brush 3.0.6
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-brush/-/d3-brush-3.0.6.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-brush"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-chord 3.0.6
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-chord/-/d3-chord-3.0.6.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-chord"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-color 3.1.3
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-color/-/d3-color-3.1.3.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-color"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-contour 3.0.6
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-contour/-/d3-contour-3.0.6.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-contour"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-delaunay 6.0.4
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-delaunay/-/d3-delaunay-6.0.4.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-delaunay"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-dispatch 3.0.7
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-dispatch/-/d3-dispatch-3.0.7.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-dispatch"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-drag 3.0.7
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-drag/-/d3-drag-3.0.7.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-drag"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-dsv 3.0.7
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-dsv/-/d3-dsv-3.0.7.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-dsv"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-ease 3.0.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-ease/-/d3-ease-3.0.2.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-ease"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-fetch 3.0.7
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-fetch/-/d3-fetch-3.0.7.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-fetch"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-force 3.0.10
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-force/-/d3-force-3.0.10.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-force"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-format 3.0.4
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-format/-/d3-format-3.0.4.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-format"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-geo 3.1.1
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-geo/-/d3-geo-3.1.1.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-geo"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-hierarchy 3.1.7
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-hierarchy/-/d3-hierarchy-3.1.7.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-hierarchy"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-interpolate 3.0.4
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-interpolate/-/d3-interpolate-3.0.4.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-interpolate"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-path 3.1.1
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-path/-/d3-path-3.1.1.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-path"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-polygon 3.0.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-polygon/-/d3-polygon-3.0.2.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-polygon"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-quadtree 3.0.6
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-quadtree/-/d3-quadtree-3.0.6.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-quadtree"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-random 3.0.4
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-random/-/d3-random-3.0.4.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-random"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-scale 4.0.9
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-scale/-/d3-scale-4.0.9.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-scale"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-scale-chromatic 3.1.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-scale-chromatic/-/d3-scale-chromatic-3.1.0.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-scale-chromatic"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-selection 3.0.12
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-selection/-/d3-selection-3.0.12.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-selection"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-shape 3.2.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-shape/-/d3-shape-3.2.0.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-shape"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-time 3.0.4
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-time/-/d3-time-3.0.4.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-time"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-time-format 4.0.3
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-time-format/-/d3-time-format-4.0.3.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-time-format"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-timer 3.0.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-timer/-/d3-timer-3.0.2.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-timer"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-transition 3.0.9
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-transition/-/d3-transition-3.0.9.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-transition"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/d3-zoom 3.0.8
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/d3-zoom/-/d3-zoom-3.0.8.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/d3-zoom"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
 @types/debug 4.1.13
 Declared license: MIT
 Selected license: MIT
@@ -2881,6 +3256,15 @@ Selected license: MIT
 Source: https://registry.npmjs.org/@types/estree-jsx/-/estree-jsx-1.0.5.tgz
 
 Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/estree-jsx"}
+LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+@types/geojson 7946.0.16
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@types/geojson/-/geojson-7946.0.16.tgz
+
+Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/geojson"}
 LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
 
 ==============================================================================
@@ -2991,6 +3375,16 @@ Source: https://registry.npmjs.org/@ungap/structured-clone/-/structured-clone-1.
 Published author metadata: "Andrea Giammarchi"
 Repository: {"type": "git", "url": "git+https://github.com/ungap/structured-clone.git"}
 LICENSE: text 22fc2b0e60ba1aba633480a843b0cded65e5de44f4be0cc17b19e1449a00d465
+
+==============================================================================
+@upsetjs/venn.js 2.0.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@upsetjs/venn.js/-/venn.js-2.0.0.tgz
+
+Published author metadata: {"name": "Ben Frederickson", "email": "ben@benfrederickson.com", "url": "https://www.benfrederickson.com"}
+Repository: {"type": "git", "url": "https://github.com/upsetjs/venn.js.git"}
+LICENSE: text 7bdac5ba137b8460596d8a7148ddf6e453c662bd22733a333ce4da500b3c889d
 
 ==============================================================================
 @vitejs/plugin-react 6.0.2
@@ -3244,6 +3638,16 @@ Repository: "wooorm/character-reference-invalid"
 license: text c37a32dd1cd44e7b68afdf88cb45eb2c4028574f7d894c720371d5688f73ef45
 
 ==============================================================================
+chevrotain 11.1.2
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://registry.npmjs.org/chevrotain/-/chevrotain-11.1.2.tgz
+
+Published author metadata: {"name": "Shahar Soel"}
+Repository: {"type": "git", "url": "git://github.com/Chevrotain/chevrotain.git"}
+LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
 chokidar 5.0.0
 Declared license: MIT
 Selected license: MIT
@@ -3313,6 +3717,26 @@ Repository: {"type": "git", "url": "git+https://github.com/tj/commander.js.git"}
 LICENSE: text 4cc9c2af4eb0056cd4d2297b7404819e3816b4c44b7f8012c42d5fd671d783d3
 
 ==============================================================================
+commander 7.2.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/commander/-/commander-7.2.0.tgz
+
+Published author metadata: "TJ Holowaychuk <tj@vision-media.ca>"
+Repository: {"type": "git", "url": "https://github.com/tj/commander.js.git"}
+LICENSE: text 4cc9c2af4eb0056cd4d2297b7404819e3816b4c44b7f8012c42d5fd671d783d3
+
+==============================================================================
+commander 8.3.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/commander/-/commander-8.3.0.tgz
+
+Published author metadata: "TJ Holowaychuk <tj@vision-media.ca>"
+Repository: {"type": "git", "url": "https://github.com/tj/commander.js.git"}
+LICENSE: text 4cc9c2af4eb0056cd4d2297b7404819e3816b4c44b7f8012c42d5fd671d783d3
+
+==============================================================================
 conf 15.1.0
 Declared license: MIT
 Selected license: MIT
@@ -3370,6 +3794,24 @@ Repository: {"type": "git", "url": "git+https://github.com/zloirock/core-js.git"
 LICENSE: text 826192089a5a1058a7f4f404b2436d92b73f38fd0dbcc6378cfa2b8de58e5375
 
 ==============================================================================
+cose-base 1.0.3
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/cose-base/-/cose-base-1.0.3.tgz
+
+Repository: {"type": "git", "url": "git+https://github.com/iVis-at-Bilkent/cose-base.git"}
+LICENSE: text 90ee3cca58dabf88333de774d3d05509516d5e80cec40e0109ae2717d52b0f94
+
+==============================================================================
+cose-base 2.2.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/cose-base/-/cose-base-2.2.0.tgz
+
+Repository: {"type": "git", "url": "git+https://github.com/iVis-at-Bilkent/cose-base.git"}
+LICENSE: text 90ee3cca58dabf88333de774d3d05509516d5e80cec40e0109ae2717d52b0f94
+
+==============================================================================
 cross-spawn 7.0.6
 Declared license: MIT
 Selected license: MIT
@@ -3397,6 +3839,404 @@ Source: https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz
 Published author metadata: "Fredrik Nicol <fredrik.nicol@gmail.com>"
 Repository: "https://github.com/frenic/csstype"
 LICENSE: text 6a972b33787e14304b4cfca68387f8644d11788a5d551731196b8e64dd9f0431
+
+==============================================================================
+cytoscape 3.34.3
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/cytoscape/-/cytoscape-3.34.3.tgz
+
+Repository: {"type": "git", "url": "https://github.com/cytoscape/cytoscape.js.git"}
+LICENSE: text eb319c6e6f233607f71e8e2f450391751883cfc0eeb3ca7ef574c13d1d9c2203
+license-update.mjs: text d4317f690ad0f0ff2b616d608d0514f4f97241a07933151ae63947d0dff19c1b
+
+==============================================================================
+cytoscape-cose-bilkent 4.1.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/cytoscape-cose-bilkent/-/cytoscape-cose-bilkent-4.1.0.tgz
+
+Repository: {"type": "git", "url": "https://github.com/cytoscape/cytoscape.js-cose-bilkent.git"}
+LICENSE: text 39b03b27e43a4f2d28a291b5c729509d2f1baf3d1720516888f49454c16a868d
+
+==============================================================================
+cytoscape-fcose 2.2.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/cytoscape-fcose/-/cytoscape-fcose-2.2.0.tgz
+
+Published author metadata: {"name": "iVis-at-Bilkent"}
+Repository: {"type": "git", "url": "https://github.com/iVis-at-Bilkent/cytoscape.js-fcose.git"}
+LICENSE: text 9f5ea8f5a2689d9e0fd255197282d4526fc2219637d7e76c4ef02f1ea289f544
+
+==============================================================================
+d3 7.9.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3/-/d3-7.9.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3.git"}
+LICENSE: text f57e3a2cabf2b43ab2fc942a8e9f4b38366ab0d1f859c6439b1fb69e80d9af73
+
+==============================================================================
+d3-array 2.12.1
+Declared license: BSD-3-Clause
+Selected license: BSD-3-Clause
+Source: https://registry.npmjs.org/d3-array/-/d3-array-2.12.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-array.git"}
+LICENSE: text 586409690da31408c8348e6acb0bdbabdf4611308778edfc6210eb09492f23a1
+
+==============================================================================
+d3-array 3.2.4
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-array/-/d3-array-3.2.4.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-array.git"}
+LICENSE: text f57e3a2cabf2b43ab2fc942a8e9f4b38366ab0d1f859c6439b1fb69e80d9af73
+
+==============================================================================
+d3-axis 3.0.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-axis/-/d3-axis-3.0.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-axis.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-brush 3.0.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-brush/-/d3-brush-3.0.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-brush.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-chord 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-chord/-/d3-chord-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-chord.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-color 3.1.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-color/-/d3-color-3.1.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-color.git"}
+LICENSE: text 4f4f9997e3d96636b08171484bf3e2b5a8a46745e2b0dd4d4f86b0e5cfa632e8
+
+==============================================================================
+d3-contour 4.0.2
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-contour/-/d3-contour-4.0.2.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-contour.git"}
+LICENSE: text c8ea45f591c25c2a96e7a59f87ecc5adf64010c10cfd7938f4c1c5c9ff4c1885
+
+==============================================================================
+d3-delaunay 6.0.4
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-delaunay/-/d3-delaunay-6.0.4.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-delaunay.git"}
+LICENSE: text 4f8e381e74d41111b8220c5b93c5c8fd1e5abc9d1a4d963ee6dd679c4631b63c
+
+==============================================================================
+d3-dispatch 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-dispatch/-/d3-dispatch-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-dispatch.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-drag 3.0.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-drag/-/d3-drag-3.0.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-drag.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-dsv 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-dsv/-/d3-dsv-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-dsv.git"}
+LICENSE: text 4c1cd1d0c4f880ec6cc58495f54e57877fccefcf0a4050fe09c9d81b757bf494
+
+==============================================================================
+d3-ease 3.0.1
+Declared license: BSD-3-Clause
+Selected license: BSD-3-Clause
+Source: https://registry.npmjs.org/d3-ease/-/d3-ease-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-ease.git"}
+LICENSE: text 69af84a0cb486bc97d578ea76f0aea3ad628ad97147551d2a898902941bd6db6
+
+==============================================================================
+d3-fetch 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-fetch/-/d3-fetch-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-fetch.git"}
+LICENSE: text 9d00baf34d17d2e5ca9301230b256f1ced369cdb41712daa6f18716d93c6e88c
+
+==============================================================================
+d3-force 3.0.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-force/-/d3-force-3.0.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-force.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-format 3.1.2
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-format/-/d3-format-3.1.2.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-format.git"}
+LICENSE: text 9fe3e95ca3e8ef778fc93263946e9c4e8a10ff3afe9c3333f54402bb99079bc1
+
+==============================================================================
+d3-geo 3.1.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-geo/-/d3-geo-3.1.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-geo.git"}
+LICENSE: text e87ae4ac338d47ce509af51623763b9a197e6ca26f958be54f67c1a64cd0062c
+
+==============================================================================
+d3-hierarchy 3.1.2
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-hierarchy/-/d3-hierarchy-3.1.2.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-hierarchy.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-interpolate 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-interpolate/-/d3-interpolate-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-interpolate.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-path 1.0.9
+Declared license: BSD-3-Clause
+Selected license: BSD-3-Clause
+Source: https://registry.npmjs.org/d3-path/-/d3-path-1.0.9.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-path.git"}
+LICENSE: text 4b2513f280f34835efbeaa334f82b04a9a4c7498786828f75c6d1bbcdc88c56d
+
+==============================================================================
+d3-path 3.1.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-path/-/d3-path-3.1.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-path.git"}
+LICENSE: text 58f959e2911ca1fdd6812a2cebe42193c6137922ecbcce86d8233873706181ab
+
+==============================================================================
+d3-polygon 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-polygon/-/d3-polygon-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-polygon.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-quadtree 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-quadtree/-/d3-quadtree-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-quadtree.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-random 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-random/-/d3-random-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-random.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-sankey 0.12.3
+Declared license: BSD-3-Clause
+Selected license: BSD-3-Clause
+Source: https://registry.npmjs.org/d3-sankey/-/d3-sankey-0.12.3.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike/"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-sankey.git"}
+LICENSE: text 38fdb5e42d4842bde17baea7f4bf690c25706ce06c6a90c981c57379f01751b1
+
+==============================================================================
+d3-scale 4.0.2
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-scale/-/d3-scale-4.0.2.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-scale.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-scale-chromatic 3.1.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-scale-chromatic/-/d3-scale-chromatic-3.1.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-scale-chromatic.git"}
+LICENSE: text 1549638d9e45cf99379d6e71aa706583e5952cd875a26a02f58c9b26499c94e9
+
+==============================================================================
+d3-selection 3.0.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-selection/-/d3-selection-3.0.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-selection.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-shape 1.3.7
+Declared license: BSD-3-Clause
+Selected license: BSD-3-Clause
+Source: https://registry.npmjs.org/d3-shape/-/d3-shape-1.3.7.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-shape.git"}
+LICENSE: text 50366760ca8535f84b7aee30309f9ec70f78677843b1fc73491e6d1803edea69
+
+==============================================================================
+d3-shape 3.2.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-shape/-/d3-shape-3.2.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-shape.git"}
+LICENSE: text 4f4f9997e3d96636b08171484bf3e2b5a8a46745e2b0dd4d4f86b0e5cfa632e8
+
+==============================================================================
+d3-time 3.1.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-time/-/d3-time-3.1.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-time.git"}
+LICENSE: text 4f4f9997e3d96636b08171484bf3e2b5a8a46745e2b0dd4d4f86b0e5cfa632e8
+
+==============================================================================
+d3-time-format 4.1.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-time-format/-/d3-time-format-4.1.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-time-format.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-timer 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-timer/-/d3-timer-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-timer.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-transition 3.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-transition/-/d3-transition-3.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-transition.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+d3-zoom 3.0.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/d3-zoom/-/d3-zoom-3.0.0.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/d3/d3-zoom.git"}
+LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
+
+==============================================================================
+dagre-d3-es 7.0.14
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/dagre-d3-es/-/dagre-d3-es-7.0.14.tgz
+
+Repository: {"type": "git", "url": "git+https://github.com/tbo47/dagre-es.git"}
+LICENSE.md: text 1521adecf617469732f46e52c8da847796e27763eeec6e45b14522c53032c2f5
+
+==============================================================================
+dayjs 1.11.23
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/dayjs/-/dayjs-1.11.23.tgz
+
+Published author metadata: "iamkun"
+Repository: {"type": "git", "url": "https://github.com/iamkun/dayjs.git"}
+LICENSE: text 16e34a46fa584c2cc09682bd36edae63e88c4696371b5d95476f676a65763535
 
 ==============================================================================
 db0 0.3.4
@@ -3446,6 +4286,16 @@ Source: https://registry.npmjs.org/deep-is/-/deep-is-0.1.4.tgz
 Published author metadata: {"name": "Thorsten Lorenz", "email": "thlorenz@gmx.de", "url": "http://thlorenz.com"}
 Repository: {"type": "git", "url": "http://github.com/thlorenz/deep-is.git"}
 LICENSE: text a6ea8b9acb876df3e8f06ba65d89e38b7f29e0d507db712024bb5337a0a42c5d
+
+==============================================================================
+delaunator 5.1.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/delaunator/-/delaunator-5.1.0.tgz
+
+Published author metadata: "Vladimir Agafonkin"
+Repository: {"type": "git", "url": "https://github.com/mapbox/delaunator.git"}
+LICENSE: text 2c5fce57341d0c1e2369145707a4b5ee5cd4d0776824a65d52ad0a759b9dd26c
 
 ==============================================================================
 dequal 2.0.3
@@ -3560,6 +4410,16 @@ Repository: {"type": "git", "url": "git+https://github.com/Kilian/electron-to-ch
 LICENSE: text 94e2d6f90264f1e3efc695ab64d36f17c7616a7bae97ab0c51e7f895b842db4d
 
 ==============================================================================
+elkjs 0.9.3
+Declared license: EPL-2.0
+Selected license: EPL-2.0
+Source: https://registry.npmjs.org/elkjs/-/elkjs-0.9.3.tgz
+
+Published author metadata: {"name": "Ulf Rüegg", "email": "uruurumail@gmail.com"}
+Repository: {"type": "git", "url": "https://github.com/kieler/elkjs.git"}
+LICENSE.md: text 937e74317a828098505160d49253e3aac07fad512442228922a230a32097d5f3
+
+==============================================================================
 enhanced-resolve 5.21.6
 Declared license: MIT
 Selected license: MIT
@@ -3597,6 +4457,16 @@ Source: https://registry.npmjs.org/es-module-lexer/-/es-module-lexer-2.1.0.tgz
 Published author metadata: "Guy Bedford"
 Repository: {"type": "git", "url": "git+https://github.com/guybedford/es-module-lexer.git"}
 LICENSE: text 4b48a6b2bcf727a2f27e1bd4892fd047ffed8a0bc1b791b1afc9fe0fec75eba5
+
+==============================================================================
+es-toolkit 1.52.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.52.0.tgz
+
+Repository: {"type": "git", "url": "https://github.com/toss/es-toolkit.git"}
+LICENSE: text 02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd
+NOTICE: text fbc4178c74242989f8d40f9a4e9c10ce969604c33699a94b1bfffd30cb2634d1
 
 ==============================================================================
 escalade 3.2.0
@@ -4022,6 +4892,16 @@ Repository: "h3js/h3"
 LICENSE: text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94
 
 ==============================================================================
+hachure-fill 0.5.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/hachure-fill/-/hachure-fill-0.5.2.tgz
+
+Published author metadata: "Preet Shihn"
+Repository: {"type": "git", "url": "git+https://github.com/pshihn/hachure-fill.git"}
+LICENSE: text d3de97fbfe541d80b7e8d0c9c5ddc55d3d6b65acd2208b46235e5b0b10bbe920
+
+==============================================================================
 hast-util-heading-rank 3.0.0
 Declared license: MIT
 Selected license: MIT
@@ -4128,6 +5008,16 @@ Repository: "unjs/httpxy"
 LICENSE: text ef18ec33f0d1d868a88623e8af50a29eb6f764e09b4212fbd48a261d02cc1d0f
 
 ==============================================================================
+iconv-lite 0.6.3
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.6.3.tgz
+
+Published author metadata: "Alexander Shtuchkin <ashtuchkin@gmail.com>"
+Repository: {"type": "git", "url": "git://github.com/ashtuchkin/iconv-lite.git"}
+LICENSE: text 48186f5950f28caaafaa7f4c18b0b31350bea5c93f3a2d74b883b35a0d528863
+
+==============================================================================
 ignore 5.3.2
 Declared license: MIT
 Selected license: MIT
@@ -4150,6 +5040,16 @@ LICENSE-3rdparty.csv: text 333a321d670aa80db5d1f2ee86b416c463ebe34043fa1fcd1dfc1
 NOTICE: text 79e98d102ededbd933d8f3f88879f9560519d0ede75ad184839b6e6e4aacd67f
 
 ==============================================================================
+import-meta-resolve 4.2.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/import-meta-resolve/-/import-meta-resolve-4.2.0.tgz
+
+Published author metadata: "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)"
+Repository: "wooorm/import-meta-resolve"
+license: text 396681618aa8aa6f0b7829ad39bfd2afa908034ff594774a5bb8df02ae91c9c3
+
+==============================================================================
 imurmurhash 0.1.4
 Declared license: MIT
 Selected license: MIT
@@ -4169,6 +5069,26 @@ Source: https://registry.npmjs.org/inline-style-parser/-/inline-style-parser-0.2
 
 Repository: {"type": "git", "url": "git+https://github.com/remarkablemark/inline-style-parser.git"}
 LICENSE: text 9cac2500def4b470630236615d685a8bfaa65389c271d4cb1ea63df46880d06f
+
+==============================================================================
+internmap 1.0.1
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/internmap/-/internmap-1.0.1.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/mbostock/internmap.git"}
+LICENSE: text f4bb8f655fdb4d119878a0eea6dfcb871da509d83baa7426794f7c70b9bb9d46
+
+==============================================================================
+internmap 2.0.3
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/internmap/-/internmap-2.0.3.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "https://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "https://github.com/mbostock/internmap.git"}
+LICENSE: text f4bb8f655fdb4d119878a0eea6dfcb871da509d83baa7426794f7c70b9bb9d46
 
 ==============================================================================
 is-alphabetical 2.0.1
@@ -4389,6 +5309,15 @@ Repository: {"type": "git", "url": "https://github.com/microsoft/node-jsonc-pars
 LICENSE.md: text 59d4ecf670e758dc63133945108bb5d74f875e7dc1cab5a2b4dcb901e3fa3e36
 
 ==============================================================================
+katex 0.16.47
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/katex/-/katex-0.16.47.tgz
+
+Repository: {"type": "git", "url": "https://github.com/KaTeX/KaTeX.git"}
+LICENSE: text d3c8c167dfa0a8a7f2ace9fc23ddfb89e609adc13b113e958bede249592b852d
+
+==============================================================================
 keyv 4.5.4
 Declared license: MIT
 Selected license: MIT
@@ -4401,6 +5330,19 @@ The checksum-verified package manifest explicitly declares MIT. Upstream omits a
 legal/upstream/f3a25fb846504d92.txt: text 5465107dd51e3020d6b6d7f1cee260a8a8435aff4b628d7aa7401fe95c34b6fa
 legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt: text c435050845f96340bfb02c18e46653138e73475492f519b7e6e381853bdfbace
 Published package license and author metadata: text 9c2bd0288e8423e19a08f3653b03c0a445580dad760611677f9620b88f33f415
+
+==============================================================================
+khroma 2.1.0
+Declared license: not declared
+Selected license: MIT
+Source: https://registry.npmjs.org/khroma/-/khroma-2.1.0.tgz
+
+Upstream license: MIT
+Repository: "github:fabiospampinato/khroma"
+The published archive omits a license declaration and license file. Preserve the MIT license from the upstream repository at the published npm gitHead 4968165afb0d3d09be66497e7985a34f7bfe6d42, also tagged v2.1.0, for this checksum-verified archive.
+
+license: text 5135f3f7607134fae453693e070d5afb8704957fa2f4388dd4abdc14b99aebfb
+legal/upstream/khroma-4968165afb0d-license: text 5135f3f7607134fae453693e070d5afb8704957fa2f4388dd4abdc14b99aebfb
 
 ==============================================================================
 kleur 3.0.3
@@ -4420,6 +5362,24 @@ Source: https://registry.npmjs.org/konsistent/-/konsistent-1.0.0-beta.1.tgz
 
 Repository: {"type": "git", "url": "https://github.com/vercel-labs/konsistent", "directory": "packages/konsistent"}
 LICENSE: text 5c67ad692a469fa14d325db4c1e392f9343a77b9ac82ae87f70cfb47b2387c22
+
+==============================================================================
+layout-base 1.0.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/layout-base/-/layout-base-1.0.2.tgz
+
+Repository: {"type": "git", "url": "git+https://github.com/iVis-at-Bilkent/layout-base.git"}
+LICENSE: text 6dfc8a41d27c6bfd01a963b61461f22060aa32909f1c0eda6863755cc3aea9a0
+
+==============================================================================
+layout-base 2.0.1
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/layout-base/-/layout-base-2.0.1.tgz
+
+Repository: {"type": "git", "url": "git+https://github.com/iVis-at-Bilkent/layout-base.git"}
+LICENSE: text 6dfc8a41d27c6bfd01a963b61461f22060aa32909f1c0eda6863755cc3aea9a0
 
 ==============================================================================
 levn 0.4.1
@@ -4550,6 +5510,26 @@ Repository: "sindresorhus/locate-path"
 license: text 1529f88b3675095087120854c6fa2cc1113ab2da2f88c4f6aa4ffe52e98ef81b
 
 ==============================================================================
+lodash-es 4.17.23
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/lodash-es/-/lodash-es-4.17.23.tgz
+
+Published author metadata: "John-David Dalton <john.david.dalton@gmail.com>"
+Repository: "lodash/lodash"
+LICENSE: text 2314aa0e2bae2fcbc099b29c8815e26688cef6c2cf76226927a3f24f091f7114
+
+==============================================================================
+lodash-es 4.18.1
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/lodash-es/-/lodash-es-4.18.1.tgz
+
+Published author metadata: "John-David Dalton <john.david.dalton@gmail.com>"
+Repository: "lodash/lodash"
+LICENSE: text 2314aa0e2bae2fcbc099b29c8815e26688cef6c2cf76226927a3f24f091f7114
+
+==============================================================================
 longest-streak 3.1.0
 Declared license: MIT
 Selected license: MIT
@@ -4619,6 +5599,16 @@ Source: https://registry.npmjs.org/markdown-table/-/markdown-table-3.0.4.tgz
 Published author metadata: "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)"
 Repository: "wooorm/markdown-table"
 license: text ea559213e0e927a249bd60f4f6a27d1a272fb5d38d2babbd723099c66a17c5af
+
+==============================================================================
+marked 16.4.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/marked/-/marked-16.4.2.tgz
+
+Published author metadata: "Christopher Jeffrey"
+Repository: {"type": "git", "url": "git://github.com/markedjs/marked.git"}
+LICENSE.md: text dd923de9769808b2820f68a2ea9d90b62d9348709e13ee95c234e4acc6d3ee09
 
 ==============================================================================
 mdast-util-find-and-replace 3.0.2
@@ -4789,6 +5779,16 @@ Source: https://registry.npmjs.org/meriyah/-/meriyah-6.1.4.tgz
 Published author metadata: {"name": "Kenny F.", "url": "https://github.com/KFlash"}
 Repository: {"type": "git", "url": "git+https://github.com/meriyah/meriyah.git"}
 LICENSE.md: text dc0b04b900b6ef51d11e9af2a306bc78600db32aa0728e4ea661cbdb6816b9c7
+
+==============================================================================
+mermaid 12.0.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/mermaid/-/mermaid-12.0.0.tgz
+
+Published author metadata: "Knut Sveidqvist"
+Repository: {"type": "git", "url": "https://github.com/mermaid-js/mermaid"}
+LICENSE: text 94228ab8fc0bb327fa6c903ce56642885e72f7d2d274e9e33f8eea57e4c887cb
 
 ==============================================================================
 micromark 4.0.2
@@ -5328,6 +6328,16 @@ Repository: "sindresorhus/p-locate"
 license: text 1529f88b3675095087120854c6fa2cc1113ab2da2f88c4f6aa4ffe52e98ef81b
 
 ==============================================================================
+package-manager-detector 1.8.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/package-manager-detector/-/package-manager-detector-1.8.0.tgz
+
+Published author metadata: "Anthony Fu <anthonyfu117@hotmail.com>"
+Repository: {"type": "git", "url": "git+https://github.com/antfu-collective/package-manager-detector.git"}
+LICENSE: text ac1f2978a646f2d409b80c433e49c489c835988e2729a5afddcfe29d352196dc
+
+==============================================================================
 pagent 0.1.0
 Declared license: not declared
 Selected license: Apache-2.0
@@ -5348,6 +6358,16 @@ Source: https://registry.npmjs.org/parse-entities/-/parse-entities-4.0.2.tgz
 Published author metadata: "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)"
 Repository: "wooorm/parse-entities"
 license: text c74f9c5a522f5929f11d6de847a4af6e025b18ee22f00e917d60391cc78864ad
+
+==============================================================================
+path-data-parser 0.1.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/path-data-parser/-/path-data-parser-0.1.0.tgz
+
+Published author metadata: "Preet Shihn"
+Repository: {"type": "git", "url": "git+https://github.com/pshihn/path-data-parser.git"}
+LICENSE: text a734fd0e3f64745e4d78dd34b37a3546f4488a3e516879d62e952f2b9e0f69a4
 
 ==============================================================================
 path-exists 4.0.0
@@ -5429,6 +6449,26 @@ Published author metadata: {"name": "Microsoft Corporation"}
 Repository: {"type": "git", "url": "git+https://github.com/microsoft/playwright.git"}
 LICENSE: text 5b475effab78d12623dfa54915387571ec075e7f7e026cc0a196cfce2d764049
 NOTICE: text 7b1444e03705067d36e59fc8cd3260daf245b8d06006cad06d462578fb92eab5
+
+==============================================================================
+points-on-curve 0.2.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/points-on-curve/-/points-on-curve-0.2.0.tgz
+
+Published author metadata: "Preet Shihn"
+Repository: {"type": "git", "url": "git+https://github.com/pshihn/bezier-points.git"}
+LICENSE: text a734fd0e3f64745e4d78dd34b37a3546f4488a3e516879d62e952f2b9e0f69a4
+
+==============================================================================
+points-on-path 0.2.1
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/points-on-path/-/points-on-path-0.2.1.tgz
+
+Published author metadata: "Preet Shihn"
+Repository: {"type": "git", "url": "git+https://github.com/pshihn/points-on-path.git"}
+LICENSE: text 05a601c405df8b356c034413e7d3db9f57300cffad0eea2df809414151914864
 
 ==============================================================================
 postcss 8.5.15
@@ -5731,6 +6771,16 @@ Repository: {"type": "git", "url": "git+https://github.com/mcollina/reusify.git"
 LICENSE: text 7eb05843f078916a78f1be5f00b944653a398d208d8f7aa3df4f8f6986323bb7
 
 ==============================================================================
+robust-predicates 3.0.3
+Declared license: Unlicense
+Selected license: Unlicense
+Source: https://registry.npmjs.org/robust-predicates/-/robust-predicates-3.0.3.tgz
+
+Published author metadata: "Vladimir Agafonkin"
+Repository: {"type": "git", "url": "https://github.com/mourner/robust-predicates.git"}
+LICENSE: text 79d0fc44716007dddc375601bca8879ad45bc1165bf9342b7a16572b4f41abe8
+
+==============================================================================
 rolldown 1.0.3
 Declared license: MIT
 Selected license: MIT
@@ -5758,6 +6808,16 @@ Repository: "h3js/rou3"
 LICENSE: text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94
 
 ==============================================================================
+roughjs 4.6.6
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/roughjs/-/roughjs-4.6.6.tgz
+
+Published author metadata: "Preet Shihn <preetshihn@gmail.com>"
+Repository: {"type": "git", "url": "git+https://github.com/pshihn/rough.git"}
+LICENSE: text bb62e07404e8d5022ffaa6a7ac60c42b658df09605da52bbb9486825f941b2cc
+
+==============================================================================
 run-parallel 1.2.0
 Declared license: MIT
 Selected license: MIT
@@ -5766,6 +6826,26 @@ Source: https://registry.npmjs.org/run-parallel/-/run-parallel-1.2.0.tgz
 Published author metadata: {"name": "Feross Aboukhadijeh", "email": "feross@feross.org", "url": "https://feross.org"}
 Repository: {"type": "git", "url": "git://github.com/feross/run-parallel.git"}
 LICENSE: text df12b5d07fbd3cf2891a43bebdc8cdda70819efb37aac6c43f25001670a06bd2
+
+==============================================================================
+rw 1.3.3
+Declared license: BSD-3-Clause
+Selected license: BSD-3-Clause
+Source: https://registry.npmjs.org/rw/-/rw-1.3.3.tgz
+
+Published author metadata: {"name": "Mike Bostock", "url": "http://bost.ocks.org/mike"}
+Repository: {"type": "git", "url": "http://github.com/mbostock/rw.git"}
+LICENSE: text 1325cb60c071ba88c009d7b199e66bef7df85eb62e67c855949ac353e3da434c
+
+==============================================================================
+safer-buffer 2.1.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/safer-buffer/-/safer-buffer-2.1.2.tgz
+
+Published author metadata: {"name": "Nikita Skovoroda", "email": "chalkerx@gmail.com", "url": "https://github.com/ChALkeR"}
+Repository: {"type": "git", "url": "git+https://github.com/ChALkeR/safer-buffer.git"}
+LICENSE: text aa72fb6117e423794ec098a00d0413fa4ceb2369b68869e07d32ca32235a5f1e
 
 ==============================================================================
 scheduler 0.27.0
@@ -5996,6 +7076,16 @@ Repository: {"type": "git", "url": "git+https://github.com/remarkablemark/style-
 LICENSE: text 20b25fb4d9ba5aab95799ed66d6563361ea9299550d16697173442dd1f4ab588
 
 ==============================================================================
+stylis 4.4.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/stylis/-/stylis-4.4.0.tgz
+
+Published author metadata: "Sultan Tarimo <sultantarimo@me.com>"
+Repository: "https://github.com/thysultan/stylis.js"
+LICENSE: text 6821b85df4724cddb1de03c371af9a7cc055839d0331dcd7c2f1b1d025098c49
+
+==============================================================================
 tagged-tag 1.0.0
 Declared license: MIT
 Selected license: MIT
@@ -6033,6 +7123,16 @@ Source: https://registry.npmjs.org/tapable/-/tapable-2.3.3.tgz
 Published author metadata: "Tobias Koppers @sokra"
 Repository: {"type": "git", "url": "http://github.com/webpack/tapable.git"}
 LICENSE: text 31d52158e4bc522a5a244ef3daef69996fbd7316912547041dd316cd046c3ac7
+
+==============================================================================
+tinyexec 1.3.1
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/tinyexec/-/tinyexec-1.3.1.tgz
+
+Published author metadata: "James Garbutt (https://github.com/43081j)"
+Repository: {"type": "git", "url": "git+https://github.com/tinylibs/tinyexec.git"}
+LICENSE: text 1b5f37fd06c10b0fede3b1baba3592da2a28d50933034a88fb3b4d7b17a327a7
 
 ==============================================================================
 tinyglobby 0.2.17
@@ -6073,6 +7173,16 @@ Source: https://registry.npmjs.org/trough/-/trough-2.2.0.tgz
 Published author metadata: "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)"
 Repository: "wooorm/trough"
 license: text e1da326aaf68bf80fcd24c35117d2dcce33ff0c8bd49704a52d255774f9654f6
+
+==============================================================================
+ts-dedent 2.3.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/ts-dedent/-/ts-dedent-2.3.0.tgz
+
+Published author metadata: "Tamino Martinius <dev@zaku.eu>"
+Repository: {"type": "git", "url": "https://github.com/tamino-martinius/node-ts-dedent.git"}
+LICENSE: text 1078bbb5b87d77871937a28405a87b556e07ba12f5dbc87e01025925ad68bac9
 
 ==============================================================================
 tslib 2.8.1
@@ -6288,6 +7398,15 @@ Source: https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-s
 
 Repository: {"type": "git", "url": "https://github.com/facebook/react.git", "directory": "packages/use-sync-external-store"}
 LICENSE: text cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173
+
+==============================================================================
+uuid 14.0.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/uuid/-/uuid-14.0.2.tgz
+
+Repository: {"type": "git", "url": "https://github.com/uuidjs/uuid.git"}
+LICENSE.md: text 19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b
 
 ==============================================================================
 vfile 6.0.3
@@ -6527,6 +7646,20 @@ Copyright (c) 2025 Million Software, Inc.
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd ---
+MIT License
+
+Copyright (c) 2024 Viva Republica, Inc.
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 045ce74712fc613fdd74d1c55f5140a08d623836ff2aca44132b38d68fbc67ad ---
+MIT License
+
+Copyright (c) 2021 - 2022 Vjacheslav Trushkin / Iconify OÜ
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 055ae8302677e9c70eb91539c44984c8828ea8695322fdb2e818035a04207064 ---
 Copyright 2013 Thorsten Lorenz.
 All rights reserved.
@@ -6559,6 +7692,13 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--- text 05a601c405df8b356c034413e7d3db9f57300cffad0eea2df809414151914864 ---
+MIT License
+
+Copyright (c) 2020 Preet
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text 05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7 ---
 MIT License
@@ -6658,6 +7798,13 @@ Copyright (c) Pooya Parsa <pooya@pi0.io> and Anthony Fu <https://github.com/antf
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 0bc46fcdad091a1d914ff9f7981f467faa976fa7a998796afc512f5b6e13287f ---
+MIT License
+
+Copyright (c) 2017 Braintree
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 0bf0a569ac4bc5f2b96d7d12db451a2252234a5ac97124841be4bdb8057e63d5 ---
 MIT License
 
@@ -6718,10 +7865,54 @@ Copyright (c) 2013 Gary Court, Jens Taylor
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 1078bbb5b87d77871937a28405a87b556e07ba12f5dbc87e01025925ad68bac9 ---
+MIT License
+
+Copyright (c) 2018 Tamino Martinius
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 1325cb60c071ba88c009d7b199e66bef7df85eb62e67c855949ac353e3da434c ---
+Copyright (c) 2014-2016, Michael Bostock
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* The name Michael Bostock may not be used to endorse or promote products
+  derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL MICHAEL BOSTOCK BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 --- text 1407925f61282a6b72650585a14e4ab3674773c2ebee389fb2d0e4d11c21b5c1 ---
 MIT License
 
 Copyright (c) Kevin Mårtensson <kevinmartensson@gmail.com> (github.com/kevva)
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 1521adecf617469732f46e52c8da847796e27763eeec6e45b14522c53032c2f5 ---
+Original dagre-d3 copyright: Copyright (c) 2013 Chris Pettitt
+Original dagre copyright: Copyright (c) 2012-2014 Chris Pettitt
+Original graphlib copyright: Copyright (c) 2012-2014 Chris Pettitt
+
+Copyright (c) 2022-2024 Thibaut Lassalle, David Newell, Alois Klink, Sidharth Vinod and dagre-es contributors
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -6732,8 +7923,45 @@ Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 1549638d9e45cf99379d6e71aa706583e5952cd875a26a02f58c9b26499c94e9 ---
+Copyright 2010-2024 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+Apache-Style Software License for ColorBrewer software and ColorBrewer Color Schemes
+
+Copyright 2002 Cynthia Brewer, Mark Harrower, and The Pennsylvania State University
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
 --- text 15e7786c7e6868263ce41f904c9cd0d38d35edcb8c86d8b49c019ac557a57ad4 ---
 Copyright 2023 Abdullah Atta
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 16e34a46fa584c2cc09682bd36edae63e88c4696371b5d95476f676a65763535 ---
+MIT License
+
+Copyright (c) 2018-present, iamkun
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -6768,6 +7996,20 @@ Copyright (c) 2013-2023 Cole Bemis
 Copyright (c) 2023 Titus Wormer <tituswormer@gmail.com>
 
 [Shared terms ed1e240a96a36e5baa93b7fad4cc89dae42effbc8820657ff397f2cc7a079d15]
+
+--- text 19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b ---
+The MIT License (MIT)
+
+Copyright (c) 2010-2020 Robert Kieffer and other contributors
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 1b5f37fd06c10b0fede3b1baba3592da2a28d50933034a88fb3b4d7b17a327a7 ---
+MIT License
+
+Copyright (c) 2024 Tinylibs
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text 1bdd76c86ddc4c08c19ed8d5365058bdb47907163899021327672c3b4ca38d52 ---
 MIT License
@@ -6838,6 +8080,38 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
 LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
 OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
+
+--- text 2314aa0e2bae2fcbc099b29c8815e26688cef6c2cf76226927a3f24f091f7114 ---
+Copyright OpenJS Foundation and other contributors <https://openjsf.org/>
+
+Based on Underscore.js, copyright Jeremy Ashkenas,
+DocumentCloud and Investigative Reporters & Editors <http://underscorejs.org/>
+
+This software consists of voluntary contributions made by many
+individuals. For exact contribution history, see the revision history
+available at https://github.com/lodash/lodash
+
+The following license applies to all parts of this software except as
+documented below:
+
+====
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+====
+
+Copyright and related rights for sample code are waived via CC0. Sample
+code is defined as all source code displayed within the prose of the
+documentation.
+
+CC0: http://creativecommons.org/publicdomain/zero/1.0/
+
+====
+
+Files located in the node_modules and vendor directories are externally
+maintained libraries used by this software which have their own
+licenses; we recommend you read them, as their terms may differ from the
+terms above.
 
 --- text 236f59788488a1dbe3e0e1c318c869941c0e30b41e78659a67ca52c31fe167c1 ---
 MIT License
@@ -6949,6 +8223,23 @@ The above copyright notice and this permission notice (including the next paragr
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+--- text 2c5fce57341d0c1e2369145707a4b5ee5cd4d0776824a65d52ad0a759b9dd26c ---
+ISC License
+
+Copyright (c) 2026, Mapbox
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
 --- text 2cd23e64d69941c70a6a6a42ee2e4b3249bb9f071380a6e68709f5c6efd9d96a ---
 This software is released under the MIT license:
 
@@ -7035,6 +8326,67 @@ Copyright (c) Pooya Parsa <pooya@pi0.io>
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 38fdb5e42d4842bde17baea7f4bf690c25706ce06c6a90c981c57379f01751b1 ---
+Copyright 2015, Mike Bostock
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the author nor the names of contributors may be used to
+  endorse or promote products derived from this software without specific prior
+  written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--- text 396681618aa8aa6f0b7829ad39bfd2afa908034ff594774a5bb8df02ae91c9c3 ---
+(The MIT License)
+
+Copyright (c) Titus Wormer <mailto:tituswormer@gmail.com>
+
+[Shared terms ed1e240a96a36e5baa93b7fad4cc89dae42effbc8820657ff397f2cc7a079d15]
+
+---
+
+This is a derivative work based on:
+<https://github.com/nodejs/node>.
+Which is licensed:
+
+"""
+Copyright Node.js contributors. All rights reserved.
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+"""
+
+This license applies to parts of Node.js originating from the
+https://github.com/joyent/node repository:
+
+"""
+Copyright Joyent, Inc. and other Node contributors. All rights reserved.
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+"""
+
+--- text 39b03b27e43a4f2d28a291b5c729509d2f1baf3d1720516888f49454c16a868d ---
+Copyright (c) 2016-2018, The Cytoscape Consortium.
+
+[Shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf]
+
 --- text 3a2bf91a2d9811efcf96c0bc7faa2849371a5ae4472565f122b87c24c1aed556 ---
 MIT License
 
@@ -7076,6 +8428,11 @@ Copyright OpenJS Foundation and other contributors, <www.openjsf.org>
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 48186f5950f28caaafaa7f4c18b0b31350bea5c93f3a2d74b883b35a0d528863 ---
+Copyright (c) 2011 Alexander Shtuchkin
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 4918b99deb04bad7ac6e3398e28d1a06eca1f713387ea3ee95d8200062f6469b ---
 MIT License
 
@@ -7111,6 +8468,35 @@ Copyright (c) 2024 Madeline Gurriarán
    See the License for the specific language governing permissions and
    limitations under the License.
 
+--- text 4b2513f280f34835efbeaa334f82b04a9a4c7498786828f75c6d1bbcdc88c56d ---
+Copyright 2015-2016 Mike Bostock
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the author nor the names of contributors may be used to
+  endorse or promote products derived from this software without specific prior
+  written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 --- text 4b47df8ec8583084069175f41b780674a7e2c66b3b3805a1ba9d39411cadc948 ---
 MIT License
 
@@ -7132,6 +8518,21 @@ Copyright (C) 2018-2022 Guy Bedford
 Copyright (c) 2015 Titus Wormer <mailto:tituswormer@gmail.com>
 
 [Shared terms ed1e240a96a36e5baa93b7fad4cc89dae42effbc8820657ff397f2cc7a079d15]
+
+--- text 4c1cd1d0c4f880ec6cc58495f54e57877fccefcf0a4050fe09c9d81b757bf494 ---
+Copyright 2013-2021 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
 
 --- text 4c30eae799682e7fbef75434a53c959cc623a96496c5cb275d4a505474ed9b81 ---
 # Vite core license
@@ -9103,6 +10504,73 @@ Copyright (c) 2023 Functional Software, Inc. dba Sentry
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 4f4f9997e3d96636b08171484bf3e2b5a8a46745e2b0dd4d4f86b0e5cfa632e8 ---
+Copyright 2010-2022 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+--- text 4f8e381e74d41111b8220c5b93c5c8fd1e5abc9d1a4d963ee6dd679c4631b63c ---
+Copyright 2018-2021 Observable, Inc.
+Copyright 2021 Mapbox
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+--- text 50366760ca8535f84b7aee30309f9ec70f78677843b1fc73491e6d1803edea69 ---
+Copyright 2010-2015 Mike Bostock
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the author nor the names of contributors may be used to
+  endorse or promote products derived from this software without specific prior
+  written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--- text 5135f3f7607134fae453693e070d5afb8704957fa2f4388dd4abdc14b99aebfb ---
+The MIT License (MIT)
+
+Copyright (c) 2019-present Fabio Spampinato, Andrew Maney
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 5465107dd51e3020d6b6d7f1cee260a8a8435aff4b628d7aa7401fe95c34b6fa ---
 MIT License
 
@@ -9148,6 +10616,50 @@ The MIT License (MIT)
 Copyright 2022 Andrey Sitnik <andrey@sitnik.ru> and other contributors
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 586409690da31408c8348e6acb0bdbabdf4611308778edfc6210eb09492f23a1 ---
+Copyright 2010-2020 Mike Bostock
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the author nor the names of contributors may be used to
+  endorse or promote products derived from this software without specific prior
+  written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--- text 58f959e2911ca1fdd6812a2cebe42193c6137922ecbcce86d8233873706181ab ---
+Copyright 2015-2022 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
 
 --- text 5937a76954e9322bac4f3ada3634b2d01cdf22bd05c630f7ec672c5487a8182f ---
 Copyright (C) 2012-2014 by various contributors (see AUTHORS)
@@ -9618,6 +11130,21 @@ Copyright (c) 2018 Made With MOXY Lda <hello@moxy.studio>
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1 ---
+Copyright 2010-2021 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
 --- text 61817d32cf2cc8abd3b14b637ecb7a4c2eaae4334f58b3dab4f762583e1cf380 ---
 Copyright (c) 2015-2020, Matteo Collina <matteo.collina@gmail.com>
 
@@ -9640,12 +11167,56 @@ Copyright (c) 2020 Arjun Barrett
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc ---
+MIT License
+
+Copyright (c) 2021 Anthony Fu <https://github.com/antfu>
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 67ad6d13f0d5c1d8cea4143041a6498e24b9bb5a3a931dd4e4da830473935c72 ---
 MIT License
 
 Copyright (c) 2022 Clerk, Inc.
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 6821b85df4724cddb1de03c371af9a7cc055839d0331dcd7c2f1b1d025098c49 ---
+MIT License
+
+Copyright (c) 2016-present Sultan Tarimo
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 69af84a0cb486bc97d578ea76f0aea3ad628ad97147551d2a898902941bd6db6 ---
+Copyright 2010-2021 Mike Bostock
+Copyright 2001 Robert Penner
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the author nor the names of contributors may be used to
+  endorse or promote products derived from this software without specific prior
+  written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --- text 6a972b33787e14304b4cfca68387f8644d11788a5d551731196b8e64dd9f0431 ---
 Copyright (c) 2017-2018 Fredrik Nicol
@@ -9809,6 +11380,13 @@ express Statement of Purpose.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+--- text 6dfc8a41d27c6bfd01a963b61461f22060aa32909f1c0eda6863755cc3aea9a0 ---
+MIT License
+
+Copyright (c) 2019 iVis@Bilkent
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text 6ead954f967233375b98f6d8363bdb27ddc7d945a83f88c20952e7ca0fa8675d ---
 Copyright (c) 2009-2011, Mozilla Foundation and contributors
@@ -10367,6 +11945,14 @@ Copyright (c) Microsoft Corporation
 This software contains code derived from the Puppeteer project (https://github.com/puppeteer/puppeteer),
 available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/blob/master/LICENSE).
 
+--- text 7bdac5ba137b8460596d8a7148ddf6e453c662bd22733a333ce4da500b3c889d ---
+MIT License
+
+Copyright (c) 2013 Ben Frederickson
+Copyright (c) 2021 Samuel Gratzl
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 7e02e9c37c8849280e70bf5fd67d65e93d902c700104a997b11fb7175fdbf37e ---
 The MIT License (MIT)
 
@@ -10802,6 +12388,13 @@ Copyright (c) 2014-present Sebastian McKenzie and other contributors
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 90ee3cca58dabf88333de774d3d05509516d5e80cec40e0109ae2717d52b0f94 ---
+MIT License
+
+Copyright (c) 2019 - present, iVis@Bilkent.
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 9219a3ebed1d1e1bc469cc605ca626c8433997a1a3013aba1338e03e381bbe11 ---
 The MIT License (MIT)
 
@@ -10813,6 +12406,272 @@ Copyright (c) 2017-present, Jon Schlinkert.
 Copyright 2024 Justin Ridgewell <justin@ridgewell.name>
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 937e74317a828098505160d49253e3aac07fad512442228922a230a32097d5f3 ---
+# Eclipse Public License - v 2.0
+
+THE ACCOMPANYING PROGRAM IS PROVIDED UNDER THE TERMS OF THIS ECLIPSE
+PUBLIC LICENSE (“AGREEMENT”). ANY USE, REPRODUCTION OR DISTRIBUTION OF
+THE PROGRAM CONSTITUTES RECIPIENT'S ACCEPTANCE OF THIS AGREEMENT.
+
+## 1. DEFINITIONS
+
+“Contribution” means:
+
+-   a\) in the case of the initial Contributor, the initial content
+    Distributed under this Agreement, and
+-   b\) in the case of each subsequent Contributor:
+    -   i\) changes to the Program, and
+    -   ii\) additions to the Program;
+
+    where such changes and/or additions to the Program originate from
+    and are Distributed by that particular Contributor. A Contribution
+    “originates” from a Contributor if it was added to the Program by
+    such Contributor itself or anyone acting on such Contributor's
+    behalf. Contributions do not include changes or additions to the
+    Program that are not Modified Works.
+
+“Contributor” means any person or entity that Distributes the Program.
+
+“Licensed Patents” mean patent claims licensable by a Contributor which
+are necessarily infringed by the use or sale of its Contribution alone
+or when combined with the Program.
+
+“Program” means the Contributions Distributed in accordance with this
+Agreement.
+
+“Recipient” means anyone who receives the Program under this Agreement
+or any Secondary License (as applicable), including Contributors.
+
+“Derivative Works” shall mean any work, whether in Source Code or other
+form, that is based on (or derived from) the Program and for which the
+editorial revisions, annotations, elaborations, or other modifications
+represent, as a whole, an original work of authorship.
+
+“Modified Works” shall mean any work in Source Code or other form that
+results from an addition to, deletion from, or modification of the
+contents of the Program, including, for purposes of clarity any new file
+in Source Code form that contains any contents of the Program. Modified
+Works shall not include works that contain only declarations,
+interfaces, types, classes, structures, or files of the Program solely
+in each case in order to link to, bind by name, or subclass the Program
+or Modified Works thereof.
+
+“Distribute” means the acts of a) distributing or b) making available in
+any manner that enables the transfer of a copy.
+
+“Source Code” means the form of a Program preferred for making
+modifications, including but not limited to software source code,
+documentation source, and configuration files.
+
+“Secondary License” means either the GNU General Public License, Version
+2.0, or any later versions of that license, including any exceptions or
+additional permissions as identified by the initial Contributor.
+
+## 2. GRANT OF RIGHTS
+
+-   a\) Subject to the terms of this Agreement, each Contributor hereby
+    grants Recipient a non-exclusive, worldwide, royalty-free copyright
+    license to reproduce, prepare Derivative Works of, publicly display,
+    publicly perform, Distribute and sublicense the Contribution of such
+    Contributor, if any, and such Derivative Works.
+-   b\) Subject to the terms of this Agreement, each Contributor hereby
+    grants Recipient a non-exclusive, worldwide, royalty-free patent license
+    under Licensed Patents to make, use, sell, offer to sell, import and
+    otherwise transfer the Contribution of such Contributor, if any, in
+    Source Code or other form. This patent license shall apply to the
+    combination of the Contribution and the Program if, at the time the
+    Contribution is added by the Contributor, such addition of the
+    Contribution causes such combination to be covered by the
+    Licensed Patents. The patent license shall not apply to any other
+    combinations which include the Contribution. No hardware per se is
+    licensed hereunder.
+-   c\) Recipient understands that although each Contributor grants the
+    licenses to its Contributions set forth herein, no assurances are
+    provided by any Contributor that the Program does not infringe the
+    patent or other intellectual property rights of any other entity. Each
+    Contributor disclaims any liability to Recipient for claims brought by
+    any other entity based on infringement of intellectual property rights
+    or otherwise. As a condition to exercising the rights and licenses
+    granted hereunder, each Recipient hereby assumes sole responsibility to
+    secure any other intellectual property rights needed, if any. For
+    example, if a third party patent license is required to allow Recipient
+    to Distribute the Program, it is Recipient's responsibility to acquire
+    that license before distributing the Program.
+-   d\) Each Contributor represents that to its knowledge it has sufficient
+    copyright rights in its Contribution, if any, to grant the copyright
+    license set forth in this Agreement.
+-   e\) Notwithstanding the terms of any Secondary License, no Contributor
+    makes additional grants to any Recipient (other than those set forth in
+    this Agreement) as a result of such Recipient's receipt of the Program
+    under the terms of a Secondary License (if permitted under the terms of
+    Section 3).
+
+## 3. REQUIREMENTS
+
+3.1 If a Contributor Distributes the Program in any form, then:
+
+-   a\) the Program must also be made available as Source Code, in accordance
+    with section 3.2, and the Contributor must accompany the Program with a
+    statement that the Source Code for the Program is available under this
+    Agreement, and informs Recipients how to obtain it in a reasonable
+    manner on or through a medium customarily used for software exchange;
+    and
+-   b\) the Contributor may Distribute the Program under a license different
+    than this Agreement, provided that such license:
+    -   i\) effectively disclaims on behalf of all other Contributors all
+        warranties and conditions, express and implied, including warranties or
+        conditions of title and non-infringement, and implied warranties or
+        conditions of merchantability and fitness for a particular purpose;
+    -   ii\) effectively excludes on behalf of all other Contributors all
+        liability for damages, including direct, indirect, special, incidental
+        and consequential damages, such as lost profits;
+    -   iii\) does not attempt to limit or alter the recipients' rights in the
+        Source Code under section 3.2; and
+    -   iv\) requires any subsequent distribution of the Program by any party to
+        be under a license that satisfies the requirements of this section 3.
+
+3.2 When the Program is Distributed as Source Code:
+
+-   a\) it must be made available under this Agreement, or if the Program (i)
+    is combined with other material in a separate file or files made
+    available under a Secondary License, and (ii) the initial Contributor
+    attached to the Source Code the notice described in Exhibit A of this
+    Agreement, then the Program may be made available under the terms of
+    such Secondary Licenses, and
+-   b\) a copy of this Agreement must be included with each copy of
+    the Program.
+
+3.3 Contributors may not remove or alter any copyright, patent,
+trademark, attribution notices, disclaimers of warranty, or limitations
+of liability (‘notices’) contained within the Program from any copy of
+the Program which they Distribute, provided that Contributors may add
+their own appropriate notices.
+
+## 4. COMMERCIAL DISTRIBUTION
+
+Commercial distributors of software may accept certain responsibilities
+with respect to end users, business partners and the like. While this
+license is intended to facilitate the commercial use of the Program, the
+Contributor who includes the Program in a commercial product offering
+should do so in a manner which does not create potential liability for
+other Contributors. Therefore, if a Contributor includes the Program in
+a commercial product offering, such Contributor (“Commercial
+Contributor”) hereby agrees to defend and indemnify every other
+Contributor (“Indemnified Contributor”) against any losses, damages and
+costs (collectively “Losses”) arising from claims, lawsuits and other
+legal actions brought by a third party against the Indemnified
+Contributor to the extent caused by the acts or omissions of such
+Commercial Contributor in connection with its distribution of the
+Program in a commercial product offering. The obligations in this
+section do not apply to any claims or Losses relating to any actual or
+alleged intellectual property infringement. In order to qualify, an
+Indemnified Contributor must: a) promptly notify the Commercial
+Contributor in writing of such claim, and b) allow the Commercial
+Contributor to control, and cooperate with the Commercial Contributor
+in, the defense and any related settlement negotiations. The Indemnified
+Contributor may participate in any such claim at its own expense.
+
+For example, a Contributor might include the Program in a commercial
+product offering, Product X. That Contributor is then a Commercial
+Contributor. If that Commercial Contributor then makes performance
+claims, or offers warranties related to Product X, those performance
+claims and warranties are such Commercial Contributor's responsibility
+alone. Under this section, the Commercial Contributor would have to
+defend claims against the other Contributors related to those
+performance claims and warranties, and if a court requires any other
+Contributor to pay any damages as a result, the Commercial Contributor
+must pay those damages.
+
+## 5. NO WARRANTY {#warranty}
+
+EXCEPT AS EXPRESSLY SET FORTH IN THIS AGREEMENT, AND TO THE EXTENT
+PERMITTED BY APPLICABLE LAW, THE PROGRAM IS PROVIDED ON AN “AS IS”
+BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR
+IMPLIED INCLUDING, WITHOUT LIMITATION, ANY WARRANTIES OR CONDITIONS OF
+TITLE, NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR
+PURPOSE. Each Recipient is solely responsible for determining the
+appropriateness of using and distributing the Program and assumes all
+risks associated with its exercise of rights under this Agreement,
+including but not limited to the risks and costs of program errors,
+compliance with applicable laws, damage to or loss of data, programs or
+equipment, and unavailability or interruption of operations.
+
+## 6. DISCLAIMER OF LIABILITY {#disclaimer}
+
+EXCEPT AS EXPRESSLY SET FORTH IN THIS AGREEMENT, AND TO THE EXTENT
+PERMITTED BY APPLICABLE LAW, NEITHER RECIPIENT NOR ANY CONTRIBUTORS
+SHALL HAVE ANY LIABILITY FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING WITHOUT LIMITATION LOST
+PROFITS), HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OR DISTRIBUTION OF THE PROGRAM OR THE
+EXERCISE OF ANY RIGHTS GRANTED HEREUNDER, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGES.
+
+## 7. GENERAL
+
+If any provision of this Agreement is invalid or unenforceable under
+applicable law, it shall not affect the validity or enforceability of
+the remainder of the terms of this Agreement, and without further action
+by the parties hereto, such provision shall be reformed to the minimum
+extent necessary to make such provision valid and enforceable.
+
+If Recipient institutes patent litigation against any entity (including
+a cross-claim or counterclaim in a lawsuit) alleging that the Program
+itself (excluding combinations of the Program with other software or
+hardware) infringes such Recipient's patent(s), then such Recipient's
+rights granted under Section 2(b) shall terminate as of the date such
+litigation is filed.
+
+All Recipient's rights under this Agreement shall terminate if it fails
+to comply with any of the material terms or conditions of this Agreement
+and does not cure such failure in a reasonable period of time after
+becoming aware of such noncompliance. If all Recipient's rights under
+this Agreement terminate, Recipient agrees to cease use and distribution
+of the Program as soon as reasonably practicable. However, Recipient's
+obligations under this Agreement and any licenses granted by Recipient
+relating to the Program shall continue and survive.
+
+Everyone is permitted to copy and distribute copies of this Agreement,
+but in order to avoid inconsistency the Agreement is copyrighted and may
+only be modified in the following manner. The Agreement Steward reserves
+the right to publish new versions (including revisions) of this
+Agreement from time to time. No one other than the Agreement Steward has
+the right to modify this Agreement. The Eclipse Foundation is the
+initial Agreement Steward. The Eclipse Foundation may assign the
+responsibility to serve as the Agreement Steward to a suitable separate
+entity. Each new version of the Agreement will be given a distinguishing
+version number. The Program (including Contributions) may always be
+Distributed subject to the version of the Agreement under which it was
+received. In addition, after a new version of the Agreement is
+published, Contributor may elect to Distribute the Program (including
+its Contributions) under the new version.
+
+Except as expressly stated in Sections 2(a) and 2(b) above, Recipient
+receives no rights or licenses to the intellectual property of any
+Contributor under this Agreement, whether expressly, by implication,
+estoppel or otherwise. All rights in the Program not expressly granted
+under this Agreement are reserved. Nothing in this Agreement is intended
+to be enforceable by any entity that is not a Contributor or Recipient.
+No third-party beneficiary rights are created under this Agreement.
+
+## Exhibit A – Form of Secondary Licenses Notice {#exhibit-a}
+
+“This Source Code may also be made available under the following
+Secondary Licenses when the conditions for such availability set forth
+in the Eclipse Public License, v. 2.0 are satisfied: {name license(s),
+version(s), and exceptions or additional permissions here}.”
+
+> Simply including a copy of this Agreement, including this Exhibit A is
+> not sufficient to license the Source Code under Secondary Licenses.
+>
+> If it is not possible or desirable to put the notice in a particular
+> file, then You may include the notice in a location (such as a LICENSE
+> file in a relevant directory) where a recipient would be likely to
+> look for such a notice.
+>
+> You may add additional accurate notices of copyright ownership.
 
 --- text 937e8ea6d28e259cb0a3703148f6b292c50708013888372feae61e3520b18100 ---
 The MIT License (MIT)
@@ -10831,6 +12690,13 @@ Copyright (c) 2024-present VoidZero Inc. & Contributors
 end of terms and conditions
 
 The licenses of externally maintained libraries from which parts of the Software is derived are listed [here](https://github.com/rolldown/rolldown/blob/main/THIRD-PARTY-LICENSE).
+
+--- text 94228ab8fc0bb327fa6c903ce56642885e72f7d2d274e9e33f8eea57e4c887cb ---
+The MIT License (MIT)
+
+Copyright (c) 2014 - 2022 Knut Sveidqvist
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text 94e2d6f90264f1e3efc695ab64d36f17c7616a7bae97ab0c51e7f895b842db4d ---
 Copyright 2018 Kilian Valkhof
@@ -10989,6 +12855,21 @@ Copyright (c) 2012 TJ Holowaychuk <tj@vision-media.ca>
 
 [Shared terms ed1e240a96a36e5baa93b7fad4cc89dae42effbc8820657ff397f2cc7a079d15]
 
+--- text 9d00baf34d17d2e5ca9301230b256f1ced369cdb41712daa6f18716d93c6e88c ---
+Copyright 2016-2021 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
 --- text 9ea0e90a4fdca1b34ef1dab71957352cf533e048fa5ff390f0c941091a252b48 ---
 The MIT License (MIT)
 
@@ -11019,6 +12900,26 @@ Copyright (c) 2025+, require-in-the-middle contributors
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--- text 9f5ea8f5a2689d9e0fd255197282d4526fc2219637d7e76c4ef02f1ea289f544 ---
+Copyright (c) 2018 - present, iVis-at-Bilkent.
+
+[Shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf]
+
+--- text 9fe3e95ca3e8ef778fc93263946e9c4e8a10ff3afe9c3333f54402bb99079bc1 ---
+Copyright 2010-2026 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
 
 --- text a05c505267a8736ef8af08d800132d98d47b18cb374891438d1fcb104f494949 ---
 MIT License
@@ -11079,6 +12980,13 @@ This software is released under the MIT license:
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text a734fd0e3f64745e4d78dd34b37a3546f4488a3e516879d62e952f2b9e0f69a4 ---
+MIT License
+
+Copyright (c) 2020 Preet Shihn
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text a73647cf797f6a2f6a6a9b04a1def9425f4a983adb913d704998209fb4e3bc87 ---
 MIT License
 
@@ -11120,6 +13028,13 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 For more information, please refer to <http://unlicense.org/>
+
+--- text a86793ac023162ce98b91899601c15f6712f44943163c4f92a0a4bf89152b3bf ---
+MIT License
+
+Copyright (c) 2021-PRESENT Vjacheslav Trushkin
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text aa407ee69b3f646286f5162d0679256a0fe5b7fcc51f104ffb647efe167715ea ---
 MIT License
@@ -11185,6 +13100,13 @@ without any warranty or condition, and no contributor
 will be liable to anyone for any damages related to this
 software or this license, under any kind of legal claim._**
 
+--- text aa72fb6117e423794ec098a00d0413fa4ceb2369b68869e07d32ca32235a5f1e ---
+MIT License
+
+Copyright (c) 2018 Nikita Skovoroda <chalkerx@gmail.com>
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text aac842346e3368e0459dd620003c2c90e5caf48c8aeac28da6504f66b26b13be ---
 The MIT License (MIT)
 
@@ -11206,6 +13128,13 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+--- text ac1f2978a646f2d409b80c433e49c489c835988e2729a5afddcfe29d352196dc ---
+MIT License
+
+Copyright (c) 2020-PRESENT Anthony Fu <https://github.com/antfu>
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text ae00cb6006eaaa72d9b56c1d66cc8033398ec51f06add68be4e69742f9e63ea7 ---
 Copyright (c) Microsoft Corporation
@@ -11388,28 +13317,19 @@ Copyright (c) 2024 [Motion](https://motion.dev) B.V.
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text bb62e07404e8d5022ffaa6a7ac60c42b658df09605da52bbb9486825f941b2cc ---
+MIT License
+
+Copyright (c) 2019 Preet Shihn
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text bc77badaede6898848b509a222eb5399fa077f77c7b53ec81a9ee53898d26f30 ---
 The MIT License (MIT)
 
 Copyright (c) 2012 Paul Miller (https://paulmillr.com), Elan Shanker
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the “Software”), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+[Shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf]
 
 --- text bca9eeb35a863ceb7581123ac807ecb7ec18df45df51e360033278904e5bb15e ---
 MIT License
@@ -11989,6 +13909,21 @@ Copyright (C) 2012-2017 by Ingvar Stepanyan
   "authors": null
 }
 
+--- text c8ea45f591c25c2a96e7a59f87ecc5adf64010c10cfd7938f4c1c5c9ff4c1885 ---
+Copyright 2012-2023 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
 --- text c9808a775260db5602f6a0c29f5f8b78e81f9666a33623fedfa34a22208b1063 ---
 MIT License
 
@@ -12071,6 +14006,38 @@ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
 ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--- text d3c8c167dfa0a8a7f2ace9fc23ddfb89e609adc13b113e958bede249592b852d ---
+The MIT License (MIT)
+
+Copyright (c) 2013-2020 Khan Academy and other contributors
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text d3de97fbfe541d80b7e8d0c9c5ddc55d3d6b65acd2208b46235e5b0b10bbe920 ---
+MIT License
+
+Copyright (c) 2023 Preet Shihn
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text d4317f690ad0f0ff2b616d608d0514f4f97241a07933151ae63947d0dff19c1b ---
+import fs from 'fs';
+import path from 'path';
+
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const year = (new Date()).getFullYear();
+
+const license = `Copyright (c) 2016-${year}, The Cytoscape Consortium.
+
+[Shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf]`;
+
+fs.writeFileSync(path.join(__dirname, 'LICENSE'), license);
 
 --- text d63190bc72e36215a5b8e9f6f8e0abdd4821169ef22c98ab6f992f8123eed9ef ---
 MIT License
@@ -12172,6 +14139,13 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+--- text d872b89e34b794519bb00f82dbad5710435fe5eb37a0a80ed0b72a92db47ced5 ---
+The MIT License (MIT)
+
+Copyright (c) 2023 Yokozuna59
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b ---
 The MIT License (MIT)
 
@@ -12202,6 +14176,36 @@ Copyright (c) 2019 and later, KFlash and others.
 Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
 
 THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+--- text dd923de9769808b2820f68a2ea9d90b62d9348709e13ee95c234e4acc6d3ee09 ---
+# License information
+
+## Contribution License Agreement
+
+If you contribute code to this project, you are implicitly allowing your code
+to be distributed under the MIT license. You are also implicitly verifying that
+all code is your original work. `</legalese>`
+
+## Marked
+
+Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/)
+Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+## Markdown
+
+Copyright © 2004, John Gruber
+http://daringfireball.net/
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+* Neither the name “Markdown” nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+This software is provided by the copyright holders and contributors “as is” and any express or implied warranties, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose are disclaimed. In no event shall the copyright owner or contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this software, even if advised of the possibility of such damage.
 
 --- text ddb4986a4ed37c90fadf8ec4ad83ce242c55e913af3fdde273581b05154d1c8e ---
 MIT License
@@ -12378,6 +14382,27 @@ Copyright Mathias Bynens <https://mathiasbynens.be/>
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text e87ae4ac338d47ce509af51623763b9a197e6ca26f958be54f67c1a64cd0062c ---
+Copyright 2010-2024 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+This license applies to GeographicLib, versions 1.12 and later.
+
+Copyright 2008-2012 Charles Karney
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text e91069c31b4e4daee9db0e946308531fe585f091b655bb68fee44a83830ab9b6 ---
 The MIT License (MIT)
 
@@ -12391,6 +14416,11 @@ Copyright (c) 2020 Vercel, Inc.
 Copyright (c) Titus Wormer <tituswormer@gmail.com>
 
 [Shared terms ed1e240a96a36e5baa93b7fad4cc89dae42effbc8820657ff397f2cc7a079d15]
+
+--- text eb319c6e6f233607f71e8e2f450391751883cfc0eeb3ca7ef574c13d1d9c2203 ---
+Copyright (c) 2016-2026, The Cytoscape Consortium.
+
+[Shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf]
 
 --- text ecc934075c786ff5a83b109f49b32b1efb57cd99410e194e15b01dc144dc7fd5 ---
 The MIT License (MIT)
@@ -12483,12 +14513,42 @@ TypeScript port Copyright Isaac Z. Schlueter <i@izs.me>
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text f4bb8f655fdb4d119878a0eea6dfcb871da509d83baa7426794f7c70b9bb9d46 ---
+Copyright 2021 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
 --- text f526adb7b81e5d0b296715f70db2b3ac5fa9e40c651e1658a30dc65157ea93e8 ---
 MIT License
 
 Copyright (c) 2025 Steven Levithan
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text f57e3a2cabf2b43ab2fc942a8e9f4b38366ab0d1f859c6439b1fb69e80d9af73 ---
+Copyright 2010-2023 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
 
 --- text f61cacc2acb8b71aa79a128b3e732bf25e02aab40747bbbd5bf00c97c9cda28d ---
 MIT License
@@ -12581,6 +14641,30 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 The MIT License (MIT)
 
 Copyright (c) Roy Riojas & Jared Wray
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text fbc4178c74242989f8d40f9a4e9c10ce969604c33699a94b1bfffd30cb2634d1 ---
+es-toolkit
+
+Parts of the test suite and compatibility layer in es-toolkit/compat are
+derived from Lodash (https://github.com/lodash/lodash).
+
+Lodash copyright notice and MIT permission notice:
+
+Copyright OpenJS Foundation and other contributors <https://openjsf.org/>
+
+Based on Underscore.js, copyright Jeremy Ashkenas,
+DocumentCloud and Investigative Reporters & Editors <http://underscorejs.org/>
+
+This software consists of voluntary contributions made by many
+individuals. For exact contribution history, see the revision history
+available at https://github.com/lodash/lodash
+
+The following license applies to all parts of this software except as
+documented below:
+
+====
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -12937,6 +15021,25 @@ Permission is hereby granted, free of charge, to any person
 > FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 > OTHER DEALINGS IN THE SOFTWARE.
 
+--- shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf ---
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
 --- shared terms cde2e49ad5ddcda284af6dfc512965bb2e9e4f94726f6bd6493b85ff8460b7a9 ---
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 >
@@ -12983,17 +15086,20 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --- shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5 ---
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-associated documentation files (the "Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all copies or substantial
-portions of the Software.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
-EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-USE OR OTHER DEALINGS IN THE SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
