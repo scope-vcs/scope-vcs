@@ -29,7 +29,8 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     const baseline = readFileSync(new URL('../../crates/scope-postgres/src/migrations/current_schema.sql', import.meta.url), 'utf8');
     query(baseline);
     // Apply the actual raw SQL of the migrations which introduce the additional tables.
-    for (const filename of ['m0044_request_attention.rs', 'm0045_dependency_analysis.rs', 'm0053_request_ref_cleanup.rs']) {
+    for (const filename of ['m0044_request_attention.rs', 'm0045_dependency_analysis.rs',
+      'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs']) {
       const source = readFileSync(new URL(`../../crates/scope-postgres/src/migrations/${filename}`, import.meta.url), 'utf8');
       query(source.match(/r#"([\s\S]*?)"#/)[1]);
     }
@@ -77,6 +78,15 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query('SELECT * FROM scope_cli_sessions;', 'scope_run_worker', false);
     query('UPDATE scope_repository_members SET repo_id = repo_id;', 'scope_run_worker', false);
     query('UPDATE scope_repositories SET owner_user_id = owner_user_id;', 'scope_run_worker', false);
+    query(`SELECT * FROM scope_request_check_evaluations;
+      SELECT * FROM scope_request_auto_merge_intents FOR UPDATE;
+      UPDATE scope_request_auto_merge_intents SET status = status;
+      UPDATE scope_requests SET activity_version = activity_version;
+      INSERT INTO scope_request_events SELECT * FROM scope_request_events WHERE false RETURNING *;`, 'scope_run_worker');
+    query('UPDATE scope_request_check_evaluations SET state = state;', 'scope_run_worker', false);
+    query('DELETE FROM scope_request_auto_merge_intents;', 'scope_run_worker', false);
+    query('DELETE FROM scope_requests;', 'scope_run_worker', false);
+    query('UPDATE scope_request_events SET id = id;', 'scope_run_worker', false);
     query("SELECT 1 AS present FROM scope_request_discussions WHERE id = 'missing' AND request_id = 'missing';", 'scope_media_api');
     query('SELECT * FROM scope_cache_objects;', 'scope_api', false);
     query('SELECT * FROM scope_runs;', 'scope_media_worker', false);

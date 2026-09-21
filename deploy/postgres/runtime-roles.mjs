@@ -21,7 +21,7 @@ const runTables = names(`run_attempt_cache_setups run_attempt_caches run_attempt
   runs run_jobs run_logs`);
 const collaborationTables = names(`request_discussion_read_states request_discussion_replies
   request_discussions request_events request_invitees request_ratings request_revisions requests
-  request_claims request_attention_states`);
+  request_claims request_attention_states request_check_evaluations request_auto_merge_intents`);
 const authTables = names(`auth_identities cli_browser_logins cli_device_logins cli_exchange_grants
   cli_sessions users`);
 export const tables = [...cacheTables, ...mediaTables, ...repositoryTables, ...runTables,
@@ -39,14 +39,18 @@ function policy(write, read = [], lock = []) {
 // Worker also performs outbox delivery, compaction, dependency analysis and content cleanup.
 export const grants = {
   scope_api: policy([...repositoryTables, ...runTables, ...collaborationTables, ...authTables, ...mediaTables]),
-  scope_run_worker: policy([...names(`git_compaction_jobs git_segment_references git_segment_uploads
+  scope_run_worker: { ...policy([...names(`git_compaction_jobs git_segment_references git_segment_uploads
     git_segments metadata_locks object_references orphan_object_jobs outbox_jobs projection_files
     projection_read_models push_trigger_evaluations repo_storage_cleanup_jobs workflow_revisions
     dependency_analyses dependency_reports dependency_analysis_jobs request_ref_cleanup_jobs`), ...runTables],
     names(`file_changes git_heads live_files logical_commits repositories repository_first_push_tokens
     repository_git_push_tokens repository_history_entries repository_history_views repository_invites
     repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files
-    visibility_change_sets visibility_changes requests request_revisions users`)),
+    visibility_change_sets visibility_changes requests request_revisions users request_check_evaluations`)),
+    // Terminal check runs stop auto-merge and persist its request activity and event.
+    scope_requests: ['SELECT', 'UPDATE'],
+    scope_request_auto_merge_intents: ['SELECT', 'UPDATE'],
+    scope_request_events: ['SELECT', 'INSERT'] },
   scope_cache: policy(cacheTables, names('runs run_jobs run_attempts')),
   scope_media_api: { ...policy(names('request_media_upload_parts request_media_abandoned_objects'),
     [...names('request_media_bindings request_media_cleanup_jobs request_media_derivatives request_media_manifest_chunks request_media_manifests'),
