@@ -11,9 +11,9 @@ import { Button } from '@/components/ui/button'
 import { MemberAccessSummary } from '@/features/repo-detail/repo-members-section'
 import { formatUnixDateUtc } from '@/lib/date-format'
 import { Link, useNavigate, useRouter } from '@tanstack/react-router'
-import { useClerk } from '@clerk/tanstack-react-start'
+import { useAuth, useClerk } from '@clerk/tanstack-react-start'
 import { Check, LoaderCircle } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 type OpenInvite = Extract<RepositoryInviteLandingResponse, { status: 'open' }>
 
@@ -28,6 +28,8 @@ export function InvitePage({
   invite: RepositoryInviteLandingResponse
   token: string
 }) {
+  useSignedInLanding(invite)
+
   return (
     <AppShell
       header={() => <ApplicationTopbar contextLabel="Repository invite" />}
@@ -37,6 +39,26 @@ export function InvitePage({
       </PageContent>
     </AppShell>
   )
+}
+
+/**
+ * The server can render before Clerk has refreshed an idle session, and then
+ * answers as if nobody were signed in. Once the browser knows better, load the
+ * landing again, a single time, so it describes the actual viewer.
+ */
+function useSignedInLanding(invite: RepositoryInviteLandingResponse) {
+  const { isLoaded, isSignedIn } = useAuth()
+  const router = useRouter()
+  const reloaded = useRef(false)
+  const answeredWithoutViewer =
+    invite.status === 'used' ||
+    (invite.status === 'open' && invite.viewer === 'signed_out')
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !answeredWithoutViewer || reloaded.current) return
+    reloaded.current = true
+    void router.invalidate()
+  }, [answeredWithoutViewer, isLoaded, isSignedIn, router])
 }
 
 function InviteLanding({
@@ -241,6 +263,14 @@ function InviteViewerActions({
             <Button disabled={pending} onClick={() => void onAccept()} type="button">
               {spinner || <Check className="size-3.5" />}
               <span>Accept invite</span>
+            </Button>
+            <Button
+              disabled={pending}
+              onClick={() => void switchAccount()}
+              type="button"
+              variant="ghost"
+            >
+              Use another account
             </Button>
           </div>
         </>
