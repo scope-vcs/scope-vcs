@@ -3,7 +3,6 @@ import { Check, Pencil } from 'lucide-react'
 import { useState } from 'react'
 import { RequestAttachmentEditor } from './request-attachment-editor'
 import { RequestDiscussionMarkdown } from './request-discussion-markdown'
-import { REQUEST_DESCRIPTION_CONTENT_CLASS } from './request-content-layout'
 
 export function RequestDescription({
   canEdit,
@@ -64,10 +63,7 @@ export function RequestDescription({
           {error ? <p className="mt-2 text-sm text-destructive" role="alert">{error}</p> : null}
         </>
       ) : description ? (
-        <RequestDiscussionMarkdown
-          className={REQUEST_DESCRIPTION_CONTENT_CLASS}
-          source={description}
-        />
+        <RequestDiscussionMarkdown source={description} />
       ) : (
         <p className="text-sm leading-6 text-muted-foreground">
           No description yet.

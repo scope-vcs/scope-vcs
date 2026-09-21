@@ -192,7 +192,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       requestId={request.id}
       viewerId={viewerId}
     >
-      <WorkbenchPane className="max-w-none">
+      <WorkbenchPane>
         <div className={cn('w-full', actionClearance)} ref={paneRef}>
           <RequestDetailHeader
             actions={
