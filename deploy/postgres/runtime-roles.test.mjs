@@ -30,7 +30,8 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query(baseline);
     // Apply the actual raw SQL of the migrations which introduce the additional tables.
     for (const filename of ['m0044_request_attention.rs', 'm0045_dependency_analysis.rs',
-      'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs']) {
+      'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs',
+      'm0057_repository_invite_links.rs']) {
       const source = readFileSync(new URL(`../../crates/scope-postgres/src/migrations/${filename}`, import.meta.url), 'utf8');
       query(source.match(/r#"([\s\S]*?)"#/)[1]);
     }

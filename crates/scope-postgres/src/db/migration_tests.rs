@@ -13,6 +13,7 @@ mod fresh_schema;
 mod git_manifest_retirement;
 mod git_segment_schema;
 mod maintenance_cutover;
+mod repository_invite_links;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
 mod run_attempt_active_indexes;
@@ -35,6 +36,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0054_request_attention_revision",
     "m0055_request_checks",
     "m0056_request_auto_merge",
+    "m0057_repository_invite_links",
 ];
 
 pub(super) async fn isolated_database() -> (

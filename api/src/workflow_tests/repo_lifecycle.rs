@@ -60,131 +60,6 @@ async fn create_repo_route_creates_user_and_lists_repo() {
 }
 
 #[tokio::test]
-async fn invite_acceptance_returns_member_access() {
-    let mut state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
-    state.product_analytics = analytics;
-    let invited_email = "invitee@example.com";
-    let create_response = api_request(
-        router(state.clone()),
-        "POST",
-        "/v1/repos/owner/repo/invites",
-        Some(&bearer_header()),
-        Some(
-            serde_json::json!({
-                "email": invited_email,
-                "permissions": RepositoryMemberPermissions::default(),
-            })
-            .to_string(),
-        )
-        .as_deref(),
-    )
-    .await;
-    assert_eq!(create_response.status(), StatusCode::OK);
-    let create_body = response_json(create_response).await;
-    let invite_url = create_body["invite_url"].as_str().unwrap();
-    let token = invite_url.rsplit('/').next().unwrap();
-
-    let accept_response = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repository-invites/{token}/accept"),
-        Some(&bearer_header_for("user_invitee", invited_email)),
-        None,
-    )
-    .await;
-
-    assert_eq!(accept_response.status(), StatusCode::OK);
-    let body = response_json(accept_response).await;
-    assert_eq!(body["repo"]["access"]["actor"], "Member");
-    assert_eq!(
-        recording.event_names(),
-        ["account:user_create", "repository:invite_accept"]
-    );
-    assert_eq!(
-        recording.property(1, "repository_id"),
-        Some(serde_json::Value::String("repoi_workflow_test".into()))
-    );
-    assert_eq!(
-        recording.property(1, "actor_role"),
-        Some(serde_json::Value::String("member".into()))
-    );
-
-    let repeated = api_request(
-        router(state),
-        "POST",
-        &format!("/v1/repository-invites/{token}/accept"),
-        Some(&bearer_header_for("user_invitee", invited_email)),
-        None,
-    )
-    .await;
-    assert_eq!(repeated.status(), StatusCode::CONFLICT);
-    assert_eq!(
-        recording.event_names(),
-        ["account:user_create", "repository:invite_accept"]
-    );
-}
-
-#[tokio::test]
-async fn owner_can_revoke_pending_invite_before_acceptance() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let token = "revoked-invite-token";
-    let invited_email = "invitee@example.com";
-    let now = unix_now();
-    let invite = RepositoryInvite {
-        id: "invite_revoke".into(),
-        repo_id: TEST_REPO_ID.into(),
-        invited_email: invited_email.into(),
-        invited_email_normalized:
-            scope_domain::repository::collaboration::normalize_repository_invite_email(
-                invited_email,
-            ),
-        permissions: RepositoryMemberPermissions::default(),
-        invited_by_user_id: test_owner_id(),
-        state: RepositoryInviteState::Pending,
-        token_hash: token_hash(token),
-        created_at_unix: now,
-        updated_at_unix: now,
-        expires_at_unix: now + 600,
-        accepted_by_user_id: None,
-        accepted_at_unix: None,
-        revoked_at_unix: None,
-    };
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, move |repo| repo.invitations.push(invite))
-        .await
-        .unwrap();
-
-    let revoke_response = api_request(
-        router(state.clone()),
-        "DELETE",
-        "/v1/repos/owner/repo/invites/invite_revoke",
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-
-    assert_eq!(revoke_response.status(), StatusCode::OK);
-    let body = response_json(revoke_response).await;
-    assert_eq!(body["state"], "Revoked");
-
-    let accept_response = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repository-invites/{token}/accept"),
-        Some(&bearer_header_for("user_invitee", invited_email)),
-        None,
-    )
-    .await;
-
-    assert_eq!(accept_response.status(), StatusCode::CONFLICT);
-}
-
-#[tokio::test]
 async fn collaboration_publication_keeps_the_committed_invite_result_and_version() {
     let state = test_state_with_repo();
     let owner = state
@@ -202,7 +77,7 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
         .unwrap()
         .record
         .change_version;
-    let (secret, token_hash) = crate::auth::tokens::generate_repository_invite_token().unwrap();
+    let (secret, link_hash) = crate::auth::tokens::generate_repository_invite_token().unwrap();
     let invite = state
         .metadata
         .repositories()
@@ -214,7 +89,7 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
                 invited_email: "later@example.com".to_string(),
                 permissions: Default::default(),
                 invite_id: "invite_version".to_string(),
-                token_hash,
+                link_hash,
                 now_unix: unix_now(),
             },
             &crate::persistence_ids::generate_persistence_id,

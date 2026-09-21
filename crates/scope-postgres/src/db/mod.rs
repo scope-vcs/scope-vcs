@@ -125,8 +125,8 @@ pub use maintenance::{
 };
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{
-    CreateRepositoryInviteMutation, RepositoryCollaborationMutation,
-    UpdateRepositoryMemberPermissionsCommand,
+    CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
+    RepositoryCollaborationMutation, UpdateRepositoryMemberPermissionsCommand,
 };
 pub use repo_lifecycle::{CreateRepositoryCommand, RepositoryCreationError};
 pub use repo_mutation::{RepositoryMutation, RepositoryMutationError};

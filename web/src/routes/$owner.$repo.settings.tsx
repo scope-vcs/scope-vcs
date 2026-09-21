@@ -1,6 +1,6 @@
 import {
   parseCreateRepoInviteInput,
-  parseDeleteRepoInviteInput,
+  parseRepoInviteInput,
   parseDeleteRepoMemberInput,
   parseUpdateRepoMemberInput,
   parseUpdateRepoMetadataInput,
@@ -8,6 +8,7 @@ import {
 import { parseRepoParams } from '@/api/repo-params'
 import {
   createRepoInviteForRequest,
+  createRepoInviteLinkForRequest,
   deleteRepoInviteForRequest,
   deleteRepoMemberForRequest,
   deleteRepoForRequest,
@@ -23,10 +24,11 @@ import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@clerk/tanstack-react-start'
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import {
+  refreshWhenNextInviteExpires,
   repoCollaborationResource,
   retainCollaborationResult,
 } from '@/features/repo-detail/repo-collaboration-resource'
@@ -60,8 +62,12 @@ const deleteRepoMember = createServerFn({ method: 'POST' })
   .validator(parseDeleteRepoMemberInput)
   .handler(({ data }) => deleteRepoMemberForRequest(data))
 
+const createRepoInviteLink = createServerFn({ method: 'POST' })
+  .validator(parseRepoInviteInput)
+  .handler(({ data }) => createRepoInviteLinkForRequest(data))
+
 const deleteRepoInvite = createServerFn({ method: 'POST' })
-  .validator(parseDeleteRepoInviteInput)
+  .validator(parseRepoInviteInput)
   .handler(({ data }) => deleteRepoInviteForRequest(data))
 
 export const Route = createFileRoute('/$owner/$repo/settings')({
@@ -85,6 +91,12 @@ function RepoSettingsRoute() {
     load,
     fallbackError: 'Repository access settings could not be loaded.',
   })
+
+  const collaboration = resource.value?.collaboration ?? null
+  useEffect(
+    () => (scope ? refreshWhenNextInviteExpires(scope, collaboration) : undefined),
+    [scope, collaboration],
+  )
 
   async function retainResult<T>(
     mutation: Promise<T>,
@@ -110,6 +122,7 @@ function RepoSettingsRoute() {
             createRepoInvite({ data }),
             ({ invite }) => ({ type: 'inviteUpdated', invite }),
           )}
+          createInviteLink={(data) => createRepoInviteLink({ data })}
           deleteInvite={(data) => retainResult(
             deleteRepoInvite({ data }),
             (invite) => ({ type: 'inviteUpdated', invite }),

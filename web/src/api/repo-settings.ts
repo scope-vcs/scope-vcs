@@ -1,7 +1,7 @@
 import { createApiClient } from '@/api/client'
 import type {
   CreateRepoInviteInput,
-  DeleteRepoInviteInput,
+  RepoInviteInput,
   DeleteRepoMemberInput,
   RepoParams,
   RepoInviteTokenInput,
@@ -13,7 +13,8 @@ import type {
   CreateRepositoryInviteResponse,
   RepositoryCollaborationResponse,
   RepositoryInviteResponse,
-  RepositoryInviteLookupResponse,
+  RepositoryInviteLandingResponse,
+  RepositoryInviteLinkResponse,
   RepositoryMemberResponse,
   RepoSummaryResponse,
 } from './types.generated'
@@ -103,7 +104,7 @@ export async function deleteRepoMemberForRequest(
 }
 
 export async function deleteRepoInviteForRequest(
-  data: DeleteRepoInviteInput,
+  data: RepoInviteInput,
 ): Promise<RepositoryInviteResponse> {
   return createApiClient().delete(
     buildApiPath(ApiRouteTemplates.repoInvite, {
@@ -116,12 +117,26 @@ export async function deleteRepoInviteForRequest(
   )
 }
 
+export async function createRepoInviteLinkForRequest(
+  data: RepoInviteInput,
+): Promise<RepositoryInviteLinkResponse> {
+  return createApiClient().post(
+    buildApiPath(ApiRouteTemplates.repoInviteLinks, {
+      owner: data.owner,
+      repo: data.repo,
+      invite_id: data.invite_id,
+    }),
+    apiValidators.RepositoryInviteLinkResponse,
+    { auth: 'required' },
+  )
+}
+
 export async function loadRepoInviteForRequest(
   data: RepoInviteTokenInput,
-): Promise<RepositoryInviteLookupResponse> {
+): Promise<RepositoryInviteLandingResponse> {
   return createApiClient().get(
     buildApiPath(ApiRouteTemplates.repositoryInvite, { token: data.token }),
-    apiValidators.RepositoryInviteLookupResponse,
+    apiValidators.RepositoryInviteLandingResponse,
     { auth: 'optional' },
   )
 }

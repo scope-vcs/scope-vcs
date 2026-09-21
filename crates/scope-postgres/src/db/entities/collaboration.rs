@@ -64,8 +64,6 @@ pub mod repository_invite {
         pub invited_email_normalized: String,
         pub permissions: Json,
         pub invited_by_user_id: String,
-        pub state: String,
-        pub token_hash: String,
         pub created_at_unix: i64,
         pub updated_at_unix: i64,
         pub expires_at_unix: i64,
@@ -88,8 +86,6 @@ pub mod repository_invite {
                 invited_email_normalized: invite.invited_email_normalized.clone(),
                 permissions: encode_json(&invite.permissions)?,
                 invited_by_user_id: invite.invited_by_user_id.clone(),
-                state: encode_enum(invite.state)?,
-                token_hash: invite.token_hash.clone(),
                 created_at_unix: u64_to_i64(
                     invite.created_at_unix,
                     "repository invite creation time",
@@ -114,7 +110,10 @@ pub mod repository_invite {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RepositoryInvite, PostgresError> {
+        pub fn try_into_domain(
+            self,
+            link_hashes: Vec<String>,
+        ) -> Result<RepositoryInvite, PostgresError> {
             Ok(RepositoryInvite {
                 id: self.id,
                 repo_id: self.repo_id,
@@ -122,8 +121,7 @@ pub mod repository_invite {
                 invited_email_normalized: self.invited_email_normalized,
                 permissions: decode_json::<RepositoryMemberPermissions>(self.permissions)?,
                 invited_by_user_id: self.invited_by_user_id,
-                state: decode_enum::<RepositoryInviteState>(self.state)?,
-                token_hash: self.token_hash,
+                link_hashes,
                 created_at_unix: i64_to_u64(
                     self.created_at_unix,
                     "repository invite creation time",
@@ -142,4 +140,20 @@ pub mod repository_invite {
             })
         }
     }
+}
+pub mod repository_invite_link {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "scope_repository_invite_links")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub token_hash: String,
+        pub invite_id: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
 }
