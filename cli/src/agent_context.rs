@@ -71,9 +71,9 @@ pub fn sync_repo_rules(git_root: &Path) -> anyhow::Result<SyncResult> {
         if !has_current_block(&current, adapter.block)
             .with_context(|| format!("update {}", path.display()))?
         {
-            let desired = managed_content(&current, adapter.block)
+            let desired = managed_content(&current, &block_for(&current, adapter.block))
                 .with_context(|| format!("update {}", path.display()))?;
-            adapter_updates.push((adapter.path, path, with_line_endings_of(&current, desired)));
+            adapter_updates.push((adapter.path, path, desired));
         }
     }
 
@@ -383,11 +383,13 @@ fn has_current_block(current: &str, block: &str) -> anyhow::Result<bool> {
     Ok(managed_content(&current, block)? == current)
 }
 
-fn with_line_endings_of(current: &str, desired: String) -> String {
+/// The block written into a file takes that file's line endings; the rest of
+/// the file is left as it is.
+fn block_for(current: &str, block: &str) -> String {
     if current.contains("\r\n") {
-        desired.replace("\r\n", "\n").replace('\n', "\r\n")
+        block.replace('\n', "\r\n")
     } else {
-        desired
+        block.to_string()
     }
 }
 
@@ -396,19 +398,12 @@ fn managed_content(current: &str, block: &str) -> anyhow::Result<String> {
     let ends = current.match_indices(END_MARKER).collect::<Vec<_>>();
     match (starts.as_slice(), ends.as_slice()) {
         ([], []) => {
+            let newline = if block.contains("\r\n") { "\r\n" } else { "\n" };
             if current.is_empty() {
-                Ok(format!("{block}\n"))
+                Ok(format!("{block}{newline}"))
             } else {
-                Ok(format!(
-                    "{}{}{}\n",
-                    current,
-                    if current.ends_with('\n') {
-                        "\n"
-                    } else {
-                        "\n\n"
-                    },
-                    block
-                ))
+                let gap = if current.ends_with('\n') { 1 } else { 2 };
+                Ok(format!("{current}{}{block}{newline}", newline.repeat(gap)))
             }
         }
         ([(start, _)], [(end, _)]) if start < end => {
@@ -707,6 +702,19 @@ mod tests {
         let synced = fs::read_to_string(&agents_path).unwrap();
         assert!(synced.contains(START_MARKER));
         assert!(!synced.replace("\r\n", "").contains('\n'));
+    }
+
+    #[test]
+    fn sync_leaves_mixed_line_endings_outside_the_block_alone() {
+        let repo = TempDir::git_repo("rules-mixed-endings", "main");
+        let agents_path = repo.path().join("AGENTS.md");
+        fs::write(&agents_path, "# Project\r\nNotes\n").unwrap();
+
+        sync_repo_rules(repo.path()).unwrap();
+
+        let synced = fs::read_to_string(&agents_path).unwrap();
+        assert!(synced.starts_with("# Project\r\nNotes\n"));
+        ensure_worktree_is_synced(repo.path()).unwrap();
     }
 
     #[test]
