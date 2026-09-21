@@ -6,6 +6,7 @@ import { RequestDescription } from '@/features/requests/request-description'
 import { toggleTheme } from '@/lib/use-theme-type'
 import { requestMermaidResource, resetRequestMermaidResource } from '@/features/requests/request-mermaid-resource'
 import './styles.css'
+import { setFixtureViewer } from './clerk'
 
 const flowchart = '```mermaid\nflowchart LR\n  A[Request opened] --> B[Review changes]\n  B --> C[Merge request]\n```'
 const sequence = '```mermaid\nsequenceDiagram\n  Alice->>Bob: Review this request\n  Bob-->>Alice: Looks good\n```'
@@ -23,7 +24,8 @@ function App() {
   const [viewer, setViewer] = useState('viewer')
   Object.assign(window, {
     mermaidCacheStats: () => requestMermaidResource.stats(),
-    changeMermaidViewer: () => { resetRequestMermaidResource(); setViewer('other-viewer') },
+    changeMermaidViewer: () => { setFixtureViewer('other-viewer'); resetRequestMermaidResource() },
+    refreshMermaidViewer: () => setViewer('other-viewer'),
   })
   const source = mode === 'ordinary' ? 'An ordinary request.\n\n```ts\nconst ready = true\n```' :
     mode === 'other' ? state :
@@ -32,7 +34,7 @@ function App() {
     `${revision ? 'Updated explanation.\n\n' : ''}${flowchart}`
   return (
     <RequestAttachmentProvider actions={actions as never} live={{ repo: { id: 'repo', owner_handle: 'dev', name: 'demo', access: { actor: 'Public' } } } as never} requestId="request" viewerId={viewer}>
-      <main className="mx-auto max-w-3xl px-5 py-8 text-foreground">
+      <main id="main-content" className="mx-auto h-screen max-w-3xl overflow-y-auto px-5 py-8 text-foreground">
         <h1 className="mb-5 text-2xl">Request diagram review</h1>
         <nav className="mb-6 flex flex-wrap gap-4" aria-label="Fixture actions">
           <button onClick={() => setMode('diagrams')}>Show diagrams</button>

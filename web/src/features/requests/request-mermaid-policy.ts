@@ -1,5 +1,6 @@
 export const REQUEST_MERMAID_MAX_SOURCE_LENGTH = 20_000
 export const REQUEST_MERMAID_MAX_EDGES = 200
+const MAX_SYNTAX_ITEMS = 400
 
 type BlockedSyntax = {
   message: string
@@ -59,5 +60,11 @@ export function assertRequestMermaidSource(source: string) {
   }
   for (const blocked of BLOCKED_SYNTAX) {
     if (blocked.pattern.test(source)) throw new Error(blocked.message)
+  }
+  // Count labels and numeric values too: edge limits alone miss disconnected
+  // nodes, actors, and chart data. This conservative budget runs before parsing.
+  const items = source.match(/[^\s;,\[\]{}()<>|:&=+\-]+/gu) ?? []
+  if (items.length > MAX_SYNTAX_ITEMS) {
+    throw new Error('This diagram is too complex to render here. Split it into smaller diagrams.')
   }
 }

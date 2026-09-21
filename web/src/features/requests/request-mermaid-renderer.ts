@@ -149,6 +149,9 @@ async function render(input: MermaidRenderInput): Promise<MermaidRenderResult> {
   const id = `request-mermaid-${++renderSequence}`
   try {
     const rendered = await mermaid.render(id, input.source)
+    if (rendered.svg.length > 512 * 1024) {
+      throw new Error('This diagram is too large to display. Split it into smaller diagrams.')
+    }
     const sanitized = sanitizeSvg(DOMPurify, rendered.svg)
     return { ...viewBoxSize(sanitized.root), svg: sanitized.svg }
   } finally {

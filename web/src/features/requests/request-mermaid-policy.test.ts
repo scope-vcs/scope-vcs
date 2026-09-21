@@ -18,6 +18,17 @@ test('rejects empty and oversized Mermaid source', () => {
   )
 })
 
+test('bounds disconnected nodes and compact chart values before rendering', () => {
+  for (const source of [
+    `flowchart LR\n${Array.from({ length: 1_000 }, (_, index) => `N${index}`).join('\n')}`,
+    `flowchart LR\n${Array.from({ length: 1_000 }, (_, index) => `N${index}`).join(' & ')}`,
+    `xychart-beta\nline [${Array.from({ length: 1_000 }, (_, index) => index).join(',')}]`,
+  ]) {
+    assert(source.length < REQUEST_MERMAID_MAX_SOURCE_LENGTH)
+    assert.throws(() => assertRequestMermaidSource(source), /too complex/)
+  }
+})
+
 test('rejects author-controlled Mermaid configuration', () => {
   assert.throws(
     () => assertRequestMermaidSource('---\nconfig:\n  securityLevel: loose\n---\nflowchart LR\nA-->B'),

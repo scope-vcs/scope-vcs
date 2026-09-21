@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useAuth } from '@clerk/tanstack-react-start'
 import { useThemeType } from '@/lib/use-theme-type'
 import { useRequestAttachments } from './request-attachment-context'
 import {
@@ -10,6 +11,15 @@ import {
 import { observeRequestMermaid } from './request-mermaid-visibility'
 
 export function RequestMermaidBlock({ source }: { source: string }) {
+  const { isLoaded, userId } = useAuth()
+  const { viewerId } = useRequestAttachments()
+  // Route data may still belong to the previous viewer while Clerk changes.
+  // Unmount its observer/lease rather than rerendering discarded private data.
+  if (isLoaded && (userId ?? 'anonymous') !== viewerId) return null
+  return <RequestMermaidImage source={source} />
+}
+
+function RequestMermaidImage({ source }: { source: string }) {
   const { accessScope } = useRequestAttachments()
   const theme = useThemeType()
   const input = useMemo(() => ({ accessScope, source, theme }), [accessScope, source, theme])

@@ -183,6 +183,8 @@ export function createRequestMermaidResourceManager({
 
   function acquire(input: RequestMermaidInput, priority: RequestMermaidPriority) {
     const identity = requestMermaidIdentity(input)
+    // Reopening a retained result is a cache read, even when no render is needed.
+    resource.read(identity)
     const lease = Symbol(identity)
     let demand = demands.get(identity)
     if (!demand) {

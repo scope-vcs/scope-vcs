@@ -163,7 +163,7 @@ test('access changes discard old-scope work and suppress its late result', async
   releaseNext()
 })
 
-test('retention evicts least-recently-read results and accounts for source plus SVG weight', async () => {
+test('reopening refreshes retention recency and accounts for source plus SVG weight', async () => {
   const manager = createRequestMermaidResourceManager({
     render: async (renderInput) => result(`<svg>${renderInput.source}</svg>`),
     yieldToBrowser: async () => {},
@@ -177,7 +177,7 @@ test('retention evicts least-recently-read results and accounts for source plus 
     await completed(manager, current)
     release()
   }
-  manager.resource.read(requestMermaidIdentity(first))
+  manager.acquire(first, 0)()
   const releaseThird = manager.acquire(third, 0)
   await completed(manager, third)
   releaseThird()
