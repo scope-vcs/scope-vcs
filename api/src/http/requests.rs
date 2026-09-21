@@ -92,7 +92,7 @@ pub(crate) async fn list_requests(
             let checks = checks
                 .get(&request.id)
                 .copied()
-                .unwrap_or(RequestChecksOutcome::Clear);
+                .unwrap_or(RequestChecksOutcome::NotEvaluated);
             request_list_item_response(request, access, current_main_oid.clone(), checks)
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
@@ -541,7 +541,10 @@ async fn request_response_for_viewer(
         can_close: decision.can_close,
         can_merge: decision.can_merge,
     };
-    let checks = crate::use_cases::request_checks::checks_outcome(state, &request).await?;
+    // A summary describes the request; only a look at its checks evaluates a head.
+    let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
+        .await?
+        .outcome;
     let decision = request_mergeability(&request, viewer.access, checks);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),

@@ -23,7 +23,7 @@ pub mod attachments;
 mod checks;
 pub use checks::{
     RequestCheck, RequestCheckEvaluation, RequestCheckEvaluationState, RequestChecksOutcome,
-    request_checks_outcome, request_checks_start_immediately,
+    request_checks_outcome, request_checks_start_immediately, request_head_awaits_evaluation,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};

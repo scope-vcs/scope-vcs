@@ -43,7 +43,7 @@ pub(crate) async fn view(
         .into_iter()
         .max_by_key(|revision| revision.position);
     let intent = store.request_auto_merge_intent(request_id).await?;
-    let checks = request_checks::checks_view(state, &request).await?;
+    let checks = request_checks::recorded_checks_view(state, &request).await?;
     let readiness = request_auto_merge_readiness(
         &request.id,
         &request.head_oid,

@@ -131,7 +131,8 @@ pub(crate) async fn merge_request_inner(
         return Err(ApiError::conflict("request cannot be merged").into());
     }
     // The gate is separate from permission: the head's checks must have cleared.
-    let checks = crate::use_cases::request_checks::checks_outcome(state, &request).await?;
+    let checks =
+        crate::use_cases::request_checks::checks_outcome(state, &repo.record, &request).await?;
     if checks != RequestChecksOutcome::Clear {
         let decision = request_mergeability(&request, access, checks);
         return Err(ApiError::conflict(

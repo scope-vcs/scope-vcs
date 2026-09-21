@@ -9,7 +9,7 @@ use crate::error::PostgresError;
 use scope_domain::{
     requests::{
         RequestAutoMergeStopReason, RequestCheckEvaluation, RequestCheckEvaluationState,
-        stop_request_auto_merge,
+        RequestRevision, stop_request_auto_merge,
     },
     runs::{
         run::Run,
@@ -57,6 +57,30 @@ impl RequestStore {
             &command.evaluation.request_id,
         )
         .await?;
+        // Evaluating reads the head outside this lock, so the request may have been
+        // closed or merged since. A request that can no longer merge starts nothing.
+        let request = super::request_rows::request_by_id(&tx, &command.evaluation.request_id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("request not found"))?;
+        if request.is_terminal() {
+            return Err(PostgresError::conflict(
+                "request can no longer merge, so its checks are not evaluated",
+            ));
+        }
+        // The first evaluation of a head stands. A later one, from someone looking at
+        // a request while its push was still evaluating, must not undo an approval.
+        if let Some(evaluation) = evaluation_for_head(
+            &tx,
+            &command.evaluation.request_id,
+            &command.evaluation.head_oid,
+        )
+        .await?
+        {
+            return Ok(RequestChecksMutation {
+                evaluation,
+                created_runs: Vec::new(),
+            });
+        }
         let created_runs = start_runs(
             &tx,
             &command.revisions,
@@ -158,6 +182,15 @@ impl RequestStore {
             evaluation,
             created_runs,
         })
+    }
+
+    /// The revision the request's most recent push saved.
+    pub async fn latest_request_revision(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<RequestRevision>, PostgresError> {
+        super::request_revision_rows::latest_revision_for_request(self.db.as_ref(), request_id)
+            .await
     }
 
     pub async fn request_check_evaluation(

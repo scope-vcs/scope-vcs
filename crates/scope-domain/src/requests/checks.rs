@@ -255,8 +255,10 @@ fn ensure_every_check_started(checks: &[RequestCheck]) -> Result<(), DomainError
 /// current head and the states of the runs it started.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestChecksOutcome {
-    /// No evaluation exists for the head, or it asks for nothing.
+    /// The head asks for nothing, or every run it asked for succeeded.
     Clear,
+    /// No evaluation is recorded for the head, so nothing is known to have passed.
+    NotEvaluated,
     AwaitingApproval,
     Pending,
     Failed,
@@ -272,7 +274,7 @@ pub fn request_checks_outcome(
     let Some(evaluation) = evaluation.filter(|evaluation| {
         evaluation.request_id == request_id && evaluation.head_oid == head_oid
     }) else {
-        return RequestChecksOutcome::Clear;
+        return RequestChecksOutcome::NotEvaluated;
     };
     match evaluation.state {
         RequestCheckEvaluationState::NoChecks => RequestChecksOutcome::Clear,
@@ -299,6 +301,14 @@ pub fn request_checks_outcome(
             outcome
         }
     }
+}
+
+/// Whether a look at the request should evaluate its head: nothing is recorded for
+/// it, a push saved it, and the request can still merge.
+pub fn request_head_awaits_evaluation(request: &Request, outcome: RequestChecksOutcome) -> bool {
+    outcome == RequestChecksOutcome::NotEvaluated
+        && request.git_snapshot.is_some()
+        && !request.is_terminal()
 }
 
 /// Whether the pusher's request runs start at once or wait for a maintainer.
@@ -346,6 +356,32 @@ mod tests {
     }
 
     #[test]
+    fn only_a_pushed_head_that_can_still_merge_is_evaluated_on_a_look() {
+        let pushed = open_request();
+        let awaits = |request: &Request| {
+            request_head_awaits_evaluation(request, RequestChecksOutcome::NotEvaluated)
+        };
+
+        assert!(awaits(&pushed));
+        assert!(!request_head_awaits_evaluation(
+            &pushed,
+            RequestChecksOutcome::Pending
+        ));
+        assert!(!awaits(&Request {
+            git_snapshot: None,
+            ..pushed.clone()
+        }));
+        assert!(!awaits(&Request {
+            closed_at_unix: Some(20),
+            ..pushed.clone()
+        }));
+        assert!(!awaits(&Request {
+            merged_at_unix: Some(20),
+            ..pushed
+        }));
+    }
+
+    #[test]
     fn outcome_follows_the_current_head_and_its_runs() {
         let mut request = open_request();
         request.head_oid = HEAD.to_string();
@@ -366,7 +402,7 @@ mod tests {
 
         assert_eq!(
             request_checks_outcome(&request.id, HEAD, None, &[]),
-            RequestChecksOutcome::Clear
+            RequestChecksOutcome::NotEvaluated
         );
         assert_eq!(
             outcome(&[("run_a", RunState::Succeeded), ("run_b", RunState::Running)]),
@@ -397,7 +433,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             request_checks_outcome(&request.id, HEAD, Some(&stale), &[]),
-            RequestChecksOutcome::Clear
+            RequestChecksOutcome::NotEvaluated
         );
         let waiting = RequestCheckEvaluation::awaiting_approval(
             &request.id,

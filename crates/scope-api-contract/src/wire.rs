@@ -143,6 +143,7 @@ wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
     Merged,
     NotMaintainer,
     MissingRequestBranch,
+    ChecksNotEvaluated,
     ChecksAwaitingApproval,
     ChecksPending,
     ChecksFailed,

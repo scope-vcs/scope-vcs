@@ -139,26 +139,17 @@ impl RequestAutoMergeReadiness {
 }
 
 /// Determines whether unattended merging may continue for the authorized head.
-///
-/// This intentionally does not use the manual merge default for a missing
-/// evaluation. Manual merging remains clear when no evaluation exists; an
-/// unattended merge waits for positive evidence that evaluation completed.
 pub fn request_auto_merge_readiness(
     request_id: &str,
     head_oid: &str,
     evaluation: Option<&RequestCheckEvaluation>,
     run_states: &[(String, RunState)],
 ) -> RequestAutoMergeReadiness {
-    let Some(evaluation) = evaluation.filter(|evaluation| {
-        evaluation.request_id == request_id && evaluation.head_oid == head_oid
-    }) else {
-        return RequestAutoMergeReadiness::Waiting(
-            RequestAutoMergeWaitingReason::CheckEvaluationMissing,
-        );
-    };
-
-    match request_checks_outcome(request_id, head_oid, Some(evaluation), run_states) {
+    match request_checks_outcome(request_id, head_oid, evaluation, run_states) {
         RequestChecksOutcome::Clear => RequestAutoMergeReadiness::Ready,
+        RequestChecksOutcome::NotEvaluated => RequestAutoMergeReadiness::Waiting(
+            RequestAutoMergeWaitingReason::CheckEvaluationMissing,
+        ),
         RequestChecksOutcome::AwaitingApproval => RequestAutoMergeReadiness::Waiting(
             RequestAutoMergeWaitingReason::ChecksAwaitingApproval,
         ),

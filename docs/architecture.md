@@ -115,7 +115,8 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 - `request_discussion_mutation.rs` for discussion commands, authorization
   context, persistence, result loading, and timeline publication;
 - `request_checks.rs` for evaluating the workflows a pushed request head asks
-  for, starting or holding their runs, and reading what they mean for a merge;
+  for, starting or holding their runs, reading what they mean for a merge, and
+  evaluating a head again from its saved revision when its push could not;
 - `request_revision_inspection.rs` for shared Git revision membership checks
   and raw diff execution used by review and discussion anchors;
 - `run_control.rs` and `run_inspection.rs` for run mutations and authorized run,

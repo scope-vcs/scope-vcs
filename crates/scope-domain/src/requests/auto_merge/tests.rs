@@ -200,11 +200,6 @@ fn a_terminal_check_result_stops_the_intent_permanently() {
 #[test]
 fn unattended_readiness_requires_an_explicit_evaluation() {
     assert_eq!(
-        request_checks_outcome("request_1", HEAD, None, &[]),
-        RequestChecksOutcome::Clear,
-        "manual merge behavior remains unchanged"
-    );
-    assert_eq!(
         request_auto_merge_readiness("request_1", HEAD, None, &[]),
         RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::CheckEvaluationMissing)
     );
