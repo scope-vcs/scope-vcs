@@ -21,7 +21,7 @@ pub enum RepositoryInviteLanding {
     Revoked,
     /// The viewer accepted this invite and was later removed.
     AccessRemoved,
-    /// Someone other than the viewer accepted this invite.
+    /// Someone else accepted this invite, and the viewer has no access.
     Used,
 }
 
@@ -127,9 +127,9 @@ pub fn repository_invite_landing(
             let accepted_by_viewer = viewer
                 .is_some_and(|viewer| invite.accepted_by_user_id.as_deref() == Some(&viewer.id));
             match (accepted_by_viewer, viewer_has_access) {
-                (true, true) => RepositoryInviteLanding::Member,
+                (_, true) => RepositoryInviteLanding::Member,
                 (true, false) => RepositoryInviteLanding::AccessRemoved,
-                (false, _) => RepositoryInviteLanding::Used,
+                (false, false) => RepositoryInviteLanding::Used,
             }
         }
         RepositoryInviteState::Pending if viewer_has_access => RepositoryInviteLanding::Member,

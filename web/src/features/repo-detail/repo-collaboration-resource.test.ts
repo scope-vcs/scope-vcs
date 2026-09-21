@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RepositoryMemberResponse } from '../../api/types.generated'
-import { repoCollaborationResource, retainCollaborationResult } from './repo-collaboration-resource'
+import type { RepositoryInviteResponse, RepositoryMemberResponse } from '../../api/types.generated'
+import { refreshWhenNextInviteExpires, repoCollaborationResource, retainCollaborationResult } from './repo-collaboration-resource'
 
 const member: RepositoryMemberResponse = { user_id: 'member', handle: 'member', email: 'member@example.com', created_at_unix: 1, updated_at_unix: 1, permissions: { can_push: false, can_change_file_visibility: false } }
 
@@ -26,4 +26,23 @@ test('settings reuse one scoped snapshot and write results fence older reads wit
   assert.equal(repoCollaborationResource.peek('other-viewer'), null)
   retainCollaborationResult('owner-scope', { type: 'memberRemoved', member: saved })
   assert.deepEqual(repoCollaborationResource.peek('owner-scope')?.collaboration?.members, [])
+})
+
+test('a retained snapshot refreshes once when its earliest pending invite expires', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 })
+  repoCollaborationResource.clear()
+  const invite = (id: string, state: RepositoryInviteResponse['state'], expires_at_unix: number): RepositoryInviteResponse =>
+    ({ id, invited_email: `${id}@example.com`, permissions: member.permissions, state, expires_at_unix })
+  const collaboration = { members: [], invites: [invite('later', 'Pending', 1_900), invite('soon', 'Pending', 1_060), invite('revoked', 'Revoked', 1_010)] }
+  await repoCollaborationResource.load('expiry-scope', '', async () => ({ collaboration }))
+
+  assert.equal(refreshWhenNextInviteExpires('expiry-scope', { members: [], invites: [] }), undefined)
+  refreshWhenNextInviteExpires('expiry-scope', collaboration)
+  t.mock.timers.tick(59_999)
+  assert.equal(repoCollaborationResource.getSnapshot('expiry-scope').stale, false)
+  t.mock.timers.tick(1)
+  assert.equal(repoCollaborationResource.getSnapshot('expiry-scope').stale, true)
+
+  // A client clock ahead of the server would get the same pending invite back.
+  assert.equal(refreshWhenNextInviteExpires('expiry-scope', collaboration), undefined)
 })

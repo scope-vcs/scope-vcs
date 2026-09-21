@@ -150,7 +150,8 @@ fn a_repeated_acceptance_returns_the_same_membership_without_changing_anything()
     assert_eq!(repeated, member);
     assert_eq!(collaboration(&repo), accepted);
     assert_eq!(landing(&repo, Some(&invitee()), CREATED_AT + 9), Member);
-    // Anyone else learns only that the link was used.
+    assert_eq!(landing(&repo, Some(&owner()), CREATED_AT + 9), Member);
+    // Anyone without access learns only that the link was used.
     assert_eq!(landing(&repo, None, CREATED_AT + 9), Used);
     let other = user("user_other", "other@example.com");
     assert_eq!(landing(&repo, Some(&other), CREATED_AT + 9), Used);

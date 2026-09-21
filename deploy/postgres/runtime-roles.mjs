@@ -13,8 +13,8 @@ const repositoryTables = names(`file_changes git_compaction_jobs git_heads git_s
   git_segment_uploads git_segments live_files logical_commits metadata_locks object_references
   orphan_object_jobs outbox_jobs projection_files projection_read_models push_trigger_evaluations
   repo_storage_cleanup_jobs repositories repository_first_push_tokens repository_git_push_tokens
-  repository_history_entries repository_history_views repository_invites repository_landing_files
-  repository_members repository_workflow_catalogs repository_workflow_files visibility_change_sets
+  repository_history_entries repository_history_views repository_invites repository_invite_links
+  repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files visibility_change_sets
   visibility_changes workflow_revisions dependency_analyses dependency_reports dependency_analysis_jobs
   request_ref_cleanup_jobs`);
 const runTables = names(`run_attempt_cache_setups run_attempt_caches run_attempt_steps run_attempts
@@ -45,7 +45,7 @@ export const grants = {
     dependency_analyses dependency_reports dependency_analysis_jobs request_ref_cleanup_jobs`), ...runTables],
     names(`file_changes git_heads live_files logical_commits repositories repository_first_push_tokens
     repository_git_push_tokens repository_history_entries repository_history_views repository_invites
-    repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files
+    repository_invite_links repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files
     visibility_change_sets visibility_changes requests request_revisions users request_check_evaluations`)),
     // Terminal check runs stop auto-merge and persist its request activity and event.
     scope_requests: ['SELECT', 'UPDATE'],

@@ -24,10 +24,11 @@ import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@clerk/tanstack-react-start'
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import {
+  refreshWhenNextInviteExpires,
   repoCollaborationResource,
   retainCollaborationResult,
 } from '@/features/repo-detail/repo-collaboration-resource'
@@ -90,6 +91,12 @@ function RepoSettingsRoute() {
     load,
     fallbackError: 'Repository access settings could not be loaded.',
   })
+
+  const collaboration = resource.value?.collaboration ?? null
+  useEffect(
+    () => (scope ? refreshWhenNextInviteExpires(scope, collaboration) : undefined),
+    [scope, collaboration],
+  )
 
   async function retainResult<T>(
     mutation: Promise<T>,
