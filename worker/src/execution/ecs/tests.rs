@@ -25,12 +25,15 @@ async fn only_explicit_broker_rejection_is_a_safe_setup_failure() {
     let provider = fake::FakeEcs::new().await;
     provider.reply(
         StatusCode::OK,
-        json!({"status":"rejected", "message":"authorization denied"}),
+        json!({"status":"rejected", "reason":"authorization", "message":"authorization denied"}),
         false,
     );
     assert!(matches!(
         provider.client.start("attempt_1", "token").await,
-        Err(StartError::Rejected(_))
+        Err(StartError::Rejected {
+            reason: RejectionReason::Authorization,
+            ..
+        })
     ));
     for (status, reply, function_error) in [
         (
@@ -46,12 +49,12 @@ async fn only_explicit_broker_rejection_is_a_safe_setup_failure() {
         (StatusCode::OK, json!({"status":"stopped"}), false),
         (
             StatusCode::OK,
-            json!({"status":"rejected", "message":"denied", "extra":true}),
+            json!({"status":"rejected", "reason":"authorization", "message":"denied", "extra":true}),
             false,
         ),
         (
             StatusCode::OK,
-            json!({"status":"rejected", "message":"denied"}),
+            json!({"status":"rejected", "reason":"authorization", "message":"denied"}),
             true,
         ),
         (
@@ -74,7 +77,7 @@ async fn retry_is_unblocked_only_after_broker_confirms_cleanup() {
     let provider = fake::FakeEcs::new().await;
     for reply in [
         json!({"status":"ambiguous", "message":"still stopping"}),
-        json!({"status":"rejected", "message":"not authorized"}),
+        json!({"status":"rejected", "reason":"authorization", "message":"not authorized"}),
         json!({"status":"started", "task_arn":"task-1"}),
     ] {
         provider.reply(StatusCode::OK, reply, false);
@@ -92,11 +95,79 @@ async fn retry_is_unblocked_only_after_broker_confirms_cleanup() {
         .client
         .stop_terminal_task("attempt_1")
         .await
+        .map(|outcome| assert_eq!(outcome, StopOutcome::Stopped))
         .unwrap();
     assert_eq!(
         provider.request_body("stop"),
         json!({"action":"stop", "attempt_id":"attempt_1"})
     );
+}
+
+#[tokio::test]
+async fn stop_progress_is_explicit_and_cannot_confirm_cleanup() {
+    let provider = fake::FakeEcs::new().await;
+    provider.reply(
+        StatusCode::OK,
+        json!({"status":"stopping", "stuck":false}),
+        false,
+    );
+    assert_eq!(
+        provider
+            .client
+            .stop_terminal_task("attempt_1")
+            .await
+            .unwrap(),
+        StopOutcome::Stopping { stuck: false }
+    );
+    provider.reply(
+        StatusCode::OK,
+        json!({"status":"stopping", "stuck":true}),
+        false,
+    );
+    assert_eq!(
+        provider
+            .client
+            .stop_terminal_task("attempt_1")
+            .await
+            .unwrap(),
+        StopOutcome::Stopping { stuck: true }
+    );
+    provider.reply(StatusCode::OK, json!({"status":"stopping"}), false);
+    assert!(
+        provider
+            .client
+            .stop_terminal_task("attempt_1")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn capacity_and_quota_rejections_keep_distinct_reasons() {
+    let provider = fake::FakeEcs::new().await;
+    for (wire, expected) in [
+        ("capacity", RejectionReason::Capacity),
+        ("quota", RejectionReason::Quota),
+        ("permanent", RejectionReason::Permanent),
+    ] {
+        provider.reply(
+            StatusCode::OK,
+            json!({"status":"rejected", "reason":wire, "message":"ECS rejected this attempt"}),
+            false,
+        );
+        assert!(
+            matches!(provider.client.start("attempt_1", "token").await, Err(StartError::Rejected { reason, .. }) if reason == expected)
+        );
+    }
+    provider.reply(
+        StatusCode::OK,
+        json!({"status":"rejected", "reason":"unknown", "message":"denied"}),
+        false,
+    );
+    assert!(matches!(
+        provider.client.start("attempt_1", "token").await,
+        Err(StartError::Ambiguous(_))
+    ));
 }
 
 #[tokio::test]

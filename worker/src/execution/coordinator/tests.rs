@@ -1,5 +1,6 @@
 use super::*;
 use crate::execution::fake::{FakeEcs, TEST_IMAGE};
+use axum::http::StatusCode;
 use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
@@ -20,6 +21,96 @@ use scope_domain::{
     },
 };
 use scope_postgres::db::{CatalogFixture, TestDatabaseTarget};
+use serde_json::json;
+
+#[tokio::test]
+async fn zero_cloud_concurrency_pauses_admission() {
+    let metadata = queued_runs(1).await;
+    let provider = FakeEcs::new().await;
+    let mut settings = provider.settings();
+    settings.max_concurrency = 0;
+    let coordinator = CloudExecutionCoordinator {
+        metadata: metadata.clone(),
+        product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
+        ecs: provider.client.clone(),
+        origin_id: "paused-worker".into(),
+        settings,
+    };
+    assert_eq!(
+        coordinator
+            .dispatch_available(crate::unix_now().unwrap())
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(provider.count("start"), 0);
+    assert!(
+        metadata
+            .runs()
+            .next_dispatchable_job()
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn paused_dispatch_still_checks_cleanup_without_marking_stopping_as_complete() {
+    let metadata = queued_runs(2).await;
+    let now = crate::unix_now().unwrap();
+    let attempt_ids = ["attempt_paused_cleanup_1", "attempt_paused_cleanup_2"];
+    let expired_at = now + DISPATCH_LEASE.as_secs() + 1;
+    for (index, attempt_id) in attempt_ids.into_iter().enumerate() {
+        let scope_postgres::db::DispatchAdmission::Admitted(_) = metadata
+            .runs()
+            .admit_next_job(
+                2,
+                attempt_id,
+                &format!("{:064x}", index + 1),
+                "test",
+                now,
+                now + DISPATCH_LEASE.as_secs(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("expected admitted attempt");
+        };
+        metadata
+            .runs()
+            .expire_attempt(attempt_id, expired_at)
+            .await
+            .unwrap();
+    }
+    let provider = FakeEcs::new().await;
+    provider.reply(
+        StatusCode::OK,
+        json!({"status":"stopping", "stuck":false}),
+        false,
+    );
+    let mut settings = provider.settings();
+    settings.max_concurrency = 0;
+    let coordinator = CloudExecutionCoordinator {
+        metadata: metadata.clone(),
+        product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
+        ecs: provider.client.clone(),
+        origin_id: "paused-worker".into(),
+        settings,
+    };
+    assert_eq!(coordinator.cleanup_terminal(expired_at).await.unwrap(), 0);
+    assert_eq!(provider.count("stop"), 2);
+    let pending = metadata
+        .runs()
+        .claim_terminal_cloud_task_stops(expired_at + 1, 2)
+        .await
+        .unwrap();
+    assert_eq!(pending.len(), 2);
+    assert!(
+        pending
+            .iter()
+            .all(|task| attempt_ids.contains(&task.attempt_id.as_str()))
+    );
+}
 
 #[tokio::test]
 async fn attempt_analytics_correlates_admission_and_completion_without_replaying_completion() {

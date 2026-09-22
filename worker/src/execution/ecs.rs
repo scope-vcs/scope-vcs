@@ -18,8 +18,26 @@ pub(crate) struct EcsClient {
 
 #[derive(Debug)]
 pub(crate) enum StartError {
-    Rejected(anyhow::Error),
+    Rejected {
+        reason: RejectionReason,
+        error: anyhow::Error,
+    },
     Ambiguous(anyhow::Error),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RejectionReason {
+    Capacity,
+    Quota,
+    Permanent,
+    Authorization,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum StopOutcome {
+    Stopped,
+    Stopping { stuck: bool },
 }
 
 #[derive(Serialize)]
@@ -37,10 +55,20 @@ enum BrokerRequest<'a> {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
 enum BrokerReply {
-    Started { task_arn: String },
+    Started {
+        task_arn: String,
+    },
     Stopped,
-    Rejected { message: String },
-    Ambiguous { message: String },
+    Stopping {
+        stuck: bool,
+    },
+    Rejected {
+        reason: RejectionReason,
+        message: String,
+    },
+    Ambiguous {
+        message: String,
+    },
 }
 
 impl EcsClient {
@@ -78,9 +106,10 @@ impl EcsClient {
             .await
         {
             Ok(BrokerReply::Started { task_arn }) if !task_arn.trim().is_empty() => Ok(task_arn),
-            Ok(BrokerReply::Rejected { message }) => {
-                Err(StartError::Rejected(anyhow::anyhow!(message)))
-            }
+            Ok(BrokerReply::Rejected { reason, message }) => Err(StartError::Rejected {
+                reason,
+                error: anyhow::anyhow!(message),
+            }),
             Ok(BrokerReply::Ambiguous { message }) => {
                 Err(StartError::Ambiguous(anyhow::anyhow!(message)))
             }
@@ -91,10 +120,11 @@ impl EcsClient {
         }
     }
 
-    pub(crate) async fn stop_terminal_task(&self, attempt_id: &str) -> anyhow::Result<()> {
+    pub(crate) async fn stop_terminal_task(&self, attempt_id: &str) -> anyhow::Result<StopOutcome> {
         match self.invoke(&BrokerRequest::Stop { attempt_id }).await? {
-            BrokerReply::Stopped => Ok(()),
-            BrokerReply::Rejected { message } | BrokerReply::Ambiguous { message } => {
+            BrokerReply::Stopped => Ok(StopOutcome::Stopped),
+            BrokerReply::Stopping { stuck } => Ok(StopOutcome::Stopping { stuck }),
+            BrokerReply::Rejected { message, .. } | BrokerReply::Ambiguous { message } => {
                 bail!("dispatch broker cleanup incomplete: {message}")
             }
             BrokerReply::Started { .. } => bail!("unexpected dispatch broker stop reply"),

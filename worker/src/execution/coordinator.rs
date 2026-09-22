@@ -1,6 +1,6 @@
-use super::ecs::{EcsClient, StartError};
+use super::ecs::{EcsClient, StartError, StopOutcome};
 use super::provisioning::Provisioning;
-use crate::settings::CloudExecutionSettings;
+use crate::settings::{BATCH_SIZE, CloudExecutionSettings};
 use anyhow::Context as _;
 use scope_domain::runs::{exit_code::SetupFailure, step::AttemptConclusion};
 use scope_postgres::db::MetadataStore;
@@ -36,6 +36,9 @@ impl CloudExecutionCoordinator {
     }
 
     pub(crate) async fn dispatch_available(&self, now_unix: u64) -> anyhow::Result<usize> {
+        if self.settings.max_concurrency == 0 {
+            return Ok(0);
+        }
         let mut starts = Provisioning::new(self.settings.max_concurrency);
         let dispatch_result: anyhow::Result<usize> = async {
             let mut dispatched = 0;
@@ -106,8 +109,8 @@ impl CloudExecutionCoordinator {
                 self.publish_status_change(&claim).await;
                 tracing::info!(attempt_id = %attempt_id, external_run_id, run_id = %claim.run.id, job = %claim.job.key.as_str(), "dispatched cloud run");
             }
-            Err(StartError::Rejected(error)) => {
-                tracing::error!(attempt_id = %attempt_id, error = %error, "ECS rejected cloud run");
+            Err(StartError::Rejected { reason, error }) => {
+                tracing::error!(attempt_id = %attempt_id, ?reason, error = %error, "ECS rejected cloud run");
                 let mutation = self
                     .metadata
                     .runs()
@@ -145,7 +148,10 @@ impl CloudExecutionCoordinator {
         let attempts = self
             .metadata
             .runs()
-            .claim_cloud_attempt_aborts(now_unix, self.settings.max_concurrency as u64)
+            .claim_cloud_attempt_aborts(
+                now_unix,
+                self.settings.max_concurrency.max(BATCH_SIZE) as u64,
+            )
             .await
             .map_err(db_error)?;
         let mut tasks = tokio::task::JoinSet::new();
@@ -171,7 +177,10 @@ impl CloudExecutionCoordinator {
         let tasks = self
             .metadata
             .runs()
-            .claim_terminal_cloud_task_stops(now_unix, self.settings.max_concurrency as u64)
+            .claim_terminal_cloud_task_stops(
+                now_unix,
+                self.settings.max_concurrency.max(BATCH_SIZE) as u64,
+            )
             .await
             .map_err(db_error)?;
         let mut reconciliations = tokio::task::JoinSet::new();
@@ -223,7 +232,7 @@ async fn abort_canceled_attempt(
     now_unix: u64,
 ) -> anyhow::Result<Option<scope_postgres::db::DispatchClaim>> {
     match ecs.stop_terminal_task(&attempt.attempt_id).await {
-        Ok(()) => {
+        Ok(StopOutcome::Stopped) => {
             let mutation = metadata
                 .runs()
                 .confirm_provider_cancellation(&attempt.attempt_id, now_unix)
@@ -237,6 +246,17 @@ async fn abort_canceled_attempt(
                 .map_err(db_error)?;
             tracing::info!(attempt_id = %attempt.attempt_id, external_run_id = ?attempt.external_run_id, "aborted canceled cloud run");
             Ok(Some(mutation.claim))
+        }
+        Ok(StopOutcome::Stopping { stuck }) => {
+            metadata
+                .runs()
+                .release_cloud_task_stop_claim(&attempt.attempt_id)
+                .await
+                .map_err(db_error)?;
+            if stuck {
+                tracing::warn!(attempt_id = %attempt.attempt_id, "cloud run cancellation is still stopping after 15 minutes");
+            }
+            Ok(None)
         }
         Err(error) => {
             metadata
@@ -257,7 +277,7 @@ async fn cleanup_terminal_task(
     now_unix: u64,
 ) -> anyhow::Result<bool> {
     match ecs.stop_terminal_task(&task.attempt_id).await {
-        Ok(()) => {
+        Ok(StopOutcome::Stopped) => {
             metadata
                 .runs()
                 .complete_cloud_task_stop(&task.attempt_id, now_unix)
@@ -265,6 +285,17 @@ async fn cleanup_terminal_task(
                 .map_err(db_error)?;
             tracing::info!(attempt_id = %task.attempt_id, "reconciled terminal cloud task");
             Ok(true)
+        }
+        Ok(StopOutcome::Stopping { stuck }) => {
+            metadata
+                .runs()
+                .release_cloud_task_stop_claim(&task.attempt_id)
+                .await
+                .map_err(db_error)?;
+            if stuck {
+                tracing::warn!(attempt_id = %task.attempt_id, "terminal cloud task is still stopping after 15 minutes");
+            }
+            Ok(false)
         }
         Err(error) => {
             metadata

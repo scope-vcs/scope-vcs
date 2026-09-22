@@ -1,7 +1,9 @@
 import copy
+import io
 import json
 import sys
 import unittest
+from contextlib import redirect_stdout
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -75,10 +77,14 @@ class FakeProvider:
         self.cleanups = 0
         self.tasks = []
         self.stopped = "stopped"
+        self.stop_calls = 0
+        self.status_calls = 0
         self.lose_launch_response = False
         self.lose_prepare_response = False
         self.lose_cleanup_response = False
         self.reject_launch = False
+        self.reject_reason = "permanent"
+        self.launch_error = None
         self.on_prepare = None
 
     def prepare(self, record, token):
@@ -92,7 +98,9 @@ class FakeProvider:
     def launch(self, specification):
         self.launches += 1
         if self.reject_launch:
-            raise ProviderRejected("rejected")
+            raise ProviderRejected(self.reject_reason)
+        if self.launch_error:
+            raise self.launch_error
         self.tasks = ["task:1"]
         if self.lose_launch_response:
             raise OSError("lost launch response")
@@ -102,6 +110,11 @@ class FakeProvider:
         return self.tasks
 
     def stop(self, task):
+        self.stop_calls += 1
+        return True
+
+    def status(self, task):
+        self.status_calls += 1
         return self.stopped
 
     def cleanup(self, record):
@@ -191,12 +204,28 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(self.call()["status"], "ambiguous")
         self.assertEqual(self.provider.launches, 1)
 
+    def test_server_exception_stays_ambiguous_without_relaunch(self):
+        error = OSError("secret response body")
+        error.response = {"Error": {"Code": "ServerException", "Message": "secret response body"},
+                          "ResponseMetadata": {"RequestId": "aws-request-1"}}
+        self.provider.launch_error = error
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(self.call()["status"], "ambiguous")
+        event = json.loads(output.getvalue())
+        self.assertEqual(event["aws_error_code"], "ServerException")
+        self.assertEqual(event["aws_request_id"], "aws-request-1")
+        self.assertNotIn("secret response body", output.getvalue())
+        self.assertEqual(self.record()["phase"], "launching")
+        self.assertEqual(self.call()["status"], "ambiguous")
+        self.assertEqual(self.provider.launches, 1)
+
     def test_unknown_launch_absence_waits_for_consistency(self):
         self.provider.lose_launch_response = True
         self.call()
         self.provider.tasks = []
         self.authority.stop_allowed = True
-        self.assertEqual(self.call(STOP)["status"], "ambiguous")
+        self.assertEqual(self.call(STOP), {"status": "stopping", "stuck": False})
         self.assertEqual(self.provider.cleanups, 0)
         self.now += 301
         self.assertEqual(self.call(STOP)["status"], "stopped")
@@ -207,7 +236,7 @@ class LifecycleTests(unittest.TestCase):
         self.provider.lose_prepare_response = True
         self.assertEqual(self.call()["status"], "ambiguous")
         self.authority.stop_allowed = True
-        self.assertEqual(self.call(STOP)["status"], "ambiguous")
+        self.assertEqual(self.call(STOP)["status"], "stopping")
         self.now += 301
         self.assertEqual(self.call(STOP)["status"], "stopped")
         self.assertEqual(self.provider.launches, 0)
@@ -236,18 +265,51 @@ class LifecycleTests(unittest.TestCase):
         self.call()
         self.authority.stop_allowed = True
         self.provider.stopped = "stopping"
-        self.assertEqual(self.call(STOP)["status"], "ambiguous")
+        self.assertEqual(self.call(STOP)["status"], "stopping")
         self.assertEqual(self.provider.cleanups, 0)
         self.assertEqual(self.call()["status"], "ambiguous")
+        self.assertEqual(self.call(STOP)["status"], "stopping")
+        self.assertEqual(self.provider.stop_calls, 1)
+        self.assertEqual(self.provider.status_calls, 1)
+        for _ in range(9):
+            self.now += 1
+            self.assertEqual(self.call(STOP)["status"], "stopping")
+        self.assertEqual(self.provider.status_calls, 1)
         self.provider.stopped = "stopped"
+        self.now += 1
         self.assertEqual(self.call(STOP)["status"], "stopped")
+        self.assertEqual(self.provider.stop_calls, 1)
+        self.assertEqual(self.provider.status_calls, 2)
+
+    def test_stuck_stop_is_reported_once_without_discarding_cleanup(self):
+        self.call()
+        self.authority.stop_allowed = True
+        self.provider.stopped = "stopping"
+        self.assertEqual(self.call(STOP), {"status": "stopping", "stuck": False})
+        self.now += 901
+        self.assertEqual(self.call(STOP), {"status": "stopping", "stuck": True})
+        self.now += 10
+        self.assertEqual(self.call(STOP), {"status": "stopping", "stuck": False})
+        self.assertEqual(self.record()["phase"], "stopping")
+        self.assertEqual(self.provider.stop_calls, 1)
+
+    def test_stop_status_error_remains_ambiguous(self):
+        self.call()
+        self.authority.stop_allowed = True
+        def fail_status(task):
+            raise OSError("lost describe response")
+
+        self.provider.status = fail_status
+        self.assertEqual(self.call(STOP)["status"], "ambiguous")
+        self.assertEqual(self.record()["phase"], "stopping")
+        self.assertEqual(self.provider.stop_calls, 1)
 
     def test_known_recent_task_missing_from_ecs_cannot_finish_cleanup(self):
         self.call()
         self.authority.stop_allowed = True
         self.provider.tasks = []
         self.provider.stopped = "missing"
-        self.assertEqual(self.call(STOP)["status"], "ambiguous")
+        self.assertEqual(self.call(STOP)["status"], "stopping")
         self.assertEqual(self.provider.cleanups, 0)
         self.assertEqual(self.record()["phase"], "stopping")
         self.now += 301
@@ -272,9 +334,24 @@ class LifecycleTests(unittest.TestCase):
 
     def test_ecs_rejection_requires_cleanup_before_safe_rejection(self):
         self.provider.reject_launch = True
-        self.assertEqual(self.call()["status"], "rejected")
+        self.provider.reject_reason = "capacity"
+        self.assertEqual(self.call(), {"status": "rejected", "reason": "capacity", "message": "ECS capacity is unavailable"})
         self.assertEqual(self.provider.cleanups, 1)
         self.assertEqual(self.record()["phase"], "stopped")
+        self.assertEqual(self.call()["reason"], "capacity")
+        self.assertEqual(self.provider.launches, 1)
+
+    def test_rejected_launch_stays_ambiguous_until_cleanup_finishes(self):
+        self.provider.reject_launch = True
+        self.provider.reject_reason = "quota"
+        self.provider.lose_cleanup_response = True
+        self.assertEqual(self.call()["status"], "ambiguous")
+        self.assertEqual(self.record()["phase"], "stopping")
+        self.authority.stop_allowed = True
+        self.provider.lose_cleanup_response = False
+        self.assertEqual(self.call(STOP)["status"], "stopped")
+        self.assertEqual(self.call()["reason"], "quota")
+        self.assertEqual(self.provider.launches, 1)
 
 
 class SchemaTests(unittest.TestCase):
@@ -312,6 +389,53 @@ class RecordingAws:
 
 
 class ProviderTests(unittest.TestCase):
+    def test_launch_classifies_only_definite_no_task_rejections(self):
+        class AwsError(Exception):
+            def __init__(self, code, message):
+                self.response = {"Error": {"Code": code, "Message": message},
+                                 "ResponseMetadata": {"RequestId": "aws-request-1"}}
+
+        class LaunchAws:
+            def __init__(self, outcome):
+                self.outcome = outcome
+                self.calls = 0
+
+            def run_task(self, **kwargs):
+                self.calls += 1
+                if isinstance(self.outcome, Exception):
+                    raise self.outcome
+                return self.outcome
+
+        settings = SimpleNamespace(cluster="cluster")
+        for outcome, expected in [
+            ({"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}, "capacity"),
+            ({"tasks": [], "failures": [{"reason": "Capacity is unavailable at this time. Please try again later or in a different availability zone"}]}, "capacity"),
+            ({"tasks": [], "failures": [{"reason": "You’ve reached the limit on the number of vCPUs you can run concurrently"}]}, "quota"),
+            ({"tasks": [], "failures": [{"reason": "RESOURCE:GPU"}]}, "permanent"),
+            ({"tasks": [], "failures": [{"reason": "LIMIT", "detail": "task quota exceeded"}]}, "quota"),
+            ({"tasks": [], "failures": [{"reason": "ATTRIBUTE"}]}, "permanent"),
+            (AwsError("ClientException", "PROVISIONING quota reached"), "quota"),
+            (AwsError("InvalidParameterException", "invalid"), "permanent"),
+        ]:
+            with self.subTest(expected=expected, outcome=outcome):
+                provider = Provider(LaunchAws(outcome), None, settings)
+                with self.assertRaises(ProviderRejected) as raised:
+                    provider.launch({"clientToken": ATTEMPT})
+                self.assertEqual(raised.exception.reason, expected)
+                self.assertEqual(provider.ecs.calls, 1)
+        for outcome in [
+            AwsError("ServerException", "server lost result"),
+            {"tasks": [], "failures": []},
+            {"tasks": [{"lastStatus": "PROVISIONING"}], "failures": [{"reason": "RESOURCE:CPU"}]},
+        ]:
+            with self.subTest(outcome=outcome):
+                provider = Provider(LaunchAws(outcome), None, settings)
+                with self.assertRaises((AwsError, Pending)):
+                    provider.launch({"clientToken": ATTEMPT})
+                self.assertEqual(provider.ecs.calls, 1)
+        provider = Provider(LaunchAws({"tasks": [{"taskArn": "task:1"}], "failures": [{"reason": "RESOURCE:CPU"}]}), None, settings)
+        self.assertEqual(provider.launch({"clientToken": ATTEMPT}), "task:1")
+
     def test_task_role_secret_network_and_limits_are_constructed_by_broker(self):
         aws = RecordingAws()
         settings = SimpleNamespace(cluster="arn:cluster/scope-vcs-production-runner", region="us-east-1", subnets=["subnet-owned"], security_group="sg-owned", execution_role="role-owned", log_group="logs-owned", api="https://api.example.org", registry_secret="")
