@@ -15,7 +15,7 @@ STOP_CHECK_SECONDS = 10
 REJECTION_MESSAGES = {
     "capacity": "ECS capacity is unavailable",
     "quota": "ECS task quota was reached",
-    "permanent": "ECS rejected task configuration",
+    "permanent": "ECS rejected the launch",
 }
 OBSERVABLE_AWS_ERRORS = {
     "ServerException", "ConflictException", "ThrottlingException",
