@@ -18,8 +18,8 @@ export function FirstRepositoryWalkthrough({
         No repositories yet
       </h2>
       <p className="mt-1 max-w-[52ch] text-sm leading-5 text-muted-foreground">
-        Repositories are created from the terminal. Three steps, then this page
-        fills in on its own.
+        Repositories are created from the terminal. Three steps, then reload
+        this page.
       </p>
 
       <ol className="mt-5 divide-y divide-border border-t border-border">
@@ -37,7 +37,7 @@ export function FirstRepositoryWalkthrough({
           <CopyableCodeBlock copyLabel="Copy init command" value="scope init" />
         </WalkthroughStep>
         <WalkthroughStep
-          description="Commit the generated Scope files, then publish. The repository appears here as soon as the push lands."
+          description="Commit the generated Scope files, then publish. Once the push lands, reload this page to see the repository."
           number={3}
           title="Push your first version"
         >
