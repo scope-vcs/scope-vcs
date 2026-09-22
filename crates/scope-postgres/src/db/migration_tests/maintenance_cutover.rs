@@ -30,6 +30,30 @@ async fn ordinary_startup_refuses_pending_maintenance_migration() {
 }
 
 #[tokio::test]
+async fn worker_history_grant_change_requires_maintenance_cutover() {
+    let (target, db, _lease) = isolated_database().await;
+    migrations::Migrator::up(db.as_ref(), Some(17))
+        .await
+        .unwrap();
+
+    let plan = migrations::plan(db.as_ref()).await.unwrap();
+    assert!(!plan.exact);
+    assert_eq!(plan.pending[0].name, "m0059_worker_history_permissions");
+    assert!(plan.metadata_restore_safe);
+    assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
+    assert!(
+        connect_postgres_store(target.schema_database_url())
+            .await
+            .is_err()
+    );
+
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
+    assert!(migrations::plan(db.as_ref()).await.unwrap().exact);
+}
+
+#[tokio::test]
 async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     let (target, db, _lease) = isolated_database().await;
     migrations::Migrator::up(db.as_ref(), Some(1))

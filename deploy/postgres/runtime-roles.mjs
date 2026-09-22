@@ -44,9 +44,12 @@ export const grants = {
     projection_read_models push_trigger_evaluations repo_storage_cleanup_jobs workflow_revisions
     dependency_analyses dependency_reports dependency_analysis_jobs request_ref_cleanup_jobs`), ...runTables],
     names(`file_changes git_heads live_files logical_commits repositories repository_first_push_tokens
-    repository_git_push_tokens repository_history_entries repository_history_views repository_invites
+    repository_git_push_tokens repository_invites
     repository_invite_links repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files
     visibility_change_sets visibility_changes requests request_revisions users request_check_evaluations`)),
+    // Rebuilding a view deletes its entries through the foreign key cascade; no direct entry DELETE is needed.
+    scope_repository_history_views: ['SELECT', 'INSERT', 'DELETE'],
+    scope_repository_history_entries: ['SELECT', 'INSERT'],
     // Terminal check runs stop auto-merge and persist its request activity and event.
     scope_requests: ['SELECT', 'UPDATE'],
     scope_request_auto_merge_intents: ['SELECT', 'UPDATE'],

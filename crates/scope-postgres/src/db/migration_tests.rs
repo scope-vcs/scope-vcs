@@ -39,7 +39,8 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0056_request_auto_merge",
     "m0057_repository_invite_links",
     "m0058_repository_invite_emails",
-    "m0059_capacity_retries",
+    "m0059_worker_history_permissions",
+    "m0060_capacity_retries",
 ];
 
 pub(super) async fn isolated_database() -> (
