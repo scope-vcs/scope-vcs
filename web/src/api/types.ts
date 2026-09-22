@@ -99,9 +99,8 @@ export type RunStepLogsInput = RunActionInput & {
   step_index: number
 }
 
-export type ProfileState = {
+export type ProfileState = CliInstallState & {
   account: AccountSessionResponse
-  cliInstallCommands: CliInstallCommands
   profile: OwnerProfileResponse
 }
 
