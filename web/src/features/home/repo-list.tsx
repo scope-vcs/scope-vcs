@@ -1,44 +1,25 @@
-import type { CliInstallCommands } from '@/api/types'
 import type { RepoSummaryResponse } from '@/api/types.generated'
 import { LifecycleBadge } from '@/components/lifecycle-badge'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
-import { CopyableCodeBlock } from '@/components/copyable-code-block'
 import { EmptyState } from '@/components/empty-state'
 import { Link } from '@tanstack/react-router'
 import { GitBranch } from 'lucide-react'
 
+/** Owners with no repositories get `FirstRepositoryWalkthrough` instead. */
 export function RepoList({
-  cliInstallCommands,
   isOwner,
   repositories,
 }: {
-  cliInstallCommands: CliInstallCommands
   isOwner: boolean
   repositories: RepoSummaryResponse[]
 }) {
   if (repositories.length === 0) {
     return (
       <EmptyState
-        action={isOwner ? (
-          <div className="mt-1 w-full max-w-[460px] space-y-2.5 text-left">
-            <CopyableCodeBlock
-              copyLabel="Copy macOS/Linux install command"
-              value={cliInstallCommands.posix}
-            />
-            <CopyableCodeBlock
-              copyLabel="Copy Windows install command"
-              value={cliInstallCommands.windows}
-            />
-            <CopyableCodeBlock copyLabel="Copy init command" value="scope init" />
-            <CopyableCodeBlock copyLabel="Copy push command" value="scope push --main" />
-          </div>
-        ) : undefined}
         className="mt-6"
-        description={isOwner
-          ? 'Install the CLI, then initialize an existing Git repository with at least one commit.'
-          : 'This user does not have any repositories with public project files.'}
+        description="This user does not have any repositories with public project files."
         icon={<GitBranch />}
-        title={isOwner ? 'No repositories yet' : 'No repositories to show'}
+        title="No repositories to show"
       />
     )
   }

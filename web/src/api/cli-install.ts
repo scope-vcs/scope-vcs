@@ -2,7 +2,7 @@ import { getCliInstallConnection } from '@/api/client'
 import type { CliInstallCommands, CliInstallState } from '@/api/types'
 import { detectCliPlatform } from '@/lib/cli-platform'
 
-export function buildCliInstallCommands(): CliInstallCommands {
+function buildCliInstallCommands(): CliInstallCommands {
   const baseUrl = getCliInstallConnection()
   return {
     posix: `curl -fsSL ${baseUrl}/install.sh | sh`,

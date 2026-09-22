@@ -67,11 +67,7 @@ export function OwnerProfilePage({ state }: { state: ProfileState }) {
             initialCliPlatform={state.initialCliPlatform}
           />
         ) : (
-          <RepoList
-            cliInstallCommands={state.cliInstallCommands}
-            isOwner={isOwner}
-            repositories={profile.repositories}
-          />
+          <RepoList isOwner={isOwner} repositories={profile.repositories} />
         )}
       </PageContent>
     </AppShell>
