@@ -88,10 +88,10 @@ const alwaysOnGateInputs = [
   /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
   // railway-ssh.test.mjs runs the pinned OpenSSH wrapper in the operations gate.
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
-  /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/licensing\//,
+  /^bench\//, /^deploy\/(aws|postgres|automation)\//, /^dev\/analytics\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/, /^\.scope\/runs\/checks\.yml$/,
-  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-tests|maintenance-runtime)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-tests|deployment-watcher-heartbeat|maintenance-runtime)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 
@@ -417,6 +417,72 @@ test('CI is pull-request-only and Release is scheduled/manual with a shared chec
   assert.match(triggers, /workflow_dispatch:/);
   assert.doesNotMatch(triggers, /pull_request:|push:/);
   for (const caller of [ci, release]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);
+});
+
+function gateScript(job) {
+  const script = job.match(/        run: \|\n((?:          .*\n)+)/)?.[1];
+  assert.ok(script, 'gate must execute its assertion');
+  return script.replace(/^          /gm, '');
+}
+
+test('required PR check runs after failures and rejects every unsuccessful prerequisite', () => {
+  const ci = read('.github/workflows/ci.yml');
+  const job = ci.slice(ci.indexOf('\n  required-pr-checks:\n'));
+  assert.match(job, /name: Required PR checks\n/);
+  assert.match(job, /needs: \[plan, validation\]\n/);
+  assert.match(job, /if: \$\{\{ always\(\) \}\}\n/);
+  assert.match(job, /PLAN_RESULT: \$\{\{ needs.plan.result \}\}/);
+  assert.match(job, /VALIDATION_RESULT: \$\{\{ needs.validation.result \}\}/);
+  for (const plan of ['success', 'failure', 'cancelled', 'skipped', '']) {
+    for (const validation of ['success', 'failure', 'cancelled', 'skipped', '']) {
+      const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', gateScript(job)], {
+        env: { ...process.env, PLAN_RESULT: plan, VALIDATION_RESULT: validation },
+        encoding: 'utf8',
+      });
+      assert.equal(result.status === 0, plan === 'success' && validation === 'success', `${plan}/${validation}`);
+    }
+  }
+});
+
+test('validation gate allows unselected jobs and reused artifacts but fails selected jobs and cancellation', () => {
+  const workflow = read('.github/workflows/validate.yml');
+  const job = workflow.slice(workflow.indexOf('\n  production-validation-gate:\n'));
+  assert.match(job, /if: \$\{\{ always\(\) \}\}\n/);
+  assert.match(job, /if: \$\{\{ cancelled\(\) \}\}\n\s+run: exit 1\n/);
+  const expression = job.match(/VALIDATIONS_PASSED: >-\n\s*\$\{\{ ([\s\S]*?) \}\}/)?.[1];
+  assert.ok(expression, 'validation predicate must be evaluated in the assertion, not the job condition');
+  const evaluate = Function('inputs', 'needs', `return (${expression.replace(/needs\.([\w-]+)/g, 'needs["$1"]')});`);
+  const selectedBy = {
+    'checks-image': ['checks_image'],
+    'backend-validation': ['backend'],
+    'media-worker-image': ['backend'],
+    'web-validation': ['web'],
+    'cli-validation': ['cli'],
+    'integration-validation': ['web', 'cli'],
+  };
+  for (const mask of Array.from({ length: 16 }, (_, i) => i)) {
+    const inputs = Object.fromEntries(['checks_image', 'backend', 'web', 'cli'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
+    inputs.reuse_artifacts = false;
+    const needs = Object.fromEntries(Object.entries(selectedBy).map(([name, keys]) => [name, {
+      result: keys.some((key) => inputs[key] === 'true') ? 'success' : 'skipped',
+    }]));
+    assert.equal(evaluate(inputs, needs), true, `selection ${mask}`);
+    for (const [name, state] of Object.entries(needs)) {
+      if (state.result !== 'success') continue;
+      for (const result of ['failure', 'cancelled', 'skipped']) {
+        assert.equal(evaluate(inputs, { ...needs, [name]: { result } }), false, `${mask}: ${name}/${result}`);
+      }
+    }
+    inputs.reuse_artifacts = true;
+    const skipped = Object.fromEntries(Object.keys(needs).map((name) => [name, { result: 'skipped' }]));
+    assert.equal(evaluate(inputs, skipped), true, `reused selection ${mask}`);
+  }
+  for (const value of ['true', 'false', '']) {
+    const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', gateScript(job)], {
+      env: { ...process.env, VALIDATIONS_PASSED: value }, encoding: 'utf8',
+    });
+    assert.equal(result.status === 0, value === 'true', `assertion ${value}`);
+  }
 });
 
 

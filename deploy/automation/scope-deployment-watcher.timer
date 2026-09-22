@@ -1,0 +1,11 @@
+[Unit]
+Description=Supervise Scope releases every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+Persistent=true
+Unit=scope-deployment-watcher.service
+
+[Install]
+WantedBy=timers.target

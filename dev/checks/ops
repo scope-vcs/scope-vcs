@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
+python3 -B -m unittest discover -s deploy/automation -p 'test_*.py'
+
 node --test dev/analytics/*.test.mjs
 node --test .scope/images/checks/*.test.mjs
 bash -n .scope/images/checks/scan-image.sh .github/scripts/publish-soci-image.sh

@@ -110,18 +110,26 @@ jobs:
       - web-validation
       - cli-validation
       - integration-validation
-    if: >-
-      !cancelled() &&
-      (inputs.reuse_artifacts || (
-      (inputs.checks_image != 'true' || needs.checks-image.result == 'success') &&
-      (inputs.backend != 'true' ||
-      (needs.backend-validation.result == 'success' &&
-      needs.media-worker-image.result == 'success')) &&
-      (inputs.web != 'true' || needs.web-validation.result == 'success') &&
-      (inputs.cli != 'true' || needs.cli-validation.result == 'success') &&
-      ((inputs.web != 'true' && inputs.cli != 'true') ||
-      needs.integration-validation.result == 'success')))
+    if: ${{ always() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
     steps:
-      - run: echo 'All selected production validations passed.'
+      - name: Reject cancelled validation
+        if: ${{ cancelled() }}
+        run: exit 1
 
+      - name: Require selected validations to succeed
+        env:
+          VALIDATIONS_PASSED: >-
+            ${{ inputs.reuse_artifacts || (
+            (inputs.checks_image != 'true' || needs.checks-image.result == 'success') &&
+            (inputs.backend != 'true' ||
+            (needs.backend-validation.result == 'success' &&
+            needs.media-worker-image.result == 'success')) &&
+            (inputs.web != 'true' || needs.web-validation.result == 'success') &&
+            (inputs.cli != 'true' || needs.cli-validation.result == 'success') &&
+            ((inputs.web != 'true' && inputs.cli != 'true') ||
+            needs.integration-validation.result == 'success')) }}
+        run: |
+          test "$VALIDATIONS_PASSED" = true
+          echo 'All selected production validations passed.'

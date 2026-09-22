@@ -1,0 +1,10 @@
+[Unit]
+Description=Supervise Scope release agents through verified deployment
+After=network-online.target t3code.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/code/scope-vcs
+ExecStart=/usr/bin/python3 -B %h/.local/share/scope-automation/release-supervisor/deployment_watcher.py
+TimeoutStartSec=4min
+UMask=0077

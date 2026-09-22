@@ -70,3 +70,18 @@ jobs:
       release_sha: ${{ github.sha }}
     secrets: inherit
 
+  required-pr-checks:
+    name: Required PR checks
+    needs: [plan, validation]
+    if: ${{ always() }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Require successful planning and validation
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          VALIDATION_RESULT: ${{ needs.validation.result }}
+        run: |
+          echo "Planning: $PLAN_RESULT; validation: $VALIDATION_RESULT"
+          test "$PLAN_RESULT" = success
+          test "$VALIDATION_RESULT" = success
