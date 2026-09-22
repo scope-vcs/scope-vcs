@@ -79,6 +79,11 @@ impl RequestCheckPlan {
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         evaluation.ensure_awaiting_approval()?;
+        if evaluation.request_id != request.id || evaluation.head_oid != request.head_oid {
+            return Err(DomainError::invalid_input(
+                "request check evaluation does not match the request head",
+            ));
+        }
         let runs = plan_runs(
             request,
             &evaluation.checks,

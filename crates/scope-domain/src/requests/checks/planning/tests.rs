@@ -233,3 +233,28 @@ fn both_start_paths_reject_missing_or_mismatched_snapshots() {
         );
     }
 }
+
+#[test]
+fn approval_rejects_an_evaluation_from_another_request_or_head() {
+    let request = request();
+    let revisions = [revision("test")];
+    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), "author", false, 30)
+        .unwrap()
+        .evaluation;
+    for (request_id, head_oid) in [
+        ("other_request".to_string(), request.head_oid.clone()),
+        (request.id.clone(), "d".repeat(40)),
+    ] {
+        let evaluation = RequestCheckEvaluation {
+            request_id,
+            head_oid,
+            ..waiting.clone()
+        };
+        assert_eq!(
+            RequestCheckPlan::approve(&request, evaluation, &revisions, "actor", 40)
+                .unwrap_err()
+                .message,
+            "request check evaluation does not match the request head"
+        );
+    }
+}
