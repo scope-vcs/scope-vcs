@@ -99,9 +99,8 @@ export type RunStepLogsInput = RunActionInput & {
   step_index: number
 }
 
-export type ProfileState = {
+export type ProfileState = CliInstallState & {
   account: AccountSessionResponse
-  cliInstallCommands: CliInstallCommands
   profile: OwnerProfileResponse
 }
 
@@ -111,6 +110,11 @@ export type CliInstallCommands = {
 }
 
 export type CliPlatform = keyof CliInstallCommands
+
+export type CliInstallState = {
+  cliInstallCommands: CliInstallCommands
+  initialCliPlatform: CliPlatform
+}
 
 export type CreateRepoInviteInput = RepoParams & {
   email: string

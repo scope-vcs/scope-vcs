@@ -8,6 +8,7 @@ import { useHomeFlash } from '@/lib/home-flash'
 import { UserButton } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
 import { CheckCircle2, KeyRound } from 'lucide-react'
+import { FirstRepositoryWalkthrough } from './first-repository-walkthrough'
 import { RepoList } from './repo-list'
 
 export function OwnerProfilePage({ state }: { state: ProfileState }) {
@@ -60,11 +61,14 @@ export function OwnerProfilePage({ state }: { state: ProfileState }) {
           </Alert>
         )}
 
-        <RepoList
-          cliInstallCommands={state.cliInstallCommands}
-          isOwner={isOwner}
-          repositories={profile.repositories}
-        />
+        {isOwner && profile.repositories.length === 0 ? (
+          <FirstRepositoryWalkthrough
+            cliInstallCommands={state.cliInstallCommands}
+            initialCliPlatform={state.initialCliPlatform}
+          />
+        ) : (
+          <RepoList isOwner={isOwner} repositories={profile.repositories} />
+        )}
       </PageContent>
     </AppShell>
   )
