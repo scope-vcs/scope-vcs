@@ -112,6 +112,11 @@ export type CliInstallCommands = {
 
 export type CliPlatform = keyof CliInstallCommands
 
+export type CliInstallState = {
+  cliInstallCommands: CliInstallCommands
+  initialCliPlatform: CliPlatform
+}
+
 export type CreateRepoInviteInput = RepoParams & {
   email: string
   permissions: RepositoryMemberPermissions
