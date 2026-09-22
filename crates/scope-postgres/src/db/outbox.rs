@@ -515,7 +515,14 @@ fn unix_timestamp_i64(now_unix: u64) -> Result<i64, PostgresError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scope_domain::{account::UserAccount, policy::Visibility};
+    use scope_domain::{
+        account::UserAccount,
+        content::SourceBlob,
+        content_ref::ContentRef,
+        policy::{ScopePath, Visibility},
+        projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
+        repository::{RepoLifecycleState, Repository},
+    };
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
@@ -532,6 +539,116 @@ mod tests {
         assert!(!is_terminal_retry_attempt(MAX_JOB_ATTEMPTS - 1));
         assert!(is_terminal_retry_attempt(MAX_JOB_ATTEMPTS));
         assert!(is_terminal_retry_attempt(MAX_JOB_ATTEMPTS + 10));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn worker_role_rebuilds_repository_history() {
+        let Ok(admin_url) = std::env::var("SCOPE_WORKER_ROLE_TEST_ADMIN_URL") else {
+            return;
+        };
+        let worker_url = std::env::var("SCOPE_WORKER_ROLE_TEST_WORKER_URL")
+            .expect("worker URL must accompany the admin URL");
+        let admin = Arc::new(sea_orm::Database::connect(admin_url).await.unwrap());
+        let worker = Arc::new(sea_orm::Database::connect(worker_url).await.unwrap());
+        let owner = UserAccount {
+            id: "worker_history_owner".into(),
+            handle: "worker_history_owner".into(),
+            email: "worker-history@example.com".into(),
+            email_verified: true,
+        };
+        let mut repo = Repository::new(
+            &owner,
+            "worker-history",
+            Visibility::Public,
+            "worker_history_repo",
+        )
+        .unwrap();
+        repo.record.lifecycle_state = RepoLifecycleState::Ready;
+        repo.graph.commits.push(LogicalCommit {
+            occurred_at_unix: None,
+            id: "worker_history_commit".into(),
+            origin: LogicalCommitOrigin::CanonicalPush {
+                source_head_oid: format!("{:040x}", 1),
+            },
+            author_id: owner.id.clone(),
+            message: "Initial file".into(),
+            changes: vec![FileChange {
+                path: ScopePath::parse("/file.txt").unwrap(),
+                old_content: None,
+                new_content: Some(SourceBlob {
+                    content_ref: ContentRef::git_bundle_sha256("worker-history-bundle"),
+                    sha256: "worker-history-hash".into(),
+                    git_oid: format!("{:040x}", 1),
+                    git_file_mode: "100644".into(),
+                    size_bytes: 1,
+                }),
+                visibility: Visibility::Public,
+            }],
+        });
+        let mut catalog = crate::db::CatalogFixture::default();
+        catalog.users.insert(owner.id.clone(), owner);
+        catalog
+            .repositories
+            .insert(repo.record.id.clone(), repo.clone());
+        super::super::AdminStore {
+            db: Arc::clone(&admin),
+        }
+        .seed_catalog_for_tests(catalog)
+        .unwrap();
+
+        let summary = JobStore {
+            db: Arc::clone(&worker),
+        }
+        .run_ready_outbox_jobs("role-test-worker", 1, &|| Ok(1_700_000_001))
+        .await
+        .unwrap();
+        let job_error = admin
+            .query_one(sea_orm::Statement::from_string(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT last_error FROM scope_outbox_jobs LIMIT 1",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<Option<String>>("", "last_error")
+            .unwrap();
+        assert_eq!(summary.completed, 1, "{summary:?}, error: {job_error:?}");
+        assert_eq!(summary.failed, 0);
+        let entry_count = history_entry_count(admin.as_ref()).await;
+        assert!(
+            entry_count > 0,
+            "outbox rebuild must insert history entries"
+        );
+
+        admin
+            .execute(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload) VALUES ($1, 'private', 1000000, 'stale-entry', '{}'::jsonb)",
+                [repo.record.id.clone().into()],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(history_entry_count(admin.as_ref()).await, entry_count + 1);
+        save_live_projection_read_models(worker.as_ref(), &repo, 1_700_000_002)
+            .await
+            .unwrap();
+        let replaced_count = history_entry_count(admin.as_ref()).await;
+        assert_eq!(
+            replaced_count, entry_count,
+            "view replacement must cascade old entries"
+        );
+    }
+
+    async fn history_entry_count(db: &sea_orm::DatabaseConnection) -> i64 {
+        db.query_one(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT count(*) AS count FROM scope_repository_history_entries",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "count")
+        .unwrap()
     }
 
     #[tokio::test]

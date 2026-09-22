@@ -37,6 +37,6 @@ Role names are cluster-wide. Use separate PostgreSQL instances for separate envi
 
 ## Local verification
 
-Run `node --test deploy/postgres/runtime-roles.test.mjs`. The test creates and removes its own local cluster, loads the real baseline and table-adding migration SQL, and connects as each service login. It verifies every effective table grant, denies schema/temp-table/role/ledger mutations and unrelated reads, checks schema restore and grant refresh, checks future objects default to denied, removes a stale column grant, and confirms the migration login can terminate a runtime session. It also rejects unexpected tables and inherited role access.
+Run `node --test deploy/postgres/runtime-roles.test.mjs`. The test creates and removes its own local cluster, loads the real baseline and table-adding migration SQL, and connects as each service login. It verifies every effective table grant, runs the Rust outbox history rebuild as the worker login, denies direct history-entry deletion and unrelated mutations or reads, checks schema restore and grant refresh, checks future objects default to denied, removes a stale column grant, and confirms the migration login can terminate a runtime session. It also rejects unexpected tables and inherited role access. Cargo is required for the worker rebuild check.
 
 PostgreSQL 16 server tools are required at `/usr/lib/postgresql/16/bin`; set `SCOPE_TEST_POSTGRES_BIN` for another installation. The test never reads `DATABASE_URL` and never uses the machine's running PostgreSQL instance.
