@@ -21,7 +21,7 @@ def request_id(response):
 
 def rejection_reason(reason, detail=""):
     text = f"{reason} {detail}".lower()
-    if "quota" in text or "limit exceeded" in text or "limit on the number of tasks" in text:
+    if "quota" in text or "limit exceeded" in text or "limit on the number of tasks" in text or "limit on the number of vcpus" in text:
         return "quota"
     if reason.upper() in {"RESOURCE:CPU", "RESOURCE:MEMORY", "RESOURCE:ENI", "RESOURCE:PORTS"} or "capacity is unavailable" in text or "insufficient capacity" in text:
         return "capacity"

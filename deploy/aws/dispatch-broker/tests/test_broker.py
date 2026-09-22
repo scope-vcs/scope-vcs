@@ -409,6 +409,8 @@ class ProviderTests(unittest.TestCase):
         settings = SimpleNamespace(cluster="cluster")
         for outcome, expected in [
             ({"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}, "capacity"),
+            ({"tasks": [], "failures": [{"reason": "Capacity is unavailable at this time. Please try again later or in a different availability zone"}]}, "capacity"),
+            ({"tasks": [], "failures": [{"reason": "You’ve reached the limit on the number of vCPUs you can run concurrently"}]}, "quota"),
             ({"tasks": [], "failures": [{"reason": "RESOURCE:GPU"}]}, "permanent"),
             ({"tasks": [], "failures": [{"reason": "LIMIT", "detail": "task quota exceeded"}]}, "quota"),
             ({"tasks": [], "failures": [{"reason": "ATTRIBUTE"}]}, "permanent"),
