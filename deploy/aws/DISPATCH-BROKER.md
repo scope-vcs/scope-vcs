@@ -21,7 +21,9 @@ registries do not receive those registry credentials.
   names, passes only the configured ECS execution role, and owns privileged cleanup.
 - Worker needs `AWS_REGION`, `SCOPE_DISPATCH_BROKER_FUNCTION_ARN`, and AWS credentials
   granting only `lambda:InvokeFunction` on that exact function. Cloud-run admission
-  retains `SCOPE_CLOUD_RUNS_ENABLED` and its existing concurrency configuration.
+  retains `SCOPE_CLOUD_RUNS_ENABLED`. `SCOPE_CLOUD_RUN_MAX_CONCURRENCY` defaults to 20;
+  set it to 0 to pause new admission while cancellation and terminal cleanup
+  continue in batches of ten.
 - Remove direct ECS, Secrets Manager, and `iam:PassRole` grants from the worker
   identity. Remove old worker ECS settings, public API URL, registry ARN, and
   secret-name HMAC key once the cutover is verified.
@@ -52,8 +54,14 @@ outcomes remain owned by existing attempt lease recovery and cleanup.
 Stop serializes with launch, records discovered task ARNs, and requires ECS
 `STOPPED` confirmation before deleting definitions and the bootstrap secret. An
 uncertain launch or registration waits at least five minutes before declaring
-absence. Transient failures return `ambiguous`; the worker retains its durable
-cleanup claim/retry behavior. Only confirmed absence produces `rejected`.
+absence. Accepted stop requests are journaled so later polls only check task status.
+The broker checks ECS at most once every ten seconds while cleanup is progressing;
+`stopping` keeps durable cleanup ownership without an error warning. A stop
+still pending after fifteen minutes is logged once. Real provider errors return
+`ambiguous` and retain durable cleanup ownership. Definite ECS no-task outcomes
+return `rejected` with a capacity, quota, or permanent reason after setup cleanup.
+Replies use fixed messages for those reasons. The broker logs the AWS error code
+and request ID when available, never the AWS error body.
 
 Terminal journal records have no TTL and the table has deletion protection,
 retention, and point-in-time recovery. Preserve these tombstones in recovery.
@@ -86,7 +94,19 @@ principals allowed to inspect Lambda environment configuration remain privileged
 
 There is no Lambda function URL. IAM authorizes invocation. The broker's API call
 uses verified HTTPS, rejects redirects, and bounds response size. Logs record only
-the result status and invocation ID, never request bodies or AWS error payloads.
+the result status, invocation ID, and safe provider code and request ID when available,
+never request bodies or AWS error payloads.
+
+## Coordinated reply-format release
+
+The worker strictly decodes the broker's rejection reason and `stopping` reply;
+deploy the matching worker and broker as one coordinated release. First deploy the
+new worker with `SCOPE_CLOUD_RUN_MAX_CONCURRENCY=0` against the existing broker.
+Wait for active attempts and their cleanup claims to settle, while the worker
+continues cancellation and terminal cleanup. Then deploy the new broker and restore
+the intended positive concurrency value. Monitor broker `ambiguous` outcomes and
+the journal before admitting new work. Do not run mixed reply formats during new
+dispatch.
 
 ## Cutover and canary
 

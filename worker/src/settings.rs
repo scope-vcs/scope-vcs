@@ -8,6 +8,7 @@ const SCOPE_OBJECT_STORE_MAX_BYTES_ENV: &str = "SCOPE_OBJECT_STORE_MAX_BYTES";
 const SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_CHUNK_BYTES";
 const SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES";
 const SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV: &str = "SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY";
+const CLOUD_RUN_MAX_CONCURRENCY_ENV: &str = "SCOPE_CLOUD_RUN_MAX_CONCURRENCY";
 const DEFAULT_HEALTH_PORT: u16 = 8081;
 
 /// Outbox jobs claimed per control poll.
@@ -95,7 +96,7 @@ fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> 
         aws_region,
         dispatch_broker_function_arn,
         runtime_version: env!("CARGO_PKG_VERSION").to_string(),
-        max_concurrency: CLOUD_RUN_MAX_CONCURRENCY,
+        max_concurrency: parse_usize_env(CLOUD_RUN_MAX_CONCURRENCY_ENV, CLOUD_RUN_MAX_CONCURRENCY)?,
     }))
 }
 

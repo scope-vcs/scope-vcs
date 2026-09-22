@@ -1,11 +1,31 @@
 """The broker constructs every privileged AWS input from trusted configuration."""
 
+import re
+
 from journal import error_code
 from protocol import Pending
 
 
 class ProviderRejected(Exception):
-    pass
+    def __init__(self, reason, request_id=None):
+        super().__init__(reason)
+        self.reason = reason
+        self.request_id = request_id
+
+
+def request_id(response):
+    metadata = response.get("ResponseMetadata") if isinstance(response, dict) else None
+    value = metadata.get("RequestId") if isinstance(metadata, dict) else None
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9-]{1,128}", value) else None
+
+
+def rejection_reason(reason, detail=""):
+    text = f"{reason} {detail}".lower()
+    if "quota" in text or "limit exceeded" in text or "limit on the number of tasks" in text:
+        return "quota"
+    if reason.upper() in {"RESOURCE:CPU", "RESOURCE:MEMORY", "RESOURCE:ENI", "RESOURCE:PORTS"} or "capacity is unavailable" in text or "insufficient capacity" in text:
+        return "capacity"
+    return "permanent"
 
 
 def tags(attempt):
@@ -78,17 +98,24 @@ class Provider:
         try:
             result = self.ecs.run_task(**specification)
         except Exception as error:
-            if error_code(error) in {
+            code = error_code(error)
+            if code in {
                 "ClientException", "InvalidParameterException", "AccessDeniedException",
                 "ClusterNotFoundException", "PlatformUnknownException", "UnsupportedFeatureException",
+                "PlatformTaskDefinitionIncompatibilityException", "BlockedException",
             }:
-                raise ProviderRejected("ECS rejected this attempt") from None
+                detail = getattr(error, "response", {}).get("Error", {}).get("Message", "")
+                reason = rejection_reason(code, detail) if code == "ClientException" else "permanent"
+                raise ProviderRejected(reason, request_id(getattr(error, "response", {}))) from None
             raise
         tasks = result.get("tasks", [])
         if len(tasks) == 1 and tasks[0].get("taskArn"):
             return tasks[0]["taskArn"]
         if not tasks and result.get("failures"):
-            raise ProviderRejected("ECS rejected this attempt")
+            failures = result["failures"]
+            reasons = [rejection_reason(item.get("reason", ""), item.get("detail", "")) for item in failures]
+            reason = reasons[0] if len(set(reasons)) == 1 else "permanent"
+            raise ProviderRejected(reason, request_id(result))
         raise Pending("ECS launch requires reconciliation")
 
     def find(self, attempt):
@@ -112,6 +139,10 @@ class Provider:
         except Exception as error:
             if error_code(error) != "ClientException" or "not found" not in str(error).lower():
                 raise
+            return False
+        return True
+
+    def status(self, task):
         result = self.ecs.describe_tasks(cluster=self.settings.cluster, tasks=[task])
         tasks = result.get("tasks", [])
         failures = result.get("failures", [])
