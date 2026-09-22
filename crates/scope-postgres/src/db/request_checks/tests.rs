@@ -1,5 +1,6 @@
 use super::*;
 use crate::db::{MetadataStore, requests::tests::postgres_store};
+use scope_domain::requests::RequestCheckEvaluationState;
 use scope_domain::requests::{RequestActorRole, RequestAudience, StartRequestInput};
 use sea_orm::{DatabaseBackend, QueryTrait};
 

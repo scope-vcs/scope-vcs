@@ -554,6 +554,54 @@ async fn terminal_run_failure_stays_stopped_after_retry() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_old_heads_terminal_run_cannot_stop_the_current_authorization() {
+    let request_id = "req_auto_merge_old_run_failure";
+    let (state, second_revision_id) = open_owner_request(request_id).await;
+    let old_run_id = record_queued_request_check(&state, request_id).await;
+    let app = router(state.clone());
+    let second_head = authorize(app.clone(), request_id, &second_revision_id, SECOND_HEAD).await;
+    assert_eq!(second_head["intent"]["status"], "Active");
+
+    let third_revision_id = record_revision(
+        &state,
+        request_id,
+        &test_owner_id(),
+        Some(SECOND_HEAD),
+        THIRD_HEAD,
+        2,
+        unix_now(),
+    )
+    .await;
+    let stale_intent = auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
+    assert_stopped(&stale_intent, "RequestChanged");
+
+    let current_run_id = record_queued_request_check(&state, request_id).await;
+    assert_ne!(current_run_id, old_run_id);
+    let current = authorize(app.clone(), request_id, &third_revision_id, THIRD_HEAD).await;
+    assert_eq!(current["intent"]["status"], "Active");
+    assert_eq!(current["intent"]["head_oid"], THIRD_HEAD);
+    assert_eq!(current["waiting_reason"], "Waiting for checks to finish");
+    let current_intent_id = current["intent"]["id"].as_str().unwrap().to_string();
+
+    let canceled = state
+        .metadata
+        .runs()
+        .request_run_cancellation(&test_owner_id(), TEST_REPO_ID, &old_run_id, unix_now() + 20)
+        .await
+        .unwrap();
+    assert_eq!(canceled.state, RunState::Canceled);
+
+    let still_active = auto_merge_json(app, "GET", request_id, None, StatusCode::OK).await;
+    assert_eq!(still_active["intent"]["id"], current_intent_id);
+    assert_eq!(still_active["intent"]["status"], "Active");
+    assert_eq!(still_active["intent"]["head_oid"], THIRD_HEAD);
+    assert_eq!(
+        still_active["waiting_reason"],
+        "Waiting for checks to finish"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn manual_merge_fulfills_an_active_authorization() {
     let (state, _source, _remote, request_id, request_head, _server) =
         native_open_request("request-auto-merge-manual", RequestAudience::Private).await;

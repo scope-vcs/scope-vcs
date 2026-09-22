@@ -4,6 +4,8 @@ use crate::{
     requests::{RequestActorRole, RequestCheckEvaluationState},
 };
 
+mod check_failures;
+
 const HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OTHER_HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 

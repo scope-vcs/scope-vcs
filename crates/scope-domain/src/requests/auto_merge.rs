@@ -12,6 +12,11 @@ use super::{
 use crate::{error::DomainError, runs::run::RunState, runs::validation::validate_git_oid};
 use serde::{Deserialize, Serialize};
 
+mod check_failures;
+pub use check_failures::{
+    stop_request_auto_merge_for_check_evaluation, stop_request_auto_merge_for_check_run,
+};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequestAutoMergeIntentStatus {
     Active,

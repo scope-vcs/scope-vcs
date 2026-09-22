@@ -8,8 +8,8 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     requests::{
-        RequestAutoMergeStopReason, RequestCheckEvaluation, RequestCheckEvaluationState,
-        RequestCheckPlan, RequestRevision, stop_request_auto_merge,
+        RequestCheckEvaluation, RequestCheckPlan, RequestRevision,
+        stop_request_auto_merge_for_check_evaluation,
     },
     runs::{
         run::Run,
@@ -86,25 +86,14 @@ impl RequestStore {
             save_workflow_revision(&tx, revision, command.evaluation.updated_at_unix).await?;
         }
         save_evaluation(&tx, &command.evaluation).await?;
-        if command.evaluation.state == RequestCheckEvaluationState::ConfigurationError
-            && let Some(stored) = active_auto_merge
-            && stored.intent.head_oid == command.evaluation.head_oid
-        {
-            let request = super::request_rows::request_by_id(&tx, &stored.intent.request_id)
-                .await?
-                .ok_or_else(|| PostgresError::internal_message("auto-merge request is missing"))?;
-            let now_unix = command
-                .evaluation
-                .updated_at_unix
-                .max(request.updated_at_unix)
-                .max(stored.intent.updated_at_unix);
-            let stopped = stop_request_auto_merge(
+        if let Some(stored) = active_auto_merge
+            && let Some(stopped) = stop_request_auto_merge_for_check_evaluation(
                 &request,
                 &stored.intent,
-                RequestAutoMergeStopReason::ChecksConfigurationError,
+                &command.evaluation,
                 super::request_auto_merge::automatic_event_id("stopped", &stored.intent.id),
-                now_unix,
-            )?;
+            )?
+        {
             super::request_auto_merge::persist_existing_auto_merge_mutation(
                 &tx,
                 stored.model,
