@@ -73,6 +73,7 @@ mod run_attempt_mutations;
 mod run_attempt_persistence;
 mod run_cache_authorization;
 mod run_cache_observations;
+mod run_capacity_retry;
 mod run_details;
 mod run_dispatch;
 mod run_dispatch_authorization;

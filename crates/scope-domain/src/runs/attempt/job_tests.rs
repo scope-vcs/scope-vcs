@@ -94,6 +94,170 @@ fn dispatched_attempt() -> (
 }
 
 #[test]
+fn capacity_rejection_retries_three_times_within_two_minutes() {
+    let (revision, mut run, mut job, mut attempt, mut steps) = dispatched_attempt();
+    for (rejection, at, due) in [(1, 12, 22), (2, 23, 53), (3, 54, 114), (4, 115, 0)] {
+        attempt
+            .reject_capacity(
+                &run,
+                &mut job,
+                &mut steps,
+                &"b".repeat(64),
+                "provider full",
+                at,
+            )
+            .unwrap();
+        // Duplicate completion cannot consume another retry.
+        attempt
+            .reject_capacity(
+                &run,
+                &mut job,
+                &mut steps,
+                &"b".repeat(64),
+                "provider full",
+                at,
+            )
+            .unwrap();
+        assert_eq!(job.capacity_retry.as_ref().unwrap().rejections, rejection);
+        reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, at).unwrap();
+        if rejection == 4 {
+            assert_eq!(job.state, RunJobState::Failed);
+            assert_eq!(run.state, RunState::Failed);
+            break;
+        }
+        assert_eq!(
+            job.capacity_retry.as_ref().unwrap().next_attempt_at_unix,
+            Some(due)
+        );
+        assert!(
+            job.dispatch(
+                &run,
+                revision.definition().only_job().unwrap(),
+                format!("early-{rejection}"),
+                "b".repeat(64),
+                "runtime",
+                due - 1,
+                due + 900
+            )
+            .is_err()
+        );
+        let dispatched = job
+            .dispatch(
+                &run,
+                revision.definition().only_job().unwrap(),
+                format!("attempt-{}", rejection + 1),
+                "b".repeat(64),
+                "runtime",
+                due,
+                due + 900,
+            )
+            .unwrap();
+        attempt = dispatched.0;
+        steps = dispatched.1;
+        reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, due).unwrap();
+    }
+    crate::runs::job::retry_run(&mut run, std::slice::from_mut(&mut job), &revision, 116).unwrap();
+    assert!(job.capacity_retry.is_none());
+    assert_eq!(job.state, RunJobState::Queued);
+}
+
+#[test]
+fn capacity_retry_expires_and_cancellation_prevents_rejection() {
+    let (revision, mut run, mut job, mut attempt, mut steps) = dispatched_attempt();
+    attempt
+        .reject_capacity(
+            &run,
+            &mut job,
+            &mut steps,
+            &"b".repeat(64),
+            "provider full",
+            12,
+        )
+        .unwrap();
+    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 12).unwrap();
+    assert!(!job.expire_capacity_retry(131).unwrap());
+    assert!(job.expire_capacity_retry(132).unwrap());
+    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 132).unwrap();
+    assert_eq!(run.state, RunState::Failed);
+
+    let (_, mut canceled_run, mut canceled_job, mut canceled_attempt, mut canceled_steps) =
+        dispatched_attempt();
+    canceled_run.cancellation_requested = true;
+    assert!(
+        canceled_attempt
+            .reject_capacity(
+                &canceled_run,
+                &mut canceled_job,
+                &mut canceled_steps,
+                &"b".repeat(64),
+                "provider full",
+                12
+            )
+            .is_err()
+    );
+    assert!(canceled_job.capacity_retry.is_none());
+
+    let (revision, mut run, mut job, mut attempt, mut steps) = dispatched_attempt();
+    attempt
+        .reject_capacity(
+            &run,
+            &mut job,
+            &mut steps,
+            &"b".repeat(64),
+            "provider full",
+            12,
+        )
+        .unwrap();
+    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 12).unwrap();
+    request_run_cancellation(&mut run, std::slice::from_mut(&mut job), 13).unwrap();
+    assert_eq!(job.state, RunJobState::Canceled);
+    assert_eq!(
+        job.capacity_retry.as_ref().unwrap().next_attempt_at_unix,
+        None
+    );
+}
+
+#[test]
+fn capacity_rejection_stops_when_next_delay_exceeds_window() {
+    let (revision, mut run, mut job, mut first, mut steps) = dispatched_attempt();
+    first
+        .reject_capacity(
+            &run,
+            &mut job,
+            &mut steps,
+            &"b".repeat(64),
+            "provider full",
+            12,
+        )
+        .unwrap();
+    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 12).unwrap();
+    let (mut second, mut second_steps) = job
+        .dispatch(
+            &run,
+            revision.definition().only_job().unwrap(),
+            "attempt-2",
+            "c".repeat(64),
+            "runtime",
+            100,
+            200,
+        )
+        .unwrap();
+    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 100).unwrap();
+    second
+        .reject_capacity(
+            &run,
+            &mut job,
+            &mut second_steps,
+            &"c".repeat(64),
+            "provider full",
+            103,
+        )
+        .unwrap();
+    assert_eq!(job.state, RunJobState::Failed);
+    assert_eq!(job.capacity_retry.as_ref().unwrap().rejections, 2);
+}
+
+#[test]
 fn cloud_dispatch_pins_the_workflow_image_and_rotates_the_bootstrap_credential() {
     let (revision, mut run, mut job, mut attempt, steps) = dispatched_attempt();
     reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 11).unwrap();

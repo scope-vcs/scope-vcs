@@ -206,6 +206,13 @@ fn terminal_reason(reason: AttemptTerminalReason) -> RepositoryRunTerminalReason
         AttemptTerminalReason::DispatchAttemptsExhausted => {
             RepositoryRunTerminalReason::DispatchAttemptsExhausted
         }
+        AttemptTerminalReason::ProviderCapacityRejected { message } => {
+            RepositoryRunTerminalReason::RuntimeSetupFailed {
+                exit_code: scope_domain::runs::exit_code::SetupFailure::ProviderRejected
+                    .exit_code(),
+                message,
+            }
+        }
         AttemptTerminalReason::RuntimeSetupFailed { exit_code, message } => {
             RepositoryRunTerminalReason::RuntimeSetupFailed { exit_code, message }
         }

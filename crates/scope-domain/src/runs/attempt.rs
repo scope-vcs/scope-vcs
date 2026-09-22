@@ -670,5 +670,6 @@ impl RunAttempt {
     }
 }
 
+mod capacity_retry;
 #[cfg(test)]
 mod job_tests;

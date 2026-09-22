@@ -1,4 +1,4 @@
-use super::ecs::{EcsClient, StartError, StopOutcome};
+use super::ecs::{EcsClient, RejectionReason, StartError, StopOutcome};
 use super::provisioning::Provisioning;
 use crate::settings::{BATCH_SIZE, CloudExecutionSettings};
 use anyhow::Context as _;
@@ -36,6 +36,22 @@ impl CloudExecutionCoordinator {
     }
 
     pub(crate) async fn dispatch_available(&self, now_unix: u64) -> anyhow::Result<usize> {
+        for run in self
+            .metadata
+            .runs()
+            .expire_capacity_retries(now_unix, BATCH_SIZE as u64)
+            .await
+            .map_err(db_error)?
+        {
+            crate::run_events::publish_run_change(
+                &self.metadata,
+                &self.origin_id,
+                run.workflow.repository_id(),
+                &run.id,
+                scope_api_contract::RunChangeKind::StatusChanged,
+            )
+            .await;
+        }
         if self.settings.max_concurrency == 0 {
             return Ok(0);
         }
@@ -110,25 +126,55 @@ impl CloudExecutionCoordinator {
                 tracing::info!(attempt_id = %attempt_id, external_run_id, run_id = %claim.run.id, job = %claim.job.key.as_str(), "dispatched cloud run");
             }
             Err(StartError::Rejected { reason, error }) => {
-                tracing::error!(attempt_id = %attempt_id, ?reason, error = %error, "ECS rejected cloud run");
-                let mutation = self
-                    .metadata
-                    .runs()
-                    .complete_attempt(
-                        attempt_id,
-                        &bootstrap_hash,
-                        AttemptConclusion::SetupFailed {
-                            exit_code: SetupFailure::ProviderRejected.exit_code(),
-                            message: format!("provider rejected dispatch: {error}")
-                                .chars()
-                                .take(2048)
-                                .collect(),
-                        },
-                        false,
-                        now_unix,
-                    )
-                    .await
-                    .map_err(db_error)?;
+                let now_unix = crate::unix_now()?.max(now_unix);
+                let message = format!("provider rejected dispatch: {error}")
+                    .chars()
+                    .take(2048)
+                    .collect::<String>();
+                // Only the broker's confirmed capacity rejection can request another attempt.
+                // Quota and permanent failures require an operator/configuration change.
+                let mutation = match reason {
+                    RejectionReason::Capacity => {
+                        self.metadata
+                            .runs()
+                            .reject_capacity_attempt(
+                                attempt_id,
+                                &bootstrap_hash,
+                                &message,
+                                now_unix,
+                            )
+                            .await
+                    }
+                    _ => {
+                        self.metadata
+                            .runs()
+                            .complete_attempt(
+                                attempt_id,
+                                &bootstrap_hash,
+                                AttemptConclusion::SetupFailed {
+                                    exit_code: SetupFailure::ProviderRejected.exit_code(),
+                                    message,
+                                },
+                                false,
+                                now_unix,
+                            )
+                            .await
+                    }
+                }
+                .map_err(db_error)?;
+                if let Some(due) = mutation
+                    .claim
+                    .job
+                    .capacity_retry
+                    .as_ref()
+                    .and_then(|retry| retry.next_attempt_at_unix)
+                {
+                    tracing::info!(attempt_id = %attempt_id, retry_at_unix = due,
+                        "ECS capacity unavailable; scheduled another attempt");
+                } else {
+                    tracing::error!(attempt_id = %attempt_id, ?reason, error = %error,
+                        "ECS rejected cloud run; no capacity retry scheduled");
+                }
                 capture_attempt_completed(&self.product_analytics, &mutation);
                 self.metadata
                     .runs()
@@ -315,3 +361,6 @@ fn db_error(error: scope_postgres::error::PostgresError) -> anyhow::Error {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod capacity_tests;

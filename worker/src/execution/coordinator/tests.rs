@@ -381,7 +381,7 @@ async fn competing_workers_reserve_capacity_before_concurrent_provider_starts() 
     assert_eq!(admitted_runs, 3);
 }
 
-async fn queued_runs(count: usize) -> MetadataStore {
+pub(super) async fn queued_runs(count: usize) -> MetadataStore {
     let metadata =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let owner = UserAccount {

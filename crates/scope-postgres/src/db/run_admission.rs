@@ -41,8 +41,9 @@ impl RunStore {
             .query_one(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!(
-                    "SELECT COUNT(*)::bigint AS count FROM scope_run_attempts WHERE state IN ({})",
-                    attempt_active_states()
+                    "SELECT COUNT(*)::bigint AS count FROM scope_run_attempts
+                     WHERE state IN ({}) OR (state IN ({}) AND runner_stop_completed_at_unix IS NULL)",
+                    attempt_active_states(), attempt_terminal_states()
                 ),
             ))
             .await
@@ -65,6 +66,10 @@ impl RunStore {
              WHERE job.state = {queued}
                AND run.state IN ({runs})
                AND run.cancellation_requested = FALSE
+               AND (job.capacity_retry_next_attempt_at_unix IS NULL
+                    OR job.capacity_retry_next_attempt_at_unix <= {now_unix})
+               AND (job.capacity_retry_first_rejected_at_unix IS NULL
+                    OR {now_unix} < job.capacity_retry_first_rejected_at_unix + {window})
                AND NOT EXISTS (
                  SELECT 1 FROM scope_run_attempts previous
                  WHERE previous.run_id = job.run_id AND previous.job_key = job.job_key
@@ -76,6 +81,7 @@ impl RunStore {
                     queued = queued_job_state(),
                     runs = run_active_states(),
                     attempts = attempt_terminal_states(),
+                    window = scope_domain::runs::job::CAPACITY_RETRY_WINDOW_SECONDS,
                 ),
             ))
             .await

@@ -76,6 +76,17 @@ pub struct RunJob {
     pub created_at_unix: u64,
     pub updated_at_unix: u64,
     pub completed_at_unix: Option<u64>,
+    pub capacity_retry: Option<CapacityRetry>,
+}
+
+pub const MAX_CAPACITY_RETRIES: u32 = 3;
+pub const CAPACITY_RETRY_WINDOW_SECONDS: u64 = 120;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CapacityRetry {
+    pub first_rejected_at_unix: u64,
+    pub rejections: u32,
+    pub next_attempt_at_unix: Option<u64>,
 }
 
 impl RunJob {
@@ -94,6 +105,7 @@ impl RunJob {
             created_at_unix: run.created_at_unix,
             updated_at_unix: run.created_at_unix,
             completed_at_unix: None,
+            capacity_retry: None,
         })
     }
 
@@ -108,6 +120,7 @@ impl RunJob {
         created_at_unix: u64,
         updated_at_unix: u64,
         completed_at_unix: Option<u64>,
+        capacity_retry: Option<CapacityRetry>,
     ) -> Result<Self, DomainError> {
         let job = Self {
             run_id: required("run job run id", run_id.into())?,
@@ -119,6 +132,7 @@ impl RunJob {
             created_at_unix,
             updated_at_unix,
             completed_at_unix,
+            capacity_retry,
         };
         job.validate_facts()?;
         Ok(job)
@@ -152,6 +166,19 @@ impl RunJob {
             ));
         }
         self.ensure_time_not_before_update(now_unix)?;
+        if self.capacity_retry.as_ref().is_some_and(|retry| {
+            retry
+                .next_attempt_at_unix
+                .is_some_and(|next| now_unix < next)
+                || now_unix
+                    >= retry
+                        .first_rejected_at_unix
+                        .saturating_add(CAPACITY_RETRY_WINDOW_SECONDS)
+        }) {
+            return Err(DomainError::conflict(
+                "capacity retry is not due or its window expired",
+            ));
+        }
         let attempt_id = required("run attempt id", attempt_id.into())?;
         let token_hash = token_hash.into();
         validate_sha256_hash("attempt token hash", &token_hash)?;
@@ -194,7 +221,62 @@ impl RunJob {
         self.last_attempt_number = number;
         self.current_attempt_id = Some(attempt_id);
         self.updated_at_unix = now_unix;
+        if let Some(retry) = self.capacity_retry.as_mut() {
+            retry.next_attempt_at_unix = None;
+        }
         Ok((attempt, steps))
+    }
+
+    pub(crate) fn record_capacity_rejection(&mut self, now_unix: u64) -> Result<(), DomainError> {
+        self.ensure_time_not_before_update(now_unix)?;
+        let first = self
+            .capacity_retry
+            .as_ref()
+            .map_or(now_unix, |retry| retry.first_rejected_at_unix);
+        let rejections = self
+            .capacity_retry
+            .as_ref()
+            .map_or(1, |retry| retry.rejections + 1);
+        let deadline = first.saturating_add(CAPACITY_RETRY_WINDOW_SECONDS);
+        let delay = [10, 30, 60][(rejections - 1).min(2) as usize];
+        let next = now_unix.saturating_add(delay);
+        let retry = rejections <= MAX_CAPACITY_RETRIES
+            && self.last_attempt_number < MAX_RUN_ATTEMPTS
+            && next < deadline;
+        self.capacity_retry = Some(CapacityRetry {
+            first_rejected_at_unix: first,
+            rejections,
+            next_attempt_at_unix: retry.then_some(next),
+        });
+        self.state = if retry {
+            RunJobState::Queued
+        } else {
+            RunJobState::Failed
+        };
+        self.current_attempt_id = None;
+        self.updated_at_unix = now_unix;
+        self.completed_at_unix = (!retry).then_some(now_unix);
+        Ok(())
+    }
+
+    pub fn expire_capacity_retry(&mut self, now_unix: u64) -> Result<bool, DomainError> {
+        let Some(retry) = self.capacity_retry.as_ref() else {
+            return Ok(false);
+        };
+        if self.state != RunJobState::Queued
+            || now_unix
+                < retry
+                    .first_rejected_at_unix
+                    .saturating_add(CAPACITY_RETRY_WINDOW_SECONDS)
+        {
+            return Ok(false);
+        }
+        self.ensure_time_not_before_update(now_unix)?;
+        self.capacity_retry.as_mut().unwrap().next_attempt_at_unix = None;
+        self.state = RunJobState::Failed;
+        self.updated_at_unix = now_unix;
+        self.completed_at_unix = Some(now_unix);
+        Ok(true)
     }
 
     pub(crate) fn ensure_current_attempt(&self, attempt: &RunAttempt) -> Result<(), DomainError> {
@@ -243,6 +325,25 @@ impl RunJob {
         if self.last_attempt_number > MAX_RUN_ATTEMPTS {
             return Err(DomainError::invariant_violation(
                 "run job attempt history exceeds its bounded limit",
+            ));
+        }
+        if let Some(retry) = &self.capacity_retry
+            && (retry.rejections == 0
+                || retry.rejections > MAX_CAPACITY_RETRIES + 1
+                || retry.first_rejected_at_unix < self.created_at_unix
+                || retry.first_rejected_at_unix > self.updated_at_unix
+                || retry.next_attempt_at_unix.is_some_and(|next| {
+                    next <= retry.first_rejected_at_unix
+                        || next
+                            >= retry
+                                .first_rejected_at_unix
+                                .saturating_add(CAPACITY_RETRY_WINDOW_SECONDS)
+                        || retry.rejections > MAX_CAPACITY_RETRIES
+                        || self.state != RunJobState::Queued
+                }))
+        {
+            return Err(DomainError::invariant_violation(
+                "run job capacity retry facts are inconsistent",
             ));
         }
         if self.updated_at_unix < self.created_at_unix
@@ -360,6 +461,9 @@ pub fn request_run_cancellation(
         job.state = RunJobState::Canceled;
         job.updated_at_unix = transition_time;
         job.completed_at_unix = Some(transition_time);
+        if let Some(retry) = job.capacity_retry.as_mut() {
+            retry.next_attempt_at_unix = None;
+        }
     }
     derive_run_state(run, jobs, now_unix)?;
     Ok(true)
@@ -403,6 +507,7 @@ pub fn retry_run(
         job.current_attempt_id = None;
         job.updated_at_unix = now_unix;
         job.completed_at_unix = None;
+        job.capacity_retry = None;
     }
     run.state = RunState::Queued;
     run.cancellation_requested = false;
@@ -441,6 +546,9 @@ fn derive_run_state(run: &mut Run, jobs: &mut [RunJob], now_unix: u64) -> Result
             job.state = RunJobState::Canceled;
             job.updated_at_unix = transition_time;
             job.completed_at_unix = Some(transition_time);
+            if let Some(retry) = job.capacity_retry.as_mut() {
+                retry.next_attempt_at_unix = None;
+            }
         }
     }
     let cancellation_took_effect = jobs.iter().any(|job| job.state == RunJobState::Canceled);
