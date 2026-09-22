@@ -18,6 +18,7 @@ pub use auto_merge::{
     RequestAutoMergeStopReason, RequestAutoMergeWaitingReason, authorize_request_auto_merge,
     cancel_request_auto_merge, fulfill_request_auto_merge, request_auto_merge_can_cancel,
     request_auto_merge_can_enable, request_auto_merge_readiness, stop_request_auto_merge,
+    stop_request_auto_merge_for_check_evaluation, stop_request_auto_merge_for_check_run,
 };
 pub mod attachments;
 mod checks;

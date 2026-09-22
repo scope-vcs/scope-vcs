@@ -11,7 +11,7 @@ use scope_domain::{
     content_ref::ContentRef,
     requests::{
         RecordRequestRevisionInput, RequestAutoMergeIntentStatus, RequestCheck,
-        RequestCheckEvaluation,
+        RequestCheckEvaluation, RequestCheckEvaluationState,
     },
     runs::{
         run::Run,
@@ -19,6 +19,150 @@ use scope_domain::{
     },
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+
+#[tokio::test]
+async fn recording_configuration_error_stops_matching_active_intent_immediately() {
+    let store = postgres_store();
+    let revision = open_request_with_revision(&store).await;
+    let requests = store.requests();
+    requests
+        .authorize_request_auto_merge(authorize(
+            "intent_config_error",
+            "enabled_config_error",
+            &revision,
+            7,
+        ))
+        .await
+        .unwrap();
+
+    requests
+        .record_request_checks(RecordRequestChecksCommand {
+            evaluation: RequestCheckEvaluation::configuration_error(
+                "req_1",
+                "a".repeat(40),
+                "invalid request workflow",
+                8,
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+        })
+        .await
+        .unwrap();
+
+    let stopped = requests
+        .request_auto_merge_intent("req_1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stopped.status, RequestAutoMergeIntentStatus::Stopped);
+    assert_eq!(
+        stopped.reason,
+        Some(RequestAutoMergeStopReason::ChecksConfigurationError)
+    );
+    assert_eq!(stopped.updated_at_unix, 8);
+}
+
+#[tokio::test]
+async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
+    // A configuration error has nothing to stop when no authorization exists.
+    let store = postgres_store();
+    open_request_with_revision(&store).await;
+    let requests = store.requests();
+    requests
+        .record_request_checks(RecordRequestChecksCommand {
+            evaluation: RequestCheckEvaluation::configuration_error(
+                "req_1",
+                "a".repeat(40),
+                "invalid request workflow",
+                7,
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+        })
+        .await
+        .unwrap();
+    assert!(
+        requests
+            .request_auto_merge_intent("req_1")
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    // A result computed for another head cannot stop the authorized head.
+    let store = postgres_store();
+    let revision = open_request_with_revision(&store).await;
+    let requests = store.requests();
+    requests
+        .authorize_request_auto_merge(authorize("intent_current", "enabled_current", &revision, 7))
+        .await
+        .unwrap();
+    requests
+        .record_request_checks(RecordRequestChecksCommand {
+            evaluation: RequestCheckEvaluation::configuration_error(
+                "req_1",
+                "b".repeat(40),
+                "stale-head workflow error",
+                8,
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+        })
+        .await
+        .unwrap();
+    let active = requests
+        .request_auto_merge_intent("req_1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(active.status, RequestAutoMergeIntentStatus::Active);
+    assert_eq!(active.reason, None);
+
+    // The first evaluation stands; a later conflicting result is only a replay.
+    let store = postgres_store();
+    let revision = open_request_with_revision(&store).await;
+    let requests = store.requests();
+    requests
+        .authorize_request_auto_merge(authorize("intent_replay", "enabled_replay", &revision, 7))
+        .await
+        .unwrap();
+    requests
+        .record_request_checks(RecordRequestChecksCommand {
+            evaluation: RequestCheckEvaluation::no_checks("req_1", "a".repeat(40), 8).unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+        })
+        .await
+        .unwrap();
+    let replayed = requests
+        .record_request_checks(RecordRequestChecksCommand {
+            evaluation: RequestCheckEvaluation::configuration_error(
+                "req_1",
+                "a".repeat(40),
+                "later conflicting evaluation",
+                9,
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        replayed.evaluation.state,
+        RequestCheckEvaluationState::NoChecks
+    );
+    let active = requests
+        .request_auto_merge_intent("req_1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(active.status, RequestAutoMergeIntentStatus::Active);
+    assert_eq!(active.reason, None);
+}
 
 #[tokio::test]
 async fn latest_same_second_intent_and_expired_claims_remain_fenced() {

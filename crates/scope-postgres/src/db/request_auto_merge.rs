@@ -13,7 +13,7 @@ use scope_domain::{
     requests::{
         AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
         RequestAutoMergeMutation, RequestAutoMergeStopReason, authorize_request_auto_merge,
-        cancel_request_auto_merge, stop_request_auto_merge,
+        cancel_request_auto_merge, stop_request_auto_merge, stop_request_auto_merge_for_check_run,
     },
     runs::run::RunState,
 };
@@ -449,31 +449,21 @@ pub(super) async fn stop_auto_merge_for_terminal_run(
     active: Option<StoredIntent>,
     run: &scope_domain::runs::run::Run,
 ) -> Result<(), PostgresError> {
-    if !matches!(
-        run.state,
-        RunState::Failed | RunState::Canceled | RunState::Lost
-    ) {
-        return Ok(());
-    }
     let Some(StoredIntent { model, intent }) = active else {
         return Ok(());
     };
     let request = request_by_id(tx, &intent.request_id)
         .await?
         .ok_or_else(|| PostgresError::internal_message("auto-merge request is missing"))?;
-    let now_unix = run
-        .completed_at_unix
-        .unwrap_or(run.updated_at_unix)
-        .max(request.updated_at_unix)
-        .max(intent.updated_at_unix);
-    let mutation = stop_request_auto_merge(
+    if let Some(mutation) = stop_request_auto_merge_for_check_run(
         &request,
         &intent,
-        RequestAutoMergeStopReason::ChecksFailed,
+        run,
         automatic_event_id("stopped", &intent.id),
-        now_unix,
-    )?;
-    persist_existing_auto_merge_mutation(tx, model, &mutation).await
+    )? {
+        persist_existing_auto_merge_mutation(tx, model, &mutation).await?;
+    }
+    Ok(())
 }
 
 pub(super) async fn stop_auto_merges_for_revoked_actor(
