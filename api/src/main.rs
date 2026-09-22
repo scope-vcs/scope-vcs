@@ -3,6 +3,12 @@ use api::{AppState, router};
 use scope_service_runtime::{init_tracing, shutdown_signal};
 use std::net::{Ipv6Addr, SocketAddr};
 
+// Git read views and request snapshots pass multi-megabyte buffers through the heap. glibc
+// malloc keeps that freed memory mapped, so resident memory ratchets up across push bursts.
+// jemalloc returns it within seconds; the decay settings live in the runtime image.
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 fn main() -> anyhow::Result<()> {
     scope_git_process::install_pid1_reaper_if_needed()?;
     run()
