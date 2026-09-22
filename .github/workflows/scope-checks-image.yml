@@ -30,7 +30,9 @@ jobs:
           persist-credentials: false
 
       - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@9309da73a81f66976a6d750572e221508b1e2682 # v1
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
+        with:
+          cache-key: .scope/images/checks/Dockerfile
 
       - name: Build candidate image
         uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2
@@ -133,7 +135,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@9309da73a81f66976a6d750572e221508b1e2682 # v1
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
+        with:
+          cache-key: .scope/images/checks/Dockerfile
 
       - name: Log in to the GitHub container registry
         if: steps.source.outputs.publish == 'true'
