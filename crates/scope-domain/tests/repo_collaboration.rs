@@ -41,20 +41,22 @@ fn invitee() -> UserAccount {
 }
 
 fn invite(repo: &mut Repository, link_hash: &str, now_unix: u64) -> Result<(), String> {
+    let id = format!("{INVITE_ID}{now_unix}");
     create_repository_invite(
         repo,
         CreateRepositoryInviteCommand {
-            id: format!("{INVITE_ID}{now_unix}"),
+            id: id.clone(),
             owner: &owner(),
             invited_email: " invitee@example.com ".to_string(),
             invitee: None,
             permissions: RepositoryMemberPermissions::default(),
-            link_hash: link_hash.to_string(),
             now_unix,
         },
     )
-    .map(|_| ())
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+    issue_repository_invite_link(repo, OWNER_ID, &id, link_hash.to_string(), now_unix)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn repo_with_invite() -> Repository {

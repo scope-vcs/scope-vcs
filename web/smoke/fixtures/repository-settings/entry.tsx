@@ -49,10 +49,15 @@ function App() {
         params={{ owner: repo.owner_handle, repo: repo.name }} collaboration={settings.value?.collaboration ?? null}
         createInvite={async (input) => {
           calls.push(input)
-          const invite = { id: 'new-invite', invited_email: input.email, permissions: input.permissions, state: 'Pending' as const, expires_at_unix: 100 }
+          const invite = {
+            id: 'new-invite', invited_email: input.email, permissions: input.permissions, state: 'Pending' as const,
+            expires_at_unix: 1_900_000_000, email: { state: 'sent' as const, requested_at_unix: 1 },
+          }
           retainCollaborationResult(settingsScope, { type: 'inviteUpdated', invite })
-          return { invite, invite_url: 'https://example.com/invites/new-token' }
+          return invite
         }}
+        createInviteLink={async () => ({ invite_url: 'https://example.com/invites/new-token' })}
+        sendInviteEmail={async () => { throw new Error('unused') }}
         deleteInvite={async () => { throw new Error('unused') }}
         deleteMember={async () => { throw new Error('unused') }}
         deleteRepo={async () => { throw new Error('Deletion denied by fixture') }}

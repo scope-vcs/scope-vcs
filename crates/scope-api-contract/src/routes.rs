@@ -172,6 +172,7 @@ routes! {
         REPO_INVITES = "/v1/repos/{owner}/{repo}/invites" => "repoInvites";
         REPO_INVITE = "/v1/repos/{owner}/{repo}/invites/{invite_id}" => "repoInvite";
         REPO_INVITE_LINKS = "/v1/repos/{owner}/{repo}/invites/{invite_id}/links" => "repoInviteLinks";
+        REPO_INVITE_EMAILS = "/v1/repos/{owner}/{repo}/invites/{invite_id}/emails" => "repoInviteEmails";
         REPO_MEMBER = "/v1/repos/{owner}/{repo}/members/{member_user_id}" => "repoMember";
         REPOSITORY_INVITE = "/v1/repository-invites/{token}" => "repositoryInvite";
         REPOSITORY_INVITE_ACCEPT = "/v1/repository-invites/{token}/accept" => "repositoryInviteAccept";

@@ -15,7 +15,7 @@ export function RepoSettingsPending() {
       <PageContent>
         <h1 className="sr-only">Settings</h1>
         <SectionRows>
-          {['danger', 'invite', 'members'].map((row) => (
+          {['danger', 'access'].map((row) => (
             <SectionRow
               description={(
                 <>
@@ -28,16 +28,7 @@ export function RepoSettingsPending() {
             >
               <div className="space-y-3">
                 {row === 'danger' ? <BlockSkeleton className="h-8 w-40" /> : null}
-                {row === 'invite' ? (
-                  <>
-                    <div className="flex gap-2">
-                      <BlockSkeleton className="h-10 min-w-0 flex-1" />
-                      <BlockSkeleton className="h-10 w-24 shrink-0" />
-                    </div>
-                    <BlockSkeleton className="h-16 w-full" />
-                  </>
-                ) : null}
-                {row === 'members' ? (
+                {row === 'access' ? (
                   <div className="divide-y divide-border border-y border-border">
                     {MEMBER_LABEL_LENGTHS.map((length) => (
                       <div

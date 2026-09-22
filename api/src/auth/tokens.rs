@@ -71,7 +71,7 @@ pub(crate) fn machine_token_hash(secret: &str) -> String {
     format!("{:x}", Sha256::digest(secret.as_bytes()))
 }
 
-pub(super) fn random_token(prefix: &str, failure_message: &str) -> Result<String, ApiError> {
+pub(crate) fn random_token(prefix: &str, failure_message: &str) -> Result<String, ApiError> {
     let mut bytes = [0_u8; TOKEN_BYTES];
     getrandom::fill(&mut bytes)
         .map_err(|error| ApiError::internal_message(format!("{failure_message}: {error}")))?;

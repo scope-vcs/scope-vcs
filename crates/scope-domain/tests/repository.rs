@@ -150,7 +150,6 @@ fn pending_invite_does_not_grant_private_access() {
             invitee: None,
             owner: &test_owner(),
             permissions: RepositoryMemberPermissions::default(),
-            link_hash: "sha256:invite".to_string(),
             now_unix: 1,
         },
     )

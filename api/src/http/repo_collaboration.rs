@@ -1,7 +1,7 @@
 use crate::{
     auth::{
         scope::{optional_scope_user, principal_for_user_id, require_scope_user},
-        tokens::{generate_repository_invite_token, token_hash},
+        tokens::{generate_repository_invite_token, random_token, token_hash},
     },
     error::ApiError,
     http::{origins::public_app_origin, responses::*},
@@ -43,9 +43,15 @@ pub(crate) async fn list_repository_collaboration(
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
 
+    let emails = state
+        .metadata
+        .repositories()
+        .latest_repository_invite_emails(&repo)
+        .await?;
     Ok(Json(repository_collaboration_response(
         &repo,
         &users,
+        &emails,
         unix_now()?,
     )))
 }
@@ -55,7 +61,7 @@ pub(crate) async fn create_repository_invite(
     headers: HeaderMap,
     Path((owner, repo_name)): Path<(String, String)>,
     Json(input): Json<CreateRepositoryInviteRequest>,
-) -> Result<Json<CreateRepositoryInviteResponse>, ApiError> {
+) -> Result<Json<RepositoryInviteResponse>, ApiError> {
     let metadata = state.metadata.clone();
     let mutation_owner = owner.clone();
     let mutation_repo_name = repo_name.clone();
@@ -66,10 +72,7 @@ pub(crate) async fn create_repository_invite(
         &repo_name,
         RepoChangeReason::InviteUpdated,
         |user| async move {
-            let (secret, link_hash) = generate_repository_invite_token()?;
-            let invite_url = repository_invite_url(&secret)?;
             let now = unix_now()?;
-            let invite_id = format!("repo_invite_{}", link_hash.replace([':', '/'], "_"));
             let invite = metadata
                 .repositories()
                 .create_repository_invite(
@@ -79,22 +82,73 @@ pub(crate) async fn create_repository_invite(
                         owner_user: user.clone(),
                         invited_email: input.email,
                         permissions: input.permissions.into(),
-                        invite_id,
-                        link_hash,
+                        invite_id: random_token("repo_invite_", "failed to generate invite id")?,
+                        email_id: random_token("invite_email_", "failed to generate email id")?,
                         now_unix: now,
                     },
                     &crate::persistence_ids::generate_persistence_id,
                 )
                 .await?;
-            Ok(map_committed_mutation(invite, |invite| {
-                CreateRepositoryInviteResponse {
-                    invite: repository_invite_response(&invite, now),
-                    invite_url,
-                }
+            Ok(map_committed_mutation(invite, |(invite, email)| {
+                repository_invite_response(&invite, email.as_ref(), now)
             }))
         },
     )
     .await?;
+    state.invite_email_wakeup.notify_one();
+
+    Ok(Json(response))
+}
+
+/// Emails a pending invite again. The email carries a new link; earlier links
+/// and the expiry stay as they are.
+pub(crate) async fn create_repository_invite_email(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo_name, invite_id)): Path<(String, String, String)>,
+) -> Result<Json<RepositoryInviteResponse>, ApiError> {
+    let metadata = state.metadata.clone();
+    let mutation_owner = owner.clone();
+    let mutation_repo_name = repo_name.clone();
+    let response = mutate_owned_collaboration(
+        &state,
+        &headers,
+        &owner,
+        &repo_name,
+        RepoChangeReason::InviteUpdated,
+        |user| async move {
+            let now = unix_now()?;
+            let repositories = metadata.repositories();
+            let mutation = repositories
+                .request_repository_invite_email(
+                    scope_postgres::db::RequestRepositoryInviteEmailCommand {
+                        owner: mutation_owner.clone(),
+                        name: mutation_repo_name.clone(),
+                        owner_user_id: user.id,
+                        invite_id: invite_id.clone(),
+                        email_id: random_token("invite_email_", "failed to generate email id")?,
+                        now_unix: now,
+                    },
+                    &crate::persistence_ids::generate_persistence_id,
+                )
+                .await?;
+            let (repo, _) = repositories
+                .repository_collaboration(&mutation_owner, &mutation_repo_name)
+                .await?
+                .ok_or_else(|| ApiError::not_found("repository not found"))?;
+            let invite = repo
+                .invitations
+                .iter()
+                .find(|invite| invite.id == invite_id)
+                .ok_or_else(|| ApiError::not_found("repository invite not found"))?
+                .clone();
+            Ok(map_committed_mutation(mutation, |email| {
+                repository_invite_response(&invite, Some(&email), now)
+            }))
+        },
+    )
+    .await?;
+    state.invite_email_wakeup.notify_one();
 
     Ok(Json(response))
 }
@@ -210,7 +264,8 @@ pub(crate) async fn delete_repository_invite(
                 )
                 .await?;
             Ok(map_committed_mutation(mutation, |invite| {
-                repository_invite_response(&invite, now)
+                // A revoked invite shows no delivery state.
+                repository_invite_response(&invite, None, now)
             }))
         },
     )

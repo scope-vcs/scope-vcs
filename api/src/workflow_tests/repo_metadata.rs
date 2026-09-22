@@ -146,7 +146,21 @@ async fn metadata_editing_requires_membership_but_no_member_capabilities() {
     .await;
     assert_eq!(invite.status(), StatusCode::OK);
     let invite = response_json(invite).await;
-    let token = invite["invite_url"]
+    // Creating an invite returns no link, so copy one the way an owner would.
+    let link = api_request(
+        router(state.clone()),
+        "POST",
+        &format!(
+            "/v1/repos/owner/repo/invites/{}/links",
+            invite["id"].as_str().unwrap()
+        ),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(link.status(), StatusCode::OK);
+    let link = response_json(link).await;
+    let token = link["invite_url"]
         .as_str()
         .unwrap()
         .rsplit('/')

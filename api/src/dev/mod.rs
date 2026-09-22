@@ -79,6 +79,8 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
         })?;
     let state = AppState {
         auto_merge_wakeup: Arc::new(tokio::sync::Notify::new()),
+        invite_email_wakeup: Arc::new(tokio::sync::Notify::new()),
+        invite_mailer: crate::invite_mailer::InviteMailer::from_env(),
         metadata,
         data_dir: storage.data_dir,
         clerk: ClerkVerifier::from_env(),
@@ -103,6 +105,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
     state.start_run_attempt_recovery();
     state.start_run_retention();
     state.start_request_ref_cleanup();
+    state.start_invite_email_delivery();
     state.start_git_segment_recovery();
     Ok(state)
 }

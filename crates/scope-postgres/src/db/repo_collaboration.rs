@@ -2,7 +2,7 @@ use super::{
     GeneratedIdSource, RepositoryStore, acquire_aggregate_lock, auth::load_user_by_id, entities,
     repo_effects::save_repo_mutation, repository_from_model,
 };
-use crate::error::PostgresError;
+use crate::error::{PostgresError, PostgresErrorKind};
 use scope_domain::{
     account::UserAccount,
     repo_collaboration::{
@@ -10,6 +10,7 @@ use scope_domain::{
         create_repository_invite, issue_repository_invite_link, remove_repository_member,
         revoke_repository_invite, update_repository_member_permissions,
     },
+    repo_invite_email::RepositoryInviteEmail,
     repository::collaboration::{
         RepositoryInvite, RepositoryMember, RepositoryMemberPermissions,
         normalize_repository_invite_email,
@@ -26,7 +27,7 @@ pub struct RepositoryCollaborationMutation<T> {
 }
 
 impl<T> RepositoryCollaborationMutation<T> {
-    fn committed(repo: &Repository, value: T) -> Self {
+    pub(super) fn committed(repo: &Repository, value: T) -> Self {
         Self {
             incarnation: repo.incarnation(),
             change_version: repo.record.change_version,
@@ -42,7 +43,7 @@ pub struct CreateRepositoryInviteMutation {
     pub invited_email: String,
     pub permissions: RepositoryMemberPermissions,
     pub invite_id: String,
-    pub link_hash: String,
+    pub email_id: String,
     pub now_unix: u64,
 }
 
@@ -109,7 +110,10 @@ impl RepositoryStore {
         &self,
         command: CreateRepositoryInviteMutation,
         generated_ids: &dyn GeneratedIdSource,
-    ) -> Result<RepositoryCollaborationMutation<RepositoryInvite>, PostgresError> {
+    ) -> Result<
+        RepositoryCollaborationMutation<(RepositoryInvite, Option<RepositoryInviteEmail>)>,
+        PostgresError,
+    > {
         let now_unix = command.now_unix;
         let repo_id = repo_id(&command.owner, &command.name);
         let owner_name = command.owner.clone();
@@ -134,7 +138,6 @@ impl RepositoryStore {
                 invited_email: command.invited_email,
                 invitee: invitee.as_ref(),
                 permissions: command.permissions,
-                link_hash: command.link_hash,
                 now_unix: command.now_unix,
             },
         )?;
@@ -147,8 +150,28 @@ impl RepositoryStore {
             generated_ids,
         )
         .await?;
+        // The invite and its first email commit together, so an invite is
+        // never saved with a forgotten email. An owner who has used up the
+        // daily email allowance still gets the invite, and can copy a link.
+        let email = match super::repo_invite_emails::queue_invite_email(
+            &tx,
+            &repo,
+            &command.owner_user.id,
+            &mutation.id,
+            command.email_id,
+            now_unix,
+        )
+        .await
+        {
+            Ok(email) => Some(email),
+            Err(error) if error.kind == PostgresErrorKind::ResourceExhausted => None,
+            Err(error) => return Err(error),
+        };
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(RepositoryCollaborationMutation::committed(&repo, mutation))
+        Ok(RepositoryCollaborationMutation::committed(
+            &repo,
+            (mutation, email),
+        ))
     }
 
     pub async fn issue_repository_invite_link(

@@ -46,7 +46,6 @@ pub struct CreateRepositoryInviteCommand<'a> {
     pub invited_email: String,
     pub invitee: Option<&'a UserAccount>,
     pub permissions: RepositoryMemberPermissions,
-    pub link_hash: String,
     pub now_unix: u64,
 }
 
@@ -69,7 +68,7 @@ pub fn create_repository_invite(
             && invite.state(command.now_unix) == RepositoryInviteState::Pending
     }) {
         return Err(DomainError::conflict(
-            "this email already has a pending invite; copy a new link or revoke it",
+            "this email already has a pending invite; resend it, copy a link, or revoke it",
         ));
     }
 
@@ -80,7 +79,9 @@ pub fn create_repository_invite(
         invited_email_normalized: normalized,
         permissions: command.permissions,
         invited_by_user_id: command.owner.id.clone(),
-        link_hashes: vec![command.link_hash],
+        // The sender issues a link when it emails the invite, and the owner
+        // can copy one. Nothing stores a link that was never handed out.
+        link_hashes: Vec::new(),
         created_at_unix: command.now_unix,
         updated_at_unix: command.now_unix,
         expires_at_unix: command.now_unix + REPOSITORY_INVITE_TTL_SECS,

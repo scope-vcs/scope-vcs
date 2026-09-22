@@ -7,7 +7,6 @@ import type {
   UpdateRepoMetadataInput,
 } from '@/api/types'
 import type {
-  CreateRepositoryInviteResponse,
   DeleteRepoResponse,
   RepositoryCollaborationResponse,
   RepositoryInviteLinkResponse,
@@ -26,9 +25,9 @@ import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useReducer, useState } from 'react'
 import { DeleteRepositoryDialog } from './delete-repository-dialog'
 import {
-  MemberAccessSummary,
   RepositoryMembersSection,
 } from './repo-members-section'
+import { MemberAccessSummary } from './repo-member-permissions'
 import { RepositoryMetadataForm } from './repository-metadata-form'
 import { useRepoLayout } from './repo-layout-context'
 import {
@@ -41,6 +40,7 @@ export function RepoSettingsPage({
   createInvite,
   createInviteLink,
   deleteInvite,
+  sendInviteEmail,
   deleteMember,
   collaboration,
   deleteRepo,
@@ -50,9 +50,10 @@ export function RepoSettingsPage({
 }: {
   createInvite: (
     input: CreateRepoInviteInput,
-  ) => Promise<CreateRepositoryInviteResponse>
+  ) => Promise<RepositoryInviteResponse>
   createInviteLink: (input: RepoInviteInput) => Promise<RepositoryInviteLinkResponse>
   deleteInvite: (input: RepoInviteInput) => Promise<RepositoryInviteResponse>
+  sendInviteEmail: (input: RepoInviteInput) => Promise<RepositoryInviteResponse>
   deleteMember: (input: DeleteRepoMemberInput) => Promise<RepositoryMemberResponse>
   collaboration: RepositoryCollaborationResponse | null
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
@@ -183,6 +184,8 @@ export function RepoSettingsPage({
             createInviteLink={(inviteId) =>
               createInviteLink({ ...params, invite_id: inviteId })}
             deleteInvite={removeRepositoryInvite}
+            sendInviteEmail={(inviteId) =>
+              mutateAndRefresh(sendInviteEmail({ ...params, invite_id: inviteId }))}
             deleteMember={removeRepositoryMember}
             params={params}
             repo={repo}

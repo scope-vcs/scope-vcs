@@ -157,3 +157,66 @@ pub mod repository_invite_link {
 
     impl ActiveModelBehavior for ActiveModel {}
 }
+pub mod repository_invite_email {
+    use super::*;
+    use scope_domain::repo_invite_email::{RepositoryInviteEmail, RepositoryInviteEmailState};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "scope_repository_invite_emails")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
+        pub invite_id: Option<String>,
+        pub requested_by_user_id: String,
+        pub state: String,
+        pub attempts: i32,
+        pub next_attempt_at_unix: i64,
+        pub claim_token: Option<String>,
+        pub claim_expires_at_unix: Option<i64>,
+        pub provider_message_id: Option<String>,
+        pub last_error: Option<String>,
+        pub created_at_unix: i64,
+        pub updated_at_unix: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+
+    pub fn state_name(state: RepositoryInviteEmailState) -> &'static str {
+        match state {
+            RepositoryInviteEmailState::Queued => "Queued",
+            RepositoryInviteEmailState::Sent => "Sent",
+            RepositoryInviteEmailState::Failed => "Failed",
+        }
+    }
+
+    impl Model {
+        pub fn try_into_domain(self) -> Result<RepositoryInviteEmail, PostgresError> {
+            let state = match self.state.as_str() {
+                "Queued" => RepositoryInviteEmailState::Queued,
+                "Sent" => RepositoryInviteEmailState::Sent,
+                "Failed" => RepositoryInviteEmailState::Failed,
+                other => {
+                    return Err(PostgresError::internal_message(format!(
+                        "unknown repository invite email state {other}"
+                    )));
+                }
+            };
+            Ok(RepositoryInviteEmail {
+                id: self.id,
+                // Only rows kept for the owner's allowance lose their invite,
+                // and nothing loads those as emails.
+                invite_id: self
+                    .invite_id
+                    .ok_or_else(|| PostgresError::internal_message("invite email has no invite"))?,
+                requested_by_user_id: self.requested_by_user_id,
+                state,
+                attempts: u32::try_from(self.attempts).map_err(PostgresError::internal)?,
+                created_at_unix: i64_to_u64(self.created_at_unix, "invite email creation time")?,
+                updated_at_unix: i64_to_u64(self.updated_at_unix, "invite email update time")?,
+            })
+        }
+    }
+}

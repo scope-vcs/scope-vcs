@@ -176,11 +176,17 @@ export type RepositoryCollaborationResponse = { members: Array<RepositoryMemberR
 
 export type RepositoryMemberResponse = { user_id: string, handle: string, email: string, permissions: RepositoryMemberPermissions, created_at_unix: number, updated_at_unix: number, };
 
-export type RepositoryInviteResponse = { id: string, invited_email: string, permissions: RepositoryMemberPermissions, state: RepositoryInviteState, expires_at_unix: number, };
+export type RepositoryInviteResponse = { id: string, invited_email: string, permissions: RepositoryMemberPermissions, state: RepositoryInviteState, expires_at_unix: number, 
+/**
+ * The newest email for this invite. `None` when it was never emailed.
+ */
+email: RepositoryInviteEmailResponse | null, };
+
+export type RepositoryInviteEmailResponse = { state: RepositoryInviteEmailStateResponse, requested_at_unix: number, };
+
+export type RepositoryInviteEmailStateResponse = "queued" | "sent" | "failed";
 
 export type CreateRepositoryInviteRequest = { email: string, permissions: RepositoryMemberPermissions, };
-
-export type CreateRepositoryInviteResponse = { invite: RepositoryInviteResponse, invite_url: string, };
 
 export type UpdateRepositoryMemberRequest = { permissions: RepositoryMemberPermissions, };
 
@@ -479,6 +485,7 @@ export const ApiRouteTemplates = {
   repoInvites: "/v1/repos/{owner}/{repo}/invites",
   repoInvite: "/v1/repos/{owner}/{repo}/invites/{invite_id}",
   repoInviteLinks: "/v1/repos/{owner}/{repo}/invites/{invite_id}/links",
+  repoInviteEmails: "/v1/repos/{owner}/{repo}/invites/{invite_id}/emails",
   repoMember: "/v1/repos/{owner}/{repo}/members/{member_user_id}",
   repositoryInvite: "/v1/repository-invites/{token}",
   repositoryInviteAccept: "/v1/repository-invites/{token}/accept",
