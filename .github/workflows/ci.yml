@@ -13,7 +13,7 @@ permissions:
 jobs:
   plan:
     name: Plan selected components
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       checks_image: ${{ steps.plan.outputs.checks_image }}
       backend_selected: ${{ steps.plan.outputs.backend_selected }}
