@@ -161,6 +161,15 @@ async fn final_dispatch_expiry_is_terminal_and_healthy_job_progresses() {
         terminal.attempts[0].attempt.terminal_reason,
         Some(scope_domain::runs::step::AttemptTerminalReason::DispatchAttemptsExhausted)
     );
+    assert!(matches!(
+        runs.admit_next_job(1, "healthy", &"d".repeat(64), "runtime", 13, 20)
+            .await
+            .unwrap(),
+        DispatchAdmission::AtCapacity
+    ));
+    runs.complete_cloud_task_absence(&claim.attempt.id, 13)
+        .await
+        .unwrap();
     let outcome = runs
         .admit_next_job(1, "healthy", &"d".repeat(64), "runtime", 13, 20)
         .await
@@ -187,7 +196,7 @@ async fn retries_wait_for_provider_cleanup() {
         runs.admit_next_job(1, "attempt-2", &"c".repeat(64), "runtime", 13, 20)
             .await
             .unwrap(),
-        DispatchAdmission::Empty
+        DispatchAdmission::AtCapacity
     ));
     runs.complete_cloud_task_absence(&claim.attempt.id, 13)
         .await
@@ -239,6 +248,15 @@ async fn uncertain_start_reserves_capacity_until_expiry_and_retains_cleanup_work
     let cleanup = runs.claim_terminal_cloud_task_stops(13, 10).await.unwrap();
     assert_eq!(cleanup.len(), 1);
     assert_eq!(cleanup[0].attempt_id, "uncertain");
+    assert!(matches!(
+        runs.admit_next_job(1, "next", &"c".repeat(64), "runtime", 13, 20)
+            .await
+            .unwrap(),
+        DispatchAdmission::AtCapacity
+    ));
+    runs.complete_cloud_task_absence(&claim.attempt.id, 13)
+        .await
+        .unwrap();
     let DispatchAdmission::Admitted(next) = runs
         .admit_next_job(1, "next", &"c".repeat(64), "runtime", 13, 20)
         .await
@@ -246,7 +264,7 @@ async fn uncertain_start_reserves_capacity_until_expiry_and_retains_cleanup_work
     else {
         panic!("expected admission");
     };
-    assert_eq!(next.run.id, "run-001");
+    assert_eq!(next.run.id, "run-000");
 }
 
 #[tokio::test]
@@ -290,4 +308,158 @@ async fn rejected_start_releases_capacity_and_completes_absent_task_cleanup() {
         panic!("expected admission");
     };
     assert_eq!(next.run.id, "run-001");
+}
+
+#[tokio::test]
+async fn capacity_retry_budget_and_due_time_survive_store_reopening() {
+    let store = fixture(1).await;
+    let runs = store.runs();
+    let token = "b".repeat(64);
+    let DispatchAdmission::Admitted(first) = runs
+        .admit_next_job(1, "capacity-1", &token, "runtime", 11, 100)
+        .await
+        .unwrap()
+    else {
+        panic!("expected initial admission");
+    };
+    let rejected = runs
+        .reject_capacity_attempt(&first.attempt.id, &token, "provider full", 12)
+        .await
+        .unwrap();
+    assert!(rejected.transitioned);
+    assert_eq!(
+        rejected
+            .claim
+            .job
+            .capacity_retry
+            .as_ref()
+            .unwrap()
+            .next_attempt_at_unix,
+        Some(22)
+    );
+    assert!(
+        !store
+            .runs()
+            .reject_capacity_attempt(&first.attempt.id, &token, "provider full", 12)
+            .await
+            .unwrap()
+            .transitioned
+    );
+    // The terminal attempt continues to reserve real provider capacity until absence is confirmed.
+    assert!(matches!(
+        store
+            .runs()
+            .admit_next_job(1, "too-soon", &"c".repeat(64), "runtime", 14, 100)
+            .await
+            .unwrap(),
+        DispatchAdmission::AtCapacity
+    ));
+    runs.complete_cloud_task_absence(&first.attempt.id, 13)
+        .await
+        .unwrap();
+    assert!(matches!(
+        store
+            .runs()
+            .admit_next_job(1, "too-soon", &"c".repeat(64), "runtime", 21, 100)
+            .await
+            .unwrap(),
+        DispatchAdmission::Empty
+    ));
+    let DispatchAdmission::Admitted(second) = store
+        .runs()
+        .admit_next_job(1, "capacity-2", &"c".repeat(64), "runtime", 22, 100)
+        .await
+        .unwrap()
+    else {
+        panic!("expected durable due admission");
+    };
+    assert_eq!(second.attempt.number, 2);
+    assert_eq!(second.job.capacity_retry.as_ref().unwrap().rejections, 1);
+    assert_eq!(
+        second
+            .job
+            .capacity_retry
+            .as_ref()
+            .unwrap()
+            .next_attempt_at_unix,
+        None
+    );
+    assert!(
+        !store
+            .runs()
+            .reject_capacity_attempt(&first.attempt.id, &token, "provider full", 15)
+            .await
+            .unwrap()
+            .transitioned
+    );
+    let detail = runs.run_detail("run-000").await.unwrap().unwrap();
+    assert_eq!(
+        detail.jobs[0].capacity_retry.as_ref().unwrap().rejections,
+        1
+    );
+}
+
+#[tokio::test]
+async fn expired_capacity_window_and_cancellation_settle_queued_retry() {
+    let store = fixture(2).await;
+    let runs = store.runs();
+    for index in 0..2 {
+        let id = format!("run-{index:03}");
+        let claim = runs
+            .dispatch_job(
+                &id,
+                "checks",
+                &format!("capacity-{index}"),
+                &format!("{index:064x}"),
+                "runtime",
+                11,
+                100,
+            )
+            .await
+            .unwrap();
+        runs.reject_capacity_attempt(
+            &claim.attempt.id,
+            &claim.attempt.token_hash,
+            "provider full",
+            12,
+        )
+        .await
+        .unwrap();
+        runs.complete_cloud_task_absence(&claim.attempt.id, 13)
+            .await
+            .unwrap();
+    }
+    runs.request_run_cancellation("user_cache_owner", "cache-owner/cache-repo", "run-001", 13)
+        .await
+        .unwrap();
+    assert!(
+        store
+            .runs()
+            .expire_capacity_retries(131, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let expired_runs = store.runs().expire_capacity_retries(132, 10).await.unwrap();
+    assert_eq!(expired_runs.len(), 1);
+    assert_eq!(expired_runs[0].id, "run-000");
+    assert!(
+        store
+            .runs()
+            .expire_capacity_retries(133, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let expired = runs.run_detail("run-000").await.unwrap().unwrap();
+    assert_eq!(expired.run.state, scope_domain::runs::run::RunState::Failed);
+    assert_eq!(
+        expired.jobs[0].state,
+        scope_domain::runs::job::RunJobState::Failed
+    );
+    let canceled = runs.run_detail("run-001").await.unwrap().unwrap();
+    assert_eq!(
+        canceled.run.state,
+        scope_domain::runs::run::RunState::Canceled
+    );
 }

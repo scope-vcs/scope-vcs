@@ -77,6 +77,7 @@ pub enum AttemptTerminalReason {
     ExecutionLost { step_index: Option<u32> },
     DispatchAttemptsExhausted,
     RuntimeSetupFailed { exit_code: i32, message: String },
+    ProviderCapacityRejected { message: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -409,6 +410,14 @@ impl RunAttempt {
             (AttemptState::Failed, Some(AttemptTerminalReason::TimedOut { step_index }))
             | (AttemptState::Canceled, Some(AttemptTerminalReason::Canceled { step_index })) => {
                 interrupted_step_matches(steps, *step_index, StepState::Canceled)
+            }
+            (
+                AttemptState::Failed,
+                Some(AttemptTerminalReason::ProviderCapacityRejected { message }),
+            ) => {
+                self.started_at_unix.is_none()
+                    && valid_setup_failure_message(message)
+                    && steps.iter().all(|step| step.state == StepState::Skipped)
             }
             (AttemptState::Lost, Some(AttemptTerminalReason::ExecutionLost { step_index })) => {
                 interrupted_step_matches(steps, *step_index, StepState::Lost)

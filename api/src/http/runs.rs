@@ -332,6 +332,7 @@ mod tests {
             1,
             2,
             Some(2),
+            None,
         )
         .unwrap()
     }

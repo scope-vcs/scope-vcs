@@ -207,6 +207,9 @@ pub mod run_job {
         pub created_at_unix: i64,
         pub updated_at_unix: i64,
         pub completed_at_unix: Option<i64>,
+        pub capacity_retry_first_rejected_at_unix: Option<i64>,
+        pub capacity_retry_rejections: i32,
+        pub capacity_retry_next_attempt_at_unix: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -232,6 +235,24 @@ pub mod run_job {
                     job.completed_at_unix,
                     "run job completion time",
                 )?,
+                capacity_retry_first_rejected_at_unix: optional_u64_to_i64(
+                    job.capacity_retry
+                        .as_ref()
+                        .map(|retry| retry.first_rejected_at_unix),
+                    "capacity retry first rejection time",
+                )?,
+                capacity_retry_rejections: u32_to_i32(
+                    job.capacity_retry
+                        .as_ref()
+                        .map_or(0, |retry| retry.rejections),
+                    "capacity retry rejection count",
+                )?,
+                capacity_retry_next_attempt_at_unix: optional_u64_to_i64(
+                    job.capacity_retry
+                        .as_ref()
+                        .and_then(|retry| retry.next_attempt_at_unix),
+                    "capacity retry next attempt time",
+                )?,
             })
         }
 
@@ -247,6 +268,24 @@ pub mod run_job {
                 i64_to_u64(self.created_at_unix, "run job creation time")?,
                 i64_to_u64(self.updated_at_unix, "run job update time")?,
                 optional_i64_to_u64(self.completed_at_unix, "run job completion time")?,
+                self.capacity_retry_first_rejected_at_unix
+                    .map(|first_rejected_at_unix| -> Result<_, PostgresError> {
+                        Ok(scope_domain::runs::job::CapacityRetry {
+                            first_rejected_at_unix: i64_to_u64(
+                                first_rejected_at_unix,
+                                "capacity retry first rejection time",
+                            )?,
+                            rejections: i32_to_u32(
+                                self.capacity_retry_rejections,
+                                "capacity retry rejection count",
+                            )?,
+                            next_attempt_at_unix: optional_i64_to_u64(
+                                self.capacity_retry_next_attempt_at_unix,
+                                "capacity retry next attempt time",
+                            )?,
+                        })
+                    })
+                    .transpose()?,
             )
             .map_err(PostgresError::invalid_input)
         }

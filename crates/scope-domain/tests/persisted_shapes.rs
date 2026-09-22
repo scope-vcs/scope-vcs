@@ -92,6 +92,10 @@ fn persisted_domain_shapes_roundtrip_the_recorded_json() {
         "exit_code": 127,
         "message": "runtime unavailable",
     }));
+    persisted_roundtrip::<AttemptTerminalReason>(json!({
+        "kind": "provider-capacity-rejected",
+        "message": "provider full",
+    }));
 }
 
 #[test]

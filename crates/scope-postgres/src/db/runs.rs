@@ -116,6 +116,26 @@ impl RunStore {
         })
     }
 
+    pub async fn reject_capacity_attempt(
+        &self,
+        attempt_id: &str,
+        token_hash: &str,
+        message: &str,
+        now_unix: u64,
+    ) -> Result<AttemptMutation, PostgresError> {
+        let mut transitioned = false;
+        let claim = self
+            .mutate_attempt(attempt_id, |run, job, attempt, steps| {
+                transitioned = !attempt.state.is_terminal();
+                attempt.reject_capacity(run, job, steps, token_hash, message, now_unix)
+            })
+            .await?;
+        Ok(AttemptMutation {
+            claim,
+            transitioned,
+        })
+    }
+
     pub async fn abandon_attempt(
         &self,
         attempt_id: &str,

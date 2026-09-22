@@ -128,3 +128,23 @@ dispatch.
 Do not report cutover complete until these live checks pass. Reverting to direct
 dispatch would require deliberately restoring the old administrative permissions
 and would reopen the original security boundary.
+
+## Capacity recovery and admission
+
+A confirmed capacity rejection may schedule three additional attempts within 120
+seconds of the first rejection. The run domain waits 10, 30, then 60 seconds;
+the run store persists the rejection count and next eligible time. A worker
+restart does not reset either limit. Cancellation stops the retries, and every
+previous attempt must have confirmed provider cleanup before a new one starts.
+This window limits launch retries; it does not extend workflow execution timeouts.
+
+Quota and permanent rejections fail without automatic capacity retries. Unknown
+launch outcomes remain under the existing lease and journal reconciliation rules.
+Never treat a lost response as evidence that no task started.
+
+Admission counts active attempts and terminal attempts whose tasks have not yet
+been confirmed stopped. Configure `SCOPE_CLOUD_RUN_MAX_CONCURRENCY` against the
+account's available Fargate CPU quota, allowing for other workloads in the region.
+Each current runner task requests four vCPUs, so the default limit of 20 permits
+up to 80 vCPUs. The default is not evidence that the account has that quota.
+Increasing the AWS quota is a separate operational change.
