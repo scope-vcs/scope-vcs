@@ -9,6 +9,7 @@ use crate::{
         git_read_scope_user,
         projection_repo::projection_bare_repo_for_state,
         request_refs::attach_visible_request_refs,
+        storage::repository_storage_key,
     },
     repo_access::{ensure_repo_read, find_repo},
     runtime_budgets::RuntimePermit,
@@ -40,9 +41,11 @@ use std::{
     time::{Duration, Instant},
 };
 mod read_view_identity;
+mod read_view_seed;
 #[cfg(test)]
 mod read_view_tests;
 use read_view_identity::GitReadViewIdentity;
+use read_view_seed::seed_request_refs_from_read_views;
 static GIT_READ_VIEW_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 
 /// Resolves the repository, the caller's access and (when authenticated) the viewer for a
@@ -219,7 +222,11 @@ async fn git_read_view_repo(
     )
     .cache_key();
     let cache_root = state.repository_engine.cache_root().to_path_buf();
-    let repo_path = cache_root.join(format!("read-view-{cache_key}.git"));
+    // The incarnation prefix lets a build find this repository's earlier read views and copy
+    // unchanged request refs from them instead of downloading every snapshot again.
+    let read_view_prefix = repository_storage_key(incarnation);
+    let read_view_name = format!("read-view-{read_view_prefix}-{cache_key}");
+    let repo_path = cache_root.join(format!("{read_view_name}.git"));
     let repo_path_for_ready = repo_path.clone();
     let is_ready = move || repo_path_for_ready.join("objects").is_dir();
     let state_for_build = state.clone();
@@ -227,8 +234,8 @@ async fn git_read_view_repo(
     let public_base_repo_for_build = public_base_repo;
     let requests_for_build = requests.to_vec();
     let cache_root_for_build = cache_root.clone();
-    let cache_key_for_build = cache_key.clone();
     let repo_path_for_build = repo_path.clone();
+    let repository_id = incarnation.repository_id().to_string();
     state.repository_engine.materialize_derived(
         incarnation,
         GitDerivedCacheNamespace::RequestReadView,
@@ -241,7 +248,7 @@ async fn git_read_view_repo(
                 let _permit = permit;
                 let attempt = GIT_READ_VIEW_CACHE_ATTEMPT.fetch_add(1, Ordering::Relaxed);
                 let temp_path = cache_root_for_build.join(format!(
-                    "read-view-{cache_key_for_build}.{}.{}.tmp",
+                    "{read_view_name}.{}.{}.tmp",
                     std::process::id(),
                     attempt
                 ));
@@ -258,9 +265,29 @@ async fn git_read_view_repo(
                             .arg(&temp_path),
                         None,
                     )?;
+                    let seeded = seed_request_refs_from_read_views(
+                        &state_for_build.repository_engine,
+                        &read_view_prefix,
+                        &requests_for_build,
+                        &temp_path,
+                    )?;
+                    let unattached: Vec<Request> = requests_for_build
+                        .iter()
+                        .filter(|request| !seeded.contains(&request.name))
+                        .cloned()
+                        .collect();
+                    tracing::info!(
+                        repository_id,
+                        seeded_refs = seeded.len(),
+                        snapshot_downloads = unattached
+                            .iter()
+                            .filter(|request| request.git_snapshot.is_some())
+                            .count(),
+                        "attaching request refs to Git read view"
+                    );
                     attach_visible_request_refs(
                         &state_for_build,
-                        &requests_for_build,
+                        &unattached,
                         &temp_path,
                         public_base_repo_for_build.as_deref(),
                     )?;
