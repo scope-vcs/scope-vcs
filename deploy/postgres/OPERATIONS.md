@@ -33,10 +33,15 @@ A grants-only policy change also needs a migration to enter the writer cutover,
 or an explicit grant refresh with writers paused. Exact-ledger releases leave
 read-only preflight unchanged. Never replace this with default grants on all future tables. Restore without source ownership/ACLs, restore into the migration owner's schema, and reapply this policy. After a restore, repeat readiness and permission-denial checks before resuming writers.
 
+`m0059_worker_history_permissions` is a ledger marker for the worker history
+grants. It changes no schema. Its pending state sends the release through the
+paused maintenance cutover, whose apply wrapper refreshes this role policy
+before writers reopen.
+
 Role names are cluster-wide. Use separate PostgreSQL instances for separate environments, and do not reuse these logins for unrelated databases. Bootstrap rejects role memberships except the migration role's `pg_signal_backend` membership. It does not inventory permissions in other databases; check and remove such access before cutover. Preserve a separately controlled administrator recovery path.
 
 ## Local verification
 
-Run `node --test deploy/postgres/runtime-roles.test.mjs`. The test creates and removes its own local cluster, loads the real baseline and table-adding migration SQL, and connects as each service login. It verifies every effective table grant, denies schema/temp-table/role/ledger mutations and unrelated reads, checks schema restore and grant refresh, checks future objects default to denied, removes a stale column grant, and confirms the migration login can terminate a runtime session. It also rejects unexpected tables and inherited role access.
+Run `node --test deploy/postgres/runtime-roles.test.mjs`. The test creates and removes its own local cluster, loads the real baseline and table-adding migration SQL, and connects as each service login. It verifies every effective table grant, runs the Rust outbox history rebuild as the worker login, denies direct history-entry deletion and unrelated mutations or reads, checks schema restore and grant refresh, checks future objects default to denied, removes a stale column grant, and confirms the migration login can terminate a runtime session. It also rejects unexpected tables and inherited role access. Cargo is required for the worker rebuild check.
 
 PostgreSQL 16 server tools are required at `/usr/lib/postgresql/16/bin`; set `SCOPE_TEST_POSTGRES_BIN` for another installation. The test never reads `DATABASE_URL` and never uses the machine's running PostgreSQL instance.

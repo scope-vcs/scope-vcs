@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { grants, renderPolicy, tables } from './runtime-roles.mjs';
 import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
@@ -28,12 +29,12 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     started = true;
     const baseline = readFileSync(new URL('../../crates/scope-postgres/src/migrations/current_schema.sql', import.meta.url), 'utf8');
     query(baseline);
-    // Apply the actual raw SQL of the migrations which introduce the additional tables.
-    for (const filename of ['m0044_request_attention.rs', 'm0045_dependency_analysis.rs',
+    // Apply the raw migration SQL needed by the current worker model and role inventory.
+    for (const filename of ['m0043_retire_git_manifests.rs', 'm0044_request_attention.rs', 'm0045_dependency_analysis.rs',
       'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs',
       'm0057_repository_invite_links.rs', 'm0058_repository_invite_emails.rs']) {
       const source = readFileSync(new URL(`../../crates/scope-postgres/src/migrations/${filename}`, import.meta.url), 'utf8');
-      query(source.match(/r#"([\s\S]*?)"#/)[1]);
+      query(`BEGIN; ${source.match(/r#"([\s\S]*?)"#/)[1]} COMMIT;`);
     }
     query('CREATE TABLE seaql_migrations (version text PRIMARY KEY);');
     const actual = query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename").stdout.trim().split('\n');
@@ -88,6 +89,18 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query('DELETE FROM scope_request_auto_merge_intents;', 'scope_run_worker', false);
     query('DELETE FROM scope_requests;', 'scope_run_worker', false);
     query('UPDATE scope_request_events SET id = id;', 'scope_run_worker', false);
+    const workerRoleTest = spawnSync('cargo', ['test', '-p', 'scope-postgres', '--lib',
+      'worker_role_rebuilds_repository_history', '--', '--nocapture'], {
+      cwd: fileURLToPath(new URL('../../', import.meta.url)),
+      env: {
+        ...process.env,
+        SCOPE_WORKER_ROLE_TEST_ADMIN_URL: `postgres://postgres@localhost/postgres?host=${encodeURIComponent(dir)}`,
+        SCOPE_WORKER_ROLE_TEST_WORKER_URL: `postgres://scope_run_worker@localhost/postgres?host=${encodeURIComponent(dir)}`,
+      },
+      encoding: 'utf8', timeout: 600_000, maxBuffer: 10 * 1024 * 1024,
+    });
+    assert.equal(workerRoleTest.status, 0, `${workerRoleTest.stdout}\n${workerRoleTest.stderr}`);
+    query('DELETE FROM scope_repository_history_entries;', 'scope_run_worker', false);
     query("SELECT 1 AS present FROM scope_request_discussions WHERE id = 'missing' AND request_id = 'missing';", 'scope_media_api');
     query('SELECT * FROM scope_cache_objects;', 'scope_api', false);
     query('SELECT * FROM scope_runs;', 'scope_media_worker', false);
