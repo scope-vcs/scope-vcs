@@ -37,7 +37,7 @@ export function FirstRepositoryWalkthrough({
           <CopyableCodeBlock copyLabel="Copy init command" value="scope init" />
         </WalkthroughStep>
         <WalkthroughStep
-          description="Review the generated config and publish. The repository appears here as soon as the push lands."
+          description="Commit the generated Scope files, then publish. The repository appears here as soon as the push lands."
           number={3}
           title="Push your first version"
         >
