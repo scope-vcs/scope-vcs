@@ -4648,6 +4648,29 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 8d1f81ea4e87111d557b185d58d996e7bcb974c19c364197fffd4e814fd9b6fa
 
 ==============================================================================
+tikv-jemalloc-sys 0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8
+Declared license: MIT/Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/tikv-jemalloc-sys/tikv-jemalloc-sys-0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8.crate
+
+Published author metadata: ["Alex Crichton <alex@alexcrichton.com>", "Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>", "The TiKV Project Developers"]
+Repository: "https://github.com/tikv/jemallocator"
+LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
+LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
+jemalloc/COPYING: text f1e1ccef8b618427f0417b6cc8c894da203e89d8837b38915a4cb9b26800f9a1
+
+==============================================================================
+tikv-jemallocator 0.7.0
+Declared license: MIT/Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/tikv-jemallocator/tikv-jemallocator-0.7.0.crate
+
+Published author metadata: ["Alex Crichton <alex@alexcrichton.com>", "Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>", "Simon Sapin <simon.sapin@exyr.org>", "Steven Fackler <sfackler@gmail.com>", "The TiKV Project Developers"]
+Repository: "https://github.com/tikv/jemallocator"
+LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
+LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
+
+==============================================================================
 time 0.3.52
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -11659,6 +11682,35 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+--- text f1e1ccef8b618427f0417b6cc8c894da203e89d8837b38915a4cb9b26800f9a1 ---
+Unless otherwise specified, files in the jemalloc source distribution are
+subject to the following license:
+--------------------------------------------------------------------------------
+Copyright (C) 2002-present Jason Evans <jasone@canonware.com>.
+All rights reserved.
+Copyright (C) 2007-2012 Mozilla Foundation.  All rights reserved.
+Copyright (C) 2009-present Facebook, Inc.  All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+1. Redistributions of source code must retain the above copyright notice(s),
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice(s),
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER(S) ``AS IS'' AND ANY EXPRESS
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+EVENT SHALL THE COPYRIGHT HOLDER(S) BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+--------------------------------------------------------------------------------
 
 --- text f30e9ee33dbf771d1066168d0d8c68401a81340f2241dd726f7891364696c7f9 ---
 LICENSE:
