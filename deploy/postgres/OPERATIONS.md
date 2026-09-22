@@ -33,6 +33,11 @@ A grants-only policy change also needs a migration to enter the writer cutover,
 or an explicit grant refresh with writers paused. Exact-ledger releases leave
 read-only preflight unchanged. Never replace this with default grants on all future tables. Restore without source ownership/ACLs, restore into the migration owner's schema, and reapply this policy. After a restore, repeat readiness and permission-denial checks before resuming writers.
 
+`m0059_worker_history_permissions` is a ledger marker for the worker history
+grants. It changes no schema. Its pending state sends the release through the
+paused maintenance cutover, whose apply wrapper refreshes this role policy
+before writers reopen.
+
 Role names are cluster-wide. Use separate PostgreSQL instances for separate environments, and do not reuse these logins for unrelated databases. Bootstrap rejects role memberships except the migration role's `pg_signal_backend` membership. It does not inventory permissions in other databases; check and remove such access before cutover. Preserve a separately controlled administrator recovery path.
 
 ## Local verification
