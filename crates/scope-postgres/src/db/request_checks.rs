@@ -9,7 +9,7 @@ use crate::error::PostgresError;
 use scope_domain::{
     requests::{
         RequestAutoMergeStopReason, RequestCheckEvaluation, RequestCheckEvaluationState,
-        RequestRevision, stop_request_auto_merge,
+        RequestCheckPlan, RequestRevision, stop_request_auto_merge,
     },
     runs::{
         run::Run,
@@ -81,13 +81,7 @@ impl RequestStore {
                 created_runs: Vec::new(),
             });
         }
-        let created_runs = start_runs(
-            &tx,
-            &command.revisions,
-            command.runs,
-            command.evaluation.updated_at_unix,
-        )
-        .await?;
+        let created_runs = start_runs(&tx, &command.revisions, command.runs).await?;
         for revision in &command.revisions {
             save_workflow_revision(&tx, revision, command.evaluation.updated_at_unix).await?;
         }
@@ -138,16 +132,11 @@ impl RequestStore {
         if !repo.access.is_maintainer() {
             return Err(PostgresError::permission_denied("repo maintainer required"));
         }
-        let mut evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
+        let evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
             .await?
             .ok_or_else(|| PostgresError::not_found("request head has no recorded checks"))?;
-        if evaluation.state != RequestCheckEvaluationState::AwaitingApproval {
-            return Err(PostgresError::conflict(
-                "request checks are not awaiting approval",
-            ));
-        }
+        evaluation.ensure_awaiting_approval()?;
         let mut revisions = Vec::with_capacity(evaluation.checks.len());
-        let mut runs = Vec::with_capacity(evaluation.checks.len());
         for check in &evaluation.checks {
             let identity = WorkflowIdentity::new(
                 &request.repo_id,
@@ -165,17 +154,16 @@ impl RequestStore {
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::internal_message("recorded check revision is missing"))?
             .try_into_domain(identity)?;
-            runs.push(check.run(
-                &request,
-                &revision,
-                &command.actor_user_id,
-                command.now_unix,
-            )?);
             revisions.push(revision);
         }
-        let run_ids = runs.iter().map(|run| run.id.clone()).collect();
-        let created_runs = start_runs(&tx, &revisions, runs, command.now_unix).await?;
-        evaluation.approve(run_ids, command.now_unix)?;
+        let RequestCheckPlan { evaluation, runs } = RequestCheckPlan::approve(
+            &request,
+            evaluation,
+            &revisions,
+            &command.actor_user_id,
+            command.now_unix,
+        )?;
+        let created_runs = start_runs(&tx, &revisions, runs).await?;
         save_evaluation(&tx, &evaluation).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RequestChecksMutation {
@@ -239,7 +227,6 @@ async fn start_runs(
     tx: &DatabaseTransaction,
     revisions: &[WorkflowRevision],
     runs: Vec<Run>,
-    _now_unix: u64,
 ) -> Result<Vec<Run>, PostgresError> {
     let mut created = Vec::new();
     for run in runs {

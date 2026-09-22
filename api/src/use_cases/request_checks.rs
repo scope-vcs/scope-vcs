@@ -16,8 +16,8 @@ use scope_api_contract::RunChangeKind;
 use scope_domain::{
     repository::{RepoRecord, RepositoryIncarnation},
     requests::{
-        Request, RequestCheck, RequestCheckEvaluation, RequestChecksOutcome,
-        request_checks_outcome, request_checks_start_immediately, request_head_awaits_evaluation,
+        Request, RequestCheckEvaluation, RequestCheckPlan, RequestChecksOutcome,
+        request_checks_outcome, request_head_awaits_evaluation,
     },
     runs::{run::RunState, workflow::revision::WorkflowRevision},
 };
@@ -235,75 +235,19 @@ async fn evaluate_request_checks(
     files: ReadWorkflowFiles,
 ) -> Result<RequestChecksMutation, ApiError> {
     let now_unix = unix_now()?;
-    let revisions = match request_workflow_revisions(request, files) {
-        Ok(revisions) => revisions,
-        Err(message) => {
-            return record_checks(
-                state,
-                RecordRequestChecksCommand {
-                    evaluation: RequestCheckEvaluation::configuration_error(
-                        &request.id,
-                        &request.head_oid,
-                        message,
-                        now_unix,
-                    )?,
-                    revisions: Vec::new(),
-                    runs: Vec::new(),
-                },
-            )
-            .await;
-        }
-    };
-    if revisions.is_empty() {
-        return record_checks(
-            state,
-            RecordRequestChecksCommand {
-                evaluation: RequestCheckEvaluation::no_checks(
-                    &request.id,
-                    &request.head_oid,
-                    now_unix,
-                )?,
-                revisions: Vec::new(),
-                runs: Vec::new(),
-            },
-        )
-        .await;
-    }
-    let checks = revisions
-        .iter()
-        .map(RequestCheck::for_revision)
-        .collect::<Vec<_>>();
-    let (evaluation, runs) = if request_checks_start_immediately(request, actor_is_maintainer) {
-        let mut started = Vec::with_capacity(checks.len());
-        let mut runs = Vec::with_capacity(checks.len());
-        for (check, revision) in checks.into_iter().zip(&revisions) {
-            let run = check.run(request, revision, actor_user_id, now_unix)?;
-            started.push(RequestCheck {
-                run_id: Some(run.id.clone()),
-                ..check
-            });
-            runs.push(run);
-        }
-        (
-            RequestCheckEvaluation::started(&request.id, &request.head_oid, started, now_unix)?,
-            runs,
-        )
-    } else {
-        (
-            RequestCheckEvaluation::awaiting_approval(
-                &request.id,
-                &request.head_oid,
-                checks,
-                now_unix,
-            )?,
-            Vec::new(),
-        )
-    };
+    let revisions = request_workflow_revisions(request, files);
+    let RequestCheckPlan { evaluation, runs } = RequestCheckPlan::evaluate(
+        request,
+        revisions.as_deref().map_err(String::as_str),
+        actor_user_id,
+        actor_is_maintainer,
+        now_unix,
+    )?;
     record_checks(
         state,
         RecordRequestChecksCommand {
             evaluation,
-            revisions,
+            revisions: revisions.unwrap_or_default(),
             runs,
         },
     )

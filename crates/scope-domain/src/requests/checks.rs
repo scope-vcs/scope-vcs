@@ -18,6 +18,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod planning;
+pub use planning::RequestCheckPlan;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RequestCheckEvaluationState {
@@ -180,11 +183,7 @@ impl RequestCheckEvaluation {
 
     /// A maintainer starts the recorded checks; each check receives its run in order.
     pub fn approve(&mut self, run_ids: Vec<String>, now_unix: u64) -> Result<(), DomainError> {
-        if self.state != RequestCheckEvaluationState::AwaitingApproval {
-            return Err(DomainError::conflict(
-                "request checks are not awaiting approval",
-            ));
-        }
+        self.ensure_awaiting_approval()?;
         if run_ids.len() != self.checks.len() {
             return Err(DomainError::invalid_input(
                 "approval must start every recorded check",
@@ -201,6 +200,15 @@ impl RequestCheckEvaluation {
         ensure_every_check_started(&self.checks)?;
         self.state = RequestCheckEvaluationState::Started;
         self.updated_at_unix = now_unix;
+        Ok(())
+    }
+
+    pub fn ensure_awaiting_approval(&self) -> Result<(), DomainError> {
+        if self.state != RequestCheckEvaluationState::AwaitingApproval {
+            return Err(DomainError::conflict(
+                "request checks are not awaiting approval",
+            ));
+        }
         Ok(())
     }
 
