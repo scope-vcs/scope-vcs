@@ -171,24 +171,13 @@ pub(crate) fn attach_visible_request_refs(
     for request in requests {
         let request_ref = canonical_request_ref(&request.name);
         if let Some(snapshot) = request.git_snapshot.as_ref() {
-            let bundle_path = target_repo.with_extension(format!(
-                "read-view-{}.bundle.tmp",
-                hex::encode(
-                    &Sha256::digest(format!("{}:{}", request.name, snapshot.sha256).as_bytes())
-                        [..8]
-                )
-            ));
-            let bytes = source_blob_bytes(state.object_store.as_ref(), snapshot)?;
-            fs::write(&bundle_path, bytes).map_err(ApiError::internal)?;
-            let bundle = bundle_path.to_string_lossy().to_string();
-            let refspec = format!("+{request_ref}:{request_ref}");
-            let result = run_git(
-                Some(target_repo),
-                &["fetch", &bundle, &refspec],
+            fetch_snapshot_into(
+                state,
+                target_repo,
+                &request_ref,
+                snapshot,
                 "attaching request ref to Git read view",
-            );
-            let _ = fs::remove_file(&bundle_path);
-            result?;
+            )?;
         } else {
             // A newly started request initially points at its selected main base and therefore
             // needs no snapshot object transfer.
@@ -512,20 +501,33 @@ fn restore_request_ref_from_snapshot(
     request: &Request,
     snapshot: &SourceBlob,
 ) -> Result<(), ApiError> {
-    let bundle_path = store_repo.with_extension(format!(
-        "request-ref-{}.bundle.tmp",
-        hex::encode(&snapshot.sha256.as_bytes()[..8])
+    fetch_snapshot_into(
+        state,
+        store_repo,
+        &canonical_request_ref(&request.name),
+        snapshot,
+        "restoring request ref snapshot",
+    )
+}
+
+/// Downloads a request snapshot bundle and fetches `request_ref` from it into `repo`. The bundle
+/// lands in a temp file beside the repo and is removed whether or not the fetch succeeds.
+fn fetch_snapshot_into(
+    state: &AppState,
+    repo: &FsPath,
+    request_ref: &str,
+    snapshot: &SourceBlob,
+    action: &str,
+) -> Result<(), ApiError> {
+    let bundle_path = repo.with_extension(format!(
+        "snapshot-{}.bundle.tmp",
+        hex::encode(&Sha256::digest(format!("{request_ref}:{}", snapshot.sha256).as_bytes())[..8])
     ));
     let bytes = source_blob_bytes(state.object_store.as_ref(), snapshot)?;
     fs::write(&bundle_path, bytes).map_err(ApiError::internal)?;
     let bundle = bundle_path.to_string_lossy().to_string();
-    let request_ref = canonical_request_ref(&request.name);
     let refspec = format!("+{request_ref}:{request_ref}");
-    let result = run_git(
-        Some(store_repo),
-        &["fetch", &bundle, &refspec],
-        "restoring request ref snapshot",
-    );
+    let result = run_git(Some(repo), &["fetch", &bundle, &refspec], action);
     let _ = fs::remove_file(&bundle_path);
     result
 }
