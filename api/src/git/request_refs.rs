@@ -161,7 +161,8 @@ pub(crate) fn create_request_receive_pack_staging_repo(
 
 /// Adds every already-authorized request snapshot to a disposable upload-pack repository.
 /// The caller chooses the visible requests; this function never reaches into the private main
-/// repository or advertises any other durable request-store refs.
+/// repository or advertises any other durable request-store refs. `target_repo` must already hold
+/// private main, which thin private request snapshots are based on.
 pub(crate) fn attach_visible_request_refs(
     state: &AppState,
     requests: &[Request],
@@ -176,6 +177,7 @@ pub(crate) fn attach_visible_request_refs(
                 target_repo,
                 &request_ref,
                 snapshot,
+                None,
                 "attaching request ref to Git read view",
             )?;
         } else {
@@ -298,6 +300,7 @@ pub(crate) async fn persist_request_ref_to_store(
             .await?;
     }
     let incarnation = repo.incarnation();
+    let snapshot_base = thin_snapshot_base(repo, request).map(str::to_string);
     let prepared = {
         let state = state.clone();
         let incarnation = incarnation.clone();
@@ -305,7 +308,14 @@ pub(crate) async fn persist_request_ref_to_store(
         let request = request.clone();
         let update = update.clone();
         crate::git::blocking::run(move || {
-            prepare_request_ref_snapshot(&state, &incarnation, &path, &request, &update)
+            prepare_request_ref_snapshot(
+                &state,
+                &incarnation,
+                &path,
+                &request,
+                &update,
+                snapshot_base.as_deref(),
+            )
         })
         .await?
     };
@@ -366,16 +376,26 @@ struct PreparedRequestRef {
     snapshot_bytes: Vec<u8>,
 }
 
+/// The base a request snapshot leaves out, if any. A private request on a Git-backed repository
+/// starts from private main, which only fast-forwards and is durably stored, so every reader can
+/// supply that base. A public request starts from the public projection, which a history
+/// redaction can rewrite, so its snapshot keeps its full history.
+fn thin_snapshot_base<'a>(repo: &Repository, request: &'a Request) -> Option<&'a str> {
+    (request.audience == RequestAudience::Private && repo.git_head.is_some())
+        .then_some(request.base_main_oid.as_str())
+}
+
 fn prepare_request_ref_snapshot(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     staging_repo: &FsPath,
     request: &Request,
     update: &RequestRefUpdate,
+    snapshot_base: Option<&str>,
 ) -> Result<PreparedRequestRef, ApiError> {
     let store_lock = acquire_request_ref_store_lock(state, incarnation)?;
     let store_repo = ensure_request_ref_store_repo_locked(state, incarnation)?;
-    ensure_request_ref_available_in_store_locked(state, &store_repo, request)?;
+    ensure_request_ref_available_in_store_locked(state, &store_repo, staging_repo, request)?;
     let previous_head = request_ref_head(&store_repo, &update.request_ref)?;
     let expected_stored_head = previous_head.as_deref().or_else(|| {
         request
@@ -397,7 +417,7 @@ fn prepare_request_ref_snapshot(
         "persisting request ref",
     )?;
     let (git_snapshot, snapshot_bytes) =
-        match git_snapshot_from_ref(&store_repo, &update.request_ref) {
+        match git_snapshot_from_ref(&store_repo, &update.request_ref, snapshot_base) {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 rollback_request_ref(state, incarnation, &update.request_ref, previous_head);
@@ -466,9 +486,12 @@ fn request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<bool, ApiError>
             == "commit")
 }
 
+/// `staging_repo` was seeded with the request's base, so it supplies the base a thin snapshot
+/// needs when the store repo is empty.
 fn ensure_request_ref_available_in_store_locked(
     state: &AppState,
     store_repo: &FsPath,
+    staging_repo: &FsPath,
     request: &Request,
 ) -> Result<(), ApiError> {
     let request_ref = canonical_request_ref(&request.name);
@@ -476,7 +499,14 @@ fn ensure_request_ref_available_in_store_locked(
         return Ok(());
     }
     if let Some(snapshot) = request.git_snapshot.as_ref() {
-        restore_request_ref_from_snapshot(state, store_repo, request, snapshot)?;
+        fetch_snapshot_into(
+            state,
+            store_repo,
+            &request_ref,
+            snapshot,
+            Some(staging_repo),
+            "restoring request ref snapshot",
+        )?;
         if request_ref_head(store_repo, &request_ref)?.as_deref() == Some(request.head_oid.as_str())
         {
             return Ok(());
@@ -495,21 +525,6 @@ fn ensure_request_ref_available_in_store_locked(
     Ok(())
 }
 
-fn restore_request_ref_from_snapshot(
-    state: &AppState,
-    store_repo: &FsPath,
-    request: &Request,
-    snapshot: &SourceBlob,
-) -> Result<(), ApiError> {
-    fetch_snapshot_into(
-        state,
-        store_repo,
-        &canonical_request_ref(&request.name),
-        snapshot,
-        "restoring request ref snapshot",
-    )
-}
-
 /// Downloads a request snapshot bundle and fetches `request_ref` from it into `repo`. The bundle
 /// lands in a temp file beside the repo and is removed whether or not the fetch succeeds.
 fn fetch_snapshot_into(
@@ -517,6 +532,7 @@ fn fetch_snapshot_into(
     repo: &FsPath,
     request_ref: &str,
     snapshot: &SourceBlob,
+    base_repo: Option<&FsPath>,
     action: &str,
 ) -> Result<(), ApiError> {
     let bundle_path = repo.with_extension(format!(
@@ -525,11 +541,87 @@ fn fetch_snapshot_into(
     ));
     let bytes = source_blob_bytes(state.object_store.as_ref(), snapshot)?;
     fs::write(&bundle_path, bytes).map_err(ApiError::internal)?;
-    let bundle = bundle_path.to_string_lossy().to_string();
-    let refspec = format!("+{request_ref}:{request_ref}");
-    let result = run_git(Some(repo), &["fetch", &bundle, &refspec], action);
+    let result = fetch_bundle_into(repo, request_ref, &bundle_path, base_repo, action);
     let _ = fs::remove_file(&bundle_path);
     result
+}
+
+/// Fetches `request_ref` from a snapshot bundle file into `repo`, first supplying the request's
+/// base from `base_repo` when `repo` lacks it.
+pub(super) fn fetch_bundle_into(
+    repo: &FsPath,
+    request_ref: &str,
+    bundle: &FsPath,
+    base_repo: Option<&FsPath>,
+    action: &str,
+) -> Result<(), ApiError> {
+    supply_bundle_base(repo, bundle, base_repo)?;
+    let bundle = bundle.to_string_lossy();
+    let refspec = format!("+{request_ref}:{request_ref}");
+    run_git(
+        Some(repo),
+        &["fetch", "--no-tags", bundle.as_ref(), &refspec],
+        action,
+    )
+}
+
+/// A snapshot bundle leaves out the history of the request's base. Fetches any base commit
+/// `repo` is missing, with its history, from `base_repo`.
+fn supply_bundle_base(
+    repo: &FsPath,
+    bundle: &FsPath,
+    base_repo: Option<&FsPath>,
+) -> Result<(), ApiError> {
+    let mut missing = Vec::new();
+    for oid in bundle_prerequisites(bundle)? {
+        if !request_ref_oid_is_commit(repo, &oid)? {
+            missing.push(oid);
+        }
+    }
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let Some(base_repo) = base_repo else {
+        return Err(ApiError::infrastructure_unavailable(
+            "request snapshot base commit is unavailable",
+        ));
+    };
+    let source = base_repo.to_string_lossy();
+    let mut args = vec![
+        "-c",
+        "uploadpack.allowAnySHA1InWant=true",
+        "fetch",
+        "--no-tags",
+        source.as_ref(),
+    ];
+    args.extend(missing.iter().map(String::as_str));
+    run_git(Some(repo), &args, "fetching request snapshot base")
+}
+
+/// The commits a bundle requires but does not contain, read from its header.
+fn bundle_prerequisites(bundle: &FsPath) -> Result<Vec<String>, ApiError> {
+    use std::io::BufRead;
+    let mut reader = std::io::BufReader::new(fs::File::open(bundle).map_err(ApiError::internal)?);
+    let mut prerequisites = Vec::new();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        if reader
+            .read_until(b'\n', &mut line)
+            .map_err(ApiError::internal)?
+            == 0
+            || line == b"\n"
+        {
+            return Ok(prerequisites);
+        }
+        if let Some(rest) = line.strip_prefix(b"-") {
+            let oid = rest
+                .split(|byte| byte.is_ascii_whitespace())
+                .next()
+                .unwrap_or_default();
+            prerequisites.push(String::from_utf8(oid.to_vec()).map_err(ApiError::internal)?);
+        }
+    }
 }
 
 fn ensure_request_ref_store_head_matches_push(

@@ -165,3 +165,62 @@ fn temp_repo_path(label: &str) -> PathBuf {
     let _ = fs::remove_dir_all(&path);
     path
 }
+
+#[test]
+fn thin_snapshot_takes_its_base_from_the_base_repo() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    run_git(
+        None,
+        &["init", "-b", "main", source.to_string_lossy().as_ref()],
+        "init source",
+    )
+    .unwrap();
+    let commit = |message: &str| {
+        run_git(
+            Some(&source),
+            &[
+                "-c",
+                "user.name=Scope Test",
+                "-c",
+                "user.email=scope@example.com",
+                "commit",
+                "--allow-empty",
+                "-m",
+                message,
+            ],
+            "commit",
+        )
+        .unwrap();
+        git_stdout(&source, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string()
+    };
+    let base = commit("base");
+    run_git(Some(&source), &["checkout", "-b", "topic"], "branch").unwrap();
+    let head = commit("topic");
+    let (_, bytes) = git_snapshot_from_ref(&source, "refs/heads/topic", Some(&base)).unwrap();
+    let bundle = root.path().join("topic.bundle");
+    fs::write(&bundle, bytes).unwrap();
+    assert_eq!(bundle_prerequisites(&bundle).unwrap(), vec![base]);
+
+    let target = root.path().join("target.git");
+    run_git(
+        None,
+        &["init", "--bare", target.to_string_lossy().as_ref()],
+        "init target",
+    )
+    .unwrap();
+    let error = fetch_bundle_into(&target, "refs/heads/topic", &bundle, None, "fetch").unwrap_err();
+    assert!(
+        error
+            .operator_diagnostic()
+            .contains("base commit is unavailable")
+    );
+
+    fetch_bundle_into(&target, "refs/heads/topic", &bundle, Some(&source), "fetch").unwrap();
+    assert_eq!(
+        request_ref_head(&target, "refs/heads/topic").unwrap(),
+        Some(head)
+    );
+}
