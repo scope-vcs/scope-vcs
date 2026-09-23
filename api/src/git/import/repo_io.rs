@@ -528,22 +528,29 @@ pub(crate) async fn git_push_from_repo(
     })
 }
 
+/// Bundles `refname`. With a `base_oid` the bundle leaves out history reachable from that base,
+/// so it carries only the request's own commits and whoever fetches it supplies the base first.
 pub(crate) fn git_snapshot_from_ref(
     repo: &FsPath,
     refname: &str,
+    base_oid: Option<&str>,
 ) -> Result<(SourceBlob, Vec<u8>), ApiError> {
     let head_oid = git_stdout_text(repo, &["rev-parse", refname], "reading Git snapshot head")?;
+    let head_oid = head_oid.trim();
     let bundle_path = repo.join(format!("scope-snapshot-{}.bundle", random_bundle_id()?));
     let bundle = bundle_path.to_string_lossy().to_string();
-    run_git(
-        Some(repo),
-        &["bundle", "create", bundle.as_str(), refname],
-        "creating Git snapshot bundle",
-    )?;
+    // Git refuses an empty bundle, so a ref still at its base keeps its full history.
+    let exclude_base = base_oid
+        .filter(|base_oid| *base_oid != head_oid)
+        .map(|base_oid| format!("^{base_oid}"));
+    let mut args = vec!["bundle", "create", bundle.as_str()];
+    args.extend(exclude_base.as_deref());
+    args.push(refname);
+    run_git(Some(repo), &args, "creating Git snapshot bundle")?;
     let bytes = std::fs::read(&bundle_path).map_err(ApiError::internal)?;
     let _ = std::fs::remove_file(&bundle_path);
     let mut snapshot = content_object_for_bytes(ContentObjectKind::GitBundle, &bytes);
-    snapshot.git_oid = head_oid.trim().to_string();
+    snapshot.git_oid = head_oid.to_string();
     Ok((snapshot, bytes))
 }
 

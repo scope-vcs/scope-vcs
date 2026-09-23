@@ -1,15 +1,19 @@
-use super::{request_ref_head, request_ref_oid_is_commit};
+use super::{fetch_bundle_into, request_ref_head, request_ref_oid_is_commit};
 use crate::{
     error::ApiError,
-    git::{cache::GitDerivedCacheNamespace, command::run_git},
+    git::{
+        cache::{GitDerivedCacheNamespace, GitRepoHandle},
+        command::run_git,
+    },
     state::AppState,
 };
 use scope_domain::{
     repository::RepositoryIncarnation,
-    requests::{Request, RequestRevision, canonical_request_ref},
+    requests::{Request, RequestAudience, RequestRevision, canonical_request_ref},
 };
 use scope_object_store::source_blob_bytes;
 use sha2::{Digest, Sha256};
+use std::future::Future;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -28,6 +32,48 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     revision: &RequestRevision,
     action: impl FnOnce(&Path, &RequestRevision) -> Result<T, ApiError> + Send + 'static,
 ) -> Result<T, ApiError> {
+    let base_repo = request_base_repo(state.clone(), incarnation.clone(), request.audience);
+    with_revision_repo(state, incarnation, request, revision, base_repo, action).await
+}
+
+/// The private replica a thin private request snapshot is based on. Public snapshots carry their
+/// full history and need no base.
+async fn request_base_repo(
+    state: AppState,
+    incarnation: RepositoryIncarnation,
+    audience: RequestAudience,
+) -> Result<Option<GitRepoHandle>, ApiError> {
+    if audience == RequestAudience::Public {
+        return Ok(None);
+    }
+    let (Some(head), spans) = state
+        .metadata
+        .repositories()
+        .repository_content_source(&incarnation)
+        .await?
+    else {
+        return Ok(None);
+    };
+    state
+        .repository_engine
+        .materialize_repository(&state, &incarnation, &head, &spans)
+        .await
+        .map(Some)
+}
+
+/// `base_repo` only runs when the revision is not cached yet.
+async fn with_revision_repo<T, Base>(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    request: &Request,
+    revision: &RequestRevision,
+    base_repo: impl Future<Output = Result<Option<Base>, ApiError>> + Send + 'static,
+    action: impl FnOnce(&Path, &RequestRevision) -> Result<T, ApiError> + Send + 'static,
+) -> Result<T, ApiError>
+where
+    T: Send + 'static,
+    Base: AsRef<Path> + Send + 'static,
+{
     if revision.request_id != request.id || request.repo_id != incarnation.repository_id() {
         return Err(ApiError::not_found("request revision not found"));
     }
@@ -50,16 +96,24 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
             &path,
             move || ready_path.is_file(),
             move || async move {
+                // Resolved before taking a permit, since it may materialize a repository itself.
+                let base_repo = base_repo.await?;
                 let permit = state_for_build.runtime_budgets.try_git_materialization()?;
                 tokio::task::spawn_blocking(move || {
                     let _permit = permit;
-                    build_revision(&build_path, &request_ref, &revision_for_build, || {
-                        source_blob_bytes(
-                            state_for_build.object_store.as_ref(),
-                            &revision_for_build.git_snapshot,
-                        )
-                        .map_err(ApiError::from)
-                    })
+                    build_revision(
+                        &build_path,
+                        &request_ref,
+                        &revision_for_build,
+                        base_repo.as_ref().map(AsRef::as_ref),
+                        || {
+                            source_blob_bytes(
+                                state_for_build.object_store.as_ref(),
+                                &revision_for_build.git_snapshot,
+                            )
+                            .map_err(ApiError::from)
+                        },
+                    )
                 })
                 .await
                 .map_err(|error| {
@@ -112,6 +166,7 @@ fn build_revision(
     path: &Path,
     request_ref: &str,
     revision: &RequestRevision,
+    base_repo: Option<&Path>,
     load: impl FnOnce() -> Result<Vec<u8>, ApiError>,
 ) -> Result<(), ApiError> {
     let attempt = REVISION_BUILD_ATTEMPT.fetch_add(1, Ordering::Relaxed);
@@ -125,14 +180,11 @@ fn build_revision(
     )?;
     let bundle = temporary.join("revision.bundle");
     fs::write(&bundle, load()?).map_err(ApiError::internal)?;
-    run_git(
-        Some(&temporary),
-        &[
-            "fetch",
-            "--no-tags",
-            bundle.to_string_lossy().as_ref(),
-            &format!("+{request_ref}:{request_ref}"),
-        ],
+    fetch_bundle_into(
+        &temporary,
+        request_ref,
+        &bundle,
+        base_repo,
         "importing request revision",
     )?;
     fs::remove_file(bundle).map_err(ApiError::internal)?;
@@ -154,6 +206,8 @@ mod tests {
     use scope_domain::requests::{RequestActorRole, RequestAudience};
     use std::sync::{Arc, atomic::AtomicUsize};
 
+    /// A thin revision snapshot on top of the fixture's first commit. The `source` repo under
+    /// `root` holds that base.
     fn fixture(root: &Path) -> (RequestRevision, Vec<u8>) {
         let source = root.join("source");
         run_git(
@@ -189,7 +243,8 @@ mod tests {
         let new_head_oid = request_ref_head(&source, "refs/heads/topic")
             .unwrap()
             .unwrap();
-        let (git_snapshot, bytes) = git_snapshot_from_ref(&source, "refs/heads/topic").unwrap();
+        let (git_snapshot, bytes) =
+            git_snapshot_from_ref(&source, "refs/heads/topic", Some(&old_head_oid)).unwrap();
         (
             RequestRevision {
                 id: "revision".into(),
@@ -284,12 +339,14 @@ mod tests {
                 let revision = revision.clone();
                 let active = active.clone();
                 let peak = peak.clone();
+                let base_repo = root.path().join("source");
                 readers.push(tokio::spawn(async move {
-                    with_request_revision_store_repo(
+                    with_revision_repo(
                         &state,
                         &incarnation,
                         &request_fixture(),
                         &revision,
+                        async move { Ok(Some(base_repo)) },
                         move |repo, _| {
                             let current = active.fetch_add(1, Ordering::SeqCst) + 1;
                             peak.fetch_max(current, Ordering::SeqCst);
@@ -327,10 +384,18 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let (revision, bytes) = fixture(root.path());
         let path = root.path().join("revision.git");
+        let source = root.path().join("source");
         let mut wrong_head = revision.clone();
         wrong_head.new_head_oid = wrong_head.old_head_oid.clone();
         assert!(
-            build_revision(&path, "refs/heads/topic", &wrong_head, || Ok(bytes.clone())).is_err()
+            build_revision(
+                &path,
+                "refs/heads/topic",
+                &wrong_head,
+                Some(&source),
+                || Ok(bytes.clone())
+            )
+            .is_err()
         );
         assert!(!path.exists());
         assert!(
@@ -340,7 +405,10 @@ mod tests {
                 .to_string_lossy()
                 .ends_with(".tmp"))
         );
-        build_revision(&path, "refs/heads/topic", &revision, || Ok(bytes)).unwrap();
+        build_revision(&path, "refs/heads/topic", &revision, Some(&source), || {
+            Ok(bytes)
+        })
+        .unwrap();
         assert!(path.join(READY_FILE).is_file());
     }
 

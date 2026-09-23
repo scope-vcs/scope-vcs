@@ -18,8 +18,6 @@ use scope_domain::{
     requests::{Request, RequestAudience, canonical_request_ref},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_object_store::source_blob_bytes;
-use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -30,11 +28,15 @@ mod cleanup;
 pub(crate) use cleanup::cleanup_deleted_request_ref;
 mod locks;
 mod revision;
+mod snapshot;
 #[cfg(test)]
 use crate::persistence::unix_now;
 use locks::acquire_request_ref_store_lock;
 pub(crate) use locks::acquire_request_ref_update_lock_async;
 pub(crate) use revision::with_request_revision_store_repo;
+#[cfg(test)]
+use snapshot::bundle_prerequisites;
+use snapshot::{fetch_bundle_into, fetch_snapshot_into};
 
 /// Push rules shared by the request pre-receive hooks and the Rust validators, so the
 /// message a contributor sees is the same whichever layer rejects the push.
@@ -161,7 +163,8 @@ pub(crate) fn create_request_receive_pack_staging_repo(
 
 /// Adds every already-authorized request snapshot to a disposable upload-pack repository.
 /// The caller chooses the visible requests; this function never reaches into the private main
-/// repository or advertises any other durable request-store refs.
+/// repository or advertises any other durable request-store refs. `target_repo` must already hold
+/// private main, which thin private request snapshots are based on.
 pub(crate) fn attach_visible_request_refs(
     state: &AppState,
     requests: &[Request],
@@ -176,6 +179,7 @@ pub(crate) fn attach_visible_request_refs(
                 target_repo,
                 &request_ref,
                 snapshot,
+                None,
                 "attaching request ref to Git read view",
             )?;
         } else {
@@ -298,6 +302,7 @@ pub(crate) async fn persist_request_ref_to_store(
             .await?;
     }
     let incarnation = repo.incarnation();
+    let snapshot_base = thin_snapshot_base(repo, request).map(str::to_string);
     let prepared = {
         let state = state.clone();
         let incarnation = incarnation.clone();
@@ -305,7 +310,14 @@ pub(crate) async fn persist_request_ref_to_store(
         let request = request.clone();
         let update = update.clone();
         crate::git::blocking::run(move || {
-            prepare_request_ref_snapshot(&state, &incarnation, &path, &request, &update)
+            prepare_request_ref_snapshot(
+                &state,
+                &incarnation,
+                &path,
+                &request,
+                &update,
+                snapshot_base.as_deref(),
+            )
         })
         .await?
     };
@@ -366,16 +378,26 @@ struct PreparedRequestRef {
     snapshot_bytes: Vec<u8>,
 }
 
+/// The base a request snapshot leaves out, if any. A private request on a Git-backed repository
+/// starts from private main, which only fast-forwards and is durably stored, so every reader can
+/// supply that base. A public request starts from the public projection, which a history
+/// redaction can rewrite, so its snapshot keeps its full history.
+fn thin_snapshot_base<'a>(repo: &Repository, request: &'a Request) -> Option<&'a str> {
+    (request.audience == RequestAudience::Private && repo.git_head.is_some())
+        .then_some(request.base_main_oid.as_str())
+}
+
 fn prepare_request_ref_snapshot(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     staging_repo: &FsPath,
     request: &Request,
     update: &RequestRefUpdate,
+    snapshot_base: Option<&str>,
 ) -> Result<PreparedRequestRef, ApiError> {
     let store_lock = acquire_request_ref_store_lock(state, incarnation)?;
     let store_repo = ensure_request_ref_store_repo_locked(state, incarnation)?;
-    ensure_request_ref_available_in_store_locked(state, &store_repo, request)?;
+    ensure_request_ref_available_in_store_locked(state, &store_repo, staging_repo, request)?;
     let previous_head = request_ref_head(&store_repo, &update.request_ref)?;
     let expected_stored_head = previous_head.as_deref().or_else(|| {
         request
@@ -397,7 +419,7 @@ fn prepare_request_ref_snapshot(
         "persisting request ref",
     )?;
     let (git_snapshot, snapshot_bytes) =
-        match git_snapshot_from_ref(&store_repo, &update.request_ref) {
+        match git_snapshot_from_ref(&store_repo, &update.request_ref, snapshot_base) {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 rollback_request_ref(state, incarnation, &update.request_ref, previous_head);
@@ -466,9 +488,12 @@ fn request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<bool, ApiError>
             == "commit")
 }
 
+/// `staging_repo` was seeded with the request's base, so it supplies the base a thin snapshot
+/// needs when the store repo is empty.
 fn ensure_request_ref_available_in_store_locked(
     state: &AppState,
     store_repo: &FsPath,
+    staging_repo: &FsPath,
     request: &Request,
 ) -> Result<(), ApiError> {
     let request_ref = canonical_request_ref(&request.name);
@@ -476,7 +501,14 @@ fn ensure_request_ref_available_in_store_locked(
         return Ok(());
     }
     if let Some(snapshot) = request.git_snapshot.as_ref() {
-        restore_request_ref_from_snapshot(state, store_repo, request, snapshot)?;
+        fetch_snapshot_into(
+            state,
+            store_repo,
+            &request_ref,
+            snapshot,
+            Some(staging_repo),
+            "restoring request ref snapshot",
+        )?;
         if request_ref_head(store_repo, &request_ref)?.as_deref() == Some(request.head_oid.as_str())
         {
             return Ok(());
@@ -493,43 +525,6 @@ fn ensure_request_ref_available_in_store_locked(
         )?;
     }
     Ok(())
-}
-
-fn restore_request_ref_from_snapshot(
-    state: &AppState,
-    store_repo: &FsPath,
-    request: &Request,
-    snapshot: &SourceBlob,
-) -> Result<(), ApiError> {
-    fetch_snapshot_into(
-        state,
-        store_repo,
-        &canonical_request_ref(&request.name),
-        snapshot,
-        "restoring request ref snapshot",
-    )
-}
-
-/// Downloads a request snapshot bundle and fetches `request_ref` from it into `repo`. The bundle
-/// lands in a temp file beside the repo and is removed whether or not the fetch succeeds.
-fn fetch_snapshot_into(
-    state: &AppState,
-    repo: &FsPath,
-    request_ref: &str,
-    snapshot: &SourceBlob,
-    action: &str,
-) -> Result<(), ApiError> {
-    let bundle_path = repo.with_extension(format!(
-        "snapshot-{}.bundle.tmp",
-        hex::encode(&Sha256::digest(format!("{request_ref}:{}", snapshot.sha256).as_bytes())[..8])
-    ));
-    let bytes = source_blob_bytes(state.object_store.as_ref(), snapshot)?;
-    fs::write(&bundle_path, bytes).map_err(ApiError::internal)?;
-    let bundle = bundle_path.to_string_lossy().to_string();
-    let refspec = format!("+{request_ref}:{request_ref}");
-    let result = run_git(Some(repo), &["fetch", &bundle, &refspec], action);
-    let _ = fs::remove_file(&bundle_path);
-    result
 }
 
 fn ensure_request_ref_store_head_matches_push(

@@ -106,7 +106,7 @@ fn advance_request_snapshot(
         "advance request branch",
     )
     .unwrap();
-    let (snapshot, bytes) = git_snapshot_from_ref(source, &request_ref).unwrap();
+    let (snapshot, bytes) = git_snapshot_from_ref(source, &request_ref, None).unwrap();
     state
         .object_store
         .put(&scope_object_store::object_key(&snapshot), bytes)
