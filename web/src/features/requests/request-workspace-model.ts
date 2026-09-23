@@ -1,4 +1,9 @@
-import { formatUnixMonthDay, formatUnixSnoozeUntil } from '../../lib/date-format'
+import {
+  formatUnixClockTime,
+  formatUnixMonthDay,
+  formatUnixSnoozeUntil,
+  formatUnixWeekdayTime,
+} from '../../lib/date-format'
 import type {
   RequestAttentionReason,
   RequestQueueItemResponse,
@@ -113,15 +118,14 @@ export function requestAgeLabel(attentionAtUnix: number, nowUnix: number, hydrat
 }
 
 export const REQUEST_SNOOZE_OPTIONS = [
-  { label: 'In an hour', value: 'hour', detail: null },
-  { label: 'Tomorrow', value: 'tomorrow', detail: '9:00 AM' },
-  { label: 'Next week', value: 'next_week', detail: 'Monday, 9:00 AM' },
+  { label: 'In an hour', value: 'hour' },
+  { label: 'Tomorrow', value: 'tomorrow' },
+  { label: 'Next week', value: 'next_week' },
 ] as const
 
-export function requestSnoozeUntil(
-  value: (typeof REQUEST_SNOOZE_OPTIONS)[number]['value'],
-  now = new Date(),
-): number {
+export type RequestSnoozeOption = (typeof REQUEST_SNOOZE_OPTIONS)[number]['value']
+
+export function requestSnoozeUntil(value: RequestSnoozeOption, now = new Date()): number {
   const until = new Date(now)
   if (value === 'hour') until.setHours(until.getHours() + 1)
   else {
@@ -129,4 +133,14 @@ export function requestSnoozeUntil(
     until.setDate(until.getDate() + (value === 'next_week' ? (8 - until.getDay()) % 7 || 7 : 1))
   }
   return Math.floor(until.getTime() / 1000)
+}
+
+/**
+ * When a snooze choice lands, worded for the menu: the hour option is still
+ * today so only the clock matters, the rest name the day they return on. The
+ * menu only asks once it is open in the browser, so this is always local time.
+ */
+export function requestSnoozeLandingLabel(value: RequestSnoozeOption, now: Date): string {
+  const until = requestSnoozeUntil(value, now)
+  return value === 'hour' ? formatUnixClockTime(until, true) : formatUnixWeekdayTime(until, true)
 }
