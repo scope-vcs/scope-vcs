@@ -14,6 +14,7 @@ import {
   within,
   withPage,
 } from './browser-smoke.mjs'
+import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 import { assertHistoryNavigationKeepsDocument } from './history-navigation-smoke.mjs'
 import { assertRepositoryMarkdownUsesClientNavigation } from './repository-markdown-navigation-smoke.mjs'
 
@@ -22,7 +23,9 @@ const primaryLink = (page, name) => page
   .getByRole('link', { name, exact: true })
 
 test('public repository history renders its seeded push as an update', async () => {
+  let settled
   await withPage(`${repoPath}/history`, async (page) => {
+    await settled()
     await assertCurrentRepoSection(page, 'History')
     await assertPageHeading(page, 'history')
     const update = page.getByRole('button', {
@@ -48,7 +51,7 @@ test('public repository history renders its seeded push as an update', async () 
       await page.evaluate(() => document.querySelector('#main-content')?.scrollTop),
       0,
     )
-  })
+  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
 })
 
 test('repository Markdown routes relative file links without replacing the document', async () => {
