@@ -24,7 +24,7 @@ import {
   UserRound,
   UserRoundMinus,
 } from 'lucide-react'
-import { type ReactNode, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useMemo, useRef, useState } from 'react'
 import { RequestActivityDrawer } from './request-activity-drawer'
 import type {
   RequestActionCommand,
@@ -43,11 +43,8 @@ import type { RequestActivityPage } from './request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
-import {
-  hasRequestAutoMergeActions,
-  hasRequestLifecycleActions,
-} from './request-lifecycle-model'
 import { useDetailPaneRail } from './use-detail-pane-rail'
+import { useElementHeight } from './use-element-height'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
 import { useRequestChecks } from './use-request-checks'
@@ -163,14 +160,10 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     request_id: request.id,
   }), [params.owner, params.repo, request.id])
   const paneRef = useRef<HTMLDivElement>(null)
+  const [descriptionActions, setDescriptionActions] = useState<HTMLElement | null>(null)
   const rail = useDetailPaneRail(paneRef)
-  const hasLifecycleActions = hasRequestLifecycleActions(request) ||
-    hasRequestAutoMergeActions(autoMerge.status)
-  const actionClearance = hasLifecycleActions
-    ? autoMerge.status?.intent
-      ? 'pb-28 min-[701px]:pb-0'
-      : 'pb-20 min-[701px]:pb-0'
-    : null
+  const [lifecycleBar, setLifecycleBar] = useState<HTMLDivElement | null>(null)
+  const actionClearance = useElementHeight(lifecycleBar)
   const canClaim = workspace?.selected?.attention.reason === 'unclaimed' &&
     workspace.selected.attention.can_claim
   const canRelease = workspace?.selected?.attention.can_release ?? false
@@ -193,7 +186,11 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       viewerId={viewerId}
     >
       <WorkbenchPane>
-        <div className={cn('w-full', actionClearance)} ref={paneRef}>
+        <div
+          className="request-detail-pane w-full"
+          ref={paneRef}
+          style={{ '--request-action-clearance': `${actionClearance}px` } as CSSProperties}
+        >
           <RequestDetailHeader
             actions={
               <>
@@ -225,6 +222,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   actions={requestActions}
                   autoMerge={autoMerge}
                   className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
+                  ref={setLifecycleBar}
                   request={request}
                   viewerId={viewerId}
                 />
@@ -282,11 +280,16 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 data-state={request.state}
               >
                 <RequestDescription
+                  actionsSlot={descriptionActions}
                   canEdit={request.permissions.can_edit_identity}
                   description={description}
                   onSave={saveDescription}
                 />
-                <RequestViewTabs params={{ ...params, requestId: request.id }} rail={rail} />
+                <RequestViewTabs
+                  actionsRef={setDescriptionActions}
+                  params={{ ...params, requestId: request.id }}
+                  rail={rail}
+                />
                 <div className="min-w-0">{children}</div>
               </div>
               {rail ? (
@@ -312,15 +315,18 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
 }
 
 function RequestViewTabs({
+  actionsRef,
   params,
   rail,
 }: {
+  /** The description's edit control and editor actions render here. */
+  actionsRef: (element: HTMLElement | null) => void
   params: RepoParams & { requestId: string }
   rail: boolean
 }) {
   const tabClass = 'inline-flex h-11 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors'
   return (
-    <nav aria-label="Request views" className="flex gap-5 px-5 lg:gap-6 lg:px-7">
+    <nav aria-label="Request views" className="request-view-tabs flex flex-wrap gap-x-5 px-5 lg:gap-x-6 lg:px-7">
       <Link
         activeOptions={{ exact: true }}
         activeProps={{ className: 'border-foreground text-foreground' }}
@@ -361,6 +367,7 @@ function RequestViewTabs({
         <SlidersHorizontal className="size-3.5" />
         Details
       </Link>
+      <div className="ml-auto flex items-center" ref={actionsRef} />
     </nav>
   )
 }

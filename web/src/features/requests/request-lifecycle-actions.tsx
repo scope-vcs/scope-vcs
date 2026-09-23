@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { shortOid } from '@/lib/short-oid'
 import { cn } from '@/lib/utils'
 import { CheckCircle2, XCircle } from 'lucide-react'
-import { useState } from 'react'
+import { type Ref, useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
 import { RequestAutoMergeActions } from './request-auto-merge-actions'
 import {
@@ -22,12 +22,14 @@ export function RequestLifecycleActions({
   actions,
   autoMerge,
   className,
+  ref,
   request,
   viewerId,
 }: {
   actions: RequestActionController
   autoMerge: RequestAutoMergeController
   className?: string
+  ref?: Ref<HTMLDivElement>
   request: RequestSummaryResponse
   viewerId: string
 }) {
@@ -49,7 +51,7 @@ export function RequestLifecycleActions({
 
   return (
     <>
-      <div className={cn('flex flex-wrap items-center gap-2', className)}>
+      <div className={cn('flex flex-wrap items-center gap-2', className)} ref={ref}>
         {permissions.can_submit ? (
           <Button disabled={busy} onClick={() => setDialog('submit')} size="sm" type="button">
             <CheckCircle2 />
