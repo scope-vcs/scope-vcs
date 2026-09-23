@@ -33,7 +33,7 @@ async fn existing_invites_keep_their_link_and_their_state() {
         .unwrap();
 
     let rows = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "
             SELECT invite.id, link.token_hash, invite.expires_at_unix,

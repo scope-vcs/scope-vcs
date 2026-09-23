@@ -191,6 +191,19 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
+    if matches!(
+        &cli.command,
+        CommandKind::Init(_)
+            | CommandKind::Push(_)
+            | CommandKind::Pull(_)
+            | CommandKind::Visibility(_)
+            | CommandKind::Rules(_)
+            | CommandKind::Request(_)
+            | CommandKind::Clone(_)
+            | CommandKind::Run(_)
+    ) {
+        scope_cli::git_version::require_supported()?;
+    }
     scope_cli::execution::configure(scope_cli::execution::Options {
         json: cli.json,
         non_interactive: cli.non_interactive,

@@ -5,7 +5,12 @@ use super::repo_io::{
 };
 use super::segment_upload::GitSegmentUploadHeartbeat;
 use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
-use crate::{error::ApiError, git::command::run_git_output_bounded, state::AppState};
+use crate::{
+    error::ApiError,
+    git::command::{git_process_output, run_git_output_bounded},
+    runtime_budgets::RuntimeBudgets,
+    state::AppState,
+};
 use scope_domain::landing_file::{
     MAX_REPOSITORY_LANDING_FILE_BYTES, REPOSITORY_LANDING_FILE_PATH, RepositoryLandingFile,
     RepositoryLandingFileMutation,
@@ -21,9 +26,10 @@ use scope_domain::runs::{
     workflow::identity::WorkflowPath,
 };
 use scope_git::git_blob_reference;
+use scope_git_process::ProcessLimits;
 use scope_git_storage::StagedGitSegment;
 use scope_postgres::db::RepositoryGitWriteLease;
-use std::{path::Path as FsPath, time::Instant};
+use std::{path::Path as FsPath, process::Command, time::Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReviewedUpdateMode {
@@ -265,8 +271,7 @@ pub(crate) fn read_repository_workflow_files(
         )));
     }
 
-    let mut workflows = Vec::with_capacity(workflow_entries.len());
-    for entry in workflow_entries {
+    for entry in &workflow_entries {
         let path = format!("/{}", entry.path);
         if WorkflowPath::parse(path.clone()).is_err() {
             return Ok(ReadWorkflowFiles::Rejected(format!(
@@ -278,22 +283,67 @@ pub(crate) fn read_repository_workflow_files(
                 "workflow {path} exceeds {MAX_WORKFLOW_DEFINITION_BYTES} bytes"
             )));
         }
-        let source = git_blob_reference(entry.oid.clone(), entry.mode, entry.size_bytes);
-        let output = run_git_output_bounded(
-            Some(staging_repo),
-            &["cat-file", "blob", &entry.oid],
-            "reading repository workflow definition",
-            MAX_WORKFLOW_DEFINITION_BYTES,
-        )?;
-        if !output.status.success() || output.stdout.len() as u64 != entry.size_bytes {
-            return Err(ApiError::infrastructure_unavailable(format!(
-                "reading repository workflow {path} failed"
-            )));
+    }
+    if workflow_entries.is_empty() {
+        return Ok(ReadWorkflowFiles::Files(Vec::new()));
+    }
+    let input = workflow_entries
+        .iter()
+        .map(|entry| format!("{}\n", entry.oid))
+        .collect::<String>()
+        .into_bytes();
+    let max_stdout_bytes = workflow_entries
+        .iter()
+        .map(|entry| entry.size_bytes as usize + entry.oid.len() + 32)
+        .sum();
+    let output = git_process_output(
+        Command::new("git")
+            .arg("-C")
+            .arg(staging_repo)
+            .args(["cat-file", "--batch"]),
+        Some(input),
+        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout())
+            .with_max_stdout_bytes(max_stdout_bytes),
+    )?;
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(
+            "reading repository workflow definitions failed",
+        ));
+    }
+    let mut remaining = output.stdout.as_slice();
+    let mut workflows = Vec::with_capacity(workflow_entries.len());
+    for entry in workflow_entries {
+        let path = format!("/{}", entry.path);
+        let header_end = remaining
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .ok_or_else(|| {
+                ApiError::infrastructure_unavailable("invalid repository workflow batch response")
+            })?;
+        let expected_header = format!("{} blob {}", entry.oid, entry.size_bytes);
+        if &remaining[..header_end] != expected_header.as_bytes() {
+            return Err(ApiError::infrastructure_unavailable(
+                "repository workflow batch response does not match tree metadata",
+            ));
         }
+        remaining = &remaining[header_end + 1..];
+        let size = entry.size_bytes as usize;
+        if remaining.get(size) != Some(&b'\n') {
+            return Err(ApiError::infrastructure_unavailable(
+                "truncated repository workflow batch response",
+            ));
+        }
+        let source = git_blob_reference(entry.oid, entry.mode, entry.size_bytes);
         workflows.push(
-            RepositoryWorkflowFile::from_source_blob(path, &source, output.stdout)
+            RepositoryWorkflowFile::from_source_blob(path, &source, remaining[..size].to_vec())
                 .map_err(ApiError::internal)?,
         );
+        remaining = &remaining[size + 1..];
+    }
+    if !remaining.is_empty() {
+        return Err(ApiError::infrastructure_unavailable(
+            "unexpected trailing repository workflow batch response",
+        ));
     }
     Ok(ReadWorkflowFiles::Files(workflows))
 }
@@ -401,6 +451,51 @@ mod tests {
         assert_eq!(file.content_bytes, bytes);
         assert_eq!(file.size_bytes, bytes.len() as u64);
 
+        fs::remove_dir_all(repo).unwrap();
+    }
+
+    #[test]
+    fn workflow_files_read_multiple_blobs_in_tree_order() {
+        let repo = temp_repo_path("workflow-batch");
+        run_git(
+            None,
+            &[
+                "init",
+                "--initial-branch=main",
+                repo.to_string_lossy().as_ref(),
+            ],
+            "initializing workflow test repository",
+        )
+        .unwrap();
+        fs::create_dir_all(repo.join(".scope/runs")).unwrap();
+        fs::write(repo.join(".scope/runs/first.yml"), b"first\n\0body").unwrap();
+        fs::write(repo.join(".scope/runs/second.yaml"), b"second\nbody").unwrap();
+        run_git(Some(&repo), &["add", "."], "staging workflow files").unwrap();
+        let tree = run_git_output(Some(&repo), &["write-tree"], "writing workflow tree").unwrap();
+        let tree_oid = String::from_utf8(tree.stdout).unwrap();
+        let ReadWorkflowFiles::Files(files) =
+            read_repository_workflow_files(&repo, tree_oid.trim()).unwrap()
+        else {
+            panic!("expected workflow files");
+        };
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].path().as_str(), "/.scope/runs/first.yml");
+        assert_eq!(files[0].content_bytes(), b"first\n\0body");
+        assert_eq!(files[1].path().as_str(), "/.scope/runs/second.yaml");
+        assert_eq!(files[1].content_bytes(), b"second\nbody");
+
+        fs::write(
+            repo.join(".scope/runs/oversized.yml"),
+            vec![b'x'; MAX_WORKFLOW_DEFINITION_BYTES + 1],
+        )
+        .unwrap();
+        run_git(Some(&repo), &["add", "."], "staging oversized workflow").unwrap();
+        let tree = run_git_output(Some(&repo), &["write-tree"], "writing oversized tree").unwrap();
+        let tree_oid = String::from_utf8(tree.stdout).unwrap();
+        assert!(matches!(
+            read_repository_workflow_files(&repo, tree_oid.trim()).unwrap(),
+            ReadWorkflowFiles::Rejected(reason) if reason.contains("exceeds")
+        ));
         fs::remove_dir_all(repo).unwrap();
     }
 

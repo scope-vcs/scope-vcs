@@ -6,7 +6,7 @@ use sea_orm::{
     AccessMode, ConnectOptions, DatabaseConnection, DatabaseTransaction, IsolationLevel,
     SqlxPostgresConnector, TransactionTrait,
 };
-use sqlx::{Connection as _, PgConnection};
+use sqlx::{AssertSqlSafe, Connection as _, PgConnection};
 use std::sync::Arc;
 
 const WRITER_FENCE_KEY: &str = "scope:metadata-writers";
@@ -44,7 +44,8 @@ pub async fn verify_writer_fence_available(database_url: String) -> anyhow::Resu
 
 pub async fn terminate_metadata_writer_sessions(database_url: String) -> anyhow::Result<u64> {
     let mut connection = PgConnection::connect(&database_url).await?;
-    let terminated: Vec<bool> = sqlx::query_scalar(&format!(
+    // Only the fixed fence key is interpolated; database names remain SQL values.
+    let terminated: Vec<bool> = sqlx::query_scalar(AssertSqlSafe(format!(
         "WITH fence AS (
             SELECT hashtextextended(
                 '{WRITER_FENCE_KEY}:' || current_database() || ':' || current_schema(),
@@ -61,7 +62,7 @@ pub async fn terminate_metadata_writer_sessions(database_url: String) -> anyhow:
             AND locks.classid::bigint = ((fence.key >> 32) & 4294967295)
             AND locks.objid::bigint = (fence.key & 4294967295)
             AND locks.pid <> pg_backend_pid()"
-    ))
+    )))
     .fetch_all(&mut connection)
     .await?;
     connection.close().await?;
@@ -75,9 +76,11 @@ pub struct ExclusiveWriterFence {
 impl ExclusiveWriterFence {
     pub async fn acquire(database_url: &str) -> anyhow::Result<Self> {
         let mut connection = PgConnection::connect(database_url).await?;
-        let acquired: bool = sqlx::query_scalar(&writer_fence_statement("pg_try_advisory_lock"))
-            .fetch_one(&mut connection)
-            .await?;
+        let acquired: bool = sqlx::query_scalar(AssertSqlSafe(writer_fence_statement(
+            "pg_try_advisory_lock",
+        )))
+        .fetch_one(&mut connection)
+        .await?;
         if !acquired {
             anyhow::bail!(
                 "maintenance migration refused: a metadata writer still holds the database fence"
@@ -87,7 +90,7 @@ impl ExclusiveWriterFence {
     }
 
     pub async fn release(mut self) -> anyhow::Result<()> {
-        sqlx::query(&writer_fence_statement("pg_advisory_unlock"))
+        sqlx::query(AssertSqlSafe(writer_fence_statement("pg_advisory_unlock")))
             .execute(&mut self.connection)
             .await?;
         self.connection.close().await?;
@@ -107,7 +110,7 @@ pub(super) async fn connect_writer_database(
         .after_connect(move |connection, _| {
             let fence_statement = fence_statement.clone();
             Box::pin(async move {
-                sqlx::query(&fence_statement)
+                sqlx::query(AssertSqlSafe(fence_statement))
                     .execute(connection)
                     .await
                     .map(|_| ())

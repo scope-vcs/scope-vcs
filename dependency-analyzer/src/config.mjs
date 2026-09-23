@@ -1,6 +1,7 @@
-import { dirname, posix } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, posix, resolve } from "node:path";
 
-import ts from "typescript";
+import { parse } from "jsonc-parser";
 
 import { LIMITS } from "./constants.mjs";
 import { absoluteSnapshotPath } from "./snapshot.mjs";
@@ -50,10 +51,6 @@ export function groupSourcesByConfig(sources, configs) {
   return groups;
 }
 
-function diagnosticReason(diagnostic) {
-  return ts.flattenDiagnosticMessageText(diagnostic.messageText, " ").slice(0, 400);
-}
-
 function extendsValues(config) {
   if (typeof config.extends === "string") return [config.extends];
   if (Array.isArray(config.extends) && config.extends.every((value) => typeof value === "string")) {
@@ -84,49 +81,74 @@ function resolveExtendedConfig(currentPath, requestedPath, allFiles) {
 }
 
 function readConfig(root, configPath) {
-  const result = ts.readConfigFile(absoluteSnapshotPath(root, configPath), ts.sys.readFile);
-  if (result.error) throw new Error(diagnosticReason(result.error));
-  return result.config;
+  const errors = [];
+  const config = parse(readFileSync(absoluteSnapshotPath(root, configPath), "utf8"), errors, {
+    allowTrailingComma: true,
+  });
+  if (errors.length || !config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error(`malformed JSONC at ${configPath}`);
+  }
+  return config;
 }
 
-function loadCompilerOptions(root, configPath, allFiles, visiting) {
+function validateCompilerOptions(options) {
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("compilerOptions must be an object");
+  }
+  if (options.baseUrl !== undefined && typeof options.baseUrl !== "string") {
+    throw new Error("baseUrl must be a string");
+  }
+  if (options.paths !== undefined) {
+    if (!options.paths || typeof options.paths !== "object" || Array.isArray(options.paths)) {
+      throw new Error("paths must be an object");
+    }
+    for (const [pattern, targets] of Object.entries(options.paths)) {
+      if (!Array.isArray(targets) || targets.length === 0 || targets.some((target) => typeof target !== "string")) {
+        throw new Error(`paths mapping must contain string targets: ${pattern}`);
+      }
+    }
+  }
+  for (const unsupported of ["rootDirs", "moduleSuffixes"]) {
+    if (options[unsupported] !== undefined) throw new Error(`${unsupported} resolution is unsupported`);
+  }
+}
+
+function validateConfig(root, configPath, allFiles, visiting) {
   if (visiting.has(configPath)) throw new Error(`extended config cycle at ${configPath}`);
   visiting.add(configPath);
-
   const config = readConfig(root, configPath);
+  validateCompilerOptions(config.compilerOptions ?? {});
   let options = {};
   for (const extended of extendsValues(config)) {
-    const extendedPath = resolveExtendedConfig(configPath, extended, allFiles);
-    options = { ...options, ...loadCompilerOptions(root, extendedPath, allFiles, visiting) };
+    options = { ...options, ...validateConfig(root, resolveExtendedConfig(configPath, extended, allFiles), allFiles, visiting) };
   }
-
-  const converted = ts.convertCompilerOptionsFromJson(
-    config.compilerOptions ?? {},
-    dirname(absoluteSnapshotPath(root, configPath)),
-    configPath,
-  );
-  if (converted.errors.length > 0) throw new Error(diagnosticReason(converted.errors[0]));
-
-  if (converted.options.paths && !converted.options.baseUrl && !options.baseUrl) {
-    converted.options.baseUrl = dirname(absoluteSnapshotPath(root, configPath));
+  const own = config.compilerOptions ?? {};
+  const configDir = dirname(absoluteSnapshotPath(root, configPath));
+  if (own.baseUrl !== undefined) {
+    const baseUrl = resolve(configDir, own.baseUrl);
+    absoluteSnapshotPath(root, posix.relative(root, baseUrl));
+    options.baseUrl = baseUrl;
   }
-
+  if (own.paths !== undefined) options.pathsDir = configDir;
+  const effectivePaths = own.paths ?? options.paths ?? {};
+  for (const targets of Object.values(effectivePaths)) {
+    for (const target of targets) {
+      const candidate = resolve(options.baseUrl ?? configDir, target.replaceAll("${configDir}", options.pathsDir ?? configDir).replaceAll("*", "segment"));
+      absoluteSnapshotPath(root, posix.relative(root, candidate));
+    }
+  }
   visiting.delete(configPath);
-  return { ...options, ...converted.options };
+  return { ...options, ...own, baseUrl: options.baseUrl };
 }
 
 export function loadResolutionConfig(root, configPath, allFiles) {
   try {
-    return {
-      gap: null,
-      transpileOptions: {
-        tsConfig: { options: loadCompilerOptions(root, configPath, allFiles, new Set()) },
-      },
-    };
+    const options = validateConfig(root, configPath, allFiles, new Set());
+    return { gap: null, configPath: absoluteSnapshotPath(root, configPath), paths: options.paths ?? {} };
   } catch (error) {
     return {
       gap: { path: configPath, reason: `invalid TypeScript config: ${error.message}` },
-      transpileOptions: undefined,
+      configPath: null,
     };
   }
 }

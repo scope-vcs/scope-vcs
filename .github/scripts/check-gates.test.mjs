@@ -33,12 +33,12 @@ test('the backend gate covers the whole workspace and the API feature suites exp
   assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
 });
 
-test('web gate includes observer and resource rules; the backend gate owns the contract; CLI and integration retain their coverage', () => {
+test('web gate includes resource, Hooks, convention and advisory checks; backend owns the contract; CLI and integration retain their coverage', () => {
   assert.deepEqual(commands('web'), [
     'pnpm test', 'pnpm check', 'pnpm build',
   ]);
   const webChecks = JSON.parse(read('web/package.json')).scripts.check;
-  assert.equal(webChecks, 'pnpm typecheck && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
+  assert.equal(webChecks, 'pnpm typecheck && pnpm check:resource-boundary && pnpm check:hooks && pnpm check:conventions && pnpm check:advisories');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   const cliCommands = commands('cli');
   assert.ok(cliCommands.includes('cargo fmt --manifest-path cli/Cargo.toml -- --check'));

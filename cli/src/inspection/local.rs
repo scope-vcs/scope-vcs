@@ -91,29 +91,3 @@ pub(super) fn git_text(repo: &GitRepo, args: &[&str]) -> Option<String> {
         })
         .filter(|value| !value.is_empty())
 }
-
-pub(super) fn git_version_supported(version: &str) -> bool {
-    let Some(number) = version.split_whitespace().nth(2) else {
-        return false;
-    };
-    let mut parts = number
-        .split('.')
-        .filter_map(|part| part.parse::<u32>().ok());
-    matches!((parts.next(), parts.next()), (Some(major), Some(minor)) if (major,minor) >= (2,38))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn git_version_support_handles_native_suffixes() {
-        for supported in [
-            "git version 2.38.0",
-            "git version 2.48.1.windows.1",
-            "git version 2.39.5 (Apple Git-154)",
-        ] {
-            assert!(git_version_supported(supported));
-        }
-        assert!(!git_version_supported("git version 2.37.4"));
-    }
-}

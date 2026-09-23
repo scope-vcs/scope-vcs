@@ -6,14 +6,12 @@ import {
   InvalidApiResponseError,
   loadJson,
   noContent,
-  setInvalidApiResponseObserver,
 } from './http'
 import { apiValidators, type ApiValidator } from './validators.generated'
 
 const originalFetch = globalThis.fetch
 afterEach(() => {
   globalThis.fetch = originalFetch
-  setInvalidApiResponseObserver(undefined)
 })
 
 test('loadJson validates a successful response and preserves request init', async () => {
@@ -46,8 +44,6 @@ test('loadJson validates structured API errors', async () => {
 })
 
 test('loadJson rejects malformed API error bodies', async () => {
-  let observed: InvalidApiResponseError | undefined
-  setInvalidApiResponseObserver((error) => { observed = error })
   globalThis.fetch = async () => jsonResponse({ message: 'missing code' }, 502)
 
   await assert.rejects(
@@ -56,12 +52,9 @@ test('loadJson rejects malformed API error bodies', async () => {
       error.failureClass === 'schema' &&
       error.status === 502,
   )
-  assert.equal(observed?.failureClass, 'schema')
 })
 
 test('loadJson rejects the wrong media type without exposing the body', async () => {
-  let observed: InvalidApiResponseError | undefined
-  setInvalidApiResponseObserver((error) => { observed = error })
   globalThis.fetch = async () => new Response('<h1>secret response</h1>', {
     headers: { 'content-type': 'text/html; charset=utf-8' },
     status: 200,
@@ -78,21 +71,6 @@ test('loadJson rejects the wrong media type without exposing the body', async ()
       error.contentType === 'text/html; charset=utf-8' &&
       error.failureClass === 'content-type' &&
       !error.message.includes('secret'),
-  )
-  assert.equal(observed?.requestPath, '/v1/repos')
-})
-
-test('loadJson preserves its error when the observer fails', async () => {
-  setInvalidApiResponseObserver(() => { throw new Error('observer failed') })
-  globalThis.fetch = async () => new Response('not json', {
-    headers: { 'content-type': 'application/json' },
-    status: 200,
-  })
-
-  await assert.rejects(
-    loadJson('/v1/repos', okValidator),
-    (error: unknown) => error instanceof InvalidApiResponseError &&
-      error.failureClass === 'json-syntax',
   )
 })
 
@@ -225,9 +203,7 @@ test('loadJson accepts a valid response within the streaming byte limit', async 
   assert.deepEqual(await loadJson('/v1/references', okValidator, {}, 100), { ok: true })
 })
 
-test('body read failures preserve their cause and do not report contract failures', async () => {
-  const observed: InvalidApiResponseError[] = []
-  setInvalidApiResponseObserver((error) => observed.push(error))
+test('body read failures preserve their cause', async () => {
   for (const status of [200, 503]) {
     for (const limit of [undefined, 100]) {
       for (const failure of [new DOMException('cancelled', 'AbortError'), new Error('connection lost')]) {
@@ -238,23 +214,17 @@ test('body read failures preserve their cause and do not report contract failure
       }
     }
   }
-  assert.deepEqual(observed, [])
 })
 
-test('valid JSON above the byte limit has a separate error without a contract report', async () => {
-  const observed: InvalidApiResponseError[] = []
-  setInvalidApiResponseObserver((error) => observed.push(error))
+test('valid JSON above the byte limit has a separate error', async () => {
   for (const status of [200, 503]) {
     globalThis.fetch = async () => jsonResponse({ ok: true }, status)
     await assert.rejects(loadJson('/v1/repos', okValidator, {}, 2), (error: unknown) =>
       error instanceof ApiResponseTooLargeError && error.limit === 2)
   }
-  assert.deepEqual(observed, [])
 })
 
 test('malformed JSON remains a contract failure on success and error responses', async () => {
-  const observed: InvalidApiResponseError[] = []
-  setInvalidApiResponseObserver((error) => observed.push(error))
   for (const status of [200, 503]) {
     for (const limit of [undefined, 100]) {
       globalThis.fetch = async () => new Response('{', {
@@ -264,5 +234,4 @@ test('malformed JSON remains a contract failure on success and error responses',
         error instanceof InvalidApiResponseError && error.failureClass === 'json-syntax')
     }
   }
-  assert.equal(observed.length, 4)
 })

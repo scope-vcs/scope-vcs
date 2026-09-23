@@ -1,6 +1,6 @@
 {
   "railway": {
-    "cliVersion": "5.41.2",
+    "cliVersion": "5.60.0",
     "releaseImagePrefix": "railway-private",
     "projectId": "45dd67fa-6d69-48ad-9680-1313d41b4490",
     "runtimeGroupId": "74120aef-735e-4959-bf8d-5cd36d10cab1",
@@ -36,7 +36,9 @@
     "run-worker": {
       "name": "scope-run-worker",
       "id": "a474a0d1-3000-4a95-9ca3-cd3a7f3ef669",
-      "dependsOn": ["cache"],
+      "dependsOn": [
+        "cache"
+      ],
       "deployment": {
         "backend": true,
         "runtimeConfig": "worker/railway.json",
@@ -95,7 +97,9 @@
     "media-worker": {
       "name": "scope-media-worker",
       "id": "8aaade33-a730-408b-bab3-298119369420",
-      "dependsOn": ["media-api"],
+      "dependsOn": [
+        "media-api"
+      ],
       "deployment": {
         "backend": true,
         "runtimeConfig": "media-worker/railway.json",
@@ -114,7 +118,12 @@
     "api": {
       "name": "scope-api",
       "id": "9456cd8d-40bd-489a-a181-72b7f777c4a8",
-      "dependsOn": ["run-worker", "git-router", "media-api", "media-worker"],
+      "dependsOn": [
+        "run-worker",
+        "git-router",
+        "media-api",
+        "media-worker"
+      ],
       "deployment": {
         "backend": true,
         "runtimeConfig": "api/railway.json",
@@ -132,7 +141,9 @@
     "web": {
       "name": "scope-web",
       "id": "df831355-3056-4d1a-a4be-37735fb83d00",
-      "dependsOn": ["api"],
+      "dependsOn": [
+        "api"
+      ],
       "deployment": {
         "backend": false,
         "runtimeConfig": "web/railway.json",
@@ -148,7 +159,9 @@
     "cli-downloads": {
       "name": "scope-cli-downloads",
       "id": "a212bccb-ed1a-4574-a031-2b0183e08a2d",
-      "dependsOn": ["api"],
+      "dependsOn": [
+        "api"
+      ],
       "deployment": {
         "backend": false,
         "runtimeConfig": "cli/railway.json",
@@ -199,6 +212,8 @@
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
+        "dev/tool-versions.json",
+        "deploy/railway/install-git.sh",
         ".github/workflows/scope-checks-image.yml",
         ".github/scripts/publish-soci-image.sh",
         "dev/checks/runner-runtime-container"
@@ -239,6 +254,8 @@
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
+        "dev/tool-versions.json",
+        "deploy/railway/install-git.sh",
         "deploy/railway/prebuilt.Dockerfile",
         "deploy/railway/worker.Dockerfile",
         ".github/workflows/scope-api-ci.yml",
@@ -286,6 +303,8 @@
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
+        "dev/tool-versions.json",
+        "deploy/railway/install-git.sh",
         "web/package.json",
         "web/pnpm-lock.yaml",
         "web/scripts/check-api-contract.mjs",
@@ -388,6 +407,9 @@
     },
     "cli-downloads": {
       "files": [
+        "dev/tool-versions.json",
+        "dev/check-git-version.mjs",
+        "deploy/railway/install-git.sh",
         "deploy/railway/prebuilt.Dockerfile",
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/railway-artifact.mjs",
@@ -423,6 +445,9 @@
     },
     "cli-distribution": {
       "files": [
+        "dev/tool-versions.json",
+        "dev/check-git-version.mjs",
+        "deploy/railway/install-git.sh",
         "cli/Cargo.lock",
         "cli/Cargo.toml",
         "Cross.toml",
@@ -449,9 +474,9 @@
       "apiOrigin": "https://api.scopevcs.com",
       "fixture": {
         "owner": "adamblumoff",
-        "repo": "pagent",
+        "repo": "scope-vcs",
         "filePath": "/README.md",
-        "expectedText": "# Pagent",
+        "expectedText": "# Scope",
         "expectedRequestIds": []
       }
     }

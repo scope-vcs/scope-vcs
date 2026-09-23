@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Properties } from 'posthog-js'
+import type { Properties } from './types'
 import {
   analyticsEventContext,
   applyAnalyticsIdentityTransition,

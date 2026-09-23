@@ -6,7 +6,7 @@ import { nitro } from 'nitro/vite'
 import { defineConfig, loadEnv } from 'vite'
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, __dirname, '')
+  const env = loadEnv(mode, import.meta.dirname, '')
   const allowedHost = env.SCOPE_WEB_ALLOWED_HOST?.trim()
 
   return {
@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(import.meta.dirname, './src'),
       },
       dedupe: ['react', 'react-dom'],
     },
@@ -40,7 +40,6 @@ export default defineConfig(({ mode }) => {
           './src/server/readiness-endpoint.ts',
           './src/server/analytics-endpoint.ts',
           './src/server/compress-responses.ts',
-          './src/server/pagent-invalid-api-response.ts',
           './src/server/secure-responses.ts',
         ],
       }),

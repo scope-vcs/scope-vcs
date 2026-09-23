@@ -94,7 +94,7 @@ where
     C: ConnectionTrait,
 {
     let Some(row) = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT attachment.*, original.size_bytes AS original_size_bytes, original.sha256 AS original_sha256
              FROM scope_request_media_attachments attachment
@@ -116,7 +116,7 @@ pub(super) async fn attachments_for_request<C: ConnectionTrait>(
     conn: &C,
     request_id: &str,
 ) -> Result<Vec<RequestAttachment>, PostgresError> {
-    let rows = conn.query_all(Statement::from_sql_and_values(
+    let rows = conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT attachment.*, original.size_bytes AS original_size_bytes, original.sha256 AS original_sha256
          FROM scope_request_media_attachments attachment
@@ -130,7 +130,7 @@ pub(super) async fn attachments_for_request<C: ConnectionTrait>(
         return Ok(Vec::new());
     }
     let mut derivatives: BTreeMap<String, Vec<RequestAttachmentDerivative>> = BTreeMap::new();
-    for row in conn.query_all(Statement::from_sql_and_values(
+    for row in conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT derivative.* FROM scope_request_media_derivatives derivative
          JOIN scope_request_media_attachments attachment ON attachment.id = derivative.attachment_id
@@ -242,7 +242,7 @@ async fn derivatives_for_attachment<C>(
 where
     C: ConnectionTrait,
 {
-    conn.query_all(Statement::from_sql_and_values(
+    conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT * FROM scope_request_media_derivatives WHERE attachment_id = $1 ORDER BY id",
         [attachment_id.into()],
@@ -293,7 +293,7 @@ where
     C: ConnectionTrait,
 {
     let Some(row) = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT * FROM scope_request_media_manifests WHERE id = $1",
             [manifest_id.into()],
@@ -305,7 +305,7 @@ where
     };
     let row = ManifestRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
     let chunks = conn
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT * FROM scope_request_media_manifest_chunks WHERE manifest_id = $1 ORDER BY chunk_index",
             [manifest_id.into()],
@@ -351,7 +351,7 @@ pub(super) async fn bindings_for_attachment<C>(
 where
     C: ConnectionTrait,
 {
-    conn.query_all(Statement::from_sql_and_values(
+    conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT * FROM scope_request_media_bindings WHERE attachment_id = $1 ORDER BY target_key",
         [attachment_id.into()],
@@ -368,7 +368,7 @@ pub(super) async fn bindings_for_request<C: ConnectionTrait>(
     request_id: &str,
 ) -> Result<BTreeMap<String, Vec<RequestAttachmentBinding>>, PostgresError> {
     let mut bindings: BTreeMap<String, Vec<RequestAttachmentBinding>> = BTreeMap::new();
-    for row in conn.query_all(Statement::from_sql_and_values(
+    for row in conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT binding.* FROM scope_request_media_bindings binding
          WHERE binding.request_id = $1 AND NOT EXISTS (

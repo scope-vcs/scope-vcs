@@ -11,6 +11,8 @@ node .github/scripts/check-source-size.mjs
 node --test .github/scripts/check-rust-boundaries.test.mjs
 node .github/scripts/check-rust-boundaries.mjs
 node .github/scripts/check-rust-toolchain-sync.mjs
+node .github/scripts/check-runtime-image-sync.mjs
+node --test media-worker/check-vendor-advisories.test.mjs
 node --test .github/scripts/check-rust-toolchain-sync.test.mjs
 node .github/scripts/check-production-origins.mjs
 node --test .github/scripts/check-production-origins.test.mjs

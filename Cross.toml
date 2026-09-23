@@ -1,2 +1,5 @@
 [build.env]
 passthrough = ["SCOPE_BUILD_SHA"]
+
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5@sha256:9e5d86740280e021e5f372afcad2eda7367676f33ec40085b49ee88a2652cfe5"

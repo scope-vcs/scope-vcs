@@ -79,7 +79,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
 
     caches
         .db
-        .execute(statement(
+        .execute_raw(statement(
             "UPDATE scope_cache_references SET compatibility_group_digest = $1
              WHERE repository_id = $2 AND identity_digest = $3",
             vec![
@@ -100,7 +100,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
     );
     caches
         .db
-        .execute(statement(
+        .execute_raw(statement(
             "UPDATE scope_cache_references SET compatibility_group_digest = $1
              WHERE repository_id = $2 AND identity_digest = $3",
             vec![
@@ -287,7 +287,7 @@ async fn failed_deletions_with_empty_errors_stay_retryable() {
             .unwrap();
         let stored = caches
             .db
-            .query_one(statement(
+            .query_one_raw(statement(
                 "SELECT last_error FROM scope_cache_deletion_queue
                  WHERE repository_id = $1 AND checksum_sha256 = $2",
                 vec![repository_id.clone().into(), digest.clone().into()],

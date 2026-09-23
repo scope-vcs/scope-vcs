@@ -10,7 +10,14 @@ test-support = []
 
 [dependencies]
 anyhow.workspace = true
-posthog-rs = { version = "0.24.0", default-features = false, features = ["async-client"] }
+reqwest = { workspace = true, features = ["rustls"] }
 scope_domain.workspace = true
 serde_json.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 tracing.workspace = true
+uuid = { version = "1.23.4", features = ["v4"] }
+
+[dev-dependencies]
+axum.workspace = true
+tokio = { workspace = true, features = ["macros", "net"] }

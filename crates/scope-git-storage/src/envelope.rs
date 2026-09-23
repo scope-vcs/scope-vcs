@@ -1,6 +1,6 @@
 use crate::GitStorageError;
 use chacha20poly1305::{
-    ChaCha20Poly1305, Key, Nonce,
+    ChaCha20Poly1305, Nonce,
     aead::{Aead, KeyInit, Payload},
 };
 use hmac::{Hmac, Mac};
@@ -122,7 +122,7 @@ impl EnvelopeWriter {
         let ciphertext = self
             .cipher
             .encrypt(
-                Nonce::from_slice(&nonce),
+                &Nonce::from(nonce),
                 Payload {
                     msg: plaintext,
                     aad: &aad,
@@ -255,7 +255,7 @@ impl EnvelopeReader {
         let plaintext = self
             .cipher
             .decrypt(
-                Nonce::from_slice(&nonce),
+                &Nonce::from(nonce),
                 Payload {
                     msg: &ciphertext,
                     aad: &aad,
@@ -288,7 +288,7 @@ fn segment_cipher(
     repository_id: &str,
     segment_id: &str,
 ) -> ChaCha20Poly1305 {
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&key.key)
+    let mut mac = <Hmac<Sha256> as hmac::KeyInit>::new_from_slice(&key.key)
         .expect("HMAC accepts a 32-byte segment key");
     mac.update(b"scope-git-segment-v2\0");
     mac.update(&(repository_id.len() as u64).to_be_bytes());
@@ -296,7 +296,7 @@ fn segment_cipher(
     mac.update(&(segment_id.len() as u64).to_be_bytes());
     mac.update(segment_id.as_bytes());
     let derived_key = mac.finalize().into_bytes();
-    ChaCha20Poly1305::new(Key::from_slice(&derived_key))
+    ChaCha20Poly1305::new_from_slice(&derived_key).expect("HMAC derives a 32-byte segment key")
 }
 
 fn nonce(prefix: [u8; 8], counter: u32) -> [u8; 12] {
@@ -339,4 +339,30 @@ async fn read_exact_envelope<R: AsyncRead + Unpin>(
                 GitStorageError::Multipart(crate::MultipartError::new(error.to_string()))
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn reads_python_recovery_segment() {
+        // Produced by deploy/aws/recovery/tests/test_recovery.py::segment.
+        let fixture = hex::decode("53434753454730320000000200076e6e6e6e6e6e6e6e000004007072696d6172790000000000000012003b36a869a52a9b5f9c5f06ab0beec0d365170a7c5807b055345ccc7a7c302189b8df000000010000000001e3030b235680d3a18f50e0d2e52c20f9").unwrap();
+        let key = SegmentEncryptionKey::new("primary", [b'k'; 32]).unwrap();
+        let mut source = fixture.as_slice();
+        let mut reader =
+            EnvelopeReader::read_header(&mut source, &key, "repository-123", "segment-123")
+                .await
+                .unwrap();
+        let DecryptedFrame::Data(bytes) = reader.next(&mut source).await.unwrap() else {
+            panic!("expected a data frame");
+        };
+        assert_eq!(bytes, b"ciphertext fixture");
+        assert!(matches!(
+            reader.next(&mut source).await.unwrap(),
+            DecryptedFrame::Final
+        ));
+        assert!(source.is_empty());
+    }
 }

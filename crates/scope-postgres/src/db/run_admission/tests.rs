@@ -113,7 +113,7 @@ async fn concurrent_admission_obeys_global_capacity() {
         let row = store
             .runs()
             .db
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!(
                     "SELECT COUNT(*)::bigint AS active FROM scope_run_attempts WHERE state IN ({})",

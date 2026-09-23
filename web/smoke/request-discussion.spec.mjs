@@ -220,12 +220,14 @@ async function assertReplyRegion(page, region, expanded) {
 }
 
 test('Details is a separate tab that reuses request data and preserves discussion state', async () => {
+  let settled
   await withPage(requestPath, async (page) => {
     const tabs = page.getByRole('navigation', { name: 'Request views' })
     const details = tabs.getByRole('link', { name: 'Details', exact: true })
     const thread = page.locator('#discussion-discussion_demo_retry_cap')
     const collapse = thread.getByRole('button', { name: 'Hide 3 replies' })
     await waitForClientHydration(collapse)
+    await settled()
     await collapse.click()
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
     const shell = await captureRequestShell(page)
@@ -255,7 +257,7 @@ test('Details is a separate tab that reuses request data and preserves discussio
     const quote = page.locator('#reply-discussion_reply_demo_retry_cap_quote a[href^="#discussion="]')
     await quote.click()
     await page.waitForFunction(() => document.activeElement?.id === 'reply-discussion_reply_demo_retry_cap_maintainer')
-  })
+  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
 })
 
 test('Details tab has a working link before hydration and renders directly on mobile', async () => {

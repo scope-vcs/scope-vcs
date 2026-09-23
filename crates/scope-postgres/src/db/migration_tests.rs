@@ -54,7 +54,7 @@ pub(super) async fn isolated_database() -> (
 }
 
 pub(super) async fn relation_exists(db: &DatabaseConnection, relation: &str) -> bool {
-    db.query_one(Statement::from_sql_and_values(
+    db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT to_regclass($1) IS NOT NULL AS exists",
         [relation.into()],
@@ -67,7 +67,7 @@ pub(super) async fn relation_exists(db: &DatabaseConnection, relation: &str) -> 
 }
 
 pub(super) async fn applied_versions(db: &DatabaseConnection) -> Vec<String> {
-    db.query_all(Statement::from_string(
+    db.query_all_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT version FROM seaql_migrations ORDER BY version".to_string(),
     ))
@@ -79,7 +79,7 @@ pub(super) async fn applied_versions(db: &DatabaseConnection) -> Vec<String> {
 }
 
 async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
-    db.query_one(Statement::from_string(
+    db.query_one_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "
             SELECT jsonb_build_object(

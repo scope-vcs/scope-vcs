@@ -1,28 +1,15 @@
 import { readFile } from "node:fs/promises";
 
-import ts from "typescript";
+import { parse } from "@babel/parser";
 
 import { absoluteSnapshotPath } from "./snapshot.mjs";
 
 function literalText(node) {
-  if (ts.isStringLiteralLike(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-    return node.text;
+  if (node?.type === "StringLiteral") return node.value;
+  if (node?.type === "TemplateLiteral" && node.expressions.length === 0) {
+    return node.quasis[0].value.cooked;
   }
   return null;
-}
-
-function importDeclarationKind(node) {
-  if (!node.importClause) return "side-effect-import";
-  if (node.importClause.isTypeOnly) return "type-import";
-  if (
-    node.importClause.namedBindings &&
-    ts.isNamedImports(node.importClause.namedBindings) &&
-    node.importClause.namedBindings.elements.length > 0 &&
-    node.importClause.namedBindings.elements.every((element) => element.isTypeOnly)
-  ) {
-    return "type-import";
-  }
-  return "import";
 }
 
 function addReference(references, specifier, kind) {
@@ -30,51 +17,50 @@ function addReference(references, specifier, kind) {
   if (!references.has(key)) references.set(key, { kind, specifier });
 }
 
+function walk(node, visit) {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const child of node) walk(child, visit);
+    return;
+  }
+  if (typeof node.type !== "string") return;
+  visit(node);
+  for (const [key, value] of Object.entries(node)) {
+    if (key !== "loc" && key !== "extra" && key !== "comments") walk(value, visit);
+  }
+}
+
 function scanNode(node, references, gapReasons) {
-  if (ts.isImportDeclaration(node)) {
-    const specifier = literalText(node.moduleSpecifier);
-    if (specifier === null) gapReasons.add("non-literal import declaration");
-    else addReference(references, specifier, importDeclarationKind(node));
-  } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
-    const specifier = literalText(node.moduleSpecifier);
-    if (specifier === null) gapReasons.add("non-literal re-export");
-    else addReference(references, specifier, node.isTypeOnly ? "type-re-export" : "re-export");
-  } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-    const specifier = node.moduleReference.expression
-      ? literalText(node.moduleReference.expression)
-      : null;
+  if (node.type === "ImportDeclaration") {
+    const kind = node.specifiers.length === 0 ? "side-effect-import"
+      : node.importKind === "type" || node.specifiers.every((specifier) => specifier.importKind === "type")
+        ? "type-import" : "import";
+    addReference(references, node.source.value, kind);
+  } else if ((node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration") && node.source) {
+    addReference(references, node.source.value, node.exportKind === "type" ? "type-re-export" : "re-export");
+  } else if (node.type === "TSImportEqualsDeclaration" && node.moduleReference.type === "TSExternalModuleReference") {
+    const specifier = literalText(node.moduleReference.expression);
     if (specifier === null) gapReasons.add("non-literal require");
     else addReference(references, specifier, "require");
-  } else if (ts.isImportTypeNode(node)) {
-    const specifier = ts.isLiteralTypeNode(node.argument)
-      ? literalText(node.argument.literal)
-      : null;
+  } else if (node.type === "TSImportType") {
+    const specifier = literalText(node.argument);
     if (specifier === null) gapReasons.add("non-literal type import");
     else addReference(references, specifier, "type-import");
-  } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-    const specifier = node.arguments.length > 0 ? literalText(node.arguments[0]) : null;
+  } else if (node.type === "ImportExpression" || node.type === "CallExpression" && node.callee.type === "Import") {
+    const argument = node.type === "ImportExpression" ? node.source : node.arguments[0];
+    const specifier = literalText(argument);
     if (specifier === null) gapReasons.add("non-literal dynamic import");
     else addReference(references, specifier, "dynamic-import");
-  } else if (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "require"
-  ) {
-    const specifier = node.arguments.length > 0 ? literalText(node.arguments[0]) : null;
+  } else if (node.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "require") {
+    const specifier = literalText(node.arguments[0]);
     if (specifier === null) gapReasons.add("non-literal require");
     else addReference(references, specifier, "require");
   }
-
-  ts.forEachChild(node, (child) => scanNode(child, references, gapReasons));
-}
-
-function diagnosticText(diagnostic) {
-  return ts.flattenDiagnosticMessageText(diagnostic.messageText, " ").slice(0, 400);
 }
 
 export async function scanSources(root, sourcePaths) {
   const analyzedFiles = [];
-  const cruisableFiles = [];
+  const resolvableFiles = [];
   const gaps = [];
   const referencesBySource = new Map();
 
@@ -88,20 +74,26 @@ export async function scanSources(root, sourcePaths) {
     }
 
     analyzedFiles.push(path);
-    const sourceFile = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
-    const parseDiagnostics = sourceFile.parseDiagnostics ?? [];
-    if (parseDiagnostics.length > 0) {
-      gaps.push({ path, reason: `syntax error: ${diagnosticText(parseDiagnostics[0])}` });
-    } else {
-      cruisableFiles.push(path);
-    }
-
     const references = new Map();
     const gapReasons = new Set();
-    scanNode(sourceFile, references, gapReasons);
+    try {
+      const file = parse(text, {
+        sourceType: "unambiguous",
+        plugins: ["typescript", ...(path.endsWith("x") ? ["jsx"] : [])],
+        errorRecovery: true,
+      });
+      if (file.errors.length) {
+        gaps.push({ path, reason: `syntax error: ${file.errors[0].message.slice(0, 400)}` });
+      } else {
+        resolvableFiles.push(path);
+      }
+      walk(file.program, (node) => scanNode(node, references, gapReasons));
+    } catch (error) {
+      gaps.push({ path, reason: `syntax error: ${error.message.slice(0, 400)}` });
+    }
     referencesBySource.set(path, [...references.values()]);
     for (const reason of gapReasons) gaps.push({ path, reason });
   }
 
-  return { analyzedFiles, cruisableFiles, gaps, referencesBySource };
+  return { analyzedFiles, resolvableFiles, gaps, referencesBySource };
 }

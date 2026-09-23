@@ -1,6 +1,6 @@
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use scope_domain::{
     repo_config::{RepoConfig, repo_config_fingerprint as domain_repo_config_fingerprint},
     repository::git::GitFrontier,

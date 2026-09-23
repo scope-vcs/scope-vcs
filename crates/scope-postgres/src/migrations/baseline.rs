@@ -43,7 +43,7 @@ pub(super) async fn assert_empty_schema<C: ConnectionTrait>(db: &C) -> Result<()
 /// of PostgreSQL versions. Only metadata is created in the comparison schema.
 pub(super) async fn assert_baseline_schema<C: ConnectionTrait>(db: &C) -> Result<(), DbErr> {
     let actual = schema_inventory(db).await?;
-    let state = db.query_one(Statement::from_string(
+    let state = db.query_one_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT current_setting('search_path') AS search_path,
                 'scope_baseline_check_' || pg_backend_pid() || '_' || txid_current() AS comparison_schema",
@@ -72,7 +72,7 @@ pub(super) async fn assert_baseline_schema<C: ConnectionTrait>(db: &C) -> Result
 }
 
 async fn set_search_path<C: ConnectionTrait>(db: &C, search_path: &str) -> Result<(), DbErr> {
-    db.query_one(Statement::from_sql_and_values(
+    db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT set_config('search_path', $1, true)",
         [search_path.into()],
@@ -83,7 +83,7 @@ async fn set_search_path<C: ConnectionTrait>(db: &C, search_path: &str) -> Resul
 
 pub(super) async fn schema_inventory<C: ConnectionTrait>(db: &C) -> Result<Value, DbErr> {
     let schema = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT current_schema() AS name",
         ))
@@ -91,7 +91,7 @@ pub(super) async fn schema_inventory<C: ConnectionTrait>(db: &C) -> Result<Value
         .ok_or_else(|| DbErr::Custom("PostgreSQL did not report current schema".into()))?
         .try_get::<String>("", "name")?;
     let mut inventory = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             include_str!("schema_inventory.sql"),
         ))
@@ -110,7 +110,7 @@ pub(super) async fn schema_inventory<C: ConnectionTrait>(db: &C) -> Result<Value
 /// this server's parser, instead of weakening comparisons with text rewrites.
 async fn normalized_expressions<C: ConnectionTrait>(db: &C, schema: &str) -> Result<Value, DbErr> {
     let rows = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
         SELECT r.relname, c.conname AS name, 'constraint' AS kind,
@@ -153,7 +153,7 @@ async fn normalized_expressions<C: ConnectionTrait>(db: &C, schema: &str) -> Res
             "CREATE TEMP VIEW scope_baseline_expression_inventory AS SELECT {columns} FROM {}.{} AS source",
             quote_identifier(schema), quote_identifier(&table),
         )).await?;
-        let definition = db.query_one(Statement::from_string(DatabaseBackend::Postgres,
+        let definition = db.query_one_raw(Statement::from_string(DatabaseBackend::Postgres,
             "SELECT pg_get_viewdef('pg_temp.scope_baseline_expression_inventory'::regclass, false) AS definition",
         )).await?.ok_or_else(|| DbErr::Custom("PostgreSQL did not normalize schema expressions".into()))?
             .try_get::<String>("", "definition")?;

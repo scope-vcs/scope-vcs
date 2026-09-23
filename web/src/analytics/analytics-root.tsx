@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useRouterState } from '@tanstack/react-router'
-import type { PostHog } from 'posthog-js'
+import type { AnalyticsClient } from './client'
 import { useEffect, useRef } from 'react'
 import { useAccountSession } from '@/features/account/use-account-session'
 import { useCachedResource, useRetryOnReconnect } from '@/lib/use-cached-resource'
@@ -47,7 +47,7 @@ function AnalyticsRuntime({
   client,
   eventContext,
 }: {
-  client: PostHog
+  client: AnalyticsClient
   eventContext: AnalyticsEventContext
 }) {
   const { isLoaded, isSignedIn, userId } = useAuth()
@@ -135,7 +135,7 @@ function AnalyticsRuntime({
 }
 
 function captureCurrentPage(
-  client: PostHog,
+  client: AnalyticsClient,
   page: { pathname: string; routeId: string | undefined },
   capturedPage: { current: string | null },
 ) {

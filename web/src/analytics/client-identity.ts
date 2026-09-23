@@ -1,4 +1,4 @@
-import type { PostHog } from 'posthog-js'
+import type { AnalyticsClient } from './client'
 import type { AnalyticsRuntimeConfig } from './config'
 import { identityTransition } from './identity'
 
@@ -9,7 +9,7 @@ export type AnalyticsEventContext = Readonly<{
 }>
 
 type AnalyticsIdentityClient = Pick<
-  PostHog,
+  AnalyticsClient,
   'get_distinct_id' | 'get_property' | 'identify' | 'register' | 'reset'
 >
 
@@ -24,7 +24,7 @@ export function analyticsEventContext(
 }
 
 export function registerAnalyticsEventContext(
-  client: Pick<PostHog, 'register'>,
+  client: Pick<AnalyticsClient, 'register'>,
   context: AnalyticsEventContext,
 ) {
   client.register(context)

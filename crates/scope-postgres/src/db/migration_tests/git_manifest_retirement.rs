@@ -167,7 +167,7 @@ async fn manifest_retirement_preserves_frontiers_pins_and_enqueues_shared_object
 }
 
 async fn json_column(db: &DatabaseConnection, sql: &str) -> serde_json::Value {
-    db.query_one(Statement::from_string(
+    db.query_one_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         sql.to_string(),
     ))
@@ -179,7 +179,7 @@ async fn json_column(db: &DatabaseConnection, sql: &str) -> serde_json::Value {
 }
 
 async fn scalar_i64(db: &DatabaseConnection, sql: &str) -> i64 {
-    db.query_one(Statement::from_string(
+    db.query_one_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         sql.to_string(),
     ))
@@ -191,7 +191,7 @@ async fn scalar_i64(db: &DatabaseConnection, sql: &str) -> i64 {
 }
 
 async fn column_exists(db: &DatabaseConnection, table: &str, column: &str) -> bool {
-    db.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+    db.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2",
         [table.into(), column.into()])).await.unwrap().is_some()
 }

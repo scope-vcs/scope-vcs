@@ -149,7 +149,7 @@ test('native installer installs the managed analyzer and preserves the bundle on
     env: { ...process.env, PATH: installDir },
   });
   const result = JSON.parse(analysis.stdout);
-  assert.equal(result.analyzer_version, 'dependency-cruiser@18.2.0+scope-1');
+  assert.equal(result.analyzer_version, 'enhanced-resolve@5.25.1+scope-2');
   assert.ok(result.edges.some(({ source_path, target_path }) =>
     source_path === 'src/public/direct.ts' && target_path === 'src/private/pricing.ts'));
 
@@ -188,7 +188,7 @@ test('native installer installs the managed analyzer and preserves the bundle on
   assert.equal(createHash('sha256').update(await readFile(destination)).digest('hex'), installedChecksum);
   assert.equal(
     (await execute(managedNode, [analyzer, '--version'])).stdout.trim(),
-    'dependency-cruiser@18.2.0+scope-1',
+    'enhanced-resolve@5.25.1+scope-2',
   );
 
   if (!windows) {

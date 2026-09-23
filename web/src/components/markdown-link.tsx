@@ -29,7 +29,10 @@ export function MarkdownLink({
         target,
       },
       window.location.href,
-      (pathname) => router.getMatchedRoutes(pathname).foundRoute !== undefined,
+      (pathname) => {
+        const [, , foundRoute] = router.getMatchedRoutes(pathname)
+        return foundRoute !== undefined
+      },
     )
     if (!destination) return
 

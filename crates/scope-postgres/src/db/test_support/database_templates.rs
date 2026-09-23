@@ -271,7 +271,7 @@ fn database_url(admin_url: &str, database_name: &str) -> anyhow::Result<String> 
 
 async fn execute(database: &DatabaseConnection, sql: String) -> anyhow::Result<()> {
     database
-        .execute(Statement::from_string(database.get_database_backend(), sql))
+        .execute_raw(Statement::from_string(database.get_database_backend(), sql))
         .await?;
     Ok(())
 }
@@ -361,7 +361,7 @@ mod tests {
             for (store, expected) in [(reopened, 1_i64), (other, 0_i64)] {
                 let row = store
                     .db
-                    .query_one(Statement::from_string(
+                    .query_one_raw(Statement::from_string(
                         store.db.get_database_backend(),
                         "SELECT current_database() AS database, (SELECT count(*) FROM scope_users WHERE id = 'template_fixture') AS count".to_owned(),
                     ))
@@ -386,7 +386,7 @@ mod tests {
         run_test_future(async move {
             let count = fresh
                 .db
-                .query_one(Statement::from_string(
+                .query_one_raw(Statement::from_string(
                     fresh.db.get_database_backend(),
                     "SELECT count(*) AS count FROM scope_users".to_owned(),
                 ))
@@ -455,7 +455,7 @@ mod tests {
             let deadline = tokio::time::Instant::now() + EXIT_CLEANUP_TIMEOUT;
             let databases = loop {
                 let databases = admin
-                    .query_all(Statement::from_string(
+                    .query_all_raw(Statement::from_string(
                         admin.get_database_backend(),
                         "SELECT datname FROM pg_database".to_owned(),
                     ))

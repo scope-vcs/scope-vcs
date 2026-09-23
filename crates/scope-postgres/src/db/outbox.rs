@@ -7,8 +7,8 @@ use super::{
 };
 use crate::error::PostgresError;
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait, TryInsertResult,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait, TryInsertResult,
     sea_query::{Expr, LockBehavior, LockType, OnConflict},
 };
 use std::sync::Arc;
@@ -165,7 +165,7 @@ where
                 .do_nothing()
                 .to_owned(),
         )
-        .do_nothing()
+        .try_insert()
         .exec(conn)
         .await
         .map_err(PostgresError::internal)?
@@ -182,7 +182,7 @@ async fn claim_next_ready_job<C>(
     now: i64,
 ) -> Result<Option<ClaimedOutboxJob>, PostgresError>
 where
-    C: ConnectionTrait + TransactionTrait,
+    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
 {
     let tx = conn.begin().await.map_err(PostgresError::internal)?;
     let runnable = Condition::any()
@@ -257,7 +257,7 @@ async fn execute_outbox_job<C>(
     now_unix: u64,
 ) -> Result<Vec<OutboxCreatedRun>, PostgresError>
 where
-    C: ConnectionTrait + TransactionTrait,
+    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
 {
     match job.kind.as_str() {
         PROJECTION_READ_MODEL_REBUILD => {
@@ -286,7 +286,7 @@ async fn rebuild_live_projection_read_models_for_job<C>(
     now_unix: u64,
 ) -> Result<(), PostgresError>
 where
-    C: ConnectionTrait + TransactionTrait,
+    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
 {
     let tx = conn.begin().await.map_err(PostgresError::internal)?;
     acquire_aggregate_lock(&tx, "repository", &job.repo_id).await?;
@@ -377,7 +377,7 @@ async fn fail_outbox_job<C>(
     now: i64,
 ) -> Result<(), PostgresError>
 where
-    C: ConnectionTrait + TransactionTrait,
+    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
 {
     let attempts = next_retry_attempt(job.attempts)?;
     let terminal = is_terminal_retry_attempt(attempts);
@@ -603,7 +603,7 @@ mod tests {
         .await
         .unwrap();
         let job_error = admin
-            .query_one(sea_orm::Statement::from_string(
+            .query_one_raw(sea_orm::Statement::from_string(
                 sea_orm::DatabaseBackend::Postgres,
                 "SELECT last_error FROM scope_outbox_jobs LIMIT 1",
             ))
@@ -621,7 +621,7 @@ mod tests {
         );
 
         admin
-            .execute(sea_orm::Statement::from_sql_and_values(
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
                 "INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload) VALUES ($1, 'private', 1000000, 'stale-entry', '{}'::jsonb)",
                 [repo.record.id.clone().into()],
@@ -640,7 +640,7 @@ mod tests {
     }
 
     async fn history_entry_count(db: &sea_orm::DatabaseConnection) -> i64 {
-        db.query_one(sea_orm::Statement::from_string(
+        db.query_one_raw(sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT count(*) AS count FROM scope_repository_history_entries",
         ))

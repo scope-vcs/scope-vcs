@@ -1,8 +1,8 @@
 use super::{ObjectStore, ensure_object_size};
 use crate::ObjectStoreError;
 use chacha20poly1305::{
-    ChaCha20Poly1305, Key, Nonce, Tag,
-    aead::{AeadInPlace, KeyInit},
+    ChaCha20Poly1305, Nonce, Tag,
+    aead::{AeadInOut, KeyInit},
 };
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ impl EncryptedObjectStore {
     }
 
     fn cipher(&self) -> ChaCha20Poly1305 {
-        ChaCha20Poly1305::new(Key::from_slice(&self.key))
+        ChaCha20Poly1305::new_from_slice(&self.key).expect("object encryption uses a 32-byte key")
     }
 
     fn decrypt_envelope(
@@ -40,14 +40,15 @@ impl EncryptedObjectStore {
                 "object {key} has an invalid encryption envelope"
             )));
         }
-        let nonce = Nonce::clone_from_slice(&envelope[ENCRYPTED_OBJECT_MAGIC.len()..header_bytes]);
+        let nonce = Nonce::try_from(&envelope[ENCRYPTED_OBJECT_MAGIC.len()..header_bytes])
+            .expect("validated envelope nonce length");
         let tag_start = envelope.len() - ENCRYPTED_OBJECT_TAG_BYTES;
-        let tag = Tag::clone_from_slice(&envelope[tag_start..]);
+        let tag = Tag::try_from(&envelope[tag_start..]).expect("validated envelope tag length");
         self.cipher()
-            .decrypt_in_place_detached(
+            .decrypt_inout_detached(
                 &nonce,
                 key.as_bytes(),
-                &mut envelope[header_bytes..tag_start],
+                (&mut envelope[header_bytes..tag_start]).into(),
                 &tag,
             )
             .map_err(|_| ObjectStoreError::integrity(format!("object {key} failed decryption")))?;
@@ -80,10 +81,10 @@ impl ObjectStore for EncryptedObjectStore {
         bytes[ENCRYPTED_OBJECT_MAGIC.len()..header_bytes].copy_from_slice(&nonce);
         let tag = self
             .cipher()
-            .encrypt_in_place_detached(
-                Nonce::from_slice(&nonce),
+            .encrypt_inout_detached(
+                &Nonce::from(nonce),
                 key.as_bytes(),
-                &mut bytes[header_bytes..],
+                (&mut bytes[header_bytes..]).into(),
             )
             .map_err(|_| ObjectStoreError::internal_message("object encryption failed"))?;
         bytes.extend_from_slice(&tag);
@@ -114,6 +115,16 @@ mod tests {
     use crate::MemoryObjectStore;
 
     #[test]
+    fn reads_python_recovery_ciphertext() {
+        // Produced by deploy/aws/recovery/tests/test_recovery.py::envelope.
+        let fixture = hex::decode("73636f70652d7663732d6f626a6563742d76310a6e6e6e6e6e6e6e6e6e6e6e6eed964e3aa7a0df7cb6c0db5074d90a4a8032759707aa260242ae869311f42fdf2c5f").unwrap();
+        let raw = Arc::new(MemoryObjectStore::new());
+        raw.put("source", fixture).unwrap();
+        let encrypted = EncryptedObjectStore::new(raw, [b'k'; 32]);
+        assert_eq!(encrypted.get("source").unwrap(), b"ciphertext fixture");
+    }
+
+    #[test]
     fn encryption_preserves_envelope_format_and_rejects_tampering() {
         use chacha20poly1305::aead::{Aead, Payload};
         let raw = Arc::new(MemoryObjectStore::new());
@@ -124,12 +135,12 @@ mod tests {
             assert_ne!(stored, plaintext);
             assert!(!String::from_utf8_lossy(&stored).contains("private source"));
             let header = ENCRYPTED_OBJECT_MAGIC.len() + ENCRYPTED_OBJECT_NONCE_BYTES;
-            let nonce = Nonce::from_slice(&stored[ENCRYPTED_OBJECT_MAGIC.len()..header]);
+            let nonce = Nonce::try_from(&stored[ENCRYPTED_OBJECT_MAGIC.len()..header]).unwrap();
             assert_eq!(
                 encrypted
                     .cipher()
                     .decrypt(
-                        nonce,
+                        &nonce,
                         Payload {
                             msg: &stored[header..],
                             aad: b"source"

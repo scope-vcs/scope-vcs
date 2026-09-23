@@ -45,7 +45,7 @@ async fn dispatch_repair_migrates_terminal_state_and_preserves_provider_cleanup(
             .await
             .unwrap();
         let row = db
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 r#"
         SELECT run.state, run.completed_at_unix,

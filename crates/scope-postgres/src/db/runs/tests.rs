@@ -113,7 +113,7 @@ jobs:
 }
 
 async fn backend_pid(tx: &DatabaseTransaction) -> i32 {
-    tx.query_one(Statement::from_string(
+    tx.query_one_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT pg_backend_pid() AS pid",
     ))

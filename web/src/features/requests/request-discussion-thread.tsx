@@ -8,7 +8,6 @@ import {
   Reply,
   RotateCcw,
 } from 'lucide-react'
-import { m, useReducedMotion } from 'motion/react'
 import { memo, useEffect, useRef } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
 import { RequestDiscussionAnchor } from './request-discussion-anchor'
@@ -68,7 +67,6 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   params: { owner: string; repo: string; request_id: string }
 }) {
   const collapsed = discussionRepliesAreCollapsed(discussion)
-  const prefersReducedMotion = useReducedMotion()
   const {
     availableReplies,
     canPostReply,
@@ -161,6 +159,13 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
     if (!collapsed || !replyRegionRef.current?.contains(document.activeElement)) return
     disclosureRef.current?.focus()
   }, [collapsed])
+
+  useEffect(() => {
+    if (!collapsed || !composerOpen) return
+    const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180
+    const timer = window.setTimeout(onCloseComposer, delay)
+    return () => window.clearTimeout(timer)
+  }, [collapsed, composerOpen, onCloseComposer])
 
   function openComposer() {
     onExpandedChange(discussion.id, true)
@@ -306,94 +311,85 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
           </button>
         ) : null}
 
-        <m.div
-          animate={
-            collapsed ? { height: 0, opacity: 0, y: -4 } : { height: 'auto', opacity: 1, y: 0 }
-          }
+        <div
           aria-hidden={collapsed}
-          className="overflow-hidden [overflow-anchor:none]"
+          className={`grid [overflow-anchor:none] transition-[grid-template-rows,opacity,transform] duration-180 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:duration-0 ${collapsed ? 'grid-rows-[0fr] -translate-y-1 opacity-0' : 'grid-rows-[1fr] translate-y-0 opacity-100'}`}
           id={replyRegionId}
           inert={collapsed}
-          initial={false}
-          onAnimationComplete={() => {
-            if (collapsed && composerOpen) onCloseComposer()
-          }}
           ref={replyRegionRef}
-          transition={{
-            duration: prefersReducedMotion ? 0 : 0.18,
-            ease: [0.2, 0.8, 0.2, 1],
-          }}
         >
-          {availableReplies.length > 0 || hasOlderReplies ? (
-            <div className="mt-1 ml-0 border-l border-border pb-3 pl-4">
-              {hasOlderReplies ? (
-                <button
-                  className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-70"
-                  disabled={loadingReplies}
-                  onClick={() => void loadOlderWithoutJump()}
-                  type="button"
-                >
-                  {loadingReplies
-                    ? 'Loading…'
-                    : `${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
-                </button>
-              ) : null}
-              <RequestDiscussionReplyList
-                canReply={canPostReply}
-                discussionCreatedAtUnix={discussion.created_at_unix}
-                onQuote={(quoted) => {
-                  setQuoteId(quoted.id)
-                  openComposer()
-                }}
-                onRetry={(failedReply) =>
-                  void postReply(failedReply.body_markdown, {
-                    clientReplyId: failedReply.id,
-                    replyToReplyId:
-                      failedReply.reply_to?.id ?? failedReply.optimistic_reply_to_reply_id ?? null,
-                    retryReference: failedReply.reply_to,
-                    waitAfterReply: failedReply.optimistic_wait_after_reply,
-                  })
-                }
-                readThroughPosition={discussion.read_through_position}
-                replies={availableReplies}
-                showUnreadBoundary={
-                  discussion.unread_count > 0 && !rootUnread && unreadContentFullyExposed
-                }
-              />
-            </div>
-          ) : null}
+          <div className="min-h-0 overflow-hidden">
+            {availableReplies.length > 0 || hasOlderReplies ? (
+              <div className="mt-1 ml-0 border-l border-border pb-3 pl-4">
+                {hasOlderReplies ? (
+                  <button
+                    className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-70"
+                    disabled={loadingReplies}
+                    onClick={() => void loadOlderWithoutJump()}
+                    type="button"
+                  >
+                    {loadingReplies
+                      ? 'Loading…'
+                      : `${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
+                  </button>
+                ) : null}
+                <RequestDiscussionReplyList
+                  canReply={canPostReply}
+                  discussionCreatedAtUnix={discussion.created_at_unix}
+                  onQuote={(quoted) => {
+                    setQuoteId(quoted.id)
+                    openComposer()
+                  }}
+                  onRetry={(failedReply) =>
+                    void postReply(failedReply.body_markdown, {
+                      clientReplyId: failedReply.id,
+                      replyToReplyId:
+                        failedReply.reply_to?.id ?? failedReply.optimistic_reply_to_reply_id ?? null,
+                      retryReference: failedReply.reply_to,
+                      waitAfterReply: failedReply.optimistic_wait_after_reply,
+                    })
+                  }
+                  readThroughPosition={discussion.read_through_position}
+                  replies={availableReplies}
+                  showUnreadBoundary={
+                    discussion.unread_count > 0 && !rootUnread && unreadContentFullyExposed
+                  }
+                />
+              </div>
+            ) : null}
 
-          {replyError ? (
-            <p className="mt-3 flex items-center gap-2 text-sm text-destructive" role="alert">
-              <CircleAlert className="size-4" />
-              {replyError}
-            </p>
-          ) : null}
+            {replyError ? (
+              <p className="mt-3 flex items-center gap-2 text-sm text-destructive" role="alert">
+                <CircleAlert className="size-4" />
+                {replyError}
+              </p>
+            ) : null}
 
-          {canPostReply && composerOpen ? (
-            <div className="mt-4 border-t border-border pt-3">
-              <RequestReplyComposer
-                discussionId={discussion.id}
-                onCancel={() => {
-                  setQuoteId(null)
-                  onCloseComposer()
-                }}
-                onCancelQuote={() => setQuoteId(null)}
-                onSubmit={submitReply}
-                quote={
-                  quotedReply
-                    ? {
-                        author: quotedReply.author.handle,
-                        body: compactDiscussionSummary(quotedReply.body_markdown),
-                      }
-                    : null
-                }
-                reopen={discussion.status === 'Resolved'}
-                waitAfterReply={canWaitAfterReply ? (body, submissionId) => submitReply(body, submissionId, true) : undefined}
-              />
-            </div>
-          ) : null}
-        </m.div>
+            {canPostReply && composerOpen ? (
+              <div className="mt-4 border-t border-border pt-3">
+                <RequestReplyComposer
+                  discussionId={discussion.id}
+                  onCancel={() => {
+                    setQuoteId(null)
+                    onCloseComposer()
+                  }}
+                  onCancelQuote={() => setQuoteId(null)}
+                  onSubmit={submitReply}
+                  quote={
+                    quotedReply
+                      ? {
+                          author: quotedReply.author.handle,
+                          body: compactDiscussionSummary(quotedReply.body_markdown),
+                        }
+                      : null
+                  }
+                  reopen={discussion.status === 'Resolved'}
+                  waitAfterReply={canWaitAfterReply ? (body, submissionId) => submitReply(body, submissionId, true) : undefined}
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
 
         <span aria-hidden="true" className="block h-px" ref={readMarkerRef} />
       </div>

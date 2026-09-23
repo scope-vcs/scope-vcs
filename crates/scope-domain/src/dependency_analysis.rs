@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
-pub const DEPENDENCY_ANALYZER_VERSION: &str = "dependency-cruiser@18.2.0+scope-1";
+pub const DEPENDENCY_ANALYZER_VERSION: &str = "enhanced-resolve@5.25.1+scope-2";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AnalyzerOutput {

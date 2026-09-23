@@ -72,7 +72,10 @@ pub mod projection_file {
     }
 
     pub(crate) fn projection_file_path_key(path: &ScopePath) -> String {
-        format!("sha256:{:x}", Sha256::digest(path.as_str().as_bytes()))
+        format!(
+            "sha256:{}",
+            hex::encode(Sha256::digest(path.as_str().as_bytes()))
+        )
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

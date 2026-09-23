@@ -63,7 +63,7 @@ fn dispatching_attempt_sql(
 }
 
 async fn index_predicates(db: &DatabaseConnection) -> Vec<String> {
-    db.query_all(Statement::from_string(
+    db.query_all_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT pg_get_indexdef(indexrelid) AS definition
          FROM pg_index

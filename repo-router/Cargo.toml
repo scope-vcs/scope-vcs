@@ -9,7 +9,7 @@ repository.workspace = true
 scope_service_runtime = { workspace = true }
 anyhow.workspace = true
 axum.workspace = true
-reqwest = { workspace = true, features = ["rustls-tls", "stream"] }
+reqwest = { workspace = true, features = ["rustls", "stream"] }
 sha2.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tracing.workspace = true

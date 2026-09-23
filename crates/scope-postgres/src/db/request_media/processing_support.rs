@@ -24,7 +24,7 @@ async fn lock_live_job<C>(
 where
     C: ConnectionTrait,
 {
-    conn.query_one(Statement::from_sql_and_values(
+    conn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT * FROM scope_request_media_processing_jobs
          WHERE attachment_id = $1 AND state = 'Leased' AND lease_token = $2
@@ -82,7 +82,7 @@ where
         return Ok(None);
     }
     let repository_exists = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT 1 AS present FROM scope_repositories WHERE id = $1",
             [attachment.repository_id.clone().into()],
@@ -170,7 +170,7 @@ pub(super) async fn save_attachment_processing_state<C>(
 where
     C: ConnectionTrait,
 {
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_attachments
          SET state = $2, failure_json = $3, original_validated_at_unix = $4,
@@ -242,7 +242,7 @@ where
         video_height,
         video_duration,
     ] = media_metadata_columns(attachment)?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_attachments
          SET detected_media_type = $2, original_validated_at_unix = $3,
@@ -352,7 +352,7 @@ where
 {
     for chunk in &manifest.chunks {
         let reserved = conn
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT 1 AS present FROM scope_request_media_processing_objects
                  WHERE object_key = $1 AND attachment_id = $2
@@ -385,7 +385,7 @@ pub(super) async fn insert_derivative<C>(
 where
     C: ConnectionTrait,
 {
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_request_media_manifests (
             id, attachment_id, derivative_id, media_type, size_bytes, sha256, completed_at_unix
@@ -403,7 +403,7 @@ where
     .await
     .map_err(PostgresError::internal)?;
     for chunk in &value.manifest.chunks {
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_request_media_manifest_chunks (
                 manifest_id, chunk_index, object_key, plaintext_offset,
@@ -421,7 +421,7 @@ where
         .await
         .map_err(PostgresError::internal)?;
     }
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_request_media_derivatives (
             id, attachment_id, manifest_id, kind, media_type, size_bytes,
@@ -473,7 +473,7 @@ where
 {
     for chunk in &manifest.chunks {
         let result = conn
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_processing_objects
                  SET state = 'Adopted', manifest_id = $4, updated_at_unix = $5
@@ -536,7 +536,7 @@ where
         video_height,
         video_duration,
     ] = media_metadata_columns(attachment)?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_attachments
          SET state = $2, detected_media_type = $3, original_validated_at_unix = $4,
@@ -575,7 +575,7 @@ pub(super) async fn complete_job<C>(
 where
     C: ConnectionTrait,
 {
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_processing_jobs
          SET state = 'Completed', lease_token = NULL, lease_expires_at_unix = NULL,

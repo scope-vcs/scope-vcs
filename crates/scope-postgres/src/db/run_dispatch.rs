@@ -84,7 +84,7 @@ impl RunStore {
         let claim_cutoff = now_unix.saturating_sub(CLOUD_TASK_STOP_CLAIM_LEASE_SECS);
         let rows = self
             .db
-            .query_all(Statement::from_sql_and_values(
+            .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 format!(
                     "WITH candidates AS (
@@ -122,7 +122,7 @@ impl RunStore {
         attempt_id: &str,
     ) -> Result<(), PostgresError> {
         self.db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_run_attempts SET runner_stop_claimed_at_unix = NULL WHERE id = $1 AND runner_stop_completed_at_unix IS NULL",
                 [attempt_id.into()],
@@ -139,7 +139,7 @@ impl RunStore {
     ) -> Result<(), PostgresError> {
         let result = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_run_attempts
                  SET runner_stop_completed_at_unix = $2
@@ -172,7 +172,7 @@ impl RunStore {
         let terminal = attempt_terminal_states();
         let result = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 format!(
                     "UPDATE scope_run_attempts
@@ -201,7 +201,7 @@ impl RunStore {
     ) -> Result<Option<super::runs::DispatchOffer>, PostgresError> {
         let Some(row) = self
             .db
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!(
                     "SELECT job.run_id, job.job_key
@@ -371,7 +371,7 @@ impl RunStore {
         }
         let result = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_run_attempts
              SET external_run_id = $2

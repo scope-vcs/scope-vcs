@@ -1,15 +1,16 @@
 use super::{AnalyticsEnvironment, EventSource, ProductEvent};
-use posthog_rs::{ClientOptionsBuilder, Event};
 #[cfg(any(test, feature = "test-support"))]
 use serde_json::Value;
 use std::{future::Future, pin::Pin, sync::Arc};
+
+mod delivery;
+use delivery::PostHogSink;
 
 const POSTHOG_PROJECT_TOKEN_ENV: &str = "POSTHOG_PROJECT_TOKEN";
 const POSTHOG_HOST_ENV: &str = "POSTHOG_HOST";
 const ANALYTICS_ENVIRONMENT_ENV: &str = "SCOPE_ANALYTICS_ENVIRONMENT";
 const ANALYTICS_RELEASE_ENV: &str = "SCOPE_ANALYTICS_RELEASE";
 const RAILWAY_ENVIRONMENT_NAME_ENV: &str = "RAILWAY_ENVIRONMENT_NAME";
-const PROCESS_PERSON_PROFILE_PROPERTY: &str = "$process_person_profile";
 
 #[derive(Clone)]
 pub struct ProductAnalytics {
@@ -30,21 +31,11 @@ impl ProductAnalytics {
             return Ok(Self::disabled());
         };
 
-        let mut options = ClientOptionsBuilder::default();
-        options
-            .api_key(project_token)
-            .disable_geoip(true)
-            .is_server(true);
-        if let Some(host) = non_empty_env(POSTHOG_HOST_ENV) {
-            options.host(host);
-        }
-        options.on_error(|error| {
-            tracing::warn!(error = ?error, "PostHog product analytics delivery failed");
-        });
-        let client = posthog_rs::client(options.build()?).await;
-
         Ok(Self {
-            sink: Arc::new(PostHogSink { client }),
+            sink: Arc::new(PostHogSink::new(
+                project_token,
+                non_empty_env(POSTHOG_HOST_ENV),
+            )?),
             context: Some(context),
         })
     }
@@ -175,7 +166,7 @@ impl ProductEventContext {
     }
 }
 
-trait ProductAnalyticsSink: Send + Sync {
+pub(super) trait ProductAnalyticsSink: Send + Sync {
     fn capture(&self, event: ProductEvent) -> Result<(), ProductAnalyticsError>;
 
     fn shutdown(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
@@ -191,42 +182,12 @@ impl ProductAnalyticsSink for DisabledSink {
     }
 }
 
-struct PostHogSink {
-    client: posthog_rs::Client,
-}
-
-impl ProductAnalyticsSink for PostHogSink {
-    fn capture(&self, event: ProductEvent) -> Result<(), ProductAnalyticsError> {
-        let mut posthog_event = Event::new(event.name, event.distinct_id.as_str());
-        posthog_event
-            .insert_prop(PROCESS_PERSON_PROFILE_PROPERTY, false)
-            .map_err(ProductAnalyticsError::posthog)?;
-        for (name, value) in event.properties {
-            posthog_event
-                .insert_prop(name, value)
-                .map_err(ProductAnalyticsError::posthog)?;
-        }
-        self.client.capture(posthog_event);
-        Ok(())
-    }
-
-    fn shutdown(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(self.client.shutdown())
-    }
-}
-
 #[derive(Debug)]
-struct ProductAnalyticsError(String);
-
-impl ProductAnalyticsError {
-    fn posthog(error: posthog_rs::Error) -> Self {
-        Self(error.to_string())
-    }
-}
+pub(super) struct ProductAnalyticsError(pub(super) &'static str);
 
 impl std::fmt::Display for ProductAnalyticsError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
+        formatter.write_str(self.0)
     }
 }
 

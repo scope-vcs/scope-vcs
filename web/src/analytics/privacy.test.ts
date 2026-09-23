@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { CaptureResult } from 'posthog-js'
+import type { CaptureResult } from './types'
 import { pageViewProperties, sanitizeCapture } from './privacy'
 
 const siteOrigin = 'https://scopevcs.com'

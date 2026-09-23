@@ -164,7 +164,7 @@ where
     C: ConnectionTrait,
 {
     let mut replies = conn
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             SELECT replies.id, replies.discussion_id, replies.position,
@@ -243,7 +243,7 @@ where
          ORDER BY replies.discussion_id ASC, replies.position ASC, replies.id ASC"
     );
     let rows = conn
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             discussion_ids.iter().cloned().map(Into::into),
@@ -343,7 +343,7 @@ where
          GROUP BY reads.discussion_id"
     );
     let rows = conn
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             values,
