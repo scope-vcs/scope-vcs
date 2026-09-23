@@ -24,6 +24,17 @@ const SNOOZE_UNTIL_OPTIONS = {
   month: 'short',
 } satisfies Intl.DateTimeFormatOptions
 
+const CLOCK_TIME_OPTIONS = {
+  hour: 'numeric',
+  minute: '2-digit',
+} satisfies Intl.DateTimeFormatOptions
+
+const WEEKDAY_TIME_OPTIONS = {
+  hour: 'numeric',
+  minute: '2-digit',
+  weekday: 'short',
+} satisfies Intl.DateTimeFormatOptions
+
 // Server and hydration render UTC so both sides agree; the browser switches to
 // the viewer's zone once it owns the markup.
 function zonedFormatters(options: Intl.DateTimeFormatOptions) {
@@ -39,6 +50,8 @@ const REQUEST_DATE = zonedFormatters(REQUEST_DATE_FORMAT_OPTIONS)
 const MONTH_DAY = zonedFormatters(MONTH_DAY_OPTIONS)
 const DAY_LABEL = zonedFormatters(DAY_LABEL_OPTIONS)
 const SNOOZE_UNTIL = zonedFormatters(SNOOZE_UNTIL_OPTIONS)
+const CLOCK_TIME = zonedFormatters(CLOCK_TIME_OPTIONS)
+const WEEKDAY_TIME = zonedFormatters(WEEKDAY_TIME_OPTIONS)
 
 const RELATIVE_FORMATTER = new Intl.RelativeTimeFormat('en-US', {
   numeric: 'auto',
@@ -70,6 +83,16 @@ export function formatUnixDayLabel(unixSeconds: number, hydrated: boolean) {
 /** Wording for a snooze that has not expired yet. */
 export function formatUnixSnoozeUntil(unixSeconds: number, hydrated: boolean) {
   return formatZoned(SNOOZE_UNTIL, unixSeconds, hydrated)
+}
+
+/** Just the clock, "4:12 PM", for a moment the reader knows is today. */
+export function formatUnixClockTime(unixSeconds: number, hydrated: boolean) {
+  return formatZoned(CLOCK_TIME, unixSeconds, hydrated)
+}
+
+/** "Mon 9:00 AM" for a moment within the coming week. */
+export function formatUnixWeekdayTime(unixSeconds: number, hydrated: boolean) {
+  return formatZoned(WEEKDAY_TIME, unixSeconds, hydrated)
 }
 
 /** The calendar day a timestamp falls on, in the zone the viewer is reading. */
