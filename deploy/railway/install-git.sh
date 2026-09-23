@@ -25,7 +25,7 @@ doc_dir=/opt/git/share/doc/git
 mkdir -p "$doc_dir"
 install -m 0644 "/tmp/git-${version}/COPYING" "$doc_dir/COPYING"
 install -m 0644 "$archive" "$doc_dir/git-${version}.tar.xz"
-install -m 0644 /tmp/install-git.sh "$doc_dir/install-git.sh"
+install -m 0644 "${BASH_SOURCE[0]}" "$doc_dir/install-git.sh"
 printf 'Source: https://www.kernel.org/pub/software/scm/git/git-%s.tar.xz\nSHA-256: %s\n' \
   "$version" "$source_sha256" > "$doc_dir/SOURCE.txt"
 rm -rf "/tmp/git-${version}" "$archive" /var/lib/apt/lists/*

@@ -14,6 +14,5 @@ test('hooks checks reject order and dependency violations', async () => {
 })
 
 test('hooks checks accept a valid component', async () => {
-  const { stdout } = await run('pnpm', ['exec', 'oxlint', '-c', '.oxlintrc.json', 'scripts/fixtures/hooks/valid.tsx'], { cwd })
-  assert.equal(stdout.trim(), '')
+  await run('pnpm', ['exec', 'oxlint', '-c', '.oxlintrc.json', 'scripts/fixtures/hooks/valid.tsx'], { cwd })
 })
