@@ -13,15 +13,11 @@ use crate::{
     health::WorkerHealth,
     settings::{BATCH_SIZE, GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings, non_empty_env},
 };
-use scope_git_storage::{
-    FileMultipartStore, GitSegmentStore, MultipartStore, S3MultipartSettings, S3MultipartStore,
-    SegmentEncryptionKey,
-};
-use scope_object_store::{
-    EncryptedObjectStore, FileObjectStore, FileObjectStoreSettings, ObjectStore, S3ObjectStore,
-    S3ObjectStoreSettings,
-};
 use scope_postgres::db::{GeneratedIdKind, MetadataStore};
+use scope_storage::{
+    EncryptedObjectStore, EncryptionKey, FileBackend, GitSegmentStore, ObjectBackend, ObjectStore,
+    S3Backend, S3Settings,
+};
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -79,10 +75,17 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
         scope_product_analytics::EventSource::Worker,
     )
     .await?;
-    let data_dir = settings.data_dir.clone();
-    let object_store =
-        tokio::task::spawn_blocking(move || object_store_from_env(&data_dir)).await??;
-    let git_segment_store = Arc::new(git_segment_store_from_env(&settings)?);
+    let backend = object_backend_from_env(&settings.data_dir)?;
+    let encryption_key = EncryptionKey::new("primary", encryption_key_from_env()?)?;
+    let object_store: Arc<dyn ObjectStore> = Arc::new(EncryptedObjectStore::new(
+        backend.clone(),
+        encryption_key.clone(),
+    ));
+    let git_segment_store = Arc::new(GitSegmentStore::new(
+        backend,
+        encryption_key,
+        settings.git_segment_store.clone(),
+    )?);
     git_segment_store.cleanup_temporary().await?;
     let result = tokio::try_join!(
         control::run(
@@ -205,66 +208,28 @@ fn generate_persistence_id(kind: GeneratedIdKind) -> Result<String, String> {
     random_hex(prefix, 16).map_err(|error| error.to_string())
 }
 
-/// The object backend selected by `SCOPE_OBJECT_STORE`; both the blob store
-/// and the Git segment store are built from the same choice.
-enum ObjectBackend {
-    Filesystem(PathBuf),
-    S3(S3ObjectStoreSettings),
-}
-
-fn object_backend_from_env(data_dir: &Path) -> anyhow::Result<ObjectBackend> {
-    match non_empty_env(SCOPE_OBJECT_STORE_ENV).as_deref() {
-        Some("filesystem") => Ok(ObjectBackend::Filesystem(
+/// The object backend selected by `SCOPE_OBJECT_STORE`; the blob store and the Git segment
+/// store share it.
+fn object_backend_from_env(data_dir: &Path) -> anyhow::Result<Arc<dyn ObjectBackend>> {
+    Ok(match non_empty_env(SCOPE_OBJECT_STORE_ENV).as_deref() {
+        Some("filesystem") => Arc::new(FileBackend::new(
             non_empty_env(SCOPE_OBJECT_STORE_DIR_ENV)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| data_dir.join("objects")),
-        )),
+        )?),
         Some(value) if value != "s3" => {
             anyhow::bail!("unsupported {SCOPE_OBJECT_STORE_ENV} value {value}")
         }
-        _ => Ok(ObjectBackend::S3(s3_settings_from_env()?)),
-    }
+        _ => Arc::new(S3Backend::new(s3_settings_from_env()?)?),
+    })
 }
 
-fn object_store_from_env(data_dir: &Path) -> anyhow::Result<Arc<dyn ObjectStore>> {
-    let raw: Arc<dyn ObjectStore> = match object_backend_from_env(data_dir)? {
-        ObjectBackend::Filesystem(root) => {
-            Arc::new(FileObjectStore::new(FileObjectStoreSettings::new(root)))
-        }
-        ObjectBackend::S3(settings) => Arc::new(S3ObjectStore::new(settings)?),
-    };
-    Ok(Arc::new(EncryptedObjectStore::new(
-        raw,
-        encryption_key_from_env()?,
-    )))
-}
-
-fn git_segment_store_from_env(settings: &WorkerSettings) -> anyhow::Result<GitSegmentStore> {
-    let backend: Arc<dyn MultipartStore> = match object_backend_from_env(&settings.data_dir)? {
-        ObjectBackend::Filesystem(root) => Arc::new(FileMultipartStore::new(root)?),
-        ObjectBackend::S3(s3) => Arc::new(S3MultipartStore::new(S3MultipartSettings {
-            endpoint: s3.endpoint,
-            bucket: s3.bucket,
-            region: s3.region,
-            access_key_id: s3.access_key_id,
-            secret_access_key: s3.secret_access_key,
-            force_path_style: s3.force_path_style,
-        })?),
-    };
-    GitSegmentStore::new(
-        backend,
-        SegmentEncryptionKey::new("primary", encryption_key_from_env()?)?,
-        settings.git_segment_store.clone(),
-    )
-    .map_err(anyhow::Error::from)
-}
-
-fn s3_settings_from_env() -> anyhow::Result<S3ObjectStoreSettings> {
-    Ok(S3ObjectStoreSettings::from_env("SCOPE_BUCKET")?)
+fn s3_settings_from_env() -> anyhow::Result<S3Settings> {
+    Ok(S3Settings::from_env("SCOPE_BUCKET")?)
 }
 
 fn encryption_key_from_env() -> anyhow::Result<[u8; 32]> {
-    Ok(scope_object_store::config::encryption_key_from_env(
+    Ok(scope_storage::config::encryption_key_from_env(
         SCOPE_OBJECT_ENCRYPTION_KEY_ENV,
     )?)
 }

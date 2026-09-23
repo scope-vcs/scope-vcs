@@ -300,12 +300,15 @@ mod tests {
     use crate::demo_seed::DevSeedUser;
     use scope_domain::requests::RequestDiscussionStatus;
     use scope_domain::requests::RequestEventKind;
-    use scope_object_store::{EncryptedObjectStore, MemoryObjectStore};
+    use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend};
     use std::sync::Arc;
 
     #[tokio::test]
     async fn gallery_covers_open_resolved_and_quoted_conversations() {
-        let object_store = EncryptedObjectStore::new(Arc::new(MemoryObjectStore::new()), [9; 32]);
+        let object_store = EncryptedObjectStore::new(
+            Arc::new(MemoryBackend::default()),
+            EncryptionKey::new("test", [9; 32]).unwrap(),
+        );
         let git_segment_store = super::super::test_seed_git_segment_store();
         let catalog = super::super::catalog(
             &object_store,
@@ -315,6 +318,7 @@ mod tests {
                 handle: "dev".to_string(),
             },
         )
+        .await
         .unwrap();
         let target = scope_postgres::db::TestDatabaseTarget::required().unwrap();
         let metadata = MetadataStore::connect_fresh_for_tests(&target).unwrap();

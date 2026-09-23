@@ -1,8 +1,7 @@
 use super::*;
 use scope_domain::repository::git::GitSegmentRef;
-use scope_git_storage::{
-    ENCODING_VERSION, GitSegmentStoreConfig, S3MultipartSettings, S3MultipartStore,
-    SegmentEncryptionKey,
+use scope_storage::{
+    ENCODING_VERSION, EncryptionKey, GitSegmentStoreConfig, S3Backend, S3Settings,
 };
 
 #[tokio::test]
@@ -31,7 +30,7 @@ async fn cancellation_stops_a_remote_restore_and_reaps_index_pack() {
     });
     let store = GitSegmentStore::new(
         Arc::new(
-            S3MultipartStore::new(S3MultipartSettings {
+            S3Backend::new(S3Settings {
                 endpoint,
                 bucket: "test-segments".into(),
                 region: "test-region".into(),
@@ -41,7 +40,7 @@ async fn cancellation_stops_a_remote_restore_and_reaps_index_pack() {
             })
             .unwrap(),
         ),
-        SegmentEncryptionKey::new("test", [7_u8; 32]).unwrap(),
+        EncryptionKey::new("test", [7_u8; 32]).unwrap(),
         GitSegmentStoreConfig::new(temp.path().join("segments")),
     )
     .unwrap();

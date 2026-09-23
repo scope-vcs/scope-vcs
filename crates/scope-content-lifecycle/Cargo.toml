@@ -7,5 +7,5 @@ repository.workspace = true
 
 [dependencies]
 scope_domain.workspace = true
-scope_object_store.workspace = true
+scope_storage.workspace = true
 scope_postgres.workspace = true

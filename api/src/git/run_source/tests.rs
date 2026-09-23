@@ -140,7 +140,7 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     let indexed_at = fs::metadata(&index_path).unwrap().modified().unwrap();
     state
         .git_segment_store
-        .delete_remote(&scope_git_storage::object_key(
+        .delete_remote(&scope_storage::segment_object_key(
             "owner/repo",
             &pushed.stored.pack_span.segment.segment_id,
         ))
@@ -198,7 +198,7 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
         .unwrap();
     state
         .git_segment_store
-        .delete_remote(&scope_git_storage::object_key(
+        .delete_remote(&scope_storage::segment_object_key(
             "owner/repo",
             &pushed.stored.pack_span.segment.segment_id,
         ))
@@ -233,7 +233,7 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
         .unwrap();
     state
         .git_segment_store
-        .delete_remote(&scope_git_storage::object_key(
+        .delete_remote(&scope_storage::segment_object_key(
             "owner/repo",
             &pushed.stored.pack_span.segment.segment_id,
         ))

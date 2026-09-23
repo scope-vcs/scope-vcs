@@ -60,3 +60,35 @@ impl fmt::Display for ObjectStoreError {
 }
 
 impl std::error::Error for ObjectStoreError {}
+
+impl From<crate::BackendError> for ObjectStoreError {
+    fn from(error: crate::BackendError) -> Self {
+        match error.kind() {
+            crate::BackendErrorKind::NotFound => Self::not_found(error.to_string()),
+            crate::BackendErrorKind::Unavailable => Self::service_unavailable(error.to_string()),
+        }
+    }
+}
+
+pub fn ensure_object_size(
+    operation: &str,
+    key: &str,
+    bytes: usize,
+    max_bytes: usize,
+) -> Result<(), ObjectStoreError> {
+    if bytes > max_bytes {
+        return Err(object_too_large(operation, key, bytes, max_bytes));
+    }
+    Ok(())
+}
+
+pub fn object_too_large(
+    operation: &str,
+    key: &str,
+    bytes: usize,
+    max_bytes: usize,
+) -> ObjectStoreError {
+    ObjectStoreError::payload_too_large(format!(
+        "object store {operation} for {key} is too large: {bytes} bytes exceeds {max_bytes} bytes"
+    ))
+}

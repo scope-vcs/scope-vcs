@@ -36,7 +36,7 @@ pub(crate) use locks::acquire_request_ref_update_lock_async;
 pub(crate) use revision::with_request_revision_store_repo;
 #[cfg(test)]
 use snapshot::bundle_prerequisites;
-use snapshot::{fetch_bundle_into, fetch_snapshot_into};
+use snapshot::{download_snapshot, fetch_bundle_into, fetch_snapshot_into};
 
 /// Push rules shared by the request pre-receive hooks and the Rust validators, so the
 /// message a contributor sees is the same whichever layer rejects the push.
@@ -349,10 +349,12 @@ pub(crate) async fn persist_request_ref_to_store(
         let state = state.clone();
         let request_ref = update.request_ref.clone();
         let previous_head = previous_head.clone();
-        let object_key = scope_object_store::object_key(&git_snapshot);
+        let object_key = scope_storage::object_key(&git_snapshot);
         crate::git::blocking::run(move || {
             let _store_lock = store_lock;
-            if let Err(error) = state.object_store.put(&object_key, snapshot_bytes) {
+            if let Err(error) =
+                crate::git::blocking::block_on(state.object_store.put(&object_key, snapshot_bytes))
+            {
                 rollback_request_ref(&state, &incarnation, &request_ref, previous_head);
                 return Err(error.into());
             }

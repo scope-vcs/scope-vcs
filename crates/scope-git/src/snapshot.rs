@@ -1,6 +1,6 @@
 use crate::{GitSnapshotError, GitStorageLimits};
 use scope_domain::repository::git::{GitHead, GitPackSpan, GitSegmentRef};
-use scope_object_store::ensure_object_size;
+use scope_storage::ensure_object_size;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StoredGitPush {

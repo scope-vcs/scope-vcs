@@ -1,9 +1,9 @@
 use super::{
-    GitSegmentIngestTimings, GitSegmentReservation, GitSegmentStore, GitStorageError,
-    MultipartError, MultipartStore, MultipartUpload, SegmentEncryptionKey, StagedGitSegment,
-    UploadedPart, is_hex_id_32, object_key, random_hex_id, sync_directory,
+    BackendError, EncryptionKey, GitSegmentIngestTimings, GitSegmentReservation, GitSegmentStore,
+    GitStorageError, MultipartUpload, ObjectBackend, StagedGitSegment, UploadedPart, is_hex_id_32,
+    random_hex_id, segment_object_key, sync_directory,
 };
-use crate::envelope::EnvelopeWriter;
+use crate::envelope::{EnvelopeScope, EnvelopeWriter};
 use crate::lifecycle::REMOTE_CLEANUP_TIMEOUT;
 use bytes::Bytes;
 use scope_domain::repository::git::GitSegmentRef;
@@ -73,7 +73,7 @@ impl GitSegmentStore {
         }
         let segment_id = random_segment_id()?;
         Ok(GitSegmentReservation {
-            object_key: object_key(repository_id, &segment_id),
+            object_key: segment_object_key(repository_id, &segment_id),
             segment_id,
         })
     }
@@ -94,7 +94,7 @@ impl GitSegmentStore {
                 "repository id and a generated segment id are required".into(),
             ));
         }
-        let expected_key = object_key(repository_id, &reservation.segment_id);
+        let expected_key = segment_object_key(repository_id, &reservation.segment_id);
         if reservation.object_key != expected_key {
             return Err(GitStorageError::InvalidConfiguration(
                 "Git segment reservation does not belong to this repository".into(),
@@ -419,8 +419,8 @@ async fn write_local(
 }
 
 struct RemoteIngestRequest {
-    backend: Arc<dyn MultipartStore>,
-    key: SegmentEncryptionKey,
+    backend: Arc<dyn ObjectBackend>,
+    key: EncryptionKey,
     repository_id: String,
     segment_id: String,
     object_key: String,
@@ -444,7 +444,11 @@ async fn upload_remote(
         cancellation,
     } = request;
     let started = Instant::now();
-    let mut envelope = EnvelopeWriter::new(&key, &repository_id, &segment_id, frame_bytes)?;
+    let mut envelope = EnvelopeWriter::new(
+        &key,
+        EnvelopeScope::git_segment(&repository_id, &segment_id),
+        frame_bytes,
+    )?;
     let mut upload = PackUpload::new(Arc::clone(&backend), object_key, part_bytes, cancellation);
     upload.push(envelope.header()).await?;
     loop {
@@ -470,7 +474,7 @@ async fn upload_remote(
 }
 
 struct PackUpload {
-    backend: Arc<dyn MultipartStore>,
+    backend: Arc<dyn ObjectBackend>,
     object_key: String,
     multipart: Option<MultipartUpload>,
     part_bytes: usize,
@@ -484,7 +488,7 @@ struct PackUpload {
 
 impl PackUpload {
     fn new(
-        backend: Arc<dyn MultipartStore>,
+        backend: Arc<dyn ObjectBackend>,
         object_key: String,
         part_bytes: usize,
         cancellation: Option<ProcessCancellation>,
@@ -595,7 +599,7 @@ impl PackUpload {
             let operation = backend.upload_part(&upload, part_number, bytes);
             let part = remote_with_cancellation(cancellation.as_ref(), operation).await?;
             if part.part_number != part_number {
-                return Err(GitStorageError::Multipart(MultipartError::new(
+                return Err(GitStorageError::Backend(BackendError::new(
                     "multipart backend returned the wrong part number",
                 )));
             }
@@ -617,7 +621,7 @@ impl PackUpload {
 }
 
 async fn cleanup_ingest(
-    backend: &Arc<dyn MultipartStore>,
+    backend: &Arc<dyn ObjectBackend>,
     object_key: &str,
     local: Option<LocalOutcome>,
 ) {
@@ -633,7 +637,7 @@ async fn cleanup_ingest(
 
 async fn remote_with_cancellation<T>(
     cancellation: Option<&ProcessCancellation>,
-    operation: impl std::future::Future<Output = Result<T, MultipartError>>,
+    operation: impl std::future::Future<Output = Result<T, BackendError>>,
 ) -> Result<T, GitStorageError> {
     match cancellation {
         Some(cancellation) => {

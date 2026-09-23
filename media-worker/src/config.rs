@@ -1,5 +1,5 @@
 use scope_domain::requests::attachments::RequestAttachmentLimits;
-use scope_object_store::config::required_env;
+use scope_storage::config::required_env;
 use std::{path::PathBuf, time::Duration};
 
 pub const DEFAULT_HEALTH_PORT: u16 = 8080;

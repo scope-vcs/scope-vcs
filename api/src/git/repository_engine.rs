@@ -45,7 +45,7 @@ const MATERIALIZATION_PATH_RESTORE: u8 = 2;
 pub(crate) struct RepositoryEngine {
     cache: Arc<RepositoryGitCache>,
     materializations: Arc<GitDerivedCacheCoordinator>,
-    packs: Arc<scope_git_storage::GitSegmentStore>,
+    packs: Arc<scope_storage::GitSegmentStore>,
     max_bytes: u64,
 }
 
@@ -53,7 +53,7 @@ impl RepositoryEngine {
     pub(crate) fn new(
         root: PathBuf,
         max_bytes: usize,
-        packs: Arc<scope_git_storage::GitSegmentStore>,
+        packs: Arc<scope_storage::GitSegmentStore>,
     ) -> Result<Arc<Self>, ApiError> {
         Ok(Arc::new(Self {
             cache: RepositoryGitCache::new(root, max_bytes)?,
@@ -65,12 +65,10 @@ impl RepositoryEngine {
 
     #[cfg(test)]
     pub(crate) fn for_tests(root: PathBuf, max_bytes: usize) -> Result<Arc<Self>, ApiError> {
-        use scope_git_storage::{
-            GitSegmentStore, GitSegmentStoreConfig, MemoryMultipartStore, SegmentEncryptionKey,
-        };
+        use scope_storage::{EncryptionKey, GitSegmentStore, GitSegmentStoreConfig, MemoryBackend};
         let packs = GitSegmentStore::new(
-            Arc::new(MemoryMultipartStore::default()),
-            SegmentEncryptionKey::new("test", [9; 32]).unwrap(),
+            Arc::new(MemoryBackend::default()),
+            EncryptionKey::new("test", [9; 32]).unwrap(),
             GitSegmentStoreConfig::new(root.join(".segments")),
         )
         .unwrap();

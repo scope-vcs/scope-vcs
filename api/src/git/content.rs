@@ -5,7 +5,7 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     repository::git::{GitHead, GitPackSpan},
 };
-use scope_object_store::source_blob_bytes;
+use scope_storage::source_blob_bytes;
 use std::{path::Path, time::Instant};
 
 pub(crate) async fn source_content_bytes<C: GitContext>(
@@ -14,15 +14,7 @@ pub(crate) async fn source_content_bytes<C: GitContext>(
     git_source: Option<(RepositoryIncarnation, &GitHead, &[GitPackSpan])>,
 ) -> Result<Vec<u8>, ApiError> {
     if !matches!(blob.content_ref, ContentRef::GitBlob { .. }) {
-        let object_store = context.object_store().clone();
-        let blob = blob.clone();
-        return tokio::task::spawn_blocking(move || {
-            source_blob_bytes(object_store.as_ref(), &blob).map_err(ApiError::from)
-        })
-        .await
-        .map_err(|error| {
-            ApiError::internal_message(format!("source object read task failed: {error}"))
-        })?;
+        return Ok(stored_content_bytes(context, blob).await?);
     }
     let (repository_id, head, pack_spans) = git_source.ok_or_else(|| {
         ApiError::internal_message("Git blob content requires a current pack layout")
@@ -40,6 +32,15 @@ pub(crate) async fn source_content_bytes<C: GitContext>(
     .map_err(|error| ApiError::internal_message(format!("Git blob read task failed: {error}")))?
 }
 
+/// Content stored in the object store. Its recorded size bounds the read.
+async fn stored_content_bytes<C: GitContext>(
+    context: &C,
+    blob: &SourceBlob,
+) -> Result<Vec<u8>, scope_storage::ObjectStoreError> {
+    source_blob_bytes(context.object_store().as_ref(), blob, usize::MAX).await
+}
+
+/// Runs on a blocking thread: object-store content is read by waiting on the runtime.
 pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
     context: &C,
     blob: &SourceBlob,
@@ -49,7 +50,9 @@ pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
         git_oid: content_oid,
     } = &blob.content_ref
     else {
-        return Ok(source_blob_bytes(context.object_store().as_ref(), blob)?);
+        return Ok(crate::git::blocking::block_on(stored_content_bytes(
+            context, blob,
+        ))?);
     };
     if content_oid != &blob.git_oid {
         return Err(ApiError::internal_message(

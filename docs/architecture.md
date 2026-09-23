@@ -15,17 +15,16 @@ dependencies:
 | `scope-domain` | Repository, request, projection, reviewed-update, and run rules and persisted shapes | none |
 | `scope-cache-domain` | Cache identities, policy, state, and decisions | none |
 | `scope-git-process` | Git subprocess lifetime, limits, reaping, and telemetry | none |
-| `scope-git-storage` | Bounded, encrypted Git segment ingest, restore, and cleanup across local and remote storage | `scope-domain`, `scope-git-process` |
+| `scope-storage` | Object backends (S3, filesystem, memory), the framed encryption envelope, verified object reads, presigning, and bounded Git segment ingest, restore, and cleanup | `scope-domain`, `scope-git-process` |
 | `scope-api-contract` | API routes and serialized API/runtime DTOs | `scope-domain` |
 | `scope-cache-contract` | Cache grant and endpoint DTOs | `scope-cache-domain` |
 | `scope-run-config` | Workflow YAML decoding and compilation | `scope-domain` |
-| `scope-object-store` | Object-store interface and filesystem, memory, encrypted, and S3 adapters | `scope-domain` |
-| `scope-git` | Projection identity and Git snapshot preparation/materialization | `scope-domain`, optionally `scope-object-store` |
+| `scope-git` | Projection identity and Git snapshot preparation/materialization | `scope-domain`, optionally `scope-storage` |
 | `scope-postgres` | Metadata stores, migrations, read models, and transaction owners | `scope-domain`, `scope-cache-domain`, `scope-git`, `scope-run-config` |
-| `scope-media-storage` | Encrypted, chunked attachment storage and media object manifests | `scope-object-store` |
-| `scope-media-service` | Grant-authorized attachment upload and media delivery | `scope-api-contract`, `scope-domain`, `scope-media-storage`, `scope-object-store`, `scope-postgres` |
-| `scope-media-worker` | Attachment validation, derivative generation, and media cleanup | `scope-domain`, `scope-media-storage`, `scope-object-store`, `scope-postgres` |
-| `scope-content-lifecycle` | Shared source-blob cleanup orchestration | `scope-domain`, `scope-object-store`, `scope-postgres` |
+| `scope-media-storage` | Encrypted, chunked attachment storage and media object manifests | `scope-storage` |
+| `scope-media-service` | Grant-authorized attachment upload and media delivery | `scope-api-contract`, `scope-domain`, `scope-media-storage`, `scope-storage`, `scope-postgres` |
+| `scope-media-worker` | Attachment validation, derivative generation, and media cleanup | `scope-domain`, `scope-media-storage`, `scope-storage`, `scope-postgres` |
+| `scope-content-lifecycle` | Shared source-blob cleanup orchestration | `scope-domain`, `scope-storage`, `scope-postgres` |
 | `api` | Authentication, HTTP/SSE delivery, application use cases, and composition | the contracts, domain crates, orchestration crate, and infrastructure adapters |
 | `worker` | Run control, Git compaction, and cleanup polling | domain, API contract, orchestration, and infrastructure adapters |
 | `scope-cache-service` | Cache authorization, signed transfers, and reconciliation | cache contract/domain, object store, Postgres |
@@ -36,7 +35,7 @@ The dependency rules are:
 
 - `scope-domain`, `scope-cache-domain`, `scope-git-process`, and
   `scope-repo-router` are internal leaves. They do not depend on another
-  workspace package. `scope-git-storage` depends on the process leaf only for
+  workspace package. `scope-storage` depends on the process leaf only for
   the cooperative cancellation signal shared by a Git producer and its
   storage consumer; it does not own subprocess policy.
 - Contract crates may depend only on their corresponding domain crate.
@@ -48,7 +47,7 @@ The dependency rules are:
   `worker`.
 - Delivery code translates and authorizes. Domain crates decide allowed state;
   Postgres modules own atomic metadata changes; use cases coordinate explicit
-  non-database side effects. `scope-git-storage` is the single enforcement
+  non-database side effects. `scope-storage` is the single enforcement
   point for exact plaintext ingest limits, including the first byte beyond the
   accepted boundary, for both API pushes and worker compaction.
 
@@ -163,7 +162,7 @@ Follow these paths from application coordination to durable rules and storage:
 | Behavior | Application path | Domain or shared behavior | Persistence and adapters |
 | --- | --- | --- | --- |
 | Request merge | `api/src/use_cases/request_merge.rs` | `scope-domain/src/reviewed_updates/`, `repository/updates.rs`, request policy | `scope-postgres/src/db/request_merge.rs`, `content_push_transactions.rs`; Git preparation under `api/src/git/` |
-| Git receive | `api/src/use_cases/git_receive/` | reviewed-update, repository, request-revision, and workflow-catalog rules in `scope-domain` | `repo_mutation.rs`, `content_push_transactions.rs`, request persistence; upload lifecycle under `api/src/git/import/segment_upload.rs`; bounded ingest under `scope-git-storage` |
+| Git receive | `api/src/use_cases/git_receive/` | reviewed-update, repository, request-revision, and workflow-catalog rules in `scope-domain` | `repo_mutation.rs`, `content_push_transactions.rs`, request persistence; upload lifecycle under `api/src/git/import/segment_upload.rs`; bounded ingest under `scope-storage` |
 | Discussion mutation | `api/src/use_cases/request_discussion_mutation.rs` | `scope-domain/src/requests/discussions.rs` | `scope-postgres/src/db/request_discussions.rs`; HTTP projection in `api/src/http/request_discussions.rs` |
 | Run inspection and control | `api/src/use_cases/run_inspection.rs`, `run_control.rs` | `scope-domain/src/runs/` | `run_details.rs`, `run_log_reads.rs`, `runs.rs`, and run-attempt modules; response mapping in `api/src/http/run_*` |
 | Content cleanup | `api/src/use_cases/content_cleanup.rs`, `worker/src/cleanup.rs` | `scope-content-lifecycle/src/lib.rs` and `scope-domain::repo_actions` | `scope-postgres/src/db/cleanup_queue/` and `scope-object-store` |

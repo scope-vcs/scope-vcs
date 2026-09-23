@@ -7,10 +7,10 @@ repository.workspace = true
 
 [features]
 default = ["storage"]
-storage = ["dep:scope_object_store"]
+storage = ["dep:scope_storage"]
 
 [dependencies]
 hex.workspace = true
 scope_domain.workspace = true
-scope_object_store = { workspace = true, optional = true }
+scope_storage = { workspace = true, optional = true }
 thiserror.workspace = true

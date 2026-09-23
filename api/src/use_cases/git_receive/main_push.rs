@@ -13,9 +13,9 @@ use scope_domain::{
     reviewed_updates::content::{ReviewedUpdateAuthorization, authorize_reviewed_update},
     runs::trigger::PushTriggerInput,
 };
-use scope_git_storage::StagedGitSegment;
 use scope_postgres::db::RepositoryGitWriteLease;
 use scope_postgres::db::RepositoryMutation;
+use scope_storage::StagedGitSegment;
 use std::{path::Path, time::Instant};
 
 use super::ReceivePackAccess;

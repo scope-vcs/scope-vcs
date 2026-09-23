@@ -1,5 +1,5 @@
 use super::{
-    GitSegmentStore, GitStorageError, MultipartError, StagedGitSegment, VerifiedPackCacheUsage,
+    BackendError, GitSegmentStore, GitStorageError, StagedGitSegment, VerifiedPackCacheUsage,
     is_hex_id_32, sync_directory,
 };
 use std::time::Duration;
@@ -46,13 +46,11 @@ impl GitSegmentStore {
         let delete = self.backend.delete(object_key).await;
         match (abort, delete) {
             (Ok(()), Ok(())) => Ok(()),
-            (Err(abort), Ok(())) => Err(GitStorageError::Multipart(abort)),
-            (Ok(()), Err(delete)) => Err(GitStorageError::Multipart(delete)),
-            (Err(abort), Err(delete)) => {
-                Err(GitStorageError::Multipart(MultipartError::new(format!(
-                    "aborting incomplete uploads failed: {abort}; deleting object failed: {delete}"
-                ))))
-            }
+            (Err(abort), Ok(())) => Err(GitStorageError::Backend(abort)),
+            (Ok(()), Err(delete)) => Err(GitStorageError::Backend(delete)),
+            (Err(abort), Err(delete)) => Err(GitStorageError::Backend(BackendError::new(format!(
+                "aborting incomplete uploads failed: {abort}; deleting object failed: {delete}"
+            )))),
         }
     }
 

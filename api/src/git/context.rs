@@ -1,8 +1,8 @@
 use crate::{
     git::repository_engine::RepositoryEngine, runtime_budgets::RuntimeBudgets, state::AppState,
 };
-use scope_git_storage::GitSegmentStore;
-use scope_object_store::ObjectStore;
+use scope_storage::GitSegmentStore;
+use scope_storage::ObjectStore;
 use std::sync::Arc;
 
 pub(crate) trait GitContext: Clone + Send + Sync + 'static {

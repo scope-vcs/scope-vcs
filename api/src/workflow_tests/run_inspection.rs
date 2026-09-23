@@ -25,10 +25,8 @@ async fn active_run(log_chunks: usize) -> InspectableRun {
     .into_revision(TEST_REPO_ID.to_string())
     .unwrap();
     let run_id = "run_inspection".to_string();
-    let mut source = scope_object_store::content_object_for_bytes(
-        ContentObjectKind::GitBundle,
-        b"inspection bundle",
-    );
+    let mut source =
+        scope_storage::content_object_for_bytes(ContentObjectKind::GitBundle, b"inspection bundle");
     source.git_oid = "b".repeat(40);
     let run = Run::new(
         run_id.clone(),

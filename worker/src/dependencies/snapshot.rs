@@ -1,10 +1,12 @@
 use scope_domain::{
-    content::is_supported_git_file_mode, content_ref::ContentRef, repository::git::GitPackSpan,
+    content::{SourceBlob, is_supported_git_file_mode},
+    content_ref::ContentRef,
+    repository::git::GitPackSpan,
 };
 use scope_git_process::{ProcessCancellation, ProcessLimits, run_cancellable};
-use scope_git_storage::GitSegmentStore;
-use scope_object_store::{ObjectStore, source_blob_bytes_bounded};
 use scope_postgres::db::{DependencyAnalysisClaim, DependencySnapshotFile};
+use scope_storage::GitSegmentStore;
+use scope_storage::{ObjectStore, write_source_blob_to};
 use std::{
     collections::BTreeMap,
     fs,
@@ -75,18 +77,35 @@ pub(super) async fn materialize(
         }
     }
     let files = claim.files.clone();
+    let blocking_cancellation = cancellation.clone();
+    let (snapshot, stored) = tokio::task::spawn_blocking(move || {
+        let stored = write_files(&snapshot.source, &bare, &files, &blocking_cancellation)?;
+        anyhow::Ok((snapshot, stored))
+    })
+    .await??;
+    write_stored_files(objects.as_ref(), stored, &cancellation).await?;
     tokio::task::spawn_blocking(move || {
-        write_files(
-            &snapshot.source,
-            &bare,
-            &files,
-            objects.as_ref(),
-            &cancellation,
-        )?;
         freeze_tree(&snapshot.source)?;
         Ok(snapshot)
     })
     .await?
+}
+
+/// Streams each object-store file straight to its path.
+async fn write_stored_files(
+    objects: &dyn ObjectStore,
+    stored: Vec<(PathBuf, SourceBlob)>,
+    cancellation: &ProcessCancellation,
+) -> anyhow::Result<()> {
+    for (path, blob) in stored {
+        check_cancellation(cancellation)?;
+        if blob.size_bytes > MAX_FILE_BYTES as u64 {
+            anyhow::bail!("dependency source file exceeds {MAX_FILE_BYTES} bytes");
+        }
+        let mut file = tokio::fs::File::create(&path).await?;
+        write_source_blob_to(objects, &blob, &mut file).await?;
+    }
+    Ok(())
 }
 
 fn check_cancellation(cancellation: &ProcessCancellation) -> anyhow::Result<()> {
@@ -162,14 +181,16 @@ fn needs_content(path: &str) -> bool {
         })
 }
 
+/// Writes placeholders and Git-backed files, and returns the files whose content still has to be
+/// streamed from the object store.
 fn write_files(
     source: &Path,
     bare: &Path,
     files: &[DependencySnapshotFile],
-    objects: &dyn ObjectStore,
     cancellation: &ProcessCancellation,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<(PathBuf, SourceBlob)>> {
     let mut git_targets: BTreeMap<String, GitBlobTarget> = BTreeMap::new();
+    let mut stored = Vec::new();
     for file in files {
         check_cancellation(cancellation)?;
         let path = source.join(file.path.as_str().trim_start_matches('/'));
@@ -197,13 +218,11 @@ fn write_files(
                 }
                 target.paths.push(path);
             }
-            _ => fs::write(
-                path,
-                source_blob_bytes_bounded(objects, &file.blob, MAX_FILE_BYTES)?,
-            )?,
+            _ => stored.push((path, file.blob.clone())),
         }
     }
-    write_git_blobs(bare, &git_targets, cancellation)
+    write_git_blobs(bare, &git_targets, cancellation)?;
+    Ok(stored)
 }
 
 struct GitBlobTarget {
@@ -345,7 +364,7 @@ fn set_tree_writable(path: &Path) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use scope_domain::{content::SourceBlob, policy::ScopePath, repository::git::GitSegmentRef};
-    use scope_object_store::{MemoryObjectStore, put_source_blob};
+    use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend, put_source_blob};
 
     fn snapshot_file(path: &str, size_bytes: u64, git_file_mode: &str) -> DependencySnapshotFile {
         DependencySnapshotFile {
@@ -463,9 +482,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn blob_snapshot_preserves_analyzer_inputs_and_cleans_up_readonly_placeholders() {
-        let objects = MemoryObjectStore::new();
+    #[tokio::test]
+    async fn blob_snapshot_preserves_analyzer_inputs_and_cleans_up_readonly_placeholders() {
+        let objects = EncryptedObjectStore::new(
+            Arc::new(MemoryBackend::default()),
+            EncryptionKey::new("primary", [3; 32]).unwrap(),
+        );
         let fixtures = [
             (
                 "tsconfig.json",
@@ -482,13 +504,13 @@ mod tests {
             ),
             ("assets/logo.png", "not really a png", false),
         ];
-        let files = fixtures
-            .iter()
-            .map(|(path, content, _)| DependencySnapshotFile {
+        let mut files = Vec::new();
+        for (path, content, _) in &fixtures {
+            files.push(DependencySnapshotFile {
                 path: ScopePath::parse(format!("/{path}")).unwrap(),
-                blob: put_source_blob(&objects, content.as_bytes()).unwrap(),
-            })
-            .collect::<Vec<_>>();
+                blob: put_source_blob(&objects, content.as_bytes()).await.unwrap(),
+            });
+        }
 
         let directory = tempfile::tempdir().unwrap();
         let source = directory.path().join("source");
@@ -496,14 +518,17 @@ mod tests {
         let snapshot = Snapshot { directory, source };
         let snapshot_root = snapshot.directory.path().to_path_buf();
 
-        write_files(
+        let cancellation = ProcessCancellation::new();
+        let stored = write_files(
             &snapshot.source,
             &snapshot.directory.path().join("unused-git"),
             &files,
-            &objects,
-            &ProcessCancellation::new(),
+            &cancellation,
         )
         .unwrap();
+        write_stored_files(&objects, stored, &cancellation)
+            .await
+            .unwrap();
         freeze_tree(&snapshot.source).unwrap();
 
         for (path, content, materialized) in fixtures {

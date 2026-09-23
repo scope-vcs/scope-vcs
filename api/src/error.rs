@@ -232,9 +232,9 @@ impl From<scope_git::GitSnapshotError> for ApiError {
     }
 }
 
-impl From<scope_object_store::ObjectStoreError> for ApiError {
-    fn from(error: scope_object_store::ObjectStoreError) -> Self {
-        use scope_object_store::ObjectStoreErrorKind;
+impl From<scope_storage::ObjectStoreError> for ApiError {
+    fn from(error: scope_storage::ObjectStoreError) -> Self {
+        use scope_storage::ObjectStoreErrorKind;
 
         match error.kind {
             ObjectStoreErrorKind::CapacityExhausted => Self::capacity_exhausted(error.message),
@@ -360,7 +360,7 @@ mod tests {
             ApiError::infrastructure_unavailable(
                 "git upload-pack exited 128: fatal: repository secret.git not found",
             ),
-            ApiError::from(scope_object_store::ObjectStoreError::service_unavailable(
+            ApiError::from(scope_storage::ObjectStoreError::service_unavailable(
                 "S3 endpoint https://objects.internal.example timed out",
             )),
         ];

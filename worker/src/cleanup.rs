@@ -3,8 +3,8 @@ use crate::{
     settings::POLL_INTERVAL,
 };
 use scope_content_lifecycle::SourceBlobCleanupReport;
-use scope_object_store::ObjectStore;
 use scope_postgres::db::MetadataStore;
+use scope_storage::ObjectStore;
 use std::sync::Arc;
 
 pub(crate) async fn run(
@@ -53,7 +53,7 @@ async fn drain_orphan_objects(
     .map_err(|error| anyhow::anyhow!("draining orphan object jobs: {}", error.message))?;
     for failure in &report.failed_object_deletes {
         tracing::warn!(
-            object_key = %scope_object_store::object_key(&failure.blob),
+            object_key = %scope_storage::object_key(&failure.blob),
             error = %failure.error.message,
             "failed to delete orphan object"
         );

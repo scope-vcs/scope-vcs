@@ -150,13 +150,16 @@ mod tests {
     use super::*;
     use crate::demo_seed::DevSeedUser;
     use scope_domain::runs::run::RunState;
-    use scope_object_store::{EncryptedObjectStore, MemoryObjectStore};
     use scope_postgres::db::RunHistoryPageQuery;
+    use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend};
     use std::sync::Arc;
 
     #[tokio::test]
     async fn gallery_covers_every_run_state_and_both_workflows() {
-        let object_store = EncryptedObjectStore::new(Arc::new(MemoryObjectStore::new()), [7; 32]);
+        let object_store = EncryptedObjectStore::new(
+            Arc::new(MemoryBackend::default()),
+            EncryptionKey::new("test", [7; 32]).unwrap(),
+        );
         let git_segment_store = super::super::test_seed_git_segment_store();
         let catalog = super::super::catalog(
             &object_store,
@@ -166,6 +169,7 @@ mod tests {
                 handle: "dev".to_string(),
             },
         )
+        .await
         .unwrap();
         let target = scope_postgres::db::TestDatabaseTarget::required().unwrap();
         let metadata = MetadataStore::connect_fresh_for_tests(&target).unwrap();

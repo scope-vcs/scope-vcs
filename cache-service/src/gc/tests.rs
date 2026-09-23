@@ -5,8 +5,8 @@ use scope_domain::{
     policy::Visibility,
     repository::{RepoLifecycleState, Repository},
 };
-use scope_object_store::{S3ObjectStore, S3ObjectStoreSettings, S3Presigner};
 use scope_postgres::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
+use scope_storage::{S3Backend, S3Presigner, S3Settings};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -43,8 +43,10 @@ impl Fixture {
                     tokio::time::sleep(Duration::from_millis(5)).await;
                     requests.fetch_add(1, Ordering::SeqCst);
                     active.fetch_sub(1, Ordering::SeqCst);
+                    // A non-retryable failure, so each reconcile sends exactly one request per
+                    // object and the counts below measure only the claim-expiry retry.
                     if fail.load(Ordering::SeqCst) {
-                        axum::http::StatusCode::SERVICE_UNAVAILABLE
+                        axum::http::StatusCode::FORBIDDEN
                     } else {
                         axum::http::StatusCode::NO_CONTENT
                     }
@@ -73,7 +75,7 @@ impl Fixture {
             .repositories
             .insert(repository_id.clone(), repository);
         metadata.admin().seed_catalog_for_tests(catalog).unwrap();
-        let mut settings = S3ObjectStoreSettings::new(
+        let mut settings = S3Settings::new(
             endpoint,
             "gc-test".into(),
             "local".into(),
@@ -81,12 +83,7 @@ impl Fixture {
             "secret".into(),
         );
         settings.force_path_style = true;
-        let object_store = tokio::task::spawn_blocking({
-            let settings = settings.clone();
-            move || S3ObjectStore::new(settings).unwrap()
-        })
-        .await
-        .unwrap();
+        let object_store = S3Backend::new(settings.clone()).unwrap();
         let state = AppState {
             metadata, object_store: Arc::new(object_store), presigner: Arc::new(S3Presigner::new(&settings)),
             verifier: Arc::new(GrantVerifier::new("-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA2+Jj2UvNCvQiUPNYRgSi0cJSPiJI6Rs6D0UTeEpQVj8=\n-----END PUBLIC KEY-----\n", "test-local".into()).unwrap()),

@@ -1,7 +1,7 @@
 use super::request_ref_oid_is_commit;
 use crate::{error::ApiError, git::command::run_git, state::AppState};
 use scope_domain::content::SourceBlob;
-use scope_object_store::source_blob_bytes;
+use scope_storage::{ObjectStore, write_source_blob_to};
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path as FsPath};
 
@@ -19,11 +19,26 @@ pub(super) fn fetch_snapshot_into(
         "snapshot-{}.bundle.tmp",
         hex::encode(&Sha256::digest(format!("{request_ref}:{}", snapshot.sha256).as_bytes())[..8])
     ));
-    let bytes = source_blob_bytes(state.object_store.as_ref(), snapshot)?;
-    fs::write(&bundle_path, bytes).map_err(ApiError::internal)?;
-    let result = fetch_bundle_into(repo, request_ref, &bundle_path, base_repo, action);
+    let result = download_snapshot(state.object_store.as_ref(), snapshot, &bundle_path)
+        .and_then(|()| fetch_bundle_into(repo, request_ref, &bundle_path, base_repo, action));
     let _ = fs::remove_file(&bundle_path);
     result
+}
+
+/// Streams a verified snapshot bundle to `path` without holding it in memory. Runs on a blocking
+/// thread. On failure `path` may hold a partial bundle, which the caller removes.
+pub(super) fn download_snapshot(
+    objects: &dyn ObjectStore,
+    snapshot: &SourceBlob,
+    path: &FsPath,
+) -> Result<(), ApiError> {
+    crate::git::blocking::block_on(async {
+        let mut file = tokio::fs::File::create(path)
+            .await
+            .map_err(ApiError::internal)?;
+        write_source_blob_to(objects, snapshot, &mut file).await?;
+        Ok(())
+    })
 }
 
 /// Fetches `request_ref` from a snapshot bundle file into `repo`, first supplying the request's

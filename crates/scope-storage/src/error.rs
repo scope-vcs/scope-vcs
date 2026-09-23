@@ -18,8 +18,8 @@ pub enum GitStorageError {
     Encryption,
     #[error("Git segment envelope is invalid: {0}")]
     InvalidEnvelope(String),
-    #[error("Git segment multipart storage failed: {0}")]
-    Multipart(#[from] MultipartError),
+    #[error("Git segment storage failed: {0}")]
+    Backend(#[from] BackendError),
     #[error("Git segment output failed: {0}")]
     Output(#[source] io::Error),
     #[error("verified Git pack hydration failed: {0}")]
@@ -34,17 +34,34 @@ pub enum GitStorageError {
     Task(String),
 }
 
+/// Whether a backend operation failed because the object is absent or because storage could not
+/// answer. Only the first is a fact about the object.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackendErrorKind {
+    NotFound,
+    Unavailable,
+}
+
 #[derive(Debug)]
-pub struct MultipartError {
+pub struct BackendError {
+    kind: BackendErrorKind,
     message: String,
     source: Option<Box<dyn Error + Send + Sync>>,
 }
 
-impl MultipartError {
+impl BackendError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
+            kind: BackendErrorKind::Unavailable,
             message: message.into(),
             source: None,
+        }
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            kind: BackendErrorKind::NotFound,
+            ..Self::new(message)
         }
     }
 
@@ -53,13 +70,17 @@ impl MultipartError {
         source: impl Error + Send + Sync + 'static,
     ) -> Self {
         Self {
-            message: message.into(),
             source: Some(Box::new(source)),
+            ..Self::new(message)
         }
+    }
+
+    pub fn kind(&self) -> BackendErrorKind {
+        self.kind
     }
 }
 
-impl fmt::Display for MultipartError {
+impl fmt::Display for BackendError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.message)?;
         let mut source = self.source();
@@ -71,7 +92,7 @@ impl fmt::Display for MultipartError {
     }
 }
 
-impl Error for MultipartError {
+impl Error for BackendError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.source
             .as_deref()
@@ -79,9 +100,14 @@ impl Error for MultipartError {
     }
 }
 
-impl From<io::Error> for MultipartError {
+impl From<io::Error> for BackendError {
     fn from(error: io::Error) -> Self {
-        Self::with_source("multipart I/O failed", error)
+        let not_found = error.kind() == io::ErrorKind::NotFound;
+        let mut error = Self::with_source("object storage I/O failed", error);
+        if not_found {
+            error.kind = BackendErrorKind::NotFound;
+        }
+        error
     }
 }
 
@@ -91,7 +117,7 @@ mod tests {
 
     #[test]
     fn multipart_error_keeps_its_source() {
-        let error = MultipartError::with_source("S3 get object failed", io::Error::other("closed"));
+        let error = BackendError::with_source("S3 get object failed", io::Error::other("closed"));
 
         assert_eq!(error.to_string(), "S3 get object failed: closed");
         assert_eq!(error.source().unwrap().to_string(), "closed");
@@ -106,7 +132,7 @@ mod tests {
             source: io::Error,
         }
 
-        let error = MultipartError::with_source(
+        let error = BackendError::with_source(
             "S3 get object failed",
             DispatchError {
                 source: io::Error::other("runtime dropped the dispatch task"),

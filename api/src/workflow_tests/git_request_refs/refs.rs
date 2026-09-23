@@ -135,7 +135,9 @@ async fn draft_request_ref_push_replaces_snapshot_without_touching_main() {
     source_blob_bytes(
         state.object_store.as_ref(),
         request.git_snapshot.as_ref().unwrap(),
+        usize::MAX,
     )
+    .await
     .unwrap();
     assert_eq!(request_event_count(&state).await, before_event_count + 1);
     let store_repo =
@@ -263,7 +265,7 @@ async fn failed_request_snapshot_put_rolls_back_the_request_ref_cache() {
         request_checkout(&state, "request-ref-put-failure").await;
     drop(server);
     state.object_store = Arc::new(PutFailsObjectStore {
-        readable: state.test_object_store.clone(),
+        readable: state.object_store.clone(),
     });
     let (origin, _server) = spawn_test_server(&state).await;
     let permissioned_remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
@@ -579,7 +581,8 @@ async fn draft_push_records_revision_activity_without_touching_main() {
         .unwrap();
     state
         .object_store
-        .delete(&scope_object_store::object_key(&revision.git_snapshot))
+        .delete(&scope_storage::object_key(&revision.git_snapshot))
+        .await
         .unwrap();
     let unavailable_anchor = public_get_json(
         &app,

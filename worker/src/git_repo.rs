@@ -5,7 +5,7 @@ use scope_git_process::{
     ProcessCancellation, ProcessError, ProcessLimits, StreamingProcessError,
     configure_process_group, run as run_process, run_with_stdin_reader, run_with_stdout,
 };
-use scope_git_storage::{
+use scope_storage::{
     GitSegmentReservation, GitSegmentRestoreSource, GitSegmentRestoreTimings, GitSegmentStore,
     StagedGitSegment,
 };
@@ -410,7 +410,7 @@ async fn ingest_compacted_pack(
             return Err(anyhow::Error::new(error));
         }
         Err(StreamingProcessError::Consumer(
-            scope_git_storage::GitStorageError::PlaintextLimitExceeded { .. },
+            scope_storage::GitStorageError::PlaintextLimitExceeded { .. },
         )) => {
             return Err(anyhow::Error::new(ProcessError::StdoutLimitExceeded {
                 action: "git pack-objects --stdout".to_string(),

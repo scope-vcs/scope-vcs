@@ -428,8 +428,9 @@ async fn pending_object_cleanup_uses_transactional_reference_rows() {
 
     assert!(
         state
-            .test_object_store
-            .contains_key(&scope_object_store::object_key(&live_blob))
+            .test_object_backend
+            .object(&scope_storage::object_key(&live_blob))
+            .is_some()
     );
     assert!(
         state

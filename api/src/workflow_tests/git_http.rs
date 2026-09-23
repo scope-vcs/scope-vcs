@@ -597,7 +597,7 @@ async fn first_push_missing_tip_rules_displays_rejection_without_persisting() {
     commit_all(&source, "remove rules");
     let remote = git_stdout_text(&source, &["remote", "get-url", "scope"], "read remote").unwrap();
     configure_push_intent_header(&state, &source, remote.trim(), &test_owner_id()).await;
-    let object_count = state.test_object_store.object_count();
+    let object_count = state.test_object_backend.object_count();
 
     let output = run_git_output(
         Some(&source),
@@ -622,7 +622,7 @@ async fn first_push_missing_tip_rules_displays_rejection_without_persisting() {
     );
     assert!(repo.git_head.is_none());
     assert!(repo.first_push_token.is_some());
-    assert_eq!(state.test_object_store.object_count(), object_count);
+    assert_eq!(state.test_object_backend.object_count(), object_count);
     assert_eq!(recording.event_names(), ["operation:failure"]);
 }
 

@@ -1,5 +1,5 @@
-use scope_object_store::S3ObjectStoreSettings;
-use scope_object_store::config::required_env as required;
+use scope_storage::S3Settings;
+use scope_storage::config::required_env as required;
 
 const DATABASE_URL: &str = "DATABASE_URL";
 const CACHE_BACKEND: &str = "SCOPE_CACHE_BACKEND";
@@ -7,7 +7,7 @@ const CACHE_GRANT_PUBLIC_KEY: &str = "SCOPE_CACHE_GRANT_PUBLIC_KEY";
 
 pub struct Settings {
     pub(crate) database_url: String,
-    pub(crate) object_store: S3ObjectStoreSettings,
+    pub(crate) object_store: S3Settings,
     pub(crate) backend: String,
     pub(crate) grant_public_key_pem: String,
 }
@@ -27,7 +27,7 @@ impl Settings {
                 "{CACHE_BACKEND} must contain lowercase letters, digits, or single hyphens"
             );
         }
-        let object_store = S3ObjectStoreSettings::from_env("SCOPE_CACHE_BUCKET")?;
+        let object_store = S3Settings::from_env("SCOPE_CACHE_BUCKET")?;
         Ok(Self {
             database_url: required(DATABASE_URL)?,
             object_store,

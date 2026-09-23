@@ -9,7 +9,7 @@ use std::{
 };
 
 pub(super) fn store_seed_git_pack(
-    git_segment_store: &scope_git_storage::GitSegmentStore,
+    git_segment_store: &scope_storage::GitSegmentStore,
     repository_id: &str,
     repo_path: &Path,
 ) -> Result<(GitHead, GitPackSpan, GitSegmentUpload), ApiError> {
@@ -44,7 +44,7 @@ pub(super) fn store_seed_git_pack(
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(scope_git_storage::GitStorageError::Local)?
+            .map_err(scope_storage::GitStorageError::Local)?
             .block_on(store.ingest_blocking_reader(
                 &ingest_repository_id,
                 std::io::Cursor::new(output.stdout),
@@ -76,7 +76,7 @@ pub(super) fn store_seed_git_pack(
 }
 
 #[cfg(test)]
-pub(crate) fn test_seed_git_segment_store() -> scope_git_storage::GitSegmentStore {
+pub(crate) fn test_seed_git_segment_store() -> scope_storage::GitSegmentStore {
     use std::sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -88,10 +88,10 @@ pub(crate) fn test_seed_git_segment_store() -> scope_git_storage::GitSegmentStor
         std::process::id(),
         ATTEMPT.fetch_add(1, Ordering::Relaxed)
     ));
-    scope_git_storage::GitSegmentStore::new(
-        Arc::new(scope_git_storage::MemoryMultipartStore::default()),
-        scope_git_storage::SegmentEncryptionKey::new("test", [3_u8; 32]).unwrap(),
-        scope_git_storage::GitSegmentStoreConfig::new(root),
+    scope_storage::GitSegmentStore::new(
+        Arc::new(scope_storage::MemoryBackend::default()),
+        scope_storage::EncryptionKey::new("test", [3_u8; 32]).unwrap(),
+        scope_storage::GitSegmentStoreConfig::new(root),
     )
     .unwrap()
 }

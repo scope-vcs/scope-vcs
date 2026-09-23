@@ -1,4 +1,4 @@
-use super::{fetch_bundle_into, request_ref_head, request_ref_oid_is_commit};
+use super::{download_snapshot, fetch_bundle_into, request_ref_head, request_ref_oid_is_commit};
 use crate::{
     error::ApiError,
     git::{
@@ -11,7 +11,6 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     requests::{Request, RequestAudience, RequestRevision, canonical_request_ref},
 };
-use scope_object_store::source_blob_bytes;
 use sha2::{Digest, Sha256};
 use std::future::Future;
 use std::{
@@ -106,12 +105,12 @@ where
                         &request_ref,
                         &revision_for_build,
                         base_repo.as_ref().map(AsRef::as_ref),
-                        || {
-                            source_blob_bytes(
+                        |bundle| {
+                            download_snapshot(
                                 state_for_build.object_store.as_ref(),
                                 &revision_for_build.git_snapshot,
+                                bundle,
                             )
-                            .map_err(ApiError::from)
                         },
                     )
                 })
@@ -167,7 +166,7 @@ fn build_revision(
     request_ref: &str,
     revision: &RequestRevision,
     base_repo: Option<&Path>,
-    load: impl FnOnce() -> Result<Vec<u8>, ApiError>,
+    download: impl FnOnce(&Path) -> Result<(), ApiError>,
 ) -> Result<(), ApiError> {
     let attempt = REVISION_BUILD_ATTEMPT.fetch_add(1, Ordering::Relaxed);
     let temporary = path.with_extension(format!("{}.{}.tmp", std::process::id(), attempt));
@@ -179,7 +178,7 @@ fn build_revision(
         "initializing request revision",
     )?;
     let bundle = temporary.join("revision.bundle");
-    fs::write(&bundle, load()?).map_err(ApiError::internal)?;
+    download(&bundle)?;
     fetch_bundle_into(
         &temporary,
         request_ref,
@@ -287,27 +286,29 @@ mod tests {
     }
 
     struct CountingStore {
-        inner: Arc<dyn scope_object_store::ObjectStore>,
+        inner: Arc<dyn scope_storage::ObjectStore>,
         loads: Arc<AtomicUsize>,
     }
-    impl scope_object_store::ObjectStore for CountingStore {
-        fn put(
+    #[async_trait::async_trait]
+    impl scope_storage::ObjectStore for CountingStore {
+        async fn put(
             &self,
             key: &str,
             bytes: Vec<u8>,
-        ) -> Result<(), scope_object_store::ObjectStoreError> {
-            self.inner.put(key, bytes)
+        ) -> Result<(), scope_storage::ObjectStoreError> {
+            self.inner.put(key, bytes).await
         }
-        fn get_bounded(
+        async fn read_to(
             &self,
             key: &str,
-            max_bytes: usize,
-        ) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
+            max_bytes: u64,
+            output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
+        ) -> Result<u64, scope_storage::ObjectStoreError> {
             self.loads.fetch_add(1, Ordering::SeqCst);
-            self.inner.get_bounded(key, max_bytes)
+            self.inner.read_to(key, max_bytes, output).await
         }
-        fn delete(&self, key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
-            self.inner.delete(key)
+        async fn delete(&self, key: &str) -> Result<(), scope_storage::ObjectStoreError> {
+            self.inner.delete(key).await
         }
     }
 
@@ -318,10 +319,8 @@ mod tests {
         let mut state = AppState::test_state();
         state
             .object_store
-            .put(
-                &scope_object_store::object_key(&revision.git_snapshot),
-                bytes,
-            )
+            .put(&scope_storage::object_key(&revision.git_snapshot), bytes)
+            .await
             .unwrap();
         let incarnation = RepositoryIncarnation::new("owner/repo", "repoi_first").unwrap();
         let loads = Arc::new(AtomicUsize::new(0));
@@ -393,7 +392,7 @@ mod tests {
                 "refs/heads/topic",
                 &wrong_head,
                 Some(&source),
-                || Ok(bytes.clone())
+                |bundle| fs::write(bundle, &bytes).map_err(ApiError::internal)
             )
             .is_err()
         );
@@ -405,9 +404,13 @@ mod tests {
                 .to_string_lossy()
                 .ends_with(".tmp"))
         );
-        build_revision(&path, "refs/heads/topic", &revision, Some(&source), || {
-            Ok(bytes)
-        })
+        build_revision(
+            &path,
+            "refs/heads/topic",
+            &revision,
+            Some(&source),
+            |bundle| fs::write(bundle, &bytes).map_err(ApiError::internal),
+        )
         .unwrap();
         assert!(path.join(READY_FILE).is_file());
     }
@@ -422,8 +425,8 @@ mod tests {
             actor_user_id: "owner".into(),
             old_head_oid: request.base_main_oid.clone(),
             new_head_oid: request.head_oid.clone(),
-            git_snapshot: scope_object_store::content_object_for_bytes(
-                scope_object_store::ContentObjectKind::GitBundle,
+            git_snapshot: scope_storage::content_object_for_bytes(
+                scope_storage::ContentObjectKind::GitBundle,
                 b"bundle",
             ),
             created_at_unix: 1,

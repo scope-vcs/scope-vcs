@@ -1,4 +1,4 @@
-use scope_object_store::{ObjectStoreError, ObjectStoreErrorKind};
+use scope_storage::{ObjectStoreError, ObjectStoreErrorKind};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MediaStorageErrorKind {

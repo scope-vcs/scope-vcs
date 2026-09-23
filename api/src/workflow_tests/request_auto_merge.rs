@@ -92,11 +92,12 @@ async fn record_revision(
     now_unix: u64,
 ) -> String {
     let event_id = format!("event_{request_id}_revision_{position}");
-    let mut git_snapshot = scope_object_store::put_content_object(
+    let mut git_snapshot = scope_storage::put_content_object(
         state.object_store.as_ref(),
         ContentObjectKind::GitBundle,
         format!("snapshot for {event_id}").into_bytes(),
     )
+    .await
     .unwrap();
     git_snapshot.git_oid = new_head_oid.to_string();
     state
@@ -761,7 +762,9 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
     let snapshot = source_blob_bytes(
         state.object_store.as_ref(),
         request.git_snapshot.as_ref().unwrap(),
+        usize::MAX,
     )
+    .await
     .unwrap();
     let header_end = snapshot
         .windows(2)

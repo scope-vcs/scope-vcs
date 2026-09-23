@@ -1,7 +1,11 @@
 mod support;
 
+use async_trait::async_trait;
+use bytes::Bytes;
 use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, MediaStorageErrorKind, WriteAttempt};
-use scope_object_store::{MemoryObjectStore, ObjectStore, ObjectStoreError};
+use scope_storage::{
+    BackendError, MemoryBackend, MultipartUpload, ObjectBackend, RemoteReader, UploadedPart,
+};
 use sha2::{Digest, Sha256};
 use std::{
     sync::{
@@ -15,7 +19,7 @@ use tokio_stream::StreamExt;
 
 #[tokio::test]
 async fn encrypted_chunks_support_verified_ranges_across_boundaries() {
-    let raw = Arc::new(MemoryObjectStore::new());
+    let raw = Arc::new(MemoryBackend::default());
     let storage = MediaStorage::encrypted(raw.clone(), [7; 32], 2).unwrap();
     let attempt = WriteAttempt::new("att_1", "original", "upload_1").unwrap();
     let mut plaintext = vec![0x41; MAX_CHUNK_BYTES];
@@ -63,7 +67,7 @@ async fn encrypted_chunks_support_verified_ranges_across_boundaries() {
 
 #[tokio::test]
 async fn tampered_encrypted_chunk_fails_closed() {
-    let raw = Arc::new(MemoryObjectStore::new());
+    let raw = Arc::new(MemoryBackend::default());
     let storage = MediaStorage::encrypted(raw.clone(), [9; 32], 1).unwrap();
     let attempt = WriteAttempt::new("att_2", "original", "upload_2").unwrap();
     let plaintext = b"private recording bytes".to_vec();
@@ -75,9 +79,11 @@ async fn tampered_encrypted_chunk_fails_closed() {
         .await
         .unwrap();
 
-    let mut envelope = raw.get(&part.object_key).unwrap();
+    let mut envelope = raw.object(&part.object_key).unwrap().to_vec();
     *envelope.last_mut().unwrap() ^= 1;
-    raw.put(&part.object_key, envelope).unwrap();
+    raw.put(&part.object_key, Bytes::from(envelope))
+        .await
+        .unwrap();
     let mut stream = storage.read_range(&object, 0..=22).await.unwrap();
     let error = stream.next().await.unwrap().unwrap_err();
     assert_eq!(error.kind, MediaStorageErrorKind::Integrity);
@@ -85,7 +91,7 @@ async fn tampered_encrypted_chunk_fails_closed() {
 
 #[tokio::test]
 async fn writer_download_preserves_all_chunks() {
-    let raw = Arc::new(MemoryObjectStore::new());
+    let raw = Arc::new(MemoryBackend::default());
     let storage = MediaStorage::encrypted(raw, [11; 32], 2).unwrap();
     let attempt = WriteAttempt::new("att_3", "video-playback", "lease_3").unwrap();
     let plaintext = vec![0x5a; MAX_CHUNK_BYTES + 17];
@@ -108,8 +114,8 @@ async fn writer_download_preserves_all_chunks() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn blocking_store_work_never_exceeds_configured_slots() {
-    let tracker = Arc::new(TrackingStore::default());
+async fn store_work_never_exceeds_configured_slots() {
+    let tracker = Arc::new(TrackingBackend::default());
     let storage = MediaStorage::encrypted(tracker.clone(), [13; 32], 2).unwrap();
     let mut tasks = Vec::new();
     for index in 1..=6 {
@@ -127,26 +133,66 @@ async fn blocking_store_work_never_exceeds_configured_slots() {
     assert_eq!(tracker.high_water.load(Ordering::SeqCst), 2);
 }
 
+/// Records how many puts overlap, delegating storage to memory.
 #[derive(Default)]
-struct TrackingStore {
+struct TrackingBackend {
+    inner: MemoryBackend,
     active: AtomicUsize,
     high_water: AtomicUsize,
 }
 
-impl ObjectStore for TrackingStore {
-    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
+#[async_trait]
+impl ObjectBackend for TrackingBackend {
+    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), BackendError> {
         let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
         self.high_water.fetch_max(active, Ordering::SeqCst);
-        std::thread::sleep(Duration::from_millis(30));
+        tokio::time::sleep(Duration::from_millis(30)).await;
         self.active.fetch_sub(1, Ordering::SeqCst);
-        Ok(())
+        self.inner.put(key, bytes).await
     }
 
-    fn get_bounded(&self, key: &str, _max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
-        Err(ObjectStoreError::not_found(format!("{key} not found")))
+    async fn begin(&self, key: &str) -> Result<MultipartUpload, BackendError> {
+        self.inner.begin(key).await
     }
 
-    fn delete(&self, _key: &str) -> Result<(), ObjectStoreError> {
-        Ok(())
+    async fn upload_part(
+        &self,
+        upload: &MultipartUpload,
+        part_number: i32,
+        bytes: Bytes,
+    ) -> Result<UploadedPart, BackendError> {
+        self.inner.upload_part(upload, part_number, bytes).await
+    }
+
+    async fn complete(
+        &self,
+        upload: MultipartUpload,
+        parts: Vec<UploadedPart>,
+    ) -> Result<(), BackendError> {
+        self.inner.complete(upload, parts).await
+    }
+
+    async fn abort(&self, upload: MultipartUpload) -> Result<(), BackendError> {
+        self.inner.abort(upload).await
+    }
+
+    async fn abort_incomplete(&self, key: &str) -> Result<(), BackendError> {
+        self.inner.abort_incomplete(key).await
+    }
+
+    async fn read(&self, key: &str) -> Result<RemoteReader, BackendError> {
+        self.inner.read(key).await
+    }
+
+    async fn delete(&self, key: &str) -> Result<(), BackendError> {
+        self.inner.delete(key).await
+    }
+
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+    ) -> Result<Vec<String>, BackendError> {
+        self.inner.list_page(prefix, start_after).await
     }
 }

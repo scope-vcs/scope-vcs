@@ -98,7 +98,7 @@ async fn assert_intent_mismatch_rejection(sideband: bool) {
         assert!(body[4..].starts_with(b"ERR "));
     }
     assert!(!String::from_utf8_lossy(&body).contains("unpack ok"));
-    assert!(!state.test_object_store.contains_bytes(readme));
+    assert!(!state.test_object_backend.contains_bytes(readme));
 }
 
 #[tokio::test]

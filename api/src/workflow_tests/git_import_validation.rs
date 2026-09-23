@@ -110,7 +110,7 @@ async fn receive_pack_rejects_nested_windows_device_path_before_durable_side_eff
         "install crafted commit",
     )
     .unwrap();
-    let object_count = state.test_object_store.object_count();
+    let object_count = state.test_object_backend.object_count();
     let refs = git_refs(&repo).unwrap();
     let metadata = serde_json::to_value(
         find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
@@ -137,7 +137,7 @@ async fn receive_pack_rejects_nested_windows_device_path_before_durable_side_eff
             .public_message()
             .contains("reserved Windows device name")
     );
-    assert_eq!(state.test_object_store.object_count(), object_count);
+    assert_eq!(state.test_object_backend.object_count(), object_count);
     assert_eq!(git_refs(&repo).unwrap(), refs);
     assert_eq!(
         serde_json::to_value(
@@ -179,7 +179,7 @@ async fn receive_pack_rejects_windows_device_path_removed_before_the_new_head() 
             .public_message()
             .contains("reserved Windows device name")
     );
-    assert_eq!(state.test_object_store.object_count(), 0);
+    assert_eq!(state.test_object_backend.object_count(), 0);
 }
 
 #[test]

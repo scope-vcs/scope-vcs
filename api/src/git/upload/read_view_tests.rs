@@ -76,7 +76,7 @@ fn commit_in(path: &FsPath, message: &str, parent: &str) -> String {
 
 /// Advances the request branch `refs/heads/<request>` in `source` by one commit and stores
 /// its snapshot bundle, the way a request push does.
-fn advance_request_snapshot(
+async fn advance_request_snapshot(
     state: &AppState,
     source: &FsPath,
     request: &str,
@@ -109,7 +109,8 @@ fn advance_request_snapshot(
     let (snapshot, bytes) = git_snapshot_from_ref(source, &request_ref, None).unwrap();
     state
         .object_store
-        .put(&scope_object_store::object_key(&snapshot), bytes)
+        .put(&scope_storage::object_key(&snapshot), bytes)
+        .await
         .unwrap();
     (head, snapshot)
 }
@@ -233,7 +234,7 @@ async fn unchanged_request_refs_are_copied_from_earlier_read_views() {
     let main_head = ref_head(&primary_path, "refs/heads/main");
     let topic_source = base_repo(&cache, "topic-source");
     let (topic_head, snapshot) =
-        advance_request_snapshot(&state, topic_source.as_ref(), "alpha", "topic");
+        advance_request_snapshot(&state, topic_source.as_ref(), "alpha", "topic").await;
     let incarnation = RepositoryIncarnation::new("repo", "incarnation").unwrap();
     let alpha = request("alpha", &topic_head, Some(snapshot.clone()));
 
@@ -251,7 +252,8 @@ async fn unchanged_request_refs_are_copied_from_earlier_read_views() {
     // Once the snapshot is gone from the object store, only the first read view can supply alpha.
     state
         .object_store
-        .delete(&scope_object_store::object_key(&snapshot))
+        .delete(&scope_storage::object_key(&snapshot))
+        .await
         .unwrap();
     let requests = vec![alpha, request("beta", &main_head, None)];
     let second = git_read_view_repo(
@@ -278,7 +280,7 @@ async fn earlier_read_views_only_seed_the_exact_request_head() {
     let primary_path = primary.as_ref().to_path_buf();
     let topic_source = base_repo(&cache, "topic-source");
     let (first_head, first_snapshot) =
-        advance_request_snapshot(&state, topic_source.as_ref(), "alpha", "topic one");
+        advance_request_snapshot(&state, topic_source.as_ref(), "alpha", "topic one").await;
     let incarnation = RepositoryIncarnation::new("repo", "incarnation").unwrap();
 
     let first = git_read_view_repo(
@@ -293,7 +295,7 @@ async fn earlier_read_views_only_seed_the_exact_request_head() {
     assert_eq!(ref_head(first.as_ref(), "refs/heads/alpha"), first_head);
 
     let (second_head, second_snapshot) =
-        advance_request_snapshot(&state, topic_source.as_ref(), "alpha", "topic two");
+        advance_request_snapshot(&state, topic_source.as_ref(), "alpha", "topic two").await;
     let second = git_read_view_repo(
         &state,
         &incarnation,

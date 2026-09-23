@@ -5,7 +5,7 @@ use super::*;
 use crate::AppState;
 use crate::git::command::git_stdout_text;
 use crate::git::restore::restore_git_pack_spans;
-use scope_object_store::{EncryptedObjectStore, MemoryObjectStore, source_blob_bytes};
+use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend, source_blob_bytes};
 use std::sync::Arc;
 
 #[test]
@@ -36,7 +36,10 @@ fn local_dev_actor_lookup_is_limited_to_seeded_identities() {
 
 #[tokio::test]
 async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
-    let store = EncryptedObjectStore::new(Arc::new(MemoryObjectStore::new()), [9; 32]);
+    let store = EncryptedObjectStore::new(
+        Arc::new(MemoryBackend::default()),
+        EncryptionKey::new("test", [9; 32]).unwrap(),
+    );
     let git_segment_store = super::test_seed_git_segment_store();
 
     let catalog = super::catalog(
@@ -47,6 +50,7 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
             handle: "dev".to_string(),
         },
     )
+    .await
     .unwrap();
 
     for fixture in dependency_repositories::fixtures() {
@@ -80,7 +84,9 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
                 "seeded dependency policy and persisted config must agree for {path}"
             );
             assert_eq!(
-                source_blob_bytes(&store, change.new_content.as_ref().unwrap()).unwrap(),
+                source_blob_bytes(&store, change.new_content.as_ref().unwrap(), usize::MAX)
+                    .await
+                    .unwrap(),
                 file.content.as_bytes()
             );
         }
@@ -116,8 +122,8 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
 #[tokio::test]
 async fn seed_catalog_git_segments_restore_raw_repositories() {
     let store = Arc::new(EncryptedObjectStore::new(
-        Arc::new(MemoryObjectStore::new()),
-        [9; 32],
+        Arc::new(MemoryBackend::default()),
+        EncryptionKey::new("test", [9; 32]).unwrap(),
     ));
     let git_segment_store = Arc::new(super::test_seed_git_segment_store());
     let catalog = super::catalog(
@@ -128,6 +134,7 @@ async fn seed_catalog_git_segments_restore_raw_repositories() {
             handle: "dev".to_string(),
         },
     )
+    .await
     .unwrap();
     let mut state = AppState::test_state();
     state.git_segment_store = git_segment_store;
@@ -176,7 +183,9 @@ async fn seed_catalog_git_segments_restore_raw_repositories() {
         fs::create_dir_all(state.data_dir.as_ref()).unwrap();
         fs::write(
             &bundle_path,
-            source_blob_bytes(state.object_store.as_ref(), snapshot).unwrap(),
+            source_blob_bytes(state.object_store.as_ref(), snapshot, usize::MAX)
+                .await
+                .unwrap(),
         )
         .unwrap();
         seed_git(
@@ -295,6 +304,7 @@ async fn seeded_readme_is_readable_without_startup_backfill_or_git_materializati
             handle: "dev".into(),
         },
     )
+    .await
     .unwrap();
     state
         .metadata
@@ -303,7 +313,10 @@ async fn seeded_readme_is_readable_without_startup_backfill_or_git_materializati
         .unwrap();
     // The HTTP read must use the persisted snapshot, even with no source objects available.
     let mut state = state;
-    state.object_store = Arc::new(MemoryObjectStore::new());
+    state.object_store = Arc::new(EncryptedObjectStore::new(
+        Arc::new(MemoryBackend::default()),
+        EncryptionKey::new("test", [1; 32]).unwrap(),
+    ));
     state.git_segment_store = Arc::new(super::test_seed_git_segment_store());
     let response = crate::router(state)
         .oneshot(

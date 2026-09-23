@@ -224,8 +224,8 @@ const DEPENDENCY_REPOSITORIES: &[SeedRepository] = &[
 ];
 
 pub(super) fn seed_dependency_repositories(
-    object_store: &dyn ObjectStore,
-    git_segment_store: &scope_git_storage::GitSegmentStore,
+    object_store: &SeedObjects,
+    git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
 ) -> Result<Vec<(Repository, GitSegmentUpload)>, ApiError> {
     DEPENDENCY_REPOSITORIES
@@ -243,8 +243,8 @@ pub(super) fn seed_dependency_repositories(
 }
 
 fn dependency_repository(
-    object_store: &dyn ObjectStore,
-    git_segment_store: &scope_git_storage::GitSegmentStore,
+    object_store: &SeedObjects,
+    git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
     name: &str,
     files: &[SeedFile],

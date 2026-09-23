@@ -1,4 +1,7 @@
-use crate::error::MultipartError;
+use crate::{
+    backend::{LIST_PAGE_KEYS, MultipartUpload, ObjectBackend, RemoteReader, UploadedPart},
+    error::BackendError,
+};
 use async_trait::async_trait;
 use aws_sdk_s3::{
     Client,
@@ -9,61 +12,14 @@ use aws_sdk_s3::{
     types::{CompletedMultipartUpload, CompletedPart},
 };
 use bytes::Bytes;
-use std::{error::Error, future::Future, pin::Pin, sync::Arc, time::Duration};
-use tokio::io::AsyncRead;
+use std::{error::Error, future::Future, sync::Arc, time::Duration};
 
 const REMOTE_READ_ATTEMPTS: usize = 3;
 
 type GetObjectSdkError = SdkError<GetObjectError>;
 
-pub type RemoteReader = Pin<Box<dyn AsyncRead + Send>>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MultipartUpload {
-    pub key: String,
-    pub upload_id: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UploadedPart {
-    pub part_number: i32,
-    pub etag: String,
-}
-
-#[async_trait]
-pub trait MultipartStore: Send + Sync + 'static {
-    fn minimum_part_bytes(&self) -> usize {
-        1
-    }
-
-    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError>;
-
-    async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError>;
-
-    async fn upload_part(
-        &self,
-        upload: &MultipartUpload,
-        part_number: i32,
-        bytes: Bytes,
-    ) -> Result<UploadedPart, MultipartError>;
-
-    async fn complete(
-        &self,
-        upload: MultipartUpload,
-        parts: Vec<UploadedPart>,
-    ) -> Result<(), MultipartError>;
-
-    async fn abort(&self, upload: MultipartUpload) -> Result<(), MultipartError>;
-
-    async fn abort_incomplete(&self, key: &str) -> Result<(), MultipartError>;
-
-    async fn read(&self, key: &str) -> Result<RemoteReader, MultipartError>;
-
-    async fn delete(&self, key: &str) -> Result<(), MultipartError>;
-}
-
 #[derive(Clone)]
-pub struct S3MultipartSettings {
+pub struct S3Settings {
     pub endpoint: String,
     pub bucket: String,
     pub region: String,
@@ -73,20 +29,20 @@ pub struct S3MultipartSettings {
 }
 
 #[derive(Clone)]
-pub struct S3MultipartStore {
+pub struct S3Backend {
     client: Client,
     bucket: Arc<str>,
 }
 
-impl S3MultipartStore {
-    pub fn new(settings: S3MultipartSettings) -> Result<Self, MultipartError> {
+impl S3Backend {
+    pub fn new(settings: S3Settings) -> Result<Self, BackendError> {
         if settings.endpoint.trim().is_empty()
             || settings.bucket.trim().is_empty()
             || settings.region.trim().is_empty()
             || settings.access_key_id.trim().is_empty()
             || settings.secret_access_key.is_empty()
         {
-            return Err(MultipartError::new(
+            return Err(BackendError::new(
                 "S3 endpoint, bucket, region, and credentials are required",
             ));
         }
@@ -95,7 +51,7 @@ impl S3MultipartStore {
             settings.secret_access_key,
             None,
             None,
-            "scope-git-storage",
+            "scope-storage",
         );
         let config = aws_sdk_s3::Config::builder()
             .behavior_version(BehaviorVersion::latest())
@@ -115,8 +71,8 @@ fn s3_request_error(
     operation: &str,
     key: &str,
     error: impl Error + Send + Sync + 'static,
-) -> MultipartError {
-    MultipartError::with_source(format!("S3 {operation} failed for object {key}"), error)
+) -> BackendError {
+    BackendError::with_source(format!("S3 {operation} failed for object {key}"), error)
 }
 
 fn is_retryable_get_error(error: &GetObjectSdkError) -> bool {
@@ -168,12 +124,12 @@ fn remote_read_delay(failed_attempt: usize) -> Duration {
 }
 
 #[async_trait]
-impl MultipartStore for S3MultipartStore {
+impl ObjectBackend for S3Backend {
     fn minimum_part_bytes(&self) -> usize {
         5 * 1024 * 1024
     }
 
-    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError> {
+    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), BackendError> {
         self.client
             .put_object()
             .bucket(self.bucket.as_ref())
@@ -185,7 +141,7 @@ impl MultipartStore for S3MultipartStore {
         Ok(())
     }
 
-    async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {
+    async fn begin(&self, key: &str) -> Result<MultipartUpload, BackendError> {
         let response = self
             .client
             .create_multipart_upload()
@@ -197,7 +153,7 @@ impl MultipartStore for S3MultipartStore {
         let upload_id = response
             .upload_id()
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| MultipartError::new("S3 did not return a multipart upload id"))?;
+            .ok_or_else(|| BackendError::new("S3 did not return a multipart upload id"))?;
         Ok(MultipartUpload {
             key: key.to_string(),
             upload_id: upload_id.to_string(),
@@ -209,7 +165,7 @@ impl MultipartStore for S3MultipartStore {
         upload: &MultipartUpload,
         part_number: i32,
         bytes: Bytes,
-    ) -> Result<UploadedPart, MultipartError> {
+    ) -> Result<UploadedPart, BackendError> {
         let response = self
             .client
             .upload_part()
@@ -224,7 +180,7 @@ impl MultipartStore for S3MultipartStore {
         let etag = response
             .e_tag()
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| MultipartError::new("S3 did not return an ETag for a multipart part"))?;
+            .ok_or_else(|| BackendError::new("S3 did not return an ETag for a multipart part"))?;
         Ok(UploadedPart {
             part_number,
             etag: etag.to_string(),
@@ -235,7 +191,7 @@ impl MultipartStore for S3MultipartStore {
         &self,
         upload: MultipartUpload,
         parts: Vec<UploadedPart>,
-    ) -> Result<(), MultipartError> {
+    ) -> Result<(), BackendError> {
         let parts = parts
             .into_iter()
             .map(|part| {
@@ -260,7 +216,7 @@ impl MultipartStore for S3MultipartStore {
         Ok(())
     }
 
-    async fn abort(&self, upload: MultipartUpload) -> Result<(), MultipartError> {
+    async fn abort(&self, upload: MultipartUpload) -> Result<(), BackendError> {
         self.client
             .abort_multipart_upload()
             .bucket(self.bucket.as_ref())
@@ -272,7 +228,7 @@ impl MultipartStore for S3MultipartStore {
         Ok(())
     }
 
-    async fn abort_incomplete(&self, key: &str) -> Result<(), MultipartError> {
+    async fn abort_incomplete(&self, key: &str) -> Result<(), BackendError> {
         let mut key_marker = None;
         let mut upload_id_marker = None;
         loop {
@@ -312,14 +268,14 @@ impl MultipartStore for S3MultipartStore {
             key_marker = response.next_key_marker().map(ToOwned::to_owned);
             upload_id_marker = response.next_upload_id_marker().map(ToOwned::to_owned);
             if key_marker.is_none() {
-                return Err(MultipartError::new(
+                return Err(BackendError::new(
                     "S3 multipart listing was truncated without a next key marker",
                 ));
             }
         }
     }
 
-    async fn read(&self, key: &str) -> Result<RemoteReader, MultipartError> {
+    async fn read(&self, key: &str) -> Result<RemoteReader, BackendError> {
         let response = retry_remote_read(
             || {
                 self.client
@@ -337,11 +293,17 @@ impl MultipartStore for S3MultipartStore {
             tokio::time::sleep,
         )
         .await
-        .map_err(|error| s3_request_error("get object", key, error))?;
+        .map_err(|error| {
+            if is_missing_object(&error) {
+                BackendError::not_found(format!("object {key} not found"))
+            } else {
+                s3_request_error("get object", key, error)
+            }
+        })?;
         Ok(Box::pin(response.body.into_async_read()))
     }
 
-    async fn delete(&self, key: &str) -> Result<(), MultipartError> {
+    async fn delete(&self, key: &str) -> Result<(), BackendError> {
         self.client
             .delete_object()
             .bucket(self.bucket.as_ref())
@@ -351,6 +313,54 @@ impl MultipartStore for S3MultipartStore {
             .map_err(|error| s3_request_error("delete object", key, error))?;
         Ok(())
     }
+
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+    ) -> Result<Vec<String>, BackendError> {
+        let response = self
+            .client
+            .list_objects_v2()
+            .bucket(self.bucket.as_ref())
+            .prefix(prefix)
+            .set_start_after(start_after.map(ToOwned::to_owned))
+            .max_keys(LIST_PAGE_KEYS as i32)
+            .send()
+            .await
+            .map_err(|error| s3_request_error("list objects", prefix, error))?;
+        let keys = response
+            .contents()
+            .iter()
+            .filter_map(|object| object.key().map(ToOwned::to_owned))
+            .collect::<Vec<_>>();
+        // An empty page ends the listing, so a truncated one must make progress.
+        if keys.is_empty() && response.is_truncated() == Some(true) {
+            return Err(BackendError::new(
+                "S3 object listing was truncated without returning any keys",
+            ));
+        }
+        Ok(keys)
+    }
+
+    async fn readiness_check(&self) -> Result<(), BackendError> {
+        self.client
+            .head_bucket()
+            .bucket(self.bucket.as_ref())
+            .send()
+            .await
+            .map_err(|error| s3_request_error("head bucket", &self.bucket, error))?;
+        Ok(())
+    }
+}
+
+/// Only an explicit `NoSuchKey` means the object is absent. Any other failure, including a 404
+/// for a missing bucket or one without an error code, stays an outage the caller may retry.
+fn is_missing_object(error: &GetObjectSdkError) -> bool {
+    let SdkError::ServiceError(error) = error else {
+        return false;
+    };
+    aws_sdk_s3::error::ProvideErrorMetadata::code(error.err()) == Some("NoSuchKey")
 }
 
 #[cfg(test)]
@@ -370,6 +380,14 @@ mod tests {
         let error = GetObjectError::generic(ErrorMetadata::builder().code(code).build());
         let response = HttpResponse::new(status.try_into().unwrap(), SdkBody::empty());
         SdkError::service_error(error, response)
+    }
+
+    #[test]
+    fn only_no_such_key_means_the_object_is_missing() {
+        assert!(is_missing_object(&service_error("NoSuchKey", 404)));
+        assert!(!is_missing_object(&service_error("NoSuchBucket", 404)));
+        assert!(!is_missing_object(&service_error("", 404)));
+        assert!(!is_missing_object(&service_error("AccessDenied", 403)));
     }
 
     #[test]

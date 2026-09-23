@@ -3,13 +3,13 @@ mod support;
 use scope_media_storage::{
     MAX_CHUNK_BYTES, MediaObject, MediaStorage, MediaStorageErrorKind, WriteAttempt,
 };
-use scope_object_store::{MemoryObjectStore, ObjectStore};
+use scope_storage::{MemoryBackend, ObjectBackend};
 use std::sync::Arc;
 use tokio_stream::StreamExt;
 
 #[tokio::test]
 async fn metadata_encrypted_chunks_and_key_restore_into_an_independent_store() {
-    let original_bucket = Arc::new(MemoryObjectStore::new());
+    let original_bucket = Arc::new(MemoryBackend::default());
     let recovery_key = [83; 32];
     let source = MediaStorage::encrypted(original_bucket.clone(), recovery_key, 1).unwrap();
     let mut plaintext = vec![13; MAX_CHUNK_BYTES];
@@ -25,7 +25,7 @@ async fn metadata_encrypted_chunks_and_key_restore_into_an_independent_store() {
         .map(|chunk| {
             (
                 chunk.object_key.clone(),
-                original_bucket.get(&chunk.object_key).unwrap(),
+                original_bucket.object(&chunk.object_key).unwrap(),
             )
         })
         .collect();
@@ -33,9 +33,9 @@ async fn metadata_encrypted_chunks_and_key_restore_into_an_independent_store() {
     drop(original_bucket);
     drop(manifest);
 
-    let restored_bucket = Arc::new(MemoryObjectStore::new());
+    let restored_bucket = Arc::new(MemoryBackend::default());
     for (key, encrypted_bytes) in encrypted_backup {
-        restored_bucket.put(&key, encrypted_bytes).unwrap();
+        restored_bucket.put(&key, encrypted_bytes).await.unwrap();
     }
     let restored_manifest: MediaObject = serde_json::from_slice(&metadata_backup).unwrap();
     let restored = MediaStorage::encrypted(restored_bucket.clone(), recovery_key, 1).unwrap();

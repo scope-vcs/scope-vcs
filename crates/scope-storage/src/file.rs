@@ -1,5 +1,6 @@
+use crate::backend::LIST_PAGE_KEYS;
 use crate::{
-    MultipartError, MultipartStore, MultipartUpload, RemoteReader, UploadedPart, is_hex_id_32,
+    BackendError, MultipartUpload, ObjectBackend, RemoteReader, UploadedPart, is_hex_id_32,
     random_hex_id, sync_directory,
 };
 use async_trait::async_trait;
@@ -12,15 +13,15 @@ use tokio::{
 };
 
 #[derive(Clone, Debug)]
-pub struct FileMultipartStore {
+pub struct FileBackend {
     root: PathBuf,
 }
 
-impl FileMultipartStore {
-    pub fn new(root: impl Into<PathBuf>) -> Result<Self, MultipartError> {
+impl FileBackend {
+    pub fn new(root: impl Into<PathBuf>) -> Result<Self, BackendError> {
         let root = root.into();
         if root.as_os_str().is_empty() {
-            return Err(MultipartError::new("filesystem multipart root is required"));
+            return Err(BackendError::new("filesystem multipart root is required"));
         }
         Ok(Self { root })
     }
@@ -29,22 +30,22 @@ impl FileMultipartStore {
         self.root.join("multipart")
     }
 
-    fn upload_path(&self, upload_id: &str) -> Result<PathBuf, MultipartError> {
+    fn upload_path(&self, upload_id: &str) -> Result<PathBuf, BackendError> {
         validate_upload_id(upload_id)?;
         Ok(self.uploads_root().join(upload_id))
     }
 
-    fn object_path(&self, key: &str) -> Result<PathBuf, MultipartError> {
+    fn object_path(&self, key: &str) -> Result<PathBuf, BackendError> {
         validate_key(key)?;
         Ok(self.root.join("objects").join(key))
     }
 
-    async fn verify_upload(&self, upload: &MultipartUpload) -> Result<PathBuf, MultipartError> {
+    async fn verify_upload(&self, upload: &MultipartUpload) -> Result<PathBuf, BackendError> {
         validate_key(&upload.key)?;
         let directory = self.upload_path(&upload.upload_id)?;
         let recorded_key = fs::read_to_string(directory.join("key")).await?;
         if recorded_key != upload.key {
-            return Err(MultipartError::new(
+            return Err(BackendError::new(
                 "filesystem multipart upload key does not match",
             ));
         }
@@ -53,21 +54,39 @@ impl FileMultipartStore {
 }
 
 #[async_trait]
-impl MultipartStore for FileMultipartStore {
-    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError> {
-        let upload = self.begin(key).await?;
+impl ObjectBackend for FileBackend {
+    /// Replaces any existing object, like an S3 put.
+    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), BackendError> {
+        let final_path = self.object_path(key)?;
+        let parent = final_path
+            .parent()
+            .ok_or_else(|| BackendError::new("filesystem object path has no parent"))?
+            .to_path_buf();
+        fs::create_dir_all(&parent).await?;
+        fs::create_dir_all(self.uploads_root()).await?;
+        let temp_path = self
+            .uploads_root()
+            .join(format!("{}.put", random_upload_id()?));
         let result = async {
-            let part = self.upload_part(&upload, 1, bytes).await?;
-            self.complete(upload.clone(), vec![part]).await
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temp_path)
+                .await?;
+            file.write_all(&bytes).await?;
+            file.sync_all().await?;
+            drop(file);
+            fs::rename(&temp_path, &final_path).await?;
+            sync_directory(parent).await.map_err(BackendError::from)
         }
         .await;
         if result.is_err() {
-            let _ = self.abort(upload).await;
+            let _ = fs::remove_file(&temp_path).await;
         }
         result
     }
 
-    async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {
+    async fn begin(&self, key: &str) -> Result<MultipartUpload, BackendError> {
         validate_key(key)?;
         fs::create_dir_all(self.uploads_root()).await?;
         let upload_id = random_upload_id()?;
@@ -78,15 +97,15 @@ impl MultipartStore for FileMultipartStore {
             .write(true)
             .open(directory.join("key"))
             .await
-            .map_err(MultipartError::from)?;
+            .map_err(BackendError::from)?;
         metadata
             .write_all(key.as_bytes())
             .await
-            .map_err(MultipartError::from)?;
-        metadata.sync_all().await.map_err(MultipartError::from)?;
+            .map_err(BackendError::from)?;
+        metadata.sync_all().await.map_err(BackendError::from)?;
         sync_directory(directory.clone())
             .await
-            .map_err(MultipartError::from)?;
+            .map_err(BackendError::from)?;
         Ok(MultipartUpload {
             key: key.to_string(),
             upload_id,
@@ -98,11 +117,9 @@ impl MultipartStore for FileMultipartStore {
         upload: &MultipartUpload,
         part_number: i32,
         bytes: Bytes,
-    ) -> Result<UploadedPart, MultipartError> {
+    ) -> Result<UploadedPart, BackendError> {
         if part_number <= 0 {
-            return Err(MultipartError::new(
-                "multipart part number must be positive",
-            ));
+            return Err(BackendError::new("multipart part number must be positive"));
         }
         let directory = self.verify_upload(upload).await?;
         let part_name = format!("{part_number:08}.part");
@@ -118,16 +135,14 @@ impl MultipartStore for FileMultipartStore {
             file.sync_all().await?;
             drop(file);
             if fs::try_exists(&final_path).await? {
-                return Err(MultipartError::new(
+                return Err(BackendError::new(
                     "filesystem multipart part already exists",
                 ));
             }
             fs::rename(&temp_path, &final_path)
                 .await
-                .map_err(MultipartError::from)?;
-            sync_directory(directory)
-                .await
-                .map_err(MultipartError::from)
+                .map_err(BackendError::from)?;
+            sync_directory(directory).await.map_err(BackendError::from)
         }
         .await;
         if let Err(error) = result {
@@ -144,9 +159,9 @@ impl MultipartStore for FileMultipartStore {
         &self,
         upload: MultipartUpload,
         parts: Vec<UploadedPart>,
-    ) -> Result<(), MultipartError> {
+    ) -> Result<(), BackendError> {
         if parts.is_empty() {
-            return Err(MultipartError::new(
+            return Err(BackendError::new(
                 "filesystem multipart upload has no parts",
             ));
         }
@@ -154,10 +169,10 @@ impl MultipartStore for FileMultipartStore {
         let final_path = self.object_path(&upload.key)?;
         let parent = final_path
             .parent()
-            .ok_or_else(|| MultipartError::new("filesystem object path has no parent"))?;
+            .ok_or_else(|| BackendError::new("filesystem object path has no parent"))?;
         fs::create_dir_all(parent).await?;
         if fs::try_exists(&final_path).await? {
-            return Err(MultipartError::new(
+            return Err(BackendError::new(
                 "filesystem multipart object already exists",
             ));
         }
@@ -170,9 +185,9 @@ impl MultipartStore for FileMultipartStore {
         let result = async {
             for (index, part) in parts.iter().enumerate() {
                 let expected = i32::try_from(index + 1)
-                    .map_err(|_| MultipartError::new("multipart part count exceeds i32"))?;
+                    .map_err(|_| BackendError::new("multipart part count exceeds i32"))?;
                 if part.part_number != expected {
-                    return Err(MultipartError::new(
+                    return Err(BackendError::new(
                         "filesystem multipart parts are not contiguous",
                     ));
                 }
@@ -184,10 +199,10 @@ impl MultipartStore for FileMultipartStore {
             drop(output);
             fs::rename(&temp_path, &final_path)
                 .await
-                .map_err(MultipartError::from)?;
+                .map_err(BackendError::from)?;
             sync_directory(parent.to_path_buf())
                 .await
-                .map_err(MultipartError::from)?;
+                .map_err(BackendError::from)?;
             let _ = fs::remove_dir_all(&upload_directory).await;
             Ok(())
         }
@@ -198,20 +213,20 @@ impl MultipartStore for FileMultipartStore {
         result
     }
 
-    async fn abort(&self, upload: MultipartUpload) -> Result<(), MultipartError> {
+    async fn abort(&self, upload: MultipartUpload) -> Result<(), BackendError> {
         let directory = self.verify_upload(&upload).await?;
         fs::remove_dir_all(directory)
             .await
-            .map_err(MultipartError::from)
+            .map_err(BackendError::from)
     }
 
-    async fn abort_incomplete(&self, key: &str) -> Result<(), MultipartError> {
+    async fn abort_incomplete(&self, key: &str) -> Result<(), BackendError> {
         validate_key(key)?;
         let uploads_root = self.uploads_root();
         let mut entries = match fs::read_dir(&uploads_root).await {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(MultipartError::from(error)),
+            Err(error) => return Err(BackendError::from(error)),
         };
         while let Some(entry) = entries.next_entry().await? {
             let Some(upload_id) = entry.file_name().to_str().map(ToOwned::to_owned) else {
@@ -232,23 +247,67 @@ impl MultipartStore for FileMultipartStore {
         Ok(())
     }
 
-    async fn read(&self, key: &str) -> Result<RemoteReader, MultipartError> {
+    async fn read(&self, key: &str) -> Result<RemoteReader, BackendError> {
         let path = self.object_path(key)?;
         let file = File::open(path).await?;
         Ok(Box::pin(file))
     }
 
-    async fn delete(&self, key: &str) -> Result<(), MultipartError> {
+    async fn delete(&self, key: &str) -> Result<(), BackendError> {
         let path = self.object_path(key)?;
         match fs::remove_file(path).await {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(MultipartError::from(error)),
+            Err(error) => Err(BackendError::from(error)),
         }
+    }
+
+    /// Proves the objects directory exists or can be created, which fails when the path is a
+    /// file or its parent is not writable.
+    async fn readiness_check(&self) -> Result<(), BackendError> {
+        fs::create_dir_all(self.root.join("objects")).await?;
+        Ok(())
+    }
+
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+    ) -> Result<Vec<String>, BackendError> {
+        let objects = self.root.join("objects");
+        let mut keys = Vec::new();
+        let mut directories = vec![objects.clone()];
+        while let Some(directory) = directories.pop() {
+            let mut entries = match fs::read_dir(&directory).await {
+                Ok(entries) => entries,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.into()),
+            };
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                if entry.file_type().await?.is_dir() {
+                    directories.push(path);
+                    continue;
+                }
+                let Some(key) = path
+                    .strip_prefix(&objects)
+                    .ok()
+                    .and_then(|relative| relative.to_str())
+                else {
+                    continue;
+                };
+                if key.starts_with(prefix) && start_after.is_none_or(|after| key > after) {
+                    keys.push(key.to_string());
+                }
+            }
+        }
+        keys.sort();
+        keys.truncate(LIST_PAGE_KEYS);
+        Ok(keys)
     }
 }
 
-fn validate_key(key: &str) -> Result<(), MultipartError> {
+fn validate_key(key: &str) -> Result<(), BackendError> {
     if key.split('/').any(|component| {
         component.is_empty()
             || component == "."
@@ -257,21 +316,46 @@ fn validate_key(key: &str) -> Result<(), MultipartError> {
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     }) {
-        return Err(MultipartError::new("filesystem object key is invalid"));
+        return Err(BackendError::new("filesystem object key is invalid"));
     }
     Ok(())
 }
 
-fn validate_upload_id(upload_id: &str) -> Result<(), MultipartError> {
+fn validate_upload_id(upload_id: &str) -> Result<(), BackendError> {
     if !is_hex_id_32(upload_id) {
-        return Err(MultipartError::new(
+        return Err(BackendError::new(
             "filesystem multipart upload id is invalid",
         ));
     }
     Ok(())
 }
 
-fn random_upload_id() -> Result<String, MultipartError> {
+fn random_upload_id() -> Result<String, BackendError> {
     random_hex_id()
-        .map_err(|error| MultipartError::new(format!("creating multipart upload id: {error}")))
+        .map_err(|error| BackendError::new(format!("creating multipart upload id: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn readiness_fails_when_the_objects_directory_cannot_exist() {
+        let root = tempfile::tempdir().unwrap();
+        FileBackend::new(root.path())
+            .unwrap()
+            .readiness_check()
+            .await
+            .unwrap();
+
+        let blocked = tempfile::tempdir().unwrap();
+        std::fs::write(blocked.path().join("objects"), b"not a directory").unwrap();
+        assert!(
+            FileBackend::new(blocked.path())
+                .unwrap()
+                .readiness_check()
+                .await
+                .is_err()
+        );
+    }
 }

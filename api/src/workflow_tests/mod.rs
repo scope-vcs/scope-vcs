@@ -23,6 +23,7 @@ use axum::{
     response::Response,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use futures_util::FutureExt;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode, jwk::JwkSet};
 use scope_domain::policy::{Policy, ScopePath, Visibility, VisibilityRule};
 use scope_domain::projection::{
@@ -38,9 +39,7 @@ use scope_domain::{
     repository::{RepoLifecycleState, RepoRecord, Repository},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_object_store::{
-    ContentObjectKind, MemoryObjectStore, put_source_blob, source_blob_bytes,
-};
+use scope_storage::{ContentObjectKind, ObjectStore, put_source_blob, source_blob_bytes};
 use std::{
     collections::BTreeMap,
     fs,
@@ -406,7 +405,7 @@ fn test_git_segment_ref(label: &str) -> scope_domain::repository::git::GitSegmen
         segment_id: format!("test-{}", hex::encode(Sha256::digest(label.as_bytes()))),
         sha256: hex::encode(Sha256::digest(format!("pack:{label}").as_bytes())),
         plaintext_bytes: label.len() as u64,
-        encoding_version: scope_git_storage::ENCODING_VERSION,
+        encoding_version: scope_storage::ENCODING_VERSION,
     }
 }
 
@@ -422,7 +421,7 @@ async fn ready_test_git_segment(
             TEST_REPO_ID,
             &reservation.segment_id,
             &reservation.object_key,
-            scope_git_storage::ENCODING_VERSION,
+            scope_storage::ENCODING_VERSION,
             crate::persistence::unix_now().unwrap(),
         )
         .await
@@ -486,7 +485,7 @@ async fn persist_and_promote_test_update(
                     TEST_REPO_ID,
                     &reservation.segment_id,
                     &reservation.object_key,
-                    scope_git_storage::ENCODING_VERSION,
+                    scope_storage::ENCODING_VERSION,
                     crate::persistence::unix_now()?,
                 )
                 .await?;
@@ -666,8 +665,20 @@ async fn apply_first_push_from_staging_repo(
     persist_test_update(state, update).await.unwrap();
 }
 
+/// Test state stores objects in memory, so a write finishes on its first poll and fixtures can
+/// stay synchronous.
+fn immediate<T>(future: impl std::future::Future<Output = T>) -> T {
+    future
+        .now_or_never()
+        .expect("in-memory object storage completes without waiting")
+}
+
 fn source_blob(state: &AppState, content: &str) -> scope_domain::content::SourceBlob {
-    put_source_blob(state.object_store.as_ref(), content.as_bytes()).unwrap()
+    immediate(put_source_blob(
+        state.object_store.as_ref(),
+        content.as_bytes(),
+    ))
+    .unwrap()
 }
 
 async fn blob_content(
@@ -792,59 +803,61 @@ fn push_intent_request_json_with_base(
 
 struct DeleteFailsObjectStore;
 
-impl scope_object_store::ObjectStore for DeleteFailsObjectStore {
-    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), scope_object_store::ObjectStoreError> {
+#[async_trait::async_trait]
+impl ObjectStore for DeleteFailsObjectStore {
+    async fn put(
+        &self,
+        _key: &str,
+        _bytes: Vec<u8>,
+    ) -> Result<(), scope_storage::ObjectStoreError> {
         Ok(())
     }
 
-    fn get(&self, _key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
-        Err(scope_object_store::ObjectStoreError::not_found(
-            "object not found",
-        ))
-    }
-
-    fn get_bounded(
+    async fn read_to(
         &self,
         _key: &str,
-        _max_bytes: usize,
-    ) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
-        Err(scope_object_store::ObjectStoreError::not_found(
+        _max_bytes: u64,
+        _output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
+    ) -> Result<u64, scope_storage::ObjectStoreError> {
+        Err(scope_storage::ObjectStoreError::not_found(
             "object not found",
         ))
     }
 
-    fn delete(&self, _key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
-        Err(scope_object_store::ObjectStoreError::service_unavailable(
+    async fn delete(&self, _key: &str) -> Result<(), scope_storage::ObjectStoreError> {
+        Err(scope_storage::ObjectStoreError::service_unavailable(
             "delete failed",
         ))
     }
 }
 
 struct PutFailsObjectStore {
-    readable: Arc<MemoryObjectStore>,
+    readable: Arc<dyn ObjectStore>,
 }
 
-impl scope_object_store::ObjectStore for PutFailsObjectStore {
-    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), scope_object_store::ObjectStoreError> {
-        Err(scope_object_store::ObjectStoreError::service_unavailable(
+#[async_trait::async_trait]
+impl ObjectStore for PutFailsObjectStore {
+    async fn put(
+        &self,
+        _key: &str,
+        _bytes: Vec<u8>,
+    ) -> Result<(), scope_storage::ObjectStoreError> {
+        Err(scope_storage::ObjectStoreError::service_unavailable(
             "object PUT failed for test",
         ))
     }
 
-    fn get(&self, key: &str) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
-        scope_object_store::ObjectStore::get(self.readable.as_ref(), key)
-    }
-
-    fn get_bounded(
+    async fn read_to(
         &self,
         key: &str,
-        max_bytes: usize,
-    ) -> Result<Vec<u8>, scope_object_store::ObjectStoreError> {
-        scope_object_store::ObjectStore::get_bounded(self.readable.as_ref(), key, max_bytes)
+        max_bytes: u64,
+        output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
+    ) -> Result<u64, scope_storage::ObjectStoreError> {
+        self.readable.read_to(key, max_bytes, output).await
     }
 
-    fn delete(&self, key: &str) -> Result<(), scope_object_store::ObjectStoreError> {
-        scope_object_store::ObjectStore::delete(self.readable.as_ref(), key)
+    async fn delete(&self, key: &str) -> Result<(), scope_storage::ObjectStoreError> {
+        self.readable.delete(key).await
     }
 }
 

@@ -2,72 +2,32 @@ use crate::config::SCOPE_OBJECT_ENCRYPTION_KEY_ENV;
 #[cfg(feature = "local-dev")]
 use crate::config::non_empty_env;
 #[cfg(feature = "local-dev")]
-use scope_git_storage::FileMultipartStore;
-use scope_git_storage::{
-    GitSegmentStore, S3MultipartSettings, S3MultipartStore, SegmentEncryptionKey,
-};
+use scope_storage::FileBackend;
+use scope_storage::{ObjectBackend, S3Backend, S3Settings};
 #[cfg(feature = "local-dev")]
-use scope_object_store::{FileObjectStore, FileObjectStoreSettings};
-use scope_object_store::{S3ObjectStore, S3ObjectStoreSettings};
-#[cfg(feature = "local-dev")]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[cfg(feature = "local-dev")]
 const SCOPE_OBJECT_STORE_DIR_ENV: &str = "SCOPE_OBJECT_STORE_DIR";
 
 pub(crate) fn encryption_key_from_env() -> anyhow::Result<[u8; 32]> {
-    scope_object_store::config::encryption_key_from_env(SCOPE_OBJECT_ENCRYPTION_KEY_ENV)
+    scope_storage::config::encryption_key_from_env(SCOPE_OBJECT_ENCRYPTION_KEY_ENV)
         .map_err(anyhow::Error::from)
 }
 
-pub(crate) fn s3_from_env() -> anyhow::Result<S3ObjectStore> {
-    S3ObjectStore::new(s3_settings_from_env()?).map_err(anyhow::Error::from)
+pub(crate) fn s3_settings_from_env() -> anyhow::Result<S3Settings> {
+    S3Settings::from_env("SCOPE_BUCKET").map_err(anyhow::Error::from)
 }
 
-pub(crate) fn s3_settings_from_env() -> anyhow::Result<S3ObjectStoreSettings> {
-    S3ObjectStoreSettings::from_env("SCOPE_BUCKET").map_err(anyhow::Error::from)
-}
-
-pub(crate) fn git_segment_store_from_env(
-    local_root: PathBuf,
-    encryption_key: [u8; 32],
-) -> anyhow::Result<GitSegmentStore> {
-    let s3 = s3_settings_from_env()?;
-    let backend = S3MultipartStore::new(S3MultipartSettings {
-        endpoint: s3.endpoint,
-        bucket: s3.bucket,
-        region: s3.region,
-        access_key_id: s3.access_key_id,
-        secret_access_key: s3.secret_access_key,
-        force_path_style: s3.force_path_style,
-    })?;
-    let key = SegmentEncryptionKey::new("primary", encryption_key)?;
-    GitSegmentStore::new(
-        std::sync::Arc::new(backend),
-        key,
-        crate::config::git_segment_store_config_from_env(local_root)?,
-    )
-    .map_err(anyhow::Error::from)
+pub(crate) fn s3_backend_from_env() -> anyhow::Result<Arc<dyn ObjectBackend>> {
+    Ok(Arc::new(S3Backend::new(s3_settings_from_env()?)?))
 }
 
 #[cfg(feature = "local-dev")]
-pub(crate) fn file_from_env(default_root: &Path) -> FileObjectStore {
-    FileObjectStore::new(FileObjectStoreSettings::new(filesystem_root_from_env(
-        default_root,
-    )))
-}
-
-#[cfg(feature = "local-dev")]
-pub(crate) fn git_segment_file_store_from_env(
-    default_root: &Path,
-) -> anyhow::Result<FileMultipartStore> {
-    FileMultipartStore::new(filesystem_root_from_env(default_root)).map_err(anyhow::Error::from)
-}
-
-#[cfg(feature = "local-dev")]
-fn filesystem_root_from_env(default_root: &Path) -> PathBuf {
-    non_empty_env(SCOPE_OBJECT_STORE_DIR_ENV)
+pub(crate) fn file_backend_from_env(default_root: &Path) -> anyhow::Result<Arc<dyn ObjectBackend>> {
+    let root = non_empty_env(SCOPE_OBJECT_STORE_DIR_ENV)
         .map(PathBuf::from)
-        .unwrap_or_else(|| default_root.to_path_buf())
+        .unwrap_or_else(|| default_root.to_path_buf());
+    Ok(Arc::new(FileBackend::new(root)?))
 }

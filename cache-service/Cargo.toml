@@ -16,7 +16,7 @@ jsonwebtoken.workspace = true
 reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 scope_cache_contract.workspace = true
 scope_cache_domain.workspace = true
-scope_object_store.workspace = true
+scope_storage.workspace = true
 scope_postgres.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
 tower-http.workspace = true
