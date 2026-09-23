@@ -47,10 +47,13 @@ import {
   requestAttachmentContentCount,
 } from './request-attachment-reference'
 
+const staleDescriptionMessage = 'The description changed while you were editing. Your draft is kept.'
+
 export function RequestAttachmentEditor({
   actionsSlot,
   autoFocus = false,
   enterSubmits = true,
+  error = null,
   initialText = '',
   label,
   minHeight,
@@ -68,6 +71,8 @@ export function RequestAttachmentEditor({
   actionsSlot?: HTMLElement | null
   autoFocus?: boolean
   enterSubmits?: boolean
+  /** A failure the caller reports, such as a rejected save. */
+  error?: string | null
   initialText?: string
   label: string
   /** Starting height, so an editor that replaces rendered text keeps its size. */
@@ -144,6 +149,7 @@ export function RequestAttachmentEditor({
     overLimitBy: overLimit ? limits.max_attachments_per_content : null,
     transferPending,
   })
+  const alert = validationError ?? error ?? (staleDescription ? staleDescriptionMessage : null)
   const draftChanged = staleDescription || draft.text !== initialText || draft.attachments.length > 0
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -250,6 +256,7 @@ export function RequestAttachmentEditor({
 
   const actions = (
     <EditorActions
+      alert={alert}
       canSubmit={canSubmit}
       formId={formId}
       slotted={Boolean(actionsSlot)}
@@ -335,19 +342,15 @@ export function RequestAttachmentEditor({
         ref={fileInputRef}
         type="file"
       />
+      {!actionsSlot && alert ? <p className="mt-2 text-sm text-destructive" role="alert">{alert}</p> : null}
       {staleDescription ? <StaleDescriptionNotice currentDescription={initialText} /> : null}
-      {validationError ? <p className="mt-2 text-sm text-destructive" role="alert">{validationError}</p> : null}
-      {actionsSlot ? (
-        <>
-          {status ? <p aria-live="polite" className="mt-2 text-xs text-muted-foreground">{status}</p> : null}
-          {createPortal(actions, actionsSlot)}
-        </>
-      ) : actions}
+      {actionsSlot ? createPortal(actions, actionsSlot) : actions}
     </form>
   )
 }
 
 function EditorActions({
+  alert,
   canSubmit,
   formId,
   limitsReady,
@@ -362,6 +365,8 @@ function EditorActions({
   submitIcon,
   submitLabel,
 }: {
+  /** Shown beside slotted actions, which may sit far from the field. */
+  alert: string | null
   canSubmit: boolean
   /** Actions may render outside the form, so submit buttons name it. */
   formId: string
@@ -384,6 +389,11 @@ function EditorActions({
       className={cn('flex items-center gap-1', !slotted && 'mt-2 flex-wrap gap-2')}
       data-editor-actions={slotted ? '' : undefined}
     >
+      {slotted ? (
+        <p aria-live="polite" className={cn('max-w-80 text-xs', alert ? 'text-destructive' : 'text-muted-foreground')}>
+          {alert ?? status}
+        </p>
+      ) : null}
       <Button
         aria-label="Attach files"
         disabled={!limitsReady || pending}
@@ -458,15 +468,12 @@ function QuotedReply({
 
 function StaleDescriptionNotice({ currentDescription }: { currentDescription: string }) {
   return (
-    <div className="mt-2 space-y-2 text-sm">
-      <p role="alert">The description changed while you were editing. Your draft is kept.</p>
-      <details>
-        <summary className="cursor-pointer">Current description</summary>
-        <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
-          {currentDescription || 'No description.'}
-        </pre>
-      </details>
-    </div>
+    <details className="mt-2 text-sm">
+      <summary className="cursor-pointer">Current description</summary>
+      <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
+        {currentDescription || 'No description.'}
+      </pre>
+    </details>
   )
 }
 
@@ -532,11 +539,26 @@ function DraftAttachmentRow({
 /** Grows the textarea with its text, so it never scrolls inside itself. */
 function useFitToContent(ref: RefObject<HTMLTextAreaElement | null>, text: string) {
   useLayoutEffect(() => {
+    if (ref.current) fitToContent(ref.current)
+  }, [ref, text])
+  // Rewrapped text changes the needed height without changing the text.
+  useEffect(() => {
     const textarea = ref.current
     if (!textarea) return
-    textarea.style.height = 'auto'
-    textarea.style.height = `${textarea.scrollHeight}px`
-  }, [ref, text])
+    let width = textarea.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (textarea.clientWidth === width) return
+      width = textarea.clientWidth
+      fitToContent(textarea)
+    })
+    observer.observe(textarea)
+    return () => observer.disconnect()
+  }, [ref])
+}
+
+function fitToContent(textarea: HTMLTextAreaElement) {
+  textarea.style.height = 'auto'
+  textarea.style.height = `${textarea.scrollHeight}px`
 }
 
 function editorStatus({

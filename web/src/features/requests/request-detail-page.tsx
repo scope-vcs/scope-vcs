@@ -24,7 +24,7 @@ import {
   UserRound,
   UserRoundMinus,
 } from 'lucide-react'
-import { type ReactNode, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useMemo, useRef, useState } from 'react'
 import { RequestActivityDrawer } from './request-activity-drawer'
 import type {
   RequestActionCommand,
@@ -43,11 +43,8 @@ import type { RequestActivityPage } from './request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
-import {
-  hasRequestAutoMergeActions,
-  hasRequestLifecycleActions,
-} from './request-lifecycle-model'
 import { useDetailPaneRail } from './use-detail-pane-rail'
+import { useElementHeight } from './use-element-height'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
 import { useRequestChecks } from './use-request-checks'
@@ -165,13 +162,8 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   const paneRef = useRef<HTMLDivElement>(null)
   const [descriptionActions, setDescriptionActions] = useState<HTMLElement | null>(null)
   const rail = useDetailPaneRail(paneRef)
-  const hasLifecycleActions = hasRequestLifecycleActions(request) ||
-    hasRequestAutoMergeActions(autoMerge.status)
-  const actionClearance = hasLifecycleActions
-    ? autoMerge.status?.intent
-      ? '[--request-action-clearance:7rem]'
-      : '[--request-action-clearance:5rem]'
-    : null
+  const [lifecycleBar, setLifecycleBar] = useState<HTMLDivElement | null>(null)
+  const actionClearance = useElementHeight(lifecycleBar)
   const canClaim = workspace?.selected?.attention.reason === 'unclaimed' &&
     workspace.selected.attention.can_claim
   const canRelease = workspace?.selected?.attention.can_release ?? false
@@ -194,7 +186,11 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       viewerId={viewerId}
     >
       <WorkbenchPane>
-        <div className={cn('request-detail-pane w-full', actionClearance)} ref={paneRef}>
+        <div
+          className="request-detail-pane w-full"
+          ref={paneRef}
+          style={{ '--request-action-clearance': `${actionClearance}px` } as CSSProperties}
+        >
           <RequestDetailHeader
             actions={
               <>
@@ -226,6 +222,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   actions={requestActions}
                   autoMerge={autoMerge}
                   className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
+                  ref={setLifecycleBar}
                   request={request}
                   viewerId={viewerId}
                 />

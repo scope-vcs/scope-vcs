@@ -47,35 +47,33 @@ export function RequestDescription({
       ) : null}
 
       {editing ? (
-        <>
-          <RequestAttachmentEditor
-            actionsSlot={actionsSlot}
-            autoFocus
-            enterSubmits={false}
-            initialText={description}
-            label="Request description"
-            minHeight={editorMinHeight}
-            onCancel={() => setEditorMinHeight(null)}
-            onSubmit={async (markdown, baseText) => {
-              setError(null)
-              try {
-                if (await onSave(markdown, baseText ?? description)) {
-                  setEditorMinHeight(null)
-                  return true
-                }
-                setError('The request description could not be saved.')
-              } catch (saveError) {
-                setError(saveError instanceof Error ? saveError.message : 'The request description could not be saved.')
+        <RequestAttachmentEditor
+          actionsSlot={actionsSlot}
+          autoFocus
+          enterSubmits={false}
+          error={error}
+          initialText={description}
+          label="Request description"
+          minHeight={editorMinHeight}
+          onCancel={() => setEditorMinHeight(null)}
+          onSubmit={async (markdown, baseText) => {
+            setError(null)
+            try {
+              if (await onSave(markdown, baseText ?? description)) {
+                setEditorMinHeight(null)
+                return true
               }
-              return false
-            }}
-            placeholder="Explain the intent, approach, and how this request was tested."
-            submitIcon={<Check className="size-3.5" />}
-            submitLabel="Save"
-            target="description"
-          />
-          {error ? <p className="mt-2 text-sm text-destructive" role="alert">{error}</p> : null}
-        </>
+              setError('The request description could not be saved.')
+            } catch (saveError) {
+              setError(saveError instanceof Error ? saveError.message : 'The request description could not be saved.')
+            }
+            return false
+          }}
+          placeholder="Explain the intent, approach, and how this request was tested."
+          submitIcon={<Check className="size-3.5" />}
+          submitLabel="Save"
+          target="description"
+        />
       ) : (
         <div ref={renderedRef}>
           {description ? (
