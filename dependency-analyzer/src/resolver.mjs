@@ -4,6 +4,7 @@ import { dirname, posix, relative, resolve, sep } from "node:path";
 import enhancedResolve from "enhanced-resolve";
 
 import { absoluteSnapshotPath } from "./snapshot.mjs";
+import { moduleSuffixPlugin } from "./typescript-resolution.mjs";
 
 function isOutside(root, candidate) {
   const difference = relative(root, candidate);
@@ -27,7 +28,7 @@ function isBareSpecifier(specifier) {
   return !specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.startsWith("#");
 }
 
-function createResolver(configPath, kind, source) {
+function createResolver(configPath, kind, source, moduleSuffixes) {
   const typeOnly = kind === "type-import" || kind === "type-re-export";
   const commonJsSource = source.endsWith(".cts") || source.endsWith(".cjs");
   const requireMode = kind === "require" || commonJsSource && kind !== "dynamic-import";
@@ -37,16 +38,17 @@ function createResolver(configPath, kind, source) {
     conditionNames: conditions,
     exportsFields: ["exports"],
     importsFields: ["imports"],
-    extensions: [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"],
-    extensionAlias: { ".js": [".ts", ".tsx", ".js"], ".mjs": [".mts", ".mjs"], ".cjs": [".cts", ".cjs"] },
+    extensions: [".ts", ".tsx", ".d.ts", ".mts", ".d.mts", ".cts", ".d.cts", ".js", ".jsx", ".mjs", ".cjs", ".json"],
+    extensionAlias: { ".js": [".ts", ".tsx", ".d.ts", ".js"], ".mjs": [".mts", ".d.mts", ".mjs"], ".cjs": [".cts", ".d.cts", ".cjs"] },
     mainFields: typeOnly ? ["types", "module", "main"] : ["module", "main"],
     mainFiles: ["index"],
     symlinks: false,
+    plugins: moduleSuffixes?.length ? [moduleSuffixPlugin(moduleSuffixes)] : [],
     ...(configPath ? { tsconfig: { configFile: configPath } } : {}),
   });
 }
 
-export async function resolveGroup({ allFiles, configPath, internalPackageNames, paths, referencesBySource, root, sources }) {
+export async function resolveGroup({ allFiles, configPath, internalPackageNames, paths, referencesBySource, root, sources, rootDirs = [], moduleSuffixes }) {
   const matchesAlias = aliasMatcher(paths);
   const resolvers = new Map();
   const edges = [];
@@ -58,12 +60,30 @@ export async function resolveGroup({ allFiles, configPath, internalPackageNames,
         && !matchesAlias(specifier)
         && !internalPackageNames.has(packageNameOf(specifier));
       const resolverKey = `${kind}:${source.endsWith(".cts") || source.endsWith(".cjs")}`;
-      if (!resolvers.has(resolverKey)) resolvers.set(resolverKey, createResolver(configPath, kind, source));
+      if (!resolvers.has(resolverKey)) resolvers.set(resolverKey, createResolver(configPath, kind, source, moduleSuffixes));
+      const resolver = resolvers.get(resolverKey);
+      const sourceDirectory = dirname(absoluteSnapshotPath(root, source));
       let target;
       try {
-        target = await resolvers.get(resolverKey)(dirname(absoluteSnapshotPath(root, source)), specifier);
+        target = await resolver(sourceDirectory, specifier);
       } catch {
         target = null;
+      }
+      if (!target && specifier.startsWith(".")) {
+        const candidate = resolve(sourceDirectory, specifier);
+        const originalRoot = rootDirs.filter((directory) => !isOutside(directory, candidate))
+          .sort((left, right) => right.length - left.length)[0];
+        if (originalRoot) {
+          for (const directory of rootDirs) {
+            if (directory === originalRoot) continue;
+            try {
+              target = await resolver(sourceDirectory, resolve(directory, relative(originalRoot, candidate)));
+            } catch {
+              target = null;
+            }
+            if (target) break;
+          }
+        }
       }
       if (!target) {
         if (unclaimedBare) continue;

@@ -13,6 +13,7 @@ export class BoundedDelivery {
   private sending = false
   private closed = false
   private current: AbortController | null = null
+  private activePayload: string | null = null
   private generation = 0
 
   constructor(private readonly options: DeliveryOptions = {}) {}
@@ -35,6 +36,7 @@ export class BoundedDelivery {
   clear() {
     this.generation++
     this.current?.abort()
+    this.activePayload = null
     this.pending.length = 0
   }
 
@@ -45,7 +47,10 @@ export class BoundedDelivery {
       ? undefined
       : navigator.sendBeacon?.bind(navigator))
     if (beacon) {
-      for (const payload of this.pending) {
+      const payloads = this.activePayload === null
+        ? this.pending
+        : [this.activePayload, ...this.pending]
+      for (const payload of payloads) {
         try {
           beacon('/e/e/', new Blob([payload], { type: 'application/json' }))
         } catch {
@@ -66,7 +71,12 @@ export class BoundedDelivery {
     try {
       while (!this.closed && this.pending.length > 0) {
         const payload = this.pending.shift()!
-        await this.deliver(payload)
+        this.activePayload = payload
+        try {
+          await this.deliver(payload)
+        } finally {
+          this.activePayload = null
+        }
       }
     } finally {
       this.sending = false

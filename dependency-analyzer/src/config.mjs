@@ -108,8 +108,14 @@ function validateCompilerOptions(options) {
       }
     }
   }
-  for (const unsupported of ["rootDirs", "moduleSuffixes"]) {
-    if (options[unsupported] !== undefined) throw new Error(`${unsupported} resolution is unsupported`);
+  for (const option of ["rootDirs", "moduleSuffixes"]) {
+    if (options[option] !== undefined
+      && (!Array.isArray(options[option]) || options[option].some((value) => typeof value !== "string"))) {
+      throw new Error(`${option} must be an array of strings`);
+    }
+  }
+  if (options.moduleSuffixes?.some((suffix) => /[/\\]/u.test(suffix))) {
+    throw new Error("moduleSuffixes cannot contain path separators");
   }
 }
 
@@ -126,25 +132,39 @@ function validateConfig(root, configPath, allFiles, visiting) {
   const configDir = dirname(absoluteSnapshotPath(root, configPath));
   if (own.baseUrl !== undefined) {
     const baseUrl = resolve(configDir, own.baseUrl);
-    absoluteSnapshotPath(root, posix.relative(root, baseUrl));
+    absoluteSnapshotPath(root, baseUrl);
     options.baseUrl = baseUrl;
   }
   if (own.paths !== undefined) options.pathsDir = configDir;
+  const rootDirs = own.rootDirs?.map((directory) => {
+    const absolute = resolve(configDir, directory);
+    absoluteSnapshotPath(root, absolute);
+    return absolute;
+  }) ?? options.rootDirs;
   const effectivePaths = own.paths ?? options.paths ?? {};
   for (const targets of Object.values(effectivePaths)) {
     for (const target of targets) {
       const candidate = resolve(options.baseUrl ?? configDir, target.replaceAll("${configDir}", options.pathsDir ?? configDir).replaceAll("*", "segment"));
-      absoluteSnapshotPath(root, posix.relative(root, candidate));
+      absoluteSnapshotPath(root, candidate);
     }
   }
   visiting.delete(configPath);
-  return { ...options, ...own, baseUrl: options.baseUrl };
+  const merged = { ...options, ...own };
+  if (options.baseUrl !== undefined) merged.baseUrl = options.baseUrl;
+  if (rootDirs !== undefined) merged.rootDirs = rootDirs;
+  return merged;
 }
 
 export function loadResolutionConfig(root, configPath, allFiles) {
   try {
     const options = validateConfig(root, configPath, allFiles, new Set());
-    return { gap: null, configPath: absoluteSnapshotPath(root, configPath), paths: options.paths ?? {} };
+    return {
+      gap: null,
+      configPath: absoluteSnapshotPath(root, configPath),
+      paths: options.paths ?? {},
+      rootDirs: options.rootDirs,
+      moduleSuffixes: options.moduleSuffixes,
+    };
   } catch (error) {
     return {
       gap: { path: configPath, reason: `invalid TypeScript config: ${error.message}` },

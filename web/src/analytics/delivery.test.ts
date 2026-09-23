@@ -70,7 +70,32 @@ test('reset drops queued events and aborts a failed request before retry', async
   assert.deepEqual(attempts, ['old', 'new'])
 })
 
-test('page hide offers queued events to sendBeacon and drops the queue', () => {
+test('page hide offers active and queued events to sendBeacon with their original identity', async () => {
+  const sent: Blob[] = []
+  let aborted = false
+  const delivery = new BoundedDelivery({
+    fetcher: async (_url, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        aborted = true
+        reject(new Error('aborted'))
+      }, { once: true })
+    }),
+    beacon: (_url, payload) => { sent.push(payload); return true },
+  })
+  const active = { ...event, uuid: 'active-event', timestamp: '2026-09-23T12:00:00Z' }
+  const queued = { ...event, uuid: 'queued-event', timestamp: '2026-09-23T12:00:01Z' }
+  delivery.enqueue(active)
+  delivery.enqueue(queued)
+  delivery.flushOnPageHide()
+  assert.equal(aborted, true)
+  assert.deepEqual(await Promise.all(sent.map(async payload => JSON.parse(await payload.text()))), [active, queued])
+  assert.equal(delivery.enqueue(event), false)
+  delivery.resume()
+  assert.equal(delivery.enqueue(event), true)
+  delivery.clear()
+})
+
+test('reset prevents active and queued identity data from reaching a later page-hide beacon', () => {
   const sent: Blob[] = []
   const delivery = new BoundedDelivery({
     fetcher: async () => new Promise<Response>(() => {}),
@@ -78,11 +103,9 @@ test('page hide offers queued events to sendBeacon and drops the queue', () => {
   })
   delivery.enqueue(event)
   delivery.enqueue(event)
+  delivery.clear()
   delivery.flushOnPageHide()
-  assert.equal(sent.length, 1)
-  assert.equal(delivery.enqueue(event), false)
-  delivery.resume()
-  assert.equal(delivery.enqueue(event), true)
+  assert.deepEqual(sent, [])
 })
 
 async function until(condition: () => boolean) {

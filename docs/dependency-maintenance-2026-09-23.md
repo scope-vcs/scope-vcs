@@ -22,7 +22,7 @@ The removed observer boundary belonged only to Pagent. Resource boundaries still
 
 The browser queues at most 64 waiting events; the server queues 128. Both reject events larger than 16 KiB, use two-second request deadlines, and retry transient failures at most twice. Events receive an ID and capture timestamp before serialization, so retries retain their identity. Queues are memory-only and can lose events on saturation, network failure or shutdown.
 
-Browser logout clears pending events and aborts the current request. DNT disables capture and identity storage. Page exit attempts best-effort beacon delivery. The server allows two seconds for shutdown flushing and then drops remaining work. Neither adapter adds `$set`, `$set_once` or `$unset` payloads or automatic capture. Existing identity transitions, property filtering and person-profile policy remain in their original owners.
+Browser logout clears pending events and aborts the current request. DNT disables capture and identity storage. Page exit attempts best-effort beacon delivery for the active payload and queued events, retaining their original IDs and timestamps. The server allows two seconds for shutdown flushing and then drops remaining work. Neither adapter adds `$set`, `$set_once` or `$unset` payloads or automatic capture. Existing identity transitions, property filtering and person-profile policy remain in their original owners.
 
 ## Versions and deliberate holds
 
@@ -56,18 +56,18 @@ On this Linux host, normal/build dependency graphs changed from 362 to 340 packa
 
 Two runs on the same integrated web source measured TypeScript 7 at 9.92 and 8.76 seconds, versus TypeScript 6.0.3 at 40.08 and 53.02 seconds. Peak resident memory was about 695 to 744 MiB versus 862 to 868 MiB. Other builds were running on the host, so these are indicative measurements, not a controlled performance guarantee. TypeScript 6 was used only from a temporary comparison checkout.
 
-The old and new analyzers produced identical results on 466 copied web files: 1,516 dependency edges and zero gaps. Twenty fixtures cover imports, package conditions, aliases, configuration errors, containment and output bounds. A disposable 64-blob Git benchmark over ten runs measured 401.08 ms median for separate processes and 10.65 ms for one batch.
+The old and new analyzers produced identical results on 466 copied web files: 1,516 dependency edges and zero gaps. Twenty-four fixtures cover imports, package conditions, aliases, inherited root directories, module suffixes, configuration errors, containment and output bounds. After the review fixes, the preceding resolver and final resolver also agree on 468 current web files: 1,523 edges and zero gaps. A disposable 64-blob Git benchmark over ten runs measured 401.08 ms median for separate processes and 10.65 ms for one batch.
 
 ## Validation
 
-- Combined web typecheck, 527 unit tests, Hooks/resource/convention checks, advisory check and production build pass.
+- Combined web typecheck, 528 unit tests, Hooks/resource/convention checks, advisory check and production build pass.
 - Analyzer tests and the old/new graph comparison pass.
 - A local Reqwest probe rejects an untrusted TLS certificate, accepts an explicitly trusted one and verifies environment HTTP proxy forwarding.
 - License declarations and notices were regenerated from checksum-verified archives and published source revisions.
 - The 268 CLI tests, repository policy checks and vendor-advisory gate fixtures pass. An actual CLI invocation rejects Git 2.54 before initialization writes anything.
 - The SeaORM 2 migration harness now exercises the same outer transaction as production: ledger installation and failed transforms must roll back together.
 - Rust workspace tests, API feature tests and workspace Clippy pass. PostgreSQL 18 cluster, cutover and runtime-role checks pass in disposable containers.
-- The integrated media image passes nine Rust tests and all codec assertions for 12 valid and three invalid fixtures. Explicit encoder color metadata preserves the intended output under FFmpeg 7.1.5.
+- The integrated media image passes nine Rust tests and all codec assertions for 12 valid and three invalid fixtures. Explicit encoder color metadata preserves the intended output under FFmpeg 7.1.5. Capping glibc allocator arenas keeps virtual memory below the existing 1,536 MiB process limit; the large-video probe fell from about 1,534 MiB to 1,061 MiB without changing encoder settings.
 - The media image scan reports 596 OS advisory entries, including 208 high or critical entries, with no available fixes for those high or critical entries. The separate libheif gate reports the two unresolved records described above. Both configured gates pass.
 - All 58 browser smoke tests and the two-actor CLI contribution flow pass against the upgraded local stack. Navigation reuse tests wait for initial live reconciliation before measuring requests.
 - AutoReview completed at P1 with no findings for the implementation and subsequent integration fixes. The PR records hosted CI and platform results.

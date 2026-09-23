@@ -115,7 +115,12 @@ jobs:
       - name: Install current Git on macOS
         if: runner.os == 'macOS'
         run: |
-          brew install git
+          brew update
+          if brew list --versions git >/dev/null; then
+            brew upgrade git
+          else
+            brew install git
+          fi
           echo "$(brew --prefix git)/bin" >> "$GITHUB_PATH"
 
       - name: Install Git for Windows 2.55

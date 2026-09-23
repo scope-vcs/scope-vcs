@@ -346,3 +346,82 @@ test("bundler query imports retain the underlying source edge", async (context) 
     { source_path: "src/main.ts", target_path: "src/worker.ts", kind: "dynamic-import" },
   ]);
 });
+
+test("rootDirs overlays relative imports without discarding inherited aliases", async (context) => {
+  const root = await mkdtemp(resolve(tmpdir(), "scope-root-dirs-"));
+  context.after(() => rm(root, { recursive: true }));
+  const files = {
+    "config/base.json": JSON.stringify({ compilerOptions: {
+      baseUrl: "..", paths: { "@private/*": ["private/*"] }, rootDirs: ["../src", "../src/public", "../generated"],
+    } }),
+    "config/strict.json": JSON.stringify({ compilerOptions: { strict: true } }),
+    "tsconfig.json": JSON.stringify({ extends: ["./config/base.json", "./config/strict.json"] }),
+    "src/public/entry.ts": "import '../shared'; import '@private/value'; import './nested'; import './own'; import './style.css';\n",
+    "generated/shared.ts": "export const generated = true;\n",
+    "generated/nested.ts": "export {};\n",
+    "generated/style.css.d.ts": "export {};\n",
+    "generated/own.ts": "export {};\n",
+    "src/public/own.ts": "export {};\n",
+    "private/value.ts": "export const secret = true;\n",
+  };
+  for (const [path, content] of Object.entries(files)) {
+    await mkdir(dirname(resolve(root, path)), { recursive: true });
+    await writeFile(resolve(root, path), content);
+  }
+  const result = await analyzeSnapshot(root);
+  assert.deepEqual(result.gaps, []);
+  assert.deepEqual(edgesFrom(result, "src/public/entry.ts").map(({ target_path }) => target_path), [
+    "generated/nested.ts", "generated/shared.ts", "generated/style.css.d.ts", "private/value.ts", "src/public/own.ts",
+  ]);
+});
+
+test("moduleSuffixes preserves aliases, extension priority, explicit imports and directory indexes", async (context) => {
+  const root = await mkdtemp(resolve(tmpdir(), "scope-module-suffixes-"));
+  context.after(() => rm(root, { recursive: true }));
+  const files = {
+    "config/base.json": JSON.stringify({ compilerOptions: { moduleSuffixes: [".native", ""] } }),
+    "tsconfig.json": JSON.stringify({ extends: "./config/base.json", compilerOptions: {
+      baseUrl: ".", paths: { "@private/*": ["private/*"] },
+    } }),
+    "src/entry.ts": "import '@private/value'; import '@private/explicit.js'; import '@private/folder'; import '@private/priority';\n",
+    "private/value.ts": "export {};\n",
+    "private/value.native.ts": "export {};\n",
+    "private/explicit.native.ts": "export {};\n",
+    "private/folder/index.native.ts": "export {};\n",
+    "private/priority.ts": "export {};\n",
+    "private/priority.native.tsx": "export {};\n",
+  };
+  for (const [path, content] of Object.entries(files)) {
+    await mkdir(dirname(resolve(root, path)), { recursive: true });
+    await writeFile(resolve(root, path), content);
+  }
+  const result = await analyzeSnapshot(root);
+  assert.deepEqual(result.gaps, []);
+  assert.deepEqual(edgesFrom(result, "src/entry.ts").map(({ target_path }) => target_path), [
+    "private/explicit.native.ts", "private/folder/index.native.ts", "private/priority.ts", "private/value.native.ts",
+  ]);
+});
+
+test("moduleSuffixes without an empty suffix does not silently use an unsuffixed file", async (context) => {
+  const root = await mkdtemp(resolve(tmpdir(), "scope-required-suffix-"));
+  context.after(() => rm(root, { recursive: true }));
+  await writeFile(resolve(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { moduleSuffixes: [".native"] } }));
+  await writeFile(resolve(root, "entry.ts"), "import './value';\n");
+  await writeFile(resolve(root, "value.ts"), "export {};\n");
+  const result = await analyzeSnapshot(root);
+  assert.deepEqual(result.edges, []);
+  assert.deepEqual(result.gaps, [{ path: "entry.ts", reason: "unresolved side-effect-import: ./value" }]);
+  await writeFile(resolve(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { moduleSuffixes: [] } }));
+  const defaultResult = await analyzeSnapshot(root);
+  assert.deepEqual(defaultResult.gaps, []);
+  assert.equal(defaultResult.edges[0].target_path, "value.ts");
+});
+
+test("rootDirs cannot resolve outside the snapshot", async (context) => {
+  const root = await mkdtemp(resolve(tmpdir(), "scope-root-dirs-escape-"));
+  context.after(() => rm(root, { recursive: true }));
+  await writeFile(resolve(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { rootDirs: [".", "../outside"] } }));
+  await writeFile(resolve(root, "entry.ts"), "export {};\n");
+  const result = await analyzeSnapshot(root);
+  assert.ok(result.gaps.some(({ path, reason }) => path === "tsconfig.json" && reason.startsWith("invalid TypeScript config:")));
+});

@@ -71,6 +71,8 @@ export async function analyzeSnapshot(snapshotPath) {
         root: inventory.root,
         sources,
         paths: config.paths ?? {},
+        rootDirs: config.rootDirs,
+        moduleSuffixes: config.moduleSuffixes,
       });
       edges.push(...groupResult.edges);
       gaps.push(...groupResult.gaps);
