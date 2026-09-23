@@ -9,13 +9,16 @@ import {
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
 } from 'react'
+import { createPortal } from 'react-dom'
 import {
   addRequestAttachmentDraftFiles,
   beginRequestAttachmentSubmission,
@@ -45,10 +48,12 @@ import {
 } from './request-attachment-reference'
 
 export function RequestAttachmentEditor({
+  actionsSlot,
   autoFocus = false,
   enterSubmits = true,
   initialText = '',
   label,
+  minHeight,
   onCancel,
   onCancelQuote,
   onSubmit,
@@ -59,10 +64,14 @@ export function RequestAttachmentEditor({
   submitLabel,
   target,
 }: {
+  /** Renders the actions here instead of under the field. */
+  actionsSlot?: HTMLElement | null
   autoFocus?: boolean
   enterSubmits?: boolean
   initialText?: string
   label: string
+  /** Starting height, so an editor that replaces rendered text keeps its size. */
+  minHeight?: number
   onCancel: () => void
   onCancelQuote?: () => void
   onSubmit: (markdown: string, baseText: string | null, submissionId: string) => Promise<boolean>
@@ -79,6 +88,7 @@ export function RequestAttachmentEditor({
 }) {
   const environment = useRequestAttachments()
   const editorId = useId()
+  const formId = `${editorId}-form`
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [pendingAction, setPendingAction] = useState<'primary' | 'secondary' | null>(null)
@@ -97,7 +107,8 @@ export function RequestAttachmentEditor({
   )
   const read = useCallback(() => readRequestAttachmentDraft(draftKey), [draftKey])
   const draft = useSyncExternalStore(subscribe, read, read)
-  const staleDescription = target === 'description' && draft.initialized && draft.baseText !== initialText
+  const editsDescription = target === 'description'
+  const staleDescription = editsDescription && draft.initialized && draft.baseText !== initialText
   const limits = environment.limits
   const acceptedMedia = limits
     ? [...limits.accepted_photo_media_types, ...limits.accepted_video_media_types]
@@ -106,6 +117,8 @@ export function RequestAttachmentEditor({
   useEffect(() => {
     seedRequestAttachmentDraft(draftKey, initialText)
   }, [draftKey, initialText])
+
+  useFitToContent(textareaRef, draft.text)
 
   const readyAttachments = draft.attachments.filter(
     (attachment) => attachment.status === 'uploaded' && attachment.attachmentId,
@@ -123,8 +136,15 @@ export function RequestAttachmentEditor({
   const pending = pendingAction !== null || draft.pending
   const overLimit = limits !== null && attachmentCount > limits.max_attachments_per_content
   const canSubmit = !pending && !staleDescription && transfersReady && !overLimit && (
-    target === 'description' || Boolean(draft.text.trim()) || readyAttachments.length > 0
+    editsDescription || Boolean(draft.text.trim()) || readyAttachments.length > 0
   )
+  const status = editorStatus({
+    enterSubmits,
+    hasFailedTransfer,
+    overLimitBy: overLimit ? limits.max_attachments_per_content : null,
+    transferPending,
+  })
+  const draftChanged = staleDescription || draft.text !== initialText || draft.attachments.length > 0
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -182,16 +202,18 @@ export function RequestAttachmentEditor({
         ),
       )
     }
-    for (const attachment of attachments) {
-      void uploadRequestAttachment({
-        actions: environment.actions,
-        draftKey,
-        localId: attachment.localId,
-        params: environment.params,
-        target: attachmentTargetForDraft(target),
-        onCompleted: () => refreshRequestAttachments(environment.accessScope, environment.requestId),
-      })
-    }
+    for (const attachment of attachments) upload(attachment.localId)
+  }
+
+  function upload(localId: string) {
+    void uploadRequestAttachment({
+      actions: environment.actions,
+      draftKey,
+      localId,
+      params: environment.params,
+      target: attachmentTargetForDraft(target),
+      onCompleted: () => refreshRequestAttachments(environment.accessScope, environment.requestId),
+    })
   }
 
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -220,29 +242,47 @@ export function RequestAttachmentEditor({
       else onCancel()
       return
     }
-    if (!enterSubmits || pending || event.key !== 'Enter' || event.shiftKey) return
+    if (event.key !== 'Enter' || event.shiftKey) return
+    if (!enterSubmits && !event.metaKey && !event.ctrlKey) return
     event.preventDefault()
     event.currentTarget.form?.requestSubmit()
   }
 
+  const actions = (
+    <EditorActions
+      canSubmit={canSubmit}
+      formId={formId}
+      slotted={Boolean(actionsSlot)}
+      limitsReady={limits !== null}
+      onAttach={() => fileInputRef.current?.click()}
+      onCancel={onCancel}
+      onDiscardDraft={editsDescription && draftChanged
+        ? () => {
+            clearRequestAttachmentDraft(draftKey)
+            seedRequestAttachmentDraft(draftKey, initialText)
+            setValidationError(null)
+          }
+        : undefined}
+      pending={pending}
+      pendingAction={pendingAction}
+      secondarySubmit={secondarySubmit}
+      status={status}
+      submitIcon={submitIcon}
+      submitLabel={submitLabel}
+    />
+  )
+
   return (
-    <form onSubmit={submit}>
+    <form id={formId} onSubmit={submit}>
       <label className="sr-only" htmlFor={editorId}>{label}</label>
-      {quote ? (
-        <div className="mb-2 flex min-w-0 items-start gap-2 border-l-2 border-border-strong pl-3 text-xs leading-5 text-muted-foreground">
-          <div className="min-w-0 flex-1">
-            <span className="font-medium text-foreground">{quote.author}</span>
-            <span className="ml-1 line-clamp-1">{quote.body}</span>
-          </div>
-          <button aria-label="Cancel quoted reply" className="shrink-0 p-1 hover:text-foreground" disabled={pending} onClick={onCancelQuote} type="button">
-            <X className="size-3.5" />
-          </button>
-        </div>
-      ) : null}
+      {quote ? <QuotedReply disabled={pending} onCancel={onCancelQuote} quote={quote} /> : null}
       <div
         className={cn(
-          'overflow-hidden rounded-md border border-input bg-background transition-colors',
-          dragging && 'border-ring ring-3 ring-ring/30',
+          'transition-colors',
+          editsDescription
+            ? '-mx-2 bg-muted/40 px-2 shadow-[inset_2px_0_0_var(--color-ring)]'
+            : 'overflow-hidden rounded-md border border-input bg-background',
+          dragging && 'ring-3 ring-ring/30',
         )}
         onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
         onDragLeave={(event) => {
@@ -253,7 +293,10 @@ export function RequestAttachmentEditor({
       >
         <textarea
           autoFocus={autoFocus}
-          className="min-h-28 w-full resize-y bg-transparent px-3 py-2 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-wait disabled:opacity-70"
+          className={cn(
+            'block w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground disabled:cursor-wait disabled:opacity-70',
+            editsDescription ? 'text-base leading-[26px]' : 'min-h-28 px-3 py-2 text-sm leading-6',
+          )}
           disabled={pending}
           id={editorId}
           onChange={(event) => setRequestAttachmentDraftText(draftKey, event.target.value)}
@@ -261,129 +304,101 @@ export function RequestAttachmentEditor({
           onPaste={handlePaste}
           placeholder={placeholder}
           ref={textareaRef}
+          style={minHeight === undefined ? undefined : { minHeight }}
           value={draft.text}
         />
         {draft.attachments.length > 0 ? (
-          <div className="px-3 pb-2">
+          <div className={cn('pb-2', !editsDescription && 'px-3')}>
             {draft.attachments.map((attachment) => (
               <DraftAttachmentRow
                 attachment={attachment}
                 disabled={pending}
                 key={attachment.localId}
                 onRemove={() => removeUploadingRequestAttachment(draftKey, attachment.localId)}
-                onRetry={() => void uploadRequestAttachment({
-                  actions: environment.actions,
-                  draftKey,
-                  localId: attachment.localId,
-                  params: environment.params,
-                  target: attachmentTargetForDraft(target),
-                  onCompleted: () => refreshRequestAttachments(environment.accessScope, environment.requestId),
-                })}
+                onRetry={() => upload(attachment.localId)}
                 onReselect={() => fileInputRef.current?.click()}
               />
             ))}
           </div>
         ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/25 px-3 py-2">
-          <input
-            accept={acceptedMedia.join(',')}
-            aria-label="Attach photos or videos"
-            className="sr-only"
-            disabled={pending}
-            multiple
-            onChange={(event) => {
-              addFiles([...(event.target.files ?? [])])
-              event.target.value = ''
-            }}
-            ref={fileInputRef}
-            type="file"
-          />
-          <Button
-            aria-label="Attach files"
-            disabled={!limits || pending}
-            onClick={() => fileInputRef.current?.click()}
-            size="icon-sm"
-            title="Attach files"
-            type="button"
-            variant="ghost"
-          >
-            <Paperclip />
-          </Button>
-          <span className="text-xs text-muted-foreground">Drop files or paste an image</span>
-        </div>
       </div>
-      {target === 'description' && staleDescription ? (
-        <StaleDescriptionNotice currentDescription={initialText} />
-      ) : null}
-      {validationError ? <p className="mt-2 text-sm text-destructive" role="alert">{validationError}</p> : null}
-      <EditorActions
-        attachmentLimit={limits?.max_attachments_per_content ?? null}
-        attachmentCount={attachmentCount}
-        canSubmit={canSubmit}
-        enterSubmits={enterSubmits}
-        hasFailedTransfer={hasFailedTransfer}
-        onCancel={onCancel}
-        onDiscardDraft={target === 'description'
-          ? () => {
-              clearRequestAttachmentDraft(draftKey)
-              seedRequestAttachmentDraft(draftKey, initialText)
-              setValidationError(null)
-            }
-          : undefined}
-        pending={pending}
-        pendingAction={pendingAction}
-        secondarySubmit={secondarySubmit}
-        submitIcon={submitIcon}
-        submitLabel={submitLabel}
-        transferPending={transferPending}
+      <input
+        accept={acceptedMedia.join(',')}
+        aria-label="Attach photos or videos"
+        className="sr-only"
+        disabled={pending}
+        multiple
+        onChange={(event) => {
+          addFiles([...(event.target.files ?? [])])
+          event.target.value = ''
+        }}
+        ref={fileInputRef}
+        type="file"
       />
+      {staleDescription ? <StaleDescriptionNotice currentDescription={initialText} /> : null}
+      {validationError ? <p className="mt-2 text-sm text-destructive" role="alert">{validationError}</p> : null}
+      {actionsSlot ? (
+        <>
+          {status ? <p aria-live="polite" className="mt-2 text-xs text-muted-foreground">{status}</p> : null}
+          {createPortal(actions, actionsSlot)}
+        </>
+      ) : actions}
     </form>
   )
 }
 
 function EditorActions({
-  attachmentCount,
-  attachmentLimit,
   canSubmit,
-  enterSubmits,
-  hasFailedTransfer,
+  formId,
+  limitsReady,
+  onAttach,
   onCancel,
   onDiscardDraft,
   pending,
   pendingAction,
   secondarySubmit,
+  slotted,
+  status,
   submitIcon,
   submitLabel,
-  transferPending,
 }: {
-  attachmentCount: number
-  attachmentLimit: number | null
   canSubmit: boolean
-  enterSubmits: boolean
-  hasFailedTransfer: boolean
+  /** Actions may render outside the form, so submit buttons name it. */
+  formId: string
+  limitsReady: boolean
+  onAttach: () => void
   onCancel: () => void
   /** Present where a kept draft can be swapped for the saved text. */
   onDiscardDraft?: () => void
   pending: boolean
   pendingAction: 'primary' | 'secondary' | null
   secondarySubmit?: { icon: ReactNode; label: string }
+  /** Rendered into a row outside the form instead of under the field. */
+  slotted: boolean
+  status: string
   submitIcon: ReactNode
   submitLabel: string
-  transferPending: boolean
 }) {
-  const status = attachmentLimit !== null && attachmentCount > attachmentLimit
-    ? `You can attach up to ${attachmentLimit} files here.`
-    : hasFailedTransfer
-      ? 'Remove or retry failed files before saving.'
-      : transferPending
-        ? 'Uploading files…'
-        : enterSubmits
-          ? 'Shift+Enter for a new line'
-          : ''
   return (
-    <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-      <p aria-live="polite" className="min-w-0 flex-1 text-xs text-muted-foreground">{status}</p>
-      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+    <div
+      className={cn('flex items-center gap-1', !slotted && 'mt-2 flex-wrap gap-2')}
+      data-editor-actions={slotted ? '' : undefined}
+    >
+      <Button
+        aria-label="Attach files"
+        disabled={!limitsReady || pending}
+        onClick={onAttach}
+        size="icon-sm"
+        title="Attach files. You can also drop or paste them."
+        type="button"
+        variant="ghost"
+      >
+        <Paperclip />
+      </Button>
+      {slotted ? null : (
+        <p aria-live="polite" className="min-w-0 flex-1 text-xs text-muted-foreground">{status}</p>
+      )}
+      <div className={cn('ml-auto flex items-center justify-end gap-2', !slotted && 'flex-wrap')}>
         {onDiscardDraft ? (
           <Button
             disabled={pending}
@@ -401,6 +416,7 @@ function EditorActions({
           <Button
             data-submit-action="secondary"
             disabled={!canSubmit}
+            form={formId}
             size="sm"
             type="submit"
             variant="secondary"
@@ -409,11 +425,33 @@ function EditorActions({
             {pendingAction === 'secondary' ? 'Saving…' : secondarySubmit.label}
           </Button>
         ) : null}
-        <Button disabled={!canSubmit} size="sm" type="submit">
+        <Button disabled={!canSubmit} form={formId} size="sm" title="Ctrl+Enter or ⌘+Enter" type="submit">
           {submitIcon}
           {pendingAction === 'primary' ? 'Saving…' : submitLabel}
         </Button>
       </div>
+    </div>
+  )
+}
+
+function QuotedReply({
+  disabled,
+  onCancel,
+  quote,
+}: {
+  disabled: boolean
+  onCancel?: () => void
+  quote: { author: string; body: string }
+}) {
+  return (
+    <div className="mb-2 flex min-w-0 items-start gap-2 border-l-2 border-border-strong pl-3 text-xs leading-5 text-muted-foreground">
+      <div className="min-w-0 flex-1">
+        <span className="font-medium text-foreground">{quote.author}</span>
+        <span className="ml-1 line-clamp-1">{quote.body}</span>
+      </div>
+      <button aria-label="Cancel quoted reply" className="shrink-0 p-1 hover:text-foreground" disabled={disabled} onClick={onCancel} type="button">
+        <X className="size-3.5" />
+      </button>
     </div>
   )
 }
@@ -489,6 +527,34 @@ function DraftAttachmentRow({
       </div>
     </div>
   )
+}
+
+/** Grows the textarea with its text, so it never scrolls inside itself. */
+function useFitToContent(ref: RefObject<HTMLTextAreaElement | null>, text: string) {
+  useLayoutEffect(() => {
+    const textarea = ref.current
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    textarea.style.height = `${textarea.scrollHeight}px`
+  }, [ref, text])
+}
+
+function editorStatus({
+  enterSubmits,
+  hasFailedTransfer,
+  overLimitBy,
+  transferPending,
+}: {
+  enterSubmits: boolean
+  hasFailedTransfer: boolean
+  /** The attachment limit, when the draft exceeds it. */
+  overLimitBy: number | null
+  transferPending: boolean
+}) {
+  if (overLimitBy !== null) return `You can attach up to ${overLimitBy} files here.`
+  if (hasFailedTransfer) return 'Remove or retry failed files before saving.'
+  if (transferPending) return 'Uploading files…'
+  return enterSubmits ? 'Shift+Enter for a new line' : ''
 }
 
 function markdownWithAttachments(text: string, attachments: DraftAttachment[]) {
