@@ -99,7 +99,7 @@ impl RunStore {
 
         // A run cursor spans parallel jobs. Allocate its positions in commit order,
         // after the attempt locks, without locking sibling jobs or the parent row.
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT pg_advisory_xact_lock(hashtextextended(
                 'scope:run-log:' || current_schema() || ':' || $1, 0))",

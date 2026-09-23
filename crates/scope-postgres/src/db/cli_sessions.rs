@@ -57,7 +57,7 @@ pub(super) async fn record_cli_session_use<C: ConnectionTrait>(
     session_id: &str,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_cli_sessions SET last_used_at_unix = $2
          WHERE id = $1 AND revoked_at_unix IS NULL AND expires_at_unix > $2

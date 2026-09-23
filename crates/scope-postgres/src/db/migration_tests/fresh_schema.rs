@@ -12,7 +12,7 @@ async fn fresh_database_reaches_exact_latest_schema() {
     assert_eq!(applied_versions(db.as_ref()).await, LATEST_MIGRATIONS);
 
     let projection_columns = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "
                 SELECT
@@ -39,7 +39,7 @@ async fn fresh_database_reaches_exact_latest_schema() {
             .unwrap()
     );
     let runner_stop_columns = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*) AS count
              FROM information_schema.columns

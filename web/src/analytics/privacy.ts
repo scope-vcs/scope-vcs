@@ -1,4 +1,4 @@
-import type { CaptureResult, Properties, Property } from 'posthog-js'
+import type { CaptureResult, Properties, Property } from './types'
 import {
   analyticsRouteForName,
   type AnalyticsRoute,

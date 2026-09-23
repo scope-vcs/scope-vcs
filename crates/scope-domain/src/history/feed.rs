@@ -26,6 +26,6 @@ impl HistoryFeed {
             hash.update((value.len() as u64).to_be_bytes());
             hash.update(value.as_bytes());
         }
-        format!("{:x}", hash.finalize())
+        hex::encode(hash.finalize())
     }
 }

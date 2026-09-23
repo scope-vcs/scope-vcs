@@ -132,7 +132,6 @@ function VideoAttachment({
   return (
     <figure className="my-3 min-w-0">
       {/* Uploaded recordings have no caption asset; revisit when caption upload or transcription is supported. */}
-      {/* eslint-disable-next-line react-doctor/media-has-caption */}
       <video
         aria-label={label || attachment.filename}
         className="max-h-[38rem] w-full rounded-md border border-border bg-black"

@@ -8,7 +8,7 @@ async fn git_segment_schema_uses_segment_identity() {
         .unwrap();
 
     let columns = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT column_name
              FROM information_schema.columns

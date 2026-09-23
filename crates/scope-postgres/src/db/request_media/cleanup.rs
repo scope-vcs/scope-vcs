@@ -31,7 +31,7 @@ impl MediaStore {
         reconcile_completed_inventories(self.db.as_ref(), now_unix).await?;
         let candidates = self
             .db
-            .query_all(Statement::from_sql_and_values(
+            .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT attachment.id, attachment.repository_id,
                         CASE WHEN attachment.state = 'Prepared'
@@ -81,7 +81,7 @@ impl MediaStore {
             }
             let available_at = cleanup_available_at(&tx, &attachment_id, now_unix).await?;
             let result = tx
-                .execute(Statement::from_sql_and_values(
+                .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     "INSERT INTO scope_request_media_cleanup_jobs (
                         attachment_id, repository_id, reason, state, available_at_unix,
@@ -144,7 +144,7 @@ impl MediaStore {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
         let updated = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_cleanup_jobs
                  SET lease_expires_at_unix = $5, updated_at_unix = $4
@@ -165,7 +165,7 @@ impl MediaStore {
         }
         let orphan_updated = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_orphan_cleanup_leases
                  SET lease_expires_at_unix = $5, updated_at_unix = $4
@@ -213,7 +213,7 @@ impl MediaStore {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 return Ok(MediaLeaseMutation::LeaseLost);
             }
-            tx.execute(Statement::from_sql_and_values(
+            tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_cleanup_jobs
                  SET state = 'Completed', lease_token = NULL, lease_expires_at_unix = NULL,
@@ -226,7 +226,7 @@ impl MediaStore {
             ))
             .await
             .map_err(PostgresError::internal)?;
-            tx.execute(Statement::from_sql_and_values(
+            tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_attachments
                  SET budget_released_at_unix = COALESCE(budget_released_at_unix, $2)
@@ -258,7 +258,7 @@ impl MediaStore {
                 return Ok(MediaLeaseMutation::LeaseLost);
             }
             mark_orphan_inventory_deleted(&tx, attachment_id, now_unix).await?;
-            tx.execute(Statement::from_sql_and_values(
+            tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "DELETE FROM scope_request_media_orphan_cleanup_leases WHERE attachment_id = $1",
                 [attachment_id.into()],
@@ -293,7 +293,7 @@ impl MediaStore {
             .is_some()
         {
             let result = tx
-                .execute(Statement::from_sql_and_values(
+                .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     "UPDATE scope_request_media_cleanup_jobs
                      SET state = 'Queued', available_at_unix = $5, lease_token = NULL,
@@ -323,7 +323,7 @@ impl MediaStore {
             .is_some()
         {
             let result = tx
-                .execute(Statement::from_sql_and_values(
+                .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     "UPDATE scope_request_media_orphan_cleanup_leases
                  SET lease_token = '', lease_expires_at_unix = $5, updated_at_unix = $4
@@ -398,7 +398,7 @@ where
     C: ConnectionTrait,
 {
     let observed = conn
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "SELECT id, repository_id FROM scope_request_media_attachments
@@ -443,7 +443,7 @@ where
 
     for (attachment_id, repository_id) in locked_attachments {
         let available_at = cleanup_available_at(conn, &attachment_id, now_unix).await?;
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_request_media_cleanup_jobs (
                 attachment_id, repository_id, reason, state, available_at_unix,
@@ -490,7 +490,7 @@ async fn claim_attachment_tombstone(
 ) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError> {
     let tx = db.begin().await.map_err(PostgresError::internal)?;
     let candidate = tx
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT cleanup.attachment_id, cleanup.repository_id
              FROM scope_request_media_cleanup_jobs cleanup
@@ -526,7 +526,7 @@ async fn claim_attachment_tombstone(
         return Ok(None);
     }
     let row = tx
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT * FROM scope_request_media_cleanup_jobs
              WHERE attachment_id = $1
@@ -546,7 +546,7 @@ async fn claim_attachment_tombstone(
     };
     let available_at = cleanup_available_at(&tx, &attachment_id, now_unix).await?;
     if available_at > now_unix {
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_cleanup_jobs
              SET state = 'Queued', available_at_unix = $2, lease_token = NULL,
@@ -577,7 +577,7 @@ async fn claim_attachment_tombstone(
     .map_err(PostgresError::internal)?
     .checked_add(1)
     .ok_or_else(|| PostgresError::internal_message("cleanup attempt overflow"))?;
-    tx.execute(Statement::from_sql_and_values(
+    tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_cleanup_jobs
          SET state = 'Leased', lease_token = $2, lease_generation = $3,
@@ -615,7 +615,7 @@ async fn claim_orphan_objects(
 ) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError> {
     let tx = db.begin().await.map_err(PostgresError::internal)?;
     let candidate = tx
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT attachment.id, attachment.repository_id
              FROM scope_request_media_attachments attachment
@@ -645,7 +645,7 @@ async fn claim_orphan_objects(
         .try_get::<String>("", "id")
         .map_err(PostgresError::internal)?;
     let existing = tx
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT * FROM scope_request_media_orphan_cleanup_leases
              WHERE attachment_id = $1 FOR UPDATE",
@@ -685,7 +685,7 @@ async fn claim_orphan_objects(
     } else {
         (1, 1)
     };
-    tx.execute(Statement::from_sql_and_values(
+    tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_request_media_orphan_cleanup_leases (
             attachment_id, lease_token, lease_generation, lease_expires_at_unix,
@@ -734,7 +734,7 @@ where
     C: ConnectionTrait,
 {
     let row = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT * FROM scope_request_media_cleanup_jobs
              WHERE attachment_id = $1 AND state = 'Leased' AND lease_token = $2
@@ -763,7 +763,7 @@ where
     C: ConnectionTrait,
 {
     let row = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT lease.*, attachment.repository_id
              FROM scope_request_media_orphan_cleanup_leases lease

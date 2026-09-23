@@ -61,7 +61,7 @@ impl CleanupStore {
         incarnation: &RepositoryIncarnation,
         request_name: &str,
     ) -> Result<bool, PostgresError> {
-        let row = self.db.query_one(sea_orm::Statement::from_sql_and_values(
+        let row = self.db.query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT EXISTS(SELECT 1 FROM scope_requests q JOIN scope_repositories r ON r.id = q.repo_id WHERE r.id = $1 AND r.incarnation_id = $2 AND q.name = $3) AS live",
             [incarnation.repository_id().into(), incarnation.incarnation_id().into(), request_name.into()],

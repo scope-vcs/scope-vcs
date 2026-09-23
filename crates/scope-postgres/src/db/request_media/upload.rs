@@ -163,7 +163,7 @@ impl MediaStore {
                     "expired upload part retries require a fresh object key",
                 ));
             }
-            tx.execute(Statement::from_sql_and_values(
+            tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_request_media_abandoned_objects (
                     object_key, attachment_id, created_at_unix
@@ -176,7 +176,7 @@ impl MediaStore {
             ))
             .await
             .map_err(PostgresError::internal)?;
-            tx.execute(Statement::from_sql_and_values(
+            tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_upload_parts
                  SET object_key = $3, write_token = $4, write_expires_at_unix = $5,
@@ -196,7 +196,7 @@ impl MediaStore {
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(ReserveUploadPartResult::Write(part));
         }
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_request_media_upload_parts (
                 attachment_id, upload_id, part_number, plaintext_size_bytes,
@@ -262,7 +262,7 @@ impl MediaStore {
             return Ok(StorePartResult::WriteLeaseLost);
         }
         let updated = tx
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_upload_parts
              SET state = 'Stored', stored_at_unix = $3,
@@ -342,7 +342,7 @@ impl MediaStore {
                 .now_unix
                 .checked_add(RequestAttachmentLimits::default().unbound_attachment_ttl_seconds)
                 .ok_or_else(|| PostgresError::internal_message("unbound expiry overflow"))?;
-            tx.execute(Statement::from_sql_and_values(
+            tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_attachments
                  SET state = 'Uploaded', original_manifest_id = $2,
@@ -357,7 +357,7 @@ impl MediaStore {
             ))
             .await
             .map_err(PostgresError::internal)?;
-            tx.execute(Statement::from_sql_and_values(
+            tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_request_media_processing_jobs (
                     attachment_id, state, available_at_unix, created_at_unix, updated_at_unix
@@ -409,7 +409,7 @@ where
     C: ConnectionTrait,
 {
     let exists = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT 1 AS present FROM scope_request_discussions WHERE id = $1 AND request_id = $2",
             [discussion_id.into(), request_id.into()],
@@ -435,7 +435,7 @@ where
 {
     let target_json = serde_json::to_value(target).map_err(PostgresError::internal)?;
     let count = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT COUNT(*)::bigint AS count
              FROM scope_request_media_attachments attachment
@@ -474,7 +474,7 @@ where
     C: ConnectionTrait,
 {
     let row = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT id FROM scope_request_media_attachments
              WHERE request_id = $1 AND uploader_user_id = $2 AND operation_id = $3
@@ -527,7 +527,7 @@ async fn insert_prepared_attachment<C>(
 where
     C: ConnectionTrait,
 {
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_request_media_attachments (
             id, repository_id, request_id, uploader_user_id, upload_id, operation_id,
@@ -650,7 +650,7 @@ where
     C: ConnectionTrait,
 {
     let row = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT * FROM scope_request_media_upload_parts
              WHERE attachment_id = $1 AND part_number = $2 FOR UPDATE",
@@ -707,7 +707,7 @@ async fn stored_parts<C>(
 where
     C: ConnectionTrait,
 {
-    conn.query_all(Statement::from_sql_and_values(
+    conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT * FROM scope_request_media_upload_parts
          WHERE attachment_id = $1 AND state = 'Stored' ORDER BY part_number",
@@ -744,7 +744,7 @@ async fn insert_original_manifest<C>(
 where
     C: ConnectionTrait,
 {
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_request_media_manifests (
             id, attachment_id, derivative_id, media_type, size_bytes, sha256, completed_at_unix
@@ -762,7 +762,7 @@ where
     .map_err(PostgresError::internal)?;
     let mut offset = 0_u64;
     for part in parts {
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_request_media_manifest_chunks (
                 manifest_id, chunk_index, object_key, plaintext_offset,

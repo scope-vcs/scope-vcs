@@ -65,7 +65,7 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
         .unwrap();
 
     let writer_pid = writer
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT pg_backend_pid() AS pid".to_string(),
         ))
@@ -74,7 +74,7 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
         .unwrap()
         .try_get::<i32>("", "pid")
         .unwrap();
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT pg_terminate_backend($1)",
         [writer_pid.into()],
@@ -257,7 +257,7 @@ async fn preflight_requires_empty_schema_for_an_empty_ledger_without_persisting_
     assert!(!relation_exists(&db, "scope_users").await);
     assert!(!relation_exists(&db, "pg_temp.scope_baseline_expression_inventory").await);
     let retained = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT id FROM untracked",
         ))

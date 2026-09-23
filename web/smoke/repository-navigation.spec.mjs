@@ -14,9 +14,9 @@ import {
   within,
   withPage,
 } from './browser-smoke.mjs'
-import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 import { assertHistoryNavigationKeepsDocument } from './history-navigation-smoke.mjs'
 import { assertRepositoryMarkdownUsesClientNavigation } from './repository-markdown-navigation-smoke.mjs'
+import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 
 const primaryLink = (page, name) => page
   .getByRole('navigation', { name: 'Primary' })
@@ -25,7 +25,6 @@ const primaryLink = (page, name) => page
 test('public repository history renders its seeded push as an update', async () => {
   let settled
   await withPage(`${repoPath}/history`, async (page) => {
-    await settled()
     await assertCurrentRepoSection(page, 'History')
     await assertPageHeading(page, 'history')
     const update = page.getByRole('button', {
@@ -36,6 +35,7 @@ test('public repository history renders its seeded push as an update', async () 
     await update.getByText('Push', { exact: true }).waitFor()
     await update.getByText('dev-public-1', { exact: true }).waitFor()
     await waitForClientHydration(update)
+    await settled()
     await page.locator('#main-content > .scope-content-enter').evaluate(
       (page) => { page.style.minHeight = '1200px' },
     )

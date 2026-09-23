@@ -20,7 +20,7 @@ pub(super) async fn media_usage<C: ConnectionTrait>(
     request_id: Option<&str>,
     exclude_attachment_id: Option<&str>,
 ) -> Result<MediaUsage, PostgresError> {
-    let row = conn.query_one(Statement::from_sql_and_values(
+    let row = conn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT COALESCE(SUM(reserved_source_bytes) FILTER (WHERE request_id = $2), 0)::bigint AS source_bytes,
                 COALESCE(SUM(reserved_source_bytes + COALESCE(actual_derivative_bytes, reserved_derivative_bytes)), 0)::bigint AS total_bytes
@@ -50,7 +50,7 @@ pub(super) async fn lock_media_budget<C: ConnectionTrait>(
     conn: &C,
     repository_id: &str,
 ) -> Result<(), PostgresError> {
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT pg_advisory_xact_lock(hashtextextended('scope:request-media-budget:' || $1, 0))",
         [repository_id.into()],

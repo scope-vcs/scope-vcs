@@ -56,7 +56,8 @@ fi
 ffmpeg -hide_banner -loglevel error -y \
   -f lavfi -i "testsrc2=size=320x180:rate=12:duration=1" \
   -vf "format=yuv420p10le" \
-  -c:v libx265 -preset ultrafast -x265-params log-level=error \
+  -c:v libx265 -preset ultrafast \
+  -x265-params 'log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc' \
   -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc -an \
   "$output_dir/fixture-hdr.mp4"
 

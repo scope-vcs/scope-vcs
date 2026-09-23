@@ -70,7 +70,7 @@ fn quoted_literals(text: &str) -> Vec<String> {
 }
 
 async fn constraint_definition(db: &DatabaseConnection, name: &str) -> String {
-    db.query_one(Statement::from_sql_and_values(
+    db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT pg_get_constraintdef(c.oid) AS definition
          FROM pg_constraint c

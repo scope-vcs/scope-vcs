@@ -193,7 +193,7 @@ async fn requests_with_invitee_status<C: ConnectionTrait>(
     let requests = super::request_rows::requests_by_repo_id(conn, repository_id).await?;
     let invitees = match viewer_user_id {
         Some(user_id) => conn
-            .query_all(Statement::from_sql_and_values(
+            .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT i.request_id FROM scope_request_invitees i
                  JOIN scope_requests r ON r.id = i.request_id

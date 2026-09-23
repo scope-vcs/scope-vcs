@@ -1,6 +1,6 @@
 import { ANALYZER_VERSION, LIMITS } from "./constants.mjs";
 import { groupSourcesByConfig, loadResolutionConfig } from "./config.mjs";
-import { cruiseGroup } from "./cruiser.mjs";
+import { resolveGroup } from "./resolver.mjs";
 import { internalPackageNames, inventorySnapshot, SnapshotError } from "./snapshot.mjs";
 import { scanSources } from "./source-scan.mjs";
 
@@ -43,7 +43,7 @@ export async function analyzeSnapshot(snapshotPath) {
   const scan = await scanSources(inventory.root, inventory.sources);
   let groups;
   try {
-    groups = groupSourcesByConfig(scan.cruisableFiles, inventory.configs);
+    groups = groupSourcesByConfig(scan.resolvableFiles, inventory.configs);
   } catch (error) {
     return {
       ...baseResult(),
@@ -59,18 +59,20 @@ export async function analyzeSnapshot(snapshotPath) {
   for (const [configPath, sources] of groups) {
     const config = configPath
       ? loadResolutionConfig(inventory.root, configPath, inventory.allFiles)
-      : { gap: null, transpileOptions: undefined };
+      : { gap: null, configPath: null, paths: {} };
     if (config.gap) gaps.push(config.gap);
 
     try {
-      const groupResult = await cruiseGroup({
+      const groupResult = await resolveGroup({
         allFiles: inventory.allFiles,
-        configPath: config.gap ? null : configPath,
+        configPath: config.configPath,
         internalPackageNames: packageNames,
         referencesBySource: scan.referencesBySource,
         root: inventory.root,
         sources,
-        transpileOptions: config.transpileOptions,
+        paths: config.paths ?? {},
+        rootDirs: config.rootDirs,
+        moduleSuffixes: config.moduleSuffixes,
       });
       edges.push(...groupResult.edges);
       gaps.push(...groupResult.gaps);

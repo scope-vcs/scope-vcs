@@ -20,8 +20,8 @@ use scope_domain::{
     },
 };
 use sea_orm::{
-    ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait, TryInsertResult, sea_query::OnConflict,
+    ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, ExprTrait, IntoActiveModel, QueryFilter,
+    QueryOrder, QuerySelect, TransactionTrait, TryInsertResult, sea_query::OnConflict,
 };
 
 #[cfg(test)]
@@ -355,7 +355,7 @@ pub(super) async fn enqueue_run_in_transaction(
     let model = entities::run::ActiveModel::from_domain(&run)?;
     let result = entities::run::Entity::insert(model)
         .on_conflict(OnConflict::new().do_nothing().to_owned())
-        .do_nothing()
+        .try_insert()
         .exec(tx)
         .await
         .map_err(PostgresError::internal)?;
@@ -422,7 +422,7 @@ pub(super) async fn save_workflow_revision(
             .do_nothing()
             .to_owned(),
     )
-    .do_nothing()
+    .try_insert()
     .exec(tx)
     .await
     .map_err(PostgresError::internal)?;

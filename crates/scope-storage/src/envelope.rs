@@ -1,7 +1,7 @@
 use crate::GitStorageError;
 use chacha20poly1305::{
-    ChaCha20Poly1305, Key, Nonce,
-    aead::{Aead, AeadInPlace, KeyInit, Payload},
+    ChaCha20Poly1305, Nonce,
+    aead::{Aead, AeadInOut, KeyInit, Payload},
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -151,10 +151,10 @@ impl EnvelopeWriter {
         let nonce = nonce(self.nonce_prefix, counter);
         let tag = self
             .cipher
-            .encrypt_in_place_detached(
-                Nonce::from_slice(&nonce),
+            .encrypt_inout_detached(
+                &Nonce::from(nonce),
                 &aad,
-                &mut frame[FRAME_HEADER_BYTES..tag_start],
+                (&mut frame[FRAME_HEADER_BYTES..tag_start]).into(),
             )
             .map_err(|_| GitStorageError::Encryption)?;
         frame[..FRAME_HEADER_BYTES].copy_from_slice(&frame_header);
@@ -308,7 +308,7 @@ impl EnvelopeReader {
         let plaintext = self
             .cipher
             .decrypt(
-                Nonce::from_slice(&nonce),
+                &Nonce::from(nonce),
                 Payload {
                     msg: &ciphertext,
                     aad: &aad,
@@ -337,15 +337,15 @@ fn frame_header(counter: u32, plaintext_len: u32, flags: u8) -> [u8; FRAME_HEADE
 }
 
 fn scope_cipher(key: &EncryptionKey, scope: &EnvelopeScope) -> ChaCha20Poly1305 {
-    let mut mac =
-        <Hmac<Sha256> as Mac>::new_from_slice(&key.key).expect("HMAC accepts a 32-byte key");
+    let mut mac = <Hmac<Sha256> as hmac::KeyInit>::new_from_slice(&key.key)
+        .expect("HMAC accepts a 32-byte key");
     mac.update(scope.label);
     for part in &scope.parts {
         mac.update(&(part.len() as u64).to_be_bytes());
         mac.update(part.as_bytes());
     }
     let derived_key = mac.finalize().into_bytes();
-    ChaCha20Poly1305::new(Key::from_slice(&derived_key))
+    ChaCha20Poly1305::new_from_slice(&derived_key).expect("HMAC derives a 32-byte key")
 }
 
 fn nonce(prefix: [u8; 8], counter: u32) -> [u8; 12] {
@@ -390,6 +390,30 @@ async fn read_exact_envelope<R: AsyncRead + Unpin>(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn reads_python_recovery_segment() {
+        // Produced by deploy/aws/recovery/tests/test_recovery.py::segment.
+        let fixture = hex::decode("53434753454730320000000200076e6e6e6e6e6e6e6e000004007072696d6172790000000000000012003b36a869a52a9b5f9c5f06ab0beec0d365170a7c5807b055345ccc7a7c302189b8df000000010000000001e3030b235680d3a18f50e0d2e52c20f9").unwrap();
+        let key = EncryptionKey::new("primary", [b'k'; 32]).unwrap();
+        let mut source = fixture.as_slice();
+        let mut reader = EnvelopeReader::read_header(
+            &mut source,
+            &key,
+            EnvelopeScope::git_segment("repository-123", "segment-123"),
+        )
+        .await
+        .unwrap();
+        let DecryptedFrame::Data(bytes) = reader.next(&mut source).await.unwrap() else {
+            panic!("expected a data frame");
+        };
+        assert_eq!(bytes, b"ciphertext fixture");
+        assert!(matches!(
+            reader.next(&mut source).await.unwrap(),
+            DecryptedFrame::Final
+        ));
+        assert!(source.is_empty());
+    }
+
     /// Seals one data frame exactly as the segment-only envelope did before objects shared it.
     fn segment_sealed_by_the_original_derivation(
         key: &[u8; 32],
@@ -397,13 +421,13 @@ mod tests {
         segment_id: &str,
         plaintext: &[u8],
     ) -> Vec<u8> {
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).unwrap();
+        let mut mac = <Hmac<Sha256> as hmac::KeyInit>::new_from_slice(key).unwrap();
         mac.update(b"scope-git-segment-v2\0");
         mac.update(&(repository_id.len() as u64).to_be_bytes());
         mac.update(repository_id.as_bytes());
         mac.update(&(segment_id.len() as u64).to_be_bytes());
         mac.update(segment_id.as_bytes());
-        let cipher = ChaCha20Poly1305::new(Key::from_slice(&mac.finalize().into_bytes()));
+        let cipher = ChaCha20Poly1305::new_from_slice(&mac.finalize().into_bytes()).unwrap();
         let nonce_prefix = [9_u8; 8];
         let mut header = MAGIC.to_vec();
         header.extend_from_slice(&ENCODING_VERSION.to_be_bytes());
@@ -425,7 +449,7 @@ mod tests {
             aad.extend_from_slice(&frame_header);
             let ciphertext = cipher
                 .encrypt(
-                    Nonce::from_slice(&nonce(nonce_prefix, counter as u32)),
+                    &Nonce::from(nonce(nonce_prefix, counter as u32)),
                     Payload {
                         msg: frame,
                         aad: &aad,

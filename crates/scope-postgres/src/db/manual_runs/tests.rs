@@ -80,7 +80,7 @@ async fn uploaded_enqueue_rechecks_membership_after_waiting_for_repository_lock(
         .await
         .unwrap();
     let pid = held
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT pg_backend_pid() AS pid",
         ))
@@ -116,14 +116,14 @@ async fn uploaded_enqueue_rechecks_membership_after_waiting_for_repository_lock(
 async fn uploaded_enqueue_that_wins_repository_lock_completes_before_real_revocation() {
     let (store, request, revision, object) = fixture();
     let held = store.db.begin().await.unwrap();
-    held.execute(Statement::from_string(
+    held.execute_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "LOCK TABLE scope_runs IN SHARE MODE",
     ))
     .await
     .unwrap();
     let pid = held
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT pg_backend_pid() AS pid",
         ))

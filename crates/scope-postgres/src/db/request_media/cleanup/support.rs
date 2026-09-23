@@ -14,7 +14,7 @@ where
     C: ConnectionTrait,
 {
     let rows = conn
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT object_key FROM scope_request_media_upload_parts WHERE attachment_id = $1
              UNION SELECT object_key FROM scope_request_media_abandoned_objects
@@ -45,7 +45,7 @@ where
     C: ConnectionTrait,
 {
     let rows = conn
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT object_key FROM scope_request_media_abandoned_objects
              WHERE attachment_id = $1 AND deleted_at_unix IS NULL
@@ -73,7 +73,7 @@ where
     C: ConnectionTrait,
 {
     let now = as_i64(now_unix, "inventory deletion time")?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_abandoned_objects SET deleted_at_unix = $2
          WHERE attachment_id = $1",
@@ -81,7 +81,7 @@ where
     ))
     .await
     .map_err(PostgresError::internal)?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_processing_objects
          SET state = 'Deleted', updated_at_unix = $2 WHERE attachment_id = $1",
@@ -101,7 +101,7 @@ where
     C: ConnectionTrait,
 {
     let now = as_i64(now_unix, "orphan deletion time")?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_abandoned_objects SET deleted_at_unix = $2
          WHERE attachment_id = $1 AND deleted_at_unix IS NULL",
@@ -109,7 +109,7 @@ where
     ))
     .await
     .map_err(PostgresError::internal)?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_processing_objects
          SET state = 'Deleted', updated_at_unix = $2
@@ -131,7 +131,7 @@ where
     let cutoff = now_unix.saturating_sub(TOMBSTONE_RECONCILIATION_SECONDS);
     let now = as_i64(now_unix, "inventory reconciliation time")?;
     let cutoff = as_i64(cutoff, "inventory reconciliation cutoff")?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "WITH due AS (
             SELECT attachment_id FROM scope_request_media_cleanup_jobs
@@ -147,7 +147,7 @@ where
     ))
     .await
     .map_err(PostgresError::internal)?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "WITH due AS (
             SELECT abandoned.object_key
@@ -168,7 +168,7 @@ where
     ))
     .await
     .map_err(PostgresError::internal)?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "WITH due AS (
             SELECT object.object_key
@@ -201,7 +201,7 @@ where
     C: ConnectionTrait,
 {
     let max_expiry = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT MAX(active.expires_at_unix) AS expires
              FROM (
@@ -260,7 +260,7 @@ where
         return Ok(false);
     }
     Ok(conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT 1 AS present FROM scope_request_media_bindings
              WHERE attachment_id = $1 LIMIT 1",
@@ -280,7 +280,7 @@ where
     C: ConnectionTrait,
 {
     let now = as_i64(now_unix, "attachment tombstone time")?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_processing_jobs
          SET state = 'Canceled', lease_token = NULL, lease_expires_at_unix = NULL,
@@ -289,7 +289,7 @@ where
     ))
     .await
     .map_err(PostgresError::internal)?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_processing_objects
          SET state = 'Orphaned', updated_at_unix = $2

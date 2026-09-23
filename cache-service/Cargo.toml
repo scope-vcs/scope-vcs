@@ -13,7 +13,7 @@ getrandom.workspace = true
 futures-util = { version = "0.3.32", default-features = false, features = ["std"] }
 hex.workspace = true
 jsonwebtoken.workspace = true
-reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+reqwest = { workspace = true, features = ["json", "rustls"] }
 scope_cache_contract.workspace = true
 scope_cache_domain.workspace = true
 scope_storage.workspace = true

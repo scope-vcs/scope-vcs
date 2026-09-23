@@ -32,7 +32,7 @@ pub async fn repository_workflow_catalogs_for_maintenance(
     let db = Database::connect(database_url).await?;
     crate::migrations::plan(&db).await?;
     let exists = db
-        .query_one(sea_orm::Statement::from_string(
+        .query_one_raw(sea_orm::Statement::from_string(
             db.get_database_backend(),
             "SELECT to_regclass(format('%I.scope_repository_workflow_catalogs', current_schema())) IS NOT NULL AS exists",
         ))

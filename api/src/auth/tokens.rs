@@ -68,7 +68,7 @@ fn generate_machine_token(
 }
 
 pub(crate) fn machine_token_hash(secret: &str) -> String {
-    format!("{:x}", Sha256::digest(secret.as_bytes()))
+    hex::encode(Sha256::digest(secret.as_bytes()))
 }
 
 pub(crate) fn random_token(prefix: &str, failure_message: &str) -> Result<String, ApiError> {
@@ -80,5 +80,5 @@ pub(crate) fn random_token(prefix: &str, failure_message: &str) -> Result<String
 
 pub(crate) fn token_hash(secret: &str) -> String {
     let digest = Sha256::digest(secret.as_bytes());
-    format!("sha256:{digest:x}")
+    format!("sha256:{}", hex::encode(digest))
 }

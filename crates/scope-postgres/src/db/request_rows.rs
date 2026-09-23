@@ -2,8 +2,8 @@ use super::entities;
 use super::integer_columns;
 use super::object_references::{delete_object_reference, replace_object_reference};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult,
-    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
+    FromQueryResult, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
     sea_query::{Expr, Query},
 };
 use {
@@ -131,7 +131,10 @@ fn request_list_select(
     let mut query = request_list_projection()
         .filter(entities::request::Column::RepoId.eq(input.repo_id))
         .order_by_asc(entities::request::Column::Id)
-        .limit(input.limit.min((REQUEST_LIST_MAX_PAGE_SIZE + 1) as u64));
+        .limit(std::cmp::min(
+            input.limit,
+            (REQUEST_LIST_MAX_PAGE_SIZE + 1) as u64,
+        ));
     if let Some(after_id) = input.after_id {
         query = query.filter(entities::request::Column::Id.gt(after_id));
     }

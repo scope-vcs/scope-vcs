@@ -204,7 +204,7 @@ async fn set_operation_limits<C: ConnectionTrait>(
             "migration operation limits must be positive".to_string(),
         ));
     }
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT set_config('lock_timeout', $1, true), set_config('statement_timeout', $2, true)",
         [
@@ -293,7 +293,7 @@ where
     C: ConnectionTrait,
 {
     let table_exists = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT to_regclass(
                 format('%I.%I', current_schema(), $1)
@@ -307,7 +307,7 @@ where
         return Ok(Vec::new());
     }
 
-    db.query_all(Statement::from_string(
+    db.query_all_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         format!("SELECT version FROM {MIGRATION_TABLE} ORDER BY version"),
     ))

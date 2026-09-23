@@ -11,7 +11,7 @@ where
     C: ConnectionTrait,
 {
     let result = conn
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_git_segment_uploads uploads
              SET state = CASE

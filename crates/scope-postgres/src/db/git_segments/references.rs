@@ -16,7 +16,7 @@ where
     require_reference_kind(ref_kind)?;
     require_text(ref_id, "Git segment reference id")?;
     for segment in segments {
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_git_segment_references (segment_id, ref_kind, ref_id)
              VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
@@ -43,7 +43,7 @@ where
 {
     require_reference_kind(ref_kind)?;
     require_text(ref_id, "Git segment reference id")?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "WITH released AS (
              DELETE FROM scope_git_segment_references

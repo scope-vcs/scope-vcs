@@ -32,7 +32,7 @@ test('accepted summaries and reconnects reconcile the retained request queue wit
   page.setDefaultTimeout(5_000)
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
-  await page.goto(server.resolvedUrls.local[0])
+  await page.goto(server.resolvedUrls.local[0], { timeout: 30_000 })
   await page.waitForFunction(() => window.fixture?.server.queueReads >= 4)
   await page.evaluate(async () => { window.fixture.submit(['new-request']); await window.fixture.refresh() })
   await page.locator('[data-count]').filter({ hasText: '1' }).waitFor()

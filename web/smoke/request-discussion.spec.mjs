@@ -228,6 +228,7 @@ test('Details is a separate tab that reuses request data and preserves discussio
     const thread = page.locator('#discussion-discussion_demo_retry_cap')
     const collapse = thread.getByRole('button', { name: 'Hide 3 replies' })
     await waitForClientHydration(collapse)
+    await settled()
     await collapse.click()
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
     const shell = await captureRequestShell(page)

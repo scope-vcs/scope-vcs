@@ -132,10 +132,10 @@ class LicensingChecks(unittest.TestCase):
         self.write("legal/copied-sources.json", "[]")
         self.write_supplements("rust", {})
         self.write("legal/license-selections.json", json.dumps({"Apache-2.0": "Apache-2.0"}))
-        self.write_supplements("web", {"web:pagent@0.1.0": dict(
+        self.write_supplements("web", {"web:test-package@0.1.0": dict(
             upstream_license="Apache-2.0", archive_sha256="audited-archive-hash", reason="Upstream grant",
             documents=[dict(path="legal/upstream/LICENSE", sha256=generate.digest(b"Upstream license terms"))])})
-        entry = dict(ecosystem="web", name="pagent", version="0.1.0", archive_sha256="audited-archive-hash", license=None)
+        entry = dict(ecosystem="web", name="test-package", version="0.1.0", archive_sha256="audited-archive-hash", license=None)
         audited = generate.supplement([{**entry, "documents": []}])[0]
         self.assertFalse(generate.missing_coverage(audited))
         self.assertIsNone(audited["license"])

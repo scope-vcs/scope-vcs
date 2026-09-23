@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
-import ts from 'typescript'
+import { parse } from '@babel/parser'
 import * as parsers from './request-inputs'
 
 const request = { owner: 'scope', repo: 'vcs', request_id: 'req_1' }
@@ -187,50 +187,65 @@ test('every route server function binds at most one validator, taken from an API
   for (const route of routeFiles) {
     const source = readFileSync(resolve(routesDir, route), 'utf8')
     if (!source.includes('createServerFn')) continue
-    const file = ts.createSourceFile(route, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const file = parse(source, { sourceType: 'module', plugins: ['typescript', 'jsx'] })
     const serverFactories = new Set<string>()
     const apiImports = new Set<string>()
-    for (const statement of file.statements) {
-      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
-      const bindings = statement.importClause?.namedBindings
-      if (!bindings || !ts.isNamedImports(bindings)) continue
-      const module = statement.moduleSpecifier.text
-      for (const binding of bindings.elements) {
-        const imported = binding.propertyName?.text ?? binding.name.text
-        if (module === '@tanstack/react-start' && imported === 'createServerFn') serverFactories.add(binding.name.text)
-        if (module.startsWith('@/api/')) apiImports.add(binding.name.text)
+    for (const statement of file.program.body) {
+      if (statement.type !== 'ImportDeclaration') continue
+      const module = statement.source.value
+      for (const binding of statement.specifiers) {
+        if (binding.type !== 'ImportSpecifier' || binding.importKind === 'type') continue
+        const imported = binding.imported.type === 'Identifier' ? binding.imported.name : binding.imported.value
+        if (module === '@tanstack/react-start' && imported === 'createServerFn') serverFactories.add(binding.local.name)
+        if (module.startsWith('@/api/')) apiImports.add(binding.local.name)
       }
     }
 
+    const parents = new WeakMap<object, any>()
     const names = new Set<string>()
-    const inspect = (node: ts.Node) => {
-      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && serverFactories.has(node.expression.text)) {
-        const location = `${route}:${file.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
-        const boundValidators: ts.Expression[] = []
-        let chain: ts.Node = node
-        while (ts.isPropertyAccessExpression(chain.parent) && ts.isCallExpression(chain.parent.parent)) {
-          const method = chain.parent
-          const call = chain.parent.parent
-          if (method.name.text === 'validator') {
+    const inspect = (node: any) => {
+      if (!node || typeof node !== 'object') return
+      if (Array.isArray(node)) {
+        for (const child of node) inspect(child)
+        return
+      }
+      if (typeof node.type !== 'string') return
+      if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && serverFactories.has(node.callee.name)) {
+        const location = `${route}:${node.loc.start.line}`
+        const boundValidators: any[] = []
+        let chain = node
+        while (parents.get(chain)?.type === 'MemberExpression' && parents.get(parents.get(chain))?.type === 'CallExpression') {
+          const method = parents.get(chain)
+          const call = parents.get(method)
+          if (method.property.type === 'Identifier' && method.property.name === 'validator') {
             assert.equal(call.arguments.length, 1, `${location}: validator needs one parser`)
             boundValidators.push(call.arguments[0])
           }
           chain = call
         }
-        assert.ok(ts.isVariableDeclaration(chain.parent), `${location}: server function must be assigned to a variable`)
-        assert.ok(ts.isIdentifier(chain.parent.name), `${location}: server function needs an identifier name`)
+        const declaration = parents.get(chain)
+        assert.equal(declaration?.type, 'VariableDeclarator', `${location}: server function must be assigned to a variable`)
+        assert.equal(declaration.id.type, 'Identifier', `${location}: server function needs an identifier name`)
         assert.ok(boundValidators.length <= 1, `${location}: server function binds more than one validator`)
-        assert.ok(!names.has(chain.parent.name.text), `${location}: duplicate server function name`)
-        names.add(chain.parent.name.text)
+        assert.ok(!names.has(declaration.id.name), `${location}: duplicate server function name`)
+        names.add(declaration.id.name)
         const validator = boundValidators[0]
-        if (validator && ts.isIdentifier(validator)) {
-          assert.ok(apiImports.has(validator.text), `${location}: validator ${validator.text} must be imported from an @/api input module`)
+        if (validator?.type === 'Identifier') {
+          assert.ok(apiImports.has(validator.name), `${location}: validator ${validator.name} must be imported from an @/api input module`)
         }
         serverFunctionCount += 1
       }
-      ts.forEachChild(node, inspect)
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'loc' || key === 'extra' || key === 'comments') continue
+        if (value && typeof value === 'object') {
+          if (Array.isArray(value)) {
+            for (const child of value) if (child && typeof child === 'object') parents.set(child, node)
+          } else parents.set(value, node)
+          inspect(value)
+        }
+      }
     }
-    inspect(file)
+    inspect(file.program)
   }
   assert.ok(serverFunctionCount > 0)
 })

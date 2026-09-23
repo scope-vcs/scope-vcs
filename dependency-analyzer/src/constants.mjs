@@ -1,4 +1,4 @@
-export const ANALYZER_VERSION = "dependency-cruiser@18.2.0+scope-1";
+export const ANALYZER_VERSION = "enhanced-resolve@5.25.1+scope-2";
 
 export const SUPPORTED_SOURCE_EXTENSIONS = new Set([
   ".cjs",

@@ -50,7 +50,7 @@ where
 {
     let target_sequence = u64_to_i64(target_sequence, "Git compaction target sequence")?;
     let now = u64_to_i64(now_unix, "Git compaction schedule time")?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
             INSERT INTO scope_git_compaction_jobs (
@@ -178,7 +178,7 @@ impl JobStore {
     ) -> Result<(), PostgresError> {
         let now = u64_to_i64(now_unix, "Git compaction time")?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
                 UPDATE scope_git_compaction_jobs
@@ -202,7 +202,7 @@ impl JobStore {
         ))
         .await
         .map_err(PostgresError::internal)?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "DELETE FROM scope_git_compaction_jobs
              WHERE repo_id = $1 AND lease_generation = $2 AND target_sequence <= $3",
@@ -235,7 +235,7 @@ impl JobStore {
         })?;
         let result = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                     UPDATE scope_git_compaction_jobs
@@ -264,7 +264,7 @@ impl JobStore {
     ) -> Result<(), PostgresError> {
         let now = u64_to_i64(now_unix, "Git compaction time")?;
         self.db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                     UPDATE scope_git_compaction_jobs
@@ -297,7 +297,7 @@ impl JobStore {
         let now = u64_to_i64(now_unix, "Git compaction time")?;
         let error = bounded_compaction_error(error);
         self.db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                     UPDATE scope_git_compaction_jobs

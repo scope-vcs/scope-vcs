@@ -163,7 +163,7 @@ async fn repository_workflow_catalog_schema_enforces_identity_bounds_and_cascade
         "scope_repository_workflow_files",
     ] {
         let count = db
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!("SELECT count(*) AS count FROM {table}"),
             ))

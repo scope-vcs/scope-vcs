@@ -10,6 +10,7 @@ pub mod execution;
 pub mod git_credential;
 pub mod git_repo;
 pub mod git_transport;
+pub mod git_version;
 pub mod init;
 pub mod inspection;
 pub mod installers;

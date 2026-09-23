@@ -124,13 +124,14 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_media_chunks_become_readable_framed_objects() {
-        use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce, aead::Aead};
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
         let root = tempfile::tempdir().unwrap();
         let key = "media/v1/staged/att/original/try/parts/00000001-abc";
         let nonce = [5_u8; 12];
-        let sealed = ChaCha20Poly1305::new(Key::from_slice(&[7; 32]))
+        let sealed = ChaCha20Poly1305::new_from_slice(&[7; 32])
+            .unwrap()
             .encrypt(
-                Nonce::from_slice(&nonce),
+                &Nonce::from(nonce),
                 chacha20poly1305::aead::Payload {
                     msg: b"recorded bytes",
                     aad: key.as_bytes(),

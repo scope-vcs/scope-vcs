@@ -260,7 +260,7 @@ impl RepositoryStore {
             [repo_id.into(), source_head_oid.into()],
         );
         self.db
-            .execute(statement)
+            .execute_raw(statement)
             .await
             .map_err(PostgresError::internal)?;
         Ok(())
@@ -282,7 +282,7 @@ impl RepositoryStore {
             [repo_id.into(), path.into(), content_bytes.into()],
         );
         self.db
-            .execute(statement)
+            .execute_raw(statement)
             .await
             .map_err(PostgresError::internal)?;
         Ok(())

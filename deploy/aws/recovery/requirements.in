@@ -1,0 +1,4 @@
+boto3==1.43.100
+psycopg[binary]==3.3.6
+cryptography==50.0.1
+PyYAML==6.0.3

@@ -27,7 +27,7 @@ impl RepositoryStore {
             ));
         }
         self.db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_git_segment_uploads (
                     segment_id, repo_id, object_key, state, sha256,
@@ -73,7 +73,7 @@ impl RepositoryStore {
         }
         let result = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_git_segment_uploads
                  SET state = 'ready', sha256 = $2, plaintext_bytes = $3,
@@ -102,7 +102,7 @@ impl RepositoryStore {
         require_text(segment_id, "Git segment id")?;
         let result = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_git_segment_uploads
                  SET updated_at_unix = GREATEST(updated_at_unix, $2)
@@ -256,7 +256,7 @@ where
          WHERE segment_id = $1 AND {from_predicate}"
     );
     let result = conn
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             statement,
             [

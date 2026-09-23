@@ -4,8 +4,8 @@
 use super::{EncryptedObjectStore, ObjectStore, ObjectStoreError};
 use crate::{EncryptionKey, ObjectBackend, envelope::is_framed};
 use chacha20poly1305::{
-    ChaCha20Poly1305, Key, Nonce, Tag,
-    aead::{AeadInPlace, KeyInit},
+    ChaCha20Poly1305, Nonce, Tag,
+    aead::{AeadInOut, KeyInit},
 };
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
@@ -35,7 +35,7 @@ pub async fn reencrypt_legacy_objects(
     max_object_bytes: usize,
 ) -> Result<LegacyReencryptReport, ObjectStoreError> {
     let store = EncryptedObjectStore::new(backend.clone(), key);
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(&legacy_key));
+    let cipher = ChaCha20Poly1305::new_from_slice(&legacy_key).expect("legacy key has 32 bytes");
     let mut report = LegacyReencryptReport::default();
     let mut start_after = None;
     loop {
@@ -140,14 +140,14 @@ fn decrypt_legacy(
             "object {object_key} has an invalid legacy envelope"
         )));
     }
-    let nonce = Nonce::clone_from_slice(&envelope[..LEGACY_NONCE_BYTES]);
+    let nonce = Nonce::try_from(&envelope[..LEGACY_NONCE_BYTES]).expect("validated nonce length");
     let tag_start = envelope.len() - LEGACY_TAG_BYTES;
-    let tag = Tag::clone_from_slice(&envelope[tag_start..]);
+    let tag = Tag::try_from(&envelope[tag_start..]).expect("validated tag length");
     cipher
-        .decrypt_in_place_detached(
+        .decrypt_inout_detached(
             &nonce,
             object_key.as_bytes(),
-            &mut envelope[LEGACY_NONCE_BYTES..tag_start],
+            (&mut envelope[LEGACY_NONCE_BYTES..tag_start]).into(),
             &tag,
         )
         .map_err(|_| {
@@ -170,11 +170,15 @@ mod tests {
 
     /// Seals `plaintext` the way the retired store did.
     fn legacy_envelope(key: &[u8; 32], object_key: &str, plaintext: &[u8]) -> Vec<u8> {
-        let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
+        let cipher = ChaCha20Poly1305::new_from_slice(key).unwrap();
         let nonce = [3_u8; LEGACY_NONCE_BYTES];
         let mut body = plaintext.to_vec();
         let tag = cipher
-            .encrypt_in_place_detached(Nonce::from_slice(&nonce), object_key.as_bytes(), &mut body)
+            .encrypt_inout_detached(
+                &Nonce::from(nonce),
+                object_key.as_bytes(),
+                body.as_mut_slice().into(),
+            )
             .unwrap();
         [LEGACY_MAGIC, &nonce, &body, &tag].concat()
     }

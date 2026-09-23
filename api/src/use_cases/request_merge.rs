@@ -568,27 +568,15 @@ fn merge_main_oid_for_execution(
         &["config", "user.email", "merge@scope.local"],
         "configuring request merge email",
     )?;
-    let synthetic_base =
-        synthetic_merge_commit(repo, request_base_oid, None, "Scope request merge base")?;
-    let synthetic_main = synthetic_merge_commit(
-        repo,
-        current_main_oid,
-        Some(&synthetic_base),
-        "Scope current main",
-    )?;
-    let synthetic_request = synthetic_merge_commit(
-        repo,
-        request_head_oid,
-        Some(&synthetic_base),
-        "Scope request head",
-    )?;
+    let merge_base = format!("--merge-base={request_base_oid}");
     let merge_tree = run_git_output(
         Some(repo),
         &[
             "merge-tree",
             "--write-tree",
-            &synthetic_main,
-            &synthetic_request,
+            &merge_base,
+            current_main_oid,
+            request_head_oid,
         ],
         "merging request trees",
     )?;
@@ -641,30 +629,6 @@ fn merge_main_oid_for_execution(
     Ok(String::from_utf8(commit.stdout)
         .map_err(ApiError::internal)
         .map(|value| value.trim().to_string())?)
-}
-
-fn synthetic_merge_commit(
-    repo: &std::path::Path,
-    tree_source_oid: &str,
-    parent_oid: Option<&str>,
-    message: &str,
-) -> Result<String, ApiError> {
-    let tree_source = format!("{tree_source_oid}^{{tree}}");
-    let mut args = vec!["commit-tree", tree_source.as_str()];
-    if let Some(parent_oid) = parent_oid {
-        args.extend(["-p", parent_oid]);
-    }
-    args.extend(["-m", message]);
-    let commit = run_git_output(Some(repo), &args, "creating synthetic request merge commit")?;
-    if !commit.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "creating synthetic request merge commit: {}",
-            String::from_utf8_lossy(&commit.stderr).trim()
-        )));
-    }
-    String::from_utf8(commit.stdout)
-        .map_err(ApiError::internal)
-        .map(|value| value.trim().to_string())
 }
 
 #[cfg(test)]

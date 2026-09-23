@@ -33,7 +33,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (const finding of findings) {
       console.error(`${finding.Severity} ${finding.VulnerabilityID} ${finding.PkgName}: ${finding.InstalledVersion} -> ${finding.FixedVersion}`);
     }
-    console.log(`Checks image scan: ${findings.length} actionable HIGH/CRITICAL findings`);
+    console.log(`Image scan: ${findings.length} actionable HIGH/CRITICAL findings`);
     process.exitCode = findings.length ? 1 : 0;
   } catch (error) {
     console.error(error.message);

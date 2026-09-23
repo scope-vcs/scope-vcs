@@ -5,7 +5,7 @@ use crate::{
     state::AppState,
 };
 use axum::{Json, extract::State, http::HeaderMap};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use scope_domain::runs::dispatch_authorization::DispatchAuthorization;
 use serde::Deserialize;
 use sha2::Sha256;

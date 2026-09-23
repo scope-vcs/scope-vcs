@@ -304,7 +304,7 @@ async fn upload_part_reservation_is_idempotent_and_fences_expired_writers() {
     let abandoned = fixture
         .store
         .db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT object_key FROM scope_request_media_abandoned_objects WHERE attachment_id = $1",
             ["lease_attachment".into()],
@@ -465,7 +465,7 @@ async fn processing_lease_takeover_orphans_old_output_and_fences_stale_completio
     let old_output = fixture
         .store
         .db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT state FROM scope_request_media_processing_objects WHERE object_key = $1",
             [old_output_key.into()],
@@ -567,7 +567,7 @@ async fn successful_processing_completion_persists_derivative_with_repository_bu
     let inventory = fixture
         .store
         .db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT state, manifest_id FROM scope_request_media_processing_objects
              WHERE object_key = $1",
@@ -592,7 +592,7 @@ async fn completed_manifests_reject_mutation() {
     let error = fixture
         .store
         .db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_manifests SET media_type = $2 WHERE id = $1",
             ["manifest_attachment:original".into(), "image/jpeg".into()],
@@ -763,7 +763,7 @@ async fn binding_a_ready_attachment_notifies_only_after_the_transaction_commits(
     fixture
         .store
         .db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_attachments SET state = 'Ready' WHERE id = $1",
             ["notification_attachment".into()],
