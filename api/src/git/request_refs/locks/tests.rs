@@ -5,6 +5,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+const LOCK_TEST_WAIT: Duration = Duration::from_secs(5);
+
 fn lock_path(label: &str) -> PathBuf {
     let directory = std::env::temp_dir().join(format!(
         "scope-git-lock-{label}-{}-{}",
@@ -22,7 +24,9 @@ fn lock_path(label: &str) -> PathBuf {
 fn lock_exclusion_depends_on_owner_not_timestamp_and_survives_reopening() {
     let path = lock_path("ownership");
     fs::write(&path, "pid=1\ncreated_at_unix=1\n").unwrap();
-    let first = acquire_git_lock(&path, "busy", Duration::ZERO).unwrap();
+    // Acquisitions that must succeed wait briefly: a child process forked by a parallel test
+    // can inherit the lock's file descriptor until its exec closes it.
+    let first = acquire_git_lock(&path, "busy", LOCK_TEST_WAIT).unwrap();
     fs::write(
         &path,
         format!("pid={}\ncreated_at_unix=1\n", std::process::id()),
@@ -30,7 +34,7 @@ fn lock_exclusion_depends_on_owner_not_timestamp_and_survives_reopening() {
     .unwrap();
     assert!(acquire_git_lock(&path, "busy", Duration::ZERO).is_err());
     drop(first);
-    let second = acquire_git_lock(&path, "busy", Duration::ZERO).unwrap();
+    let second = acquire_git_lock(&path, "busy", LOCK_TEST_WAIT).unwrap();
     assert!(acquire_git_lock(&path, "busy", Duration::ZERO).is_err());
     drop(second);
     assert!(path.is_file());
