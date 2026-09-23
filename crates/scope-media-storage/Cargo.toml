@@ -19,6 +19,8 @@ tokio-stream = "0.1.17"
 
 [dev-dependencies]
 async-trait.workspace = true
+chacha20poly1305.workspace = true
 serde_json.workspace = true
 scope_storage = { workspace = true, features = ["test-support"] }
+tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread"] }

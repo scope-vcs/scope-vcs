@@ -15,6 +15,8 @@ use tokio::{
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 
 pub const MAX_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+/// Media chunks are sealed under their own key id, separate from source objects.
+pub(crate) const MEDIA_KEY_ID: &str = "media";
 
 pub type MediaByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, MediaStorageError>> + Send>>;
 
@@ -37,7 +39,7 @@ impl MediaStorage {
                 "media storage operation limit must be positive",
             ));
         }
-        let key = EncryptionKey::new("media", encryption_key)
+        let key = EncryptionKey::new(MEDIA_KEY_ID, encryption_key)
             .map_err(|error| MediaStorageError::invalid(error.to_string()))?;
         Ok(Self {
             store: Arc::new(EncryptedObjectStore::new(backend, key)),

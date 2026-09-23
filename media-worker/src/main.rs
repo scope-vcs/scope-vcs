@@ -18,6 +18,9 @@ async fn main() -> anyhow::Result<()> {
     match args.next().as_deref().and_then(|value| value.to_str()) {
         None => run_service().await,
         Some("codec-info") if args.next().is_none() => codec_info().await,
+        Some("reencrypt-legacy-objects") if args.next().is_none() => {
+            reencrypt_legacy_objects().await
+        }
         Some("codec-self-test") => {
             let fixture_dir = args
                 .next()
@@ -29,6 +32,30 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(command) => anyhow::bail!("unknown scope-media-worker command: {command}"),
     }
+}
+
+/// One-time media migration to the framed envelope. See
+/// `MediaStorageSettings::reencrypt_legacy_objects`.
+async fn reencrypt_legacy_objects() -> anyhow::Result<()> {
+    let report = scope_media_storage::MediaStorageSettings::from_env()?
+        .reencrypt_legacy_objects()
+        .await?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "rewritten": report.rewritten,
+            "alreadyFramed": report.already_framed,
+            "unrecognized": report.unrecognized,
+            "failed": report.failed,
+        })
+    );
+    if !report.failed.is_empty() {
+        anyhow::bail!(
+            "{} media objects could not be re-encrypted",
+            report.failed.len()
+        );
+    }
+    Ok(())
 }
 
 async fn run_service() -> anyhow::Result<()> {

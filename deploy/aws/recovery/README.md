@@ -26,8 +26,8 @@ Railway snapshot schedules remain a separate recovery mechanism.
 - Archives captured before objects moved to the framed envelope still hold legacy
   object envelopes. Verification accepts them, but current services cannot read
   them: after restoring such an archive's buckets, run `scope-maintenance
-  reencrypt-objects` and `reencrypt-media-objects` against the restored buckets
-  before starting services.
+  reencrypt-objects` and `scope-media-worker reencrypt-legacy-objects` against the
+  restored buckets before starting services.
 
 The rebuildable cache bucket is excluded by default. Its database rows remain in
 the dump, and the manifest records the exclusion and object count. Before starting

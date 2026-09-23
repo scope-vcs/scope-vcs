@@ -1,5 +1,7 @@
 use crate::{MediaStorage, MediaStorageError};
-use scope_storage::{FileBackend, ObjectBackend, S3Backend, S3Settings};
+use scope_storage::{
+    EncryptionKey, FileBackend, LegacyReencryptReport, ObjectBackend, S3Backend, S3Settings,
+};
 use std::{path::PathBuf, sync::Arc};
 
 /// Shared by the media HTTP service and processing worker. Process concurrency
@@ -52,7 +54,31 @@ impl MediaStorageSettings {
         self,
         max_storage_operations: usize,
     ) -> Result<MediaStorage, MediaStorageError> {
-        let backend: Arc<dyn ObjectBackend> = match self.backend {
+        let encryption_key = self.encryption_key;
+        MediaStorage::encrypted(self.backend()?, encryption_key, max_storage_operations)
+    }
+
+    /// One-time move of media chunks still in the retired single-tag envelope to the framed
+    /// envelope. Run it with media writers stopped, before starting media services that only read
+    /// the framed envelope. It is safe to rerun.
+    pub async fn reencrypt_legacy_objects(
+        self,
+    ) -> Result<LegacyReencryptReport, MediaStorageError> {
+        let encryption_key = self.encryption_key;
+        let key = EncryptionKey::new(crate::storage::MEDIA_KEY_ID, encryption_key)
+            .map_err(|error| MediaStorageError::invalid(error.to_string()))?;
+        Ok(scope_storage::reencrypt_legacy_objects(
+            self.backend()?,
+            encryption_key,
+            key,
+            "media/",
+            crate::MAX_CHUNK_BYTES,
+        )
+        .await?)
+    }
+
+    fn backend(self) -> Result<Arc<dyn ObjectBackend>, MediaStorageError> {
+        Ok(match self.backend {
             Backend::Filesystem(root) => Arc::new(
                 FileBackend::new(root)
                     .map_err(|error| MediaStorageError::invalid(error.to_string()))?,
@@ -61,8 +87,7 @@ impl MediaStorageSettings {
                 S3Backend::new(settings)
                     .map_err(|error| MediaStorageError::invalid(error.to_string()))?,
             ),
-        };
-        MediaStorage::encrypted(backend, self.encryption_key, max_storage_operations)
+        })
     }
 }
 
@@ -94,6 +119,50 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn legacy_media_chunks_become_readable_framed_objects() {
+        use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce, aead::Aead};
+        let root = tempfile::tempdir().unwrap();
+        let key = "media/v1/staged/att/original/try/parts/00000001-abc";
+        let nonce = [5_u8; 12];
+        let sealed = ChaCha20Poly1305::new(Key::from_slice(&[7; 32]))
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                chacha20poly1305::aead::Payload {
+                    msg: b"recorded bytes",
+                    aad: key.as_bytes(),
+                },
+            )
+            .unwrap();
+        let legacy = [b"scope-vcs-object-v1\n".as_slice(), &nonce, &sealed].concat();
+        let backend = FileBackend::new(root.path()).unwrap();
+        backend.put(key, legacy.into()).await.unwrap();
+        let configured = || {
+            settings(&[
+                ("SCOPE_MEDIA_OBJECT_STORE", "filesystem".into()),
+                (
+                    "SCOPE_MEDIA_OBJECT_STORE_DIR",
+                    root.path().to_string_lossy().into_owned(),
+                ),
+            ])
+            .unwrap()
+        };
+
+        let report = configured().reencrypt_legacy_objects().await.unwrap();
+
+        assert_eq!(report.rewritten, 1);
+        let store = scope_storage::EncryptedObjectStore::new(
+            Arc::new(backend),
+            EncryptionKey::new(crate::storage::MEDIA_KEY_ID, [7; 32]).unwrap(),
+        );
+        assert_eq!(
+            scope_storage::read_bounded(&store, key, 1024)
+                .await
+                .unwrap(),
+            b"recorded bytes"
+        );
     }
 
     #[tokio::test]

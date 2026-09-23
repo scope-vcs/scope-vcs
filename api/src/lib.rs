@@ -43,7 +43,7 @@ mod workflow_catalog_backfill;
 mod workflow_tests;
 
 pub use app::router;
-pub use object_reencryption::{ReencryptionBucket, reencrypt_legacy_objects_for_maintenance};
+pub use object_reencryption::reencrypt_legacy_objects_for_maintenance;
 pub use request_auto_merge_runtime::RequestAutoMergeRuntime;
 pub use state::AppState;
 pub use workflow_catalog_backfill::{

@@ -3,8 +3,8 @@
 Format: the framed envelope in scope-storage/src/envelope.rs, version 2, used by Git segments and
 every other encrypted object. Archives captured before objects moved to that envelope still hold
 the legacy single-tag object envelope, which stays readable until those archives expire (42 days
-after the `reencrypt-objects` maintenance run). Unknown formats fail closed instead of silently
-claiming a usable backup.
+after the objects are re-encrypted). Unknown formats fail closed instead of silently claiming a
+usable backup.
 """
 
 import base64

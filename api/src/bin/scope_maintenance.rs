@@ -16,7 +16,6 @@ commands:
   apply                       apply all pending migrations behind the writer fence
   backfill-workflow-catalogs  idempotently rebuild repository workflow catalogs
   reencrypt-objects           rewrite legacy-envelope objects in SCOPE_BUCKET (no database)
-  reencrypt-media-objects     rewrite legacy-envelope objects in SCOPE_MEDIA_BUCKET (no database)
   help                        show this help
 
 Migration operation limits (positive seconds; independent of downtime warnings):
@@ -41,8 +40,8 @@ async fn main() -> anyhow::Result<()> {
     if command == "serve" {
         return api::maintenance_http::serve().await;
     }
-    if let Some(bucket) = reencryption_bucket(&command) {
-        return reencrypt_objects(bucket).await;
+    if command == "reencrypt-objects" {
+        return reencrypt_objects().await;
     }
     let database_url = maintenance_database_url()?;
 
@@ -94,16 +93,10 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn reencryption_bucket(command: &str) -> Option<api::ReencryptionBucket> {
-    match command {
-        "reencrypt-objects" => Some(api::ReencryptionBucket::Objects),
-        "reencrypt-media-objects" => Some(api::ReencryptionBucket::Media),
-        _ => None,
-    }
-}
-
-async fn reencrypt_objects(bucket: api::ReencryptionBucket) -> anyhow::Result<()> {
-    let report = api::reencrypt_legacy_objects_for_maintenance(bucket).await?;
+/// One-time object migration to the framed envelope. See
+/// `api::reencrypt_legacy_objects_for_maintenance`.
+async fn reencrypt_objects() -> anyhow::Result<()> {
+    let report = api::reencrypt_legacy_objects_for_maintenance().await?;
     println!(
         "{}",
         serde_json::json!({
