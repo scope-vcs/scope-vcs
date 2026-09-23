@@ -1,4 +1,3 @@
-use crate::backend::LIST_PAGE_KEYS;
 use crate::{
     BackendError, MultipartUpload, ObjectBackend, RemoteReader, UploadedPart, is_hex_id_32,
     random_hex_id, sync_directory,
@@ -267,43 +266,6 @@ impl ObjectBackend for FileBackend {
     async fn readiness_check(&self) -> Result<(), BackendError> {
         fs::create_dir_all(self.root.join("objects")).await?;
         Ok(())
-    }
-
-    async fn list_page(
-        &self,
-        prefix: &str,
-        start_after: Option<&str>,
-    ) -> Result<Vec<String>, BackendError> {
-        let objects = self.root.join("objects");
-        let mut keys = Vec::new();
-        let mut directories = vec![objects.clone()];
-        while let Some(directory) = directories.pop() {
-            let mut entries = match fs::read_dir(&directory).await {
-                Ok(entries) => entries,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(error.into()),
-            };
-            while let Some(entry) = entries.next_entry().await? {
-                let path = entry.path();
-                if entry.file_type().await?.is_dir() {
-                    directories.push(path);
-                    continue;
-                }
-                let Some(key) = path
-                    .strip_prefix(&objects)
-                    .ok()
-                    .and_then(|relative| relative.to_str())
-                else {
-                    continue;
-                };
-                if key.starts_with(prefix) && start_after.is_none_or(|after| key > after) {
-                    keys.push(key.to_string());
-                }
-            }
-        }
-        keys.sort();
-        keys.truncate(LIST_PAGE_KEYS);
-        Ok(keys)
     }
 }
 
