@@ -4,6 +4,8 @@ ARG BINARY
 ARG SCOPE_ANALYTICS_RELEASE
 ENV SCOPE_ANALYTICS_RELEASE=$SCOPE_ANALYTICS_RELEASE
 ENV SCOPE_COMPONENT_BINARY=$BINARY
+# jemalloc decay: hand freed pages back to the OS within seconds instead of holding them.
+ENV _RJEM_MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libssl3t64 \
     && if [ "$INSTALL_GIT" = 1 ]; then apt-get install -y --no-install-recommends git; fi \
