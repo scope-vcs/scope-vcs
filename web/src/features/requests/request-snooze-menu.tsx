@@ -1,5 +1,5 @@
 import { Clock3 } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ToggleEvent } from 'react'
 import {
   REQUEST_SNOOZE_OPTIONS,
   requestSnoozeLandingLabel,
@@ -46,6 +46,12 @@ export function RequestSnoozeMenu({
     menu.current.querySelector('button')?.focus({ preventScroll: true })
   }
 
+  function toggle(event: ToggleEvent<HTMLDivElement>) {
+    const showing = event.newState === 'open'
+    setOpenedAt(showing ? new Date() : null)
+    if (showing) position()
+  }
+
   return (
     <>
       <button
@@ -66,11 +72,7 @@ export function RequestSnoozeMenu({
         className="fixed m-0 w-48 max-w-[calc(100vw-16px)] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[var(--shadow-pop)]"
         id={id}
         onKeyDown={moveFocus}
-        onToggle={(event) => {
-          const showing = event.newState === 'open'
-          setOpenedAt(showing ? new Date() : null)
-          if (showing) position()
-        }}
+        onToggle={toggle}
         popover="auto"
         ref={menu}
         role="menu"
@@ -82,8 +84,11 @@ export function RequestSnoozeMenu({
             className="flex w-full items-baseline justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
             key={option.value}
             onClick={() => {
+              if (!openedAt) return
+              // Same reference moment as the label, so what was shown is what lands.
+              const until = requestSnoozeUntil(option.value, openedAt)
               menu.current?.hidePopover()
-              onSnooze(requestSnoozeUntil(option.value))
+              onSnooze(until)
             }}
             role="menuitem"
             type="button"
