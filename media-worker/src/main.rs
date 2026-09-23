@@ -31,13 +31,17 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-/// Rewrites media chunks still in the retired single-tag envelope, once, in the background after
-/// the worker starts. Until a chunk is rewritten, reads of it fail. Delete this once a release has
-/// run it.
+/// Rewrites media chunks still in the retired single-tag envelope in the background after the
+/// worker starts, retrying until one pass completes. Until a chunk is rewritten, reads of it fail.
+/// Delete this once a release has run it.
 fn start_legacy_object_reencryption() {
     tokio::spawn(async {
         let result = match scope_media_storage::MediaStorageSettings::from_env() {
-            Ok(settings) => settings.reencrypt_legacy_objects().await,
+            Ok(settings) => {
+                settings
+                    .reencrypt_legacy_objects(Duration::from_secs(60))
+                    .await
+            }
             Err(error) => Err(error),
         };
         match result {

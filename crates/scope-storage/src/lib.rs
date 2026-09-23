@@ -25,7 +25,8 @@ pub use objects::{
     ContentObjectKind, EncryptedObjectStore, LegacyReencryptReport, ObjectStore, ObjectStoreError,
     ObjectStoreErrorKind, content_object_for_bytes, delete_source_blobs, ensure_object_size,
     object_key, object_too_large, put_content_object, put_source_blob, read_bounded,
-    reencrypt_legacy_objects, source_blob_bytes, write_source_blob_to,
+    reencrypt_legacy_objects, reencrypt_legacy_objects_until_complete, source_blob_bytes,
+    write_source_blob_to,
 };
 pub use presign::{PresignedRequest, S3Presigner};
 pub use s3::{S3Backend, S3Settings};

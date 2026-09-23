@@ -97,6 +97,35 @@ async fn reencrypt_object(
     Ok(())
 }
 
+/// Repeats [`reencrypt_legacy_objects`] until one pass finishes, waiting `retry_delay` after a
+/// pass that storage interrupted. Objects rewritten by an earlier pass are skipped as framed.
+pub async fn reencrypt_legacy_objects_until_complete(
+    backend: Arc<dyn ObjectBackend>,
+    legacy_key: [u8; 32],
+    key: EncryptionKey,
+    prefix: &str,
+    max_object_bytes: usize,
+    retry_delay: std::time::Duration,
+) -> LegacyReencryptReport {
+    loop {
+        match reencrypt_legacy_objects(
+            backend.clone(),
+            legacy_key,
+            key.clone(),
+            prefix,
+            max_object_bytes,
+        )
+        .await
+        {
+            Ok(report) => return report,
+            Err(error) => {
+                tracing::warn!(%error, prefix, "legacy object re-encryption interrupted; retrying");
+                tokio::time::sleep(retry_delay).await;
+            }
+        }
+    }
+}
+
 /// `envelope` is everything after the magic: nonce, ciphertext, tag. The object key is the AAD.
 fn decrypt_legacy(
     cipher: &ChaCha20Poly1305,
@@ -233,6 +262,95 @@ mod tests {
         assert_eq!(
             read_bounded(&store, last, 1024).await.unwrap(),
             b"after page one"
+        );
+    }
+
+    /// Memory storage whose first listing fails, as an interrupted S3 call would.
+    #[derive(Default)]
+    struct FlakyListing {
+        inner: MemoryBackend,
+        failed_once: std::sync::atomic::AtomicBool,
+    }
+
+    #[async_trait::async_trait]
+    impl ObjectBackend for FlakyListing {
+        async fn put(&self, key: &str, bytes: Bytes) -> Result<(), crate::BackendError> {
+            self.inner.put(key, bytes).await
+        }
+        async fn begin(&self, key: &str) -> Result<crate::MultipartUpload, crate::BackendError> {
+            self.inner.begin(key).await
+        }
+        async fn upload_part(
+            &self,
+            upload: &crate::MultipartUpload,
+            part_number: i32,
+            bytes: Bytes,
+        ) -> Result<crate::UploadedPart, crate::BackendError> {
+            self.inner.upload_part(upload, part_number, bytes).await
+        }
+        async fn complete(
+            &self,
+            upload: crate::MultipartUpload,
+            parts: Vec<crate::UploadedPart>,
+        ) -> Result<(), crate::BackendError> {
+            self.inner.complete(upload, parts).await
+        }
+        async fn abort(&self, upload: crate::MultipartUpload) -> Result<(), crate::BackendError> {
+            self.inner.abort(upload).await
+        }
+        async fn abort_incomplete(&self, key: &str) -> Result<(), crate::BackendError> {
+            self.inner.abort_incomplete(key).await
+        }
+        async fn read(&self, key: &str) -> Result<crate::RemoteReader, crate::BackendError> {
+            self.inner.read(key).await
+        }
+        async fn delete(&self, key: &str) -> Result<(), crate::BackendError> {
+            self.inner.delete(key).await
+        }
+        async fn list_page(
+            &self,
+            prefix: &str,
+            start_after: Option<&str>,
+        ) -> Result<Vec<String>, crate::BackendError> {
+            if !self
+                .failed_once
+                .swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
+                return Err(crate::BackendError::new("listing interrupted"));
+            }
+            self.inner.list_page(prefix, start_after).await
+        }
+    }
+
+    #[tokio::test]
+    async fn an_interrupted_pass_is_retried_until_it_completes() {
+        let raw_key = [7_u8; 32];
+        let key = EncryptionKey::new("primary", raw_key).unwrap();
+        let backend: Arc<dyn ObjectBackend> = Arc::new(FlakyListing::default());
+        let object_key = "objects/blobs/old";
+        backend
+            .put(
+                object_key,
+                Bytes::from(legacy_envelope(&raw_key, object_key, b"old content")),
+            )
+            .await
+            .unwrap();
+
+        let report = reencrypt_legacy_objects_until_complete(
+            backend.clone(),
+            raw_key,
+            key.clone(),
+            "objects/",
+            1024,
+            std::time::Duration::ZERO,
+        )
+        .await;
+
+        assert_eq!(report.rewritten, 1);
+        let store = EncryptedObjectStore::new(backend, key);
+        assert_eq!(
+            read_bounded(&store, object_key, 1024).await.unwrap(),
+            b"old content"
         );
     }
 

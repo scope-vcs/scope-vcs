@@ -59,21 +59,23 @@ impl MediaStorageSettings {
     }
 
     /// One-time move of media chunks still in the retired single-tag envelope to the framed
-    /// envelope. It is safe to rerun.
+    /// envelope, retrying after `retry_delay` until one pass completes. It is safe to rerun.
     pub async fn reencrypt_legacy_objects(
         self,
+        retry_delay: std::time::Duration,
     ) -> Result<LegacyReencryptReport, MediaStorageError> {
         let encryption_key = self.encryption_key;
         let key = EncryptionKey::new(crate::storage::MEDIA_KEY_ID, encryption_key)
             .map_err(|error| MediaStorageError::invalid(error.to_string()))?;
-        Ok(scope_storage::reencrypt_legacy_objects(
+        Ok(scope_storage::reencrypt_legacy_objects_until_complete(
             self.backend()?,
             encryption_key,
             key,
             "media/",
             crate::MAX_CHUNK_BYTES,
+            retry_delay,
         )
-        .await?)
+        .await)
     }
 
     fn backend(self) -> Result<Arc<dyn ObjectBackend>, MediaStorageError> {
@@ -149,7 +151,10 @@ mod tests {
             .unwrap()
         };
 
-        let report = configured().reencrypt_legacy_objects().await.unwrap();
+        let report = configured()
+            .reencrypt_legacy_objects(std::time::Duration::ZERO)
+            .await
+            .unwrap();
 
         assert_eq!(report.rewritten, 1);
         let store = scope_storage::EncryptedObjectStore::new(
