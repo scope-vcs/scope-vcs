@@ -2,7 +2,7 @@ use super::run_resources::{
     state_with_pushed_workflow_checkout, state_with_pushed_workflow_source,
 };
 use super::*;
-use scope_object_store::{ObjectStore, ObjectStoreError};
+use scope_storage::{ObjectStore, ObjectStoreError};
 
 struct RevokeMembershipOnUpload {
     inner: Arc<dyn ObjectStore>,
@@ -12,40 +12,36 @@ struct RevokeMembershipOnUpload {
     revoked: std::sync::atomic::AtomicBool,
 }
 
+#[async_trait::async_trait]
 impl ObjectStore for RevokeMembershipOnUpload {
-    fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
-        self.inner.put(key, bytes)?;
+    async fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
+        self.inner.put(key, bytes).await?;
         if key == self.uploaded_key {
-            let runtime = tokio::runtime::Handle::current();
-            std::thread::scope(|scope| {
-                scope
-                    .spawn(|| {
-                        runtime.block_on(async {
-                            self.metadata
-                                .repositories()
-                                .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-                                    repo.members
-                                        .retain(|member| member.user_id != self.member_id);
-                                })
-                                .await
-                                .unwrap();
-                        })
-                    })
-                    .join()
-                    .unwrap();
-            });
+            self.metadata
+                .repositories()
+                .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+                    repo.members
+                        .retain(|member| member.user_id != self.member_id);
+                })
+                .await
+                .unwrap();
             self.revoked
                 .store(true, std::sync::atomic::Ordering::SeqCst);
         }
         Ok(())
     }
 
-    fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
-        self.inner.get_bounded(key, max_bytes)
+    async fn read_to(
+        &self,
+        key: &str,
+        max_bytes: u64,
+        output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
+    ) -> Result<u64, ObjectStoreError> {
+        self.inner.read_to(key, max_bytes, output).await
     }
 
-    fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
-        self.inner.delete(key)
+    async fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
+        self.inner.delete(key).await
     }
 }
 
@@ -89,9 +85,9 @@ async fn uploaded_manual_run_revocation_queues_cleanup_and_preserves_shared_sour
         .unwrap();
         let bundle = fs::read(bundle_path).unwrap();
         let mut object =
-            scope_object_store::content_object_for_bytes(ContentObjectKind::GitBundle, &bundle);
+            scope_storage::content_object_for_bytes(ContentObjectKind::GitBundle, &bundle);
         object.git_oid = git_oid.clone();
-        let key = scope_object_store::object_key(&object);
+        let key = scope_storage::object_key(&object);
         let upload_request = |request_id: &str, auth: String| {
             Request::builder()
                 .method("POST")
@@ -159,10 +155,12 @@ async fn uploaded_manual_run_revocation_queues_cleanup_and_preserves_shared_sour
         drain_pending_source_blob_deletions_report(&state)
             .await
             .unwrap();
+        let stored =
+            scope_storage::read_bounded(state.object_store.as_ref(), &key, usize::MAX).await;
         if shared_source {
-            assert_eq!(state.object_store.get(&key).unwrap(), bundle);
+            assert_eq!(stored.unwrap(), bundle);
         } else {
-            assert!(state.object_store.get(&key).is_err());
+            assert!(stored.is_err());
         }
     }
 }

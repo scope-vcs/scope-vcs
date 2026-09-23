@@ -10,7 +10,7 @@ use axum::{
         },
     },
 };
-use scope_object_store::{ObjectStore, ObjectStoreError};
+use scope_storage::{ObjectStore, ObjectStoreError};
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -96,24 +96,26 @@ fn request(method: &str, uri: &str) -> Request<Body> {
 
 struct UnavailableObjectStore;
 
+#[async_trait::async_trait]
 impl ObjectStore for UnavailableObjectStore {
-    fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
+    async fn put(&self, _key: &str, _bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
         Ok(())
     }
 
-    fn get(&self, _key: &str) -> Result<Vec<u8>, ObjectStoreError> {
-        Ok(Vec::new())
+    async fn read_to(
+        &self,
+        _key: &str,
+        _max_bytes: u64,
+        _output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
+    ) -> Result<u64, ObjectStoreError> {
+        Ok(0)
     }
 
-    fn get_bounded(&self, _key: &str, _max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
-        Ok(Vec::new())
-    }
-
-    fn delete(&self, _key: &str) -> Result<(), ObjectStoreError> {
+    async fn delete(&self, _key: &str) -> Result<(), ObjectStoreError> {
         Ok(())
     }
 
-    fn readiness_check(&self) -> Result<(), ObjectStoreError> {
+    async fn readiness_check(&self) -> Result<(), ObjectStoreError> {
         Err(ObjectStoreError::service_unavailable(
             "secret internal object-store hostname is unavailable",
         ))

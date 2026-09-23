@@ -27,6 +27,7 @@ path = "src/bin/scope_smoke_seed.rs"
 required-features = ["smoke-seed"]
 
 [dependencies]
+async-trait.workspace = true
 tempfile.workspace = true
 scope_service_runtime = { workspace = true, features = ["postgres"] }
 anyhow.workspace = true
@@ -54,9 +55,8 @@ scope_cache_contract.workspace = true
 scope_cache_domain.workspace = true
 scope_content_lifecycle.workspace = true
 scope_git = { workspace = true, features = ["storage"] }
-scope_git_storage.workspace = true
+scope_storage.workspace = true
 scope_run_config.workspace = true
-scope_object_store.workspace = true
 scope_product_analytics.workspace = true
 url = "2.5.7"
 scope_git_process.workspace = true
@@ -70,7 +70,7 @@ ts-rs = { workspace = true, optional = true }
 [dev-dependencies]
 scope_product_analytics = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
-scope_object_store = { workspace = true, features = ["test-support"] }
+scope_storage = { workspace = true, features = ["test-support"] }
 scope_postgres = { workspace = true, features = ["test-support"] }
 tower = { workspace = true, features = ["util"] }
 tracing-subscriber.workspace = true

@@ -23,6 +23,11 @@ Railway snapshot schedules remain a separate recovery mechanism.
 - Plaintext checksums checked against the captured database for required content,
   Git segments, media chunks, and whole media manifests. Unknown encryption formats
   or missing key versions fail recovery verification.
+- Archives captured before objects moved to the framed envelope still hold legacy
+  object envelopes. Verification accepts them, but current services cannot read
+  them: after restoring such an archive's buckets, run `scope-maintenance
+  reencrypt-objects` and `reencrypt-media-objects` against the restored buckets
+  before starting services.
 
 The rebuildable cache bucket is excluded by default. Its database rows remain in
 the dump, and the manifest records the exclusion and object count. Before starting

@@ -4,9 +4,9 @@ use crate::{
     runtime_budgets::RuntimeBudgets,
     state::AppState,
 };
-use scope_git_storage::GitSegmentStore;
-use scope_object_store::ObjectStore;
 use scope_postgres::db::MetadataStore;
+use scope_storage::GitSegmentStore;
+use scope_storage::ObjectStore;
 use std::sync::Arc;
 
 #[derive(Clone)]

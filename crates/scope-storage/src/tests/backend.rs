@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) struct TestMultipartStore {
+pub(super) struct TestObjectBackend {
     state: Mutex<TestState>,
     pub(super) minimum_part_bytes: usize,
     pub(super) fail_begin: AtomicBool,
@@ -18,7 +18,7 @@ pub(super) struct TestMultipartStore {
     pub(super) part_gate: Semaphore,
 }
 
-impl Default for TestMultipartStore {
+impl Default for TestObjectBackend {
     fn default() -> Self {
         Self {
             state: Mutex::new(TestState::default()),
@@ -57,7 +57,7 @@ struct TestUpload {
     parts: HashMap<i32, Bytes>,
 }
 
-impl TestMultipartStore {
+impl TestObjectBackend {
     pub(super) fn object(&self, key: &str) -> Option<Bytes> {
         self.state.lock().unwrap().objects.get(key).cloned()
     }
@@ -106,22 +106,22 @@ impl TestMultipartStore {
 }
 
 #[async_trait]
-impl MultipartStore for TestMultipartStore {
+impl ObjectBackend for TestObjectBackend {
     fn minimum_part_bytes(&self) -> usize {
         self.minimum_part_bytes
     }
 
-    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), MultipartError> {
+    async fn put(&self, key: &str, bytes: Bytes) -> Result<(), BackendError> {
         let mut state = self.state.lock().unwrap();
         state.objects.insert(key.to_string(), bytes);
         state.puts += 1;
         Ok(())
     }
 
-    async fn begin(&self, key: &str) -> Result<MultipartUpload, MultipartError> {
+    async fn begin(&self, key: &str) -> Result<MultipartUpload, BackendError> {
         if self.fail_begin.load(Ordering::SeqCst) {
             self.begin_failed.notify_one();
-            return Err(MultipartError::new("begin failed"));
+            return Err(BackendError::new("begin failed"));
         }
         let mut state = self.state.lock().unwrap();
         state.next_upload += 1;
@@ -144,7 +144,7 @@ impl MultipartStore for TestMultipartStore {
         upload: &MultipartUpload,
         part_number: i32,
         bytes: Bytes,
-    ) -> Result<UploadedPart, MultipartError> {
+    ) -> Result<UploadedPart, BackendError> {
         struct ActivePart<'a>(&'a AtomicUsize);
         impl Drop for ActivePart<'_> {
             fn drop(&mut self) {
@@ -163,7 +163,7 @@ impl MultipartStore for TestMultipartStore {
             self.part_gate.acquire().await.unwrap().forget();
         }
         if self.fail_part.load(Ordering::SeqCst) {
-            return Err(MultipartError::new("part failed"));
+            return Err(BackendError::new("part failed"));
         }
         let mut state = self.state.lock().unwrap();
         let pending = state.uploads.get_mut(&upload.upload_id).unwrap();
@@ -178,9 +178,9 @@ impl MultipartStore for TestMultipartStore {
         &self,
         upload: MultipartUpload,
         parts: Vec<UploadedPart>,
-    ) -> Result<(), MultipartError> {
+    ) -> Result<(), BackendError> {
         if self.fail_complete.load(Ordering::SeqCst) {
-            return Err(MultipartError::new("complete failed"));
+            return Err(BackendError::new("complete failed"));
         }
         let mut state = self.state.lock().unwrap();
         let mut pending = state.uploads.remove(&upload.upload_id).unwrap();
@@ -198,14 +198,14 @@ impl MultipartStore for TestMultipartStore {
         Ok(())
     }
 
-    async fn abort(&self, upload: MultipartUpload) -> Result<(), MultipartError> {
+    async fn abort(&self, upload: MultipartUpload) -> Result<(), BackendError> {
         let mut state = self.state.lock().unwrap();
         state.uploads.remove(&upload.upload_id);
         state.aborted += 1;
         Ok(())
     }
 
-    async fn abort_incomplete(&self, key: &str) -> Result<(), MultipartError> {
+    async fn abort_incomplete(&self, key: &str) -> Result<(), BackendError> {
         if self.block_cleanup.load(Ordering::SeqCst) {
             std::future::pending::<()>().await;
         }
@@ -220,7 +220,7 @@ impl MultipartStore for TestMultipartStore {
         Ok(())
     }
 
-    async fn read(&self, key: &str) -> Result<RemoteReader, MultipartError> {
+    async fn read(&self, key: &str) -> Result<RemoteReader, BackendError> {
         let bytes = {
             let mut state = self.state.lock().unwrap();
             state.reads += 1;
@@ -228,7 +228,7 @@ impl MultipartStore for TestMultipartStore {
                 .objects
                 .get(key)
                 .cloned()
-                .ok_or_else(|| MultipartError::new("missing object"))?
+                .ok_or_else(|| BackendError::new("missing object"))?
         };
         let delay = self.read_delay_ms.load(Ordering::SeqCst);
         if delay > 0 {
@@ -241,8 +241,20 @@ impl MultipartStore for TestMultipartStore {
         Ok(Box::pin(reader))
     }
 
-    async fn delete(&self, key: &str) -> Result<(), MultipartError> {
+    async fn delete(&self, key: &str) -> Result<(), BackendError> {
         self.state.lock().unwrap().objects.remove(key);
         Ok(())
+    }
+
+    async fn list(&self, prefix: &str) -> Result<Vec<String>, BackendError> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .objects
+            .keys()
+            .filter(|key| key.starts_with(prefix))
+            .cloned()
+            .collect())
     }
 }

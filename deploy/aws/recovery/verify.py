@@ -1,7 +1,10 @@
 """Independent recovery verification of persisted object envelopes and plaintext hashes.
 
-Formats: scope-object-store/encrypted.rs and scope-git-storage/envelope.rs v2.
-Unknown formats fail closed instead of silently claiming a usable backup.
+Format: the framed envelope in scope-storage/src/envelope.rs, version 2, used by Git segments and
+every other encrypted object. Archives captured before objects moved to that envelope still hold
+the legacy single-tag object envelope, which stays readable until those archives expire (42 days
+after the `reencrypt-objects` maintenance run). Unknown formats fail closed instead of silently
+claiming a usable backup.
 """
 
 import base64
@@ -12,58 +15,84 @@ from pathlib import Path
 
 from common import Incomplete, digest, object_path
 
+SEGMENT_LABEL = b"scope-git-segment-v2\0"
+OBJECT_LABEL = b"scope-object-v2\0"
 
-def decrypt_object(path, object_key, key):
+
+def framed_digest(path, key, label, parts, key_id, sinks=()):
+    """Decrypts a framed envelope, returning the plaintext SHA-256 and size.
+
+    `parts` are the identity the envelope is bound to: repository and segment IDs for a segment,
+    the object key for anything else. Each sink also receives the plaintext.
+    """
     from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-    magic = b"scope-vcs-object-v1\n"
-    if path.stat().st_size > 256 * 1024**2:
-        raise Incomplete("object exceeds bounded plaintext verification size")
-    data = path.read_bytes()
-    if not data.startswith(magic) or len(data) < len(magic) + 28:
-        raise Incomplete("object encryption format is invalid")
-    offset = len(magic)
-    return ChaCha20Poly1305(key).decrypt(data[offset:offset+12], data[offset+12:], object_key.encode())
-
-
-def segment_digest(path, reference, key):
-    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-    repository = reference["repo_id"].encode()
-    segment = reference["segment_id"].encode()
-    derived = hmac.new(key, b"scope-git-segment-v2\0" + struct.pack(">Q", len(repository)) + repository + struct.pack(">Q", len(segment)) + segment, hashlib.sha256).digest()
+    derived = hmac.new(key, label + b"".join(struct.pack(">Q", len(part)) + part for part in parts), hashlib.sha256).digest()
     cipher = ChaCha20Poly1305(derived)
+    identity = b"".join(struct.pack(">I", len(part)) + part for part in parts)
     checksum = hashlib.sha256()
     size = 0
     with path.open("rb") as stream:
         fixed = stream.read(26)
         if len(fixed) != 26 or fixed[:8] != b"SCGSEG02" or struct.unpack(">I", fixed[8:12])[0] != 2:
-            raise Incomplete("Git segment encryption format is invalid")
+            raise Incomplete("encrypted object format is invalid")
         key_size = struct.unpack(">H", fixed[12:14])[0]
         frame_size = struct.unpack(">I", fixed[22:26])[0]
         if not 0 < key_size <= 1024 or not 0 < frame_size <= 16 * 1024**2:
-            raise Incomplete("Git segment bounds are invalid")
-        key_id = stream.read(key_size)
-        if key_id != b"primary":
-            raise Incomplete("Git segment requires an unrecognized escrow key version")
-        header = fixed + key_id
+            raise Incomplete("encrypted object bounds are invalid")
+        stored_key_id = stream.read(key_size)
+        if stored_key_id != key_id:
+            raise Incomplete("encrypted object requires an unrecognized escrow key version")
+        header = fixed + stored_key_id
         counter = 0
         while True:
             frame = stream.read(9)
             if len(frame) != 9:
-                raise Incomplete("Git segment is truncated")
+                raise Incomplete("encrypted object is truncated")
             actual, length, flags = struct.unpack(">IIB", frame)
             if actual != counter or length > frame_size or flags not in (0, 1) or (flags == 1) != (length == 0):
-                raise Incomplete("Git segment frame is invalid")
+                raise Incomplete("encrypted object frame is invalid")
             payload = stream.read(length + 16)
-            aad = header + struct.pack(">I", len(repository)) + repository + struct.pack(">I", len(segment)) + segment + frame
-            plaintext = cipher.decrypt(fixed[14:22] + struct.pack(">I", counter), payload, aad)
+            plaintext = cipher.decrypt(fixed[14:22] + struct.pack(">I", counter), payload, header + identity + frame)
             if flags:
                 if stream.read(1):
-                    raise Incomplete("Git segment contains trailing bytes")
+                    raise Incomplete("encrypted object contains trailing bytes")
                 break
             checksum.update(plaintext)
+            for sink in sinks:
+                sink.update(plaintext)
             size += len(plaintext)
             counter += 1
     return checksum.hexdigest(), size
+
+
+def segment_digest(path, reference, key):
+    parts = [reference["repo_id"].encode(), reference["segment_id"].encode()]
+    return framed_digest(path, key, SEGMENT_LABEL, parts, b"primary")
+
+
+LEGACY_OBJECT_MAGIC = b"scope-vcs-object-v1\n"
+
+
+def object_digest(path, object_key, key, key_id, sinks=()):
+    with path.open("rb") as stream:
+        legacy = stream.read(len(LEGACY_OBJECT_MAGIC)) == LEGACY_OBJECT_MAGIC
+    if not legacy:
+        return framed_digest(path, key, OBJECT_LABEL, [object_key.encode()], key_id, sinks)
+    plaintext = legacy_object_plaintext(path, object_key, key)
+    for sink in sinks:
+        sink.update(plaintext)
+    return hashlib.sha256(plaintext).hexdigest(), len(plaintext)
+
+
+def legacy_object_plaintext(path, object_key, key):
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+    if path.stat().st_size > 256 * 1024**2:
+        raise Incomplete("object exceeds bounded plaintext verification size")
+    data = path.read_bytes()
+    if len(data) < len(LEGACY_OBJECT_MAGIC) + 28:
+        raise Incomplete("object encryption format is invalid")
+    offset = len(LEGACY_OBJECT_MAGIC)
+    return ChaCha20Poly1305(key).decrypt(data[offset:offset+12], data[offset+12:], object_key.encode())
 
 
 def verify(root, inventory, references, escrow):
@@ -86,11 +115,13 @@ def verify(root, inventory, references, escrow):
         elif ref["kind"] == "cache":
             checksum, size = digest(path), path.stat().st_size
         else:
-            plaintext = decrypt_object(path, ref["key"], media_key if ref["kind"] == "media" else object_key)
-            checksum, size = hashlib.sha256(plaintext).hexdigest(), len(plaintext)
+            media = ref["kind"] == "media"
+            sinks = []
             if ref.get("manifest_id"):
                 manifest = manifests.setdefault(ref["manifest_id"], {"hash": hashlib.sha256(), "size": 0, "sha256": ref["manifest_sha256"], "bytes": ref["manifest_bytes"]})
-                manifest["hash"].update(plaintext)
+                sinks.append(manifest["hash"])
+            checksum, size = object_digest(path, ref["key"], media_key if media else object_key, b"media" if media else b"primary", sinks)
+            if ref.get("manifest_id"):
                 manifest["size"] += size
         if checksum != ref["sha256"] or (ref.get("plaintext_bytes") is not None and size != ref["plaintext_bytes"]):
             raise Incomplete("restored plaintext does not match database metadata")

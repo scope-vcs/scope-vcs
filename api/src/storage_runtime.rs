@@ -1,13 +1,14 @@
 use crate::{
     config::{data_dir, git_cache_max_bytes_from_env, git_repo_root},
     git::repository_engine::RepositoryEngine,
-    object_store_config::{encryption_key_from_env, git_segment_store_from_env, s3_from_env},
+    object_store_config::{encryption_key_from_env, s3_backend_from_env},
     persistence::ensure_private_dir,
     push_intents::push_intent_signing_key,
     runtime_budgets::{BudgetedObjectStore, RuntimeBudgets},
 };
-use scope_git_storage::GitSegmentStore;
-use scope_object_store::{EncryptedObjectStore, ObjectStore};
+use scope_storage::{
+    EncryptedObjectStore, EncryptionKey, GitSegmentStore, ObjectBackend, ObjectStore,
+};
 use std::{path::PathBuf, sync::Arc};
 
 pub(crate) enum StorageSource {
@@ -30,53 +31,46 @@ impl StorageRuntime {
         let data_dir = data_dir(&git_repo_root());
         ensure_private_dir(&data_dir)
             .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
-        let key = encryption_key_from_env()?;
-        let segment_root = data_dir.join("git-segments");
-        let (raw_object_store, git_segment_store): (Arc<dyn ObjectStore>, GitSegmentStore) =
-            match source {
-                StorageSource::S3 => {
-                    let s3 = tokio::task::spawn_blocking(s3_from_env).await??;
-                    (Arc::new(s3), git_segment_store_from_env(segment_root, key)?)
-                }
-                #[cfg(feature = "local-dev")]
-                StorageSource::Filesystem => {
-                    use crate::object_store_config::{
-                        file_from_env, git_segment_file_store_from_env,
-                    };
-                    let root = data_dir.join("objects");
-                    (
-                        Arc::new(file_from_env(&root)),
-                        GitSegmentStore::new(
-                            Arc::new(git_segment_file_store_from_env(&root)?),
-                            scope_git_storage::SegmentEncryptionKey::new("primary", key)?,
-                            crate::config::git_segment_store_config_from_env(segment_root)?,
-                        )?,
-                    )
-                }
-            };
+        let raw_key = encryption_key_from_env()?;
+        let key = EncryptionKey::new("primary", raw_key)?;
+        let backend: Arc<dyn ObjectBackend> = match source {
+            StorageSource::S3 => s3_backend_from_env()?,
+            #[cfg(feature = "local-dev")]
+            StorageSource::Filesystem => {
+                crate::object_store_config::file_backend_from_env(&data_dir.join("objects"))?
+            }
+        };
+        let git_segment_store = GitSegmentStore::new(
+            backend.clone(),
+            key.clone(),
+            crate::config::git_segment_store_config_from_env(data_dir.join("git-segments"))?,
+        )?;
         Self::new(
             data_dir,
-            Arc::new(EncryptedObjectStore::new(raw_object_store, key)),
+            Arc::new(EncryptedObjectStore::new(backend, key)),
             git_segment_store,
             RuntimeBudgets::from_env()?,
             git_cache_max_bytes_from_env()?,
-            push_intent_signing_key(&key)
+            push_intent_signing_key(&raw_key)
                 .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?,
         )
     }
 
+    /// `object_backend` holds only content objects, so tests can count them apart from segments.
     #[cfg(test)]
-    pub(crate) fn for_tests(object_store: Arc<dyn ObjectStore>) -> Self {
-        use scope_git_storage::{
-            GitSegmentStoreConfig, MemoryMultipartStore, SegmentEncryptionKey,
-        };
+    pub(crate) fn for_tests(object_backend: Arc<dyn ObjectBackend>) -> Self {
+        use scope_storage::{GitSegmentStoreConfig, MemoryBackend};
         let data_dir = crate::persistence::test_data_dir();
         let git_segment_store = GitSegmentStore::new(
-            Arc::new(MemoryMultipartStore::default()),
-            SegmentEncryptionKey::new("test", [9_u8; 32]).unwrap(),
+            Arc::new(MemoryBackend::default()),
+            EncryptionKey::new("test", [9_u8; 32]).unwrap(),
             GitSegmentStoreConfig::new(data_dir.join("git-segments")),
         )
         .unwrap();
+        let object_store = Arc::new(EncryptedObjectStore::new(
+            object_backend,
+            EncryptionKey::new("test", [7_u8; 32]).unwrap(),
+        ));
         Self::new(
             data_dir,
             object_store,

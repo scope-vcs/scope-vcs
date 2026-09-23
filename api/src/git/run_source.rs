@@ -16,7 +16,7 @@ use scope_domain::{
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, run as run_process};
-use scope_object_store::source_blob_bytes_bounded;
+use scope_storage::source_blob_bytes;
 use sha2::{Digest as _, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
@@ -82,20 +82,12 @@ pub(crate) async fn materialize_run_source_bundle(
 ) -> Result<MaterializedRunSource, ApiError> {
     let source = &run.source;
     if let Some(bundle) = source.ephemeral_bundle() {
-        let object_store = state.object_store.clone();
-        let bundle = bundle.clone();
-        return tokio::task::spawn_blocking(move || {
-            let bytes = source_blob_bytes_bounded(object_store.as_ref(), &bundle, max_bytes)
-                .map_err(ApiError::from)?;
-            Ok(MaterializedRunSource {
-                sha256: hex::encode(Sha256::digest(&bytes)),
-                body: RunSourceBody::Buffered(bytes),
-            })
-        })
-        .await
-        .map_err(|error| {
-            ApiError::internal_message(format!("run source object read task failed: {error}"))
-        })?;
+        // The read checks the bundle against its recorded digest.
+        let bytes = source_blob_bytes(state.object_store.as_ref(), bundle, max_bytes).await?;
+        return Ok(MaterializedRunSource {
+            sha256: bundle.sha256.clone(),
+            body: RunSourceBody::Buffered(bytes),
+        });
     }
     let incarnation = state
         .metadata

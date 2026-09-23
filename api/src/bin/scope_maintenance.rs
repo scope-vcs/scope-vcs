@@ -15,6 +15,8 @@ commands:
   validate-workflow-catalogs  validate pre-migration workflow inputs
   apply                       apply all pending migrations behind the writer fence
   backfill-workflow-catalogs  idempotently rebuild repository workflow catalogs
+  reencrypt-objects           rewrite legacy-envelope objects in SCOPE_BUCKET (no database)
+  reencrypt-media-objects     rewrite legacy-envelope objects in SCOPE_MEDIA_BUCKET (no database)
   help                        show this help
 
 Migration operation limits (positive seconds; independent of downtime warnings):
@@ -38,6 +40,9 @@ async fn main() -> anyhow::Result<()> {
     }
     if command == "serve" {
         return api::maintenance_http::serve().await;
+    }
+    if let Some(bucket) = reencryption_bucket(&command) {
+        return reencrypt_objects(bucket).await;
     }
     let database_url = maintenance_database_url()?;
 
@@ -85,6 +90,63 @@ async fn main() -> anyhow::Result<()> {
             println!(r#"{{"exact":true}}"#);
         }
         _ => anyhow::bail!(USAGE),
+    }
+    Ok(())
+}
+
+/// Which bucket a re-encryption command rewrites: its env prefix, key variable, key id and prefix.
+struct ReencryptionBucket {
+    env_prefix: &'static str,
+    key_env: &'static str,
+    key_id: &'static str,
+    object_prefix: &'static str,
+}
+
+fn reencryption_bucket(command: &str) -> Option<ReencryptionBucket> {
+    match command {
+        "reencrypt-objects" => Some(ReencryptionBucket {
+            env_prefix: "SCOPE_BUCKET",
+            key_env: "SCOPE_OBJECT_ENCRYPTION_KEY",
+            key_id: "primary",
+            object_prefix: "",
+        }),
+        "reencrypt-media-objects" => Some(ReencryptionBucket {
+            env_prefix: "SCOPE_MEDIA_BUCKET",
+            key_env: "SCOPE_MEDIA_ENCRYPTION_KEY",
+            key_id: "media",
+            object_prefix: "media/",
+        }),
+        _ => None,
+    }
+}
+
+/// One-time move of every object still in the retired single-tag envelope to the framed
+/// envelope. Run it with writers stopped, before starting services that only read the framed
+/// envelope. It is safe to rerun and fails only if an object could not be rewritten.
+async fn reencrypt_objects(bucket: ReencryptionBucket) -> anyhow::Result<()> {
+    use scope_storage::{EncryptionKey, ObjectBackend, S3Backend, S3Settings, config};
+    let raw_key = config::encryption_key_from_env(bucket.key_env)?;
+    let backend: std::sync::Arc<dyn ObjectBackend> =
+        std::sync::Arc::new(S3Backend::new(S3Settings::from_env(bucket.env_prefix)?)?);
+    let report = scope_storage::reencrypt_legacy_objects(
+        backend,
+        raw_key,
+        EncryptionKey::new(bucket.key_id, raw_key)?,
+        bucket.object_prefix,
+        scope_git::GitStorageLimits::default().max_object_bytes(),
+    )
+    .await?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "rewritten": report.rewritten,
+            "alreadyFramed": report.already_framed,
+            "unrecognized": report.unrecognized,
+            "failed": report.failed,
+        })
+    );
+    if !report.failed.is_empty() {
+        anyhow::bail!("{} objects could not be re-encrypted", report.failed.len());
     }
     Ok(())
 }

@@ -45,7 +45,7 @@ impl AppState {
         let metadata = MetadataStore::connect(settings.database_url).await?;
         let storage = settings
             .storage
-            .connect(settings.max_blocking_operations)
+            .connect(settings.max_storage_operations)
             .await?;
         Ok(Self {
             metadata,

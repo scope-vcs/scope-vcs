@@ -466,7 +466,7 @@ async fn best_effort_sync_cache(
     repo_name: &str,
     author_id: &str,
     committed_incarnation: &RepositoryIncarnation,
-    staged_segment: &scope_git_storage::StagedGitSegment,
+    staged_segment: &scope_storage::StagedGitSegment,
     committed_git_head: &scope_domain::repository::git::GitHead,
 ) {
     let retained_pack = match state

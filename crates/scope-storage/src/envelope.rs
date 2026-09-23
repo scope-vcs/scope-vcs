@@ -16,6 +16,11 @@ const FRAME_HEADER_BYTES: usize = 4 + 4 + 1;
 const MAX_KEY_ID_BYTES: usize = 1024;
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
+/// Whether `prefix`, the first bytes of a stored object, starts a framed envelope.
+pub(crate) fn is_framed(prefix: &[u8]) -> bool {
+    prefix.starts_with(&MAGIC)
+}
+
 const fn magic(version: u32) -> [u8; 8] {
     assert!(version < 100, "envelope magic encodes a two-digit version");
     let mut magic = *b"SCGSEG00";
@@ -24,13 +29,37 @@ const fn magic(version: u32) -> [u8; 8] {
     magic
 }
 
+/// What an envelope's key and authentication are bound to. Each scope derives its own cipher from
+/// the storage key, so an object can only be read back under the identity it was written with.
+#[derive(Clone, Debug)]
+pub(crate) struct EnvelopeScope {
+    label: &'static [u8],
+    parts: Vec<String>,
+}
+
+impl EnvelopeScope {
+    pub(crate) fn git_segment(repository_id: &str, segment_id: &str) -> Self {
+        Self {
+            label: b"scope-git-segment-v2\0",
+            parts: vec![repository_id.to_string(), segment_id.to_string()],
+        }
+    }
+
+    pub(crate) fn object(key: &str) -> Self {
+        Self {
+            label: b"scope-object-v2\0",
+            parts: vec![key.to_string()],
+        }
+    }
+}
+
 #[derive(Clone)]
-pub struct SegmentEncryptionKey {
+pub struct EncryptionKey {
     key_id: String,
     key: [u8; 32],
 }
 
-impl SegmentEncryptionKey {
+impl EncryptionKey {
     pub fn new(key_id: impl Into<String>, key: [u8; 32]) -> Result<Self, GitStorageError> {
         let key_id = key_id.into();
         if key_id.is_empty() || key_id.len() > MAX_KEY_ID_BYTES {
@@ -46,16 +75,14 @@ pub(crate) struct EnvelopeWriter {
     cipher: ChaCha20Poly1305,
     header: Vec<u8>,
     nonce_prefix: [u8; 8],
-    repository_id: String,
-    segment_id: String,
+    scope: EnvelopeScope,
     next_counter: u32,
 }
 
 impl EnvelopeWriter {
     pub(crate) fn new(
-        key: &SegmentEncryptionKey,
-        repository_id: &str,
-        segment_id: &str,
+        key: &EncryptionKey,
+        scope: EnvelopeScope,
         frame_bytes: usize,
     ) -> Result<Self, GitStorageError> {
         let frame_bytes = u32::try_from(frame_bytes).map_err(|_| {
@@ -77,11 +104,10 @@ impl EnvelopeWriter {
         header.extend_from_slice(&frame_bytes.to_be_bytes());
         header.extend_from_slice(key_id_bytes);
         Ok(Self {
-            cipher: segment_cipher(key, repository_id, segment_id),
+            cipher: scope_cipher(key, &scope),
             header,
             nonce_prefix,
-            repository_id: repository_id.to_string(),
-            segment_id: segment_id.to_string(),
+            scope,
             next_counter: 0,
         })
     }
@@ -112,12 +138,7 @@ impl EnvelopeWriter {
         let plaintext_len = u32::try_from(plaintext.len())
             .map_err(|_| GitStorageError::InvalidEnvelope("encryption frame exceeds u32".into()))?;
         let frame_header = frame_header(counter, plaintext_len, flags);
-        let aad = associated_data(
-            &self.header,
-            &self.repository_id,
-            &self.segment_id,
-            &frame_header,
-        );
+        let aad = associated_data(&self.header, &self.scope, &frame_header);
         let nonce = nonce(self.nonce_prefix, counter);
         let ciphertext = self
             .cipher
@@ -140,8 +161,7 @@ pub(crate) struct EnvelopeReader {
     cipher: ChaCha20Poly1305,
     header: Vec<u8>,
     nonce_prefix: [u8; 8],
-    repository_id: String,
-    segment_id: String,
+    scope: EnvelopeScope,
     frame_bytes: usize,
     next_counter: u32,
     saw_final: bool,
@@ -155,9 +175,8 @@ pub(crate) enum DecryptedFrame {
 impl EnvelopeReader {
     pub(crate) async fn read_header<R: AsyncRead + Unpin>(
         source: &mut R,
-        key: &SegmentEncryptionKey,
-        repository_id: &str,
-        segment_id: &str,
+        key: &EncryptionKey,
+        scope: EnvelopeScope,
     ) -> Result<Self, GitStorageError> {
         let mut fixed = [0_u8; HEADER_FIXED_BYTES];
         read_exact_envelope(source, &mut fixed).await?;
@@ -195,11 +214,10 @@ impl EnvelopeReader {
         let mut header = fixed.to_vec();
         header.extend_from_slice(&key_id);
         Ok(Self {
-            cipher: segment_cipher(key, repository_id, segment_id),
+            cipher: scope_cipher(key, &scope),
             header,
             nonce_prefix,
-            repository_id: repository_id.to_string(),
-            segment_id: segment_id.to_string(),
+            scope,
             frame_bytes,
             next_counter: 0,
             saw_final: false,
@@ -245,12 +263,7 @@ impl EnvelopeReader {
         }
         let mut ciphertext = vec![0_u8; plaintext_len + TAG_BYTES];
         read_exact_envelope(source, &mut ciphertext).await?;
-        let aad = associated_data(
-            &self.header,
-            &self.repository_id,
-            &self.segment_id,
-            &frame_header_bytes,
-        );
+        let aad = associated_data(&self.header, &self.scope, &frame_header_bytes);
         let nonce = nonce(self.nonce_prefix, counter);
         let plaintext = self
             .cipher
@@ -283,18 +296,14 @@ fn frame_header(counter: u32, plaintext_len: u32, flags: u8) -> [u8; FRAME_HEADE
     header
 }
 
-fn segment_cipher(
-    key: &SegmentEncryptionKey,
-    repository_id: &str,
-    segment_id: &str,
-) -> ChaCha20Poly1305 {
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&key.key)
-        .expect("HMAC accepts a 32-byte segment key");
-    mac.update(b"scope-git-segment-v2\0");
-    mac.update(&(repository_id.len() as u64).to_be_bytes());
-    mac.update(repository_id.as_bytes());
-    mac.update(&(segment_id.len() as u64).to_be_bytes());
-    mac.update(segment_id.as_bytes());
+fn scope_cipher(key: &EncryptionKey, scope: &EnvelopeScope) -> ChaCha20Poly1305 {
+    let mut mac =
+        <Hmac<Sha256> as Mac>::new_from_slice(&key.key).expect("HMAC accepts a 32-byte key");
+    mac.update(scope.label);
+    for part in &scope.parts {
+        mac.update(&(part.len() as u64).to_be_bytes());
+        mac.update(part.as_bytes());
+    }
     let derived_key = mac.finalize().into_bytes();
     ChaCha20Poly1305::new(Key::from_slice(&derived_key))
 }
@@ -308,18 +317,14 @@ fn nonce(prefix: [u8; 8], counter: u32) -> [u8; 12] {
 
 fn associated_data(
     header: &[u8],
-    repository_id: &str,
-    segment_id: &str,
+    scope: &EnvelopeScope,
     frame_header: &[u8; FRAME_HEADER_BYTES],
 ) -> Vec<u8> {
-    let repository = repository_id.as_bytes();
-    let segment = segment_id.as_bytes();
-    let mut aad = Vec::with_capacity(header.len() + repository.len() + segment.len() + 17);
-    aad.extend_from_slice(header);
-    aad.extend_from_slice(&(repository.len() as u32).to_be_bytes());
-    aad.extend_from_slice(repository);
-    aad.extend_from_slice(&(segment.len() as u32).to_be_bytes());
-    aad.extend_from_slice(segment);
+    let mut aad = header.to_vec();
+    for part in &scope.parts {
+        aad.extend_from_slice(&(part.len() as u32).to_be_bytes());
+        aad.extend_from_slice(part.as_bytes());
+    }
     aad.extend_from_slice(frame_header);
     aad
 }
@@ -336,7 +341,91 @@ async fn read_exact_envelope<R: AsyncRead + Unpin>(
             if error.kind() == std::io::ErrorKind::UnexpectedEof {
                 GitStorageError::InvalidEnvelope("truncated stream".into())
             } else {
-                GitStorageError::Multipart(crate::MultipartError::new(error.to_string()))
+                GitStorageError::Backend(crate::BackendError::new(error.to_string()))
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Seals one data frame exactly as the segment-only envelope did before objects shared it.
+    fn segment_sealed_by_the_original_derivation(
+        key: &[u8; 32],
+        repository_id: &str,
+        segment_id: &str,
+        plaintext: &[u8],
+    ) -> Vec<u8> {
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).unwrap();
+        mac.update(b"scope-git-segment-v2\0");
+        mac.update(&(repository_id.len() as u64).to_be_bytes());
+        mac.update(repository_id.as_bytes());
+        mac.update(&(segment_id.len() as u64).to_be_bytes());
+        mac.update(segment_id.as_bytes());
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(&mac.finalize().into_bytes()));
+        let nonce_prefix = [9_u8; 8];
+        let mut header = MAGIC.to_vec();
+        header.extend_from_slice(&ENCODING_VERSION.to_be_bytes());
+        header.extend_from_slice(&7_u16.to_be_bytes());
+        header.extend_from_slice(&nonce_prefix);
+        header.extend_from_slice(&1024_u32.to_be_bytes());
+        header.extend_from_slice(b"primary");
+        let mut sealed = header.clone();
+        for (counter, (frame, flags)) in [(plaintext, 0), (&[][..], FINAL_FLAG)]
+            .into_iter()
+            .enumerate()
+        {
+            let frame_header = frame_header(counter as u32, frame.len() as u32, flags);
+            let mut aad = header.clone();
+            aad.extend_from_slice(&(repository_id.len() as u32).to_be_bytes());
+            aad.extend_from_slice(repository_id.as_bytes());
+            aad.extend_from_slice(&(segment_id.len() as u32).to_be_bytes());
+            aad.extend_from_slice(segment_id.as_bytes());
+            aad.extend_from_slice(&frame_header);
+            let ciphertext = cipher
+                .encrypt(
+                    Nonce::from_slice(&nonce(nonce_prefix, counter as u32)),
+                    Payload {
+                        msg: frame,
+                        aad: &aad,
+                    },
+                )
+                .unwrap();
+            sealed.extend_from_slice(&frame_header);
+            sealed.extend_from_slice(&ciphertext);
+        }
+        sealed
+    }
+
+    #[tokio::test]
+    async fn segments_sealed_before_objects_shared_the_envelope_still_open() {
+        let key = EncryptionKey::new("primary", [5_u8; 32]).unwrap();
+        let sealed =
+            segment_sealed_by_the_original_derivation(&[5_u8; 32], "repo", "segment", b"pack");
+        let mut source = &sealed[..];
+        let mut reader = EnvelopeReader::read_header(
+            &mut source,
+            &key,
+            EnvelopeScope::git_segment("repo", "segment"),
+        )
+        .await
+        .unwrap();
+        let DecryptedFrame::Data(frame) = reader.next(&mut source).await.unwrap() else {
+            panic!("expected a data frame");
+        };
+        assert_eq!(frame, b"pack");
+        assert!(matches!(
+            reader.next(&mut source).await.unwrap(),
+            DecryptedFrame::Final
+        ));
+
+        // The same bytes do not open as an object, whose key is derived under its own label.
+        let mut source = &sealed[..];
+        let mut object =
+            EnvelopeReader::read_header(&mut source, &key, EnvelopeScope::object("repo"))
+                .await
+                .unwrap();
+        assert!(object.next(&mut source).await.is_err());
+    }
 }

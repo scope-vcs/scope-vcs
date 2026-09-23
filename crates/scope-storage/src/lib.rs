@@ -1,23 +1,34 @@
 #![warn(unreachable_pub)]
+//! Scope's one object storage crate. Every stored object, Git segment or not, goes through the
+//! same backends and the same framed, authenticated envelope.
+mod backend;
 mod cache;
+pub mod config;
 mod envelope;
 mod error;
 mod file;
 mod ingest;
 mod lifecycle;
 mod memory;
-mod multipart;
+mod objects;
+mod presign;
 mod restore;
+mod s3;
 
+pub use backend::{MultipartUpload, ObjectBackend, RemoteReader, UploadedPart};
 pub use cache::{VerifiedGitPack, VerifiedPackCacheUsage};
-pub use envelope::{ENCODING_VERSION, SegmentEncryptionKey};
-pub use error::{GitStorageError, MultipartError};
-pub use file::FileMultipartStore;
-pub use memory::MemoryMultipartStore;
-pub use multipart::{
-    MultipartStore, MultipartUpload, RemoteReader, S3MultipartSettings, S3MultipartStore,
-    UploadedPart,
+pub use envelope::{ENCODING_VERSION, EncryptionKey};
+pub use error::{BackendError, BackendErrorKind, GitStorageError};
+pub use file::FileBackend;
+pub use memory::MemoryBackend;
+pub use objects::{
+    ContentObjectKind, EncryptedObjectStore, LegacyReencryptReport, ObjectStore, ObjectStoreError,
+    ObjectStoreErrorKind, content_object_for_bytes, delete_source_blobs, ensure_object_size,
+    object_key, object_too_large, put_content_object, put_source_blob, read_bounded,
+    reencrypt_legacy_objects, source_blob_bytes, write_source_blob_to,
 };
+pub use presign::{PresignedRequest, S3Presigner};
+pub use s3::{S3Backend, S3Settings};
 
 use cache::VerifiedPackCache;
 use scope_domain::repository::{RepositoryIncarnation, git::GitSegmentRef};
@@ -126,8 +137,8 @@ impl StagedGitSegment {
 
 #[derive(Clone)]
 pub struct GitSegmentStore {
-    backend: Arc<dyn MultipartStore>,
-    encryption_key: SegmentEncryptionKey,
+    backend: Arc<dyn ObjectBackend>,
+    encryption_key: EncryptionKey,
     config: GitSegmentStoreConfig,
     verified_cache: Arc<VerifiedPackCache>,
     hydration_permits: Arc<tokio::sync::Semaphore>,
@@ -135,8 +146,8 @@ pub struct GitSegmentStore {
 
 impl GitSegmentStore {
     pub fn new(
-        backend: Arc<dyn MultipartStore>,
-        encryption_key: SegmentEncryptionKey,
+        backend: Arc<dyn ObjectBackend>,
+        encryption_key: EncryptionKey,
         config: GitSegmentStoreConfig,
     ) -> Result<Self, GitStorageError> {
         config.validate(backend.minimum_part_bytes())?;
@@ -178,7 +189,7 @@ impl GitSegmentStore {
     }
 }
 
-pub fn object_key(repository_id: &str, segment_id: &str) -> String {
+pub fn segment_object_key(repository_id: &str, segment_id: &str) -> String {
     format!(
         "git/segments/v{ENCODING_VERSION}/{}/{segment_id}",
         repository_namespace(repository_id)

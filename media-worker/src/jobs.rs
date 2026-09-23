@@ -732,25 +732,24 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
 
-    #[test]
-    fn storage_retry_policy_distinguishes_absence_from_filesystem_failure() {
-        use scope_object_store::{
-            FileObjectStore, FileObjectStoreSettings, MemoryObjectStore, ObjectStore,
-        };
+    #[tokio::test]
+    async fn storage_retry_policy_distinguishes_absence_from_filesystem_failure() {
+        async fn read_error(backend: &dyn scope_storage::ObjectBackend) -> MediaStorageError {
+            let error = backend.read("missing").await.err().unwrap();
+            MediaStorageError::from(scope_storage::ObjectStoreError::from(error))
+        }
+        use scope_storage::{FileBackend, MemoryBackend, ObjectBackend};
         let root = tempfile::tempdir().unwrap();
-        let file_store =
-            FileObjectStore::new(FileObjectStoreSettings::new(root.path().join("objects")));
-        let memory_store = MemoryObjectStore::new();
-        for store in [&file_store as &dyn ObjectStore, &memory_store] {
-            let error = MediaStorageError::from(store.get_bounded("missing", 4).unwrap_err());
-            let failure = storage_failure(&error);
+        let file_backend = FileBackend::new(root.path()).unwrap();
+        let memory_backend = MemoryBackend::default();
+        for backend in [&file_backend as &dyn ObjectBackend, &memory_backend] {
+            let failure = storage_failure(&read_error(backend).await);
             assert_eq!(failure.code, RequestAttachmentFailureCode::CorruptMedia);
             assert!(!failure.retryable);
         }
         // An inaccessible storage hierarchy is an I/O failure, not absent media.
         std::fs::write(root.path().join("objects"), b"not a directory").unwrap();
-        let error = MediaStorageError::from(file_store.get_bounded("missing", 4).unwrap_err());
-        let failure = storage_failure(&error);
+        let failure = storage_failure(&read_error(&file_backend).await);
         assert_eq!(
             failure.code,
             RequestAttachmentFailureCode::StorageUnavailable

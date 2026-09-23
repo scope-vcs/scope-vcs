@@ -621,7 +621,7 @@ async fn prepared_merge(
 
 async fn assert_segment_rollback_and_write_lease_released(
     state: &AppState,
-    staged_segment: &scope_git_storage::StagedGitSegment,
+    staged_segment: &scope_storage::StagedGitSegment,
 ) {
     assert!(!staged_segment.local_pack_path().exists());
     assert!(

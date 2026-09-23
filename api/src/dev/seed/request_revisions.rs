@@ -1,10 +1,9 @@
 use super::{
-    SeedGitCommit, apply_seed_commits, canonical_request_ref, seed_git, seed_git_head,
+    SeedGitCommit, SeedObjects, apply_seed_commits, canonical_request_ref, seed_git, seed_git_head,
     store_seed_bundle,
 };
 use crate::error::ApiError;
 use scope_domain::content::SourceBlob;
-use scope_object_store::ObjectStore;
 use std::path::Path;
 
 const REQUEST_NAME: &str = "bounded-retry-timing";
@@ -57,7 +56,7 @@ struct RevisionSpec<'a> {
 }
 
 pub(super) fn seed_bounded_retry_revisions(
-    object_store: &dyn ObjectStore,
+    object_store: &SeedObjects,
     repo_path: &Path,
     initial_head_oid: &str,
     main_oid: &str,

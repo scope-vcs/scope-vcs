@@ -1,7 +1,5 @@
 use crate::{MediaStorage, MediaStorageError};
-use scope_object_store::{
-    FileObjectStore, FileObjectStoreSettings, ObjectStore, S3ObjectStore, S3ObjectStoreSettings,
-};
+use scope_storage::{FileBackend, ObjectBackend, S3Backend, S3Settings};
 use std::{path::PathBuf, sync::Arc};
 
 /// Shared by the media HTTP service and processing worker. Process concurrency
@@ -12,8 +10,8 @@ pub struct MediaStorageSettings {
 }
 
 enum Backend {
-    Filesystem(FileObjectStoreSettings),
-    S3(S3ObjectStoreSettings),
+    Filesystem(PathBuf),
+    S3(S3Settings),
 }
 
 impl MediaStorageSettings {
@@ -24,13 +22,13 @@ impl MediaStorageSettings {
     fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, MediaStorageError> {
         let optional = |name| get(name).filter(|value| !value.trim().is_empty());
         let backend = match optional("SCOPE_MEDIA_OBJECT_STORE").as_deref() {
-            Some("filesystem") => Backend::Filesystem(FileObjectStoreSettings::new(
+            Some("filesystem") => Backend::Filesystem(
                 optional("SCOPE_MEDIA_OBJECT_STORE_DIR")
                     .map(PathBuf::from)
                     .unwrap_or_else(|| PathBuf::from("data/media-objects")),
-            )),
+            ),
             None | Some("s3") => Backend::S3(
-                S3ObjectStoreSettings::from_lookup("SCOPE_MEDIA_BUCKET", |name| get(name))
+                S3Settings::from_lookup("SCOPE_MEDIA_BUCKET", |name| get(name))
                     .map_err(|error| MediaStorageError::invalid(error.message))?,
             ),
             Some(value) => {
@@ -39,7 +37,7 @@ impl MediaStorageSettings {
                 )));
             }
         };
-        let encryption_key = scope_object_store::config::encryption_key_from_lookup(
+        let encryption_key = scope_storage::config::encryption_key_from_lookup(
             "SCOPE_MEDIA_ENCRYPTION_KEY",
             |name| get(name),
         )
@@ -52,21 +50,19 @@ impl MediaStorageSettings {
 
     pub async fn connect(
         self,
-        max_blocking_operations: usize,
+        max_storage_operations: usize,
     ) -> Result<MediaStorage, MediaStorageError> {
-        let raw: Arc<dyn ObjectStore> =
-            tokio::task::spawn_blocking(move || -> Result<_, MediaStorageError> {
-                let raw: Arc<dyn ObjectStore> = match self.backend {
-                    Backend::Filesystem(settings) => Arc::new(FileObjectStore::new(settings)),
-                    Backend::S3(settings) => Arc::new(S3ObjectStore::new(settings)?),
-                };
-                Ok(raw)
-            })
-            .await
-            .map_err(|error| {
-                MediaStorageError::internal(format!("initialize media storage: {error}"))
-            })??;
-        MediaStorage::encrypted(raw, self.encryption_key, max_blocking_operations)
+        let backend: Arc<dyn ObjectBackend> = match self.backend {
+            Backend::Filesystem(root) => Arc::new(
+                FileBackend::new(root)
+                    .map_err(|error| MediaStorageError::invalid(error.to_string()))?,
+            ),
+            Backend::S3(settings) => Arc::new(
+                S3Backend::new(settings)
+                    .map_err(|error| MediaStorageError::invalid(error.to_string()))?,
+            ),
+        };
+        MediaStorage::encrypted(backend, self.encryption_key, max_storage_operations)
     }
 }
 
@@ -86,7 +82,7 @@ mod tests {
     fn filesystem_has_one_default_and_key_validation() {
         let config = settings(&[("SCOPE_MEDIA_OBJECT_STORE", "filesystem".into())]).unwrap();
         assert!(
-            matches!(config.backend, Backend::Filesystem(value) if value.root == std::path::Path::new("data/media-objects"))
+            matches!(config.backend, Backend::Filesystem(root) if root == std::path::Path::new("data/media-objects"))
         );
         for key in ["invalid".to_string(), BASE64.encode([7; 31])] {
             assert!(
@@ -101,7 +97,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn s3_client_initializes_off_the_async_thread_without_network_io() {
+    async fn s3_client_initializes_without_network_io() {
         let config = settings(&[
             ("SCOPE_MEDIA_BUCKET_ENDPOINT", "http://127.0.0.1:1".into()),
             ("SCOPE_MEDIA_BUCKET_NAME", "test".into()),

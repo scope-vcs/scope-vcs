@@ -9,9 +9,9 @@ use scope_cache_contract::{
     PrepareCacheUploadResponse, RestoreCacheRequest, RestoreCacheResponse, SignedCacheGrantClaims,
 };
 use scope_cache_domain::{CacheDigest, UploadLeaseId};
-use scope_object_store::ObjectStore;
 use scope_postgres::db::{CacheCommitResult, CachePrepareResult};
 use scope_service_runtime::http::ServiceError;
+use scope_storage::ObjectBackend;
 use std::{collections::BTreeMap, time::Duration};
 
 const SIGNED_URL_TTL_SECONDS: u32 = 15 * 60;
@@ -22,10 +22,10 @@ pub(crate) async fn healthz() -> StatusCode {
 
 pub(crate) async fn readyz(State(state): State<AppState>) -> Result<StatusCode, ServiceError> {
     state.metadata.admin().readiness_check().await?;
-    let store = state.object_store.clone();
-    tokio::task::spawn_blocking(move || store.readiness_check())
+    state
+        .object_store
+        .readiness_check()
         .await
-        .map_err(|error| ServiceError::internal(error.to_string()))?
         .map_err(|error| ServiceError::unavailable(error.to_string()))?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -321,8 +321,8 @@ mod tests {
             },
         },
     };
-    use scope_object_store::{S3ObjectStore, S3ObjectStoreSettings, S3Presigner};
     use scope_postgres::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
+    use scope_storage::{S3Backend, S3Presigner, S3Settings};
     use sha2::{Digest as _, Sha256};
     use std::sync::{Arc, Mutex};
     use tower::ServiceExt as _;
@@ -363,7 +363,7 @@ mod tests {
         let group = CacheDigest::parse("2".repeat(64)).unwrap();
         let object_bytes = b"real cache-service round trip".to_vec();
         let object_digest = CacheDigest::parse(hex::encode(Sha256::digest(&object_bytes))).unwrap();
-        let mut settings = S3ObjectStoreSettings::new(
+        let mut settings = S3Settings::new(
             endpoint,
             "scope-cache-e2e".to_string(),
             "us-east-1".to_string(),
@@ -371,13 +371,7 @@ mod tests {
             "minioadmin".to_string(),
         );
         settings.force_path_style = true;
-        let object_store = tokio::task::spawn_blocking({
-            let settings = settings.clone();
-            move || S3ObjectStore::new(settings)
-        })
-        .await
-        .unwrap()
-        .unwrap();
+        let object_store = S3Backend::new(settings.clone()).unwrap();
         let state = AppState {
             metadata,
             object_store: Arc::new(object_store),

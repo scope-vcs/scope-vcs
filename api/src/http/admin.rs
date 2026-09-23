@@ -144,7 +144,7 @@ impl SourceBlobCleanupQueueResponse {
             objects: blobs
                 .iter()
                 .map(|blob| SourceBlobCleanupResponse {
-                    object_key: scope_object_store::object_key(blob),
+                    object_key: scope_storage::object_key(blob),
                     sha256: blob.sha256.clone(),
                     git_oid: blob.git_oid.clone(),
                     size_bytes: blob.size_bytes,

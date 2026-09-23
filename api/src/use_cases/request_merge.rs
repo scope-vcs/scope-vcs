@@ -35,11 +35,11 @@ use scope_domain::{
     runs::catalog::RepositoryWorkflowCatalog,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_git_storage::StagedGitSegment;
 use scope_postgres::db::{
     ExpectedRequestAutoMerge, MergeRequestContentCommand, RepositoryGitWriteLease,
 };
 use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
+use scope_storage::StagedGitSegment;
 
 mod failures;
 pub(crate) use failures::RequestMergeFailure;
@@ -319,14 +319,26 @@ async fn prepare_request_merge_for_execution(
         "preparing request merge repository",
     )?;
     let prepared = async {
-        attach_visible_request_refs(state, std::slice::from_ref(request), &staging_repo, None)
-            .map_err(|error| {
-                if error.kind == crate::error::ErrorKind::NotFound {
-                    RequestMergeFailure::RequestBranchMissing(error)
-                } else {
-                    RequestMergeFailure::from(error)
-                }
-            })?;
+        let attach = {
+            let state = state.clone();
+            let request = request.clone();
+            let staging_repo = staging_repo.clone();
+            crate::git::blocking::run(move || {
+                attach_visible_request_refs(
+                    &state,
+                    std::slice::from_ref(&request),
+                    &staging_repo,
+                    None,
+                )
+            })
+        };
+        attach.await.map_err(|error| {
+            if error.kind == crate::error::ErrorKind::NotFound {
+                RequestMergeFailure::RequestBranchMissing(error)
+            } else {
+                RequestMergeFailure::from(error)
+            }
+        })?;
         let request_ref = canonical_request_ref(&request.name);
         let (origin, merge_base_oid) = match request.audience {
             RequestAudience::Public => {
@@ -396,7 +408,7 @@ async fn prepare_request_merge_for_execution(
         )
         .await
         .map_err(RequestMergeFailure::from)?;
-        let preflight = (|| -> Result<(), ApiError> {
+        let public_projection = (|| -> Result<_, ApiError> {
             let mut proposed_repo = repo.clone();
             apply_request_merge_to_repo(
                 &mut proposed_repo,
@@ -405,13 +417,23 @@ async fn prepare_request_merge_for_execution(
             )
             .map_err(reviewed_update_domain_error)
             .map_err(ApiError::from)?;
-            let public_projection = project_graph(
+            Ok(project_graph(
                 &proposed_repo.graph,
                 &proposed_repo.visibility_change_sets,
                 ProjectionViewKey::Public,
-            );
-            verify_projection_materialization(state, &public_projection, &staging_repo)
+            ))
         })();
+        let preflight = match public_projection {
+            Ok(projection) => {
+                let state = state.clone();
+                let staging_repo = staging_repo.clone();
+                crate::git::blocking::run(move || {
+                    verify_projection_materialization(&state, &projection, &staging_repo)
+                })
+                .await
+            }
+            Err(error) => Err(error),
+        };
         if let Err(error) = preflight {
             crate::git::import::best_effort_delete_staged_git_segment(
                 state,

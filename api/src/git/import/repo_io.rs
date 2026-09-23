@@ -21,8 +21,8 @@ use scope_domain::{
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git::{GitTreePath, StoredGitPush, prepare_git_push};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
-use scope_git_storage::{GitStorageError, StagedGitSegment};
-use scope_object_store::{ContentObjectKind, content_object_for_bytes};
+use scope_storage::{ContentObjectKind, content_object_for_bytes};
+use scope_storage::{GitStorageError, StagedGitSegment};
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
 pub(super) fn pushed_commit_time(staging_repo: &FsPath, head_oid: &str) -> Result<i64, ApiError> {

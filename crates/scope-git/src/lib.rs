@@ -13,7 +13,7 @@ pub use tree_path::{GitTreePath, GitTreePathError};
 use scope_domain::content::SourceBlob;
 use scope_domain::content_ref::ContentRef;
 #[cfg(feature = "storage")]
-use scope_object_store::ObjectStoreError;
+use scope_storage::ObjectStoreError;
 use thiserror::Error;
 
 pub const DEFAULT_GIT_BRANCH: &str = "main";

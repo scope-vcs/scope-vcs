@@ -1,6 +1,6 @@
 use crate::AppState;
 use futures_util::{StreamExt, stream};
-use scope_object_store::ObjectStore;
+use scope_storage::ObjectBackend;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const BATCH_SIZE: u64 = 100;
@@ -120,7 +120,7 @@ async fn reconcile_batch(state: &AppState, now: u64) -> anyhow::Result<bool> {
 }
 
 async fn delete_objects<T>(
-    store: std::sync::Arc<scope_object_store::S3ObjectStore>,
+    store: std::sync::Arc<scope_storage::S3Backend>,
     objects: Vec<T>,
     object_key: impl Fn(&T) -> String,
 ) -> Vec<(T, anyhow::Result<()>)> {
@@ -135,10 +135,10 @@ async fn delete_objects<T>(
 }
 
 async fn delete_object(
-    store: std::sync::Arc<scope_object_store::S3ObjectStore>,
+    store: std::sync::Arc<scope_storage::S3Backend>,
     object_key: String,
 ) -> anyhow::Result<()> {
-    tokio::task::spawn_blocking(move || store.delete(&object_key)).await??;
+    store.delete(&object_key).await?;
     Ok(())
 }
 

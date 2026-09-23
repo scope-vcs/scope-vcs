@@ -4,8 +4,10 @@ const OPERATOR_TOKEN: &str = "operator-secret";
 const OPERATOR_AUTH: &str = "Bearer operator-secret";
 
 async fn queued_blob(state: &AppState, bytes: &[u8]) -> String {
-    let blob = put_source_blob(state.object_store.as_ref(), bytes).unwrap();
-    let key = scope_object_store::object_key(&blob);
+    let blob = put_source_blob(state.object_store.as_ref(), bytes)
+        .await
+        .unwrap();
+    let key = scope_storage::object_key(&blob);
     state
         .metadata
         .cleanup()
@@ -102,7 +104,11 @@ async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
     assert_eq!(body["report"]["source_blobs"]["attempted"], 1);
     assert_eq!(body["report"]["source_blobs"]["deleted"], 1);
     assert_eq!(body["report"]["source_blobs"]["retained"], 0);
-    assert!(state.object_store.get(&key).is_err());
+    assert!(
+        scope_storage::read_bounded(state.object_store.as_ref(), &key, usize::MAX)
+            .await
+            .is_err()
+    );
     assert!(
         state
             .metadata
@@ -115,11 +121,9 @@ async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
 
     let mut state = operator_state();
     state.object_store = Arc::new(DeleteFailsObjectStore);
-    let blob = scope_object_store::content_object_for_bytes(
-        scope_object_store::ContentObjectKind::Blob,
-        b"stale",
-    );
-    let key = scope_object_store::object_key(&blob);
+    let blob =
+        scope_storage::content_object_for_bytes(scope_storage::ContentObjectKind::Blob, b"stale");
+    let key = scope_storage::object_key(&blob);
     state
         .metadata
         .cleanup()
@@ -160,7 +164,7 @@ async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
             .await
             .unwrap()
             .iter()
-            .any(|blob| scope_object_store::object_key(blob) == key)
+            .any(|blob| scope_storage::object_key(blob) == key)
     );
 }
 

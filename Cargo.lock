@@ -59,6 +59,7 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "base64",
  "chacha20poly1305",
@@ -79,12 +80,11 @@ dependencies = [
  "scope-domain",
  "scope-git",
  "scope-git-process",
- "scope-git-storage",
- "scope-object-store",
  "scope-postgres",
  "scope-product-analytics",
  "scope-run-config",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha1 0.10.6",
@@ -3486,9 +3486,9 @@ dependencies = [
  "scope-cache-contract",
  "scope-cache-domain",
  "scope-domain",
- "scope-object-store",
  "scope-postgres",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3503,8 +3503,8 @@ name = "scope-content-lifecycle"
 version = "0.1.0"
 dependencies = [
  "scope-domain",
- "scope-object-store",
  "scope-postgres",
+ "scope-storage",
 ]
 
 [[package]]
@@ -3527,7 +3527,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "scope-domain",
- "scope-object-store",
+ "scope-storage",
  "thiserror",
 ]
 
@@ -3539,26 +3539,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
-]
-
-[[package]]
-name = "scope-git-storage"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "aws-sdk-s3",
- "bytes",
- "chacha20poly1305",
- "getrandom 0.3.4",
- "hex",
- "hmac 0.12.1",
- "scope-domain",
- "scope-git-process",
- "sha2 0.10.9",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3574,9 +3554,9 @@ dependencies = [
  "scope-api-contract",
  "scope-domain",
  "scope-media-storage",
- "scope-object-store",
  "scope-postgres",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "sha2 0.10.9",
  "tokio",
@@ -3591,11 +3571,12 @@ dependencies = [
 name = "scope-media-storage"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64",
  "bytes",
  "getrandom 0.3.4",
  "hex",
- "scope-object-store",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3615,9 +3596,9 @@ dependencies = [
  "libc",
  "scope-domain",
  "scope-media-storage",
- "scope-object-store",
  "scope-postgres",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3625,25 +3606,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "scope-object-store"
-version = "0.1.0"
-dependencies = [
- "aws-credential-types",
- "aws-sigv4",
- "aws-smithy-http",
- "base64",
- "chacha20poly1305",
- "getrandom 0.3.4",
- "hex",
- "http 1.4.2",
- "reqwest 0.12.28",
- "scope-domain",
- "sha2 0.10.9",
- "tokio",
- "xmlparser",
 ]
 
 [[package]]
@@ -3742,6 +3704,32 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "scope-storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "aws-sigv4",
+ "aws-smithy-http",
+ "base64",
+ "bytes",
+ "chacha20poly1305",
+ "getrandom 0.3.4",
+ "hex",
+ "hmac 0.12.1",
+ "http 1.4.2",
+ "scope-domain",
+ "scope-git-process",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
  "url",
 ]
 
@@ -5360,11 +5348,10 @@ dependencies = [
  "scope-domain",
  "scope-git",
  "scope-git-process",
- "scope-git-storage",
- "scope-object-store",
  "scope-postgres",
  "scope-product-analytics",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha2 0.10.9",

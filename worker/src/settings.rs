@@ -1,5 +1,5 @@
 use scope_git::{DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits};
-use scope_git_storage::GitSegmentStoreConfig;
+use scope_storage::GitSegmentStoreConfig;
 use std::{path::PathBuf, time::Duration};
 
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
