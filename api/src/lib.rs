@@ -18,6 +18,7 @@ pub(crate) mod git_segment_recovery;
 pub(crate) mod http;
 pub(crate) mod invite_mailer;
 pub(crate) mod media_grants;
+mod object_reencryption;
 pub(crate) mod object_store_config;
 pub(crate) mod operation_analytics;
 pub(crate) mod persistence;
@@ -42,6 +43,7 @@ mod workflow_catalog_backfill;
 mod workflow_tests;
 
 pub use app::router;
+pub use object_reencryption::{ReencryptionBucket, reencrypt_legacy_objects_for_maintenance};
 pub use request_auto_merge_runtime::RequestAutoMergeRuntime;
 pub use state::AppState;
 pub use workflow_catalog_backfill::{

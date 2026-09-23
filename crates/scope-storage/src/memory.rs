@@ -1,3 +1,4 @@
+use crate::backend::LIST_PAGE_KEYS;
 use crate::{BackendError, MultipartUpload, ObjectBackend, RemoteReader, UploadedPart};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -130,17 +131,24 @@ impl ObjectBackend for MemoryBackend {
         Ok(())
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>, BackendError> {
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+    ) -> Result<Vec<String>, BackendError> {
         let mut keys = self
             .state
             .lock()
             .expect("memory multipart store lock")
             .objects
             .keys()
-            .filter(|key| key.starts_with(prefix))
+            .filter(|key| {
+                key.starts_with(prefix) && start_after.is_none_or(|after| key.as_str() > after)
+            })
             .cloned()
             .collect::<Vec<_>>();
         keys.sort();
+        keys.truncate(LIST_PAGE_KEYS);
         Ok(keys)
     }
 }

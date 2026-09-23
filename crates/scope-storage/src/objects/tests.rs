@@ -16,6 +16,7 @@ async fn objects_round_trip_across_frames_without_storing_plaintext() {
     for plaintext in [
         Vec::new(),
         b"private source".to_vec(),
+        vec![42; OBJECT_FRAME_BYTES * 2],
         vec![42; OBJECT_FRAME_BYTES * 2 + 17],
     ] {
         store.put("object", plaintext.clone()).await.unwrap();
@@ -106,4 +107,29 @@ async fn source_blobs_are_checked_against_their_recorded_size_and_digest() {
         .await
         .unwrap_err();
     assert_eq!(different.kind, ObjectStoreErrorKind::Integrity);
+}
+
+#[tokio::test]
+async fn sealing_reuses_the_plaintext_allocation() {
+    let plaintext = vec![9_u8; OBJECT_FRAME_BYTES + 5];
+    let mut buffer = Vec::with_capacity(plaintext.len() + 4096);
+    buffer.extend_from_slice(&plaintext);
+    let allocation = buffer.as_ptr();
+
+    let key = EncryptionKey::new("primary", [7_u8; 32]).unwrap();
+    let sealed = crate::envelope::seal(
+        &key,
+        EnvelopeScope::object("object"),
+        OBJECT_FRAME_BYTES,
+        buffer,
+    )
+    .unwrap();
+
+    assert_eq!(sealed.as_ptr(), allocation);
+    let (backend, store) = store();
+    backend.put("object", Bytes::from(sealed)).await.unwrap();
+    assert_eq!(
+        read_bounded(&store, "object", usize::MAX).await.unwrap(),
+        plaintext
+    );
 }

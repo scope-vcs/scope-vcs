@@ -16,7 +16,7 @@ pub use source_blobs::{
 
 use crate::{
     EncryptionKey, GitStorageError, ObjectBackend,
-    envelope::{DecryptedFrame, EnvelopeReader, EnvelopeScope, EnvelopeWriter},
+    envelope::{DecryptedFrame, EnvelopeReader, EnvelopeScope, seal},
 };
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -73,23 +73,13 @@ impl EncryptedObjectStore {
 #[async_trait]
 impl ObjectStore for EncryptedObjectStore {
     async fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
-        let mut writer =
-            EnvelopeWriter::new(&self.key, EnvelopeScope::object(key), OBJECT_FRAME_BYTES)
-                .map_err(|error| envelope_error(key, error))?;
-        let mut envelope = writer.header().to_vec();
-        for frame in bytes.chunks(OBJECT_FRAME_BYTES) {
-            envelope.extend_from_slice(
-                &writer
-                    .encrypt_data(frame)
-                    .map_err(|error| envelope_error(key, error))?,
-            );
-        }
-        envelope.extend_from_slice(
-            &writer
-                .encrypt_final()
-                .map_err(|error| envelope_error(key, error))?,
-        );
-        drop(bytes);
+        let envelope = seal(
+            &self.key,
+            EnvelopeScope::object(key),
+            OBJECT_FRAME_BYTES,
+            bytes,
+        )
+        .map_err(|error| envelope_error(key, error))?;
         Ok(self.backend.put(key, Bytes::from(envelope)).await?)
     }
 

@@ -6,6 +6,9 @@ use tokio::io::AsyncRead;
 
 pub type RemoteReader = Pin<Box<dyn AsyncRead + Send>>;
 
+/// The most keys one [`ObjectBackend::list_page`] call returns.
+pub(crate) const LIST_PAGE_KEYS: usize = 1000;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MultipartUpload {
     pub key: String,
@@ -50,8 +53,14 @@ pub trait ObjectBackend: Send + Sync + 'static {
 
     async fn delete(&self, key: &str) -> Result<(), BackendError>;
 
-    /// Every stored key that starts with `prefix`, for maintenance jobs that walk the store.
-    async fn list(&self, prefix: &str) -> Result<Vec<String>, BackendError>;
+    /// Up to [`LIST_PAGE_KEYS`] stored keys that start with `prefix` and sort after
+    /// `start_after`, in order, for maintenance jobs that walk the store. Only an empty page ends
+    /// the listing.
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+    ) -> Result<Vec<String>, BackendError>;
 
     async fn readiness_check(&self) -> Result<(), BackendError> {
         Ok(())

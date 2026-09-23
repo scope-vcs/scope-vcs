@@ -1,5 +1,5 @@
 use crate::{
-    backend::{MultipartUpload, ObjectBackend, RemoteReader, UploadedPart},
+    backend::{LIST_PAGE_KEYS, MultipartUpload, ObjectBackend, RemoteReader, UploadedPart},
     error::BackendError,
 };
 use async_trait::async_trait;
@@ -314,30 +314,33 @@ impl ObjectBackend for S3Backend {
         Ok(())
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>, BackendError> {
-        let mut keys = Vec::new();
-        let mut continuation = None;
-        loop {
-            let response = self
-                .client
-                .list_objects_v2()
-                .bucket(self.bucket.as_ref())
-                .prefix(prefix)
-                .set_continuation_token(continuation)
-                .send()
-                .await
-                .map_err(|error| s3_request_error("list objects", prefix, error))?;
-            keys.extend(
-                response
-                    .contents()
-                    .iter()
-                    .filter_map(|object| object.key().map(ToOwned::to_owned)),
-            );
-            continuation = response.next_continuation_token().map(ToOwned::to_owned);
-            if continuation.is_none() {
-                return Ok(keys);
-            }
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+    ) -> Result<Vec<String>, BackendError> {
+        let response = self
+            .client
+            .list_objects_v2()
+            .bucket(self.bucket.as_ref())
+            .prefix(prefix)
+            .set_start_after(start_after.map(ToOwned::to_owned))
+            .max_keys(LIST_PAGE_KEYS as i32)
+            .send()
+            .await
+            .map_err(|error| s3_request_error("list objects", prefix, error))?;
+        let keys = response
+            .contents()
+            .iter()
+            .filter_map(|object| object.key().map(ToOwned::to_owned))
+            .collect::<Vec<_>>();
+        // An empty page ends the listing, so a truncated one must make progress.
+        if keys.is_empty() && response.is_truncated() == Some(true) {
+            return Err(BackendError::new(
+                "S3 object listing was truncated without returning any keys",
+            ));
         }
+        Ok(keys)
     }
 
     async fn readiness_check(&self) -> Result<(), BackendError> {

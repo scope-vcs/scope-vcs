@@ -1,3 +1,4 @@
+use crate::backend::LIST_PAGE_KEYS;
 use crate::{
     BackendError, MultipartUpload, ObjectBackend, RemoteReader, UploadedPart, is_hex_id_32,
     random_hex_id, sync_directory,
@@ -261,7 +262,18 @@ impl ObjectBackend for FileBackend {
         }
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>, BackendError> {
+    /// Proves the objects directory exists or can be created, which fails when the path is a
+    /// file or its parent is not writable.
+    async fn readiness_check(&self) -> Result<(), BackendError> {
+        fs::create_dir_all(self.root.join("objects")).await?;
+        Ok(())
+    }
+
+    async fn list_page(
+        &self,
+        prefix: &str,
+        start_after: Option<&str>,
+    ) -> Result<Vec<String>, BackendError> {
         let objects = self.root.join("objects");
         let mut keys = Vec::new();
         let mut directories = vec![objects.clone()];
@@ -284,12 +296,13 @@ impl ObjectBackend for FileBackend {
                 else {
                     continue;
                 };
-                if key.starts_with(prefix) {
+                if key.starts_with(prefix) && start_after.is_none_or(|after| key > after) {
                     keys.push(key.to_string());
                 }
             }
         }
         keys.sort();
+        keys.truncate(LIST_PAGE_KEYS);
         Ok(keys)
     }
 }
@@ -320,4 +333,29 @@ fn validate_upload_id(upload_id: &str) -> Result<(), BackendError> {
 fn random_upload_id() -> Result<String, BackendError> {
     random_hex_id()
         .map_err(|error| BackendError::new(format!("creating multipart upload id: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn readiness_fails_when_the_objects_directory_cannot_exist() {
+        let root = tempfile::tempdir().unwrap();
+        FileBackend::new(root.path())
+            .unwrap()
+            .readiness_check()
+            .await
+            .unwrap();
+
+        let blocked = tempfile::tempdir().unwrap();
+        std::fs::write(blocked.path().join("objects"), b"not a directory").unwrap();
+        assert!(
+            FileBackend::new(blocked.path())
+                .unwrap()
+                .readiness_check()
+                .await
+                .is_err()
+        );
+    }
 }

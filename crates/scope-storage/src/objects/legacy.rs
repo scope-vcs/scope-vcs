@@ -37,37 +37,64 @@ pub async fn reencrypt_legacy_objects(
     let store = EncryptedObjectStore::new(backend.clone(), key);
     let cipher = ChaCha20Poly1305::new(Key::from_slice(&legacy_key));
     let mut report = LegacyReencryptReport::default();
-    for object_key in backend.list(prefix).await? {
-        let mut reader = backend.read(&object_key).await?;
-        let mut head = Vec::with_capacity(LEGACY_MAGIC.len());
-        (&mut reader)
-            .take(LEGACY_MAGIC.len() as u64)
-            .read_to_end(&mut head)
-            .await
-            .map_err(|error| read_error(&object_key, error))?;
-        if is_framed(&head) {
-            report.already_framed += 1;
-            continue;
+    let mut start_after = None;
+    loop {
+        let page = backend.list_page(prefix, start_after.as_deref()).await?;
+        let Some(last) = page.last().cloned() else {
+            return Ok(report);
+        };
+        for object_key in page {
+            reencrypt_object(
+                &backend,
+                &store,
+                &cipher,
+                object_key,
+                max_object_bytes,
+                &mut report,
+            )
+            .await?;
         }
-        if head != LEGACY_MAGIC {
-            report.unrecognized.push(object_key);
-            continue;
-        }
-        let mut envelope = Vec::new();
-        (&mut reader)
-            .take(max_object_bytes as u64 + (LEGACY_NONCE_BYTES + LEGACY_TAG_BYTES + 1) as u64)
-            .read_to_end(&mut envelope)
-            .await
-            .map_err(|error| read_error(&object_key, error))?;
-        match decrypt_legacy(&cipher, &object_key, envelope, max_object_bytes) {
-            Ok(plaintext) => {
-                store.put(&object_key, plaintext).await?;
-                report.rewritten += 1;
-            }
-            Err(error) => report.failed.push((object_key, error.message)),
-        }
+        start_after = Some(last);
     }
-    Ok(report)
+}
+
+async fn reencrypt_object(
+    backend: &Arc<dyn ObjectBackend>,
+    store: &EncryptedObjectStore,
+    cipher: &ChaCha20Poly1305,
+    object_key: String,
+    max_object_bytes: usize,
+    report: &mut LegacyReencryptReport,
+) -> Result<(), ObjectStoreError> {
+    let mut reader = backend.read(&object_key).await?;
+    let mut head = Vec::with_capacity(LEGACY_MAGIC.len());
+    (&mut reader)
+        .take(LEGACY_MAGIC.len() as u64)
+        .read_to_end(&mut head)
+        .await
+        .map_err(|error| read_error(&object_key, error))?;
+    if is_framed(&head) {
+        report.already_framed += 1;
+        return Ok(());
+    }
+    if head != LEGACY_MAGIC {
+        report.unrecognized.push(object_key);
+        return Ok(());
+    }
+    let mut envelope = Vec::new();
+    (&mut reader)
+        .take(max_object_bytes as u64 + (LEGACY_NONCE_BYTES + LEGACY_TAG_BYTES + 1) as u64)
+        .read_to_end(&mut envelope)
+        .await
+        .map_err(|error| read_error(&object_key, error))?;
+    match decrypt_legacy(cipher, &object_key, envelope, max_object_bytes) {
+        Ok(plaintext) => {
+            store.put(&object_key, plaintext).await?;
+            report.rewritten += 1;
+        }
+        Err(error) => report.failed.push((object_key, error.message)),
+    }
+    Ok(())
 }
 
 /// `envelope` is everything after the magic: nonce, ciphertext, tag. The object key is the AAD.
@@ -173,6 +200,39 @@ mod tests {
                 .object("objects/blobs/old")
                 .unwrap()
                 .starts_with(LEGACY_MAGIC)
+        );
+    }
+
+    #[tokio::test]
+    async fn the_migration_walks_every_listing_page() {
+        let raw_key = [7_u8; 32];
+        let key = EncryptionKey::new("primary", raw_key).unwrap();
+        let backend: Arc<dyn ObjectBackend> = Arc::new(MemoryBackend::default());
+        let store = EncryptedObjectStore::new(backend.clone(), key.clone());
+        for index in 0..crate::backend::LIST_PAGE_KEYS {
+            store
+                .put(&format!("objects/blobs/{index:05}"), vec![1])
+                .await
+                .unwrap();
+        }
+        let last = "objects/blobs/99999";
+        backend
+            .put(
+                last,
+                Bytes::from(legacy_envelope(&raw_key, last, b"after page one")),
+            )
+            .await
+            .unwrap();
+
+        let report = reencrypt_legacy_objects(backend, raw_key, key, "objects/", 1024)
+            .await
+            .unwrap();
+
+        assert_eq!(report.rewritten, 1);
+        assert_eq!(report.already_framed, crate::backend::LIST_PAGE_KEYS);
+        assert_eq!(
+            read_bounded(&store, last, 1024).await.unwrap(),
+            b"after page one"
         );
     }
 

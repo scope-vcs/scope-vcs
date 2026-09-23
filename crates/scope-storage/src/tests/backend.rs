@@ -246,15 +246,11 @@ impl ObjectBackend for TestObjectBackend {
         Ok(())
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>, BackendError> {
-        Ok(self
-            .state
-            .lock()
-            .unwrap()
-            .objects
-            .keys()
-            .filter(|key| key.starts_with(prefix))
-            .cloned()
-            .collect())
+    async fn list_page(
+        &self,
+        _prefix: &str,
+        _start_after: Option<&str>,
+    ) -> Result<Vec<String>, BackendError> {
+        unimplemented!("segment tests never list")
     }
 }

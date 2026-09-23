@@ -1,7 +1,7 @@
 use crate::GitStorageError;
 use chacha20poly1305::{
     ChaCha20Poly1305, Key, Nonce,
-    aead::{Aead, KeyInit, Payload},
+    aead::{Aead, AeadInPlace, KeyInit, Payload},
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -130,31 +130,71 @@ impl EnvelopeWriter {
     }
 
     fn encrypt_frame(&mut self, plaintext: &[u8], flags: u8) -> Result<Vec<u8>, GitStorageError> {
+        let mut frame = vec![0_u8; FRAME_HEADER_BYTES + plaintext.len() + TAG_BYTES];
+        frame[FRAME_HEADER_BYTES..FRAME_HEADER_BYTES + plaintext.len()].copy_from_slice(plaintext);
+        self.seal_frame(&mut frame, flags)?;
+        Ok(frame)
+    }
+
+    /// Seals a frame laid out as header space, plaintext, and tag space, in place.
+    fn seal_frame(&mut self, frame: &mut [u8], flags: u8) -> Result<(), GitStorageError> {
         let counter = self.next_counter;
         self.next_counter = self
             .next_counter
             .checked_add(1)
             .ok_or_else(|| GitStorageError::InvalidEnvelope("too many encryption frames".into()))?;
-        let plaintext_len = u32::try_from(plaintext.len())
+        let tag_start = frame.len() - TAG_BYTES;
+        let plaintext_len = u32::try_from(tag_start - FRAME_HEADER_BYTES)
             .map_err(|_| GitStorageError::InvalidEnvelope("encryption frame exceeds u32".into()))?;
         let frame_header = frame_header(counter, plaintext_len, flags);
         let aad = associated_data(&self.header, &self.scope, &frame_header);
         let nonce = nonce(self.nonce_prefix, counter);
-        let ciphertext = self
+        let tag = self
             .cipher
-            .encrypt(
+            .encrypt_in_place_detached(
                 Nonce::from_slice(&nonce),
-                Payload {
-                    msg: plaintext,
-                    aad: &aad,
-                },
+                &aad,
+                &mut frame[FRAME_HEADER_BYTES..tag_start],
             )
             .map_err(|_| GitStorageError::Encryption)?;
-        let mut frame = Vec::with_capacity(FRAME_HEADER_BYTES + ciphertext.len());
-        frame.extend_from_slice(&frame_header);
-        frame.extend_from_slice(&ciphertext);
-        Ok(frame)
+        frame[..FRAME_HEADER_BYTES].copy_from_slice(&frame_header);
+        frame[tag_start..].copy_from_slice(&tag);
+        Ok(())
     }
+}
+
+/// Seals `plaintext` as one complete envelope inside its own allocation, so a write never holds
+/// the plaintext and a second copy of the envelope at once. Frames are moved back to front into
+/// their sealed positions, which leaves every not-yet-moved frame intact.
+pub(crate) fn seal(
+    key: &EncryptionKey,
+    scope: EnvelopeScope,
+    frame_bytes: usize,
+    mut buffer: Vec<u8>,
+) -> Result<Vec<u8>, GitStorageError> {
+    let mut writer = EnvelopeWriter::new(key, scope, frame_bytes)?;
+    let header_len = writer.header.len();
+    let plaintext_len = buffer.len();
+    let frames = plaintext_len.div_ceil(frame_bytes);
+    let overhead = FRAME_HEADER_BYTES + TAG_BYTES;
+    let frame_start = |index: usize| header_len + index * (frame_bytes + overhead);
+    let frame_len = |index: usize| frame_bytes.min(plaintext_len - index * frame_bytes);
+    buffer.resize(header_len + frames * overhead + plaintext_len + overhead, 0);
+    for index in (0..frames).rev() {
+        let source = index * frame_bytes;
+        buffer.copy_within(
+            source..source + frame_len(index),
+            frame_start(index) + FRAME_HEADER_BYTES,
+        );
+    }
+    buffer[..header_len].copy_from_slice(&writer.header);
+    for index in 0..frames {
+        let start = frame_start(index);
+        writer.seal_frame(&mut buffer[start..start + frame_len(index) + overhead], 0)?;
+    }
+    let final_start = buffer.len() - overhead;
+    writer.seal_frame(&mut buffer[final_start..], FINAL_FLAG)?;
+    Ok(buffer)
 }
 
 pub(crate) struct EnvelopeReader {
