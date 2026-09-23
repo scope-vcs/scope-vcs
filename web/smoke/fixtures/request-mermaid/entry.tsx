@@ -46,7 +46,7 @@ function App() {
           <button onClick={toggleTheme}>Toggle theme</button>
         </nav>
         {open ? <>
-          <section aria-label="Description"><RequestDescription canEdit={false} description={source} onSave={async () => false} /></section>
+          <section aria-label="Description"><RequestDescription actionsSlot={null} canEdit={false} description={source} onSave={async () => false} /></section>
           {mode === 'other' ? <section aria-label="Discussion"><RequestDiscussionMarkdown source={er} /></section> : null}
           {mode === 'diagrams' ? <>
             <section aria-label="Discussion"><RequestDiscussionMarkdown source={flowchart} /></section>
