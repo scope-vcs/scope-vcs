@@ -59,8 +59,7 @@ impl MediaStorageSettings {
     }
 
     /// One-time move of media chunks still in the retired single-tag envelope to the framed
-    /// envelope. Run it with media writers stopped, before starting media services that only read
-    /// the framed envelope. It is safe to rerun.
+    /// envelope. It is safe to rerun.
     pub async fn reencrypt_legacy_objects(
         self,
     ) -> Result<LegacyReencryptReport, MediaStorageError> {

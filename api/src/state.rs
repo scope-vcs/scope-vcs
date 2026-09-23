@@ -87,6 +87,7 @@ impl AppState {
         state.start_request_ref_cleanup();
         state.start_invite_email_delivery();
         state.start_git_segment_recovery();
+        crate::object_reencryption::start_legacy_object_reencryption();
         best_effort_drain_pending_repo_storage_deletions(&state).await;
         Ok(state)
     }

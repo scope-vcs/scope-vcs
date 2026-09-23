@@ -26,7 +26,7 @@ pub struct LegacyReencryptReport {
 
 /// Rewrites every object under `prefix` that still uses the legacy envelope into the framed
 /// envelope, under the same key. Framed objects, including Git segments, are only sniffed, so the
-/// job is safe to rerun. Run it with writers stopped, before the release that drops legacy reads.
+/// job is safe to rerun.
 pub async fn reencrypt_legacy_objects(
     backend: Arc<dyn ObjectBackend>,
     legacy_key: [u8; 32],

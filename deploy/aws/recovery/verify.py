@@ -1,10 +1,8 @@
 """Independent recovery verification of persisted object envelopes and plaintext hashes.
 
 Format: the framed envelope in scope-storage/src/envelope.rs, version 2, used by Git segments and
-every other encrypted object. Archives captured before objects moved to that envelope still hold
-the legacy single-tag object envelope, which stays readable until those archives expire (42 days
-after the objects are re-encrypted). Unknown formats fail closed instead of silently claiming a
-usable backup.
+every other encrypted object. Unknown formats fail closed instead of silently claiming a usable
+backup.
 """
 
 import base64
@@ -70,29 +68,8 @@ def segment_digest(path, reference, key):
     return framed_digest(path, key, SEGMENT_LABEL, parts, b"primary")
 
 
-LEGACY_OBJECT_MAGIC = b"scope-vcs-object-v1\n"
-
-
 def object_digest(path, object_key, key, key_id, sinks=()):
-    with path.open("rb") as stream:
-        legacy = stream.read(len(LEGACY_OBJECT_MAGIC)) == LEGACY_OBJECT_MAGIC
-    if not legacy:
-        return framed_digest(path, key, OBJECT_LABEL, [object_key.encode()], key_id, sinks)
-    plaintext = legacy_object_plaintext(path, object_key, key)
-    for sink in sinks:
-        sink.update(plaintext)
-    return hashlib.sha256(plaintext).hexdigest(), len(plaintext)
-
-
-def legacy_object_plaintext(path, object_key, key):
-    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-    if path.stat().st_size > 256 * 1024**2:
-        raise Incomplete("object exceeds bounded plaintext verification size")
-    data = path.read_bytes()
-    if len(data) < len(LEGACY_OBJECT_MAGIC) + 28:
-        raise Incomplete("object encryption format is invalid")
-    offset = len(LEGACY_OBJECT_MAGIC)
-    return ChaCha20Poly1305(key).decrypt(data[offset:offset+12], data[offset+12:], object_key.encode())
+    return framed_digest(path, key, OBJECT_LABEL, [object_key.encode()], key_id, sinks)
 
 
 def verify(root, inventory, references, escrow):

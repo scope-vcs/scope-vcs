@@ -155,15 +155,6 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(Exception):
             segment_digest(path, {"repo_id": "repo", "segment_id": "segment"}, KEY)
 
-    def testArchivesFromBeforeTheFramedEnvelopeStillVerify(self):
-        key = "objects/blobs/legacy"
-        nonce = b"n" * 12
-        legacy = b"scope-vcs-object-v1\n" + nonce + ChaCha20Poly1305(KEY).encrypt(nonce, b"legacy content", key.encode())
-        clients = {"objects": (Source({key: legacy}), "source-bucket"), "media": (Source({}), "media-bucket")}
-        stored = copy_objects(clients, inventory(clients, 10000, 100), self.root)
-        refs = [{"kind": "content", "bucket": "objects", "key": key, "sha256": hashlib.sha256(b"legacy content").hexdigest(), "plaintext_bytes": 14}]
-        self.assertEqual(verify(self.root, stored, refs, ESCROW)["verified_references"], 1)
-
     def testMediaManifestCrossingEightMibChunkBoundary(self):
         chunks = [b"a" * (8 * 1024**2), b"last chunk"]
         whole = b"".join(chunks)

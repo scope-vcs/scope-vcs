@@ -5,7 +5,7 @@ environment="${1:?Maintenance environment is required}"
 command="${2:?Maintenance command is required}"
 [[ "$#" == 2 ]]
 case "$command" in
-  preflight|plan|verify|fence|drain-writers|validate-workflow-catalogs|apply|backfill-workflow-catalogs|reencrypt-objects) ;;
+  preflight|plan|verify|fence|drain-writers|validate-workflow-catalogs|apply|backfill-workflow-catalogs) ;;
   *) echo 'Unsupported private maintenance command.' >&2; exit 2 ;;
 esac
 binary="${SCOPE_MAINTENANCE_BINARY:-./target/release/scope-maintenance}"

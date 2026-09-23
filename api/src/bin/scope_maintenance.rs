@@ -15,7 +15,6 @@ commands:
   validate-workflow-catalogs  validate pre-migration workflow inputs
   apply                       apply all pending migrations behind the writer fence
   backfill-workflow-catalogs  idempotently rebuild repository workflow catalogs
-  reencrypt-objects           rewrite legacy-envelope objects in SCOPE_BUCKET (no database)
   help                        show this help
 
 Migration operation limits (positive seconds; independent of downtime warnings):
@@ -39,9 +38,6 @@ async fn main() -> anyhow::Result<()> {
     }
     if command == "serve" {
         return api::maintenance_http::serve().await;
-    }
-    if command == "reencrypt-objects" {
-        return reencrypt_objects().await;
     }
     let database_url = maintenance_database_url()?;
 
@@ -89,25 +85,6 @@ async fn main() -> anyhow::Result<()> {
             println!(r#"{{"exact":true}}"#);
         }
         _ => anyhow::bail!(USAGE),
-    }
-    Ok(())
-}
-
-/// One-time object migration to the framed envelope. See
-/// `api::reencrypt_legacy_objects_for_maintenance`.
-async fn reencrypt_objects() -> anyhow::Result<()> {
-    let report = api::reencrypt_legacy_objects_for_maintenance().await?;
-    println!(
-        "{}",
-        serde_json::json!({
-            "rewritten": report.rewritten,
-            "alreadyFramed": report.already_framed,
-            "unrecognized": report.unrecognized,
-            "failed": report.failed,
-        })
-    );
-    if !report.failed.is_empty() {
-        anyhow::bail!("{} objects could not be re-encrypted", report.failed.len());
     }
     Ok(())
 }

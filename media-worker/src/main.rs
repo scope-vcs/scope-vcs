@@ -18,9 +18,6 @@ async fn main() -> anyhow::Result<()> {
     match args.next().as_deref().and_then(|value| value.to_str()) {
         None => run_service().await,
         Some("codec-info") if args.next().is_none() => codec_info().await,
-        Some("reencrypt-legacy-objects") if args.next().is_none() => {
-            reencrypt_legacy_objects().await
-        }
         Some("codec-self-test") => {
             let fixture_dir = args
                 .next()
@@ -34,28 +31,26 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-/// One-time media migration to the framed envelope. See
-/// `MediaStorageSettings::reencrypt_legacy_objects`.
-async fn reencrypt_legacy_objects() -> anyhow::Result<()> {
-    let report = scope_media_storage::MediaStorageSettings::from_env()?
-        .reencrypt_legacy_objects()
-        .await?;
-    println!(
-        "{}",
-        serde_json::json!({
-            "rewritten": report.rewritten,
-            "alreadyFramed": report.already_framed,
-            "unrecognized": report.unrecognized,
-            "failed": report.failed,
-        })
-    );
-    if !report.failed.is_empty() {
-        anyhow::bail!(
-            "{} media objects could not be re-encrypted",
-            report.failed.len()
-        );
-    }
-    Ok(())
+/// Rewrites media chunks still in the retired single-tag envelope, once, in the background after
+/// the worker starts. Until a chunk is rewritten, reads of it fail. Delete this once a release has
+/// run it.
+fn start_legacy_object_reencryption() {
+    tokio::spawn(async {
+        let result = match scope_media_storage::MediaStorageSettings::from_env() {
+            Ok(settings) => settings.reencrypt_legacy_objects().await,
+            Err(error) => Err(error),
+        };
+        match result {
+            Ok(report) => tracing::info!(
+                rewritten = report.rewritten,
+                already_framed = report.already_framed,
+                unrecognized = ?report.unrecognized,
+                failed = ?report.failed,
+                "legacy media re-encryption completed"
+            ),
+            Err(error) => tracing::warn!(%error, "legacy media re-encryption failed"),
+        }
+    });
 }
 
 async fn run_service() -> anyhow::Result<()> {
@@ -75,6 +70,7 @@ async fn run_service() -> anyhow::Result<()> {
         .connect(2)
         .await
         .context("configuring encrypted media storage")?;
+    start_legacy_object_reencryption();
     let health = WorkerHealth::new(settings.poll_interval);
     health.mark_codecs_ready();
     let mut health_task = tokio::spawn(health.clone().serve(settings.health_port));
