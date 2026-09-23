@@ -7,7 +7,7 @@ pub(super) struct SeedGitCommit<'a> {
 }
 
 pub(super) fn git_pack_state(
-    git_segment_store: &scope_git_storage::GitSegmentStore,
+    git_segment_store: &scope_storage::GitSegmentStore,
     repository_id: &str,
     label: &str,
     commits: &[SeedGitCommit<'_>],
@@ -19,8 +19,8 @@ pub(super) fn git_pack_state(
 }
 
 pub(super) fn update_demo_git_snapshot(
-    object_store: &dyn ObjectStore,
-    git_segment_store: &scope_git_storage::GitSegmentStore,
+    object_store: &SeedObjects,
+    git_segment_store: &scope_storage::GitSegmentStore,
     repository_id: &str,
     initial: SeedGitCommit<'_>,
     accepted: SeedGitCommit<'_>,
@@ -302,7 +302,7 @@ pub(super) fn apply_seed_commits(
 }
 
 pub(super) fn store_seed_bundle(
-    object_store: &dyn ObjectStore,
+    object_store: &SeedObjects,
     repo_path: &FsPath,
     label: &str,
     refs: &[&str],
@@ -315,7 +315,7 @@ pub(super) fn store_seed_bundle(
     seed_git(Some(repo_path), &args, "creating seeded Git bundle")?;
     let bytes = fs::read(&bundle_path).map_err(ApiError::internal)?;
     fs::remove_file(&bundle_path).map_err(ApiError::internal)?;
-    let mut snapshot = put_content_object(object_store, ContentObjectKind::GitBundle, bytes)?;
+    let mut snapshot = object_store.add(ContentObjectKind::GitBundle, bytes);
     snapshot.git_oid = head_oid.to_string();
     Ok(snapshot)
 }

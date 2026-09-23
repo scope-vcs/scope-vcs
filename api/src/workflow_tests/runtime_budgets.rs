@@ -1,10 +1,15 @@
 use super::*;
 use scope_git::GitStorageLimits;
-use scope_object_store::ObjectStore;
+use scope_storage::{
+    EncryptedObjectStore, EncryptionKey, MemoryBackend, ObjectStore, read_bounded,
+};
 use std::{process::Command, time::Duration};
 
-fn budgeted_store(config: RuntimeBudgetConfig) -> (Arc<MemoryObjectStore>, BudgetedObjectStore) {
-    let raw = Arc::new(MemoryObjectStore::new());
+fn budgeted_store(config: RuntimeBudgetConfig) -> (Arc<EncryptedObjectStore>, BudgetedObjectStore) {
+    let raw = Arc::new(EncryptedObjectStore::new(
+        Arc::new(MemoryBackend::default()),
+        EncryptionKey::new("test", [7; 32]).unwrap(),
+    ));
     let store =
         BudgetedObjectStore::new(raw.clone(), Arc::new(RuntimeBudgets::from_config(config)));
     (raw, store)
@@ -141,11 +146,13 @@ async fn object_store_capacity_exhaustion_returns_backpressure() {
         ..Default::default()
     });
 
-    let error = store.get("tests/budget/backpressure").unwrap_err();
+    let error = read_bounded(&store, "tests/budget/backpressure", 1)
+        .await
+        .unwrap_err();
 
     assert_eq!(
         error.kind,
-        scope_object_store::ObjectStoreErrorKind::CapacityExhausted
+        scope_storage::ObjectStoreErrorKind::CapacityExhausted
     );
     assert_eq!(
         error.message,
@@ -160,11 +167,11 @@ async fn object_store_readiness_bypasses_operation_capacity() {
         ..Default::default()
     });
 
-    store.readiness_check().unwrap();
+    store.readiness_check().await.unwrap();
 }
 
-#[test]
-fn object_store_size_limits_cover_writes_and_reads() {
+#[tokio::test]
+async fn object_store_size_limits_cover_writes_and_reads() {
     let key = "tests/budget/read-too-large";
     let (raw, store) = budgeted_store(RuntimeBudgetConfig {
         git_storage_limits: GitStorageLimits::new(4).unwrap(),
@@ -172,18 +179,25 @@ fn object_store_size_limits_cover_writes_and_reads() {
     });
     store
         .put("tests/budget/write-at-limit", b"1234".to_vec())
+        .await
         .unwrap();
-    assert_eq!(store.get("tests/budget/write-at-limit").unwrap(), b"1234");
-    raw.put(key, b"12345".to_vec()).unwrap();
+    assert_eq!(
+        read_bounded(&store, "tests/budget/write-at-limit", usize::MAX)
+            .await
+            .unwrap(),
+        b"1234"
+    );
+    raw.put(key, b"12345".to_vec()).await.unwrap();
     for error in [
         store
             .put("tests/budget/write-too-large", b"12345".to_vec())
+            .await
             .unwrap_err(),
-        store.get(key).unwrap_err(),
+        read_bounded(&store, key, usize::MAX).await.unwrap_err(),
     ] {
         assert_eq!(
             error.kind,
-            scope_object_store::ObjectStoreErrorKind::PayloadTooLarge
+            scope_storage::ObjectStoreErrorKind::PayloadTooLarge
         );
         assert!(error.message.contains("exceeds 4 bytes"));
     }
@@ -209,7 +223,10 @@ fn state_with_budget_config(config: RuntimeBudgetConfig) -> AppState {
     let budgets = Arc::new(RuntimeBudgets::from_config(config));
     state.runtime_budgets = budgets.clone();
     state.object_store = Arc::new(BudgetedObjectStore::new(
-        Arc::new(MemoryObjectStore::new()),
+        Arc::new(EncryptedObjectStore::new(
+            Arc::new(MemoryBackend::default()),
+            EncryptionKey::new("test", [7; 32]).unwrap(),
+        )),
         budgets,
     ));
     state

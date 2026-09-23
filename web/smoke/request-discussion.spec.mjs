@@ -222,6 +222,7 @@ async function assertReplyRegion(page, region, expanded) {
 test('Details is a separate tab that reuses request data and preserves discussion state', async () => {
   let settled
   await withPage(requestPath, async (page) => {
+    await settled()
     const tabs = page.getByRole('navigation', { name: 'Request views' })
     const details = tabs.getByRole('link', { name: 'Details', exact: true })
     const thread = page.locator('#discussion-discussion_demo_retry_cap')
@@ -252,6 +253,7 @@ test('Details is a separate tab that reuses request data and preserves discussio
     await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready'))
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
     await assertNodesPreserved(page, shell)
+    await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
     assert.deepEqual(requestLoads, [])
     await thread.getByRole('button', { name: 'Show 3 replies' }).click()
     const quote = page.locator('#reply-discussion_reply_demo_retry_cap_quote a[href^="#discussion="]')

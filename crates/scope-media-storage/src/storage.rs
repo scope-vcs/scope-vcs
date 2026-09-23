@@ -3,46 +3,53 @@ use crate::{
     WriteAttempt, keys::staged_chunk_key,
 };
 use bytes::Bytes;
-use scope_object_store::{EncryptedObjectStore, ObjectStore};
+use scope_storage::{
+    EncryptedObjectStore, EncryptionKey, ObjectBackend, ObjectStore, read_bounded,
+};
 use sha2::{Digest, Sha256};
 use std::{ops::RangeInclusive, pin::Pin, sync::Arc};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
-    sync::{Semaphore, mpsc},
+    sync::{OwnedSemaphorePermit, Semaphore, mpsc},
 };
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 
 pub const MAX_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+/// Media chunks are sealed under their own key id, separate from source objects.
+pub(crate) const MEDIA_KEY_ID: &str = "media";
 
 pub type MediaByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, MediaStorageError>> + Send>>;
 
 #[derive(Clone)]
 pub struct MediaStorage {
     store: Arc<dyn ObjectStore>,
-    blocking_slots: Arc<Semaphore>,
+    operation_slots: Arc<Semaphore>,
 }
 
 impl MediaStorage {
     /// Wraps the backend in Scope's authenticated object encryption. Production media callers
     /// cannot construct a storage instance without supplying the media-only encryption key.
     pub fn encrypted(
-        raw_store: Arc<dyn ObjectStore>,
+        backend: Arc<dyn ObjectBackend>,
         encryption_key: [u8; 32],
-        max_blocking_operations: usize,
+        max_storage_operations: usize,
     ) -> Result<Self, MediaStorageError> {
-        if max_blocking_operations == 0 {
+        if max_storage_operations == 0 {
             return Err(MediaStorageError::invalid(
-                "media blocking operation limit must be positive",
+                "media storage operation limit must be positive",
             ));
         }
+        let key = EncryptionKey::new(MEDIA_KEY_ID, encryption_key)
+            .map_err(|error| MediaStorageError::invalid(error.to_string()))?;
         Ok(Self {
-            store: Arc::new(EncryptedObjectStore::new(raw_store, encryption_key)),
-            blocking_slots: Arc::new(Semaphore::new(max_blocking_operations)),
+            store: Arc::new(EncryptedObjectStore::new(backend, key)),
+            operation_slots: Arc::new(Semaphore::new(max_storage_operations)),
         })
     }
 
     pub async fn readiness_check(&self) -> Result<(), MediaStorageError> {
-        self.run_blocking(|store| store.readiness_check()).await
+        let _slot = self.operation_slot().await?;
+        Ok(self.store.readiness_check().await?)
     }
 
     /// Plans an immutable object key and digest before I/O. Durable workflows must inventory the
@@ -85,9 +92,8 @@ impl MediaStorage {
                 "media part bytes do not match the planned storage object",
             ));
         }
-        let stored_key = part.object_key.clone();
-        self.run_blocking(move |store| store.put(&stored_key, bytes))
-            .await
+        let _slot = self.operation_slot().await?;
+        Ok(self.store.put(&part.object_key, bytes).await?)
     }
 
     pub async fn seal_parts(
@@ -209,17 +215,17 @@ impl MediaStorage {
                 "media object key is outside the staged media namespace",
             ));
         }
-        let key = object_key.to_string();
-        self.run_blocking(move |store| store.delete(&key)).await
+        let _slot = self.operation_slot().await?;
+        Ok(self.store.delete(object_key).await?)
     }
 
     async fn read_verified_chunk(&self, chunk: &MediaChunk) -> Result<Vec<u8>, MediaStorageError> {
-        let key = chunk.object_key.clone();
         let max_bytes = usize::try_from(chunk.plaintext_bytes)
             .map_err(|_| MediaStorageError::integrity("media chunk size is invalid"))?;
-        let bytes = self
-            .run_blocking(move |store| store.get_bounded(&key, max_bytes))
-            .await?;
+        let bytes = {
+            let _slot = self.operation_slot().await?;
+            read_bounded(self.store.as_ref(), &chunk.object_key, max_bytes).await?
+        };
         if bytes.len() as u64 != chunk.plaintext_bytes
             || hex::encode(Sha256::digest(&bytes)) != chunk.sha256
         {
@@ -230,29 +236,12 @@ impl MediaStorage {
         Ok(bytes)
     }
 
-    async fn run_blocking<T, F>(&self, operation: F) -> Result<T, MediaStorageError>
-    where
-        T: Send + 'static,
-        F: FnOnce(Arc<dyn ObjectStore>) -> Result<T, scope_object_store::ObjectStoreError>
-            + Send
-            + 'static,
-    {
-        let permit = self
-            .blocking_slots
+    async fn operation_slot(&self) -> Result<OwnedSemaphorePermit, MediaStorageError> {
+        self.operation_slots
             .clone()
             .acquire_owned()
             .await
-            .map_err(|_| MediaStorageError::internal("media blocking operation pool is closed"))?;
-        let store = self.store.clone();
-        tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            operation(store)
-        })
-        .await
-        .map_err(|error| {
-            MediaStorageError::internal(format!("media blocking operation failed: {error}"))
-        })?
-        .map_err(Into::into)
+            .map_err(|_| MediaStorageError::internal("media storage operation pool is closed"))
     }
 }
 

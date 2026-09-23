@@ -52,6 +52,8 @@ These are registry package entries per lockfile, including optional/platform ent
 | Analyzer npm | 44 | 8 | -36 |
 | Total | 1,562 | 1,292 | -270 |
 
+These measurements precede the merge with main's storage consolidation and jemalloc allocator. That integration adds two registry packages already approved on main, bringing the final workspace lockfile to 467 entries and the combined total to 1,294. The storage consolidation remains intact; its envelope and one-time migration use the upgraded crypto API without changing stored byte formats.
+
 On this Linux host, normal/build dependency graphs changed from 362 to 340 package versions for the API, 332 to 300 for the worker, and 294 to 308 for the cache service. These graphs overlap and must not be summed. The cache graph grows with the ORM and HTTP migrations. Lockfile reduction does not imply every binary gets smaller.
 
 Two runs on the same integrated web source measured TypeScript 7 at 9.92 and 8.76 seconds, versus TypeScript 6.0.3 at 40.08 and 53.02 seconds. Peak resident memory was about 695 to 744 MiB versus 862 to 868 MiB. Other builds were running on the host, so these are indicative measurements, not a controlled performance guarantee. TypeScript 6 was used only from a temporary comparison checkout.

@@ -1,11 +1,11 @@
 use super::{
-    ENCODING_VERSION, GitSegmentRestoreSource, GitSegmentRestoreTimings, GitSegmentStore,
-    GitStorageError, MultipartError, StagedGitSegment, VerifiedGitPack, is_hex_id_32, object_key,
-    random_hex_id, sync_directory,
+    BackendError, ENCODING_VERSION, GitSegmentRestoreSource, GitSegmentRestoreTimings,
+    GitSegmentStore, GitStorageError, StagedGitSegment, VerifiedGitPack, is_hex_id_32,
+    random_hex_id, segment_object_key, sync_directory,
 };
 use crate::{
     cache::{VerifiedPackCache, VerifiedPackFlight, VerifiedPackPin},
-    envelope::{DecryptedFrame, EnvelopeReader},
+    envelope::{DecryptedFrame, EnvelopeReader, EnvelopeScope},
 };
 use scope_domain::repository::{RepositoryIncarnation, git::GitSegmentRef};
 use sha2::{Digest, Sha256};
@@ -155,7 +155,8 @@ impl GitSegmentStore {
         staged: &StagedGitSegment,
     ) -> Result<VerifiedGitPack, GitStorageError> {
         validate_restore_identity(incarnation.repository_id(), &staged.segment)?;
-        if staged.object_key != object_key(incarnation.repository_id(), &staged.segment.segment_id)
+        if staged.object_key
+            != segment_object_key(incarnation.repository_id(), &staged.segment.segment_id)
         {
             return Err(GitStorageError::InvalidConfiguration(
                 "staged Git segment does not belong to this repository".into(),
@@ -191,13 +192,12 @@ impl GitSegmentStore {
     {
         validate_restore_identity(repository_id, segment)?;
         let started = Instant::now();
-        let object_key = object_key(repository_id, &segment.segment_id);
+        let object_key = segment_object_key(repository_id, &segment.segment_id);
         let mut source = self.backend.read(&object_key).await?;
         let mut envelope = EnvelopeReader::read_header(
             &mut source,
             &self.encryption_key,
-            repository_id,
-            &segment.segment_id,
+            EnvelopeScope::git_segment(repository_id, &segment.segment_id),
         )
         .await?;
         let mut digest = Sha256::new();
@@ -222,7 +222,7 @@ impl GitSegmentStore {
         if source
             .read(&mut trailing)
             .await
-            .map_err(|error| GitStorageError::Multipart(MultipartError::new(error.to_string())))?
+            .map_err(|error| GitStorageError::Backend(BackendError::new(error.to_string())))?
             != 0
         {
             return Err(GitStorageError::InvalidEnvelope(

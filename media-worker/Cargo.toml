@@ -16,7 +16,7 @@ serde.workspace = true
 serde_json.workspace = true
 scope_domain.workspace = true
 scope_media_storage = { package = "scope-media-storage", path = "../crates/scope-media-storage" }
-scope_object_store.workspace = true
+scope_storage.workspace = true
 scope_postgres.workspace = true
 sha2.workspace = true
 tempfile.workspace = true

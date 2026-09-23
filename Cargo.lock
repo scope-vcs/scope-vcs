@@ -73,6 +73,7 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "chacha20poly1305",
@@ -93,17 +94,17 @@ dependencies = [
  "scope-domain",
  "scope-git",
  "scope-git-process",
- "scope-git-storage",
- "scope-object-store",
  "scope-postgres",
  "scope-product-analytics",
  "scope-run-config",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha1",
  "sha2 0.11.0",
  "tempfile",
+ "tikv-jemallocator",
  "time",
  "tokio",
  "tokio-stream",
@@ -3338,9 +3339,9 @@ dependencies = [
  "scope-cache-contract",
  "scope-cache-domain",
  "scope-domain",
- "scope-object-store",
  "scope-postgres",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -3355,8 +3356,8 @@ name = "scope-content-lifecycle"
 version = "0.1.0"
 dependencies = [
  "scope-domain",
- "scope-object-store",
  "scope-postgres",
+ "scope-storage",
 ]
 
 [[package]]
@@ -3379,7 +3380,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "scope-domain",
- "scope-object-store",
+ "scope-storage",
  "thiserror",
 ]
 
@@ -3391,26 +3392,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
-]
-
-[[package]]
-name = "scope-git-storage"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "aws-sdk-s3",
- "bytes",
- "chacha20poly1305",
- "getrandom 0.3.4",
- "hex",
- "hmac 0.13.0",
- "scope-domain",
- "scope-git-process",
- "sha2 0.11.0",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3426,9 +3407,9 @@ dependencies = [
  "scope-api-contract",
  "scope-domain",
  "scope-media-storage",
- "scope-object-store",
  "scope-postgres",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "sha2 0.11.0",
  "tokio",
@@ -3443,14 +3424,17 @@ dependencies = [
 name = "scope-media-storage"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "bytes",
+ "chacha20poly1305",
  "getrandom 0.3.4",
  "hex",
- "scope-object-store",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -3467,9 +3451,9 @@ dependencies = [
  "libc",
  "scope-domain",
  "scope-media-storage",
- "scope-object-store",
  "scope-postgres",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -3477,25 +3461,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "scope-object-store"
-version = "0.1.0"
-dependencies = [
- "aws-credential-types",
- "aws-sigv4",
- "aws-smithy-http",
- "base64 0.22.1",
- "chacha20poly1305",
- "getrandom 0.3.4",
- "hex",
- "http",
- "reqwest",
- "scope-domain",
- "sha2 0.11.0",
- "tokio",
- "xmlparser",
 ]
 
 [[package]]
@@ -3598,6 +3563,32 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "scope-storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "aws-sigv4",
+ "aws-smithy-http",
+ "base64 0.22.1",
+ "bytes",
+ "chacha20poly1305",
+ "getrandom 0.3.4",
+ "hex",
+ "hmac 0.13.0",
+ "http",
+ "scope-domain",
+ "scope-git-process",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
  "url",
 ]
 
@@ -4378,6 +4369,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "tikv-jemalloc-sys"
+version = "0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a2825c78386b4ae0314074867860ba9577875de945f05992c38815cbec327f0"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "tikv-jemallocator"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "249f09e49ab1609436f34c776e84231bead18d6a955f119f939bdc1d847561bd"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
+]
+
+[[package]]
 name = "time"
 version = "0.3.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5132,11 +5143,10 @@ dependencies = [
  "scope-domain",
  "scope-git",
  "scope-git-process",
- "scope-git-storage",
- "scope-object-store",
  "scope-postgres",
  "scope-product-analytics",
  "scope-service-runtime",
+ "scope-storage",
  "serde",
  "serde_json",
  "sha2 0.11.0",

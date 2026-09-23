@@ -45,7 +45,7 @@ use scope_domain::{
         record_working_request_upload, start_request,
     },
 };
-use scope_object_store::{ContentObjectKind, ObjectStore, put_content_object, put_source_blob};
+use scope_storage::{ContentObjectKind, ObjectStore, content_object_for_bytes, object_key};
 use std::{
     fs,
     path::Path as FsPath,
@@ -196,9 +196,21 @@ const UPDATE_DEMO_QUEUE_DRAFT: &str =
 const UPDATE_DEMO_CACHE_NOTE: &str =
     "# Cache note\n\nRecord the tradeoff without changing repository behavior.\n";
 
-pub(crate) fn catalog(
+/// Builds the seeded catalog and writes every object it refers to.
+pub(crate) async fn catalog(
     object_store: &dyn ObjectStore,
-    git_segment_store: &scope_git_storage::GitSegmentStore,
+    git_segment_store: &scope_storage::GitSegmentStore,
+    seed_user: DevSeedUser,
+) -> Result<scope_postgres::db::CatalogFixture, ApiError> {
+    let objects = SeedObjects::default();
+    let catalog = build_catalog(&objects, git_segment_store, seed_user)?;
+    objects.store(object_store).await?;
+    Ok(catalog)
+}
+
+fn build_catalog(
+    object_store: &SeedObjects,
+    git_segment_store: &scope_storage::GitSegmentStore,
     seed_user: DevSeedUser,
 ) -> Result<scope_postgres::db::CatalogFixture, ApiError> {
     let owner = seed_user_account(seed_user);
@@ -240,7 +252,7 @@ pub(crate) fn catalog(
         let path = ScopePath::parse(scope_domain::landing_file::REPOSITORY_LANDING_FILE_PATH)
             .map_err(ApiError::internal)?;
         if let Some(blob) = repo.live_files.get(&path) {
-            let bytes = scope_object_store::source_blob_bytes(object_store, blob)?;
+            let bytes = object_store.bytes(blob)?;
             let landing =
                 scope_domain::landing_file::RepositoryLandingFile::from_source_blob(blob, bytes)
                     .map_err(ApiError::internal)?;
@@ -273,8 +285,8 @@ pub(crate) fn actor_account(seed_user: DevSeedUser, handle: &str) -> Option<User
 }
 
 fn published_demo(
-    object_store: &dyn ObjectStore,
-    git_segment_store: &scope_git_storage::GitSegmentStore,
+    object_store: &SeedObjects,
+    git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
 ) -> Result<(Repository, GitSegmentUpload), ApiError> {
     let mut repo = repo(owner, "public-demo", Visibility::Public)?;
@@ -326,8 +338,8 @@ fn published_demo(
 }
 
 fn update_demo(
-    object_store: &dyn ObjectStore,
-    git_segment_store: &scope_git_storage::GitSegmentStore,
+    object_store: &SeedObjects,
+    git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
 ) -> Result<(Repository, SeedRequestGallery, GitSegmentUpload), ApiError> {
     let mut repo = repo(owner, "update-demo", Visibility::Public)?;
@@ -611,6 +623,34 @@ fn add_change(
     })
 }
 
-fn blob(object_store: &dyn ObjectStore, content: &str) -> Result<SourceBlob, ApiError> {
-    Ok(put_source_blob(object_store, content.as_bytes())?)
+fn blob(object_store: &SeedObjects, content: &str) -> Result<SourceBlob, ApiError> {
+    Ok(object_store.add(ContentObjectKind::Blob, content.as_bytes().to_vec()))
+}
+
+/// The objects a seeded catalog refers to. Git fixtures build the catalog synchronously, so
+/// objects are collected here and written to the store once the catalog is complete.
+#[derive(Default)]
+pub(crate) struct SeedObjects(std::cell::RefCell<std::collections::BTreeMap<String, Vec<u8>>>);
+
+impl SeedObjects {
+    fn add(&self, kind: ContentObjectKind, bytes: Vec<u8>) -> SourceBlob {
+        let blob = content_object_for_bytes(kind, &bytes);
+        self.0.borrow_mut().insert(object_key(&blob), bytes);
+        blob
+    }
+
+    fn bytes(&self, blob: &SourceBlob) -> Result<Vec<u8>, ApiError> {
+        self.0
+            .borrow()
+            .get(&object_key(blob))
+            .cloned()
+            .ok_or_else(|| ApiError::internal_message("seeded object was never added"))
+    }
+
+    async fn store(self, object_store: &dyn ObjectStore) -> Result<(), ApiError> {
+        for (key, bytes) in self.0.into_inner() {
+            object_store.put(&key, bytes).await?;
+        }
+        Ok(())
+    }
 }

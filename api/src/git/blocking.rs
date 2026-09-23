@@ -10,6 +10,13 @@ pub(crate) async fn run<T: Send + 'static>(
     })?
 }
 
+/// Waits on async object storage from synchronous Git work. Only for code already on a blocking
+/// thread, such as inside [`run`]: it parks that thread while the runtime drives the I/O, and it
+/// panics if called on a runtime worker.
+pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Handle::current().block_on(future)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

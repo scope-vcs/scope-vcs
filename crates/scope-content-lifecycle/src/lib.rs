@@ -1,9 +1,9 @@
 use scope_domain::content::SourceBlob;
-use scope_object_store::{ObjectStore, ObjectStoreError, object_key};
 use scope_postgres::{
     db::{GeneratedIdSource, MetadataStore, cleanup_queue::types::SourceBlobCleanupDecision},
     error::PostgresError,
 };
+use scope_storage::{ObjectStore, ObjectStoreError, object_key};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -48,7 +48,7 @@ pub async fn drain_source_blob_cleanup(
         match cleanup.source_blob_cleanup_decision(&batch, blob).await? {
             SourceBlobCleanupDecision::Delete => {
                 report.attempted += 1;
-                match object_store.delete(&object_key(blob)) {
+                match object_store.delete(&object_key(blob)).await {
                     Ok(()) => report.deleted += 1,
                     Err(error) => {
                         retained.push(blob.clone());

@@ -1,5 +1,5 @@
 use crate::{error::ApiError, state::AppState};
-use scope_git_storage::{ENCODING_VERSION, GitSegmentReservation, StagedGitSegment};
+use scope_storage::{ENCODING_VERSION, GitSegmentReservation, StagedGitSegment};
 use std::time::Duration;
 
 pub(super) enum RemoteCleanup {

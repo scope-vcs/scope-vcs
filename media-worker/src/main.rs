@@ -31,6 +31,32 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
+/// Rewrites media chunks still in the retired single-tag envelope in the background after the
+/// worker starts, retrying until one pass completes. Until a chunk is rewritten, reads of it fail.
+/// Delete this once a release has run it.
+fn start_legacy_object_reencryption() {
+    tokio::spawn(async {
+        let result = match scope_media_storage::MediaStorageSettings::from_env() {
+            Ok(settings) => {
+                settings
+                    .reencrypt_legacy_objects(Duration::from_secs(60))
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        match result {
+            Ok(report) => tracing::info!(
+                rewritten = report.rewritten,
+                already_framed = report.already_framed,
+                unrecognized = ?report.unrecognized,
+                failed = ?report.failed,
+                "legacy media re-encryption completed"
+            ),
+            Err(error) => tracing::warn!(%error, "legacy media re-encryption failed"),
+        }
+    });
+}
+
 async fn run_service() -> anyhow::Result<()> {
     let settings = WorkerSettings::from_env()?;
     let scratch = ScratchSpace::prepare(settings.scratch_root.clone())?;
@@ -48,6 +74,7 @@ async fn run_service() -> anyhow::Result<()> {
         .connect(2)
         .await
         .context("configuring encrypted media storage")?;
+    start_legacy_object_reencryption();
     let health = WorkerHealth::new(settings.poll_interval);
     health.mark_codecs_ready();
     let mut health_task = tokio::spawn(health.clone().serve(settings.health_port));

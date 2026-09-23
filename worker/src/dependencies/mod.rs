@@ -7,9 +7,9 @@ use crate::{
 use scope_api_contract::{RepoChangeEvent, RepoChangeKind, RepoChangeNotification};
 use scope_domain::dependency_analysis::{AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION};
 use scope_git_process::{ProcessCancellation, ProcessLimits, run as run_process, run_cancellable};
-use scope_git_storage::GitSegmentStore;
-use scope_object_store::ObjectStore;
 use scope_postgres::db::{DependencyAnalysisClaim, DependencyCompletion, MetadataStore};
+use scope_storage::GitSegmentStore;
+use scope_storage::ObjectStore;
 use std::{
     path::PathBuf,
     process::Command,

@@ -21,7 +21,7 @@ pub(crate) async fn healthz() -> Json<HealthResponse> {
 
 pub(crate) async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<ReadinessResponse>) {
     let database_ready = state.metadata.admin().readiness_check().await.is_ok();
-    let object_store_ready = state.object_store.readiness_check().is_ok();
+    let object_store_ready = state.object_store.readiness_check().await.is_ok();
     let ready = database_ready && object_store_ready;
 
     (

@@ -19,7 +19,7 @@ async fn destination_failure_before_fanout_preserves_the_backend_error() {
     source.write_all(b"next chunk").await.unwrap();
     drop(source);
     let error = ingest.await.unwrap().unwrap_err();
-    assert!(matches!(error, GitStorageError::Multipart(_)));
+    assert!(matches!(error, GitStorageError::Backend(_)));
     assert!(error.to_string().contains("begin failed"));
     assert!(fixture.backend.objects().is_empty());
     assert!(all_files(&fixture.local_root).await.is_empty());

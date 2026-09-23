@@ -39,7 +39,7 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
     for span in &repo.git_pack_spans {
         state
             .git_segment_store
-            .delete_remote(&scope_git_storage::object_key(
+            .delete_remote(&scope_storage::segment_object_key(
                 TEST_REPO_ID,
                 &span.segment.segment_id,
             ))

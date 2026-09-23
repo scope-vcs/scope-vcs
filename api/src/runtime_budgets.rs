@@ -1,11 +1,15 @@
 use crate::{config::git_storage_limits_from_env, error::ApiError};
+use async_trait::async_trait;
 use scope_git::GitStorageLimits;
-use scope_object_store::{ObjectStore, ObjectStoreError, ensure_object_size};
+use scope_storage::{ObjectStore, ObjectStoreError, ensure_object_size};
 use std::{
     sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::{
+    io::AsyncWrite,
+    sync::{OwnedSemaphorePermit, Semaphore},
+};
 
 const DEFAULT_RECEIVE_PACK_CONCURRENCY: usize = 4;
 const DEFAULT_UPLOAD_PACK_CONCURRENCY: usize = 8;
@@ -180,18 +184,14 @@ impl BudgetedObjectStore {
     }
 }
 
+#[async_trait]
 impl ObjectStore for BudgetedObjectStore {
-    fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
+    async fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
         self.budgets.check_object_size("write", key, bytes.len())?;
-        let _permit = self
-            .budgets
-            .try_object_store("object store write")
-            .map_err(|error| {
-                ObjectStoreError::capacity_exhausted(error.into_operator_diagnostic())
-            })?;
+        let _permit = self.permit("object store write")?;
         let started = Instant::now();
         let byte_count = bytes.len();
-        let result = self.inner.put(key, bytes);
+        let result = self.inner.put(key, bytes).await;
         tracing::info!(
             operation = "put",
             bytes = byte_count,
@@ -202,51 +202,30 @@ impl ObjectStore for BudgetedObjectStore {
         result
     }
 
-    fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
-        let _permit = self
-            .budgets
-            .try_object_store("object store read")
-            .map_err(|error| {
-                ObjectStoreError::capacity_exhausted(error.into_operator_diagnostic())
-            })?;
+    async fn read_to(
+        &self,
+        key: &str,
+        max_bytes: u64,
+        output: &mut (dyn AsyncWrite + Send + Unpin),
+    ) -> Result<u64, ObjectStoreError> {
+        let _permit = self.permit("object store read")?;
         let started = Instant::now();
-        let result = self.inner.get_bounded(
-            key,
-            max_bytes.min(self.budgets.git_storage_limits.max_object_bytes()),
+        let limit = max_bytes.min(self.budgets.git_storage_limits.max_object_bytes() as u64);
+        let result = self.inner.read_to(key, limit, output).await;
+        tracing::info!(
+            operation = "get",
+            bytes = result.as_ref().copied().unwrap_or(0),
+            elapsed_us = started.elapsed().as_micros(),
+            success = result.is_ok(),
+            "object store operation timing"
         );
-        match result {
-            Ok(bytes) => {
-                tracing::info!(
-                    operation = "get",
-                    bytes = bytes.len(),
-                    elapsed_us = started.elapsed().as_micros(),
-                    success = true,
-                    "object store operation timing"
-                );
-                Ok(bytes)
-            }
-            Err(error) => {
-                tracing::info!(
-                    operation = "get",
-                    bytes = 0,
-                    elapsed_us = started.elapsed().as_micros(),
-                    success = false,
-                    "object store operation timing"
-                );
-                Err(error)
-            }
-        }
+        result
     }
 
-    fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
-        let _permit = self
-            .budgets
-            .try_object_store("object store delete")
-            .map_err(|error| {
-                ObjectStoreError::capacity_exhausted(error.into_operator_diagnostic())
-            })?;
+    async fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
+        let _permit = self.permit("object store delete")?;
         let started = Instant::now();
-        let result = self.inner.delete(key);
+        let result = self.inner.delete(key).await;
         tracing::info!(
             operation = "delete",
             elapsed_us = started.elapsed().as_micros(),
@@ -256,44 +235,68 @@ impl ObjectStore for BudgetedObjectStore {
         result
     }
 
-    fn readiness_check(&self) -> Result<(), ObjectStoreError> {
-        self.inner.readiness_check()
+    async fn readiness_check(&self) -> Result<(), ObjectStoreError> {
+        self.inner.readiness_check().await
+    }
+}
+
+impl BudgetedObjectStore {
+    fn permit(&self, operation: &str) -> Result<RuntimePermit, ObjectStoreError> {
+        self.budgets
+            .try_object_store(operation)
+            .map_err(|error| ObjectStoreError::capacity_exhausted(error.into_operator_diagnostic()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scope_object_store::{EncryptedObjectStore, MemoryObjectStore, ObjectStoreErrorKind};
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use scope_storage::{
+        EncryptedObjectStore, EncryptionKey, MemoryBackend, ObjectStoreErrorKind, read_bounded,
+    };
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-    #[derive(Default)]
+    /// Records the limit each read passes down to the store it wraps.
     struct RecordingReadStore {
-        inner: MemoryObjectStore,
-        limit: AtomicUsize,
+        inner: EncryptedObjectStore,
+        limit: AtomicU64,
     }
 
+    impl Default for RecordingReadStore {
+        fn default() -> Self {
+            Self {
+                inner: EncryptedObjectStore::new(
+                    Arc::new(MemoryBackend::default()),
+                    EncryptionKey::new("test", [7; 32]).unwrap(),
+                ),
+                limit: AtomicU64::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
     impl ObjectStore for RecordingReadStore {
-        fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
-            self.inner.put(key, bytes)
+        async fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError> {
+            self.inner.put(key, bytes).await
         }
 
-        fn get(&self, _key: &str) -> Result<Vec<u8>, ObjectStoreError> {
-            panic!("budgeted reads must pass the limit to the backend");
-        }
-
-        fn get_bounded(&self, key: &str, max_bytes: usize) -> Result<Vec<u8>, ObjectStoreError> {
+        async fn read_to(
+            &self,
+            key: &str,
+            max_bytes: u64,
+            output: &mut (dyn AsyncWrite + Send + Unpin),
+        ) -> Result<u64, ObjectStoreError> {
             self.limit.store(max_bytes, Ordering::SeqCst);
-            self.inner.get_bounded(key, max_bytes)
+            self.inner.read_to(key, max_bytes, output).await
         }
 
-        fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
-            self.inner.delete(key)
+        async fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
+            self.inner.delete(key).await
         }
     }
 
-    #[test]
-    fn object_reads_forward_the_smaller_caller_limit_before_loading() {
+    #[tokio::test]
+    async fn object_reads_forward_the_smaller_limit_and_stop_at_capacity() {
         let raw = Arc::new(RecordingReadStore::default());
         let budgets = Arc::new(RuntimeBudgets::from_config(RuntimeBudgetConfig {
             object_store_concurrency: 1,
@@ -301,18 +304,24 @@ mod tests {
             ..Default::default()
         }));
         let store = BudgetedObjectStore::new(raw.clone(), budgets.clone());
-        store.put("object", vec![42; 16]).unwrap();
+        store.put("object", vec![42; 16]).await.unwrap();
         assert_eq!(
-            store.get_bounded("object", 4).unwrap_err().kind,
+            read_bounded(&store, "object", 4).await.unwrap_err().kind,
             ObjectStoreErrorKind::PayloadTooLarge
         );
         assert_eq!(raw.limit.load(Ordering::SeqCst), 4);
-        assert_eq!(store.get_bounded("object", 32).unwrap(), vec![42; 16]);
+        assert_eq!(
+            read_bounded(&store, "object", 32).await.unwrap(),
+            vec![42; 16]
+        );
         assert_eq!(raw.limit.load(Ordering::SeqCst), 16);
-        assert_eq!(store.get("object").unwrap(), vec![42; 16]);
+        assert_eq!(
+            store.put("large", vec![0; 17]).await.unwrap_err().kind,
+            ObjectStoreErrorKind::PayloadTooLarge
+        );
         let _occupied = budgets.try_object_store("test").unwrap();
         assert_eq!(
-            store.get_bounded("object", 1).unwrap_err().kind,
+            read_bounded(&store, "object", 1).await.unwrap_err().kind,
             ObjectStoreErrorKind::CapacityExhausted
         );
         assert_eq!(
@@ -320,26 +329,6 @@ mod tests {
             16,
             "exhausted capacity must prevent the backend read"
         );
-    }
-
-    #[test]
-    fn encrypted_budgeted_reads_preserve_the_plaintext_limit() {
-        let raw = Arc::new(RecordingReadStore::default());
-        let budgets = Arc::new(RuntimeBudgets::from_config(RuntimeBudgetConfig {
-            git_storage_limits: GitStorageLimits::new(16).unwrap(),
-            ..Default::default()
-        }));
-        let encrypted = Arc::new(EncryptedObjectStore::new(raw.clone(), [7; 32]));
-        let store = BudgetedObjectStore::new(encrypted, budgets);
-        store.put("object", vec![42; 16]).unwrap();
-        let envelope_bytes = raw.inner.get("object").unwrap().len() - 16;
-        assert_eq!(
-            store.get_bounded("object", 4).unwrap_err().kind,
-            ObjectStoreErrorKind::PayloadTooLarge
-        );
-        assert_eq!(raw.limit.load(Ordering::SeqCst), envelope_bytes + 4);
-        assert_eq!(store.get_bounded("object", 32).unwrap(), vec![42; 16]);
-        assert_eq!(raw.limit.load(Ordering::SeqCst), envelope_bytes + 16);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

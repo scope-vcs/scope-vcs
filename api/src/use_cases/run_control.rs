@@ -10,7 +10,7 @@ use scope_domain::{
     repository::repo_id,
     runs::{manual::ManualRunRequest, run::Run},
 };
-use scope_object_store::{ContentObjectKind, content_object_for_bytes, object_key};
+use scope_storage::{ContentObjectKind, content_object_for_bytes, object_key};
 
 pub(crate) struct ManualRunCommand {
     pub(crate) request: ManualRunRequest,
@@ -62,7 +62,8 @@ pub(crate) async fn create_manual_run(
         .await?;
     state
         .object_store
-        .put(&object_key(&source_cleanup), bundle)?;
+        .put(&object_key(&source_cleanup), bundle)
+        .await?;
     let enqueued = match state
         .metadata
         .runs()

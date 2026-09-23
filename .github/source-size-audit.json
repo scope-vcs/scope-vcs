@@ -32,11 +32,6 @@
       "reason": "Tree construction, native-range validation, deterministic object identity, and identity fixtures are one algorithm."
     },
     {
-      "path": "crates/scope-object-store/src/s3.rs",
-      "owner": "S3 object-store adapter",
-      "reason": "Configuration, SigV4 signing, HTTP transfer, presigning, and provider-level fixtures form one adapter."
-    },
-    {
       "path": "crates/scope-postgres/src/db/cache_service.rs",
       "owner": "workflow cache persistence",
       "reason": "Object, upload, reference, deletion, and repository-budget operations share one locked cache metadata model."

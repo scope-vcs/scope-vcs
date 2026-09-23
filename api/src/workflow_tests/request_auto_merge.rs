@@ -92,11 +92,12 @@ async fn record_revision(
     now_unix: u64,
 ) -> String {
     let event_id = format!("event_{request_id}_revision_{position}");
-    let mut git_snapshot = scope_object_store::put_content_object(
+    let mut git_snapshot = scope_storage::put_content_object(
         state.object_store.as_ref(),
         ContentObjectKind::GitBundle,
         format!("snapshot for {event_id}").into_bytes(),
     )
+    .await
     .unwrap();
     git_snapshot.git_oid = new_head_oid.to_string();
     state
@@ -745,4 +746,93 @@ async fn public_main_advance_stops_authorization_as_merge_conflict() {
     assert_stopped(&stopped, "MergeConflict");
     assert_eq!(reconcile(&state, attempt_time + 1).await, 0);
     assert_eq!(live_file_content(&state, "/auto-merge.txt").await, None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_replica() {
+    let (state, source, remote, request_id, _head, _server) =
+        native_open_request("thin-private-snapshot", RequestAudience::Private).await;
+    let request = state
+        .metadata
+        .requests()
+        .request_for_tests(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let snapshot = source_blob_bytes(
+        state.object_store.as_ref(),
+        request.git_snapshot.as_ref().unwrap(),
+        usize::MAX,
+    )
+    .await
+    .unwrap();
+    let header_end = snapshot
+        .windows(2)
+        .position(|pair| pair == b"\n\n")
+        .unwrap();
+    let header = String::from_utf8_lossy(&snapshot[..header_end]);
+    assert!(
+        header.contains(&format!("\n-{}", request.base_main_oid)),
+        "snapshot should require its base instead of carrying main: {header}"
+    );
+
+    // An empty request-ref store repo takes the base from the push's staging repo.
+    fs::remove_dir_all(crate::git::storage::request_ref_store_repo_path(
+        &state,
+        &test_repo_incarnation(),
+    ))
+    .unwrap();
+    commit_file(
+        &source,
+        "auto-merge.txt",
+        "second revision\n",
+        "second revision",
+    );
+    push_head(&source, &remote, AUTO_REQUEST_NAME, "push second revision");
+    let request = state
+        .metadata
+        .requests()
+        .request_for_tests(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(request.head_oid, git_head_oid(&source));
+
+    // A revision view starts empty and takes the base from the private replica.
+    let cache_root = state.repository_engine.cache_root().to_path_buf();
+    for entry in fs::read_dir(&cache_root).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("revision-")
+        {
+            fs::remove_dir_all(path).unwrap();
+        }
+    }
+    let revision = state
+        .metadata
+        .requests()
+        .latest_request_revision(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let content = crate::git::request_refs::with_request_revision_store_repo(
+        &state,
+        &test_repo_incarnation(),
+        &request,
+        &revision,
+        |repo, revision| {
+            let output = run_git_output(
+                Some(repo),
+                &["show", &format!("{}:auto-merge.txt", revision.new_head_oid)],
+                "read revision file",
+            )?;
+            Ok(String::from_utf8(output.stdout).unwrap())
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(content, "second revision\n");
 }

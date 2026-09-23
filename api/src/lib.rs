@@ -18,6 +18,7 @@ pub(crate) mod git_segment_recovery;
 pub(crate) mod http;
 pub(crate) mod invite_mailer;
 pub(crate) mod media_grants;
+mod object_reencryption;
 pub(crate) mod object_store_config;
 pub(crate) mod operation_analytics;
 pub(crate) mod persistence;

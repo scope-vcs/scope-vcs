@@ -17,9 +17,9 @@ use tokio::{
 
 const REPOSITORY_ID: &str = "repository-123";
 
+mod backend;
 mod ingest_control;
-mod multipart_backend;
-use multipart_backend::TestMultipartStore;
+use backend::TestObjectBackend;
 
 #[tokio::test]
 async fn small_ingest_uses_one_put_and_restores_identical_bytes() {
@@ -54,7 +54,7 @@ async fn large_ingest_streams_bounded_multipart_and_restores_identical_bytes() {
     let reservation = fixture.store.reserve(REPOSITORY_ID).unwrap();
     assert_eq!(
         reservation.object_key,
-        object_key(REPOSITORY_ID, &reservation.segment_id)
+        segment_object_key(REPOSITORY_ID, &reservation.segment_id)
     );
     let staged = fixture
         .store
@@ -284,7 +284,7 @@ async fn preferred_restore_does_not_fall_back_on_local_io_errors() {
 #[tokio::test]
 async fn filesystem_backend_completes_atomically_and_rejects_path_traversal() {
     let temp = tempfile::tempdir().unwrap();
-    let backend = Arc::new(FileMultipartStore::new(temp.path().join("remote")).unwrap());
+    let backend = Arc::new(FileBackend::new(temp.path().join("remote")).unwrap());
     let config = test_config(temp.path().join("local"), 4, 11, 1);
     let store = GitSegmentStore::new(backend.clone(), test_key(), config).unwrap();
     let input = b"filesystem multipart segment";
@@ -327,7 +327,7 @@ async fn failed_part_aborts_multipart_and_removes_local_output() {
         .await
         .unwrap_err();
 
-    assert!(matches!(error, GitStorageError::Multipart(_)));
+    assert!(matches!(error, GitStorageError::Backend(_)));
     assert!(error.to_string().contains("part failed"));
     assert_eq!(fixture.backend.aborted(), 1);
     assert_eq!(fixture.backend.completed(), 0);
@@ -469,7 +469,7 @@ async fn failed_complete_is_followed_by_abort() {
         .await
         .unwrap_err();
 
-    assert!(matches!(error, GitStorageError::Multipart(_)));
+    assert!(matches!(error, GitStorageError::Backend(_)));
     assert_eq!(fixture.backend.aborted(), 1);
     assert!(fixture.backend.objects().is_empty());
     assert!(all_files(&fixture.local_root).await.is_empty());
@@ -480,7 +480,7 @@ async fn local_failure_aborts_the_remote_upload() {
     let fixture_root = tempfile::tempdir().unwrap();
     let invalid_root = fixture_root.path().join("not-a-directory");
     tokio::fs::write(&invalid_root, b"file").await.unwrap();
-    let backend = Arc::new(TestMultipartStore::default());
+    let backend = Arc::new(TestObjectBackend::default());
     let config = test_config(invalid_root, 4, 8, 1);
     let store = GitSegmentStore::new(backend.clone(), test_key(), config).unwrap();
 
@@ -680,9 +680,9 @@ async fn restore_rejects_truncation_and_bytes_after_final_frame() {
 
 #[test]
 fn s3_rejects_parts_smaller_than_five_mib() {
-    let mut backend = TestMultipartStore::default();
+    let mut backend = TestObjectBackend::default();
     backend.minimum_part_bytes = 5 * 1024 * 1024;
-    let mut config = GitSegmentStoreConfig::new("/tmp/scope-git-storage-config-test");
+    let mut config = GitSegmentStoreConfig::new("/tmp/scope-storage-config-test");
     config.multipart_part_bytes = 5 * 1024 * 1024 - 1;
 
     let error = GitSegmentStore::new(Arc::new(backend), test_key(), config)
@@ -694,7 +694,7 @@ fn s3_rejects_parts_smaller_than_five_mib() {
 struct Fixture {
     _temp: tempfile::TempDir,
     local_root: std::path::PathBuf,
-    backend: Arc<TestMultipartStore>,
+    backend: Arc<TestObjectBackend>,
     store: GitSegmentStore,
 }
 
@@ -702,7 +702,7 @@ impl Fixture {
     fn new(chunk_bytes: usize, part_bytes: usize, channel_capacity: usize) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let local_root = temp.path().join("segments");
-        let backend = Arc::new(TestMultipartStore::default());
+        let backend = Arc::new(TestObjectBackend::default());
         let config = test_config(
             local_root.clone(),
             chunk_bytes,
@@ -733,8 +733,8 @@ fn test_config(
     }
 }
 
-fn test_key() -> SegmentEncryptionKey {
-    SegmentEncryptionKey::new("key-1", [7_u8; 32]).unwrap()
+fn test_key() -> EncryptionKey {
+    EncryptionKey::new("key-1", [7_u8; 32]).unwrap()
 }
 
 async fn restore_bytes(

@@ -1,7 +1,7 @@
 use super::*;
 use scope_domain::repository::git::GitPackSpan;
 use scope_git_process::ProcessError;
-use scope_git_storage::{GitSegmentStoreConfig, MemoryMultipartStore, SegmentEncryptionKey};
+use scope_storage::{EncryptionKey, GitSegmentStoreConfig, MemoryBackend};
 use std::io::Cursor;
 
 fn oid(bytes: Vec<u8>) -> String {
@@ -125,8 +125,8 @@ fn segment_store(local_root: &Path) -> Arc<GitSegmentStore> {
     config.multipart_part_bytes = 1024;
     Arc::new(
         GitSegmentStore::new(
-            Arc::new(MemoryMultipartStore::default()),
-            SegmentEncryptionKey::new("test", [7_u8; 32]).unwrap(),
+            Arc::new(MemoryBackend::default()),
+            EncryptionKey::new("test", [7_u8; 32]).unwrap(),
             config,
         )
         .unwrap(),

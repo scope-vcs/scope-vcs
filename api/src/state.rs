@@ -11,10 +11,10 @@ use crate::{
     runtime_budgets::RuntimeBudgets,
     use_cases::content_cleanup::best_effort_drain_pending_repo_storage_deletions,
 };
-use scope_git_storage::GitSegmentStore;
-use scope_object_store::ObjectStore;
 use scope_postgres::db::MetadataStore;
 use scope_product_analytics::{EventSource, ProductAnalytics};
+use scope_storage::GitSegmentStore;
+use scope_storage::ObjectStore;
 use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone)]
@@ -38,7 +38,7 @@ pub struct AppState {
     pub(crate) repository_engine: Arc<RepositoryEngine>,
     pub(crate) git_public_url: Arc<str>,
     #[cfg(test)]
-    pub(crate) test_object_store: Arc<scope_object_store::MemoryObjectStore>,
+    pub(crate) test_object_backend: Arc<scope_storage::MemoryBackend>,
 }
 
 impl AppState {
@@ -79,7 +79,7 @@ impl AppState {
             repository_engine: storage.repository_engine,
             git_public_url: Arc::from(git_public_url),
             #[cfg(test)]
-            test_object_store: Arc::new(scope_object_store::MemoryObjectStore::new()),
+            test_object_backend: Arc::new(scope_storage::MemoryBackend::default()),
         };
         state.repository_engine.start_reaper();
         state.start_run_attempt_recovery();
@@ -87,6 +87,7 @@ impl AppState {
         state.start_request_ref_cleanup();
         state.start_invite_email_delivery();
         state.start_git_segment_recovery();
+        crate::object_reencryption::start_legacy_object_reencryption();
         best_effort_drain_pending_repo_storage_deletions(&state).await;
         Ok(state)
     }
@@ -98,8 +99,8 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn test_state() -> Self {
         install_test_tracing();
-        let test_object_store = Arc::new(scope_object_store::MemoryObjectStore::new());
-        let storage = StorageRuntime::for_tests(test_object_store.clone());
+        let test_object_backend = Arc::new(scope_storage::MemoryBackend::default());
+        let storage = StorageRuntime::for_tests(test_object_backend.clone());
         let target = scope_postgres::db::TestDatabaseTarget::required().unwrap();
         let metadata = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         Self {
@@ -129,7 +130,7 @@ impl AppState {
             repository_engine: storage.repository_engine,
             git_public_url: Arc::from(crate::config::LOCAL_API_ORIGIN),
             #[cfg(test)]
-            test_object_store,
+            test_object_backend,
         }
     }
 }

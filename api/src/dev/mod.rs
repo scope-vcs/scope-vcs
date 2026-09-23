@@ -35,6 +35,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
         storage.git_segment_store.as_ref(),
         settings.seed_user.clone(),
     )
+    .await
     .map_err(|error| {
         anyhow::anyhow!(
             "building local dev catalog: {}",
@@ -98,7 +99,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
         repository_engine: storage.repository_engine,
         git_public_url: Arc::from(git_public_url),
         #[cfg(test)]
-        test_object_store: Arc::new(scope_object_store::MemoryObjectStore::new()),
+        test_object_backend: Arc::new(scope_storage::MemoryBackend::default()),
     };
     state.backfill_repository_workflow_catalogs().await?;
     state.repository_engine.start_reaper();

@@ -85,6 +85,7 @@ async fn run_with_snapshot(
             storage.git_segment_store.as_ref(),
             target.seed_user,
         )
+        .await
         .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
         metadata
             .admin()

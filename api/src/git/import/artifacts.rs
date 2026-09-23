@@ -27,8 +27,8 @@ use scope_domain::runs::{
 };
 use scope_git::git_blob_reference;
 use scope_git_process::ProcessLimits;
-use scope_git_storage::StagedGitSegment;
 use scope_postgres::db::RepositoryGitWriteLease;
+use scope_storage::StagedGitSegment;
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]

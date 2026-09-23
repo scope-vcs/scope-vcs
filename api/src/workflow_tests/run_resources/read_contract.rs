@@ -544,7 +544,7 @@ async fn run_history_filters_source_revisions_before_pagination() {
 }
 
 fn history_bundle(git_oid: &str) -> RunSource {
-    let mut bundle = scope_object_store::content_object_for_bytes(
+    let mut bundle = scope_storage::content_object_for_bytes(
         ContentObjectKind::GitBundle,
         b"run history fixture",
     );

@@ -1,5 +1,5 @@
 //! Environment configuration for object storage.
-use crate::{ObjectStoreError, S3ObjectStoreSettings};
+use crate::{S3Settings, objects::ObjectStoreError};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 pub fn nonempty_env(name: &str) -> Option<String> {
@@ -13,7 +13,24 @@ pub fn required_env(name: &str) -> Result<String, ObjectStoreError> {
         .ok_or_else(|| ObjectStoreError::internal_message(format!("{name} is required")))
 }
 
-impl S3ObjectStoreSettings {
+impl S3Settings {
+    pub fn new(
+        endpoint: String,
+        bucket: String,
+        region: String,
+        access_key_id: String,
+        secret_access_key: String,
+    ) -> Self {
+        Self {
+            endpoint,
+            bucket,
+            region,
+            access_key_id,
+            secret_access_key,
+            force_path_style: false,
+        }
+    }
+
     pub fn from_env(prefix: &str) -> Result<Self, ObjectStoreError> {
         Self::from_lookup(prefix, |name| std::env::var(name).ok())
     }
@@ -50,7 +67,7 @@ impl S3ObjectStoreSettings {
 }
 
 fn validate_endpoint(value: &str) -> Result<(), ObjectStoreError> {
-    let url = reqwest::Url::parse(value).map_err(ObjectStoreError::internal)?;
+    let url = url::Url::parse(value).map_err(ObjectStoreError::internal)?;
     let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
     if !(url.scheme() == "https" || (url.scheme() == "http" && loopback))
         || url.host_str().is_none()
@@ -96,11 +113,11 @@ mod tests {
     #[test]
     fn prefixed_s3_settings_preserve_addressing() {
         if let Ok(prefix) = std::env::var("SCOPE_TEST_S3_PREFIX") {
-            let settings = S3ObjectStoreSettings::from_env(&prefix).unwrap();
+            let settings = S3Settings::from_env(&prefix).unwrap();
             let signed = crate::S3Presigner::new(&settings)
                 .presign("GET", "object", 60)
                 .unwrap();
-            let url = reqwest::Url::parse(&signed).unwrap();
+            let url = url::Url::parse(&signed).unwrap();
             let path_style = std::env::var("SCOPE_TEST_PATH_STYLE").unwrap() == "true";
             assert_eq!(
                 url.host_str(),
@@ -182,7 +199,7 @@ mod tests {
         ] {
             assert!(validate_endpoint(endpoint).is_err(), "{endpoint}");
         }
-        let mut password_endpoint = reqwest::Url::parse("https://bucket.example").unwrap();
+        let mut password_endpoint = url::Url::parse("https://bucket.example").unwrap();
         password_endpoint.set_password(Some("fixture")).unwrap();
         assert!(validate_endpoint(password_endpoint.as_str()).is_err());
     }

@@ -26,22 +26,24 @@ KEY = b"k" * 32
 ESCROW = {"SCOPE_OBJECT_ENCRYPTION_KEY": base64.b64encode(KEY).decode(), "SCOPE_MEDIA_ENCRYPTION_KEY": base64.b64encode(KEY).decode()}
 
 
-def envelope(key, plaintext):
-    nonce = b"n" * 12
-    return b"scope-vcs-object-v1\n" + nonce + ChaCha20Poly1305(KEY).encrypt(nonce, plaintext, key.encode())
-
-
-def segment(repository, segment_id, frames):
-    repo = repository.encode()
-    identity = segment_id.encode()
-    derived = hmac.new(KEY, b"scope-git-segment-v2\0" + struct.pack(">Q", len(repo)) + repo + struct.pack(">Q", len(identity)) + identity, hashlib.sha256).digest()
-    header = b"SCGSEG02" + struct.pack(">IH", 2, 7) + b"n" * 8 + struct.pack(">I", 1024) + b"primary"
+def framed(label, parts, key_id, frames):
+    derived = hmac.new(KEY, label + b"".join(struct.pack(">Q", len(part)) + part for part in parts), hashlib.sha256).digest()
+    header = b"SCGSEG02" + struct.pack(">IH", 2, len(key_id)) + b"n" * 8 + struct.pack(">I", 1024) + key_id
+    identity = b"".join(struct.pack(">I", len(part)) + part for part in parts)
     result = header
     for counter, data in enumerate([*frames, b""]):
         frame = struct.pack(">IIB", counter, len(data), int(not data))
-        aad = header + struct.pack(">I", len(repo)) + repo + struct.pack(">I", len(identity)) + identity + frame
-        result += frame + ChaCha20Poly1305(derived).encrypt(b"n" * 8 + struct.pack(">I", counter), data, aad)
+        result += frame + ChaCha20Poly1305(derived).encrypt(b"n" * 8 + struct.pack(">I", counter), data, header + identity + frame)
     return result
+
+
+def envelope(key, plaintext, key_id=b"primary"):
+    frames = [plaintext[offset:offset + 1024] for offset in range(0, len(plaintext), 1024)]
+    return framed(b"scope-object-v2\0", [key.encode()], key_id, frames)
+
+
+def segment(repository, segment_id, frames):
+    return framed(b"scope-git-segment-v2\0", [repository.encode(), segment_id.encode()], b"primary", frames)
 
 
 class Body(io.BytesIO):
@@ -156,7 +158,7 @@ class RecoveryTests(unittest.TestCase):
     def testMediaManifestCrossingEightMibChunkBoundary(self):
         chunks = [b"a" * (8 * 1024**2), b"last chunk"]
         whole = b"".join(chunks)
-        source = Source({f"media/v1/chunk-{index}": envelope(f"media/v1/chunk-{index}", part) for index, part in enumerate(chunks, 1)})
+        source = Source({f"media/v1/chunk-{index}": envelope(f"media/v1/chunk-{index}", part, b"media") for index, part in enumerate(chunks, 1)})
         clients = {"media": (source, "bucket")}
         stored = copy_objects(clients, inventory(clients, 10 * 1024**2, 10), self.root)
         refs = [{"kind": "media", "bucket": "media", "key": f"media/v1/chunk-{index}", "sha256": hashlib.sha256(part).hexdigest(), "plaintext_bytes": len(part), "manifest_id": "original", "chunk_index": index, "manifest_sha256": hashlib.sha256(whole).hexdigest(), "manifest_bytes": len(whole)} for index, part in enumerate(chunks, 1)]

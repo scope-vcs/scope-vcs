@@ -88,8 +88,8 @@ pub fn git_cache_max_bytes_from_env() -> anyhow::Result<usize> {
 
 pub fn git_segment_store_config_from_env(
     local_root: PathBuf,
-) -> anyhow::Result<scope_git_storage::GitSegmentStoreConfig> {
-    let mut config = scope_git_storage::GitSegmentStoreConfig::new(local_root);
+) -> anyhow::Result<scope_storage::GitSegmentStoreConfig> {
+    let mut config = scope_storage::GitSegmentStoreConfig::new(local_root);
     config.chunk_bytes = parse_usize_env(SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV, config.chunk_bytes)?;
     config.multipart_part_bytes = parse_usize_env(
         SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV,

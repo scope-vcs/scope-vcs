@@ -2,11 +2,11 @@ use crate::git_repo::{CompactionPackMetrics, build_compacted_pack};
 use scope_domain::repository::git::GitPackSpan;
 use scope_git::GitStorageLimits;
 use scope_git_process::ProcessError;
-use scope_git_storage::{
+use scope_postgres::db::MetadataStore;
+use scope_storage::{
     ENCODING_VERSION, GitSegmentIngestTimings, GitSegmentReservation, GitSegmentStore,
     StagedGitSegment,
 };
-use scope_postgres::db::MetadataStore;
 use std::{
     sync::Arc,
     time::{Duration, Instant},

@@ -466,7 +466,7 @@ fn random_token(prefix: &str) -> Result<String, ServiceError> {
 mod tests {
     use super::*;
     use scope_media_storage::WriteAttempt;
-    use scope_object_store::MemoryObjectStore;
+    use scope_storage::MemoryBackend;
     use sha2::{Digest, Sha256};
     use std::sync::Arc;
     use tokio::sync::Semaphore;
@@ -474,7 +474,7 @@ mod tests {
 
     async fn fixture() -> (scope_media_storage::MediaStorage, MediaObject) {
         let storage = scope_media_storage::MediaStorage::encrypted(
-            Arc::new(MemoryObjectStore::new()),
+            Arc::new(MemoryBackend::default()),
             [21; 32],
             1,
         )
