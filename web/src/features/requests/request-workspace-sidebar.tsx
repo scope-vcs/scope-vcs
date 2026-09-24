@@ -90,20 +90,28 @@ export function RequestWorkspaceSidebar({
 }) {
   const aside = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(false)
+  // Closing keeps the open layout while the rail slides shut, since the
+  // closed rail hides the list and clips everything past 54px at once.
+  const [closing, setClosing] = useState(false)
   const [hint, setHint] = useState<{ id: string; left: number; top: number; now: number } | null>(null)
   const state = collapsed ? (open ? 'open' : 'closed') : 'pinned'
-  const openRail = useCallback(() => setOpen(true), [])
+  const openRail = useCallback(() => {
+    setOpen(true)
+    setClosing(false)
+  }, [])
   const togglePinned = useCallback(() => {
     setOpen(false)
+    setClosing(false)
     onCollapsedChange(!collapsed)
   }, [collapsed, onCollapsedChange])
   // Focus mode keeps the narrow rail, not the rail opened over the page.
   const toggleFocus = useCallback(() => {
     setOpen(false)
+    setClosing(false)
     onFocusToggle()
   }, [onFocusToggle])
   const close = useCallback(() => {
-    setOpen(false)
+    setClosing(true)
     if (query) onSearch('')
     // Focus left inside would sit in a search box or row the rail now hides.
     if (document.activeElement instanceof HTMLElement && aside.current?.contains(document.activeElement))
@@ -112,7 +120,26 @@ export function RequestWorkspaceSidebar({
   // The open rail collapses back to the closed rail, not to the pinned sidebar.
   const toggle = state === 'open' ? close : togglePinned
   useEffect(() => {
-    if (state !== 'open') return
+    if (!closing) return
+    let current = true
+    const slides = aside.current?.getAnimations().filter(
+      (animation) => animation instanceof CSSTransition && animation.transitionProperty === 'width',
+    )
+    // No slide under reduced motion or on narrow screens, so it closes at once.
+    Promise.all(slides?.map((slide) => slide.finished) ?? []).then(
+      () => {
+        if (!current) return
+        setOpen(false)
+        setClosing(false)
+      },
+      () => {},
+    )
+    return () => {
+      current = false
+    }
+  }, [closing])
+  useEffect(() => {
+    if (state !== 'open' || closing) return
     function outside(event: PointerEvent) {
       if (!aside.current?.contains(event.target as Node)) close()
     }
@@ -132,13 +159,14 @@ export function RequestWorkspaceSidebar({
       document.removeEventListener('pointerdown', outside)
       document.removeEventListener('keydown', escape, true)
     }
-  }, [close, state])
+  }, [close, closing, state])
   // Avatars and buttons on the closed rail do their own thing; anywhere else
-  // on it opens the rail. Picking a request from the open rail closes it.
+  // on it, even while it slides shut, opens the rail. Picking a request from
+  // the open rail closes it.
   function click(event: MouseEvent) {
     const target = event.target as Element
     setHint(null)
-    if (state === 'closed' && !target.closest('a, button')) setOpen(true)
+    if ((state === 'closed' || closing) && !target.closest('a, button')) openRail()
     else if (state === 'open' && target.closest('a')) close()
   }
   // The closed rail shows only avatars, so hovering or focusing one names its
@@ -218,6 +246,7 @@ export function RequestWorkspaceSidebar({
     <aside
       aria-label="Requests workspace"
       className="request-workspace-sidebar"
+      data-closing={closing || undefined}
       data-state={state}
       onBlur={() => setHint(null)}
       onClick={click}

@@ -7,6 +7,12 @@
   grid-template-columns: var(--request-workspace-sidebar-width, 360px) 1px minmax(0, 1fr);
   min-height: 100cqh;
   width: 100%;
+  transition: grid-template-columns 200ms ease;
+}
+
+/* Dragging the handle sets the width directly; easing would trail the pointer. */
+.request-workspace-shell:has(> .request-workspace-resize-handle:active) {
+  transition: none;
 }
 
 .request-workspace-shell[data-collapsed] {
@@ -28,6 +34,7 @@
  * always the pinned width, so the closed rail is that column clipped to 54px
  * and opening only changes how much of it shows. Nothing inside moves. */
 .request-workspace-sidebar {
+  --request-workspace-rail-shadow: rgba(27, 26, 23, 0.2);
   position: sticky;
   top: 0;
   display: flex;
@@ -37,6 +44,10 @@
   overflow: hidden;
   background: var(--background);
   transition: width 200ms ease, box-shadow 200ms ease, background-color 120ms ease;
+}
+
+.dark .request-workspace-sidebar {
+  --request-workspace-rail-shadow: rgba(0, 0, 0, 0.6);
 }
 
 .request-workspace-sidebar-inner {
@@ -61,7 +72,29 @@
     z-index: 30;
     width: var(--request-workspace-sidebar-width);
     border-right: 1px solid var(--border);
-    box-shadow: var(--shadow-pop);
+    /* Only over the page it covers: the margin to its left stays flat. */
+    box-shadow: 18px 0 28px -14px var(--request-workspace-rail-shadow);
+  }
+
+  .request-workspace-sidebar[data-state="open"][data-closing] {
+    width: 100%;
+    box-shadow: none;
+  }
+
+  /* Everything the closed rail drops fades while it slides shut. */
+  .request-workspace-sidebar[data-closing] .request-workspace-row-link > :last-child,
+  .request-workspace-sidebar[data-closing] .request-workspace-row::before,
+  .request-workspace-sidebar[data-closing] .request-workspace-sidebar-tools > search,
+  .request-workspace-sidebar[data-closing] .request-workspace-needs-you > h2 > span:first-child,
+  .request-workspace-sidebar[data-closing] .request-workspace-open,
+  .request-workspace-sidebar[data-closing] .request-workspace-disclosures {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .request-workspace-sidebar[data-closing] .request-workspace-row {
+    border-color: transparent;
+    background: none;
   }
 
   .request-workspace-sidebar[data-state="closed"] {
@@ -115,6 +148,10 @@
 
   .request-workspace-sidebar[data-state="closed"] .request-workspace-row-link > :last-child {
     opacity: 0;
+  }
+
+  .request-workspace-row-link > :last-child {
+    transition: opacity 150ms ease;
   }
 
   .request-workspace-sidebar[data-state="closed"] .request-workspace-row--selected .request-workspace-row-avatar {
@@ -486,6 +523,8 @@ html[data-focus] .application-topbar {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .request-workspace-shell,
+  .request-workspace-row-link > :last-child,
   .request-workspace-row,
   .request-workspace-row-age,
   .request-workspace-row-actions,
