@@ -52,6 +52,9 @@ class WatcherTests(unittest.TestCase):
             patcher = patch.object(watcher, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        scheduler = patch.object(watcher.deployment_scheduler, "poll", return_value={})
+        scheduler.start()
+        self.addCleanup(scheduler.stop)
         watcher.persist({"installed_at": BEFORE, "listed_through": BEFORE, "runs": {}, "threads": {}})
 
     def github(self, path):
@@ -148,6 +151,15 @@ class WatcherTests(unittest.TestCase):
             watcher.poll()
         self.mocks["heartbeat"].assert_not_called()
 
+    def test_scheduler_failure_still_supervises_release_without_heartbeat(self):
+        self.runs = [release()]
+        with patch.object(watcher.deployment_scheduler, "poll", side_effect=RuntimeError("unavailable")):
+            with self.assertRaisesRegex(RuntimeError, "Daily release scheduler failed"):
+                watcher.poll()
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
+        self.assertEqual(len(self.starts()), 1)
+        self.mocks["heartbeat"].assert_not_called()
+
     def test_verified_correction_receipt_recovers_original(self):
         self.runs = [release(status="completed", conclusion="failure")]
         watcher.poll()
@@ -161,6 +173,110 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(self.saved()["runs"]["123"]["status"], "recovered")
         self.assertEqual(self.saved()["runs"]["123"]["corrected_by"], 456)
         self.assertEqual(self.saved()["runs"]["456"]["status"], "verified")
+
+    def test_failed_correction_chain_resolves_to_final_verified_run_idempotently(self):
+        self.runs = [release(status="completed", conclusion="failure")]
+        watcher.poll()
+        info = next(iter(self.saved()["threads"].values()))
+        path = watcher.receipt_path(info)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"corrections": {"123": 456, "456": 789}, "blocker": False}))
+        self.by_id[456] = release(456, "completed", "failure", "2026-09-23T00:02:00Z")
+        self.by_id[789] = release(789, "completed", "success", "2026-09-23T00:03:00Z")
+        watcher.poll()
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
+        self.mocks["jobs"].return_value = [{"name": "Verify and record release", "conclusion": "success"}]
+        watcher.poll()
+        first = self.saved()
+        for run_id in ("123", "456"):
+            self.assertEqual(first["runs"][run_id]["status"], "recovered")
+            self.assertEqual(first["runs"][run_id]["corrected_by"], 789)
+        self.assertEqual(first["runs"]["789"]["status"], "verified")
+        watcher.poll()
+        self.assertEqual(self.saved()["runs"], first["runs"])
+
+    def test_correction_chain_requires_final_production_verification(self):
+        self.runs = [release(status="completed", conclusion="failure")]
+        watcher.poll()
+        info = next(iter(self.saved()["threads"].values()))
+        path = watcher.receipt_path(info)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"corrections": {"123": 456, "456": 789}, "blocker": False}))
+        self.by_id[456] = release(456, "completed", "failure", "2026-09-23T00:02:00Z")
+        self.by_id[789] = release(789, "completed", "success", "2026-09-23T00:03:00Z")
+        self.mocks["jobs"].return_value = [{"name": "Verify and record release", "conclusion": "failure"}]
+        watcher.poll()
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
+        self.assertEqual(self.saved()["runs"]["456"]["status"], "monitoring")
+
+    def test_receipt_adopts_unassigned_completed_correction(self):
+        self.runs = [release(status="completed", conclusion="failure")]
+        watcher.poll()
+        info = next(iter(self.saved()["threads"].values()))
+        self.runs = [release(456, "completed", "success", "2026-09-23T00:02:00Z"), self.runs[0]]
+        self.mocks["jobs"].return_value = [{"name": "Verify and record release", "conclusion": "success"}]
+        path = watcher.receipt_path(info)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"corrections": {"123": 456}, "blocker": False}))
+        self.by_id[456] = self.runs[0]
+        watcher.poll()
+        state = self.saved()
+        self.assertEqual(state["runs"]["123"]["status"], "recovered")
+        self.assertEqual(state["runs"]["456"]["incident_id"], info["incident_id"])
+
+    def test_cycle_receipt_does_not_resolve_or_add_runs(self):
+        self.runs = [release(status="completed", conclusion="failure")]
+        watcher.poll()
+        info = next(iter(self.saved()["threads"].values()))
+        path = watcher.receipt_path(info)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"corrections": {"123": 456, "456": 123}, "blocker": False}))
+        self.by_id[456] = release(456, "completed", "failure")
+        self.by_id[123] = self.runs[0]
+        watcher.poll()
+        self.assertEqual(set(self.saved()["runs"]), {"123"})
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
+
+    def test_failed_retry_of_final_correction_reopens_chain(self):
+        self.runs = [release(status="completed", conclusion="failure")]
+        watcher.poll()
+        info = next(iter(self.saved()["threads"].values()))
+        path = watcher.receipt_path(info)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"corrections": {"123": 456}, "blocker": False}))
+        self.by_id[456] = release(456, "completed", "success", "2026-09-23T00:02:00Z")
+        self.mocks["jobs"].return_value = [{"name": "Verify and record release", "conclusion": "success"}]
+        watcher.poll()
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "recovered")
+        self.by_id[456] = release(456, "completed", "failure", "2026-09-23T00:02:00Z", attempt=2)
+        self.mocks["jobs"].return_value = []
+        watcher.poll()
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
+
+    def test_failed_retry_of_closed_correction_reopens_recovered_original(self):
+        self.runs = [release(status="completed", conclusion="failure")]
+        watcher.poll()
+        info = next(iter(self.saved()["threads"].values()))
+        path = watcher.receipt_path(info)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"corrections": {"123": 456}, "blocker": False}))
+        self.by_id[456] = release(456, "completed", "success", "2026-09-23T00:02:00Z")
+        self.mocks["jobs"].return_value = [{"name": "Verify and record release", "conclusion": "success"}]
+        self.client.thread.return_value = {"latestTurn": {"state": "completed", "startedAt": NOW},
+                                           "session": {"status": "idle"}, "messages": [], "activities": []}
+        watcher.poll()
+        self.assertEqual(self.saved()["threads"][info["incident_id"]]["status"], "verified")
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "recovered")
+        retry = release(456, "completed", "failure", "2026-09-23T00:02:00Z", attempt=2)
+        self.runs = [release(status="completed", conclusion="failure"), retry]
+        self.by_id[456] = retry
+        self.mocks["jobs"].return_value = []
+        watcher.poll()
+        state = self.saved()
+        self.assertEqual(state["runs"]["123"]["status"], "monitoring")
+        self.assertNotIn("corrected_by", state["runs"]["123"])
+        self.assertEqual(state["runs"]["123"]["incident_id"], state["runs"]["456"]["incident_id"])
+        self.assertNotEqual(state["runs"]["123"]["incident_id"], info["incident_id"])
 
     def test_failed_correction_cannot_close_original(self):
         self.runs = [release(status="completed", conclusion="failure")]
