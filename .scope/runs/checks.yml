@@ -11,7 +11,12 @@ env:
   CARGO_TARGET_DIR: /workspace/target
   RUSTUP_TOOLCHAIN: 1.98.1-x86_64-unknown-linux-gnu
 jobs:
+  image-compatibility:
+    steps:
+      - name: Verify pinned image tools
+        run: .scope/images/checks/verify-pinned-runtime.sh
   backend:
+    needs: [image-compatibility]
     timeout: 45m
     caches:
       - name: cargo
@@ -76,6 +81,7 @@ jobs:
           (cd web && pnpm install --frozen-lockfile)
           ./dev/checks/contract
   cli-checks:
+    needs: [image-compatibility]
     caches:
       - name: cargo
         path: /scope/cache/cargo
@@ -109,6 +115,7 @@ jobs:
         run: ./dev/checks/cli-bundle
 
   cli-e2e:
+    needs: [image-compatibility]
     caches:
       - name: cargo
         path: /scope/cache/cargo
@@ -134,6 +141,7 @@ jobs:
             ./dev/checks/integration cli
 
   web-checks:
+    needs: [image-compatibility]
     timeout: 45m
     caches:
       - name: pnpm-store
@@ -152,6 +160,7 @@ jobs:
           ./dev/checks/web
 
   web-smoke:
+    needs: [image-compatibility]
     timeout: 45m
     caches:
       - name: cargo
@@ -185,6 +194,7 @@ jobs:
             ./dev/checks/integration web
 
   repository-policy:
+    needs: [image-compatibility]
     steps:
       - name: Check repository policy
         run: |
@@ -194,11 +204,13 @@ jobs:
           ./dev/checks/policy
 
   operations:
+    needs: [image-compatibility]
     steps:
       - name: Check operations
         run: ./dev/checks/ops
 
   dependency-analyzer:
+    needs: [image-compatibility]
     caches:
       - name: dependency-analyzer-npm
         path: /root/.npm

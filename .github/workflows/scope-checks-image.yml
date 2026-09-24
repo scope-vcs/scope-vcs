@@ -57,6 +57,9 @@ jobs:
             GIT_VERSION=${{ steps.git.outputs.version }}
             GIT_SOURCE_SHA256=${{ steps.git.outputs.source_sha256 }}
 
+      - name: Verify candidate tools
+        run: docker run --rm --volume "$PWD:/workspace:ro" scope-checks:candidate .scope/images/checks/verify-pinned-runtime.sh
+
       - name: Verify runtime process lifecycle
         run: dev/checks/runner-runtime-container --image scope-checks:candidate
 
@@ -179,6 +182,11 @@ jobs:
           build-args: |
             GIT_VERSION=${{ steps.git.outputs.version }}
             GIT_SOURCE_SHA256=${{ steps.git.outputs.source_sha256 }}
+
+      - name: Verify image tools
+        env:
+          IMAGE: ${{ steps.tags.outputs.ghcr_image }}
+        run: docker run --rm --volume "$PWD:/workspace:ro" "$IMAGE" .scope/images/checks/verify-pinned-runtime.sh
 
       - name: Verify runtime process lifecycle
         env:
