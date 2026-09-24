@@ -87,6 +87,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
   writeFileSync(join(root, '.github/deployment-services.json'), JSON.stringify(input.manifest))
   copyFileSync(new URL('./verify-staging-target.mjs', import.meta.url), join(scripts, 'verify-staging-target.mjs'))
   copyFileSync(new URL('./deploy-staging-railway.sh', import.meta.url), join(scripts, 'deploy-staging-railway.sh'))
+  copyFileSync(new URL('./railway-predecessor-teardown.mjs', import.meta.url), join(scripts, 'railway-predecessor-teardown.mjs'))
   writeFileSync(join(scripts, 'railway-read.mjs'), `
     if (process.argv[1]?.endsWith('railway-read.mjs')) {
     const input = ${JSON.stringify(input)};
@@ -106,6 +107,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
   writeFileSync(join(bin, 'railway'), '#!/bin/sh\ntest "$1 $2" = "variable set"\n', { mode: 0o755 })
   writeFileSync(join(scripts, 'deploy-railway.sh'), `#!/bin/sh
     node -e 'require("node:fs").writeFileSync("deployment.json", JSON.stringify({ source: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, message: process.env.RAILWAY_DEPLOY_MESSAGE }))'
+    node -e 'require("node:fs").writeFileSync(process.env.SCOPE_DEPLOYMENT_EVIDENCE_PATH, JSON.stringify({ component: process.env.SCOPE_DEPLOYMENT_COMPONENT, sourceSha: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, evidenceId: "new-web" }) + "\\n")'
   `)
   writeFileSync(join(root, 'prepared.json'), JSON.stringify({ schemaVersion: 1, sourceSha: candidate,
     components: { web: { sourceSha: candidate, serviceId: 'web', image: `ghcr.io/scope-vcs/release-web@sha256:${'b'.repeat(64)}` } } }))
@@ -219,7 +221,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   }
   writeFileSync(join(root, 'provider.json'), JSON.stringify({ ...input, activations: [], maintenance: [] }))
   writeFileSync(join(root, '.github/deployment-services.json'), JSON.stringify(input.manifest))
-  for (const name of ['deploy-staging-railway.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-retry.mjs', 'railway-private-command.sh', 'railway-private-maintenance.sh']) {
+  for (const name of ['deploy-staging-railway.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-retry.mjs', 'railway-predecessor-teardown.mjs', 'railway-private-command.sh', 'railway-private-maintenance.sh']) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
   }
   mkdirSync(join(root, 'deploy/postgres'), { recursive: true })
@@ -269,7 +271,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       assert.equal(process.env.DATABASE_URL, 'postgres://scope_migrator@scope-postgres.railway.internal/railway');
       assert.ok(state.services.filter(s => ['api', 'cache', 'worker', 'media', 'media-worker'].includes(s.id))
         .every(s => s.replicas.running === 0));
-      assert.ok(['plan', 'validate-workflow-catalogs', 'apply', 'backfill-workflow-catalogs'].includes(args[0]));
+      assert.ok(['plan', 'validate-workflow-catalogs', 'apply', 'backfill-workflow-catalogs', 'verify'].includes(args[0]));
       state.maintenance.push(args[0]);
       save();
       if (args[0] === 'plan') console.log(JSON.stringify({ exact: true, applied: ['m0001_initial'], pending: [] }));
@@ -288,7 +290,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       assert.equal(args[0], artifact.serviceId);
       assert.equal(process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, prepared.sourceSha);
       assert.equal(process.env.SCOPE_RAILWAY_ENVIRONMENT_ID, state.manifest.environments.staging.environmentId);
-      if (process.env.SCOPE_STAGING_RESUME === '1') assert.deepEqual(state.maintenance, ['plan']);
+      if (process.env.SCOPE_STAGING_RESUME === '1') assert.deepEqual(state.maintenance, ['plan', 'verify']);
       else { assert.ok(state.maintenance.includes('apply')); assert.equal(state.grantsApplied, true); }
       assert.ok(!state.activations.includes(component), 'A participant was activated twice');
       if (component === 'git-router') {
@@ -317,10 +319,10 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   writeFileSync(join(bin, 'psql'), '#!/bin/sh\nexec node provider.mjs grants "$@"\n', { mode: 0o755 })
   const binary = join(bin, 'maintenance')
   writeFileSync(binary, '#!/bin/sh\nexec node provider.mjs maintenance "$@"\n', { mode: 0o755 })
-  writeFileSync(join(scripts, 'deploy-railway.sh'), '#!/bin/sh\nexec node provider.mjs activate "$@"\n')
+  writeFileSync(join(scripts, 'deploy-railway.sh'), '#!/bin/sh\nexec flock -x provider.lock node provider.mjs activate "$@"\n')
   writeFileSync(join(scripts, 'deploy-railway-image.mjs'), `
     import { execFileSync } from 'node:child_process';
-    execFileSync(process.execPath, ['provider.mjs', 'activate', ...process.argv.slice(2)], { stdio: 'inherit' });
+    execFileSync('flock', ['-x', 'provider.lock', process.execPath, 'provider.mjs', 'activate', ...process.argv.slice(2)], { stdio: 'inherit' });
   `)
   const components = Object.fromEntries(Object.entries(input.manifest.services).map(([component, service]) => [component, {
     sourceSha: candidate, serviceId: service.id, image: `ghcr.io/scope-vcs/release-${component}@sha256:${'b'.repeat(64)}`,
@@ -338,11 +340,17 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   assert.equal(result.status, 0, result.stderr)
   const state = JSON.parse(readFileSync(join(root, 'provider.json')))
   assert.deepEqual([...state.activations].sort(), Object.keys(components).sort())
-  assert.ok(state.activations.indexOf('api') < state.activations.indexOf('git-router'))
+  for (const [dependency, component] of [
+    ['cache', 'run-worker'], ['media-api', 'media-worker'],
+    ['run-worker', 'api'], ['media-worker', 'api'], ['api', 'git-router'], ['git-router', 'web'],
+  ]) {
+    assert.ok(state.activations.indexOf(dependency) < state.activations.indexOf(component),
+      `${dependency} must become ready before ${component}`)
+  }
   assert.doesNotThrow(() => verifyStagingTopology(state))
   assert.deepEqual(JSON.parse(readFileSync(join(root, 'evidence.json'))), {
     commit: candidate, environmentId: input.manifest.environments.staging.environmentId, candidateDeployments: 1,
-    deployments: state.activations.map(component => ({ service: components[component].serviceId,
+    deployments: ['cache', 'run-worker', 'media-api', 'media-worker', 'api', 'git-router', 'web'].map(component => ({ service: components[component].serviceId,
       deploymentId: 'new-' + components[component].serviceId, status: 'SUCCESS' })),
   })
 })

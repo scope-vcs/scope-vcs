@@ -23,13 +23,18 @@ function providerStatus(activeDeployments) {
   };
 }
 
-function deploy(t, status, predecessors = [], failedPolls = [], component = "cache") {
+function deploy(t, status, predecessors = [], failedPolls = [], component = "cache", defer = false) {
   const root = mkdtempSync(join(tmpdir(), "scope-railway-teardown-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const scripts = join(root, ".github/scripts");
   const bin = join(root, "bin");
   mkdirSync(scripts, { recursive: true });
   mkdirSync(bin);
+  if (defer) {
+    mkdirSync(join(root, 'predecessors'));
+    writeFileSync(join(scripts, 'railway-predecessor-teardown.mjs'), readFileSync(new URL('./railway-predecessor-teardown.mjs', import.meta.url)));
+    writeFileSync(join(scripts, 'railway-read.mjs'), readFileSync(new URL('./railway-read.mjs', import.meta.url)));
+  }
   writeFileSync(join(scripts, "deployment-components.mjs"), readFileSync(new URL("./deployment-components.mjs", import.meta.url)));
   writeFileSync(join(root, ".github/deployment-services.json"), readFileSync(new URL("../deployment-services.json", import.meta.url)));
   writeFileSync(join(root, "status.json"), JSON.stringify(status));
@@ -86,10 +91,12 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "cac
       SCOPE_DEFER_SERVICE_HEALTH: "1",
       SCOPE_DEPLOYMENT_EVIDENCE_PATH: "",
       SCOPE_RELEASE_DEPLOYMENTS_FILE: "",
+      SCOPE_PREDECESSOR_TEARDOWN_DIR: defer ? join(root, 'predecessors') : '',
     },
   });
   assert.ifError(result.error);
-  return { ...result, events: readFileSync(join(root, "events"), "utf8").trim().split("\n") };
+  return { ...result, events: readFileSync(join(root, "events"), "utf8").trim().split("\n"),
+    snapshot: defer ? JSON.parse(readFileSync(join(root, 'predecessors', `${component}.json`))) : null };
 }
 
 test("stale FAILED latest deployment without active predecessors needs no teardown", (t) => {
@@ -113,6 +120,14 @@ test("waits for every active predecessor to finish teardown", (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.events.filter((event) => event === "sleep").length, 2);
   for (const id of predecessors) assert.ok(result.stdout.includes(`Previous deployment ${id} completed teardown.`));
+});
+
+test("deferred activation records predecessors before mutation and leaves removal to the shared barrier", (t) => {
+  const result = deploy(t, providerStatus([{ id: 'old-cache', status: 'SUCCESS' }]), ['old-cache'], [], 'cache', true);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.snapshot, { component: 'cache', service: 'cache-id', ids: ['old-cache'] });
+  assert.equal(result.events.filter((event) => event === 'sleep').length, 0);
+  assert.ok(result.events.indexOf('status --project') < result.events.indexOf('activate'));
 });
 
 test("missing or malformed provider state fails before activation", (t) => {

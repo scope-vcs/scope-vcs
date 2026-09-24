@@ -25,9 +25,9 @@ successful_deployments="${SCOPE_SUCCESSFUL_DEPLOYMENTS:-}"
 [[ -n "$successful_deployments" ]] || successful_deployments='{}'
 deployment_evidence_path="${SCOPE_DEPLOYMENT_EVIDENCE_PATH:-}"
 pending_evidence_path=""
+predecessor_teardown_dir=""
 if [[ -n "$deployment_evidence_path" ]]; then
   pending_evidence_path="${deployment_evidence_path}.pending.$$"
-  rm -f -- "$pending_evidence_path"
 fi
 
 for deployment_flag in deploy_cache_requested deploy_worker_requested deploy_router_requested \
@@ -268,7 +268,8 @@ deploy_release() {
   local verified_sha
   verified_sha="$(successful_deployment_field "$component" sourceSha)"
   SCOPE_DEPLOYMENT_COMPONENT="$component" \
-    SCOPE_DEPLOYMENT_EVIDENCE_PATH="$pending_evidence_path" \
+    SCOPE_DEPLOYMENT_EVIDENCE_PATH="$(component_pending_evidence_path "$component")" \
+    SCOPE_PREDECESSOR_TEARDOWN_DIR="$predecessor_teardown_dir" \
     SCOPE_DEFER_SERVICE_HEALTH=1 \
     SCOPE_VERIFIED_SUCCESSFUL_SHA="$verified_sha" \
     bash .github/scripts/deploy-railway.sh "$service_name"
@@ -276,14 +277,21 @@ deploy_release() {
 
 pending_deployment_id() {
   local component="$1"
-  [[ -n "$pending_evidence_path" && -s "$pending_evidence_path" ]] || return 0
-  COMPONENT="$component" EVIDENCE_PATH="$pending_evidence_path" node -e '
+  local evidence_file
+  evidence_file="$(component_pending_evidence_path "$component")"
+  [[ -n "$evidence_file" && -s "$evidence_file" ]] || return 0
+  COMPONENT="$component" EVIDENCE_PATH="$evidence_file" node -e '
 const { readFileSync } = require("node:fs");
 const records = readFileSync(process.env.EVIDENCE_PATH, "utf8")
   .trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
-const evidence = records.findLast(({component}) => component === process.env.COMPONENT);
-process.stdout.write(evidence?.evidenceId || "");
+if (records.length !== 1 || records[0].component !== process.env.COMPONENT ||
+    typeof records[0].evidenceId !== "string" || !records[0].evidenceId) process.exit(1);
+process.stdout.write(records[0].evidenceId);
 '
+}
+
+component_pending_evidence_path() {
+  [[ -z "$pending_evidence_path" ]] || printf '%s.%s\n' "$pending_evidence_path" "$1"
 }
 
 activate_release() {
@@ -313,7 +321,8 @@ activate_image_release() {
   local expected_deployment_id
   RAILWAY_API_TOKEN="$railway_api_token" \
     SCOPE_DEPLOYMENT_COMPONENT="$component" \
-    SCOPE_DEPLOYMENT_EVIDENCE_PATH="$pending_evidence_path" \
+    SCOPE_DEPLOYMENT_EVIDENCE_PATH="$(component_pending_evidence_path "$component")" \
+    SCOPE_PREDECESSOR_TEARDOWN_DIR="$predecessor_teardown_dir" \
     node .github/scripts/deploy-railway-image.mjs "$service_name" "$image"
   expected_deployment_id="$(pending_deployment_id "$component")"
   [[ -n "$expected_deployment_id" ]] || {
@@ -324,18 +333,37 @@ activate_image_release() {
 }
 
 promote_pending_evidence() {
-  [[ -n "$deployment_evidence_path" && -s "$pending_evidence_path" ]] || return 0
+  [[ -n "$deployment_evidence_path" ]] || return 0
   FINAL_EVIDENCE_PATH="$deployment_evidence_path" \
-    PENDING_EVIDENCE_PATH="$pending_evidence_path" \
+    PENDING_EVIDENCE_PREFIX="$pending_evidence_path" \
     node -e '
-const { appendFileSync, readFileSync, unlinkSync } = require("node:fs");
-appendFileSync(process.env.FINAL_EVIDENCE_PATH, readFileSync(process.env.PENDING_EVIDENCE_PATH));
-unlinkSync(process.env.PENDING_EVIDENCE_PATH);
+const { appendFileSync, existsSync, readFileSync, unlinkSync } = require("node:fs");
+const paths = ["cache", "run-worker", "media-api", "media-worker", "api", "git-router", "web"]
+  .map(component => `${process.env.PENDING_EVIDENCE_PREFIX}.${component}`)
+  .filter(existsSync);
+if (paths.length) {
+  appendFileSync(process.env.FINAL_EVIDENCE_PATH, paths.map(path => readFileSync(path)).join(""));
+  for (const path of paths) unlinkSync(path);
+}
 '
 }
 
 discard_pending_evidence() {
-  [[ -z "$pending_evidence_path" ]] || rm -f -- "$pending_evidence_path"
+  if [[ -n "$pending_evidence_path" ]]; then
+    rm -f -- "$pending_evidence_path".{cache,run-worker,media-api,media-worker,api,git-router,web}
+  fi
+  [[ -z "$predecessor_teardown_dir" ]] || rm -rf -- "$predecessor_teardown_dir"
+}
+
+activate_pair() {
+  local first_pid second_pid failed=0
+  (trap - EXIT; "$1" "$2" "$3" "$4") &
+  first_pid=$!
+  (trap - EXIT; "$5" "$6" "$7" "$8") &
+  second_pid=$!
+  wait "$first_pid" || failed=1
+  wait "$second_pid" || failed=1
+  return "$failed"
 }
 
 deploy_selected_releases() {
@@ -366,20 +394,21 @@ deploy_and_reopen() {
   maintenance_read verify
   cutover_phase backfills
   backfill_repository_snapshots
+  predecessor_teardown_dir="$(mktemp -d)"
   # Activation can create a live replacement before its response fails. Mark it potentially open
   # first so the failure handler stops whichever deployment the provider currently reports.
   cutover_phase activating-cache
   cache_closed=0
-  activate_release cache "$cache_service"
-  cutover_phase activating-worker
-  worker_closed=0
-  activate_release run-worker "$worker_service"
   cutover_phase activating-media
   media_closed=0
-  activate_release media-api "$media_service"
+  activate_pair activate_release cache "$cache_service" '' \
+    activate_release media-api "$media_service" ''
+  cutover_phase activating-worker
+  worker_closed=0
   cutover_phase activating-media-worker
   media_worker_closed=0
-  activate_image_release media-worker "$media_worker_service" "$media_worker_image"
+  activate_pair activate_release run-worker "$worker_service" '' \
+    activate_image_release media-worker "$media_worker_service" "$media_worker_image"
   cutover_phase activating-api
   api_closed=0
   activate_release api "$api_service"
@@ -393,6 +422,7 @@ deploy_and_reopen() {
   local web_deployment_id
   web_deployment_id="$(pending_deployment_id web)"
   wait_for_service_health "$web_service" "$web_deployment_id" "$(railway_config_path web)"
+  node .github/scripts/railway-predecessor-teardown.mjs wait "$predecessor_teardown_dir"
   mark_maintenance_end
   # Every database writer forms one cutover. Publish their evidence only after all writers are healthy
   # so the durable ledger cannot claim a deployment that the failure trap subsequently closes.

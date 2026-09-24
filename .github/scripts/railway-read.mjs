@@ -74,10 +74,14 @@ export function readRailway(args, {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const args = process.argv.slice(2);
+    const retryDelay = Number(process.env.SCOPE_RAILWAY_READ_RETRY_DELAY_MS ?? 2_000);
+    if (!Number.isInteger(retryDelay) || retryDelay < 0 || retryDelay > 2_000) {
+      throw new Error('Invalid Railway retry delay');
+    }
     const input = args[0] === "api" && args[2] === "--variables" && args[3] === "@-"
       ? readFileSync(0, "utf8")
       : undefined;
-    process.stdout.write(`${JSON.stringify(readRailway(args, { input }))}\n`);
+    process.stdout.write(`${JSON.stringify(readRailway(args, { input, pause: () => pauseSync(retryDelay) }))}\n`);
   } catch {
     console.error(FAILURE);
     process.exitCode = 1;
