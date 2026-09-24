@@ -44,6 +44,7 @@ function fixture() {
     status: "ahead",
     base_commit: { sha: sourceSha },
     merge_base_commit: { sha: sourceSha },
+    files: [],
   };
   const jobs = [
     {
@@ -116,6 +117,44 @@ test('staging resume accepts a failed smoke run only after successful validation
   assert.equal(result.resume_staging, true);
   assert.deepEqual(result.prepared, state.prepared);
   await assert.rejects(validatePreparedDeployment(state.prepared, sourceRunId, state.request, repository), /staging/);
+});
+
+test('a requested resume reuses staging that already passed', async () => {
+  const state = fixture();
+  const result = await selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository,
+    loadPrepared: async () => state.prepared }, path => path.startsWith('/deployments?') ? [] : state.request(path));
+  assert.equal(result.resume_staging, false);
+  assert.equal(result.prepared_run_id, sourceRunId);
+
+  delete state.prepared.components.web;
+  const backendOnly = await selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository,
+    loadPrepared: async () => state.prepared }, path => path.startsWith('/deployments?') ? [] : state.request(path));
+  assert.equal(backendOnly.resume_staging, false);
+});
+
+test('source reuse rejects changed staging inputs but permits receipt-only repair', async () => {
+  for (const filename of [
+    '.github/deployment-services.json',
+    '.github/scripts/staging-resume.mjs',
+    '.github/scripts/stop-staging-writers.sh',
+    '.github/scripts/verify-staging-target.mjs',
+    '.github/scripts/deploy-railway-image.mjs',
+    '.github/workflows/deploy-staging.yml',
+    'web/smoke/server-functions-smoke.mjs',
+    'crates/scope-postgres/src/migrations/m0062_new_table.rs',
+    'apps/web/src/history.test.ts',
+  ]) {
+    const state = fixture();
+    state.comparison.files = [{ filename }];
+    await assert.rejects(selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository,
+      loadPrepared: async () => state.prepared }, path => path.startsWith('/deployments?') ? [] : state.request(path)),
+    /Staging evidence is stale/);
+  }
+  const state = fixture();
+  state.comparison.files = [{ filename: '.github/scripts/production-deployment-progress.mjs' }];
+  const result = await selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository,
+    loadPrepared: async () => state.prepared }, path => path.startsWith('/deployments?') ? [] : state.request(path));
+  assert.equal(result.resume_staging, false);
 });
 
 test('staging resume rejects incomplete deployment, unvalidated images, and unrelated attempts', async () => {

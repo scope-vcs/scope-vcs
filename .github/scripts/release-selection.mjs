@@ -15,6 +15,28 @@ import { APPLICATION_COMPONENTS, BACKEND_COMPONENTS, backendSelected } from "./d
 const components = APPLICATION_COMPONENTS;
 const validationJobName = "Validate selected components / Production validation gate";
 
+export function assertReusableStagingSource(comparison) {
+  // GitHub Compare returns at most 300 changed files. A truncated comparison
+  // cannot prove that staging rules and schema stayed unchanged.
+  if (!Array.isArray(comparison?.files) || comparison.files.length >= 300) {
+    throw new Error("Cannot establish unchanged staging inputs for source reuse");
+  }
+  const stagingInput = (filename) => typeof filename === "string" && (
+    filename === ".github/deployment-services.json"
+    || /^\.github\/workflows\/(release|validate|prepare-release|deploy-staging|deploy-backend|deploy-web)\.yml$/.test(filename)
+    || /^\.github\/scripts\/(staging|railway|prepare-railway|extract-railway|extract-staging-web-manifest|deploy-|stop-staging|verify-staging|rehearse-release|[^/]*smoke|recovery-preparation-trust|release-selection)/.test(filename)
+    || filename.startsWith("crates/scope-postgres/src/migrations/")
+    || filename.startsWith("deploy/postgres/")
+    || filename.startsWith("deploy/railway/")
+    || filename.startsWith("web/smoke/")
+    || filename.startsWith("web/scripts/update-smoke-server-functions.mjs")
+    || /(?:^|\/)(?:tests?\/|[^/]+\.(?:test|spec)\.)/.test(filename)
+  );
+  const relevant = comparison.files.find(({ filename, previous_filename: previousFilename }) =>
+    stagingInput(filename) || stagingInput(previousFilename));
+  if (relevant) throw new Error(`Staging evidence is stale after ${relevant.filename} changed`);
+}
+
 export async function validatePreparedDeployment(
   prepared,
   sourceRunId,
@@ -48,14 +70,17 @@ export async function validatePreparedDeployment(
     return responses.get(path);
   };
   const proof = await validateRecoveryPreparation(prepared, cachedRequest, repository, manifest, selected);
+  if (proof.mainSha !== proof.sourceSha) {
+    assertReusableStagingSource(await cachedRequest(`/compare/${proof.sourceSha}...${proof.mainSha}`));
+  }
   if (resumeStaging) {
-    validatePreparedRelease(prepared, { components });
     const run = await cachedRequest(`/actions/runs/${sourceRunId}`);
     if (run.status !== 'completed') throw new Error('Staging resume requires a completed source run');
   }
 
   let validated = false;
   let staged = false;
+  let stagingPassed = false;
   for (let page = 1; ; page += 1) {
     const result = await cachedRequest(
       `/actions/runs/${sourceRunId}/jobs?filter=all&per_page=100&page=${page}`,
@@ -67,15 +92,20 @@ export async function validatePreparedDeployment(
           && job.status === "completed") {
         if (job.name === validationJobName && job.conclusion === 'success') validated = true;
         if (job.name === 'Deploy staging / Deploy and smoke staging') {
+          stagingPassed ||= job.conclusion === 'success';
           if (resumeStaging) {
-            staged ||= ['success', 'failure', 'cancelled'].includes(job.conclusion)
-              && job.steps?.some(step => step.name === 'Deploy candidate once' && step.conclusion === 'success');
+            staged ||= job.conclusion === 'success'
+              || (['failure', 'cancelled'].includes(job.conclusion)
+                && job.steps?.some(step => step.name === 'Deploy candidate once' && step.conclusion === 'success'));
           } else staged ||= job.conclusion === 'success';
         }
       }
     }
-    if (validated && staged) return proof;
     if (result.jobs.length < 100) break;
+  }
+  if (validated && staged) {
+    if (resumeStaging && !stagingPassed) validatePreparedRelease(prepared, { components });
+    return { ...proof, stagingPassed };
   }
   throw new Error("Source run did not pass the production validation gate and staging deployment");
 }
@@ -103,8 +133,8 @@ export async function selectRelease({ sourceSha, sourceRunId = "", resumeStaging
   if (sourceRunId) {
     if (!/^[1-9][0-9]*$/.test(sourceRunId)) throw new Error("Source run ID must be numeric");
     const prepared = await loadPrepared(sourceRunId);
-    await validatePreparedDeployment(prepared, sourceRunId, request, repository, { resumeStaging });
-    return selection(prepared, '', resumeStaging);
+    const proof = await validatePreparedDeployment(prepared, sourceRunId, request, repository, { resumeStaging });
+    return selection(prepared, '', resumeStaging && !proof.stagingPassed);
   }
   if (!/^[0-9a-f]{40}$/.test(sourceSha ?? "")) throw new Error("Source SHA must be a full commit SHA");
   return { sha: sourceSha, recover_cutover_id: "", recover_components: {}, prepared_run_id: "", resume_staging: false };
