@@ -5,12 +5,12 @@ import {
   type TextSkeletonLength,
 } from '@/components/ui/skeleton'
 
-const PENDING_REPOSITORIES: { id: string; length: TextSkeletonLength }[] = [
-  { id: 'first', length: 'medium' },
-  { id: 'second', length: 'short' },
-  { id: 'third', length: 'long' },
-  { id: 'fourth', length: 'medium' },
-]
+const REPOSITORY_LENGTHS: TextSkeletonLength[] = ['medium', 'short', 'long', 'medium']
+// Enough rows to fill a first screen, so dividers line up with any list length.
+const PENDING_REPOSITORIES = Array.from({ length: 12 }, (_, row) => ({
+  id: `repository-${row}`,
+  length: REPOSITORY_LENGTHS[row % REPOSITORY_LENGTHS.length],
+}))
 
 export function OwnerProfilePending({ owner }: { owner: string }) {
   return (

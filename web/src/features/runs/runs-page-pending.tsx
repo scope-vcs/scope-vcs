@@ -12,13 +12,12 @@ import {
   RUN_ROW_TIMESTAMP_CLASS,
 } from './run-row-layout'
 
-const PENDING_RUNS: { id: string; length: TextSkeletonLength }[] = [
-  { id: 'first', length: 'medium' },
-  { id: 'second', length: 'short' },
-  { id: 'third', length: 'long' },
-  { id: 'fourth', length: 'medium' },
-  { id: 'fifth', length: 'medium' },
-]
+const RUN_LENGTHS: TextSkeletonLength[] = ['medium', 'short', 'long', 'medium', 'medium']
+// Enough rows to fill a first screen, so dividers line up with any list length.
+const PENDING_RUNS = Array.from({ length: 16 }, (_, row) => ({
+  id: `run-${row}`,
+  length: RUN_LENGTHS[row % RUN_LENGTHS.length],
+}))
 const PENDING_ACTIONS = (
   <div className="flex items-center gap-2">
     <BlockSkeleton className="h-8 w-36" />
