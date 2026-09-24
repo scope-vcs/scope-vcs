@@ -1,4 +1,5 @@
 import { useAuth } from '@clerk/tanstack-react-start'
+import { useRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { activateAccountSessionViewer } from '../account/account-session-resource'
 import { activateRequestAttachmentDraftViewer } from './request-attachment-drafts'
@@ -14,6 +15,7 @@ let activeViewer: string | null = null
 // everything the previous viewer loaded so nothing of theirs lingers in memory.
 export function RequestSessionBoundary() {
   const { isLoaded, userId } = useAuth()
+  const router = useRouter()
   useEffect(() => {
     if (!isLoaded) return
     const viewerId = userId ?? 'anonymous'
@@ -25,8 +27,9 @@ export function RequestSessionBoundary() {
       resetRequestDiscussionCache()
       resetRequestMermaidResource()
       requestQueueResource.clear()
+      void router.invalidate().catch(() => {})
     }
     activeViewer = viewerId
-  }, [isLoaded, userId])
+  }, [isLoaded, router, userId])
   return null
 }

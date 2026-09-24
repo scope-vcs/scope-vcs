@@ -3,6 +3,7 @@ import type { RequestChecksResponse } from '@/api/types.generated'
 import {
   resourceErrorMessage,
   useCachedResource,
+  useRetryOnReconnect,
 } from '@/lib/use-cached-resource'
 import { requestChecksResource } from './request-checks-resource'
 
@@ -30,6 +31,7 @@ export function useRequestChecks({
     load,
     resource: requestChecksResource,
   })
+  useRetryOnReconnect(resource)
   const [approving, setApproving] = useState(false)
   const [approveError, setApproveError] = useState<string | null>(null)
 
