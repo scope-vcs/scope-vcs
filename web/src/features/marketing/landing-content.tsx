@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { ArrowUpRight } from 'lucide-react'
 import type { CSSProperties, MouseEvent, ReactElement } from 'react'
-import { heroCopy, installCommandAside, installTitle, mergeTitle, notes, sourceUrl, touchNavNote, type LandingView } from './landing-copy'
+import { heroCopy, installTitle, mergeTitle, notes, sourceUrl, touchNavNote, type LandingView } from './landing-copy'
 import { Heading, LandingViewProvider, Note, Swap } from './landing-view'
 import { MergeGraph } from './merge-graph'
 import { RepoPanel } from './repo-panel'
@@ -16,11 +16,6 @@ const landingShell = 'mx-auto w-[calc(100%-64px)] max-w-[1120px] max-[521px]:w-[
 const column = 'relative min-w-0 scroll-mt-8'
 const columnTitle = 'max-w-[12ch] text-[clamp(32px,3.6vw,48px)] leading-[1.04] font-medium tracking-[-.045em]'
 const columnNote = 'absolute left-0 top-[calc(100%+24px)] max-w-[34ch]'
-// The private copy can't scroll, so its longer command widens the box toward
-// the window edge (the column starts 40px past the centre) and wraps beyond it.
-// Its copy button would move with the wider box and can't be clicked, so it's
-// hidden; the lens closes over the real one.
-const privateCommand = 'w-max min-w-full max-w-[calc(50vw-56px)] [&_pre]:overflow-visible [&_pre]:whitespace-pre-wrap [&_button]:invisible max-[901px]:w-auto max-[901px]:max-w-none'
 const rise = (delay: number) => ({ '--rise-delay': `${delay}ms` }) as CSSProperties
 
 /** The whole page, once per view. Only the public view carries ids, headings
@@ -43,10 +38,6 @@ export function LandingContent({
   view: LandingView
 }): ReactElement {
   const isPublic = view === 'public'
-  const shownCommands = isPublic ? commands : {
-    posix: commands.posix + installCommandAside,
-    windows: commands.windows + installCommandAside,
-  }
 
   return (
     <LandingViewProvider view={view}>
@@ -88,15 +79,16 @@ export function LandingContent({
           <section className="relative grid grid-cols-2 items-start gap-x-20 gap-y-24 pt-8 pb-40 max-[901px]:grid-cols-1 max-[901px]:pt-10 max-[901px]:pb-40">
             <div className={column} id={isPublic ? 'merge' : undefined}>
               <Heading className={columnTitle} level={2}><Swap text={mergeTitle} /></Heading>
+              <Note className="absolute right-0 top-[calc(100%+24px)] max-w-[20ch] text-right max-[521px]:static max-[521px]:mt-4 max-[521px]:block max-[521px]:max-w-[34ch] max-[521px]:text-left" id="graph" />
               <div className="mt-12"><MergeGraph /></div>
-              <Note className={columnNote} id="merge" />
+              <Note className={`${columnNote} max-[1151px]:max-w-[24ch]`} id="merge" />
             </div>
             <div className={column} id={isPublic ? 'install' : undefined}>
               <Heading className={columnTitle} level={2}><Swap text={installTitle} /></Heading>
-              <div className="mt-12 min-w-0" data-note="command">
+              <div className="install-command mt-12 min-w-0">
                 <CliInstallCommand
-                  codeBlockClassName={cn('landing-terminal rounded-lg border-0 py-2 pl-4 pr-2 shadow-none [&_pre]:whitespace-pre [&_pre]:py-2.5 [&_pre]:pr-12 [&_pre]:text-sm [&_pre]:leading-6', installCalled && 'is-called', !isPublic && privateCommand)}
-                  commands={shownCommands}
+                  codeBlockClassName={cn('landing-terminal rounded-lg border-0 py-2 pl-4 pr-2 shadow-none [&_pre]:whitespace-pre [&_pre]:py-2.5 [&_pre]:pr-12 [&_pre]:text-sm [&_pre]:leading-6', installCalled && 'is-called')}
+                  commands={commands}
                   initialPlatform={initialPlatform}
                   onPlatformChange={onPlatformChange}
                   pickerClassName="platforms mb-4"
@@ -128,7 +120,7 @@ export function LandingContent({
  * scrolls to any hash it sees. */
 function callInstall(event: MouseEvent<HTMLAnchorElement>, onInstallCall: () => void) {
   const install = document.getElementById('install')
-  const command = install?.querySelector('[data-note="command"]')
+  const command = install?.querySelector('.install-command')
   if (!install || !command) return
   event.preventDefault()
   const box = command.getBoundingClientRect()

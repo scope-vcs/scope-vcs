@@ -13,7 +13,6 @@ export const heroCopy = {
 
 export const mergeTitle: PairedText = { public: 'Anyone can send a change.', private: 'Only you can merge it.' }
 export const installTitle: PairedText = { public: 'Bring your repository.', private: 'Private paths included.' }
-export const installCommandAside = "  # go on, we'll wait"
 
 /** Scope's own repository, matching the visibility rules in `.scope/repo.json`. */
 export const repoPanel = {
@@ -35,6 +34,7 @@ export const notes = {
   heroTop: "yes, those are scope's real private folders. you can look. you can't clone",
   cta: 'you found one. eight more are hiding somewhere on this page',
   repo: 'AGENTS.md stays private. it has some choice language in it',
+  graph: "this graph has never had a merge conflict. it's a drawing",
   merge: 'you also get the merge button. pressing it never gets old',
   corner: 'legal/ is 12,250 lines of licenses. someone should probably read it',
   // Non-breaking hyphens keep the folder name on one line.
@@ -42,5 +42,5 @@ export const notes = {
   footer: 'an earlier draft of this page was about a sourdough starter. yikes',
 } as const
 
-export type NoteId = keyof typeof notes | 'command'
+export type NoteId = keyof typeof notes
 export const touchNavNote = 'drag the ring'

@@ -27,9 +27,9 @@ export function Heading({ children, className, level }: { children: ReactNode; c
 
 /** A note the lens reveals. The public copy keeps it invisible but laid out, so
  * the finder can measure where it sits. */
-export function Note({ children, className, id }: { children?: ReactNode; className?: string; id: Exclude<NoteId, 'command'> }): ReactElement {
+export function Note({ children, className, id }: { children?: ReactNode; className?: string; id: NoteId }): ReactElement {
   return (
-    <span aria-hidden className={cn('landing-note', className)} data-note={id}>
+    <span aria-hidden className={cn('landing-note max-w-[34ch]', className)} data-note={id}>
       {children ?? notes[id]}
     </span>
   )

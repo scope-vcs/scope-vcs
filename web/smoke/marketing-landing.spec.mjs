@@ -45,10 +45,9 @@ test('landing install controls copy the selected command and keep the theme afte
       const option = page.getByRole('button', { name: platform, exact: true })
       await option.click()
       assert.equal(await option.getAttribute('aria-pressed'), 'true')
-      const command = await page.locator(`${publicLayer} [data-note="command"] code`).innerText()
+      const command = await page.locator(`${publicLayer} .install-command code`).innerText()
       assert(command.includes(script))
-      assert.equal(await page.locator(`${privateLayer} [data-note="command"] code`).innerText(), `${command}  # go on, we'll wait`)
-      assert.equal(await page.locator(`${privateLayer} [data-note="command"] button[aria-label^="Copy"]`).evaluate((button) => getComputedStyle(button).visibility), 'hidden')
+      assert.equal(await page.locator(`${privateLayer} .install-command code`).innerText(), command)
       await page.getByRole('button', { name: `Copy ${copyName} install command` }).click()
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), command)
     }
@@ -65,8 +64,8 @@ test('landing layout keeps every note clear of the content at each width', async
         await page.setViewportSize({ width, height: 1000 })
         const layout = await page.evaluate((selector) => {
           const layer = document.querySelector(selector)
-          const notes = [...layer.querySelectorAll('[data-note]:not([data-note="command"])')].filter((note) => note.getClientRects().length)
-          const content = [...layer.querySelectorAll('h1, h2, p:not(.landing-note), a, button, .repo-panel, .merge-graph, [data-note="command"]')]
+          const notes = [...layer.querySelectorAll('[data-note]')].filter((note) => note.getClientRects().length)
+          const content = [...layer.querySelectorAll('h1, h2, p:not(.landing-note), a, button, .repo-panel, .merge-graph, .install-command')]
           const overlaps = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1
           return {
             notes: notes.length,
@@ -77,7 +76,7 @@ test('landing layout keeps every note clear of the content at each width', async
             tops: innerWidth > 900 ? [['merge', 'install'].map((id) => document.querySelector(`#${id} h2`).getBoundingClientRect().top)] : [],
           }
         }, publicLayer)
-        assert.equal(layout.notes, 8, `${colorScheme} at ${width}px`)
+        assert.equal(layout.notes, 9, `${colorScheme} at ${width}px`)
         assert.deepEqual(layout.collisions, [], `${colorScheme} at ${width}px`)
         assert.equal(layout.overflow, false, `${colorScheme} at ${width}px`)
         for (const [merge, install] of layout.tops) assert.equal(merge, install, `${colorScheme} at ${width}px`)

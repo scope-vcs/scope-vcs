@@ -44,7 +44,6 @@
 .landing-note {
   font: 400 12px/1.55 var(--font-mono);
   color: var(--muted-foreground);
-  max-width: 34ch;
 }
 
 .landing-private :is(.landing-swap, .landing-note, .is-kept) {
