@@ -119,6 +119,18 @@ jobs:
             echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.environments.staging.environmentId' .github/deployment-services.json)"
           } >> "$GITHUB_ENV"
 
+      - name: Install reviewed Git for staging smoke
+        # The same installer took 47s in release 36013327331; allow download/compile headroom.
+        timeout-minutes: 5
+        run: |
+          version="$(jq -er '.git.version' dev/tool-versions.json)"
+          source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+          sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
+          echo /opt/git/bin >> "$GITHUB_PATH"
+
+      - name: Verify staging Git version
+        run: node dev/check-git-version.mjs
+
       - name: Install Railway CLI
         run: |
           railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"

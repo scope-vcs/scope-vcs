@@ -374,6 +374,22 @@ test('CLI publication configures the advertised installer origin before deployme
   ]);
 });
 
+test('staging verifies pinned Git before credentials or deployment mutations', () => {
+  const workflow = read('.github/workflows/deploy-staging.yml');
+  const install = workflow.indexOf('- name: Install reviewed Git for staging smoke');
+  const verify = workflow.indexOf('- name: Verify staging Git version');
+  const credentials = workflow.indexOf('- name: Create staging-scoped Railway token');
+  assert.ok(install > workflow.indexOf('- name: Checkout trusted orchestration'));
+  assert.ok(verify > install && credentials > verify);
+  const setup = workflow.slice(install, credentials);
+  assert.match(setup, /jq -er '\.git\.version' dev\/tool-versions\.json/);
+  assert.match(setup, /jq -er '\.git\.sourceSha256' dev\/tool-versions\.json/);
+  assert.match(setup, /sudo bash deploy\/railway\/install-git\.sh "\$version" "\$source_sha256"/);
+  assert.match(setup, /echo \/opt\/git\/bin >> "\$GITHUB_PATH"/);
+  assert.match(setup, /run: node dev\/check-git-version\.mjs/);
+  assert.doesNotMatch(setup, /\n\s+(?:if:|continue-on-error:)/);
+});
+
 test('Node workflows cache pnpm and browser downloads by the web lockfile', () => {
   const integrationCi = read('.github/workflows/scope-integration-ci.yml');
   for (const workflow of [integrationCi, read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
