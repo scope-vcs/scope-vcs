@@ -53,9 +53,17 @@ BEGIN
     OR NOT pg_has_role('scope_migrator', 'pg_signal_backend', 'MEMBER') THEN
     RAISE EXCEPTION 'Production role memberships differ from policy';
   END IF;
+  IF EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid
+      WHERE r.rolname IN (${roleNames})) THEN
+    RAISE EXCEPTION 'Production role is held by another account';
+  END IF;
   IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname NOT LIKE 'pg_%'
       AND nspname NOT IN ('public', 'information_schema')) THEN
     RAISE EXCEPTION 'Unexpected production application schema';
+  END IF;
+  IF exact_policy AND EXISTS (SELECT 1 FROM unnest(ARRAY[${expectedTables}]) AS expected(relname)
+      WHERE to_regclass('public.' || quote_ident(expected.relname)) IS NULL) THEN
+    RAISE EXCEPTION 'Expected production relation is missing';
   END IF;
   IF exact_policy AND EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
@@ -80,8 +88,15 @@ BEGIN
       OR has_schema_privilege(role_name, 'public', 'CREATE') THEN
       RAISE EXCEPTION 'Production database/schema privileges differ for %', role_name;
     END IF;
+    -- The ledger stays read-only in every mode: a writable ledger lets a runtime
+    -- role forge the candidate version that unlocks the exact comparison.
     IF NOT has_table_privilege(role_name, 'public.seaql_migrations', 'SELECT')
-      OR has_table_privilege(role_name, 'public.seaql_migrations', 'UPDATE') THEN
+      OR has_any_column_privilege(role_name, 'public.seaql_migrations', 'INSERT')
+      OR has_any_column_privilege(role_name, 'public.seaql_migrations', 'UPDATE')
+      OR has_any_column_privilege(role_name, 'public.seaql_migrations', 'REFERENCES')
+      OR has_table_privilege(role_name, 'public.seaql_migrations', 'DELETE')
+      OR has_table_privilege(role_name, 'public.seaql_migrations', 'TRUNCATE')
+      OR has_table_privilege(role_name, 'public.seaql_migrations', 'TRIGGER') THEN
       RAISE EXCEPTION 'Production migration-ledger privileges differ for %', role_name;
     END IF;
     IF NOT exact_policy THEN
