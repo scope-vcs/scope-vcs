@@ -77,7 +77,7 @@ function RepoLayoutRoute() {
   return (
     <RepoLayoutProvider live={live} subscribe={subscribe}>
       <RepositoryHtmlPreviewProvider>
-        <RepoShell params={params}>
+        <RepoShell params={params} repo={live.repo}>
           <Outlet />
         </RepoShell>
       </RepositoryHtmlPreviewProvider>
