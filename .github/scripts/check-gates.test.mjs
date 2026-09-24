@@ -420,7 +420,7 @@ test('CI is pull-request-only and Release is scheduled/manual with a shared chec
   assert.match(ci, /  pull_request:/);
   assert.doesNotMatch(ci.split('\nconcurrency:')[0], /schedule:|workflow_dispatch:|push:/);
   const triggers = release.split('\nconcurrency:')[0];
-  assert.match(triggers, /cron: "8 9 \* \* \*"\n\s+timezone: "America\/Chicago"/);
+  assert.match(triggers, /cron: "8 3 \* \* \*"\n\s+timezone: "America\/Chicago"/);
   assert.equal((triggers.match(/cron:/g) || []).length, 1);
   assert.match(triggers, /workflow_dispatch:/);
   assert.doesNotMatch(triggers, /pull_request:|push:/);

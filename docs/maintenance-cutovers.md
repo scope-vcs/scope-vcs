@@ -1,6 +1,6 @@
 # Releases and maintenance recovery
 
-`release.yml` is the production entry point. It runs once daily at 9:08 AM in
+`release.yml` is the production entry point. It runs once daily at 3:08 AM in
 `America/Chicago`, including daylight saving changes. GitHub may delay the
 scheduled start. A failed run does not trigger another scheduled attempt that
 day. Use manual dispatch for a correction or recovery:
@@ -14,10 +14,10 @@ concurrency lock. Later commits wait for another release. Component receipts
 skip unchanged work. `ci.yml` validates pull requests without deploying; it and
 Release call the same reusable validation workflow.
 
-On Surface, `scope-deployment-watcher.timer` checks GitHub every five minutes
-from 9 AM through 11:55 PM Chicago time. Once a release reaches staging, its
-local `deployment_watcher.py` starts a Codex thread in T3 to follow the release
-and handle corrections. The watcher never dispatches the daily release itself.
+On Surface, `scope-deployment-watcher.timer` checks GitHub every minute, all day.
+Its local `deployment_watcher.py` starts a Codex thread in T3 when a main Release
+workflow appears, then follows the release and handles corrections. The watcher
+never dispatches the daily release itself.
 Its persisted run and command IDs prevent duplicate threads after retries.
 The shared automation client resolves T3's active native executable from
 `runtime/service-state.json` each time it connects, so nightly updates and
