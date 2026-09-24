@@ -26,8 +26,14 @@ successful_deployments="${SCOPE_SUCCESSFUL_DEPLOYMENTS:-}"
 deployment_evidence_path="${SCOPE_DEPLOYMENT_EVIDENCE_PATH:-}"
 pending_evidence_path=""
 predecessor_teardown_dir=""
+remove_pending_evidence() {
+  [[ -z "$pending_evidence_path" ]] ||
+    rm -f -- "$pending_evidence_path".{cache,run-worker,media-api,media-worker,api,git-router,web}
+}
 if [[ -n "$deployment_evidence_path" ]]; then
   pending_evidence_path="${deployment_evidence_path}.pending.$$"
+  # A killed earlier invocation whose PID was reused can leave stale fragments.
+  remove_pending_evidence
 fi
 
 for deployment_flag in deploy_cache_requested deploy_worker_requested deploy_router_requested \
@@ -349,9 +355,7 @@ if (paths.length) {
 }
 
 discard_pending_evidence() {
-  if [[ -n "$pending_evidence_path" ]]; then
-    rm -f -- "$pending_evidence_path".{cache,run-worker,media-api,media-worker,api,git-router,web}
-  fi
+  remove_pending_evidence
   [[ -z "$predecessor_teardown_dir" ]] || rm -rf -- "$predecessor_teardown_dir"
 }
 
