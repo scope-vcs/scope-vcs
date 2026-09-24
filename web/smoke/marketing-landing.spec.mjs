@@ -36,7 +36,6 @@ test('landing install controls copy the selected command and keep the theme afte
     await page.getByRole('button', { name: 'Switch to dark mode' }).waitFor()
     assert.equal(await page.locator('html').getAttribute('class'), '')
     await page.getByRole('link', { name: 'Install Scope', exact: true }).click()
-    assert.equal(new URL(page.url()).hash, '#install')
     await page.locator(`${publicLayer} .landing-terminal.is-called`).waitFor()
     await page.locator(`${publicLayer} .landing-terminal.is-called`).waitFor({ state: 'detached' })
     for (const [platform, copyName, script] of [

@@ -32,12 +32,12 @@ export const repoPanel = {
 /** Notes only the lens shows. Keys name where each one sits on the page. */
 export const notes = {
   nav: 'hold the mouse down. press L to put the lens away',
-  heroTop: 'this is the real scope repo btw. those really are the folders we keep private',
+  heroTop: "yes, those are scope's real private folders. you can look. you can't clone",
   cta: 'no cards on this page. this was not a design decision',
   repo: "AGENTS.md stays private. you don't want to read the part about backwards compatibility",
   merge: 'merge conflicts are also only yours. we left that out of the headline',
   corner: 'legal/ is 12,250 lines of licenses. someone should probably read it',
-  install: 'pre-alpha. the changelog is mostly apologies',
+  install: 'a new build ships every night at 3:08am. nobody has ever been awake for one',
   footer: 'an earlier draft of this page was about a sourdough starter. it did not survive review',
 } as const
 

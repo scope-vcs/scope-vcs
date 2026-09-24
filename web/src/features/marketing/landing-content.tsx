@@ -80,7 +80,7 @@ export function LandingContent({
           </section>
 
           {/* The second screen: two columns, headline above figure. */}
-          <section className="relative grid grid-cols-2 items-start gap-x-20 gap-y-24 pt-8 pb-36 max-[901px]:grid-cols-1 max-[901px]:pt-10 max-[901px]:pb-40">
+          <section className="relative grid grid-cols-2 items-start gap-x-20 gap-y-24 pt-8 pb-40 max-[901px]:grid-cols-1 max-[901px]:pt-10 max-[901px]:pb-40">
             <div className={column} id={isPublic ? 'merge' : undefined}>
               <Heading className={columnTitle} level={2}><Swap text={mergeTitle} /></Heading>
               <div className="mt-12"><MergeGraph /></div>
@@ -100,7 +100,7 @@ export function LandingContent({
               </div>
               <Note className={columnNote} id="install" />
             </div>
-            <Note className="absolute bottom-6 right-0 max-w-[24ch] text-right" id="corner" />
+            <Note className="absolute bottom-2 right-0 max-w-[24ch] text-right" id="corner" />
           </section>
         </main>
 
@@ -117,14 +117,19 @@ export function LandingContent({
   )
 }
 
-/** Brings the install command to the middle of the screen and asks the page to
- * light it up, since the command itself is what the button offers. */
+/** Lights up the install command, since the command is what the button
+ * offers. The page only scrolls when the command isn't already fully on
+ * screen, so a visible command never moves. The URL stays put too: the router
+ * scrolls to any hash it sees. */
 function callInstall(event: MouseEvent<HTMLAnchorElement>, onInstallCall: () => void) {
   const install = document.getElementById('install')
-  if (!install) return
+  const command = install?.querySelector('[data-note="command"]')
+  if (!install || !command) return
   event.preventDefault()
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
-  install.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
-  history.replaceState(history.state, '', '#install')
+  const box = command.getBoundingClientRect()
+  if (box.top < 0 || box.bottom > innerHeight) {
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+    command.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+  }
   onInstallCall()
 }
