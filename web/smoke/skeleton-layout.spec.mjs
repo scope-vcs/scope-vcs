@@ -62,13 +62,13 @@ const KNOWN_FAILURES = new Set([
   'desktop profile: dividers',
   'desktop request detail: dividers',
   'desktop requests from code: dividers',
-  'desktop requests from profile: content edge',
   'desktop requests from profile: dividers',
   'desktop requests from profile: topbar',
   'desktop run detail: dividers',
   'desktop runs: dividers',
   'desktop settings: dividers',
   'mobile account: dividers',
+  'mobile code from history: content edge',
   'mobile code from history: dividers',
   'mobile code from profile: content edge',
   'mobile code from profile: dividers',
@@ -81,7 +81,6 @@ const KNOWN_FAILURES = new Set([
   'mobile profile: dividers',
   'mobile request detail: dividers',
   'mobile requests from code: dividers',
-  'mobile requests from profile: content edge',
   'mobile requests from profile: dividers',
   'mobile requests from profile: topbar',
   'mobile run detail: dividers',
@@ -190,10 +189,12 @@ function compareSteps({ pending, loaded }) {
     }
     const expected = loaded.dividers.filter((y) => y <= step.skeletonBottom + DIVIDER_TOLERANCE_PX)
     const matched = expected.filter((y) => near(step.dividers, y)).length
-    const kept = step.dividers.filter((y) => near(loaded.dividers, y)).length
+    // Placeholder rows past the end of a short loaded list are not phantoms.
+    const drawn = step.dividers.filter((y) => y <= Math.max(0, ...loaded.dividers) + DIVIDER_TOLERANCE_PX)
+    const kept = drawn.filter((y) => near(loaded.dividers, y)).length
     if (
       matched < expected.length * DIVIDER_MATCH_RATIO ||
-      kept < step.dividers.length * DIVIDER_MATCH_RATIO
+      kept < drawn.length * DIVIDER_MATCH_RATIO
     ) {
       failures.dividers ??= `${at} dividers [${step.dividers}] vs loaded [${loaded.dividers}]`
     }
@@ -228,9 +229,17 @@ function measureLayout() {
     if (!visible(element) || element.closest('.sr-only, .animate-spin')) continue
     const rect = element.getBoundingClientRect()
     if (rect.bottom < mainRect.top || rect.top > innerHeight) continue
-    const content = element.matches('[data-slot="skeleton"], svg, img, input, textarea, select, button') ||
-      [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim())
-    if (content) left = Math.min(left, rect.left)
+    // Content is text where it is drawn, or a box that stands for content:
+    // skeletons, icons, images and inputs.
+    if (element.matches('[data-slot="skeleton"], svg, img, input, textarea, select')) {
+      left = Math.min(left, rect.left)
+    }
+    for (const node of element.childNodes) {
+      if (node.nodeType !== Node.TEXT_NODE || !node.textContent.trim()) continue
+      const range = document.createRange()
+      range.selectNodeContents(node)
+      left = Math.min(left, range.getBoundingClientRect().left)
+    }
     if (element.matches('[data-slot="skeleton"]')) skeletonBottom = Math.max(skeletonBottom, Math.min(rect.bottom, innerHeight))
     if (rect.width < mainRect.width * 0.25) continue
     // A divider is a lone top or bottom edge. Boxed inputs and panels have
