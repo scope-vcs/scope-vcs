@@ -1,11 +1,13 @@
 name: Release
+run-name: ${{ inputs.schedule_intent != '' && format('Release / daily {0}', inputs.schedule_intent) || 'Release' }}
 
 on:
-  schedule:
-    - cron: "8 2 * * *"
-      timezone: "America/Chicago"
   workflow_dispatch:
     inputs:
+      schedule_intent:
+        description: Chicago release date supplied by the deployment watcher
+        type: string
+        default: ""
       source_run_id:
         description: Reuse a validated and staged release run without rebuilding (optional)
         type: string

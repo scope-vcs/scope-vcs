@@ -430,14 +430,14 @@ test('release selection uses the trusted control revision before exposing a sour
   assert.match(checks.slice(checks.indexOf('  build:')), /if: github\.event_name != 'pull_request'/);
 });
 
-test('CI is pull-request-only and Release is scheduled/manual with a shared check owner', () => {
+test('CI is pull-request-only and Release dispatch is owned by the watcher', () => {
   const ci = read('.github/workflows/ci.yml');
   const release = read('.github/workflows/release.yml');
   assert.match(ci, /  pull_request:/);
   assert.doesNotMatch(ci.split('\nconcurrency:')[0], /schedule:|workflow_dispatch:|push:/);
   const triggers = release.split('\nconcurrency:')[0];
-  assert.match(triggers, /cron: "8 2 \* \* \*"\n\s+timezone: "America\/Chicago"/);
-  assert.equal((triggers.match(/cron:/g) || []).length, 1);
+  assert.doesNotMatch(triggers, /schedule:|cron:/);
+  assert.match(triggers, /schedule_intent:/);
   assert.match(triggers, /workflow_dispatch:/);
   assert.doesNotMatch(triggers, /pull_request:|push:/);
   for (const caller of [ci, release]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);

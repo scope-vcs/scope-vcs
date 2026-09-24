@@ -9,6 +9,7 @@ from pathlib import Path
 
 from deployment_policy import MAX_RECOVERIES, TERMINAL, completion, running, stamp, supervise, timestamp, trusted_run
 from deployment_runtime import CHECKOUT, PROJECT_ID, REPOSITORY, SELECTIONS, T3Client, create_worktree, github, jobs, save_json
+import deployment_scheduler
 from heartbeat import alert, heartbeat
 
 STATE_DIR = Path.home() / ".local/state/scope-deployment-watcher"
@@ -33,8 +34,9 @@ Record corrective workflow run IDs promptly in {receipt}, using this JSON object
 {{"corrections": {{"original_run_id": corrective_run_id}}, "blocker": false}}
 Only link a corrective run that actually addresses that original failure. The supervisor
 independently checks the workflow and production verification before closing the release.
-Keep all original mappings when updating this file. Re-running the same GitHub run needs
-no mapping. Write a temporary file then rename it atomically onto the receipt path.
+If a corrective run fails, map it to its next correction too; retain the full chain and
+all original mappings when updating the file. Re-running the same GitHub run needs no
+mapping. Write a temporary file then rename it atomically onto the receipt path.
 Do not modify any other supervisor state, watcher source, services, or settings.
 Read {inbox} on every monitoring cycle. It lists new releases assigned to this investigation
 while your turn is running; cover each release and keep all corrective work in this thread.
@@ -120,25 +122,80 @@ def read_corrections(state: dict, info: dict) -> str:
     if (not isinstance(receipt, dict) or not isinstance(receipt.get("corrections", {}), dict)
             or not isinstance(receipt.get("blocker", False), bool)):
         raise ValueError("Invalid correction receipt")
-    for original, correction in receipt.get("corrections", {}).items():
-        record = state["runs"].get(original)
-        if not record or record.get("incident_id") != info["incident_id"]:
-            raise ValueError("Correction must belong to this release investigation")
-        if not isinstance(correction, int) or isinstance(correction, bool) or correction <= 0:
+    corrections = receipt.get("corrections", {})
+    runs = {}
+    for original, correction in corrections.items():
+        if (not isinstance(original, str) or not original.isdecimal()
+                or not isinstance(correction, int) or isinstance(correction, bool)
+                or correction <= 0 or str(correction) == original):
             raise ValueError("Correction must identify a GitHub workflow run")
         run = github(f"actions/runs/{correction}")
-        if not trusted_run(run) or run["created_at"] < record["created_at"]:
+        if not trusted_run(run):
+            raise ValueError("Correction must be a trusted main release")
+        existing = state["runs"].get(str(correction))
+        if existing and existing.get("incident_id") not in {None, info["incident_id"]}:
+            raise ValueError("Correction belongs to another release investigation")
+        runs[str(correction)] = run
+    targets = {str(correction) for correction in corrections.values()}
+    for original, correction in corrections.items():
+        record = state["runs"].get(original)
+        if not record and original in runs:
+            run = runs[original]
+            record = {"created_at": run["created_at"], "incident_id": info["incident_id"]}
+        if (not record or record.get("incident_id") != info["incident_id"]
+                and not (original in targets and record.get("incident_id") is None)):
+            raise ValueError("Correction must belong to this release investigation")
+        if runs[str(correction)]["created_at"] < record["created_at"]:
             raise ValueError("Correction must be a subsequent trusted release")
-        if (run.get("run_started_at") or run["created_at"]) < record.get("attempt_started_at", record["created_at"]):
-            # A previous repair cannot close a newly retried original release.
-            continue
-        corrected = state["runs"].setdefault(str(correction), {
-            "run_id": correction, "attempt": run["run_attempt"], "created_at": run["created_at"],
+    for original in corrections:
+        seen = set()
+        current = original
+        while current in corrections:
+            if current in seen:
+                raise ValueError("Correction chain contains a cycle")
+            seen.add(current)
+            current = str(corrections[current])
+    for correction, run in runs.items():
+        corrected = state["runs"].setdefault(correction, {
+            "run_id": int(correction), "attempt": run["run_attempt"], "created_at": run["created_at"],
             "status": "monitoring", "incident_id": info["incident_id"], "thread_id": info["thread_id"],
         })
-        if completion(run, jobs(run)) == "verified":
-            corrected.update(status="verified", verified_at=stamp())
-            record.update(status="recovered", corrected_by=correction, verified_at=stamp())
+        corrected.setdefault("incident_id", info["incident_id"])
+        corrected.setdefault("thread_id", info["thread_id"])
+        if run["run_attempt"] > corrected["attempt"]:
+            corrected.update(attempt=run["run_attempt"], status="monitoring",
+                             attempt_started_at=run.get("run_started_at") or run["created_at"])
+    for original in corrections:
+        chain = [original]
+        current_verified = False
+        while chain[-1] in corrections:
+            correction = str(corrections[chain[-1]])
+            previous = state["runs"][chain[-1]]
+            run = runs[correction]
+            if ((run.get("run_started_at") or run["created_at"])
+                    < previous.get("attempt_started_at", previous["created_at"])):
+                # A previous repair cannot close a newly retried release.
+                break
+            chain.append(correction)
+        else:
+            final = chain[-1]
+            run = runs[final]
+            if run["status"] == "completed" and completion(run, jobs(run)) == "verified":
+                current_verified = True
+                final_record = state["runs"][final]
+                verified_at = final_record.get("verified_at") if final_record["status"] == "verified" else stamp()
+                final_record.update(status="verified", verified_at=verified_at)
+                for member in chain[:-1]:
+                    record = state["runs"][member]
+                    if record["status"] != "recovered" or record.get("corrected_by") != int(final):
+                        record.update(status="recovered", corrected_by=int(final), verified_at=verified_at)
+        if not current_verified:
+            for member in chain:
+                record = state["runs"][member]
+                if record["status"] == "recovered":
+                    record["status"] = "monitoring"
+                    record.pop("corrected_by", None)
+                    record.pop("verified_at", None)
     persist(state)
     return "approval_required" if receipt.get("blocker") is True else ""
 
@@ -274,6 +331,13 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
         return {"trusted_releases": len([r for r in listed if trusted_run(r)]),
                 "incomplete_releases": [r["id"] for r in listed if trusted_run(r) and r["status"] != "completed"],
                 "tracked_releases": len(state["runs"])}
+    scheduler_error = None
+    try:
+        deployment_scheduler.poll()
+    except Exception as error:
+        # Keep supervising existing releases, but withhold the heartbeat so the
+        # external observer reports a broken daily dispatch owner.
+        scheduler_error = error
     update_runs(state, listed)
     # Read registrations before assigning newly discovered corrective releases.
     for info in list(state["threads"].values()):
@@ -317,6 +381,8 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
                 monitor(client, state, info, shells.get(info["thread_id"], {}))
     state["last_poll_at"] = stamp()
     persist(state)
+    if scheduler_error is not None:
+        raise RuntimeError("Daily release scheduler failed") from scheduler_error
     heartbeat()
     return {"tracked_releases": len(state["runs"]),
             "open_investigations": sum(t["status"] == "monitoring" for t in state["threads"].values()),
@@ -326,12 +392,18 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--initialize", action="store_true")
+    parser.add_argument("--initialize-scheduler", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (STATE_DIR / "watcher.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        print(json.dumps(poll(initialize=args.initialize, dry_run=args.dry_run)))
+        if args.initialize_scheduler:
+            if args.initialize or args.dry_run:
+                raise ValueError("Initialize the scheduler separately from other watcher options")
+            print(json.dumps(deployment_scheduler.initialize()))
+        else:
+            print(json.dumps(poll(initialize=args.initialize, dry_run=args.dry_run)))
 
 
 if __name__ == "__main__":
