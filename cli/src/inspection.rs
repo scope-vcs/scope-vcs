@@ -5,7 +5,9 @@ use serde::Serialize;
 use std::{path::PathBuf, process::Command, time::Duration};
 
 mod local;
-use local::{compare_scope_ref, git_text, local_state, local_visibility};
+mod visibility;
+use local::{compare_scope_ref, git_text, local_state};
+use visibility::inspect_visibility;
 
 #[derive(Serialize)]
 struct LocalState {
@@ -231,14 +233,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                 None,
             ),
         }
-        match local_visibility(repo) {
-            Ok(visibility) => {
-                let message = if visibility.local_edits == Some(true) { "Local visibility changes have not been published" } else { "Local visibility config is valid" };
-                record(&mut report, "visibility", DiagnosticState::Ok, message.into(), None);
-                if let Some(local) = &mut report.local { local.visibility = Some(visibility); }
-            }
-            Err(error) => record(&mut report, "visibility", DiagnosticState::Problem, error.to_string(), Some("Inspect setup with scope visibility show; use scope init for a new repository or repair the retained repository setup".into())),
-        }
+        inspect_visibility(&mut report, repo);
         if let Some(head) = report
             .local
             .as_ref()

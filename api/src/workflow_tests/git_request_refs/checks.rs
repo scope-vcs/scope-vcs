@@ -312,9 +312,7 @@ async fn merging_an_unevaluated_head_evaluates_it_instead() {
     assert_eq!(listed_status(&state, &request_id).await, "ChecksPending");
 }
 
-/// The evaluation a non-maintainer's push records for the request's current head.
-/// Seeded here because `.scope/` is private, so nothing a public contributor can
-/// see or push carries a workflow for their own head to ask for.
+/// Seed an awaiting evaluation to exercise the approval transaction in isolation.
 async fn record_awaiting_approval(state: &AppState, request_id: &str) {
     forget_evaluations(state, request_id).await;
     let request = stored_request(state, request_id).await;

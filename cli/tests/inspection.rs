@@ -1,4 +1,7 @@
 mod support;
+use scope_cli::repo_config::{
+    default_scope_repo_config, repo_config_path, write_worktree_scope_repo_config_with_base,
+};
 use serde_json::Value;
 use std::fs;
 use std::process::Command;
@@ -149,6 +152,47 @@ fn doctor_reports_incomplete_setup_without_repairing_it() {
             .any(|d| d["name"] == "visibility" && d["state"] == "problem")
     );
     assert!(!dir.path().join(".git/scope").exists());
+}
+
+#[test]
+fn doctor_identifies_missing_linked_worktree_visibility_without_creating_it() {
+    let dir = TempDir::new("doctor-linked-worktree");
+    create_repo_with_head(dir.path());
+    write_worktree_scope_repo_config_with_base(dir.path(), &default_scope_repo_config()).unwrap();
+    let linked = dir.path().join("linked");
+    run_git(
+        dir.path(),
+        ["worktree", "add", "-b", "linked", linked.to_str().unwrap()],
+    );
+    let linked_config = repo_config_path(&linked).unwrap();
+    assert!(!linked_config.exists());
+
+    let output = scope_command(&linked)
+        .args(["--json", "doctor", "--offline"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let visibility = value["result"]["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|diagnostic| diagnostic["name"] == "visibility")
+        .unwrap();
+    assert_eq!(visibility["state"], "info");
+    assert!(
+        visibility["message"]
+            .as_str()
+            .unwrap()
+            .contains("request commands do not require it")
+    );
+    assert!(
+        visibility["recovery"]
+            .as_str()
+            .unwrap()
+            .contains("scope pull")
+    );
+    assert!(!linked_config.exists());
 }
 
 #[test]

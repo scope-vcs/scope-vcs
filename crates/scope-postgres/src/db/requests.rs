@@ -278,7 +278,6 @@ impl RequestStore {
         let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
         let input = CloseRequestInput {
             request_id: command.request_id,
-            actor_is_author: request.author_user_id == command.actor_user_id,
             actor_user_id: command.actor_user_id,
             actor_is_maintainer: repo.access.is_maintainer(),
             event_id: command.event_id,

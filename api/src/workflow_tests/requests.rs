@@ -1,5 +1,6 @@
 use super::*;
 
+mod close;
 mod helpers;
 mod publication;
 mod queue;

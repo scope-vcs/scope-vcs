@@ -241,13 +241,6 @@ pub(crate) async fn close_request(
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let (request, _) =
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
-    if !request_policy(&request, RequestViewer::new(access, Some(&user.id), false))
-        .permissions
-        .can_close
-    {
-        return Err(ApiError::forbidden("request close access required"));
-    }
-    let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let mutation =
         crate::use_cases::request_close::close_request(&state, &repo, &request, &user.id).await?;
     match mutation {
@@ -256,6 +249,7 @@ pub(crate) async fn close_request(
             request: None,
         })),
         CloseRequestMutation::Closed { request, .. } => {
+            let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
             let viewer = request_viewer(&state, &request.id, access, Some(&user.id)).await?;
             let request =
                 request_response_for_viewer(&state, request, viewer, current_main_oid).await?;

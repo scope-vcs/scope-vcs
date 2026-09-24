@@ -1,6 +1,7 @@
+use crate::api::ApiSession;
 use crate::display::short_oid;
 use crate::{
-    api::{api_url, http_client},
+    api::{RepositoryActor, api_url, get_repo, get_repo_config, http_client},
     git_repo::{
         GitRepo, branch_config_value, current_branch, ensure_git_repo_ready, git_remote_fetch_url,
         head_oid, install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
@@ -8,6 +9,11 @@ use crate::{
     git_transport::{ScopeRemote, select_scope_fetch_remote},
     login::session_from_cache_or_browser,
     push::DEFAULT_SCOPE_BRANCH,
+    repo_config::{
+        WorktreeRepoConfigPresence, WorktreeRepoConfigSync, default_scope_repo_config,
+        load_worktree_scope_repo_config, load_worktree_scope_repo_config_base_hash,
+        sync_missing_worktree_scope_repo_config, worktree_scope_repo_config_presence,
+    },
 };
 use crate::{error::CliError, execution::emit};
 use anyhow::{Context, bail};
@@ -23,48 +29,106 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     let git_origin = scope_git_origin(&repo, &api_url)?;
     let target = ScopeRemote::parse(&git_origin, &remote, &git_remote_fetch_url(&repo, &remote)?)?;
     let client = http_client()?;
-    let _session = session_from_cache_or_browser(&client, &api_url)?;
-
-    // Persist the permissioned URL and credential helper so plain `git fetch` and
-    // `git pull` have exactly the same view after this command returns.
-    run_git_in_repo(
+    let session = session_from_cache_or_browser(&client, &api_url)?;
+    let visibility_sync = sync_pull_visibility(
         &repo,
-        &["remote", "set-url", &remote, &target.permissioned_url],
+        ApiSession::new(&client, &api_url, &session.token),
+        &target,
     )?;
-    install_scope_fetch_auth(&repo.root, &target.permissioned_url, &api_url)?;
 
-    let before = remote_refs(&repo, &remote)?;
-    run_git_in_repo(&repo, &["fetch", "--prune", &remote])?;
-    let after = remote_refs(&repo, &remote)?;
-    let mut lines = ref_change_lines(&remote, &before, &after);
-    let upstream = tracked_branch(&repo, &remote, &branch)?;
-    let tracked_name = upstream.as_deref().filter(|name| after.contains_key(*name));
-    let mut moved = false;
-    if let Some(tracked_name) = tracked_name {
-        let tracked = format!("refs/remotes/{remote}/{tracked_name}");
-        eprintln!(
-            "Fast-forward {}/{} local {branch} to {tracked} at {}",
-            target.owner, target.repo, after[tracked_name]
-        );
-        run_git_in_repo(&repo, &["merge", "--ff-only", &tracked]).map_err(|error| CliError::partial(
-            format!("Fetched Scope refs, but could not fast-forward {branch}: {error:#}"),
-            json!({"operation": "pull", "repository": format!("{}/{}", target.owner, target.repo), "fetched": true, "branch": branch, "previous_head": previous_head, "remote_refs": after, "recovery": "Inspect git status and the local branch divergence. Resolve local changes or divergence, then repeat scope pull; no force reset is needed."})
-        ))?;
-        moved = head_oid(&repo)? != previous_head;
-        lines.push(format!(
-            "{branch} is up to date with {remote}/{tracked_name}."
-        ));
-    } else if let Some(upstream) = upstream {
-        lines.push(format!("Fetched every visible Scope ref; upstream {remote}/{upstream} for local branch {branch} is unavailable."));
-    } else {
-        lines.push(format!("Fetched every visible Scope ref; local branch {branch} does not track a branch on {remote}, so it was not moved."));
+    let result = (|| -> anyhow::Result<()> {
+        // Persist the permissioned URL and credential helper so plain `git fetch` and
+        // `git pull` have exactly the same view after this command returns.
+        run_git_in_repo(
+            &repo,
+            &["remote", "set-url", &remote, &target.permissioned_url],
+        )?;
+        install_scope_fetch_auth(&repo.root, &target.permissioned_url, &api_url)?;
+
+        let before = remote_refs(&repo, &remote)?;
+        run_git_in_repo(&repo, &["fetch", "--prune", &remote])?;
+        let after = remote_refs(&repo, &remote)?;
+        let mut lines = ref_change_lines(&remote, &before, &after);
+        if visibility_sync == WorktreeRepoConfigSync::Created {
+            lines.push("Loaded this worktree's visibility config from Scope.".into());
+        } else if visibility_sync == WorktreeRepoConfigSync::BaseRecovered {
+            lines.push("Recovered this worktree's visibility sync base.".into());
+        }
+        let upstream = tracked_branch(&repo, &remote, &branch)?;
+        let tracked_name = upstream.as_deref().filter(|name| after.contains_key(*name));
+        let mut moved = false;
+        if let Some(tracked_name) = tracked_name {
+            let tracked = format!("refs/remotes/{remote}/{tracked_name}");
+            eprintln!(
+                "Fast-forward {}/{} local {branch} to {tracked} at {}",
+                target.owner, target.repo, after[tracked_name]
+            );
+            run_git_in_repo(&repo, &["merge", "--ff-only", &tracked]).map_err(|error| CliError::partial(
+                format!("Fetched Scope refs, but could not fast-forward {branch}: {error:#}"),
+                json!({"operation": "pull", "repository": format!("{}/{}", target.owner, target.repo), "fetched": true, "branch": branch, "previous_head": previous_head, "remote_refs": after, "visibility_setup": visibility_sync.as_str(), "recovery": "Inspect git status and the local branch divergence. Resolve local changes or divergence, then repeat scope pull; no force reset is needed."})
+            ))?;
+            moved = head_oid(&repo)? != previous_head;
+            lines.push(format!(
+                "{branch} is up to date with {remote}/{tracked_name}."
+            ));
+        } else if let Some(upstream) = upstream {
+            lines.push(format!("Fetched every visible Scope ref; upstream {remote}/{upstream} for local branch {branch} is unavailable."));
+        } else {
+            lines.push(format!("Fetched every visible Scope ref; local branch {branch} does not track a branch on {remote}, so it was not moved."));
+        }
+
+        emit(
+            "pull",
+            &json!({"repository": format!("{}/{}", target.owner, target.repo), "remote": remote, "branch": branch, "previous_head": previous_head, "head": head_oid(&repo)?, "branch_moved": moved, "refs_before": before, "refs_after": after, "visibility_setup": visibility_sync.as_str()}),
+            lines,
+        )
+    })();
+    result.map_err(|error| {
+        if visibility_sync == WorktreeRepoConfigSync::Unchanged {
+            error
+        } else {
+            visibility_setup_error(error, visibility_sync, &target, &remote, &branch)
+        }
+    })
+}
+
+fn visibility_setup_error(
+    error: anyhow::Error,
+    visibility_sync: WorktreeRepoConfigSync,
+    target: &ScopeRemote,
+    remote: &str,
+    branch: &str,
+) -> anyhow::Error {
+    let failure = crate::error::json_response(&error);
+    let mut receipt = match failure.recovery {
+        Some(serde_json::Value::Object(fields)) => serde_json::Value::Object(fields),
+        Some(other) => json!({"previous_recovery": other}),
+        None => {
+            json!({"operation": "pull", "repository": format!("{}/{}", target.owner, target.repo), "remote": remote, "branch": branch, "recovery": "Local visibility state was saved. Fix the reported error, then rerun scope pull."})
+        }
+    };
+    receipt["visibility_setup"] = json!(visibility_sync.as_str());
+    CliError::with_recovery(failure.error, receipt).into()
+}
+
+fn sync_pull_visibility(
+    repo: &GitRepo,
+    api: ApiSession<'_>,
+    target: &ScopeRemote,
+) -> anyhow::Result<WorktreeRepoConfigSync> {
+    if worktree_scope_repo_config_presence(&repo.root)? == WorktreeRepoConfigPresence::Complete {
+        load_worktree_scope_repo_config(&repo.root)?;
+        load_worktree_scope_repo_config_base_hash(&repo.root)?;
+        return Ok(WorktreeRepoConfigSync::Unchanged);
     }
-
-    emit(
-        "pull",
-        &json!({"repository": format!("{}/{}", target.owner, target.repo), "remote": remote, "branch": branch, "previous_head": previous_head, "head": head_oid(&repo)?, "branch_moved": moved, "refs_before": before, "refs_after": after}),
-        lines,
-    )
+    let summary = get_repo(api, &target.owner, &target.repo)?;
+    let config = match summary.access.actor {
+        RepositoryActor::Public => default_scope_repo_config(),
+        RepositoryActor::Member | RepositoryActor::Owner => {
+            get_repo_config(api, &target.owner, &target.repo)?.config
+        }
+    };
+    sync_missing_worktree_scope_repo_config(&repo.root, &config)
 }
 
 fn tracked_branch(repo: &GitRepo, remote: &str, branch: &str) -> anyhow::Result<Option<String>> {
@@ -174,6 +238,104 @@ mod tests {
                 .unwrap()
                 .as_deref(),
             Some("main")
+        );
+    }
+
+    #[test]
+    fn linked_origin_tracking_stays_intact_while_visibility_is_initialized() {
+        let main = TempDir::git_repo("pull-linked-main", "main");
+        fs::write(main.path().join("README.md"), "initial\n").unwrap();
+        main.run_git(["add", "README.md"]);
+        main.run_git([
+            "-c",
+            "user.email=scope@example.test",
+            "-c",
+            "user.name=Scope Test",
+            "commit",
+            "--quiet",
+            "-m",
+            "initial",
+        ]);
+        let linked = main.path().join("linked");
+        main.run_git([
+            "worktree",
+            "add",
+            "-b",
+            "contribution",
+            linked.to_str().unwrap(),
+        ]);
+        main.run_git([
+            "remote",
+            "add",
+            "origin",
+            "https://github.example/owner/repo",
+        ]);
+        main.run_git(["config", "branch.contribution.remote", "origin"]);
+        main.run_git(["config", "branch.contribution.merge", "refs/heads/main"]);
+        let repo = GitRepo { root: linked };
+        let before = head_oid(&repo).unwrap();
+        let config = default_scope_repo_config();
+
+        assert_eq!(
+            tracked_branch(&repo, "scope", "contribution").unwrap(),
+            None
+        );
+        assert_eq!(
+            sync_missing_worktree_scope_repo_config(&repo.root, &config).unwrap(),
+            WorktreeRepoConfigSync::Created
+        );
+        assert_eq!(head_oid(&repo).unwrap(), before);
+        assert_eq!(
+            branch_config_value(&repo, "contribution", "remote")
+                .unwrap()
+                .as_deref(),
+            Some("origin")
+        );
+    }
+
+    #[test]
+    fn visibility_receipt_preserves_fast_forward_recovery_and_conflict_category() {
+        let target = ScopeRemote::parse(
+            "https://scope.example",
+            "scope",
+            "https://scope.example/git/permissioned/owner/repo",
+        )
+        .unwrap();
+        let prior = json!({
+            "operation": "pull",
+            "fetched": true,
+            "remote_refs": {"main": "abc123"},
+            "recovery": "Resolve local divergence, then retry."
+        });
+        let error: anyhow::Error =
+            CliError::partial("Could not fast-forward", prior.clone()).into();
+
+        let wrapped = visibility_setup_error(
+            error,
+            WorktreeRepoConfigSync::Created,
+            &target,
+            "scope",
+            "main",
+        );
+        let failure = crate::error::json_response(&wrapped);
+
+        assert_eq!(crate::error::exit_code(&wrapped), 5);
+        assert_eq!(failure.error.message, "Could not fast-forward");
+        assert_eq!(
+            failure.recovery.as_ref().unwrap()["fetched"],
+            prior["fetched"]
+        );
+        assert_eq!(
+            failure.recovery.as_ref().unwrap()["remote_refs"],
+            prior["remote_refs"]
+        );
+        assert_eq!(
+            failure.recovery.as_ref().unwrap()["recovery"],
+            prior["recovery"]
+        );
+        assert_eq!(
+            failure.recovery.as_ref().unwrap()["visibility_setup"],
+            "created"
         );
     }
 }

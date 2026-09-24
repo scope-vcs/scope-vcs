@@ -17,5 +17,6 @@
   "m0057_repository_invite_links.rs": "700cbfa7ecf1e8aed56e44ea8f0458b26c68a3e3c345714596513949163da5b3",
   "m0058_repository_invite_emails.rs": "7e2722c0f3148835ad34f10330c463e0c815a0b3550fa3538c4b4f032a8db7c7",
   "m0059_worker_history_permissions.rs": "75bc861f75681f1c489166b4eb5f6c73ef3fc972ce3ca7dd12c7e81d4c98db69",
-  "m0060_capacity_retries.rs": "3186fea14c47198a0c95565dc110ac455161f156b2c5fdb94ff0a0ab51324364"
+  "m0060_capacity_retries.rs": "3186fea14c47198a0c95565dc110ac455161f156b2c5fdb94ff0a0ab51324364",
+  "m0061_public_request_check_source.rs": "6d3f2f3a62df46e37cc67f447d2d1533c84e6e5b4497383e670f64d7b2c24a89"
 }
