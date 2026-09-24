@@ -63,5 +63,8 @@ python3 -m unittest discover -s deploy/aws/recovery/tests -p test_references.py
 bash -n deploy/aws/recovery/remote-snapshot.sh
 node --test deploy/postgres/prepare-cutover.test.mjs
 
+node --test .github/scripts/smoke-tools-evidence.test.mjs
 node --test .github/scripts/railway-predecessor-teardown.test.mjs
+node --test .github/scripts/merge-prepared-release.test.mjs
+node --test .github/scripts/run-bounded-image-builds.test.mjs
 node --test .github/scripts/production-readiness-preflight.test.mjs

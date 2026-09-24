@@ -41,15 +41,33 @@ jobs:
           --head "$HEAD_SHA"
           --scope "$REQUESTED_SCOPE"
 
-      - name: Install Rust for dependency metadata
-        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+  policy:
+    name: Check repository policy
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
-
       - name: Check repository policy
         run: ./dev/checks/policy
 
+  ops:
+    name: Check operations
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
       - name: Check operations
         run: ./dev/checks/ops
 
@@ -73,16 +91,20 @@ jobs:
 
   required-pr-checks:
     name: Required PR checks
-    needs: [plan, validation]
+    needs: [plan, policy, ops, validation]
     if: ${{ always() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - name: Require successful planning and validation
         env:
+          POLICY_RESULT: ${{ needs.policy.result }}
+          OPS_RESULT: ${{ needs.ops.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
           VALIDATION_RESULT: ${{ needs.validation.result }}
         run: |
           echo "Planning: $PLAN_RESULT; validation: $VALIDATION_RESULT"
+          test "$POLICY_RESULT" = success
+          test "$OPS_RESULT" = success
           test "$PLAN_RESULT" = success
           test "$VALIDATION_RESULT" = success

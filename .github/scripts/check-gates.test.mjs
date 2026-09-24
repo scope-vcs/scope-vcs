@@ -85,7 +85,7 @@ test('every deployment and policy script test is run by a shared gate', () => {
   }
 });
 
-// The plan job runs the operations and policy gates on every pull request and
+// Independent jobs run the operations and policy gates on every pull request and
 // release, so their inputs need no component lane. Every other gate input must
 // select the lane whose artifact it shapes.
 const alwaysOnGateInputs = [
@@ -251,8 +251,8 @@ function releasePath(selected, { reuse = false, resumeStaging = false, failure =
   outputs.prepared_run_id = reuse || resumeStaging ? '123' : '';
   outputs.recover_cutover_id = reuse ? '456' : '';
   outputs.resume_staging = String(resumeStaging);
-  const needs = { plan: { result: 'success', outputs }, validation: { result: 'success' } };
-  for (const key of ['readiness-preflight', 'release-preparation', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
+  const needs = { plan: { result: 'success', outputs }, ...Object.fromEntries(['policy', 'ops', 'validation', 'server-validation'].map(key => [key, { result: key === failure ? 'failure' : 'success' }])) };
+  for (const key of ['readiness-preflight', 'smoke-tools', 'release-preparation', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
     const expression = jobs[key].if.replace(/needs\.([\w-]+)/g, 'needs["$1"]');
     const enabled = Function('needs', 'github', 'cancelled', `return (${expression});`)(needs, { ref }, () => cancelled);
     needs[key] = { result: enabled ? key === failure ? 'failure' : 'success' : 'skipped',
@@ -279,7 +279,7 @@ test('release paths stage applications once and leave no-op and distribution-onl
 });
 
 test('failed preflight, staging or activation cannot publish a successful release', () => {
-  for (const failure of ['readiness-preflight', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy']) {
+  for (const failure of ['policy', 'ops', 'validation', 'server-validation', 'readiness-preflight', 'smoke-tools', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy']) {
     const result = releasePath(['api', 'web', 'cli'], { failure });
     assert.equal(result['production-health-gate'].result, 'skipped', failure);
   }
@@ -335,7 +335,8 @@ test('prepared web and backend jobs cannot build after activation begins', () =>
     assert.match(workflow, /SCOPE_PREPARED_RELEASE_PATH: prepared-release\.json/);
     assert.doesNotMatch(workflow, /cargo build|docker build|railway up|pnpm build/);
   }
-  assert.match(preparation, /prepare-railway-artifact\.sh/);
+  assert.match(preparation, /prepare-release-images\.sh/);
+  assert.match(read('.github/scripts/prepare-release-images.sh'), /prepare-railway-artifact\.sh/);
   assert.match(read('.github/workflows/scope-api-ci.yml'), /name: backend-release-\$\{\{ github\.sha \}\}/);
   assert.match(backendDeploy, /extract-railway-maintenance\.sh prepared-release\.json/);
   assert.doesNotMatch(backendDeploy, /backend-release-\$\{\{ inputs\.source_sha \}\}/);
@@ -453,17 +454,30 @@ test('required PR check runs after failures and rejects every unsuccessful prere
   const ci = read('.github/workflows/ci.yml');
   const job = ci.slice(ci.indexOf('\n  required-pr-checks:\n'));
   assert.match(job, /name: Required PR checks\n/);
-  assert.match(job, /needs: \[plan, validation\]\n/);
+  assert.match(job, /needs: \[plan, policy, ops, validation\]\n/);
   assert.match(job, /if: \$\{\{ always\(\) \}\}\n/);
   assert.match(job, /PLAN_RESULT: \$\{\{ needs.plan.result \}\}/);
   assert.match(job, /VALIDATION_RESULT: \$\{\{ needs.validation.result \}\}/);
   for (const plan of ['success', 'failure', 'cancelled', 'skipped', '']) {
     for (const validation of ['success', 'failure', 'cancelled', 'skipped', '']) {
       const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', gateScript(job)], {
-        env: { ...process.env, PLAN_RESULT: plan, VALIDATION_RESULT: validation },
+        env: { ...process.env, PLAN_RESULT: plan, VALIDATION_RESULT: validation, POLICY_RESULT: 'success', OPS_RESULT: 'success' },
         encoding: 'utf8',
       });
       assert.equal(result.status === 0, plan === 'success' && validation === 'success', `${plan}/${validation}`);
+    }
+  }
+});
+
+test('required PR gate rejects failed policy and operations even when validation passes', () => {
+  const ci = read('.github/workflows/ci.yml');
+  const script = gateScript(ci.slice(ci.indexOf('\n  required-pr-checks:\n')));
+  for (const key of ['POLICY_RESULT', 'OPS_RESULT']) {
+    for (const failure of ['failure', 'cancelled', 'skipped', '']) {
+      const result = spawnSync('bash', ['-e', '-c', script], {
+        env: { ...process.env, PLAN_RESULT: 'success', VALIDATION_RESULT: 'success', POLICY_RESULT: 'success', OPS_RESULT: 'success', [key]: failure },
+      });
+      assert.notEqual(result.status, 0, `${key}: ${failure}`);
     }
   }
 });
@@ -478,18 +492,18 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
   const evaluate = Function('inputs', 'needs', `return (${expression.replace(/needs\.([\w-]+)/g, 'needs["$1"]')});`);
   const selectedBy = {
     'checks-image': ['checks_image'],
-    'backend-validation': ['backend'],
-    'media-worker-image': ['backend'],
-    'web-validation': ['web'],
+    'server-validation': ['backend', 'web'],
     'cli-validation': ['cli'],
     'integration-validation': ['web', 'cli'],
   };
   for (const mask of Array.from({ length: 16 }, (_, i) => i)) {
     const inputs = Object.fromEntries(['checks_image', 'backend', 'web', 'cli'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
     inputs.reuse_artifacts = false;
+    inputs.validate_server = true;
     const needs = Object.fromEntries(Object.entries(selectedBy).map(([name, keys]) => [name, {
       result: keys.some((key) => inputs[key] === 'true') ? 'success' : 'skipped',
     }]));
+    needs['server-validation'].result = 'success';
     assert.equal(evaluate(inputs, needs), true, `selection ${mask}`);
     for (const [name, state] of Object.entries(needs)) {
       if (state.result !== 'success') continue;
@@ -526,5 +540,37 @@ test('always-on operations gate executes the broker lifecycle suite', () => {
   assert.ok(ops.includes('python3 -m unittest discover -s deploy/aws/dispatch-broker/tests -v'));
   for (const caller of ['ci', 'release']) {
     assert.ok(read(`.github/workflows/${caller}.yml`).includes('dev/checks/ops'));
+  }
+});
+
+
+test('preparation can overlap CLI work while staging joins every required lane', () => {
+  const release = read('.github/workflows/release.yml');
+  const section = (name) => release.split(`\n  ${name}:\n`)[1].split(/\n  [\w-]+:\n/)[0];
+  const needs = (name) => section(name).match(/needs: \[(.+)\]/)[1].split(', ');
+  assert.deepEqual(needs('release-preparation'), ['plan', 'server-validation']);
+  for (const required of ['plan', 'policy', 'ops', 'validation', 'release-preparation', 'readiness-preflight', 'production-preflight', 'smoke-tools']) {
+    assert(needs('staging').includes(required), `staging must join ${required}`);
+  }
+  assert.doesNotMatch(section('plan'), /dev\/checks\/(policy|ops)/);
+  for (const job of ['policy', 'ops']) assert.doesNotMatch(section(job), /needs:/);
+});
+
+test('server readiness rejects each failed selected build before packaging', () => {
+  const workflow = read('.github/workflows/validate-server.yml');
+  const expression = workflow.match(/VALIDATIONS_PASSED: >-\n\s*\$\{\{ ([\s\S]*?) \}\}/)[1];
+  const evaluate = Function('inputs', 'needs', `return (${expression.replace(/needs\.([\w-]+)/g, 'needs["$1"]')});`);
+  for (const backend of ['true', 'false']) for (const web of ['true', 'false']) {
+    const inputs = { backend, web, reuse_artifacts: false };
+    const needs = Object.fromEntries(['backend-validation', 'media-worker-image', 'web-validation'].map(key => [key, {
+      result: (key === 'web-validation' ? web : backend) === 'true' ? 'success' : 'skipped',
+    }]));
+    assert.equal(evaluate(inputs, needs), true);
+    for (const [job, { result }] of Object.entries(needs)) {
+      if (result !== 'success') continue;
+      for (const failure of ['failure', 'cancelled', 'skipped']) {
+        assert.equal(evaluate(inputs, { ...needs, [job]: { result: failure } }), false, `${job}: ${failure}`);
+      }
+    }
   }
 });

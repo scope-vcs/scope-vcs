@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { smokeToolsEvidence } from './smoke-tools-evidence.mjs';
 
 const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url)));
 const workflow = readFileSync(new URL('../workflows/deploy-staging.yml', import.meta.url), 'utf8');
@@ -135,6 +136,11 @@ test('imported releases extract smoke tools and initialize private credentials',
   const { root, env } = fixture(t);
   mkdirSync(join(root, '.github/scripts'), { recursive: true });
   writeFileSync(join(root, '.github/deployment-services.json'), readFileSync(new URL('../deployment-services.json', import.meta.url)));
+  writeFileSync(join(root, '.github/scripts/smoke-tools-evidence.mjs'), readFileSync(new URL('./smoke-tools-evidence.mjs', import.meta.url)));
+  mkdirSync(join(root, 'candidate'));
+  const toolchain = join(root, 'candidate/rust-toolchain.toml');
+  writeFileSync(toolchain, '[toolchain]\nchannel = "1.98.1"\n');
+  env.SOURCE_SHA = 'a'.repeat(40);
   writeFileSync(join(root, '.github/scripts/extract-railway-release.py'), readFileSync(new URL('./extract-railway-release.py', import.meta.url)));
   mkdirSync(join(root, 'artifacts/commands'), { recursive: true });
   for (const name of ['scope', 'scope-smoke-seed']) {
@@ -142,6 +148,7 @@ test('imported releases extract smoke tools and initialize private credentials',
   }
   const packed = spawnSync('tar', ['-czf', 'artifacts/staging-commands.tar.gz', '-C', 'artifacts/commands', '.'], { cwd: root });
   assert.equal(packed.status, 0);
+  writeFileSync(join(root, 'artifacts/staging-commands.json'), JSON.stringify(smokeToolsEvidence(join(root, 'artifacts'), env.SOURCE_SHA, toolchain)));
   mkdirSync(join(root, 'artifacts/backend'));
   writeFileSync(join(root, 'artifacts/backend/scope-maintenance'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   assert.equal(spawnSync('tar', ['-czf', 'artifacts/backend-release.tar.gz', '-C', 'artifacts/backend', '.'], { cwd: root }).status, 0);
@@ -154,8 +161,11 @@ test('imported releases extract smoke tools and initialize private credentials',
   assert.equal(statSync(join(root, 'candidate/target/release/scope-smoke-seed')).mode & 0o111, 0o111);
   assert.equal(statSync(emitted.SCOPE_GIT_SMOKE_DIR).mode & 0o777, 0o700);
   assert.equal(emitted.SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH, join(emitted.SCOPE_GIT_SMOKE_DIR, 'exchange-token'));
-  for (const name of ['Build smoke binaries', 'Upload staging commands', 'Extract candidate commands', 'Initialize smoke credentials directory']) {
+  for (const name of ['Extract candidate commands', 'Initialize smoke credentials directory']) {
     assert.doesNotMatch(workflowStep(name), /\n        if:/);
   }
+  const preparation = readFileSync(new URL('../workflows/prepare-smoke-tools.yml', import.meta.url), 'utf8');
+  assert.match(preparation, /name: Build smoke binaries/);
+  assert.match(preparation, /name: Upload staging commands/);
   assert.match(workflowStep('Issue smoke login without resetting existing data'), /run: bash \.\.\/\.github\/scripts\/staging-smoke-seed\.sh\n/);
 });

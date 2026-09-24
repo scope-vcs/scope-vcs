@@ -175,7 +175,7 @@ test('source reuse rejects changed staging inputs but permits receipt-only repai
     '.github/scripts/stop-staging-writers.sh',
     '.github/scripts/verify-staging-target.mjs',
     '.github/scripts/deploy-railway-image.mjs',
-    '.github/workflows/deploy-staging.yml',
+    '.github/workflows/prepare-smoke-tools.yml',
     'web/smoke/server-functions-smoke.mjs',
     'crates/scope-postgres/src/migrations/m0062_new_table.rs',
     'apps/web/src/history.test.ts',

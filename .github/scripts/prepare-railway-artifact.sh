@@ -59,12 +59,24 @@ printf '%s\n' "$source_sha" > "$context_root/.scope-deployment-sha"
 cp deploy/railway/install-git.sh "$context_root/install-git.sh"
 git_version="$(jq -er '.git.version' dev/tool-versions.json)"
 git_source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+# Retain dependency layers across source-only releases, but refresh moving apt
+# repositories once per UTC week. Base digests, Dockerfiles, package inputs,
+# and the pinned Git source still invalidate their own BuildKit cache keys.
+dependency_epoch="${SCOPE_IMAGE_DEPENDENCY_EPOCH:-$(date -u +%G-W%V)}"
+cache_ref="$image_repository:buildcache"
+cache_args=(--cache-from "type=registry,ref=$cache_ref" \
+  --cache-to "type=registry,ref=$cache_ref,mode=max,image-manifest=true,oci-mediatypes=true")
+if [[ "$install_git" == 1 && -n "${SCOPE_GIT_BUILD_CACHE_REF:-}" ]]; then
+  cache_args+=(--cache-from "type=registry,ref=$SCOPE_GIT_BUILD_CACHE_REF")
+fi
 docker buildx build --platform linux/amd64 --provenance=false --push \
   --file "$dockerfile" --tag "$image_tag" --metadata-file "$metadata" \
+  "${cache_args[@]}" \
   --label "org.opencontainers.image.revision=$source_sha" \
   --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
   --build-arg "INSTALL_GIT=$install_git" --build-arg "BINARY=$binary" \
   --build-arg "GIT_VERSION=$git_version" --build-arg "GIT_SOURCE_SHA256=$git_source_sha256" \
+  --build-arg "IMAGE_DEPENDENCY_EPOCH=$dependency_epoch" \
   --build-arg "SCOPE_ANALYTICS_RELEASE=$source_sha" "$context_root"
 digest="$(jq -er '."containerimage.digest"' "$metadata")"
 [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Build did not publish an immutable image digest.' >&2; exit 1; }

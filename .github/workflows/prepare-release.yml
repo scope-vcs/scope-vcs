@@ -98,43 +98,7 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: |
           [[ "$PREPARE_BACKEND" == 1 ]] || unset SCOPE_MAINTENANCE_BINARY
-          preparation_failed=0
-          if [[ "$PREPARE_BACKEND" == 1 ]]; then
-            mkdir -p artifacts/backend/bin
-            python3 .github/scripts/extract-railway-release.py backend artifacts/backend/backend-release.tar.gz artifacts/backend/bin
-            component_names="$(node .github/scripts/deployment-components.mjs backend-prebuilt)"
-            mapfile -t components <<< "$component_names"
-            for component in "${components[@]}"; do
-              [[ "$component" != git-router || "$PREPARE_ROUTER" == 1 ]] || continue
-              root=".railway-prepared/$component"
-              mkdir -p "$root/bin"
-              cp artifacts/backend/bin/LICENSE artifacts/backend/bin/NOTICE artifacts/backend/bin/third-party-rust.txt "$root/bin/"
-              binary="$(node .github/scripts/deployment-components.mjs field "$component" binary)"
-              install -m 0755 "artifacts/backend/bin/$binary" "$root/bin/$binary"
-              if [[ "$component" == run-worker ]]; then
-                cp -a artifacts/backend/bin/dependency-analyzer "$root/dependency-analyzer"
-              fi
-              if [[ "$component" == api ]]; then
-                install -m 0755 "$SCOPE_MAINTENANCE_BINARY" "$root/bin/scope-maintenance"
-              fi
-              if ! bash .github/scripts/prepare-railway-artifact.sh "$component" "$root" prepared-release.json; then
-                preparation_failed=1
-              fi
-            done
-            [[ "$MEDIA_WORKER_IMAGE" =~ ^ghcr\.io/scope-vcs/scope-media-worker@sha256:[0-9a-f]{64}$ ]]
-            media_worker_service="$(jq -er '.services["media-worker"].id' .github/deployment-services.json)"
-            node .github/scripts/railway-artifact.mjs record prepared-release.json \
-              media-worker "$MEDIA_WORKER_IMAGE" "$SCOPE_DEPLOYMENT_SOURCE_SHA" "$media_worker_service"
-          fi
-          if [[ "$PREPARE_WEB" == 1 ]]; then
-            mkdir -p .railway-prepared/web
-            python3 .github/scripts/extract-railway-release.py web artifacts/web/web-release.tar.gz .railway-prepared/web
-            if ! bash .github/scripts/prepare-railway-artifact.sh web .railway-prepared/web prepared-release.json; then
-              preparation_failed=1
-            fi
-          fi
-          [[ "$preparation_failed" == 0 ]]
-          test -s prepared-release.json
+          bash .github/scripts/prepare-release-images.sh
 
       - name: Upload immutable release manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
