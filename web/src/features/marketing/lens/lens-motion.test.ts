@@ -13,9 +13,10 @@ test('eases toward the target and turns the ring with horizontal movement', () =
   assert.equal(next.rotation, 7)
 })
 
-test('reduced motion and dragging land on the target without turning the ring', () => {
+test('reduced motion and dragging land on the target without turning the ring, and still ease the radius', () => {
   const next = stepLens(start, { x: 100, y: 50, r: 150 }, { instant: true, resting: true })
-  assert.deepEqual(next, { x: 100, y: 50, r: 150, rotation: 0 })
+  assert.deepEqual({ x: next.x, y: next.y, rotation: next.rotation }, { x: 100, y: 50, rotation: 0 })
+  assert.ok(next.r > 0 && next.r < 150)
 })
 
 test('rests over the anchor while it is on screen, and floats in the viewport otherwise', () => {

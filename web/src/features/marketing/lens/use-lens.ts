@@ -20,6 +20,9 @@ type Mode = 'rest' | 'follow' | 'drag' | 'pinned'
 const OPEN_DELAY_MS = 950
 const HINT_DELAY_MS = 3200
 const SETTLED = .05
+/** The lens only closes over a link after the pointer rests on it this long, so
+ * sweeping across the page doesn't blink it shut. */
+const CLOSE_OVER_LINK_MS = 120
 
 /**
  * Drives the lens: follows the mouse, rests over the private rows when there's
@@ -51,6 +54,7 @@ export function useLens(elements: LensElements) {
     let drawnRadius = -1
     let animation = 0
     let messageTimer = 0
+    let overTimer = 0
 
     const targetRadius = () => {
       if (input.held) return floodRadius(innerWidth, innerHeight)
@@ -116,7 +120,14 @@ export function useLens(elements: LensElements) {
       elements.cursor.current?.classList.add('is-visible')
       const over = event.target instanceof Element && event.target.closest('a, button') !== null
       elements.cursor.current?.classList.toggle('is-over', over)
-      input.over = over
+      clearTimeout(overTimer)
+      if (!over) input.over = false
+      else if (!input.over) {
+        overTimer = window.setTimeout(() => {
+          input.over = true
+          wake()
+        }, CLOSE_OVER_LINK_MS)
+      }
       wake()
     }
     const onPointerLeave = (event: PointerEvent) => {
@@ -201,6 +212,7 @@ export function useLens(elements: LensElements) {
       clearTimeout(openTimer)
       clearTimeout(hintTimer)
       clearTimeout(messageTimer)
+      clearTimeout(overTimer)
       removeEventListener('pointermove', onPointerMove)
       document.documentElement.removeEventListener('pointerleave', onPointerLeave)
       page.removeEventListener('pointerdown', onPointerDown)

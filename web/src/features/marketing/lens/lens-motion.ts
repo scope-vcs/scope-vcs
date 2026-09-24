@@ -16,6 +16,9 @@ export interface Box {
 
 const FOLLOW_EASE = .2
 const RADIUS_EASE = .13
+/** Opening and closing still ease under reduced motion, just faster: an
+ * instant cut reads as a flicker. */
+const QUICK_RADIUS_EASE = .35
 const MAX_ZOOM = .08
 
 export function restRadius(viewportWidth: number): number {
@@ -28,8 +31,9 @@ export function floodRadius(viewportWidth: number, viewportHeight: number): numb
 }
 
 /** One animation frame toward the target. Reduced motion and direct dragging
- * jump straight there; otherwise position and radius ease, and the tick ring
- * turns with horizontal movement plus a slow idle spin while resting. */
+ * move straight there and keep the ring still, but the radius always eases,
+ * quickly when `instant`; otherwise position eases too, and the tick ring turns
+ * with horizontal movement plus a slow idle spin while resting. */
 export function stepLens(
   frame: LensFrame,
   target: { x: number; y: number; r: number },
@@ -40,7 +44,7 @@ export function stepLens(
   return {
     x: frame.x + dx,
     y: frame.y + (target.y - frame.y) * follow,
-    r: frame.r + (target.r - frame.r) * (instant ? 1 : RADIUS_EASE),
+    r: frame.r + (target.r - frame.r) * (instant ? QUICK_RADIUS_EASE : RADIUS_EASE),
     rotation: instant ? frame.rotation : frame.rotation + dx * .35 + (resting ? .03 : 0),
   }
 }
