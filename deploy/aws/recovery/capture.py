@@ -41,6 +41,12 @@ def capture(clients, url, escrow, recipient, destination, source_sha, max_bytes=
                 "object_bytes": sum(item["size"] for values in objects.values() for item in values), **proof}
 
 
+def failure_reason(error):
+    # Exceptions from providers can embed credentials or private object keys. Incomplete messages
+    # are fixed strings in this tool, so only they are printed; anything else is named by type.
+    return str(error) if isinstance(error, Incomplete) else type(error).__name__
+
+
 def main(snapshot_provider=None):
     import boto3
     from botocore.config import Config
@@ -74,13 +80,12 @@ def main(snapshot_provider=None):
             receipt = publish(s3, bucket, capture_id, archive, summary)
         metric(cloudwatch, bucket, True)
         print(json.dumps(receipt, sort_keys=True))
-    except Exception:
+    except Exception as error:
         try:
             metric(cloudwatch, bucket, False)
         except Exception:
             pass
-        # Exceptions from providers can embed credentials or private object keys.
-        print("Recovery capture failed; no successful completion metric was emitted.", file=sys.stderr)
+        print(f"Recovery capture failed ({failure_reason(error)}); no successful completion metric was emitted.", file=sys.stderr)
         return 1
     return 0
 
