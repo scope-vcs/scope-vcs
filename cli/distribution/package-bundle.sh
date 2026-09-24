@@ -60,3 +60,12 @@ cp LICENSE NOTICE legal/third-party-rust.txt legal/third-party-dependency-analyz
 cp "$node_root/LICENSE" "$licenses/Node.js-LICENSE"
 
 tar -czf "$SCOPE_ARTIFACT" -C "$bundle" .
+
+artifact_bytes="$(wc -c < "$SCOPE_ARTIFACT" | tr -d '[:space:]')"
+max_artifact_bytes="$(jq -er '.max_artifact_bytes' cli/distribution/targets.json)"
+if (( artifact_bytes > max_artifact_bytes )); then
+  echo "$SCOPE_ARTIFACT is $artifact_bytes bytes, over the $max_artifact_bytes byte cap by $((artifact_bytes - max_artifact_bytes)) bytes" >&2
+  exit 1
+fi
+awk -v name="$(basename "$SCOPE_ARTIFACT")" -v bytes="$artifact_bytes" \
+  'BEGIN { printf "%s is %.1f MiB\n", name, bytes / 1048576 }'
