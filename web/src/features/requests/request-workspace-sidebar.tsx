@@ -109,6 +109,8 @@ export function RequestWorkspaceSidebar({
     if (document.activeElement instanceof HTMLElement && aside.current?.contains(document.activeElement))
       document.activeElement.blur()
   }, [onSearch, query])
+  // The open rail collapses back to the closed rail, not to the pinned sidebar.
+  const toggle = state === 'open' ? close : togglePinned
   useEffect(() => {
     if (state !== 'open') return
     function outside(event: PointerEvent) {
@@ -163,7 +165,7 @@ export function RequestWorkspaceSidebar({
   useRequestKeyboard({
     focus,
     onAction,
-    onCollapseToggle: togglePinned,
+    onCollapseToggle: toggle,
     onFocusToggle: toggleFocus,
     rows: new Map(allRows.map((row) => [row.item.request.id, row])),
     selectedId,
@@ -252,18 +254,18 @@ export function RequestWorkspaceSidebar({
             status={loading && searching ? 'Searching requests' : undefined}
             value={query}
           />
-          {/* Pinned, the caret collapses to the rail. Otherwise it expands the
-              sidebar, and the closed rail shows it in place of the search box. */}
+          {/* The closed rail shows the caret in place of the search box, and it
+              pins the sidebar. Pinned or open, it collapses to the rail. */}
           <Button
-            aria-label={state === 'pinned' ? 'Collapse requests sidebar' : 'Expand requests sidebar'}
+            aria-label={state === 'closed' ? 'Expand requests sidebar' : 'Collapse requests sidebar'}
             className="request-workspace-sidebar-toggle text-muted-foreground"
-            onClick={togglePinned}
+            onClick={toggle}
             size="icon-sm"
-            title={state === 'pinned' ? 'Collapse requests sidebar' : 'Expand requests sidebar'}
+            title={state === 'closed' ? 'Expand requests sidebar' : 'Collapse requests sidebar'}
             type="button"
             variant="ghost"
           >
-            {state === 'pinned' ? <ChevronLeft aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+            {state === 'closed' ? <ChevronRight aria-hidden="true" /> : <ChevronLeft aria-hidden="true" />}
           </Button>
         </div>
         {actionError && (

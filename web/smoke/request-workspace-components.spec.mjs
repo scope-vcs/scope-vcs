@@ -194,6 +194,15 @@ test('request rows exchange age and actions and restore the selected view across
   }
   await page.keyboard.press('Escape')
   await sidebarWidth(54)
+  // The open rail's caret folds it back to the rail instead of pinning it.
+  await openRail()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
+  await sidebarWidth(54)
+  assert.equal(await sidebar.getAttribute('data-state'), 'closed')
+  await openRail()
+  await page.keyboard.press('[')
+  await sidebarWidth(54)
+  assert.equal(await sidebar.getAttribute('data-state'), 'closed')
   await openRail()
   await page.mouse.click(900, 500)
   await sidebarWidth(54)
