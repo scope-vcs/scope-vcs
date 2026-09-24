@@ -124,7 +124,17 @@
 
 .lens-label.is-shown { opacity: 1; }
 .lens-label.is-highlight { fill: var(--success-strong); }
-.lens-grab { touch-action: none; }
+.lens-grip {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 44px;
+  pointer-events: none;
+  touch-action: none;
+}
+
+@media (pointer: coarse) {
+  .lens-grip { pointer-events: stroke; }
+}
 
 .lens-cursor {
   mix-blend-mode: difference;
@@ -156,9 +166,10 @@
 
 .lens-cursor.is-down i { transform: scale(.7); }
 
+/* The native cursor stays until the lens has mounted and can replace it. */
 @media (pointer: fine) {
-  .landing.lens-on,
-  .landing.lens-on * {
+  .landing.lens-ready.lens-on,
+  .landing.lens-ready.lens-on * {
     cursor: none;
   }
 }
@@ -186,4 +197,14 @@
 .landing-toast.is-visible {
   opacity: 1;
   translate: 0 0;
+}
+
+/* The app's reduced-motion rule shortens durations; drop the stagger delays too
+ * so nothing waits to appear. */
+@media (prefers-reduced-motion: reduce) {
+  .landing-rise,
+  .merge-graph :is(circle, text) {
+    animation-delay: 0ms;
+    transition-delay: 0ms !important;
+  }
 }

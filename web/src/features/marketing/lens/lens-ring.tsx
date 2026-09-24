@@ -10,13 +10,13 @@ export function LensRing({ elements, highlight, inverseTheme, label, showLabel }
     <div aria-hidden className="lens-ring pointer-events-none absolute left-0 top-0 z-[5] size-0 opacity-0" ref={elements.ring}>
       <svg className="absolute left-0 top-0 overflow-visible">
         <circle className="fill-none stroke-border-strong" ref={elements.edge} />
+        <circle className="lens-grip" ref={elements.grip} />
         <g ref={elements.ticks}>
           <path className="stroke-muted-foreground" ref={elements.minorTicks} strokeLinecap="round" />
           <path className="stroke-foreground" ref={elements.majorTicks} strokeLinecap="round" />
         </g>
         <text className={cn('lens-label', inverseTheme, showLabel && 'is-shown', highlight && 'is-highlight')} ref={elements.label} textAnchor="middle">{label}</text>
       </svg>
-      <div className="lens-grab absolute hidden rounded-full pointer-coarse:pointer-events-auto pointer-coarse:block" ref={elements.grab} />
     </div>
   )
 }

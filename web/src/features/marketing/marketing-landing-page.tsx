@@ -1,7 +1,7 @@
 import type { CliInstallCommands, CliPlatform } from '@/api/types'
 import { cn } from '@/lib/utils'
 import { useThemeType } from '@/lib/use-theme-type'
-import { createRef, useState, type ReactElement } from 'react'
+import { createRef, useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { LandingContent } from './landing-content'
 import { LensCursor } from './lens/lens-cursor'
 import { LensRing } from './lens/lens-ring'
@@ -26,15 +26,18 @@ export function MarketingLandingPage({
   const inverseTheme = useThemeType() === 'dark' ? 'light' : 'dark'
   const [platform, setPlatform] = useState(initialCliPlatform)
   const [elements] = useState<LensElements>(() => ({
-    page: createRef(), privateLayer: createRef(), ring: createRef(), edge: createRef(), minorTicks: createRef(),
-    majorTicks: createRef(), ticks: createRef(), label: createRef(), grab: createRef(), cursor: createRef(), tally: createRef(),
+    page: createRef(), privateLayer: createRef(), ring: createRef(), edge: createRef(), grip: createRef(), minorTicks: createRef(),
+    majorTicks: createRef(), ticks: createRef(), label: createRef(), cursor: createRef(), tally: createRef(),
   }))
   const lens = useLens(elements)
-  const progress = useNoteFinder(elements.page, lens.frame, fireConfetti)
+  const stopConfetti = useRef<() => void>(undefined)
+  const celebrate = useCallback(() => { stopConfetti.current = fireConfetti() }, [])
+  useEffect(() => () => stopConfetti.current?.(), [])
+  const progress = useNoteFinder(elements.page, lens.frame, celebrate)
   const content = { commands: cliInstallCommands, initialPlatform: initialCliPlatform, onPlatformChange: setPlatform, platform }
 
   return (
-    <div className={cn('marketing-page landing relative min-h-dvh overflow-clip bg-background font-sans text-base leading-normal text-foreground antialiased', lens.on ? 'lens-on' : 'lens-off', lens.holding && 'lens-holding')} ref={elements.page}>
+    <div className={cn('marketing-page landing relative min-h-dvh overflow-clip bg-background font-sans text-base leading-normal text-foreground antialiased', lens.ready && 'lens-ready', lens.on ? 'lens-on' : 'lens-off', lens.holding && 'lens-holding')} ref={elements.page}>
       <a className="fixed top-2.5 left-2.5 z-40 -translate-y-[160%] bg-foreground px-4 py-2.5 text-background focus:translate-y-0" href="#main-content">Skip to content</a>
       <div className="landing-layer" data-view="public">
         <LandingContent {...content} view="public" />

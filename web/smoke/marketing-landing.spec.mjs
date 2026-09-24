@@ -130,6 +130,29 @@ for (const reducedMotion of ['no-preference', 'reduce']) {
   })
 }
 
+test('without JavaScript the landing page keeps the native cursor', async () => {
+  await withPage('/', async (page) => {
+    await page.getByRole('heading', { name: 'One repository. Part of it is public.' }).waitFor()
+    assert.notEqual(await page.locator('.landing').evaluate((element) => getComputedStyle(element).cursor), 'none')
+  }, { javaScriptEnabled: false, viewport: { width: 1440, height: 1000 } })
+})
+
+test('on touch screens only the lens rim catches touches', async () => {
+  await withLanding(async (page) => {
+    // Playwright's click() moves an emulated mouse onto the theme toggle, where the lens closes.
+    await page.mouse.move(200, 700)
+    await waitForRadius(page, { above: 100 })
+    const hits = await page.locator(privateLayer).evaluate((layer) => {
+      const [, radius, x, y] = /circle\(([\d.]+)px at ([\d.-]+)px ([\d.-]+)px\)/.exec(layer.style.clipPath).map(Number)
+      const zoom = Number(/scale\(([\d.]+)\)/.exec(layer.style.transform)?.[1] ?? 1)
+      const box = layer.parentElement.getBoundingClientRect()
+      const hit = (dx) => document.elementFromPoint(box.left + x + dx, box.top + y)?.classList.contains('lens-grip') ?? false
+      return { center: hit(0), rim: hit(radius * zoom) }
+    })
+    assert.deepEqual(hits, { center: false, rim: true })
+  }, { hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } })
+})
+
 test('install platform controls retain touch-sized targets on tablets', async () => {
   await withLanding(async (page) => {
     await page.setViewportSize({ width: 768, height: 1000 })

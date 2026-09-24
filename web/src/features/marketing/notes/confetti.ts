@@ -1,7 +1,8 @@
 /**
  * Confetti for finding every note. Normally two cannons fire from the bottom
  * corners; with reduced motion, still pieces fade in along both edges and fade
- * out again. Draws on a throwaway canvas that removes itself.
+ * out again. Draws on a throwaway canvas that removes itself when done or when
+ * the returned stop function runs.
  */
 const CANNON_FRAMES = 260
 const CALM_FRAMES = 150
@@ -22,7 +23,7 @@ interface Piece {
   delay: number
 }
 
-export function fireConfetti(): void {
+export function fireConfetti(): () => void {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
   const canvas = document.createElement('canvas')
   canvas.setAttribute('aria-hidden', 'true')
@@ -31,7 +32,7 @@ export function fireConfetti(): void {
   const context = canvas.getContext('2d')
   if (!context) {
     canvas.remove()
-    return
+    return () => undefined
   }
   const scale = devicePixelRatio || 1
   const width = innerWidth
@@ -47,6 +48,7 @@ export function fireConfetti(): void {
   const frames = reduced ? CALM_FRAMES : CANNON_FRAMES
 
   let frame = 0
+  let animation = 0
   const draw = () => {
     frame++
     context.clearRect(0, 0, width, height)
@@ -71,10 +73,14 @@ export function fireConfetti(): void {
       context.fillRect(-piece.width / 2, -piece.height / 2, piece.width, piece.height)
       context.restore()
     }
-    if (frame < frames) requestAnimationFrame(draw)
+    if (frame < frames) animation = requestAnimationFrame(draw)
     else canvas.remove()
   }
-  requestAnimationFrame(draw)
+  animation = requestAnimationFrame(draw)
+  return () => {
+    cancelAnimationFrame(animation)
+    canvas.remove()
+  }
 }
 
 function cannonPiece(index: number, width: number, height: number, colors: string[]): Piece {

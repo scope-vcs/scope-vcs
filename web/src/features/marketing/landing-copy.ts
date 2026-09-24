@@ -42,4 +42,4 @@ export const notes = {
 } as const
 
 export type NoteId = keyof typeof notes | 'command'
-export const touchNavNote = 'drag the circle'
+export const touchNavNote = 'drag the ring'
