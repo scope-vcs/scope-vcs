@@ -28,8 +28,13 @@ def missing_timeouts(workflows):
     return missing
 
 
+def workflow_files():
+    """GitHub Actions loads both .yml and .yaml files from the workflows directory."""
+    return sorted([*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")])
+
+
 def main():
-    workflows = {str(path): path.read_text() for path in sorted(WORKFLOWS.glob("*.yml"))}
+    workflows = {str(path): path.read_text() for path in workflow_files()}
     missing = missing_timeouts(workflows)
     if missing:
         print("Workflow jobs without timeout-minutes:", file=sys.stderr)
