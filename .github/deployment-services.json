@@ -48,7 +48,7 @@
           "binary": "scope-worker",
           "imageName": "worker",
           "dockerfile": "deploy/railway/worker.Dockerfile",
-          "installGit": false,
+          "installGit": true,
           "sourceBinary": "worker"
         }
       }
@@ -199,9 +199,14 @@
         ".github/deployment-services.json",
         ".github/workflows/ci.yml",
         ".github/workflows/validate.yml",
+        ".github/workflows/validate-server.yml",
+        ".github/workflows/prepare-smoke-tools.yml",
         ".github/workflows/release.yml",
         ".github/workflows/prepare-release.yml",
-        ".github/workflows/deploy-staging.yml"
+        ".github/workflows/deploy-staging.yml",
+        ".github/scripts/prepare-release-images.sh",
+        ".github/scripts/run-bounded-image-builds.sh",
+        ".github/scripts/merge-prepared-release.mjs"
       ],
       "prefixes": [
         "legal/"

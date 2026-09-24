@@ -19,11 +19,11 @@ function workflowReplica(path, count = 1) {
 const REPLICAS = [
   workflowReplica(".github/workflows/rust-workspace-checks.yml"),
   workflowReplica(".github/workflows/scope-api-ci.yml"),
-  workflowReplica(".github/workflows/ci.yml"),
-  workflowReplica(".github/workflows/release.yml"),
+  workflowReplica(".github/workflows/ci.yml", 2),
+  workflowReplica(".github/workflows/release.yml", 2),
   workflowReplica(".github/workflows/scope-cli-build.yml", 2),
   workflowReplica(".github/workflows/scope-integration-ci.yml"),
-  workflowReplica(".github/workflows/deploy-staging.yml"),
+  workflowReplica(".github/workflows/prepare-smoke-tools.yml"),
   {
     path: ".scope/images/checks/Dockerfile",
     label: "Rust base image",

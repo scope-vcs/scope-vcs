@@ -115,15 +115,33 @@ jobs:
           --scope "$REQUESTED_SCOPE"
           --deployed-revisions "$DEPLOYED_REVISIONS"
 
-      - name: Install Rust for dependency metadata
-        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+  policy:
+    name: Check repository policy
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
-
       - name: Check repository policy
         run: ./dev/checks/policy
 
+  ops:
+    name: Check operations
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
       - name: Check operations
         run: ./dev/checks/ops
 
@@ -142,6 +160,22 @@ jobs:
       web: ${{ needs.plan.outputs.web }}
       cli: ${{ needs.plan.outputs.cli }}
       cli_distribution: ${{ needs.plan.outputs.cli_distribution }}
+      release_sha: ${{ needs.plan.outputs.release_sha }}
+      release: true
+      validate_server: false
+      reuse_artifacts: ${{ needs.plan.outputs.prepared_run_id != '' }}
+    secrets: inherit
+
+  server-validation:
+    name: Validate server components
+    needs: plan
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/validate-server.yml
+    with:
+      backend: ${{ needs.plan.outputs.backend_selected }}
+      web: ${{ needs.plan.outputs.web }}
       release_sha: ${{ needs.plan.outputs.release_sha }}
       release: true
       reuse_artifacts: ${{ needs.plan.outputs.prepared_run_id != '' }}
@@ -172,11 +206,11 @@ jobs:
 
   release-preparation:
     name: Prepare Railway artifacts
-    needs: [plan, validation]
+    needs: [plan, server-validation]
     if: >-
       !cancelled() &&
       github.ref == 'refs/heads/main' &&
-      needs.validation.result == 'success' &&
+      needs.server-validation.result == 'success' &&
       (needs.plan.outputs.backend_selected == 'true' ||
       needs.plan.outputs.web == 'true')
     permissions:
@@ -194,7 +228,19 @@ jobs:
       prepare_web: ${{ needs.plan.outputs.web == 'true' }}
       recover_cutover_id: ${{ needs.plan.outputs.recover_cutover_id || '' }}
       prepared_run_id: ${{ needs.plan.outputs.prepared_run_id }}
-      media_worker_image: ${{ needs.validation.outputs.media_worker_image || '' }}
+      media_worker_image: ${{ needs.server-validation.outputs.media_worker_image || '' }}
+    secrets: inherit
+
+  smoke-tools:
+    name: Prepare smoke tools
+    needs: plan
+    if: >-
+      (needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true') &&
+      (needs.plan.outputs.prepared_run_id == '' || needs.plan.outputs.resume_staging == 'true')
+    uses: ./.github/workflows/prepare-smoke-tools.yml
+    with:
+      source_sha: ${{ needs.plan.outputs.release_sha }}
+      source_run_id: ${{ needs.plan.outputs.prepared_run_id }}
     secrets: inherit
 
   production-preflight:
@@ -246,9 +292,11 @@ jobs:
 
   staging:
     name: Deploy staging
-    needs: [plan, release-preparation, readiness-preflight, production-preflight]
+    needs: [plan, policy, ops, validation, release-preparation, readiness-preflight, production-preflight, smoke-tools]
     if: >-
-      !cancelled() && needs.readiness-preflight.result == 'success' &&
+      !cancelled() && needs.policy.result == 'success' && needs.ops.result == 'success' &&
+      needs.validation.result == 'success' && needs.readiness-preflight.result == 'success' &&
+      needs.smoke-tools.result == 'success' &&
       (needs.plan.outputs.prepared_run_id == '' || needs.plan.outputs.resume_staging == 'true') &&
       needs.release-preparation.result == 'success' &&
       (needs.production-preflight.result == 'success' || needs.production-preflight.result == 'skipped')
@@ -267,10 +315,10 @@ jobs:
 
   backend-deploy:
     name: Backend deploy
-    needs: [plan, readiness-preflight, validation, release-preparation, staging]
+    needs: [plan, policy, ops, readiness-preflight, validation, release-preparation, staging]
     if: >-
       !cancelled() && github.ref == 'refs/heads/main' &&
-      needs.validation.result == 'success' &&
+      needs.validation.result == 'success' && needs.policy.result == 'success' && needs.ops.result == 'success' &&
       (needs.readiness-preflight.result == 'success' || needs.readiness-preflight.result == 'skipped') &&
       needs.release-preparation.result == 'success' &&
       ((needs.plan.outputs.prepared_run_id != '' && needs.plan.outputs.resume_staging != 'true') || needs.staging.result == 'success') &&
@@ -294,10 +342,10 @@ jobs:
 
   web-deploy:
     name: Web deploy
-    needs: [plan, readiness-preflight, validation, release-preparation, staging, backend-deploy]
+    needs: [plan, policy, ops, readiness-preflight, validation, release-preparation, staging, backend-deploy]
     if: >-
       !cancelled() && github.ref == 'refs/heads/main' &&
-      needs.validation.result == 'success' &&
+      needs.validation.result == 'success' && needs.policy.result == 'success' && needs.ops.result == 'success' &&
       (needs.readiness-preflight.result == 'success' || needs.readiness-preflight.result == 'skipped') &&
       needs.release-preparation.result == 'success' &&
       ((needs.plan.outputs.prepared_run_id != '' && needs.plan.outputs.resume_staging != 'true') || needs.staging.result == 'success') &&
@@ -318,11 +366,11 @@ jobs:
 
   cli-deploy:
     name: CLI deploy
-    needs: [plan, readiness-preflight, validation, staging, backend-deploy]
+    needs: [plan, policy, ops, readiness-preflight, validation, staging, backend-deploy]
     if: >-
       needs.plan.outputs.prepared_run_id == '' &&
       !cancelled() && github.ref == 'refs/heads/main' &&
-      needs.validation.result == 'success' &&
+      needs.validation.result == 'success' && needs.policy.result == 'success' && needs.ops.result == 'success' &&
       (needs.readiness-preflight.result == 'success' || needs.readiness-preflight.result == 'skipped') &&
       needs.plan.outputs.cli == 'true' &&
       (needs.staging.result == 'success' ||
@@ -343,10 +391,10 @@ jobs:
 
   production-health-gate:
     name: Verify and record release
-    needs: [plan, readiness-preflight, validation, backend-deploy, web-deploy, cli-deploy]
+    needs: [plan, policy, ops, readiness-preflight, validation, backend-deploy, web-deploy, cli-deploy]
     if: >-
       !cancelled() && github.ref == 'refs/heads/main' &&
-      needs.validation.result == 'success' &&
+      needs.validation.result == 'success' && needs.policy.result == 'success' && needs.ops.result == 'success' &&
       (needs.readiness-preflight.result == 'success' || needs.readiness-preflight.result == 'skipped') &&
       (needs.plan.outputs.checks_image == 'true' || needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true' || needs.plan.outputs.cli == 'true') &&
       (((needs.plan.outputs.backend_selected == 'true') &&

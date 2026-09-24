@@ -30,60 +30,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare:
-    name: Build smoke tools
-    permissions:
-      contents: read
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 45
-    steps:
-      - name: Validate requested revision
-        env:
-          SOURCE_SHA: ${{ inputs.source_sha }}
-        run: test "${#SOURCE_SHA}" = 40 && [[ "$SOURCE_SHA" != *[^0-9a-f]* ]]
-
-      - name: Checkout exact candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.source_sha }}
-          persist-credentials: false
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
-        with:
-          toolchain: 1.98.1
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          cache-bin: false
-          shared-key: staging-smoke
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          workspaces: |
-            . -> target
-            cli -> target
-
-      - name: Build smoke binaries
-        env:
-          SCOPE_BUILD_SHA: ${{ inputs.source_sha }}
-        run: |
-          mkdir -p artifacts/commands
-          cargo build --release --locked -p api --bin scope-smoke-seed --features smoke-seed
-          cargo build --release --locked --manifest-path cli/Cargo.toml --bin scope
-          install -m 0755 target/release/scope-smoke-seed artifacts/commands/scope-smoke-seed
-          install -m 0755 cli/target/release/scope artifacts/commands/scope
-          tar -czf artifacts/staging-commands.tar.gz -C artifacts/commands .
-
-      - name: Upload staging commands
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: staging-commands-${{ inputs.source_sha }}
-          path: artifacts/staging-commands.tar.gz
-          if-no-files-found: error
-
   prove:
     name: Deploy and smoke staging
-    needs: prepare
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 90
     outputs:
@@ -231,7 +179,10 @@ jobs:
           node-version: 24
 
       - name: Extract candidate commands
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
+          node .github/scripts/smoke-tools-evidence.mjs verify artifacts "$SOURCE_SHA" candidate/rust-toolchain.toml
           mkdir -p candidate/target/release candidate/cli/target/release
           if [[ -f artifacts/backend-release.tar.gz ]]; then
             python3 .github/scripts/extract-railway-release.py backend artifacts/backend-release.tar.gz candidate/target/release
