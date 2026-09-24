@@ -26,7 +26,9 @@ test('auto-merge actions require loaded status, an available action, or an open 
   assert.equal(hasRequestAutoMergeActions(null), false)
   assert.equal(hasRequestAutoMergeActions({ can_enable: false, intent: null }), false)
   assert.equal(hasRequestAutoMergeActions({ can_enable: true, intent: null }), true)
-  assert.equal(hasRequestAutoMergeActions({ can_enable: false, intent: {} as never }), true)
+  assert.equal(hasRequestAutoMergeActions({ can_enable: false, intent: { status: 'Active' } as never }), true)
+  // An authorization that already ended leaves nothing to act on.
+  assert.equal(hasRequestAutoMergeActions({ can_enable: false, intent: { status: 'Stopped' } as never }), false)
   assert.equal(hasRequestAutoMergeActions(null, true), true)
 })
 

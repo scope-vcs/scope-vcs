@@ -11,7 +11,6 @@ import {
   hasRequestAutoMergeActions,
   hasRequestLifecycleActions,
 } from './request-lifecycle-model'
-import { requestMergeabilityLabel } from './request-labels'
 import type { RequestActionController } from './use-request-actions'
 import type { RequestAutoMergeController } from './use-request-auto-merge'
 import type { RequestSummaryResponse } from '@/api/types.generated'
@@ -72,14 +71,9 @@ export function RequestLifecycleActions({
         />
         {checksHoldMerge && !autoMerge.status?.can_enable &&
           autoMerge.status?.intent?.status !== 'Active' ? (
-          <span className="flex min-w-0 items-center gap-2">
-            <Button disabled size="sm" type="button" variant="success">
-              Merge
-            </Button>
-            <span className="min-w-0 text-xs text-muted-foreground">
-              {request.mergeability.reason ?? requestMergeabilityLabel(request)}
-            </span>
-          </span>
+          <Button disabled size="sm" type="button" variant="success">
+            Merge
+          </Button>
         ) : null}
       </div>
 

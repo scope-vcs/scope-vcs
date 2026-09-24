@@ -23,8 +23,8 @@ export function canMergeRequest(request: RequestSummaryResponse) {
 }
 
 /**
- * A maintainer whose merge waits only on checks still sees the merge, disabled,
- * with the reason the server gave for holding it.
+ * A maintainer whose merge waits only on checks still sees the merge, disabled.
+ * The mergeability badge beside it says why.
  */
 export function checksHoldRequestMerge(request: RequestSummaryResponse) {
   return request.permissions.can_merge &&
@@ -43,6 +43,6 @@ export function hasRequestAutoMergeActions(
   dialogOpen = false,
 ) {
   return dialogOpen || (
-    status !== null && (status.can_enable || status.intent !== null)
+    status !== null && (status.can_enable || status.intent?.status === 'Active')
   )
 }

@@ -60,11 +60,11 @@ function App() {
       revision_id: 'revision-new',
     })),
     setAutoMergeIntentStatus: (
-      intentStatus: 'Cancelled' | 'Stopped' | 'Fulfilled',
+      intentStatus: 'Cancelled' | 'Stopped',
     ) => setStatus((current) => current && ({
       ...current,
       can_cancel: false,
-      can_enable: intentStatus !== 'Fulfilled',
+      can_enable: true,
       intent: current.intent && {
         ...current.intent,
         reason: intentStatus === 'Stopped' ? 'ChecksFailed' : null,

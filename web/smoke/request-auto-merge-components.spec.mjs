@@ -77,21 +77,14 @@ test('auto-merge confirms one revision and stays usable on desktop and mobile', 
     await cancelDialog.getByText('aaaaaaaaaaaa → main', { exact: true }).waitFor()
     await cancelDialog.getByRole('button', { name: 'Cancel auto-merge' }).click()
     await page.getByRole('button', { name: 'Merge when checks pass' }).waitFor()
-    await page.getByText('Auto-merge canceled', { exact: true }).waitFor()
+    // An ended authorization leaves the header; its record lives in the activity history.
+    assert.equal(await page.getByText(/Authorized by/).count(), 0)
     assert.deepEqual(await page.evaluate(() => window.calls[1]), {
       expected_intent_id: 'intent-1',
     })
     await page.evaluate(() => window.setAutoMergeIntentStatus('Stopped'))
-    await page.getByText('Auto-merge stopped', { exact: true }).waitFor()
-    await page.getByText(/checks failed/).waitFor()
-    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
-      await page.screenshot({
-        path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.terminal.png`,
-        fullPage: true,
-      })
-    }
-    await page.evaluate(() => window.setAutoMergeIntentStatus('Fulfilled'))
-    await page.getByText('Merged automatically', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Merge when checks pass' }).waitFor()
+    assert.equal(await page.getByText(/Authorized by/).count(), 0)
     await page.evaluate(() => window.showAutoMergeLoading())
     assert.equal(await page.locator('main > div.fixed').count(), 0)
     if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
