@@ -1,19 +1,25 @@
 import type {
   RequestAutoMergeResponse,
   RequestChecksResponse,
+  RequestMergeabilityStatus,
   RequestSummaryResponse,
 } from '@/api/types.generated'
 
+// Mergeability that describes a request which is no longer, or not yet, open.
+const NOT_OPEN = new Set<RequestMergeabilityStatus>(['Draft', 'Closed', 'Merged'])
+
 /**
  * Run changes refresh a request's checks but not its summary. While the request
- * stays open on the same head, the checks carry its current mergeability.
+ * stays open on the same head, the checks carry its current mergeability. Checks
+ * loaded before the request opened, such as while it was a draft, do not.
  */
 export function withCurrentMergeability(
   request: RequestSummaryResponse,
   checks: RequestChecksResponse | null,
 ): RequestSummaryResponse {
   const current = checks?.mergeability
-  return request.state === 'Open' && current?.request_head_oid === request.head_oid
+  return request.state === 'Open' && current?.request_head_oid === request.head_oid &&
+    !NOT_OPEN.has(current.status)
     ? { ...request, mergeability: current }
     : request
 }

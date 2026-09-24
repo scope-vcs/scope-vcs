@@ -42,6 +42,8 @@ test('refreshed checks supply the mergeability of an open request on the same he
   assert.equal(withCurrentMergeability(summary, checks('Ready', 'b')), summary)
   const merged = { ...summary, state: 'Merged' } as RequestSummaryResponse
   assert.equal(withCurrentMergeability(merged, checks('Ready')), merged)
+  // Checks loaded while the request was a draft do not describe it once submitted.
+  assert.equal(withCurrentMergeability(summary, checks('Draft')), summary)
 })
 
 function request(
