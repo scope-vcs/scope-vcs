@@ -42,14 +42,15 @@ export function RequestDetailPagePending() {
     <PendingSurface label="Loading request">
       <div className="request-detail-pane w-full" ref={paneRef}>
         <header className="request-detail-header border-b border-border px-5 pb-4 pt-6 sm:px-6 lg:px-8">
-          <TextSkeleton className="h-9" length="xlong" size="heading" />
+          <TextSkeleton length="xlong" size="heading" />
           <div className="request-detail-header-secondary mt-4">
             <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs leading-5">
               {/* Mergeability badge, branch, then author: the same pieces as
                   the loaded row, so they wrap the same way. */}
-              <BlockSkeleton className="h-5 w-32 rounded-md" />
+              <BlockSkeleton className="h-5 w-40 rounded-md" />
+              {/* The branch row is as tall as its copy button. */}
+              <TextSkeleton className="h-6 py-1.5" length="long" size="meta" />
               <TextSkeleton className="h-5 py-1" length="medium" size="meta" />
-              <TextSkeleton className="h-5 py-1" length="long" size="meta" />
             </div>
             {/* Signed-out viewers get no request actions. Signed-in ones get
                 the one lifecycle action, which moves to a bottom bar on
@@ -69,7 +70,8 @@ export function RequestDetailPagePending() {
         <div className={cn(rail && 'grid grid-cols-[minmax(0,1fr)_300px]')}>
           <div className="request-detail-document pt-4">
             <section className="min-w-0 px-5 pb-5 lg:px-7">
-              <TextSkeleton length="xlong" />
+              {/* Descriptions are set at leading-6. */}
+              <TextSkeleton className="h-6 py-1" length="xlong" />
             </section>
             <RequestViewTabs actionsRef={() => {}} params={params} rail={rail} />
             <div className="min-w-0">

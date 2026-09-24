@@ -49,12 +49,10 @@ const SCENARIOS = [
 // Checks that fail today. Each fix removes its entry, and the test fails if an
 // entry starts passing, so this list only shrinks. What remains depends on the
 // seeded data, not on the skeletons' shape: the history skeleton fills its list
-// box as an active repository would, and the seed has one entry; the request
-// header grows with whichever actions that request offers.
+// box as an active repository would, and the seed has one entry.
 const KNOWN_FAILURES = new Set([
   'desktop history from code: dividers',
   'desktop history from profile: dividers',
-  'desktop request detail: dividers',
   'mobile history from code: dividers',
   'mobile history from profile: dividers',
 ])
