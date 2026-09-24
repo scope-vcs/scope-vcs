@@ -2,7 +2,6 @@ import type { CliInstallCommands, CliPlatform } from '@/api/types'
 import { CliInstallCommand } from '@/components/cli-install-command'
 import { ScopeLogo } from '@/components/scope-logo'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { ArrowUpRight } from 'lucide-react'
 import type { CSSProperties, ReactElement } from 'react'
@@ -13,9 +12,9 @@ import { RepoPanel } from './repo-panel'
 import { ScrollCue } from './scroll-cue'
 
 const landingShell = 'mx-auto w-[calc(100%-64px)] max-w-[1120px] max-[521px]:w-[calc(100%-40px)]'
-const section = 'relative grid grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)] items-start gap-18 pt-[var(--marketing-section-space)] max-[901px]:grid-cols-1 max-[901px]:gap-12'
-const sectionTitle = 'max-w-[12ch] text-[clamp(32px,3.6vw,48px)] leading-[1.04] font-medium tracking-[-.045em]'
-const sectionNote = 'absolute left-0 top-[calc(100%+28px)] max-w-[32ch] max-[901px]:static max-[901px]:mt-5 max-[901px]:block'
+const column = 'relative min-w-0 scroll-mt-8'
+const columnTitle = 'max-w-[12ch] text-[clamp(32px,3.6vw,48px)] leading-[1.04] font-medium tracking-[-.045em]'
+const columnNote = 'absolute left-0 top-[calc(100%+24px)] max-w-[34ch]'
 const rise = (delay: number) => ({ '--rise-delay': `${delay}ms` }) as CSSProperties
 
 /** The whole page, once per view. Only the public view carries ids, headings
@@ -56,8 +55,8 @@ export function LandingContent({
           </nav>
         </header>
 
-        <main className="outline-none [--marketing-section-space:144px] max-[901px]:[--marketing-section-space:96px]" id={isPublic ? 'main-content' : undefined} tabIndex={isPublic ? -1 : undefined}>
-          <section className="relative grid min-h-[calc(100dvh-76px)] grid-cols-[minmax(0,1fr)_400px] items-center gap-24 pb-24 max-[901px]:min-h-0 max-[901px]:grid-cols-1 max-[901px]:gap-14 max-[901px]:pt-28 max-[421px]:pt-40">
+        <main className="outline-none" id={isPublic ? 'main-content' : undefined} tabIndex={isPublic ? -1 : undefined}>
+          <section className="relative grid min-h-[min(calc(100dvh-76px),820px)] grid-cols-[minmax(0,1fr)_400px] items-center gap-24 pb-24 max-[901px]:min-h-0 max-[901px]:grid-cols-1 max-[901px]:gap-14 max-[901px]:pt-28 max-[421px]:pt-40">
             <Note className="absolute left-0 top-[7%] max-w-[40ch] max-[901px]:top-7 max-[421px]:top-16" id="heroTop" />
             <div className="relative min-w-0">
               <Heading className="text-[clamp(46px,6vw,84px)] leading-[.98] font-medium tracking-[-.058em]" level={1}>
@@ -75,36 +74,34 @@ export function LandingContent({
             <ScrollCue target="merge" />
           </section>
 
-          <section className={section} id={isPublic ? 'merge' : undefined}>
-            <div className="relative">
-              <Heading className={sectionTitle} level={2}><Swap text={mergeTitle} /></Heading>
-              <Note className={sectionNote} id="merge" />
+          {/* The second screen: two columns, headline above figure. */}
+          <section className="relative grid grid-cols-2 items-start gap-x-20 gap-y-24 pt-8 pb-36 max-[901px]:grid-cols-1 max-[901px]:pt-10 max-[901px]:pb-40">
+            <div className={column} id={isPublic ? 'merge' : undefined}>
+              <Heading className={columnTitle} level={2}><Swap text={mergeTitle} /></Heading>
+              <div className="mt-12"><MergeGraph /></div>
+              <Note className={columnNote} id="merge" />
             </div>
-            <MergeGraph />
-            <Note className="absolute right-0 top-[calc(100%+24px)] max-w-[24ch] text-right" id="corner" />
-          </section>
-
-          <section className={cn(section, 'scroll-mt-8 pb-12 max-[901px]:pb-36')} id={isPublic ? 'install' : undefined}>
-            <div className="relative">
-              <Heading className={sectionTitle} level={2}><Swap text={installTitle} /></Heading>
-              <Note className={sectionNote} id="install" />
+            <div className={column} id={isPublic ? 'install' : undefined}>
+              <Heading className={columnTitle} level={2}><Swap text={installTitle} /></Heading>
+              <div className="mt-12 min-w-0" data-note="command">
+                <CliInstallCommand
+                  codeBlockClassName="landing-terminal rounded-lg border-0 py-2 pl-4 pr-2 shadow-none [&_pre]:whitespace-pre [&_pre]:py-2.5 [&_pre]:pr-12 [&_pre]:text-sm [&_pre]:leading-6"
+                  commands={shownCommands}
+                  initialPlatform={initialPlatform}
+                  onPlatformChange={onPlatformChange}
+                  pickerClassName="platforms mb-4"
+                  platform={platform}
+                />
+              </div>
+              <Note className={columnNote} id="install" />
             </div>
-            <div className="min-w-0" data-note="command">
-              <CliInstallCommand
-                codeBlockClassName="landing-terminal rounded-lg border-0 py-2 pl-4 pr-2 shadow-none [&_pre]:whitespace-pre [&_pre]:py-2.5 [&_pre]:pr-12 [&_pre]:text-sm [&_pre]:leading-6"
-                commands={shownCommands}
-                initialPlatform={initialPlatform}
-                onPlatformChange={onPlatformChange}
-                pickerClassName="platforms mb-4"
-                platform={platform}
-              />
-            </div>
+            <Note className="absolute bottom-6 right-0 max-w-[24ch] text-right" id="corner" />
           </section>
         </main>
 
-        <footer className="relative flex min-h-24 items-center justify-between gap-5 text-[13px] text-muted-foreground">
+        <footer className="relative flex min-h-24 flex-wrap items-center justify-between gap-5 text-[13px] text-muted-foreground max-[901px]:pb-8">
           <Link aria-label="Scope home" to="/"><ScopeLogo className="landing-logo w-[84px] opacity-65" /></Link>
-          <Note className="absolute left-1/2 top-1/2 max-w-[44ch] -translate-x-1/2 -translate-y-1/2 text-center max-[901px]:top-auto max-[901px]:bottom-[calc(100%+16px)] max-[901px]:translate-y-0" id="footer" />
+          <Note className="absolute left-1/2 top-1/2 max-w-[44ch] -translate-x-1/2 -translate-y-1/2 text-center max-[901px]:static max-[901px]:order-last max-[901px]:block max-[901px]:max-w-none max-[901px]:basis-full max-[901px]:translate-none max-[901px]:text-left" id="footer" />
           <nav aria-label={isPublic ? 'Project' : undefined} className="flex gap-6 [&_a:hover]:text-success-strong">
             <a href={sourceUrl}>Source</a>
             <Link to="/licenses">Licenses</Link>

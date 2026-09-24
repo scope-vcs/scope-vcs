@@ -72,13 +72,13 @@ test('landing layout keeps every note clear of the content at each width', async
               .filter((other) => other !== note && !note.contains(other) && !other.contains(note) && overlaps(note.getBoundingClientRect(), other.getBoundingClientRect()))
               .map((other) => `${note.dataset.note} overlaps ${other.dataset.note ?? other.tagName}`)),
             overflow: document.documentElement.scrollWidth > innerWidth,
-            tops: innerWidth > 900 ? ['merge', 'install'].map((id) => [...document.getElementById(id).children].slice(0, 2).map((child) => child.getBoundingClientRect().top)) : [],
+            tops: innerWidth > 900 ? [['merge', 'install'].map((id) => document.querySelector(`#${id} h2`).getBoundingClientRect().top)] : [],
           }
         }, publicLayer)
         assert.equal(layout.notes, 8, `${colorScheme} at ${width}px`)
         assert.deepEqual(layout.collisions, [], `${colorScheme} at ${width}px`)
         assert.equal(layout.overflow, false, `${colorScheme} at ${width}px`)
-        for (const [title, figure] of layout.tops) assert.equal(title, figure, `${colorScheme} at ${width}px`)
+        for (const [merge, install] of layout.tops) assert.equal(merge, install, `${colorScheme} at ${width}px`)
       }
     }
   })

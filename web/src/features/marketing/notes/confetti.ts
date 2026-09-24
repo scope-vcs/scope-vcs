@@ -1,12 +1,11 @@
 /**
- * Confetti for finding every note. Normally two cannons fire from the bottom
- * corners; with reduced motion, still pieces fade in along both edges and fade
- * out again. Draws on a throwaway canvas that removes itself when done or when
- * the returned stop function runs.
+ * Confetti for finding every note: two cannons fire from the left and right
+ * edges toward the middle of the screen. Draws on a throwaway canvas that
+ * removes itself when done or when the returned stop function runs.
  */
-const CANNON_FRAMES = 260
-const CALM_FRAMES = 150
+const FRAMES = 260
 const FADE_FRAMES = 45
+const PIECES = 260
 
 interface Piece {
   x: number
@@ -24,7 +23,6 @@ interface Piece {
 }
 
 export function fireConfetti(): () => void {
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
   const canvas = document.createElement('canvas')
   canvas.setAttribute('aria-hidden', 'true')
   canvas.className = 'pointer-events-none fixed inset-0 z-30 h-screen w-screen'
@@ -44,28 +42,23 @@ export function fireConfetti(): () => void {
   const tokens = getComputedStyle(document.documentElement)
   const colors = ['--success', '--success-strong', '--success-border', '--foreground', '--warning', '--warning-strong']
     .map((token) => tokens.getPropertyValue(token).trim())
-  const pieces = Array.from({ length: reduced ? 90 : 260 }, (_, index) => reduced ? calmPiece(index, width, height, colors) : cannonPiece(index, width, height, colors))
-  const frames = reduced ? CALM_FRAMES : CANNON_FRAMES
+  const pieces = Array.from({ length: PIECES }, (_, index) => cannonPiece(index, width, height, colors))
 
   let frame = 0
   let animation = 0
   const draw = () => {
     frame++
     context.clearRect(0, 0, width, height)
-    const fadeOut = Math.max(0, Math.min(1, (frames - frame) / FADE_FRAMES))
+    context.globalAlpha = Math.max(0, Math.min(1, (FRAMES - frame) / FADE_FRAMES))
     for (const piece of pieces) {
       if (frame < piece.delay) continue
-      if (!reduced) {
-        piece.vx *= .985
-        piece.vy = Math.min(piece.vy * .985 + .38, 4.2)
-        piece.tilt += piece.wobble
-        piece.x += piece.vx + Math.sin(piece.tilt) * .8
-        piece.y += piece.vy
-        piece.rotation += piece.spin
-      }
-      const fadeIn = reduced ? Math.min(1, (frame - piece.delay) / 20) : 1
+      piece.vx *= .985
+      piece.vy = Math.min(piece.vy * .985 + .32, 4.2)
+      piece.tilt += piece.wobble
+      piece.x += piece.vx + Math.sin(piece.tilt) * .8
+      piece.y += piece.vy
+      piece.rotation += piece.spin
       context.save()
-      context.globalAlpha = fadeIn * fadeOut
       context.translate(piece.x, piece.y)
       context.rotate(piece.rotation)
       context.scale(1, Math.cos(piece.tilt))
@@ -73,7 +66,7 @@ export function fireConfetti(): () => void {
       context.fillRect(-piece.width / 2, -piece.height / 2, piece.width, piece.height)
       context.restore()
     }
-    if (frame < frames) animation = requestAnimationFrame(draw)
+    if (frame < FRAMES) animation = requestAnimationFrame(draw)
     else canvas.remove()
   }
   animation = requestAnimationFrame(draw)
@@ -83,14 +76,17 @@ export function fireConfetti(): () => void {
   }
 }
 
+/** A piece fired from low on one side edge, angled up and in, fast enough to
+ * carry it to about the middle of the screen before it falls. */
 function cannonPiece(index: number, width: number, height: number, colors: string[]): Piece {
   const fromLeft = index % 2 === 0
-  const angle = (58 + Math.random() * 26) * Math.PI / 180
-  const speed = (15 + Math.random() * 13) * Math.min(1.25, Math.max(.8, height / 900))
+  const angle = (18 + Math.random() * 40) * Math.PI / 180
+  const reach = Math.min(1.3, Math.max(.6, width / 1400))
+  const speed = (13 + Math.random() * 14) * reach
   const strip = Math.random() < .25
   return {
-    x: fromLeft ? 0 : width,
-    y: height + 6,
+    x: fromLeft ? -8 : width + 8,
+    y: height * (.62 + Math.random() * .22),
     vx: Math.cos(angle) * speed * (fromLeft ? 1 : -1),
     vy: -Math.sin(angle) * speed,
     width: strip ? 3 : 8 + Math.random() * 6,
@@ -100,25 +96,6 @@ function cannonPiece(index: number, width: number, height: number, colors: strin
     tilt: Math.random() * Math.PI * 2,
     wobble: .08 + Math.random() * .1,
     color: colors[index % colors.length] ?? 'currentColor',
-    delay: Math.floor(Math.random() * 22),
-  }
-}
-
-function calmPiece(index: number, width: number, height: number, colors: string[]): Piece {
-  const band = width * .14
-  const fromLeft = index % 2 === 0
-  return {
-    x: fromLeft ? Math.random() * band : width - Math.random() * band,
-    y: Math.random() * height,
-    vx: 0,
-    vy: 0,
-    width: 8 + Math.random() * 6,
-    height: 5 + Math.random() * 4,
-    rotation: Math.random() * Math.PI * 2,
-    spin: 0,
-    tilt: Math.random() * Math.PI * 2,
-    wobble: 0,
-    color: colors[index % colors.length] ?? 'currentColor',
-    delay: Math.floor(Math.random() * 30),
+    delay: Math.floor(Math.random() * 18),
   }
 }
