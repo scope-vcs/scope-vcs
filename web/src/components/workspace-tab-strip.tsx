@@ -131,7 +131,7 @@ export function WorkspaceTabStrip({
                 ref={tabRef(tab.id)}
                 role="tab"
                 tabIndex={tab.id === tabStopId ? 0 : -1}
-                title={accessibleLabel}
+                title={`${accessibleLabel} (Delete closes tab)`}
                 type="button"
               >
                 {/* Buttons reset font-style, so the preview marker lives on the
