@@ -13,6 +13,13 @@ import { Toaster } from 'sonner'
 import { scopeClerkAppearance } from '../clerk-appearance'
 import { RequestSessionBoundary } from '@/features/requests/request-session-boundary'
 import '../styles.css'
+import commitMono400 from '@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2?url'
+import commitMono500 from '@fontsource/commit-mono/files/commit-mono-latin-500-normal.woff2?url'
+import ibmPlexSans from '@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-normal.woff2?url'
+
+// Fonts drawn above the fold. Preloading them starts the downloads before the
+// stylesheet is parsed, which is where Lighthouse attributes the LCP render delay.
+const preloadedFonts = [ibmPlexSans, commitMono400, commitMono500]
 
 const AnalyticsRoot = lazy(() => import('@/analytics/analytics-root').then(
   ({ AnalyticsRoot: component }) => ({ default: component }),
@@ -26,6 +33,13 @@ export const Route = createRootRoute({
         type: 'image/svg+xml',
         href: '/favicon.svg',
       },
+      ...preloadedFonts.map((href) => ({
+        rel: 'preload',
+        as: 'font',
+        type: 'font/woff2',
+        crossOrigin: 'anonymous' as const,
+        href,
+      })),
     ],
     meta: [
       { charSet: 'utf-8' },

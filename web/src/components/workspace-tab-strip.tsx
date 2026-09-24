@@ -72,6 +72,10 @@ export function WorkspaceTabStrip({
       nextIndex = 0
     } else if (event.key === 'End') {
       nextIndex = tabs.length - 1
+    } else if (event.key === 'Delete') {
+      event.preventDefault()
+      closeTab(id)
+      return
     }
     if (nextIndex === null) return
     event.preventDefault()
@@ -111,6 +115,7 @@ export function WorkspaceTabStrip({
             >
               <button
                 aria-controls={domIds.panelId}
+                aria-keyshortcuts="Delete"
                 aria-label={accessibleLabel}
                 aria-selected={active}
                 className={cn(
@@ -135,13 +140,18 @@ export function WorkspaceTabStrip({
                   {visibleLabels.get(tab.id) ?? tab.label}
                 </span>
               </button>
+              {/* A tablist may only own tabs, so the pointer close control is
+                  hidden from assistive tech; keyboard and screen reader users
+                  close the focused tab with Delete. */}
               <button
-                aria-label={`Close ${accessibleLabel}`}
+                aria-hidden
                 className={cn(
-                  'mr-1.5 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-[color,background-color,opacity] hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring sm:opacity-0 sm:group-hover/tab:opacity-100 sm:focus-visible:opacity-100 [@media(hover:none)]:min-w-11 [@media(hover:none)]:!opacity-100 [@media(pointer:coarse)]:min-w-11 [@media(pointer:coarse)]:!opacity-100',
+                  'ml-0.5 mr-1.5 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-[color,background-color,opacity] hover:bg-muted hover:text-foreground sm:opacity-0 sm:group-hover/tab:opacity-100 [@media(hover:none)]:min-w-11 [@media(hover:none)]:!opacity-100 [@media(pointer:coarse)]:min-w-11 [@media(pointer:coarse)]:!opacity-100',
                   active && 'sm:opacity-60',
                 )}
                 onClick={() => closeTab(tab.id)}
+                tabIndex={-1}
+                title={`Close ${accessibleLabel}`}
                 type="button"
               >
                 <X className="size-3.5" />

@@ -24,10 +24,7 @@ test('workspace tabs keep touch close controls visible and large enough', async 
       })
     }, repoPath)
     await page.getByRole('tab', { name: 'src/app.ts', exact: true }).waitFor()
-    const close = page.getByRole('button', {
-      name: `Close ${firstLabel}`,
-      exact: true,
-    })
+    const close = page.getByTitle(`Close ${firstLabel}`, { exact: true })
     await page.waitForFunction(
       (element) => getComputedStyle(element).opacity === '1',
       await close.elementHandle(),
@@ -69,10 +66,7 @@ test('workspace tabs retain mouse hover disclosure', async () => {
     }, repoPath)
     await page.getByRole('tab', { name: 'src/app.ts', exact: true }).waitFor()
     await page.mouse.move(tabletViewport.width - 1, tabletViewport.height - 1)
-    const close = page.getByRole('button', {
-      name: `Close ${firstLabel}`,
-      exact: true,
-    })
+    const close = page.getByTitle(`Close ${firstLabel}`, { exact: true })
     await page.waitForFunction(
       (element) => getComputedStyle(element).opacity === '0',
       await close.elementHandle(),
@@ -82,5 +76,31 @@ test('workspace tabs retain mouse hover disclosure', async () => {
       (element) => getComputedStyle(element).opacity === '1',
       await close.elementHandle(),
     )
+  }, { viewport: tabletViewport })
+})
+
+test('workspace tabs close from the keyboard and keep close controls out of the tablist', async () => {
+  await withPage(repoPath, async (page) => {
+    const firstTab = page.getByRole('tab').first()
+    await firstTab.waitFor()
+    await waitForClientHydration(firstTab)
+    await firstTab.dblclick()
+    const firstLabel = await firstTab.getAttribute('aria-label')
+    assert(firstLabel)
+
+    await page.evaluate((to) => {
+      void globalThis.__TSR_ROUTER__.navigate({
+        to,
+        search: { file: 'src/app.ts' },
+      })
+    }, repoPath)
+    const secondTab = page.getByRole('tab', { name: 'src/app.ts', exact: true })
+    await secondTab.waitFor()
+    assert.equal(await page.getByRole('tablist').getByRole('button').count(), 0)
+
+    await firstTab.focus()
+    await page.keyboard.press('Delete')
+    await page.getByRole('tab', { name: firstLabel, exact: true }).waitFor({ state: 'detached' })
+    assert.equal(await secondTab.evaluate((element) => element === document.activeElement), true)
   }, { viewport: tabletViewport })
 })

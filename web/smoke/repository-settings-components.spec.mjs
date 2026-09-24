@@ -33,7 +33,7 @@ test('repository components retain drafts, previews and pending actions across r
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(server.resolvedUrls.local[0], { timeout: 30_000, waitUntil: 'domcontentloaded' })
-    const initialClose = page.getByRole('button', { name: 'Close Two.html' })
+    const initialClose = page.getByTitle('Close Two.html', { exact: true })
     assert.equal(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches), true)
     assert.equal(await initialClose.evaluate(node => getComputedStyle(node).opacity), '1')
     assert.equal(await initialClose.evaluate(node => getComputedStyle(node).minWidth), '44px')
@@ -126,10 +126,10 @@ test('repository components retain drafts, previews and pending actions across r
     await page.frameLocator('iframe').getByRole('heading', { name: 'Test preview' }).waitFor()
     assert.equal(await first.evaluate(node => node.isConnected), false)
     assert.equal(await page.locator('iframe').count(), 1)
-    const close = page.getByRole('button', { name: 'Close Two.html' })
+    const close = page.getByTitle('Close Two.html', { exact: true })
     await close.locator('..').hover()
     await page.waitForFunction(() => [...document.querySelectorAll('button')].some((node) =>
-      node.getAttribute('aria-label') === 'Close Two.html' &&
+      node.title === 'Close Two.html' &&
       getComputedStyle(node).opacity === '1'))
     assert.equal(await close.evaluate(node => getComputedStyle(node).opacity), '1')
     await close.tap()
