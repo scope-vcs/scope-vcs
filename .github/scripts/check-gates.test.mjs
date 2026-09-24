@@ -28,20 +28,24 @@ function commands(gate, ...args) {
 
 test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
   const backend = commands('backend');
+  // Advisories run before the tests so a vulnerable dependency fails fast.
+  assert.ok(backend.includes('cargo deny --locked check advisories'));
+  assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --locked'));
   assert.ok(backend.includes('cargo test --workspace --locked'));
   assert.ok(backend.includes('cargo test -p api --features local-dev --locked dev::'));
   assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
 });
 
-test('web gate includes observer and resource rules; the backend gate owns the contract; CLI and integration retain their coverage', () => {
+test('web gate includes resource, Hooks, convention and advisory checks; backend owns the contract; CLI and integration retain their coverage', () => {
   assert.deepEqual(commands('web'), [
     'pnpm test', 'pnpm check', 'pnpm build',
   ]);
   const webChecks = JSON.parse(read('web/package.json')).scripts.check;
-  assert.equal(webChecks, 'pnpm typecheck && pnpm check:observer-boundary && pnpm check:resource-boundary && pnpm check:react-doctor && pnpm check:konsistent');
+  assert.equal(webChecks, 'pnpm typecheck && pnpm check:resource-boundary && pnpm check:hooks && pnpm check:conventions && pnpm check:advisories');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   const cliCommands = commands('cli');
   assert.ok(cliCommands.includes('cargo fmt --manifest-path cli/Cargo.toml -- --check'));
+  assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check advisories'));
   assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
   assert.ok(cliCommands.includes('cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings'));
   // The distribution matrix owns every release build; the CLI gate must not add one.
@@ -370,13 +374,33 @@ test('CLI publication configures the advertised installer origin before deployme
   ]);
 });
 
+test('staging verifies pinned Git before credentials or deployment mutations', () => {
+  const workflow = read('.github/workflows/deploy-staging.yml');
+  const install = workflow.indexOf('- name: Install reviewed Git for staging smoke');
+  const verify = workflow.indexOf('- name: Verify staging Git version');
+  const credentials = workflow.indexOf('- name: Create staging-scoped Railway token');
+  assert.ok(install > workflow.indexOf('- name: Checkout trusted orchestration'));
+  assert.ok(verify > install && credentials > verify);
+  const setup = workflow.slice(install, credentials);
+  assert.match(setup, /jq -er '\.git\.version' dev\/tool-versions\.json/);
+  assert.match(setup, /jq -er '\.git\.sourceSha256' dev\/tool-versions\.json/);
+  assert.match(setup, /sudo bash deploy\/railway\/install-git\.sh "\$version" "\$source_sha256"/);
+  assert.match(setup, /echo \/opt\/git\/bin >> "\$GITHUB_PATH"/);
+  assert.match(setup, /run: node dev\/check-git-version\.mjs/);
+  assert.doesNotMatch(setup, /\n\s+(?:if:|continue-on-error:)/);
+});
+
 test('Node workflows cache pnpm and browser downloads by the web lockfile', () => {
   const integrationCi = read('.github/workflows/scope-integration-ci.yml');
   for (const workflow of [integrationCi, read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
     assert.match(workflow, /uses: pnpm\/action-setup@[0-9a-f]{40} # v5/);
-    assert.match(workflow, /cache: pnpm/);
     assert.match(workflow, /cache-dependency-path: web\/pnpm-lock\.yaml/);
   }
+  for (const workflow of [read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
+    assert.match(workflow, /cache: pnpm/);
+  }
+  // The integration job installs web dependencies only for the web lane, so the pnpm store cache follows that lane.
+  assert.match(integrationCi, /cache: \$\{\{ inputs\.run_web && 'pnpm' \|\| '' \}\}/);
   assert.match(integrationCi, /path: ~\/\.cache\/ms-playwright/);
   assert.match(integrationCi, /key: playwright-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('web\/pnpm-lock\.yaml'\) \}\}/);
 });
@@ -412,7 +436,7 @@ test('CI is pull-request-only and Release is scheduled/manual with a shared chec
   assert.match(ci, /  pull_request:/);
   assert.doesNotMatch(ci.split('\nconcurrency:')[0], /schedule:|workflow_dispatch:|push:/);
   const triggers = release.split('\nconcurrency:')[0];
-  assert.match(triggers, /cron: "8 9 \* \* \*"\n\s+timezone: "America\/Chicago"/);
+  assert.match(triggers, /cron: "8 3 \* \* \*"\n\s+timezone: "America\/Chicago"/);
   assert.equal((triggers.match(/cron:/g) || []).length, 1);
   assert.match(triggers, /workflow_dispatch:/);
   assert.doesNotMatch(triggers, /pull_request:|push:/);

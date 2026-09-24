@@ -22,11 +22,12 @@ jobs:
     name: Prepare distribution matrix
     if: inputs.validate_targets
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Read distribution targets
         id: targets
@@ -42,6 +43,7 @@ jobs:
   checks:
     name: Check scope-cli
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
     steps:
       # The distribution matrix builds, packages, and uploads the service
       # artifact, so a service release cannot skip the matrix.
@@ -52,21 +54,34 @@ jobs:
           exit 1
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install reviewed Git on Linux
+        run: |
+          version="$(jq -er '.git.version' dev/tool-versions.json)"
+          source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+          sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
+          echo /opt/git/bin >> "$GITHUB_PATH"
+
+      - name: Verify host Git version
+        run: node dev/check-git-version.mjs
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
-          toolchain: 1.98.0
+          toolchain: 1.98.1
           components: rustfmt, clippy
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-bin: false
           shared-key: cli-checks
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           workspaces: cli -> target
+
+      - name: Install cargo-deny
+        run: ./dev/install-cargo-deny.sh
 
       - name: Check CLI
         run: ./dev/checks/cli
@@ -86,22 +101,55 @@ jobs:
     needs: [checks, prepare]
     if: inputs.validate_targets
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install reviewed Git on Linux
+        if: runner.os == 'Linux'
+        run: |
+          version="$(jq -er '.git.version' dev/tool-versions.json)"
+          source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+          sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
+          echo /opt/git/bin >> "$GITHUB_PATH"
+
+      - name: Install current Git on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          if brew list --versions git >/dev/null; then
+            brew upgrade git
+          else
+            brew install git
+          fi
+          echo "$(brew --prefix git)/bin" >> "$GITHUB_PATH"
+
+      - name: Install Git for Windows 2.55
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Get-Content dev/tool-versions.json | ConvertFrom-Json).git.windowsPackageVersion
+          choco upgrade git --version=$version --yes --no-progress
+          'C:\Program Files\Git\cmd' | Out-File -FilePath $env:GITHUB_PATH -Append
+          & 'C:\Program Files\Git\cmd\git.exe' --version
+
+      - name: Verify host Git version
+        shell: bash
+        run: node dev/check-git-version.mjs
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
-          toolchain: 1.98.0
+          toolchain: 1.98.1
           targets: ${{ matrix.target }}
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-bin: ${{ matrix.builder == 'cross' }}
           shared-key: cli-build-${{ matrix.target }}
@@ -113,7 +161,7 @@ jobs:
         working-directory: cli
         env:
           CARGO_TARGET_DIR: target/cargo-install
-        run: cargo install cross --locked
+        run: cargo install cross --version 0.2.5 --locked
 
       - name: Build scope
         shell: bash
@@ -162,7 +210,7 @@ jobs:
           --target "${{ matrix.target }}" --bin scope-cli-service
 
       - name: Install Node for analyzer packaging
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
 
@@ -216,7 +264,7 @@ jobs:
         run: node --test cli/distribution/install-smoke.test.mjs
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.artifact }}
           path: cli/dist/${{ matrix.artifact }}
@@ -238,7 +286,7 @@ jobs:
 
       - name: Upload service
         if: inputs.validate_service_release && matrix.target == 'x86_64-unknown-linux-gnu'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cli-service-release-${{ github.sha }}
           path: artifacts/scope-cli-service.tar.gz

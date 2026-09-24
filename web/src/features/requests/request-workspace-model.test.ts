@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestAttentionReason } from '../../api/types.generated'
-import { requestAgeLabel, requestAttentionGroup, requestAttentionHeat } from './request-workspace-model'
+import {
+  requestAgeLabel,
+  requestAttentionGroup,
+  requestAttentionHeat,
+  requestSnoozeLandingLabel,
+  requestSnoozeUntil,
+} from './request-workspace-model'
 
 const ACTIVE_REASONS: Record<RequestAttentionReason, 'needs_you' | 'waiting'> = {
   invited: 'needs_you',
@@ -60,3 +66,21 @@ test('attention heat steps up with the wait', () => {
   assert.equal(requestAttentionHeat(now - 5 * 86400, now), 2)
   assert.equal(requestAttentionHeat(now - 30 * 86400, now), 3)
 })
+
+test('snooze choices land an hour on, tomorrow at nine, or next Monday at nine', () => {
+  const wednesday = new Date('2026-09-23T14:12:00Z')
+  const hour = new Date(requestSnoozeUntil('hour', wednesday) * 1_000)
+  const tomorrow = new Date(requestSnoozeUntil('tomorrow', wednesday) * 1_000)
+  const nextWeek = new Date(requestSnoozeUntil('next_week', wednesday) * 1_000)
+  assert.equal(hour.toISOString(), '2026-09-23T15:12:00.000Z')
+  assert.equal(tomorrow.toISOString(), '2026-09-24T09:00:00.000Z')
+  assert.equal(nextWeek.toISOString(), '2026-09-28T09:00:00.000Z')
+})
+
+test('the menu words each landing as a clock today and a weekday later', () => {
+  const wednesday = new Date('2026-09-23T14:12:00Z')
+  assert.equal(requestSnoozeLandingLabel('hour', wednesday), '3:12 PM')
+  assert.equal(requestSnoozeLandingLabel('tomorrow', wednesday), 'Thu 9:00 AM')
+  assert.equal(requestSnoozeLandingLabel('next_week', wednesday), 'Mon 9:00 AM')
+})
+

@@ -1,3 +1,5 @@
+#[path = "contribution_flow/checks.rs"]
+mod checks;
 mod support;
 
 use serde_json::Value;
@@ -40,6 +42,7 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         maintainer.repo.join("internal/notes.md").is_file(),
         "maintainer clone omitted a private file"
     );
+    exercise_worktree_setup(&maintainer);
 
     let status = maintainer.json(["status"]);
     assert_command(&status, "status");
@@ -284,6 +287,17 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         "second public revision\n"
     );
 
+    assert_error(
+        &contributor,
+        [
+            "request",
+            "merge",
+            "--request",
+            request_id.as_str(),
+            "--yes",
+        ],
+        "forbidden",
+    );
     let merged = maintainer.json([
         "request",
         "merge",
@@ -296,6 +310,18 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         string_at(&merged, "/result/response/request/state"),
         "Merged"
     );
+    let already_merged = assert_error(
+        &maintainer,
+        [
+            "request",
+            "close",
+            "--request",
+            request_id.as_str(),
+            "--yes",
+        ],
+        "conflict",
+    );
+    assert_eq!(already_merged["message"], "request is already merged");
     run_git(&maintainer.repo, ["switch", "main"]);
     let merged_pull = maintainer.json(["pull"]);
     assert_eq!(merged_pull["result"]["branch_moved"], true);
@@ -340,6 +366,12 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         string_at(&closed, "/result/response/request/state"),
         "Closed"
     );
+    let already_closed = assert_error(
+        &maintainer,
+        ["request", "close", "--request", close_id.as_str(), "--yes"],
+        "conflict",
+    );
+    assert_eq!(already_closed["message"], "request is already closed");
     let terminal_push = contributor.run(["--json", "request", "push"]);
     assert_eq!(terminal_push.status.code(), Some(4));
     assert!(terminal_push.stdout.is_empty());
@@ -363,6 +395,74 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         fs::read_to_string(maintainer_after.join("contribution.txt")).unwrap(),
         "second public revision\n"
     );
+    checks::exercise(&contributor, &maintainer, &suffix);
+}
+
+fn assert_error<const N: usize>(actor: &Actor, args: [&str; N], code: &str) -> Value {
+    let output = actor.run(std::iter::once("--json").chain(args));
+    assert!(!output.status.success(), "command unexpectedly succeeded");
+    let error = error_json(&output);
+    assert_eq!(error["code"], code, "{error}");
+    error
+}
+
+fn exercise_worktree_setup(actor: &Actor) {
+    run_git(&actor.repo, ["remote", "rename", "origin", "scope"]);
+    let linked = actor.repo.parent().unwrap().join("linked");
+    run_git(
+        &actor.repo,
+        [
+            "worktree",
+            "add",
+            "-b",
+            "linked-setup",
+            linked.to_str().unwrap(),
+        ],
+    );
+    // Simulate the GitHub-tracking branch used for ordinary mirrored development.
+    run_git(
+        &linked,
+        [
+            "remote",
+            "add",
+            "origin",
+            "https://github.example/owner/repo",
+        ],
+    );
+    run_git(&linked, ["config", "branch.linked-setup.remote", "origin"]);
+    run_git(
+        &linked,
+        ["config", "branch.linked-setup.merge", "refs/heads/main"],
+    );
+    let head = git_stdout(&linked, ["rev-parse", "HEAD"]);
+    let doctor = actor
+        .command(&linked)
+        .args(["--json", "doctor"])
+        .output()
+        .unwrap();
+    assert_success(&doctor, "linked worktree doctor");
+    let doctor: Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    assert_eq!(doctor["result"]["healthy"], true, "{doctor}");
+    let pulled = actor
+        .command(&linked)
+        .args(["--json", "pull", "--remote", "scope"])
+        .output()
+        .unwrap();
+    assert_success(&pulled, "linked worktree pull");
+    let pulled: Value = serde_json::from_slice(&pulled.stdout).unwrap();
+    assert_eq!(pulled["result"]["visibility_setup"], "created");
+    assert_eq!(pulled["result"]["branch_moved"], false);
+    assert_eq!(git_stdout(&linked, ["rev-parse", "HEAD"]), head);
+    assert_eq!(
+        git_stdout(&linked, ["config", "branch.linked-setup.remote"]),
+        "origin"
+    );
+    run_git(
+        &actor.repo,
+        ["worktree", "remove", linked.to_str().unwrap()],
+    );
+    run_git(&actor.repo, ["remote", "remove", "origin"]);
+    run_git(&actor.repo, ["remote", "rename", "scope", "origin"]);
 }
 
 struct Actor {

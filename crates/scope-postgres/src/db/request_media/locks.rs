@@ -15,7 +15,7 @@ pub(super) async fn lock_attachment_row<C>(
 where
     C: ConnectionTrait,
 {
-    conn.query_one(Statement::from_sql_and_values(
+    conn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT * FROM scope_request_media_attachments WHERE id = $1 FOR UPDATE",
         [attachment_id.into()],
@@ -50,7 +50,7 @@ where
     C: ConnectionTrait,
 {
     Ok(conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT attachment_id FROM scope_request_media_processing_jobs
              WHERE attachment_id = $1 FOR UPDATE",

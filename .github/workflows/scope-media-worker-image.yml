@@ -21,11 +21,12 @@ jobs:
   image:
     name: Build pinned media worker image
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
     outputs:
       image_ref: ${{ steps.identity.outputs.image_ref }}
     steps:
       - name: Checkout exact revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_sha }}
 
@@ -43,7 +44,7 @@ jobs:
 
       - name: Log in to GHCR
         if: inputs.publish
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -51,7 +52,7 @@ jobs:
 
       - name: Build media worker
         id: build
-        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
         with:
@@ -60,7 +61,55 @@ jobs:
           platforms: linux/amd64
           provenance: false
           push: ${{ inputs.publish }}
+          load: ${{ !inputs.publish }}
           tags: ghcr.io/scope-vcs/scope-media-worker:${{ inputs.source_sha }}
+
+      - name: Scan image and record codec SBOM
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PUBLISH: ${{ inputs.publish && '1' || '0' }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          vendor_version="$(jq -er '.components[0].version' media-worker/codec-vendor.cdx.json)"
+          vendor_sha256="$(jq -er '.components[0].hashes[0].content' media-worker/codec-vendor.cdx.json)"
+          grep --fixed-strings --line-regexp --quiet "ARG LIBHEIF_VERSION=${vendor_version}" media-worker/Dockerfile
+          grep --fixed-strings --line-regexp --quiet "ARG LIBHEIF_SHA256=${vendor_sha256}" media-worker/Dockerfile
+          source=docker
+          image="ghcr.io/scope-vcs/scope-media-worker:${SOURCE_SHA}"
+          if [[ "$PUBLISH" == 1 ]]; then
+            [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            source=remote
+            image="ghcr.io/scope-vcs/scope-media-worker@${DIGEST}"
+          fi
+          .scope/images/checks/scan-image.sh "$source" "$image" \
+            media-worker-vulnerabilities.json media-worker-sbom.cdx.json
+          jq --slurpfile vendor media-worker/codec-vendor.cdx.json \
+            '.components += $vendor[0].components' \
+            media-worker-sbom.cdx.json > media-worker-sbom-complete.cdx.json
+          jq -e '.components | any(.name == "libheif1") | not' \
+            media-worker-sbom-complete.cdx.json
+          purl="$(jq -er '.components | map(select(.name == "libheif")) | if length == 1 then .[0].purl else error("expected one libheif component") end' media-worker-sbom-complete.cdx.json)"
+          test "$purl" = "pkg:generic/libheif@${vendor_version}"
+          jq -n --arg purl "$purl" '{package: {purl: $purl}}' > media-worker-vendor-query.json
+          curl --fail --location --silent --show-error --retry 3 --connect-timeout 10 --max-time 60 \
+            --header 'content-type: application/json' \
+            --data-binary @media-worker-vendor-query.json \
+            https://api.osv.dev/v1/query > media-worker-vendor-advisories.json
+          node media-worker/check-vendor-advisories.mjs \
+            media-worker-sbom-complete.cdx.json media-worker-vendor-advisories.json
+
+      - name: Retain media scan and SBOM
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: media-worker-image-scan
+          path: |
+            media-worker-vulnerabilities.json
+            media-worker-sbom-complete.cdx.json
+            media-worker-vendor-query.json
+            media-worker-vendor-advisories.json
+          if-no-files-found: warn
 
       - name: Bind image to source and digest
         id: identity

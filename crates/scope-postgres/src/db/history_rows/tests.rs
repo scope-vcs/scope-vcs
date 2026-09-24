@@ -15,7 +15,7 @@ async fn histories_load_more_parents_than_postgres_bind_limit() {
     .unwrap();
     store
         .db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_logical_commits (repo_id, id, ordinal, origin, author_id, message)
          SELECT $1, 'commit-' || n, n, $2, $3, 'Imported commit'
@@ -30,7 +30,7 @@ async fn histories_load_more_parents_than_postgres_bind_limit() {
         .unwrap();
     store
         .db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_visibility_change_sets (repo_id, id, ordinal, author_id)
          SELECT $1, 'visibility-' || n, n, $2 FROM generate_series(0, 65535) n",

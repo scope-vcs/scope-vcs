@@ -208,7 +208,7 @@ impl RepositoryStore {
             .exec(&tx)
             .await
             .map_err(PostgresError::internal)?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "DELETE FROM scope_git_segment_references refs
              USING scope_git_segment_uploads uploads
@@ -217,7 +217,7 @@ impl RepositoryStore {
         ))
         .await
         .map_err(PostgresError::internal)?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_git_segment_uploads
              SET state = 'deleting', updated_at_unix = GREATEST(updated_at_unix, $2)

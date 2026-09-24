@@ -199,6 +199,114 @@ fn content_conflict_is_the_only_typed_merge_conflict() {
     let _ = fs::remove_dir_all(repo);
 }
 
+#[test]
+fn merge_preserves_rename_executable_mode_and_binary_content() {
+    let repo = temp_repo_path("rename-mode-binary");
+    run_git(
+        None,
+        &["init", "-b", "main", repo.to_string_lossy().as_ref()],
+        "init",
+    )
+    .unwrap();
+    run_git(Some(&repo), &["config", "user.name", "Test"], "config name").unwrap();
+    run_git(
+        Some(&repo),
+        &["config", "user.email", "test@scope.local"],
+        "config email",
+    )
+    .unwrap();
+    fs::write(repo.join("old.txt"), "one\ntwo\nthree\nfour\nfive\n").unwrap();
+    fs::write(repo.join("script.sh"), "#!/bin/sh\n").unwrap();
+    fs::write(repo.join("data.bin"), [0, 1, 2, 255]).unwrap();
+    commit_all(&repo, "base");
+    let base = oid(&repo, "HEAD");
+
+    fs::rename(repo.join("old.txt"), repo.join("new.txt")).unwrap();
+    commit_all(&repo, "rename on main");
+    let main = oid(&repo, "HEAD");
+
+    run_git(
+        Some(&repo),
+        &["switch", "-c", "request", &base],
+        "request branch",
+    )
+    .unwrap();
+    fs::write(repo.join("old.txt"), "one\ntwo\nrequest\nfour\nfive\n").unwrap();
+    fs::write(repo.join("data.bin"), [0, 9, 2, 255]).unwrap();
+    run_git(Some(&repo), &["add", "."], "stage request").unwrap();
+    run_git(
+        Some(&repo),
+        &["update-index", "--chmod=+x", "script.sh"],
+        "mode change",
+    )
+    .unwrap();
+    run_git(
+        Some(&repo),
+        &["commit", "-m", "request edit"],
+        "commit request",
+    )
+    .unwrap();
+    let request = oid(&repo, "HEAD");
+
+    let merged = merge_main_oid(&repo, &base, &main, &request, "request").unwrap();
+    assert_eq!(
+        git_text(&repo, &["show", &format!("{merged}:new.txt")]),
+        "one\ntwo\nrequest\nfour\nfive\n"
+    );
+    let blob = run_git_output(
+        Some(&repo),
+        &["show", &format!("{merged}:data.bin")],
+        "binary",
+    )
+    .unwrap();
+    assert_eq!(blob.stdout, [0, 9, 2, 255]);
+    assert!(git_text(&repo, &["ls-tree", &merged, "script.sh"]).starts_with("100755 blob "));
+    let _ = fs::remove_dir_all(repo);
+}
+
+#[test]
+fn recorded_base_controls_merge_even_when_git_finds_a_newer_common_ancestor() {
+    let repo = temp_repo_path("recorded-base");
+    run_git(
+        None,
+        &["init", "-b", "main", repo.to_string_lossy().as_ref()],
+        "init",
+    )
+    .unwrap();
+    run_git(Some(&repo), &["config", "user.name", "Test"], "config name").unwrap();
+    run_git(
+        Some(&repo),
+        &["config", "user.email", "test@scope.local"],
+        "config email",
+    )
+    .unwrap();
+    fs::write(repo.join("shared.txt"), "base\n").unwrap();
+    commit_all(&repo, "recorded base");
+    let recorded_base = oid(&repo, "HEAD");
+    fs::write(repo.join("shared.txt"), "intermediate\n").unwrap();
+    commit_all(&repo, "newer common ancestor");
+    let newer_base = oid(&repo, "HEAD");
+    run_git(Some(&repo), &["switch", "-c", "request"], "request branch").unwrap();
+    fs::write(repo.join("request.txt"), "request\n").unwrap();
+    commit_all(&repo, "request");
+    let request = oid(&repo, "HEAD");
+    run_git(Some(&repo), &["switch", "main"], "main branch").unwrap();
+    fs::write(repo.join("shared.txt"), "latest\n").unwrap();
+    commit_all(&repo, "main changed again");
+    let main = oid(&repo, "HEAD");
+
+    assert_eq!(
+        git_text(&repo, &["merge-base", &main, &request]).trim(),
+        newer_base
+    );
+    assert!(matches!(
+        merge_main_oid_for_execution(&repo, &recorded_base, &main, &request, "request"),
+        Err(MergeMainFailure::Conflict(_))
+    ));
+    assert!(merge_main_oid(&repo, &newer_base, &main, &request, "request").is_ok());
+    let _ = fs::remove_dir_all(repo);
+}
+
 fn commit_all(repo: &Path, message: &str) {
     run_git(Some(repo), &["add", "."], "staging merge test files").unwrap();
     run_git(

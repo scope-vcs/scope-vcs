@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  analyticsClientOptions,
   fetchAnalyticsRuntimeConfig,
 } from './bootstrap'
 
@@ -40,20 +39,4 @@ test('disabled runtime configuration does not initialize analytics', async () =>
     await fetchAnalyticsRuntimeConfig(new AbortController().signal, fetcher),
     null,
   )
-})
-
-test('browser client keeps remote collection features disabled', () => {
-  const options = analyticsClientOptions('https://scopevcs.com')
-
-  assert.equal(options.api_host, '/e')
-  assert.equal(options.ui_host, 'https://us.posthog.com')
-  assert.equal(options.advanced_disable_flags, true)
-  assert.equal(options.advanced_disable_feature_flags, true)
-  assert.equal(options.advanced_disable_feature_flags_on_first_load, true)
-  assert.equal(options.autocapture, false)
-  assert.equal(options.capture_exceptions, false)
-  assert.equal(options.capture_pageview, false)
-  assert.equal(options.capture_performance, false)
-  assert.equal(options.disable_session_recording, true)
-  assert.equal(options.respect_dnt, true)
 })

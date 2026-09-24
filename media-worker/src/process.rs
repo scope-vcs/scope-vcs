@@ -58,6 +58,9 @@ pub async fn run_bounded(
         )
         .env("LANG", "C")
         .env("LC_ALL", "C")
+        // glibc's per-thread arenas can reserve most of the address-space
+        // budget even when the codec's resident memory stays well below it.
+        .env("MALLOC_ARENA_MAX", "2")
         .env("TMPDIR", cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

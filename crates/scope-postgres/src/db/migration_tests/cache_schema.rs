@@ -129,7 +129,7 @@ async fn cache_service_schema_enforces_content_and_lifecycle_invariants() {
         "scope_cache_deletion_queue",
     ] {
         let count = db
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!("SELECT count(*) AS count FROM {table}"),
             ))

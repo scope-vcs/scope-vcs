@@ -1,0 +1,1490 @@
+{
+  "audit_date": "2026-09-23",
+  "commit": "dab2cca3c3d1bce76c750e6a1dbf81a7041ab152",
+  "registry_observations": {
+    "rust": {
+      "tempfile": {
+        "source": "https://crates.io/api/v1/crates/tempfile",
+        "latest": "3.27.0",
+        "released": "2026-03-11T00:20:04.812840Z",
+        "rust_version": "1.63",
+        "repository": "https://github.com/Stebalien/tempfile"
+      },
+      "anyhow": {
+        "source": "https://crates.io/api/v1/crates/anyhow",
+        "latest": "1.0.104",
+        "released": "2026-07-18T20:59:37.656167Z",
+        "rust_version": "1.68",
+        "repository": "https://github.com/dtolnay/anyhow"
+      },
+      "axum": {
+        "source": "https://crates.io/api/v1/crates/axum",
+        "latest": "0.8.9",
+        "released": "2026-04-14T07:55:20.258398Z",
+        "rust_version": "1.80",
+        "repository": "https://github.com/tokio-rs/axum"
+      },
+      "base64": {
+        "source": "https://crates.io/api/v1/crates/base64",
+        "latest": "0.23.1",
+        "released": "2026-08-04T12:34:31.976297Z",
+        "rust_version": "1.71.0",
+        "repository": "https://github.com/marshallpierce/rust-base64"
+      },
+      "chacha20poly1305": {
+        "source": "https://crates.io/api/v1/crates/chacha20poly1305",
+        "latest": "0.11.0",
+        "released": "2026-06-28T17:41:38.459924Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/RustCrypto/AEADs"
+      },
+      "flate2": {
+        "source": "https://crates.io/api/v1/crates/flate2",
+        "latest": "1.1.10",
+        "released": "2026-08-28T04:35:22.192325Z",
+        "rust_version": "1.67.0",
+        "repository": "https://github.com/rust-lang/flate2-rs"
+      },
+      "futures-util": {
+        "source": "https://crates.io/api/v1/crates/futures-util",
+        "latest": "0.3.34",
+        "released": "2026-08-11T12:13:19.272525Z",
+        "rust_version": "1.71",
+        "repository": "https://github.com/rust-lang/futures-rs"
+      },
+      "hex": {
+        "source": "https://crates.io/api/v1/crates/hex",
+        "latest": "0.4.3",
+        "released": "2021-03-03T10:48:58.682837Z",
+        "rust_version": null,
+        "repository": "https://github.com/KokaKiwi/rust-hex"
+      },
+      "hmac": {
+        "source": "https://crates.io/api/v1/crates/hmac",
+        "latest": "0.13.0",
+        "released": "2026-03-29T23:19:21.430299Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/RustCrypto/MACs"
+      },
+      "http": {
+        "source": "https://crates.io/api/v1/crates/http",
+        "latest": "1.5.0",
+        "released": "2026-07-29T14:57:21.755258Z",
+        "rust_version": "1.57.0",
+        "repository": "https://github.com/hyperium/http"
+      },
+      "jsonwebtoken": {
+        "source": "https://crates.io/api/v1/crates/jsonwebtoken",
+        "latest": "11.1.0",
+        "released": "2026-09-16T10:18:33.566871Z",
+        "rust_version": "1.88.0",
+        "repository": "https://github.com/Keats/jsonwebtoken"
+      },
+      "getrandom": {
+        "source": "https://crates.io/api/v1/crates/getrandom",
+        "latest": "0.4.3",
+        "released": "2026-06-17T18:01:59.979552Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/rust-random/getrandom"
+      },
+      "libc": {
+        "source": "https://crates.io/api/v1/crates/libc",
+        "latest": "0.2.189",
+        "released": "2026-07-21T21:33:28.018110Z",
+        "rust_version": "1.65",
+        "repository": "https://github.com/rust-lang/libc"
+      },
+      "reqwest": {
+        "source": "https://crates.io/api/v1/crates/reqwest",
+        "latest": "0.13.5",
+        "released": "2026-09-08T20:55:26.479356Z",
+        "rust_version": "1.85.0",
+        "repository": "https://github.com/seanmonstar/reqwest"
+      },
+      "schemars": {
+        "source": "https://crates.io/api/v1/crates/schemars",
+        "latest": "1.2.2",
+        "released": "2026-07-27T14:35:28.246709Z",
+        "rust_version": "1.74",
+        "repository": "https://github.com/GREsau/schemars"
+      },
+      "serde": {
+        "source": "https://crates.io/api/v1/crates/serde",
+        "latest": "1.0.229",
+        "released": "2026-07-18T23:05:13.266456Z",
+        "rust_version": "1.56",
+        "repository": "https://github.com/serde-rs/serde"
+      },
+      "serde_json": {
+        "source": "https://crates.io/api/v1/crates/serde_json",
+        "latest": "1.0.151",
+        "released": "2026-07-20T05:54:44.078083Z",
+        "rust_version": "1.71",
+        "repository": "https://github.com/serde-rs/json"
+      },
+      "sha1": {
+        "source": "https://crates.io/api/v1/crates/sha1",
+        "latest": "0.11.0",
+        "released": "2026-03-27T14:07:50.054737Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/RustCrypto/hashes"
+      },
+      "sha2": {
+        "source": "https://crates.io/api/v1/crates/sha2",
+        "latest": "0.11.0",
+        "released": "2026-03-25T15:05:27.949444Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/RustCrypto/hashes"
+      },
+      "url": {
+        "source": "https://crates.io/api/v1/crates/url",
+        "latest": "2.5.8",
+        "released": "2026-01-05T22:14:31.414927Z",
+        "rust_version": "1.63",
+        "repository": "https://github.com/servo/rust-url"
+      },
+      "time": {
+        "source": "https://crates.io/api/v1/crates/time",
+        "latest": "0.3.55",
+        "released": "2026-08-01T08:08:34.139758Z",
+        "rust_version": "1.88.0",
+        "repository": "https://github.com/time-rs/time"
+      },
+      "tokio": {
+        "source": "https://crates.io/api/v1/crates/tokio",
+        "latest": "1.53.1",
+        "released": "2026-07-20T17:06:09.996426Z",
+        "rust_version": "1.71",
+        "repository": "https://github.com/tokio-rs/tokio"
+      },
+      "tokio-stream": {
+        "source": "https://crates.io/api/v1/crates/tokio-stream",
+        "latest": "0.1.19",
+        "released": "2026-07-22T08:19:01.447272Z",
+        "rust_version": "1.71",
+        "repository": "https://github.com/tokio-rs/tokio"
+      },
+      "tower-http": {
+        "source": "https://crates.io/api/v1/crates/tower-http",
+        "latest": "0.7.1",
+        "released": "2026-08-31T14:49:25.697237Z",
+        "rust_version": "1.65",
+        "repository": "https://github.com/tower-rs/tower-http"
+      },
+      "tracing": {
+        "source": "https://crates.io/api/v1/crates/tracing",
+        "latest": "0.1.44",
+        "released": "2025-12-18T14:26:12.360139Z",
+        "rust_version": "1.65.0",
+        "repository": "https://github.com/tokio-rs/tracing"
+      },
+      "ts-rs": {
+        "source": "https://crates.io/api/v1/crates/ts-rs",
+        "latest": "12.0.1",
+        "released": "2026-01-31T19:05:25.017774Z",
+        "rust_version": "1.78.0",
+        "repository": "https://github.com/Aleph-Alpha/ts-rs"
+      },
+      "tower": {
+        "source": "https://crates.io/api/v1/crates/tower",
+        "latest": "0.5.3",
+        "released": "2026-01-12T18:43:05.227461Z",
+        "rust_version": "1.64.0",
+        "repository": "https://github.com/tower-rs/tower"
+      },
+      "tracing-subscriber": {
+        "source": "https://crates.io/api/v1/crates/tracing-subscriber",
+        "latest": "0.3.23",
+        "released": "2026-03-13T10:04:15.571048Z",
+        "rust_version": "1.65.0",
+        "repository": "https://github.com/tokio-rs/tracing"
+      },
+      "clap": {
+        "source": "https://crates.io/api/v1/crates/clap",
+        "latest": "4.6.7",
+        "released": "2026-09-14T18:40:28.474794Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/clap-rs/clap"
+      },
+      "clap_complete": {
+        "source": "https://crates.io/api/v1/crates/clap_complete",
+        "latest": "4.6.11",
+        "released": "2026-09-15T16:32:44.599836Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/clap-rs/clap"
+      },
+      "crossterm": {
+        "source": "https://crates.io/api/v1/crates/crossterm",
+        "latest": "0.29.0",
+        "released": "2025-04-05T15:21:48.500601Z",
+        "rust_version": "1.63.0",
+        "repository": "https://github.com/crossterm-rs/crossterm"
+      },
+      "ctrlc": {
+        "source": "https://crates.io/api/v1/crates/ctrlc",
+        "latest": "3.5.2",
+        "released": "2026-02-10T20:41:44.442750Z",
+        "rust_version": "1.69.0",
+        "repository": "https://github.com/Detegr/rust-ctrlc.git"
+      },
+      "ratatui": {
+        "source": "https://crates.io/api/v1/crates/ratatui",
+        "latest": "0.30.2",
+        "released": "2026-06-19T08:56:46.628604Z",
+        "rust_version": "1.88.0",
+        "repository": "https://github.com/ratatui/ratatui"
+      },
+      "unicode-width": {
+        "source": "https://crates.io/api/v1/crates/unicode-width",
+        "latest": "0.2.2",
+        "released": "2025-10-06T14:33:47.922595Z",
+        "rust_version": "1.66",
+        "repository": "https://github.com/unicode-rs/unicode-width"
+      },
+      "webbrowser": {
+        "source": "https://crates.io/api/v1/crates/webbrowser",
+        "latest": "1.2.4",
+        "released": "2026-08-05T03:28:17.562974Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/amodm/webbrowser-rs"
+      },
+      "keyring-core": {
+        "source": "https://crates.io/api/v1/crates/keyring-core",
+        "latest": "1.0.0",
+        "released": "2026-04-21T18:51:41.140307Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/open-source-cooperative/keyring-core.git"
+      },
+      "apple-native-keyring-store": {
+        "source": "https://crates.io/api/v1/crates/apple-native-keyring-store",
+        "latest": "1.0.2",
+        "released": "2026-08-06T15:44:02.343908Z",
+        "rust_version": "1.85",
+        "repository": "https://github.com/open-source-cooperative/apple-native-keyring-store.git"
+      },
+      "windows-native-keyring-store": {
+        "source": "https://crates.io/api/v1/crates/windows-native-keyring-store",
+        "latest": "1.1.0",
+        "released": "2026-05-24T20:15:23.788374Z",
+        "rust_version": "1.88",
+        "repository": "https://github.com/open-source-cooperative/windows-native-keyring-store.git"
+      },
+      "windows-sys": {
+        "source": "https://crates.io/api/v1/crates/windows-sys",
+        "latest": "0.61.2",
+        "released": "2025-10-06T19:18:30.163595Z",
+        "rust_version": "1.71",
+        "repository": "https://github.com/microsoft/windows-rs"
+      },
+      "thiserror": {
+        "source": "https://crates.io/api/v1/crates/thiserror",
+        "latest": "2.0.20",
+        "released": "2026-08-08T06:22:23.795550Z",
+        "rust_version": "1.71",
+        "repository": "https://github.com/dtolnay/thiserror"
+      },
+      "pulldown-cmark": {
+        "source": "https://crates.io/api/v1/crates/pulldown-cmark",
+        "latest": "0.13.4",
+        "released": "2026-05-20T08:48:23.621050Z",
+        "rust_version": "1.71.1",
+        "repository": "https://github.com/raphlinus/pulldown-cmark"
+      },
+      "async-trait": {
+        "source": "https://crates.io/api/v1/crates/async-trait",
+        "latest": "0.1.92",
+        "released": "2026-08-08T07:10:35.376083Z",
+        "rust_version": "1.71",
+        "repository": "https://github.com/dtolnay/async-trait"
+      },
+      "aws-sdk-s3": {
+        "source": "https://crates.io/api/v1/crates/aws-sdk-s3",
+        "latest": "1.149.0",
+        "released": "2026-09-22T19:18:11.759294Z",
+        "rust_version": "1.94.1",
+        "repository": "https://github.com/awslabs/aws-sdk-rust"
+      },
+      "bytes": {
+        "source": "https://crates.io/api/v1/crates/bytes",
+        "latest": "1.12.1",
+        "released": "2026-07-08T10:01:28.616466Z",
+        "rust_version": "1.57",
+        "repository": "https://github.com/tokio-rs/bytes"
+      },
+      "aws-credential-types": {
+        "source": "https://crates.io/api/v1/crates/aws-credential-types",
+        "latest": "1.3.0",
+        "released": "2026-07-08T19:08:20.561050Z",
+        "rust_version": "1.94.1",
+        "repository": "https://github.com/smithy-lang/smithy-rs"
+      },
+      "aws-sigv4": {
+        "source": "https://crates.io/api/v1/crates/aws-sigv4",
+        "latest": "1.6.0",
+        "released": "2026-09-22T18:45:22.205688Z",
+        "rust_version": "1.94.1",
+        "repository": "https://github.com/smithy-lang/smithy-rs"
+      },
+      "aws-smithy-http": {
+        "source": "https://crates.io/api/v1/crates/aws-smithy-http",
+        "latest": "0.64.0",
+        "released": "2026-07-07T18:17:21.128942Z",
+        "rust_version": "1.94.1",
+        "repository": "https://github.com/smithy-lang/smithy-rs"
+      },
+      "xmlparser": {
+        "source": "https://crates.io/api/v1/crates/xmlparser",
+        "latest": "0.13.6",
+        "released": "2023-09-30T15:21:25.478529Z",
+        "rust_version": null,
+        "repository": "https://github.com/RazrFalcon/xmlparser"
+      },
+      "sea-orm": {
+        "source": "https://crates.io/api/v1/crates/sea-orm",
+        "latest": "2.0.3",
+        "released": "2026-09-13T09:46:42.073406Z",
+        "rust_version": "1.94.0",
+        "repository": "https://github.com/SeaQL/sea-orm"
+      },
+      "sea-orm-migration": {
+        "source": "https://crates.io/api/v1/crates/sea-orm-migration",
+        "latest": "2.0.3",
+        "released": "2026-09-13T09:47:07.735784Z",
+        "rust_version": "1.85.0",
+        "repository": "https://github.com/SeaQL/sea-orm"
+      },
+      "sqlx": {
+        "source": "https://crates.io/api/v1/crates/sqlx",
+        "latest": "0.9.0",
+        "released": "2026-05-21T17:35:53.403466Z",
+        "rust_version": "1.94.0",
+        "repository": "https://github.com/launchbadge/sqlx"
+      },
+      "posthog-rs": {
+        "source": "https://crates.io/api/v1/crates/posthog-rs",
+        "latest": "0.26.0",
+        "released": "2026-09-21T05:16:47.661269Z",
+        "rust_version": "1.78.0",
+        "repository": "https://github.com/posthog/posthog-rs"
+      },
+      "yaml_serde": {
+        "source": "https://crates.io/api/v1/crates/yaml_serde",
+        "latest": "0.10.7",
+        "released": "2026-08-18T16:56:51.839798Z",
+        "rust_version": "1.82",
+        "repository": "https://github.com/yaml/yaml-serde"
+      },
+      "filetime": {
+        "source": "https://crates.io/api/v1/crates/filetime",
+        "latest": "0.2.29",
+        "released": "2026-05-12T22:38:22.994500Z",
+        "rust_version": "1.75.0",
+        "repository": "https://github.com/alexcrichton/filetime"
+      },
+      "tar": {
+        "source": "https://crates.io/api/v1/crates/tar",
+        "latest": "0.4.46",
+        "released": "2026-05-18T19:12:11.033813Z",
+        "rust_version": "1.63",
+        "repository": "https://github.com/composefs/tar-rs"
+      },
+      "zstd": {
+        "source": "https://crates.io/api/v1/crates/zstd",
+        "latest": "0.14.0",
+        "released": "2026-09-04T19:02:35.959541Z",
+        "rust_version": "1.64",
+        "repository": "https://github.com/gyscos/zstd-rs"
+      },
+      "aws-config": {
+        "source": "https://crates.io/api/v1/crates/aws-config",
+        "latest": "1.12.0",
+        "released": "2026-09-04T19:07:41.516716Z",
+        "rust_version": "1.94.1",
+        "repository": "https://github.com/smithy-lang/smithy-rs"
+      },
+      "aws-sdk-lambda": {
+        "source": "https://crates.io/api/v1/crates/aws-sdk-lambda",
+        "latest": "1.147.0",
+        "released": "2026-09-22T19:07:21.106656Z",
+        "rust_version": "1.94.1",
+        "repository": "https://github.com/awslabs/aws-sdk-rust"
+      }
+    },
+    "npm": {
+      "@clerk/tanstack-react-start": {
+        "source": "https://registry.npmjs.org/%40clerk%2Ftanstack-react-start/latest",
+        "latest": "1.5.16",
+        "repository": {
+          "url": "git+https://github.com/clerk/javascript.git",
+          "type": "git",
+          "directory": "packages/tanstack-react-start"
+        },
+        "engines": {
+          "node": ">=20.9.0"
+        },
+        "dependencies": {
+          "tslib": "2.8.1",
+          "@clerk/react": "^6.17.0",
+          "@clerk/shared": "^4.34.0",
+          "@clerk/backend": "^3.19.0"
+        }
+      },
+      "@fontsource-variable/ibm-plex-sans": {
+        "source": "https://registry.npmjs.org/%40fontsource-variable%2Fibm-plex-sans/latest",
+        "latest": "5.3.0",
+        "repository": {
+          "url": "git+https://github.com/fontsource/font-files.git",
+          "type": "git",
+          "directory": "fonts/variable/ibm-plex-sans"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "@fontsource/commit-mono": {
+        "source": "https://registry.npmjs.org/%40fontsource%2Fcommit-mono/latest",
+        "latest": "5.3.0",
+        "repository": {
+          "url": "git+https://github.com/fontsource/font-files.git",
+          "type": "git",
+          "directory": "fonts/other/commit-mono"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "@pierre/diffs": {
+        "source": "https://registry.npmjs.org/%40pierre%2Fdiffs/latest",
+        "latest": "1.4.3",
+        "repository": null,
+        "engines": null,
+        "dependencies": {
+          "diff": "9.0.0",
+          "shiki": "^3.0.0 || ^4.0.0",
+          "lru_map": "0.4.1",
+          "@pierre/theme": "2.0.0",
+          "@pierre/theming": "1.0.1",
+          "hast-util-to-html": "9.0.5",
+          "@shikijs/transformers": "^3.0.0 || ^4.0.0"
+        }
+      },
+      "@radix-ui/react-alert-dialog": {
+        "source": "https://registry.npmjs.org/%40radix-ui%2Freact-alert-dialog/latest",
+        "latest": "1.1.23",
+        "repository": {
+          "url": "git+https://github.com/radix-ui/primitives.git",
+          "type": "git",
+          "directory": "packages/react/alert-dialog"
+        },
+        "engines": null,
+        "dependencies": {
+          "@radix-ui/primitive": "1.1.7",
+          "@radix-ui/react-dialog": "1.1.23",
+          "@radix-ui/react-context": "1.2.2",
+          "@radix-ui/react-primitive": "2.1.10",
+          "@radix-ui/react-compose-refs": "1.1.5"
+        }
+      },
+      "@radix-ui/react-dialog": {
+        "source": "https://registry.npmjs.org/%40radix-ui%2Freact-dialog/latest",
+        "latest": "1.1.23",
+        "repository": {
+          "url": "git+https://github.com/radix-ui/primitives.git",
+          "type": "git",
+          "directory": "packages/react/dialog"
+        },
+        "engines": null,
+        "dependencies": {
+          "aria-hidden": "^1.2.4",
+          "@radix-ui/react-id": "1.1.4",
+          "@radix-ui/primitive": "1.1.7",
+          "react-remove-scroll": "^2.7.2",
+          "@radix-ui/react-slot": "1.3.3",
+          "@radix-ui/react-portal": "1.1.17",
+          "@radix-ui/react-context": "1.2.2",
+          "@radix-ui/react-presence": "1.1.10",
+          "@radix-ui/react-primitive": "2.1.10",
+          "@radix-ui/react-focus-scope": "1.1.16",
+          "@radix-ui/react-compose-refs": "1.1.5",
+          "@radix-ui/react-focus-guards": "1.1.6",
+          "@radix-ui/react-dismissable-layer": "1.1.19",
+          "@radix-ui/react-use-layout-effect": "1.1.4",
+          "@radix-ui/react-use-controllable-state": "1.2.6"
+        }
+      },
+      "@radix-ui/react-slot": {
+        "source": "https://registry.npmjs.org/%40radix-ui%2Freact-slot/latest",
+        "latest": "1.3.3",
+        "repository": {
+          "url": "git+https://github.com/radix-ui/primitives.git",
+          "type": "git",
+          "directory": "packages/react/slot"
+        },
+        "engines": null,
+        "dependencies": {
+          "@radix-ui/react-compose-refs": "1.1.5"
+        }
+      },
+      "@radix-ui/react-switch": {
+        "source": "https://registry.npmjs.org/%40radix-ui%2Freact-switch/latest",
+        "latest": "1.3.7",
+        "repository": {
+          "url": "git+https://github.com/radix-ui/primitives.git",
+          "type": "git",
+          "directory": "packages/react/switch"
+        },
+        "engines": null,
+        "dependencies": {
+          "@radix-ui/primitive": "1.1.7",
+          "@radix-ui/react-context": "1.2.2",
+          "@radix-ui/react-use-size": "1.1.4",
+          "@radix-ui/react-primitive": "2.1.10",
+          "@radix-ui/react-compose-refs": "1.1.5",
+          "@radix-ui/react-use-controllable-state": "1.2.6"
+        }
+      },
+      "@radix-ui/react-toggle-group": {
+        "source": "https://registry.npmjs.org/%40radix-ui%2Freact-toggle-group/latest",
+        "latest": "1.1.19",
+        "repository": {
+          "url": "git+https://github.com/radix-ui/primitives.git",
+          "type": "git",
+          "directory": "packages/react/toggle-group"
+        },
+        "engines": null,
+        "dependencies": {
+          "@radix-ui/primitive": "1.1.7",
+          "@radix-ui/react-toggle": "1.1.18",
+          "@radix-ui/react-context": "1.2.2",
+          "@radix-ui/react-direction": "1.1.4",
+          "@radix-ui/react-primitive": "2.1.10",
+          "@radix-ui/react-roving-focus": "1.1.19",
+          "@radix-ui/react-use-controllable-state": "1.2.6"
+        }
+      },
+      "@radix-ui/react-tooltip": {
+        "source": "https://registry.npmjs.org/%40radix-ui%2Freact-tooltip/latest",
+        "latest": "1.2.16",
+        "repository": {
+          "url": "git+https://github.com/radix-ui/primitives.git",
+          "type": "git",
+          "directory": "packages/react/tooltip"
+        },
+        "engines": null,
+        "dependencies": {
+          "@radix-ui/react-id": "1.1.4",
+          "@radix-ui/primitive": "1.1.7",
+          "@radix-ui/react-slot": "1.3.3",
+          "@radix-ui/react-popper": "1.3.7",
+          "@radix-ui/react-portal": "1.1.17",
+          "@radix-ui/react-context": "1.2.2",
+          "@radix-ui/react-presence": "1.1.10",
+          "@radix-ui/react-primitive": "2.1.10",
+          "@radix-ui/react-compose-refs": "1.1.5",
+          "@radix-ui/react-visually-hidden": "1.2.11",
+          "@radix-ui/react-dismissable-layer": "1.1.19",
+          "@radix-ui/react-use-layout-effect": "1.1.4",
+          "@radix-ui/react-use-controllable-state": "1.2.6"
+        }
+      },
+      "@tailwindcss/vite": {
+        "source": "https://registry.npmjs.org/%40tailwindcss%2Fvite/latest",
+        "latest": "4.3.3",
+        "repository": {
+          "url": "https://github.com/tailwindlabs/tailwindcss.git",
+          "type": "git",
+          "directory": "packages/@tailwindcss-vite"
+        },
+        "engines": null,
+        "dependencies": {
+          "tailwindcss": "4.3.3",
+          "@tailwindcss/node": "4.3.3",
+          "@tailwindcss/oxide": "4.3.3"
+        }
+      },
+      "@tanstack/react-router": {
+        "source": "https://registry.npmjs.org/%40tanstack%2Freact-router/latest",
+        "latest": "1.170.39",
+        "repository": {
+          "url": "git+https://github.com/TanStack/router.git",
+          "type": "git",
+          "directory": "packages/react-router"
+        },
+        "engines": {
+          "node": ">=20.19"
+        },
+        "dependencies": {
+          "isbot": "^5.1.22",
+          "@tanstack/history": "1.162.4",
+          "@tanstack/react-store": "^0.11.0",
+          "@tanstack/router-core": "1.171.32"
+        }
+      },
+      "@tanstack/react-start": {
+        "source": "https://registry.npmjs.org/%40tanstack%2Freact-start/latest",
+        "latest": "1.168.58",
+        "repository": {
+          "url": "git+https://github.com/TanStack/router.git",
+          "type": "git",
+          "directory": "packages/react-start"
+        },
+        "engines": {
+          "node": ">=22.12.0"
+        },
+        "dependencies": {
+          "pathe": "^2.0.3",
+          "@tanstack/react-router": "1.170.39",
+          "@tanstack/router-utils": "1.162.3",
+          "@tanstack/react-start-rsc": "0.1.57",
+          "@tanstack/start-client-core": "1.170.32",
+          "@tanstack/start-plugin-core": "1.171.47",
+          "@tanstack/start-server-core": "1.169.37",
+          "@tanstack/react-start-client": "1.168.37",
+          "@tanstack/react-start-server": "1.167.44"
+        }
+      },
+      "class-variance-authority": {
+        "source": "https://registry.npmjs.org/class-variance-authority/latest",
+        "latest": "0.7.1",
+        "repository": {
+          "url": "git+https://github.com/joe-bell/cva.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {
+          "clsx": "^2.1.1"
+        }
+      },
+      "clsx": {
+        "source": "https://registry.npmjs.org/clsx/latest",
+        "latest": "2.1.1",
+        "repository": {
+          "url": "git+https://github.com/lukeed/clsx.git",
+          "type": "git"
+        },
+        "engines": {
+          "node": ">=6"
+        },
+        "dependencies": {}
+      },
+      "dompurify": {
+        "source": "https://registry.npmjs.org/dompurify/latest",
+        "latest": "3.4.15",
+        "repository": {
+          "url": "git://github.com/cure53/DOMPurify.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "github-slugger": {
+        "source": "https://registry.npmjs.org/github-slugger/latest",
+        "latest": "2.0.0",
+        "repository": {
+          "url": "git+https://github.com/Flet/github-slugger.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "lucide-react": {
+        "source": "https://registry.npmjs.org/lucide-react/latest",
+        "latest": "1.47.0",
+        "repository": {
+          "url": "https://github.com/lucide-icons/lucide.git",
+          "type": "git",
+          "directory": "packages/lucide-react"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "mdast-util-from-markdown": {
+        "source": "https://registry.npmjs.org/mdast-util-from-markdown/latest",
+        "latest": "2.0.3",
+        "repository": {
+          "url": "git+https://github.com/syntax-tree/mdast-util-from-markdown.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {
+          "devlop": "^1.0.0",
+          "micromark": "^4.0.0",
+          "@types/mdast": "^4.0.0",
+          "@types/unist": "^3.0.0",
+          "mdast-util-to-string": "^4.0.0",
+          "micromark-util-types": "^2.0.0",
+          "micromark-util-symbol": "^2.0.0",
+          "micromark-util-decode-string": "^2.0.0",
+          "unist-util-stringify-position": "^4.0.0",
+          "decode-named-character-reference": "^1.0.0",
+          "micromark-util-normalize-identifier": "^2.0.0",
+          "micromark-util-decode-numeric-character-reference": "^2.0.0"
+        }
+      },
+      "mermaid": {
+        "source": "https://registry.npmjs.org/mermaid/latest",
+        "latest": "12.0.0",
+        "repository": {
+          "url": "git+https://github.com/mermaid-js/mermaid.git",
+          "type": "git"
+        },
+        "engines": {
+          "node": ">=22.12.0"
+        },
+        "dependencies": {
+          "d3": "^7.9.0",
+          "uuid": "^11.1.0 || ^12 || ^13 || ^14.0.0",
+          "dayjs": "^1.11.21",
+          "elkjs": "^0.9.3",
+          "katex": "^0.16.47",
+          "khroma": "^2.1.0",
+          "marked": "^16.3.0",
+          "stylis": "^4.3.6",
+          "roughjs": "^4.6.6",
+          "@types/d3": "^7.4.3",
+          "cytoscape": "^3.34.0",
+          "d3-sankey": "^0.12.3",
+          "dompurify": "^3.4.12",
+          "ts-dedent": "^2.2.0",
+          "chevrotain": "~11.1.2",
+          "es-toolkit": "^1.45.1",
+          "dagre-d3-es": "7.0.14",
+          "@iconify/utils": "^3.0.2",
+          "cytoscape-fcose": "^2.2.0",
+          "@upsetjs/venn.js": "^2.0.0",
+          "@mermaid-js/parser": "^2.0.0",
+          "cytoscape-cose-bilkent": "^4.1.0",
+          "@braintree/sanitize-url": "^7.1.2"
+        }
+      },
+      "motion": {
+        "source": "https://registry.npmjs.org/motion/latest",
+        "latest": "13.4.1",
+        "repository": {
+          "url": "git+https://github.com/motiondivision/motion.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {
+          "tslib": "^2.4.0",
+          "framer-motion": "^13.4.1"
+        }
+      },
+      "posthog-js": {
+        "source": "https://registry.npmjs.org/posthog-js/latest",
+        "latest": "1.434.11",
+        "repository": {
+          "url": "https://github.com/PostHog/posthog-js",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {
+          "fflate": "^0.4.8",
+          "preact": "^10.29.3",
+          "core-js": "^3.49.0",
+          "dompurify": "^3.4.13",
+          "web-vitals": "^6.2.1",
+          "@posthog/core": "^1.55.1",
+          "@posthog/types": "^1.412.4",
+          "web-vitals-soft-navs": "npm:web-vitals@6.2.1",
+          "@posthog/browser-common": "^0.9.0",
+          "query-selector-shadow-dom": "^1.0.1"
+        }
+      },
+      "react": {
+        "source": "https://registry.npmjs.org/react/latest",
+        "latest": "19.3.0",
+        "repository": {
+          "url": "git+https://github.com/react/react.git",
+          "type": "git",
+          "directory": "packages/react"
+        },
+        "engines": {
+          "node": ">=0.10.0"
+        },
+        "dependencies": {}
+      },
+      "react-dom": {
+        "source": "https://registry.npmjs.org/react-dom/latest",
+        "latest": "19.3.0",
+        "repository": {
+          "url": "git+https://github.com/react/react.git",
+          "type": "git",
+          "directory": "packages/react-dom"
+        },
+        "engines": null,
+        "dependencies": {
+          "scheduler": "^0.28.0"
+        }
+      },
+      "react-markdown": {
+        "source": "https://registry.npmjs.org/react-markdown/latest",
+        "latest": "10.1.0",
+        "repository": {
+          "url": "git+https://github.com/remarkjs/react-markdown.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {
+          "vfile": "^6.0.0",
+          "devlop": "^1.0.0",
+          "unified": "^11.0.0",
+          "@types/hast": "^3.0.0",
+          "@types/mdast": "^4.0.0",
+          "remark-parse": "^11.0.0",
+          "remark-rehype": "^11.0.0",
+          "unist-util-visit": "^5.0.0",
+          "mdast-util-to-hast": "^13.0.0",
+          "html-url-attributes": "^3.0.0",
+          "hast-util-to-jsx-runtime": "^2.0.0"
+        }
+      },
+      "rehype-slug": {
+        "source": "https://registry.npmjs.org/rehype-slug/latest",
+        "latest": "6.0.0",
+        "repository": {
+          "url": "git+https://github.com/rehypejs/rehype-slug.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {
+          "@types/hast": "^3.0.0",
+          "github-slugger": "^2.0.0",
+          "unist-util-visit": "^5.0.0",
+          "hast-util-to-string": "^3.0.0",
+          "hast-util-heading-rank": "^3.0.0"
+        }
+      },
+      "remark-gfm": {
+        "source": "https://registry.npmjs.org/remark-gfm/latest",
+        "latest": "4.0.1",
+        "repository": {
+          "url": "git+https://github.com/remarkjs/remark-gfm.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {
+          "unified": "^11.0.0",
+          "@types/mdast": "^4.0.0",
+          "remark-parse": "^11.0.0",
+          "mdast-util-gfm": "^3.0.0",
+          "remark-stringify": "^11.0.0",
+          "micromark-extension-gfm": "^3.0.0"
+        }
+      },
+      "sonner": {
+        "source": "https://registry.npmjs.org/sonner/latest",
+        "latest": "2.0.8",
+        "repository": {
+          "url": "git+https://github.com/emilkowalski/sonner.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "tailwind-merge": {
+        "source": "https://registry.npmjs.org/tailwind-merge/latest",
+        "latest": "3.7.0",
+        "repository": {
+          "url": "https://github.com/dcastil/tailwind-merge.git",
+          "type": "git",
+          "directory": "packages/tailwind-merge"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "tailwindcss": {
+        "source": "https://registry.npmjs.org/tailwindcss/latest",
+        "latest": "4.3.3",
+        "repository": {
+          "url": "https://github.com/tailwindlabs/tailwindcss.git",
+          "type": "git",
+          "directory": "packages/tailwindcss"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "web-vitals": {
+        "source": "https://registry.npmjs.org/web-vitals/latest",
+        "latest": "6.2.2",
+        "repository": {
+          "url": "git+https://github.com/GoogleChrome/web-vitals.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "@types/node": {
+        "source": "https://registry.npmjs.org/%40types%2Fnode/latest",
+        "latest": "26.6.2",
+        "repository": {
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+          "type": "git",
+          "directory": "types/node"
+        },
+        "engines": null,
+        "dependencies": {
+          "undici-types": "~8.9.0"
+        }
+      },
+      "@types/react": {
+        "source": "https://registry.npmjs.org/%40types%2Freact/latest",
+        "latest": "19.3.0",
+        "repository": {
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+          "type": "git",
+          "directory": "types/react"
+        },
+        "engines": null,
+        "dependencies": {
+          "csstype": "^3.2.2"
+        }
+      },
+      "@types/react-dom": {
+        "source": "https://registry.npmjs.org/%40types%2Freact-dom/latest",
+        "latest": "19.3.0",
+        "repository": {
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+          "type": "git",
+          "directory": "types/react-dom"
+        },
+        "engines": null,
+        "dependencies": {}
+      },
+      "@vitejs/plugin-react": {
+        "source": "https://registry.npmjs.org/%40vitejs%2Fplugin-react/latest",
+        "latest": "6.1.1",
+        "repository": {
+          "url": "git+https://github.com/vitejs/vite-plugin-react.git",
+          "type": "git",
+          "directory": "packages/plugin-react"
+        },
+        "engines": {
+          "node": "^20.19.0 || >=22.12.0"
+        },
+        "dependencies": {
+          "@rolldown/pluginutils": "^1.0.1"
+        }
+      },
+      "ajv": {
+        "source": "https://registry.npmjs.org/ajv/latest",
+        "latest": "8.20.0",
+        "repository": {
+          "url": "git+https://github.com/ajv-validator/ajv.git",
+          "type": "git"
+        },
+        "engines": null,
+        "dependencies": {
+          "fast-uri": "^3.0.1",
+          "fast-deep-equal": "^3.1.3",
+          "require-from-string": "^2.0.2",
+          "json-schema-traverse": "^1.0.0"
+        }
+      },
+      "konsistent": {
+        "source": "https://registry.npmjs.org/konsistent/latest",
+        "latest": "1.0.0-beta.9",
+        "repository": {
+          "url": "https://github.com/vercel-labs/konsistent",
+          "type": "git",
+          "directory": "packages/konsistent"
+        },
+        "engines": {
+          "node": ">=22.11.0"
+        },
+        "dependencies": {
+          "zod": "^4",
+          "citty": "^0.2",
+          "picomatch": "^4",
+          "picocolors": "^1",
+          "tinyglobby": "^0.2",
+          "typescript": "^5.7",
+          "resolve.exports": "^2",
+          "@konsistent/convention": "1.0.0-beta.9"
+        }
+      },
+      "nitro": {
+        "source": "https://registry.npmjs.org/nitro/latest",
+        "latest": "3.0.260903-beta",
+        "repository": {
+          "url": "git+https://github.com/nitrojs/nitro.git",
+          "type": "git"
+        },
+        "engines": {
+          "node": "^20.19.0 || >=22.12.0"
+        },
+        "dependencies": {
+          "h3": "^2.0.1-rc.31",
+          "db0": "^0.4.1",
+          "nf3": "^0.3.24",
+          "rou3": "^0.9.2",
+          "srvx": "^1.0.3",
+          "unenv": "^2.0.0-rc.24",
+          "ocache": "^0.3.0",
+          "consola": "^3.4.2",
+          "crossws": "^0.4.12",
+          "hookable": "^6.1.1",
+          "rolldown": "^1.2.7",
+          "unstorage": "^2.0.0-alpha.10",
+          "env-runner": "^0.2.1"
+        }
+      },
+      "playwright": {
+        "source": "https://registry.npmjs.org/playwright/latest",
+        "latest": "1.63.0",
+        "repository": {
+          "url": "git+https://github.com/microsoft/playwright.git",
+          "type": "git"
+        },
+        "engines": {
+          "node": ">=20"
+        },
+        "dependencies": {
+          "playwright-core": "1.63.0"
+        }
+      },
+      "react-doctor": {
+        "source": "https://registry.npmjs.org/react-doctor/latest",
+        "latest": "0.9.14",
+        "repository": {
+          "url": "git+https://github.com/millionco/react-doctor.git",
+          "type": "git",
+          "directory": "packages/react-doctor"
+        },
+        "engines": {
+          "node": "^20.19.0 || >=22.13.0"
+        },
+        "dependencies": {
+          "conf": "^15.1.0",
+          "jiti": "^2.7.0",
+          "yaml": "^2.9.0",
+          "bippy": "^0.6.1",
+          "oxlint": ">=1.81.0 <1.82.0",
+          "confbox": "^0.2.4",
+          "prompts": "^2.4.2",
+          "magicast": "^0.5.3",
+          "oxc-parser": "^0.148.0",
+          "typescript": ">=5.0.4 <6",
+          "yoga-layout": "~3.2.1",
+          "@sentry/node": "^10.54.0",
+          "oxc-resolver": "^11.24.2",
+          "agent-install": "0.0.5",
+          "playwright-core": "^1.62.1",
+          "@astrojs/compiler": "^4.0.0",
+          "is-unicode-supported": "^2.1.0",
+          "eslint-plugin-react-hooks": "^7.1.1",
+          "oxlint-plugin-react-doctor": "0.9.14"
+        }
+      },
+      "typescript": {
+        "source": "https://registry.npmjs.org/typescript/latest",
+        "latest": "7.0.2",
+        "repository": {
+          "url": "git+https://github.com/microsoft/TypeScript.git",
+          "type": "git"
+        },
+        "engines": {
+          "node": ">=16.20.0"
+        },
+        "dependencies": {
+          "@typescript/typescript-aix-ppc64": "7.0.2",
+          "@typescript/typescript-linux-arm": "7.0.2",
+          "@typescript/typescript-linux-x64": "7.0.2",
+          "@typescript/typescript-sunos-x64": "7.0.2",
+          "@typescript/typescript-win32-x64": "7.0.2",
+          "@typescript/typescript-darwin-x64": "7.0.2",
+          "@typescript/typescript-netbsd-x64": "7.0.2",
+          "@typescript/typescript-freebsd-x64": "7.0.2",
+          "@typescript/typescript-linux-arm64": "7.0.2",
+          "@typescript/typescript-linux-ppc64": "7.0.2",
+          "@typescript/typescript-linux-s390x": "7.0.2",
+          "@typescript/typescript-openbsd-x64": "7.0.2",
+          "@typescript/typescript-win32-arm64": "7.0.2",
+          "@typescript/typescript-darwin-arm64": "7.0.2",
+          "@typescript/typescript-netbsd-arm64": "7.0.2",
+          "@typescript/typescript-freebsd-arm64": "7.0.2",
+          "@typescript/typescript-linux-loong64": "7.0.2",
+          "@typescript/typescript-linux-riscv64": "7.0.2",
+          "@typescript/typescript-openbsd-arm64": "7.0.2",
+          "@typescript/typescript-linux-mips64el": "7.0.2"
+        }
+      },
+      "vite": {
+        "source": "https://registry.npmjs.org/vite/latest",
+        "latest": "8.3.0",
+        "repository": {
+          "url": "git+https://github.com/vitejs/vite.git",
+          "type": "git",
+          "directory": "packages/vite"
+        },
+        "engines": {
+          "node": "^20.19.0 || >=22.12.0"
+        },
+        "dependencies": {
+          "postcss": "^8.5.28",
+          "rolldown": "~1.2.6",
+          "picomatch": "^4.0.7",
+          "tinyglobby": "^0.2.17",
+          "lightningcss": "^1.33.0"
+        }
+      },
+      "dependency-cruiser": {
+        "source": "https://registry.npmjs.org/dependency-cruiser/latest",
+        "latest": "18.4.0",
+        "repository": {
+          "url": "git+https://github.com/sverweij/dependency-cruiser.git",
+          "type": "git"
+        },
+        "engines": {
+          "node": "^22||^24||>=26"
+        },
+        "dependencies": {
+          "acorn": "8.18.0",
+          "json5": "2.2.3",
+          "ignore": "7.0.9",
+          "semver": "7.8.5",
+          "prompts": "2.4.2",
+          "rechoir": "0.8.0",
+          "acorn-jsx": "5.3.2",
+          "commander": "15.0.0",
+          "interpret": "3.1.1",
+          "picomatch": "4.0.7",
+          "acorn-walk": "8.3.5",
+          "safe-regex": "2.1.1",
+          "watskeburt": "6.0.0",
+          "acorn-loose": "8.5.2",
+          "acorn-jsx-walk": "2.0.0",
+          "enhanced-resolve": "5.25.1",
+          "is-installed-globally": "1.0.0",
+          "tsconfig-paths-webpack-plugin": "4.2.0"
+        }
+      }
+    },
+    "python": {
+      "PyYAML": {
+        "source": "https://pypi.org/pypi/PyYAML/json",
+        "latest": "6.0.3",
+        "repository": {
+          "Bug Tracker": "https://github.com/yaml/pyyaml/issues",
+          "CI": "https://github.com/yaml/pyyaml/actions",
+          "Documentation": "https://pyyaml.org/wiki/PyYAMLDocumentation",
+          "Download": "https://pypi.org/project/PyYAML/",
+          "Homepage": "https://pyyaml.org/",
+          "Mailing lists": "http://lists.sourceforge.net/lists/listinfo/yaml-core",
+          "Source Code": "https://github.com/yaml/pyyaml"
+        }
+      },
+      "boto3": {
+        "source": "https://pypi.org/pypi/boto3/json",
+        "latest": "1.43.100",
+        "repository": {
+          "Documentation": "https://docs.aws.amazon.com/boto3/latest/",
+          "Homepage": "https://github.com/boto/boto3",
+          "Source": "https://github.com/boto/boto3"
+        }
+      },
+      "psycopg": {
+        "source": "https://pypi.org/pypi/psycopg/json",
+        "latest": "3.3.6",
+        "repository": {
+          "Changes": "https://psycopg.org/psycopg3/docs/news.html",
+          "Code": "https://github.com/psycopg/psycopg",
+          "Documentation": "https://psycopg.org/psycopg3/docs/",
+          "Funding": "https://github.com/sponsors/dvarrazzo",
+          "Homepage": "https://psycopg.org/",
+          "Issue Tracker": "https://github.com/psycopg/psycopg/issues"
+        }
+      },
+      "cryptography": {
+        "source": "https://pypi.org/pypi/cryptography/json",
+        "latest": "50.0.1"
+      }
+    }
+  },
+  "tool_observations": {
+    "cryptography": {
+      "source": "https://pypi.org/pypi/cryptography/json",
+      "latest": "50.0.1"
+    },
+    "sha1": {
+      "source": "https://crates.io/api/v1/crates/sha1",
+      "latest": "0.11.0",
+      "latest_by_date": "0.10.7"
+    },
+    "cross": {
+      "source": "https://crates.io/api/v1/crates/cross",
+      "latest": "0.2.5",
+      "latest_by_date": "0.2.5"
+    },
+    "pnpm": {
+      "source": "https://registry.npmjs.org/pnpm/latest",
+      "latest": "12.5.1"
+    },
+    "npm": {
+      "source": "https://registry.npmjs.org/npm/latest",
+      "latest": "12.1.0"
+    },
+    "railway-cli": {
+      "source": "https://registry.npmjs.org/@railway%2Fcli/latest",
+      "latest": "5.60.0"
+    },
+    "node-types-24": {
+      "source": "https://registry.npmjs.org/@types%2fnode",
+      "latest": "24.13.6",
+      "selection": "highest stable 24.x; aligns with Node 24 runtime"
+    },
+    "FiloSottile/age": {
+      "source": "https://api.github.com/repos/FiloSottile/age/releases/latest",
+      "latest": "v1.3.2",
+      "date": "2026-08-29T17:55:36Z",
+      "html_url": "https://github.com/FiloSottile/age/releases/tag/v1.3.2"
+    },
+    "aquasecurity/trivy": {
+      "source": "https://api.github.com/repos/aquasecurity/trivy/releases/latest",
+      "latest": "v0.74.0",
+      "date": "2026-08-14T11:29:11Z",
+      "html_url": "https://github.com/aquasecurity/trivy/releases/tag/v0.74.0"
+    },
+    "awslabs/soci-snapshotter": {
+      "source": "https://api.github.com/repos/awslabs/soci-snapshotter/releases/latest",
+      "latest": "v0.16.0",
+      "date": "2026-09-21T23:32:40Z",
+      "html_url": "https://github.com/awslabs/soci-snapshotter/releases/tag/v0.16.0"
+    },
+    "cli/cli": {
+      "source": "https://api.github.com/repos/cli/cli/releases/latest",
+      "latest": "v2.101.0",
+      "date": "2026-09-15T14:24:34Z",
+      "html_url": "https://github.com/cli/cli/releases/tag/v2.101.0"
+    },
+    "docker/buildx": {
+      "source": "https://api.github.com/repos/docker/buildx/releases/latest",
+      "latest": "v0.37.1",
+      "date": "2026-09-11T15:35:46Z",
+      "html_url": "https://github.com/docker/buildx/releases/tag/v0.37.1"
+    },
+    "actions/checkout": {
+      "source": "https://api.github.com/repos/actions/checkout/releases/latest",
+      "latest": "v7.0.1",
+      "date": "2026-07-20T15:10:05Z",
+      "html_url": "https://github.com/actions/checkout/releases/tag/v7.0.1"
+    },
+    "actions/setup-node": {
+      "source": "https://api.github.com/repos/actions/setup-node/releases/latest",
+      "latest": "v7.0.0",
+      "date": "2026-07-14T02:46:05Z",
+      "html_url": "https://github.com/actions/setup-node/releases/tag/v7.0.0"
+    },
+    "actions/setup-python": {
+      "source": "https://api.github.com/repos/actions/setup-python/releases/latest",
+      "latest": "v7.0.0",
+      "date": "2026-07-20T03:15:01Z",
+      "html_url": "https://github.com/actions/setup-python/releases/tag/v7.0.0"
+    },
+    "actions/upload-artifact": {
+      "source": "https://api.github.com/repos/actions/upload-artifact/releases/latest",
+      "latest": "v7.0.1",
+      "date": "2026-04-10T17:31:14Z",
+      "html_url": "https://github.com/actions/upload-artifact/releases/tag/v7.0.1"
+    },
+    "actions/download-artifact": {
+      "source": "https://api.github.com/repos/actions/download-artifact/releases/latest",
+      "latest": "v8.0.1",
+      "date": "2026-03-11T15:44:25Z",
+      "html_url": "https://github.com/actions/download-artifact/releases/tag/v8.0.1"
+    },
+    "actions/cache": {
+      "source": "https://api.github.com/repos/actions/cache/releases/latest",
+      "latest": "v6.1.0",
+      "date": "2026-06-26T19:17:06Z",
+      "html_url": "https://github.com/actions/cache/releases/tag/v6.1.0"
+    },
+    "pnpm/action-setup": {
+      "source": "https://api.github.com/repos/pnpm/action-setup/releases/latest",
+      "latest": "v6.1.0",
+      "date": "2026-09-05T07:31:28Z",
+      "html_url": "https://github.com/pnpm/action-setup/releases/tag/v6.1.0"
+    },
+    "aws-actions/configure-aws-credentials": {
+      "source": "https://api.github.com/repos/aws-actions/configure-aws-credentials/releases/latest",
+      "latest": "v6.3.0",
+      "date": "2026-09-15T05:13:09Z",
+      "html_url": "https://github.com/aws-actions/configure-aws-credentials/releases/tag/v6.3.0"
+    },
+    "aws-actions/amazon-ecr-login": {
+      "source": "https://api.github.com/repos/aws-actions/amazon-ecr-login/releases/latest",
+      "latest": "v2.1.7",
+      "date": "2026-08-19T21:34:26Z",
+      "html_url": "https://github.com/aws-actions/amazon-ecr-login/releases/tag/v2.1.7"
+    },
+    "docker/login-action": {
+      "source": "https://api.github.com/repos/docker/login-action/releases/latest",
+      "latest": "v4.6.0",
+      "date": "2026-07-29T12:12:00Z",
+      "html_url": "https://github.com/docker/login-action/releases/tag/v4.6.0"
+    },
+    "docker/setup-buildx-action": {
+      "source": "https://api.github.com/repos/docker/setup-buildx-action/releases/latest",
+      "latest": "v4.4.1",
+      "date": "2026-09-16T07:50:21Z",
+      "html_url": "https://github.com/docker/setup-buildx-action/releases/tag/v4.4.1"
+    },
+    "Swatinem/rust-cache": {
+      "source": "https://api.github.com/repos/Swatinem/rust-cache/releases/latest",
+      "latest": "v2.9.2",
+      "date": "2026-08-06T06:26:27Z",
+      "html_url": "https://github.com/Swatinem/rust-cache/releases/tag/v2.9.2"
+    },
+    "useblacksmith/setup-docker-builder": {
+      "source": "https://api.github.com/repos/useblacksmith/setup-docker-builder/releases/latest",
+      "latest": "v1.13.0",
+      "date": "2026-09-09T12:47:43Z",
+      "html_url": "https://github.com/useblacksmith/setup-docker-builder/releases/tag/v1.13.0"
+    },
+    "useblacksmith/build-push-action": {
+      "source": "https://api.github.com/repos/useblacksmith/build-push-action/releases/latest",
+      "latest": "v2.3.0",
+      "date": "2026-07-30T19:59:58Z",
+      "html_url": "https://github.com/useblacksmith/build-push-action/releases/tag/v2.3.0"
+    }
+  },
+  "git_experiment": [
+    {
+      "fixture": "disjoint_edits",
+      "same_exit_code": true,
+      "old_exit_code": 0,
+      "same_tree": true,
+      "same_conflict_paths": true
+    },
+    {
+      "fixture": "text_conflict",
+      "same_exit_code": true,
+      "old_exit_code": 1,
+      "same_tree": false,
+      "same_conflict_paths": true
+    },
+    {
+      "fixture": "rename_and_edit",
+      "same_exit_code": true,
+      "old_exit_code": 0,
+      "same_tree": true,
+      "same_conflict_paths": true
+    },
+    {
+      "fixture": "delete_and_modify",
+      "same_exit_code": true,
+      "old_exit_code": 1,
+      "same_tree": true,
+      "same_conflict_paths": true
+    },
+    {
+      "fixture": "mode_and_content",
+      "same_exit_code": true,
+      "old_exit_code": 0,
+      "same_tree": true,
+      "same_conflict_paths": true
+    },
+    {
+      "fixture": "binary_conflict",
+      "same_exit_code": true,
+      "old_exit_code": 1,
+      "same_tree": true,
+      "same_conflict_paths": true
+    },
+    {
+      "fixture": "empty_file",
+      "same_exit_code": true,
+      "old_exit_code": 0,
+      "same_tree": true,
+      "same_conflict_paths": true
+    }
+  ],
+  "feature_experiment": {
+    "api": {
+      "status": 0,
+      "removed": [
+        "h2 v0.3.27",
+        "hyper v0.14.32",
+        "hyper-rustls v0.24.2",
+        "rustls v0.21.12",
+        "rustls-webpki v0.101.7",
+        "sct v0.7.1",
+        "tokio-rustls v0.24.1"
+      ],
+      "added": [],
+      "stderr": ""
+    },
+    "worker": {
+      "status": 0,
+      "removed": [
+        "h2 v0.3.27",
+        "hyper v0.14.32",
+        "hyper-rustls v0.24.2",
+        "rustls v0.21.12",
+        "rustls-webpki v0.101.7",
+        "sct v0.7.1",
+        "tokio-rustls v0.24.1"
+      ],
+      "added": [],
+      "stderr": ""
+    },
+    "scope-cache-service": {
+      "status": 0,
+      "removed": [
+        "chrono v0.4.45",
+        "iana-time-zone v0.1.65"
+      ],
+      "added": [],
+      "stderr": ""
+    }
+  },
+  "web_exclusive_snapshot_counts": {
+    "@clerk/tanstack-react-start": 10,
+    "@fontsource-variable/ibm-plex-sans": 1,
+    "@fontsource/commit-mono": 1,
+    "@pierre/diffs": 22,
+    "@radix-ui/react-alert-dialog": 1,
+    "@radix-ui/react-dialog": 0,
+    "@radix-ui/react-slot": 0,
+    "@radix-ui/react-switch": 2,
+    "@radix-ui/react-toggle-group": 5,
+    "@radix-ui/react-tooltip": 10,
+    "@tailwindcss/vite": 18,
+    "@tanstack/react-router": 0,
+    "@tanstack/react-start": 0,
+    "class-variance-authority": 1,
+    "clsx": 0,
+    "dompurify": 0,
+    "github-slugger": 0,
+    "lucide-react": 1,
+    "mdast-util-from-markdown": 0,
+    "mermaid": 116,
+    "motion": 4,
+    "pagent": 1,
+    "posthog-js": 10,
+    "react": 0,
+    "react-dom": 0,
+    "react-markdown": 19,
+    "rehype-slug": 3,
+    "remark-gfm": 18,
+    "sonner": 1,
+    "tailwind-merge": 1,
+    "tailwindcss": 0,
+    "web-vitals": 0,
+    "@types/node": 0,
+    "@types/react": 0,
+    "@types/react-dom": 0,
+    "@vitejs/plugin-react": 1,
+    "ajv": 0,
+    "konsistent": 5,
+    "nitro": 29,
+    "playwright": 3,
+    "react-doctor": 228,
+    "typescript": 0,
+    "vite": 0
+  },
+  "osv_queries": 1351,
+  "advisory_matched_package_versions": 17,
+  "counts": {
+    "direct_unique_ecosystem_packages": 106,
+    "source_lockfile_rows": 1562
+  }
+}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import ts from 'typescript'
+import { parse } from '@babel/parser'
 import { productionFunctions, serverFunctionName } from './server-functions-smoke.mjs'
 
 const request = (path) => ({ url: () => `https://scope.example${path}` })
@@ -12,18 +12,25 @@ test('server function interception recognizes production IDs from the built mani
     ? 'No local build; pnpm build runs this check against its emitted manifest'
     : false,
 }, () => {
-  const source = ts.createSourceFile('ssr.mjs', readFileSync(serverBundle, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const source = parse(readFileSync(serverBundle, 'utf8'), { sourceType: 'module' })
   const manifest = new Map()
-  ts.forEachChild(source, function visit(node) {
-    if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.name) && ts.isObjectLiteralExpression(node.initializer)) {
-      const name = node.initializer.properties.find((property) =>
-        ts.isPropertyAssignment(property) && property.name.text === 'functionName')
-      if (name && ts.isStringLiteral(name.initializer)) {
-        manifest.set(node.name.text, name.initializer.text)
-      }
+  const visit = (node) => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child)
+      return
     }
-    ts.forEachChild(node, visit)
-  })
+    if (typeof node.type !== 'string') return
+    if (node.type === 'ObjectProperty' && node.key.type === 'StringLiteral' && node.value.type === 'ObjectExpression') {
+      const name = node.value.properties.find((property) =>
+        property.type === 'ObjectProperty' && property.key.name === 'functionName')
+      if (name?.value.type === 'StringLiteral') manifest.set(node.key.value, name.value.value)
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key !== 'loc' && key !== 'extra' && key !== 'comments') visit(value)
+    }
+  }
+  visit(source.program)
 
   assert.ok(manifest.size > 0, 'No server function manifest entries found in the built server')
   for (const [id, handler] of productionFunctions) {

@@ -53,7 +53,7 @@ pub(super) async fn history_view_metadata<C: ConnectionTrait>(
     version: u64,
     audience: ProjectionViewKey,
 ) -> Result<Option<HistoryViewMetadata>, PostgresError> {
-    let row = conn.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+    let row = conn.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "SELECT generation, available, visible_files, head_oid FROM scope_repository_history_views WHERE repo_id=$1 AND repo_version=$2 AND audience=$3 AND identity_version=$4 AND history_version=$5",
         [repo_id.into(), integer_columns::u64_to_i64(version, "repository version")?.into(), audience.as_str().into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
     )).await.map_err(PostgresError::internal)?;
@@ -99,7 +99,7 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
 ) -> Result<(), PostgresError> {
     let audience = projection.view_key;
     let available = true;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "DELETE FROM scope_repository_history_views WHERE repo_id=$1 AND audience=$2",
         [repo.record.id.clone().into(), audience.as_str().into()],
@@ -116,7 +116,7 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
     }
     let visible_files = tree.into_iter().any(|path| !is_repo_control_path(path));
     let view = history_view_from_projection(projection, &repo.graph, &repo.visibility_change_sets);
-    conn.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+    conn.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO scope_repository_history_views (repo_id,audience,repo_version,generation,available,visible_files,head_oid,identity_version,history_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
             [repo.record.id.clone().into(), audience.as_str().into(), integer_columns::u64_to_i64(repo.record.change_version,"repository version")?.into(), view.generation.into(), available.into(), visible_files.into(), head_oid.into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
         )).await.map_err(PostgresError::internal)?;
@@ -154,7 +154,7 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
             })
             .collect::<Result<Vec<_>, PostgresError>>()?
             .join(",");
-        conn.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        conn.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
                 format!("INSERT INTO scope_repository_history_entries (repo_id,audience,position,source_id,payload) VALUES {rows}"), values,
             )).await.map_err(PostgresError::internal)?;
     }
@@ -239,7 +239,7 @@ impl RepositoryStore {
                     }
                     let position =
                         integer_columns::u64_to_i64(boundary.position, "history position")?;
-                    tx.query_one(Statement::from_sql_and_values(
+                    tx.query_one_raw(Statement::from_sql_and_values(
                         DatabaseBackend::Postgres,
                         "SELECT position FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND position=$3",
                         [incarnation.repository_id().into(), audience.as_str().into(), position.into()],
@@ -272,7 +272,7 @@ impl RepositoryStore {
                 )
             };
             let rows = tx
-                .query_all(Statement::from_sql_and_values(
+                .query_all_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     sql,
                     values,

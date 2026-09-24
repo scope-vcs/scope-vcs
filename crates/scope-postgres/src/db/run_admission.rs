@@ -17,7 +17,7 @@ pub enum DispatchAdmission {
 }
 
 pub(super) async fn lock_admission(tx: &DatabaseTransaction) -> Result<(), PostgresError> {
-    tx.execute(Statement::from_string(DatabaseBackend::Postgres,
+    tx.execute_raw(Statement::from_string(DatabaseBackend::Postgres,
         "SELECT pg_advisory_xact_lock(hashtextextended('scope:cloud-admission:' || current_schema(), 0))"))
         .await.map_err(PostgresError::internal)?;
     Ok(())
@@ -38,7 +38,7 @@ impl RunStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         lock_admission(&tx).await?;
         let row = tx
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!(
                     "SELECT COUNT(*)::bigint AS count FROM scope_run_attempts
@@ -58,7 +58,7 @@ impl RunStore {
             return Ok(DispatchAdmission::AtCapacity);
         }
         let Some(row) = tx
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!(
                     "SELECT job.run_id, job.job_key FROM scope_run_jobs job

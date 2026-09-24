@@ -19,8 +19,8 @@ use scope_domain::{
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
     sea_query::{LockBehavior, LockType},
 };
 use std::collections::BTreeMap;

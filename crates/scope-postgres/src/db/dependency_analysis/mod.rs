@@ -93,7 +93,7 @@ impl JobStore {
             .await
             .map_err(PostgresError::internal)?;
         let Some(job) = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                     UPDATE scope_dependency_analysis_jobs job
@@ -126,7 +126,7 @@ impl JobStore {
         };
         let repo_id = database_value::<String>(&job, "repo_id")?;
         let repository = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT incarnation_id, change_version FROM scope_repositories WHERE id = $1",
                 [repo_id.clone().into()],
@@ -213,7 +213,7 @@ impl JobStore {
         let expires = lease_expiry(now, lease_seconds)?;
         let result = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_dependency_analysis_jobs
                  SET lease_expires_at_unix = $3, updated_at_unix = GREATEST(updated_at_unix, $2)
@@ -285,7 +285,7 @@ impl JobStore {
         )?)?;
         let report =
             evaluate_dependency_analysis(&analysis, &config).map_err(PostgresError::internal)?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
                 INSERT INTO scope_dependency_analyses (
@@ -309,7 +309,7 @@ impl JobStore {
         ))
         .await
         .map_err(PostgresError::internal)?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
                 INSERT INTO scope_dependency_reports (
@@ -342,7 +342,7 @@ impl JobStore {
         .await
         .map_err(PostgresError::internal)?;
         let deleted = tx
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "DELETE FROM scope_dependency_analysis_jobs
              WHERE repo_id = $1 AND lease_generation = $2",
@@ -376,7 +376,7 @@ impl JobStore {
             return Ok(false);
         }
         let updated = tx
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                 UPDATE scope_dependency_analysis_jobs
@@ -418,7 +418,7 @@ pub(super) async fn enqueue_dependency_analysis_target<C: ConnectionTrait>(
         PostgresError::internal_message("dependency repository version exceeds database bigint")
     })?;
     let now = dependency_time(now_unix)?;
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
             INSERT INTO scope_dependency_analysis_jobs (
@@ -467,7 +467,7 @@ async fn current_claim_repository<C: ConnectionTrait>(
     claim: &DependencyAnalysisClaim,
     now: i64,
 ) -> Result<Option<QueryResult>, PostgresError> {
-    conn.query_one(Statement::from_sql_and_values(
+    conn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
             SELECT repository.repo_config
@@ -510,7 +510,7 @@ async fn load_reusable_analysis<C: ConnectionTrait>(
     analyzer_version: &str,
 ) -> Result<Option<StoredDependencyAnalysis>, PostgresError> {
     let row = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT analysis FROM scope_dependency_analyses
              WHERE repo_id = $1 AND incarnation_id = $2 AND head_oid = $3 AND analyzer_version = $4",

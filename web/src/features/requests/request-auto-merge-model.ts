@@ -1,20 +1,10 @@
-import type {
-  RequestAutoMergeIntentStatus,
-  RequestAutoMergeStopReason,
-} from '../../api/types.generated'
+import type { RequestAutoMergeStopReason } from '../../api/types.generated'
 
 export function autoMergeAuthorizer(
   actor: { handle: string; id: string },
   viewerId: string,
 ) {
   return actor.id === viewerId ? 'Authorized by you' : `Authorized by ${actor.handle}`
-}
-
-const titles: Record<RequestAutoMergeIntentStatus, string> = {
-  Active: 'Will merge when checks pass',
-  Cancelled: 'Auto-merge canceled',
-  Stopped: 'Auto-merge stopped',
-  Fulfilled: 'Merged automatically',
 }
 
 const reasons: Record<RequestAutoMergeStopReason, string> = {
@@ -27,5 +17,4 @@ const reasons: Record<RequestAutoMergeStopReason, string> = {
   RequestBranchMissing: 'the request branch is missing',
 }
 
-export const autoMergeIntentTitle = (status: RequestAutoMergeIntentStatus) => titles[status] ?? 'Auto-merge'
 export const autoMergeStopReasonText = (reason: RequestAutoMergeStopReason) => reasons[reason] ?? 'auto-merge stopped'

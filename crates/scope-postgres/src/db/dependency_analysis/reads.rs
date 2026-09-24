@@ -30,7 +30,7 @@ impl RepositoryStore {
             return Ok(None);
         }
         let Some(current) = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT repository.incarnation_id, repository.change_version, head.head_oid
                  FROM scope_repositories repository
@@ -49,7 +49,7 @@ impl RepositoryStore {
             database_u64(&current, "change_version", "repository change version")?;
         let current_head = database_value::<Option<String>>(&current, "head_oid")?;
         let report_row = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT incarnation_id, repo_version, head_oid, report
                  FROM scope_dependency_reports WHERE repo_id = $1",
@@ -71,7 +71,7 @@ impl RepositoryStore {
             None => false,
         };
         let job = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT last_error FROM scope_dependency_analysis_jobs WHERE repo_id = $1",
                 [repo_id.into()],

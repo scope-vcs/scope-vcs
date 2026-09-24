@@ -17,8 +17,8 @@ test-support = ["seeding"]
 anyhow.workspace = true
 hex.workspace = true
 libc.workspace = true
-sea-orm = { version = "1.1.20", default-features = false, features = ["macros", "mock", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-json"] }
-sea-orm-migration = { version = "1.1.20", default-features = false, features = ["runtime-tokio-rustls", "sqlx-postgres"] }
+sea-orm = { version = "2.0.3", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-json"] }
+sea-orm-migration = { version = "2.0.3", default-features = false, features = ["runtime-tokio-rustls", "sqlx-postgres"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -26,9 +26,12 @@ scope_domain.workspace = true
 scope_cache_domain.workspace = true
 scope_git.workspace = true
 scope_run_config.workspace = true
-sqlx = { version = "0.8.6", default-features = false, features = ["postgres", "runtime-tokio-rustls"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls"] }
 thiserror.workspace = true
 time.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tracing.workspace = true
 url = "2.5.8"
+
+[dev-dependencies]
+sea-orm = { version = "2.0.3", default-features = false, features = ["mock"] }

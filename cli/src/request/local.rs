@@ -247,8 +247,7 @@ pub(super) fn track_request_branch_ref(
     request_name: &str,
     request_head_oid: &str,
 ) -> anyhow::Result<()> {
-    let remote_ref = request_remote_ref(&target.remote, request_name);
-    run_git_in_repo(git_repo, &["update-ref", &remote_ref, request_head_oid])?;
+    update_request_remote_ref(git_repo, target, request_name, request_head_oid)?;
     // A branch attached with --current-branch may track another host; its request keys identify it.
     if branch_config_value(git_repo, branch, "remote")?
         .is_some_and(|remote| remote != target.remote)
@@ -262,6 +261,16 @@ pub(super) fn track_request_branch_ref(
         "merge",
         &format!("refs/heads/{request_name}"),
     )
+}
+
+pub(super) fn update_request_remote_ref(
+    git_repo: &GitRepo,
+    target: &ScopeRemote,
+    request_name: &str,
+    request_head_oid: &str,
+) -> anyhow::Result<()> {
+    let remote_ref = request_remote_ref(&target.remote, request_name);
+    run_git_in_repo(git_repo, &["update-ref", &remote_ref, request_head_oid])
 }
 
 pub(super) fn remote_main_ref(remote: &str) -> String {

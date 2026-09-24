@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/skeleton'
 import * as Dialog from '@radix-ui/react-dialog'
 import { History, TriangleAlert, X } from 'lucide-react'
+import type { RefObject } from 'react'
 import { REQUEST_ACTIVITY_PAGE_SIZE } from './request-discussion-api'
 import { eventKindLabel, requestEventBody } from './request-labels'
 import { RelativeTimestamp } from '@/components/timestamp'
@@ -35,6 +36,7 @@ export function RequestActivityDrawer({
   load,
   onOpenChange,
   open,
+  returnFocus,
 }: {
   activity: RequestActivityPage | null
   error: string | null
@@ -42,6 +44,8 @@ export function RequestActivityDrawer({
   load: () => void
   onOpenChange: (open: boolean) => void
   open: boolean
+  /** Where focus goes on close; the drawer opens without a Radix trigger. */
+  returnFocus: RefObject<HTMLElement | null>
 }) {
   const events = activity
     ? ([...activity.events].reverse() as ActivityEvent[])
@@ -54,6 +58,11 @@ export function RequestActivityDrawer({
         <Dialog.Content
           aria-describedby="request-history-description"
           className="fixed inset-y-0 right-0 z-50 flex w-[520px] max-w-[90vw] flex-col border-l border-[var(--border-strong)] bg-background shadow-[var(--shadow-pop)] outline-none"
+          onCloseAutoFocus={(event) => {
+            if (!returnFocus.current) return
+            event.preventDefault()
+            returnFocus.current.focus()
+          }}
         >
           <div className="flex min-h-16 items-start gap-3 border-b border-border px-5 py-4">
             <History className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

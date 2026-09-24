@@ -1,6 +1,7 @@
-//! What a request's head owes before it can merge: the runs its workflows ask for.
+//! What a request's head owes before it can merge: its evaluated workflow runs.
 //!
-//! Every push to a request evaluates the workflows at its head. A maintainer's push
+//! Every push evaluates workflows for that revision: public requests use the
+//! accepted main catalog; private requests carry workflows at their head. A maintainer's push
 //! starts the request-triggered runs at once; another contributor's push records
 //! them and waits for a maintainer to approve. The evaluation for the current head
 //! decides whether the request can merge.
@@ -24,13 +25,13 @@ pub use planning::RequestCheckPlan;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RequestCheckEvaluationState {
-    /// The head asks for no request-triggered workflow.
+    /// The evaluation selected no request-triggered workflow.
     NoChecks,
     /// The workflows are known; a maintainer has not started them.
     AwaitingApproval,
     /// Every check has a run.
     Started,
-    /// The head's workflow definitions could not be used.
+    /// The selected workflow definitions could not be used.
     ConfigurationError,
 }
 
@@ -38,7 +39,7 @@ pub enum RequestCheckEvaluationState {
 pub struct RequestCheck {
     pub workflow_path: String,
     pub workflow_name: String,
-    /// The compiled definition at the head, kept so approval starts exactly it.
+    /// The compiled definition selected for the head, kept so approval starts exactly it.
     pub workflow_revision_digest: String,
     pub run_id: Option<String>,
 }

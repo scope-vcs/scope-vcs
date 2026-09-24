@@ -177,7 +177,7 @@ where
     C: ConnectionTrait,
 {
     Ok(conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT 1 AS present FROM scope_request_media_cleanup_jobs WHERE attachment_id = $1",
             [attachment_id.into()],

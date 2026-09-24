@@ -1,6 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
-FROM --platform=linux/amd64 rust:1.98.0-bookworm@sha256:585c722e62805d1636fee6c80e744cdddfd81a9d32e08cba21ff15b69845e0fd AS scope-runtime-builder
+FROM debian:bookworm-slim@sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867 AS git-builder
+ARG GIT_VERSION
+ARG GIT_SOURCE_SHA256
+COPY deploy/railway/install-git.sh /tmp/install-git.sh
+RUN bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"
+
+FROM --platform=linux/amd64 rust:1.98.1-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e AS scope-runtime-builder
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
@@ -14,26 +20,36 @@ COPY worker worker
 COPY runner-runtime runner-runtime
 RUN cargo build --locked --release -p scope-runner-runtime
 
-FROM --platform=linux/amd64 rust:1.98.0-bookworm@sha256:585c722e62805d1636fee6c80e744cdddfd81a9d32e08cba21ff15b69845e0fd
+FROM --platform=linux/amd64 rust:1.98.1-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e
 
-ARG NODE_VERSION=24.18.0
-ARG NODE_SHA256=55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742
+ARG NODE_VERSION=24.21.0
+ARG NODE_SHA256=fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6
 ARG NPM_VERSION=11.19.1
 ARG NPM_SHA512=cedb312b1b7f92421a02cfb68b4194e88f8346651dacd6acc5364a25ef5309d4a32b19616a1ff8aff865e7280c0fa5c0835a99f5cd93368991e2a80ec9da75d2
 ARG PNPM_VERSION=11.24.0
-ARG POSTGRES_VERSION=15.19-0+deb12u1
-ARG PLAYWRIGHT_VERSION=1.61.1
+ARG POSTGRES_VERSION=18.6-1.pgdg12+2
+ARG PLAYWRIGHT_VERSION=1.63.0
 ARG DEBIAN_SNAPSHOT=20260921T000000Z
+ARG GIT_VERSION
+ARG GIT_SOURCE_SHA256
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright \
-    RUSTUP_TOOLCHAIN=1.98.0-x86_64-unknown-linux-gnu
+    RUSTUP_TOOLCHAIN=1.98.1-x86_64-unknown-linux-gnu
 
 RUN sed -i \
         -e "s|http://deb.debian.org/debian-security|https://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}|" \
         -e "s|http://deb.debian.org/debian|https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}|" \
         /etc/apt/sources.list.d/debian.sources \
     && printf '%s\n' 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot \
+    && mkdir -p /usr/local/share/keyrings \
+    && curl --fail --silent --show-error --location \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        --output /usr/local/share/keyrings/postgresql.asc \
+    && echo '0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76  /usr/local/share/keyrings/postgresql.asc' \
+        | sha256sum --check --strict \
+    && printf '%s\n' 'deb [signed-by=/usr/local/share/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main 18' \
+        > /etc/apt/sources.list.d/postgresql.list \
     && apt-get update \
     && apt-get upgrade --yes \
     && apt-get install --yes --no-install-recommends \
@@ -42,10 +58,13 @@ RUN sed -i \
         jq \
         libheif-examples \
         python3-yaml \
-        "postgresql-15=${POSTGRES_VERSION}" \
-        "postgresql-client-15=${POSTGRES_VERSION}" \
+        "postgresql-18=${POSTGRES_VERSION}" \
+        "postgresql-client-18=${POSTGRES_VERSION}" \
         time \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=git-builder /opt/git /opt/git
+ENV PATH=/opt/git/bin:$PATH
 
 RUN curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
         "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
@@ -71,10 +90,11 @@ RUN rustup component add \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/* /tmp/*
 
-ARG PLAYWRIGHT_CHROMIUM_VERSION=149.0.7827.55
-ARG PLAYWRIGHT_CHROMIUM_REVISION=1228
+ARG PLAYWRIGHT_CHROMIUM_VERSION=153.0.8010.12
+ARG PLAYWRIGHT_CHROMIUM_REVISION=1243
 
-RUN test "$(rustc --version | cut -d' ' -f2)" = "1.98.0" \
+RUN test "$(rustc --version | cut -d' ' -f2)" = "1.98.1" \
+    && test "$(git --version)" = "git version ${GIT_VERSION}" \
     && test "$(node --version)" = "v${NODE_VERSION}" \
     && test "$(npm --version)" = "${NPM_VERSION}" \
     && test "$(pnpm --version)" = "${PNPM_VERSION}" \

@@ -39,7 +39,7 @@ fn landing_file(oid: &str, bytes: &[u8]) -> RepositoryLandingFile {
 async fn row_xmin(store: &MetadataStore) -> String {
     store
         .db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT xmin::text AS xmin FROM scope_repository_landing_files".to_string(),
         ))

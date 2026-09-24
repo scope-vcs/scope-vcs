@@ -21,13 +21,20 @@ jobs:
     name: Validate checks image
     if: github.event_name == 'pull_request'
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - name: Checkout candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Read Git build version
+        id: git
+        run: |
+          echo "version=$(jq -er '.git.version' dev/tool-versions.json)" >> "$GITHUB_OUTPUT"
+          echo "source_sha256=$(jq -er '.git.sourceSha256' dev/tool-versions.json)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Blacksmith Builder
         uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
@@ -35,7 +42,7 @@ jobs:
           cache-key: .scope/images/checks/Dockerfile
 
       - name: Build candidate image
-        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
         with:
@@ -46,6 +53,9 @@ jobs:
           push: false
           load: true
           tags: scope-checks:candidate
+          build-args: |
+            GIT_VERSION=${{ steps.git.outputs.version }}
+            GIT_SOURCE_SHA256=${{ steps.git.outputs.source_sha256 }}
 
       - name: Verify runtime process lifecycle
         run: dev/checks/runner-runtime-container --image scope-checks:candidate
@@ -55,7 +65,7 @@ jobs:
 
       - name: Retain vulnerability report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: checks-image-scan-candidate
           path: checks-image-scan.json
@@ -65,6 +75,7 @@ jobs:
     name: Build checks image
     if: github.event_name != 'pull_request'
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
     permissions:
       contents: read
       deployments: write
@@ -86,7 +97,7 @@ jobs:
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
       - name: Checkout exact revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
 
@@ -95,9 +106,15 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
 
+      - name: Read Git build version
+        id: git
+        run: |
+          echo "version=$(jq -er '.git.version' dev/tool-versions.json)" >> "$GITHUB_OUTPUT"
+          echo "source_sha256=$(jq -er '.git.sourceSha256' dev/tool-versions.json)" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS credentials
         if: steps.source.outputs.publish == 'true'
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-region: us-east-1
           role-to-assume: ${{ vars.SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN }}
@@ -141,14 +158,14 @@ jobs:
 
       - name: Log in to the GitHub container registry
         if: steps.source.outputs.publish == 'true'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build image for verification
-        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
         with:
@@ -159,6 +176,9 @@ jobs:
           push: false
           load: true
           tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            GIT_VERSION=${{ steps.git.outputs.version }}
+            GIT_SOURCE_SHA256=${{ steps.git.outputs.source_sha256 }}
 
       - name: Verify runtime process lifecycle
         env:
@@ -193,6 +213,7 @@ jobs:
             sudo apt-get update
             sudo apt-get install --yes skopeo
           fi
+          skopeo --version | tee -a "$GITHUB_STEP_SUMMARY"
           archive="soci-snapshotter-${SOCI_VERSION}-linux-amd64-static.tar.gz"
           curl --fail --location --silent --show-error \
             --output "$RUNNER_TEMP/$archive" \
@@ -220,7 +241,7 @@ jobs:
 
       - name: Retain vulnerability reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: checks-image-scans
           path: |
@@ -280,7 +301,7 @@ jobs:
 
       - name: Upload published image reference
         if: steps.source.outputs.publish == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: checks-image-${{ github.sha }}
           path: checks-image.txt

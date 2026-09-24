@@ -15,7 +15,7 @@ anyhow.workspace = true
 filetime.workspace = true
 hex.workspace = true
 libc.workspace = true
-reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 scope_api_contract.workspace = true
 scope_cache_contract.workspace = true
 scope_cache_domain.workspace = true

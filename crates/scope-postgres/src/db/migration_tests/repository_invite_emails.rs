@@ -25,7 +25,7 @@ async fn deleting_a_repository_keeps_its_emails_for_the_owner_allowance() {
     .unwrap();
 
     let row = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT invite_id, requested_by_user_id FROM scope_repository_invite_emails"
                 .to_string(),

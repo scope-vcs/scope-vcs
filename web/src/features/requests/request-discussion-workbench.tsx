@@ -4,8 +4,7 @@ import { EmptyState } from '@/components/empty-state'
 import { mainScrollContainer } from '@/components/main-content'
 import { Button } from '@/components/ui/button'
 import { CircleAlert, MessageSquare } from 'lucide-react'
-import { domAnimation, LazyMotion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   readRequestDiscussionScroll,
   writeRequestDiscussionScroll,
@@ -58,6 +57,7 @@ export function RequestDiscussionWorkbench({
     repoId,
   })
   const [activeComposer, setActiveComposer] = useState<string | null>(null)
+  const closeComposer = useCallback(() => setActiveComposer(null), [])
 
   useEffect(() => {
     const scrollContainer = mainScrollContainer()
@@ -109,30 +109,28 @@ export function RequestDiscussionWorkbench({
       ) : null}
 
       {store.discussions.length > 0 ? (
-        <LazyMotion features={domAnimation}>
-          <div>
-            {store.discussions.map((discussion) => (
-              <RequestDiscussionThread
-                actions={threadActions}
-                actor={actor}
-                canReply={permissions.canReply}
-                canResolve={canResolve(discussion)}
-                canWaitAfterReply={permissions.canWaitAfterReply}
-                composerOpen={activeComposer === discussion.id}
-                discussion={discussion}
-                key={`${store.cacheKey}\0${discussion.id}`}
-                onExpandedChange={store.setExpanded}
-                onMarkRead={store.markRead}
-                onCloseComposer={() => setActiveComposer(null)}
-                onOpenComposer={() => setActiveComposer(discussion.id)}
-                onPatch={store.patch}
-                onRetryRoot={store.retry}
-                onResolve={store.resolve}
-                params={params}
-              />
-            ))}
-          </div>
-        </LazyMotion>
+        <div>
+          {store.discussions.map((discussion) => (
+            <RequestDiscussionThread
+              actions={threadActions}
+              actor={actor}
+              canReply={permissions.canReply}
+              canResolve={canResolve(discussion)}
+              canWaitAfterReply={permissions.canWaitAfterReply}
+              composerOpen={activeComposer === discussion.id}
+              discussion={discussion}
+              key={`${store.cacheKey}\0${discussion.id}`}
+              onExpandedChange={store.setExpanded}
+              onMarkRead={store.markRead}
+              onCloseComposer={closeComposer}
+              onOpenComposer={() => setActiveComposer(discussion.id)}
+              onPatch={store.patch}
+              onRetryRoot={store.retry}
+              onResolve={store.resolve}
+              params={params}
+            />
+          ))}
+        </div>
       ) : (
         <EmptyState
           description="Open one to ask a question or leave review notes."

@@ -21,7 +21,7 @@ impl JobStore {
         })?;
         let candidates = self
             .db
-            .query_all(Statement::from_sql_and_values(
+            .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                     SELECT repository.id
@@ -59,7 +59,7 @@ impl JobStore {
             let tx = self.db.begin().await.map_err(PostgresError::internal)?;
             super::acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
             let current = tx
-                .query_one(Statement::from_sql_and_values(
+                .query_one_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     r#"
                         SELECT repository.incarnation_id, repository.change_version,

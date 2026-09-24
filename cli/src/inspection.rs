@@ -5,7 +5,9 @@ use serde::Serialize;
 use std::{path::PathBuf, process::Command, time::Duration};
 
 mod local;
-use local::{compare_scope_ref, git_text, git_version_supported, local_state, local_visibility};
+mod visibility;
+use local::{compare_scope_ref, git_text, local_state};
+use visibility::inspect_visibility;
 
 #[derive(Serialize)]
 struct LocalState {
@@ -152,7 +154,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
     let git_available = match Command::new("git").arg("--version").output() {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let supported = git_version_supported(&version);
+            let supported = crate::git_version::supported(&version);
             record(
                 &mut report,
                 "git",
@@ -162,8 +164,12 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                     DiagnosticState::Problem
                 },
                 version,
-                (!supported)
-                    .then(|| "Install Git 2.38 or newer for request merge inspection".into()),
+                (!supported).then(|| {
+                    format!(
+                        "Install Git {} or newer",
+                        crate::git_version::minimum_version_text()
+                    )
+                }),
             );
             true
         }
@@ -173,7 +179,10 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                 "git",
                 DiagnosticState::Problem,
                 "Git is not available on PATH".into(),
-                Some("Install Git 2.38 or newer".into()),
+                Some(format!(
+                    "Install Git {} or newer",
+                    crate::git_version::minimum_version_text()
+                )),
             );
             false
         }
@@ -224,14 +233,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                 None,
             ),
         }
-        match local_visibility(repo) {
-            Ok(visibility) => {
-                let message = if visibility.local_edits == Some(true) { "Local visibility changes have not been published" } else { "Local visibility config is valid" };
-                record(&mut report, "visibility", DiagnosticState::Ok, message.into(), None);
-                if let Some(local) = &mut report.local { local.visibility = Some(visibility); }
-            }
-            Err(error) => record(&mut report, "visibility", DiagnosticState::Problem, error.to_string(), Some("Inspect setup with scope visibility show; use scope init for a new repository or repair the retained repository setup".into())),
-        }
+        inspect_visibility(&mut report, repo);
         if let Some(head) = report
             .local
             .as_ref()

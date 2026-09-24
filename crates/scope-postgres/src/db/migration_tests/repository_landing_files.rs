@@ -77,7 +77,7 @@ async fn repository_landing_file_schema_enforces_identity_bounds_and_cascade() {
         .await
         .unwrap();
     let remaining = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*) AS count FROM scope_repository_landing_files".to_string(),
         ))

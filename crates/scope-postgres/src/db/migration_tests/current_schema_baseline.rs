@@ -26,7 +26,7 @@ async fn baseline_database(db: &DatabaseConnection) {
 
 async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
     let row = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT last_value, is_called FROM scope_run_creation_sequence",
         ))
@@ -54,7 +54,7 @@ async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
             .await
             .unwrap();
         for name in &ledger {
-            db.execute(Statement::from_sql_and_values(
+            db.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO seaql_migrations (version, applied_at) VALUES ($1, 1)",
                 [(*name).into()],
@@ -194,7 +194,7 @@ async fn preflight_rejects_upload_constraint_drift_and_rolls_back_metadata() {
     let context = "SELECT current_setting('search_path') AS path,
         (SELECT count(*)::bigint FROM pg_namespace WHERE nspname LIKE 'scope_baseline_check_%') AS comparisons";
     let before = connection
-        .query_one(Statement::from_string(DatabaseBackend::Postgres, context))
+        .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, context))
         .await
         .unwrap()
         .unwrap();
@@ -209,7 +209,7 @@ async fn preflight_rejects_upload_constraint_drift_and_rolls_back_metadata() {
     assert!(error.contains("retained"), "{error}");
     assert!(error.contains("expected expressions"), "{error}");
     let after = connection
-        .query_one(Statement::from_string(DatabaseBackend::Postgres, context))
+        .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, context))
         .await
         .unwrap()
         .unwrap();
@@ -245,7 +245,7 @@ async fn the_visible_public_search_path_survives_the_baseline_schema_check() {
         .await
         .unwrap();
     let search_path = visible_public
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SHOW search_path",
         ))
@@ -268,7 +268,7 @@ async fn the_visible_public_search_path_survives_the_baseline_schema_check() {
     assert_eq!(representative_business_snapshot(&db).await, before);
     assert_eq!(sequence_state(&db).await, sequence);
     let restored_path = visible_public
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SHOW search_path",
         ))

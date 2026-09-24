@@ -15,16 +15,26 @@ if (bootstrap.client) {
   })
 
   capturePageView()
+  await pauseForDelivery()
   applyAnalyticsIdentityTransition(client, 'scope_usr_one', bootstrap.eventContext)
+  await pauseForDelivery()
   captureError('window')
+  await pauseForDelivery()
 
   applyAnalyticsIdentityTransition(client, null, bootstrap.eventContext)
   capturePageView()
+  await pauseForDelivery()
   applyAnalyticsIdentityTransition(client, 'scope_usr_one', bootstrap.eventContext)
+  await pauseForDelivery()
   applyAnalyticsIdentityTransition(client, 'scope_usr_two', bootstrap.eventContext)
+  await pauseForDelivery()
   capturePageView()
   captureError('route')
 
   client.capture('unexpected_event', { secret: 'SECRET source text' })
 }
 Object.assign(window, { analyticsReady: true, analyticsEnabled: Boolean(bootstrap.client) })
+
+async function pauseForDelivery() {
+  await new Promise(resolve => setTimeout(resolve, 150))
+}

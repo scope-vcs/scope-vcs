@@ -19,6 +19,8 @@ function workflowReplica(path, count = 1) {
 const REPLICAS = [
   workflowReplica(".github/workflows/rust-workspace-checks.yml"),
   workflowReplica(".github/workflows/scope-api-ci.yml"),
+  workflowReplica(".github/workflows/ci.yml"),
+  workflowReplica(".github/workflows/release.yml"),
   workflowReplica(".github/workflows/scope-cli-build.yml", 2),
   workflowReplica(".github/workflows/scope-integration-ci.yml"),
   workflowReplica(".github/workflows/deploy-staging.yml"),
@@ -27,6 +29,12 @@ const REPLICAS = [
     label: "Rust base image",
     pattern: /FROM\s+--platform=linux\/amd64\s+rust:([0-9]+\.[0-9]+\.[0-9]+)-bookworm@sha256:[0-9a-f]{64}/g,
     count: 2,
+  },
+  {
+    path: "media-worker/Dockerfile",
+    label: "Rust base image",
+    pattern: /FROM\s+docker\.io\/library\/rust:([0-9]+\.[0-9]+\.[0-9]+)-(?:bookworm|trixie)@sha256:[0-9a-f]{64}/g,
+    count: 1,
   },
   {
     path: ".scope/images/checks/Dockerfile",

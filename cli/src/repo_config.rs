@@ -29,6 +29,98 @@ struct RepoStatePaths {
     state: PathBuf,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WorktreeRepoConfigPresence {
+    Absent,
+    ConfigOnly,
+    StateOnly,
+    Complete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WorktreeRepoConfigSync {
+    Created,
+    BaseRecovered,
+    Unchanged,
+}
+
+impl WorktreeRepoConfigSync {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::BaseRecovered => "base_recovered",
+            Self::Unchanged => "unchanged",
+        }
+    }
+}
+
+pub fn worktree_scope_repo_config_presence(
+    git_root: &Path,
+) -> anyhow::Result<WorktreeRepoConfigPresence> {
+    let paths = repo_state_paths(git_root)?;
+    match fs::symlink_metadata(&paths.directory) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                bail!("Scope repo state directory cannot be a symlink");
+            }
+            if !metadata.is_dir() {
+                bail!("Scope repo state path must be a directory");
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(WorktreeRepoConfigPresence::Absent);
+        }
+        Err(error) => return Err(error).context("inspect Scope repo state directory"),
+    }
+    let config = state_file_exists(&paths.config, "Scope repo config")?;
+    let state = state_file_exists(&paths.state, "Scope repo config state")?;
+    Ok(match (config, state) {
+        (false, false) => WorktreeRepoConfigPresence::Absent,
+        (true, false) => WorktreeRepoConfigPresence::ConfigOnly,
+        (false, true) => WorktreeRepoConfigPresence::StateOnly,
+        (true, true) => WorktreeRepoConfigPresence::Complete,
+    })
+}
+
+pub fn sync_missing_worktree_scope_repo_config(
+    git_root: &Path,
+    server_config: &RepoConfig,
+) -> anyhow::Result<WorktreeRepoConfigSync> {
+    server_config
+        .validate()
+        .context("validate server Scope repo config")?;
+    match worktree_scope_repo_config_presence(git_root)? {
+        WorktreeRepoConfigPresence::Absent => {
+            write_worktree_scope_repo_config_with_base(git_root, server_config)?;
+            Ok(WorktreeRepoConfigSync::Created)
+        }
+        WorktreeRepoConfigPresence::ConfigOnly => {
+            let local = load_worktree_scope_repo_config(git_root)?;
+            if repo_config_fingerprint(&local)? != repo_config_fingerprint(server_config)? {
+                bail!(
+                    "Local Scope visibility config has edits but no sync base; resolve it before refreshing visibility state"
+                );
+            }
+            mark_worktree_scope_repo_config_synced(git_root, server_config)?;
+            Ok(WorktreeRepoConfigSync::BaseRecovered)
+        }
+        WorktreeRepoConfigPresence::StateOnly => {
+            bail!("Scope repo config state exists without a local visibility config");
+        }
+        WorktreeRepoConfigPresence::Complete => {
+            load_worktree_scope_repo_config(git_root)?;
+            load_worktree_scope_repo_config_base_hash(git_root)?;
+            Ok(WorktreeRepoConfigSync::Unchanged)
+        }
+    }
+}
+
+pub fn is_linked_worktree(git_root: &Path) -> anyhow::Result<bool> {
+    let git_dir = git_path(git_root, &["rev-parse", "--git-dir"])?;
+    let common_dir = git_path(git_root, &["rev-parse", "--git-common-dir"])?;
+    Ok(git_dir.canonicalize()? != common_dir.canonicalize()?)
+}
+
 pub fn ensure_scope_repo_config_exists(git_root: &Path) -> anyhow::Result<bool> {
     let paths = repo_state_paths(git_root)?;
     ensure_safe_state_directory_exists(&paths.directory)?;
@@ -59,8 +151,7 @@ pub fn load_worktree_scope_repo_config(git_root: &Path) -> anyhow::Result<RepoCo
 
 pub fn load_worktree_scope_repo_config_base_hash(git_root: &Path) -> anyhow::Result<String> {
     let path = repo_state_paths(git_root)?.state;
-    let bytes =
-        fs::read(&path).context("read Scope repo config state; run scope clone or scope init")?;
+    let bytes = fs::read(&path).context("read Scope repo config state; run scope pull")?;
     let state: WorktreeRepoConfigState =
         serde_json::from_slice(&bytes).context("parse Scope repo config state")?;
     if state.kind != REPO_CONFIG_STATE_KIND {
@@ -133,35 +224,50 @@ fn default_repo_config_json() -> String {
 }
 
 fn repo_state_paths(git_root: &Path) -> anyhow::Result<RepoStatePaths> {
-    let output = Command::new("git")
-        .current_dir(git_root)
-        .args(["rev-parse", "--git-path", "scope"])
-        .output()
-        .context("resolve per-worktree Scope state path")?;
-    if !output.status.success() {
-        bail!(
-            "resolve per-worktree Scope state path: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    let value = String::from_utf8(output.stdout)
-        .context("per-worktree Scope state path is not UTF-8")?
-        .trim()
-        .to_string();
-    if value.is_empty() {
-        bail!("per-worktree Scope state path could not be determined");
-    }
-    let directory = PathBuf::from(value);
-    let directory = if directory.is_absolute() {
-        directory
-    } else {
-        git_root.join(directory)
-    };
+    let directory = git_path(git_root, &["rev-parse", "--git-path", "scope"])?;
     Ok(RepoStatePaths {
         config: directory.join(REPO_CONFIG_FILE),
         state: directory.join(REPO_CONFIG_STATE_FILE),
         directory,
     })
+}
+
+fn git_path(git_root: &Path, args: &[&str]) -> anyhow::Result<PathBuf> {
+    let output = Command::new("git")
+        .current_dir(git_root)
+        .args(args)
+        .output()
+        .context("resolve Git state path")?;
+    if !output.status.success() {
+        bail!(
+            "resolve Git state path: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let value = String::from_utf8(output.stdout)
+        .context("Git state path is not UTF-8")?
+        .trim_end_matches(['\r', '\n'])
+        .to_string();
+    if value.is_empty() {
+        bail!("Git state path could not be determined");
+    }
+    let path = PathBuf::from(value);
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Ok(git_root.join(path))
+    }
+}
+
+fn state_file_exists(path: &Path, label: &str) -> anyhow::Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            ensure_regular_file(&metadata, label)?;
+            Ok(true)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error).with_context(|| format!("inspect {label}")),
+    }
 }
 
 fn ensure_safe_state_file_path(directory: &Path, path: &Path, label: &str) -> anyhow::Result<()> {

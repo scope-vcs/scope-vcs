@@ -2,9 +2,8 @@
 
 import * as React from "react"
 import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group"
-import { type VariantProps } from "class-variance-authority"
 
-import { buttonVariants } from "@/components/ui/button-variants"
+import { buttonVariants, type ButtonVariantProps } from "@/components/ui/button-variants"
 import { cn } from "@/lib/utils"
 
 function ToggleGroup({
@@ -14,7 +13,7 @@ function ToggleGroup({
   children,
   ...props
 }: React.ComponentProps<typeof ToggleGroupPrimitive.Root> &
-  VariantProps<typeof buttonVariants>) {
+  ButtonVariantProps) {
   return (
     <ToggleGroupPrimitive.Root
       data-slot="toggle-group"
@@ -38,7 +37,7 @@ function ToggleGroupItem({
   size = "sm",
   ...props
 }: React.ComponentProps<typeof ToggleGroupPrimitive.Item> &
-  VariantProps<typeof buttonVariants>) {
+  ButtonVariantProps) {
   return (
     <ToggleGroupPrimitive.Item
       data-slot="toggle-group-item"

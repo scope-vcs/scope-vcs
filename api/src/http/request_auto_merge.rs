@@ -90,6 +90,7 @@ async fn response(
         &view.request,
         view.revision.as_ref(),
         view.intent.as_ref(),
+        view.readiness,
         access.is_maintainer(),
     );
     let can_cancel =

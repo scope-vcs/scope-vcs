@@ -4,7 +4,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const pgBin = process.env.SCOPE_TEST_POSTGRES_BIN ?? '/usr/lib/postgresql/16/bin';
+export const pgBin = process.env.SCOPE_TEST_POSTGRES_BIN ?? '/usr/lib/postgresql/18/bin';
 
 export const localClusterSkip = !existsSync(join(pgBin, 'initdb'))
   ? `no initdb under ${pgBin}; set SCOPE_TEST_POSTGRES_BIN`

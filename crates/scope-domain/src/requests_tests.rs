@@ -1,5 +1,6 @@
 use super::requests::*;
 use crate::{
+    error::DomainErrorKind,
     repository::access::{RepositoryAccess, RepositoryActor},
     requests::fixtures::{open_request, source_blob, start_input},
 };
@@ -165,13 +166,7 @@ fn draft_close_deletes_and_open_close_preserves_exact_actor() {
         request,
         orphan_objects,
         ..
-    } = close_request(
-        draft,
-        Vec::new(),
-        Vec::new(),
-        close_input("author", true, false),
-    )
-    .unwrap()
+    } = close_request(draft, Vec::new(), Vec::new(), close_input("author", false)).unwrap()
     else {
         panic!("draft close must delete the request");
     };
@@ -183,7 +178,7 @@ fn draft_close_deletes_and_open_close_preserves_exact_actor() {
         open,
         Vec::new(),
         Vec::new(),
-        close_input("maintainer", false, true),
+        close_input("maintainer", true),
     )
     .unwrap();
     let CloseRequestMutation::Closed { request, event } = mutation else {
@@ -192,6 +187,102 @@ fn draft_close_deletes_and_open_close_preserves_exact_actor() {
     assert_eq!(request.state(), RequestState::Closed);
     assert_eq!(request.closed_by_user_id.as_deref(), Some("maintainer"));
     assert_eq!(event.actor_user_id, "maintainer");
+}
+
+#[test]
+fn close_permission_and_mutation_agree_for_roles_and_terminal_states() {
+    let draft = pushed_draft();
+    let open = open_request();
+    let mut closed = open.clone();
+    closed.closed_at_unix = Some(30);
+    closed.closed_by_user_id = Some("author".to_string());
+    closed.updated_at_unix = 30;
+    let mut merged = open.clone();
+    merged.merged_at_unix = Some(30);
+    merged.merged_by_user_id = Some("maintainer".to_string());
+    merged.merged_head_oid = Some(merged.head_oid.clone());
+    merged.merged_main_oid = Some("main-after".to_string());
+    merged.updated_at_unix = 30;
+    closed.validate_facts().unwrap();
+    merged.validate_facts().unwrap();
+
+    for (request, actor, maintainer, kind, message) in [
+        (
+            draft.clone(),
+            "maintainer",
+            true,
+            DomainErrorKind::Forbidden,
+            "only the request author can delete a draft",
+        ),
+        (
+            draft,
+            "stranger",
+            false,
+            DomainErrorKind::Forbidden,
+            "only the request author can delete a draft",
+        ),
+        (
+            open,
+            "stranger",
+            false,
+            DomainErrorKind::Forbidden,
+            "request author or repo maintainer required",
+        ),
+        (
+            closed.clone(),
+            "author",
+            false,
+            DomainErrorKind::Conflict,
+            "request is already closed",
+        ),
+        (
+            closed,
+            "stranger",
+            false,
+            DomainErrorKind::Forbidden,
+            "request author or repo maintainer required",
+        ),
+        (
+            merged.clone(),
+            "maintainer",
+            true,
+            DomainErrorKind::Conflict,
+            "request is already merged",
+        ),
+        (
+            merged,
+            "stranger",
+            false,
+            DomainErrorKind::Forbidden,
+            "request author or repo maintainer required",
+        ),
+    ] {
+        let error = close_request(
+            request.clone(),
+            Vec::new(),
+            Vec::new(),
+            close_input(actor, maintainer),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind, kind);
+        assert_eq!(error.message, message);
+        assert!(
+            !request_policy(
+                &request,
+                RequestViewer::new(
+                    if maintainer {
+                        maintainer_access()
+                    } else {
+                        RepositoryAccess::public()
+                    },
+                    Some(actor),
+                    false,
+                ),
+            )
+            .permissions
+            .can_close
+        );
+    }
 }
 
 #[test]
@@ -332,11 +423,10 @@ fn pushed_draft() -> Request {
     crate::requests::fixtures::pushed_draft(RequestActorRole::Public)
 }
 
-fn close_input(actor: &str, actor_is_author: bool, actor_is_maintainer: bool) -> CloseRequestInput {
+fn close_input(actor: &str, actor_is_maintainer: bool) -> CloseRequestInput {
     CloseRequestInput {
         request_id: "request_1".to_string(),
         actor_user_id: actor.to_string(),
-        actor_is_author,
         actor_is_maintainer,
         event_id: "event_closed".to_string(),
         now_unix: 30,

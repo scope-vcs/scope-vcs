@@ -168,7 +168,7 @@ pub(super) async fn connect_isolated_test_database(
 ) -> anyhow::Result<(Arc<DatabaseConnection>, Arc<TestSchemaLease>)> {
     let admin = Database::connect(&target.database_url).await?;
     admin
-        .execute(Statement::from_string(
+        .execute_raw(Statement::from_string(
             admin.get_database_backend(),
             format!(
                 "CREATE SCHEMA IF NOT EXISTS {}",
@@ -314,7 +314,7 @@ impl RepositoryStore {
         acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
         // Raw fixture replacement bypasses domain mutations and may keep the same
         // change_version while changing history. Discard its derived representation.
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "DELETE FROM scope_repository_history_views WHERE repo_id = $1",
             [repo.record.id.clone().into()],
@@ -516,7 +516,7 @@ async fn replace_catalog(
 ) -> Result<(), PostgresError> {
     let tx = db.begin().await.map_err(PostgresError::internal)?;
     let tables = tx
-        .query_one(sea_orm::Statement::from_string(
+        .query_one_raw(sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             "
                 SELECT string_agg(
@@ -822,7 +822,7 @@ mod tests {
             .await
             .unwrap();
             let before = db
-                .query_all(Statement::from_string(
+                .query_all_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT version FROM seaql_migrations ORDER BY version".to_string(),
                 ))
@@ -837,7 +837,7 @@ mod tests {
                 .unwrap();
 
             let after = db
-                .query_all(Statement::from_string(
+                .query_all_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT version FROM seaql_migrations ORDER BY version".to_string(),
                 ))
@@ -848,7 +848,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(after, before);
             let user_count = db
-                .query_one(Statement::from_string(
+                .query_one_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT count(*) AS count FROM scope_users".to_string(),
                 ))
@@ -859,7 +859,7 @@ mod tests {
                 .unwrap();
             assert_eq!(user_count, 0);
             let unrelated_sentinel = db
-                .query_one(Statement::from_string(
+                .query_one_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT sentinel FROM scopex_private".to_string(),
                 ))

@@ -554,7 +554,7 @@ jobs:
 }
 
 async fn backend_pid(tx: &sea_orm::DatabaseTransaction) -> i32 {
-    tx.query_one(Statement::from_string(
+    tx.query_one_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT pg_backend_pid() AS pid",
     ))
@@ -574,7 +574,7 @@ async fn wait_for_blocked_transaction_count(
         loop {
             let count = store
                 .db
-                .query_one(Statement::from_sql_and_values(
+                .query_one_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     "WITH RECURSIVE blocked(pid) AS ( \
                          SELECT pid FROM pg_stat_activity \

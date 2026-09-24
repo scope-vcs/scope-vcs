@@ -46,7 +46,7 @@ impl RepositoryStore {
 
     pub async fn notify_repo_change(&self, payload: &str) -> Result<(), PostgresError> {
         self.db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
                 format!("SELECT pg_notify('{POSTGRES_REPO_CHANGE_CHANNEL}', $1)"),
                 [payload.into()],

@@ -258,8 +258,10 @@ test('CLI image staging preserves all downloads and preparation rejects missing 
   const directory = mkdtempSync(join(tmpdir(), 'scope-cli-image-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const targets = JSON.parse(readFileSync(new URL('../../cli/distribution/targets.json', import.meta.url), 'utf8'));
-  for (const path of ['cli/dist', 'cli/distribution', 'artifacts', 'service', 'bin']) mkdirSync(join(directory, path), { recursive: true });
+  for (const path of ['cli/dist', 'cli/distribution', 'artifacts', 'service', 'bin', 'dev', 'deploy/railway']) mkdirSync(join(directory, path), { recursive: true });
   cpSync(resolve('.github'), join(directory, '.github'), { recursive: true });
+  cpSync(resolve('dev/tool-versions.json'), join(directory, 'dev/tool-versions.json'));
+  cpSync(resolve('deploy/railway/install-git.sh'), join(directory, 'deploy/railway/install-git.sh'));
   writeFileSync(join(directory, 'cli/distribution/targets.json'), JSON.stringify(targets));
   writeFileSync(join(directory, 'service/scope-cli-service'), '#!/bin/sh\nexit 0\n');
   assert.equal(spawnSync('tar', ['-czf', 'artifacts/scope-cli-service.tar.gz', '-C', 'service', '.'], { cwd: directory }).status, 0);
@@ -289,6 +291,10 @@ test('CLI image staging preserves all downloads and preparation rejects missing 
   assert.equal(valid.status, 17, valid.stderr || 'valid context must reach the image builder');
   const args = readFileSync(join(directory, 'docker-args'), 'utf8');
   assert.match(args, /BINARY=scope-cli-service/);
+  const git = JSON.parse(readFileSync(join(directory, 'dev/tool-versions.json'), 'utf8')).git;
+  assert.ok(args.includes(`GIT_VERSION=${git.version}`));
+  assert.ok(args.includes(`GIT_SOURCE_SHA256=${git.sourceSha256}`));
+  assert.equal(readFileSync(join(directory, '.railway-cli/install-git.sh'), 'utf8'), readFileSync(join(directory, 'deploy/railway/install-git.sh'), 'utf8'));
   assert.match(args, /railway-private-cli:cli-downloads-/);
   rmSync(join(directory, 'docker-args'));
   const bundle = join(directory, '.railway-cli/dist', targets.targets[0].artifact);

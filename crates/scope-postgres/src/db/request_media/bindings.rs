@@ -68,7 +68,7 @@ where
         &existing_bindings,
     )?;
 
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "DELETE FROM scope_request_media_bindings WHERE request_id = $1 AND target_key = $2",
         [request_id.into(), target_key.clone().into()],
@@ -77,7 +77,7 @@ where
     .map_err(PostgresError::internal)?;
 
     for binding in &projected {
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_request_media_bindings (
                 attachment_id, request_id, target_key, target_kind,
@@ -95,7 +95,7 @@ where
         ))
         .await
         .map_err(PostgresError::internal)?;
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_attachments SET unbound_expires_at_unix = NULL
              WHERE id = $1",
@@ -109,7 +109,7 @@ where
         .checked_add(limits.unbound_attachment_ttl_seconds)
         .ok_or_else(|| PostgresError::internal_message("attachment expiry overflow"))?;
     for attachment_id in existing_ids.difference(&referenced) {
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_attachments attachment
              SET unbound_expires_at_unix = $2
@@ -145,7 +145,7 @@ async fn existing_target_bindings<C>(
 where
     C: ConnectionTrait,
 {
-    conn.query_all(Statement::from_sql_and_values(
+    conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         if lock {
             "SELECT attachment_id FROM scope_request_media_bindings

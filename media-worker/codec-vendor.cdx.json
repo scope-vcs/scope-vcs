@@ -1,0 +1,26 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "components": [
+    {
+      "type": "library",
+      "name": "libheif",
+      "version": "1.23.5",
+      "purl": "pkg:generic/libheif@1.23.5",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "fd9036064c4432f0550d15072ddf34956a248279ee9aeaff0fba3fa0f77d8f1a"
+        }
+      ],
+      "licenses": [{ "license": { "id": "LGPL-3.0-or-later" } }],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://github.com/strukturag/libheif/releases/download/v1.23.5/libheif-1.23.5.tar.gz"
+        }
+      ]
+    }
+  ]
+}

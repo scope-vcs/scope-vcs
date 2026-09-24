@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   autoMergeAuthorizer,
-  autoMergeIntentTitle,
   autoMergeStopReasonText,
 } from './request-auto-merge-model'
 
@@ -17,11 +16,7 @@ test('auto-merge status names the current authorizer without exposing their id',
   )
 })
 
-test('auto-merge status names every durable outcome and stop reason', () => {
-  assert.equal(autoMergeIntentTitle('Active'), 'Will merge when checks pass')
-  assert.equal(autoMergeIntentTitle('Cancelled'), 'Auto-merge canceled')
-  assert.equal(autoMergeIntentTitle('Stopped'), 'Auto-merge stopped')
-  assert.equal(autoMergeIntentTitle('Fulfilled'), 'Merged automatically')
+test('auto-merge stop reasons read as plain text', () => {
   assert.equal(autoMergeStopReasonText('ChecksFailed'), 'checks failed')
   assert.equal(
     autoMergeStopReasonText('AccessRevoked'),

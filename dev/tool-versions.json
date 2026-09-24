@@ -1,0 +1,11 @@
+{
+  "git": {
+    "version": "2.55.0",
+    "sourceSha256": "457fdb04dc8728e007d4688695e6912e6f680727920f2a40bf11eacc17505357",
+    "windowsPackageVersion": "2.55.0.5"
+  },
+  "cargoDeny": {
+    "version": "0.20.2",
+    "linuxMuslSha256": "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+  }
+}

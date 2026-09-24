@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if (( $# != 3 )) || [[ "$1" != docker && "$1" != remote ]]; then
-  echo "usage: $0 <docker|remote> <executable image> <JSON report>" >&2
+if (( $# < 3 || $# > 4 )) || [[ "$1" != docker && "$1" != remote ]]; then
+  echo "usage: $0 <docker|remote> <executable image> <JSON report> [CycloneDX SBOM]" >&2
   exit 2
 fi
 readonly image_source="$1" image="$2" report="$3"
@@ -28,4 +28,14 @@ tar --extract --gzip --file "$work_dir/trivy.tar.gz" --directory "$work_dir" tri
   --scanners vuln --pkg-types os,library --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
   --ignore-unfixed=false --skip-db-update=false --skip-java-db-update=false \
   --timeout 15m --exit-code 0 --format json --output "$report" "$image"
+"$work_dir/trivy" version --format json > "$work_dir/database-version.json"
+jq --slurpfile database "$work_dir/database-version.json" \
+  '. + {ScanDatabase: $database[0]}' "$report" > "$work_dir/report-with-database.json"
+mv "$work_dir/report-with-database.json" "$report"
 node "$(dirname "$0")/scan-report.mjs" "$report"
+if (( $# == 4 )); then
+  "$work_dir/trivy" image --config /dev/null --ignorefile /dev/null \
+    --image-src "$image_source" --platform linux/amd64 \
+    --scanners vuln --skip-db-update=false --skip-java-db-update=false \
+    --timeout 15m --exit-code 0 --format cyclonedx --output "$4" "$image"
+fi

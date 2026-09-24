@@ -9,7 +9,7 @@ import test from 'node:test'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
 
-test('real browser SDK uses the bounded proxy while analytics domains are blocked', async (t) => {
+test('browser analytics transport uses the bounded proxy while analytics domains are blocked', async (t) => {
   const cacheDir = await mkdtemp(join(tmpdir(), 'scope-analytics-sdk-'))
   t.after(() => rm(cacheDir, { recursive: true, force: true }))
   let runtime
@@ -56,7 +56,7 @@ test('real browser SDK uses the bounded proxy while analytics domains are blocke
   const page = await context.newPage()
   page.on('request', request => requests.push(request.url()))
   page.on('pageerror', error => console.log('pageerror:', error.message))
-  await page.goto(origin, { waitUntil: 'networkidle' })
+  await page.goto(origin, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => window.analyticsReady)
   assert.equal(await page.evaluate(() => window.analyticsEnabled), true, JSON.stringify(requests))
   await waitFor(() => deliveries.flatMap(decodeCapture).length >= 8)
@@ -113,14 +113,14 @@ test('real browser SDK uses the bounded proxy while analytics domains are blocke
   await dntContext.addInitScript(normalVisitor)
   await dntContext.addInitScript(() => Object.defineProperty(navigator, 'doNotTrack', { get: () => '1' }))
   const dnt = await dntContext.newPage()
-  await dnt.goto(origin, { waitUntil: 'networkidle' })
+  await dnt.goto(origin, { waitUntil: 'domcontentloaded' })
   await dnt.waitForFunction(() => window.analyticsReady)
   await dnt.waitForTimeout(3500)
   assert.equal(deliveries.length, beforeDnt, 'DNT must suppress capture')
 
   runtime = { ...runtime, SCOPE_ANALYTICS_ENVIRONMENT: 'production', RAILWAY_ENVIRONMENT_NAME: 'staging' }
   const staging = await browser.newPage()
-  await staging.goto(origin, { waitUntil: 'networkidle' })
+  await staging.goto(origin, { waitUntil: 'domcontentloaded' })
   await staging.waitForFunction(() => window.analyticsReady)
   assert.equal(await staging.evaluate(() => window.analyticsEnabled), false)
   assert.equal(deliveries.length, beforeDnt, 'Staging cannot use production analytics')
@@ -140,7 +140,7 @@ function decodeCapture(delivery) {
 async function waitFor(condition) {
   const deadline = Date.now() + 15000
   while (!condition()) {
-    assert.ok(Date.now() < deadline, 'SDK did not deliver its queued events')
+    assert.ok(Date.now() < deadline, 'analytics transport did not deliver its queued events')
     await new Promise(resolve => setTimeout(resolve, 50))
   }
 }

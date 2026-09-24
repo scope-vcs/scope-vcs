@@ -254,17 +254,20 @@ fn terminal_run_failure_is_a_stop_even_if_a_retry_could_later_succeed() {
 
 #[test]
 fn only_open_requests_with_a_current_revision_and_maintainer_can_enable() {
+    let waiting = RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::ChecksPending);
     let mut request = open_request();
     assert!(request_auto_merge_can_enable(
         &request,
         Some(&revision(HEAD)),
         None,
+        waiting,
         true
     ));
     assert!(!request_auto_merge_can_enable(
         &request,
         Some(&revision(HEAD)),
         None,
+        waiting,
         false
     ));
     request.closed_at_unix = Some(3);
@@ -274,8 +277,27 @@ fn only_open_requests_with_a_current_revision_and_maintainer_can_enable() {
         &request,
         Some(&revision(HEAD)),
         None,
+        waiting,
         true
     ));
+}
+
+#[test]
+fn auto_merge_is_offered_only_while_checks_are_undecided() {
+    let request = open_request();
+    for readiness in [
+        RequestAutoMergeReadiness::Ready,
+        RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksFailed),
+        RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksConfigurationError),
+    ] {
+        assert!(!request_auto_merge_can_enable(
+            &request,
+            Some(&revision(HEAD)),
+            None,
+            readiness,
+            true
+        ));
+    }
 }
 
 #[test]

@@ -12,6 +12,9 @@ trap 'rm -rf -- "$workspace"' EXIT
 trap 'exit 1' HUP INT TERM
 node .github/scripts/maintenance-runtime.mjs source "$workspace/source.json"
 mkdir -p "$workspace/context/bin" "$workspace/pull-config"
+cp deploy/railway/install-git.sh "$workspace/context/install-git.sh"
+git_version="$(jq -er '.git.version' dev/tool-versions.json)"
+git_source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
 bash .github/scripts/extract-railway-maintenance.sh "$workspace/source.json" "$workspace/context/bin/scope-maintenance"
 # The running image, extracted bytes and operator's source identity must agree.
 image="$(jq -er '.components.api.image' "$workspace/source.json")"
@@ -22,7 +25,9 @@ node .github/scripts/maintenance-runtime.mjs verify-publish-target
 docker buildx build --platform linux/amd64 --provenance=false --push \
   --file deploy/railway/maintenance.Dockerfile --tag "$tag" --metadata-file "$workspace/metadata.json" \
   --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
-  --label "org.opencontainers.image.revision=$GITHUB_SHA" "$workspace/context"
+  --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+  --build-arg "GIT_VERSION=$git_version" --build-arg "GIT_SOURCE_SHA256=$git_source_sha256" \
+  "$workspace/context"
 digest="$(jq -er '."containerimage.digest" | select(test("^sha256:[a-f0-9]{64}$"))' "$workspace/metadata.json")"
 image="$repository@$digest"
 printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" | \

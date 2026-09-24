@@ -144,7 +144,7 @@ impl RunStore {
         .collect::<Result<Vec<_>, _>>()?;
         let first = logs.first().map_or(position, |log| log.position as i64);
         let last = logs.last().map_or(position, |log| log.position as i64);
-        let bounds = tx.query_one(Statement::from_sql_and_values(
+        let bounds = tx.query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT EXISTS(SELECT 1 FROM scope_run_logs WHERE attempt_id = $1 AND step_index = $2 AND position < $3) AS has_earlier,
                     EXISTS(SELECT 1 FROM scope_run_logs WHERE attempt_id = $1 AND step_index = $2 AND position > $4) AS has_more",

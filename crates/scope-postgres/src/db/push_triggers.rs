@@ -96,7 +96,7 @@ pub(super) async fn evaluate<C>(
     now_unix: u64,
 ) -> Result<Vec<String>, PostgresError>
 where
-    C: ConnectionTrait + TransactionTrait,
+    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
 {
     let payload = load_job_payload(conn, &job.id).await?;
     let change_version = u64::try_from(job.repo_version)
@@ -627,7 +627,7 @@ jobs:
         .unwrap();
         store
             .db
-            .execute(sea_orm::Statement::from_sql_and_values(
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
                 "UPDATE scope_outbox_jobs SET payload = $2, attempts = 11 WHERE repo_id = $1",
                 vec![
@@ -765,7 +765,7 @@ jobs:
     }
 
     async fn segment_reference_count(store: &MetadataStore, ref_kind: &str, ref_id: &str) -> usize {
-        store.db.query_all(sea_orm::Statement::from_sql_and_values(
+        store.db.query_all_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT segment_id FROM scope_git_segment_references WHERE ref_kind = $1 AND ref_id = $2",
             [ref_kind.into(), ref_id.into()])).await.unwrap().len()

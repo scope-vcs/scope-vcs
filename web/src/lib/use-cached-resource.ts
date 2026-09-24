@@ -64,13 +64,13 @@ export function useCachedResource<T extends object>({
   }
 }
 
-// A failed resource is retried by the lifecycle that can succeed again, so no
-// subscriber has to own listeners for its own read.
+// A resource with a failed refresh can retain a valid cached value. Retry that
+// error too when the browser can read again.
 export function useRetryOnReconnect(
-  { retry, status }: Pick<CachedResource<object>, 'retry' | 'status'>,
+  { error, retry }: Pick<CachedResource<object>, 'error' | 'retry'>,
 ) {
   useEffect(() => {
-    if (status !== 'failed') return
+    if (error === null) return
     // focus and online often arrive together; one retry per failure is enough.
     let retried = false
     const onReconnect = () => {
@@ -84,7 +84,7 @@ export function useRetryOnReconnect(
       window.removeEventListener('focus', onReconnect)
       window.removeEventListener('online', onReconnect)
     }
-  }, [retry, status])
+  }, [error, retry])
 }
 
 export function resourceErrorMessage(error: unknown, fallback: string) {

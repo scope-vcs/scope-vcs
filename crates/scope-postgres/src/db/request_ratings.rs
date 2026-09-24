@@ -44,7 +44,7 @@ impl RequestStore {
     ) -> Result<RequestReputation, PostgresError> {
         let row = self
             .db
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                     SELECT COALESCE(SUM(score), 0)::bigint AS score_sum,

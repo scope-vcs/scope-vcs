@@ -1,5 +1,4 @@
 /* Static license files are served by the web server, outside the client route tree. */
-/* eslint-disable react-doctor/tanstack-start-no-anchor-element */
 import { ApplicationTopbar } from '@/components/application-topbar'
 import { AppShell } from '@/components/app-shell'
 import { PageContent, PageHeader } from '@/components/page-header'
@@ -28,10 +27,6 @@ function LicensesRoute() {
             <p className="mt-3 text-[15px] leading-6 text-muted-foreground">
               Scope's own code is licensed under the Apache License, Version 2.0.
               Third-party components retain their own licenses.
-            </p>
-            <p className="mt-3 text-[15px] leading-6 text-muted-foreground">
-              Pagent is separately licensed under Apache-2.0. Its upstream license
-              is included in the third-party notices below.
             </p>
             <ul className="mt-4 space-y-3 text-sm">
               <li><a className={licenseLinkClass} href="/LICENSE.txt">Apache License 2.0</a></li>

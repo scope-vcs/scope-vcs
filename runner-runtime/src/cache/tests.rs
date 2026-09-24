@@ -276,7 +276,7 @@ fn cache_input_digest_distinguishes_missing_empty_content_and_environment() {
         false,
     )
     .unwrap();
-    let mut environment = BTreeMap::from([("RUSTUP_TOOLCHAIN".to_string(), "1.98.0".to_string())]);
+    let mut environment = BTreeMap::from([("RUSTUP_TOOLCHAIN".to_string(), "1.98.1".to_string())]);
     let missing = digest_inputs_at(&inputs, &environment, root.path(), "source-a").unwrap();
     fs::write(root.path().join("Cargo.lock"), []).unwrap();
     let empty = digest_inputs_at(&inputs, &environment, root.path(), "source-a").unwrap();

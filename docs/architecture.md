@@ -56,6 +56,11 @@ The dependency rules are:
 application boundaries. It also verifies the required behavior-owned source
 homes and rejects the retired catch-all module paths.
 
+The backend and CLI gates run `cargo deny --locked check advisories` with
+`deny.toml` and `cli/deny.toml`, which fail on known vulnerabilities, yanked or
+unsound crates, and unmaintained direct dependencies unless an ignore entry
+records a reason.
+
 ## Contract and domain boundary
 
 `crates/scope-domain/` owns durable concepts, invariants, transitions, and
@@ -155,6 +160,15 @@ data during refresh. Components subscribe and render instead of copying server
 state or owning request completion. History and request changes share the
 changed-files workbench in `web/src/features/history/changed-files-workbench.tsx`.
 
+`pnpm build` in `web/` enforces client JavaScript budgets after the review diff
+worker check. A Vite plugin in `web/vite.config.ts` writes the client chunk graph
+to `.output/client-chunk-graph.json`, outside the served `public` directory.
+`web/scripts/check-client-bundle.mjs` gzips every emitted script and fails when
+the entry chunks plus their static imports exceed 300 KiB, or when any single
+chunk exceeds 512 KiB. The caps and their references are constants at the top of
+that script. `web/smoke/request-mermaid-components.spec.mjs` separately caps the
+lazy JavaScript for a cold diagram render at 256 KiB and the render at 1,000 ms.
+
 ## Reading important behavior
 
 Follow these paths from application coordination to durable rules and storage:
@@ -248,6 +262,15 @@ from tests and support code.
   ledger cannot become a historical exception list.
 
 The guardrail is enforced in CI and by `./dev/check guardrails`.
+
+## Workflow timeouts
+
+`.github/scripts/check-workflow-timeouts.py` requires `timeout-minutes` on every
+GitHub Actions job that runs steps. GitHub's default is 360 minutes, so a hung
+process otherwise holds a runner for six hours. Values are about twice the
+observed job duration, rounded up to five minutes, so a cache miss passes and a
+hang fails. Jobs that call a reusable workflow are exempt; the called jobs carry
+their own timeouts. The policy gate runs the check.
 
 ## Documentation index
 

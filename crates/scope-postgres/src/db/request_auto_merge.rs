@@ -20,7 +20,7 @@ use scope_domain::{
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, ExprTrait,
     IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
     sea_query::{LockBehavior, LockType},
 };
@@ -388,7 +388,7 @@ pub(super) async fn request_id_for_check_run<C: ConnectionTrait>(
     run_id: &str,
 ) -> Result<Option<String>, PostgresError> {
     let row = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             SELECT evaluation.request_id
@@ -495,9 +495,10 @@ pub(super) async fn stop_auto_merges_for_revoked_actor(
         let request = request_by_id(tx, &intent.request_id)
             .await?
             .ok_or_else(|| PostgresError::internal_message("auto-merge request is missing"))?;
-        let transition_time = now_unix
-            .max(request.updated_at_unix)
-            .max(intent.updated_at_unix);
+        let transition_time = std::cmp::max(
+            std::cmp::max(now_unix, request.updated_at_unix),
+            intent.updated_at_unix,
+        );
         let mutation = stop_request_auto_merge(
             &request,
             &intent,

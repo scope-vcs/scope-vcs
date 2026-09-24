@@ -53,6 +53,13 @@ configuration file against local rules without saving it:
 scope visibility preview --config proposed-config.json
 ```
 
+A fresh linked worktree can contribute to requests before it has local visibility
+state. `scope doctor` reports that absence as informational. Run `scope pull` to
+initialize the missing state from the repository (public contributors receive
+private-by-default local rules). Pull preserves existing visibility edits and
+leaves a branch tracking another remote, such as GitHub's `origin`, at its current
+commit. Invalid or conflicting partial visibility state still needs repair.
+
 Show and preview inspect tracked and untracked worktree files, excluding ignored
 files. Preview is an offline comparison; it does not compare server configuration
 or the committed tree that a push will publish.
@@ -211,6 +218,12 @@ publication, and request context. Fix the reported prerequisite before retrying.
 If request creation or pushing fails after a side effect, the error identifies the
 request, failed stage, whether pushing completed, and an exact retry command.
 Use that command, usually `scope request push --remote REMOTE --request ID`.
+Pushing to a named request updates that request without changing the current
+branch's request association or Git upstream. If request start could not save
+local branch metadata, push from that branch, then run the reported
+`scope request checkout --remote REMOTE --request ID --branch BRANCH` command to
+restore its association. Checkout only adopts an unassociated existing branch
+when its HEAD matches the request head.
 Inspect the request with `scope request show --request ID` if needed. Do not rerun
 `request start` after the draft exists. An unwanted draft
 can be closed with `scope request close --request NAME --yes`.
@@ -224,7 +237,8 @@ starting a new workflow would create another run.
 ## Distribution checks and hosting
 
 `cli/distribution/targets.json` owns the six release targets and their artifact
-names. Pull requests execute native Linux x64, macOS Apple Silicon, and Windows
+names. It also sets `max_artifact_bytes`, and packaging fails when any target's
+archive exceeds that cap. Pull requests execute native Linux x64, macOS Apple Silicon, and Windows
 x64 lanes. Releases also execute macOS Intel. Linux ARM64 and Windows ARM64 are
 build-only lanes and are labeled accordingly. Native lanes exercise the version
 and license commands plus installation through the real download service. They

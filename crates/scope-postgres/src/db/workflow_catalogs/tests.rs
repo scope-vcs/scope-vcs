@@ -167,7 +167,7 @@ async fn current_catalog_reads_head_and_files_from_one_snapshot_during_a_push() 
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let waiting = writer
-                .query_one(Statement::from_string(
+                .query_one_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT EXISTS (
                         SELECT 1 FROM pg_locks
@@ -249,7 +249,7 @@ async fn catalog_replaces_complete_snapshots_and_detects_corruption() {
         Some(empty)
     );
     let file_count = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*) AS count FROM scope_repository_workflow_files".to_string(),
         ))

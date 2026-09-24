@@ -56,11 +56,15 @@ if [[ "$component" == api ]]; then
   }
 fi
 printf '%s\n' "$source_sha" > "$context_root/.scope-deployment-sha"
+cp deploy/railway/install-git.sh "$context_root/install-git.sh"
+git_version="$(jq -er '.git.version' dev/tool-versions.json)"
+git_source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
 docker buildx build --platform linux/amd64 --provenance=false --push \
   --file "$dockerfile" --tag "$image_tag" --metadata-file "$metadata" \
   --label "org.opencontainers.image.revision=$source_sha" \
   --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
   --build-arg "INSTALL_GIT=$install_git" --build-arg "BINARY=$binary" \
+  --build-arg "GIT_VERSION=$git_version" --build-arg "GIT_SOURCE_SHA256=$git_source_sha256" \
   --build-arg "SCOPE_ANALYTICS_RELEASE=$source_sha" "$context_root"
 digest="$(jq -er '."containerimage.digest"' "$metadata")"
 [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Build did not publish an immutable image digest.' >&2; exit 1; }

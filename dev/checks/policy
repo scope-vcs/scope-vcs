@@ -11,7 +11,11 @@ node .github/scripts/check-source-size.mjs
 node --test .github/scripts/check-rust-boundaries.test.mjs
 node .github/scripts/check-rust-boundaries.mjs
 node .github/scripts/check-rust-toolchain-sync.mjs
+node .github/scripts/check-runtime-image-sync.mjs
+node --test media-worker/check-vendor-advisories.test.mjs
 node --test .github/scripts/check-rust-toolchain-sync.test.mjs
+python3 .github/scripts/test-check-workflow-timeouts.py
+python3 .github/scripts/check-workflow-timeouts.py
 node .github/scripts/check-production-origins.mjs
 node --test .github/scripts/check-production-origins.test.mjs
 node --test .github/scripts/check-gates.test.mjs

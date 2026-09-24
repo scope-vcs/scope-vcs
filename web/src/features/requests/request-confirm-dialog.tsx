@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { LoaderCircle } from 'lucide-react'
-import type { FormEvent, ReactNode } from 'react'
+import type { FormEvent, ReactNode, RefObject } from 'react'
 
 export function RequestConfirmDialog({
   children,
@@ -19,6 +19,7 @@ export function RequestConfirmDialog({
   onOpenChange,
   open,
   pending,
+  returnFocus,
   title,
 }: {
   children: ReactNode
@@ -28,6 +29,8 @@ export function RequestConfirmDialog({
   onOpenChange: (open: boolean) => void
   open: boolean
   pending: boolean
+  /** Where focus goes on close when no Radix trigger opened the dialog. */
+  returnFocus?: RefObject<HTMLElement | null>
   title: string
 }) {
   async function confirm(event: FormEvent<HTMLFormElement>) {
@@ -42,7 +45,14 @@ export function RequestConfirmDialog({
       }}
       open={open}
     >
-      <AlertDialogContent asChild>
+      <AlertDialogContent
+        asChild
+        onCloseAutoFocus={(event) => {
+          if (!returnFocus?.current) return
+          event.preventDefault()
+          returnFocus.current.focus()
+        }}
+      >
         <form onSubmit={(event) => void confirm(event)}>
           <AlertDialogHeader>
             <AlertDialogTitle>{title}</AlertDialogTitle>

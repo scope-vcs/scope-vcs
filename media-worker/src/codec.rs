@@ -443,6 +443,8 @@ impl CodecPipeline {
             "rotate=0".into(),
             "-c:v".into(),
             "libx264".into(),
+            "-x264-params".into(),
+            "colorprim=bt709:transfer=bt709:colormatrix=bt709".into(),
             "-preset".into(),
             "medium".into(),
             "-crf".into(),

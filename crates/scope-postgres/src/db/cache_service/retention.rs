@@ -10,7 +10,7 @@ impl CacheStore {
     ) -> Result<Vec<PendingOrphanCacheUpload>, PostgresError> {
         let rows = self
             .db
-            .query_all(statement(
+            .query_all_raw(statement(
                 "WITH due AS (
                     SELECT object_key
                     FROM scope_cache_orphan_uploads
@@ -52,7 +52,7 @@ impl CacheStore {
         object_key: &str,
     ) -> Result<(), PostgresError> {
         self.db
-            .execute(statement(
+            .execute_raw(statement(
                 "DELETE FROM scope_cache_orphan_uploads WHERE object_key = $1",
                 vec![object_key.into()],
             ))
@@ -68,7 +68,7 @@ impl CacheStore {
         error: &str,
     ) -> Result<(), PostgresError> {
         self.db
-            .execute(statement(
+            .execute_raw(statement(
                 "UPDATE scope_cache_orphan_uploads
                  SET not_before_unix = $2, last_error = $3
                  WHERE object_key = $1",
@@ -86,7 +86,7 @@ impl CacheStore {
     pub async fn expire_references(&self, now_unix: u64, limit: u64) -> Result<u64, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let rows = tx
-            .query_all(statement(
+            .query_all_raw(statement(
                 "SELECT repository_id, identity_digest, compatibility_group_digest,
                         checksum_sha256,
                         last_accessed_at_unix, expires_at_unix
@@ -119,7 +119,7 @@ impl CacheStore {
     ) -> Result<Vec<CacheUploadCleanupClaim>, PostgresError> {
         let rows = self
             .db
-            .query_all(statement(
+            .query_all_raw(statement(
                 "WITH due AS (
                     SELECT upload_id FROM scope_cache_uploads
                     WHERE (state = 'active' AND expires_at_unix <= $1)
@@ -171,7 +171,7 @@ impl CacheStore {
         tokio::spawn(async move {
             let tx = db.begin().await.map_err(PostgresError::internal)?;
             let current = tx
-                .query_one(statement(
+                .query_one_raw(statement(
                     "SELECT upload_id FROM scope_cache_uploads
                      WHERE upload_id = $1 AND state = 'deleting' AND cleanup_generation = $2
                      FOR UPDATE",
@@ -183,7 +183,7 @@ impl CacheStore {
                 return Ok(());
             }
             delete().await?;
-            tx.execute(statement(
+            tx.execute_raw(statement(
                 "DELETE FROM scope_cache_uploads WHERE upload_id = $1",
                 vec![claim.upload_id.into()],
             ))
@@ -202,7 +202,7 @@ impl CacheStore {
     ) -> Result<u64, PostgresError> {
         let result = self
             .db
-            .execute(statement(
+            .execute_raw(statement(
                 "DELETE FROM scope_cache_uploads
                  WHERE upload_id IN (
                     SELECT upload_id FROM scope_cache_uploads
@@ -227,7 +227,7 @@ impl CacheStore {
     ) -> Result<Vec<PendingCacheDeletion>, PostgresError> {
         let candidates = self
             .db
-            .query_all(statement(
+            .query_all_raw(statement(
                 "SELECT repository_id, checksum_sha256
                  FROM scope_cache_deletion_queue
                  WHERE not_before_unix <= $1
@@ -251,7 +251,7 @@ impl CacheStore {
             let tx = self.db.begin().await.map_err(PostgresError::internal)?;
             lock_repository(&tx, &repository_id).await?;
             let row = tx
-                .query_one(statement(
+                .query_one_raw(statement(
                     "WITH due AS (
                         SELECT not_before_unix
                         FROM scope_cache_deletion_queue
@@ -300,7 +300,7 @@ impl CacheStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         lock_repository(&tx, repository_id).await?;
         let result = tx
-            .execute(statement(
+            .execute_raw(statement(
                 "DELETE FROM scope_cache_objects o
                  WHERE o.repository_id = $1 AND o.checksum_sha256 = $2
                    AND EXISTS (
@@ -329,7 +329,7 @@ impl CacheStore {
         error: &str,
     ) -> Result<(), PostgresError> {
         self.db
-            .execute(statement(
+            .execute_raw(statement(
                 "UPDATE scope_cache_deletion_queue
                  SET not_before_unix = $3, last_error = $4
                  WHERE repository_id = $1 AND checksum_sha256 = $2",
@@ -352,7 +352,7 @@ pub(super) async fn expire_repository_references(
     now_unix: u64,
 ) -> Result<(), PostgresError> {
     let rows = tx
-        .query_all(statement(
+        .query_all_raw(statement(
             "SELECT identity_digest, compatibility_group_digest, checksum_sha256,
                     last_accessed_at_unix, expires_at_unix
              FROM scope_cache_references
@@ -393,7 +393,7 @@ async fn expire_reference_row(
             "expired cache reference was unexpectedly retained",
         ));
     };
-    tx.execute(statement(
+    tx.execute_raw(statement(
         "DELETE FROM scope_cache_references
          WHERE repository_id = $1 AND identity_digest = $2",
         vec![repository_id.into(), identity.into()],
@@ -437,7 +437,7 @@ pub(super) async fn make_repository_room(
             return Ok(());
         }
         let victim = tx
-            .query_one(statement(
+            .query_one_raw(statement(
                 "SELECT identity_digest, compatibility_group_digest, checksum_sha256,
                         last_accessed_at_unix, expires_at_unix
                  FROM scope_cache_references
@@ -475,7 +475,7 @@ pub(super) async fn make_repository_room(
                 "over-budget cache reference was unexpectedly retained",
             ));
         };
-        tx.execute(statement(
+        tx.execute_raw(statement(
             "DELETE FROM scope_cache_references
              WHERE repository_id = $1 AND identity_digest = $2",
             vec![repository_id.into(), identity.into()],
@@ -500,7 +500,7 @@ pub(super) async fn active_repository_bytes(
     repository_id: &str,
 ) -> Result<i64, PostgresError> {
     let row = tx
-        .query_one(statement(
+        .query_one_raw(statement(
             "SELECT COALESCE(SUM(size_bytes), 0)::bigint AS bytes FROM (
                 SELECT o.size_bytes
                 FROM scope_cache_objects o
@@ -528,7 +528,7 @@ pub(super) async fn queue_if_unreferenced(
     checksum_sha256: &str,
     not_before: i64,
 ) -> Result<(), PostgresError> {
-    tx.execute(statement(
+    tx.execute_raw(statement(
         "INSERT INTO scope_cache_deletion_queue (
             repository_id, checksum_sha256, not_before_unix, attempts, last_error
          )

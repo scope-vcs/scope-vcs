@@ -138,7 +138,7 @@ completion marker's SHA-256 separately with the restore evidence.
 
 ```bash
 python3 -m venv /tmp/scope-recovery-venv
-/tmp/scope-recovery-venv/bin/pip install -r deploy/aws/recovery/requirements.txt
+/tmp/scope-recovery-venv/bin/pip install --require-hashes -r deploy/aws/recovery/requirements.txt
 /tmp/scope-recovery-venv/bin/python deploy/aws/recovery/restore.py recovery.tar.age \
   --identity /secure/offline-recovery-identity \
   --expected-sha256 "$ARCHIVE_SHA256" \

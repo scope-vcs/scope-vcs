@@ -22,6 +22,11 @@ test -w "$HOME"
 test -w "$XDG_CACHE_HOME"
 test ! -w /app
 test ! -w /app/bin/scope-worker
+test "$(git --version)" = "git version ${SCOPE_TEST_GIT_VERSION}"
+test -r /opt/git/share/doc/git/COPYING
+test -r /opt/git/share/doc/git/install-git.sh
+test -r /opt/git/share/doc/git/SOURCE.txt
+test "$(sha256sum "/opt/git/share/doc/git/git-${SCOPE_TEST_GIT_VERSION}.tar.xz" | cut -d ' ' -f 1)" = "$SCOPE_TEST_GIT_SHA256"
 mkdir -p .scope/git-segments .scope/dependency-checks
 printf 'write probe' > .scope/git-segments/probe
 scratch="$(mktemp -d)"
@@ -40,17 +45,22 @@ SH
 chmod 755 "$context/bin/scope-worker"
 cp -R "$repo_root/dependency-analyzer" "$context/dependency-analyzer"
 cp "$repo_root/legal/third-party-dependency-analyzer.txt" "$context/dependency-analyzer/"
+cp "$repo_root/deploy/railway/install-git.sh" "$context/install-git.sh"
+git_version="$(jq -er '.git.version' "$repo_root/dev/tool-versions.json")"
+git_source_sha256="$(jq -er '.git.sourceSha256' "$repo_root/dev/tool-versions.json")"
 # The dependency stage must supply node_modules from the reviewed lockfile.
 rm -rf "$context/dependency-analyzer/node_modules"
 
 docker build -f "$repo_root/deploy/railway/prebuilt.Dockerfile" \
   --build-arg INSTALL_GIT=1 --build-arg BINARY=scope-worker \
+  --build-arg "GIT_VERSION=$git_version" --build-arg "GIT_SOURCE_SHA256=$git_source_sha256" \
   -t "$image_prefix-prebuilt" "$context"
-docker run --rm --network none "$image_prefix-prebuilt"
+docker run --rm --network none -e "SCOPE_TEST_GIT_VERSION=$git_version" -e "SCOPE_TEST_GIT_SHA256=$git_source_sha256" "$image_prefix-prebuilt"
 
 docker build -f "$repo_root/deploy/railway/worker.Dockerfile" \
+  --build-arg "GIT_VERSION=$git_version" --build-arg "GIT_SOURCE_SHA256=$git_source_sha256" \
   -t "$image_prefix-worker" "$context"
-docker run --rm --network none "$image_prefix-worker"
+docker run --rm --network none -e "SCOPE_TEST_GIT_VERSION=$git_version" -e "SCOPE_TEST_GIT_SHA256=$git_source_sha256" "$image_prefix-worker"
 
 cp "$context/bin/scope-worker" "$context/bin/scope-maintenance"
 cat >> "$context/bin/scope-maintenance" <<'SH'
@@ -62,8 +72,9 @@ psql --version | grep -E 'PostgreSQL\) 18\.'
 printf 'checksum probe' | sha256sum
 SH
 docker build -f "$repo_root/deploy/railway/maintenance.Dockerfile" \
+  --build-arg "GIT_VERSION=$git_version" --build-arg "GIT_SOURCE_SHA256=$git_source_sha256" \
   -t "$image_prefix-maintenance" "$context"
-docker run --rm --network none "$image_prefix-maintenance"
+docker run --rm --network none -e "SCOPE_TEST_GIT_VERSION=$git_version" -e "SCOPE_TEST_GIT_SHA256=$git_source_sha256" "$image_prefix-maintenance"
 
 cat > "$context/.output/server/index.mjs" <<'JS'
 import assert from 'node:assert/strict';

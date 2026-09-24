@@ -12,7 +12,7 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chacha20poly1305::{
-    ChaCha20Poly1305, Key, Nonce,
+    ChaCha20Poly1305, Nonce,
     aead::{Aead, KeyInit, Payload},
 };
 use scope_api_contract::{
@@ -265,9 +265,10 @@ fn encode_cursor(
     getrandom::fill(&mut nonce).map_err(|error| {
         ApiError::internal_message(format!("queue cursor nonce failed: {error}"))
     })?;
-    let ciphertext = ChaCha20Poly1305::new(Key::from_slice(&cursor_key(signing_key)))
+    let ciphertext = ChaCha20Poly1305::new_from_slice(&cursor_key(signing_key))
+        .expect("SHA-256 derives a 32-byte cursor key")
         .encrypt(
-            Nonce::from_slice(&nonce),
+            &Nonce::from(nonce),
             Payload {
                 msg: plaintext.as_bytes(),
                 aad: cursor_aad(repo_id, section).as_bytes(),
@@ -299,9 +300,10 @@ fn parse_cursor(
         return Err(invalid());
     }
     let (nonce, ciphertext) = envelope.split_at(CURSOR_NONCE_BYTES);
-    let plaintext = ChaCha20Poly1305::new(Key::from_slice(&cursor_key(signing_key)))
+    let plaintext = ChaCha20Poly1305::new_from_slice(&cursor_key(signing_key))
+        .expect("SHA-256 derives a 32-byte cursor key")
         .decrypt(
-            Nonce::from_slice(nonce),
+            &Nonce::try_from(nonce).map_err(|_| invalid())?,
             Payload {
                 msg: ciphertext,
                 aad: cursor_aad(repo_id, section).as_bytes(),

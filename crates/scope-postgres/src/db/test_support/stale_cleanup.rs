@@ -58,7 +58,7 @@ async fn abandoned(
     now_nanos: u128,
 ) -> anyhow::Result<Vec<String>> {
     let rows = admin
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             admin.get_database_backend(),
             names_sql.to_owned(),
         ))

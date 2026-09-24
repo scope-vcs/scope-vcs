@@ -42,7 +42,7 @@ http = "1.4.0"
 jsonwebtoken.workspace = true
 getrandom.workspace = true
 libc.workspace = true
-reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true

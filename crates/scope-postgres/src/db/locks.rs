@@ -34,7 +34,7 @@ async fn acquire_aggregate_lock_with_mode<C: ConnectionTrait>(
     mode: LockType,
 ) -> Result<(), PostgresError> {
     #[cfg(test)]
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT set_config('application_name', $1, true)",
         [format!("scope-test-lock:{namespace}").into()],
@@ -51,7 +51,7 @@ async fn acquire_aggregate_lock_with_mode<C: ConnectionTrait>(
             .do_nothing()
             .to_owned(),
     )
-    .do_nothing()
+    .try_insert()
     .exec(conn)
     .await
     .map_err(PostgresError::internal)?;
@@ -76,7 +76,7 @@ pub(super) async fn wait_for_transaction_waiter(
 ) -> i32 {
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
         loop {
-            let waiting = store.db.query_one(Statement::from_sql_and_values(
+            let waiting = store.db.query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)) LIMIT 1",
                 [blocker_pid.into()],
@@ -110,7 +110,7 @@ pub(super) async fn wait_for_advisory_waiter(
     .unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
         loop {
-            let waiting = store.db.query_one(Statement::from_sql_and_values(
+            let waiting = store.db.query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT EXISTS (
                     SELECT 1 FROM pg_locks waiter JOIN pg_locks holder
@@ -153,7 +153,7 @@ mod tests {
 
         let held = store.db.begin().await.unwrap();
         let holder_pid: i32 = held
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 "SELECT pg_backend_pid() AS pid".to_string(),
             ))
@@ -191,7 +191,7 @@ mod tests {
             loop {
                 let waiting: bool = store
                     .db
-                    .query_one(Statement::from_sql_and_values(
+                    .query_one_raw(Statement::from_sql_and_values(
                         DatabaseBackend::Postgres,
                         "SELECT EXISTS (
                         SELECT 1 FROM pg_stat_activity waiter

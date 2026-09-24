@@ -1,5 +1,5 @@
 use super::migration_tests::{isolated_database, relation_exists};
-use sea_orm::{ConnectionTrait, DatabaseBackend, DynIden, Statement};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DynIden, Statement, TransactionTrait};
 use sea_orm_migration::{
     MigrationName, MigrationTrait, MigratorTrait, SchemaManager, sea_query::IntoIden,
 };
@@ -120,7 +120,7 @@ async fn migration_harness_transforms_rows_and_retires_source_schema() {
     TransformMigrator::up(db.as_ref(), None).await.unwrap();
 
     let values = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "
                 SELECT id, doubled_value
@@ -160,9 +160,10 @@ async fn failed_transform_rolls_back_schema_data_and_ledger() {
     .await
     .unwrap();
 
-    let error = FailingTransformMigrator::up(db.as_ref(), None)
-        .await
-        .unwrap_err();
+    // Production migration execution wraps installation and every transform in one transaction.
+    let tx = db.begin().await.unwrap();
+    let error = FailingTransformMigrator::up(&tx, None).await.unwrap_err();
+    tx.rollback().await.unwrap();
 
     assert!(
         error

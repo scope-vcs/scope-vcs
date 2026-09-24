@@ -4,7 +4,9 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::runs::{job::RunJob, run::Run};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, sea_query::Expr};
+use sea_orm::{
+    ColumnTrait, EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunHistoryCursor {

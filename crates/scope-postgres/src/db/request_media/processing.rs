@@ -37,7 +37,7 @@ impl MediaStore {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let Some(candidate) = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT job.attachment_id, attachment.repository_id
                  FROM scope_request_media_processing_jobs job
@@ -70,7 +70,7 @@ impl MediaStore {
             .map_err(PostgresError::internal)?;
         acquire_shared_repository_lock(&tx, &repository_id).await?;
         let Some(job) = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT job.*
                  FROM scope_request_media_processing_jobs job
@@ -106,7 +106,7 @@ impl MediaStore {
             .map_err(PostgresError::internal)?;
         let mut attachment = lock_attachment(&tx, &attachment_id).await?;
         if old_state == "Leased" {
-            tx.execute(Statement::from_sql_and_values(
+            tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_processing_objects
                  SET state = 'Orphaned', updated_at_unix = $3
@@ -142,7 +142,7 @@ impl MediaStore {
         .map_err(PostgresError::internal)?
         .checked_add(1)
         .ok_or_else(|| PostgresError::internal_message("processing attempt overflow"))?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_jobs
              SET state = 'Leased', lease_token = $2, lease_generation = $3,
@@ -183,7 +183,7 @@ impl MediaStore {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
         let result = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_processing_jobs job
                  SET lease_expires_at_unix = $5, updated_at_unix = $4
@@ -214,7 +214,7 @@ impl MediaStore {
     ) -> Result<Option<RequestMediaManifest>, PostgresError> {
         let valid = self
             .db
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT attachment.original_manifest_id
                  FROM scope_request_media_processing_jobs job
@@ -274,7 +274,7 @@ impl MediaStore {
             return Ok(MediaLeaseMutation::LeaseLost);
         }
         if let Some(row) = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT attachment_id, lease_generation, state
                  FROM scope_request_media_processing_objects WHERE object_key = $1 FOR UPDATE",
@@ -305,7 +305,7 @@ impl MediaStore {
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(MediaLeaseMutation::Applied(()));
         }
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_request_media_processing_objects (
                 object_key, attachment_id, lease_generation, state,
@@ -475,7 +475,7 @@ impl MediaStore {
         } else {
             ("Completed", command.now_unix)
         };
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_jobs
              SET state = $2, available_at_unix = $3, lease_token = NULL,
@@ -490,7 +490,7 @@ impl MediaStore {
         ))
         .await
         .map_err(PostgresError::internal)?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_objects
              SET state = 'Orphaned', updated_at_unix = $3
@@ -542,7 +542,7 @@ impl MediaStore {
         }
         let policy = request_policy_for_user(&tx, &repo, &request, actor_user_id).await?;
         let existing_operation = tx
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT 1 AS present FROM scope_request_media_retry_operations
                  WHERE attachment_id = $1 AND operation_id = $2",
@@ -580,7 +580,7 @@ impl MediaStore {
         };
         let next = retry_attachment_processing(&attachment, actor_can_write, now_unix)?;
         save_attachment_processing_state(&tx, &next).await?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_request_media_retry_operations (
                 attachment_id, operation_id, created_at_unix
@@ -593,7 +593,7 @@ impl MediaStore {
         ))
         .await
         .map_err(PostgresError::internal)?;
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_jobs
              SET state = 'Queued', available_at_unix = $2, lease_token = NULL,
@@ -620,7 +620,7 @@ where
     C: ConnectionTrait,
 {
     let Some(row) = conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT repository.incarnation_id, request.audience
              FROM scope_repositories repository
@@ -662,7 +662,7 @@ where
         "origin_id": "scope-postgres-request-media"
     })
     .to_string();
-    conn.execute(Statement::from_sql_and_values(
+    conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!("SELECT pg_notify('{POSTGRES_REPO_CHANGE_CHANNEL}', $1)"),
         [payload.into()],

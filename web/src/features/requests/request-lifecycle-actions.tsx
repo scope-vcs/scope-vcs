@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { shortOid } from '@/lib/short-oid'
 import { cn } from '@/lib/utils'
-import { CheckCircle2, XCircle } from 'lucide-react'
+import { CheckCircle2 } from 'lucide-react'
 import { type Ref, useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
 import { RequestAutoMergeActions } from './request-auto-merge-actions'
@@ -11,12 +11,11 @@ import {
   hasRequestAutoMergeActions,
   hasRequestLifecycleActions,
 } from './request-lifecycle-model'
-import { requestMergeabilityLabel } from './request-labels'
 import type { RequestActionController } from './use-request-actions'
 import type { RequestAutoMergeController } from './use-request-auto-merge'
 import type { RequestSummaryResponse } from '@/api/types.generated'
 
-type Dialog = 'close' | 'merge' | 'submit' | null
+type Dialog = 'merge' | 'submit' | null
 
 export function RequestLifecycleActions({
   actions,
@@ -72,19 +71,8 @@ export function RequestLifecycleActions({
         />
         {checksHoldMerge && !autoMerge.status?.can_enable &&
           autoMerge.status?.intent?.status !== 'Active' ? (
-          <span className="flex min-w-0 items-center gap-2">
-            <Button disabled size="sm" type="button" variant="success">
-              Merge
-            </Button>
-            <span className="min-w-0 text-xs text-muted-foreground">
-              {request.mergeability.reason ?? requestMergeabilityLabel(request)}
-            </span>
-          </span>
-        ) : null}
-        {permissions.can_close ? (
-          <Button disabled={busy} onClick={() => setDialog('close')} size="sm" type="button" variant="destructive">
-            <XCircle />
-            Close
+          <Button disabled size="sm" type="button" variant="success">
+            Merge
           </Button>
         ) : null}
       </div>
@@ -115,21 +103,6 @@ export function RequestLifecycleActions({
         <p className="font-mono text-xs">
           {shortOid(request.head_oid)} → main
         </p>
-      </RequestConfirmDialog>
-      <RequestConfirmDialog
-        confirmLabel="Close request"
-        destructive
-        onConfirm={() => actions.run({ action: 'close' })}
-        onOpenChange={(open) => setDialog(open ? 'close' : null)}
-        open={dialog === 'close'}
-        pending={actions.pending === 'close'}
-        title="Close this request?"
-      >
-        {request.submitted_at_unix === null ? (
-          <p>This draft request will be permanently deleted.</p>
-        ) : (
-          <p>This submitted request will close and remain in request history.</p>
-        )}
       </RequestConfirmDialog>
     </>
   )

@@ -77,7 +77,7 @@ async fn parallel_job_appends_publish_positions_in_commit_order() {
         .unwrap();
     let held = store.db.begin().await.unwrap();
     let held_pid = held
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT pg_advisory_xact_lock(731244910), pg_backend_pid() AS pid",
         ))

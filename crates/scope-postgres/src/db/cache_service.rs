@@ -38,7 +38,7 @@ impl CacheStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         lock_repository(&tx, repository_id).await?;
         let row = tx
-            .query_one(statement(
+            .query_one_raw(statement(
                 "SELECT o.repository_id, o.checksum_sha256, o.storage_backend, o.object_key,
                         o.size_bytes, o.created_at_unix,
                         r.last_accessed_at_unix,
@@ -76,7 +76,7 @@ impl CacheStore {
             &domain_reference(repository_id, &restored_identity, &current)?,
             now_unix,
         )?;
-        tx.execute(statement(
+        tx.execute_raw(statement(
             "UPDATE scope_cache_references
              SET last_accessed_at_unix = $3, expires_at_unix = $4
              WHERE repository_id = $1 AND identity_digest = $2",
@@ -89,7 +89,7 @@ impl CacheStore {
         ))
         .await
         .map_err(PostgresError::internal)?;
-        tx.execute(statement(
+        tx.execute_raw(statement(
             "UPDATE scope_cache_objects SET last_accessed_at_unix = $3
              WHERE repository_id = $1 AND checksum_sha256 = $2",
             vec![
@@ -192,7 +192,7 @@ impl CacheStore {
                 u64_to_i64(reference.expires_at_unix(), "cache reference expiry")?,
             )
             .await?;
-            tx.execute(statement(
+            tx.execute_raw(statement(
                 "DELETE FROM scope_cache_deletion_queue
                  WHERE repository_id = $1 AND checksum_sha256 = $2",
                 vec![repository_id.into(), checksum_sha256.into()],
@@ -238,7 +238,7 @@ impl CacheStore {
             ));
         };
         let inserted = tx
-            .execute(statement(
+            .execute_raw(statement(
                 "INSERT INTO scope_cache_uploads (
                     upload_id, repository_id, identity_digest, compatibility_group_digest,
                     checksum_sha256,
@@ -285,7 +285,7 @@ impl CacheStore {
     pub async fn upload(&self, upload_id: &str) -> Result<CacheUploadRecord, PostgresError> {
         let row = self
             .db
-            .query_one(statement(
+            .query_one_raw(statement(
                 "SELECT upload_id, repository_id, identity_digest, compatibility_group_digest,
                         checksum_sha256,
                         storage_backend, object_key, size_bytes,
@@ -308,7 +308,7 @@ impl CacheStore {
         let now = u64_to_i64(now_unix, "current time")?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let row = tx
-            .query_one(statement(
+            .query_one_raw(statement(
                 "SELECT upload_id, repository_id, identity_digest, compatibility_group_digest,
                         checksum_sha256,
                         storage_backend, object_key, size_bytes,
@@ -364,7 +364,7 @@ impl CacheStore {
         ) {
             Ok(decision) => decision,
             Err(CacheDomainError::StaleUploadLease) => {
-                tx.execute(statement(
+                tx.execute_raw(statement(
                     "UPDATE scope_cache_uploads SET state = 'deleting',
                         cleanup_lease_expires_at_unix = $2 WHERE upload_id = $1",
                     vec![
@@ -386,7 +386,7 @@ impl CacheStore {
                     .ok_or_else(|| {
                         PostgresError::internal_message("cache reference object missing")
                     })?;
-                tx.execute(statement(
+                tx.execute_raw(statement(
                     "UPDATE scope_cache_uploads SET state = 'committed' WHERE upload_id = $1",
                     vec![upload_id.into()],
                 ))
@@ -401,7 +401,7 @@ impl CacheStore {
             CommitUploadDecision::Committed { reference } => reference,
         };
 
-        tx.execute(statement(
+        tx.execute_raw(statement(
             "INSERT INTO scope_cache_objects (
                 repository_id, checksum_sha256, storage_backend, object_key,
                 size_bytes, created_at_unix, last_accessed_at_unix
@@ -443,13 +443,13 @@ impl CacheStore {
             u64_to_i64(reference.expires_at_unix(), "cache reference expiry")?,
         )
         .await?;
-        tx.execute(statement(
+        tx.execute_raw(statement(
             "UPDATE scope_cache_uploads SET state = 'committed' WHERE upload_id = $1",
             vec![upload_id.into()],
         ))
         .await
         .map_err(PostgresError::internal)?;
-        tx.execute(statement(
+        tx.execute_raw(statement(
             "DELETE FROM scope_cache_deletion_queue
              WHERE repository_id = $1 AND checksum_sha256 = $2",
             vec![
@@ -500,7 +500,7 @@ async fn lock_repository(
     tx: &DatabaseTransaction,
     repository_id: &str,
 ) -> Result<(), PostgresError> {
-    tx.execute(statement(
+    tx.execute_raw(statement(
         "SELECT pg_advisory_xact_lock(hashtextextended('scope:cache:' || $1, 0))",
         vec![repository_id.into()],
     ))
@@ -514,7 +514,7 @@ async fn current_reference(
     repository_id: &str,
     identity_digest: &str,
 ) -> Result<Option<ReferenceRow>, PostgresError> {
-    tx.query_one(statement(
+    tx.query_one_raw(statement(
         "SELECT checksum_sha256, compatibility_group_digest,
                 last_accessed_at_unix, expires_at_unix
          FROM scope_cache_references
@@ -532,7 +532,7 @@ async fn stored_object<C: ConnectionTrait>(
     repository_id: &str,
     checksum_sha256: &str,
 ) -> Result<Option<CacheObjectRecord>, PostgresError> {
-    db.query_one(statement(
+    db.query_one_raw(statement(
         "SELECT repository_id, checksum_sha256, storage_backend, object_key, size_bytes,
                 created_at_unix
          FROM scope_cache_objects
@@ -551,7 +551,7 @@ async fn deletion_is_claimed(
     checksum_sha256: &str,
 ) -> Result<bool, PostgresError> {
     let row = tx
-        .query_one(statement(
+        .query_one_raw(statement(
             "SELECT attempts FROM scope_cache_deletion_queue
              WHERE repository_id = $1 AND checksum_sha256 = $2 FOR UPDATE",
             vec![repository_id.into(), checksum_sha256.into()],
@@ -577,7 +577,7 @@ async fn insert_reference(
     now: i64,
     expires: i64,
 ) -> Result<(), PostgresError> {
-    tx.execute(statement(
+    tx.execute_raw(statement(
         "INSERT INTO scope_cache_references (
             repository_id, identity_digest, compatibility_group_digest, checksum_sha256,
             created_at_unix, expires_at_unix, last_accessed_at_unix

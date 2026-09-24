@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18.6@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
         env:
           POSTGRES_DB: scope_dev
           POSTGRES_PASSWORD: scope
@@ -48,7 +48,19 @@ jobs:
           --health-retries 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install reviewed Git for CLI integration
+        if: inputs.run_cli
+        run: |
+          version="$(jq -er '.git.version' dev/tool-versions.json)"
+          source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+          sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
+          echo /opt/git/bin >> "$GITHUB_PATH"
+
+      - name: Verify CLI Git version
+        if: inputs.run_cli
+        run: node dev/check-git-version.mjs
 
       - name: Install media codecs
         run: |
@@ -60,11 +72,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
-          toolchain: 1.98.0
+          toolchain: 1.98.1
 
       - name: Cache Rust dependencies for web smoke
         if: inputs.run_web && !inputs.run_cli
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-bin: false
           cache-on-failure: true
@@ -73,7 +85,7 @@ jobs:
 
       - name: Cache Rust dependencies for CLI integration
         if: inputs.run_cli
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-bin: false
           cache-on-failure: true
@@ -84,15 +96,17 @@ jobs:
             cli -> target
 
       - name: Enable pnpm
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: 11.1.0
 
+      # The pnpm store only exists after the web install, so a CLI-only run
+      # must not ask setup-node to cache it or its post step fails the job.
       - name: Install Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ inputs.run_web && 'pnpm' || '' }}
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install web dependencies
@@ -102,7 +116,7 @@ jobs:
 
       - name: Cache Playwright browsers
         if: inputs.run_web
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
