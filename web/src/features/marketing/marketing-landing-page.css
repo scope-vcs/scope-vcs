@@ -111,6 +111,23 @@
   transform: scale(1.7) translateY(4px);
 }
 
+/* Install Scope lights up the command it points at, then lets it settle. */
+.landing-terminal {
+  transition: box-shadow .6s var(--landing-ease);
+}
+
+.landing-terminal.is-called {
+  box-shadow:
+    0 0 0 1px var(--success),
+    0 0 0 6px color-mix(in srgb, var(--success) 16%, transparent),
+    0 0 36px color-mix(in srgb, var(--success) 22%, transparent);
+}
+
+.landing-terminal.is-called button {
+  border-color: var(--success);
+  color: #fff;
+}
+
 /* Lens ring, label and cursor. */
 .lens-ring path { stroke-width: 1; }
 .lens-ring circle { stroke-width: 1; }

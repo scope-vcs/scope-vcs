@@ -11,6 +11,8 @@ import { FoundTally } from './notes/found-tally'
 import { useNoteFinder } from './notes/use-note-finder'
 import './marketing-landing-page.css'
 
+const INSTALL_HIGHLIGHT_MS = 2400
+
 /**
  * The signed-out landing page. It renders its content twice: the public copy
  * people read and click, and a private copy in the opposite theme that only
@@ -34,7 +36,17 @@ export function MarketingLandingPage({
   const celebrate = useCallback(() => { stopConfetti.current = fireConfetti() }, [])
   useEffect(() => () => stopConfetti.current?.(), [])
   const progress = useNoteFinder(elements.page, lens.frame, celebrate)
-  const content = { commands: cliInstallCommands, initialPlatform: initialCliPlatform, onPlatformChange: setPlatform, platform }
+  const [installCall, setInstallCall] = useState(0)
+  const callInstall = useCallback(() => setInstallCall(Date.now()), [])
+  useEffect(() => {
+    if (installCall === 0) return
+    const timer = window.setTimeout(() => setInstallCall(0), INSTALL_HIGHLIGHT_MS)
+    return () => clearTimeout(timer)
+  }, [installCall])
+  const content = {
+    commands: cliInstallCommands, initialPlatform: initialCliPlatform, installCalled: installCall !== 0,
+    onInstallCall: callInstall, onPlatformChange: setPlatform, platform,
+  }
 
   return (
     <div className={cn('marketing-page landing relative min-h-dvh overflow-clip bg-background font-sans text-base leading-normal text-foreground antialiased', lens.ready && 'lens-ready', lens.on ? 'lens-on' : 'lens-off', lens.holding && 'lens-holding')} ref={elements.page}>

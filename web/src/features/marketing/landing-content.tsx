@@ -2,9 +2,10 @@ import type { CliInstallCommands, CliPlatform } from '@/api/types'
 import { CliInstallCommand } from '@/components/cli-install-command'
 import { ScopeLogo } from '@/components/scope-logo'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { ArrowUpRight } from 'lucide-react'
-import type { CSSProperties, ReactElement } from 'react'
+import type { CSSProperties, MouseEvent, ReactElement } from 'react'
 import { heroCopy, installCommandAside, installTitle, mergeTitle, notes, sourceUrl, touchNavNote, type LandingView } from './landing-copy'
 import { Heading, LandingViewProvider, Note, Swap } from './landing-view'
 import { MergeGraph } from './merge-graph'
@@ -22,12 +23,16 @@ const rise = (delay: number) => ({ '--rise-delay': `${delay}ms` }) as CSSPropert
 export function LandingContent({
   commands,
   initialPlatform,
+  installCalled,
+  onInstallCall,
   onPlatformChange,
   platform,
   view,
 }: {
   commands: CliInstallCommands
   initialPlatform: CliPlatform
+  installCalled: boolean
+  onInstallCall: () => void
   onPlatformChange: (platform: CliPlatform) => void
   platform: CliPlatform
   view: LandingView
@@ -65,7 +70,7 @@ export function LandingContent({
               </Heading>
               <p className="landing-rise mt-6 max-w-[36ch] text-[17px] leading-[1.6] text-muted-foreground" style={rise(180)}><Swap text={heroCopy.lede} /></p>
               <div className="landing-rise mt-8 flex flex-wrap items-center gap-x-6 gap-y-2" style={rise(260)}>
-                <a className="inline-flex min-h-11 items-center rounded-md bg-foreground px-[18px] text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5" href="#install">Install Scope</a>
+                <a className="inline-flex min-h-11 items-center rounded-md bg-foreground px-[18px] text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5" href="#install" onClick={(event) => callInstall(event, onInstallCall)}>Install Scope</a>
                 <a className="inline-flex items-center gap-1.5 text-sm hover:text-success-strong" href={sourceUrl}>Source<ArrowUpRight aria-hidden className="size-4 stroke-[1.6]" /></a>
               </div>
               <Note className="absolute left-0 top-[calc(100%+44px)] max-[901px]:static max-[901px]:mt-5 max-[901px]:block" id="cta" />
@@ -85,7 +90,7 @@ export function LandingContent({
               <Heading className={columnTitle} level={2}><Swap text={installTitle} /></Heading>
               <div className="mt-12 min-w-0" data-note="command">
                 <CliInstallCommand
-                  codeBlockClassName="landing-terminal rounded-lg border-0 py-2 pl-4 pr-2 shadow-none [&_pre]:whitespace-pre [&_pre]:py-2.5 [&_pre]:pr-12 [&_pre]:text-sm [&_pre]:leading-6"
+                  codeBlockClassName={cn('landing-terminal rounded-lg border-0 py-2 pl-4 pr-2 shadow-none [&_pre]:whitespace-pre [&_pre]:py-2.5 [&_pre]:pr-12 [&_pre]:text-sm [&_pre]:leading-6', installCalled && 'is-called')}
                   commands={shownCommands}
                   initialPlatform={initialPlatform}
                   onPlatformChange={onPlatformChange}
@@ -110,4 +115,16 @@ export function LandingContent({
       </div>
     </LandingViewProvider>
   )
+}
+
+/** Brings the install command to the middle of the screen and asks the page to
+ * light it up, since the command itself is what the button offers. */
+function callInstall(event: MouseEvent<HTMLAnchorElement>, onInstallCall: () => void) {
+  const install = document.getElementById('install')
+  if (!install) return
+  event.preventDefault()
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+  install.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+  history.replaceState(history.state, '', '#install')
+  onInstallCall()
 }
