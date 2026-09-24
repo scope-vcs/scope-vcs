@@ -5,6 +5,7 @@ import {
   requestWorkspaceWidthFromKey,
 } from './request-workspace-width'
 import { PaneResizeHandle } from '@/components/pane-resize-handle'
+import { WorkbenchPane } from '@/components/page-header'
 import { FILE_PANE_MAX_WIDTH } from '@/components/file-workbench-width'
 import './request-workspace-sidebar.css'
 
@@ -28,46 +29,50 @@ export function RequestWorkspaceShell({
   const [width, setWidth] = useState(FILE_PANE_MAX_WIDTH)
   const sidebarId = useId()
 
+  // The sidebar and detail column share the app rail so the request lines up
+  // with the topbar instead of centering in whatever the sidebar leaves over.
   return (
-    <div
-      className="request-workspace-shell"
-      data-collapsed={collapsed || undefined}
-      data-detail-open={detailOpenOnMobile || undefined}
-      data-focus={focus || undefined}
-      style={{ '--request-workspace-sidebar-width': `${width}px` } as CSSProperties}
-    >
-      <div className="request-workspace-sidebar-container" id={sidebarId}>
-        {sidebar}
+    <WorkbenchPane>
+      <div
+        className="request-workspace-shell"
+        data-collapsed={collapsed || undefined}
+        data-detail-open={detailOpenOnMobile || undefined}
+        data-focus={focus || undefined}
+        style={{ '--request-workspace-sidebar-width': `${width}px` } as CSSProperties}
+      >
+        <div className="request-workspace-sidebar-container" id={sidebarId}>
+          {sidebar}
+        </div>
+        <PaneResizeHandle
+          className="request-workspace-resize-handle"
+          controls={sidebarId}
+          label="Requests sidebar width"
+          max={FILE_PANE_MAX_WIDTH}
+          min={REQUEST_WORKSPACE_COLLAPSED_WIDTH}
+          onDrag={(distance) => {
+            const next = requestWorkspaceWidthFromDrag(
+              { startedCollapsed: collapsed, width, x: 0 },
+              distance,
+            )
+            if (!next) return
+            setWidth(next.width)
+            onCollapsedChange(next.collapsed)
+          }}
+          onKey={(key) => {
+            const next = requestWorkspaceWidthFromKey({ collapsed, width }, key)
+            if (!next) return false
+            setWidth(next.width)
+            onCollapsedChange(next.collapsed)
+            return true
+          }}
+          valueText={collapsed ? 'Collapsed' : `${width} pixels`}
+          width={collapsed ? REQUEST_WORKSPACE_COLLAPSED_WIDTH : width}
+        />
+        <section className="request-workspace-detail">{children}</section>
+        {focus ? (
+          <p className="request-workspace-focus-hint label-mono">focus · f or esc to leave</p>
+        ) : null}
       </div>
-      <PaneResizeHandle
-        className="request-workspace-resize-handle"
-        controls={sidebarId}
-        label="Requests sidebar width"
-        max={FILE_PANE_MAX_WIDTH}
-        min={REQUEST_WORKSPACE_COLLAPSED_WIDTH}
-        onDrag={(distance) => {
-          const next = requestWorkspaceWidthFromDrag(
-            { startedCollapsed: collapsed, width, x: 0 },
-            distance,
-          )
-          if (!next) return
-          setWidth(next.width)
-          onCollapsedChange(next.collapsed)
-        }}
-        onKey={(key) => {
-          const next = requestWorkspaceWidthFromKey({ collapsed, width }, key)
-          if (!next) return false
-          setWidth(next.width)
-          onCollapsedChange(next.collapsed)
-          return true
-        }}
-        valueText={collapsed ? 'Collapsed' : `${width} pixels`}
-        width={collapsed ? REQUEST_WORKSPACE_COLLAPSED_WIDTH : width}
-      />
-      <section className="request-workspace-detail">{children}</section>
-      {focus ? (
-        <p className="request-workspace-focus-hint label-mono">focus · f or esc to leave</p>
-      ) : null}
-    </div>
+    </WorkbenchPane>
   )
 }
