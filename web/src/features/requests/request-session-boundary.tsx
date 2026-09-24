@@ -20,16 +20,40 @@ export function RequestSessionBoundary() {
     if (!isLoaded) return
     const viewerId = userId ?? 'anonymous'
     activateAccountSessionViewer(viewerId)
-    if (activeViewer !== null && activeViewer !== viewerId) {
+    const viewerChanged = activeViewer !== null && activeViewer !== viewerId
+    const firstSignedInViewer = activeViewer === null && userId !== null
+    if (viewerChanged) {
       activateRequestAttachmentDraftViewer(viewerId)
       resetRequestAttachmentMediaGrants()
       resetRequestAttachmentResources()
       resetRequestDiscussionCache()
       resetRequestMermaidResource()
       requestQueueResource.clear()
-      void router.invalidate().catch(() => {})
     }
     activeViewer = viewerId
+    if (!viewerChanged && !firstSignedInViewer) return
+
+    let active = true
+    let pending = false
+    const retry = () => {
+      if (!active || pending) return
+      pending = true
+      void router.invalidate({ sync: true }).then(() => {
+        if (!active) return
+        window.removeEventListener('focus', retry)
+        window.removeEventListener('online', retry)
+      }).catch(() => {
+        // Retain the listeners so an interrupted refresh can run again.
+      }).finally(() => { pending = false })
+    }
+    window.addEventListener('focus', retry)
+    window.addEventListener('online', retry)
+    retry()
+    return () => {
+      active = false
+      window.removeEventListener('focus', retry)
+      window.removeEventListener('online', retry)
+    }
   }, [isLoaded, router, userId])
   return null
 }
