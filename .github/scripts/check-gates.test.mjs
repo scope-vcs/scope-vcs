@@ -252,7 +252,7 @@ function releasePath(selected, { reuse = false, resumeStaging = false, failure =
   outputs.recover_cutover_id = reuse ? '456' : '';
   outputs.resume_staging = String(resumeStaging);
   const needs = { plan: { result: 'success', outputs }, validation: { result: 'success' } };
-  for (const key of ['release-preparation', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
+  for (const key of ['readiness-preflight', 'release-preparation', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
     const expression = jobs[key].if.replace(/needs\.([\w-]+)/g, 'needs["$1"]');
     const enabled = Function('needs', 'github', 'cancelled', `return (${expression});`)(needs, { ref }, () => cancelled);
     needs[key] = { result: enabled ? key === failure ? 'failure' : 'success' : 'skipped',
@@ -279,7 +279,7 @@ test('release paths stage applications once and leave no-op and distribution-onl
 });
 
 test('failed preflight, staging or activation cannot publish a successful release', () => {
-  for (const failure of ['production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy']) {
+  for (const failure of ['readiness-preflight', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy']) {
     const result = releasePath(['api', 'web', 'cli'], { failure });
     assert.equal(result['production-health-gate'].result, 'skipped', failure);
   }

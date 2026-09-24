@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { grants, renderPolicy, tables } from './runtime-roles.mjs';
+import { candidateMigrationVersion, renderRuntimeRoleAudit } from './audit-runtime-roles.mjs';
 import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
 // Always creates its own disposable cluster. Never reads a DATABASE_URL or uses a live server.
@@ -44,6 +45,40 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query(renderPolicy()); // Repeat bootstrap removes stale column grants too.
     query('SELECT id FROM scope_cli_sessions;', 'scope_cache', false);
     query(renderPolicy({ grantsOnly: true }), 'scope_migrator');
+    // Before the candidate migration is applied, only stable role and ownership
+    // invariants are checked; exact candidate grants become required afterward.
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    query('GRANT SELECT (id) ON scope_cli_sessions TO scope_cache;');
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    query('CREATE TABLE old_pending_relation(id int);', 'scope_migrator');
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    query(`INSERT INTO seaql_migrations(version) VALUES ('${candidateMigrationVersion}');`);
+    const auditFails = (pattern, audit = renderRuntimeRoleAudit()) => {
+      const result = spawnSync(join(pgBin, 'psql'), ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1',
+        '-h', dir, '-U', 'scope_migrator', '-d', 'postgres'], { input: audit, encoding: 'utf8' });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, pattern);
+    };
+    auditFails(/Unreviewed production relation/);
+    query('DROP TABLE old_pending_relation;', 'scope_migrator');
+    auditFails(/Production column privilege differs/);
+    query(renderPolicy({ grantsOnly: true }), 'scope_migrator');
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    query('ALTER TABLE scope_cli_sessions OWNER TO postgres;');
+    auditFails(/not owned by scope_migrator/);
+    query('ALTER TABLE scope_cli_sessions OWNER TO scope_migrator;');
+    // Another account holding a protected role could assume its privileges.
+    query('GRANT scope_cache TO postgres;');
+    auditFails(/held by another account/);
+    query('REVOKE scope_cache FROM postgres;');
+    // The ledger must stay read-only even while exact grants are deferred.
+    query('GRANT INSERT ON seaql_migrations TO scope_cache;');
+    auditFails(/migration-ledger privileges/, renderRuntimeRoleAudit({ exactPolicy: false }));
+    query('REVOKE INSERT ON seaql_migrations FROM scope_cache;');
+    query('ALTER TABLE scope_cli_sessions RENAME TO scope_cli_sessions_retired;', 'scope_migrator');
+    auditFails(/relation is missing/);
+    query('ALTER TABLE scope_cli_sessions_retired RENAME TO scope_cli_sessions;', 'scope_migrator');
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
     const sleeper = spawn(join(pgBin, 'psql'), ['-X', '-qAt', '-h', dir, '-U', 'scope_cache', '-d', 'postgres'], { stdio: ['pipe', 'pipe', 'pipe'] });
     sleeper.stderr.resume();
     sleeper.stdin.end('SELECT pg_backend_pid(); SELECT pg_sleep(30);');
