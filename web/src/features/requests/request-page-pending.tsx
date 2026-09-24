@@ -6,7 +6,16 @@ import {
   type LineSkeletonLength,
   type TextSkeletonLength,
 } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
+import { useAuth } from '@clerk/tanstack-react-start'
+import { useParams } from '@tanstack/react-router'
+import { useRef, type ReactNode } from 'react'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
+import { RequestChecksPending } from './request-checks-pending'
+import { RequestDetailsSkeleton } from './request-details-layout'
+import { RequestViewTabs } from './request-view-tabs'
+import { useDetailPaneRail } from './use-detail-pane-rail'
+import { DiffSkeleton } from '@/features/review/diff-skeleton'
 
 const PENDING_THREADS: { id: string; length: LineSkeletonLength }[] = [
   { id: 'first', length: 'long' },
@@ -19,47 +28,62 @@ const PENDING_CHANGES: { id: string; length: TextSkeletonLength }[] = [
   { id: 'third', length: 'long' },
   { id: 'fourth', length: 'medium' },
 ]
-const PENDING_DIFF_LINES: { id: string; length: LineSkeletonLength }[] = [
-  { id: 'first', length: 'long' },
-  { id: 'second', length: 'short' },
-  { id: 'third', length: 'long' },
-  { id: 'fourth', length: 'medium' },
-  { id: 'fifth', length: 'long' },
-  { id: 'sixth', length: 'short' },
-]
 
-export function RequestDetailPagePending() {
+// Mirrors RequestDetailPage: the same header, checks row, tabs, and details
+// rail when the pane is wide enough for one. The tab's own pending state, when
+// its route has one, fills the document.
+export function RequestDetailPagePending({ children }: { children?: ReactNode }) {
+  const params = useParams({ from: '/$owner/$repo/requests/$requestId' })
+  const { isSignedIn } = useAuth()
+  const paneRef = useRef<HTMLDivElement>(null)
+  const rail = useDetailPaneRail(paneRef)
   return (
     <PendingSurface label="Loading request">
-      <header className="border-b border-border px-5 pb-4 pt-6 sm:px-6 lg:px-8">
-        <TextSkeleton length="xlong" size="heading" />
-        <div className="mt-3 flex items-center gap-3">
-          <BlockSkeleton className="h-5 w-16 rounded-full" />
-          <BlockSkeleton className="h-5 w-28 rounded-full" />
-          <TextSkeleton length="short" />
-        </div>
-      </header>
-      <div className="border-b border-border px-5 py-2.5 min-[701px]:hidden">
-        <BlockSkeleton className="h-8 w-8" />
-      </div>
-      <div className="min-h-0">
-        <div className="min-w-0">
-          <div className="px-5 py-5 lg:px-7">
-            <TextSkeleton length="short" />
-            <div className="mt-4 space-y-2">
-              <LineSkeleton length="full" />
-              <LineSkeleton length="long" />
-              <LineSkeleton length="medium" />
+      <div className="request-detail-pane w-full" ref={paneRef}>
+        <header className="request-detail-header border-b border-border px-5 pb-4 pt-6 sm:px-6 lg:px-8">
+          <TextSkeleton className="h-9" length="xlong" size="heading" />
+          <div className="request-detail-header-secondary mt-4">
+            <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs leading-5">
+              {/* Mergeability badge, branch, then author: the same pieces as
+                  the loaded row, so they wrap the same way. */}
+              <BlockSkeleton className="h-5 w-32 rounded-md" />
+              <TextSkeleton className="h-5 py-1" length="medium" size="meta" />
+              <TextSkeleton className="h-5 py-1" length="long" size="meta" />
             </div>
+            {/* Signed-out viewers get no request actions. Signed-in ones get
+                the one lifecycle action, which moves to a bottom bar on
+                narrow panes, and the More menu. */}
+            {isSignedIn ? (
+              <div className="request-detail-header-actions flex min-w-0 items-center justify-end gap-2">
+                <BlockSkeleton className="hidden h-8 w-20 min-[701px]:block" />
+                <BlockSkeleton className="size-8" />
+              </div>
+            ) : null}
           </div>
-          <div className="flex h-11 gap-6 border-b border-border px-5 lg:px-7">
-            <BlockSkeleton className="h-7 w-24" />
-            <BlockSkeleton className="h-7 w-20" />
-            <BlockSkeleton className="h-7 w-20" />
-          </div>
-          <DiscussionSkeleton />
+        </header>
+        <div className="request-detail-actions px-5 py-2.5 min-[701px]:hidden">
+          <BlockSkeleton className="size-8" />
         </div>
-
+        <RequestChecksPending />
+        <div className={cn(rail && 'grid grid-cols-[minmax(0,1fr)_300px]')}>
+          <div className="request-detail-document pt-4">
+            <section className="min-w-0 px-5 pb-5 lg:px-7">
+              <TextSkeleton length="xlong" />
+            </section>
+            <RequestViewTabs actionsRef={() => {}} params={params} rail={rail} />
+            <div className="min-w-0">{children ?? <DiscussionSkeleton />}</div>
+          </div>
+          {rail ? (
+            <aside className="min-w-0 border-l border-border">
+              <RequestDetailsSkeleton />
+            </aside>
+          ) : null}
+        </div>
+        {isSignedIn ? (
+          <div className="fixed inset-x-0 bottom-0 z-30 flex justify-end gap-2 border-t border-border bg-background px-3 py-3 min-[701px]:hidden">
+            <BlockSkeleton className="h-8 w-20" />
+          </div>
+        ) : null}
       </div>
     </PendingSurface>
   )
@@ -88,10 +112,8 @@ export function RequestChangesPending() {
         <div className="min-h-[340px] p-5 lg:p-6">
           <TextSkeleton length="long" />
           <TextSkeleton className="mt-2" length="medium" size="meta" />
-          <div className="mt-6 space-y-3">
-            {PENDING_DIFF_LINES.map((line) => (
-              <LineSkeleton key={line.id} length={line.length} />
-            ))}
+          <div className="mt-4">
+            <DiffSkeleton />
           </div>
         </div>
       </section>

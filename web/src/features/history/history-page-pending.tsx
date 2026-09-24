@@ -1,22 +1,27 @@
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
-import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
+import { TextSkeleton } from '@/components/ui/skeleton'
+import { useSearch } from '@tanstack/react-router'
+import { parseHistoryFeed } from '@/api/history-inputs'
 import { CommitDetailSkeleton } from './history-commit-detail-skeleton'
+import { HistoryEntryListSkeleton } from './history-entry-list'
+import { HistoryFeedTogglePending } from './history-feeds'
 
-const PENDING_ACTIONS = <BlockSkeleton className="h-8 w-28" />
-const PENDING_SUMMARY = <TextSkeleton length="short" />
-
+// Mirrors HistoryPage: the feed toggle, the entry list box, then the selected
+// entry's detail, which its panel draws the same way while it loads.
 export function HistoryPagePending() {
+  const feed = useSearch({ strict: false, select: (search) => parseHistoryFeed(search.feed) })
   return (
     <PendingSurface label="Loading repository history">
       <WorkbenchPane>
-        <WorkbenchBar actions={PENDING_ACTIONS} summary={PENDING_SUMMARY} title="history" />
-        <div className="min-w-0 border-t border-border">
-          <div className="border-b border-border px-5 py-3">
-            <TextSkeleton length="short" />
+        <WorkbenchBar summary={<TextSkeleton length="short" />} title="history" />
+        <section className="border-t border-border">
+          <HistoryFeedTogglePending feed={feed} />
+          <div className="max-h-80 overflow-hidden border-b border-border">
+            <HistoryEntryListSkeleton />
           </div>
-          <CommitDetailSkeleton showDiff />
-        </div>
+          <CommitDetailSkeleton />
+        </section>
       </WorkbenchPane>
     </PendingSurface>
   )

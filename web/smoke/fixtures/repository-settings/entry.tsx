@@ -47,6 +47,7 @@ function App() {
     <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe}>
       <RepoSettingsPage
         params={{ owner: repo.owner_handle, repo: repo.name }} collaboration={settings.value?.collaboration ?? null}
+        collaborationLoading={!settings.value}
         createInvite={async (input) => {
           calls.push(input)
           const invite = {

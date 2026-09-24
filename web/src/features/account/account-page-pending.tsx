@@ -1,55 +1,29 @@
 import { ApplicationPendingShell } from '@/components/pending-surface'
+import { SectionRows } from '@/components/section-rows'
+import { Button } from '@/components/ui/button'
+import { UserButton } from '@clerk/tanstack-react-start'
+import { Plus } from 'lucide-react'
 import { AccountPageHeader } from './account-page-header'
-import { SectionRow, SectionRows } from '@/components/section-rows'
-import {
-  BlockSkeleton,
-  TextSkeleton,
-  type TextSkeletonLength,
-} from '@/components/ui/skeleton'
+import { CliLoginSection, CliSessionListSkeleton, CliSessionsSection } from './account-sections'
 
-const SESSION_LABEL_LENGTHS: TextSkeletonLength[] = ['medium', 'long']
-
+// Only the session list is data; the rest of the page is drawn as loaded.
 export function AccountPagePending() {
   return (
-    <ApplicationPendingShell contextLabel="Account" label="Loading account">
+    <ApplicationPendingShell actions={<UserButton />} contextLabel="Account" label="Loading account">
       <div className="py-8 lg:py-10">
         <AccountPageHeader />
         <SectionRows>
-          {['login', 'sessions'].map((row) => (
-            <SectionRow
-              description={(
-                <>
-                  <TextSkeleton length="medium" size="meta" />
-                  <TextSkeleton className="mt-1.5" length="medium" size="meta" />
-                </>
-              )}
-              key={row}
-              title={<TextSkeleton length="short" />}
-            >
-              {row === 'login' ? (
-                <BlockSkeleton className="h-8 w-32" />
-              ) : (
-                <div className="divide-y divide-border border-y border-border">
-                  {SESSION_LABEL_LENGTHS.map((length) => (
-                    <div
-                      className="flex items-center justify-between gap-3 py-3"
-                      key={length}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <TextSkeleton length={length} />
-                        <TextSkeleton
-                          className="mt-2"
-                          length="long"
-                          size="meta"
-                        />
-                      </div>
-                      <BlockSkeleton className="size-8 shrink-0" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SectionRow>
-          ))}
+          <CliLoginSection>
+            <div className="space-y-3">
+              <Button disabled size="sm" type="button">
+                <Plus className="size-3.5" />
+                <span>Create command</span>
+              </Button>
+            </div>
+          </CliLoginSection>
+          <CliSessionsSection>
+            <CliSessionListSkeleton />
+          </CliSessionsSection>
         </SectionRows>
       </div>
     </ApplicationPendingShell>

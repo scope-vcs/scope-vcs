@@ -1,43 +1,52 @@
+import { useParams } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
 import { PendingSurface } from '@/components/pending-surface'
-import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
-import { RequestWorkspaceListSkeleton } from './request-workspace-list'
 import {
   readRequestWorkspaceCollapsed,
   saveRequestWorkspaceCollapsed,
 } from './request-workspace-collapse'
 import { RequestWorkspaceShell } from './request-workspace-shell'
+import { RequestWorkspaceSidebar } from './request-workspace-sidebar'
 
+const ignore = () => {}
+
+// The real sidebar with no queue yet. Whether the viewer maintains the
+// repository arrives with it, so the sidebar cannot pick its groups.
 export function RequestsPagePending({ children }: { children?: ReactNode }) {
+  const params = useParams({ from: '/$owner/$repo' })
+  const selectedId = useParams({ strict: false, select: (value) => value.requestId })
   const [collapsed, setCollapsed] = useState(readRequestWorkspaceCollapsed)
+  const changeCollapsed = (value: boolean) => {
+    setCollapsed(value)
+    saveRequestWorkspaceCollapsed(value)
+  }
   return (
     <PendingSurface label="Loading requests">
       <RequestWorkspaceShell
         collapsed={collapsed}
         detailOpenOnMobile={Boolean(children)}
-        onCollapsedChange={(value) => {
-          setCollapsed(value)
-          saveRequestWorkspaceCollapsed(value)
-        }}
+        onCollapsedChange={changeCollapsed}
         sidebar={
-          <aside className="request-workspace-sidebar" data-state={collapsed ? 'closed' : 'pinned'}>
-            {collapsed ? (
-              <BlockSkeleton className="mt-[14px] ml-[11px] size-8" />
-            ) : (
-              <div className="request-workspace-sidebar-inner">
-                <div className="request-workspace-sidebar-tools">
-                  <BlockSkeleton className="h-8 w-full" />
-                </div>
-                {/* Which groups show depends on the viewer's access, which
-                    arrives with the repository, so the label waits too. */}
-                <div className="request-workspace-group-label">
-                  <TextSkeleton length="short" size="meta" />
-                  <TextSkeleton className="ml-auto" length="tiny" size="meta" />
-                </div>
-                <RequestWorkspaceListSkeleton />
-              </div>
-            )}
-          </aside>
+          <RequestWorkspaceSidebar
+            actionError={null}
+            collapsed={collapsed}
+            error={null}
+            focus={false}
+            loading={false}
+            maintainer={null}
+            onAction={ignore}
+            onCollapsedChange={changeCollapsed}
+            onFocusToggle={ignore}
+            onLoadMore={ignore}
+            onRetry={ignore}
+            onSearch={ignore}
+            pages={undefined}
+            params={params}
+            pendingId={null}
+            query=""
+            selectedId={selectedId}
+            skeleton
+          />
         }
       >
         {children}

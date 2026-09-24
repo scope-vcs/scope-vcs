@@ -1,6 +1,5 @@
 import type { RepoSummaryResponse } from '@/api/types.generated'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
-import { SectionRow, SectionRows } from '@/components/section-rows'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useEffect, useReducer, useState, type FormEvent } from 'react'
@@ -11,6 +10,7 @@ import {
   type MetadataDraft,
   type RepositoryMetadata,
 } from './repository-metadata-draft'
+import { REPOSITORY_DETAIL_FIELDS, RepositoryDetailsSection } from './repo-settings-sections'
 
 type Metadata = RepositoryMetadata
 type SaveState =
@@ -75,66 +75,61 @@ export function RepositoryMetadataForm({
   }
 
   return (
-    <SectionRows className="mt-0 border-b border-border">
-      <SectionRow
-        description="Help visitors understand the project. These details are public."
-        title="Repository details"
+    <RepositoryDetailsSection>
+      <form
+        onSubmit={submit}
       >
-        <form
-          onSubmit={submit}
-        >
-          <fieldset className="max-w-xl space-y-4" disabled={state.status === 'saving'}>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium" htmlFor="repo-description">
-                Description
-              </label>
-              <Input
-                value={draft.value.description}
-                onChange={(event) => edit('description', event.target.value)}
-                id="repo-description"
-                maxLength={160}
-                name="description"
-                placeholder="A short description of this project"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium" htmlFor="repo-website">
-                Website or documentation
-              </label>
-              <Input
-                value={draft.value.website_url}
-                onChange={(event) => edit('website_url', event.target.value)}
-                id="repo-website"
-                maxLength={2048}
-                name="website_url"
-                placeholder="https://example.com"
-                type="url"
-              />
-            </div>
-            {draft.conflict && (
-              <p className="text-sm text-muted-foreground" role="status">
-                Repository details changed while you were editing. Your draft is preserved.
-                {' '}<button className="underline" type="button" onClick={() => {
-                  dispatchDraft({ type: 'use-incoming' })
-                  setState({ status: 'idle' })
-                }}>Use updated details</button>
-              </p>
+        <fieldset className="max-w-xl space-y-4" disabled={state.status === 'saving'}>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium" htmlFor="repo-description">
+              {REPOSITORY_DETAIL_FIELDS.description}
+            </label>
+            <Input
+              value={draft.value.description}
+              onChange={(event) => edit('description', event.target.value)}
+              id="repo-description"
+              maxLength={160}
+              name="description"
+              placeholder="A short description of this project"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium" htmlFor="repo-website">
+              {REPOSITORY_DETAIL_FIELDS.website_url}
+            </label>
+            <Input
+              value={draft.value.website_url}
+              onChange={(event) => edit('website_url', event.target.value)}
+              id="repo-website"
+              maxLength={2048}
+              name="website_url"
+              placeholder="https://example.com"
+              type="url"
+            />
+          </div>
+          {draft.conflict && (
+            <p className="text-sm text-muted-foreground" role="status">
+              Repository details changed while you were editing. Your draft is preserved.
+              {' '}<button className="underline" type="button" onClick={() => {
+                dispatchDraft({ type: 'use-incoming' })
+                setState({ status: 'idle' })
+              }}>Use updated details</button>
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="sm" type="submit">
+              {state.status === 'saving' ? 'Saving…' : 'Save details'}
+            </Button>
+            {state.status === 'saved' && (
+              <output className="text-sm text-muted-foreground">Details saved.</output>
             )}
-            <div className="flex flex-wrap items-center gap-3">
-              <Button size="sm" type="submit">
-                {state.status === 'saving' ? 'Saving…' : 'Save details'}
-              </Button>
-              {state.status === 'saved' && (
-                <output className="text-sm text-muted-foreground">Details saved.</output>
-              )}
-            </div>
-            {state.status === 'failed' && (
-              <p className="text-sm text-destructive" role="alert">{state.message}</p>
-            )}
-          </fieldset>
-        </form>
-      </SectionRow>
-    </SectionRows>
+          </div>
+          {state.status === 'failed' && (
+            <p className="text-sm text-destructive" role="alert">{state.message}</p>
+          )}
+        </fieldset>
+      </form>
+    </RepositoryDetailsSection>
   )
 }
 

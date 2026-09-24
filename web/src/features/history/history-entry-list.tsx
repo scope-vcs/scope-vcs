@@ -1,9 +1,38 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { BlockSkeleton, TextSkeleton, type TextSkeletonLength } from '@/components/ui/skeleton'
 import { historyEntryLabels } from '@/features/history/history-row-labels'
 import { cn } from '@/lib/utils'
 import { History, LoaderCircle } from 'lucide-react'
 import type { HistoryEntrySummaryResponse } from '@/api/types.generated'
+
+const HISTORY_ENTRY_ROW_CLASS =
+  'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-5 py-2.5 text-left text-sm sm:px-6 lg:px-8'
+
+const PENDING_TITLE_LENGTHS: TextSkeletonLength[] = ['long', 'medium', 'long', 'short', 'medium']
+
+/** Enough rows to fill the list box the way an active repository's history does. */
+export function HistoryEntryListSkeleton() {
+  return (
+    <div className="py-2">
+      {PENDING_TITLE_LENGTHS.map((length, row) => (
+        <div className={HISTORY_ENTRY_ROW_CLASS} key={`entry-${row}`}>
+          <span className="flex min-w-0 items-center gap-2">
+            <BlockSkeleton className="size-3.5 shrink-0" />
+            <span className="min-w-0">
+              <span className="flex min-w-0 items-center gap-2">
+                <BlockSkeleton className="h-5 w-11 shrink-0 rounded-md" />
+                <TextSkeleton length={length} />
+              </span>
+              <TextSkeleton className="mt-0.5" length="short" size="meta" />
+            </span>
+          </span>
+          <TextSkeleton length="short" size="meta" />
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function HistoryEntryList({
   entries,
@@ -32,7 +61,7 @@ export function HistoryEntryList({
             aria-label={labels.ariaLabel}
             aria-pressed={selected}
             className={cn(
-              'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-5 py-2.5 text-left text-sm sm:px-6 lg:px-8',
+              HISTORY_ENTRY_ROW_CLASS,
               'transition-colors',
               selected
                 ? 'bg-accent shadow-[inset_2px_0_0_0_var(--foreground)]'

@@ -9,12 +9,7 @@ import { PendingSurface } from '@/components/pending-surface'
 import { Button } from '@/components/ui/button'
 import { formatBytes } from '@/lib/format-bytes'
 import { shortOid } from '@/lib/short-oid'
-import {
-  LineSkeleton,
-  TextSkeleton,
-  type LineSkeletonLength,
-} from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
+import { DiffSkeleton } from './diff-skeleton'
 import DOMPurify from 'dompurify'
 import { File, FileText, TriangleAlert, X } from 'lucide-react'
 import { useLayoutEffect, useRef } from 'react'
@@ -159,41 +154,6 @@ function PrerenderedDiff({ html }: { html: string }) {
       ref={containerRef}
       suppressHydrationWarning
     />
-  )
-}
-
-const PENDING_DIFF_LINES: {
-  highlighted?: boolean
-  id: string
-  length: LineSkeletonLength
-}[] = [
-  { id: 'first', length: 'long' },
-  { id: 'second', length: 'short' },
-  { id: 'third', length: 'long' },
-  { highlighted: true, id: 'fourth', length: 'medium' },
-  { highlighted: true, id: 'fifth', length: 'long' },
-  { id: 'sixth', length: 'short' },
-  { id: 'seventh', length: 'long' },
-  { id: 'eighth', length: 'medium' },
-  { id: 'ninth', length: 'long' },
-]
-
-function DiffSkeleton() {
-  return (
-    <div className="py-3 font-mono">
-      {PENDING_DIFF_LINES.map((line) => (
-        <div
-          className={cn(
-            'grid min-h-7 grid-cols-[36px_minmax(0,1fr)] items-center gap-3 px-4',
-            line.highlighted ? 'bg-success-soft/50' : undefined,
-          )}
-          key={line.id}
-        >
-          <TextSkeleton length="tiny" size="meta" />
-          <LineSkeleton length={line.length} />
-        </div>
-      ))}
-    </div>
   )
 }
 

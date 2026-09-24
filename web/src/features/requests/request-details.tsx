@@ -2,6 +2,7 @@ import type { RequestParams } from '@/api/types'
 import type { RequestRatingResponse, RequestRatingsResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { shortOid } from '@/lib/short-oid'
 import { cn } from '@/lib/utils'
+import { DetailsSection, DetailsValue } from './request-details-layout'
 import { createContext, type ReactNode, use } from 'react'
 import { RequestInvitees } from './request-invitees'
 import { RequestRatingsSection } from './request-ratings-section'
@@ -80,26 +81,4 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
   )
 }
 
-function DetailsSection({
-  children,
-  title,
-}: {
-  children: ReactNode
-  title: string
-}) {
-  return (
-    <section>
-      <h2 className="label-mono text-muted-foreground">{title}</h2>
-      <div className="mt-3 grid min-w-0 gap-2.5">{children}</div>
-    </section>
-  )
-}
 
-function DetailsValue({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 text-[13px]">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 break-all text-right font-mono">{value}</span>
-    </div>
-  )
-}
