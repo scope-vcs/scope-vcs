@@ -1,6 +1,6 @@
 # Releases and maintenance recovery
 
-`release.yml` is the production entry point. It runs once daily at 3:08 AM in
+`release.yml` is the production entry point. It runs once daily at 2:08 AM in
 `America/Chicago`, including daylight saving changes. GitHub may delay the
 scheduled start. A failed run does not trigger another scheduled attempt that
 day. Use manual dispatch for a correction or recovery:
