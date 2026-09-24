@@ -11,6 +11,10 @@ import { build, preview } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 
 const require = createRequire(import.meta.url)
+// RAIL: past 1,000 ms a user loses focus on the task.
+const MAX_COLD_DIAGRAM_MS = 1000
+// Measured 212 KiB plus headroom; one diagram-bearing request stays under the initial route budget.
+const MAX_LAZY_DIAGRAM_GZIP_BYTES = 256 * 1024
 
 test('request diagrams load on demand and reuse rendered output across navigation', { timeout: 180_000 }, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'scope-mermaid-'))
@@ -84,7 +88,11 @@ test('request diagrams load on demand and reuse rendered output across navigatio
   const firstDiagramMs = await page.evaluate((start) => performance.now() - start, started)
   const lazyBytes = chunks.filter((chunk) => !initial.has(chunk.fileName) && fetched.some((url) => url.endsWith(chunk.fileName)))
     .reduce((bytes, chunk) => bytes + gzipSync(chunk.code).byteLength, 0)
-  t.diagnostic(`Cold diagram ready: ${Math.round(firstDiagramMs)}ms; loaded lazy JS: ${Math.round(lazyBytes / 1024)} KiB gzip estimate.`)
+  assert.ok(firstDiagramMs <= MAX_COLD_DIAGRAM_MS,
+    `cold diagram render took ${Math.round(firstDiagramMs)} ms, exceeding the ${MAX_COLD_DIAGRAM_MS} ms RAIL focus-loss boundary`)
+  assert.ok(lazyBytes <= MAX_LAZY_DIAGRAM_GZIP_BYTES,
+    `diagram lazy JS is ${Math.round(lazyBytes / 1024)} KiB gzip, over the ${MAX_LAZY_DIAGRAM_GZIP_BYTES / 1024} KiB cap`)
+  t.diagnostic(`Longest task during cold diagram render: ${Math.round(await page.evaluate(() => Math.max(0, ...window.diagramLongTasks)))}ms.`)
   assert.equal(await page.getByRole('region', { name: 'Reply', exact: true }).locator('img').count(), 0)
   assert.equal((await page.evaluate(() => window.mermaidCacheStats())).entries, 1)
   const originalSvg = await svgText(description)
@@ -153,7 +161,6 @@ test('request diagrams load on demand and reuse rendered output across navigatio
   await description.getByRole('status').waitFor()
   assert.equal(fetched.some((url) => url.includes('example.invalid')), false)
   assert.deepEqual(errors, [])
-  t.diagnostic(`Longest browser task: ${Math.round(await page.evaluate(() => Math.max(0, ...window.diagramLongTasks)))}ms; Mermaid stays out of initial imports.`)
 })
 
 async function loadedImage(region) {
