@@ -1,16 +1,16 @@
+import { FileWorkbench } from '@/components/file-workbench'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
+import { PendingSurface } from '@/components/pending-surface'
 import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
-import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
-import type { CachedResource } from '@/lib/use-cached-resource'
-import { useParams } from '@tanstack/react-router'
-import { RepositoryCodeView } from './repository-code-view'
+import { useState } from 'react'
+import { FileNavigatorSkeleton, SourceCodeSkeleton } from './repository-code-skeletons'
 import { RepositoryLatestActivityPending } from './repository-latest-activity'
 
-// The code view draws its own loading layout for resources it has not started,
-// so the route's pending state is that same view with nothing requested yet.
+// Mirrors RepositoryCodeView before its files arrive, without importing it:
+// pending components load with the route tree, and the view's renderers
+// would put the whole code page in the first download.
 export function RepositoryCodePending() {
-  const params = useParams({ from: '/$owner/$repo' })
-  const workspaceTabs = useWorkspaceTabs({ activeId: null })
+  const [navigationOpen, setNavigationOpen] = useState(false)
   return (
     <WorkbenchPane>
       <WorkbenchBar
@@ -20,18 +20,24 @@ export function RepositoryCodePending() {
         title="Code"
       />
       <RepositoryLatestActivityPending />
-      <RepositoryCodeView
-        content={idleResource()}
-        file={idleResource()}
-        onSelectFilePath={() => {}}
-        params={params}
+      <FileWorkbench
+        className="lg:min-h-[calc(100dvh-var(--app-chrome))]"
+        navigationOpen={navigationOpen}
+        onNavigationOpenChange={setNavigationOpen}
         selectedPath={null}
-        workspaceTabs={workspaceTabs}
-      />
+      >
+        <div className="min-w-0 px-2 py-3">
+          <PendingSurface className="min-h-[220px]" delay label="Loading repository files">
+            <FileNavigatorSkeleton />
+          </PendingSurface>
+        </div>
+        <div>
+          <div className="min-h-10 border-b border-border" />
+          <PendingSurface className="min-h-[220px]" delay label="Loading repository introduction">
+            <SourceCodeSkeleton />
+          </PendingSurface>
+        </div>
+      </FileWorkbench>
     </WorkbenchPane>
   )
-}
-
-function idleResource<T extends object>(): CachedResource<T> {
-  return { error: null, identity: null, refreshing: false, retry: () => {}, status: 'idle', value: null }
 }
