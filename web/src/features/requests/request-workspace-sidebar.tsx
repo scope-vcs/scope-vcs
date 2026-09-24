@@ -173,16 +173,23 @@ export function RequestWorkspaceSidebar({
     ? undefined
     : allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
   const moved = (items: QueueRow[]) => Number(current !== undefined && items.includes(current))
+  const waiting = grouped.waiting.filter((row) => row !== current)
+  const waitingCount = activeCount(grouped.waiting.length - moved(grouped.waiting))
+  // A reader's open requests are their whole queue, so they stay listed.
   // Unclaimed and Set aside only ever hold maintainer placements, so readers
-  // see their open requests and the finished history.
+  // see just their work and the finished history.
   const disclosures = [
-    {
-      group: 'waiting',
-      section: 'active',
-      label: maintainer ? REQUEST_ATTENTION_GROUP_LABELS.waiting : 'Open',
-      count: activeCount(grouped.waiting.length - moved(grouped.waiting)),
-      emptyLabel: maintainer ? EMPTY_LABELS.waiting : EMPTY_LABELS.needs_you,
-    } as const,
+    ...(maintainer
+      ? [
+          {
+            group: 'waiting',
+            section: 'active',
+            label: REQUEST_ATTENTION_GROUP_LABELS.waiting,
+            count: waitingCount,
+            emptyLabel: EMPTY_LABELS.waiting,
+          } as const,
+        ]
+      : []),
     ...(maintainer ? (['unclaimed', 'set_aside', 'done'] as const) : (['done'] as const)).map(
       (group) => ({
         group,
@@ -311,6 +318,21 @@ export function RequestWorkspaceSidebar({
                     +{Math.min(folded, 99)}
                   </button>
                 </>
+              )}
+              {!maintainer && (waiting.length > 0 || needsYou.length === 0) && (
+                <section className="request-workspace-open">
+                  <h2 className="request-workspace-group-label text-muted-foreground">
+                    <span>Open</span>
+                    <span className="tabular-nums">{waitingCount}</span>
+                  </h2>
+                  <RequestWorkspaceList
+                    {...common}
+                    emptyLabel={EMPTY_LABELS.needs_you}
+                    hasMore={activeHasMore}
+                    items={waiting}
+                    onLoadMore={() => onLoadMore('active')}
+                  />
+                </section>
               )}
               <div className="request-workspace-disclosures">
                 {disclosures.map(({ group, section, label, count, emptyLabel }) => (
