@@ -37,8 +37,9 @@ export const notes = {
   repo: 'AGENTS.md stays private. it has some choice language in it',
   merge: 'you also get the merge button. pressing it never gets old',
   corner: 'legal/ is 12,250 lines of licenses. someone should probably read it',
-  install: 'great for the folder named final-final-v2',
-  footer: "an earlier draft of this page was about a sourdough starter. it's private now, where it belongs",
+  // Non-breaking hyphens keep the folder name on one line.
+  install: 'great for the folder named final\u2011final\u2011v2',
+  footer: 'an earlier draft of this page was about a sourdough starter. yikes',
 } as const
 
 export type NoteId = keyof typeof notes | 'command'

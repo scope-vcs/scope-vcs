@@ -16,6 +16,9 @@ const landingShell = 'mx-auto w-[calc(100%-64px)] max-w-[1120px] max-[521px]:w-[
 const column = 'relative min-w-0 scroll-mt-8'
 const columnTitle = 'max-w-[12ch] text-[clamp(32px,3.6vw,48px)] leading-[1.04] font-medium tracking-[-.045em]'
 const columnNote = 'absolute left-0 top-[calc(100%+24px)] max-w-[34ch]'
+// The private copy can't scroll, so its longer command widens the box toward
+// the window edge (the column starts 40px past the centre) and wraps beyond it.
+const privateCommand = 'w-max min-w-full max-w-[calc(50vw-56px)] [&_pre]:overflow-visible [&_pre]:whitespace-pre-wrap max-[901px]:w-auto max-[901px]:max-w-none'
 const rise = (delay: number) => ({ '--rise-delay': `${delay}ms` }) as CSSProperties
 
 /** The whole page, once per view. Only the public view carries ids, headings
@@ -90,7 +93,7 @@ export function LandingContent({
               <Heading className={columnTitle} level={2}><Swap text={installTitle} /></Heading>
               <div className="mt-12 min-w-0" data-note="command">
                 <CliInstallCommand
-                  codeBlockClassName={cn('landing-terminal rounded-lg border-0 py-2 pl-4 pr-2 shadow-none [&_pre]:whitespace-pre [&_pre]:py-2.5 [&_pre]:pr-12 [&_pre]:text-sm [&_pre]:leading-6', installCalled && 'is-called')}
+                  codeBlockClassName={cn('landing-terminal rounded-lg border-0 py-2 pl-4 pr-2 shadow-none [&_pre]:whitespace-pre [&_pre]:py-2.5 [&_pre]:pr-12 [&_pre]:text-sm [&_pre]:leading-6', installCalled && 'is-called', !isPublic && privateCommand)}
                   commands={shownCommands}
                   initialPlatform={initialPlatform}
                   onPlatformChange={onPlatformChange}
