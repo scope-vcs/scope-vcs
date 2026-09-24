@@ -31,13 +31,13 @@ export function RepositoryCodePending() {
         selectedPath={null}
       >
         <div className="min-w-0 px-2 py-3">
-          <PendingSurface className="min-h-[220px]" delay label="Loading repository files">
+          <PendingSurface className="min-h-[220px]" label="Loading repository files">
             <FileNavigatorSkeleton />
           </PendingSurface>
         </div>
         <div>
           <SourceTabStripSkeleton />
-          <PendingSurface className="min-h-[220px]" delay label="Loading repository introduction">
+          <PendingSurface className="min-h-[220px]" label="Loading repository introduction">
             <SourceCodeSkeleton />
           </PendingSurface>
         </div>

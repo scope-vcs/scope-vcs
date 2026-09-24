@@ -278,7 +278,6 @@ function CliLoginAction({
     return (
       <PendingSurface
         className="min-h-8 min-w-24"
-        delay
         label="Loading account authorization"
       >
         <BlockSkeleton className="h-8 w-24" />

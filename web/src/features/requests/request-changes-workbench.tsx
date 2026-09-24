@@ -431,7 +431,6 @@ function RequestCommitContext({
       {discussionReferences.loading ? (
         <PendingSurface
           className="mt-3 min-h-6"
-          delay
           label="Loading discussion references"
         >
           <div className="space-y-2">
