@@ -6,8 +6,8 @@ caller's working directory.
 
 | Entrypoint | Coverage |
 | --- | --- |
-| `backend` | Workspace formatting, tests, API test support, local development helpers, Clippy |
-| `cli` | Standalone formatting, tests, distribution selector, Clippy |
+| `backend` | Workspace formatting, dependency advisories, tests, API test support, local development helpers, Clippy |
+| `cli` | Standalone formatting, dependency advisories, tests, distribution selector, Clippy |
 | `cli-bundle` | Host release binaries, packaged analyzer runtime, native installer check |
 | `web` | Tests, types, observer boundary, React health, structure, build |
 | `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |
@@ -16,7 +16,7 @@ caller's working directory.
 | `integration cli` | Opt-in two-actor contribution flow against a running seeded stack |
 | `ops` | Deployment, staging, benchmark, and AWS infrastructure tests |
 
-Callers install Rust, Node and pnpm dependencies, configure databases and secrets,
+Callers install Rust, cargo-deny (`dev/install-cargo-deny.sh`), Node and pnpm dependencies, configure databases and secrets,
 and start/stop integration stacks. The contract check needs Rust and web
 dependencies. It runs with the backend checks because the API crate generates
 the contract, so the web gate does not install Rust. CLI integration requires

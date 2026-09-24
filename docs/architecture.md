@@ -56,6 +56,11 @@ The dependency rules are:
 application boundaries. It also verifies the required behavior-owned source
 homes and rejects the retired catch-all module paths.
 
+The backend and CLI gates run `cargo deny --locked check advisories` with
+`deny.toml` and `cli/deny.toml`, which fail on known vulnerabilities, yanked or
+unsound crates, and unmaintained direct dependencies unless an ignore entry
+records a reason.
+
 ## Contract and domain boundary
 
 `crates/scope-domain/` owns durable concepts, invariants, transitions, and

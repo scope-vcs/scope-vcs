@@ -46,6 +46,9 @@ jobs:
           shared-key: workspace
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
+      - name: Install cargo-deny
+        run: ./dev/install-cargo-deny.sh
+
       - name: Check Rust workspace
         run: ./dev/checks/backend
 
