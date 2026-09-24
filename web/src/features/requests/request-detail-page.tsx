@@ -162,6 +162,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     request_id: request.id,
   }), [params.owner, params.repo, request.id])
   const paneRef = useRef<HTMLDivElement>(null)
+  const moreActions = useRef<HTMLButtonElement>(null)
   const [descriptionActions, setDescriptionActions] = useState<HTMLElement | null>(null)
   const rail = useDetailPaneRail(paneRef)
   const [lifecycleBar, setLifecycleBar] = useState<HTMLDivElement | null>(null)
@@ -233,6 +234,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   disabled={requestActions.pending !== null || autoMerge.pending !== null}
                   onViewActivity={history.openHistory}
                   request={request}
+                  triggerRef={moreActions}
                 />
               </>
             }
@@ -303,6 +305,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             loading={history.loading}
             onOpenChange={history.onOpenChange}
             open={history.open}
+            returnFocus={moreActions}
           />
         </div>
       </WorkbenchPane>

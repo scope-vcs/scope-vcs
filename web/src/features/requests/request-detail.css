@@ -34,12 +34,6 @@
   .request-detail-header-meta {
     width: 100%;
   }
-
-  /* Narrow headers start the actions at the left edge, so the menu opens rightward. */
-  .request-detail-more-menu {
-    right: auto;
-    left: 0;
-  }
 }
 
 /*

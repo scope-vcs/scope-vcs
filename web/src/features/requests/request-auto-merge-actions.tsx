@@ -5,6 +5,7 @@ import { Clock3, LoaderCircle, X } from 'lucide-react'
 import { useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
 import { autoMergeAuthorizer } from './request-auto-merge-model'
+import { canMergeRequest } from './request-lifecycle-model'
 import type { RequestAutoMergeController } from './use-request-auto-merge'
 
 type Dialog =
@@ -39,6 +40,9 @@ export function RequestAutoMergeActions({
   const revisionId = status?.revision_id ?? null
   const active = intent?.status === 'Active'
   const pending = autoMerge.pending !== null
+  // Checks and auto-merge status refresh separately. Once the request can merge
+  // directly, an offer that has not caught up yet would duplicate Merge.
+  const canOffer = status?.can_enable === true && !canMergeRequest(request)
 
   function openDialog(next: Exclude<Dialog, null>) {
     setDialog(next)
@@ -91,7 +95,7 @@ export function RequestAutoMergeActions({
           ) : null}
         </span>
       ) : null}
-      {!active && status.can_enable && revisionId ? (
+      {!active && canOffer && revisionId ? (
         <Button
           disabled={disabled || pending}
           onClick={() => openDialog({
