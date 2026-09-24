@@ -378,9 +378,13 @@ test('Node workflows cache pnpm and browser downloads by the web lockfile', () =
   const integrationCi = read('.github/workflows/scope-integration-ci.yml');
   for (const workflow of [integrationCi, read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
     assert.match(workflow, /uses: pnpm\/action-setup@[0-9a-f]{40} # v5/);
-    assert.match(workflow, /cache: pnpm/);
     assert.match(workflow, /cache-dependency-path: web\/pnpm-lock\.yaml/);
   }
+  for (const workflow of [read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
+    assert.match(workflow, /cache: pnpm/);
+  }
+  // The integration job installs web dependencies only for the web lane, so the pnpm store cache follows that lane.
+  assert.match(integrationCi, /cache: \$\{\{ inputs\.run_web && 'pnpm' \|\| '' \}\}/);
   assert.match(integrationCi, /path: ~\/\.cache\/ms-playwright/);
   assert.match(integrationCi, /key: playwright-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('web\/pnpm-lock\.yaml'\) \}\}/);
 });
