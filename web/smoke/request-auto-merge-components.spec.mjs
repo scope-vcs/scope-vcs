@@ -86,7 +86,7 @@ test('auto-merge confirms one revision and stays usable on desktop and mobile', 
     await page.getByRole('button', { name: 'Merge when checks pass' }).waitFor()
     assert.equal(await page.getByText(/Authorized by/).count(), 0)
     await page.evaluate(() => window.showAutoMergeLoading())
-    assert.equal(await page.locator('main > div.fixed').count(), 0)
+    await page.locator('main > div.fixed').waitFor({ state: 'detached' })
     if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
       await page.screenshot({
         path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.loading.png`,
