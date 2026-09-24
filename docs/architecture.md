@@ -155,6 +155,15 @@ data during refresh. Components subscribe and render instead of copying server
 state or owning request completion. History and request changes share the
 changed-files workbench in `web/src/features/history/changed-files-workbench.tsx`.
 
+`pnpm build` in `web/` enforces client JavaScript budgets after the review diff
+worker check. A Vite plugin in `web/vite.config.ts` writes the client chunk graph
+to `.output/client-chunk-graph.json`, outside the served `public` directory.
+`web/scripts/check-client-bundle.mjs` gzips every emitted script and fails when
+the entry chunks plus their static imports exceed 300 KiB, or when any single
+chunk exceeds 512 KiB. The caps and their references are constants at the top of
+that script. `web/smoke/request-mermaid-components.spec.mjs` separately caps the
+lazy JavaScript for a cold diagram render at 256 KiB and the render at 1,000 ms.
+
 ## Reading important behavior
 
 Follow these paths from application coordination to durable rules and storage:
