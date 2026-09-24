@@ -233,7 +233,8 @@ test('Details is a separate tab that reuses request data and preserves discussio
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
     const shell = await captureRequestShell(page)
     const header = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Add bounded retry timing', exact: true }) })
-    assert.equal(await header.getByText('Open', { exact: true }).getAttribute('data-variant'), 'success')
+    assert.equal(await header.getByText('Maintainer merges', { exact: true }).getAttribute('data-variant'), 'outline')
+    assert.equal(await header.getByText('Open', { exact: true }).count(), 0)
     assert.equal(await header.getByText('Open request', { exact: true }).count(), 0)
     assert.equal(await page.getByRole('navigation', { name: 'Request navigation' }).count(), 0)
     const requestLoads = []

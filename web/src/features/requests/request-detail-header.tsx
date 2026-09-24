@@ -5,12 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Check, Copy } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import {
-  requestMergeabilityLabel,
-  requestMergeabilityTone,
-  requestStatusLabel,
-  requestStatusTone,
-} from './request-labels'
+import { requestMergeabilityLabel, requestMergeabilityTone } from './request-labels'
 import { useRequestWorkspace } from './request-workspace-context'
 
 /** Title with pane-responsive metadata and request actions. */
@@ -31,14 +26,9 @@ export function RequestDetailHeader({
       </h1>
       <div className="request-detail-header-secondary mt-4">
         <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs leading-5 text-muted-foreground">
-          <Badge stamp variant={requestStatusTone(request)}>
-            {requestStatusLabel(request)}
+          <Badge stamp variant={requestMergeabilityTone(request)}>
+            {requestMergeabilityLabel(request)}
           </Badge>
-          {request.state === 'Open' ? (
-            <Badge stamp variant={requestMergeabilityTone(request)}>
-              {requestMergeabilityLabel(request)}
-            </Badge>
-          ) : null}
           <span className="flex min-w-0 items-center gap-1">
             <span className="truncate font-mono text-xs">{request.name}</span>
             <CopyBranchButton branch={request.name} />

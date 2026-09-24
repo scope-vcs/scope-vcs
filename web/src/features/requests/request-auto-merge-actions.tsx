@@ -1,14 +1,11 @@
 import type { RequestSummaryResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { shortOid } from '@/lib/short-oid'
-import { CheckCircle2, Clock3, LoaderCircle, X, XCircle } from 'lucide-react'
+import { Clock3, LoaderCircle, X } from 'lucide-react'
 import { useState } from 'react'
 import { RequestConfirmDialog } from './request-confirm-dialog'
-import {
-  autoMergeAuthorizer,
-  autoMergeIntentTitle,
-  autoMergeStopReasonText,
-} from './request-auto-merge-model'
+import { autoMergeAuthorizer } from './request-auto-merge-model'
+import { canMergeRequest } from './request-lifecycle-model'
 import type { RequestAutoMergeController } from './use-request-auto-merge'
 
 type Dialog =
@@ -43,6 +40,9 @@ export function RequestAutoMergeActions({
   const revisionId = status?.revision_id ?? null
   const active = intent?.status === 'Active'
   const pending = autoMerge.pending !== null
+  // Checks and auto-merge status refresh separately. Once the request can merge
+  // directly, an offer that has not caught up yet would duplicate Merge.
+  const canOffer = status?.can_enable === true && !canMergeRequest(request)
 
   function openDialog(next: Exclude<Dialog, null>) {
     setDialog(next)
@@ -59,30 +59,21 @@ export function RequestAutoMergeActions({
 
   return (
     <>
-      {intent ? (
+      {/* Ended authorizations stay in the activity history, not the header. */}
+      {active ? (
         <span
           aria-live="polite"
           className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs"
         >
           <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-            {intent.status === 'Active' ? (
-              <Clock3 className="size-3.5 text-info-strong" />
-            ) : intent.status === 'Fulfilled' ? (
-              <CheckCircle2 className="size-3.5 text-success-strong" />
-            ) : (
-              <XCircle className="size-3.5 text-muted-foreground" />
-            )}
-            {autoMergeIntentTitle(intent.status)}
+            <Clock3 className="size-3.5 text-info-strong" />
+            Will merge when checks pass
           </span>
           <span className="text-muted-foreground">
             {autoMergeAuthorizer(intent.actor, viewerId)} · {shortOid(intent.head_oid)}
-            {intent.status === 'Active' && status.waiting_reason
-              ? ` · ${status.waiting_reason}`
-              : intent.status === 'Stopped' && intent.reason
-                ? ` · ${autoMergeStopReasonText(intent.reason)}`
-                : ''}
+            {status.waiting_reason ? ` · ${status.waiting_reason}` : ''}
           </span>
-          {active && status.can_cancel ? (
+          {status.can_cancel ? (
             <Button
               aria-label="Cancel auto-merge"
               disabled={disabled || pending}
@@ -104,7 +95,7 @@ export function RequestAutoMergeActions({
           ) : null}
         </span>
       ) : null}
-      {!active && status.can_enable && revisionId ? (
+      {!active && canOffer && revisionId ? (
         <Button
           disabled={disabled || pending}
           onClick={() => openDialog({

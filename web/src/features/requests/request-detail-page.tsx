@@ -17,7 +17,6 @@ import {
   ArrowLeft,
   CirclePlay,
   GitCommit,
-  History,
   MessageSquare,
   ShieldQuestion,
   SlidersHorizontal,
@@ -43,6 +42,8 @@ import type { RequestActivityPage } from './request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
+import { withCurrentMergeability } from './request-lifecycle-model'
+import { RequestMoreMenu } from './request-more-menu'
 import { useDetailPaneRail } from './use-detail-pane-rail'
 import { useElementHeight } from './use-element-height'
 import { useRequestActions } from './use-request-actions'
@@ -145,6 +146,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     identity: requestAutoMergeIdentity(scope, request.id),
     load: loadAutoMerge,
   })
+  const liveRequest = withCurrentMergeability(request, checks.checks)
   const requestActions = useRequestActions(performAction)
   const workspace = useRequestWorkspace()
   const [descriptionOverride, setDescriptionOverride] = useState<{
@@ -160,6 +162,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     request_id: request.id,
   }), [params.owner, params.repo, request.id])
   const paneRef = useRef<HTMLDivElement>(null)
+  const moreActions = useRef<HTMLButtonElement>(null)
   const [descriptionActions, setDescriptionActions] = useState<HTMLElement | null>(null)
   const rail = useDetailPaneRail(paneRef)
   const [lifecycleBar, setLifecycleBar] = useState<HTMLDivElement | null>(null)
@@ -223,24 +226,19 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   autoMerge={autoMerge}
                   className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
                   ref={setLifecycleBar}
-                  request={request}
+                  request={liveRequest}
                   viewerId={viewerId}
                 />
-                {request.permissions.can_view_activity ? (
-                  <Button
-                    aria-label="View request activity"
-                    onClick={history.openHistory}
-                    size="icon-sm"
-                    title="View request activity"
-                    type="button"
-                    variant="secondary"
-                  >
-                    <History />
-                  </Button>
-                ) : null}
+                <RequestMoreMenu
+                  actions={requestActions}
+                  disabled={requestActions.pending !== null || autoMerge.pending !== null}
+                  onViewActivity={history.openHistory}
+                  request={request}
+                  triggerRef={moreActions}
+                />
               </>
             }
-            request={request}
+            request={liveRequest}
           />
           <div className="request-detail-actions px-5 py-2.5 min-[701px]:hidden">
             <Button asChild size="icon-sm" variant="secondary">
@@ -307,6 +305,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             loading={history.loading}
             onOpenChange={history.onOpenChange}
             open={history.open}
+            returnFocus={moreActions}
           />
         </div>
       </WorkbenchPane>
