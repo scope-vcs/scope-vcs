@@ -1,5 +1,6 @@
 use super::{
     Request, RequestActorRole, RequestAudience, RequestState, checks::RequestChecksOutcome,
+    lifecycle::ensure_request_close_allowed,
 };
 use crate::repository::access::{RepositoryAccess, RepositoryActor};
 use serde::{Deserialize, Serialize};
@@ -171,8 +172,9 @@ pub fn request_policy(request: &Request, viewer: RequestViewer<'_>) -> RequestPo
         can_manage_invitees: exact_visible && public && !terminal && (author || maintainer),
         can_leave_request: exact_visible && public && invitee && !terminal,
         can_close: exact_visible
-            && ((request.state() == RequestState::Draft && author)
-                || (open && (author || maintainer))),
+            && viewer.user_id.is_some_and(|user_id| {
+                ensure_request_close_allowed(request, user_id, maintainer).is_ok()
+            }),
         can_merge: exact_visible && maintainer && open,
     };
 

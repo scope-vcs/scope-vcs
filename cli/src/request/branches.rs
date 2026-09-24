@@ -186,16 +186,13 @@ pub(super) fn push_request_branch(
     let recover = |stage, error| {
         recovery::request_partial(&context, &detail.request, &branch, stage, true, error)
     };
-    track_request_branch_ref(
+    update_request_remote_ref(
         git_repo,
-        &branch,
         &context.target,
         &detail.request.name,
         &request_head_oid,
     )
-    .map_err(|error| recover("configure_tracking", error))?;
-    store_request_metadata(git_repo, &branch, &context, &detail.request)
-        .map_err(|error| recover("save_local_metadata", error))?;
+    .map_err(|error| recover("update_remote_ref", error))?;
     let detail = get_request(
         api,
         &context.target.owner,

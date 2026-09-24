@@ -76,7 +76,6 @@ pub struct RequestRevisionMutation {
 pub struct CloseRequestInput {
     pub request_id: String,
     pub actor_user_id: String,
-    pub actor_is_author: bool,
     pub actor_is_maintainer: bool,
     pub event_id: String,
     pub now_unix: u64,
@@ -242,24 +241,7 @@ pub fn close_request(
     validate_required("actor user id", &input.actor_user_id)?;
     validate_required("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
-    match request.state() {
-        RequestState::Draft
-            if !input.actor_is_author || request.author_user_id != input.actor_user_id =>
-        {
-            return Err(DomainError::forbidden(
-                "only the request author can delete a draft",
-            ));
-        }
-        RequestState::Open if !input.actor_is_author && !input.actor_is_maintainer => {
-            return Err(DomainError::forbidden(
-                "request author or repo maintainer required",
-            ));
-        }
-        RequestState::Closed | RequestState::Merged => {
-            return Err(DomainError::conflict("request is already closed"));
-        }
-        RequestState::Draft | RequestState::Open => {}
-    }
+    ensure_request_close_allowed(&request, &input.actor_user_id, input.actor_is_maintainer)?;
     if !request.is_submitted() {
         let mut removed_events = events
             .into_iter()
@@ -308,6 +290,36 @@ pub fn close_request(
         created_at_unix: input.now_unix,
     };
     Ok(CloseRequestMutation::Closed { request, event })
+}
+
+pub(super) fn ensure_request_close_allowed(
+    request: &Request,
+    actor_user_id: &str,
+    actor_is_maintainer: bool,
+) -> Result<(), DomainError> {
+    let actor_is_author = request.author_user_id == actor_user_id;
+    match request.state() {
+        RequestState::Draft if !actor_is_author => {
+            return Err(DomainError::forbidden(
+                "only the request author can delete a draft",
+            ));
+        }
+        RequestState::Open | RequestState::Closed | RequestState::Merged
+            if !actor_is_author && !actor_is_maintainer =>
+        {
+            return Err(DomainError::forbidden(
+                "request author or repo maintainer required",
+            ));
+        }
+        RequestState::Closed => {
+            return Err(DomainError::conflict("request is already closed"));
+        }
+        RequestState::Merged => {
+            return Err(DomainError::conflict("request is already merged"));
+        }
+        RequestState::Draft | RequestState::Open => {}
+    }
+    Ok(())
 }
 
 fn validate_start_request_input(input: &StartRequestInput) -> Result<(), DomainError> {

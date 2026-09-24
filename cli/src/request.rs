@@ -52,7 +52,7 @@ use confirm::require_confirmation;
 use local::{
     load_context, load_context_and_request_id, maybe_request_id_for_context, push_request_head,
     refresh_main_projection, remote_main_ref, request_id_for_context, store_request_metadata,
-    track_request_branch_ref,
+    track_request_branch_ref, update_request_remote_ref,
 };
 use outcome::*;
 use render::audience_label;

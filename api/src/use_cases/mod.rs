@@ -3,6 +3,7 @@ pub(crate) mod git_receive;
 pub(crate) mod invite_email_delivery;
 pub(crate) mod native_commit_details;
 pub(crate) mod repository_collaboration;
+pub(crate) mod repository_workflows;
 pub(crate) mod request_anchor_visibility;
 pub(crate) mod request_auto_merge;
 pub(crate) mod request_checks;

@@ -26,6 +26,7 @@ mod landed;
 mod merge;
 mod policy;
 mod privacy;
+mod public_checks;
 mod refs;
 mod review;
 mod root_history;

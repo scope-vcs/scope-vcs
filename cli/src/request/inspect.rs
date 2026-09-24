@@ -4,7 +4,8 @@ use crate::display::terminal_text;
 use crate::{
     api::{RequestFileDiffParams, request_file_diff, request_revisions},
     git_repo::{
-        branch_config_value, fetch_scope_remote_with_bearer, run_git_in_repo, scope_remote_head_oid,
+        branch_config_value, fetch_scope_remote_with_bearer, git_output_in_repo, run_git_in_repo,
+        scope_remote_head_oid,
     },
 };
 use args::{RequestCheckoutArgs, RequestChecksArgs, RequestDiffArgs};
@@ -36,13 +37,13 @@ pub(super) fn checkout_request(
     }
     let local_ref = format!("refs/heads/{branch}");
     let exists = try_run_git_in_repo(git_repo, &["show-ref", "--verify", "--quiet", &local_ref])?;
-    if exists
-        && branch_config_value(git_repo, &branch, "scopeRequestId")?.as_deref() != Some(&request_id)
-    {
-        return Err(crate::error::CliError::usage(format!(
-            "local branch '{branch}' is not linked to request {request_id}; choose a new name with --branch"
-        )).into());
-    }
+    ensure_checkout_branch_matches_request(
+        git_repo,
+        &branch,
+        &request_id,
+        &detail.request.head_oid,
+        exists,
+    )?;
     fetch_scope_remote_with_bearer(
         git_repo,
         &context.target.permissioned_url,
@@ -96,6 +97,38 @@ pub(super) fn checkout_request(
             short_oid(&fetched)
         )],
     ))
+}
+
+fn ensure_checkout_branch_matches_request(
+    git_repo: &GitRepo,
+    branch: &str,
+    request_id: &str,
+    request_head: &str,
+    exists: bool,
+) -> anyhow::Result<()> {
+    if !exists {
+        return Ok(());
+    }
+    match branch_config_value(git_repo, branch, "scopeRequestId")?.as_deref() {
+        Some(bound_id) if bound_id == request_id => Ok(()),
+        Some(_) => Err(crate::error::CliError::usage(format!(
+            "local branch '{branch}' is linked to another request; choose a new name with --branch"
+        ))
+        .into()),
+        None => {
+            let local_ref = format!("refs/heads/{branch}");
+            let output = git_output_in_repo(git_repo, &["rev-parse", "--verify", &local_ref])?;
+            let local_head = String::from_utf8_lossy(&output.stdout);
+            if output.status.success() && local_head.trim() == request_head {
+                Ok(())
+            } else {
+                Err(crate::error::CliError::usage(format!(
+                    "local branch '{branch}' is not linked to request {request_id} and has a different head; choose a new name with --branch"
+                ))
+                .into())
+            }
+        }
+    }
 }
 
 fn switch_request_branch(
@@ -255,6 +288,46 @@ mod tests {
     use super::*;
     use crate::test_support::TempDir;
     use std::fs;
+
+    #[test]
+    fn checkout_only_adopts_an_unbound_existing_branch_at_the_request_head() {
+        let dir = TempDir::git_repo("request-checkout-adopt-exact-head", "main");
+        dir.run_git(["config", "user.email", "scope@example.test"]);
+        dir.run_git(["config", "user.name", "Scope Test"]);
+        dir.run_git(["commit", "--allow-empty", "-m", "base"]);
+        let repo = GitRepo {
+            root: dir.path().to_path_buf(),
+        };
+        let base = head_oid(&repo).unwrap();
+        dir.run_git(["branch", "request-change"]);
+
+        ensure_checkout_branch_matches_request(&repo, "request-change", "req_one", &base, true)
+            .unwrap();
+        dir.run_git(["commit", "--allow-empty", "-m", "next"]);
+        let next = head_oid(&repo).unwrap();
+        let error =
+            ensure_checkout_branch_matches_request(&repo, "request-change", "req_one", &next, true)
+                .unwrap_err();
+        assert!(error.to_string().contains("different head"));
+        assert_eq!(
+            branch_config_value(&repo, "request-change", "scopeRequestId").unwrap(),
+            None
+        );
+
+        dir.run_git([
+            "config",
+            "branch.request-change.scopeRequestId",
+            "req_other",
+        ]);
+        let error =
+            ensure_checkout_branch_matches_request(&repo, "request-change", "req_one", &base, true)
+                .unwrap_err();
+        assert!(error.to_string().contains("another request"));
+        assert_eq!(
+            branch_config_value(&repo, "request-change", "scopeRequestId").unwrap(),
+            Some("req_other".to_string())
+        );
+    }
 
     #[test]
     fn checkout_preserves_unpublished_branch_commits() {

@@ -11,12 +11,13 @@ use crate::{
     persistence::unix_now,
     repo_events::RepoChangeReason,
     state::AppState,
+    use_cases::repository_workflows,
 };
 use scope_api_contract::RunChangeKind;
 use scope_domain::{
     repository::{RepoRecord, RepositoryIncarnation},
     requests::{
-        Request, RequestCheckEvaluation, RequestCheckPlan, RequestChecksOutcome,
+        Request, RequestAudience, RequestCheckEvaluation, RequestCheckPlan, RequestChecksOutcome,
         request_checks_outcome, request_head_awaits_evaluation,
     },
     runs::{run::RunState, workflow::revision::WorkflowRevision},
@@ -119,14 +120,20 @@ async fn evaluate_saved_head(
     else {
         return Ok(None);
     };
-    let files = with_request_revision_store_repo(
-        state,
-        &repo.incarnation(),
-        request,
-        &revision,
-        |path, revision| read_repository_workflow_files(path, &revision.new_head_oid),
-    )
-    .await?;
+    let revisions = match request.audience {
+        RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
+        RequestAudience::Private => {
+            let files = with_request_revision_store_repo(
+                state,
+                &repo.incarnation(),
+                request,
+                &revision,
+                |path, revision| read_repository_workflow_files(path, &revision.new_head_oid),
+            )
+            .await?;
+            request_workflow_revisions(request, files)
+        }
+    };
     let pusher_is_maintainer = state
         .metadata
         .repositories()
@@ -142,7 +149,7 @@ async fn evaluate_saved_head(
         request,
         &revision.actor_user_id,
         pusher_is_maintainer,
-        files,
+        revisions,
     )
     .await
     .map(Some)
@@ -206,10 +213,24 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     let path = staging_repo.to_path_buf();
     let head_oid = request.head_oid.clone();
     let evaluated = async {
-        let files =
-            crate::git::blocking::run(move || read_repository_workflow_files(&path, &head_oid))
+        let revisions = match request.audience {
+            RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
+            RequestAudience::Private => {
+                let files = crate::git::blocking::run(move || {
+                    read_repository_workflow_files(&path, &head_oid)
+                })
                 .await?;
-        evaluate_request_checks(state, request, actor_user_id, actor_is_maintainer, files).await
+                request_workflow_revisions(request, files)
+            }
+        };
+        evaluate_request_checks(
+            state,
+            request,
+            actor_user_id,
+            actor_is_maintainer,
+            revisions,
+        )
+        .await
     }
     .await;
     match evaluated {
@@ -232,10 +253,9 @@ async fn evaluate_request_checks(
     request: &Request,
     actor_user_id: &str,
     actor_is_maintainer: bool,
-    files: ReadWorkflowFiles,
+    revisions: Result<Vec<WorkflowRevision>, String>,
 ) -> Result<RequestChecksMutation, ApiError> {
     let now_unix = unix_now()?;
-    let revisions = request_workflow_revisions(request, files);
     let RequestCheckPlan { evaluation, runs } = RequestCheckPlan::evaluate(
         request,
         revisions.as_deref().map_err(String::as_str),
@@ -252,6 +272,31 @@ async fn evaluate_request_checks(
         },
     )
     .await
+}
+
+/// Public request trees cannot carry maintainer-owned workflow definitions.
+/// Select the verified accepted-main catalog without placing its files in the
+/// public request bundle. A parse failure is a recorded configuration error;
+/// a missing or stale catalog prevents an evaluation from being recorded.
+async fn public_request_workflow_revisions(
+    state: &AppState,
+    request: &Request,
+) -> Result<Result<Vec<WorkflowRevision>, String>, ApiError> {
+    let catalog = repository_workflows::current_catalog(state, &request.repo_id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::internal_message("public request has no accepted main workflow catalog")
+        })?;
+    Ok(
+        scope_run_config::parse_repository_workflow_catalog(&catalog)
+            .map(|revisions| {
+                revisions
+                    .into_iter()
+                    .filter(|revision| revision.definition().triggers().request())
+                    .collect()
+            })
+            .map_err(|error| error.to_string()),
+    )
 }
 
 /// The request-triggered workflows at the head, or the configuration error that

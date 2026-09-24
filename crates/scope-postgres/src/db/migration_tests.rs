@@ -13,6 +13,7 @@ mod fresh_schema;
 mod git_manifest_retirement;
 mod git_segment_schema;
 mod maintenance_cutover;
+mod public_request_check_source;
 mod repository_invite_emails;
 mod repository_invite_links;
 mod repository_landing_files;
@@ -41,6 +42,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0058_repository_invite_emails",
     "m0059_worker_history_permissions",
     "m0060_capacity_retries",
+    "m0061_public_request_check_source",
 ];
 
 pub(super) async fn isolated_database() -> (
