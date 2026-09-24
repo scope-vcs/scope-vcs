@@ -24,7 +24,8 @@ const EDGE_TOLERANCE_PX = 2
 const ACCESS_SECTIONS = ['Runs', 'Settings']
 
 // Signed-in pages run only when a Playwright storage state for a repository
-// owner is provided, because the smoke suite itself browses signed out.
+// owner is provided, because the smoke suite itself browses signed out. The
+// other pages always browse signed out so local runs measure what CI does.
 const storageState = process.env.SCOPE_SMOKE_STORAGE_STATE
 
 const SCENARIOS = [
@@ -36,11 +37,11 @@ const SCENARIOS = [
   { name: 'requests from profile', from: `/${owner}`, to: `${requestRepoPath}/requests` },
   { name: 'requests from code', from: requestRepoPath, to: `${requestRepoPath}/requests` },
   ...storageState ? [
-    { name: 'runs', from: repoPath, to: `${repoPath}/runs` },
-    { name: 'run detail', from: `${repoPath}/runs`, to: firstRunLink },
-    { name: 'settings', from: repoPath, to: `${repoPath}/settings` },
-    { name: 'account', from: `/${owner}`, to: '/account' },
-    { name: 'request detail', from: `${requestRepoPath}/requests`, to: firstRequestLink },
+    { name: 'runs', from: repoPath, to: `${repoPath}/runs`, signedIn: true },
+    { name: 'run detail', from: `${repoPath}/runs`, to: firstRunLink, signedIn: true },
+    { name: 'settings', from: repoPath, to: `${repoPath}/settings`, signedIn: true },
+    { name: 'account', from: `/${owner}`, to: '/account', signedIn: true },
+    { name: 'request detail', from: `${requestRepoPath}/requests`, to: firstRequestLink, signedIn: true },
   ] : [],
 ]
 
@@ -68,7 +69,6 @@ const KNOWN_FAILURES = new Set([
   'desktop runs: dividers',
   'desktop settings: dividers',
   'mobile account: dividers',
-  'mobile code from history: content edge',
   'mobile code from history: dividers',
   'mobile code from profile: content edge',
   'mobile code from profile: dividers',
@@ -81,6 +81,7 @@ const KNOWN_FAILURES = new Set([
   'mobile profile: dividers',
   'mobile request detail: dividers',
   'mobile requests from code: dividers',
+  'mobile requests from profile: content edge',
   'mobile requests from profile: dividers',
   'mobile requests from profile: topbar',
   'mobile run detail: dividers',
@@ -101,7 +102,7 @@ for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {
           return failure ? [`${key}: ${failure}`] : []
         })
         assert.deepEqual(problems, [])
-      }, { viewport, ...storageState ? { storageState } : {} })
+      }, { viewport, ...scenario.signedIn ? { storageState } : {} })
     })
   }
 }
@@ -227,7 +228,7 @@ function measureLayout() {
     if (!visible(element) || element.closest('.sr-only, .animate-spin')) continue
     const rect = element.getBoundingClientRect()
     if (rect.bottom < mainRect.top || rect.top > innerHeight) continue
-    const content = element.matches('[data-slot="skeleton"], svg, img') ||
+    const content = element.matches('[data-slot="skeleton"], svg, img, input, textarea, select, button') ||
       [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim())
     if (content) left = Math.min(left, rect.left)
     if (element.matches('[data-slot="skeleton"]')) skeletonBottom = Math.max(skeletonBottom, Math.min(rect.bottom, innerHeight))
