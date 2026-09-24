@@ -79,14 +79,8 @@ export function RequestWorkspaceList({
           type="button"
           variant="ghost"
         >
-          {loading ? (
-            <>
-              <LoaderCircle className="animate-spin" />
-              Loading…
-            </>
-          ) : (
-            'Load more'
-          )}
+          {loading ? <LoaderCircle className="animate-spin" /> : null}
+          Load more
         </Button>
       )}
     </div>

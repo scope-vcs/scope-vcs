@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
+  LoaderCircle,
   Reply,
   RotateCcw,
 } from 'lucide-react'
@@ -328,9 +329,8 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                     onClick={() => void loadOlderWithoutJump()}
                     type="button"
                   >
-                    {loadingReplies
-                      ? 'Loading…'
-                      : `${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
+                    {loadingReplies ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                    {`${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
                   </button>
                 ) : null}
                 <RequestDiscussionReplyList
