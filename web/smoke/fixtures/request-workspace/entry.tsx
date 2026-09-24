@@ -37,7 +37,7 @@ function Repository() {
   } } as RepoLiveState
   return <FixtureViewer value={viewer}>
     <RepoLayoutProvider live={live} subscribe={subscribe}>
-      <RepoShell params={{ owner: owner!, repo: repo! }}><Outlet /></RepoShell>
+      <RepoShell params={{ owner: owner!, repo: repo! }} repo={live.repo}><Outlet /></RepoShell>
     </RepoLayoutProvider>
   </FixtureViewer>
 }
