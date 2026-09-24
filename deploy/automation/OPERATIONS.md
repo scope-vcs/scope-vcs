@@ -88,7 +88,11 @@ fi
 ```
 
 The one-time scheduler initialization begins automatic dispatch on the next
-Chicago calendar date, avoiding a duplicate release on the cutover date. If
+Chicago calendar date, avoiding a duplicate release on the cutover date. Merge
+the workflow change and install the scheduler on the same Chicago date, after
+that date's 2:08 a.m. release has run. With cron removed, any date between the
+merge and the activation date has no automatic release and is not reported as
+missed. If
 `daily-dispatch.json` already exists, inspect it and skip `--initialize-scheduler`;
 the command deliberately refuses to overwrite prior dispatch history. A missing
 or corrupt scheduler state after installation fails the poll, which eventually
