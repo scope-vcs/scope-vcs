@@ -1,3 +1,4 @@
+import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
 import { PendingSurface } from '@/components/pending-surface'
@@ -10,9 +11,11 @@ import { RequestWorkspaceSidebar } from './request-workspace-sidebar'
 
 const ignore = () => {}
 
-// The real sidebar with no queue yet. Whether the viewer maintains the
-// repository arrives with it, so the sidebar cannot pick its groups.
+// The real sidebar with no queue yet. Whether a signed-in viewer maintains
+// the repository arrives with it, so their sidebar cannot pick its groups yet.
+// Signed-out viewers never maintain one and get the reader's groups at once.
 export function RequestsPagePending({ children }: { children?: ReactNode }) {
+  const { isSignedIn } = useAuth()
   const params = useParams({ from: '/$owner/$repo' })
   const selectedId = useParams({ strict: false, select: (value) => value.requestId })
   const [collapsed, setCollapsed] = useState(readRequestWorkspaceCollapsed)
@@ -33,7 +36,7 @@ export function RequestsPagePending({ children }: { children?: ReactNode }) {
             error={null}
             focus={false}
             loading={false}
-            maintainer={null}
+            maintainer={isSignedIn === false ? false : null}
             onAction={ignore}
             onCollapsedChange={changeCollapsed}
             onFocusToggle={ignore}
